@@ -1,0 +1,5 @@
+.wikirc.yaml
+.wiki/
+node_modules/
+dist/
+coverage/

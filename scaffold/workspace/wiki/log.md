@@ -1,0 +1,3 @@
+# Wiki Log
+
+- Workspace initialized.

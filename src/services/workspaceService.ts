@@ -1,0 +1,393 @@
+import { copyFile, mkdir, readFile, rename } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import fg from 'fast-glob';
+import matter from 'gray-matter';
+import { buildStateSchema } from '../config/schema.ts';
+import { removeIfExists, safeWriteFile, writeIfChanged, pathExists } from '../utils/fs.ts';
+import { hashParts, hashText } from '../utils/hash.ts';
+import {
+  canonicalizeName,
+  relativeFrom,
+  resolveInside,
+  slugify,
+  toPosix,
+} from '../utils/path.ts';
+import { parseTemplateInstructions } from '../utils/markdown.ts';
+import type {
+  AppConfig,
+  BuildState,
+  SourceDocument,
+  TemplateDocument,
+  WikiOperation,
+  WikiPage,
+  WorkspacePaths,
+} from '../types.ts';
+
+function inferWikiPageType(relativePath: string): WikiPage['type'] {
+  if (relativePath === 'wiki/index.md') {
+    return 'index';
+  }
+  if (relativePath.startsWith('wiki/concepts/')) {
+    return 'concept';
+  }
+  if (relativePath.startsWith('wiki/sources/')) {
+    return 'source';
+  }
+  if (relativePath.startsWith('wiki/answers/')) {
+    return 'answer';
+  }
+  return 'other';
+}
+
+export class WorkspaceService {
+  readonly paths: WorkspacePaths;
+
+  constructor(config: AppConfig) {
+    const rootDir = path.resolve(config.wikiRoot);
+    this.paths = {
+      rootDir,
+      configPath: path.join(rootDir, '.wikirc.yaml'),
+      gitignorePath: path.join(rootDir, '.gitignore'),
+      claudePath: path.join(rootDir, 'CLAUDE.md'),
+      internalDir: path.join(rootDir, '.wiki'),
+      buildStatePath: path.join(rootDir, '.wiki', 'build-state.json'),
+      rawDir: path.join(rootDir, 'raw'),
+      rawUntrackedDir: path.join(rootDir, 'raw', 'untracked'),
+      rawIngestedDir: path.join(rootDir, 'raw', 'ingested'),
+      wikiDir: path.join(rootDir, 'wiki'),
+      wikiIndexPath: path.join(rootDir, 'wiki', 'index.md'),
+      wikiLogPath: path.join(rootDir, 'wiki', 'log.md'),
+      wikiConceptsDir: path.join(rootDir, 'wiki', 'concepts'),
+      wikiSourcesDir: path.join(rootDir, 'wiki', 'sources'),
+      wikiAnswersDir: path.join(rootDir, 'wiki', 'answers'),
+      templatesDir: path.join(rootDir, 'templates'),
+      deliverablesDir: path.join(rootDir, 'deliverables'),
+    };
+  }
+
+  private getScaffoldDir(): string {
+    const currentDir = path.dirname(fileURLToPath(import.meta.url));
+    return path.resolve(currentDir, '../../scaffold/workspace');
+  }
+
+  async ensureInitialized(): Promise<void> {
+    if (!(await pathExists(this.paths.wikiIndexPath))) {
+      throw new Error(
+        `Workspace not initialized at ${this.paths.rootDir}. Run "wiki init" first.`,
+      );
+    }
+  }
+
+  async initWorkspace(options: { force?: boolean }): Promise<void> {
+    const scaffoldDir = this.getScaffoldDir();
+    const entries = await fg(['**/*', '**/.*'], {
+      cwd: scaffoldDir,
+      dot: true,
+      onlyFiles: true,
+    });
+
+    if (!options.force) {
+      for (const relativePath of entries) {
+        const destination = path.join(this.paths.rootDir, relativePath);
+        if (await pathExists(destination)) {
+          throw new Error(
+            `Workspace already contains ${relativePath}. Re-run with --force to overwrite scaffold files.`,
+          );
+        }
+      }
+    }
+
+    await mkdir(this.paths.rootDir, { recursive: true });
+
+    for (const relativePath of entries) {
+      const from = path.join(scaffoldDir, relativePath);
+      const to = path.join(this.paths.rootDir, relativePath);
+      await mkdir(path.dirname(to), { recursive: true });
+      await copyFile(from, to);
+    }
+  }
+
+  async appendLog(action: string, details: string): Promise<void> {
+    const timestamp = new Date().toISOString();
+    const line = `- ${timestamp} | ${action} | ${details}\n`;
+    const current = (await pathExists(this.paths.wikiLogPath))
+      ? await readFile(this.paths.wikiLogPath, 'utf8')
+      : '# Wiki Log\n\n';
+    await safeWriteFile(this.paths.wikiLogPath, `${current}${line}`);
+  }
+
+  async listUntrackedSourcePaths(): Promise<string[]> {
+    const files = await fg('**/*.md', {
+      cwd: this.paths.rawUntrackedDir,
+      absolute: true,
+    });
+    return files.sort();
+  }
+
+  async resolveSourceInputs(inputs: string[]): Promise<string[]> {
+    if (inputs.length === 0) {
+      return this.listUntrackedSourcePaths();
+    }
+
+    const resolved: string[] = [];
+    for (const input of inputs) {
+      const candidates = [
+        resolveInside(this.paths.rootDir, input),
+        resolveInside(this.paths.rawUntrackedDir, input),
+      ];
+
+      const found = await Promise.all(candidates.map(async (candidate) => ({
+        candidate,
+        exists: await pathExists(candidate),
+      })));
+
+      const match = found.find((entry) => entry.exists);
+      if (!match) {
+        throw new Error(`Source file not found: ${input}`);
+      }
+
+      const relativeToUntracked = path.relative(this.paths.rawUntrackedDir, match.candidate);
+      if (
+        relativeToUntracked.startsWith('..') ||
+        path.isAbsolute(relativeToUntracked) ||
+        !match.candidate.endsWith('.md')
+      ) {
+        throw new Error(`Source must live under raw/untracked and end with .md: ${input}`);
+      }
+
+      resolved.push(match.candidate);
+    }
+
+    return resolved;
+  }
+
+  async readSourceDocument(sourcePath: string): Promise<SourceDocument> {
+    const absolutePath = path.resolve(sourcePath);
+    const rawContent = await readFile(absolutePath, 'utf8');
+    const parsed = matter(rawContent);
+    const relativePath = relativeFrom(this.paths.rootDir, absolutePath);
+    const relativeToUntracked = relativeFrom(this.paths.rawUntrackedDir, absolutePath);
+    const archiveRelativePath = toPosix(path.join('raw/ingested', relativeToUntracked));
+    const fileName = path.basename(absolutePath);
+    const title =
+      typeof parsed.data.title === 'string' && parsed.data.title.trim()
+        ? parsed.data.title.trim()
+        : path.basename(fileName, '.md');
+
+    return {
+      absolutePath,
+      relativePath,
+      archiveRelativePath,
+      archiveCitationPath: archiveRelativePath,
+      fileName,
+      slug: slugify(title || fileName),
+      title,
+      frontmatter: parsed.data,
+      rawContent,
+      body: parsed.content.trim(),
+    };
+  }
+
+  async archiveSource(source: SourceDocument): Promise<void> {
+    const destination = path.join(this.paths.rootDir, source.archiveRelativePath);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await rename(source.absolutePath, destination);
+  }
+
+  async readIndex(): Promise<string> {
+    if (!(await pathExists(this.paths.wikiIndexPath))) {
+      return '# Wiki Index\n\n';
+    }
+    return readFile(this.paths.wikiIndexPath, 'utf8');
+  }
+
+  async listWikiPages(): Promise<WikiPage[]> {
+    const files = await fg('**/*.md', {
+      cwd: this.paths.wikiDir,
+      absolute: true,
+    });
+
+    const pages: WikiPage[] = [];
+    for (const absolutePath of files.sort()) {
+      const relativePath = relativeFrom(this.paths.rootDir, absolutePath);
+      const content = await readFile(absolutePath, 'utf8');
+      pages.push({
+        absolutePath,
+        relativePath,
+        name: path.basename(absolutePath, '.md'),
+        type: inferWikiPageType(relativePath),
+        content,
+      });
+    }
+
+    return pages;
+  }
+
+  async listIngestedSourcePages(): Promise<WikiPage[]> {
+    const files = await fg('**/*.md', {
+      cwd: this.paths.rawIngestedDir,
+      absolute: true,
+    });
+
+    const pages: WikiPage[] = [];
+    for (const absolutePath of files.sort()) {
+      const relativePath = relativeFrom(this.paths.rootDir, absolutePath);
+      pages.push({
+        absolutePath,
+        relativePath,
+        name: path.basename(absolutePath, '.md'),
+        type: 'source',
+        content: await readFile(absolutePath, 'utf8'),
+      });
+    }
+
+    return pages;
+  }
+
+  async applyWikiOperations(operations: WikiOperation[]): Promise<void> {
+    for (const operation of operations) {
+      if (!operation.path.startsWith('wiki/')) {
+        throw new Error(`Only wiki/* paths are allowed during ingest: ${operation.path}`);
+      }
+
+      if (operation.type !== 'delete' && typeof operation.content !== 'string') {
+        throw new Error(`Operation ${operation.path} requires content.`);
+      }
+
+      const absolutePath = resolveInside(
+        this.paths.wikiDir,
+        operation.path.slice('wiki/'.length),
+      );
+
+      switch (operation.type) {
+        case 'create':
+        case 'update':
+          await writeIfChanged(absolutePath, operation.content ?? '');
+          break;
+        case 'delete':
+          await removeIfExists(absolutePath);
+          break;
+      }
+    }
+  }
+
+  async listTemplatePaths(): Promise<string[]> {
+    const files = await fg('**/*.md', {
+      cwd: this.paths.templatesDir,
+      absolute: true,
+    });
+    return files.sort();
+  }
+
+  async resolveTemplateInputs(inputs: string[]): Promise<string[]> {
+    if (inputs.length === 0) {
+      return this.listTemplatePaths();
+    }
+
+    const resolved: string[] = [];
+    for (const input of inputs) {
+      const candidates = [
+        resolveInside(this.paths.rootDir, input),
+        resolveInside(this.paths.templatesDir, input),
+      ];
+
+      let match: string | undefined;
+      for (const candidate of candidates) {
+        if (await pathExists(candidate)) {
+          match = candidate;
+          break;
+        }
+      }
+
+      if (!match) {
+        throw new Error(`Template not found: ${input}`);
+      }
+
+      resolved.push(match);
+    }
+
+    return resolved;
+  }
+
+  async readTemplateDocument(templatePath: string): Promise<TemplateDocument> {
+    const absolutePath = resolveInside(
+      this.paths.rootDir,
+      relativeFrom(this.paths.rootDir, templatePath),
+    );
+    const rawContent = await readFile(absolutePath, 'utf8');
+    const parsed = matter(rawContent);
+    const relativePath = relativeFrom(this.paths.rootDir, absolutePath);
+    const relativeWithinTemplates = relativeFrom(this.paths.templatesDir, absolutePath);
+    const configuredOutput =
+      typeof parsed.data.output === 'string' && parsed.data.output.trim()
+        ? parsed.data.output.trim()
+        : relativeWithinTemplates;
+    const outputAbsolutePath = resolveInside(this.paths.deliverablesDir, configuredOutput);
+    const outputRelativePath = relativeFrom(this.paths.rootDir, outputAbsolutePath);
+
+    return {
+      absolutePath,
+      relativePath,
+      frontmatter: parsed.data,
+      content: parsed.content.trim(),
+      instructions: parseTemplateInstructions(parsed.content),
+      outputRelativePath,
+      outputAbsolutePath,
+    };
+  }
+
+  async writeDeliverable(outputAbsolutePath: string, content: string): Promise<boolean> {
+    return writeIfChanged(outputAbsolutePath, content);
+  }
+
+  async listDeliverablePaths(): Promise<string[]> {
+    const files = await fg('**/*.md', {
+      cwd: this.paths.deliverablesDir,
+      absolute: true,
+    });
+    return files.sort();
+  }
+
+  async readTextFile(absolutePath: string): Promise<string> {
+    return readFile(absolutePath, 'utf8');
+  }
+
+  async readBuildState(): Promise<BuildState> {
+    if (!(await pathExists(this.paths.buildStatePath))) {
+      return { deliverables: {} };
+    }
+
+    const raw = await readFile(this.paths.buildStatePath, 'utf8');
+    return buildStateSchema.parse(JSON.parse(raw));
+  }
+
+  async writeBuildState(state: BuildState): Promise<void> {
+    await mkdir(this.paths.internalDir, { recursive: true });
+    await safeWriteFile(this.paths.buildStatePath, `${JSON.stringify(state, null, 2)}\n`);
+  }
+
+  async computeWikiHash(): Promise<string> {
+    const pages = await this.listWikiPages();
+    return hashParts(
+      pages
+        .sort((a, b) => a.relativePath.localeCompare(b.relativePath))
+        .map((page) => `${page.relativePath}\n${page.content}`),
+    );
+  }
+
+  async computeTemplateHash(template: TemplateDocument): Promise<string> {
+    return hashText(
+      JSON.stringify({
+        frontmatter: template.frontmatter,
+        content: template.content,
+        outputRelativePath: template.outputRelativePath,
+      }),
+    );
+  }
+
+  findPageByWikiLink(pages: WikiPage[], target: string): WikiPage | undefined {
+    const canonicalTarget = canonicalizeName(target);
+    return pages.find((page) => canonicalizeName(page.name) === canonicalTarget);
+  }
+}

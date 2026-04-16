@@ -1,0 +1,59 @@
+{
+  "name": "llm-wiki",
+  "version": "0.2.0",
+  "description": "Local-first LLM wiki CLI for persistent markdown memory and regenerable deliverables.",
+  "type": "module",
+  "bin": {
+    "wiki": "dist/bin/wiki.js"
+  },
+  "scripts": {
+    "dev": "node --experimental-strip-types ./bin/wiki.ts",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "llm",
+    "wiki",
+    "knowledge-base",
+    "rag",
+    "cli",
+    "openai",
+    "markdown",
+    "personal-wiki",
+    "karpathy"
+  ],
+  "author": "dotdrelle",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "files": [
+    "dist",
+    "scaffold",
+    "examples"
+  ],
+  "packageManager": "pnpm@10.29.2",
+  "dependencies": {
+    "commander": "^14.0.3",
+    "fast-glob": "^3.3.3",
+    "gray-matter": "^4.0.3",
+    "openai": "^6.33.0",
+    "yaml": "^2.8.3",
+    "zod": "^4.1.8"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.36.0",
+    "@types/node": "^25.5.2",
+    "eslint": "^9.36.0",
+    "globals": "^16.4.0",
+    "prettier": "^3.6.2",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.44.1",
+    "vitest": "^3.2.4"
+  }
+}
