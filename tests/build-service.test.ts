@@ -17,6 +17,7 @@ function createConfig(root: string): AppConfig {
       apiKey: 'ollama',
       baseUrl: 'http://127.0.0.1:11434/v1',
       temperature: 0.1,
+      timeoutMs: 600000,
     },
     build: {
       refreshOnIngest: true,

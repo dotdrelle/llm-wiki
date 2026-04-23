@@ -60,6 +60,7 @@ llm:
   apiKey: YOUR_API_KEY_HERE
   baseUrl: https://api.openai.com/v1
   temperature: 0.1
+  timeoutMs: 600000
 
 build:
   refreshOnIngest: true
@@ -78,6 +79,7 @@ llm:
   model: gpt-4.1-mini
   apiKey: ${OPENAI_API_KEY}
   baseUrl: https://api.openai.com/v1
+  timeoutMs: 600000
 ```
 
 Ollama local:
@@ -87,6 +89,7 @@ llm:
   provider: ollama
   model: qwen2.5:14b
   baseUrl: http://127.0.0.1:11434/v1
+  timeoutMs: 1800000
 ```
 
 Generic OpenAI-compatible endpoint:
@@ -97,6 +100,7 @@ llm:
   model: my-model
   apiKey: optional-or-required-by-provider
   baseUrl: https://my-endpoint.example/v1
+  timeoutMs: 600000
 ```
 
 ## Workspace layout
@@ -143,9 +147,24 @@ wiki ingest
 wiki ingest raw/untracked/2026/04/16-notes.md
 wiki ingest --dry-run
 wiki ingest --no-refresh
+wiki ingest --verbose
+wiki ingest --debug
+wiki ingest --trace-file .wiki/logs/ingest-manual.log
 ```
 
-By default, `wiki ingest` also runs `wiki refresh` so stale deliverables get regenerated when the wiki changes.
+By default, `wiki ingest` also runs `wiki refresh` so stale deliverables get regenerated when the wiki changes. If that follow-up build fails because the provider is slow, unavailable, or out of credits, the wiki updates remain applied and the CLI tells you to rerun `wiki refresh` later.
+
+Tracing options:
+
+- `--verbose`: prints step-by-step ingestion traces in the terminal
+- `--debug`: prints more detailed traces, including selected context pages and normalized operations
+- `--trace-file <path>`: writes traces to a specific file relative to the workspace root
+
+Every ingestion run also writes a persistent trace file under `.wiki/logs/`, for example:
+
+```text
+.wiki/logs/ingest-2026-04-17T11-37-24-123Z-mabc12.log
+```
 
 ### `wiki query <question...>`
 

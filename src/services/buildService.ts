@@ -11,6 +11,7 @@ import type {
 } from '../types.ts';
 import type { LLMService } from './llmService.ts';
 import type { RetrievalService } from './retrievalService.ts';
+import type { TraceLogger } from './traceLogger.ts';
 import type { WorkspaceService } from './workspaceService.ts';
 
 export class BuildService {
@@ -18,17 +19,20 @@ export class BuildService {
   private readonly workspace: WorkspaceService;
   private readonly llm: LLMService;
   private readonly retrieval: RetrievalService;
+  private readonly logger?: TraceLogger;
 
   constructor(
     config: AppConfig,
     workspace: WorkspaceService,
     llm: LLMService,
     retrieval: RetrievalService,
+    logger?: TraceLogger,
   ) {
     this.config = config;
     this.workspace = workspace;
     this.llm = llm;
     this.retrieval = retrieval;
+    this.logger = logger;
   }
 
   private async renderTemplate(template: TemplateDocument): Promise<string> {
@@ -56,7 +60,18 @@ export class BuildService {
       template,
       slots,
     });
-    const response = await this.llm.completeJson(prompt, deliverableResponseSchema);
+    const response = await this.llm.completeJson(
+      {
+        ...prompt,
+        label: 'deliverable_render',
+        logger: this.logger,
+        traceData: {
+          template: template.relativePath,
+          instructionCount: template.instructions.length,
+        },
+      },
+      deliverableResponseSchema,
+    );
 
     const replacements = new Map(response.replacements.map((item) => [item.id, item.content.trim()]));
     let renderedBody = template.content;
@@ -91,7 +106,16 @@ export class BuildService {
     const nextState = this.nextState(previousState);
     const results: DeliverableBuildResult[] = [];
 
+    if (this.logger) {
+      await this.logger.info('build:run-start', {
+        templateCount: templatePaths.length,
+        force: Boolean(options?.force),
+        changedOnly: Boolean(options?.changedOnly),
+      });
+    }
+
     for (const templatePath of templatePaths) {
+      const templateStartedAt = Date.now();
       const template = await this.workspace.readTemplateDocument(templatePath);
       const templateHash = await this.workspace.computeTemplateHash(template);
       const prior = previousState.deliverables[template.relativePath];
@@ -101,6 +125,15 @@ export class BuildService {
         prior.wikiHash === wikiHash &&
         !options?.force;
 
+      if (this.logger) {
+        await this.logger.info('build:template-start', {
+          template: template.relativePath,
+          output: template.outputRelativePath,
+          instructions: template.instructions.length,
+          fresh: Boolean(isFresh),
+        });
+      }
+
       if (options?.changedOnly && isFresh) {
         results.push({
           template: template.relativePath,
@@ -108,28 +141,66 @@ export class BuildService {
           changed: false,
           skipped: true,
         });
+        if (this.logger) {
+          await this.logger.info('build:template-skip', {
+            template: template.relativePath,
+            output: template.outputRelativePath,
+            durationMs: Date.now() - templateStartedAt,
+          });
+        }
         continue;
       }
 
-      const rendered = await this.renderTemplate(template);
-      const changed = await this.workspace.writeDeliverable(template.outputAbsolutePath, rendered);
+      try {
+        const rendered = await this.renderTemplate(template);
+        const changed = await this.workspace.writeDeliverable(template.outputAbsolutePath, rendered);
 
-      nextState.deliverables[template.relativePath] = {
-        templateHash,
-        wikiHash,
-        outputHash: hashText(rendered),
-        outputRelativePath: template.outputRelativePath,
-      };
+        nextState.deliverables[template.relativePath] = {
+          templateHash,
+          wikiHash,
+          outputHash: hashText(rendered),
+          outputRelativePath: template.outputRelativePath,
+        };
 
-      results.push({
-        template: template.relativePath,
-        output: template.outputRelativePath,
-        changed,
-        skipped: false,
-      });
+        results.push({
+          template: template.relativePath,
+          output: template.outputRelativePath,
+          changed,
+          skipped: false,
+        });
+
+        if (this.logger) {
+          await this.logger.info('build:template-done', {
+            template: template.relativePath,
+            output: template.outputRelativePath,
+            changed,
+            durationMs: Date.now() - templateStartedAt,
+          });
+        }
+      } catch (error) {
+        if (this.logger) {
+          await this.logger.error('build:template-failed', {
+            template: template.relativePath,
+            output: template.outputRelativePath,
+            durationMs: Date.now() - templateStartedAt,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+        throw error;
+      }
     }
 
     await this.workspace.writeBuildState(nextState);
+
+    if (this.logger) {
+      await this.logger.info('build:run-done', {
+        templateCount: results.length,
+        changed: results.filter((result) => result.changed).length,
+        skipped: results.filter((result) => result.skipped).length,
+        unchanged: results.filter((result) => !result.changed && !result.skipped).length,
+      });
+    }
+
     return results;
   }
 }

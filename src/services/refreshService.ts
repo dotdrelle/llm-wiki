@@ -2,6 +2,7 @@ import type { AppConfig, DeliverableBuildResult } from '../types.ts';
 import { BuildService } from './buildService.ts';
 import type { LLMService } from './llmService.ts';
 import type { RetrievalService } from './retrievalService.ts';
+import type { TraceLogger } from './traceLogger.ts';
 import type { WorkspaceService } from './workspaceService.ts';
 
 export class RefreshService {
@@ -12,8 +13,9 @@ export class RefreshService {
     workspace: WorkspaceService,
     llm: LLMService,
     retrieval: RetrievalService,
+    logger?: TraceLogger,
   ) {
-    this.buildService = new BuildService(config, workspace, llm, retrieval);
+    this.buildService = new BuildService(config, workspace, llm, retrieval, logger);
   }
 
   async refresh(options?: {

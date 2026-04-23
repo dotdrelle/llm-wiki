@@ -1,4 +1,4 @@
-export type LlmProvider = 'openai' | 'ollama' | 'openai-compatible';
+export type LlmProvider = 'openai' | 'ollama' | 'openai-compatible' | 'anthropic';
 
 export interface LlmConfig {
   provider: LlmProvider;
@@ -6,6 +6,7 @@ export interface LlmConfig {
   apiKey?: string;
   baseUrl: string;
   temperature: number;
+  timeoutMs: number;
 }
 
 export interface BuildConfig {
@@ -24,12 +25,21 @@ export interface AppConfig {
   retrieval: RetrievalConfig;
 }
 
+export interface IngestCommandOptions {
+  dryRun?: boolean;
+  refresh?: boolean;
+  verbose?: boolean;
+  debug?: boolean;
+  traceFile?: string;
+}
+
 export interface WorkspacePaths {
   rootDir: string;
   configPath: string;
   gitignorePath: string;
   claudePath: string;
   internalDir: string;
+  logsDir: string;
   buildStatePath: string;
   rawDir: string;
   rawUntrackedDir: string;
@@ -81,6 +91,11 @@ export interface WikiOperation {
 export interface IngestPlan {
   summary: string;
   operations: WikiOperation[];
+}
+
+export interface IngestResult {
+  source: string;
+  plan: IngestPlan;
 }
 
 export interface TemplateInstruction {

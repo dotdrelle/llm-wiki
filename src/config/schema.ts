@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DEFAULT_OLLAMA_BASE_URL, DEFAULT_OPENAI_BASE_URL } from './defaults.ts';
+import { DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_OLLAMA_BASE_URL, DEFAULT_OPENAI_BASE_URL } from './defaults.ts';
 import type { AppConfig } from '../types.ts';
 
 function normalizeOperationType(value: unknown): unknown {
@@ -64,8 +64,6 @@ function normalizeWikiOperation(value: unknown): unknown {
   }
 
   const candidate = value as Record<string, unknown>;
-  const type =
-    candidate.type ?? candidate.action ?? candidate.operation ?? candidate.op ?? candidate.kind;
   const path =
     candidate.path ??
     candidate.file ??
@@ -80,6 +78,14 @@ function normalizeWikiOperation(value: unknown): unknown {
     candidate.body ??
     candidate.markdown ??
     candidate.value;
+  const rawType =
+    candidate.type ?? candidate.action ?? candidate.operation ?? candidate.op ?? candidate.kind;
+  const type =
+    rawType == null || (typeof rawType === 'string' && rawType.trim() === '')
+      ? typeof content === 'string'
+        ? 'update'
+        : 'delete'
+      : normalizeOperationType(rawType);
 
   return {
     ...candidate,
@@ -91,16 +97,18 @@ function normalizeWikiOperation(value: unknown): unknown {
 
 const llmSchema = z
   .object({
-    provider: z.enum(['openai', 'ollama', 'openai-compatible']).default('openai'),
+    provider: z.enum(['openai', 'ollama', 'openai-compatible', 'anthropic']).default('openai'),
     model: z.string().min(1).default('gpt-4.1-mini'),
     apiKey: z.string().min(1).optional(),
     baseUrl: z.string().url().optional(),
     temperature: z.number().min(0).max(2).default(0.1),
+    timeoutMs: z.number().int().positive().default(600000),
   })
   .default({
     provider: 'openai',
     model: 'gpt-4.1-mini',
     temperature: 0.1,
+    timeoutMs: 600000,
   });
 
 const buildSchema = z
@@ -212,7 +220,9 @@ export function resolveConfig(input: unknown, wikiRoot: string, configPath?: str
 
   const baseUrl =
     parsed.llm?.baseUrl ??
-    (provider === 'ollama' ? DEFAULT_OLLAMA_BASE_URL : DEFAULT_OPENAI_BASE_URL);
+    (provider === 'ollama' ? DEFAULT_OLLAMA_BASE_URL :
+     provider === 'anthropic' ? DEFAULT_ANTHROPIC_BASE_URL :
+     DEFAULT_OPENAI_BASE_URL);
 
   if (provider === 'openai-compatible' && !parsed.llm?.baseUrl) {
     throw new Error('Provider "openai-compatible" requires llm.baseUrl in .wikirc.yaml.');
@@ -221,6 +231,7 @@ export function resolveConfig(input: unknown, wikiRoot: string, configPath?: str
   const apiKey =
     parsed.llm?.apiKey ??
     (provider === 'openai' ? process.env.OPENAI_API_KEY : undefined) ??
+    (provider === 'anthropic' ? process.env.ANTHROPIC_API_KEY : undefined) ??
     (provider === 'ollama' ? 'ollama' : undefined);
 
   return {
@@ -232,6 +243,7 @@ export function resolveConfig(input: unknown, wikiRoot: string, configPath?: str
       apiKey,
       baseUrl,
       temperature: parsed.llm?.temperature ?? 0.1,
+      timeoutMs: parsed.llm?.timeoutMs ?? 600000,
     },
     build: {
       refreshOnIngest: parsed.build?.refreshOnIngest ?? true,

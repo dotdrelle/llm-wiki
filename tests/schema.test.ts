@@ -35,4 +35,17 @@ describe('ingest plan schema', () => {
       'wiki/concepts/old.md',
     ]);
   });
+
+  it('defaults a missing operation type to update when content is present', () => {
+    const plan = ingestPlanSchema.parse({
+      operations: [
+        {
+          path: 'index.md',
+          content: '# Wiki Index',
+        },
+      ],
+    });
+
+    expect(plan.operations[0]?.type).toBe('update');
+  });
 });

@@ -2,13 +2,29 @@ import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { ZodError } from 'zod';
 import type { ZodType } from 'zod';
-import { extractFirstJsonObject } from '../utils/json.ts';
+import {
+  extractFirstJsonCandidate,
+  extractFirstJsonObject,
+  repairIncompleteJson,
+} from '../utils/json.ts';
 import type { AppConfig } from '../types.ts';
+import type { TraceLogger } from './traceLogger.ts';
 
 interface CompletionRequest {
   system: string;
   user: string;
   temperature?: number;
+  label?: string;
+  logger?: TraceLogger;
+  traceData?: Record<string, unknown>;
+}
+
+interface ProviderErrorDetails {
+  status?: number;
+  code?: string;
+  type?: string;
+  requestId?: string;
+  message: string;
 }
 
 export class LLMService {
@@ -20,7 +36,81 @@ export class LLMService {
     this.client = new OpenAI({
       apiKey: config.llm.apiKey,
       baseURL: config.llm.baseUrl,
+      timeout: config.llm.timeoutMs,
+      defaultHeaders: config.llm.provider === 'anthropic'
+        ? { 'anthropic-version': '2023-06-01' }
+        : undefined,
     });
+  }
+
+  private extractProviderErrorDetails(error: unknown): ProviderErrorDetails {
+    const candidate = error as {
+      status?: unknown;
+      code?: unknown;
+      type?: unknown;
+      requestID?: unknown;
+      message?: unknown;
+      error?: {
+        message?: unknown;
+      };
+    };
+
+    return {
+      status: typeof candidate?.status === 'number' ? candidate.status : undefined,
+      code: typeof candidate?.code === 'string' ? candidate.code : undefined,
+      type: typeof candidate?.type === 'string' ? candidate.type : undefined,
+      requestId: typeof candidate?.requestID === 'string' ? candidate.requestID : undefined,
+      message:
+        typeof candidate?.error?.message === 'string'
+          ? candidate.error.message
+          : error instanceof Error
+            ? error.message
+            : typeof candidate?.message === 'string'
+              ? candidate.message
+              : String(error),
+    };
+  }
+
+  private normalizeProviderError(error: unknown): Error {
+    const details = this.extractProviderErrorDetails(error);
+    const lowerMessage = details.message.toLowerCase();
+    const providerTarget = `${this.config.llm.provider}/${this.config.llm.model}`;
+    const requestSuffix = details.requestId ? ` Request ID: ${details.requestId}.` : '';
+
+    if (
+      details.status === 401 ||
+      /invalid api key|authentication|unauthorized|forbidden/i.test(details.message)
+    ) {
+      return new Error(
+        `LLM request failed for ${providerTarget}: authentication was rejected. Check llm.apiKey, llm.baseUrl, and the selected provider in .wikirc.yaml.${requestSuffix}`,
+        { cause: error instanceof Error ? error : undefined },
+      );
+    }
+
+    if (
+      details.status === 429 ||
+      /credit balance is too low|insufficient credits|insufficient quota|quota|billing|rate limit/i.test(
+        lowerMessage,
+      )
+    ) {
+      return new Error(
+        `LLM request failed for ${providerTarget}: the provider account appears to be out of credits or quota. Refill billing or switch llm.provider/model/baseUrl in .wikirc.yaml.${requestSuffix}`,
+        { cause: error instanceof Error ? error : undefined },
+      );
+    }
+
+    if (details.status && details.status >= 400) {
+      return new Error(
+        `LLM request failed for ${providerTarget} with HTTP ${details.status}: ${details.message}${requestSuffix}`,
+        { cause: error instanceof Error ? error : undefined },
+      );
+    }
+
+    if (error instanceof Error) {
+      return error;
+    }
+
+    return new Error(details.message);
   }
 
   async completeText(request: CompletionRequest): Promise<string> {
@@ -28,25 +118,77 @@ export class LLMService {
       { role: 'system', content: request.system },
       { role: 'user', content: request.user },
     ];
+    const startedAt = Date.now();
+    const label = request.label ?? 'completion';
 
-    const response = await this.client.chat.completions.create({
-      model: this.config.llm.model,
-      temperature: request.temperature ?? this.config.llm.temperature,
-      messages,
-    });
+    if (request.logger) {
+      await request.logger.info('llm:start', {
+        label,
+        provider: this.config.llm.provider,
+        model: this.config.llm.model,
+        timeoutMs: this.config.llm.timeoutMs,
+        promptChars: request.system.length + request.user.length,
+        ...request.traceData,
+      });
+    }
+
+    let response;
+    try {
+      response = await this.client.chat.completions.create({
+        model: this.config.llm.model,
+        temperature: request.temperature ?? this.config.llm.temperature,
+        messages,
+      });
+    } catch (error) {
+      const details = this.extractProviderErrorDetails(error);
+
+      if (/timed? ?out|abort/i.test(details.message)) {
+        if (request.logger) {
+          await request.logger.error('llm:timeout', {
+            label,
+            durationMs: Date.now() - startedAt,
+            ...request.traceData,
+          });
+        }
+        throw new Error(
+          `LLM request timed out after ${this.config.llm.timeoutMs} ms. Increase llm.timeoutMs in .wikirc.yaml or reduce the prompt size.`,
+        );
+      }
+
+      if (request.logger) {
+        await request.logger.error('llm:error', {
+          label,
+          durationMs: Date.now() - startedAt,
+          status: details.status,
+          code: details.code,
+          type: details.type,
+          requestId: details.requestId,
+          message: details.message,
+          ...request.traceData,
+        });
+      }
+
+      throw this.normalizeProviderError(error);
+    }
 
     const content = response.choices[0]?.message?.content;
     if (!content || typeof content !== 'string') {
       throw new Error('The model returned an empty response.');
     }
 
+    if (request.logger) {
+      await request.logger.info('llm:end', {
+        label,
+        durationMs: Date.now() - startedAt,
+        responseChars: content.length,
+        ...request.traceData,
+      });
+    }
+
     return content;
   }
 
-  async completeJson<T>(request: CompletionRequest, schema: ZodType<T>): Promise<T> {
-    const raw = await this.completeText(request);
-    const payload = JSON.parse(extractFirstJsonObject(raw));
-
+  private validateStructuredPayload<T>(payload: unknown, schema: ZodType<T>): T {
     try {
       return schema.parse(payload);
     } catch (error) {
@@ -76,5 +218,61 @@ export class LLMService {
 
       throw error;
     }
+  }
+
+  private parseJsonPayload(raw: string): unknown {
+    return JSON.parse(extractFirstJsonObject(raw));
+  }
+
+  private async repairJsonWithModel(
+    raw: string,
+    request?: Pick<CompletionRequest, 'logger' | 'traceData' | 'label'>,
+  ): Promise<string> {
+    return this.completeText({
+      system: [
+        'You repair malformed JSON.',
+        'Return only valid JSON.',
+        'Do not explain anything.',
+        'Preserve the original keys and values as much as possible.',
+      ].join('\n'),
+      user: [
+        'Repair the following malformed JSON-like response into strict valid JSON only:',
+        raw,
+      ].join('\n\n'),
+      temperature: 0,
+      label: 'json_repair',
+      logger: request?.logger,
+      traceData: request?.traceData,
+    });
+  }
+
+  async completeJson<T>(request: CompletionRequest, schema: ZodType<T>): Promise<T> {
+    const raw = await this.completeText(request);
+    let payload: unknown;
+    let parseMode: 'direct' | 'local_repair' | 'model_repair' = 'direct';
+
+    try {
+      payload = this.parseJsonPayload(raw);
+    } catch {
+      try {
+        const repairedCandidate = repairIncompleteJson(extractFirstJsonCandidate(raw));
+        payload = this.parseJsonPayload(repairedCandidate);
+        parseMode = 'local_repair';
+      } catch {
+        const repairedByModel = await this.repairJsonWithModel(raw, request);
+        payload = this.parseJsonPayload(repairedByModel);
+        parseMode = 'model_repair';
+      }
+    }
+
+    if (request.logger) {
+      await request.logger.info('llm:json', {
+        label: request.label ?? 'completion',
+        parseMode,
+        ...request.traceData,
+      });
+    }
+
+    return this.validateStructuredPayload(payload, schema);
   }
 }

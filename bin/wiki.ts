@@ -44,6 +44,9 @@ async function main() {
     .argument('[files...]', 'Specific files relative to the workspace root or raw/untracked')
     .option('--dry-run', 'Show planned wiki operations without writing')
     .option('--no-refresh', 'Do not rebuild stale deliverables after ingest')
+    .option('-v, --verbose', 'Print ingestion step traces')
+    .option('--debug', 'Print detailed ingestion traces')
+    .option('--trace-file <path>', 'Write traces to a specific file relative to the workspace root')
     .action((files, options) => ingestCmd(config, files, options));
 
   program

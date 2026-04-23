@@ -24,6 +24,9 @@ export function buildIngestPrompt(args: {
       'Every factual claim added to wiki pages must cite the ingested raw source with the syntax [src: raw/ingested/...].',
       'Allowed operation paths: wiki/index.md, wiki/concepts/*.md, wiki/sources/*.md, wiki/answers/*.md.',
       'Always update wiki/index.md when creating or renaming wiki pages.',
+      'Every operation must include an explicit "type" and a full path starting with "wiki/".',
+      'For update operations, "content" must be the COMPLETE final file content after the change.',
+      'Never use placeholders such as "...", "(Contenu existant)", "(Existing content)", or omission markers in operation content.',
       'Return a strict JSON object with { "summary": string, "operations": WikiOperation[] } and no extra text.',
     ].join('\n'),
     user: [

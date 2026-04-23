@@ -51,6 +51,7 @@ export class WorkspaceService {
       gitignorePath: path.join(rootDir, '.gitignore'),
       claudePath: path.join(rootDir, 'CLAUDE.md'),
       internalDir: path.join(rootDir, '.wiki'),
+      logsDir: path.join(rootDir, '.wiki', 'logs'),
       buildStatePath: path.join(rootDir, '.wiki', 'build-state.json'),
       rawDir: path.join(rootDir, 'raw'),
       rawUntrackedDir: path.join(rootDir, 'raw', 'untracked'),
@@ -245,8 +246,65 @@ export class WorkspaceService {
     return pages;
   }
 
+  async normalizeWikiOperations(operations: WikiOperation[]): Promise<WikiOperation[]> {
+    const pages = await this.listWikiPages();
+    const basenames = new Map<string, string[]>();
+
+    for (const page of pages) {
+      const basename = path.basename(page.relativePath);
+      const entries = basenames.get(basename) ?? [];
+      entries.push(page.relativePath);
+      basenames.set(basename, entries);
+    }
+
+    return operations.map((operation) => {
+      const rawPath = operation.path.trim().replace(/\\/g, '/').replace(/^\.\//, '');
+
+      if (rawPath.startsWith('wiki/')) {
+        return {
+          ...operation,
+          path: rawPath,
+        };
+      }
+
+      if (rawPath === 'index.md' || rawPath === 'log.md') {
+        return {
+          ...operation,
+          path: `wiki/${rawPath}`,
+        };
+      }
+
+      if (
+        rawPath.startsWith('concepts/') ||
+        rawPath.startsWith('sources/') ||
+        rawPath.startsWith('answers/')
+      ) {
+        return {
+          ...operation,
+          path: `wiki/${rawPath}`,
+        };
+      }
+
+      if (!rawPath.includes('/') && rawPath.endsWith('.md')) {
+        const matches = basenames.get(rawPath) ?? [];
+        if (matches.length === 1) {
+          return {
+            ...operation,
+            path: matches[0],
+          };
+        }
+      }
+
+      throw new Error(
+        `Ambiguous or invalid wiki path returned by the model: ${operation.path}. Expected a full wiki/... path or a basename matching exactly one existing wiki page.`,
+      );
+    });
+  }
+
   async applyWikiOperations(operations: WikiOperation[]): Promise<void> {
-    for (const operation of operations) {
+    const normalizedOperations = await this.normalizeWikiOperations(operations);
+
+    for (const operation of normalizedOperations) {
       if (!operation.path.startsWith('wiki/')) {
         throw new Error(`Only wiki/* paths are allowed during ingest: ${operation.path}`);
       }
