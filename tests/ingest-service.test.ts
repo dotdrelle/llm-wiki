@@ -121,6 +121,10 @@ class MemoryTraceLogger implements TraceLogger {
     this.entries.push({ level: 'debug', event, data });
   }
 
+  async warn(event: string, data?: Record<string, unknown>): Promise<void> {
+    this.entries.push({ level: 'warn', event, data });
+  }
+
   async error(event: string, data?: Record<string, unknown>): Promise<void> {
     this.entries.push({ level: 'error', event, data });
   }

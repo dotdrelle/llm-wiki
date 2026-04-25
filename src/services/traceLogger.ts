@@ -2,7 +2,7 @@ import { appendFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { relativeFrom, resolveInside } from '../utils/path.ts';
 
-type TraceLevel = 'info' | 'debug' | 'error';
+type TraceLevel = 'info' | 'warn' | 'debug' | 'error';
 
 export interface TraceLogger {
   readonly runId: string;
@@ -11,6 +11,7 @@ export interface TraceLogger {
   readonly debugEnabled: boolean;
   readonly verboseEnabled: boolean;
   info(event: string, data?: Record<string, unknown>): Promise<void>;
+  warn(event: string, data?: Record<string, unknown>): Promise<void>;
   debug(event: string, data?: Record<string, unknown>): Promise<void>;
   error(event: string, data?: Record<string, unknown>): Promise<void>;
   close(): Promise<void>;
@@ -110,6 +111,10 @@ class FileTraceLogger implements TraceLogger {
     await this.log('info', event, data);
   }
 
+  async warn(event: string, data?: Record<string, unknown>): Promise<void> {
+    await this.log('warn', event, data);
+  }
+
   async debug(event: string, data?: Record<string, unknown>): Promise<void> {
     await this.log('debug', event, data);
   }
@@ -132,6 +137,7 @@ class FileTraceLogger implements TraceLogger {
 
     if (
       level === 'error' ||
+      level === 'warn' ||
       (level === 'info' && this.verboseEnabled) ||
       (level === 'debug' && this.debugEnabled)
     ) {
@@ -141,6 +147,8 @@ class FileTraceLogger implements TraceLogger {
       }`;
       if (level === 'error') {
         console.error(consoleLine);
+      } else if (level === 'warn') {
+        console.warn(consoleLine);
       } else {
         console.log(consoleLine);
       }

@@ -1,4 +1,5 @@
 import type { SearchResult, TemplateDocument } from '../types.ts';
+import { MAX_PAGE_CHARS } from './constants.ts';
 
 export function buildDeliverablePrompt(args: {
   template: TemplateDocument;
@@ -12,7 +13,6 @@ export function buildDeliverablePrompt(args: {
 }) {
   const slotsText = args.slots
     .map((slot) => {
-      const MAX_PAGE_CHARS = 3000;
       const context =
         slot.context.length === 0
           ? '(No relevant wiki pages found.)'

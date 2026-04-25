@@ -1,7 +1,9 @@
 import type { SearchResult, SourceDocument } from '../types.ts';
+import { MAX_PAGE_CHARS } from './constants.ts';
 
 export function buildIngestPrompt(args: {
   source: SourceDocument;
+  body: string;
   indexContent: string;
   relevantPages: SearchResult[];
   sourcePagePath: string;
@@ -10,10 +12,13 @@ export function buildIngestPrompt(args: {
     args.relevantPages.length === 0
       ? '(No closely related wiki pages found.)'
       : args.relevantPages
-          .map(
-            (result) =>
-              `## ${result.page.relativePath}\nScore: ${result.score}\n${result.page.content}`,
-          )
+          .map((result) => {
+            const content =
+              result.page.content.length > MAX_PAGE_CHARS
+                ? `${result.page.content.slice(0, MAX_PAGE_CHARS)}\n...[truncated]`
+                : result.page.content;
+            return `## ${result.page.relativePath}\nScore: ${result.score}\n${content}`;
+          })
           .join('\n\n');
 
   return {
@@ -39,7 +44,7 @@ export function buildIngestPrompt(args: {
       JSON.stringify(args.source.frontmatter, null, 2),
       '',
       '## Body',
-      args.source.body || '(Empty body)',
+      args.body || '(Empty body)',
       '',
       '# Current wiki index',
       args.indexContent,

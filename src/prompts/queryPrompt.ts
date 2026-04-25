@@ -1,14 +1,18 @@
 import type { SearchResult } from '../types.ts';
+import { MAX_PAGE_CHARS } from './constants.ts';
 
 export function buildQueryPrompt(question: string, context: SearchResult[]) {
   const contextText =
     context.length === 0
       ? '(No matching wiki pages were found.)'
       : context
-          .map(
-            (result) =>
-              `## ${result.page.relativePath}\nScore: ${result.score}\n${result.page.content}`,
-          )
+          .map((result) => {
+            const content =
+              result.page.content.length > MAX_PAGE_CHARS
+                ? `${result.page.content.slice(0, MAX_PAGE_CHARS)}\n...[truncated]`
+                : result.page.content;
+            return `## ${result.page.relativePath}\nScore: ${result.score}\n${content}`;
+          })
           .join('\n\n');
 
   return {
