@@ -14,6 +14,7 @@ interface CompletionRequest {
   system: string;
   user: string;
   temperature?: number;
+  jsonMode?: boolean;
   label?: string;
   logger?: TraceLogger;
   traceData?: Record<string, unknown>;
@@ -142,6 +143,9 @@ export class LLMService {
         ...(this.config.llm.provider === 'ollama' && this.config.llm.numCtx
           ? { options: { num_ctx: this.config.llm.numCtx } }
           : {}),
+        ...(request.jsonMode && this.config.llm.provider !== 'anthropic'
+          ? { response_format: { type: 'json_object' } }
+          : {}),
       };
       response = await this.client.chat.completions.create(createParams);
     } catch (error) {
@@ -245,6 +249,7 @@ export class LLMService {
         raw,
       ].join('\n\n'),
       temperature: 0,
+      jsonMode: true,
       label: 'json_repair',
       logger: request?.logger,
       traceData: request?.traceData,
@@ -252,7 +257,7 @@ export class LLMService {
   }
 
   async completeJson<T>(request: CompletionRequest, schema: ZodType<T>): Promise<T> {
-    const raw = await this.completeText(request);
+    const raw = await this.completeText({ ...request, jsonMode: true });
     let payload: unknown;
     let parseMode: 'direct' | 'local_repair' | 'model_repair' = 'direct';
 

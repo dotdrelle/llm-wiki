@@ -1,0 +1,44 @@
+services:
+  wiki:
+    build: .
+    volumes:
+      - ${WIKI_WORKSPACE:-.}:/workspace
+    environment:
+      - OPENAI_API_KEY
+      - ANTHROPIC_API_KEY
+    # host.docker.internal → Ollama natif macOS ou autre service hôte
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  serve:
+    build: .
+    command: serve
+    volumes:
+      - ${WIKI_WORKSPACE:-.}:/workspace
+    environment:
+      - OPENAI_API_KEY
+      - ANTHROPIC_API_KEY
+    ports:
+      - "3000:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Ollama conteneurisé — Linux + GPU NVIDIA uniquement.
+  # Sur macOS, lancer Ollama nativement et pointer baseUrl sur host.docker.internal.
+  ollama:
+    image: ollama/ollama
+    profiles: [gpu]
+    volumes:
+      - ollama-data:/root/.ollama
+    ports:
+      - "11434:11434"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  ollama-data:

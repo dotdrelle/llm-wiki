@@ -12,7 +12,7 @@ export function buildDeliverablePrompt(args: {
 }) {
   const slotsText = args.slots
     .map((slot) => {
-      const MAX_PAGE_CHARS = 1200;
+      const MAX_PAGE_CHARS = 3000;
       const context =
         slot.context.length === 0
           ? '(No relevant wiki pages found.)'

@@ -399,6 +399,16 @@ export class WorkspaceService {
     return writeIfChanged(outputAbsolutePath, content);
   }
 
+  async writeAnswer(question: string, content: string): Promise<string> {
+    const slug = slugify(question.slice(0, 80));
+    const absolutePath = path.join(this.paths.wikiAnswersDir, `${slug}.md`);
+    await mkdir(this.paths.wikiAnswersDir, { recursive: true });
+    const date = new Date().toISOString().slice(0, 10);
+    const fileContent = matter.stringify(content, { question, date });
+    await safeWriteFile(absolutePath, fileContent);
+    return relativeFrom(this.paths.rootDir, absolutePath);
+  }
+
   async listDeliverablePaths(): Promise<string[]> {
     const files = await fg('**/*.md', {
       cwd: this.paths.deliverablesDir,

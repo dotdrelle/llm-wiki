@@ -115,19 +115,19 @@ const llmSchema = z
 const buildSchema = z
   .object({
     refreshOnIngest: z.boolean().default(true),
-    slotBatchSize: z.number().int().min(1).max(50).default(5),
+    slotBatchSize: z.number().int().min(1).max(50).default(3),
   })
   .default({
     refreshOnIngest: true,
-    slotBatchSize: 5,
+    slotBatchSize: 3,
   });
 
 const retrievalSchema = z
   .object({
-    maxContextFiles: z.number().int().min(1).max(24).default(8),
+    maxContextFiles: z.number().int().min(1).max(24).default(5),
   })
   .default({
-    maxContextFiles: 8,
+    maxContextFiles: 5,
   });
 
 export const rawConfigSchema = z.object({
@@ -251,10 +251,10 @@ export function resolveConfig(input: unknown, wikiRoot: string, configPath?: str
     },
     build: {
       refreshOnIngest: parsed.build?.refreshOnIngest ?? true,
-      slotBatchSize: parsed.build?.slotBatchSize ?? 5,
+      slotBatchSize: parsed.build?.slotBatchSize ?? 3,
     },
     retrieval: {
-      maxContextFiles: parsed.retrieval?.maxContextFiles ?? 8,
+      maxContextFiles: parsed.retrieval?.maxContextFiles ?? 5,
     },
   };
 }

@@ -7,7 +7,7 @@
     "wiki": "dist/bin/wiki.js"
   },
   "scripts": {
-    "dev": "node --experimental-strip-types ./bin/wiki.ts",
+    "dev": "node --experimental-strip-types --disable-warning=ExperimentalWarning ./bin/wiki.ts",
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
@@ -41,6 +41,7 @@
     "commander": "^14.0.3",
     "fast-glob": "^3.3.3",
     "gray-matter": "^4.0.3",
+    "marked": "^18.0.2",
     "openai": "^6.33.0",
     "yaml": "^2.8.3",
     "zod": "^4.1.8"

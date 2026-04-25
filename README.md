@@ -15,7 +15,8 @@ No vector database is used. Everything stays in markdown and on disk.
 
 - Node.js 22 CLI with TypeScript and `commander`
 - `.wikirc.yaml` config validated by `zod`
-- supports `openai`, `ollama`, and any OpenAI-compatible endpoint
+- supports `openai`, `ollama`, `anthropic`, and any OpenAI-compatible endpoint
+- structured JSON mode enforced automatically for Ollama and OpenAI providers
 - local-first workspace structure:
   - `raw/untracked`
   - `raw/ingested`
@@ -25,6 +26,7 @@ No vector database is used. Everything stays in markdown and on disk.
 - reproducible deliverable generation with state tracked in `.wiki/build-state.json`
 - automatic `refresh` after `ingest` by default
 - static linting plus optional semantic linting through the configured LLM
+- query answers optionally saved to `wiki/answers/` with `--save`
 - tests with `vitest`
 - linting with `eslint`
 - formatting with `prettier`
@@ -47,27 +49,118 @@ pnpm dev ingest
 pnpm dev build
 ```
 
+## Docker
+
+A `Dockerfile` and `docker-compose.yml` are included. The image is minimal — tsup bundles everything into a single file so no `node_modules` are needed at runtime.
+
+```bash
+docker compose build
+```
+
+### Running commands
+
+```bash
+docker compose run --rm wiki init
+docker compose run --rm wiki ingest
+docker compose run --rm wiki build
+docker compose run --rm wiki query "your question here"
+```
+
+### Browsing the wiki
+
+```bash
+docker compose up serve
+# → http://localhost:3000
+```
+
+### Selecting the workspace
+
+By default the current directory is mounted into `/workspace` inside the container. Override with `WIKI_WORKSPACE`:
+
+```bash
+WIKI_WORKSPACE=/path/to/my/workspace docker compose run --rm wiki ingest
+```
+
+### Ollama
+
+**macOS** — run Ollama natively on the host and point `.wikirc.yaml` at the Docker-internal hostname:
+
+```yaml
+llm:
+  provider: ollama
+  baseUrl: http://host.docker.internal:11434/v1
+```
+
+**Linux + NVIDIA GPU** — start the bundled Ollama container and point at the service name:
+
+```bash
+docker compose --profile gpu up ollama
+```
+
+```yaml
+llm:
+  provider: ollama
+  baseUrl: http://ollama:11434/v1
+```
+
+### API keys
+
+Pass OpenAI or Anthropic keys as environment variables — the compose file forwards them automatically:
+
+```bash
+OPENAI_API_KEY=sk-... docker compose run --rm wiki build
+ANTHROPIC_API_KEY=sk-ant-... docker compose run --rm wiki build
+```
+
 ## Configuration
 
 The CLI looks for `.wikirc.yaml` or `.wikirc.yml` in the current directory or its parents.
 
-Example:
+Example (Ollama with a 16k context window):
 
 ```yaml
 llm:
-  provider: openai
-  model: gpt-4.1-mini
-  apiKey: YOUR_API_KEY_HERE
-  baseUrl: https://api.openai.com/v1
+  provider: ollama
+  model: YOUR_MODEL_NAME
+  baseUrl: http://127.0.0.1:11434/v1
   temperature: 0.1
   timeoutMs: 600000
+  numCtx: 16384
 
 build:
   refreshOnIngest: true
+  slotBatchSize: 3
 
 retrieval:
-  maxContextFiles: 8
+  maxContextFiles: 5
 ```
+
+### `llm` options
+
+| Key | Description | Default |
+|---|---|---|
+| `provider` | `openai`, `ollama`, `anthropic`, `openai-compatible` | `openai` |
+| `model` | Model name passed to the provider | `gpt-4.1-mini` |
+| `apiKey` | API key — falls back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` env vars | — |
+| `baseUrl` | Provider base URL | provider-dependent |
+| `temperature` | Sampling temperature (0–2) | `0.1` |
+| `timeoutMs` | Request timeout in milliseconds | `600000` |
+| `numCtx` | Ollama context window size in tokens — set this explicitly to avoid the provider default | — |
+
+### `build` options
+
+| Key | Description | Default |
+|---|---|---|
+| `refreshOnIngest` | Automatically regenerate stale deliverables after each ingest | `true` |
+| `slotBatchSize` | Number of `[[INSTRUCTION:...]]` slots sent to the model in a single call | `3` |
+
+### `retrieval` options
+
+| Key | Description | Default |
+|---|---|---|
+| `maxContextFiles` | Maximum wiki pages retrieved **per slot** for each LLM call | `5` |
+
+> **Context budget note** — each LLM call includes `slotBatchSize × maxContextFiles` pages at up to 3000 characters each. For a 16k-token window, `slotBatchSize: 3` and `maxContextFiles: 5` keeps the prompt around 11k tokens, leaving roughly 4k for the output.
 
 ### Supported providers
 
@@ -77,8 +170,19 @@ OpenAI:
 llm:
   provider: openai
   model: gpt-4.1-mini
-  apiKey: ${OPENAI_API_KEY}
+  apiKey: YOUR_API_KEY_HERE
   baseUrl: https://api.openai.com/v1
+  timeoutMs: 600000
+```
+
+Anthropic:
+
+```yaml
+llm:
+  provider: anthropic
+  model: claude-sonnet-4-6
+  apiKey: YOUR_API_KEY_HERE
+  baseUrl: https://api.anthropic.com/v1
   timeoutMs: 600000
 ```
 
@@ -90,7 +194,33 @@ llm:
   model: qwen2.5:14b
   baseUrl: http://127.0.0.1:11434/v1
   timeoutMs: 1800000
+  numCtx: 16384
 ```
+
+> Set `numCtx` explicitly — without it Ollama may default to 2048 or 4096 regardless of your model's capabilities.
+
+#### Ollama performance tuning
+
+For better throughput on Apple Silicon or CUDA GPUs, set these environment variables before starting `ollama serve`:
+
+```bash
+# persistent (macOS launchd — survives reboots)
+launchctl setenv OLLAMA_CONTEXT_LENGTH 16384
+launchctl setenv OLLAMA_FLASH_ATTENTION 1
+launchctl setenv OLLAMA_KV_CACHE_TYPE q8_0
+
+# or inline for a single session
+OLLAMA_CONTEXT_LENGTH=16384 \
+OLLAMA_FLASH_ATTENTION=1 \
+OLLAMA_KV_CACHE_TYPE=q8_0 \
+ollama serve
+```
+
+| Variable | Purpose |
+|---|---|
+| `OLLAMA_CONTEXT_LENGTH` | Default context window for all models (overridden by `numCtx` in `.wikirc.yaml`) |
+| `OLLAMA_FLASH_ATTENTION` | Enables Flash Attention for faster inference and lower VRAM usage |
+| `OLLAMA_KV_CACHE_TYPE` | KV cache quantization — `q8_0` halves cache memory with minimal quality loss |
 
 Generic OpenAI-compatible endpoint:
 
@@ -168,11 +298,21 @@ Every ingestion run also writes a persistent trace file under `.wiki/logs/`, for
 
 ### `wiki query <question...>`
 
-Answers a question from the persistent wiki and ingested source notes.
+Answers a question from the persistent wiki and ingested source notes. Prints the answer to stdout.
 
 ```bash
-wiki query "Quels faits sont déjà documentés sur l’adoption IA ?"
+wiki query "Quels faits sont déjà documentés sur l'adoption IA ?"
 ```
+
+Use `--save` to also write the answer to `wiki/answers/<slug>.md` with a frontmatter containing the question and date:
+
+```bash
+wiki query --save "Quels faits sont déjà documentés sur l'adoption IA ?"
+# → prints the answer
+# → Saved to wiki/answers/quels-faits-sont-deja-documentes.md
+```
+
+Asking the same question again with `--save` overwrites the previous answer file.
 
 ### `wiki build [templates...]`
 
@@ -183,6 +323,8 @@ wiki build
 wiki build templates/project-brief.md
 wiki build --force
 ```
+
+Slots are processed in batches of `build.slotBatchSize` per LLM call. For each slot, up to `retrieval.maxContextFiles` wiki pages are retrieved by keyword matching and included as context.
 
 ### `wiki refresh [templates...]`
 
@@ -203,12 +345,21 @@ Runs static checks:
 - stale deliverables
 - unresolved `[[INSTRUCTION: ...]]` placeholders left in generated outputs
 
-Optional semantic checks:
+Optional semantic checks via the configured LLM:
 
 ```bash
 wiki lint
 wiki lint --with-llm
 wiki lint --json
+```
+
+### `wiki serve`
+
+Starts a local HTTP server to browse the wiki, deliverables, and templates in a browser. Markdown files are rendered as HTML with an auto-generated index at `/`.
+
+```bash
+wiki serve
+wiki serve --port 8080
 ```
 
 ## Deliverable templates
@@ -241,6 +392,35 @@ Rules enforced by prompts:
 - cite factual claims
 - if the wiki is missing evidence, say so explicitly
 - do not fill gaps with speculation
+
+## Importing sources
+
+`llm-wiki` ingests standard markdown files. Two tools make it easy to convert existing content into that format.
+
+### Confluence Markdown Exporter
+
+[confluence-markdown-exporter](https://github.com/bdmac/confluence-markdown-exporter) exports a Confluence space as a tree of markdown files ready to drop into `raw/untracked/`.
+
+```bash
+python3.11 -m venv .cme
+source .cme/bin/activate
+pip install --upgrade pip
+pip install confluence-markdown-exporter
+
+cme config          # set your Confluence URL and credentials
+cme space https://your-confluence.example/display/YOURSPACE/
+```
+
+The exported `.md` files can then be placed in `raw/untracked/` and ingested with `wiki ingest`.
+
+### Markitdown
+
+[markitdown](https://github.com/microsoft/markitdown) converts Office documents, PDFs, HTML, and other formats to markdown.
+
+```bash
+pip install 'markitdown[all]'
+markitdown document.docx > raw/untracked/document.md
+```
 
 ## Development
 

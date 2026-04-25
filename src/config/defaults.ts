@@ -15,9 +15,9 @@ export const defaultConfig: AppConfig = {
   },
   build: {
     refreshOnIngest: true,
-    slotBatchSize: 5,
+    slotBatchSize: 3,
   },
   retrieval: {
-    maxContextFiles: 8,
+    maxContextFiles: 5,
   },
 };

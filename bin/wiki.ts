@@ -9,6 +9,7 @@ import queryCmd from '../src/commands/query.ts';
 import lintCmd from '../src/commands/lint.ts';
 import buildCmd from '../src/commands/build.ts';
 import refreshCmd from '../src/commands/refresh.ts';
+import serveCmd from '../src/commands/serve.ts';
 
 const program = new Command();
 const packageVersion = (() => {
@@ -53,7 +54,8 @@ async function main() {
     .command('query')
     .description('Query the wiki and its cited source notes')
     .argument('<question...>', 'Question to answer from the wiki')
-    .action((questionParts) => queryCmd(config, questionParts.join(' ')));
+    .option('--save', 'Save the answer to wiki/answers/')
+    .action((questionParts, options) => queryCmd(config, questionParts.join(' '), options));
 
   program
     .command('lint')
@@ -75,6 +77,12 @@ async function main() {
     .argument('[templates...]', 'Specific template files to refresh')
     .option('--force', 'Refresh all selected deliverables')
     .action((templates, options) => refreshCmd(config, templates, options));
+
+  program
+    .command('serve')
+    .description('Start a local HTTP server to browse the wiki in a browser')
+    .option('-p, --port <number>', 'Port to listen on', '3000')
+    .action((options) => serveCmd(config, { port: parseInt(options.port, 10) }));
 
   await program.parseAsync(process.argv);
 }
