@@ -134,11 +134,16 @@ export class LLMService {
 
     let response;
     try {
-      response = await this.client.chat.completions.create({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const createParams: any = {
         model: this.config.llm.model,
         temperature: request.temperature ?? this.config.llm.temperature,
         messages,
-      });
+        ...(this.config.llm.provider === 'ollama' && this.config.llm.numCtx
+          ? { options: { num_ctx: this.config.llm.numCtx } }
+          : {}),
+      };
+      response = await this.client.chat.completions.create(createParams);
     } catch (error) {
       const details = this.extractProviderErrorDetails(error);
 

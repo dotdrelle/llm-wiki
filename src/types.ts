@@ -7,10 +7,12 @@ export interface LlmConfig {
   baseUrl: string;
   temperature: number;
   timeoutMs: number;
+  numCtx?: number;
 }
 
 export interface BuildConfig {
   refreshOnIngest: boolean;
+  slotBatchSize: number;
 }
 
 export interface RetrievalConfig {

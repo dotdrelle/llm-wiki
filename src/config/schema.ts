@@ -103,6 +103,7 @@ const llmSchema = z
     baseUrl: z.string().url().optional(),
     temperature: z.number().min(0).max(2).default(0.1),
     timeoutMs: z.number().int().positive().default(600000),
+    numCtx: z.number().int().positive().optional(),
   })
   .default({
     provider: 'openai',
@@ -114,9 +115,11 @@ const llmSchema = z
 const buildSchema = z
   .object({
     refreshOnIngest: z.boolean().default(true),
+    slotBatchSize: z.number().int().min(1).max(50).default(5),
   })
   .default({
     refreshOnIngest: true,
+    slotBatchSize: 5,
   });
 
 const retrievalSchema = z
@@ -244,9 +247,11 @@ export function resolveConfig(input: unknown, wikiRoot: string, configPath?: str
       baseUrl,
       temperature: parsed.llm?.temperature ?? 0.1,
       timeoutMs: parsed.llm?.timeoutMs ?? 600000,
+      numCtx: parsed.llm?.numCtx,
     },
     build: {
       refreshOnIngest: parsed.build?.refreshOnIngest ?? true,
+      slotBatchSize: parsed.build?.slotBatchSize ?? 5,
     },
     retrieval: {
       maxContextFiles: parsed.retrieval?.maxContextFiles ?? 8,

@@ -26,6 +26,7 @@ function createConfig(): AppConfig {
     },
     build: {
       refreshOnIngest: true,
+        slotBatchSize: 5,
     },
     retrieval: {
       maxContextFiles: 8,

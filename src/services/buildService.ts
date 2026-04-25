@@ -56,24 +56,31 @@ export class BuildService {
       })),
     );
 
-    const prompt = buildDeliverablePrompt({
-      template,
-      slots,
-    });
-    const response = await this.llm.completeJson(
-      {
-        ...prompt,
-        label: 'deliverable_render',
-        logger: this.logger,
-        traceData: {
-          template: template.relativePath,
-          instructionCount: template.instructions.length,
-        },
-      },
-      deliverableResponseSchema,
-    );
+    const batchSize = this.config.build.slotBatchSize;
+    const batchCount = Math.ceil(slots.length / batchSize);
+    const replacements = new Map<string, string>();
 
-    const replacements = new Map(response.replacements.map((item) => [item.id, item.content.trim()]));
+    for (let batchIndex = 0; batchIndex < batchCount; batchIndex++) {
+      const batch = slots.slice(batchIndex * batchSize, (batchIndex + 1) * batchSize);
+      const prompt = buildDeliverablePrompt({ template, slots: batch });
+      const response = await this.llm.completeJson(
+        {
+          ...prompt,
+          label: 'deliverable_render',
+          logger: this.logger,
+          traceData: {
+            template: template.relativePath,
+            instructionCount: template.instructions.length,
+            batchIndex,
+            batchCount,
+          },
+        },
+        deliverableResponseSchema,
+      );
+      for (const item of response.replacements) {
+        replacements.set(item.id, item.content.trim());
+      }
+    }
     let renderedBody = template.content;
     for (const instruction of template.instructions) {
       const replacement =

@@ -12,14 +12,18 @@ export function buildDeliverablePrompt(args: {
 }) {
   const slotsText = args.slots
     .map((slot) => {
+      const MAX_PAGE_CHARS = 1200;
       const context =
         slot.context.length === 0
           ? '(No relevant wiki pages found.)'
           : slot.context
-              .map(
-                (result) =>
-                  `### ${result.page.relativePath}\nScore: ${result.score}\n${result.page.content}`,
-              )
+              .map((result) => {
+                const content =
+                  result.page.content.length > MAX_PAGE_CHARS
+                    ? `${result.page.content.slice(0, MAX_PAGE_CHARS)}\n...[truncated]`
+                    : result.page.content;
+                return `### ${result.page.relativePath}\nScore: ${result.score}\n${content}`;
+              })
               .join('\n\n');
 
       return [
@@ -35,28 +39,29 @@ export function buildDeliverablePrompt(args: {
     })
     .join('\n\n');
 
+  const ids = args.slots.map((s) => s.id).join(', ');
   return {
     system: [
-      'You generate markdown fragments for a local-first deliverable template.',
-      'Each fragment replaces exactly one [[INSTRUCTION: ...]] token.',
-      'Use only provided wiki context.',
-      'Never fabricate facts or names.',
-      'When context is insufficient, output a short markdown note stating that the wiki lacks enough evidence.',
-      'Do not emit headings that already exist in the template unless the instruction explicitly asks for them.',
-      'Cite factual claims with [src: relative/path.md].',
-      'Return strict JSON as { "replacements": [{ "id": string, "content": string }] } and no extra text.',
+      'You generate markdown fragments to fill in a document template.',
+      'You will receive a list of slots, each with an id, an instruction, and wiki context.',
+      'For each slot, write the markdown content that replaces it.',
+      'Use only the provided wiki context. Never fabricate facts, names, or numbers.',
+      'When context is insufficient, write a short note: "> Évidence manquante dans le wiki — à compléter."',
+      'Do not repeat headings already present in the template.',
+      'Cite factual claims with [src: path/to/wiki/page.md].',
+      `You MUST return ONLY a JSON object with this exact structure — nothing else:`,
+      `{ "replacements": [ { "id": "<slot-id>", "content": "<markdown text>" }, ... ] }`,
+      `The replacements array must contain exactly one entry per slot id: ${ids}.`,
     ].join('\n'),
     user: [
-      '# Template',
-      args.template.content,
-      '',
-      '# Replacement slots',
+      '# Slots to fill',
       slotsText,
       '',
-      '# Output requirements',
-      '- Keep fragments stable and readable for clean git diffs.',
-      '- Respect the tone implied by the template.',
-      '- If evidence is missing, say so plainly instead of guessing.',
+      '# Output rules',
+      '- Return ONLY the JSON object. No explanation, no markdown fence, no extra text.',
+      `- The "replacements" array must have exactly ${args.slots.length} item(s) with ids: ${ids}.`,
+      '- Each "content" value is a markdown string (use \\n for line breaks inside JSON strings).',
+      '- If evidence is missing for a slot, still include it in the array with a short note.',
     ].join('\n'),
   };
 }
