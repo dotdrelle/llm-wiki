@@ -2,4 +2,10 @@ node_modules/
 dist/
 .wiki/
 *.log
+.wikirs.*
 .env
+.DS_Store
+.git/
+.gitignore
+.vscode/
+.idea/

@@ -35,7 +35,10 @@ export class BuildService {
     this.logger = logger;
   }
 
-  private async renderTemplate(template: TemplateDocument): Promise<string> {
+  private async renderTemplate(
+    template: TemplateDocument,
+    onBatch?: (batchIndex: number) => void,
+  ): Promise<string> {
     if (template.instructions.length === 0) {
       const outputFrontmatter = sanitizeFrontmatter(template.frontmatter);
       return Object.keys(outputFrontmatter).length > 0
@@ -61,6 +64,7 @@ export class BuildService {
     const replacements = new Map<string, string>();
 
     for (let batchIndex = 0; batchIndex < batchCount; batchIndex++) {
+      onBatch?.(batchIndex);
       const batch = slots.slice(batchIndex * batchSize, (batchIndex + 1) * batchSize);
       const prompt = buildDeliverablePrompt({
         template,
@@ -109,6 +113,7 @@ export class BuildService {
     templates?: string[];
     force?: boolean;
     changedOnly?: boolean;
+    onProgress?: (template: string, batch: { index: number; total: number }) => void;
   }): Promise<DeliverableBuildResult[]> {
     await this.workspace.ensureInitialized();
     const templatePaths = await this.workspace.resolveTemplateInputs(options?.templates ?? []);
@@ -162,8 +167,13 @@ export class BuildService {
         continue;
       }
 
+      const batchCount = Math.ceil(template.instructions.length / this.config.build.slotBatchSize) || 1;
+      options?.onProgress?.(template.relativePath, { index: results.length, total: templatePaths.length });
+
       try {
-        const rendered = await this.renderTemplate(template);
+        const rendered = await this.renderTemplate(template, (batchIndex) => {
+          options?.onProgress?.(template.relativePath, { index: batchIndex, total: batchCount });
+        });
         const changed = await this.workspace.writeDeliverable(template.outputAbsolutePath, rendered);
 
         nextState.deliverables[template.relativePath] = {

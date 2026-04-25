@@ -45,7 +45,7 @@ async function main() {
     .description('Ingest markdown sources from raw/untracked into the persistent wiki')
     .argument('[files...]', 'Specific files relative to the workspace root or raw/untracked')
     .option('--dry-run', 'Show planned wiki operations without writing')
-    .option('--no-refresh', 'Do not rebuild stale deliverables after ingest')
+    .option('--[no-]refresh', 'Force or skip deliverable rebuild after ingest (default: follows refreshOnIngest in config)')
     .option('-v, --verbose', 'Print ingestion step traces')
     .option('--debug', 'Print detailed ingestion traces')
     .option('--trace-file <path>', 'Write traces to a specific file relative to the workspace root')

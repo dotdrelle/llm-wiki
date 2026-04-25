@@ -21,11 +21,13 @@ export class RefreshService {
   async refresh(options?: {
     templates?: string[];
     force?: boolean;
+    onProgress?: (template: string, batch: { index: number; total: number }) => void;
   }): Promise<DeliverableBuildResult[]> {
     return this.buildService.build({
       templates: options?.templates,
       force: options?.force,
       changedOnly: !options?.force,
+      onProgress: options?.onProgress,
     });
   }
 }

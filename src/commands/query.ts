@@ -3,6 +3,7 @@ import { LLMService } from '../services/llmService.ts';
 import { QueryService } from '../services/queryService.ts';
 import { RetrievalService } from '../services/retrievalService.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
+import { withSpinner } from '../utils/spinner.ts';
 
 export default async function queryCmd(
   config: AppConfig,
@@ -13,7 +14,7 @@ export default async function queryCmd(
   const llm = new LLMService(config);
   const retrieval = new RetrievalService(workspace, config);
   const service = new QueryService(config, workspace, llm, retrieval);
-  const answer = await service.query(question);
+  const answer = await withSpinner('Thinking…', () => service.query(question));
   console.log(answer);
   if (options.save) {
     const outputPath = await workspace.writeAnswer(question, answer);

@@ -251,7 +251,10 @@ export class IngestService {
       }
     }
 
-    if (!options?.dryRun && options?.refresh !== false && this.config.build.refreshOnIngest) {
+    const shouldRefresh =
+      options?.refresh === true ||
+      (options?.refresh !== false && this.config.build.refreshOnIngest);
+    if (!options?.dryRun && results.length > 0 && shouldRefresh) {
       const refreshStartedAt = Date.now();
       try {
         const refreshResults = await this.refresh.refresh();

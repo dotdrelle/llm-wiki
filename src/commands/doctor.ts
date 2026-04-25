@@ -328,7 +328,7 @@ function printOllamaHardware(
 
   if (!config.llm.numCtx) {
     err(
-      `numCtx not set in .wikirc.yaml — effective ctx is ${displayNumCtx.toLocaleString()} tokens (Ollama default or modelfile)`,
+      `numCtx not set in .wikirc.yaml — effective ctx is ${displayNumCtx.toLocaleString()} tokens (from ${effectiveNumCtxSource})`,
     );
     const suggested =
       info.nativeCtx > 0 ? Math.min(info.nativeCtx, 32768) : 32768;
@@ -449,16 +449,19 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
   const totalChars = numCtxTokens * CHARS_PER_TOKEN;
   const available = Math.round(totalChars * (1 - OUTPUT_RESERVE));
   const overhead = indexContent.length + SYSTEM_PROMPT_OVERHEAD;
+  const slotContent = config.retrieval.maxContextFiles * config.retrieval.maxChunkChars;
+  const optimalSlotBatchSize = Math.max(1, Math.min(Math.floor((available - overhead) / slotContent), 20));
   const buildBudget = available - overhead;
   const perSlotBudget = Math.floor(buildBudget / config.build.slotBatchSize);
-  const currentPerSlotUsage = config.retrieval.maxContextFiles * config.retrieval.maxChunkChars;
+  const currentPerSlotUsage = slotContent;
 
   console.log('\n── Context budget ───────────────────────────────────────────');
   row('context window:', `${numCtxTokens.toLocaleString()} tokens → ~${Math.round(totalChars / 1000)}k chars`);
   row('output reserve:', `${OUTPUT_RESERVE * 100}% → ~${Math.round(available / 1000)}k chars available`);
   row('fixed overhead:', `~${Math.round(overhead / 1000)}k chars (index + system)`);
-  row('per-slot budget:', `~${Math.round(perSlotBudget / 1000)}k chars`);
-  row('current usage:', `${config.retrieval.maxContextFiles} × ${config.retrieval.maxChunkChars} = ${Math.round(currentPerSlotUsage / 1000)}k chars/slot`);
+  row('slot content:', `${config.retrieval.maxContextFiles} files × ${config.retrieval.maxChunkChars} chars = ~${Math.round(slotContent / 1000)}k chars/slot`);
+  row('optimal slotBatchSize:', `${optimalSlotBatchSize} (fills ~${Math.round(optimalSlotBatchSize * slotContent / 1000)}k / ~${Math.round((available - overhead) / 1000)}k chars)`);
+  row('per-slot budget:', `~${Math.round(perSlotBudget / 1000)}k chars (with current slotBatchSize=${config.build.slotBatchSize})`);
 
   // ── recommendations ──────────────────────────────────────────────────────────
   console.log('\n── Recommendations ──────────────────────────────────────────');
@@ -515,6 +518,24 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
     hasWarnings = true;
   } else {
     ok(`maxContextFiles ${config.retrieval.maxContextFiles} (${Math.round(currentPerSlotUsage / 1000)}k / ~${Math.round(perSlotBudget / 1000)}k chars per slot)`);
+  }
+
+  if (Math.abs(optimalSlotBatchSize - config.build.slotBatchSize) >= 2) {
+    if (optimalSlotBatchSize > config.build.slotBatchSize) {
+      warn(
+        `slotBatchSize ${config.build.slotBatchSize} → ${optimalSlotBatchSize} recommended` +
+        ` — context window fits ${optimalSlotBatchSize} slots, fewer LLM calls per template`,
+      );
+    } else {
+      warn(
+        `slotBatchSize ${config.build.slotBatchSize} → ${optimalSlotBatchSize} recommended` +
+        ` — current value overfills context window per call`,
+      );
+    }
+    (suggestions.build ??= {}).slotBatchSize = optimalSlotBatchSize;
+    hasWarnings = true;
+  } else {
+    ok(`slotBatchSize ${config.build.slotBatchSize} (optimal for this context window: ${optimalSlotBatchSize})`);
   }
 
   if (!hasWarnings && Object.keys(suggestions).length === 0) {
