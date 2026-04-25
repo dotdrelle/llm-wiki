@@ -125,9 +125,13 @@ const buildSchema = z
 const retrievalSchema = z
   .object({
     maxContextFiles: z.number().int().min(1).max(24).default(5),
+    maxChunkChars: z.number().int().min(200).default(3000),
+    maxSourceChars: z.number().int().min(500).default(8000),
   })
   .default({
     maxContextFiles: 5,
+    maxChunkChars: 3000,
+    maxSourceChars: 8000,
   });
 
 export const rawConfigSchema = z.object({
@@ -255,6 +259,8 @@ export function resolveConfig(input: unknown, wikiRoot: string, configPath?: str
     },
     retrieval: {
       maxContextFiles: parsed.retrieval?.maxContextFiles ?? 5,
+      maxChunkChars: parsed.retrieval?.maxChunkChars ?? 3000,
+      maxSourceChars: parsed.retrieval?.maxSourceChars ?? 8000,
     },
   };
 }

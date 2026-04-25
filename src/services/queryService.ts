@@ -28,7 +28,7 @@ export class QueryService {
       limit: this.config.retrieval.maxContextFiles,
       includeRaw: true,
     });
-    const prompt = buildQueryPrompt(question, context);
+    const prompt = buildQueryPrompt(question, context, this.config.retrieval.maxChunkChars);
     return this.llm.completeText(prompt);
   }
 }

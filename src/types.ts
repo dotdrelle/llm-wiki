@@ -17,6 +17,8 @@ export interface BuildConfig {
 
 export interface RetrievalConfig {
   maxContextFiles: number;
+  maxChunkChars: number;
+  maxSourceChars: number;
 }
 
 export interface AppConfig {
@@ -82,6 +84,10 @@ export interface WikiPage {
 export interface SearchResult {
   page: WikiPage;
   score: number;
+  chunk?: {
+    headingPath: string[];
+    content: string;
+  };
 }
 
 export interface WikiOperation {

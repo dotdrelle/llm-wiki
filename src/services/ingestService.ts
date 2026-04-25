@@ -1,6 +1,5 @@
 import path from 'node:path';
 import { ingestPlanSchema } from '../config/schema.ts';
-import { MAX_PAGE_CHARS, MAX_SOURCE_CHARS } from '../prompts/constants.ts';
 import { buildIngestPrompt } from '../prompts/ingestPrompt.ts';
 import type { AppConfig, IngestCommandOptions, IngestResult } from '../types.ts';
 import type { LLMService } from './llmService.ts';
@@ -88,30 +87,31 @@ export class IngestService {
         }
 
         // Truncate source body if needed — warn always visible on console
+        const { maxChunkChars, maxSourceChars } = this.config.retrieval;
         const rawBody = source.body ?? '';
-        const sourceBodyTruncated = rawBody.length > MAX_SOURCE_CHARS;
+        const sourceBodyTruncated = rawBody.length > maxSourceChars;
         if (sourceBodyTruncated) {
           await this.logger.warn('ingest:truncation', {
             source: source.relativePath,
             field: 'sourceBody',
             originalChars: rawBody.length,
-            truncatedToChars: MAX_SOURCE_CHARS,
+            truncatedToChars: maxSourceChars,
           });
         }
         const body = sourceBodyTruncated
-          ? `${rawBody.slice(0, MAX_SOURCE_CHARS)}\n...[source tronquée — ${rawBody.length - MAX_SOURCE_CHARS} chars omis]`
+          ? `${rawBody.slice(0, maxSourceChars)}\n...[source tronquée — ${rawBody.length - maxSourceChars} chars omis]`
           : rawBody;
 
         // Count relevant pages that will be truncated
         const relevantPagesTruncated = relevantPages.filter(
-          (r) => r.page.content.length > MAX_PAGE_CHARS,
+          (r) => (r.chunk?.content ?? r.page.content).length > maxChunkChars,
         ).length;
         if (relevantPagesTruncated > 0) {
           await this.logger.warn('ingest:truncation', {
             source: source.relativePath,
             field: 'relevantPages',
             truncatedPageCount: relevantPagesTruncated,
-            truncatedToCharsPerPage: MAX_PAGE_CHARS,
+            truncatedToCharsPerPage: maxChunkChars,
           });
         }
 
@@ -122,6 +122,7 @@ export class IngestService {
           indexContent: await this.workspace.readIndex(),
           relevantPages,
           sourcePagePath,
+          maxChunkChars,
         });
         await this.logger.info('ingest:prompt', {
           source: source.relativePath,

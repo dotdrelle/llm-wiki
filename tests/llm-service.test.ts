@@ -19,6 +19,8 @@ function createConfig(): AppConfig {
     },
     retrieval: {
       maxContextFiles: 8,
+        maxChunkChars: 3000,
+        maxSourceChars: 8000,
     },
   };
 }

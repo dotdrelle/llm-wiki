@@ -10,6 +10,7 @@ import lintCmd from '../src/commands/lint.ts';
 import buildCmd from '../src/commands/build.ts';
 import refreshCmd from '../src/commands/refresh.ts';
 import serveCmd from '../src/commands/serve.ts';
+import doctorCmd from '../src/commands/doctor.ts';
 
 const program = new Command();
 const packageVersion = (() => {
@@ -83,6 +84,11 @@ async function main() {
     .description('Start a local HTTP server to browse the wiki in a browser')
     .option('-p, --port <number>', 'Port to listen on', '3000')
     .action((options) => serveCmd(config, { port: parseInt(options.port, 10) }));
+
+  program
+    .command('doctor')
+    .description('Check .wikirc.yaml, test provider connectivity, and recommend optimal settings')
+    .action(() => doctorCmd(config));
 
   await program.parseAsync(process.argv);
 }

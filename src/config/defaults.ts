@@ -19,5 +19,7 @@ export const defaultConfig: AppConfig = {
   },
   retrieval: {
     maxContextFiles: 5,
+    maxChunkChars: 3000,
+    maxSourceChars: 8000,
   },
 };

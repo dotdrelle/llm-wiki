@@ -1,8 +1,9 @@
 import type { SearchResult, TemplateDocument } from '../types.ts';
-import { MAX_PAGE_CHARS } from './constants.ts';
+import { formatContextResult } from './formatContext.ts';
 
 export function buildDeliverablePrompt(args: {
   template: TemplateDocument;
+  maxChunkChars: number;
   slots: Array<{
     id: string;
     instruction: string;
@@ -16,15 +17,7 @@ export function buildDeliverablePrompt(args: {
       const context =
         slot.context.length === 0
           ? '(No relevant wiki pages found.)'
-          : slot.context
-              .map((result) => {
-                const content =
-                  result.page.content.length > MAX_PAGE_CHARS
-                    ? `${result.page.content.slice(0, MAX_PAGE_CHARS)}\n...[truncated]`
-                    : result.page.content;
-                return `### ${result.page.relativePath}\nScore: ${result.score}\n${content}`;
-              })
-              .join('\n\n');
+          : slot.context.map((r) => formatContextResult(r, args.maxChunkChars)).join('\n\n');
 
       return [
         `## ${slot.id}`,

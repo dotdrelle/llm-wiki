@@ -62,7 +62,11 @@ export class BuildService {
 
     for (let batchIndex = 0; batchIndex < batchCount; batchIndex++) {
       const batch = slots.slice(batchIndex * batchSize, (batchIndex + 1) * batchSize);
-      const prompt = buildDeliverablePrompt({ template, slots: batch });
+      const prompt = buildDeliverablePrompt({
+        template,
+        slots: batch,
+        maxChunkChars: this.config.retrieval.maxChunkChars,
+      });
       const response = await this.llm.completeJson(
         {
           ...prompt,

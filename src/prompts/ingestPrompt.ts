@@ -1,5 +1,5 @@
 import type { SearchResult, SourceDocument } from '../types.ts';
-import { MAX_PAGE_CHARS } from './constants.ts';
+import { formatContextResult } from './formatContext.ts';
 
 export function buildIngestPrompt(args: {
   source: SourceDocument;
@@ -7,19 +7,12 @@ export function buildIngestPrompt(args: {
   indexContent: string;
   relevantPages: SearchResult[];
   sourcePagePath: string;
+  maxChunkChars: number;
 }) {
   const relevantPagesText =
     args.relevantPages.length === 0
       ? '(No closely related wiki pages found.)'
-      : args.relevantPages
-          .map((result) => {
-            const content =
-              result.page.content.length > MAX_PAGE_CHARS
-                ? `${result.page.content.slice(0, MAX_PAGE_CHARS)}\n...[truncated]`
-                : result.page.content;
-            return `## ${result.page.relativePath}\nScore: ${result.score}\n${content}`;
-          })
-          .join('\n\n');
+      : args.relevantPages.map((r) => formatContextResult(r, args.maxChunkChars)).join('\n\n');
 
   return {
     system: [

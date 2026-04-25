@@ -1,6 +1,54 @@
 import matter from 'gray-matter';
 import type { DeliverableReplacement, TemplateInstruction } from '../types.ts';
 
+export interface MarkdownChunk {
+  headingPath: string[];
+  heading: string;
+  content: string;
+}
+
+export function splitByHeadings(content: string, maxLevel = 3): MarkdownChunk[] {
+  const lines = content.split('\n');
+  const chunks: MarkdownChunk[] = [];
+  const headingStack: Array<{ depth: number; title: string }> = [];
+  let currentLines: string[] = [];
+  let inFence = false;
+
+  function flush() {
+    const text = currentLines.join('\n').trim();
+    if (text.length > 0) {
+      chunks.push({
+        headingPath: headingStack.map((h) => h.title),
+        heading: headingStack.at(-1)?.title ?? '',
+        content: text,
+      });
+    }
+  }
+
+  for (const line of lines) {
+    if (/^`{3,}/.test(line.trim())) {
+      inFence = !inFence;
+    }
+
+    const headingMatch = !inFence ? /^(#{1,6})\s+(.+?)\s*$/.exec(line) : null;
+    if (headingMatch && headingMatch[1].length <= maxLevel) {
+      flush();
+      currentLines = [line];
+      const depth = headingMatch[1].length;
+      const title = headingMatch[2];
+      while (headingStack.length > 0 && headingStack.at(-1)!.depth >= depth) {
+        headingStack.pop();
+      }
+      headingStack.push({ depth, title });
+    } else {
+      currentLines.push(line);
+    }
+  }
+
+  flush();
+  return chunks.length > 0 ? chunks : [{ headingPath: [], heading: '', content: content.trim() }];
+}
+
 export function extractWikiLinks(content: string): string[] {
   return [...content.matchAll(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g)].map((match) =>
     match[1].trim(),
