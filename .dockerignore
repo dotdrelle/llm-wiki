@@ -2,7 +2,7 @@ node_modules/
 dist/
 .wiki/
 *.log
-.wikirs.*
+.wikirc.*
 .env
 .DS_Store
 .git/

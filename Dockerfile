@@ -7,7 +7,11 @@ COPY . .
 RUN pnpm build
 
 FROM node:22-alpine
-COPY --from=builder /build/dist /app
+WORKDIR /app
+RUN corepack enable
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --prod --frozen-lockfile
+COPY --from=builder /build/dist ./
 EXPOSE 3000
 VOLUME /workspace
 WORKDIR /workspace

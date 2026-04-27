@@ -51,7 +51,7 @@ pnpm dev build
 
 ## Docker
 
-A `Dockerfile` and `docker-compose.yml` are included. The image is minimal — tsup bundles everything into a single file so no `node_modules` are needed at runtime.
+A `Dockerfile` and `docker-compose.yml` are included. The image builds the TypeScript CLI into `dist/` and installs production dependencies in the runtime layer. This is required by runtime-loaded packages such as the local D3 bundle used by `wiki serve`.
 
 ```bash
 docker compose build
@@ -59,26 +59,34 @@ docker compose build
 
 ### Running commands
 
+Use the `wiki` service for one-shot CLI commands. It does not start the web server.
+
 ```bash
-docker compose run --rm wiki init
-docker compose run --rm wiki ingest
-docker compose run --rm wiki build
-docker compose run --rm wiki query "your question here"
+docker compose --profile cli run --rm wiki init
+docker compose --profile cli run --rm wiki ingest
+docker compose --profile cli run --rm wiki build
+docker compose --profile cli run --rm wiki doctor
+docker compose --profile cli run --rm wiki query "your question here"
 ```
 
 ### Browsing the wiki
+
+Use the `serve` service for a persistent web UI.
 
 ```bash
 docker compose up serve
 # → http://localhost:3000
 ```
 
+`EXPOSE 3000` in the Dockerfile does not start a server by itself. It only documents the port used when the command is `serve`. Running `docker compose --profile cli run --rm wiki ingest` while `docker compose up serve` is active is supported: both containers mount the same workspace, and the browser sees updated markdown after refresh.
+
 ### Selecting the workspace
 
 By default the current directory is mounted into `/workspace` inside the container. Override with `WIKI_WORKSPACE`:
 
 ```bash
-WIKI_WORKSPACE=/path/to/my/workspace docker compose run --rm wiki ingest
+WIKI_WORKSPACE=/path/to/my/workspace docker compose --profile cli run --rm wiki ingest
+WIKI_WORKSPACE=/path/to/my/workspace docker compose up serve
 ```
 
 ### Ollama
@@ -133,6 +141,9 @@ build:
 
 retrieval:
   maxContextFiles: 5
+  maxChunksPerPage: 2
+  maxChunkChars: 3000
+  maxSourceChars: 8000
 ```
 
 ### `llm` options
@@ -146,6 +157,8 @@ retrieval:
 | `temperature` | Sampling temperature (0–2) | `0.1` |
 | `timeoutMs` | Request timeout in milliseconds | `600000` |
 | `numCtx` | Ollama context window size in tokens — set this explicitly to avoid the provider default | — |
+| `flashAttention` | Ollama tuning hint for remote/containerized servers when env vars cannot be detected | — |
+| `kvCacheType` | Ollama KV cache type hint: `f16`, `q8_0`, or `q4_0` | — |
 
 ### `build` options
 
@@ -159,8 +172,11 @@ retrieval:
 | Key | Description | Default |
 |---|---|---|
 | `maxContextFiles` | Maximum wiki pages retrieved **per slot** for each LLM call | `5` |
+| `maxChunksPerPage` | Maximum matching chunks returned from the same wiki page | `2` |
+| `maxChunkChars` | Maximum characters kept from a retrieved wiki chunk | `3000` |
+| `maxSourceChars` | Maximum characters read from a pending raw source during ingest | `8000` |
 
-> **Context budget note** — each LLM call includes `slotBatchSize × maxContextFiles` pages at up to 3000 characters each. For a 16k-token window, `slotBatchSize: 3` and `maxContextFiles: 5` keeps the prompt around 11k tokens, leaving roughly 4k for the output.
+> **Context budget note** — each LLM call includes up to `slotBatchSize × maxContextFiles × maxChunkChars` characters plus fixed prompt overhead. Run `wiki doctor` after changing these values; it checks whether the combined prompt fits the effective context window.
 
 ### Supported providers
 
@@ -195,6 +211,8 @@ llm:
   baseUrl: http://127.0.0.1:11434/v1
   timeoutMs: 1800000
   numCtx: 16384
+  flashAttention: true
+  kvCacheType: q8_0
 ```
 
 > Set `numCtx` explicitly — without it Ollama may default to 2048 or 4096 regardless of your model's capabilities.
@@ -221,6 +239,17 @@ ollama serve
 | `OLLAMA_CONTEXT_LENGTH` | Default context window for all models (overridden by `numCtx` in `.wikirc.yaml`) |
 | `OLLAMA_FLASH_ATTENTION` | Enables Flash Attention for faster inference and lower VRAM usage |
 | `OLLAMA_KV_CACHE_TYPE` | KV cache quantization — `q8_0` halves cache memory with minimal quality loss |
+
+If Ollama runs outside the local process namespace, for example in Docker or on another machine, `wiki doctor` cannot inspect `OLLAMA_*` from the server process. Set `flashAttention` and `kvCacheType` in `.wikirc.yaml` so the doctor can base memory and speed recommendations on the server configuration:
+
+```yaml
+llm:
+  provider: ollama
+  baseUrl: http://gpu-server:11434/v1
+  numCtx: 32768
+  flashAttention: true
+  kvCacheType: q8_0
+```
 
 Generic OpenAI-compatible endpoint:
 
@@ -355,12 +384,37 @@ wiki lint --json
 
 ### `wiki serve`
 
-Starts a local HTTP server to browse the wiki, deliverables, and templates in a browser. Markdown files are rendered as HTML with an auto-generated index at `/`.
+Starts a local HTTP server to browse the wiki, deliverables, and templates in a browser. `/` renders `wiki/index.md` as the entry point with navigation tiles. `/graph` shows a D3 force graph of wiki/source relations; relation details open rendered markdown in a modal.
 
 ```bash
 wiki serve
 wiki serve --port 8080
 ```
+
+With Docker, use the long-running `serve` service:
+
+```bash
+docker compose up serve
+```
+
+Keep using `docker compose --profile cli run --rm wiki ...` for one-shot commands such as `ingest`, `refresh`, and `doctor`.
+
+### `wiki doctor`
+
+Checks provider connectivity, effective context size, wiki chunk sizes, build batch size, and Ollama memory/speed settings. When suggestions are available, `doctor` prints the exact `.wikirc.yaml` keys to change.
+
+```bash
+wiki doctor
+docker compose --profile cli run --rm wiki doctor
+```
+
+In an interactive terminal, `doctor` asks before applying suggestions:
+
+```text
+Apply these changes to /path/to/.wikirc.yaml? [y/N]
+```
+
+Only `y`, `yes`, `o`, or `oui` writes the file. In non-interactive runs, such as CI or redirected output, `doctor` never writes and only prints the suggestions.
 
 ## Deliverable templates
 

@@ -1,6 +1,16 @@
 services:
+  # CLI ponctuelle: ce service ne lance pas le serveur.
+  # Exemples:
+  #   docker compose run --rm wiki ingest
+  #   docker compose run --rm wiki doctor
+  #   docker compose run --rm wiki build
+  #
+  # Pour garder une UI web ouverte, utiliser le service `serve` ci-dessous.
+  # Les deux services montent le même workspace: un ingest lancé via `wiki`
+  # est visible dans `serve` après rechargement du navigateur.
   wiki:
     build: .
+    profiles: ["cli"]
     volumes:
       - ${WIKI_WORKSPACE:-.}:/workspace
     environment:
@@ -10,9 +20,15 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  # Serveur web persistant pour consulter le wiki.
+  # Démarrage:
+  #   docker compose up serve
+  #
+  # `EXPOSE 3000` dans le Dockerfile ne démarre rien tout seul: seul ce service
+  # passe explicitement la commande `serve --port 3000`.
   serve:
     build: .
-    command: serve
+    command: serve --port 3000
     volumes:
       - ${WIKI_WORKSPACE:-.}:/workspace
     environment:
