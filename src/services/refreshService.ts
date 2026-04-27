@@ -21,13 +21,17 @@ export class RefreshService {
   async refresh(options?: {
     templates?: string[];
     force?: boolean;
-    onProgress?: (template: string, batch: { index: number; total: number }) => void;
+    onProgress?: (template: string, batch: { index: number; total: number }, topContextPages: string[]) => void;
+    onBatchLlm?: (template: string, batch: { index: number; total: number }, topContextPages: string[]) => void;
+    onPageLoad?: (relativePath: string, index: number, total: number) => void;
   }): Promise<DeliverableBuildResult[]> {
     return this.buildService.build({
       templates: options?.templates,
       force: options?.force,
       changedOnly: !options?.force,
       onProgress: options?.onProgress,
+      onBatchLlm: options?.onBatchLlm,
+      onPageLoad: options?.onPageLoad,
     });
   }
 }

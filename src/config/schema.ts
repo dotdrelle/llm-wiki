@@ -104,6 +104,8 @@ const llmSchema = z
     temperature: z.number().min(0).max(2).default(0.1),
     timeoutMs: z.number().int().positive().default(600000),
     numCtx: z.number().int().positive().optional(),
+    flashAttention: z.boolean().optional(),
+    kvCacheType: z.enum(['f16', 'q8_0', 'q4_0']).optional(),
   })
   .default({
     provider: 'openai',
@@ -125,11 +127,13 @@ const buildSchema = z
 const retrievalSchema = z
   .object({
     maxContextFiles: z.number().int().min(1).max(24).default(5),
+    maxChunksPerPage: z.number().int().min(1).max(10).default(2),
     maxChunkChars: z.number().int().min(200).default(3000),
     maxSourceChars: z.number().int().min(500).default(8000),
   })
   .default({
     maxContextFiles: 5,
+    maxChunksPerPage: 2,
     maxChunkChars: 3000,
     maxSourceChars: 8000,
   });
@@ -252,6 +256,8 @@ export function resolveConfig(input: unknown, wikiRoot: string, configPath?: str
       temperature: parsed.llm?.temperature ?? 0.1,
       timeoutMs: parsed.llm?.timeoutMs ?? 600000,
       numCtx: parsed.llm?.numCtx,
+      flashAttention: parsed.llm?.flashAttention,
+      kvCacheType: parsed.llm?.kvCacheType,
     },
     build: {
       refreshOnIngest: parsed.build?.refreshOnIngest ?? true,
@@ -259,6 +265,7 @@ export function resolveConfig(input: unknown, wikiRoot: string, configPath?: str
     },
     retrieval: {
       maxContextFiles: parsed.retrieval?.maxContextFiles ?? 5,
+      maxChunksPerPage: parsed.retrieval?.maxChunksPerPage ?? 2,
       maxChunkChars: parsed.retrieval?.maxChunkChars ?? 3000,
       maxSourceChars: parsed.retrieval?.maxSourceChars ?? 8000,
     },

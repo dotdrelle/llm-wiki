@@ -70,6 +70,9 @@ async function main() {
     .description('Generate deliverables from markdown templates with [[INSTRUCTION: ...]] slots')
     .argument('[templates...]', 'Specific template files to build')
     .option('--force', 'Rebuild even if the template is already up to date')
+    .option('-v, --verbose', 'Print build step traces')
+    .option('--debug', 'Print detailed build traces')
+    .option('--trace-file <path>', 'Write traces to a specific file relative to the workspace root')
     .action((templates, options) => buildCmd(config, templates, options));
 
   program
@@ -77,6 +80,9 @@ async function main() {
     .description('Regenerate only stale deliverables when the wiki or templates changed')
     .argument('[templates...]', 'Specific template files to refresh')
     .option('--force', 'Refresh all selected deliverables')
+    .option('-v, --verbose', 'Print build step traces')
+    .option('--debug', 'Print detailed build traces')
+    .option('--trace-file <path>', 'Write traces to a specific file relative to the workspace root')
     .action((templates, options) => refreshCmd(config, templates, options));
 
   program

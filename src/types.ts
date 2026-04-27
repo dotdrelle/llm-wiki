@@ -8,6 +8,8 @@ export interface LlmConfig {
   temperature: number;
   timeoutMs: number;
   numCtx?: number;
+  flashAttention?: boolean;
+  kvCacheType?: 'f16' | 'q8_0' | 'q4_0';
 }
 
 export interface BuildConfig {
@@ -17,6 +19,7 @@ export interface BuildConfig {
 
 export interface RetrievalConfig {
   maxContextFiles: number;
+  maxChunksPerPage: number;
   maxChunkChars: number;
   maxSourceChars: number;
 }
@@ -27,6 +30,20 @@ export interface AppConfig {
   llm: LlmConfig;
   build: BuildConfig;
   retrieval: RetrievalConfig;
+}
+
+export interface BuildCommandOptions {
+  force?: boolean;
+  verbose?: boolean;
+  debug?: boolean;
+  traceFile?: string;
+}
+
+export interface RefreshCommandOptions {
+  force?: boolean;
+  verbose?: boolean;
+  debug?: boolean;
+  traceFile?: string;
 }
 
 export interface IngestCommandOptions {

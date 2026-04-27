@@ -210,6 +210,7 @@ export class IngestService {
         if (!options?.dryRun) {
           const applyStartedAt = Date.now();
           await this.workspace.applyWikiOperations(normalizedPlan.operations);
+          this.retrieval.invalidateCache();
           await this.logger.info('ingest:apply', {
             source: source.relativePath,
             durationMs: Date.now() - applyStartedAt,

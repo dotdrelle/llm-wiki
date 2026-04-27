@@ -6,7 +6,7 @@ import { BuildService } from '../src/services/buildService.ts';
 import type { LLMService } from '../src/services/llmService.ts';
 import type { RetrievalService } from '../src/services/retrievalService.ts';
 import { WorkspaceService } from '../src/services/workspaceService.ts';
-import type { AppConfig, SearchResult } from '../src/types.ts';
+import type { AppConfig, SearchResult, WikiPage } from '../src/types.ts';
 
 function createConfig(root: string): AppConfig {
   return {
@@ -25,6 +25,7 @@ function createConfig(root: string): AppConfig {
     },
     retrieval: {
       maxContextFiles: 8,
+        maxChunksPerPage: 2,
         maxChunkChars: 3000,
         maxSourceChars: 8000,
     },
@@ -46,6 +47,9 @@ class FakeLLMService {
 
 class FakeRetrievalService {
   async search(): Promise<SearchResult[]> {
+    return [];
+  }
+  async warmCache(): Promise<WikiPage[]> {
     return [];
   }
 }

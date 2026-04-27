@@ -203,16 +203,22 @@ export class WorkspaceService {
     return readFile(this.paths.wikiIndexPath, 'utf8');
   }
 
-  async listWikiPages(): Promise<WikiPage[]> {
-    const files = await fg('**/*.md', {
-      cwd: this.paths.wikiDir,
-      absolute: true,
-    });
+  async listWikiPages(
+    onPage?: (relativePath: string, index: number, total: number) => void,
+  ): Promise<WikiPage[]> {
+    const files = (
+      await fg('**/*.md', {
+        cwd: this.paths.wikiDir,
+        absolute: true,
+      })
+    ).sort();
 
     const pages: WikiPage[] = [];
-    for (const absolutePath of files.sort()) {
+    for (let i = 0; i < files.length; i++) {
+      const absolutePath = files[i];
       const relativePath = relativeFrom(this.paths.rootDir, absolutePath);
       const content = await readFile(absolutePath, 'utf8');
+      onPage?.(relativePath, i, files.length);
       pages.push({
         absolutePath,
         relativePath,
@@ -435,10 +441,10 @@ export class WorkspaceService {
     await safeWriteFile(this.paths.buildStatePath, `${JSON.stringify(state, null, 2)}\n`);
   }
 
-  async computeWikiHash(): Promise<string> {
-    const pages = await this.listWikiPages();
+  async computeWikiHash(pages?: WikiPage[]): Promise<string> {
+    const resolvedPages = pages ?? await this.listWikiPages();
     return hashParts(
-      pages
+      resolvedPages
         .sort((a, b) => a.relativePath.localeCompare(b.relativePath))
         .map((page) => `${page.relativePath}\n${page.content}`),
     );

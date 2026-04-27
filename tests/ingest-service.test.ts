@@ -30,6 +30,7 @@ function createConfig(): AppConfig {
     },
     retrieval: {
       maxContextFiles: 8,
+        maxChunksPerPage: 2,
         maxChunkChars: 3000,
         maxSourceChars: 8000,
     },
@@ -99,6 +100,7 @@ class FakeRetrievalService {
   async search(): Promise<SearchResult[]> {
     return [];
   }
+  invalidateCache(): void {}
 }
 
 class FailingRefreshService {

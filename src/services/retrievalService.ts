@@ -15,7 +15,6 @@ const STOP_WORDS = new Set([
   'dans',
   'avec',
   'pour',
-  'that',
   'into',
   'have',
   'will',
@@ -58,10 +57,24 @@ function scoreChunk(queryTokens: string[], chunk: MarkdownChunk, page: WikiPage)
 export class RetrievalService {
   private readonly workspace: WorkspaceService;
   private readonly config: AppConfig;
+  private wikiPagesCache: Promise<WikiPage[]> | undefined;
 
   constructor(workspace: WorkspaceService, config: AppConfig) {
     this.workspace = workspace;
     this.config = config;
+  }
+
+  invalidateCache(): void {
+    this.wikiPagesCache = undefined;
+  }
+
+  async warmCache(
+    onPage?: (relativePath: string, index: number, total: number) => void,
+  ): Promise<WikiPage[]> {
+    if (!this.wikiPagesCache) {
+      this.wikiPagesCache = this.workspace.listWikiPages(onPage);
+    }
+    return this.wikiPagesCache;
   }
 
   async search(
@@ -70,7 +83,7 @@ export class RetrievalService {
   ): Promise<SearchResult[]> {
     const limit = options?.limit ?? this.config.retrieval.maxContextFiles;
     const queryTokens = tokenize(query);
-    const wikiPages = await this.workspace.listWikiPages();
+    const wikiPages = await (this.wikiPagesCache ??= this.workspace.listWikiPages());
     const rawPages = options?.includeRaw ? await this.workspace.listIngestedSourcePages() : [];
 
     const results: SearchResult[] = [];
@@ -93,6 +106,19 @@ export class RetrievalService {
       }
     }
 
-    return results.sort((a, b) => b.score - a.score).slice(0, limit);
+    const maxChunksPerPage = this.config.retrieval.maxChunksPerPage;
+    const sorted = results.sort((a, b) => b.score - a.score);
+    const pageChunkCount = new Map<string, number>();
+    const diverse: SearchResult[] = [];
+    for (const result of sorted) {
+      const key = result.page.relativePath;
+      const count = pageChunkCount.get(key) ?? 0;
+      if (count < maxChunksPerPage) {
+        diverse.push(result);
+        pageChunkCount.set(key, count + 1);
+        if (diverse.length >= limit) break;
+      }
+    }
+    return diverse;
   }
 }

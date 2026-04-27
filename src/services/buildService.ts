@@ -37,7 +37,8 @@ export class BuildService {
 
   private async renderTemplate(
     template: TemplateDocument,
-    onBatch?: (batchIndex: number) => void,
+    onBatch?: (batchIndex: number, topContextPages: string[]) => void,
+    onBatchLlm?: (batchIndex: number, topContextPages: string[]) => void,
   ): Promise<string> {
     if (template.instructions.length === 0) {
       const outputFrontmatter = sanitizeFrontmatter(template.frontmatter);
@@ -64,13 +65,17 @@ export class BuildService {
     const replacements = new Map<string, string>();
 
     for (let batchIndex = 0; batchIndex < batchCount; batchIndex++) {
-      onBatch?.(batchIndex);
       const batch = slots.slice(batchIndex * batchSize, (batchIndex + 1) * batchSize);
+      const topContextPages = [
+        ...new Set(batch.flatMap((s) => s.context.slice(0, 2).map((r) => r.page.relativePath))),
+      ].slice(0, 3);
+      onBatch?.(batchIndex, topContextPages);
       const prompt = buildDeliverablePrompt({
         template,
         slots: batch,
         maxChunkChars: this.config.retrieval.maxChunkChars,
       });
+      onBatchLlm?.(batchIndex, topContextPages);
       const response = await this.llm.completeJson(
         {
           ...prompt,
@@ -113,11 +118,14 @@ export class BuildService {
     templates?: string[];
     force?: boolean;
     changedOnly?: boolean;
-    onProgress?: (template: string, batch: { index: number; total: number }) => void;
+    onProgress?: (template: string, batch: { index: number; total: number }, topContextPages: string[]) => void;
+    onBatchLlm?: (template: string, batch: { index: number; total: number }, topContextPages: string[]) => void;
+    onPageLoad?: (relativePath: string, index: number, total: number) => void;
   }): Promise<DeliverableBuildResult[]> {
     await this.workspace.ensureInitialized();
     const templatePaths = await this.workspace.resolveTemplateInputs(options?.templates ?? []);
-    const wikiHash = await this.workspace.computeWikiHash();
+    const wikiPages = await this.retrieval.warmCache(options?.onPageLoad);
+    const wikiHash = await this.workspace.computeWikiHash(wikiPages);
     const previousState = await this.workspace.readBuildState();
     const nextState = this.nextState(previousState);
     const results: DeliverableBuildResult[] = [];
@@ -168,12 +176,18 @@ export class BuildService {
       }
 
       const batchCount = Math.ceil(template.instructions.length / this.config.build.slotBatchSize) || 1;
-      options?.onProgress?.(template.relativePath, { index: results.length, total: templatePaths.length });
+      options?.onProgress?.(template.relativePath, { index: results.length, total: templatePaths.length }, []);
 
       try {
-        const rendered = await this.renderTemplate(template, (batchIndex) => {
-          options?.onProgress?.(template.relativePath, { index: batchIndex, total: batchCount });
-        });
+        const rendered = await this.renderTemplate(
+          template,
+          (batchIndex, topContextPages) => {
+            options?.onProgress?.(template.relativePath, { index: batchIndex, total: batchCount }, topContextPages);
+          },
+          (batchIndex, topContextPages) => {
+            options?.onBatchLlm?.(template.relativePath, { index: batchIndex, total: batchCount }, topContextPages);
+          },
+        );
         const changed = await this.workspace.writeDeliverable(template.outputAbsolutePath, rendered);
 
         nextState.deliverables[template.relativePath] = {

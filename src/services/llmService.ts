@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
+import type { ChatCompletionChunk, ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { ZodError } from 'zod';
 import type { ZodType } from 'zod';
 import {
@@ -38,9 +38,10 @@ export class LLMService {
       apiKey: config.llm.apiKey,
       baseURL: config.llm.baseUrl,
       timeout: config.llm.timeoutMs,
-      defaultHeaders: config.llm.provider === 'anthropic'
-        ? { 'anthropic-version': '2023-06-01' }
-        : undefined,
+      defaultHeaders:
+        config.llm.provider === 'anthropic'
+          ? { 'anthropic-version': '2023-06-01' }
+          : undefined,
     });
   }
 
@@ -60,7 +61,8 @@ export class LLMService {
       status: typeof candidate?.status === 'number' ? candidate.status : undefined,
       code: typeof candidate?.code === 'string' ? candidate.code : undefined,
       type: typeof candidate?.type === 'string' ? candidate.type : undefined,
-      requestId: typeof candidate?.requestID === 'string' ? candidate.requestID : undefined,
+      requestId:
+        typeof candidate?.requestID === 'string' ? candidate.requestID : undefined,
       message:
         typeof candidate?.error?.message === 'string'
           ? candidate.error.message
@@ -100,6 +102,13 @@ export class LLMService {
       );
     }
 
+    if (details.status === 500 && this.config.llm.provider === 'ollama') {
+      return new Error(
+        `Ollama returned HTTP 500 for ${providerTarget}: ${details.message}. This usually means the prompt exceeded the active context window or Ollama ran out of memory. Run \`wiki doctor\` to see the effective numCtx and RAM estimate. Then reduce build.slotBatchSize, retrieval.maxContextFiles, or retrieval.maxChunkChars in .wikirc.yaml; if the model supports it and RAM allows it, increase llm.numCtx.${requestSuffix}`,
+        { cause: error instanceof Error ? error : undefined },
+      );
+    }
+
     if (details.status && details.status >= 400) {
       return new Error(
         `LLM request failed for ${providerTarget} with HTTP ${details.status}: ${details.message}${requestSuffix}`,
@@ -133,13 +142,13 @@ export class LLMService {
       });
     }
 
-    let response;
+    let content: string;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const createParams: any = {
         model: this.config.llm.model,
         temperature: request.temperature ?? this.config.llm.temperature,
         messages,
+        stream: true,
         ...(this.config.llm.provider === 'ollama' && this.config.llm.numCtx
           ? { options: { num_ctx: this.config.llm.numCtx } }
           : {}),
@@ -147,7 +156,14 @@ export class LLMService {
           ? { response_format: { type: 'json_object' } }
           : {}),
       };
-      response = await this.client.chat.completions.create(createParams);
+      // Stream tokens so the HTTP connection stays alive during long generations.
+      // Without streaming, Ollama's write timeout (~5 min) closes the connection mid-response.
+      const stream = (await this.client.chat.completions.create(createParams)) as unknown as AsyncIterable<ChatCompletionChunk>;
+      const chunks: string[] = [];
+      for await (const chunk of stream) {
+        chunks.push(chunk.choices[0]?.delta?.content ?? '');
+      }
+      content = chunks.join('');
     } catch (error) {
       const details = this.extractProviderErrorDetails(error);
 
@@ -180,7 +196,6 @@ export class LLMService {
       throw this.normalizeProviderError(error);
     }
 
-    const content = response.choices[0]?.message?.content;
     if (!content || typeof content !== 'string') {
       throw new Error('The model returned an empty response.');
     }
@@ -202,7 +217,9 @@ export class LLMService {
       return schema.parse(payload);
     } catch (error) {
       if (error instanceof ZodError) {
-        const operationTypes = Array.isArray((payload as { operations?: unknown[] }).operations)
+        const operationTypes = Array.isArray(
+          (payload as { operations?: unknown[] }).operations,
+        )
           ? (payload as { operations: Array<Record<string, unknown>> }).operations.map(
               (operation) =>
                 operation.type ??
@@ -217,7 +234,9 @@ export class LLMService {
           [
             'Invalid structured JSON returned by the model.',
             error.message,
-            operationTypes ? `Operation values: ${JSON.stringify(operationTypes)}` : undefined,
+            operationTypes
+              ? `Operation values: ${JSON.stringify(operationTypes)}`
+              : undefined,
             `Payload: ${JSON.stringify(payload, null, 2).slice(0, 4000)}`,
           ]
             .filter(Boolean)
