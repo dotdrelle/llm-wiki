@@ -327,7 +327,9 @@ export class WorkspaceService {
       if (operation.type !== 'delete' && typeof operation.content !== 'string') {
         throw new Error(`Operation ${operation.path} requires content.`);
       }
+    }
 
+    for (const operation of normalizedOperations) {
       const absolutePath = resolveInside(
         this.paths.wikiDir,
         operation.path.slice('wiki/'.length),

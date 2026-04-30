@@ -43,7 +43,7 @@ export function buildDeliverablePrompt(args: {
       'Do not repeat headings already present in the template.',
       'Cite factual claims with [src: path/to/wiki/page.md].',
       `You MUST return ONLY a JSON object with this exact structure — nothing else:`,
-      `{ "replacements": [ { "id": "<slot-id>", "content": "<markdown text>" }, ... ] }`,
+      `{ "replacements": [ { "id": "<slot-id>", "content": "<markdown text>" } ] }`,
       `The replacements array must contain exactly one entry per slot id: ${ids}.`,
     ].join('\n'),
     user: [
@@ -54,7 +54,50 @@ export function buildDeliverablePrompt(args: {
       '- Return ONLY the JSON object. No explanation, no markdown fence, no extra text.',
       `- The "replacements" array must have exactly ${args.slots.length} item(s) with ids: ${ids}.`,
       '- Each "content" value is a markdown string (use \\n for line breaks inside JSON strings).',
+      '- Do not return "content" as an object, array, or nested structure.',
       '- If evidence is missing for a slot, still include it in the array with a short note.',
+    ].join('\n'),
+  };
+}
+
+export function buildSingleSlotDeliverablePrompt(args: {
+  template: TemplateDocument;
+  maxChunkChars: number;
+  slot: {
+    id: string;
+    instruction: string;
+    headingPath: string[];
+    surroundingText: string;
+    context: SearchResult[];
+  };
+}) {
+  const context =
+    args.slot.context.length === 0
+      ? '(No relevant wiki pages found.)'
+      : args.slot.context.map((r) => formatContextResult(r, args.maxChunkChars)).join('\n\n');
+
+  return {
+    system: [
+      'You generate one markdown fragment to fill one document template slot.',
+      'Return only the markdown fragment. Do not return JSON.',
+      'Use only the provided wiki context. Never fabricate facts, names, or numbers.',
+      'When context is insufficient, write a short note: "> Évidence manquante dans le wiki — à compléter."',
+      'Do not repeat headings already present in the template.',
+      'Cite factual claims with [src: path/to/wiki/page.md].',
+    ].join('\n'),
+    user: [
+      `# Slot ${args.slot.id}`,
+      `Instruction: ${args.slot.instruction}`,
+      `Heading path: ${args.slot.headingPath.join(' > ') || '(root)'}`,
+      'Surrounding template text:',
+      args.slot.surroundingText,
+      '',
+      'Relevant wiki context:',
+      context,
+      '',
+      '# Output rules',
+      '- Return only markdown content for this slot.',
+      '- No JSON, no markdown fence, no explanation before or after the fragment.',
     ].join('\n'),
   };
 }

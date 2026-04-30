@@ -1,12 +1,16 @@
 import matter from 'gray-matter';
 import { deliverableResponseSchema } from '../config/schema.ts';
-import { buildDeliverablePrompt } from '../prompts/buildPrompt.ts';
+import {
+  buildDeliverablePrompt,
+  buildSingleSlotDeliverablePrompt,
+} from '../prompts/buildPrompt.ts';
 import { sanitizeFrontmatter } from '../utils/markdown.ts';
 import { hashText } from '../utils/hash.ts';
 import type {
   AppConfig,
   BuildState,
   DeliverableBuildResult,
+  SearchResult,
   TemplateDocument,
 } from '../types.ts';
 import type { LLMService } from './llmService.ts';
@@ -33,6 +37,31 @@ export class BuildService {
     this.llm = llm;
     this.retrieval = retrieval;
     this.logger = logger;
+  }
+
+  private async renderSingleSlotText(
+    template: TemplateDocument,
+    slot: {
+      id: string;
+      instruction: string;
+      headingPath: string[];
+      surroundingText: string;
+      context: SearchResult[];
+    },
+    traceData: Record<string, unknown>,
+    label: string,
+  ): Promise<string> {
+    const prompt = buildSingleSlotDeliverablePrompt({
+      template,
+      slot,
+      maxChunkChars: this.config.retrieval.maxChunkChars,
+    });
+    return this.llm.completeText({
+      ...prompt,
+      label,
+      logger: this.logger,
+      traceData,
+    });
   }
 
   private async renderTemplate(
@@ -70,26 +99,80 @@ export class BuildService {
         ...new Set(batch.flatMap((s) => s.context.slice(0, 2).map((r) => r.page.relativePath))),
       ].slice(0, 3);
       onBatch?.(batchIndex, topContextPages);
-      const prompt = buildDeliverablePrompt({
-        template,
-        slots: batch,
-        maxChunkChars: this.config.retrieval.maxChunkChars,
-      });
       onBatchLlm?.(batchIndex, topContextPages);
-      const response = await this.llm.completeJson(
-        {
-          ...prompt,
-          label: 'deliverable_render',
-          logger: this.logger,
-          traceData: {
-            template: template.relativePath,
-            instructionCount: template.instructions.length,
-            batchIndex,
-            batchCount,
-          },
-        },
-        deliverableResponseSchema,
-      );
+      const traceData = {
+        template: template.relativePath,
+        instructionCount: template.instructions.length,
+        batchIndex,
+        batchCount,
+      };
+      let response;
+      if (this.config.llm.provider === 'openai-compatible' && batch.length === 1) {
+        if (this.logger) {
+          await this.logger.info('build:text-render', {
+            ...traceData,
+            slot: batch[0].id,
+            reason: 'openai-compatible-single-slot',
+          });
+        }
+        response = {
+          replacements: [
+            {
+              id: batch[0].id,
+              content: await this.renderSingleSlotText(
+                template,
+                batch[0],
+                traceData,
+                'deliverable_render_text',
+              ),
+            },
+          ],
+        };
+      } else {
+        const prompt = buildDeliverablePrompt({
+          template,
+          slots: batch,
+          maxChunkChars: this.config.retrieval.maxChunkChars,
+        });
+        try {
+          response = await this.llm.completeJson(
+            {
+              ...prompt,
+              label: 'deliverable_render',
+              logger: this.logger,
+              traceData,
+            },
+            deliverableResponseSchema,
+          );
+        } catch (error) {
+          if (batch.length !== 1) {
+            throw error;
+          }
+
+          if (this.logger) {
+            await this.logger.warn('build:json-fallback', {
+              ...traceData,
+              slot: batch[0].id,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+
+          const content = await this.renderSingleSlotText(
+            template,
+            batch[0],
+            traceData,
+            'deliverable_render_text_fallback',
+          );
+          response = {
+            replacements: [
+              {
+                id: batch[0].id,
+                content,
+              },
+            ],
+          };
+        }
+      }
       for (const item of response.replacements) {
         replacements.set(item.id, item.content.trim());
       }

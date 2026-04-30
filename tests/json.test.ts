@@ -3,6 +3,7 @@ import {
   extractFirstJsonCandidate,
   extractFirstJsonObject,
   repairIncompleteJson,
+  sanitizeJsonStringControlChars,
 } from '../src/utils/json.ts';
 
 describe('json utilities', () => {
@@ -25,5 +26,25 @@ describe('json utilities', () => {
         },
       ],
     });
+  });
+
+  it('sanitizes literal newlines inside JSON strings', () => {
+    const raw = '{"replacements":[{"id":"instruction-1","content":"line 1\nline 2"}]}';
+    const sanitized = sanitizeJsonStringControlChars(raw);
+
+    expect(JSON.parse(sanitized)).toEqual({
+      replacements: [
+        {
+          id: 'instruction-1',
+          content: 'line 1\nline 2',
+        },
+      ],
+    });
+  });
+
+  it('does not change escaped newlines or structural whitespace', () => {
+    const raw = '{\n  "content": "line 1\\nline 2"\n}';
+
+    expect(sanitizeJsonStringControlChars(raw)).toBe(raw);
   });
 });

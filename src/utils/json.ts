@@ -52,6 +52,65 @@ export function extractFirstJsonCandidate(text: string): string {
   return text.slice(start).trim();
 }
 
+export function sanitizeJsonStringControlChars(candidate: string): string {
+  let sanitized = '';
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < candidate.length; index += 1) {
+    const char = candidate[index] ?? '';
+
+    if (inString) {
+      if (escaped) {
+        sanitized += char;
+        escaped = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        sanitized += char;
+        escaped = true;
+        continue;
+      }
+
+      if (char === '"') {
+        sanitized += char;
+        inString = false;
+        continue;
+      }
+
+      if (char === '\r') {
+        sanitized += '\\n';
+        if (candidate[index + 1] === '\n') {
+          index += 1;
+        }
+        continue;
+      }
+
+      if (char === '\n') {
+        sanitized += '\\n';
+        continue;
+      }
+
+      if (char === '\t') {
+        sanitized += '\\t';
+        continue;
+      }
+
+      if (char < ' ') {
+        sanitized += `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`;
+        continue;
+      }
+    } else if (char === '"') {
+      inString = true;
+    }
+
+    sanitized += char;
+  }
+
+  return sanitized;
+}
+
 export function repairIncompleteJson(candidate: string): string {
   let repaired = candidate.trim();
   const stack: string[] = [];
@@ -109,5 +168,5 @@ export function repairIncompleteJson(candidate: string): string {
     repaired += stack.pop();
   }
 
-  return repaired;
+  return sanitizeJsonStringControlChars(repaired);
 }

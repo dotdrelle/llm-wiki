@@ -33,7 +33,11 @@ function createConfig(root: string): AppConfig {
 }
 
 class FakeLLMService {
+  completeJsonCalls = 0;
+  completeTextCalls = 0;
+
   async completeJson() {
+    this.completeJsonCalls += 1;
     return {
       replacements: [
         {
@@ -42,6 +46,11 @@ class FakeLLMService {
         },
       ],
     };
+  }
+
+  async completeText() {
+    this.completeTextCalls += 1;
+    return 'Text fallback summary. [src: wiki/concepts/local-first.md]';
   }
 }
 
@@ -97,5 +106,38 @@ describe('build service', () => {
 
     const state = await workspace.readBuildState();
     expect(state.deliverables['templates/brief.md']).toBeDefined();
+  });
+
+  it('renders single-slot openai-compatible templates without JSON first', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-'));
+    await mkdir(path.join(root, 'wiki', 'concepts'), { recursive: true });
+    await mkdir(path.join(root, 'templates'), { recursive: true });
+    await mkdir(path.join(root, 'deliverables'), { recursive: true });
+
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n', 'utf8');
+    await writeFile(
+      path.join(root, 'templates', 'brief.md'),
+      ['# Brief', '', '[[INSTRUCTION: Summarize.]]'].join('\n'),
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    config.llm.provider = 'openai-compatible';
+    config.build.slotBatchSize = 1;
+    const workspace = new WorkspaceService(config);
+    const llm = new FakeLLMService();
+    const service = new BuildService(
+      config,
+      workspace,
+      llm as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+    );
+
+    await service.build();
+
+    expect(llm.completeJsonCalls).toBe(0);
+    expect(llm.completeTextCalls).toBe(1);
+    const output = await workspace.readTextFile(path.join(root, 'deliverables', 'brief.md'));
+    expect(output).toContain('Text fallback summary.');
   });
 });

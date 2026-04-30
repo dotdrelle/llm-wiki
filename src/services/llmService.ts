@@ -6,6 +6,7 @@ import {
   extractFirstJsonCandidate,
   extractFirstJsonObject,
   repairIncompleteJson,
+  sanitizeJsonStringControlChars,
 } from '../utils/json.ts';
 import type { AppConfig } from '../types.ts';
 import type { TraceLogger } from './traceLogger.ts';
@@ -124,10 +125,16 @@ export class LLMService {
   }
 
   async completeText(request: CompletionRequest): Promise<string> {
-    const messages: ChatCompletionMessageParam[] = [
-      { role: 'system', content: request.system },
-      { role: 'user', content: request.user },
-    ];
+    // Some openai-compatible servers (e.g. mlx_lm) reject a leading system role
+    // or treat it as a user turn, producing two consecutive user messages.
+    // Fold system into user for these providers.
+    const messages: ChatCompletionMessageParam[] =
+      this.config.llm.provider === 'openai-compatible'
+        ? [{ role: 'user', content: `${request.system}\n\n${request.user}` }]
+        : [
+            { role: 'system', content: request.system },
+            { role: 'user', content: request.user },
+          ];
     const startedAt = Date.now();
     const label = request.label ?? 'completion';
 
@@ -152,7 +159,9 @@ export class LLMService {
         ...(this.config.llm.provider === 'ollama' && this.config.llm.numCtx
           ? { options: { num_ctx: this.config.llm.numCtx } }
           : {}),
-        ...(request.jsonMode && this.config.llm.provider !== 'anthropic'
+        ...(request.jsonMode &&
+        this.config.llm.provider !== 'anthropic' &&
+        this.config.llm.provider !== 'openai-compatible'
           ? { response_format: { type: 'json_object' } }
           : {}),
       };
@@ -249,7 +258,25 @@ export class LLMService {
   }
 
   private parseJsonPayload(raw: string): unknown {
-    return JSON.parse(extractFirstJsonObject(raw));
+    return JSON.parse(sanitizeJsonStringControlChars(extractFirstJsonObject(raw)));
+  }
+
+  private parseJsonPayloadWithLocalRepair(raw: string): {
+    payload: unknown;
+    repaired: boolean;
+  } {
+    try {
+      return {
+        payload: this.parseJsonPayload(raw),
+        repaired: false,
+      };
+    } catch {
+      const repairedCandidate = repairIncompleteJson(extractFirstJsonCandidate(raw));
+      return {
+        payload: this.parseJsonPayload(repairedCandidate),
+        repaired: true,
+      };
+    }
   }
 
   private async repairJsonWithModel(
@@ -278,19 +305,21 @@ export class LLMService {
   async completeJson<T>(request: CompletionRequest, schema: ZodType<T>): Promise<T> {
     const raw = await this.completeText({ ...request, jsonMode: true });
     let payload: unknown;
-    let parseMode: 'direct' | 'local_repair' | 'model_repair' = 'direct';
+    let parseMode: 'direct' | 'local_repair' | 'model_repair' | 'model_repair_local_repair' =
+      'direct';
 
     try {
-      payload = this.parseJsonPayload(raw);
+      const parsed = this.parseJsonPayloadWithLocalRepair(raw);
+      payload = parsed.payload;
+      parseMode = parsed.repaired ? 'local_repair' : 'direct';
     } catch {
       try {
-        const repairedCandidate = repairIncompleteJson(extractFirstJsonCandidate(raw));
-        payload = this.parseJsonPayload(repairedCandidate);
-        parseMode = 'local_repair';
-      } catch {
         const repairedByModel = await this.repairJsonWithModel(raw, request);
-        payload = this.parseJsonPayload(repairedByModel);
-        parseMode = 'model_repair';
+        const parsed = this.parseJsonPayloadWithLocalRepair(repairedByModel);
+        payload = parsed.payload;
+        parseMode = parsed.repaired ? 'model_repair_local_repair' : 'model_repair';
+      } catch {
+        throw new Error('The model returned malformed JSON and JSON repair failed.');
       }
     }
 

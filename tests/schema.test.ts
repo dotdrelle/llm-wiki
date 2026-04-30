@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ingestPlanSchema } from '../src/config/schema.ts';
+import { deliverableResponseSchema, ingestPlanSchema } from '../src/config/schema.ts';
 
 describe('ingest plan schema', () => {
   it('normalizes common LLM operation aliases', () => {
@@ -47,5 +47,77 @@ describe('ingest plan schema', () => {
     });
 
     expect(plan.operations[0]?.type).toBe('update');
+  });
+
+  it('rejects create and update operations without content', () => {
+    expect(() =>
+      ingestPlanSchema.parse({
+        operations: [
+          {
+            type: 'create',
+            path: 'wiki/sources/missing-content.md',
+          },
+        ],
+      }),
+    ).toThrow(/requires content/i);
+  });
+});
+
+describe('deliverable response schema', () => {
+  it('normalizes common replacement aliases', () => {
+    const response = deliverableResponseSchema.parse({
+      items: [
+        {
+          slot_id: 'instruction-1',
+          markdown: 'Documented summary.',
+        },
+      ],
+    });
+
+    expect(response.replacements).toEqual([
+      {
+        id: 'instruction-1',
+        content: 'Documented summary.',
+      },
+    ]);
+  });
+
+  it('normalizes object maps of slot ids to content', () => {
+    const response = deliverableResponseSchema.parse({
+      replacements: {
+        'instruction-1': 'Documented summary.',
+      },
+    });
+
+    expect(response.replacements).toEqual([
+      {
+        id: 'instruction-1',
+        content: 'Documented summary.',
+      },
+    ]);
+  });
+
+  it('normalizes array content into a markdown table', () => {
+    const response = deliverableResponseSchema.parse({
+      replacements: [
+        {
+          id: 'instruction-1',
+          content: [
+            {
+              Solution: 'MFI / Synergie Web',
+              'Points forts': '- Expertise par zones fixes',
+            },
+            {
+              Solution: 'OREA',
+              'Points forts': '- Expertise par polygones',
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(response.replacements[0]?.content).toContain('| Solution | Points forts |');
+    expect(response.replacements[0]?.content).toContain('| MFI / Synergie Web | - Expertise par zones fixes |');
+    expect(response.replacements[0]?.content).toContain('| OREA | - Expertise par polygones |');
   });
 });

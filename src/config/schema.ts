@@ -95,6 +95,115 @@ function normalizeWikiOperation(value: unknown): unknown {
   };
 }
 
+function normalizeDeliverableReplacement(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const entries = Object.entries(candidate);
+  if (
+    entries.length === 1 &&
+    !('id' in candidate) &&
+    !('content' in candidate) &&
+    typeof entries[0]?.[1] === 'string'
+  ) {
+    return {
+      id: entries[0][0],
+      content: entries[0][1],
+    };
+  }
+
+  const id =
+    candidate.id ??
+    candidate.slotId ??
+    candidate.slot_id ??
+    candidate.instructionId ??
+    candidate.instruction_id;
+  const content =
+    candidate.content ??
+    candidate.markdown ??
+    candidate.text ??
+    candidate.body ??
+    candidate.value ??
+    candidate.replacement ??
+    candidate.answer;
+
+  return {
+    ...candidate,
+    id: typeof id === 'string' ? id.trim() : id,
+    content: normalizeMarkdownContent(content),
+  };
+}
+
+function escapeMarkdownTableCell(value: unknown): string {
+  if (value == null) {
+    return '';
+  }
+
+  const text =
+    typeof value === 'string'
+      ? value
+      : typeof value === 'number' || typeof value === 'boolean'
+        ? String(value)
+        : JSON.stringify(value);
+  return text.replace(/\r?\n/g, '<br>').replace(/\|/g, '\\|');
+}
+
+function normalizeMarkdownContent(content: unknown): unknown {
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (
+    Array.isArray(content) &&
+    content.every((item) => item && typeof item === 'object' && !Array.isArray(item))
+  ) {
+    const rows = content as Array<Record<string, unknown>>;
+    const headers = [
+      ...new Set(rows.flatMap((row) => Object.keys(row))),
+    ];
+
+    if (headers.length === 0) {
+      return '';
+    }
+
+    return [
+      `| ${headers.map(escapeMarkdownTableCell).join(' | ')} |`,
+      `| ${headers.map(() => '---').join(' | ')} |`,
+      ...rows.map(
+        (row) => `| ${headers.map((header) => escapeMarkdownTableCell(row[header])).join(' | ')} |`,
+      ),
+    ].join('\n');
+  }
+
+  return content;
+}
+
+function normalizeDeliverableResponse(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const rawReplacements =
+    candidate.replacements ??
+    candidate.items ??
+    candidate.slots ??
+    candidate.answers;
+  const replacements =
+    rawReplacements && typeof rawReplacements === 'object' && !Array.isArray(rawReplacements)
+      ? Object.entries(rawReplacements).map(([id, content]) => ({ id, content }))
+      : rawReplacements;
+
+  return {
+    ...candidate,
+    replacements: Array.isArray(replacements)
+      ? replacements.map(normalizeDeliverableReplacement)
+      : replacements,
+  };
+}
+
 const llmSchema = z
   .object({
     provider: z.enum(['openai', 'ollama', 'openai-compatible', 'anthropic']).default('openai'),
@@ -147,11 +256,21 @@ export const rawConfigSchema = z.object({
 
 export const wikiOperationSchema = z.preprocess(
   normalizeWikiOperation,
-  z.object({
-    type: z.preprocess(normalizeOperationType, z.enum(['create', 'update', 'delete'])),
-    path: z.string().min(1),
-    content: z.string().optional(),
-  }),
+  z
+    .object({
+      type: z.preprocess(normalizeOperationType, z.enum(['create', 'update', 'delete'])),
+      path: z.string().min(1),
+      content: z.string().optional(),
+    })
+    .superRefine((operation, context) => {
+      if (operation.type !== 'delete' && typeof operation.content !== 'string') {
+        context.addIssue({
+          code: 'custom',
+          path: ['content'],
+          message: `Operation ${operation.path} requires content for ${operation.type}.`,
+        });
+      }
+    }),
 );
 
 export const ingestPlanSchema = z.preprocess(
@@ -177,14 +296,17 @@ export const ingestPlanSchema = z.preprocess(
   }),
 );
 
-export const deliverableResponseSchema = z.object({
-  replacements: z.array(
-    z.object({
-      id: z.string().min(1),
-      content: z.string().min(1),
-    }),
-  ),
-});
+export const deliverableResponseSchema = z.preprocess(
+  normalizeDeliverableResponse,
+  z.object({
+    replacements: z.array(
+      z.object({
+        id: z.string().min(1),
+        content: z.string().min(1),
+      }),
+    ),
+  }),
+);
 
 export const semanticLintSchema = z.object({
   contradictions: z

@@ -80,7 +80,7 @@ function contextWindowTokens(config: AppConfig): number | undefined {
   if (config.llm.provider === 'ollama') return config.llm.numCtx;
   if (config.llm.provider === 'openai') return 1_000_000;
   if (config.llm.provider === 'anthropic') return 200_000;
-  return undefined;
+  return config.llm.numCtx;
 }
 
 const ok = (msg: string) => console.log(`  ✓ ${msg}`);
@@ -89,7 +89,7 @@ const err = (msg: string) => console.log(`  ✗ ${msg}`);
 const row = (label: string, value: string) =>
   console.log(`  ${label.padEnd(24)} ${value}`);
 
-type SuggestedConfig = Record<string, Record<string, string | number>>;
+type SuggestedConfig = Record<string, Record<string, boolean | string | number>>;
 
 // ── Ollama /api/show ──────────────────────────────────────────────────────────
 
@@ -205,6 +205,25 @@ function isRemoteOllama(baseUrl: string | undefined): boolean {
   } catch {
     return false;
   }
+}
+
+function isLocalHostUrl(baseUrl: string | undefined): boolean {
+  if (!baseUrl) return false;
+  try {
+    const hostname = new URL(baseUrl).hostname;
+    return ['localhost', '127.0.0.1', '::1'].includes(hostname);
+  } catch {
+    return false;
+  }
+}
+
+function looksLikeMlx(config: AppConfig): boolean {
+  return (
+    config.llm.provider === 'openai-compatible' &&
+    (config.llm.model.toLowerCase().includes('mlx') ||
+      config.llm.baseUrl?.includes(':8080') ||
+      isLocalHostUrl(config.llm.baseUrl))
+  );
 }
 
 function resolveOllamaEnv(
@@ -609,12 +628,11 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
   console.log('\n── Provider ────────────────────────────────────────────────');
   const rawOllamaEnv = readOllamaProcessEnv();
   const resolvedOllamaEnv = resolveOllamaEnv(rawOllamaEnv, config);
+  const suggestions: SuggestedConfig = {};
   const { ollamaInfo, effectiveNumCtx, effectiveNumCtxSource } = await checkProvider(
     config,
     resolvedOllamaEnv,
   );
-
-  const suggestions: SuggestedConfig = {};
 
   if (config.llm.provider === 'ollama' && ollamaInfo) {
     printOllamaHardware(
@@ -625,6 +643,54 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
       suggestions,
       resolvedOllamaEnv,
     );
+  }
+
+  if (looksLikeMlx(config)) {
+    console.log('\n── OpenAI-compatible local server ───────────────────────────');
+    warn(
+      'Local OpenAI-compatible server detected. For MLX, .wikirc llm.numCtx is advisory only; set the runtime context/output limit on mlx_lm.server.',
+    );
+    if ((config.llm.numCtx ?? 0) >= 32768) {
+      warn(
+        `numCtx ${config.llm.numCtx?.toLocaleString()} with MLX can encourage oversized prompts and high KV memory use`,
+      );
+      (suggestions.llm ??= {}).numCtx = 8192;
+    }
+    if (config.build.refreshOnIngest) {
+      warn(
+        'refreshOnIngest is enabled. With local MLX, run ingest and refresh separately to avoid losing the useful ingest result behind a build failure.',
+      );
+      (suggestions.build ??= {}).refreshOnIngest = false;
+    }
+    if (config.build.slotBatchSize > 1) {
+      warn(
+        `slotBatchSize ${config.build.slotBatchSize} → 1 recommended for local MLX JSON reliability and lower memory pressure`,
+      );
+      (suggestions.build ??= {}).slotBatchSize = 1;
+    }
+    if (config.retrieval.maxContextFiles > 4) {
+      warn(
+        `maxContextFiles ${config.retrieval.maxContextFiles} → 4 recommended for local MLX; raise gradually if refresh is stable`,
+      );
+      (suggestions.retrieval ??= {}).maxContextFiles = 4;
+    }
+    if (config.retrieval.maxChunkChars > 1200) {
+      warn(
+        `maxChunkChars ${config.retrieval.maxChunkChars} → 1200 recommended for local MLX/Metal memory headroom`,
+      );
+      (suggestions.retrieval ??= {}).maxChunkChars = 1200;
+    }
+    if (config.retrieval.maxSourceChars > 8000) {
+      warn(
+        `maxSourceChars ${config.retrieval.maxSourceChars} → 8000 recommended for local MLX ingest prompts`,
+      );
+      (suggestions.retrieval ??= {}).maxSourceChars = 8000;
+    }
+    console.log('  Suggested MLX server command:');
+    console.log(
+      `    mlx_lm.server --model ${config.llm.model} --port 8080 --max-tokens 4096`,
+    );
+    console.log('  If stable, try --max-tokens 8192 before raising retrieval limits.');
   }
 
   // ── wiki content ────────────────────────────────────────────────────────────
@@ -695,6 +761,10 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
   const numCtxTokens = effectiveNumCtx ?? contextWindowTokens(config);
   if (!numCtxTokens) {
     warn('Context window unknown for openai-compatible — skipping budget analysis');
+    if (Object.keys(suggestions).length > 0) {
+      printSuggestions(suggestions);
+      await confirmApplySuggestions(config, suggestions);
+    }
     console.log('');
     return;
   }
