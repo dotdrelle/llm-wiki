@@ -9,8 +9,12 @@ services:
   # Les deux services montent le même workspace: un ingest lancé via `wiki`
   # est visible dans `serve` après rechargement du navigateur.
   wiki:
-    build: .
-    profiles: ["cli"]
+    build:
+      context: .
+      platforms:
+        - linux/amd64
+        - linux/arm64
+    profiles: ['cli']
     volumes:
       - ${WIKI_WORKSPACE:-.}:/workspace
     environment:
@@ -18,7 +22,7 @@ services:
       - ANTHROPIC_API_KEY
     # host.docker.internal → Ollama natif macOS ou autre service hôte
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - 'host.docker.internal:host-gateway'
 
   # Serveur web persistant pour consulter le wiki.
   # Démarrage:
@@ -27,7 +31,11 @@ services:
   # `EXPOSE 3000` dans le Dockerfile ne démarre rien tout seul: seul ce service
   # passe explicitement la commande `serve --port 3000`.
   serve:
-    build: .
+    build:
+      context: .
+      platforms:
+        - linux/amd64
+        - linux/arm64
     command: serve --port 3000
     volumes:
       - ${WIKI_WORKSPACE:-.}:/workspace
@@ -35,9 +43,9 @@ services:
       - OPENAI_API_KEY
       - ANTHROPIC_API_KEY
     ports:
-      - "3000:3000"
+      - '3000:3000'
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - 'host.docker.internal:host-gateway'
 
   # Ollama conteneurisé — Linux + GPU NVIDIA uniquement.
   # Sur macOS, lancer Ollama nativement et pointer baseUrl sur host.docker.internal.
@@ -47,7 +55,7 @@ services:
     volumes:
       - ollama-data:/root/.ollama
     ports:
-      - "11434:11434"
+      - '11434:11434'
     deploy:
       resources:
         reservations:

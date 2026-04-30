@@ -148,33 +148,33 @@ retrieval:
 
 ### `llm` options
 
-| Key | Description | Default |
-|---|---|---|
-| `provider` | `openai`, `ollama`, `anthropic`, `openai-compatible` | `openai` |
-| `model` | Model name passed to the provider | `gpt-4.1-mini` |
-| `apiKey` | API key — falls back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` env vars | — |
-| `baseUrl` | Provider base URL | provider-dependent |
-| `temperature` | Sampling temperature (0–2) | `0.1` |
-| `timeoutMs` | Request timeout in milliseconds | `600000` |
-| `numCtx` | Ollama context window size in tokens — set this explicitly to avoid the provider default | — |
-| `flashAttention` | Ollama tuning hint for remote/containerized servers when env vars cannot be detected | — |
-| `kvCacheType` | Ollama KV cache type hint: `f16`, `q8_0`, or `q4_0` | — |
+| Key              | Description                                                                              | Default            |
+| ---------------- | ---------------------------------------------------------------------------------------- | ------------------ |
+| `provider`       | `openai`, `ollama`, `anthropic`, `openai-compatible`                                     | `openai`           |
+| `model`          | Model name passed to the provider                                                        | `gpt-4.1-mini`     |
+| `apiKey`         | API key — falls back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` env vars                  | —                  |
+| `baseUrl`        | Provider base URL                                                                        | provider-dependent |
+| `temperature`    | Sampling temperature (0–2)                                                               | `0.1`              |
+| `timeoutMs`      | Request timeout in milliseconds                                                          | `600000`           |
+| `numCtx`         | Ollama context window size in tokens — set this explicitly to avoid the provider default | —                  |
+| `flashAttention` | Ollama tuning hint for remote/containerized servers when env vars cannot be detected     | —                  |
+| `kvCacheType`    | Ollama KV cache type hint: `f16`, `q8_0`, or `q4_0`                                      | —                  |
 
 ### `build` options
 
-| Key | Description | Default |
-|---|---|---|
-| `refreshOnIngest` | Automatically regenerate stale deliverables after each ingest | `true` |
-| `slotBatchSize` | Number of `[[INSTRUCTION:...]]` slots sent to the model in a single call | `3` |
+| Key               | Description                                                              | Default |
+| ----------------- | ------------------------------------------------------------------------ | ------- |
+| `refreshOnIngest` | Automatically regenerate stale deliverables after each ingest            | `true`  |
+| `slotBatchSize`   | Number of `[[INSTRUCTION:...]]` slots sent to the model in a single call | `3`     |
 
 ### `retrieval` options
 
-| Key | Description | Default |
-|---|---|---|
-| `maxContextFiles` | Maximum wiki pages retrieved **per slot** for each LLM call | `5` |
-| `maxChunksPerPage` | Maximum matching chunks returned from the same wiki page | `2` |
-| `maxChunkChars` | Maximum characters kept from a retrieved wiki chunk | `3000` |
-| `maxSourceChars` | Maximum characters read from a pending raw source during ingest | `8000` |
+| Key                | Description                                                     | Default |
+| ------------------ | --------------------------------------------------------------- | ------- |
+| `maxContextFiles`  | Maximum wiki pages retrieved **per slot** for each LLM call     | `5`     |
+| `maxChunksPerPage` | Maximum matching chunks returned from the same wiki page        | `2`     |
+| `maxChunkChars`    | Maximum characters kept from a retrieved wiki chunk             | `3000`  |
+| `maxSourceChars`   | Maximum characters read from a pending raw source during ingest | `8000`  |
 
 > **Context budget note** — each LLM call includes up to `slotBatchSize × maxContextFiles × maxChunkChars` characters plus fixed prompt overhead. Run `wiki doctor` after changing these values; it checks whether the combined prompt fits the effective context window.
 
@@ -234,11 +234,11 @@ OLLAMA_KV_CACHE_TYPE=q8_0 \
 ollama serve
 ```
 
-| Variable | Purpose |
-|---|---|
-| `OLLAMA_CONTEXT_LENGTH` | Default context window for all models (overridden by `numCtx` in `.wikirc.yaml`) |
-| `OLLAMA_FLASH_ATTENTION` | Enables Flash Attention for faster inference and lower VRAM usage |
-| `OLLAMA_KV_CACHE_TYPE` | KV cache quantization — `q8_0` halves cache memory with minimal quality loss |
+| Variable                 | Purpose                                                                          |
+| ------------------------ | -------------------------------------------------------------------------------- |
+| `OLLAMA_CONTEXT_LENGTH`  | Default context window for all models (overridden by `numCtx` in `.wikirc.yaml`) |
+| `OLLAMA_FLASH_ATTENTION` | Enables Flash Attention for faster inference and lower VRAM usage                |
+| `OLLAMA_KV_CACHE_TYPE`   | KV cache quantization — `q8_0` halves cache memory with minimal quality loss     |
 
 If Ollama runs outside the local process namespace, for example in Docker or on another machine, `wiki doctor` cannot inspect `OLLAMA_*` from the server process. Set `flashAttention` and `kvCacheType` in `.wikirc.yaml` so the doctor can base memory and speed recommendations on the server configuration:
 
@@ -437,6 +437,7 @@ output: briefs/project-brief.md
 # Project Brief
 
 ## Executive Summary
+
 [[INSTRUCTION: Produce a concise executive summary using only facts documented in the wiki. Cite claims with [src: ...].]]
 ```
 

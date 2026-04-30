@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -69,7 +70,11 @@ export class WorkspaceService {
 
   private getScaffoldDir(): string {
     const currentDir = path.dirname(fileURLToPath(import.meta.url));
-    return path.resolve(currentDir, '../../scaffold/workspace');
+    const candidates = [
+      path.resolve(currentDir, '../scaffold/workspace'),
+      path.resolve(currentDir, '../../scaffold/workspace'),
+    ];
+    return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
   }
 
   async ensureInitialized(): Promise<void> {
@@ -87,6 +92,10 @@ export class WorkspaceService {
       dot: true,
       onlyFiles: true,
     });
+
+    if (entries.length === 0) {
+      throw new Error(`Workspace scaffold is missing or empty at ${scaffoldDir}.`);
+    }
 
     if (!options.force) {
       for (const relativePath of entries) {
