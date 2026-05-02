@@ -71,6 +71,7 @@ export default async function buildCmd(
         `${result.template} -> ${result.output} (${result.changed ? 'updated' : 'unchanged'})`,
       );
     }
+
   } catch (e) {
     spinner?.stop();
     throw e;

@@ -5,11 +5,18 @@ import type { ZodType } from 'zod';
 import {
   extractFirstJsonCandidate,
   extractFirstJsonObject,
+  fixUnescapedQuotes,
   repairIncompleteJson,
   sanitizeJsonStringControlChars,
+  stripThinkingBlocks,
 } from '../utils/json.ts';
 import type { AppConfig } from '../types.ts';
 import type { TraceLogger } from './traceLogger.ts';
+
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
 
 interface CompletionRequest {
   system: string;
@@ -19,6 +26,7 @@ interface CompletionRequest {
   label?: string;
   logger?: TraceLogger;
   traceData?: Record<string, unknown>;
+  onUsage?: (usage: TokenUsage) => void;
 }
 
 interface ProviderErrorDetails {
@@ -27,6 +35,32 @@ interface ProviderErrorDetails {
   type?: string;
   requestId?: string;
   message: string;
+}
+
+function supportsTemperature(config: AppConfig): boolean {
+  return !(config.llm.provider === 'openai' && /^gpt-5(?:[.-]|$)/i.test(config.llm.model));
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function extractTokenUsage(chunk: unknown): TokenUsage | undefined {
+  const usage = (chunk as { usage?: Record<string, unknown> | null }).usage;
+  if (!usage) return undefined;
+
+  const inputTokens =
+    readNumber(usage.prompt_tokens) ??
+    readNumber(usage.input_tokens) ??
+    readNumber(usage.inputTokens);
+  const outputTokens =
+    readNumber(usage.completion_tokens) ??
+    readNumber(usage.output_tokens) ??
+    readNumber(usage.outputTokens);
+
+  return inputTokens !== undefined && outputTokens !== undefined
+    ? { inputTokens, outputTokens }
+    : undefined;
 }
 
 export class LLMService {
@@ -150,10 +184,10 @@ export class LLMService {
     }
 
     let content: string;
+    let capturedUsage: TokenUsage | undefined;
     try {
       const createParams: any = {
         model: this.config.llm.model,
-        temperature: request.temperature ?? this.config.llm.temperature,
         messages,
         stream: true,
         ...(this.config.llm.provider === 'ollama' && this.config.llm.numCtx
@@ -165,14 +199,27 @@ export class LLMService {
           ? { response_format: { type: 'json_object' } }
           : {}),
       };
+      if (supportsTemperature(this.config)) {
+        createParams.temperature = request.temperature ?? this.config.llm.temperature;
+      }
       // Stream tokens so the HTTP connection stays alive during long generations.
       // Without streaming, Ollama's write timeout (~5 min) closes the connection mid-response.
+      if (this.config.llm.provider !== 'anthropic') {
+        createParams.stream_options = { include_usage: true };
+      }
       const stream = (await this.client.chat.completions.create(createParams)) as unknown as AsyncIterable<ChatCompletionChunk>;
       const chunks: string[] = [];
       for await (const chunk of stream) {
         chunks.push(chunk.choices[0]?.delta?.content ?? '');
+        const usage = extractTokenUsage(chunk);
+        if (usage) {
+          capturedUsage = usage;
+        }
       }
-      content = chunks.join('');
+      content = stripThinkingBlocks(chunks.join(''));
+      if (capturedUsage) {
+        request.onUsage?.(capturedUsage);
+      }
     } catch (error) {
       const details = this.extractProviderErrorDetails(error);
 
@@ -214,6 +261,8 @@ export class LLMService {
         label,
         durationMs: Date.now() - startedAt,
         responseChars: content.length,
+        inputTokens: capturedUsage?.inputTokens,
+        outputTokens: capturedUsage?.outputTokens,
         ...request.traceData,
       });
     }
@@ -257,23 +306,28 @@ export class LLMService {
     }
   }
 
-  private parseJsonPayload(raw: string): unknown {
-    return JSON.parse(sanitizeJsonStringControlChars(extractFirstJsonObject(raw)));
+  private preprocessJson(raw: string): string {
+    return fixUnescapedQuotes(sanitizeJsonStringControlChars(raw));
+  }
+
+  private parseJsonPayload(preprocessed: string): unknown {
+    return JSON.parse(extractFirstJsonObject(preprocessed));
   }
 
   private parseJsonPayloadWithLocalRepair(raw: string): {
     payload: unknown;
     repaired: boolean;
   } {
+    const preprocessed = this.preprocessJson(raw);
     try {
       return {
-        payload: this.parseJsonPayload(raw),
+        payload: this.parseJsonPayload(preprocessed),
         repaired: false,
       };
     } catch {
-      const repairedCandidate = repairIncompleteJson(extractFirstJsonCandidate(raw));
+      const repairedCandidate = repairIncompleteJson(extractFirstJsonCandidate(preprocessed));
       return {
-        payload: this.parseJsonPayload(repairedCandidate),
+        payload: JSON.parse(repairedCandidate),
         repaired: true,
       };
     }
@@ -312,13 +366,52 @@ export class LLMService {
       const parsed = this.parseJsonPayloadWithLocalRepair(raw);
       payload = parsed.payload;
       parseMode = parsed.repaired ? 'local_repair' : 'direct';
-    } catch {
-      try {
-        const repairedByModel = await this.repairJsonWithModel(raw, request);
-        const parsed = this.parseJsonPayloadWithLocalRepair(repairedByModel);
-        payload = parsed.payload;
-        parseMode = parsed.repaired ? 'model_repair_local_repair' : 'model_repair';
-      } catch {
+    } catch (localRepairError) {
+      // Skip model repair for openai-compatible: thinking models (e.g. Qwen3) return
+      // empty content for the repair call, making it unreliable and expensive.
+      if (this.config.llm.provider !== 'openai-compatible') {
+        if (request.logger) {
+          await request.logger.info('llm:json-local-repair-failed', {
+            label: request.label ?? 'completion',
+            localRepairError:
+              localRepairError instanceof Error
+                ? localRepairError.message
+                : String(localRepairError),
+            rawPreview: raw.slice(0, 800),
+            ...request.traceData,
+          });
+        }
+        try {
+          const repairedByModel = await this.repairJsonWithModel(raw, request);
+          const parsed = this.parseJsonPayloadWithLocalRepair(repairedByModel);
+          payload = parsed.payload;
+          parseMode = parsed.repaired ? 'model_repair_local_repair' : 'model_repair';
+        } catch {
+          if (request.logger) {
+            await request.logger.error('llm:json-parse-failed', {
+              label: request.label ?? 'completion',
+              localRepairError:
+                localRepairError instanceof Error
+                  ? localRepairError.message
+                  : String(localRepairError),
+              rawPreview: raw.slice(0, 800),
+              ...request.traceData,
+            });
+          }
+          throw new Error('The model returned malformed JSON and JSON repair failed.');
+        }
+      } else {
+        if (request.logger) {
+          await request.logger.error('llm:json-parse-failed', {
+            label: request.label ?? 'completion',
+            localRepairError:
+              localRepairError instanceof Error
+                ? localRepairError.message
+                : String(localRepairError),
+            rawPreview: raw.slice(0, 800),
+            ...request.traceData,
+          });
+        }
         throw new Error('The model returned malformed JSON and JSON repair failed.');
       }
     }

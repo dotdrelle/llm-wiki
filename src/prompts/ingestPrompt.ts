@@ -61,6 +61,8 @@ export function buildIngestPrompt(args: {
       '- A good ingest usually creates or updates one source note, zero or more concept pages, and wiki/index.md links for every new page.',
       '- Link concept pages and source notes together when useful.',
       '- Keep markdown readable and diff-friendly.',
+      '- Convert raw HTML or Confluence storage markup into plain Markdown before writing wiki content.',
+      '- Do not copy HTML tags, inline styles, Confluence macros, or escaped markup into wiki pages.',
       '- Prefer incremental updates to existing pages instead of duplicating information.',
       '- When information is missing, leave it out rather than speculating.',
     ].join('\n'),

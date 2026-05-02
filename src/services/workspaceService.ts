@@ -199,6 +199,15 @@ export class WorkspaceService {
     };
   }
 
+  async isSourceUnchangedSinceIngest(source: SourceDocument): Promise<boolean> {
+    const archivedPath = path.join(this.paths.rootDir, source.archiveRelativePath);
+    if (!(await pathExists(archivedPath))) {
+      return false;
+    }
+    const archivedContent = await readFile(archivedPath, 'utf8');
+    return archivedContent === source.rawContent;
+  }
+
   async archiveSource(source: SourceDocument): Promise<void> {
     const destination = path.join(this.paths.rootDir, source.archiveRelativePath);
     await mkdir(path.dirname(destination), { recursive: true });

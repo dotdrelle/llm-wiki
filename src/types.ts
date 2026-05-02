@@ -13,7 +13,6 @@ export interface LlmConfig {
 }
 
 export interface BuildConfig {
-  refreshOnIngest: boolean;
   slotBatchSize: number;
 }
 
@@ -49,6 +48,7 @@ export interface RefreshCommandOptions {
 export interface IngestCommandOptions {
   dryRun?: boolean;
   refresh?: boolean;
+  force?: boolean;
   verbose?: boolean;
   debug?: boolean;
   traceFile?: string;
@@ -120,7 +120,10 @@ export interface IngestPlan {
 
 export interface IngestResult {
   source: string;
-  plan: IngestPlan;
+  plan?: IngestPlan;
+  skipped?: boolean;
+  failed?: boolean;
+  error?: string;
 }
 
 export interface TemplateInstruction {

@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { AppConfig, IngestCommandOptions } from '../types.ts';
 import { IngestService } from '../services/ingestService.ts';
 import { LLMService } from '../services/llmService.ts';
@@ -45,7 +46,30 @@ export default async function ingestCmd(
   const spinner = options.verbose || options.debug ? null : new Spinner('Ingesting…');
   try {
     spinner?.start();
-    const results = await service.ingest(files, options);
+    let tokensLabel = '';
+    const fmtTok = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+    const results = await service.ingest(files, {
+      ...options,
+      onSourceStart: (sourcePath, index, total) => {
+        tokensLabel = '';
+        const name = path.basename(sourcePath, '.md');
+        spinner?.update(`Ingesting ${name} (${index + 1}/${total})…`);
+        spinner?.updateSub(undefined);
+      },
+      onSourceLlm: (sourcePath, index, total) => {
+        tokensLabel = '';
+        const llmStart = Date.now();
+        const name = path.basename(sourcePath, '.md');
+        spinner?.update(`Ingesting ${name} (${index + 1}/${total})…`);
+        spinner?.updateSub(() => {
+          const s = ((Date.now() - llmStart) / 1000).toFixed(1);
+          return `${name} · LLM ${s}s${tokensLabel}`;
+        });
+      },
+      onSourceUsage: (_sourcePath, _index, _total, usage) => {
+        tokensLabel = ` · ${fmtTok(usage.inputTokens)}in ${fmtTok(usage.outputTokens)}out`;
+      },
+    });
     spinner?.stop();
 
     if (results.length === 0) {
@@ -54,11 +78,26 @@ export default async function ingestCmd(
     }
 
     for (const result of results) {
+      if (result.failed) {
+        console.error(`\n${result.source} (failed)`);
+        console.error(`  Error: ${result.error ?? 'unknown error'}`);
+        continue;
+      }
+      if (result.skipped) {
+        console.log(`\n${result.source} (skipped — unchanged since last ingest)`);
+        continue;
+      }
       console.log(`\n${result.source}`);
-      console.log(`  Summary: ${result.plan.summary}`);
-      for (const operation of result.plan.operations) {
+      console.log(`  Summary: ${result.plan?.summary ?? ''}`);
+      for (const operation of result.plan?.operations ?? []) {
         console.log(`  - ${operation.type.toUpperCase()} ${operation.path}`);
       }
+    }
+
+    const failed = results.filter((result) => result.failed);
+    if (failed.length > 0) {
+      console.error(`\nIngest completed with ${failed.length} failed source(s). See ${logger.displayPath}.`);
+      process.exitCode = 1;
     }
   } catch (e) {
     spinner?.stop();

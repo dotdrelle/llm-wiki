@@ -8,13 +8,12 @@ export const defaultConfig: AppConfig = {
   wikiRoot: '.',
   llm: {
     provider: 'openai',
-    model: 'gpt-4.1-mini',
+    model: 'gpt-5-mini',
     baseUrl: DEFAULT_OPENAI_BASE_URL,
     temperature: 0.1,
     timeoutMs: 600000,
   },
   build: {
-    refreshOnIngest: true,
     slotBatchSize: 3,
   },
   retrieval: {

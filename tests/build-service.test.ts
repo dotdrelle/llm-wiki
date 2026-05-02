@@ -20,7 +20,6 @@ function createConfig(root: string): AppConfig {
       timeoutMs: 600000,
     },
     build: {
-      refreshOnIngest: true,
         slotBatchSize: 5,
     },
     retrieval: {

@@ -25,7 +25,6 @@ function createConfig(): AppConfig {
       timeoutMs: 600000,
     },
     build: {
-      refreshOnIngest: true,
         slotBatchSize: 5,
     },
     retrieval: {
@@ -40,24 +39,27 @@ function createConfig(): AppConfig {
 class FakeWorkspaceService {
   appliedOperations: WikiOperation[] = [];
   archivedSources: string[] = [];
+  sourcePaths = ['/tmp/wiki/raw/untracked/note.md'];
 
   async ensureInitialized(): Promise<void> {}
 
   async resolveSourceInputs(): Promise<string[]> {
-    return ['/tmp/wiki/raw/untracked/note.md'];
+    return this.sourcePaths;
   }
 
-  async readSourceDocument(): Promise<SourceDocument> {
+  async readSourceDocument(sourcePath = '/tmp/wiki/raw/untracked/note.md'): Promise<SourceDocument> {
+    const fileName = sourcePath.split('/').at(-1) ?? 'note.md';
+    const slug = fileName.replace(/\.md$/, '');
     return {
-      absolutePath: '/tmp/wiki/raw/untracked/note.md',
-      relativePath: 'raw/untracked/note.md',
-      archiveRelativePath: 'raw/ingested/note.md',
-      archiveCitationPath: 'raw/ingested/note.md',
-      fileName: 'note.md',
-      slug: 'note',
-      title: 'Note',
+      absolutePath: sourcePath,
+      relativePath: `raw/untracked/${fileName}`,
+      archiveRelativePath: `raw/ingested/${fileName}`,
+      archiveCitationPath: `raw/ingested/${fileName}`,
+      fileName,
+      slug,
+      title: slug,
       frontmatter: {},
-      rawContent: '# Note\n\nBody.\n',
+      rawContent: `# ${slug}\n\nBody.\n`,
       body: 'Body.',
     };
   }
@@ -68,6 +70,10 @@ class FakeWorkspaceService {
 
   async normalizeWikiOperations(operations: WikiOperation[]): Promise<WikiOperation[]> {
     return operations;
+  }
+
+  async isSourceUnchangedSinceIngest(): Promise<boolean> {
+    return false;
   }
 
   async applyWikiOperations(operations: WikiOperation[]): Promise<void> {
@@ -82,7 +88,10 @@ class FakeWorkspaceService {
 }
 
 class FakeLLMService {
+  calls = 0;
+
   async completeJson(): Promise<IngestPlan> {
+    this.calls += 1;
     return {
       summary: 'Updated wiki from note.',
       operations: [
@@ -90,6 +99,25 @@ class FakeLLMService {
           type: 'create',
           path: 'wiki/sources/note.md',
           content: '# Note\n\n[src: raw/ingested/note.md]\n',
+        },
+      ],
+    };
+  }
+}
+
+class FailingOnceLLMService extends FakeLLMService {
+  async completeJson(): Promise<IngestPlan> {
+    this.calls += 1;
+    if (this.calls === 1) {
+      throw new Error('model returned malformed JSON');
+    }
+    return {
+      summary: 'Updated wiki from second note.',
+      operations: [
+        {
+          type: 'create',
+          path: 'wiki/sources/second.md',
+          content: '# Second\n\n[src: raw/ingested/second.md]\n',
         },
       ],
     };
@@ -149,12 +177,47 @@ describe('ingest service', () => {
       logger,
     );
 
-    const results = await service.ingest([], {});
+    const results = await service.ingest([], { refresh: true });
 
     expect(results).toHaveLength(1);
     expect(workspace.appliedOperations).toHaveLength(1);
     expect(workspace.archivedSources).toEqual(['raw/untracked/note.md']);
     expect(logger.entries.some((entry) => entry.event === 'ingest:refresh-failed')).toBe(true);
     expect(logger.entries.some((entry) => entry.event === 'ingest:run-done')).toBe(true);
+  });
+
+  it('continues ingesting remaining sources when one source fails', async () => {
+    const workspace = new FakeWorkspaceService();
+    workspace.sourcePaths = [
+      '/tmp/wiki/raw/untracked/first.md',
+      '/tmp/wiki/raw/untracked/second.md',
+    ];
+    const logger = new MemoryTraceLogger();
+    const llm = new FailingOnceLLMService();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      llm as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+    );
+
+    const results = await service.ingest([], {});
+
+    expect(results).toHaveLength(2);
+    expect(results[0]).toMatchObject({
+      source: 'raw/untracked/first.md',
+      failed: true,
+    });
+    expect(results[1].source).toBe('raw/untracked/second.md');
+    expect(results[1].failed).toBeUndefined();
+    expect(workspace.appliedOperations).toHaveLength(1);
+    expect(workspace.archivedSources).toEqual(['raw/untracked/second.md']);
+    expect(logger.entries.some((entry) => entry.event === 'ingest:source-failed')).toBe(true);
+    expect(logger.entries.find((entry) => entry.event === 'ingest:run-done')?.data).toMatchObject({
+      failed: 1,
+      status: 'partial_failure',
+    });
   });
 });

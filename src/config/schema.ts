@@ -207,7 +207,7 @@ function normalizeDeliverableResponse(value: unknown): unknown {
 const llmSchema = z
   .object({
     provider: z.enum(['openai', 'ollama', 'openai-compatible', 'anthropic']).default('openai'),
-    model: z.string().min(1).default('gpt-4.1-mini'),
+    model: z.string().min(1).default('gpt-5-mini'),
     apiKey: z.string().min(1).optional(),
     baseUrl: z.string().url().optional(),
     temperature: z.number().min(0).max(2).default(0.1),
@@ -218,18 +218,16 @@ const llmSchema = z
   })
   .default({
     provider: 'openai',
-    model: 'gpt-4.1-mini',
+    model: 'gpt-5-mini',
     temperature: 0.1,
     timeoutMs: 600000,
   });
 
 const buildSchema = z
   .object({
-    refreshOnIngest: z.boolean().default(true),
     slotBatchSize: z.number().int().min(1).max(50).default(3),
   })
   .default({
-    refreshOnIngest: true,
     slotBatchSize: 3,
   });
 
@@ -372,7 +370,7 @@ export function resolveConfig(input: unknown, wikiRoot: string, configPath?: str
     configPath,
     llm: {
       provider,
-      model: parsed.llm?.model ?? 'gpt-4.1-mini',
+      model: parsed.llm?.model ?? 'gpt-5-mini',
       apiKey,
       baseUrl,
       temperature: parsed.llm?.temperature ?? 0.1,
@@ -382,7 +380,6 @@ export function resolveConfig(input: unknown, wikiRoot: string, configPath?: str
       kvCacheType: parsed.llm?.kvCacheType,
     },
     build: {
-      refreshOnIngest: parsed.build?.refreshOnIngest ?? true,
       slotBatchSize: parsed.build?.slotBatchSize ?? 3,
     },
     retrieval: {

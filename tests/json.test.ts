@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   extractFirstJsonCandidate,
   extractFirstJsonObject,
+  fixUnescapedQuotes,
   repairIncompleteJson,
   sanitizeJsonStringControlChars,
 } from '../src/utils/json.ts';
@@ -46,5 +47,37 @@ describe('json utilities', () => {
     const raw = '{\n  "content": "line 1\\nline 2"\n}';
 
     expect(sanitizeJsonStringControlChars(raw)).toBe(raw);
+  });
+
+  it('keeps key colons structural while escaping quoted labels inside values', () => {
+    const raw =
+      '{"operations":[{"type":"create","path":"wiki/sources/test.md","content":"# Test\\n\\nLe champ "Objectif": remplacer le système."}]}';
+    const repaired = fixUnescapedQuotes(raw);
+
+    expect(JSON.parse(repaired)).toEqual({
+      operations: [
+        {
+          type: 'create',
+          path: 'wiki/sources/test.md',
+          content: '# Test\n\nLe champ "Objectif": remplacer le système.',
+        },
+      ],
+    });
+  });
+
+  it('escapes quoted text followed by a comma inside object string values', () => {
+    const raw =
+      '{"operations":[{"type":"create","path":"wiki/sources/test.md","content":"# Test\\n\\nLe projet "JUNO", destiné aux prévisionnistes, remplace le système."}]}';
+    const repaired = fixUnescapedQuotes(raw);
+
+    expect(JSON.parse(repaired)).toEqual({
+      operations: [
+        {
+          type: 'create',
+          path: 'wiki/sources/test.md',
+          content: '# Test\n\nLe projet "JUNO", destiné aux prévisionnistes, remplace le système.',
+        },
+      ],
+    });
   });
 });

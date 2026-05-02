@@ -83,6 +83,10 @@ function contextWindowTokens(config: AppConfig): number | undefined {
   return config.llm.numCtx;
 }
 
+function omitsTemperature(config: AppConfig): boolean {
+  return config.llm.provider === 'openai' && /^gpt-5(?:[.-]|$)/i.test(config.llm.model);
+}
+
 const ok = (msg: string) => console.log(`  ✓ ${msg}`);
 const warn = (msg: string) => console.log(`  ⚠ ${msg}`);
 const err = (msg: string) => console.log(`  ✗ ${msg}`);
@@ -656,12 +660,6 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
       );
       (suggestions.llm ??= {}).numCtx = 8192;
     }
-    if (config.build.refreshOnIngest) {
-      warn(
-        'refreshOnIngest is enabled. With local MLX, run ingest and refresh separately to avoid losing the useful ingest result behind a build failure.',
-      );
-      (suggestions.build ??= {}).refreshOnIngest = false;
-    }
     if (config.build.slotBatchSize > 1) {
       warn(
         `slotBatchSize ${config.build.slotBatchSize} → 1 recommended for local MLX JSON reliability and lower memory pressure`,
@@ -832,7 +830,9 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
   console.log('\n── Recommendations ──────────────────────────────────────────');
   let hasWarnings = false;
 
-  if (config.llm.temperature > 0.15) {
+  if (omitsTemperature(config)) {
+    ok(`temperature ${config.llm.temperature} omitted for ${config.llm.provider}/${config.llm.model}`);
+  } else if (config.llm.temperature > 0.15) {
     warn(
       `temperature ${config.llm.temperature} → 0.1 recommended for structured JSON tasks`,
     );

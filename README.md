@@ -111,6 +111,37 @@ llm:
   baseUrl: http://ollama:11434/v1
 ```
 
+### MLX
+
+On Apple Silicon, run an OpenAI-compatible MLX server locally and point `.wikirc.yaml` at it.
+For ingest/build workloads under roughly 11 GB, `mlx-community/Qwen2.5-7B-Instruct-4bit`
+is a good default because it is compact and follows structured instructions reliably.
+
+```bash
+mlx_lm.server --model mlx-community/Qwen2.5-7B-Instruct-4bit --port 8080 --max-tokens 4096
+```
+
+```yaml
+llm:
+  provider: openai-compatible
+  model: mlx-community/Qwen2.5-7B-Instruct-4bit
+  baseUrl: http://127.0.0.1:8080/v1
+  temperature: 0.1
+  timeoutMs: 600000
+  numCtx: 16384
+
+build:
+  slotBatchSize: 1
+
+retrieval:
+  maxContextFiles: 4
+  maxChunkChars: 2500
+  maxSourceChars: 8000
+```
+
+Start with `numCtx: 8192` or `16384` for local MLX. Larger context windows can exceed memory
+once the KV cache is included, even when the 4-bit model weights fit comfortably on disk.
+
 ### API keys
 
 Pass OpenAI or Anthropic keys as environment variables — the compose file forwards them automatically:
@@ -148,33 +179,33 @@ retrieval:
 
 ### `llm` options
 
-| Key              | Description                                                                              | Default            |
-| ---------------- | ---------------------------------------------------------------------------------------- | ------------------ |
-| `provider`       | `openai`, `ollama`, `anthropic`, `openai-compatible`                                     | `openai`           |
-| `model`          | Model name passed to the provider                                                        | `gpt-4.1-mini`     |
-| `apiKey`         | API key — falls back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` env vars                  | —                  |
-| `baseUrl`        | Provider base URL                                                                        | provider-dependent |
-| `temperature`    | Sampling temperature (0–2)                                                               | `0.1`              |
-| `timeoutMs`      | Request timeout in milliseconds                                                          | `600000`           |
-| `numCtx`         | Ollama context window size in tokens — set this explicitly to avoid the provider default | —                  |
-| `flashAttention` | Ollama tuning hint for remote/containerized servers when env vars cannot be detected     | —                  |
-| `kvCacheType`    | Ollama KV cache type hint: `f16`, `q8_0`, or `q4_0`                                      | —                  |
+| Key                | Description                                                                               | Default            |
+| ------------------ | ----------------------------------------------------------------------------------------- | ------------------ |
+| `provider`       | `openai`, `ollama`, `anthropic`, `openai-compatible`                              | `openai`         |
+| `model`          | Model name passed to the provider                                                         | `gpt-5-mini`     |
+| `apiKey`         | API key — falls back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` env vars              | —                 |
+| `baseUrl`        | Provider base URL                                                                         | provider-dependent |
+| `temperature`    | Sampling temperature (0–2)                                                               | `0.1`            |
+| `timeoutMs`      | Request timeout in milliseconds                                                           | `600000`         |
+| `numCtx`         | Ollama context window size in tokens — set this explicitly to avoid the provider default | —                 |
+| `flashAttention` | Ollama tuning hint for remote/containerized servers when env vars cannot be detected      | —                 |
+| `kvCacheType`    | Ollama KV cache type hint:`f16`, `q8_0`, or `q4_0`                                  | —                 |
 
 ### `build` options
 
-| Key               | Description                                                              | Default |
-| ----------------- | ------------------------------------------------------------------------ | ------- |
-| `refreshOnIngest` | Automatically regenerate stale deliverables after each ingest            | `true`  |
-| `slotBatchSize`   | Number of `[[INSTRUCTION:...]]` slots sent to the model in a single call | `3`     |
+| Key                 | Description                                                                | Default  |
+| ------------------- | -------------------------------------------------------------------------- | -------- |
+| `refreshOnIngest` | Automatically regenerate stale deliverables after each ingest              | `true` |
+| `slotBatchSize`   | Number of `[[INSTRUCTION:...]]` slots sent to the model in a single call | `3`    |
 
 ### `retrieval` options
 
-| Key                | Description                                                     | Default |
-| ------------------ | --------------------------------------------------------------- | ------- |
-| `maxContextFiles`  | Maximum wiki pages retrieved **per slot** for each LLM call     | `5`     |
-| `maxChunksPerPage` | Maximum matching chunks returned from the same wiki page        | `2`     |
-| `maxChunkChars`    | Maximum characters kept from a retrieved wiki chunk             | `3000`  |
-| `maxSourceChars`   | Maximum characters read from a pending raw source during ingest | `8000`  |
+| Key                  | Description                                                      | Default  |
+| -------------------- | ---------------------------------------------------------------- | -------- |
+| `maxContextFiles`  | Maximum wiki pages retrieved**per slot** for each LLM call | `5`    |
+| `maxChunksPerPage` | Maximum matching chunks returned from the same wiki page         | `2`    |
+| `maxChunkChars`    | Maximum characters kept from a retrieved wiki chunk              | `3000` |
+| `maxSourceChars`   | Maximum characters read from a pending raw source during ingest  | `8000` |
 
 > **Context budget note** — each LLM call includes up to `slotBatchSize × maxContextFiles × maxChunkChars` characters plus fixed prompt overhead. Run `wiki doctor` after changing these values; it checks whether the combined prompt fits the effective context window.
 
@@ -182,10 +213,12 @@ retrieval:
 
 OpenAI:
 
+`gpt-5-mini` is the recommended low-cost OpenAI default for ingest/build workloads.
+
 ```yaml
 llm:
   provider: openai
-  model: gpt-4.1-mini
+  model: gpt-5-mini
   apiKey: YOUR_API_KEY_HERE
   baseUrl: https://api.openai.com/v1
   timeoutMs: 600000
@@ -234,11 +267,11 @@ OLLAMA_KV_CACHE_TYPE=q8_0 \
 ollama serve
 ```
 
-| Variable                 | Purpose                                                                          |
-| ------------------------ | -------------------------------------------------------------------------------- |
+| Variable                   | Purpose                                                                              |
+| -------------------------- | ------------------------------------------------------------------------------------ |
 | `OLLAMA_CONTEXT_LENGTH`  | Default context window for all models (overridden by `numCtx` in `.wikirc.yaml`) |
-| `OLLAMA_FLASH_ATTENTION` | Enables Flash Attention for faster inference and lower VRAM usage                |
-| `OLLAMA_KV_CACHE_TYPE`   | KV cache quantization — `q8_0` halves cache memory with minimal quality loss     |
+| `OLLAMA_FLASH_ATTENTION` | Enables Flash Attention for faster inference and lower VRAM usage                    |
+| `OLLAMA_KV_CACHE_TYPE`   | KV cache quantization —`q8_0` halves cache memory with minimal quality loss       |
 
 If Ollama runs outside the local process namespace, for example in Docker or on another machine, `wiki doctor` cannot inspect `OLLAMA_*` from the server process. Set `flashAttention` and `kvCacheType` in `.wikirc.yaml` so the doctor can base memory and speed recommendations on the server configuration:
 
@@ -330,13 +363,13 @@ Every ingestion run also writes a persistent trace file under `.wiki/logs/`, for
 Answers a question from the persistent wiki and ingested source notes. Prints the answer to stdout.
 
 ```bash
-wiki query "Quels faits sont déjà documentés sur l'adoption IA ?"
+wiki query "Quels faits sont déjà documentés sur concernant mon dossier d'architecture fonctionnel?"
 ```
 
 Use `--save` to also write the answer to `wiki/answers/<slug>.md` with a frontmatter containing the question and date:
 
 ```bash
-wiki query --save "Quels faits sont déjà documentés sur l'adoption IA ?"
+wiki query --save "Quels besions sont déjà documentés pour ma matrice des flux ?"
 # → prints the answer
 # → Saved to wiki/answers/quels-faits-sont-deja-documentes.md
 ```

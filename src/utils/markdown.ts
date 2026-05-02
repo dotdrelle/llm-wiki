@@ -134,3 +134,56 @@ export function sanitizeFrontmatter(
   delete sanitized.description;
   return sanitized;
 }
+
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#(\d+);/g, (_match, code: string) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([\da-f]+);/gi, (_match, code: string) =>
+      String.fromCodePoint(parseInt(code, 16)),
+    );
+}
+
+function stripTagAttributes(markdown: string): string {
+  return markdown.replace(/<([a-z][\w:-]*)\b[^>]*>/gi, '<$1>');
+}
+
+export function normalizeSourceBody(markdown: string): string {
+  let normalized = markdown;
+
+  normalized = normalized.replace(
+    /<a\b[^>]*href=(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi,
+    (_match, _quote: string, href: string, label: string) =>
+      `[${decodeHtmlEntities(label.replace(/<[^>]+>/g, '').trim())}](${decodeHtmlEntities(href)})`,
+  );
+  normalized = normalized.replace(
+    /<time\b[^>]*datetime=(["'])(.*?)\1[^>]*>([\s\S]*?)<\/time>/gi,
+    (_match, _quote: string, datetime: string, label: string) =>
+      decodeHtmlEntities(label.replace(/<[^>]+>/g, '').trim() || datetime),
+  );
+  normalized = stripTagAttributes(normalized);
+  normalized = normalized
+    .replace(/<\/?(strong|b)>/gi, '**')
+    .replace(/<\/?(em|i)>/gi, '*')
+    .replace(/<\/?(span|div|p)>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/?(ul|ol)>/gi, '\n')
+    .replace(/<li>/gi, '\n- ')
+    .replace(/<\/li>/gi, '')
+    .replace(/<\/?(table|tbody|thead)>/gi, '\n')
+    .replace(/<\/tr>/gi, '\n')
+    .replace(/<tr>/gi, '')
+    .replace(/<\/t[dh]>/gi, ' | ')
+    .replace(/<t[dh]>/gi, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/`{2,}(\s*[-*]?\s*)/g, '$1')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n');
+
+  return decodeHtmlEntities(normalized).trim();
+}

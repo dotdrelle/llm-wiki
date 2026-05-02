@@ -1,3 +1,120 @@
+export function stripThinkingBlocks(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+}
+
+export function fixUnescapedQuotes(text: string): string {
+  let result = '';
+  let inString = false;
+  let escaped = false;
+  let stringRole: 'key' | 'value' = 'value';
+  const stack: Array<
+    | { type: 'object'; state: 'key' | 'afterKey' | 'value' | 'afterValue' }
+    | { type: 'array'; state: 'value' | 'afterValue' }
+  > = [];
+
+  const top = () => stack[stack.length - 1];
+  const markValueDone = () => {
+    const current = top();
+    if (!current) return;
+    current.state = 'afterValue';
+  };
+  const nextNonWhitespace = (start: number): string => {
+    let j = start;
+    while (j < text.length && /[ \t\r\n]/.test(text[j] ?? '')) j++;
+    return text[j] ?? '';
+  };
+  const isValueStart = (value: string): boolean =>
+    value === '"' ||
+    value === '{' ||
+    value === '[' ||
+    value === '-' ||
+    /^[0-9tfn]$/.test(value);
+  const isClosingQuote = (next: string, afterNextIndex: number): boolean => {
+    if (next === '' || next === '}' || next === ']') return true;
+    if (next === ':' && stringRole === 'key') return true;
+    if (next !== ',') return false;
+
+    const afterComma = nextNonWhitespace(afterNextIndex);
+    const current = top();
+    if (current?.type === 'object') {
+      return afterComma === '"' || afterComma === '}';
+    }
+    if (current?.type === 'array') {
+      return isValueStart(afterComma) || afterComma === ']';
+    }
+
+    return false;
+  };
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    if (!inString) {
+      result += char;
+      if (char === '{') {
+        stack.push({ type: 'object', state: 'key' });
+      } else if (char === '[') {
+        stack.push({ type: 'array', state: 'value' });
+      } else if (char === '}' || char === ']') {
+        stack.pop();
+        markValueDone();
+      } else if (char === ':') {
+        const current = top();
+        if (current?.type === 'object' && current.state === 'afterKey') {
+          current.state = 'value';
+        }
+      } else if (char === ',') {
+        const current = top();
+        if (current?.type === 'object' && current.state === 'afterValue') {
+          current.state = 'key';
+        } else if (current?.type === 'array' && current.state === 'afterValue') {
+          current.state = 'value';
+        }
+      } else if (char === '"') {
+        const current = top();
+        stringRole = current?.type === 'object' && current.state === 'key' ? 'key' : 'value';
+        inString = true;
+      }
+      continue;
+    }
+
+    if (escaped) {
+      result += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      result += char;
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      let j = i + 1;
+      while (j < text.length && /[ \t\r\n]/.test(text[j] ?? '')) j++;
+      const next = text[j] ?? '';
+      if (isClosingQuote(next, j + 1)) {
+        result += char;
+        inString = false;
+        const current = top();
+        if (stringRole === 'key' && current?.type === 'object') {
+          current.state = 'afterKey';
+        } else {
+          markValueDone();
+        }
+      } else {
+        result += '\\"';
+      }
+      continue;
+    }
+
+    result += char;
+  }
+
+  return result;
+}
+
 export function extractFirstJsonObject(text: string): string {
   const start = text.search(/[{[]/);
   if (start === -1) {

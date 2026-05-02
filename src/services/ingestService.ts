@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { ingestPlanSchema } from '../config/schema.ts';
 import { buildIngestPrompt } from '../prompts/ingestPrompt.ts';
+import { normalizeSourceBody } from '../utils/markdown.ts';
+import type { TokenUsage } from './llmService.ts';
 import type { AppConfig, IngestCommandOptions, IngestResult } from '../types.ts';
 import type { LLMService } from './llmService.ts';
 import type { RefreshService } from './refreshService.ts';
@@ -32,13 +34,20 @@ export class IngestService {
     this.logger = logger;
   }
 
-  async ingest(inputs: string[], options?: IngestCommandOptions): Promise<IngestResult[]> {
+  async ingest(
+    inputs: string[],
+    options?: IngestCommandOptions & {
+      onSourceStart?: (sourcePath: string, index: number, total: number) => void;
+      onSourceLlm?: (sourcePath: string, index: number, total: number) => void;
+      onSourceUsage?: (sourcePath: string, index: number, total: number, usage: TokenUsage) => void;
+    },
+  ): Promise<IngestResult[]> {
     const runStartedAt = Date.now();
     await this.workspace.ensureInitialized();
     await this.logger.info('ingest:run-start', {
       inputCount: inputs.length,
       dryRun: Boolean(options?.dryRun),
-      refreshEnabled: options?.refresh !== false && this.config.build.refreshOnIngest,
+      refreshEnabled: options?.refresh === true,
     });
 
     const selectionStartedAt = Date.now();
@@ -50,7 +59,10 @@ export class IngestService {
 
     const results: IngestResult[] = [];
 
-    for (const sourcePath of sourcePaths) {
+    for (let i = 0; i < sourcePaths.length; i++) {
+      const sourcePath = sourcePaths[i];
+      let sourceLabel = sourcePath;
+      options?.onSourceStart?.(sourcePath, i, sourcePaths.length);
       const sourceStartedAt = Date.now();
       await this.logger.info('ingest:source-start', {
         sourcePath,
@@ -59,12 +71,42 @@ export class IngestService {
       try {
         const readStartedAt = Date.now();
         const source = await this.workspace.readSourceDocument(sourcePath);
+        sourceLabel = source.relativePath;
         await this.logger.info('ingest:source', {
           source: source.relativePath,
           title: source.title,
           sizeBytes: source.rawContent.length,
           durationMs: Date.now() - readStartedAt,
         });
+
+        if (!options?.force) {
+          const unchanged = await this.workspace.isSourceUnchangedSinceIngest(source);
+          if (unchanged) {
+            await this.logger.info('ingest:source-skip', {
+              source: source.relativePath,
+              reason: 'unchanged since last ingest',
+            });
+            results.push({
+              source: source.relativePath,
+              plan: { summary: 'unchanged since last ingest', operations: [] },
+              skipped: true,
+            });
+            if (!options?.dryRun) {
+              await this.workspace.archiveSource(source);
+              await this.logger.info('ingest:archive', {
+                source: source.relativePath,
+                archivePath: source.archiveCitationPath,
+                durationMs: Date.now() - sourceStartedAt,
+              });
+            }
+            await this.logger.info('ingest:source-done', {
+              source: source.relativePath,
+              durationMs: Date.now() - sourceStartedAt,
+              status: 'skipped',
+            });
+            continue;
+          }
+        }
 
         const contextStartedAt = Date.now();
         const relevantPages = await this.retrieval.search(source.body || source.title, {
@@ -88,7 +130,7 @@ export class IngestService {
 
         // Truncate source body if needed — warn always visible on console
         const { maxChunkChars, maxSourceChars } = this.config.retrieval;
-        const rawBody = source.body ?? '';
+        const rawBody = normalizeSourceBody(source.body ?? '');
         const sourceBodyTruncated = rawBody.length > maxSourceChars;
         if (sourceBodyTruncated) {
           await this.logger.warn('ingest:truncation', {
@@ -107,7 +149,7 @@ export class IngestService {
           (r) => (r.chunk?.content ?? r.page.content).length > maxChunkChars,
         ).length;
         if (relevantPagesTruncated > 0) {
-          await this.logger.warn('ingest:truncation', {
+          await this.logger.info('ingest:truncation', {
             source: source.relativePath,
             field: 'relevantPages',
             truncatedPageCount: relevantPagesTruncated,
@@ -139,6 +181,7 @@ export class IngestService {
           });
         }
 
+        options?.onSourceLlm?.(sourcePath, i, sourcePaths.length);
         const plan = await this.llm.completeJson(
           {
             ...prompt,
@@ -146,6 +189,9 @@ export class IngestService {
             logger: this.logger,
             traceData: {
               source: source.relativePath,
+            },
+            onUsage: (usage) => {
+              options?.onSourceUsage?.(sourcePath, i, sourcePaths.length, usage);
             },
           },
           ingestPlanSchema,
@@ -243,19 +289,24 @@ export class IngestService {
           status: 'success',
         });
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         await this.logger.error('ingest:source-failed', {
           sourcePath,
           durationMs: Date.now() - sourceStartedAt,
-          message: error instanceof Error ? error.message : String(error),
+          message,
         });
-        throw error;
+        results.push({
+          source: sourceLabel,
+          failed: true,
+          error: message,
+        });
       }
     }
 
-    const shouldRefresh =
-      options?.refresh === true ||
-      (options?.refresh !== false && this.config.build.refreshOnIngest);
-    if (!options?.dryRun && results.length > 0 && shouldRefresh) {
+    const successfulResults = results.filter((result) => !result.failed);
+    const failedResults = results.filter((result) => result.failed);
+    const shouldRefresh = options?.refresh === true;
+    if (!options?.dryRun && successfulResults.length > 0 && shouldRefresh) {
       const refreshStartedAt = Date.now();
       try {
         const refreshResults = await this.refresh.refresh();
@@ -274,7 +325,7 @@ export class IngestService {
         await this.logger.error('ingest:refresh-failed', {
           durationMs: Date.now() - refreshStartedAt,
           message: error instanceof Error ? error.message : String(error),
-          advice: 'Rerun `wiki refresh` later or use `wiki ingest --no-refresh`.',
+          advice: 'Rerun `wiki refresh` later to rebuild stale deliverables.',
         });
       }
     } else {
@@ -285,8 +336,9 @@ export class IngestService {
 
     await this.logger.info('ingest:run-done', {
       sourceCount: results.length,
+      failed: failedResults.length,
       durationMs: Date.now() - runStartedAt,
-      status: 'success',
+      status: failedResults.length > 0 ? 'partial_failure' : 'success',
     });
 
     return results;

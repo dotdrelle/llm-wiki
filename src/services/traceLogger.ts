@@ -141,8 +141,14 @@ class FileTraceLogger implements TraceLogger {
       (level === 'info' && this.verboseEnabled) ||
       (level === 'debug' && this.debugEnabled)
     ) {
+      const levelColors: Record<TraceLevel, string> = {
+        info:  '\x1b[36mINFO \x1b[0m',
+        warn:  '\x1b[33mWARN \x1b[0m',
+        error: '\x1b[31mERROR\x1b[0m',
+        debug: '\x1b[90mDEBUG\x1b[0m',
+      };
       const timeLabel = now.toISOString().slice(11, 19);
-      const consoleLine = `[${timeLabel} +${elapsedMs}ms] ${event}${
+      const consoleLine = `\n${levelColors[level]} [${timeLabel} +${elapsedMs}ms] ${event}${
         suffix ? ` ${suffix}` : ''
       }`;
       if (level === 'error') {

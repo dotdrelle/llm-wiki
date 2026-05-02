@@ -5,6 +5,7 @@ This workspace follows a local-first LLM Wiki pattern.
 ## Workflow
 
 - Run `wiki ingest` to turn raw sources into persistent wiki pages.
+- `wiki ingest` continues after per-source failures; check the final summary and trace log for failed sources.
 - Use `wiki query` to ask questions grounded in the wiki.
 - Use `wiki build` or `wiki refresh` to regenerate deliverables from templates.
 - Use `wiki serve` to browse the wiki UI. `/` renders `wiki/index.md`; `/graph` shows source/wiki relations.
@@ -41,6 +42,8 @@ Apply these changes to /path/to/.wikirc.yaml? [y/N]
 ```
 
 Only `y`, `yes`, `o`, or `oui` writes the file. Non-interactive runs only print suggestions.
+
+For OpenAI GPT-5 models, `temperature` may be omitted by the CLI because some models only accept the provider default.
 
 Important `.wikirc.yaml` keys:
 
