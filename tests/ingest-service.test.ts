@@ -40,6 +40,7 @@ class FakeWorkspaceService {
   appliedOperations: WikiOperation[] = [];
   archivedSources: string[] = [];
   sourcePaths = ['/tmp/wiki/raw/untracked/note.md'];
+  failApply = false;
 
   async ensureInitialized(): Promise<void> {}
 
@@ -77,6 +78,9 @@ class FakeWorkspaceService {
   }
 
   async applyWikiOperations(operations: WikiOperation[]): Promise<void> {
+    if (this.failApply) {
+      throw new Error('disk write failed');
+    }
     this.appliedOperations = operations;
   }
 
@@ -219,5 +223,29 @@ describe('ingest service', () => {
       failed: 1,
       status: 'partial_failure',
     });
+  });
+
+  it('does not report a source as successful when applying operations fails', async () => {
+    const workspace = new FakeWorkspaceService();
+    workspace.failApply = true;
+    const logger = new MemoryTraceLogger();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new FakeLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+    );
+
+    const results = await service.ingest([], {});
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      source: 'raw/untracked/note.md',
+      failed: true,
+      error: 'disk write failed',
+    });
+    expect(workspace.archivedSources).toEqual([]);
   });
 });

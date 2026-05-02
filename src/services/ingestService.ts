@@ -248,11 +248,6 @@ export class IngestService {
           });
         }
 
-        results.push({
-          source: source.relativePath,
-          plan: normalizedPlan,
-        });
-
         if (!options?.dryRun) {
           const applyStartedAt = Date.now();
           await this.workspace.applyWikiOperations(normalizedPlan.operations);
@@ -282,6 +277,11 @@ export class IngestService {
             source: source.relativePath,
           });
         }
+
+        results.push({
+          source: source.relativePath,
+          plan: normalizedPlan,
+        });
 
         await this.logger.info('ingest:source-done', {
           source: source.relativePath,
