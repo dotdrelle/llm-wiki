@@ -623,6 +623,7 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
   row('model:', config.llm.model);
   if (config.llm.numCtx) row('numCtx:', config.llm.numCtx.toLocaleString());
   row('temperature:', String(config.llm.temperature));
+  row('refreshOnIngest:', String(config.build.refreshOnIngest));
   row('slotBatchSize:', String(config.build.slotBatchSize));
   row('maxContextFiles:', String(config.retrieval.maxContextFiles));
   row('maxChunksPerPage:', String(config.retrieval.maxChunksPerPage));
@@ -694,20 +695,18 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
   // ── wiki content ────────────────────────────────────────────────────────────
   console.log('\n── Wiki content ────────────────────────────────────────────');
   const workspace = new WorkspaceService(config);
-  try {
-    await workspace.ensureInitialized();
-  } catch {
-    err('Workspace not initialized — run `wiki init` first');
-    console.log('');
-    return;
+  if (!(await pathExists(workspace.paths.wikiIndexPath))) {
+    warn('wiki/index.md missing — run `wiki init` to create it (continuing with partial data)');
   }
 
-  const [pages, rawIngestedPages, indexContent, untrackedPaths] = await Promise.all([
-    workspace.listWikiPages(),
-    workspace.listIngestedSourcePages(),
-    workspace.readIndex(),
-    workspace.listUntrackedSourcePaths(),
-  ]);
+  const [pages, rawIngestedPages, indexContent, untrackedPaths, buildContext] =
+    await Promise.all([
+      workspace.listWikiPages(),
+      workspace.listIngestedSourcePages(),
+      workspace.readIndex(),
+      workspace.listUntrackedSourcePaths(),
+      workspace.readBuildContext(),
+    ]);
 
   const untrackedContents = await Promise.all(
     untrackedPaths.map(async (p) => {
@@ -732,6 +731,12 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
     `${allChunks.length} (avg ${avg(chunkSizes)} chars, p95 ${pct(chunkSizes, 95)} chars, max ${chunkSizes.length > 0 ? Math.max(...chunkSizes) : 0} chars)`,
   );
   row('index.md:', `${indexContent.length} chars`);
+  row(
+    'build-context:',
+    buildContext.truncated
+      ? `${buildContext.fileCount} file(s), ${buildContext.rawTotalChars}/${config.build.maxBuildContextChars} chars (truncated)`
+      : `${buildContext.fileCount} file(s), ${buildContext.content.length}/${config.build.maxBuildContextChars} chars`,
+  );
   row('ingested (archive):', `${rawIngestedPages.length} file(s) in raw/ingested`);
   row(
     'pending ingest:',
@@ -770,7 +775,8 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
   const SAFE_FILL = 0.9;
   const totalChars = numCtxTokens * CHARS_PER_TOKEN;
   const available = Math.round(totalChars * (1 - OUTPUT_RESERVE));
-  const overhead = indexContent.length + SYSTEM_PROMPT_OVERHEAD;
+  const overhead =
+    indexContent.length + buildContext.content.length + SYSTEM_PROMPT_OVERHEAD;
   const slotContent = config.retrieval.maxContextFiles * config.retrieval.maxChunkChars;
   const buildBudget = available - overhead;
 
@@ -783,7 +789,15 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
     'output reserve:',
     `${OUTPUT_RESERVE * 100}% → ~${Math.round(available / 1000)}k chars available`,
   );
-  row('fixed overhead:', `~${Math.round(overhead / 1000)}k chars (index + system)`);
+  row(
+    'fixed overhead:',
+    `~${Math.round(overhead / 1000)}k chars (index + build-context + system)`,
+  );
+  if (buildContext.truncated) {
+    warn(
+      `build-context truncated: ${buildContext.rawTotalChars} chars in build-context/, maxBuildContextChars=${config.build.maxBuildContextChars}`,
+    );
+  }
   row(
     'slot content:',
     `${config.retrieval.maxContextFiles} files × ${config.retrieval.maxChunkChars} chars = ~${Math.round(slotContent / 1000)}k chars/slot`,
@@ -831,7 +845,9 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
   let hasWarnings = false;
 
   if (omitsTemperature(config)) {
-    ok(`temperature ${config.llm.temperature} omitted for ${config.llm.provider}/${config.llm.model}`);
+    ok(
+      `temperature ${config.llm.temperature} omitted for ${config.llm.provider}/${config.llm.model}`,
+    );
   } else if (config.llm.temperature > 0.15) {
     warn(
       `temperature ${config.llm.temperature} → 0.1 recommended for structured JSON tasks`,
@@ -945,6 +961,33 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
   } else {
     ok(
       `slotBatchSize ${config.build.slotBatchSize} (${Math.round(fillRatio * 100)}% fill, safe up to ${safeBatchSize})`,
+    );
+  }
+
+  const BUILD_CONTEXT_FRACTION = 0.15;
+  const recommendedBuildContextChars = Math.max(
+    4000,
+    Math.round((available * BUILD_CONTEXT_FRACTION) / 500) * 500,
+  );
+  if (buildContext.truncated) {
+    if (recommendedBuildContextChars > config.build.maxBuildContextChars) {
+      warn(
+        `build.maxBuildContextChars ${config.build.maxBuildContextChars} → ${recommendedBuildContextChars}` +
+          ` — ${buildContext.rawTotalChars} chars in build-context/ exceed the limit` +
+          ` (≈${BUILD_CONTEXT_FRACTION * 100}% of available context for numCtx=${numCtxTokens?.toLocaleString()})`,
+      );
+      (suggestions.build ??= {}).maxBuildContextChars = recommendedBuildContextChars;
+      hasWarnings = true;
+    } else {
+      warn(
+        `build-context ${buildContext.rawTotalChars} chars exceeds maxBuildContextChars (${config.build.maxBuildContextChars})` +
+          ` — context budget allows at most ${recommendedBuildContextChars} chars; trim build-context/ files`,
+      );
+      hasWarnings = true;
+    }
+  } else {
+    ok(
+      `maxBuildContextChars ${config.build.maxBuildContextChars} (${buildContext.content.length} chars used)`,
     );
   }
 

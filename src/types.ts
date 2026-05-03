@@ -13,7 +13,9 @@ export interface LlmConfig {
 }
 
 export interface BuildConfig {
+  refreshOnIngest: boolean;
   slotBatchSize: number;
+  maxBuildContextChars: number;
 }
 
 export interface RetrievalConfig {
@@ -72,6 +74,7 @@ export interface WorkspacePaths {
   wikiSourcesDir: string;
   wikiAnswersDir: string;
   templatesDir: string;
+  buildContextDir: string;
   deliverablesDir: string;
 }
 
@@ -144,12 +147,21 @@ export interface TemplateDocument {
   outputAbsolutePath: string;
 }
 
+export interface BuildContext {
+  content: string;
+  hash: string;
+  fileCount: number;
+  truncated: boolean;
+  rawTotalChars: number;
+}
+
 export interface BuildState {
   deliverables: Record<
     string,
     {
       templateHash: string;
       wikiHash: string;
+      buildContextHash: string;
       outputHash: string;
       outputRelativePath: string;
     }

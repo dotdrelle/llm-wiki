@@ -1,11 +1,16 @@
 import { existsSync } from 'node:fs';
-import { copyFile, mkdir, readFile, rename } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rename, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fg from 'fast-glob';
 import matter from 'gray-matter';
 import { buildStateSchema } from '../config/schema.ts';
-import { removeIfExists, safeWriteFile, writeIfChanged, pathExists } from '../utils/fs.ts';
+import {
+  removeIfExists,
+  safeWriteFile,
+  writeIfChanged,
+  pathExists,
+} from '../utils/fs.ts';
 import { hashParts, hashText } from '../utils/hash.ts';
 import {
   canonicalizeName,
@@ -18,6 +23,7 @@ import { parseTemplateInstructions } from '../utils/markdown.ts';
 import type {
   AppConfig,
   BuildState,
+  BuildContext,
   SourceDocument,
   TemplateDocument,
   WikiOperation,
@@ -43,8 +49,10 @@ function inferWikiPageType(relativePath: string): WikiPage['type'] {
 
 export class WorkspaceService {
   readonly paths: WorkspacePaths;
+  private readonly config: AppConfig;
 
   constructor(config: AppConfig) {
+    this.config = config;
     const rootDir = path.resolve(config.wikiRoot);
     this.paths = {
       rootDir,
@@ -64,6 +72,7 @@ export class WorkspaceService {
       wikiSourcesDir: path.join(rootDir, 'wiki', 'sources'),
       wikiAnswersDir: path.join(rootDir, 'wiki', 'answers'),
       templatesDir: path.join(rootDir, 'templates'),
+      buildContextDir: path.join(rootDir, 'build-context'),
       deliverablesDir: path.join(rootDir, 'deliverables'),
     };
   }
@@ -147,23 +156,30 @@ export class WorkspaceService {
         resolveInside(this.paths.rawUntrackedDir, input),
       ];
 
-      const found = await Promise.all(candidates.map(async (candidate) => ({
-        candidate,
-        exists: await pathExists(candidate),
-      })));
+      const found = await Promise.all(
+        candidates.map(async (candidate) => ({
+          candidate,
+          exists: await pathExists(candidate),
+        })),
+      );
 
       const match = found.find((entry) => entry.exists);
       if (!match) {
         throw new Error(`Source file not found: ${input}`);
       }
 
-      const relativeToUntracked = path.relative(this.paths.rawUntrackedDir, match.candidate);
+      const relativeToUntracked = path.relative(
+        this.paths.rawUntrackedDir,
+        match.candidate,
+      );
       if (
         relativeToUntracked.startsWith('..') ||
         path.isAbsolute(relativeToUntracked) ||
         !match.candidate.endsWith('.md')
       ) {
-        throw new Error(`Source must live under raw/untracked and end with .md: ${input}`);
+        throw new Error(
+          `Source must live under raw/untracked and end with .md: ${input}`,
+        );
       }
 
       resolved.push(match.candidate);
@@ -202,6 +218,10 @@ export class WorkspaceService {
   async isSourceUnchangedSinceIngest(source: SourceDocument): Promise<boolean> {
     const archivedPath = path.join(this.paths.rootDir, source.archiveRelativePath);
     if (!(await pathExists(archivedPath))) {
+      return false;
+    }
+    const archivedStats = await stat(archivedPath);
+    if (archivedStats.size !== Buffer.byteLength(source.rawContent, 'utf8')) {
       return false;
     }
     const archivedContent = await readFile(archivedPath, 'utf8');
@@ -407,7 +427,10 @@ export class WorkspaceService {
       typeof parsed.data.output === 'string' && parsed.data.output.trim()
         ? parsed.data.output.trim()
         : relativeWithinTemplates;
-    const outputAbsolutePath = resolveInside(this.paths.deliverablesDir, configuredOutput);
+    const outputAbsolutePath = resolveInside(
+      this.paths.deliverablesDir,
+      configuredOutput,
+    );
     const outputRelativePath = relativeFrom(this.paths.rootDir, outputAbsolutePath);
 
     return {
@@ -418,6 +441,63 @@ export class WorkspaceService {
       instructions: parseTemplateInstructions(parsed.content),
       outputRelativePath,
       outputAbsolutePath,
+    };
+  }
+
+  async readBuildContext(): Promise<BuildContext> {
+    if (!(await pathExists(this.paths.buildContextDir))) {
+      return {
+        content: '',
+        hash: hashText(''),
+        fileCount: 0,
+        truncated: false,
+        rawTotalChars: 0,
+      };
+    }
+
+    const files = (
+      await fg('**/*.md', {
+        cwd: this.paths.buildContextDir,
+        absolute: true,
+        onlyFiles: true,
+      })
+    ).sort();
+
+    const maxChars = this.config.build.maxBuildContextChars;
+    const sections: string[] = [];
+    let totalChars = 0;
+    let rawTotalChars = 0;
+    let truncated = false;
+
+    for (const absolutePath of files) {
+      const relativePath = relativeFrom(this.paths.rootDir, absolutePath);
+      const rawContent = await readFile(absolutePath, 'utf8');
+      const sectionPrefix = `## ${relativePath}\n\n`;
+      const section = `${sectionPrefix}${rawContent.trim()}\n`;
+      rawTotalChars += section.length;
+
+      if (!truncated) {
+        const remainingChars = maxChars - totalChars;
+        if (remainingChars <= 0) {
+          truncated = true;
+        } else if (section.length > remainingChars) {
+          sections.push(section.slice(0, remainingChars).trimEnd());
+          totalChars = maxChars;
+          truncated = true;
+        } else {
+          sections.push(section);
+          totalChars += section.length;
+        }
+      }
+    }
+
+    const content = sections.join('\n').trim();
+    return {
+      content,
+      hash: hashText(content),
+      fileCount: files.length,
+      truncated,
+      rawTotalChars,
     };
   }
 
@@ -462,7 +542,7 @@ export class WorkspaceService {
   }
 
   async computeWikiHash(pages?: WikiPage[]): Promise<string> {
-    const resolvedPages = pages ?? await this.listWikiPages();
+    const resolvedPages = pages ?? (await this.listWikiPages());
     return hashParts(
       resolvedPages
         .sort((a, b) => a.relativePath.localeCompare(b.relativePath))

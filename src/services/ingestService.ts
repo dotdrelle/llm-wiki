@@ -39,7 +39,12 @@ export class IngestService {
     options?: IngestCommandOptions & {
       onSourceStart?: (sourcePath: string, index: number, total: number) => void;
       onSourceLlm?: (sourcePath: string, index: number, total: number) => void;
-      onSourceUsage?: (sourcePath: string, index: number, total: number, usage: TokenUsage) => void;
+      onSourceUsage?: (
+        sourcePath: string,
+        index: number,
+        total: number,
+        usage: TokenUsage,
+      ) => void;
     },
   ): Promise<IngestResult[]> {
     const runStartedAt = Date.now();
@@ -202,7 +207,9 @@ export class IngestService {
           summary: plan.summary,
         });
 
-        const normalizedOperations = await this.workspace.normalizeWikiOperations(plan.operations);
+        const normalizedOperations = await this.workspace.normalizeWikiOperations(
+          plan.operations,
+        );
         const rewrittenPaths = normalizedOperations
           .map((operation, index) => ({
             from: plan.operations[index]?.path,
@@ -305,7 +312,7 @@ export class IngestService {
 
     const successfulResults = results.filter((result) => !result.failed);
     const failedResults = results.filter((result) => result.failed);
-    const shouldRefresh = options?.refresh === true;
+    const shouldRefresh = options?.refresh === true || this.config.build.refreshOnIngest;
     if (!options?.dryRun && successfulResults.length > 0 && shouldRefresh) {
       const refreshStartedAt = Date.now();
       try {
@@ -314,7 +321,8 @@ export class IngestService {
           durationMs: Date.now() - refreshStartedAt,
           changed: refreshResults.filter((result) => result.changed).length,
           skipped: refreshResults.filter((result) => result.skipped).length,
-          unchanged: refreshResults.filter((result) => !result.changed && !result.skipped).length,
+          unchanged: refreshResults.filter((result) => !result.changed && !result.skipped)
+            .length,
         });
         if (this.logger.debugEnabled) {
           await this.logger.debug('ingest:refresh-results', {

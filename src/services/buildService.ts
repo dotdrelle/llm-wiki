@@ -8,6 +8,7 @@ import { sanitizeFrontmatter } from '../utils/markdown.ts';
 import { hashText } from '../utils/hash.ts';
 import type {
   AppConfig,
+  BuildContext,
   BuildState,
   DeliverableBuildResult,
   SearchResult,
@@ -41,6 +42,7 @@ export class BuildService {
 
   private async renderSingleSlotText(
     template: TemplateDocument,
+    buildContext: BuildContext,
     slot: {
       id: string;
       instruction: string;
@@ -54,6 +56,7 @@ export class BuildService {
     const prompt = buildSingleSlotDeliverablePrompt({
       template,
       slot,
+      buildContext: buildContext.content,
       maxChunkChars: this.config.retrieval.maxChunkChars,
     });
     return this.llm.completeText({
@@ -66,6 +69,7 @@ export class BuildService {
 
   private async renderTemplate(
     template: TemplateDocument,
+    buildContext: BuildContext,
     onBatch?: (batchIndex: number, topContextPages: string[]) => void,
     onBatchLlm?: (batchIndex: number, topContextPages: string[]) => void,
   ): Promise<string> {
@@ -96,7 +100,9 @@ export class BuildService {
     for (let batchIndex = 0; batchIndex < batchCount; batchIndex++) {
       const batch = slots.slice(batchIndex * batchSize, (batchIndex + 1) * batchSize);
       const topContextPages = [
-        ...new Set(batch.flatMap((s) => s.context.slice(0, 2).map((r) => r.page.relativePath))),
+        ...new Set(
+          batch.flatMap((s) => s.context.slice(0, 2).map((r) => r.page.relativePath)),
+        ),
       ].slice(0, 3);
       onBatch?.(batchIndex, topContextPages);
       onBatchLlm?.(batchIndex, topContextPages);
@@ -121,6 +127,7 @@ export class BuildService {
               id: batch[0].id,
               content: await this.renderSingleSlotText(
                 template,
+                buildContext,
                 batch[0],
                 traceData,
                 'deliverable_render_text',
@@ -132,6 +139,7 @@ export class BuildService {
         const prompt = buildDeliverablePrompt({
           template,
           slots: batch,
+          buildContext: buildContext.content,
           maxChunkChars: this.config.retrieval.maxChunkChars,
         });
         try {
@@ -159,6 +167,7 @@ export class BuildService {
 
           const content = await this.renderSingleSlotText(
             template,
+            buildContext,
             batch[0],
             traceData,
             'deliverable_render_text_fallback',
@@ -201,12 +210,23 @@ export class BuildService {
     templates?: string[];
     force?: boolean;
     changedOnly?: boolean;
-    onProgress?: (template: string, batch: { index: number; total: number }, topContextPages: string[]) => void;
-    onBatchLlm?: (template: string, batch: { index: number; total: number }, topContextPages: string[]) => void;
+    onProgress?: (
+      template: string,
+      batch: { index: number; total: number },
+      topContextPages: string[],
+    ) => void;
+    onBatchLlm?: (
+      template: string,
+      batch: { index: number; total: number },
+      topContextPages: string[],
+    ) => void;
     onPageLoad?: (relativePath: string, index: number, total: number) => void;
   }): Promise<DeliverableBuildResult[]> {
     await this.workspace.ensureInitialized();
-    const templatePaths = await this.workspace.resolveTemplateInputs(options?.templates ?? []);
+    const templatePaths = await this.workspace.resolveTemplateInputs(
+      options?.templates ?? [],
+    );
+    const buildContext = await this.workspace.readBuildContext();
     const wikiPages = await this.retrieval.warmCache(options?.onPageLoad);
     const wikiHash = await this.workspace.computeWikiHash(wikiPages);
     const previousState = await this.workspace.readBuildState();
@@ -216,6 +236,8 @@ export class BuildService {
     if (this.logger) {
       await this.logger.info('build:run-start', {
         templateCount: templatePaths.length,
+        buildContextFiles: buildContext.fileCount,
+        buildContextTruncated: buildContext.truncated,
         force: Boolean(options?.force),
         changedOnly: Boolean(options?.changedOnly),
       });
@@ -230,6 +252,7 @@ export class BuildService {
         prior &&
         prior.templateHash === templateHash &&
         prior.wikiHash === wikiHash &&
+        prior.buildContextHash === buildContext.hash &&
         !options?.force;
 
       if (this.logger) {
@@ -258,24 +281,42 @@ export class BuildService {
         continue;
       }
 
-      const batchCount = Math.ceil(template.instructions.length / this.config.build.slotBatchSize) || 1;
-      options?.onProgress?.(template.relativePath, { index: results.length, total: templatePaths.length }, []);
+      const batchCount =
+        Math.ceil(template.instructions.length / this.config.build.slotBatchSize) || 1;
+      options?.onProgress?.(
+        template.relativePath,
+        { index: results.length, total: templatePaths.length },
+        [],
+      );
 
       try {
         const rendered = await this.renderTemplate(
           template,
+          buildContext,
           (batchIndex, topContextPages) => {
-            options?.onProgress?.(template.relativePath, { index: batchIndex, total: batchCount }, topContextPages);
+            options?.onProgress?.(
+              template.relativePath,
+              { index: batchIndex, total: batchCount },
+              topContextPages,
+            );
           },
           (batchIndex, topContextPages) => {
-            options?.onBatchLlm?.(template.relativePath, { index: batchIndex, total: batchCount }, topContextPages);
+            options?.onBatchLlm?.(
+              template.relativePath,
+              { index: batchIndex, total: batchCount },
+              topContextPages,
+            );
           },
         );
-        const changed = await this.workspace.writeDeliverable(template.outputAbsolutePath, rendered);
+        const changed = await this.workspace.writeDeliverable(
+          template.outputAbsolutePath,
+          rendered,
+        );
 
         nextState.deliverables[template.relativePath] = {
           templateHash,
           wikiHash,
+          buildContextHash: buildContext.hash,
           outputHash: hashText(rendered),
           outputRelativePath: template.outputRelativePath,
         };

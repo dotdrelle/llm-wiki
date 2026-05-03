@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_OLLAMA_BASE_URL, DEFAULT_OPENAI_BASE_URL } from './defaults.ts';
+import {
+  DEFAULT_ANTHROPIC_BASE_URL,
+  DEFAULT_OLLAMA_BASE_URL,
+  DEFAULT_OPENAI_BASE_URL,
+} from './defaults.ts';
 import type { AppConfig } from '../types.ts';
 
 function normalizeOperationType(value: unknown): unknown {
@@ -17,7 +21,7 @@ function normalizeOperationType(value: unknown): unknown {
     normalized.includes('add') ||
     normalized.includes('insert')
   ) {
-      return 'create';
+    return 'create';
   }
 
   if (
@@ -40,7 +44,7 @@ function normalizeOperationType(value: unknown): unknown {
     normalized.includes('upsert') ||
     normalized.includes('append')
   ) {
-      return 'update';
+    return 'update';
   }
 
   if (
@@ -52,7 +56,7 @@ function normalizeOperationType(value: unknown): unknown {
     normalized.includes('remove') ||
     normalized.includes('drop')
   ) {
-      return 'delete';
+    return 'delete';
   }
 
   return normalized;
@@ -79,7 +83,11 @@ function normalizeWikiOperation(value: unknown): unknown {
     candidate.markdown ??
     candidate.value;
   const rawType =
-    candidate.type ?? candidate.action ?? candidate.operation ?? candidate.op ?? candidate.kind;
+    candidate.type ??
+    candidate.action ??
+    candidate.operation ??
+    candidate.op ??
+    candidate.kind;
   const type =
     rawType == null || (typeof rawType === 'string' && rawType.trim() === '')
       ? typeof content === 'string'
@@ -160,9 +168,7 @@ function normalizeMarkdownContent(content: unknown): unknown {
     content.every((item) => item && typeof item === 'object' && !Array.isArray(item))
   ) {
     const rows = content as Array<Record<string, unknown>>;
-    const headers = [
-      ...new Set(rows.flatMap((row) => Object.keys(row))),
-    ];
+    const headers = [...new Set(rows.flatMap((row) => Object.keys(row)))];
 
     if (headers.length === 0) {
       return '';
@@ -172,7 +178,8 @@ function normalizeMarkdownContent(content: unknown): unknown {
       `| ${headers.map(escapeMarkdownTableCell).join(' | ')} |`,
       `| ${headers.map(() => '---').join(' | ')} |`,
       ...rows.map(
-        (row) => `| ${headers.map((header) => escapeMarkdownTableCell(row[header])).join(' | ')} |`,
+        (row) =>
+          `| ${headers.map((header) => escapeMarkdownTableCell(row[header])).join(' | ')} |`,
       ),
     ].join('\n');
   }
@@ -187,12 +194,11 @@ function normalizeDeliverableResponse(value: unknown): unknown {
 
   const candidate = value as Record<string, unknown>;
   const rawReplacements =
-    candidate.replacements ??
-    candidate.items ??
-    candidate.slots ??
-    candidate.answers;
+    candidate.replacements ?? candidate.items ?? candidate.slots ?? candidate.answers;
   const replacements =
-    rawReplacements && typeof rawReplacements === 'object' && !Array.isArray(rawReplacements)
+    rawReplacements &&
+    typeof rawReplacements === 'object' &&
+    !Array.isArray(rawReplacements)
       ? Object.entries(rawReplacements).map(([id, content]) => ({ id, content }))
       : rawReplacements;
 
@@ -206,7 +212,9 @@ function normalizeDeliverableResponse(value: unknown): unknown {
 
 const llmSchema = z
   .object({
-    provider: z.enum(['openai', 'ollama', 'openai-compatible', 'anthropic']).default('openai'),
+    provider: z
+      .enum(['openai', 'ollama', 'openai-compatible', 'anthropic'])
+      .default('openai'),
     model: z.string().min(1).default('gpt-5-mini'),
     apiKey: z.string().min(1).optional(),
     baseUrl: z.string().url().optional(),
@@ -225,10 +233,14 @@ const llmSchema = z
 
 const buildSchema = z
   .object({
+    refreshOnIngest: z.boolean().default(true),
     slotBatchSize: z.number().int().min(1).max(50).default(3),
+    maxBuildContextChars: z.number().int().min(1000).default(12000),
   })
   .default({
+    refreshOnIngest: true,
     slotBatchSize: 3,
+    maxBuildContextChars: 12000,
   });
 
 const retrievalSchema = z
@@ -285,7 +297,8 @@ export const ingestPlanSchema = z.preprocess(
         candidate.log_message ??
         candidate.message ??
         candidate.description,
-      operations: candidate.operations ?? candidate.changes ?? candidate.patches ?? candidate.files,
+      operations:
+        candidate.operations ?? candidate.changes ?? candidate.patches ?? candidate.files,
     };
   },
   z.object({
@@ -339,21 +352,28 @@ export const buildStateSchema = z.object({
     z.object({
       templateHash: z.string().min(1),
       wikiHash: z.string().min(1),
+      buildContextHash: z.string().default(''),
       outputHash: z.string().min(1),
       outputRelativePath: z.string().min(1),
     }),
   ),
 });
 
-export function resolveConfig(input: unknown, wikiRoot: string, configPath?: string): AppConfig {
+export function resolveConfig(
+  input: unknown,
+  wikiRoot: string,
+  configPath?: string,
+): AppConfig {
   const parsed = rawConfigSchema.parse(input ?? {});
   const provider = parsed.llm?.provider ?? 'openai';
 
   const baseUrl =
     parsed.llm?.baseUrl ??
-    (provider === 'ollama' ? DEFAULT_OLLAMA_BASE_URL :
-     provider === 'anthropic' ? DEFAULT_ANTHROPIC_BASE_URL :
-     DEFAULT_OPENAI_BASE_URL);
+    (provider === 'ollama'
+      ? DEFAULT_OLLAMA_BASE_URL
+      : provider === 'anthropic'
+        ? DEFAULT_ANTHROPIC_BASE_URL
+        : DEFAULT_OPENAI_BASE_URL);
 
   if (provider === 'openai-compatible' && !parsed.llm?.baseUrl) {
     throw new Error('Provider "openai-compatible" requires llm.baseUrl in .wikirc.yaml.');
@@ -380,7 +400,9 @@ export function resolveConfig(input: unknown, wikiRoot: string, configPath?: str
       kvCacheType: parsed.llm?.kvCacheType,
     },
     build: {
+      refreshOnIngest: parsed.build?.refreshOnIngest ?? true,
       slotBatchSize: parsed.build?.slotBatchSize ?? 3,
+      maxBuildContextChars: parsed.build?.maxBuildContextChars ?? 12000,
     },
     retrieval: {
       maxContextFiles: parsed.retrieval?.maxContextFiles ?? 5,

@@ -4,6 +4,7 @@ import { formatContextResult } from './formatContext.ts';
 export function buildDeliverablePrompt(args: {
   template: TemplateDocument;
   maxChunkChars: number;
+  buildContext?: string;
   slots: Array<{
     id: string;
     instruction: string;
@@ -17,7 +18,9 @@ export function buildDeliverablePrompt(args: {
       const context =
         slot.context.length === 0
           ? '(No relevant wiki pages found.)'
-          : slot.context.map((r) => formatContextResult(r, args.maxChunkChars)).join('\n\n');
+          : slot.context
+              .map((r) => formatContextResult(r, args.maxChunkChars))
+              .join('\n\n');
 
       return [
         `## ${slot.id}`,
@@ -42,10 +45,15 @@ export function buildDeliverablePrompt(args: {
       'When context is insufficient, write a short note: "> Évidence manquante dans le wiki — à compléter."',
       'Do not repeat headings already present in the template.',
       'Cite factual claims with [src: path/to/wiki/page.md].',
+      args.buildContext
+        ? `Common generation rules from build-context/:\n${args.buildContext}`
+        : '',
       `You MUST return ONLY a JSON object with this exact structure — nothing else:`,
       `{ "replacements": [ { "id": "<slot-id>", "content": "<markdown text>" } ] }`,
       `The replacements array must contain exactly one entry per slot id: ${ids}.`,
-    ].join('\n'),
+    ]
+      .filter(Boolean)
+      .join('\n'),
     user: [
       '# Slots to fill',
       slotsText,
@@ -63,6 +71,7 @@ export function buildDeliverablePrompt(args: {
 export function buildSingleSlotDeliverablePrompt(args: {
   template: TemplateDocument;
   maxChunkChars: number;
+  buildContext?: string;
   slot: {
     id: string;
     instruction: string;
@@ -74,7 +83,9 @@ export function buildSingleSlotDeliverablePrompt(args: {
   const context =
     args.slot.context.length === 0
       ? '(No relevant wiki pages found.)'
-      : args.slot.context.map((r) => formatContextResult(r, args.maxChunkChars)).join('\n\n');
+      : args.slot.context
+          .map((r) => formatContextResult(r, args.maxChunkChars))
+          .join('\n\n');
 
   return {
     system: [
@@ -84,7 +95,12 @@ export function buildSingleSlotDeliverablePrompt(args: {
       'When context is insufficient, write a short note: "> Évidence manquante dans le wiki — à compléter."',
       'Do not repeat headings already present in the template.',
       'Cite factual claims with [src: path/to/wiki/page.md].',
-    ].join('\n'),
+      args.buildContext
+        ? `Common generation rules from build-context/:\n${args.buildContext}`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('\n'),
     user: [
       `# Slot ${args.slot.id}`,
       `Instruction: ${args.slot.instruction}`,

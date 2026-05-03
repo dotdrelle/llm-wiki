@@ -20,6 +20,20 @@ describe('config resolution', () => {
     expect(config.llm.baseUrl).toBe('http://127.0.0.1:11434/v1');
     expect(config.llm.apiKey).toBe('ollama');
     expect(config.llm.timeoutMs).toBe(600000);
+    expect(config.build.refreshOnIngest).toBe(true);
+  });
+
+  it('parses build refreshOnIngest', () => {
+    const config = resolveConfig(
+      {
+        build: {
+          refreshOnIngest: false,
+        },
+      },
+      '/tmp/wiki',
+    );
+
+    expect(config.build.refreshOnIngest).toBe(false);
   });
 
   it('requires baseUrl for openai-compatible provider', () => {

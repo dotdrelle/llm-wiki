@@ -17,13 +17,15 @@ function createConfig(root: string): AppConfig {
       timeoutMs: 600000,
     },
     build: {
-        slotBatchSize: 5,
+      refreshOnIngest: true,
+      slotBatchSize: 5,
+      maxBuildContextChars: 12000,
     },
     retrieval: {
       maxContextFiles: 8,
-        maxChunksPerPage: 2,
-        maxChunkChars: 3000,
-        maxSourceChars: 8000,
+      maxChunksPerPage: 2,
+      maxChunkChars: 3000,
+      maxSourceChars: 8000,
     },
   };
 }
@@ -74,5 +76,59 @@ describe('workspace safety', () => {
         },
       ]),
     ).rejects.toThrow(/escapes workspace root/i);
+  });
+
+  it('limits build-context content with maxBuildContextChars', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-'));
+    await mkdir(path.join(root, 'build-context'), { recursive: true });
+    await writeFile(
+      path.join(root, 'build-context', 'rules.md'),
+      `# Rules\n\n${'A'.repeat(2000)}`,
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    config.build.maxBuildContextChars = 1000;
+    const workspace = new WorkspaceService(config);
+
+    const buildContext = await workspace.readBuildContext();
+
+    expect(buildContext.truncated).toBe(true);
+    expect(buildContext.fileCount).toBe(1);
+    expect(buildContext.content.length).toBeLessThanOrEqual(1000);
+    expect(buildContext.rawTotalChars).toBeGreaterThan(1000);
+    expect(buildContext.content).toContain('## build-context/rules.md');
+  });
+
+  it('detects unchanged ingested sources by matching path, byte size, and content', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-'));
+    await mkdir(path.join(root, 'raw', 'untracked'), { recursive: true });
+    await mkdir(path.join(root, 'raw', 'ingested'), { recursive: true });
+    const sourcePath = path.join(root, 'raw', 'untracked', 'note.md');
+    await writeFile(sourcePath, '# Note\n\nSame content.\n', 'utf8');
+    await writeFile(
+      path.join(root, 'raw', 'ingested', 'note.md'),
+      '# Note\n\nSame content.\n',
+      'utf8',
+    );
+    const workspace = new WorkspaceService(createConfig(root));
+
+    const source = await workspace.readSourceDocument(sourcePath);
+
+    await expect(workspace.isSourceUnchangedSinceIngest(source)).resolves.toBe(true);
+  });
+
+  it('does not treat an archived source with a different byte size as unchanged', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-'));
+    await mkdir(path.join(root, 'raw', 'untracked'), { recursive: true });
+    await mkdir(path.join(root, 'raw', 'ingested'), { recursive: true });
+    const sourcePath = path.join(root, 'raw', 'untracked', 'note.md');
+    await writeFile(sourcePath, '# Note\n\nSame content.\n', 'utf8');
+    await writeFile(path.join(root, 'raw', 'ingested', 'note.md'), '# Note\n\nDifferent.\n', 'utf8');
+    const workspace = new WorkspaceService(createConfig(root));
+
+    const source = await workspace.readSourceDocument(sourcePath);
+
+    await expect(workspace.isSourceUnchangedSinceIngest(source)).resolves.toBe(false);
   });
 });

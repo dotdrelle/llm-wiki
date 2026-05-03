@@ -25,13 +25,15 @@ function createConfig(): AppConfig {
       timeoutMs: 600000,
     },
     build: {
-        slotBatchSize: 5,
+      refreshOnIngest: false,
+      slotBatchSize: 5,
+      maxBuildContextChars: 12000,
     },
     retrieval: {
       maxContextFiles: 8,
-        maxChunksPerPage: 2,
-        maxChunkChars: 3000,
-        maxSourceChars: 8000,
+      maxChunksPerPage: 2,
+      maxChunkChars: 3000,
+      maxSourceChars: 8000,
     },
   };
 }
@@ -48,7 +50,9 @@ class FakeWorkspaceService {
     return this.sourcePaths;
   }
 
-  async readSourceDocument(sourcePath = '/tmp/wiki/raw/untracked/note.md'): Promise<SourceDocument> {
+  async readSourceDocument(
+    sourcePath = '/tmp/wiki/raw/untracked/note.md',
+  ): Promise<SourceDocument> {
     const fileName = sourcePath.split('/').at(-1) ?? 'note.md';
     const slug = fileName.replace(/\.md$/, '');
     return {
@@ -141,13 +145,26 @@ class FailingRefreshService {
   }
 }
 
+class CountingRefreshService {
+  calls = 0;
+
+  async refresh() {
+    this.calls += 1;
+    return [];
+  }
+}
+
 class MemoryTraceLogger implements TraceLogger {
   readonly runId = 'test-run';
   readonly filePath = '/tmp/wiki/.wiki/logs/test.log';
   readonly displayPath = '.wiki/logs/test.log';
   readonly debugEnabled = false;
   readonly verboseEnabled = false;
-  readonly entries: Array<{ level: string; event: string; data?: Record<string, unknown> }> = [];
+  readonly entries: Array<{
+    level: string;
+    event: string;
+    data?: Record<string, unknown>;
+  }> = [];
 
   async info(event: string, data?: Record<string, unknown>): Promise<void> {
     this.entries.push({ level: 'info', event, data });
@@ -169,6 +186,26 @@ class MemoryTraceLogger implements TraceLogger {
 }
 
 describe('ingest service', () => {
+  it('runs automatic refresh when build.refreshOnIngest is enabled', async () => {
+    const workspace = new FakeWorkspaceService();
+    const logger = new MemoryTraceLogger();
+    const refresh = new CountingRefreshService();
+    const config = createConfig();
+    config.build.refreshOnIngest = true;
+    const service = new IngestService(
+      config,
+      workspace as unknown as WorkspaceService,
+      new FakeLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      refresh as unknown as RefreshService,
+      logger,
+    );
+
+    await service.ingest([], {});
+
+    expect(refresh.calls).toBe(1);
+  });
+
   it('keeps ingest successful when automatic refresh fails', async () => {
     const workspace = new FakeWorkspaceService();
     const logger = new MemoryTraceLogger();
@@ -186,7 +223,9 @@ describe('ingest service', () => {
     expect(results).toHaveLength(1);
     expect(workspace.appliedOperations).toHaveLength(1);
     expect(workspace.archivedSources).toEqual(['raw/untracked/note.md']);
-    expect(logger.entries.some((entry) => entry.event === 'ingest:refresh-failed')).toBe(true);
+    expect(logger.entries.some((entry) => entry.event === 'ingest:refresh-failed')).toBe(
+      true,
+    );
     expect(logger.entries.some((entry) => entry.event === 'ingest:run-done')).toBe(true);
   });
 
@@ -218,8 +257,12 @@ describe('ingest service', () => {
     expect(results[1].failed).toBeUndefined();
     expect(workspace.appliedOperations).toHaveLength(1);
     expect(workspace.archivedSources).toEqual(['raw/untracked/second.md']);
-    expect(logger.entries.some((entry) => entry.event === 'ingest:source-failed')).toBe(true);
-    expect(logger.entries.find((entry) => entry.event === 'ingest:run-done')?.data).toMatchObject({
+    expect(logger.entries.some((entry) => entry.event === 'ingest:source-failed')).toBe(
+      true,
+    );
+    expect(
+      logger.entries.find((entry) => entry.event === 'ingest:run-done')?.data,
+    ).toMatchObject({
       failed: 1,
       status: 'partial_failure',
     });

@@ -14,13 +14,15 @@ function createConfig(): AppConfig {
       timeoutMs: 600000,
     },
     build: {
-        slotBatchSize: 5,
+      refreshOnIngest: true,
+      slotBatchSize: 5,
+      maxBuildContextChars: 12000,
     },
     retrieval: {
       maxContextFiles: 8,
-        maxChunksPerPage: 2,
-        maxChunkChars: 3000,
-        maxSourceChars: 8000,
+      maxChunksPerPage: 2,
+      maxChunkChars: 3000,
+      maxSourceChars: 8000,
     },
   };
 }
@@ -49,7 +51,9 @@ describe('llm service', () => {
         client: {
           chat: {
             completions: {
-              create: (params: Record<string, unknown>) => Promise<AsyncIterable<unknown>>;
+              create: (
+                params: Record<string, unknown>,
+              ) => Promise<AsyncIterable<unknown>>;
             };
           };
         };
@@ -89,7 +93,9 @@ describe('llm service', () => {
         client: {
           chat: {
             completions: {
-              create: (params: Record<string, unknown>) => Promise<AsyncIterable<unknown>>;
+              create: (
+                params: Record<string, unknown>,
+              ) => Promise<AsyncIterable<unknown>>;
             };
           };
         };

@@ -14,7 +14,9 @@ export const defaultConfig: AppConfig = {
     timeoutMs: 600000,
   },
   build: {
+    refreshOnIngest: true,
     slotBatchSize: 3,
+    maxBuildContextChars: 12000,
   },
   retrieval: {
     maxContextFiles: 5,

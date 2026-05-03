@@ -20,13 +20,15 @@ function createConfig(root: string): AppConfig {
       timeoutMs: 600000,
     },
     build: {
-        slotBatchSize: 5,
+      refreshOnIngest: true,
+      slotBatchSize: 5,
+      maxBuildContextChars: 12000,
     },
     retrieval: {
       maxContextFiles: 8,
-        maxChunksPerPage: 2,
-        maxChunkChars: 3000,
-        maxSourceChars: 8000,
+      maxChunksPerPage: 2,
+      maxChunkChars: 3000,
+      maxSourceChars: 8000,
     },
   };
 }
@@ -34,9 +36,11 @@ function createConfig(root: string): AppConfig {
 class FakeLLMService {
   completeJsonCalls = 0;
   completeTextCalls = 0;
+  lastJsonRequest?: { system: string; user: string };
 
-  async completeJson() {
+  async completeJson(request: { system: string; user: string }) {
     this.completeJsonCalls += 1;
+    this.lastJsonRequest = request;
     return {
       replacements: [
         {
@@ -81,9 +85,16 @@ describe('build service', () => {
     );
     await writeFile(
       path.join(root, 'templates', 'brief.md'),
-      ['---', 'title: Brief', 'output: brief.md', '---', '', '# Brief', '', '[[INSTRUCTION: Summarize.]]'].join(
-        '\n',
-      ),
+      [
+        '---',
+        'title: Brief',
+        'output: brief.md',
+        '---',
+        '',
+        '# Brief',
+        '',
+        '[[INSTRUCTION: Summarize.]]',
+      ].join('\n'),
       'utf8',
     );
 
@@ -100,7 +111,9 @@ describe('build service', () => {
     expect(results).toHaveLength(1);
     expect(results[0].output).toBe('deliverables/brief.md');
 
-    const output = await workspace.readTextFile(path.join(root, 'deliverables', 'brief.md'));
+    const output = await workspace.readTextFile(
+      path.join(root, 'deliverables', 'brief.md'),
+    );
     expect(output).toContain('Documented summary.');
 
     const state = await workspace.readBuildState();
@@ -136,7 +149,90 @@ describe('build service', () => {
 
     expect(llm.completeJsonCalls).toBe(0);
     expect(llm.completeTextCalls).toBe(1);
-    const output = await workspace.readTextFile(path.join(root, 'deliverables', 'brief.md'));
+    const output = await workspace.readTextFile(
+      path.join(root, 'deliverables', 'brief.md'),
+    );
     expect(output).toContain('Text fallback summary.');
+  });
+
+  it('adds build-context rules to build prompts', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'templates'), { recursive: true });
+    await mkdir(path.join(root, 'deliverables'), { recursive: true });
+    await mkdir(path.join(root, 'build-context'), { recursive: true });
+
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n', 'utf8');
+    await writeFile(
+      path.join(root, 'build-context', 'citation.md'),
+      '# Citation\n\nCite every assertion with a source marker.',
+      'utf8',
+    );
+    await writeFile(
+      path.join(root, 'templates', 'brief.md'),
+      ['# Brief', '', '[[INSTRUCTION: Summarize.]]'].join('\n'),
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    const workspace = new WorkspaceService(config);
+    const llm = new FakeLLMService();
+    const service = new BuildService(
+      config,
+      workspace,
+      llm as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+    );
+
+    await service.build();
+
+    expect(llm.lastJsonRequest?.system).toContain(
+      'Common generation rules from build-context/',
+    );
+    expect(llm.lastJsonRequest?.system).toContain('build-context/citation.md');
+    expect(llm.lastJsonRequest?.system).toContain(
+      'Cite every assertion with a source marker.',
+    );
+  });
+
+  it('rebuilds changed-only deliverables when build-context changes', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'templates'), { recursive: true });
+    await mkdir(path.join(root, 'deliverables'), { recursive: true });
+    await mkdir(path.join(root, 'build-context'), { recursive: true });
+
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n', 'utf8');
+    await writeFile(
+      path.join(root, 'build-context', 'rules.md'),
+      'Initial rules.',
+      'utf8',
+    );
+    await writeFile(
+      path.join(root, 'templates', 'brief.md'),
+      ['# Brief', '', '[[INSTRUCTION: Summarize.]]'].join('\n'),
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    const workspace = new WorkspaceService(config);
+    const service = new BuildService(
+      config,
+      workspace,
+      new FakeLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+    );
+
+    await service.build();
+    const skippedResults = await service.build({ changedOnly: true });
+    expect(skippedResults[0].skipped).toBe(true);
+
+    await writeFile(
+      path.join(root, 'build-context', 'rules.md'),
+      'Updated rules.',
+      'utf8',
+    );
+    const rebuiltResults = await service.build({ changedOnly: true });
+    expect(rebuiltResults[0].skipped).toBe(false);
   });
 });

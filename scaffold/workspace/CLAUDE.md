@@ -21,12 +21,14 @@ This workspace follows a local-first LLM Wiki pattern.
 - `wiki/concepts/`: durable reusable knowledge extracted from sources.
 - `wiki/sources/`: source notes that summarize individual ingested documents.
 - `templates/`: markdown deliverable templates with `[[INSTRUCTION: ...]]` placeholders.
+- `build-context/`: shared generation rules injected only during `wiki build` and `wiki refresh`.
 - `deliverables/`: generated markdown outputs; these should stay reproducible.
 
 ## Content Rules
 
 - Generated content must never invent facts that are not documented in the wiki.
 - Prefer citing source-backed claims with `[src: ...]` when producing deliverables.
+- Keep shared deliverable rules in `build-context/`; keep template-specific structure in `templates/`.
 - Keep manual edits in `wiki/` factual and durable. Put temporary/new source material in `raw/untracked/` instead.
 - Put reusable knowledge in `wiki/concepts/`; keep `wiki/sources/` focused on what each source document says.
 - Deliverables are generated outputs. Prefer changing source wiki pages or templates, then rerun `wiki refresh`.

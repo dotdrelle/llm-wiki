@@ -17,4 +17,5 @@ Source notes summarize individual ingested documents and cite their archived raw
 ## Deliverables
 
 - Templates live in `templates/`.
+- Shared build-only generation rules live in `build-context/`.
 - Generated documents live in `deliverables/`.
