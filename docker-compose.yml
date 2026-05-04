@@ -47,6 +47,26 @@ services:
     extra_hosts:
       - 'host.docker.internal:host-gateway'
 
+  # Serveur MCP stdio pour connecter un assistant IA (Claude Desktop / Claude Code).
+  # Ce service n'est pas destiné à être lancé directement via docker compose:
+  # le transport stdio exige que le client MCP spawn le processus lui-même.
+  # Utiliser le binaire local `wiki mcp` depuis le workspace.
+  # Voir la section "MCP integration" du README pour la configuration.
+  mcp:
+    build:
+      context: .
+      platforms:
+        - linux/amd64
+        - linux/arm64
+    command: mcp
+    profiles: ['mcp']
+    volumes:
+      - ${WIKI_WORKSPACE:-.}:/workspace
+    environment:
+      - WIKI_MCP_KEY
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+
   # Ollama conteneurisé — Linux + GPU NVIDIA uniquement.
   # Sur macOS, lancer Ollama nativement et pointer baseUrl sur host.docker.internal.
   ollama:
