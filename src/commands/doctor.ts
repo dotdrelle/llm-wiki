@@ -775,8 +775,9 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
   const SAFE_FILL = 0.9;
   const totalChars = numCtxTokens * CHARS_PER_TOKEN;
   const available = Math.round(totalChars * (1 - OUTPUT_RESERVE));
-  const overhead =
-    indexContent.length + buildContext.content.length + SYSTEM_PROMPT_OVERHEAD;
+  const baseOverhead = indexContent.length + SYSTEM_PROMPT_OVERHEAD;
+  const buildContextChars = buildContext.content.length;
+  const overhead = baseOverhead + buildContextChars;
   const slotContent = config.retrieval.maxContextFiles * config.retrieval.maxChunkChars;
   const buildBudget = available - overhead;
 
@@ -792,6 +793,10 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
   row(
     'fixed overhead:',
     `~${Math.round(overhead / 1000)}k chars (index + build-context + system)`,
+  );
+  row(
+    'overhead detail:',
+    `index ${indexContent.length} + build-context ${buildContextChars} + system ~${SYSTEM_PROMPT_OVERHEAD} chars`,
   );
   if (buildContext.truncated) {
     warn(
@@ -843,6 +848,8 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
   // ── recommendations ──────────────────────────────────────────────────────────
   console.log('\n── Recommendations ──────────────────────────────────────────');
   let hasWarnings = false;
+  const canRecommendLargerPrompts =
+    config.llm.provider === 'ollama' || config.llm.provider === 'openai-compatible';
 
   if (omitsTemperature(config)) {
     ok(
@@ -861,12 +868,20 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
   const p95chunk = pct(chunkSizes, 95);
   const recommendedChunkChars =
     chunkSizes.length > 0 ? Math.max(Math.min(p95chunk + 200, 6000), 800) : 3000;
-  if (Math.abs(recommendedChunkChars - config.retrieval.maxChunkChars) > 500) {
+  if (
+    recommendedChunkChars < config.retrieval.maxChunkChars - 500 ||
+    (canRecommendLargerPrompts &&
+      recommendedChunkChars > config.retrieval.maxChunkChars + 500)
+  ) {
     warn(
       `maxChunkChars ${config.retrieval.maxChunkChars} → ${recommendedChunkChars} (p95 chunk: ${p95chunk} chars)`,
     );
     (suggestions.retrieval ??= {}).maxChunkChars = recommendedChunkChars;
     hasWarnings = true;
+  } else if (recommendedChunkChars > config.retrieval.maxChunkChars + 500) {
+    ok(
+      `maxChunkChars ${config.retrieval.maxChunkChars} (p95 chunk ${p95chunk} chars; keeping remote-provider prompt size conservative)`,
+    );
   } else {
     ok(`maxChunkChars ${config.retrieval.maxChunkChars} (p95 chunk: ${p95chunk} chars)`);
   }
@@ -915,7 +930,10 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
       1,
     );
     hasWarnings = true;
-  } else if (recommendedMaxContextFiles > config.retrieval.maxContextFiles + 1) {
+  } else if (
+    canRecommendLargerPrompts &&
+    recommendedMaxContextFiles > config.retrieval.maxContextFiles + 1
+  ) {
     warn(
       `maxContextFiles ${config.retrieval.maxContextFiles} → ${recommendedMaxContextFiles} (budget allows, avg chunk ${effectiveChunkSize} chars)`,
     );
@@ -942,7 +960,11 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
     );
     (suggestions.build ??= {}).slotBatchSize = safeBatchSize;
     hasWarnings = true;
-  } else if (optimalSlotBatchSize > config.build.slotBatchSize + 1 && fillRatio < 0.7) {
+  } else if (
+    canRecommendLargerPrompts &&
+    optimalSlotBatchSize > config.build.slotBatchSize + 1 &&
+    fillRatio < 0.7
+  ) {
     const ollamaNoFlash =
       config.llm.provider === 'ollama' &&
       resolvedOllamaEnv.env.OLLAMA_FLASH_ATTENTION !== '1';
@@ -965,29 +987,55 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
   }
 
   const BUILD_CONTEXT_FRACTION = 0.15;
-  const recommendedBuildContextChars = Math.max(
-    4000,
-    Math.round((available * BUILD_CONTEXT_FRACTION) / 500) * 500,
+  const currentBatchContent = config.build.slotBatchSize * slotContent;
+  const maxBuildContextForCurrentConfig = Math.max(
+    0,
+    Math.floor(available - baseOverhead - currentBatchContent / SAFE_FILL),
+  );
+  const fractionalBuildContextChars =
+    Math.round((available * BUILD_CONTEXT_FRACTION) / 500) * 500;
+  const recommendedBuildContextChars = Math.floor(
+    Math.max(
+      0,
+      Math.min(
+        maxBuildContextForCurrentConfig >= 4000 ? fractionalBuildContextChars : 0,
+        maxBuildContextForCurrentConfig,
+      ),
+    ),
   );
   if (buildContext.truncated) {
-    if (recommendedBuildContextChars > config.build.maxBuildContextChars) {
+    if (
+      canRecommendLargerPrompts &&
+      recommendedBuildContextChars > config.build.maxBuildContextChars
+    ) {
       warn(
         `build.maxBuildContextChars ${config.build.maxBuildContextChars} → ${recommendedBuildContextChars}` +
           ` — ${buildContext.rawTotalChars} chars in build-context/ exceed the limit` +
-          ` (≈${BUILD_CONTEXT_FRACTION * 100}% of available context for numCtx=${numCtxTokens?.toLocaleString()})`,
+          ` (capped by current build/retrieval limits and ≈${BUILD_CONTEXT_FRACTION * 100}% of available context)`,
       );
       (suggestions.build ??= {}).maxBuildContextChars = recommendedBuildContextChars;
       hasWarnings = true;
     } else {
       warn(
         `build-context ${buildContext.rawTotalChars} chars exceeds maxBuildContextChars (${config.build.maxBuildContextChars})` +
-          ` — context budget allows at most ${recommendedBuildContextChars} chars; trim build-context/ files`,
+          (canRecommendLargerPrompts
+            ? ` — current build/retrieval limits leave at most ${recommendedBuildContextChars} safe chars for build-context/; trim files or reduce slot/context limits`
+            : ` — keeping remote-provider prompt size conservative; trim build-context/ files or raise maxBuildContextChars manually`),
       );
       hasWarnings = true;
     }
+  } else if (buildContextChars > maxBuildContextForCurrentConfig) {
+    warn(
+      `build-context uses ${buildContextChars} chars, but current build/retrieval limits leave at most ${maxBuildContextForCurrentConfig} safe chars` +
+        ` — reduce maxBuildContextChars, slotBatchSize, maxContextFiles, or maxChunkChars`,
+    );
+    if (maxBuildContextForCurrentConfig < config.build.maxBuildContextChars) {
+      (suggestions.build ??= {}).maxBuildContextChars = maxBuildContextForCurrentConfig;
+    }
+    hasWarnings = true;
   } else {
     ok(
-      `maxBuildContextChars ${config.build.maxBuildContextChars} (${buildContext.content.length} chars used)`,
+      `maxBuildContextChars ${config.build.maxBuildContextChars} (${buildContextChars} chars used, safe up to ${maxBuildContextForCurrentConfig})`,
     );
   }
 
@@ -1006,14 +1054,16 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
     }
 
     // Primary driver of per-call latency
-    const inputCharsPerBatch =
+    const retrievalCharsPerBatch =
       config.build.slotBatchSize *
       config.retrieval.maxContextFiles *
       config.retrieval.maxChunkChars;
+    const inputCharsPerBatch = retrievalCharsPerBatch + overhead;
     const inputTokensPerBatch = Math.round(inputCharsPerBatch / CHARS_PER_TOKEN);
     row(
       'Input context/batch:',
       `${config.build.slotBatchSize} slots × ${config.retrieval.maxContextFiles} files × ${config.retrieval.maxChunkChars} chars` +
+        ` + ~${Math.round(overhead / 1000)}k fixed` +
         ` ≈ ${Math.round(inputCharsPerBatch / 1000)}k chars (~${inputTokensPerBatch.toLocaleString()} tokens)`,
     );
 
@@ -1034,8 +1084,7 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
     }
 
     // Priority 2: numCtx vs actual prompt — oversized numCtx wastes KV cache, no quality loss
-    const overheadTokens = Math.round(overhead / CHARS_PER_TOKEN);
-    const totalInputTokens = inputTokensPerBatch + overheadTokens;
+    const totalInputTokens = inputTokensPerBatch;
     const ctxUtilization = effectiveNumCtx ? totalInputTokens / effectiveNumCtx : 1;
     if (effectiveNumCtx && ctxUtilization < 0.5 && effectiveNumCtx > 8192) {
       const suggestedCtx = Math.max(
@@ -1088,10 +1137,14 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
     // Priority 3: maxContextFiles — quality tradeoff, presented as option (not auto-suggested)
     const OLLAMA_FAST_TARGET_TOKENS = 4000;
     if (inputTokensPerBatch > OLLAMA_FAST_TARGET_TOKENS) {
+      const fastRetrievalBudgetChars = Math.max(
+        0,
+        OLLAMA_FAST_TARGET_TOKENS * CHARS_PER_TOKEN - overhead,
+      );
       const fastFiles = Math.max(
         1,
         Math.floor(
-          (OLLAMA_FAST_TARGET_TOKENS * CHARS_PER_TOKEN) /
+          fastRetrievalBudgetChars /
             (config.build.slotBatchSize * config.retrieval.maxChunkChars),
         ),
       );

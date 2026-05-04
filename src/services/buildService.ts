@@ -40,6 +40,13 @@ export class BuildService {
     this.logger = logger;
   }
 
+  private isContextLengthExceeded(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+    return /context_length_exceeded|exceed(?:s|ed) the configured limit|reduce the length/i.test(
+      error.message,
+    );
+  }
+
   private async renderSingleSlotText(
     template: TemplateDocument,
     buildContext: BuildContext,
@@ -112,77 +119,8 @@ export class BuildService {
         batchIndex,
         batchCount,
       };
-      let response;
-      if (this.config.llm.provider === 'openai-compatible' && batch.length === 1) {
-        if (this.logger) {
-          await this.logger.info('build:text-render', {
-            ...traceData,
-            slot: batch[0].id,
-            reason: 'openai-compatible-single-slot',
-          });
-        }
-        response = {
-          replacements: [
-            {
-              id: batch[0].id,
-              content: await this.renderSingleSlotText(
-                template,
-                buildContext,
-                batch[0],
-                traceData,
-                'deliverable_render_text',
-              ),
-            },
-          ],
-        };
-      } else {
-        const prompt = buildDeliverablePrompt({
-          template,
-          slots: batch,
-          buildContext: buildContext.content,
-          maxChunkChars: this.config.retrieval.maxChunkChars,
-        });
-        try {
-          response = await this.llm.completeJson(
-            {
-              ...prompt,
-              label: 'deliverable_render',
-              logger: this.logger,
-              traceData,
-            },
-            deliverableResponseSchema,
-          );
-        } catch (error) {
-          if (batch.length !== 1) {
-            throw error;
-          }
-
-          if (this.logger) {
-            await this.logger.warn('build:json-fallback', {
-              ...traceData,
-              slot: batch[0].id,
-              message: error instanceof Error ? error.message : String(error),
-            });
-          }
-
-          const content = await this.renderSingleSlotText(
-            template,
-            buildContext,
-            batch[0],
-            traceData,
-            'deliverable_render_text_fallback',
-          );
-          response = {
-            replacements: [
-              {
-                id: batch[0].id,
-                content,
-              },
-            ],
-          };
-        }
-      }
-      for (const item of response.replacements) {
+      const response = await this.renderBatch(template, buildContext, batch, traceData);
+      for (const item of response) {
         replacements.set(item.id, item.content.trim());
       }
     }
@@ -198,6 +136,111 @@ export class BuildService {
     return Object.keys(outputFrontmatter).length > 0
       ? matter.stringify(renderedBody.trim(), outputFrontmatter)
       : `${renderedBody.trim()}\n`;
+  }
+
+  private async renderBatch(
+    template: TemplateDocument,
+    buildContext: BuildContext,
+    batch: Array<{
+      id: string;
+      instruction: string;
+      headingPath: string[];
+      surroundingText: string;
+      context: SearchResult[];
+    }>,
+    traceData: Record<string, unknown>,
+  ): Promise<Array<{ id: string; content: string }>> {
+    if (this.config.llm.provider === 'openai-compatible' && batch.length === 1) {
+      if (this.logger) {
+        await this.logger.info('build:text-render', {
+          ...traceData,
+          slot: batch[0].id,
+          reason: 'openai-compatible-single-slot',
+        });
+      }
+      return [
+        {
+          id: batch[0].id,
+          content: await this.renderSingleSlotText(
+            template,
+            buildContext,
+            batch[0],
+            traceData,
+            'deliverable_render_text',
+          ),
+        },
+      ];
+    }
+
+    const prompt = buildDeliverablePrompt({
+      template,
+      slots: batch,
+      buildContext: buildContext.content,
+      maxChunkChars: this.config.retrieval.maxChunkChars,
+    });
+
+    try {
+      const response = await this.llm.completeJson(
+        {
+          ...prompt,
+          label: 'deliverable_render',
+          logger: this.logger,
+          traceData,
+        },
+        deliverableResponseSchema,
+      );
+      return response.replacements;
+    } catch (error) {
+      if (batch.length > 1 && this.isContextLengthExceeded(error)) {
+        if (this.logger) {
+          await this.logger.warn('build:batch-split', {
+            ...traceData,
+            slots: batch.length,
+            reason: 'context_length_exceeded',
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+        const midpoint = Math.ceil(batch.length / 2);
+        const first = await this.renderBatch(
+          template,
+          buildContext,
+          batch.slice(0, midpoint),
+          traceData,
+        );
+        const second = await this.renderBatch(
+          template,
+          buildContext,
+          batch.slice(midpoint),
+          traceData,
+        );
+        return [...first, ...second];
+      }
+
+      if (batch.length !== 1) {
+        throw error;
+      }
+
+      if (this.logger) {
+        await this.logger.warn('build:json-fallback', {
+          ...traceData,
+          slot: batch[0].id,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      return [
+        {
+          id: batch[0].id,
+          content: await this.renderSingleSlotText(
+            template,
+            buildContext,
+            batch[0],
+            traceData,
+            'deliverable_render_text_fallback',
+          ),
+        },
+      ];
+    }
   }
 
   private nextState(state: BuildState): BuildState {

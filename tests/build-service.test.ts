@@ -66,6 +66,33 @@ class FakeRetrievalService {
   }
 }
 
+class SplittingLLMService {
+  completeJsonCalls = 0;
+
+  async completeJson(request: { user: string }) {
+    this.completeJsonCalls += 1;
+    if (this.completeJsonCalls === 1) {
+      throw new Error(
+        'LLM request failed for openai/gpt-5-mini with HTTP 400: Input tokens exceed the configured limit. context_length_exceeded',
+      );
+    }
+
+    const ids = [...request.user.matchAll(/^## (instruction-\d+)$/gm)].map(
+      (match) => match[1],
+    );
+    return {
+      replacements: ids.map((id) => ({
+        id,
+        content: `Rendered ${id}. [src: wiki/index.md]`,
+      })),
+    };
+  }
+
+  async completeText() {
+    return 'Text fallback. [src: wiki/index.md]';
+  }
+}
+
 describe('build service', () => {
   it('renders a template and stores build state', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-'));
@@ -234,5 +261,50 @@ describe('build service', () => {
     );
     const rebuiltResults = await service.build({ changedOnly: true });
     expect(rebuiltResults[0].skipped).toBe(false);
+  });
+
+  it('splits an oversized build batch and retries smaller batches', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'templates'), { recursive: true });
+    await mkdir(path.join(root, 'deliverables'), { recursive: true });
+
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n', 'utf8');
+    await writeFile(
+      path.join(root, 'templates', 'brief.md'),
+      [
+        '# Brief',
+        '',
+        '[[INSTRUCTION: Fill first.]]',
+        '',
+        '[[INSTRUCTION: Fill second.]]',
+        '',
+        '[[INSTRUCTION: Fill third.]]',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    config.llm.provider = 'openai';
+    config.llm.model = 'gpt-5-mini';
+    config.build.slotBatchSize = 3;
+    const workspace = new WorkspaceService(config);
+    const llm = new SplittingLLMService();
+    const service = new BuildService(
+      config,
+      workspace,
+      llm as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+    );
+
+    await service.build();
+
+    expect(llm.completeJsonCalls).toBe(3);
+    const output = await workspace.readTextFile(
+      path.join(root, 'deliverables', 'brief.md'),
+    );
+    expect(output).toContain('Rendered instruction-1.');
+    expect(output).toContain('Rendered instruction-2.');
+    expect(output).toContain('Rendered instruction-3.');
   });
 });

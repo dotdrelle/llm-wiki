@@ -1,5 +1,17 @@
 # llm-wiki
 
+[![License](https://camo.githubusercontent.com/a21a9e0b02a2eaf1910bbf168de84e00ae1eb7b0fde8c5ceec0e7caa61920adf/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f6c6963656e73652d417061636865253230322e302d677265656e)](https://opensource.org/licenses/Apache-2.0)
+
+Open-source implementation of [Karpathy&#39;s LLM Wiki](https://x.com/karpathy/status/2039805659525644595) ([spec](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)).
+
+---
+
+`llm-wiki` is a command-line tool that turns raw project material into a durable, searchable, and reusable Markdown knowledge base. It helps you progressively build a local wiki from notes, meeting minutes, project documents, or Markdown exports, then use that wiki as context for generating reproducible deliverables.
+
+The program works as a local documentation pipeline: sources are placed in an input folder, analyzed with the help of an LLM, and integrated into structured wiki pages. Those pages become the persistent memory of the project. From Markdown templates containing instructions, `llm-wiki` can then create or refresh derived documents in `deliverables/` by retrieving the relevant context from the wiki.
+
+The goal is to keep the knowledge base readable, versionable, and easy to control: there is no vector database or opaque storage layer, and everything stays on disk as Markdown files. The tool can run with OpenAI, Ollama, Anthropic, or any OpenAI-compatible server (MLX), which makes it suitable for both cloud-based and fully local workflows.
+
 `llm-wiki` is a local-first TypeScript CLI for maintaining a persistent markdown wiki from raw sources, then generating reproducible markdown deliverables from templates with `[[INSTRUCTION: ...]]` slots.
 
 The workflow is inspired by Karpathy's LLM Wiki pattern:
@@ -541,3 +553,7 @@ See [`examples/README.md`](./examples/README.md), [`examples/raw/ai-adoption-not
 - no embeddings or vector database
 - model outputs are validated structurally, but not semantically guaranteed
 - large wikis will eventually need more efficient indexing
+
+## License
+
+Apache 2.0
