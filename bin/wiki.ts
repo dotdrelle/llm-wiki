@@ -12,6 +12,7 @@ import refreshCmd from '../src/commands/refresh.ts';
 import serveCmd from '../src/commands/serve.ts';
 import doctorCmd from '../src/commands/doctor.ts';
 import mcpCmd from '../src/commands/mcp.ts';
+import exportCmd from '../src/commands/export.ts';
 
 const program = new Command();
 const packageVersion = (() => {
@@ -102,6 +103,17 @@ async function main() {
     .command('mcp')
     .description('Start an MCP stdio server exposing the wiki workspace to AI assistants')
     .action(() => mcpCmd(config));
+
+  program
+    .command('export')
+    .description('Expand a deliverable into a self-contained document with inline source details')
+    .argument('<deliverable>', 'Path to the deliverable to expand (relative to workspace root or deliverables/)')
+    .option('--output <path>', 'Output path relative to workspace root (default: <name>.export.md)')
+    .option('--polish', 'Run an editorial polish pass after expansion')
+    .option('-v, --verbose', 'Print export step traces')
+    .option('--debug', 'Print detailed traces')
+    .option('--trace-file <path>', 'Write traces to a specific file')
+    .action((deliverable, opts) => exportCmd(config, deliverable, opts));
 
   await program.parseAsync(process.argv);
 }

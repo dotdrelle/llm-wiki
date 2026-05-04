@@ -53,6 +53,12 @@ No vector database is used. Everything stays in markdown and on disk.
                                        ▼
                               ┌─────────────────┐
                               │  deliverables/  │
+                              └────────┬────────┘
+                                       │  wiki export  (LLM)
+                                       ▼
+                              ┌─────────────────┐
+                              │  *.export.md    │
+                              │  self-contained │
                               └─────────────────┘
 ```
 
@@ -444,6 +450,24 @@ Rebuilds only stale deliverables by comparing the current wiki hash and template
 wiki refresh
 wiki refresh --force
 ```
+
+### `wiki export <deliverable>`
+
+Expands a generated deliverable into a self-contained markdown document by replacing source citation markers with inline detail from the cited files.
+
+```bash
+wiki export deliverables/briefs/project-brief.md
+# -> deliverables/briefs/project-brief.export.md
+
+wiki export deliverables/briefs/project-brief.md --output deliverables/briefs/project-brief-full.md
+wiki export deliverables/briefs/project-brief.md --polish
+wiki export deliverables/briefs/project-brief.export.md --polish
+# -> deliverables/briefs/project-brief.export.polished.md
+```
+
+`export` reads every `[src: ...]` citation in the deliverable, loads each cited file from inside the workspace, caps each source at `retrieval.maxSourceChars`, and sends the deliverable plus those sources to the LLM with strict instructions to expand each section inline without inventing facts. The default output path inserts `.export` before the extension. If the sources do not contain enough detail for a section, the LLM is instructed to keep the original text and append an insufficient-source note.
+
+Use `--polish` to run a second editorial pass after expansion. The polish pass improves clarity, flow, sentence variety, and readability while preserving the same facts, headings, markdown structure, and source-grounded constraints. It can also be run on an already exported document that no longer contains `[src: ...]` citations; when the input already ends in `.export.md`, the default output becomes `.export.polished.md`.
 
 ### `wiki lint`
 
