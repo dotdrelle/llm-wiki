@@ -11,6 +11,7 @@ import buildCmd from '../src/commands/build.ts';
 import refreshCmd from '../src/commands/refresh.ts';
 import serveCmd from '../src/commands/serve.ts';
 import doctorCmd from '../src/commands/doctor.ts';
+import mcpCmd from '../src/commands/mcp.ts';
 
 const program = new Command();
 const packageVersion = (() => {
@@ -96,6 +97,11 @@ async function main() {
     .command('doctor')
     .description('Check .wikirc.yaml, test provider connectivity, and recommend optimal settings')
     .action(() => doctorCmd(config));
+
+  program
+    .command('mcp')
+    .description('Start an MCP stdio server exposing the wiki workspace to AI assistants')
+    .action(() => mcpCmd(config));
 
   await program.parseAsync(process.argv);
 }

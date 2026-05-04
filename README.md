@@ -1,6 +1,6 @@
 # llm-wiki
 
-[![License](https://camo.githubusercontent.com/a21a9e0b02a2eaf1910bbf168de84e00ae1eb7b0fde8c5ceec0e7caa61920adf/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f6c6963656e73652d417061636865253230322e302d677265656e)](https://opensource.org/licenses/Apache-2.0)
+[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](https://polyformproject.org/licenses/noncommercial/1.0.0/)
 
 Open-source implementation of [Karpathy&#39;s LLM Wiki](https://x.com/karpathy/status/2039805659525644595) ([spec](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)).
 
@@ -10,7 +10,9 @@ Open-source implementation of [Karpathy&#39;s LLM Wiki](https://x.com/karpathy/s
 
 The program works as a local documentation pipeline: sources are placed in an input folder, analyzed with the help of an LLM, and integrated into structured wiki pages. Those pages become the persistent memory of the project. From Markdown templates containing instructions, `llm-wiki` can then create or refresh derived documents in `deliverables/` by retrieving the relevant context from the wiki.
 
-The goal is to keep the knowledge base readable, versionable, and easy to control: there is no vector database or opaque storage layer, and everything stays on disk as Markdown files. The tool can run with OpenAI, Ollama, Anthropic, or any OpenAI-compatible server (MLX), which makes it suitable for both cloud-based and fully local workflows.
+The goal is to keep the knowledge base readable, versionable, and easy to control: there is no vector database or opaque storage layer, and everything stays on disk as Markdown files (or by using MCP connexions). The tool can run with OpenAI, Ollama, Anthropic, or any OpenAI-compatible server (MLX), which makes it suitable for both cloud-based and fully local workflows.
+
+`llm-wiki` also fits agent-assisted workflows. When Claude is connected to the workspace through MCP-capable tools, it can read source material, update pages under `wiki/`, maintain cross-references, and add footnote-style citations while keeping the knowledge base in plain Markdown.
 
 `llm-wiki` is a local-first TypeScript CLI for maintaining a persistent markdown wiki from raw sources, then generating reproducible markdown deliverables from templates with `[[INSTRUCTION: ...]]` slots.
 
@@ -22,6 +24,37 @@ The workflow is inspired by Karpathy's LLM Wiki pattern:
 4. build or refresh derived documents in `deliverables/`
 
 No vector database is used. Everything stays in markdown and on disk.
+
+```
+┌──────────────────────────────────────┐  ┌─────────────────────────────────────┐
+│  raw sources                         │  │  AI assistant                       │
+│  notes, exports, Confluence, PDFs    │  │  Claude Desktop / Claude Code       │
+│  → raw/untracked/                    │  │                                     │
+└──────────────┬───────────────────────┘  │  wiki mcp  (stdio)                  │
+               │  wiki ingest  (LLM)      │  list_wiki_pages · read_wiki_page   │
+               ▼                          │  write_wiki_page                    │
+┌──────────────────────────────────────┐  │  list_sources · read_source         │
+│  wiki/                        ◄──────┼──┤                                     │
+│  ├── index.md                        │  └─────────────────────────────────────┘
+│  ├── concepts/                       │
+│  ├── sources/  (raw/ingested/)       │
+│  └── answers/                        │
+└──────┬────────────────┬──────────────┘
+       │  wiki query    │  wiki build / refresh  (LLM)
+       │  (LLM)         │
+       ▼                ▼
+┌────────────┐  ┌───────────────────────────────────────┐
+│  answers   │  │  prompt context                       │
+│  on stdout │  │  ├── retrieved wiki chunks            │
+│  or saved  │  │  ├── templates/  [[INSTRUCTION: ...]] │
+└────────────┘  │  └── build-context/  (fixed context) │
+                └──────────────────────┬────────────────┘
+                                       │
+                                       ▼
+                              ┌─────────────────┐
+                              │  deliverables/  │
+                              └─────────────────┘
+```
 
 ## Features
 
@@ -461,6 +494,81 @@ Apply these changes to /path/to/.wikirc.yaml? [y/N]
 
 Only `y`, `yes`, `o`, or `oui` writes the file. In non-interactive runs, such as CI or redirected output, `doctor` never writes and only prints the suggestions.
 
+### `wiki mcp`
+
+Starts a stdio MCP server that exposes the wiki workspace to AI assistants such as Claude Desktop or Claude Code.
+
+```bash
+wiki mcp
+```
+
+The server must be launched from inside the workspace (or a subdirectory) so it can locate `.wikirc.yaml` the same way the other CLI commands do.
+
+Exposed tools:
+
+| Tool                | Description                                                     |
+| ------------------- | --------------------------------------------------------------- |
+| `list_wiki_pages` | List all pages under `wiki/` with their type                  |
+| `read_wiki_page`  | Read a page by its relative path (e.g.`wiki/concepts/foo.md`) |
+| `write_wiki_page` | Write or update a page — restricted to `wiki/*` paths        |
+| `list_sources`    | List ingested source documents in `raw/ingested/`             |
+| `read_source`     | Read an ingested source by its relative path                    |
+
+Write operations go through the same path guards as `wiki ingest`: `resolveInside` rejects any `../../` traversal, and `applyWikiOperations` refuses paths that do not start with `wiki/`.
+
+## MCP integration
+
+`wiki mcp` starts a stdio MCP server. Connect it to Claude Desktop or Claude Code so an AI assistant can read and update the wiki directly without leaving the conversation.
+
+### Claude Code
+
+Add the following to `.claude/settings.json` at the root of your wiki workspace:
+
+```json
+{
+  "mcpServers": {
+    "llm-wiki": {
+      "command": "wiki",
+      "args": ["mcp"],
+      "type": "stdio"
+    }
+  }
+}
+```
+
+Because Claude Code runs in the workspace directory, no `cwd` is needed — `.wikirc.yaml` is found automatically.
+
+### Claude Desktop
+
+Add the following to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "llm-wiki": {
+      "command": "/absolute/path/to/wiki",
+      "args": ["mcp"],
+      "type": "stdio",
+      "cwd": "/absolute/path/to/your/wiki-workspace"
+    }
+  }
+}
+```
+
+`cwd` must point to the workspace that contains `.wikirc.yaml`. The `command` must be the absolute path to the `wiki` binary (use `which wiki` to find it, or point directly at `dist/bin/wiki.js`).
+
+### Prerequisites
+
+`wiki` must be available in the shell PATH used by the MCP host. The easiest way is to link the built binary globally:
+
+```bash
+cd /path/to/llm-wiki
+pnpm build
+pnpm link --global
+```
+
+Restart Claude Desktop (or reload Claude Code) after editing the config.
+
 ## Deliverable templates
 
 Templates are standard markdown files with optional frontmatter.
@@ -552,8 +660,12 @@ See [`examples/README.md`](./examples/README.md), [`examples/raw/ai-adoption-not
 - retrieval is lexical only
 - no embeddings or vector database
 - model outputs are validated structurally, but not semantically guaranteed
-- large wikis will eventually need more efficient indexing
+- large wikis will eventually need more efficient indexing (please use doctor to set ingest and build features)
 
 ## License
 
-Apache 2.0
+This project is released under the **PolyForm Noncommercial License 1.0.0**.
+
+You may copy, read, test, and modify this repository for personal, academic, research, hobby, or non-commercial experimentation purposes.
+
+Any commercial use, corporate use, integration into a commercial product, resale, paid service provision, client use, SaaS use, internal enterprise use, or exploitation after modification is prohibited without prior written agreement from the author or rights holder.
