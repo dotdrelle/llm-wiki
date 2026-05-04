@@ -25,12 +25,17 @@ export interface RetrievalConfig {
   maxSourceChars: number;
 }
 
+export interface McpConfig {
+  accessKey?: string;
+}
+
 export interface AppConfig {
   wikiRoot: string;
   configPath?: string;
   llm: LlmConfig;
   build: BuildConfig;
   retrieval: RetrievalConfig;
+  mcp: McpConfig;
 }
 
 export interface BuildCommandOptions {

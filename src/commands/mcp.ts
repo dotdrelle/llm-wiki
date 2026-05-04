@@ -9,6 +9,15 @@ import { resolveInside } from '../utils/path.ts';
 import type { AppConfig } from '../types.ts';
 
 export default async function mcpCmd(config: AppConfig): Promise<void> {
+  const expectedKey = config.mcp.accessKey;
+  if (expectedKey !== undefined) {
+    const providedKey = process.env.WIKI_MCP_KEY;
+    if (providedKey !== expectedKey) {
+      process.stderr.write('wiki mcp: invalid or missing WIKI_MCP_KEY\n');
+      process.exit(1);
+    }
+  }
+
   const workspace = new WorkspaceService(config);
   await workspace.ensureInitialized();
 

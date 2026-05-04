@@ -24,6 +24,7 @@ function createConfig(): AppConfig {
       maxChunkChars: 3000,
       maxSourceChars: 8000,
     },
+    mcp: {},
   };
 }
 

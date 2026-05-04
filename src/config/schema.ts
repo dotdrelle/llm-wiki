@@ -257,11 +257,18 @@ const retrievalSchema = z
     maxSourceChars: 8000,
   });
 
+const mcpSchema = z
+  .object({
+    accessKey: z.string().min(1).optional(),
+  })
+  .default({});
+
 export const rawConfigSchema = z.object({
   wikiRoot: z.string().optional(),
   llm: llmSchema.optional(),
   build: buildSchema.optional(),
   retrieval: retrievalSchema.optional(),
+  mcp: mcpSchema.optional(),
 });
 
 export const wikiOperationSchema = z.preprocess(
@@ -388,6 +395,9 @@ export function resolveConfig(
   return {
     wikiRoot,
     configPath,
+    mcp: {
+      accessKey: parsed.mcp?.accessKey,
+    },
     llm: {
       provider,
       model: parsed.llm?.model ?? 'gpt-5-mini',

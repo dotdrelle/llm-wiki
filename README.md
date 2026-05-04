@@ -47,7 +47,7 @@ No vector database is used. Everything stays in markdown and on disk.
 │  answers   │  │  prompt context                       │
 │  on stdout │  │  ├── retrieved wiki chunks            │
 │  or saved  │  │  ├── templates/  [[INSTRUCTION: ...]] │
-└────────────┘  │  └── build-context/  (fixed context) │
+└────────────┘  │  └── build-context/  (fixed context)  │
                 └──────────────────────┬────────────────┘
                                        │
                                        ▼
@@ -516,6 +516,17 @@ Exposed tools:
 
 Write operations go through the same path guards as `wiki ingest`: `resolveInside` rejects any `../../` traversal, and `applyWikiOperations` refuses paths that do not start with `wiki/`.
 
+#### Access key
+
+An optional access key can be required before the server accepts connections. Set it in `.wikirc.yaml`:
+
+```yaml
+mcp:
+  accessKey: your-secret-key
+```
+
+Then pass the same value as an environment variable in your MCP client config (`WIKI_MCP_KEY`). If the key is configured but the env var is absent or does not match, the server exits immediately with an error.
+
 ## MCP integration
 
 `wiki mcp` starts a stdio MCP server. Connect it to Claude Desktop or Claude Code so an AI assistant can read and update the wiki directly without leaving the conversation.
@@ -530,13 +541,14 @@ Add the following to `.claude/settings.json` at the root of your wiki workspace:
     "llm-wiki": {
       "command": "wiki",
       "args": ["mcp"],
-      "type": "stdio"
+      "type": "stdio",
+      "env": { "WIKI_MCP_KEY": "your-secret-key" }
     }
   }
 }
 ```
 
-Because Claude Code runs in the workspace directory, no `cwd` is needed — `.wikirc.yaml` is found automatically.
+Because Claude Code runs in the workspace directory, no `cwd` is needed — `.wikirc.yaml` is found automatically. Omit `env` if no `accessKey` is configured.
 
 ### Claude Desktop
 
@@ -549,7 +561,8 @@ Add the following to `~/Library/Application Support/Claude/claude_desktop_config
       "command": "/absolute/path/to/wiki",
       "args": ["mcp"],
       "type": "stdio",
-      "cwd": "/absolute/path/to/your/wiki-workspace"
+      "cwd": "/absolute/path/to/your/wiki-workspace",
+      "env": { "WIKI_MCP_KEY": "your-secret-key" }
     }
   }
 }
