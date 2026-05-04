@@ -1,41 +1,30 @@
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import type { IncomingMessage } from 'node:http';
+import { readFile, stat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import fg from 'fast-glob';
 import { marked } from 'marked';
 import type { AppConfig } from '../types.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
-import { pathExists } from '../utils/fs.ts';
-import { toPosix } from '../utils/path.ts';
+import { pathExists, writeIfChanged } from '../utils/fs.ts';
+import { resolveInside, toPosix } from '../utils/path.ts';
 
-const SERVED_DIRS = ['wiki', 'deliverables', 'templates'];
-const NAV_SECTIONS = [
-  {
-    label: 'wiki',
-    pattern: 'wiki/**/*.md',
-    exclude: (file: string) =>
-      file.startsWith('wiki/concepts/') || file.startsWith('wiki/sources/'),
-  },
-  {
-    label: 'concepts',
-    pattern: 'wiki/concepts/**/*.md',
-  },
-  {
-    label: 'deliverables',
-    pattern: 'deliverables/**/*.md',
-  },
-  {
-    label: 'templates',
-    pattern: 'templates/**/*.md',
-  },
+const SERVED_DIRS = ['wiki', 'deliverables', 'templates', 'build-context'];
+const NAV_PATTERNS = [
+  'wiki/**/*.md',
+  'deliverables/**/*.md',
+  'templates/**/*.md',
+  'build-context/**/*.md',
 ];
 const GRAPH_PATTERNS = [
   'wiki/**/*.md',
   'deliverables/**/*.md',
   'templates/**/*.md',
+  'build-context/**/*.md',
   'raw/ingested/**/*.md',
 ];
+const EDITABLE_DIRS = ['wiki', 'deliverables', 'templates', 'build-context'];
 const require = createRequire(import.meta.url);
 const D3_DIST_PATH = path.resolve(
   path.dirname(require.resolve('d3')),
@@ -57,6 +46,10 @@ function escapeScriptJson(s: string): string {
     .replace(/>/g, '\\u003e')
     .replace(/\u2028/g, '\\u2028')
     .replace(/\u2029/g, '\\u2029');
+}
+
+function escapeHref(href: string): string {
+  return escapeAttr(encodeURI(href));
 }
 
 function humanTitle(value: string): string {
@@ -86,14 +79,33 @@ function hrefToRelativePath(href: string, currentDir = ''): string {
   return localHref(href, currentDir).replace(/^\//, '').replace(/#.*$/, '');
 }
 
+function isEditableRelativePath(relativePath: string): boolean {
+  return (
+    relativePath.endsWith('.md') &&
+    EDITABLE_DIRS.some(
+      (dir) => relativePath.startsWith(`${dir}/`) || relativePath === `${dir}.md`,
+    )
+  );
+}
+
+function linkSourceCitations(raw: string, currentDir = ''): string {
+  return raw.replace(/\[src:\s*([^\]]+)\]/g, (match, citationPath: string) => {
+    const cleanPath = citationPath.trim();
+    if (!cleanPath) return '[src:]';
+    if (!cleanPath.endsWith('.md')) return match;
+    const href = localHref(cleanPath, currentDir);
+    return `<a class="source-citation" href="${escapeHref(href)}" title="${escapeAttr(cleanPath)}">[src: ${escapeHtml(cleanPath)}]</a>`;
+  });
+}
+
 async function renderMarkdown(raw: string, currentDir = ''): Promise<string> {
   const renderer = new marked.Renderer();
   renderer.link = ({ href, title, text }) => {
-    const safeHref = escapeAttr(localHref(href, currentDir));
+    const safeHref = escapeHref(localHref(href, currentDir));
     const safeTitle = title ? ` title="${escapeAttr(title)}"` : '';
     return `<a href="${safeHref}"${safeTitle}>${text}</a>`;
   };
-  return marked(raw, { gfm: true, renderer });
+  return marked(linkSourceCitations(raw, currentDir), { gfm: true, renderer });
 }
 
 function layout(title: string, body: string): string {
@@ -126,6 +138,21 @@ function layout(title: string, body: string): string {
       line-height: 1.65;
     }
     a { color: var(--link); text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
+    .source-citation {
+      display: inline-block;
+      max-width: 100%;
+      padding: 0.08rem 0.28rem;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      background: var(--panel-soft);
+      color: var(--link);
+      font-size: 0.86em;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+      vertical-align: baseline;
+      text-decoration: none;
+    }
+    .source-citation:hover { border-color: var(--accent); background: var(--accent-soft); }
     .app-shell { min-height: 100vh; display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); }
     .sidebar {
       position: sticky;
@@ -139,28 +166,98 @@ function layout(title: string, body: string): string {
     .brand { display: block; margin-bottom: 1.4rem; color: var(--text); text-decoration: none; }
     .brand-title { display: block; font-size: 1.05rem; font-weight: 750; }
     .brand-subtitle { display: block; margin-top: 0.1rem; color: var(--muted); font-size: 0.82rem; }
-    .side-section { margin: 1rem 0 0; }
-    .side-heading {
-      margin: 0 0 0.35rem;
-      color: var(--muted);
-      font-size: 0.72rem;
-      font-weight: 760;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+    .side-search {
+      margin: 0.9rem 0 0.65rem;
     }
-    .side-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.12rem; }
-    .side-list a {
+    .side-search-input {
+      width: 100%;
+      min-height: 2.25rem;
+      padding: 0.45rem 0.6rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.9rem;
+      outline: none;
+    }
+    .side-search-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    .side-search-status {
+      display: none;
+      margin: 0.45rem 0 0;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+    .side-search-status.is-visible { display: block; }
+    .side-tree { margin-top: 1rem; font-size: 0.9rem; }
+    .side-folder { margin: 0.08rem 0; }
+    .side-folder summary {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      min-height: 2rem;
+      padding: 0.28rem 0.45rem;
+      border-radius: 6px;
+      color: var(--text);
+      cursor: pointer;
+      list-style: none;
+      user-select: none;
+    }
+    .side-folder summary::-webkit-details-marker { display: none; }
+    .side-folder summary::before {
+      content: "▸";
+      width: 0.8rem;
+      color: var(--muted);
+      font-size: 0.74rem;
+      transition: transform 120ms ease;
+    }
+    .side-folder[open] > summary::before { transform: rotate(90deg); }
+    .side-folder summary:hover { background: var(--panel-soft); color: var(--accent); }
+    .side-folder-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 680;
+    }
+    .side-folder-children {
+      margin-left: 0.85rem;
+      padding-left: 0.35rem;
+      border-left: 1px solid var(--border);
+    }
+    .side-file {
       display: block;
-      padding: 0.34rem 0.45rem;
+      min-height: 1.85rem;
+      padding: 0.24rem 0.45rem 0.24rem 1.2rem;
       border-radius: 6px;
       color: var(--text);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
       text-decoration: none;
-      font-size: 0.9rem;
+      position: relative;
     }
-    .side-list a:hover { background: var(--panel-soft); color: var(--accent); }
+    .side-file::before {
+      content: "";
+      position: absolute;
+      left: 0.45rem;
+      top: 0.78rem;
+      width: 0.38rem;
+      height: 0.38rem;
+      border-radius: 999px;
+      background: var(--muted);
+      opacity: 0.55;
+    }
+    .side-file:hover, .side-file.is-active {
+      background: var(--panel-soft);
+      color: var(--accent);
+    }
+    .side-file.is-active { font-weight: 720; }
+    .side-file.is-active::before { background: var(--accent); opacity: 1; }
+    .side-folder.is-search-hidden, .side-file.is-search-hidden { display: none; }
     .side-link {
       display: block;
       margin: 0.45rem 0;
@@ -178,6 +275,7 @@ function layout(title: string, body: string): string {
     .topbar {
       display: flex;
       justify-content: space-between;
+      align-items: center;
       gap: 1rem;
       margin-bottom: 1.25rem;
       color: var(--muted);
@@ -185,6 +283,27 @@ function layout(title: string, body: string): string {
     }
     .topbar nav a { color: inherit; }
     .topbar nav a + a::before { content: " / "; color: var(--muted); }
+    .page-actions { display: flex; gap: 0.5rem; align-items: center; }
+    .action-link, .action-button {
+      display: inline-flex;
+      align-items: center;
+      min-height: 2rem;
+      padding: 0.35rem 0.65rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.86rem;
+      font-weight: 680;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .action-link:hover, .action-button:hover {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
     .hero {
       margin-bottom: 1.5rem;
       padding: clamp(1.3rem, 3vw, 2rem);
@@ -195,13 +314,66 @@ function layout(title: string, body: string): string {
     }
     .hero h1 { margin: 0; font-size: clamp(1.7rem, 3vw, 2.55rem); line-height: 1.05; letter-spacing: 0; }
     .hero p { max-width: 72ch; margin: 0.75rem 0 0; color: var(--muted); }
+    .index-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
+      gap: 1rem;
+      align-items: start;
+    }
+    .index-aside {
+      position: sticky;
+      top: 1rem;
+      min-width: 0;
+    }
+    .index-aside-title {
+      margin: 0 0 0.7rem;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 780;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .section-browser {
+      margin: 0 0 0.75rem;
+    }
+    .section-browser summary {
+      list-style: none;
+      cursor: pointer;
+    }
+    .section-browser summary::-webkit-details-marker { display: none; }
+    .section-browser-summary {
+      display: flex;
+      min-height: 72px;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 0.9rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--text);
+      box-shadow: 0 1px 1px rgba(23, 32, 42, 0.04);
+    }
+    .section-browser summary:hover .section-browser-summary,
+    .section-browser[open] .section-browser-summary {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+    .section-browser-title { font-weight: 760; overflow-wrap: anywhere; }
+    .section-browser-meta { margin-top: 0.45rem; color: var(--muted); font-size: 0.82rem; }
+    .section-browser-tiles {
+      margin-top: 0.6rem;
+      display: grid;
+      gap: 0.6rem;
+    }
     .tile-section { margin: 1.5rem 0 2rem; }
+    .index-aside .tile-section { margin: 0 0 1rem; }
     .section-title { margin: 0 0 0.65rem; font-size: 0.98rem; color: var(--muted); font-weight: 760; }
     .tile-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 0.8rem;
     }
+    .index-aside .tile-grid { grid-template-columns: 1fr; }
     .tile {
       display: flex;
       min-height: 92px;
@@ -228,6 +400,27 @@ function layout(title: string, body: string): string {
     .article h1, .article h2, .article h3 { line-height: 1.2; letter-spacing: 0; }
     .article h1 { margin-top: 0; }
     .article img { max-width: 100%; }
+    .edit-form {
+      display: grid;
+      gap: 0.85rem;
+    }
+    .edit-textarea {
+      width: 100%;
+      min-height: min(66vh, 760px);
+      padding: 1rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--text);
+      font: 0.92rem ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      line-height: 1.55;
+      resize: vertical;
+      outline: none;
+    }
+    .edit-textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
     pre { background: #edf1f5; padding: 1rem; border-radius: 6px; overflow-x: auto; }
     code { font-size: 0.9em; }
     table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; }
@@ -264,12 +457,14 @@ function layout(title: string, body: string): string {
     .graph-node.wiki circle { fill: #176b87; }
     .graph-node.deliverable circle { fill: #6b7f2a; }
     .graph-node.template circle { fill: #8f5c99; }
+    .graph-node.context circle { fill: #a36f18; }
     .graph-legend { display: flex; flex-wrap: wrap; gap: 0.65rem; margin: 0.75rem 0 1.25rem; color: var(--muted); font-size: 0.9rem; }
     .legend-item::before { content: ""; display: inline-block; width: 0.7rem; height: 0.7rem; margin-right: 0.35rem; border-radius: 999px; vertical-align: -0.05rem; background: var(--accent); }
     .legend-item.source::before { background: #d7663b; }
     .legend-item.wiki::before { background: #176b87; }
     .legend-item.deliverable::before { background: #6b7f2a; }
     .legend-item.template::before { background: #8f5c99; }
+    .legend-item.context::before { background: #a36f18; }
     .relation-panel {
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -374,6 +569,8 @@ function layout(title: string, body: string): string {
       .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
       .content { padding: 1rem; }
       .topbar { display: block; }
+      .index-layout { grid-template-columns: 1fr; }
+      .index-aside { position: static; }
       .graph-layout { grid-template-columns: 1fr; }
     }
     @media (prefers-color-scheme: dark) {
@@ -399,6 +596,92 @@ function layout(title: string, body: string): string {
 <div class="app-shell">
 ${body}
 </div>
+<script>
+(() => {
+  const storagePrefix = 'llm-wiki:sidebar:';
+  const searchKey = storagePrefix + 'search';
+  const scrollKey = storagePrefix + 'scrollTop';
+  const currentPath = decodeURIComponent(window.location.pathname).replace(/^\\//, '');
+  const sidebar = document.querySelector('.sidebar');
+  const searchInput = document.querySelector('[data-side-search]');
+  const searchStatus = document.querySelector('[data-side-search-status]');
+  const sideFiles = [...document.querySelectorAll('[data-side-path]')];
+  const sideFolders = [...document.querySelectorAll('[data-tree-id]')];
+  function saveSidebarState() {
+    if (searchInput) localStorage.setItem(searchKey, searchInput.value);
+    if (sidebar) localStorage.setItem(scrollKey, String(sidebar.scrollTop));
+  }
+  document.querySelectorAll('[data-tree-id]').forEach((details) => {
+    const id = details.getAttribute('data-tree-id');
+    const key = storagePrefix + id;
+    const saved = localStorage.getItem(key);
+    if (saved === 'open') details.open = true;
+    if (saved === 'closed') details.open = false;
+    if (currentPath && (currentPath === id || currentPath.startsWith(id + '/'))) {
+      details.open = true;
+    }
+    details.addEventListener('toggle', () => {
+      localStorage.setItem(key, details.open ? 'open' : 'closed');
+    });
+  });
+  document.querySelectorAll('[data-side-path]').forEach((link) => {
+    if (link.getAttribute('data-side-path') === currentPath) {
+      link.classList.add('is-active');
+    }
+    link.addEventListener('click', saveSidebarState);
+  });
+  function normalize(value) {
+    return value.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
+  }
+  function folderHasVisibleFile(folder) {
+    return Boolean(folder.querySelector('[data-side-path]:not(.is-search-hidden)'));
+  }
+  function applySidebarSearch() {
+    const query = normalize(searchInput?.value.trim() || '');
+    let matchCount = 0;
+    if (!query) {
+      sideFiles.forEach((link) => link.classList.remove('is-search-hidden'));
+      sideFolders.forEach((folder) => folder.classList.remove('is-search-hidden'));
+      searchStatus?.classList.remove('is-visible');
+      return;
+    }
+    for (const link of sideFiles) {
+      const haystack = normalize((link.getAttribute('data-side-path') || '') + ' ' + link.textContent);
+      const matches = haystack.includes(query);
+      link.classList.toggle('is-search-hidden', !matches);
+      if (matches) {
+        matchCount += 1;
+        link.closest('[data-tree-id]')?.setAttribute('open', '');
+      }
+    }
+    for (const folder of [...sideFolders].reverse()) {
+      const visible = folderHasVisibleFile(folder);
+      folder.classList.toggle('is-search-hidden', !visible);
+      if (visible) folder.open = true;
+    }
+    if (searchStatus) {
+      searchStatus.textContent = matchCount === 0 ? 'No matching files.' : matchCount + ' matching file' + (matchCount > 1 ? 's.' : '.');
+      searchStatus.classList.add('is-visible');
+    }
+  }
+  if (searchInput) {
+    searchInput.value = localStorage.getItem(searchKey) || '';
+    searchInput.addEventListener('input', () => {
+      localStorage.setItem(searchKey, searchInput.value);
+      applySidebarSearch();
+    });
+  }
+  sidebar?.addEventListener('scroll', () => {
+    localStorage.setItem(scrollKey, String(sidebar.scrollTop));
+  }, { passive: true });
+  window.addEventListener('beforeunload', saveSidebarState);
+  applySidebarSearch();
+  requestAnimationFrame(() => {
+    const savedScroll = Number(localStorage.getItem(scrollKey) || '0');
+    if (sidebar && Number.isFinite(savedScroll)) sidebar.scrollTop = savedScroll;
+  });
+})();
+</script>
 </body>
 </html>`;
 }
@@ -409,7 +692,8 @@ function breadcrumb(urlPath: string): string {
   const links = ['<a href="/">index</a>'];
   for (const part of parts) {
     href += `/${part}`;
-    links.push(`<a href="${escapeHtml(href)}">${escapeHtml(part)}</a>`);
+    const target = href === '/wiki' ? '/' : href;
+    links.push(`<a href="${escapeHref(target)}">${escapeHtml(part)}</a>`);
   }
   return `<nav>${links.join('')}</nav>`;
 }
@@ -454,48 +738,111 @@ function extractIndexTiles(markdown: string): TileSection[] {
   return sections;
 }
 
-function renderTileSections(sections: TileSection[]): string {
+function renderTile(tile: { title: string; href?: string; meta: string }): string {
+  const content = `<span class="tile-title">${escapeHtml(tile.title)}</span><span class="tile-meta">${escapeHtml(tile.meta)}</span>`;
+  return tile.href
+    ? `<a class="tile" href="${escapeHref(tile.href)}">${content}</a>`
+    : `<div class="tile">${content}</div>`;
+}
+
+function renderIndexSectionBrowser(sections: TileSection[]): string {
+  if (sections.length === 0) {
+    return '<p class="empty">No index sections found.</p>';
+  }
+
   return sections
     .map((section) => {
-      const tiles = section.tiles
-        .map((tile) => {
-          const content = `<span class="tile-title">${escapeHtml(tile.title)}</span><span class="tile-meta">${escapeHtml(tile.meta)}</span>`;
-          return tile.href
-            ? `<a class="tile" href="${escapeAttr(tile.href)}">${content}</a>`
-            : `<div class="tile">${content}</div>`;
-        })
-        .join('\n');
-      return `<section class="tile-section"><h2 class="section-title">${escapeHtml(section.heading)}</h2><div class="tile-grid">${tiles}</div></section>`;
+      const count = section.tiles.length;
+      const tiles = section.tiles.length
+        ? section.tiles.map(renderTile).join('\n')
+        : '<p class="empty">No pages in this section.</p>';
+      return `<details class="section-browser"><summary><span class="section-browser-summary"><span class="section-browser-title">${escapeHtml(section.heading)}</span><span class="section-browser-meta">${count} item${count === 1 ? '' : 's'}</span></span></summary><div class="section-browser-tiles">${tiles}</div></details>`;
     })
     .join('\n');
 }
 
-async function renderSidebar(rootDir: string): Promise<string> {
-  const sections: string[] = [];
-  for (const section of NAV_SECTIONS) {
-    const files = (await fg(section.pattern, { cwd: rootDir, dot: false })).filter(
-      (file) => !section.exclude?.(file),
-    );
-    files.sort();
-    if (files.length === 0) continue;
-    const items = files
-      .slice(0, 60)
-      .map(
-        (f) =>
-          `<li><a href="/${toPosix(f)}" title="${escapeAttr(toPosix(f))}">${escapeHtml(humanTitle(f))}</a></li>`,
-      )
-      .join('\n');
-    sections.push(
-      `<section class="side-section"><h2 class="side-heading">${escapeHtml(section.label)}</h2><ul class="side-list">${items}</ul></section>`,
-    );
+function renderTopbar(urlPath: string, actions = ''): string {
+  return `<div class="topbar">${breadcrumb(urlPath)}${actions ? `<div class="page-actions">${actions}</div>` : ''}</div>`;
+}
+
+function editHref(relativePath: string): string {
+  return `/edit/${relativePath}`;
+}
+
+interface NavTreeNode {
+  name: string;
+  path: string;
+  dirs: Map<string, NavTreeNode>;
+  files: string[];
+}
+
+function createNavNode(name: string, nodePath: string): NavTreeNode {
+  return {
+    name,
+    path: nodePath,
+    dirs: new Map(),
+    files: [],
+  };
+}
+
+function addNavPath(root: NavTreeNode, relativePath: string): void {
+  const parts = toPosix(relativePath).split('/');
+  const fileName = parts.pop();
+  if (!fileName) return;
+
+  let current = root;
+  const nodeParts: string[] = [];
+  for (const part of parts) {
+    nodeParts.push(part);
+    const nodePath = nodeParts.join('/');
+    let next = current.dirs.get(part);
+    if (!next) {
+      next = createNavNode(part, nodePath);
+      current.dirs.set(part, next);
+    }
+    current = next;
   }
-  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">wiki</span><span class="brand-subtitle">index.md comme point d'entrée</span></a><a class="side-link" href="/graph">Graph des sources</a>${sections.join('')}</aside>`;
+  current.files.push(relativePath);
+}
+
+function renderNavNode(node: NavTreeNode, depth = 0): string {
+  const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const files = [...node.files].sort((a, b) => a.localeCompare(b));
+  const children = [
+    ...dirs.map((dir) => renderNavNode(dir, depth + 1)),
+    ...files.map((file) => {
+      const title = humanTitle(file);
+      const safePath = escapeAttr(toPosix(file));
+      return `<a class="side-file" href="/${safePath}" title="${safePath}" data-side-path="${safePath}">${escapeHtml(title)}</a>`;
+    }),
+  ].join('\n');
+
+  const open = depth === 0 ? ' open' : '';
+  const label = node.name === 'build-context' ? 'build context' : node.name;
+  return `<details class="side-folder"${open} data-tree-id="${escapeAttr(node.path)}"><summary><span class="side-folder-label">${escapeHtml(label)}</span></summary><div class="side-folder-children">${children}</div></details>`;
+}
+
+async function renderSidebar(rootDir: string): Promise<string> {
+  const root = createNavNode('workspace', '');
+  const files = (await fg(NAV_PATTERNS, { cwd: rootDir, dot: false }))
+    .map(toPosix)
+    .sort();
+  for (const file of files) {
+    addNavPath(root, file);
+  }
+
+  const tree = [...root.dirs.values()]
+    .sort((a, b) => SERVED_DIRS.indexOf(a.name) - SERVED_DIRS.indexOf(b.name))
+    .map((dir) => renderNavNode(dir))
+    .join('\n');
+
+  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">wiki</span><span class="brand-subtitle">index.md comme point d'entrée</span></a><a class="side-link" href="/graph">Graph des sources</a><div class="side-search"><input class="side-search-input" type="search" placeholder="Search files" aria-label="Search files" data-side-search><p class="side-search-status" data-side-search-status>No matching files.</p></div><nav class="side-tree" aria-label="Documents markdown">${tree}</nav></aside>`;
 }
 
 interface GraphNode {
   id: string;
   title: string;
-  type: 'source' | 'wiki' | 'deliverable' | 'template';
+  type: 'source' | 'wiki' | 'deliverable' | 'template' | 'context';
   href: string;
   preview: string;
   raw: string;
@@ -520,6 +867,7 @@ function graphNodeType(relativePath: string): GraphNode['type'] {
   }
   if (relativePath.startsWith('deliverables/')) return 'deliverable';
   if (relativePath.startsWith('templates/')) return 'template';
+  if (relativePath.startsWith('build-context/')) return 'context';
   return 'wiki';
 }
 
@@ -978,7 +1326,7 @@ async function generateGraph(rootDir: string): Promise<string> {
     nodes.length > 0
       ? renderGraphApp(nodes, edges)
       : '<p class="empty">Aucun document markdown à afficher dans le graphe.</p>';
-  const body = `${sidebar}<main class="content"><div class="hero"><h1>Graph des sources</h1><p>Les sources et documents du wiki sont représentés par relation. La taille d'un noeud dépend du nombre de liens entrants et sortants. Cliquez sur un noeud pour afficher le markdown associé.</p></div><div class="graph-legend"><span class="legend-item source">${sourceCount} source(s)</span><span class="legend-item wiki">wiki</span><span class="legend-item deliverable">livrables</span><span class="legend-item template">templates</span><span>${edges.length} relation(s)</span></div>${graph}</main>`;
+  const body = `${sidebar}<main class="content"><div class="hero"><h1>Graph des sources</h1><p>Les sources et documents du wiki sont représentés par relation. La taille d'un noeud dépend du nombre de liens entrants et sortants. Cliquez sur un noeud pour afficher le markdown associé.</p></div><div class="graph-legend"><span class="legend-item source">${sourceCount} source(s)</span><span class="legend-item wiki">wiki</span><span class="legend-item deliverable">livrables</span><span class="legend-item template">templates</span><span class="legend-item context">build context</span><span>${edges.length} relation(s)</span></div>${graph}</main>`;
   return layout('Graph des sources', body);
 }
 
@@ -988,10 +1336,31 @@ async function generateIndex(rootDir: string): Promise<string> {
     ? await readFile(indexPath, 'utf8')
     : '# Wiki Index\n\n- wiki/index.md introuvable.';
   const html = await renderMarkdown(raw, 'wiki');
-  const tiles = renderTileSections(extractIndexTiles(raw));
+  const tiles = renderIndexSectionBrowser(extractIndexTiles(raw));
   const sidebar = await renderSidebar(rootDir);
-  const body = `${sidebar}<main class="content"><div class="hero"><h1>Wiki Index</h1><p>Point d'entrée du wiki local. Les sections de <code>wiki/index.md</code> sont reprises en tuiles pour naviguer rapidement dans les concepts, sources, réponses et livrables.</p></div>${tiles}<article class="article">${html}</article></main>`;
+  const body = `${sidebar}<main class="content"><div class="hero"><h1>Wiki Index</h1><p>Point d'entrée du wiki local. L'index complet reste lisible à gauche, avec les principales sections disponibles en tuiles à droite.</p></div><div class="index-layout"><article class="article">${html}</article><aside class="index-aside"><h2 class="index-aside-title">Main sections</h2>${tiles}</aside></div></main>`;
   return layout('wiki', body);
+}
+
+async function generateDirectoryPage(rootDir: string, relativePath: string): Promise<string> {
+  const cleanRelativePath = toPosix(relativePath).replace(/\/+$/, '');
+  const files = (await fg(`${cleanRelativePath}/**/*.md`, { cwd: rootDir, dot: false }))
+    .map(toPosix)
+    .sort();
+  const tiles = files.map((file) =>
+    renderTile({
+      title: humanTitle(file),
+      href: `/${file}`,
+      meta: file,
+    }),
+  );
+  const title = cleanRelativePath === 'wiki' ? 'Wiki Index' : cleanRelativePath;
+  const sidebar = await renderSidebar(rootDir);
+  const content = tiles.length
+    ? `<div class="tile-grid">${tiles.join('\n')}</div>`
+    : '<p class="empty">No markdown files found in this folder.</p>';
+  const body = `${sidebar}<main class="content"><div class="topbar">${breadcrumb(`/${cleanRelativePath}`)}</div><div class="hero"><h1>${escapeHtml(title)}</h1><p>Markdown files under <code>${escapeHtml(cleanRelativePath)}/</code>.</p></div>${content}</main>`;
+  return layout(title, body);
 }
 
 async function serveMd(
@@ -1004,10 +1373,43 @@ async function serveMd(
   const html = await renderMarkdown(raw, currentDir);
   const title = path.basename(filePath, '.md');
   const sidebar = await renderSidebar(rootDir);
+  const relativePath = urlPath.replace(/^\//, '');
+  const actions = isEditableRelativePath(relativePath)
+    ? `<a class="action-link" href="${escapeHref(editHref(relativePath))}">Edit</a>`
+    : '';
   return layout(
     title,
-    `${sidebar}<main class="content"><div class="topbar">${breadcrumb(urlPath)}</div><article class="article">${html}</article></main>`,
+    `${sidebar}<main class="content">${renderTopbar(urlPath, actions)}<article class="article">${html}</article></main>`,
   );
+}
+
+async function readRequestBody(req: IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+function resolveEditableMarkdown(rootDir: string, relativePath: string): string {
+  const cleanRelativePath = toPosix(relativePath).replace(/^\/+/, '').replace(/\/+$/, '');
+  if (!isEditableRelativePath(cleanRelativePath)) {
+    throw new Error(`FORBIDDEN_EDIT_PATH: Editing is only allowed for markdown files under ${EDITABLE_DIRS.join(', ')}`);
+  }
+
+  return resolveInside(rootDir, cleanRelativePath);
+}
+
+async function generateEditPage(rootDir: string, relativePath: string): Promise<string> {
+  const cleanRelativePath = toPosix(relativePath).replace(/^\/+/, '');
+  const absolute = resolveEditableMarkdown(rootDir, cleanRelativePath);
+  if (!(await pathExists(absolute))) {
+    throw new Error(`File not found: ${cleanRelativePath}`);
+  }
+  const raw = await readFile(absolute, 'utf8');
+  const sidebar = await renderSidebar(rootDir);
+  const body = `${sidebar}<main class="content">${renderTopbar(`/${cleanRelativePath}`)}<div class="hero"><h1>Edit ${escapeHtml(cleanRelativePath)}</h1><p>Raw Markdown editor for this workspace file.</p></div><form class="edit-form" method="post" action="${escapeHref(editHref(cleanRelativePath))}"><textarea class="edit-textarea" name="content" spellcheck="false">${escapeHtml(raw)}</textarea><div class="page-actions"><button class="action-button" type="submit">Save</button><a class="action-link" href="${escapeHref(`/${cleanRelativePath}`)}">Cancel</a></div></form></main>`;
+  return layout(`Edit ${path.basename(cleanRelativePath)}`, body);
 }
 
 export default async function serveCmd(config: AppConfig, options: { port?: number }) {
@@ -1020,6 +1422,50 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
       const urlPath = decodeURIComponent(
         new URL(req.url ?? '/', `http://localhost`).pathname,
       );
+
+      if (urlPath.startsWith('/edit/')) {
+        const relative = urlPath.replace(/^\/edit\//, '').replace(/\/+$/, '');
+        if (req.method === 'GET') {
+          try {
+            const html = await generateEditPage(rootDir, relative);
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(html);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            const status = message.startsWith('FORBIDDEN_EDIT_PATH') ? 403 : 404;
+            res.writeHead(status, { 'Content-Type': 'text/plain' });
+            res.end(status === 403 ? 'Forbidden' : 'Not found');
+          }
+          return;
+        }
+
+        if (req.method === 'POST') {
+          try {
+            const absolute = resolveEditableMarkdown(rootDir, relative);
+            const body = await readRequestBody(req);
+            const params = new URLSearchParams(body);
+            const content = params.get('content');
+            if (content === null) {
+              res.writeHead(400, { 'Content-Type': 'text/plain' });
+              res.end('Missing content field');
+              return;
+            }
+            await writeIfChanged(absolute, content);
+            res.writeHead(303, { Location: escapeHref(`/${toPosix(relative)}`) });
+            res.end();
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            const status = message.startsWith('FORBIDDEN_EDIT_PATH') ? 403 : 404;
+            res.writeHead(status, { 'Content-Type': 'text/plain' });
+            res.end(status === 403 ? 'Forbidden' : 'Not found');
+          }
+          return;
+        }
+
+        res.writeHead(405, { 'Content-Type': 'text/plain' });
+        res.end('Method not allowed');
+        return;
+      }
 
       if (urlPath === '/assets/d3.min.js') {
         const js = await readFile(D3_DIST_PATH, 'utf8');
@@ -1045,7 +1491,7 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
         return;
       }
 
-      const relative = urlPath.replace(/^\//, '');
+      const relative = urlPath.replace(/^\//, '').replace(/\/+$/, '');
       if (!isServedRelativePath(relative)) {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
         res.end('Not found');
@@ -1062,6 +1508,16 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
       if (!(await pathExists(absolute))) {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
         res.end('Not found');
+        return;
+      }
+
+      const absoluteStats = await stat(absolute);
+      if (absoluteStats.isDirectory()) {
+        const html = relative === 'wiki'
+          ? await generateIndex(rootDir)
+          : await generateDirectoryPage(rootDir, relative);
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(html);
         return;
       }
 

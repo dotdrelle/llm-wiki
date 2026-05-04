@@ -67,6 +67,7 @@ No vector database is used. Everything stays in markdown and on disk.
   - `raw/ingested`
   - `wiki`
   - `templates`
+  - `build-context`
   - `deliverables`
 - reproducible deliverable generation with state tracked in `.wiki/build-state.json`
 - automatic `refresh` after `ingest` by default
