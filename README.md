@@ -359,6 +359,8 @@ After `wiki init`:
 │   └── answers/
 ├── templates/
 │   └── project-brief.md
+├── build-context/
+│   └── deliverable-rules.md
 └── deliverables/
 ```
 
