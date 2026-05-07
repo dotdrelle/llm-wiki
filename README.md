@@ -593,8 +593,17 @@ Exposed tools:
 | `write_wiki_page` | Write or update a page — restricted to `wiki/*` paths        |
 | `list_sources`    | List ingested source documents in `raw/ingested/`             |
 | `read_source`     | Read an ingested source by its relative path                    |
+| `search_wiki_context` | Search wiki pages and ingested sources, returning relevant passages for the client to answer from |
+| `read_many`       | Read several `wiki/` or `raw/ingested/` files in one call       |
 
 Write operations go through the same path guards as `wiki ingest`: `resolveInside` rejects any `../../` traversal, and `applyWikiOperations` refuses paths that do not start with `wiki/`.
+
+For question-answering clients, the intended flow is:
+
+1. Call `search_wiki_context` with the user question.
+2. Inspect the returned paths, scores, headings, excerpts, and `[src: ...]` citations.
+3. Call `read_many` for the selected `wiki/` or `raw/ingested/` paths.
+4. Let the MCP client produce the final answer itself from that context.
 
 #### Access key
 
@@ -624,7 +633,7 @@ wiki mcp-http --host 0.0.0.0 --port 3333 --path /mcp
 | `--port`   | TCP port                     | `3333`        |
 | `--path`   | HTTP endpoint path           | `/mcp`        |
 
-The server exposes the same five tools as `wiki mcp`. Authentication uses a Bearer token:
+The server exposes the same tools as `wiki mcp`. Authentication uses a Bearer token:
 
 ```
 Authorization: Bearer <mcp.accessKey>
