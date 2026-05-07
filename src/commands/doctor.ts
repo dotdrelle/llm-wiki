@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import YAML from 'yaml';
-import { splitByHeadings } from '../utils/markdown.ts';
+import { splitByHeadings, splitSourceSections } from '../utils/markdown.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import type { AppConfig } from '../types.ts';
 import { pathExists, safeWriteFile } from '../utils/fs.ts';
@@ -713,7 +713,7 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
     untrackedPaths.map(async (p) => {
       const { readFile } = await import('node:fs/promises');
       const content = await readFile(p, 'utf8');
-      return { path: p, size: content.length };
+      return { path: p, size: content.length, content };
     }),
   );
 
@@ -747,9 +747,15 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
   const largeUntracked = untrackedContents.filter(
     (u) => u.size > config.retrieval.maxSourceChars,
   );
+  const largeUntrackedSections = largeUntracked.flatMap((source) =>
+    splitSourceSections(source.content, config.retrieval.maxSourceChars),
+  );
+  const truncatedSourceSections = largeUntrackedSections.filter((section) =>
+    section.includes('[section truncated]'),
+  );
   if (largeUntracked.length > 0) {
     warn(
-      `${largeUntracked.length} pending file(s) in raw/untracked exceed maxSourceChars (${config.retrieval.maxSourceChars}) — body will be truncated at ingest`,
+      `${largeUntracked.length} pending file(s) in raw/untracked exceed maxSourceChars (${config.retrieval.maxSourceChars}) — ingest will split them into ~${largeUntrackedSections.length} LLM section call(s); only oversized unsplittable sections are truncated`,
     );
   }
   const truncatedChunks = allChunks.filter(
@@ -896,17 +902,22 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
         )
       : config.retrieval.maxSourceChars;
   if (maxUntracked > config.retrieval.maxSourceChars) {
-    if (recommendedSourceChars > config.retrieval.maxSourceChars) {
+    if (truncatedSourceSections.length === 0) {
+      ok(
+        `maxSourceChars ${config.retrieval.maxSourceChars} (largest pending source: ${maxUntracked} chars; ${largeUntracked.length} file(s) will be split into ~${largeUntrackedSections.length} section call(s))`,
+      );
+    } else if (recommendedSourceChars > config.retrieval.maxSourceChars) {
       warn(
-        `maxSourceChars ${config.retrieval.maxSourceChars} → ${recommendedSourceChars} (largest pending source: ${maxUntracked} chars)`,
+        `maxSourceChars ${config.retrieval.maxSourceChars} → ${recommendedSourceChars} (largest pending source: ${maxUntracked} chars; ${truncatedSourceSections.length} section(s) still need truncation after heading split)`,
       );
       (suggestions.retrieval ??= {}).maxSourceChars = recommendedSourceChars;
+      hasWarnings = true;
     } else {
       warn(
-        `largest pending source (${maxUntracked} chars) exceeds maxSourceChars ${config.retrieval.maxSourceChars}, but the context budget does not leave room to raise it safely`,
+        `largest pending source (${maxUntracked} chars) exceeds maxSourceChars ${config.retrieval.maxSourceChars}; ingest will split by headings, but ${truncatedSourceSections.length} section(s) are still too large and may be truncated`,
       );
+      hasWarnings = true;
     }
-    hasWarnings = true;
   } else if (untrackedSizes.length > 0) {
     ok(
       `maxSourceChars ${config.retrieval.maxSourceChars} (largest pending source: ${maxUntracked} chars)`,

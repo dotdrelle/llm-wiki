@@ -12,6 +12,7 @@ import type {
   SourceDocument,
   WikiOperation,
 } from '../src/types.ts';
+import { slugifyPath } from '../src/utils/path.ts';
 
 function createConfig(): AppConfig {
   return {
@@ -42,8 +43,11 @@ function createConfig(): AppConfig {
 
 class FakeWorkspaceService {
   appliedOperations: WikiOperation[] = [];
+  appliedBatches: WikiOperation[][] = [];
   archivedSources: string[] = [];
   sourcePaths = ['/tmp/wiki/raw/untracked/note.md'];
+  sourceBody = 'Body.';
+  readIndexAppliedCounts: number[] = [];
   failApply = false;
 
   async ensureInitialized(): Promise<void> {}
@@ -60,18 +64,19 @@ class FakeWorkspaceService {
     return {
       absolutePath: sourcePath,
       relativePath: `raw/untracked/${fileName}`,
-      archiveRelativePath: `raw/ingested/${fileName}`,
-      archiveCitationPath: `raw/ingested/${fileName}`,
+      archiveRelativePath: `raw/ingested/${slugifyPath(fileName)}`,
+      archiveCitationPath: `raw/ingested/${slugifyPath(fileName)}`,
       fileName,
       slug,
       title: slug,
       frontmatter: {},
-      rawContent: `# ${slug}\n\nBody.\n`,
-      body: 'Body.',
+      rawContent: `# ${slug}\n\n${this.sourceBody}\n`,
+      body: this.sourceBody,
     };
   }
 
   async readIndex(): Promise<string> {
+    this.readIndexAppliedCounts.push(this.appliedBatches.length);
     return '# Wiki Index\n';
   }
 
@@ -87,6 +92,7 @@ class FakeWorkspaceService {
     if (this.failApply) {
       throw new Error('disk write failed');
     }
+    this.appliedBatches.push(operations);
     this.appliedOperations = operations;
   }
 
@@ -134,11 +140,48 @@ class FailingOnceLLMService extends FakeLLMService {
   }
 }
 
+class BadCitationLLMService extends FakeLLMService {
+  async completeJson(): Promise<IngestPlan> {
+    this.calls += 1;
+    return {
+      summary: 'Updated wiki from source with malformed citation.',
+      operations: [
+        {
+          type: 'create',
+          path: 'wiki/sources/constituer-lequipe-davant-projet.md',
+          content:
+            "# Constituer l'équipe\n\nFait documenté. [src: raw/ingested/Constituer l'équipe d_avant-projet.md]\n",
+        },
+      ],
+    };
+  }
+}
+
 class FakeRetrievalService {
+  invalidateCalls = 0;
+
   async search(): Promise<SearchResult[]> {
     return [];
   }
-  invalidateCache(): void {}
+  invalidateCache(): void {
+    this.invalidateCalls += 1;
+  }
+}
+
+class SectionedLLMService extends FakeLLMService {
+  async completeJson(): Promise<IngestPlan> {
+    this.calls += 1;
+    return {
+      summary: `Updated section ${this.calls}.`,
+      operations: [
+        {
+          type: 'update',
+          path: 'wiki/sources/note.md',
+          content: `# Note\n\nSection ${this.calls}. [src: raw/ingested/note.md]\n`,
+        },
+      ],
+    };
+  }
 }
 
 class FailingRefreshService {
@@ -229,6 +272,72 @@ describe('ingest service', () => {
       true,
     );
     expect(logger.entries.some((entry) => entry.event === 'ingest:run-done')).toBe(true);
+  });
+
+  it('rewrites model-mutated source citations to the exact archived source path', async () => {
+    const workspace = new FakeWorkspaceService();
+    workspace.sourcePaths = ['/tmp/wiki/raw/untracked/Constituer l_équipe d_avant-projet.md'];
+    const logger = new MemoryTraceLogger();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new BadCitationLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+    );
+
+    const results = await service.ingest([], {});
+
+    expect(results[0].plan?.operations[0].content).toContain(
+      '[src: raw/ingested/constituer-lequipe-davant-projet.md]',
+    );
+    expect(workspace.appliedOperations[0].content).toContain(
+      '[src: raw/ingested/constituer-lequipe-davant-projet.md]',
+    );
+    expect(workspace.appliedOperations[0].content).not.toContain(
+      "Constituer l'équipe d_avant-projet.md",
+    );
+    expect(
+      logger.entries.find((entry) => entry.event === 'ingest:citation-path-rewrite')
+        ?.data,
+    ).toMatchObject({ rewrittenCitations: 1 });
+  });
+
+  it('ingests oversized sources section by section before archiving once', async () => {
+    const workspace = new FakeWorkspaceService();
+    workspace.sourceBody = [
+      '# Large source',
+      '',
+      '## First section',
+      'A'.repeat(70),
+      '',
+      '## Second section',
+      'B'.repeat(70),
+    ].join('\n');
+    const config = createConfig();
+    config.retrieval.maxSourceChars = 120;
+    const logger = new MemoryTraceLogger();
+    const llm = new SectionedLLMService();
+    const retrieval = new FakeRetrievalService();
+    const service = new IngestService(
+      config,
+      workspace as unknown as WorkspaceService,
+      llm as unknown as LLMService,
+      retrieval as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+    );
+
+    const results = await service.ingest([], {});
+
+    expect(llm.calls).toBe(2);
+    expect(workspace.appliedBatches).toHaveLength(2);
+    expect(retrieval.invalidateCalls).toBe(2);
+    expect(workspace.archivedSources).toEqual(['raw/untracked/note.md']);
+    expect(results[0].plan?.operations).toHaveLength(2);
+    expect(workspace.readIndexAppliedCounts).toContain(1);
+    expect(logger.entries.some((entry) => entry.event === 'ingest:split')).toBe(true);
   });
 
   it('continues ingesting remaining sources when one source fails', async () => {

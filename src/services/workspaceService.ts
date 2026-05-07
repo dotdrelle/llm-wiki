@@ -17,7 +17,7 @@ import {
   relativeFrom,
   resolveInside,
   slugify,
-  toPosix,
+  slugifyPath,
 } from '../utils/path.ts';
 import { parseTemplateInstructions } from '../utils/markdown.ts';
 import type {
@@ -100,21 +100,11 @@ export class WorkspaceService {
       cwd: scaffoldDir,
       dot: true,
       onlyFiles: true,
+      ignore: ['**/.DS_Store', '**/Thumbs.db'],
     });
 
     if (entries.length === 0) {
       throw new Error(`Workspace scaffold is missing or empty at ${scaffoldDir}.`);
-    }
-
-    if (!options.force) {
-      for (const relativePath of entries) {
-        const destination = path.join(this.paths.rootDir, relativePath);
-        if (await pathExists(destination)) {
-          throw new Error(
-            `Workspace already contains ${relativePath}. Re-run with --force to overwrite scaffold files.`,
-          );
-        }
-      }
     }
 
     await mkdir(this.paths.rootDir, { recursive: true });
@@ -122,6 +112,7 @@ export class WorkspaceService {
     for (const relativePath of entries) {
       const from = path.join(scaffoldDir, relativePath);
       const to = path.join(this.paths.rootDir, relativePath);
+      if (!options.force && (await pathExists(to))) continue;
       await mkdir(path.dirname(to), { recursive: true });
       await copyFile(from, to);
     }
@@ -194,7 +185,7 @@ export class WorkspaceService {
     const parsed = matter(rawContent);
     const relativePath = relativeFrom(this.paths.rootDir, absolutePath);
     const relativeToUntracked = relativeFrom(this.paths.rawUntrackedDir, absolutePath);
-    const archiveRelativePath = toPosix(path.join('raw/ingested', relativeToUntracked));
+    const archiveRelativePath = `raw/ingested/${slugifyPath(relativeToUntracked)}`;
     const fileName = path.basename(absolutePath);
     const title =
       typeof parsed.data.title === 'string' && parsed.data.title.trim()

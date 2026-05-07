@@ -59,6 +59,80 @@ export function extractSourceCitations(content: string): string[] {
   return [...content.matchAll(/\[src:\s*([^\]]+)\]/gi)].map((match) => match[1].trim());
 }
 
+export function splitSourceSections(content: string, maxChars: number): string[] {
+  const titleMatch = /^(# .+?)(?:\n|$)/.exec(content);
+  const titlePrefix = titleMatch ? `${titleMatch[1]}\n\n` : '';
+  const body = titleMatch ? content.slice(titleMatch[0].length).trim() : content.trim();
+  if (!body) return titlePrefix ? [titlePrefix.trim()] : [];
+
+  const splitAtHeading = (text: string, level: 2 | 3): string[] => {
+    const marker = `${'#'.repeat(level)} `;
+    const sections: string[] = [];
+    let current: string[] = [];
+
+    for (const line of text.split('\n')) {
+      if (line.startsWith(marker) && current.length > 0) {
+        sections.push(current.join('\n').trim());
+        current = [line];
+      } else {
+        current.push(line);
+      }
+    }
+
+    const last = current.join('\n').trim();
+    if (last) sections.push(last);
+    return sections;
+  };
+
+  const withTitle = (section: string): string => {
+    const cleanSection = section.trim();
+    return titlePrefix && !cleanSection.startsWith('# ')
+      ? `${titlePrefix}${cleanSection}`
+      : cleanSection;
+  };
+
+  const withTitleAndLimit = (section: string): string => {
+    const cleanSection = section.trim();
+    const combined = withTitle(cleanSection);
+    if (combined.length <= maxChars) return combined;
+
+    if (!titlePrefix || cleanSection.startsWith('# ')) {
+      return truncateSection(cleanSection, maxChars);
+    }
+
+    const budget = maxChars - titlePrefix.length;
+    if (budget <= 0) return titlePrefix.slice(0, maxChars);
+    return `${titlePrefix}${truncateSection(cleanSection, budget)}`;
+  };
+
+  const fitSection = (section: string): string[] => {
+    if (withTitle(section).length <= maxChars) return [withTitle(section)];
+
+    const h3Sections = splitAtHeading(section, 3);
+    if (h3Sections.length > 1) {
+      const [prefix, ...rest] = h3Sections;
+      const prefixHasBody = prefix
+        .split('\n')
+        .some((line) => line.trim() && !/^#{1,6}\s+/.test(line.trim()));
+      if (!prefixHasBody && rest.length > 0) {
+        return rest.map((subsection) => withTitleAndLimit(`${prefix}\n\n${subsection}`));
+      }
+      return h3Sections.map(withTitleAndLimit);
+    }
+
+    return [withTitleAndLimit(section)];
+  };
+
+  return splitAtHeading(body, 2).flatMap(fitSection);
+}
+
+function truncateSection(section: string, maxChars: number): string {
+  const suffix = '\n...[section truncated]';
+  if (section.length <= maxChars) return section;
+  if (maxChars <= suffix.length) return section.slice(0, maxChars);
+  return `${section.slice(0, maxChars - suffix.length).trimEnd()}${suffix}`;
+}
+
 function headingPathAtIndex(content: string, index: number): string[] {
   const lines = content.slice(0, index).split('\n');
   const stack: Array<{ depth: number; title: string }> = [];

@@ -120,6 +120,31 @@ describe('workspace safety', () => {
     await expect(workspace.isSourceUnchangedSinceIngest(source)).resolves.toBe(true);
   });
 
+  it('slugifies archived source paths and collapses duplicate confluence directories', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-'));
+    const sourceDir = path.join(
+      root,
+      'raw',
+      'untracked',
+      'Jouvence de la chaîne de prévision production outre-mer',
+      'Jouvence de la chaîne de prévision production outre-mer',
+      'Volet fonctionnel AP JUNO',
+    );
+    await mkdir(sourceDir, { recursive: true });
+    const sourcePath = path.join(
+      sourceDir,
+      'Synthèse du positionnement des DIROM et du SRSPM.md',
+    );
+    await writeFile(sourcePath, '# Synthèse\n\nContenu.\n', 'utf8');
+    const workspace = new WorkspaceService(createConfig(root));
+
+    const source = await workspace.readSourceDocument(sourcePath);
+
+    expect(source.archiveCitationPath).toBe(
+      'raw/ingested/jouvence-de-la-chaine-de-prevision-production-outre-mer/volet-fonctionnel-ap-juno/synthese-du-positionnement-des-dirom-et-du-srspm.md',
+    );
+  });
+
   it('does not treat an archived source with a different byte size as unchanged', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-'));
     await mkdir(path.join(root, 'raw', 'untracked'), { recursive: true });

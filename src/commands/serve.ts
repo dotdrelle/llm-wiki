@@ -48,8 +48,16 @@ function escapeScriptJson(s: string): string {
     .replace(/\u2029/g, '\\u2029');
 }
 
+function decodeHrefPath(href: string): string {
+  try {
+    return decodeURI(href);
+  } catch {
+    return href;
+  }
+}
+
 function escapeHref(href: string): string {
-  return escapeAttr(encodeURI(href));
+  return escapeAttr(encodeURI(decodeHrefPath(href)));
 }
 
 function humanTitle(value: string): string {
@@ -58,8 +66,17 @@ function humanTitle(value: string): string {
 
 function localHref(href: string, currentDir = ''): string {
   if (/^(https?:|mailto:|#)/i.test(href)) return href;
-  const clean = href.replace(/^\.\//, '');
-  if (clean.startsWith('/')) return clean;
+  const clean = decodeHrefPath(href.replace(/^\.\//, ''));
+  if (clean.startsWith('/')) {
+    const absoluteRelativePath = toPosix(clean.replace(/^\/+/, ''));
+    if (isServedRelativePath(absoluteRelativePath)) {
+      return `/${absoluteRelativePath}`;
+    }
+    if (currentDir.startsWith('raw/ingested/')) {
+      return `/raw/ingested/${absoluteRelativePath}`;
+    }
+    return clean;
+  }
   if (isServedRelativePath(clean)) {
     return `/${toPosix(clean)}`;
   }
@@ -98,6 +115,18 @@ function linkSourceCitations(raw: string, currentDir = ''): string {
   });
 }
 
+function linkWikiLinks(raw: string): string {
+  return raw.replace(
+    /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
+    (match, target: string, label?: string) => {
+      const cleanTarget = target.trim();
+      if (!cleanTarget) return match;
+      const text = label?.trim() || cleanTarget;
+      return `[${text}](${encodeURI(cleanTarget)})`;
+    },
+  );
+}
+
 async function renderMarkdown(raw: string, currentDir = ''): Promise<string> {
   const renderer = new marked.Renderer();
   renderer.link = ({ href, title, text }) => {
@@ -105,7 +134,7 @@ async function renderMarkdown(raw: string, currentDir = ''): Promise<string> {
     const safeTitle = title ? ` title="${escapeAttr(title)}"` : '';
     return `<a href="${safeHref}"${safeTitle}>${text}</a>`;
   };
-  return marked(linkSourceCitations(raw, currentDir), { gfm: true, renderer });
+  return marked(linkSourceCitations(linkWikiLinks(raw), currentDir), { gfm: true, renderer });
 }
 
 function layout(title: string, body: string): string {

@@ -3,6 +3,7 @@ import {
   extractWikiLinks,
   normalizeSourceBody,
   parseTemplateInstructions,
+  splitSourceSections,
 } from '../src/utils/markdown.ts';
 
 describe('markdown helpers', () => {
@@ -43,5 +44,52 @@ describe('markdown helpers', () => {
     expect(normalized).toContain('DONE');
     expect(normalized).not.toMatch(/<\/?(ul|li|span|time|a)\b/i);
     expect(normalized).not.toContain('``<');
+  });
+
+  it('splits large sources by h2 and prefixes the document title', () => {
+    const sections = splitSourceSections(
+      ['# Document', '', '## One', 'A'.repeat(30), '', '## Two', 'B'.repeat(30)].join('\n'),
+      60,
+    );
+
+    expect(sections).toHaveLength(2);
+    expect(sections.every((section) => section.length <= 60)).toBe(true);
+    expect(sections[0]).toContain('# Document');
+    expect(sections[0]).toContain('## One');
+    expect(sections[1]).toContain('# Document');
+    expect(sections[1]).toContain('## Two');
+  });
+
+  it('splits oversized h2 sections by h3 before truncating', () => {
+    const sections = splitSourceSections(
+      [
+        '# Document',
+        '',
+        '## Big',
+        '',
+        '### A',
+        'A'.repeat(35),
+        '',
+        '### B',
+        'B'.repeat(35),
+      ].join('\n'),
+      70,
+    );
+
+    expect(sections).toHaveLength(2);
+    expect(sections.every((section) => section.length <= 70)).toBe(true);
+    expect(sections[0]).toContain('### A');
+    expect(sections[1]).toContain('### B');
+  });
+
+  it('truncates only as a final fallback', () => {
+    const sections = splitSourceSections(
+      ['# Document', '', '## Huge', 'A'.repeat(120)].join('\n'),
+      70,
+    );
+
+    expect(sections).toHaveLength(1);
+    expect(sections[0].length).toBeLessThanOrEqual(70);
+    expect(sections[0]).toContain('[section truncated]');
   });
 });

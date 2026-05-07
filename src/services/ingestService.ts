@@ -2,14 +2,42 @@ import path from 'node:path';
 import { ingestPlanSchema } from '../config/schema.ts';
 import { buildIngestPrompt } from '../prompts/ingestPrompt.ts';
 import { buildPromptContext } from '../prompts/systemPreamble.ts';
-import { normalizeSourceBody } from '../utils/markdown.ts';
+import { normalizeSourceBody, splitSourceSections } from '../utils/markdown.ts';
 import type { TokenUsage } from './llmService.ts';
-import type { AppConfig, IngestCommandOptions, IngestResult } from '../types.ts';
+import type {
+  AppConfig,
+  IngestCommandOptions,
+  IngestResult,
+  WikiOperation,
+} from '../types.ts';
 import type { LLMService } from './llmService.ts';
 import type { RefreshService } from './refreshService.ts';
 import type { RetrievalService } from './retrievalService.ts';
 import type { TraceLogger } from './traceLogger.ts';
 import type { WorkspaceService } from './workspaceService.ts';
+
+function enforceSourceCitationPath(
+  operations: WikiOperation[],
+  archiveCitationPath: string,
+): { operations: WikiOperation[]; rewrittenCitations: number } {
+  let rewrittenCitations = 0;
+  const operationsWithCitations = operations.map((operation) => {
+    if (operation.content === undefined) return operation;
+
+    const content = operation.content.replace(
+      /\[src:\s*([^\]]+)\]/gi,
+      (match, citationPath: string) => {
+        if (citationPath.trim() === archiveCitationPath) return match;
+        rewrittenCitations += 1;
+        return `[src: ${archiveCitationPath}]`;
+      },
+    );
+
+    return content === operation.content ? operation : { ...operation, content };
+  });
+
+  return { operations: operationsWithCitations, rewrittenCitations };
+}
 
 export class IngestService {
   private readonly config: AppConfig;
@@ -114,161 +142,171 @@ export class IngestService {
           }
         }
 
-        const contextStartedAt = Date.now();
-        const relevantPages = await this.retrieval.search(source.body || source.title, {
-          limit: this.config.retrieval.maxContextFiles,
-          includeRaw: false,
-        });
-        await this.logger.info('ingest:context', {
-          source: source.relativePath,
-          pagesFound: relevantPages.length,
-          durationMs: Date.now() - contextStartedAt,
-        });
-        if (this.logger.debugEnabled) {
-          await this.logger.debug('ingest:context-pages', {
-            source: source.relativePath,
-            pages: relevantPages.map((page) => ({
-              path: page.page.relativePath,
-              score: page.score,
-            })),
-          });
-        }
-
-        // Truncate source body if needed — warn always visible on console
         const { maxChunkChars, maxSourceChars } = this.config.retrieval;
         const rawBody = normalizeSourceBody(source.body ?? '');
-        const sourceBodyTruncated = rawBody.length > maxSourceChars;
-        if (sourceBodyTruncated) {
-          await this.logger.warn('ingest:truncation', {
-            source: source.relativePath,
-            field: 'sourceBody',
-            originalChars: rawBody.length,
-            truncatedToChars: maxSourceChars,
-          });
-        }
-        const body = sourceBodyTruncated
-          ? `${rawBody.slice(0, maxSourceChars)}\n...[source tronquée — ${rawBody.length - maxSourceChars} chars omis]`
-          : rawBody;
+        const sections = rawBody.length > maxSourceChars
+          ? splitSourceSections(rawBody, maxSourceChars)
+          : [rawBody];
 
-        // Count relevant pages that will be truncated
-        const relevantPagesTruncated = relevantPages.filter(
-          (r) => (r.chunk?.content ?? r.page.content).length > maxChunkChars,
-        ).length;
-        if (relevantPagesTruncated > 0) {
-          await this.logger.info('ingest:truncation', {
+        if (sections.length > 1) {
+          await this.logger.info('ingest:split', {
             source: source.relativePath,
-            field: 'relevantPages',
-            truncatedPageCount: relevantPagesTruncated,
-            truncatedToCharsPerPage: maxChunkChars,
+            sections: sections.length,
+            originalChars: rawBody.length,
+            maxSourceChars,
           });
         }
 
         const sourcePagePath = path.posix.join('wiki', 'sources', `${source.slug}.md`);
-        const prompt = buildIngestPrompt({
-          source,
-          body,
-          indexContent: await this.workspace.readIndex(),
-          relevantPages,
-          sourcePagePath,
-          maxChunkChars,
-          ctx: buildPromptContext(this.config),
-        });
-        await this.logger.info('ingest:prompt', {
-          source: source.relativePath,
-          promptChars: prompt.system.length + prompt.user.length,
-          relevantPages: relevantPages.length,
-          sourcePagePath,
-        });
-        if (this.logger.debugEnabled) {
-          await this.logger.debug('ingest:prompt-detail', {
-            source: source.relativePath,
-            sourceBodyChars: rawBody.length,
-            sourceBodyTruncated,
-            relevantPagesTruncated,
-          });
-        }
+        const allOperations: WikiOperation[] = [];
+        let lastSummary = '';
 
-        options?.onSourceLlm?.(sourcePath, i, sourcePaths.length);
-        const plan = await this.llm.completeJson(
-          {
-            ...prompt,
-            label: 'ingest_plan',
-            logger: this.logger,
-            traceData: {
+        for (const [sectionIndex, body] of sections.entries()) {
+          const sectionLabel = sections.length > 1
+            ? ` (section ${sectionIndex + 1}/${sections.length})`
+            : '';
+
+          const contextStartedAt = Date.now();
+          const relevantPages = await this.retrieval.search(body || source.title, {
+            limit: this.config.retrieval.maxContextFiles,
+            includeRaw: false,
+          });
+          await this.logger.info('ingest:context', {
+            source: source.relativePath,
+            pagesFound: relevantPages.length,
+            durationMs: Date.now() - contextStartedAt,
+            ...(sections.length > 1 && { section: `${sectionIndex + 1}/${sections.length}` }),
+          });
+          if (this.logger.debugEnabled) {
+            await this.logger.debug('ingest:context-pages', {
               source: source.relativePath,
-            },
-            onUsage: (usage) => {
-              options?.onSourceUsage?.(sourcePath, i, sourcePaths.length, usage);
-            },
-          },
-          ingestPlanSchema,
-        );
-        await this.logger.info('ingest:plan', {
-          source: source.relativePath,
-          operations: plan.operations.length,
-          summary: plan.summary,
-        });
+              pages: relevantPages.map((page) => ({
+                path: page.page.relativePath,
+                score: page.score,
+              })),
+            });
+          }
 
-        const normalizedOperations = await this.workspace.normalizeWikiOperations(
-          plan.operations,
-        );
-        const rewrittenPaths = normalizedOperations
-          .map((operation, index) => ({
-            from: plan.operations[index]?.path,
-            to: operation.path,
-          }))
-          .filter((rewrite) => rewrite.from !== rewrite.to);
-        await this.logger.info('ingest:normalize', {
-          source: source.relativePath,
-          operations: normalizedOperations.length,
-          rewrittenPaths: rewrittenPaths.length,
-        });
-        if (this.logger.debugEnabled && rewrittenPaths.length > 0) {
-          await this.logger.debug('ingest:normalize-paths', {
-            source: source.relativePath,
-            rewrites: rewrittenPaths,
+          const relevantPagesTruncated = relevantPages.filter(
+            (r) => (r.chunk?.content ?? r.page.content).length > maxChunkChars,
+          ).length;
+          if (relevantPagesTruncated > 0) {
+            await this.logger.info('ingest:truncation', {
+              source: source.relativePath,
+              field: 'relevantPages',
+              truncatedPageCount: relevantPagesTruncated,
+              truncatedToCharsPerPage: maxChunkChars,
+            });
+          }
+
+          const prompt = buildIngestPrompt({
+            source,
+            body,
+            indexContent: await this.workspace.readIndex(),
+            relevantPages,
+            sourcePagePath,
+            maxChunkChars,
+            ctx: buildPromptContext(this.config),
           });
-        }
-
-        const normalizedPlan = {
-          ...plan,
-          operations: normalizedOperations,
-        };
-        const operationCounts = normalizedOperations.reduce(
-          (counts, operation) => {
-            counts[operation.type] += 1;
-            return counts;
-          },
-          { create: 0, update: 0, delete: 0 },
-        );
-        await this.logger.info('ingest:operations', {
-          source: source.relativePath,
-          create: operationCounts.create,
-          update: operationCounts.update,
-          delete: operationCounts.delete,
-        });
-        if (this.logger.debugEnabled) {
-          await this.logger.debug('ingest:operation-paths', {
+          await this.logger.info('ingest:prompt', {
             source: source.relativePath,
-            operations: normalizedOperations.map((operation) => ({
-              type: operation.type,
-              path: operation.path,
-            })),
+            promptChars: prompt.system.length + prompt.user.length,
+            relevantPages: relevantPages.length,
+            sourcePagePath,
+            ...(sections.length > 1 && { section: `${sectionIndex + 1}/${sections.length}` }),
           });
-        }
 
-        if (!options?.dryRun) {
-          const applyStartedAt = Date.now();
-          await this.workspace.applyWikiOperations(normalizedPlan.operations);
-          this.retrieval.invalidateCache();
-          await this.logger.info('ingest:apply', {
+          options?.onSourceLlm?.(sourcePath, i, sourcePaths.length);
+          const plan = await this.llm.completeJson(
+            {
+              ...prompt,
+              label: 'ingest_plan',
+              logger: this.logger,
+              traceData: { source: source.relativePath },
+              onUsage: (usage) => {
+                options?.onSourceUsage?.(sourcePath, i, sourcePaths.length, usage);
+              },
+            },
+            ingestPlanSchema,
+          );
+          await this.logger.info('ingest:plan', {
             source: source.relativePath,
-            durationMs: Date.now() - applyStartedAt,
+            operations: plan.operations.length,
+            summary: plan.summary,
+            ...(sections.length > 1 && { section: `${sectionIndex + 1}/${sections.length}` }),
+          });
+
+          const normalizedOperations = await this.workspace.normalizeWikiOperations(
+            plan.operations,
+          );
+          const { operations: citationSafeOperations, rewrittenCitations } =
+            enforceSourceCitationPath(normalizedOperations, source.archiveCitationPath);
+          const rewrittenPaths = normalizedOperations
+            .map((operation, index) => ({
+              from: plan.operations[index]?.path,
+              to: operation.path,
+            }))
+            .filter((rewrite) => rewrite.from !== rewrite.to);
+          await this.logger.info('ingest:normalize', {
+            source: source.relativePath,
+            operations: citationSafeOperations.length,
+            rewrittenPaths: rewrittenPaths.length,
+            rewrittenCitations,
+          });
+          if (this.logger.debugEnabled && rewrittenPaths.length > 0) {
+            await this.logger.debug('ingest:normalize-paths', {
+              source: source.relativePath,
+              rewrites: rewrittenPaths,
+            });
+          }
+          if (rewrittenCitations > 0) {
+            await this.logger.warn('ingest:citation-path-rewrite', {
+              source: source.relativePath,
+              archivePath: source.archiveCitationPath,
+              rewrittenCitations,
+            });
+          }
+
+          const operationCounts = citationSafeOperations.reduce(
+            (counts, operation) => {
+              counts[operation.type] += 1;
+              return counts;
+            },
+            { create: 0, update: 0, delete: 0 },
+          );
+          await this.logger.info('ingest:operations', {
+            source: source.relativePath,
             create: operationCounts.create,
             update: operationCounts.update,
             delete: operationCounts.delete,
           });
 
+          if (!options?.dryRun) {
+            const applyStartedAt = Date.now();
+            await this.workspace.applyWikiOperations(citationSafeOperations);
+            this.retrieval.invalidateCache();
+            await this.logger.info('ingest:apply', {
+              source: source.relativePath,
+              durationMs: Date.now() - applyStartedAt,
+              create: operationCounts.create,
+              update: operationCounts.update,
+              delete: operationCounts.delete,
+              ...(sections.length > 1 && { section: `${sectionIndex + 1}/${sections.length}` }),
+            });
+          } else {
+            await this.logger.info('ingest:dry-run', {
+              source: source.relativePath,
+              ...(sections.length > 1 && { section: `${sectionIndex + 1}/${sections.length}` }),
+            });
+          }
+
+          allOperations.push(...citationSafeOperations);
+          lastSummary = sections.length > 1
+            ? `${plan.summary}${sectionLabel}`
+            : plan.summary;
+        }
+
+        if (!options?.dryRun) {
           const archiveStartedAt = Date.now();
           await this.workspace.archiveSource(source);
           await this.logger.info('ingest:archive', {
@@ -279,17 +317,13 @@ export class IngestService {
 
           await this.workspace.appendLog(
             'ingest',
-            `${source.relativePath} -> ${source.archiveCitationPath} (${normalizedPlan.summary})`,
+            `${source.relativePath} -> ${source.archiveCitationPath} (${lastSummary})`,
           );
-        } else {
-          await this.logger.info('ingest:dry-run', {
-            source: source.relativePath,
-          });
         }
 
         results.push({
           source: source.relativePath,
-          plan: normalizedPlan,
+          plan: { summary: lastSummary, operations: allOperations },
         });
 
         await this.logger.info('ingest:source-done', {

@@ -19,6 +19,21 @@ export function slugify(value: string): string {
     .slice(0, 80);
 }
 
+export function slugifyPath(relativePath: string): string {
+  const sluggedParts = relativePath
+    .split('/')
+    .map((part) => {
+      const ext = path.extname(part);
+      const base = part.slice(0, part.length - ext.length);
+      return slugify(base) + ext;
+    })
+    .filter(Boolean);
+
+  return sluggedParts
+    .filter((part, index) => index === 0 || part !== sluggedParts[index - 1])
+    .join('/');
+}
+
 export function resolveInside(rootDir: string, candidate: string): string {
   const absolutePath = path.resolve(rootDir, candidate);
   const relativePath = path.relative(rootDir, absolutePath);
