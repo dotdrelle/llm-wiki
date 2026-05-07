@@ -56,14 +56,20 @@ export default async function ingestCmd(
         spinner?.update(`Ingesting ${name} (${index + 1}/${total})…`);
         spinner?.updateSub(undefined);
       },
-      onSourceLlm: (sourcePath, index, total) => {
+      onSourceLlm: (sourcePath, index, total, progress) => {
         tokensLabel = '';
         const llmStart = Date.now();
         const name = path.basename(sourcePath, '.md');
-        spinner?.update(`Ingesting ${name} (${index + 1}/${total})…`);
+        const sectionLabel = progress && progress.sectionTotal > 1
+          ? `, section ${progress.sectionIndex + 1}/${progress.sectionTotal}`
+          : '';
+        spinner?.update(`Ingesting ${name} (${index + 1}/${total}${sectionLabel})…`);
         spinner?.updateSub(() => {
           const s = ((Date.now() - llmStart) / 1000).toFixed(1);
-          return `${name} · LLM ${s}s${tokensLabel}`;
+          const subSection = progress && progress.sectionTotal > 1
+            ? `section ${progress.sectionIndex + 1}/${progress.sectionTotal} · `
+            : '';
+          return `${name} · ${subSection}LLM ${s}s${tokensLabel}`;
         });
       },
       onSourceUsage: (_sourcePath, _index, _total, usage) => {

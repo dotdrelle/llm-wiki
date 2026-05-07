@@ -67,12 +67,18 @@ export class IngestService {
     inputs: string[],
     options?: IngestCommandOptions & {
       onSourceStart?: (sourcePath: string, index: number, total: number) => void;
-      onSourceLlm?: (sourcePath: string, index: number, total: number) => void;
+      onSourceLlm?: (
+        sourcePath: string,
+        index: number,
+        total: number,
+        progress?: { sectionIndex: number; sectionTotal: number },
+      ) => void;
       onSourceUsage?: (
         sourcePath: string,
         index: number,
         total: number,
         usage: TokenUsage,
+        progress?: { sectionIndex: number; sectionTotal: number },
       ) => void;
     },
   ): Promise<IngestResult[]> {
@@ -216,7 +222,11 @@ export class IngestService {
             ...(sections.length > 1 && { section: `${sectionIndex + 1}/${sections.length}` }),
           });
 
-          options?.onSourceLlm?.(sourcePath, i, sourcePaths.length);
+          const progress = {
+            sectionIndex,
+            sectionTotal: sections.length,
+          };
+          options?.onSourceLlm?.(sourcePath, i, sourcePaths.length, progress);
           const plan = await this.llm.completeJson(
             {
               ...prompt,
@@ -224,7 +234,7 @@ export class IngestService {
               logger: this.logger,
               traceData: { source: source.relativePath },
               onUsage: (usage) => {
-                options?.onSourceUsage?.(sourcePath, i, sourcePaths.length, usage);
+                options?.onSourceUsage?.(sourcePath, i, sourcePaths.length, usage, progress);
               },
             },
             ingestPlanSchema,
