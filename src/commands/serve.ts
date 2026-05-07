@@ -754,6 +754,18 @@ function extractIndexTiles(markdown: string): TileSection[] {
         href: localHref(link[2]),
         meta: link[2],
       });
+      continue;
+    }
+
+    const wikiLink = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/.exec(item[1]);
+    if (wikiLink?.[1]) {
+      const target = wikiLink[1].trim();
+      const title = wikiLink[2]?.trim() || humanTitle(target);
+      current.tiles.push({
+        title,
+        href: localHref(target),
+        meta: target,
+      });
     } else {
       const text = item[1].replace(/`/g, '').trim();
       current.tiles.push({

@@ -1,0 +1,36 @@
+language: fr
+
+llm:
+  provider: ollama
+  model: YOUR_MODEL_NAME
+  baseUrl: http://127.0.0.1:11434/v1
+  temperature: 0.1
+  timeoutMs: 600000
+  numCtx: 32768
+  # Ollama-specific — set these for accurate doctor recommendations.
+  # For remote/Docker Ollama, set them here since the server env cannot be auto-detected.
+  # flashAttention: true
+  # kvCacheType: q8_0
+
+build:
+  refreshOnIngest: false
+  slotBatchSize: 3
+  maxBuildContextChars: 12000
+
+retrieval:
+  maxContextFiles: 5
+  maxChunksPerPage: 2
+  maxChunkChars: 3000
+  maxSourceChars: 8000
+
+mcp:
+  # Optional: require clients to authenticate with this value.
+  # Can also be set with WIKI_MCP_ACCESS_KEY, useful for Docker-only deployments.
+  # accessKey: your-secret-key
+  # Optional: enable HTTPS for `wiki mcp-http`.
+  # Paths are relative to the workspace root, or absolute inside the container.
+  # Can also be set with WIKI_MCP_TLS_CERT_PATH / WIKI_MCP_TLS_KEY_PATH / WIKI_MCP_TLS_CA_PATH.
+  # tls:
+  #   certPath: certs/fullchain.pem
+  #   keyPath: certs/privkey.pem
+  #   caPath: certs/ca.pem

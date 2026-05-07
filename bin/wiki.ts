@@ -12,6 +12,7 @@ import refreshCmd from '../src/commands/refresh.ts';
 import serveCmd from '../src/commands/serve.ts';
 import doctorCmd from '../src/commands/doctor.ts';
 import mcpCmd from '../src/commands/mcp.ts';
+import mcpHttpCmd from '../src/commands/mcpHttp.ts';
 import exportCmd from '../src/commands/export.ts';
 
 const program = new Command();
@@ -103,6 +104,20 @@ async function main() {
     .command('mcp')
     .description('Start an MCP stdio server exposing the wiki workspace to AI assistants')
     .action(() => mcpCmd(config));
+
+  program
+    .command('mcp-http')
+    .description('Start an MCP Streamable HTTP server exposing the wiki workspace')
+    .option('--host <host>', 'Host to listen on', '127.0.0.1')
+    .option('-p, --port <number>', 'Port to listen on', '3333')
+    .option('--path <path>', 'HTTP endpoint path', '/mcp')
+    .action((options) =>
+      mcpHttpCmd(config, {
+        host: options.host,
+        port: parseInt(options.port, 10),
+        path: options.path,
+      }),
+    );
 
   program
     .command('export')

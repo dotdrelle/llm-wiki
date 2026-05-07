@@ -63,26 +63,78 @@ services:
     volumes:
       - ${WIKI_WORKSPACE:-.}:/workspace
     environment:
-      - WIKI_MCP_KEY
+      - WIKI_MCP_ACCESS_KEY
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+
+  # Serveur MCP Streamable HTTP / HTTPS.
+  # Démarrage HTTP:
+  #   docker compose --profile mcp-http up mcp-http
+  #
+  # Configuration:
+  #   - clé serveur: mcp.accessKey dans .wikirc.yaml ou WIKI_MCP_ACCESS_KEY
+  #   - certificats: mcp.tls.* dans .wikirc.yaml ou variables WIKI_MCP_TLS_*
+  #
+  # Démarrage HTTPS via Docker seul:
+  #   WIKI_MCP_ACCESS_KEY=your-secret-key \
+  #   WIKI_MCP_TLS_CERT_PATH=/certs/fullchain.pem \
+  #   WIKI_MCP_TLS_KEY_PATH=/certs/privkey.pem \
+  #   WIKI_CERTS=/absolute/path/to/certs \
+  #   docker compose --profile mcp-http up mcp-http
+  #
+  # Démarrage HTTPS via .wikirc.yaml:
+  #   - monter les certificats dans ${WIKI_CERTS:-./certs}:/certs:ro
+  #   - configurer:
+  #       mcp:
+  #         accessKey: your-secret-key
+  #         tls:
+  #           certPath: /certs/fullchain.pem
+  #           keyPath: /certs/privkey.pem
+  #           caPath: /certs/ca.pem
+  #   - lancer le même service; il bascule en HTTPS si certPath/keyPath existent.
+  #
+  # Endpoint client: http(s)://HOST:3333/mcp
+  # Auth: Authorization: Bearer <mcp.accessKey>
+  mcp-http:
+    build:
+      context: .
+      platforms:
+        - linux/amd64
+        - linux/arm64
+    command: mcp-http --host 0.0.0.0 --port 3333 --path /mcp
+    profiles: ['mcp-http']
+    volumes:
+      - ${WIKI_WORKSPACE:-.}:/workspace
+      - ${WIKI_CERTS:-./certs}:/certs:ro
+    environment:
+      - WIKI_MCP_ACCESS_KEY
+      - WIKI_MCP_TLS_CERT_PATH
+      - WIKI_MCP_TLS_KEY_PATH
+      - WIKI_MCP_TLS_CA_PATH
+    ports:
+      - '${WIKI_MCP_HTTP_PORT:-3333}:3333'
     extra_hosts:
       - 'host.docker.internal:host-gateway'
 
   # Ollama conteneurisé — Linux + GPU NVIDIA uniquement.
   # Sur macOS, lancer Ollama nativement et pointer baseUrl sur host.docker.internal.
-  ollama:
-    image: ollama/ollama
-    profiles: [gpu]
-    volumes:
-      - ollama-data:/root/.ollama
-    ports:
-      - '11434:11434'
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-
-volumes:
-  ollama-data:
+  #
+  # Décommenter ce bloc si tu veux gérer Ollama dans Docker:
+  #
+  # ollama:
+  #   image: ollama/ollama
+  #   profiles: [gpu]
+  #   volumes:
+  #     - ollama-data:/root/.ollama
+  #   ports:
+  #     - '11434:11434'
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]
+  #
+  # volumes:
+  #   ollama-data:

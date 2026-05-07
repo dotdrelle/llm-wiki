@@ -27,6 +27,11 @@ export interface RetrievalConfig {
 
 export interface McpConfig {
   accessKey?: string;
+  tls?: {
+    certPath?: string;
+    keyPath?: string;
+    caPath?: string;
+  };
 }
 
 export interface AppConfig {

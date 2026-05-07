@@ -11,7 +11,7 @@ WORKDIR /app
 COPY --from=builder /build/node_modules ./node_modules
 COPY --from=builder /build/dist ./
 COPY package.json ./
-EXPOSE 3000
+EXPOSE 3000 3333
 VOLUME /workspace
 WORKDIR /workspace
 ENTRYPOINT ["node", "/app/bin/wiki.js"]

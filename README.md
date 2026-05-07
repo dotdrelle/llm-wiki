@@ -605,7 +605,67 @@ mcp:
   accessKey: your-secret-key
 ```
 
-Then pass the same value as an environment variable in your MCP client config (`WIKI_MCP_KEY`). If the key is configured but the env var is absent or does not match, the server exits immediately with an error.
+Then pass the same value as an environment variable in your MCP client config (`WIKI_MCP_ACCESS_KEY`). If the key is configured but the env var is absent or does not match, the server exits immediately with an error.
+
+For Docker-only deployments, the server key can also be configured with `WIKI_MCP_ACCESS_KEY` instead of editing `.wikirc.yaml`. `WIKI_MCP_KEY` is still accepted for older stdio client configs, but new configs should use `WIKI_MCP_ACCESS_KEY`.
+
+### `wiki mcp-http`
+
+Starts a Streamable HTTP MCP server. Use this instead of `wiki mcp` when the AI client cannot launch a local process — for example a remote Claude deployment, a Docker-hosted assistant, or any client that connects over HTTP rather than stdio.
+
+```bash
+wiki mcp-http
+wiki mcp-http --host 0.0.0.0 --port 3333 --path /mcp
+```
+
+| Option     | Description                  | Default       |
+| ---------- | ---------------------------- | ------------- |
+| `--host`   | Address to bind              | `127.0.0.1`   |
+| `--port`   | TCP port                     | `3333`        |
+| `--path`   | HTTP endpoint path           | `/mcp`        |
+
+The server exposes the same five tools as `wiki mcp`. Authentication uses a Bearer token:
+
+```
+Authorization: Bearer <mcp.accessKey>
+```
+
+If `mcp.accessKey` is not set the endpoint accepts unauthenticated connections — only do this on a trusted network.
+
+#### HTTPS / TLS
+
+Pass certificate paths in `.wikirc.yaml` or as environment variables. Both `certPath` and `keyPath` must be provided together; `caPath` is optional for mutual TLS.
+
+```yaml
+mcp:
+  accessKey: your-secret-key
+  tls:
+    certPath: /certs/fullchain.pem
+    keyPath: /certs/privkey.pem
+    caPath: /certs/ca.pem       # optional
+```
+
+Environment variable equivalents: `WIKI_MCP_TLS_CERT_PATH`, `WIKI_MCP_TLS_KEY_PATH`, `WIKI_MCP_TLS_CA_PATH`.
+
+Relative paths are resolved against the workspace root; absolute paths (e.g. Docker volume mounts) are used as-is.
+
+#### Docker
+
+```bash
+docker compose --profile mcp-http up mcp-http
+```
+
+With TLS via environment variables:
+
+```bash
+WIKI_MCP_ACCESS_KEY=your-secret-key \
+WIKI_MCP_TLS_CERT_PATH=/certs/fullchain.pem \
+WIKI_MCP_TLS_KEY_PATH=/certs/privkey.pem \
+WIKI_CERTS=/absolute/path/to/certs \
+docker compose --profile mcp-http up mcp-http
+```
+
+---
 
 ## MCP integration
 
@@ -622,7 +682,7 @@ Add the following to `.claude/settings.json` at the root of your wiki workspace:
       "command": "wiki",
       "args": ["mcp"],
       "type": "stdio",
-      "env": { "WIKI_MCP_KEY": "your-secret-key" }
+      "env": { "WIKI_MCP_ACCESS_KEY": "your-secret-key" }
     }
   }
 }
@@ -642,7 +702,7 @@ Add the following to `~/Library/Application Support/Claude/claude_desktop_config
       "args": ["mcp"],
       "type": "stdio",
       "cwd": "/absolute/path/to/your/wiki-workspace",
-      "env": { "WIKI_MCP_KEY": "your-secret-key" }
+      "env": { "WIKI_MCP_ACCESS_KEY": "your-secret-key" }
     }
   }
 }

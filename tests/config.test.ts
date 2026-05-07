@@ -1,11 +1,19 @@
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config/loadConfig.ts';
 import { resolveConfig } from '../src/config/schema.ts';
 
 describe('config resolution', () => {
+  afterEach(() => {
+    delete process.env.WIKI_MCP_ACCESS_KEY;
+    delete process.env.WIKI_MCP_KEY;
+    delete process.env.WIKI_MCP_TLS_CERT_PATH;
+    delete process.env.WIKI_MCP_TLS_KEY_PATH;
+    delete process.env.WIKI_MCP_TLS_CA_PATH;
+  });
+
   it('defaults Ollama base URL when provider is ollama', () => {
     const config = resolveConfig(
       {
@@ -34,6 +42,81 @@ describe('config resolution', () => {
     );
 
     expect(config.build.refreshOnIngest).toBe(false);
+  });
+
+  it('parses MCP access key and TLS paths', () => {
+    const config = resolveConfig(
+      {
+        mcp: {
+          accessKey: 'secret',
+          tls: {
+            certPath: 'certs/fullchain.pem',
+            keyPath: 'certs/privkey.pem',
+            caPath: 'certs/ca.pem',
+          },
+        },
+      },
+      '/tmp/wiki',
+    );
+
+    expect(config.mcp).toEqual({
+      accessKey: 'secret',
+      tls: {
+        certPath: 'certs/fullchain.pem',
+        keyPath: 'certs/privkey.pem',
+        caPath: 'certs/ca.pem',
+      },
+    });
+  });
+
+  it('treats an empty MCP section as default config', () => {
+    const config = resolveConfig({ mcp: null }, '/tmp/wiki');
+
+    expect(config.mcp).toEqual({});
+  });
+
+  it('reads MCP settings from environment variables', () => {
+    process.env.WIKI_MCP_ACCESS_KEY = 'env-secret';
+    process.env.WIKI_MCP_TLS_CERT_PATH = '/certs/fullchain.pem';
+    process.env.WIKI_MCP_TLS_KEY_PATH = '/certs/privkey.pem';
+    process.env.WIKI_MCP_TLS_CA_PATH = '/certs/ca.pem';
+
+    const config = resolveConfig({}, '/tmp/wiki');
+
+    expect(config.mcp).toEqual({
+      accessKey: 'env-secret',
+      tls: {
+        certPath: '/certs/fullchain.pem',
+        keyPath: '/certs/privkey.pem',
+        caPath: '/certs/ca.pem',
+      },
+    });
+  });
+
+  it('keeps .wikirc MCP settings ahead of environment overrides', () => {
+    process.env.WIKI_MCP_ACCESS_KEY = 'env-secret';
+    process.env.WIKI_MCP_TLS_CERT_PATH = '/certs/env-fullchain.pem';
+
+    const config = resolveConfig(
+      {
+        mcp: {
+          accessKey: 'yaml-secret',
+          tls: {
+            certPath: 'certs/fullchain.pem',
+            keyPath: 'certs/privkey.pem',
+          },
+        },
+      },
+      '/tmp/wiki',
+    );
+
+    expect(config.mcp).toEqual({
+      accessKey: 'yaml-secret',
+      tls: {
+        certPath: 'certs/fullchain.pem',
+        keyPath: 'certs/privkey.pem',
+      },
+    });
   });
 
   it('requires baseUrl for openai-compatible provider', () => {

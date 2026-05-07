@@ -258,9 +258,19 @@ const retrievalSchema = z
   });
 
 const mcpSchema = z
-  .object({
-    accessKey: z.string().min(1).optional(),
-  })
+  .preprocess(
+    (value) => value ?? {},
+    z.object({
+      accessKey: z.string().min(1).optional(),
+      tls: z
+        .object({
+          certPath: z.string().min(1).optional(),
+          keyPath: z.string().min(1).optional(),
+          caPath: z.string().min(1).optional(),
+        })
+        .optional(),
+    }),
+  )
   .default({});
 
 export const rawConfigSchema = z.object({
@@ -393,12 +403,28 @@ export function resolveConfig(
     (provider === 'anthropic' ? process.env.ANTHROPIC_API_KEY : undefined) ??
     (provider === 'ollama' ? 'ollama' : undefined);
 
+  const mcpCertPath = parsed.mcp?.tls?.certPath ?? process.env.WIKI_MCP_TLS_CERT_PATH;
+  const mcpKeyPath = parsed.mcp?.tls?.keyPath ?? process.env.WIKI_MCP_TLS_KEY_PATH;
+  const mcpCaPath = parsed.mcp?.tls?.caPath ?? process.env.WIKI_MCP_TLS_CA_PATH;
+  const mcpTls =
+    mcpCertPath || mcpKeyPath || mcpCaPath
+      ? {
+          ...(mcpCertPath ? { certPath: mcpCertPath } : {}),
+          ...(mcpKeyPath ? { keyPath: mcpKeyPath } : {}),
+          ...(mcpCaPath ? { caPath: mcpCaPath } : {}),
+        }
+      : undefined;
+
   return {
     wikiRoot,
     configPath,
     language: parsed.language ?? 'fr',
     mcp: {
-      accessKey: parsed.mcp?.accessKey,
+      accessKey:
+        parsed.mcp?.accessKey ??
+        process.env.WIKI_MCP_ACCESS_KEY ??
+        process.env.WIKI_MCP_KEY,
+      tls: mcpTls,
     },
     llm: {
       provider,
