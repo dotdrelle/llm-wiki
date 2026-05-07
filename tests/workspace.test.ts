@@ -8,6 +8,7 @@ import { WorkspaceService } from '../src/services/workspaceService.ts';
 function createConfig(root: string): AppConfig {
   return {
     wikiRoot: root,
+    language: 'fr',
     llm: {
       provider: 'ollama',
       model: 'qwen2.5:14b',

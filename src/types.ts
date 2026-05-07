@@ -32,6 +32,7 @@ export interface McpConfig {
 export interface AppConfig {
   wikiRoot: string;
   configPath?: string;
+  language: string;
   llm: LlmConfig;
   build: BuildConfig;
   retrieval: RetrievalConfig;

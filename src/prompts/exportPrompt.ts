@@ -1,6 +1,9 @@
+import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
+
 export function buildExportPrompt(
   deliverableContent: string,
   sources: Array<{ path: string; content: string }>,
+  ctx: PromptContext,
 ) {
   const sourcesText = sources
     .map((s) => `## ${s.path}\n\n${s.content.trim()}`)
@@ -8,13 +11,14 @@ export function buildExportPrompt(
 
   return {
     system: [
+      buildSystemPreamble(ctx),
       'You expand a deliverable document into a fully self-contained version.',
       'Rules:',
       '- Use ONLY information present in the provided source pages. Do not invent.',
       '- For each section, weave the relevant source details directly into the prose.',
       '- Remove all [src: ...] citation markers from the output.',
-      '- Preserve the document structure: keep all headings exactly as they are.',
-      '- Write in the same language as the original document.',
+      '- Preserve the document structure and heading hierarchy. Translate heading text to the configured target language when needed.',
+      '- Write in the configured target language from the system instructions.',
       '- Do not add new sections or headings not present in the original.',
       '- If sources lack enough detail to expand a section, keep the original text and append a blockquote: "> Note: insufficient source documentation to expand this section."',
     ].join('\n'),
@@ -34,21 +38,22 @@ export function buildExportPrompt(
       '# Task',
       'Rewrite the document above as a fully self-contained version.',
       'Replace every [src: ...] citation with detailed inline content from the sources.',
-      'Keep all headings and the overall structure unchanged.',
+      'Keep the overall structure unchanged and keep the same heading levels.',
     ].join('\n'),
   };
 }
 
-export function buildPolishPrompt(markdown: string) {
+export function buildPolishPrompt(markdown: string, ctx: PromptContext) {
   return {
     system: [
+      buildSystemPreamble(ctx),
       'You are an editorial reviewer polishing a source-grounded markdown deliverable.',
       'Rules:',
       '- Improve clarity, flow, and readability without changing the meaning.',
-      '- Preserve every heading exactly as written and keep the same markdown structure.',
+      '- Preserve the markdown structure and heading hierarchy. Translate heading text to the configured target language when needed.',
       '- Do not add new factual claims, examples, numbers, dates, names, conclusions, or source citations.',
       '- Do not remove important technical or project-specific details.',
-      '- Keep the same language as the original document.',
+      '- Write in the configured target language from the system instructions.',
       '- Write in a natural, clear voice — as if explaining to a thoughtful colleague. Keep it simple and direct without becoming casual in formal documents.',
       '- Vary sentence length and rhythm: mix short punchy sentences with fuller explanatory ones. Avoid a uniformly smooth or templated cadence.',
       '- Vary sentence openings and reduce repetitive phrasing or keyword repetition unless technically necessary.',
@@ -70,7 +75,7 @@ export function buildPolishPrompt(markdown: string) {
       '',
       '# Task',
       'Return a polished version of the document.',
-      'Keep the same facts, headings, markdown structure, and language.',
+      'Keep the same facts and markdown structure. Use the configured target language.',
     ].join('\n'),
   };
 }

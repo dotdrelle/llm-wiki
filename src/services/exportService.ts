@@ -1,4 +1,5 @@
 import { buildExportPrompt, buildPolishPrompt } from '../prompts/exportPrompt.ts';
+import { buildPromptContext } from '../prompts/systemPreamble.ts';
 import { pathExists } from '../utils/fs.ts';
 import { extractSourceCitations } from '../utils/markdown.ts';
 import { resolveInside } from '../utils/path.ts';
@@ -75,7 +76,8 @@ export async function expandDeliverable(
       return content;
     }
 
-    const polishPrompt = buildPolishPrompt(content);
+    const promptCtx = buildPromptContext(config);
+    const polishPrompt = buildPolishPrompt(content, promptCtx);
     await logger.debug('export:polish-prompt', {
       chars: polishPrompt.system.length + polishPrompt.user.length,
       mode: 'polish-only',
@@ -86,14 +88,15 @@ export async function expandDeliverable(
     return result;
   }
 
-  const prompt = buildExportPrompt(content, sources);
+  const promptCtx = buildPromptContext(config);
+  const prompt = buildExportPrompt(content, sources, promptCtx);
   await logger.debug('export:prompt', { chars: prompt.system.length + prompt.user.length });
 
   onProgress?.({ phase: 'llm', path: deliverablePath, citations: sources.length });
   let result = await llm.completeText({ ...prompt, label: 'export', logger });
 
   if (options.polish) {
-    const polishPrompt = buildPolishPrompt(result);
+    const polishPrompt = buildPolishPrompt(result, promptCtx);
     await logger.debug('export:polish-prompt', {
       chars: polishPrompt.system.length + polishPrompt.user.length,
     });

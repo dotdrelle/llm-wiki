@@ -265,6 +265,7 @@ const mcpSchema = z
 
 export const rawConfigSchema = z.object({
   wikiRoot: z.string().optional(),
+  language: z.string().min(2).max(20).default('fr').optional(),
   llm: llmSchema.optional(),
   build: buildSchema.optional(),
   retrieval: retrievalSchema.optional(),
@@ -395,6 +396,7 @@ export function resolveConfig(
   return {
     wikiRoot,
     configPath,
+    language: parsed.language ?? 'fr',
     mcp: {
       accessKey: parsed.mcp?.accessKey,
     },

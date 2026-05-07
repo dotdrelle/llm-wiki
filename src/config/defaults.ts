@@ -6,6 +6,7 @@ export const DEFAULT_ANTHROPIC_BASE_URL = 'https://api.anthropic.com/v1';
 
 export const defaultConfig: AppConfig = {
   wikiRoot: '.',
+  language: 'fr',
   llm: {
     provider: 'openai',
     model: 'gpt-5-mini',

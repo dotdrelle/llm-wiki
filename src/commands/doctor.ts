@@ -621,6 +621,7 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
   console.log('\n── Config ──────────────────────────────────────────────────');
   row('provider:', config.llm.provider);
   row('model:', config.llm.model);
+  row('language:', config.language);
   if (config.llm.numCtx) row('numCtx:', config.llm.numCtx.toLocaleString());
   row('temperature:', String(config.llm.temperature));
   row('refreshOnIngest:', String(config.build.refreshOnIngest));
@@ -762,88 +763,88 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
 
   // ── context budget ───────────────────────────────────────────────────────────
   const numCtxTokens = effectiveNumCtx ?? contextWindowTokens(config);
-  if (!numCtxTokens) {
-    warn('Context window unknown for openai-compatible — skipping budget analysis');
-    if (Object.keys(suggestions).length > 0) {
-      printSuggestions(suggestions);
-      await confirmApplySuggestions(config, suggestions);
-    }
-    console.log('');
-    return;
-  }
-
   const SAFE_FILL = 0.9;
-  const totalChars = numCtxTokens * CHARS_PER_TOKEN;
-  const available = Math.round(totalChars * (1 - OUTPUT_RESERVE));
+  const slotContent = config.retrieval.maxContextFiles * config.retrieval.maxChunkChars;
   const baseOverhead = indexContent.length + SYSTEM_PROMPT_OVERHEAD;
   const buildContextChars = buildContext.content.length;
   const overhead = baseOverhead + buildContextChars;
-  const slotContent = config.retrieval.maxContextFiles * config.retrieval.maxChunkChars;
-  const buildBudget = available - overhead;
 
-  console.log('\n── Context budget ───────────────────────────────────────────');
-  row(
-    'context window:',
-    `${numCtxTokens.toLocaleString()} tokens → ~${Math.round(totalChars / 1000)}k chars`,
-  );
-  row(
-    'output reserve:',
-    `${OUTPUT_RESERVE * 100}% → ~${Math.round(available / 1000)}k chars available`,
-  );
-  row(
-    'fixed overhead:',
-    `~${Math.round(overhead / 1000)}k chars (index + build-context + system)`,
-  );
-  row(
-    'overhead detail:',
-    `index ${indexContent.length} + build-context ${buildContextChars} + system ~${SYSTEM_PROMPT_OVERHEAD} chars`,
-  );
-  if (buildContext.truncated) {
+  let available = 0;
+  let buildBudget = 0;
+  let optimalSlotBatchSize = 1;
+  let safeBatchSize = 1;
+  let perSlotBudget = 0;
+  let fillRatio = 0;
+
+  if (!numCtxTokens) {
     warn(
-      `build-context truncated: ${buildContext.rawTotalChars} chars in build-context/, maxBuildContextChars=${config.build.maxBuildContextChars}`,
+      'Context window unknown for openai-compatible — set numCtx in .wikirc.yaml for full budget analysis',
+    );
+  } else {
+    const totalChars = numCtxTokens * CHARS_PER_TOKEN;
+    available = Math.round(totalChars * (1 - OUTPUT_RESERVE));
+    buildBudget = available - overhead;
+
+    console.log('\n── Context budget ───────────────────────────────────────────');
+    row(
+      'context window:',
+      `${numCtxTokens.toLocaleString()} tokens → ~${Math.round(totalChars / 1000)}k chars`,
+    );
+    row(
+      'output reserve:',
+      `${OUTPUT_RESERVE * 100}% → ~${Math.round(available / 1000)}k chars available`,
+    );
+    row(
+      'fixed overhead:',
+      `~${Math.round(overhead / 1000)}k chars (index + build-context + system)`,
+    );
+    row(
+      'overhead detail:',
+      `index ${indexContent.length} + build-context ${buildContextChars} + system ~${SYSTEM_PROMPT_OVERHEAD} chars`,
+    );
+    if (buildContext.truncated) {
+      warn(
+        `build-context truncated: ${buildContext.rawTotalChars} chars in build-context/, maxBuildContextChars=${config.build.maxBuildContextChars}`,
+      );
+    }
+    row(
+      'slot content:',
+      `${config.retrieval.maxContextFiles} files × ${config.retrieval.maxChunkChars} chars = ~${Math.round(slotContent / 1000)}k chars/slot`,
+    );
+
+    if (buildBudget <= 0) {
+      err(
+        `fixed overhead exceeds available context by ~${Math.round(Math.abs(buildBudget) / 1000)}k chars`,
+      );
+      (suggestions.llm ??= {}).numCtx = Math.ceil(
+        overhead / (1 - OUTPUT_RESERVE) / CHARS_PER_TOKEN,
+      );
+      printSuggestions(suggestions);
+      await confirmApplySuggestions(config, suggestions);
+      console.log('');
+      return;
+    }
+
+    optimalSlotBatchSize = Math.max(1, Math.min(Math.floor(buildBudget / slotContent), 20));
+    safeBatchSize = Math.max(
+      1,
+      Math.min(Math.floor((buildBudget * SAFE_FILL) / slotContent), 20),
+    );
+    perSlotBudget = Math.floor(buildBudget / config.build.slotBatchSize);
+    fillRatio = (config.build.slotBatchSize * slotContent) / buildBudget;
+    row(
+      'max slotBatchSize:',
+      `${optimalSlotBatchSize} (100% fill), ${safeBatchSize} safe (${SAFE_FILL * 100}% fill)`,
+    );
+    row(
+      'current fill:',
+      `${Math.round(fillRatio * 100)}% — ${config.build.slotBatchSize} slots × ~${Math.round(slotContent / 1000)}k = ~${Math.round((config.build.slotBatchSize * slotContent) / 1000)}k / ~${Math.round(buildBudget / 1000)}k chars`,
+    );
+    row(
+      'per-slot budget:',
+      `~${Math.round(perSlotBudget / 1000)}k chars (with current slotBatchSize=${config.build.slotBatchSize})`,
     );
   }
-  row(
-    'slot content:',
-    `${config.retrieval.maxContextFiles} files × ${config.retrieval.maxChunkChars} chars = ~${Math.round(slotContent / 1000)}k chars/slot`,
-  );
-
-  if (buildBudget <= 0) {
-    err(
-      `fixed overhead exceeds available context by ~${Math.round(Math.abs(buildBudget) / 1000)}k chars`,
-    );
-    (suggestions.llm ??= {}).numCtx = Math.ceil(
-      overhead / (1 - OUTPUT_RESERVE) / CHARS_PER_TOKEN,
-    );
-    printSuggestions(suggestions);
-    await confirmApplySuggestions(config, suggestions);
-    console.log('');
-    return;
-  }
-
-  const optimalSlotBatchSize = Math.max(
-    1,
-    Math.min(Math.floor(buildBudget / slotContent), 20),
-  );
-  const safeBatchSize = Math.max(
-    1,
-    Math.min(Math.floor((buildBudget * SAFE_FILL) / slotContent), 20),
-  );
-  const perSlotBudget = Math.floor(buildBudget / config.build.slotBatchSize);
-  const currentPerSlotUsage = slotContent;
-  const fillRatio = (config.build.slotBatchSize * slotContent) / buildBudget;
-  row(
-    'max slotBatchSize:',
-    `${optimalSlotBatchSize} (100% fill), ${safeBatchSize} safe (${SAFE_FILL * 100}% fill)`,
-  );
-  row(
-    'current fill:',
-    `${Math.round(fillRatio * 100)}% — ${config.build.slotBatchSize} slots × ~${Math.round(slotContent / 1000)}k = ~${Math.round((config.build.slotBatchSize * slotContent) / 1000)}k / ~${Math.round(buildBudget / 1000)}k chars`,
-  );
-  row(
-    'per-slot budget:',
-    `~${Math.round(perSlotBudget / 1000)}k chars (with current slotBatchSize=${config.build.slotBatchSize})`,
-  );
 
   // ── recommendations ──────────────────────────────────────────────────────────
   console.log('\n── Recommendations ──────────────────────────────────────────');
@@ -886,7 +887,7 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
     ok(`maxChunkChars ${config.retrieval.maxChunkChars} (p95 chunk: ${p95chunk} chars)`);
   }
 
-  const sourceBudgetCap = Math.floor(available * 0.15);
+  const sourceBudgetCap = available > 0 ? Math.floor(available * 0.15) : 50_000;
   const recommendedSourceChars =
     untrackedSizes.length > 0
       ? Math.max(
@@ -916,126 +917,140 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
     );
   }
 
-  const effectiveChunkSize = Math.max(avg(chunkSizes) || recommendedChunkChars, 400);
-  const recommendedMaxContextFiles = Math.min(
-    Math.floor(perSlotBudget / effectiveChunkSize),
-    16,
-  );
-  if (currentPerSlotUsage > perSlotBudget) {
-    err(
-      `maxContextFiles ${config.retrieval.maxContextFiles} × maxChunkChars ${config.retrieval.maxChunkChars} = ${currentPerSlotUsage} chars/slot exceeds per-slot budget (~${perSlotBudget} chars)`,
+  if (numCtxTokens && buildBudget > 0) {
+    const currentPerSlotUsage = slotContent;
+    const effectiveChunkSize = Math.max(avg(chunkSizes) || recommendedChunkChars, 400);
+    const recommendedMaxContextFiles = Math.min(
+      Math.floor(perSlotBudget / effectiveChunkSize),
+      16,
     );
-    (suggestions.retrieval ??= {}).maxContextFiles = Math.max(
-      Math.floor(perSlotBudget / config.retrieval.maxChunkChars),
-      1,
-    );
-    hasWarnings = true;
-  } else if (
-    canRecommendLargerPrompts &&
-    recommendedMaxContextFiles > config.retrieval.maxContextFiles + 1
-  ) {
-    warn(
-      `maxContextFiles ${config.retrieval.maxContextFiles} → ${recommendedMaxContextFiles} (budget allows, avg chunk ${effectiveChunkSize} chars)`,
-    );
-    (suggestions.retrieval ??= {}).maxContextFiles = recommendedMaxContextFiles;
-    hasWarnings = true;
-  } else {
-    ok(
-      `maxContextFiles ${config.retrieval.maxContextFiles} (${Math.round(currentPerSlotUsage / 1000)}k / ~${Math.round(perSlotBudget / 1000)}k chars per slot)`,
-    );
-  }
-
-  if (config.build.slotBatchSize > optimalSlotBatchSize) {
-    err(
-      `slotBatchSize ${config.build.slotBatchSize} overflows context window (max ${optimalSlotBatchSize} slots fit)` +
-        ` — reduce to ${safeBatchSize} to leave ${Math.round((1 - SAFE_FILL) * 100)}% headroom`,
-    );
-    (suggestions.build ??= {}).slotBatchSize = safeBatchSize;
-    hasWarnings = true;
-  } else if (config.build.slotBatchSize > safeBatchSize) {
-    warn(
-      `slotBatchSize ${config.build.slotBatchSize} fills ${Math.round(fillRatio * 100)}% of context budget` +
-        ` — instruction text and JSON overhead may push past the limit (HTTP 500).` +
-        ` Reduce to ${safeBatchSize} for a safe margin.`,
-    );
-    (suggestions.build ??= {}).slotBatchSize = safeBatchSize;
-    hasWarnings = true;
-  } else if (
-    canRecommendLargerPrompts &&
-    optimalSlotBatchSize > config.build.slotBatchSize + 1 &&
-    fillRatio < 0.7
-  ) {
-    const ollamaNoFlash =
-      config.llm.provider === 'ollama' &&
-      resolvedOllamaEnv.env.OLLAMA_FLASH_ATTENTION !== '1';
-    if (ollamaNoFlash) {
-      ok(
-        `slotBatchSize ${config.build.slotBatchSize} (${Math.round(fillRatio * 100)}% fill — enable OLLAMA_FLASH_ATTENTION before increasing batch size)`,
+    if (currentPerSlotUsage > perSlotBudget) {
+      err(
+        `maxContextFiles ${config.retrieval.maxContextFiles} × maxChunkChars ${config.retrieval.maxChunkChars} = ${currentPerSlotUsage} chars/slot exceeds per-slot budget (~${perSlotBudget} chars)`,
       );
-    } else {
+      (suggestions.retrieval ??= {}).maxContextFiles = Math.max(
+        Math.floor(perSlotBudget / config.retrieval.maxChunkChars),
+        1,
+      );
+      hasWarnings = true;
+    } else if (
+      canRecommendLargerPrompts &&
+      recommendedMaxContextFiles > config.retrieval.maxContextFiles + 1
+    ) {
       warn(
-        `slotBatchSize ${config.build.slotBatchSize} → ${safeBatchSize} recommended` +
-          ` — context window could fit more slots, fewer LLM calls per template`,
+        `maxContextFiles ${config.retrieval.maxContextFiles} → ${recommendedMaxContextFiles} (budget allows, avg chunk ${effectiveChunkSize} chars)`,
+      );
+      (suggestions.retrieval ??= {}).maxContextFiles = recommendedMaxContextFiles;
+      hasWarnings = true;
+    } else {
+      ok(
+        `maxContextFiles ${config.retrieval.maxContextFiles} (${Math.round(currentPerSlotUsage / 1000)}k / ~${Math.round(perSlotBudget / 1000)}k chars per slot)`,
+      );
+    }
+
+    if (config.build.slotBatchSize > optimalSlotBatchSize) {
+      err(
+        `slotBatchSize ${config.build.slotBatchSize} overflows context window (max ${optimalSlotBatchSize} slots fit)` +
+          ` — reduce to ${safeBatchSize} to leave ${Math.round((1 - SAFE_FILL) * 100)}% headroom`,
       );
       (suggestions.build ??= {}).slotBatchSize = safeBatchSize;
       hasWarnings = true;
-    }
-  } else {
-    ok(
-      `slotBatchSize ${config.build.slotBatchSize} (${Math.round(fillRatio * 100)}% fill, safe up to ${safeBatchSize})`,
-    );
-  }
-
-  const BUILD_CONTEXT_FRACTION = 0.15;
-  const currentBatchContent = config.build.slotBatchSize * slotContent;
-  const maxBuildContextForCurrentConfig = Math.max(
-    0,
-    Math.floor(available - baseOverhead - currentBatchContent / SAFE_FILL),
-  );
-  const fractionalBuildContextChars =
-    Math.round((available * BUILD_CONTEXT_FRACTION) / 500) * 500;
-  const recommendedBuildContextChars = Math.floor(
-    Math.max(
-      0,
-      Math.min(
-        maxBuildContextForCurrentConfig >= 4000 ? fractionalBuildContextChars : 0,
-        maxBuildContextForCurrentConfig,
-      ),
-    ),
-  );
-  if (buildContext.truncated) {
-    if (
-      canRecommendLargerPrompts &&
-      recommendedBuildContextChars > config.build.maxBuildContextChars
-    ) {
+    } else if (config.build.slotBatchSize > safeBatchSize) {
       warn(
-        `build.maxBuildContextChars ${config.build.maxBuildContextChars} → ${recommendedBuildContextChars}` +
-          ` — ${buildContext.rawTotalChars} chars in build-context/ exceed the limit` +
-          ` (capped by current build/retrieval limits and ≈${BUILD_CONTEXT_FRACTION * 100}% of available context)`,
+        `slotBatchSize ${config.build.slotBatchSize} fills ${Math.round(fillRatio * 100)}% of context budget` +
+          ` — instruction text and JSON overhead may push past the limit (HTTP 500).` +
+          ` Reduce to ${safeBatchSize} for a safe margin.`,
       );
-      (suggestions.build ??= {}).maxBuildContextChars = recommendedBuildContextChars;
+      (suggestions.build ??= {}).slotBatchSize = safeBatchSize;
+      hasWarnings = true;
+    } else if (
+      canRecommendLargerPrompts &&
+      optimalSlotBatchSize > config.build.slotBatchSize + 1 &&
+      fillRatio < 0.7
+    ) {
+      const ollamaNoFlash =
+        config.llm.provider === 'ollama' &&
+        resolvedOllamaEnv.env.OLLAMA_FLASH_ATTENTION !== '1';
+      if (ollamaNoFlash) {
+        ok(
+          `slotBatchSize ${config.build.slotBatchSize} (${Math.round(fillRatio * 100)}% fill — enable OLLAMA_FLASH_ATTENTION before increasing batch size)`,
+        );
+      } else {
+        warn(
+          `slotBatchSize ${config.build.slotBatchSize} → ${safeBatchSize} recommended` +
+            ` — context window could fit more slots, fewer LLM calls per template`,
+        );
+        (suggestions.build ??= {}).slotBatchSize = safeBatchSize;
+        hasWarnings = true;
+      }
+    } else {
+      ok(
+        `slotBatchSize ${config.build.slotBatchSize} (${Math.round(fillRatio * 100)}% fill, safe up to ${safeBatchSize})`,
+      );
+    }
+
+    const BUILD_CONTEXT_FRACTION = 0.15;
+    const currentBatchContent = config.build.slotBatchSize * slotContent;
+    const maxBuildContextForCurrentConfig = Math.max(
+      0,
+      Math.floor(available - baseOverhead - currentBatchContent / SAFE_FILL),
+    );
+    const fractionalBuildContextChars =
+      Math.round((available * BUILD_CONTEXT_FRACTION) / 500) * 500;
+    const recommendedBuildContextChars = Math.floor(
+      Math.max(
+        0,
+        Math.min(
+          maxBuildContextForCurrentConfig >= 4000 ? fractionalBuildContextChars : 0,
+          maxBuildContextForCurrentConfig,
+        ),
+      ),
+    );
+    if (buildContext.truncated) {
+      if (
+        canRecommendLargerPrompts &&
+        recommendedBuildContextChars > config.build.maxBuildContextChars
+      ) {
+        warn(
+          `build.maxBuildContextChars ${config.build.maxBuildContextChars} → ${recommendedBuildContextChars}` +
+            ` — ${buildContext.rawTotalChars} chars in build-context/ exceed the limit` +
+            ` (capped by current build/retrieval limits and ≈${BUILD_CONTEXT_FRACTION * 100}% of available context)`,
+        );
+        (suggestions.build ??= {}).maxBuildContextChars = recommendedBuildContextChars;
+        hasWarnings = true;
+      } else {
+        warn(
+          `build-context ${buildContext.rawTotalChars} chars exceeds maxBuildContextChars (${config.build.maxBuildContextChars})` +
+            (canRecommendLargerPrompts
+              ? ` — current build/retrieval limits leave at most ${recommendedBuildContextChars} safe chars for build-context/; trim files or reduce slot/context limits`
+              : ` — keeping remote-provider prompt size conservative; trim build-context/ files or raise maxBuildContextChars manually`),
+        );
+        hasWarnings = true;
+      }
+    } else if (buildContextChars > maxBuildContextForCurrentConfig) {
+      warn(
+        `build-context uses ${buildContextChars} chars, but current build/retrieval limits leave at most ${maxBuildContextForCurrentConfig} safe chars` +
+          ` — reduce maxBuildContextChars, slotBatchSize, maxContextFiles, or maxChunkChars`,
+      );
+      if (maxBuildContextForCurrentConfig < config.build.maxBuildContextChars) {
+        (suggestions.build ??= {}).maxBuildContextChars = maxBuildContextForCurrentConfig;
+      }
       hasWarnings = true;
     } else {
-      warn(
-        `build-context ${buildContext.rawTotalChars} chars exceeds maxBuildContextChars (${config.build.maxBuildContextChars})` +
-          (canRecommendLargerPrompts
-            ? ` — current build/retrieval limits leave at most ${recommendedBuildContextChars} safe chars for build-context/; trim files or reduce slot/context limits`
-            : ` — keeping remote-provider prompt size conservative; trim build-context/ files or raise maxBuildContextChars manually`),
+      ok(
+        `maxBuildContextChars ${config.build.maxBuildContextChars} (${buildContextChars} chars used, safe up to ${maxBuildContextForCurrentConfig})`,
       );
+    }
+  } else if (!numCtxTokens) {
+    if (buildContext.truncated) {
+      warn(
+        `build-context ${buildContext.rawTotalChars} chars exceeds maxBuildContextChars (${config.build.maxBuildContextChars}) — raise to at least ${buildContext.rawTotalChars}`,
+      );
+      (suggestions.build ??= {}).maxBuildContextChars = buildContext.rawTotalChars + 500;
       hasWarnings = true;
     }
-  } else if (buildContextChars > maxBuildContextForCurrentConfig) {
     warn(
-      `build-context uses ${buildContextChars} chars, but current build/retrieval limits leave at most ${maxBuildContextForCurrentConfig} safe chars` +
-        ` — reduce maxBuildContextChars, slotBatchSize, maxContextFiles, or maxChunkChars`,
-    );
-    if (maxBuildContextForCurrentConfig < config.build.maxBuildContextChars) {
-      (suggestions.build ??= {}).maxBuildContextChars = maxBuildContextForCurrentConfig;
-    }
-    hasWarnings = true;
-  } else {
-    ok(
-      `maxBuildContextChars ${config.build.maxBuildContextChars} (${buildContextChars} chars used, safe up to ${maxBuildContextForCurrentConfig})`,
+      'Set numCtx in .wikirc.yaml to enable slotBatchSize, maxContextFiles, and context budget recommendations',
     );
   }
 

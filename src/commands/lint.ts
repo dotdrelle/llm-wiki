@@ -9,7 +9,7 @@ export default async function lintCmd(
 ) {
   const workspace = new WorkspaceService(config);
   const llm = new LLMService(config);
-  const service = new LintService(workspace, llm);
+  const service = new LintService(workspace, llm, config);
   const report = await service.run({ withLlm: options.withLlm });
 
   if (options.json) {

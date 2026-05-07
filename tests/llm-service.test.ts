@@ -5,6 +5,7 @@ import type { AppConfig } from '../src/types.ts';
 function createConfig(): AppConfig {
   return {
     wikiRoot: '/tmp/wiki',
+    language: 'fr',
     llm: {
       provider: 'anthropic',
       model: 'claude-sonnet-4-20250514',

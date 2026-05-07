@@ -1,5 +1,6 @@
 import type { SearchResult, SourceDocument } from '../types.ts';
 import { formatContextResult } from './formatContext.ts';
+import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
 export function buildIngestPrompt(args: {
   source: SourceDocument;
@@ -8,6 +9,7 @@ export function buildIngestPrompt(args: {
   relevantPages: SearchResult[];
   sourcePagePath: string;
   maxChunkChars: number;
+  ctx: PromptContext;
 }) {
   const relevantPagesText =
     args.relevantPages.length === 0
@@ -18,6 +20,7 @@ export function buildIngestPrompt(args: {
 
   return {
     system: [
+      buildSystemPreamble(args.ctx),
       'You maintain a local-first markdown wiki.',
       'Use only the provided source material and current wiki context.',
       'Never invent missing facts.',

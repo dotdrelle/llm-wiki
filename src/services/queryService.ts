@@ -1,4 +1,5 @@
 import { buildQueryPrompt } from '../prompts/queryPrompt.ts';
+import { buildPromptContext } from '../prompts/systemPreamble.ts';
 import type { AppConfig } from '../types.ts';
 import type { LLMService } from './llmService.ts';
 import type { RetrievalService } from './retrievalService.ts';
@@ -28,7 +29,12 @@ export class QueryService {
       limit: this.config.retrieval.maxContextFiles,
       includeRaw: true,
     });
-    const prompt = buildQueryPrompt(question, context, this.config.retrieval.maxChunkChars);
+    const prompt = buildQueryPrompt(
+      question,
+      context,
+      this.config.retrieval.maxChunkChars,
+      buildPromptContext(this.config),
+    );
     return this.llm.completeText(prompt);
   }
 }

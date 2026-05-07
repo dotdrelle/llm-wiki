@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { ingestPlanSchema } from '../config/schema.ts';
 import { buildIngestPrompt } from '../prompts/ingestPrompt.ts';
+import { buildPromptContext } from '../prompts/systemPreamble.ts';
 import { normalizeSourceBody } from '../utils/markdown.ts';
 import type { TokenUsage } from './llmService.ts';
 import type { AppConfig, IngestCommandOptions, IngestResult } from '../types.ts';
@@ -170,6 +171,7 @@ export class IngestService {
           relevantPages,
           sourcePagePath,
           maxChunkChars,
+          ctx: buildPromptContext(this.config),
         });
         await this.logger.info('ingest:prompt', {
           source: source.relativePath,

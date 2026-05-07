@@ -1,10 +1,12 @@
 import type { SearchResult, TemplateDocument } from '../types.ts';
 import { formatContextResult } from './formatContext.ts';
+import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
 export function buildDeliverablePrompt(args: {
   template: TemplateDocument;
   maxChunkChars: number;
   buildContext?: string;
+  ctx: PromptContext;
   slots: Array<{
     id: string;
     instruction: string;
@@ -38,6 +40,7 @@ export function buildDeliverablePrompt(args: {
   const ids = args.slots.map((s) => s.id).join(', ');
   return {
     system: [
+      buildSystemPreamble(args.ctx),
       'You generate markdown fragments to fill in a document template.',
       'You will receive a list of slots, each with an id, an instruction, and wiki context.',
       'For each slot, write the markdown content that replaces it.',
@@ -72,6 +75,7 @@ export function buildSingleSlotDeliverablePrompt(args: {
   template: TemplateDocument;
   maxChunkChars: number;
   buildContext?: string;
+  ctx: PromptContext;
   slot: {
     id: string;
     instruction: string;
@@ -89,6 +93,7 @@ export function buildSingleSlotDeliverablePrompt(args: {
 
   return {
     system: [
+      buildSystemPreamble(args.ctx),
       'You generate one markdown fragment to fill one document template slot.',
       'Return only the markdown fragment. Do not return JSON.',
       'Use only the provided wiki context. Never fabricate facts, names, or numbers.',

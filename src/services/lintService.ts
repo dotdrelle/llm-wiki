@@ -1,23 +1,27 @@
 import path from 'node:path';
 import { semanticLintSchema } from '../config/schema.ts';
 import { buildSemanticLintPrompt } from '../prompts/lintPrompt.ts';
+import { buildPromptContext } from '../prompts/systemPreamble.ts';
 import { extractSourceCitations, extractWikiLinks } from '../utils/markdown.ts';
 import { canonicalizeName } from '../utils/path.ts';
 import { pathExists } from '../utils/fs.ts';
-import type { LintReport } from '../types.ts';
+import type { AppConfig, LintReport } from '../types.ts';
 import type { LLMService } from './llmService.ts';
 import type { WorkspaceService } from './workspaceService.ts';
 
 export class LintService {
   private readonly workspace: WorkspaceService;
   private readonly llm: LLMService;
+  private readonly config: AppConfig;
 
   constructor(
     workspace: WorkspaceService,
     llm: LLMService,
+    config: AppConfig,
   ) {
     this.workspace = workspace;
     this.llm = llm;
+    this.config = config;
   }
 
   async run(options?: { withLlm?: boolean }): Promise<LintReport> {
@@ -96,7 +100,11 @@ export class LintService {
     };
 
     if (options?.withLlm) {
-      const prompt = buildSemanticLintPrompt(await this.workspace.readIndex(), pages);
+      const prompt = buildSemanticLintPrompt(
+        await this.workspace.readIndex(),
+        pages,
+        buildPromptContext(this.config),
+      );
       report.semantic = await this.llm.completeJson(prompt, semanticLintSchema);
     }
 

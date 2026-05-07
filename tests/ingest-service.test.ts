@@ -16,6 +16,7 @@ import type {
 function createConfig(): AppConfig {
   return {
     wikiRoot: '/tmp/wiki',
+    language: 'fr',
     llm: {
       provider: 'ollama',
       model: 'qwen2.5:14b',

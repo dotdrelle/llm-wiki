@@ -4,6 +4,7 @@ import {
   buildDeliverablePrompt,
   buildSingleSlotDeliverablePrompt,
 } from '../prompts/buildPrompt.ts';
+import { buildPromptContext } from '../prompts/systemPreamble.ts';
 import { sanitizeFrontmatter } from '../utils/markdown.ts';
 import { hashText } from '../utils/hash.ts';
 import type {
@@ -65,6 +66,7 @@ export class BuildService {
       slot,
       buildContext: buildContext.content,
       maxChunkChars: this.config.retrieval.maxChunkChars,
+      ctx: buildPromptContext(this.config),
     });
     return this.llm.completeText({
       ...prompt,
@@ -177,6 +179,7 @@ export class BuildService {
       slots: batch,
       buildContext: buildContext.content,
       maxChunkChars: this.config.retrieval.maxChunkChars,
+      ctx: buildPromptContext(this.config),
     });
 
     try {

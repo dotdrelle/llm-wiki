@@ -1,8 +1,14 @@
 import type { WikiPage } from '../types.ts';
+import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
-export function buildSemanticLintPrompt(indexContent: string, pages: WikiPage[]) {
+export function buildSemanticLintPrompt(
+  indexContent: string,
+  pages: WikiPage[],
+  ctx: PromptContext,
+) {
   return {
     system: [
+      buildSystemPreamble(ctx),
       'You review a local markdown wiki for quality issues.',
       'Use only the provided wiki pages.',
       'Return strict JSON with contradictions, missingConcepts, and shallowPages.',
