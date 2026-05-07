@@ -62,6 +62,49 @@ No vector database is used. Everything stays in markdown and on disk.
                               └─────────────────┘
 ```
 
+## Quick Start
+
+1. **Export your source documents** as Markdown (see [Importing sources](#importing-sources)) and copy them into `raw/untracked/`.
+
+2. **Initialize a workspace** in an empty directory:
+
+   ```bash
+   wiki init
+   ```
+
+   Edit `.wikirc.yaml` to set your LLM provider, model, and `language`.
+
+3. **Run the doctor** to validate your configuration and get tuning suggestions:
+
+   ```bash
+   wiki doctor
+   ```
+
+   Adjust `.wikirc.yaml` until the doctor reports no warnings, then rerun.
+
+4. **Ingest sources** — the LLM reads each source file and updates `wiki/`:
+
+   ```bash
+   wiki ingest
+   ```
+
+5. **Build deliverables** from templates in `templates/`:
+
+   ```bash
+   wiki build
+   ```
+
+6. **Export a self-contained document** from a generated deliverable:
+
+   ```bash
+   wiki export deliverables/project-brief.md
+   wiki export deliverables/project-brief.md --polish
+   ```
+
+Repeat steps 1 and 4 as new sources arrive. Run `wiki refresh` to rebuild stale deliverables without re-ingesting.
+
+---
+
 ## Features
 
 - Node.js 22 CLI with TypeScript and `commander`
@@ -207,20 +250,29 @@ ANTHROPIC_API_KEY=sk-ant-... docker compose run --rm wiki build
 
 The CLI looks for `.wikirc.yaml` or `.wikirc.yml` in the current directory or its parents.
 
-Example (Ollama with a 16k context window):
+### Top-level options
+
+| Key          | Description                                                                                      | Default |
+| ------------ | ------------------------------------------------------------------------------------------------ | ------- |
+| `language` | Language for all LLM-generated content (wiki pages, deliverables, query answers). Overrides the language of source documents and user input. Use a natural-language name such as `french`, `english`, or `español`. | `fr` |
+
+Example (Ollama with a 32k context window):
 
 ```yaml
+language: fr
+
 llm:
   provider: ollama
   model: YOUR_MODEL_NAME
   baseUrl: http://127.0.0.1:11434/v1
   temperature: 0.1
   timeoutMs: 600000
-  numCtx: 16384
+  numCtx: 32768
 
 build:
-  refreshOnIngest: true
+  refreshOnIngest: false
   slotBatchSize: 3
+  maxBuildContextChars: 12000
 
 retrieval:
   maxContextFiles: 5
@@ -245,10 +297,11 @@ retrieval:
 
 ### `build` options
 
-| Key                 | Description                                                                | Default  |
-| ------------------- | -------------------------------------------------------------------------- | -------- |
-| `refreshOnIngest` | Automatically regenerate stale deliverables after each ingest              | `true` |
-| `slotBatchSize`   | Number of `[[INSTRUCTION:...]]` slots sent to the model in a single call | `3`    |
+| Key                      | Description                                                                           | Default   |
+| ------------------------ | ------------------------------------------------------------------------------------- | --------- |
+| `refreshOnIngest`      | Automatically regenerate stale deliverables after each ingest                         | `true`  |
+| `slotBatchSize`        | Number of `[[INSTRUCTION:...]]` slots sent to the model in a single call            | `3`     |
+| `maxBuildContextChars` | Maximum characters from fixed `build-context/` files included in each build LLM call | `12000` |
 
 ### `retrieval` options
 
