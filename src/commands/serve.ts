@@ -120,7 +120,7 @@ function linkWikiLinks(raw: string): string {
     /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,
     (match, target: string, label?: string) => {
       const cleanTarget = target.trim();
-      if (!cleanTarget) return match;
+      if (!cleanTarget || cleanTarget.startsWith('INSTRUCTION:')) return match;
       const text = label?.trim() || cleanTarget;
       return `[${text}](${encodeURI(cleanTarget)})`;
     },
@@ -303,7 +303,6 @@ function layout(title: string, body: string): string {
     .content { min-width: 0; padding: 2rem clamp(1rem, 3vw, 3rem) 3rem; }
     .topbar {
       display: flex;
-      justify-content: space-between;
       align-items: center;
       gap: 1rem;
       margin-bottom: 1.25rem;
@@ -721,7 +720,8 @@ function breadcrumb(urlPath: string): string {
   const links = ['<a href="/">index</a>'];
   for (const part of parts) {
     href += `/${part}`;
-    const target = href === '/wiki' ? '/' : href;
+    const relative = href.replace(/^\//, '');
+    const target = href === '/wiki' || !isServedRelativePath(relative) ? '/' : href;
     links.push(`<a href="${escapeHref(target)}">${escapeHtml(part)}</a>`);
   }
   return `<nav>${links.join('')}</nav>`;
@@ -803,7 +803,7 @@ function renderIndexSectionBrowser(sections: TileSection[]): string {
 }
 
 function renderTopbar(urlPath: string, actions = ''): string {
-  return `<div class="topbar">${breadcrumb(urlPath)}${actions ? `<div class="page-actions">${actions}</div>` : ''}</div>`;
+  return `<div class="topbar">${actions ? `<div class="page-actions">${actions}</div>` : ''}${breadcrumb(urlPath)}</div>`;
 }
 
 function editHref(relativePath: string): string {
@@ -1377,7 +1377,28 @@ async function generateIndex(rootDir: string): Promise<string> {
     ? await readFile(indexPath, 'utf8')
     : '# Wiki Index\n\n- wiki/index.md introuvable.';
   const html = await renderMarkdown(raw, 'wiki');
-  const tiles = renderIndexSectionBrowser(extractIndexTiles(raw));
+
+  const indexTiles = extractIndexTiles(raw);
+  const wikiTypeDirs: Array<{ heading: string; glob: string }> = [
+    { heading: 'Sources', glob: 'wiki/sources/**/*.md' },
+    { heading: 'Answers', glob: 'wiki/answers/**/*.md' },
+  ];
+  for (const { heading, glob } of wikiTypeDirs) {
+    const alreadyListed = indexTiles.some((s) =>
+      s.heading.toLowerCase().includes(heading.toLowerCase()),
+    );
+    if (!alreadyListed) {
+      const files = (await fg(glob, { cwd: rootDir, dot: false })).map(toPosix).sort();
+      if (files.length > 0) {
+        indexTiles.push({
+          heading,
+          tiles: files.map((f) => ({ title: humanTitle(f), href: `/${f}`, meta: f })),
+        });
+      }
+    }
+  }
+
+  const tiles = renderIndexSectionBrowser(indexTiles);
   const sidebar = await renderSidebar(rootDir);
   const body = `${sidebar}<main class="content"><div class="hero"><h1>Wiki Index</h1><p>Point d'entrée du wiki local. L'index complet reste lisible à gauche, avec les principales sections disponibles en tuiles à droite.</p></div><div class="index-layout"><article class="article">${html}</article><aside class="index-aside"><h2 class="index-aside-title">Main sections</h2>${tiles}</aside></div></main>`;
   return layout('wiki', body);
@@ -1534,8 +1555,8 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
 
       const relative = urlPath.replace(/^\//, '').replace(/\/+$/, '');
       if (!isServedRelativePath(relative)) {
-        res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('Not found');
+        res.writeHead(302, { Location: '/' });
+        res.end();
         return;
       }
 

@@ -470,15 +470,15 @@ Every ingestion run also writes a persistent trace file under `.wiki/logs/`, for
 Answers a question from the persistent wiki and ingested source notes. Prints the answer to stdout.
 
 ```bash
-wiki query "Quels faits sont déjà documentés sur concernant mon dossier d'architecture fonctionnel?"
+wiki query "What facts are already documented about my functional architecture file?"
 ```
 
 Use `--save` to also write the answer to `wiki/answers/<slug>.md` with a frontmatter containing the question and date:
 
 ```bash
-wiki query --save "Quels besions sont déjà documentés pour ma matrice des flux ?"
+wiki query --save "What needs are already documented for my flow matrix?"
 # → prints the answer
-# → Saved to wiki/answers/quels-faits-sont-deja-documentes.md
+# → Saved to wiki/answers/what-needs-are-already-documented.md
 ```
 
 Asking the same question again with `--save` overwrites the previous answer file.

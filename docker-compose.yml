@@ -1,13 +1,13 @@
 services:
-  # CLI ponctuelle: ce service ne lance pas le serveur.
-  # Exemples:
+  # One-off CLI service: this service does not start the web server.
+  # Examples:
   #   docker compose run --rm wiki ingest
   #   docker compose run --rm wiki doctor
   #   docker compose run --rm wiki build
   #
-  # Pour garder une UI web ouverte, utiliser le service `serve` ci-dessous.
-  # Les deux services montent le même workspace: un ingest lancé via `wiki`
-  # est visible dans `serve` après rechargement du navigateur.
+  # To keep the web UI running, use the `serve` service below.
+  # Both services mount the same workspace: an ingest run through `wiki`
+  # is visible in `serve` after refreshing the browser.
   wiki:
     build:
       context: .
@@ -20,16 +20,16 @@ services:
     environment:
       - OPENAI_API_KEY
       - ANTHROPIC_API_KEY
-    # host.docker.internal → Ollama natif macOS ou autre service hôte
+    # host.docker.internal -> native macOS Ollama or another host service
     extra_hosts:
       - 'host.docker.internal:host-gateway'
 
-  # Serveur web persistant pour consulter le wiki.
-  # Démarrage:
+  # Persistent web server for browsing the wiki.
+  # Start:
   #   docker compose up serve
   #
-  # `EXPOSE 3000` dans le Dockerfile ne démarre rien tout seul: seul ce service
-  # passe explicitement la commande `serve --port 3000`.
+  # `EXPOSE 3000` in the Dockerfile does not start anything by itself:
+  # only this service explicitly runs `serve --port 3000`.
   serve:
     build:
       context: .
@@ -47,11 +47,11 @@ services:
     extra_hosts:
       - 'host.docker.internal:host-gateway'
 
-  # Serveur MCP stdio pour connecter un assistant IA (Claude Desktop / Claude Code).
-  # Ce service n'est pas destiné à être lancé directement via docker compose:
-  # le transport stdio exige que le client MCP spawn le processus lui-même.
-  # Utiliser le binaire local `wiki mcp` depuis le workspace.
-  # Voir la section "MCP integration" du README pour la configuration.
+  # MCP stdio server for connecting an AI assistant (Claude Desktop / Claude Code).
+  # This service is not meant to be started directly through docker compose:
+  # stdio transport requires the MCP client to spawn the process itself.
+  # Use the local `wiki mcp` binary from the workspace.
+  # See the README "MCP integration" section for configuration.
   mcp:
     build:
       context: .
@@ -67,33 +67,33 @@ services:
     extra_hosts:
       - 'host.docker.internal:host-gateway'
 
-  # Serveur MCP Streamable HTTP / HTTPS.
-  # Démarrage HTTP:
+  # MCP Streamable HTTP / HTTPS server.
+  # HTTP start:
   #   docker compose --profile mcp-http up mcp-http
   #
   # Configuration:
-  #   - clé serveur: mcp.accessKey dans .wikirc.yaml ou WIKI_MCP_ACCESS_KEY
-  #   - certificats: mcp.tls.* dans .wikirc.yaml ou variables WIKI_MCP_TLS_*
+  #   - server key: mcp.accessKey in .wikirc.yaml or WIKI_MCP_ACCESS_KEY
+  #   - certificates: mcp.tls.* in .wikirc.yaml or WIKI_MCP_TLS_* variables
   #
-  # Démarrage HTTPS via Docker seul:
+  # HTTPS start with Docker only:
   #   WIKI_MCP_ACCESS_KEY=your-secret-key \
   #   WIKI_MCP_TLS_CERT_PATH=/certs/fullchain.pem \
   #   WIKI_MCP_TLS_KEY_PATH=/certs/privkey.pem \
   #   WIKI_CERTS=/absolute/path/to/certs \
   #   docker compose --profile mcp-http up mcp-http
   #
-  # Démarrage HTTPS via .wikirc.yaml:
-  #   - monter les certificats dans ${WIKI_CERTS:-./certs}:/certs:ro
-  #   - configurer:
+  # HTTPS start through .wikirc.yaml:
+  #   - mount certificates with ${WIKI_CERTS:-./certs}:/certs:ro
+  #   - configure:
   #       mcp:
   #         accessKey: your-secret-key
   #         tls:
   #           certPath: /certs/fullchain.pem
   #           keyPath: /certs/privkey.pem
   #           caPath: /certs/ca.pem
-  #   - lancer le même service; il bascule en HTTPS si certPath/keyPath existent.
+  #   - start the same service; it switches to HTTPS when certPath/keyPath exist.
   #
-  # Endpoint client: http(s)://HOST:3333/mcp
+  # Client endpoint: http(s)://HOST:3333/mcp
   # Auth: Authorization: Bearer <mcp.accessKey>
   mcp-http:
     build:
@@ -116,10 +116,10 @@ services:
     extra_hosts:
       - 'host.docker.internal:host-gateway'
 
-  # Ollama conteneurisé — Linux + GPU NVIDIA uniquement.
-  # Sur macOS, lancer Ollama nativement et pointer baseUrl sur host.docker.internal.
+  # Containerized Ollama - Linux + NVIDIA GPU only.
+  # On macOS, run Ollama natively and point baseUrl to host.docker.internal.
   #
-  # Décommenter ce bloc si tu veux gérer Ollama dans Docker:
+  # Uncomment this block if you want Docker to manage Ollama:
   #
   # ollama:
   #   image: ollama/ollama
