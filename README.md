@@ -587,15 +587,15 @@ The server must be launched from inside the workspace (or a subdirectory) so it 
 
 Exposed tools:
 
-| Tool                | Description                                                     |
-| ------------------- | --------------------------------------------------------------- |
-| `wiki_list_pages` | List all pages under `wiki/` with their type |
-| `wiki_read_page` | Read a page by its relative path (e.g. `wiki/concepts/foo.md`) |
-| `wiki_write_page` | Write or update a page — restricted to `wiki/*` paths |
-| `wiki_list_ingested_sources` | List ingested source documents in `raw/ingested/` |
-| `wiki_read_ingested_source` | Read an ingested source by its relative path |
-| `wiki_search_context` | Search wiki pages and ingested sources, returning relevant passages for the client to answer from |
-| `wiki_read_many` | Read several `wiki/` or `raw/ingested/` files in one call |
+| Tool                         | Description                                                                                                                                                                                     |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `wiki_list_pages`            | List all pages under `wiki/` with their type                                                                                                                                                    |
+| `wiki_read_page`             | Read a page by its relative path (e.g. `wiki/concepts/foo.md`)                                                                                                                                  |
+| `wiki_write_page`            | Write or update a page — restricted to `wiki/*` paths                                                                                                                                           |
+| `wiki_list_ingested_sources` | List ingested source documents in `raw/ingested/`                                                                                                                                               |
+| `wiki_read_ingested_source`  | Read an ingested source by its relative path                                                                                                                                                    |
+| `wiki_search_context`        | Search wiki pages, excluding `wiki/answers/`, and return candidate paths, excerpts, and `relatedPaths`. Raw ingested sources are excluded by default unless `includeRaw` is set.                |
+| `wiki_read_many`             | Read selected `wiki/` or `raw/ingested/` files in batches. Supports `offset`, `limit`, and `maxCharsPerFile`; defaults to 5 files per call and caps file content at `retrieval.maxSourceChars`. |
 
 Write operations go through the same path guards as `wiki ingest`: `resolveInside` rejects any `../../` traversal, and `applyWikiOperations` refuses paths that do not start with `wiki/`.
 
@@ -603,8 +603,9 @@ For question-answering clients, the intended flow is:
 
 1. Call `wiki_search_context` with the user question.
 2. Inspect the returned paths, scores, headings, excerpts, and `[src: ...]` citations.
-3. Call `wiki_read_many` for the selected `wiki/` or `raw/ingested/` paths.
-4. Let the MCP client produce the final answer itself from that context.
+3. Call `wiki_read_many` for the selected `wiki/` or `raw/ingested/` paths, usually in batches of 5 files.
+4. If more context is needed, call `wiki_read_many` again with the returned `nextOffset`.
+5. Let the MCP client produce the final answer itself from that context.
 
 #### Access key
 

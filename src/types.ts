@@ -115,6 +115,7 @@ export interface WikiPage {
 export interface SearchResult {
   page: WikiPage;
   score: number;
+  relatedPaths?: string[];
   chunk?: {
     headingPath: string[];
     content: string;

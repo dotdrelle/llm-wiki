@@ -53,7 +53,11 @@ function wantsHtml(req: IncomingMessage): boolean {
   return accept.includes('text/html') || accept.includes('*/*');
 }
 
-function renderLandingPage(config: AppConfig, endpointUrl: string, scheme: string): string {
+function renderLandingPage(
+  config: AppConfig,
+  endpointUrl: string,
+  scheme: string,
+): string {
   const authStatus = config.mcp.accessKey
     ? 'Bearer token required'
     : 'Warning: mcp.accessKey is not configured; the endpoint accepts unauthenticated clients.';
@@ -94,7 +98,7 @@ function renderLandingPage(config: AppConfig, endpointUrl: string, scheme: strin
   <main>
     <div class="eyebrow">MCP Streamable HTTP</div>
     <h1>llm-wiki MCP connector</h1>
-    <p class="lead">This endpoint is intended for MCP clients such as Claude, Claude Code, and OpenWebUI. Browsers can view this status page; MCP clients should POST JSON-RPC requests to the same URL.</p>
+    <p class="lead">This endpoint is intended for MCP clients such as Claude and Claude Code. Browsers can view this status page; MCP clients should POST JSON-RPC requests to the same URL.</p>
     <section class="panel">
       <dl>
         <dt>Status</dt><dd>Ready</dd>
@@ -107,7 +111,7 @@ function renderLandingPage(config: AppConfig, endpointUrl: string, scheme: strin
     <section class="panel">
       <h2>Available tools</h2>
       <ul>${tools}</ul>
-      <p class="note">Only the canonical <code>wiki_*</code> tools are exposed. Recommended question-answering flow: call <code>wiki_search_context</code>, then read selected files with <code>wiki_read_many</code>, then let the client answer from that context.</p>
+      <p class="note">Only the canonical <code>wiki_*</code> tools are exposed. Recommended question-answering flow: call <code>wiki_search_context</code>, then read selected paths with <code>wiki_read_many</code> in batches of 5 using <code>offset</code>, <code>limit</code>, and <code>nextOffset</code>, then let the client answer from that context.</p>
     </section>
   </main>
 </body>
@@ -148,7 +152,10 @@ export default async function mcpHttpCmd(
 
   const listener = async (req: IncomingMessage, res: ServerResponse) => {
     try {
-      const url = new URL(req.url ?? '/', `${tls ? 'https' : 'http'}://${req.headers.host ?? 'localhost'}`);
+      const url = new URL(
+        req.url ?? '/',
+        `${tls ? 'https' : 'http'}://${req.headers.host ?? 'localhost'}`,
+      );
       const normalizedEndpointPath = endpointPath.endsWith('/')
         ? endpointPath.slice(0, -1)
         : endpointPath;
@@ -195,15 +202,15 @@ export default async function mcpHttpCmd(
     }
   };
 
-  const httpServer = tls
-    ? createHttpsServer(tls, listener)
-    : createServer(listener);
+  const httpServer = tls ? createHttpsServer(tls, listener) : createServer(listener);
 
   httpServer.listen(port, host, () => {
     const scheme = tls ? 'https' : 'http';
     console.log(`wiki mcp-http -> ${scheme}://${host}:${port}${endpointPath}`);
     if (!config.mcp.accessKey) {
-      console.log('Warning: mcp.accessKey is not configured; the endpoint accepts unauthenticated clients.');
+      console.log(
+        'Warning: mcp.accessKey is not configured; the endpoint accepts unauthenticated clients.',
+      );
     }
   });
 }

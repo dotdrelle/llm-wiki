@@ -163,3 +163,4 @@ dist
 # End of https://www.toptal.com/developers/gitignore/api/node,visualstudiocode
 .wiki/
 coverage/
+.DS_Store

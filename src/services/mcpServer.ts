@@ -8,6 +8,7 @@ import { WorkspaceService } from './workspaceService.ts';
 import { RetrievalService } from './retrievalService.ts';
 import { pathExists } from '../utils/fs.ts';
 import { resolveInside } from '../utils/path.ts';
+import { extractSourceCitations } from '../utils/markdown.ts';
 import type { AppConfig } from '../types.ts';
 
 export const WIKI_MCP_TOOLS = [
@@ -39,30 +40,25 @@ export const WIKI_MCP_TOOLS = [
   {
     name: 'wiki_search_context',
     description:
-      'Search llm-wiki markdown pages and ingested sources for relevant passages. Use this to answer from the wiki knowledge base, not to inspect live AgentCME settings.',
+      'First step for question answering over llm-wiki. Search wiki/ and raw/ingested/ and return ranked candidate paths with excerpts and citations only; this does not read full files and intentionally excludes wiki/answers/*. Use maxResults as needed, then call wiki_read_many with the returned paths.',
   },
   {
     name: 'wiki_read_many',
     description:
-      'Read several llm-wiki files under wiki/ or raw/ingested/ in one call. Use this only after choosing wiki paths.',
+      'Second step for question answering over llm-wiki. Read selected wiki/ or raw/ingested/ files in batches after wiki_search_context. Pass all chosen paths, read offset 0 limit 5 by default, then continue with nextOffset until enough context is loaded.',
   },
 ] as const;
 
-export function checkMcpAccessKey(config: AppConfig, providedKey: string | undefined): boolean {
+export function checkMcpAccessKey(
+  config: AppConfig,
+  providedKey: string | undefined,
+): boolean {
   return config.mcp.accessKey === undefined || providedKey === config.mcp.accessKey;
 }
 
 function truncateText(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
   return `${text.slice(0, Math.max(0, maxChars - 15)).trimEnd()}\n[truncated]`;
-}
-
-function extractSourceCitations(content: string): string[] {
-  const citations = new Set<string>();
-  for (const match of content.matchAll(/\[src:\s*([^\]\n]+?)\s*\]/g)) {
-    citations.add(match[1].trim());
-  }
-  return [...citations];
 }
 
 function textResult(text: string, options?: { isError?: boolean }): CallToolResult {
@@ -82,7 +78,9 @@ async function loggedTool<T>(
   try {
     const result = await handler(input);
     const status = result.isError ? 'error' : 'ok';
-    console.log(`[wiki-mcp] tools/result ${name} ${status} ${Math.round(performance.now() - start)}ms`);
+    console.log(
+      `[wiki-mcp] tools/result ${name} ${status} ${Math.round(performance.now() - start)}ms`,
+    );
     return result;
   } catch (error) {
     console.log(
@@ -94,7 +92,10 @@ async function loggedTool<T>(
   }
 }
 
-function resolveReadableWorkspacePath(workspace: WorkspaceService, requestedPath: string): string {
+function resolveReadableWorkspacePath(
+  workspace: WorkspaceService,
+  requestedPath: string,
+): string {
   const normalizedPath = requestedPath.trim().replace(/\\/g, '/').replace(/^\.\//, '');
   const absolutePath = resolveInside(workspace.paths.rootDir, normalizedPath);
   const relativeToRoot = path.relative(workspace.paths.rootDir, absolutePath);
@@ -141,11 +142,19 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
       const content = await readFile(absolutePath, 'utf8');
       return textResult(content);
     } catch (error) {
-      return textResult(error instanceof Error ? error.message : String(error), { isError: true });
+      return textResult(error instanceof Error ? error.message : String(error), {
+        isError: true,
+      });
     }
   };
 
-  const writeWikiPage = async ({ path: pagePath, content }: { path: string; content: string }) => {
+  const writeWikiPage = async ({
+    path: pagePath,
+    content,
+  }: {
+    path: string;
+    content: string;
+  }) => {
     await workspace.applyWikiOperations([{ type: 'update', path: pagePath, content }]);
     return textResult(`Written: ${pagePath}`);
   };
@@ -164,7 +173,9 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
       const absolutePath = resolveReadableWorkspacePath(workspace, sourcePath);
       const relative = path.relative(workspace.paths.rawIngestedDir, absolutePath);
       if (relative.startsWith('..') || path.isAbsolute(relative)) {
-        return textResult('Access denied: path must be under raw/ingested/', { isError: true });
+        return textResult('Access denied: path must be under raw/ingested/', {
+          isError: true,
+        });
       }
       if (!(await pathExists(absolutePath))) {
         return textResult(`Source not found: ${sourcePath}`, { isError: true });
@@ -172,17 +183,28 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
       const content = await readFile(absolutePath, 'utf8');
       return textResult(content);
     } catch (error) {
-      return textResult(error instanceof Error ? error.message : String(error), { isError: true });
+      return textResult(error instanceof Error ? error.message : String(error), {
+        isError: true,
+      });
     }
   };
 
   const searchWikiContextInput = {
     question: z.string().min(1).describe('Question or topic to search for.'),
-    maxResults: z.number().int().min(1).max(20).optional().describe('Maximum results to return.'),
+    maxResults: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe(
+        'Maximum ranked candidates to return. There is no MCP hard cap; omit to use retrieval.maxContextFiles from .wikirc.yaml.',
+      ),
     includeRaw: z
       .boolean()
       .optional()
-      .describe('Whether to include raw/ingested source files in addition to wiki pages. Default true.'),
+      .describe(
+        'Whether to include raw/ingested source files in addition to wiki pages. Default false; prefer wiki/sources and wiki/concepts unless the raw archived source is explicitly needed.',
+      ),
     maxExcerptChars: z
       .number()
       .int()
@@ -204,7 +226,7 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
   }) => {
     const results = await retrieval.search(question, {
       limit: maxResults ?? config.retrieval.maxContextFiles,
-      includeRaw: includeRaw ?? true,
+      includeRaw: includeRaw ?? false,
     });
     const excerptLimit = maxExcerptChars ?? config.retrieval.maxChunkChars;
     const payload = {
@@ -218,6 +240,7 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
           headingPath: result.chunk?.headingPath ?? [],
           excerpt: truncateText(excerpt, excerptLimit),
           citations: extractSourceCitations(excerpt),
+          relatedPaths: result.relatedPaths ?? [],
         };
       }),
     };
@@ -228,26 +251,53 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
     paths: z
       .array(z.string().min(1))
       .min(1)
-      .max(20)
-      .describe('Relative paths under wiki/ or raw/ingested/.'),
+      .describe(
+        'Ordered relative paths under wiki/ or raw/ingested/, usually copied from wiki_search_context results. Pass the full selected path list and page through it with offset and limit.',
+      ),
+    offset: z
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .describe('Zero-based offset into paths. Default 0.'),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe(
+        'Maximum number of files to read from paths starting at offset. Default 5; use 5 unless the client has enough context for larger batches.',
+      ),
     maxCharsPerFile: z
       .number()
       .int()
       .min(500)
-      .max(50000)
+      .max(config.retrieval.maxSourceChars)
       .optional()
-      .describe('Maximum characters returned per file.'),
+      .describe(
+        `Maximum characters returned per file. Defaults to and is capped by retrieval.maxSourceChars from .wikirc.yaml (${config.retrieval.maxSourceChars}).`,
+      ),
   };
   const readMany = async ({
     paths,
+    offset,
+    limit,
     maxCharsPerFile,
   }: {
     paths: string[];
+    offset?: number;
+    limit?: number;
     maxCharsPerFile?: number;
   }) => {
-    const limit = maxCharsPerFile ?? 20000;
+    const start = offset ?? 0;
+    const batchLimit = limit ?? 5;
+    const selectedPaths = paths.slice(start, start + batchLimit);
+    const charsPerFile = Math.min(
+      maxCharsPerFile ?? config.retrieval.maxSourceChars,
+      config.retrieval.maxSourceChars,
+    );
     const documents = [];
-    for (const requestedPath of paths) {
+    for (const requestedPath of selectedPaths) {
       try {
         const absolutePath = resolveReadableWorkspacePath(workspace, requestedPath);
         if (!(await pathExists(absolutePath))) {
@@ -256,7 +306,7 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
         }
         documents.push({
           path: requestedPath,
-          content: truncateText(await readFile(absolutePath, 'utf8'), limit),
+          content: truncateText(await readFile(absolutePath, 'utf8'), charsPerFile),
         });
       } catch (error) {
         documents.push({
@@ -265,7 +315,22 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
         });
       }
     }
-    return textResult(JSON.stringify({ documents }, null, 2));
+    return textResult(
+      JSON.stringify(
+        {
+          offset: start,
+          limit: batchLimit,
+          count: documents.length,
+          totalPaths: paths.length,
+          nextOffset:
+            start + documents.length < paths.length ? start + documents.length : null,
+          maxCharsPerFile: charsPerFile,
+          documents,
+        },
+        null,
+        2,
+      ),
+    );
   };
 
   server.tool(
@@ -276,7 +341,9 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
   );
 
   const readWikiPageInput = {
-    path: z.string().describe('Relative path from workspace root, e.g. wiki/concepts/foo.md'),
+    path: z
+      .string()
+      .describe('Relative path from workspace root, e.g. wiki/concepts/foo.md'),
   };
   server.tool(
     'wiki_read_page',
@@ -304,7 +371,9 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
   );
 
   const readSourceInput = {
-    path: z.string().describe('Relative path from workspace root, e.g. raw/ingested/doc.md'),
+    path: z
+      .string()
+      .describe('Relative path from workspace root, e.g. raw/ingested/doc.md'),
   };
   server.tool(
     'wiki_read_ingested_source',
@@ -315,14 +384,14 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
 
   server.tool(
     'wiki_search_context',
-    'Search llm-wiki markdown pages and ingested sources for relevant passages. Use this to answer from the wiki knowledge base, not to inspect live AgentCME settings.',
+    'First step for question answering over llm-wiki. Search wiki/ and raw/ingested/ and return ranked candidate paths with excerpts and citations only; this does not read full files and intentionally excludes wiki/answers/*. Use maxResults as needed, then call wiki_read_many with the returned paths.',
     searchWikiContextInput,
     (input) => loggedTool('wiki_search_context', input, searchWikiContext),
   );
 
   server.tool(
     'wiki_read_many',
-    'Read several llm-wiki files under wiki/ or raw/ingested/ in one call. Use this only after choosing wiki paths.',
+    'Second step for question answering over llm-wiki. Read selected wiki/ or raw/ingested/ files in batches after wiki_search_context. Pass all chosen paths, read offset 0 limit 5 by default, then continue with nextOffset until enough context is loaded.',
     readManyInput,
     (input) => loggedTool('wiki_read_many', input, readMany),
   );

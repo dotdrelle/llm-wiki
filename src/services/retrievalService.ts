@@ -1,5 +1,9 @@
 import { canonicalizeName } from '../utils/path.ts';
-import { splitByHeadings } from '../utils/markdown.ts';
+import {
+  extractSourceCitations,
+  extractWikiLinks,
+  splitByHeadings,
+} from '../utils/markdown.ts';
 import type { AppConfig, SearchResult, WikiPage } from '../types.ts';
 import type { MarkdownChunk } from '../utils/markdown.ts';
 import type { WorkspaceService } from './workspaceService.ts';
@@ -15,6 +19,16 @@ const STOP_WORDS = new Set([
   'dans',
   'avec',
   'pour',
+  'de',
+  'du',
+  'la',
+  'le',
+  'un',
+  'en',
+  'ou',
+  'il',
+  'elle',
+  'on',
   'into',
   'have',
   'will',
@@ -28,12 +42,23 @@ const STOP_WORDS = new Set([
   'your',
   'not',
   'pas',
+  'peux',
+  'peut',
+  'tu',
+  'me',
+  'moi',
+  'donner',
+  'resume',
 ]);
 
 function tokenize(text: string): string[] {
-  return (text.toLowerCase().match(/[\p{L}\p{N}]{2,}/gu) ?? []).filter(
-    (token) => !STOP_WORDS.has(token),
-  );
+  return (
+    text
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/\p{M}/gu, '')
+      .match(/[\p{L}\p{N}]{2,}/gu) ?? []
+  ).filter((token) => !STOP_WORDS.has(token));
 }
 
 function scoreChunk(queryTokens: string[], chunk: MarkdownChunk, page: WikiPage): number {
@@ -46,12 +71,102 @@ function scoreChunk(queryTokens: string[], chunk: MarkdownChunk, page: WikiPage)
   for (const token of queryTokens) {
     if (contentSet.has(token)) score += 1;
     if (headingTokens.includes(token)) score += 3;
-    if (nameTokens.includes(token)) score += 4;
-    if (pathTokens.includes(token)) score += 2;
+    if (nameTokens.includes(token)) score += 8;
+    if (pathTokens.includes(token)) score += 4;
     if (canonicalizeName(page.name).includes(canonicalizeName(token))) score += 1;
   }
 
   return score;
+}
+
+function normalizeRelatedPath(value: string): string | undefined {
+  const clean = value.trim().replace(/\\/g, '/').replace(/^\.\//, '').split('#')[0];
+  if (!clean.startsWith('wiki/') && !clean.startsWith('raw/ingested/')) {
+    return undefined;
+  }
+  return clean;
+}
+
+function extractRelatedPaths(content: string): string[] {
+  return [
+    ...new Set(
+      [...extractWikiLinks(content), ...extractSourceCitations(content)]
+        .map(normalizeRelatedPath)
+        .filter((path): path is string => Boolean(path)),
+    ),
+  ];
+}
+
+function scoreText(queryTokens: string[], text: string): number {
+  const tokens = new Set(tokenize(text));
+  let score = 0;
+  for (const token of queryTokens) {
+    if (tokens.has(token)) score += 1;
+  }
+  return score;
+}
+
+function extractIndexRelatedPaths(queryTokens: string[], indexPage: WikiPage): string[] {
+  const lines = indexPage.content.split('\n');
+  const minScore = queryTokens.length > 1 ? 2 : 1;
+  const matchingLineIndexes = lines
+    .map((line, index) => ({ index, score: scoreText(queryTokens, line) }))
+    .filter((line) => line.score >= minScore)
+    .map((line) => line.index);
+  const related = new Set<string>();
+  const windowSize = 15;
+
+  for (const lineIndex of matchingLineIndexes) {
+    const start = Math.max(0, lineIndex - windowSize);
+    const end = Math.min(lines.length, lineIndex + windowSize + 1);
+    for (const line of lines.slice(start, end)) {
+      for (const relatedPath of extractWikiLinks(line)) {
+        const normalized = normalizeRelatedPath(relatedPath);
+        if (normalized?.startsWith('wiki/concepts/')) {
+          related.add(normalized);
+        }
+      }
+    }
+  }
+
+  return [...related];
+}
+
+function mergeResults(results: SearchResult[]): SearchResult[] {
+  const bestByPath = new Map<string, SearchResult>();
+  const wikiSourceNames = new Set(
+    results
+      .filter((result) => result.page.relativePath.startsWith('wiki/sources/'))
+      .map((result) => result.page.name),
+  );
+
+  for (const result of results) {
+    if (
+      result.page.relativePath.startsWith('raw/ingested/') &&
+      wikiSourceNames.has(result.page.name)
+    ) {
+      continue;
+    }
+
+    const existing = bestByPath.get(result.page.relativePath);
+    if (!existing || result.score > existing.score) {
+      bestByPath.set(result.page.relativePath, {
+        ...result,
+        relatedPaths: [
+          ...new Set([...(existing?.relatedPaths ?? []), ...(result.relatedPaths ?? [])]),
+        ],
+      });
+      continue;
+    }
+
+    if (result.relatedPaths?.length) {
+      existing.relatedPaths = [
+        ...new Set([...(existing.relatedPaths ?? []), ...result.relatedPaths]),
+      ];
+    }
+  }
+
+  return [...bestByPath.values()].sort((a, b) => b.score - a.score);
 }
 
 export class RetrievalService {
@@ -83,8 +198,12 @@ export class RetrievalService {
   ): Promise<SearchResult[]> {
     const limit = options?.limit ?? this.config.retrieval.maxContextFiles;
     const queryTokens = tokenize(query);
-    const wikiPages = await (this.wikiPagesCache ??= this.workspace.listWikiPages());
-    const rawPages = options?.includeRaw ? await this.workspace.listIngestedSourcePages() : [];
+    const allWikiPages = await (this.wikiPagesCache ??= this.workspace.listWikiPages());
+    const wikiPages = allWikiPages.filter((page) => page.type !== 'answer');
+    const rawPages = options?.includeRaw
+      ? await this.workspace.listIngestedSourcePages()
+      : [];
+    const wikiPageByPath = new Map(wikiPages.map((page) => [page.relativePath, page]));
 
     const results: SearchResult[] = [];
 
@@ -98,6 +217,10 @@ export class RetrievalService {
           results.push({
             page,
             score,
+            relatedPaths:
+              page.relativePath === 'wiki/index.md'
+                ? extractIndexRelatedPaths(queryTokens, page)
+                : extractRelatedPaths(chunk.content),
             chunk: isWholePageChunk
               ? undefined
               : { headingPath: chunk.headingPath, content: chunk.content },
@@ -106,8 +229,22 @@ export class RetrievalService {
       }
     }
 
+    const indexPage = allWikiPages.find((page) => page.relativePath === 'wiki/index.md');
+    if (indexPage) {
+      const relatedIndexPaths = extractIndexRelatedPaths(queryTokens, indexPage);
+      for (let i = 0; i < relatedIndexPaths.length; i++) {
+        const relatedPage = wikiPageByPath.get(relatedIndexPaths[i]);
+        if (!relatedPage || relatedPage.type === 'answer') continue;
+        results.push({
+          page: relatedPage,
+          score: Math.max(1, 18 - i * 0.05),
+          relatedPaths: extractRelatedPaths(relatedPage.content),
+        });
+      }
+    }
+
     const maxChunksPerPage = this.config.retrieval.maxChunksPerPage;
-    const sorted = results.sort((a, b) => b.score - a.score);
+    const sorted = mergeResults(results);
     const pageChunkCount = new Map<string, number>();
     const diverse: SearchResult[] = [];
     for (const result of sorted) {
