@@ -56,7 +56,7 @@ function wantsHtml(req: IncomingMessage): boolean {
 function renderLandingPage(config: AppConfig, endpointUrl: string, scheme: string): string {
   const authStatus = config.mcp.accessKey
     ? 'Bearer token required'
-    : 'No bearer token configured';
+    : 'Warning: mcp.accessKey is not configured; the endpoint accepts unauthenticated clients.';
   const tools = WIKI_MCP_TOOLS.map(
     (tool) =>
       `<li><code>${escapeHtml(tool.name)}</code><span>${escapeHtml(tool.description)}</span></li>`,
@@ -94,7 +94,7 @@ function renderLandingPage(config: AppConfig, endpointUrl: string, scheme: strin
   <main>
     <div class="eyebrow">MCP Streamable HTTP</div>
     <h1>llm-wiki MCP connector</h1>
-    <p class="lead">This endpoint is intended for MCP clients such as Claude via mcp-remote. Browsers can view this status page; MCP clients should POST JSON-RPC requests to the same URL.</p>
+    <p class="lead">This endpoint is intended for MCP clients such as Claude, Claude Code, and OpenWebUI. Browsers can view this status page; MCP clients should POST JSON-RPC requests to the same URL.</p>
     <section class="panel">
       <dl>
         <dt>Status</dt><dd>Ready</dd>
@@ -107,7 +107,7 @@ function renderLandingPage(config: AppConfig, endpointUrl: string, scheme: strin
     <section class="panel">
       <h2>Available tools</h2>
       <ul>${tools}</ul>
-      <p class="note">Recommended question-answering flow: call <code>search_wiki_context</code>, then read selected files with <code>read_many</code>, then let the client answer from that context.</p>
+      <p class="note">Only the canonical <code>wiki_*</code> tools are exposed. Recommended question-answering flow: call <code>wiki_search_context</code>, then read selected files with <code>wiki_read_many</code>, then let the client answer from that context.</p>
     </section>
   </main>
 </body>
@@ -149,7 +149,13 @@ export default async function mcpHttpCmd(
   const listener = async (req: IncomingMessage, res: ServerResponse) => {
     try {
       const url = new URL(req.url ?? '/', `${tls ? 'https' : 'http'}://${req.headers.host ?? 'localhost'}`);
-      if (url.pathname !== endpointPath) {
+      const normalizedEndpointPath = endpointPath.endsWith('/')
+        ? endpointPath.slice(0, -1)
+        : endpointPath;
+      const normalizedRequestPath = url.pathname.endsWith('/')
+        ? url.pathname.slice(0, -1)
+        : url.pathname;
+      if (normalizedRequestPath !== normalizedEndpointPath) {
         reject(res, 404, 'Not found');
         return;
       }

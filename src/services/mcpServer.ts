@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { WorkspaceService } from './workspaceService.ts';
 import { RetrievalService } from './retrievalService.ts';
@@ -10,32 +12,39 @@ import type { AppConfig } from '../types.ts';
 
 export const WIKI_MCP_TOOLS = [
   {
-    name: 'list_wiki_pages',
-    description: 'List all pages in wiki/ with their type.',
+    name: 'wiki_list_pages',
+    description:
+      'List llm-wiki markdown pages under wiki/. Use this only for the llm-wiki knowledge base, not AgentCME runtime configuration.',
   },
   {
-    name: 'read_wiki_page',
-    description: 'Read a wiki page by relative path, for example wiki/concepts/foo.md.',
+    name: 'wiki_read_page',
+    description:
+      'Read one llm-wiki markdown page under wiki/ by relative path. Use this for wiki content, not AgentCME status or Confluence export settings.',
   },
   {
-    name: 'write_wiki_page',
-    description: 'Create or update a wiki/* markdown page.',
+    name: 'wiki_write_page',
+    description:
+      'Create or update one llm-wiki markdown page under wiki/. Use this only for wiki content edits.',
   },
   {
-    name: 'list_sources',
-    description: 'List ingested source documents in raw/ingested/.',
+    name: 'wiki_list_ingested_sources',
+    description:
+      'List source documents already ingested into llm-wiki under raw/ingested/. Do not use this for AgentCME configured export sources.',
   },
   {
-    name: 'read_source',
-    description: 'Read one ingested source document by relative path.',
+    name: 'wiki_read_ingested_source',
+    description:
+      'Read one llm-wiki ingested source document under raw/ingested/. Do not use this for AgentCME configuration.',
   },
   {
-    name: 'search_wiki_context',
-    description: 'Search wiki pages and ingested sources for relevant passages.',
+    name: 'wiki_search_context',
+    description:
+      'Search llm-wiki markdown pages and ingested sources for relevant passages. Use this to answer from the wiki knowledge base, not to inspect live AgentCME settings.',
   },
   {
-    name: 'read_many',
-    description: 'Read several wiki/ or raw/ingested/ files in one call.',
+    name: 'wiki_read_many',
+    description:
+      'Read several llm-wiki files under wiki/ or raw/ingested/ in one call. Use this only after choosing wiki paths.',
   },
 ] as const;
 
@@ -54,6 +63,35 @@ function extractSourceCitations(content: string): string[] {
     citations.add(match[1].trim());
   }
   return [...citations];
+}
+
+function textResult(text: string, options?: { isError?: boolean }): CallToolResult {
+  return {
+    content: [{ type: 'text', text }],
+    ...(options?.isError ? { isError: true } : {}),
+  };
+}
+
+async function loggedTool<T>(
+  name: string,
+  input: T,
+  handler: (input: T) => Promise<CallToolResult>,
+): Promise<CallToolResult> {
+  const start = performance.now();
+  console.log(`[wiki-mcp] tools/call ${name}`);
+  try {
+    const result = await handler(input);
+    const status = result.isError ? 'error' : 'ok';
+    console.log(`[wiki-mcp] tools/result ${name} ${status} ${Math.round(performance.now() - start)}ms`);
+    return result;
+  } catch (error) {
+    console.log(
+      `[wiki-mcp] tools/result ${name} exception ${Math.round(performance.now() - start)}ms ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    throw error;
+  }
 }
 
 function resolveReadableWorkspacePath(workspace: WorkspaceService, requestedPath: string): string {
@@ -84,177 +122,209 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
     version: '1.0.0',
   });
 
-  server.tool('list_wiki_pages', 'List all pages in wiki/', {}, async () => {
+  const listWikiPages = async () => {
     const pages = await workspace.listWikiPages();
     const items = pages.map((p) => `${p.relativePath} [${p.type}]`);
-    return { content: [{ type: 'text', text: items.join('\n') }] };
-  });
+    return textResult(items.join('\n'));
+  };
 
-  server.tool(
-    'read_wiki_page',
-    'Read the content of a wiki page by its relative path (e.g. wiki/concepts/foo.md)',
-    { path: z.string().describe('Relative path from workspace root, e.g. wiki/concepts/foo.md') },
-    async ({ path: pagePath }) => {
-      try {
-        const absolutePath = resolveReadableWorkspacePath(workspace, pagePath);
-        const relativeToWiki = path.relative(workspace.paths.wikiDir, absolutePath);
-        if (relativeToWiki.startsWith('..') || path.isAbsolute(relativeToWiki)) {
-          return {
-            content: [{ type: 'text', text: 'Access denied: path must be under wiki/.' }],
-            isError: true,
-          };
-        }
-        if (!(await pathExists(absolutePath))) {
-          return { content: [{ type: 'text', text: `Page not found: ${pagePath}` }], isError: true };
-        }
-        const content = await readFile(absolutePath, 'utf8');
-        return { content: [{ type: 'text', text: content }] };
-      } catch (error) {
-        return {
-          content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }],
-          isError: true,
-        };
+  const readWikiPage = async ({ path: pagePath }: { path: string }) => {
+    try {
+      const absolutePath = resolveReadableWorkspacePath(workspace, pagePath);
+      const relativeToWiki = path.relative(workspace.paths.wikiDir, absolutePath);
+      if (relativeToWiki.startsWith('..') || path.isAbsolute(relativeToWiki)) {
+        return textResult('Access denied: path must be under wiki/.', { isError: true });
       }
-    },
-  );
+      if (!(await pathExists(absolutePath))) {
+        return textResult(`Page not found: ${pagePath}`, { isError: true });
+      }
+      const content = await readFile(absolutePath, 'utf8');
+      return textResult(content);
+    } catch (error) {
+      return textResult(error instanceof Error ? error.message : String(error), { isError: true });
+    }
+  };
+
+  const writeWikiPage = async ({ path: pagePath, content }: { path: string; content: string }) => {
+    await workspace.applyWikiOperations([{ type: 'update', path: pagePath, content }]);
+    return textResult(`Written: ${pagePath}`);
+  };
+
+  const listIngestedSources = async () => {
+    const pages = await workspace.listIngestedSourcePages();
+    if (pages.length === 0) {
+      return textResult('No ingested sources found.');
+    }
+    const items = pages.map((p) => p.relativePath);
+    return textResult(items.join('\n'));
+  };
+
+  const readIngestedSource = async ({ path: sourcePath }: { path: string }) => {
+    try {
+      const absolutePath = resolveReadableWorkspacePath(workspace, sourcePath);
+      const relative = path.relative(workspace.paths.rawIngestedDir, absolutePath);
+      if (relative.startsWith('..') || path.isAbsolute(relative)) {
+        return textResult('Access denied: path must be under raw/ingested/', { isError: true });
+      }
+      if (!(await pathExists(absolutePath))) {
+        return textResult(`Source not found: ${sourcePath}`, { isError: true });
+      }
+      const content = await readFile(absolutePath, 'utf8');
+      return textResult(content);
+    } catch (error) {
+      return textResult(error instanceof Error ? error.message : String(error), { isError: true });
+    }
+  };
+
+  const searchWikiContextInput = {
+    question: z.string().min(1).describe('Question or topic to search for.'),
+    maxResults: z.number().int().min(1).max(20).optional().describe('Maximum results to return.'),
+    includeRaw: z
+      .boolean()
+      .optional()
+      .describe('Whether to include raw/ingested source files in addition to wiki pages. Default true.'),
+    maxExcerptChars: z
+      .number()
+      .int()
+      .min(200)
+      .max(6000)
+      .optional()
+      .describe('Maximum excerpt size per result.'),
+  };
+  const searchWikiContext = async ({
+    question,
+    maxResults,
+    includeRaw,
+    maxExcerptChars,
+  }: {
+    question: string;
+    maxResults?: number;
+    includeRaw?: boolean;
+    maxExcerptChars?: number;
+  }) => {
+    const results = await retrieval.search(question, {
+      limit: maxResults ?? config.retrieval.maxContextFiles,
+      includeRaw: includeRaw ?? true,
+    });
+    const excerptLimit = maxExcerptChars ?? config.retrieval.maxChunkChars;
+    const payload = {
+      question,
+      results: results.map((result) => {
+        const excerpt = result.chunk?.content ?? result.page.content;
+        return {
+          path: result.page.relativePath,
+          type: result.page.type,
+          score: result.score,
+          headingPath: result.chunk?.headingPath ?? [],
+          excerpt: truncateText(excerpt, excerptLimit),
+          citations: extractSourceCitations(excerpt),
+        };
+      }),
+    };
+    return textResult(JSON.stringify(payload, null, 2));
+  };
+
+  const readManyInput = {
+    paths: z
+      .array(z.string().min(1))
+      .min(1)
+      .max(20)
+      .describe('Relative paths under wiki/ or raw/ingested/.'),
+    maxCharsPerFile: z
+      .number()
+      .int()
+      .min(500)
+      .max(50000)
+      .optional()
+      .describe('Maximum characters returned per file.'),
+  };
+  const readMany = async ({
+    paths,
+    maxCharsPerFile,
+  }: {
+    paths: string[];
+    maxCharsPerFile?: number;
+  }) => {
+    const limit = maxCharsPerFile ?? 20000;
+    const documents = [];
+    for (const requestedPath of paths) {
+      try {
+        const absolutePath = resolveReadableWorkspacePath(workspace, requestedPath);
+        if (!(await pathExists(absolutePath))) {
+          documents.push({ path: requestedPath, error: 'Not found' });
+          continue;
+        }
+        documents.push({
+          path: requestedPath,
+          content: truncateText(await readFile(absolutePath, 'utf8'), limit),
+        });
+      } catch (error) {
+        documents.push({
+          path: requestedPath,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return textResult(JSON.stringify({ documents }, null, 2));
+  };
 
   server.tool(
-    'write_wiki_page',
-    'Write or update a wiki page. Only wiki/* paths are allowed. Creates the page if it does not exist.',
-    {
-      path: z.string().describe('Relative path from workspace root, must start with wiki/'),
-      content: z.string().describe('Full markdown content to write'),
-    },
-    async ({ path: pagePath, content }) => {
-      await workspace.applyWikiOperations([{ type: 'update', path: pagePath, content }]);
-      return { content: [{ type: 'text', text: `Written: ${pagePath}` }] };
-    },
-  );
-
-  server.tool(
-    'list_sources',
-    'List ingested source documents in raw/ingested/',
+    'wiki_list_pages',
+    'List llm-wiki markdown pages under wiki/. Use this only for the llm-wiki knowledge base, not AgentCME runtime configuration.',
     {},
-    async () => {
-      const pages = await workspace.listIngestedSourcePages();
-      if (pages.length === 0) {
-        return { content: [{ type: 'text', text: 'No ingested sources found.' }] };
-      }
-      const items = pages.map((p) => p.relativePath);
-      return { content: [{ type: 'text', text: items.join('\n') }] };
-    },
+    (input) => loggedTool('wiki_list_pages', input, listWikiPages),
+  );
+
+  const readWikiPageInput = {
+    path: z.string().describe('Relative path from workspace root, e.g. wiki/concepts/foo.md'),
+  };
+  server.tool(
+    'wiki_read_page',
+    'Read one llm-wiki markdown page under wiki/ by relative path. Use this for wiki content, not AgentCME status or Confluence export settings.',
+    readWikiPageInput,
+    (input) => loggedTool('wiki_read_page', input, readWikiPage),
+  );
+
+  const writeWikiPageInput = {
+    path: z.string().describe('Relative path from workspace root, must start with wiki/'),
+    content: z.string().describe('Full markdown content to write'),
+  };
+  server.tool(
+    'wiki_write_page',
+    'Create or update one llm-wiki markdown page under wiki/. Use this only for wiki content edits.',
+    writeWikiPageInput,
+    (input) => loggedTool('wiki_write_page', input, writeWikiPage),
   );
 
   server.tool(
-    'read_source',
-    'Read the content of an ingested source document',
-    { path: z.string().describe('Relative path from workspace root, e.g. raw/ingested/doc.md') },
-    async ({ path: sourcePath }) => {
-      try {
-        const absolutePath = resolveReadableWorkspacePath(workspace, sourcePath);
-        const relative = path.relative(workspace.paths.rawIngestedDir, absolutePath);
-        if (relative.startsWith('..') || path.isAbsolute(relative)) {
-          return {
-            content: [{ type: 'text', text: 'Access denied: path must be under raw/ingested/' }],
-            isError: true,
-          };
-        }
-        if (!(await pathExists(absolutePath))) {
-          return { content: [{ type: 'text', text: `Source not found: ${sourcePath}` }], isError: true };
-        }
-        const content = await readFile(absolutePath, 'utf8');
-        return { content: [{ type: 'text', text: content }] };
-      } catch (error) {
-        return {
-          content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }],
-          isError: true,
-        };
-      }
-    },
+    'wiki_list_ingested_sources',
+    'List source documents already ingested into llm-wiki under raw/ingested/. Do not use this for AgentCME configured export sources.',
+    {},
+    (input) => loggedTool('wiki_list_ingested_sources', input, listIngestedSources),
+  );
+
+  const readSourceInput = {
+    path: z.string().describe('Relative path from workspace root, e.g. raw/ingested/doc.md'),
+  };
+  server.tool(
+    'wiki_read_ingested_source',
+    'Read one llm-wiki ingested source document under raw/ingested/. Do not use this for AgentCME configuration.',
+    readSourceInput,
+    (input) => loggedTool('wiki_read_ingested_source', input, readIngestedSource),
   );
 
   server.tool(
-    'search_wiki_context',
-    'Search wiki pages and ingested sources for documents/passages relevant to a question. Returns context candidates only; the client should read selected paths and answer itself.',
-    {
-      question: z.string().min(1).describe('Question or topic to search for.'),
-      maxResults: z.number().int().min(1).max(20).optional().describe('Maximum results to return.'),
-      includeRaw: z
-        .boolean()
-        .optional()
-        .describe('Whether to include raw/ingested source files in addition to wiki pages. Default true.'),
-      maxExcerptChars: z
-        .number()
-        .int()
-        .min(200)
-        .max(6000)
-        .optional()
-        .describe('Maximum excerpt size per result.'),
-    },
-    async ({ question, maxResults, includeRaw, maxExcerptChars }) => {
-      const results = await retrieval.search(question, {
-        limit: maxResults ?? config.retrieval.maxContextFiles,
-        includeRaw: includeRaw ?? true,
-      });
-      const excerptLimit = maxExcerptChars ?? config.retrieval.maxChunkChars;
-      const payload = {
-        question,
-        results: results.map((result) => {
-          const excerpt = result.chunk?.content ?? result.page.content;
-          return {
-            path: result.page.relativePath,
-            type: result.page.type,
-            score: result.score,
-            headingPath: result.chunk?.headingPath ?? [],
-            excerpt: truncateText(excerpt, excerptLimit),
-            citations: extractSourceCitations(excerpt),
-          };
-        }),
-      };
-      return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
-    },
+    'wiki_search_context',
+    'Search llm-wiki markdown pages and ingested sources for relevant passages. Use this to answer from the wiki knowledge base, not to inspect live AgentCME settings.',
+    searchWikiContextInput,
+    (input) => loggedTool('wiki_search_context', input, searchWikiContext),
   );
 
   server.tool(
-    'read_many',
-    'Read multiple wiki/ or raw/ingested/ markdown files in one call.',
-    {
-      paths: z
-        .array(z.string().min(1))
-        .min(1)
-        .max(20)
-        .describe('Relative paths under wiki/ or raw/ingested/.'),
-      maxCharsPerFile: z
-        .number()
-        .int()
-        .min(500)
-        .max(50000)
-        .optional()
-        .describe('Maximum characters returned per file.'),
-    },
-    async ({ paths, maxCharsPerFile }) => {
-      const limit = maxCharsPerFile ?? 20000;
-      const documents = [];
-      for (const requestedPath of paths) {
-        try {
-          const absolutePath = resolveReadableWorkspacePath(workspace, requestedPath);
-          if (!(await pathExists(absolutePath))) {
-            documents.push({ path: requestedPath, error: 'Not found' });
-            continue;
-          }
-          documents.push({
-            path: requestedPath,
-            content: truncateText(await readFile(absolutePath, 'utf8'), limit),
-          });
-        } catch (error) {
-          documents.push({
-            path: requestedPath,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-      return { content: [{ type: 'text', text: JSON.stringify({ documents }, null, 2) }] };
-    },
+    'wiki_read_many',
+    'Read several llm-wiki files under wiki/ or raw/ingested/ in one call. Use this only after choosing wiki paths.',
+    readManyInput,
+    (input) => loggedTool('wiki_read_many', input, readMany),
   );
 
   return server;

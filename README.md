@@ -31,9 +31,9 @@ No vector database is used. Everything stays in markdown and on disk.
 │  notes, exports, Confluence, PDFs    │  │  Claude Desktop / Claude Code       │
 │  → raw/untracked/                    │  │                                     │
 └──────────────┬───────────────────────┘  │  wiki mcp  (stdio)                  │
-               │  wiki ingest  (LLM)      │  list_wiki_pages · read_wiki_page   │
-               ▼                          │  write_wiki_page                    │
-┌──────────────────────────────────────┐  │  list_sources · read_source         │
+               │  wiki ingest  (LLM)      │  wiki_list_pages · wiki_read_page   │
+               ▼                          │  wiki_write_page                    │
+┌──────────────────────────────────────┐  │  wiki_list_ingested_sources         │
 │  wiki/                        ◄──────┼──┤                                     │
 │  ├── index.md                        │  └─────────────────────────────────────┘
 │  ├── concepts/                       │
@@ -588,21 +588,21 @@ Exposed tools:
 
 | Tool                | Description                                                     |
 | ------------------- | --------------------------------------------------------------- |
-| `list_wiki_pages` | List all pages under `wiki/` with their type                  |
-| `read_wiki_page`  | Read a page by its relative path (e.g.`wiki/concepts/foo.md`) |
-| `write_wiki_page` | Write or update a page — restricted to `wiki/*` paths        |
-| `list_sources`    | List ingested source documents in `raw/ingested/`             |
-| `read_source`     | Read an ingested source by its relative path                    |
-| `search_wiki_context` | Search wiki pages and ingested sources, returning relevant passages for the client to answer from |
-| `read_many`       | Read several `wiki/` or `raw/ingested/` files in one call       |
+| `wiki_list_pages` | List all pages under `wiki/` with their type |
+| `wiki_read_page` | Read a page by its relative path (e.g. `wiki/concepts/foo.md`) |
+| `wiki_write_page` | Write or update a page — restricted to `wiki/*` paths |
+| `wiki_list_ingested_sources` | List ingested source documents in `raw/ingested/` |
+| `wiki_read_ingested_source` | Read an ingested source by its relative path |
+| `wiki_search_context` | Search wiki pages and ingested sources, returning relevant passages for the client to answer from |
+| `wiki_read_many` | Read several `wiki/` or `raw/ingested/` files in one call |
 
 Write operations go through the same path guards as `wiki ingest`: `resolveInside` rejects any `../../` traversal, and `applyWikiOperations` refuses paths that do not start with `wiki/`.
 
 For question-answering clients, the intended flow is:
 
-1. Call `search_wiki_context` with the user question.
+1. Call `wiki_search_context` with the user question.
 2. Inspect the returned paths, scores, headings, excerpts, and `[src: ...]` citations.
-3. Call `read_many` for the selected `wiki/` or `raw/ingested/` paths.
+3. Call `wiki_read_many` for the selected `wiki/` or `raw/ingested/` paths.
 4. Let the MCP client produce the final answer itself from that context.
 
 #### Access key
