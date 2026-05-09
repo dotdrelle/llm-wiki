@@ -177,11 +177,12 @@ docker compose up serve
 
 ### Selecting the workspace
 
-By default the current directory is mounted into `/workspace` inside the container. Override with `WIKI_WORKSPACE`:
+Set `WIKI_WORKSPACE` to the initialized wiki workspace that should be mounted into `/workspace` inside the container. Do not mount the source checkout as the workspace unless it is intentionally initialized as a wiki.
 
 ```bash
-WIKI_WORKSPACE=/path/to/my/workspace docker compose --profile cli run --rm wiki ingest
-WIKI_WORKSPACE=/path/to/my/workspace docker compose up serve
+export WIKI_WORKSPACE=/path/to/my/workspace
+docker compose --profile cli run --rm wiki ingest
+docker compose up serve
 ```
 
 ### Ollama
@@ -772,7 +773,7 @@ Rules enforced by prompts:
 [confluence-markdown-exporter](https://github.com/bdmac/confluence-markdown-exporter) exports a Confluence space as a tree of markdown files ready to drop into `raw/untracked/`.
 
 ```bash
-python3.11 -m venv .cme
+python3 -m venv .cme
 source .cme/bin/activate
 pip install --upgrade pip
 pip install confluence-markdown-exporter

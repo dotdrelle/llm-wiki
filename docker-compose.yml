@@ -8,6 +8,7 @@ services:
   # To keep the web UI running, use the `serve` service below.
   # Both services mount the same workspace: an ingest run through `wiki`
   # is visible in `serve` after refreshing the browser.
+  # WIKI_WORKSPACE is required; do not default to the source checkout.
   wiki:
     build:
       context: .
@@ -16,7 +17,7 @@ services:
         - linux/arm64
     profiles: ['cli']
     volumes:
-      - ${WIKI_WORKSPACE:-.}:/workspace
+      - ${WIKI_WORKSPACE:?Set WIKI_WORKSPACE to an initialized llm-wiki workspace}:/workspace
     environment:
       - OPENAI_API_KEY
       - ANTHROPIC_API_KEY
@@ -38,7 +39,7 @@ services:
         - linux/arm64
     command: serve --port 3000
     volumes:
-      - ${WIKI_WORKSPACE:-.}:/workspace
+      - ${WIKI_WORKSPACE:?Set WIKI_WORKSPACE to an initialized llm-wiki workspace}:/workspace
     environment:
       - OPENAI_API_KEY
       - ANTHROPIC_API_KEY
@@ -46,6 +47,7 @@ services:
       - '3000:3000'
     extra_hosts:
       - 'host.docker.internal:host-gateway'
+    restart: unless-stopped
 
   # MCP stdio server for connecting an AI assistant (Claude Desktop / Claude Code).
   # This service is not meant to be started directly through docker compose:
@@ -61,7 +63,7 @@ services:
     command: mcp
     profiles: ['mcp']
     volumes:
-      - ${WIKI_WORKSPACE:-.}:/workspace
+      - ${WIKI_WORKSPACE:?Set WIKI_WORKSPACE to an initialized llm-wiki workspace}:/workspace
     environment:
       - WIKI_MCP_ACCESS_KEY
     extra_hosts:
@@ -104,7 +106,7 @@ services:
     command: mcp-http --host 0.0.0.0 --port 3333 --path /mcp
     profiles: ['mcp-http']
     volumes:
-      - ${WIKI_WORKSPACE:-.}:/workspace
+      - ${WIKI_WORKSPACE:?Set WIKI_WORKSPACE to an initialized llm-wiki workspace}:/workspace
       - ${WIKI_CERTS:-./certs}:/certs:ro
     environment:
       - WIKI_MCP_ACCESS_KEY
@@ -115,6 +117,7 @@ services:
       - '${WIKI_MCP_HTTP_PORT:-3333}:3333'
     extra_hosts:
       - 'host.docker.internal:host-gateway'
+    restart: unless-stopped
 
   # Containerized Ollama - Linux + NVIDIA GPU only.
   # On macOS, run Ollama natively and point baseUrl to host.docker.internal.
