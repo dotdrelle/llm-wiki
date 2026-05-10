@@ -20,7 +20,7 @@ export const WIKI_MCP_TOOLS = [
   {
     name: 'wiki_read_page',
     description:
-      'Read one llm-wiki markdown page under wiki/ by relative path. Use this for wiki content, not AgentCME status or Confluence export settings.',
+      'Read one llm-wiki markdown page under wiki/ by relative path. Use this after wiki_search_context when a returned page needs full content.',
   },
   {
     name: 'wiki_write_page',
@@ -40,12 +40,7 @@ export const WIKI_MCP_TOOLS = [
   {
     name: 'wiki_search_context',
     description:
-      'First step for question answering over llm-wiki. Search wiki/ and raw/ingested/ and return ranked candidate paths with excerpts and citations only; this does not read full files and intentionally excludes wiki/answers/*. Use maxResults as needed, then call wiki_read_many with the returned paths.',
-  },
-  {
-    name: 'wiki_read_many',
-    description:
-      'Second step for question answering over llm-wiki. Read selected wiki/ or raw/ingested/ files in batches after wiki_search_context. Pass all chosen paths, read offset 0 limit 5 by default, then continue with nextOffset until enough context is loaded.',
+      'Search llm-wiki for a question. Returns ranked candidate paths with excerpts, citations, and relatedPaths only; excludes wiki/answers/*. Read selected wiki pages with wiki_read_page if full content is needed.',
   },
 ] as const;
 
@@ -247,92 +242,6 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
     return textResult(JSON.stringify(payload, null, 2));
   };
 
-  const readManyInput = {
-    paths: z
-      .array(z.string().min(1))
-      .min(1)
-      .describe(
-        'Ordered relative paths under wiki/ or raw/ingested/, usually copied from wiki_search_context results. Pass the full selected path list and page through it with offset and limit.',
-      ),
-    offset: z
-      .number()
-      .int()
-      .min(0)
-      .optional()
-      .describe('Zero-based offset into paths. Default 0.'),
-    limit: z
-      .number()
-      .int()
-      .min(1)
-      .optional()
-      .describe(
-        'Maximum number of files to read from paths starting at offset. Default 5; use 5 unless the client has enough context for larger batches.',
-      ),
-    maxCharsPerFile: z
-      .number()
-      .int()
-      .min(500)
-      .max(config.retrieval.maxSourceChars)
-      .optional()
-      .describe(
-        `Maximum characters returned per file. Defaults to and is capped by retrieval.maxSourceChars from .wikirc.yaml (${config.retrieval.maxSourceChars}).`,
-      ),
-  };
-  const readMany = async ({
-    paths,
-    offset,
-    limit,
-    maxCharsPerFile,
-  }: {
-    paths: string[];
-    offset?: number;
-    limit?: number;
-    maxCharsPerFile?: number;
-  }) => {
-    const start = offset ?? 0;
-    const batchLimit = limit ?? 5;
-    const selectedPaths = paths.slice(start, start + batchLimit);
-    const charsPerFile = Math.min(
-      maxCharsPerFile ?? config.retrieval.maxSourceChars,
-      config.retrieval.maxSourceChars,
-    );
-    const documents = [];
-    for (const requestedPath of selectedPaths) {
-      try {
-        const absolutePath = resolveReadableWorkspacePath(workspace, requestedPath);
-        if (!(await pathExists(absolutePath))) {
-          documents.push({ path: requestedPath, error: 'Not found' });
-          continue;
-        }
-        documents.push({
-          path: requestedPath,
-          content: truncateText(await readFile(absolutePath, 'utf8'), charsPerFile),
-        });
-      } catch (error) {
-        documents.push({
-          path: requestedPath,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-    return textResult(
-      JSON.stringify(
-        {
-          offset: start,
-          limit: batchLimit,
-          count: documents.length,
-          totalPaths: paths.length,
-          nextOffset:
-            start + documents.length < paths.length ? start + documents.length : null,
-          maxCharsPerFile: charsPerFile,
-          documents,
-        },
-        null,
-        2,
-      ),
-    );
-  };
-
   server.tool(
     'wiki_list_pages',
     'List llm-wiki markdown pages under wiki/. Use this only for the llm-wiki knowledge base, not AgentCME runtime configuration.',
@@ -347,7 +256,7 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
   };
   server.tool(
     'wiki_read_page',
-    'Read one llm-wiki markdown page under wiki/ by relative path. Use this for wiki content, not AgentCME status or Confluence export settings.',
+    'Read one llm-wiki markdown page under wiki/ by relative path. Use this after wiki_search_context when a returned page needs full content.',
     readWikiPageInput,
     (input) => loggedTool('wiki_read_page', input, readWikiPage),
   );
@@ -384,16 +293,9 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
 
   server.tool(
     'wiki_search_context',
-    'First step for question answering over llm-wiki. Search wiki/ and raw/ingested/ and return ranked candidate paths with excerpts and citations only; this does not read full files and intentionally excludes wiki/answers/*. Use maxResults as needed, then call wiki_read_many with the returned paths.',
+    'Search llm-wiki for a question. Returns ranked candidate paths with excerpts, citations, and relatedPaths only; excludes wiki/answers/*. Read selected wiki pages with wiki_read_page if full content is needed.',
     searchWikiContextInput,
     (input) => loggedTool('wiki_search_context', input, searchWikiContext),
-  );
-
-  server.tool(
-    'wiki_read_many',
-    'Second step for question answering over llm-wiki. Read selected wiki/ or raw/ingested/ files in batches after wiki_search_context. Pass all chosen paths, read offset 0 limit 5 by default, then continue with nextOffset until enough context is loaded.',
-    readManyInput,
-    (input) => loggedTool('wiki_read_many', input, readMany),
   );
 
   return server;
