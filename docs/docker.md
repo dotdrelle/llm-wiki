@@ -36,7 +36,7 @@ Use the `serve` service for a persistent browser UI:
 
 ```bash
 docker compose up serve
-# → http://localhost:3000
+# → http://localhost:3100
 ```
 
 `EXPOSE 3000` in the Dockerfile does not start a server by itself — only the `serve` service does. Both `wiki` and `serve` mount the same workspace: changes from `ingest` appear in the browser after a refresh.
@@ -45,7 +45,7 @@ docker compose up serve
 
 ```bash
 docker compose --profile mcp-http up mcp-http
-# → http://localhost:3333/mcp
+# → http://localhost:3101/mcp
 ```
 
 With TLS:

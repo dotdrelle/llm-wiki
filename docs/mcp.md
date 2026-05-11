@@ -146,7 +146,7 @@ Relative paths are resolved against the workspace root; absolute paths (e.g. Doc
 
 ```bash
 docker compose --profile mcp-http up mcp-http
-# → http://localhost:3333/mcp
+# → http://localhost:3101/mcp
 ```
 
 See [docker.md](./docker.md) for the TLS variant.

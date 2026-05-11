@@ -45,7 +45,7 @@ services:
       - OPENAI_API_KEY
       - ANTHROPIC_API_KEY
     ports:
-      - '3000:3000'
+      - '3100:3000'
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     restart: unless-stopped
@@ -96,7 +96,7 @@ services:
   #           caPath: /certs/ca.pem
   #   - start the same service; it switches to HTTPS when certPath/keyPath exist.
   #
-  # Client endpoint: http(s)://HOST:3333/mcp
+  # Client endpoint: http(s)://HOST:${WIKI_MCP_HTTP_PORT:-3101}/mcp
   # Auth: Authorization: Bearer <mcp.accessKey>
   mcp-http:
     build:
@@ -115,7 +115,7 @@ services:
       - WIKI_MCP_TLS_KEY_PATH
       - WIKI_MCP_TLS_CA_PATH
     ports:
-      - '${WIKI_MCP_HTTP_PORT:-3333}:3333'
+      - '${WIKI_MCP_HTTP_PORT:-3101}:3333'
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     restart: unless-stopped

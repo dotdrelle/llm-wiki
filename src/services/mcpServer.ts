@@ -55,6 +55,11 @@ export const WIKI_MCP_TOOLS = [
 ] as const;
 
 const DEFAULT_COLLECT_CONTEXT_RESULTS = 10;
+const MAX_SEARCH_CONTEXT_RESULTS = 50;
+const MAX_COLLECT_CONTEXT_RESULTS = 25;
+const MAX_READ_PAGES = 25;
+const MAX_PAGE_CHARS = 50_000;
+const DEFAULT_COLLECT_PAGE_CHARS = 24_000;
 
 export function checkMcpAccessKey(
   config: AppConfig,
@@ -77,6 +82,14 @@ function textResult(text: string, options?: { isError?: boolean }): CallToolResu
 
 function uniqueValues(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function normalizeMaxPageChars(
+  requested: number | undefined,
+  fallback?: number,
+): number | undefined {
+  const value = requested ?? fallback;
+  return typeof value === 'number' ? Math.min(value, MAX_PAGE_CHARS) : undefined;
 }
 
 interface ReadWikiPagePayload {
@@ -229,9 +242,17 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
     paths: string[];
     maxPageChars?: number;
   }) => {
+    const requestedPaths = uniqueValues(paths);
+    if (requestedPaths.length > MAX_READ_PAGES) {
+      return textResult(
+        `Too many pages requested: ${requestedPaths.length}. Maximum is ${MAX_READ_PAGES}.`,
+        { isError: true },
+      );
+    }
+    const safeMaxPageChars = normalizeMaxPageChars(maxPageChars);
     const pages = await Promise.all(
-      uniqueValues(paths).map((pagePath) =>
-        readWorkspaceWikiPage(workspace, pagePath, { maxPageChars }),
+      requestedPaths.map((pagePath) =>
+        readWorkspaceWikiPage(workspace, pagePath, { maxPageChars: safeMaxPageChars }),
       ),
     );
     return textResult(JSON.stringify({ pages }, null, 2));
@@ -284,6 +305,7 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
       .number()
       .int()
       .min(1)
+      .max(MAX_SEARCH_CONTEXT_RESULTS)
       .optional()
       .describe(
         'Maximum ranked candidates to return. Omit to use retrieval.vector.maxResults when vector retrieval is enabled, otherwise retrieval.maxContextFiles.',
@@ -349,8 +371,16 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
     maxResults?: number;
     maxPageChars?: number;
   }) => {
+    const resultLimit = Math.min(
+      maxResults ?? DEFAULT_COLLECT_CONTEXT_RESULTS,
+      MAX_COLLECT_CONTEXT_RESULTS,
+    );
+    const safeMaxPageChars = normalizeMaxPageChars(
+      maxPageChars,
+      DEFAULT_COLLECT_PAGE_CHARS,
+    );
     const results = await retrieval.search(question, {
-      limit: maxResults ?? DEFAULT_COLLECT_CONTEXT_RESULTS,
+      limit: resultLimit,
       includeRaw: false,
     });
     const excerptLimit = config.retrieval.maxChunkChars;
@@ -373,7 +403,7 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
     );
     const readPages = await Promise.all(
       readPaths.map((pagePath) =>
-        readWorkspaceWikiPage(workspace, pagePath, { maxPageChars }),
+        readWorkspaceWikiPage(workspace, pagePath, { maxPageChars: safeMaxPageChars }),
       ),
     );
     const readPagePaths = readPages
@@ -390,7 +420,7 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
       usageContract: {
         primaryEvidence: 'readPages',
         readPagesMeaning:
-          'Pages listed in readPagePaths were opened and their full returned content is available in readPages.',
+          'Pages listed in readPagePaths were opened and their returned content is available in readPages. Check truncated before treating a page as complete.',
         excerptsRole:
           'candidateResults.excerpt explains why a page was selected; it is search trace, not the primary evidence.',
         followUpPolicy:
@@ -404,15 +434,17 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
       readPages,
       notReadRawSources,
       coverage: {
-        requestedResultLimit: maxResults ?? DEFAULT_COLLECT_CONTEXT_RESULTS,
+        requestedResultLimit: resultLimit,
         candidateCount: candidateResults.length,
         readPageCount: readPagePaths.length,
+        missingPageCount: readPages.filter((page) => !page.found && page.allowed).length,
+        deniedPageCount: readPages.filter((page) => !page.allowed).length,
         truncatedPageCount: readPages.filter((page) => page.truncated).length,
         notReadRawSourceCount: notReadRawSources.length,
       },
     };
     console.log(
-      `[wiki-mcp] collect_context candidates=${candidateResults.length} readPages=${readPagePaths.length} truncated=${payload.coverage.truncatedPageCount} rawRefs=${notReadRawSources.length}`,
+      `[wiki-mcp] collect_context candidates=${candidateResults.length} readPages=${readPagePaths.length} truncated=${payload.coverage.truncatedPageCount} rawRefs=${notReadRawSources.length} readPaths=${readPagePaths.join(',')}`,
     );
     return textResult(JSON.stringify(payload, null, 2));
   };
@@ -440,11 +472,13 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
     paths: z
       .array(z.string())
       .min(1)
+      .max(MAX_READ_PAGES)
       .describe('Relative paths from workspace root, e.g. wiki/concepts/foo.md'),
     maxPageChars: z
       .number()
       .int()
       .min(500)
+      .max(MAX_PAGE_CHARS)
       .optional()
       .describe('Maximum characters returned per page. Omit for full page content.'),
   };
@@ -498,6 +532,7 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
       .number()
       .int()
       .min(1)
+      .max(MAX_COLLECT_CONTEXT_RESULTS)
       .optional()
       .describe(
         'Maximum ranked candidates to search and read. Omit to read up to 10 wiki pages.',
@@ -506,8 +541,11 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
       .number()
       .int()
       .min(500)
+      .max(MAX_PAGE_CHARS)
       .optional()
-      .describe('Maximum characters returned per read page. Omit for full page content.'),
+      .describe(
+        `Maximum characters returned per read page. Omit to use the default ${DEFAULT_COLLECT_PAGE_CHARS} character safety cap.`,
+      ),
   };
   server.tool(
     'wiki_collect_context',

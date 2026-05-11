@@ -59,8 +59,9 @@ function renderLandingPage(
   scheme: string,
 ): string {
   const authStatus = config.mcp.accessKey
-    ? 'Bearer token required'
+    ? 'Bearer token enabled'
     : 'Warning: mcp.accessKey is not configured; the endpoint accepts unauthenticated clients.';
+  const workspaceStatus = config.mcp.accessKey ? 'Protected workspace' : config.wikiRoot;
   const tools = WIKI_MCP_TOOLS.map(
     (tool) =>
       `<li><code>${escapeHtml(tool.name)}</code><span>${escapeHtml(tool.description)}</span></li>`,
@@ -105,7 +106,7 @@ function renderLandingPage(
         <dt>Endpoint</dt><dd><code>${escapeHtml(endpointUrl)}</code></dd>
         <dt>Transport</dt><dd>${scheme === 'https' ? 'HTTPS' : 'HTTP'} Streamable HTTP</dd>
         <dt>Authentication</dt><dd>${escapeHtml(authStatus)}</dd>
-        <dt>Workspace</dt><dd><code>${escapeHtml(config.wikiRoot)}</code></dd>
+        <dt>Workspace</dt><dd><code>${escapeHtml(workspaceStatus)}</code></dd>
       </dl>
     </section>
     <section class="panel">
@@ -167,11 +168,6 @@ export default async function mcpHttpCmd(
         return;
       }
 
-      if (!checkMcpAccessKey(config, bearerToken(req))) {
-        reject(res, 401, 'invalid or missing bearer token');
-        return;
-      }
-
       if (req.method === 'GET' && wantsHtml(req)) {
         const scheme = tls ? 'https' : 'http';
         const endpointUrl = `${scheme}://${req.headers.host ?? `${host}:${port}`}${endpointPath}`;
@@ -180,6 +176,11 @@ export default async function mcpHttpCmd(
           'Cache-Control': 'no-store',
         });
         res.end(renderLandingPage(config, endpointUrl, scheme));
+        return;
+      }
+
+      if (!checkMcpAccessKey(config, bearerToken(req))) {
+        reject(res, 401, 'invalid or missing bearer token');
         return;
       }
 

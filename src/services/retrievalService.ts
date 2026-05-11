@@ -212,6 +212,7 @@ export class RetrievalService {
     options?: { limit?: number; includeRaw?: boolean },
   ): Promise<SearchResult[]> {
     if (
+      !options?.includeRaw &&
       this.config.retrieval.vector.enabled &&
       (await pathExists(this.workspace.paths.vectorIndexDir))
     ) {
