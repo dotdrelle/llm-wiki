@@ -111,7 +111,7 @@ function renderLandingPage(
     <section class="panel">
       <h2>Available tools</h2>
       <ul>${tools}</ul>
-      <p class="note">Only the canonical <code>wiki_*</code> tools are exposed. Recommended question-answering flow: call <code>wiki_search_context</code>, then read selected paths with <code>wiki_read_many</code> in batches of 5 using <code>offset</code>, <code>limit</code>, and <code>nextOffset</code>, then let the client answer from that context.</p>
+      <p class="note">Only the canonical <code>wiki_*</code> tools are exposed. For synthesis-style answers, start with <code>wiki_collect_context</code>, use <code>readPages</code> as primary evidence, and call search/read tools again if coverage is insufficient.</p>
     </section>
   </main>
 </body>

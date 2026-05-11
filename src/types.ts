@@ -23,6 +23,16 @@ export interface RetrievalConfig {
   maxChunksPerPage: number;
   maxChunkChars: number;
   maxSourceChars: number;
+  vector: VectorRetrievalConfig;
+}
+
+export interface VectorRetrievalConfig {
+  enabled: boolean;
+  embeddingModel: string;
+  rerankerModel: string;
+  topK: number;
+  rerankTopK: number;
+  maxResults: number;
 }
 
 export interface McpConfig {
@@ -78,6 +88,7 @@ export interface WorkspacePaths {
   rawDir: string;
   rawUntrackedDir: string;
   rawIngestedDir: string;
+  vectorIndexDir: string;
   wikiDir: string;
   wikiIndexPath: string;
   wikiLogPath: string;

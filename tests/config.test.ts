@@ -44,6 +44,35 @@ describe('config resolution', () => {
     expect(config.build.refreshOnIngest).toBe(false);
   });
 
+  it('parses vector retrieval settings with defaults', () => {
+    const config = resolveConfig(
+      {
+        retrieval: {
+          vector: {
+            enabled: true,
+            topK: 40,
+          },
+        },
+      },
+      '/tmp/wiki',
+    );
+
+    expect(config.retrieval.vector).toEqual({
+      enabled: true,
+      embeddingModel: 'BAAI/bge-m3',
+      rerankerModel: 'BAAI/bge-reranker-v2-m3',
+      topK: 40,
+      rerankTopK: 80,
+      maxResults: 6,
+    });
+  });
+
+  it('enables vector retrieval by default', () => {
+    const config = resolveConfig({}, '/tmp/wiki');
+
+    expect(config.retrieval.vector.enabled).toBe(true);
+  });
+
   it('parses MCP access key and TLS paths', () => {
     const config = resolveConfig(
       {

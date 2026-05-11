@@ -1,4 +1,5 @@
 import { canonicalizeName } from '../utils/path.ts';
+import { pathExists } from '../utils/fs.ts';
 import {
   extractSourceCitations,
   extractWikiLinks,
@@ -7,6 +8,9 @@ import {
 import type { AppConfig, SearchResult, WikiPage } from '../types.ts';
 import type { MarkdownChunk } from '../utils/markdown.ts';
 import type { WorkspaceService } from './workspaceService.ts';
+import { EmbeddingService } from './embeddingService.ts';
+import { RerankService } from './rerankService.ts';
+import { VectorIndexService } from './vectorIndexService.ts';
 
 const STOP_WORDS = new Set([
   'the',
@@ -173,6 +177,7 @@ export class RetrievalService {
   private readonly workspace: WorkspaceService;
   private readonly config: AppConfig;
   private wikiPagesCache: Promise<WikiPage[]> | undefined;
+  private vectorIndex: VectorIndexService | undefined;
 
   constructor(workspace: WorkspaceService, config: AppConfig) {
     this.workspace = workspace;
@@ -181,6 +186,16 @@ export class RetrievalService {
 
   invalidateCache(): void {
     this.wikiPagesCache = undefined;
+  }
+
+  private getVectorIndex(): VectorIndexService {
+    this.vectorIndex ??= new VectorIndexService(
+      this.config,
+      this.workspace,
+      new EmbeddingService(this.config),
+      new RerankService(this.config),
+    );
+    return this.vectorIndex;
   }
 
   async warmCache(
@@ -193,6 +208,25 @@ export class RetrievalService {
   }
 
   async search(
+    query: string,
+    options?: { limit?: number; includeRaw?: boolean },
+  ): Promise<SearchResult[]> {
+    if (
+      this.config.retrieval.vector.enabled &&
+      (await pathExists(this.workspace.paths.vectorIndexDir))
+    ) {
+      try {
+        return await this.getVectorIndex().search(query, { limit: options?.limit });
+      } catch {
+        // Keep retrieval robust for ingest/build/query/MCP: vector search is an
+        // optimization, while lexical search is the compatibility fallback.
+      }
+    }
+
+    return this.searchLexical(query, options);
+  }
+
+  private async searchLexical(
     query: string,
     options?: { limit?: number; includeRaw?: boolean },
   ): Promise<SearchResult[]> {

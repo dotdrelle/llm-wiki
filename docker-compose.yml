@@ -4,6 +4,7 @@ services:
   #   docker compose run --rm wiki ingest
   #   docker compose run --rm wiki doctor
   #   docker compose run --rm wiki build
+  #   docker compose run --rm wiki index   # build or refresh the vector index
   #
   # To keep the web UI running, use the `serve` service below.
   # Both services mount the same workspace: an ingest run through `wiki`

@@ -65,6 +65,7 @@ export class WorkspaceService {
       rawDir: path.join(rootDir, 'raw'),
       rawUntrackedDir: path.join(rootDir, 'raw', 'untracked'),
       rawIngestedDir: path.join(rootDir, 'raw', 'ingested'),
+      vectorIndexDir: path.join(rootDir, '.wiki', 'vector-index'),
       wikiDir: path.join(rootDir, 'wiki'),
       wikiIndexPath: path.join(rootDir, 'wiki', 'index.md'),
       wikiLogPath: path.join(rootDir, 'wiki', 'log.md'),

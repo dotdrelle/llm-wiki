@@ -4,11 +4,24 @@ import { IngestService } from '../services/ingestService.ts';
 import { LLMService } from '../services/llmService.ts';
 import { RefreshService } from '../services/refreshService.ts';
 import { RetrievalService } from '../services/retrievalService.ts';
+import { EmbeddingService } from '../services/embeddingService.ts';
+import { RerankService } from '../services/rerankService.ts';
+import { VectorIndexService } from '../services/vectorIndexService.ts';
 import { createTraceLogger } from '../services/traceLogger.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import { Spinner } from '../utils/spinner.ts';
 
-const SUBCOMMANDS = new Set(['init', 'ingest', 'query', 'lint', 'build', 'refresh', 'serve', 'doctor']);
+const SUBCOMMANDS = new Set([
+  'init',
+  'ingest',
+  'query',
+  'index',
+  'lint',
+  'build',
+  'refresh',
+  'serve',
+  'doctor',
+]);
 
 export default async function ingestCmd(
   config: AppConfig,
@@ -19,9 +32,9 @@ export default async function ingestCmd(
   if (suspicious.length > 0) {
     console.error(
       `Error: "${suspicious.join('", "')}" is a wiki subcommand, not a file.\n` +
-      `Did you mean to run the commands separately?\n` +
-      `  wiki ingest\n` +
-      `  wiki ${suspicious.join('\n  wiki ')}`,
+        `Did you mean to run the commands separately?\n` +
+        `  wiki ingest\n` +
+        `  wiki ${suspicious.join('\n  wiki ')}`,
     );
     process.exit(1);
   }
@@ -47,7 +60,7 @@ export default async function ingestCmd(
   try {
     spinner?.start();
     let tokensLabel = '';
-    const fmtTok = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+    const fmtTok = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
     const results = await service.ingest(files, {
       ...options,
       onSourceStart: (sourcePath, index, total) => {
@@ -60,15 +73,17 @@ export default async function ingestCmd(
         tokensLabel = '';
         const llmStart = Date.now();
         const name = path.basename(sourcePath, '.md');
-        const sectionLabel = progress && progress.sectionTotal > 1
-          ? `, section ${progress.sectionIndex + 1}/${progress.sectionTotal}`
-          : '';
+        const sectionLabel =
+          progress && progress.sectionTotal > 1
+            ? `, section ${progress.sectionIndex + 1}/${progress.sectionTotal}`
+            : '';
         spinner?.update(`Ingesting ${name} (${index + 1}/${total}${sectionLabel})…`);
         spinner?.updateSub(() => {
           const s = ((Date.now() - llmStart) / 1000).toFixed(1);
-          const subSection = progress && progress.sectionTotal > 1
-            ? `section ${progress.sectionIndex + 1}/${progress.sectionTotal} · `
-            : '';
+          const subSection =
+            progress && progress.sectionTotal > 1
+              ? `section ${progress.sectionIndex + 1}/${progress.sectionTotal} · `
+              : '';
           return `${name} · ${subSection}LLM ${s}s${tokensLabel}`;
         });
       },
@@ -102,13 +117,48 @@ export default async function ingestCmd(
 
     const failed = results.filter((result) => result.failed);
     if (failed.length > 0) {
-      console.error(`\nIngest completed with ${failed.length} failed source(s). See ${logger.displayPath}.`);
+      console.error(
+        `\nIngest completed with ${failed.length} failed source(s). See ${logger.displayPath}.`,
+      );
       process.exitCode = 1;
+    } else if (!options.dryRun && config.retrieval.vector.enabled) {
+      const vectorIndex = new VectorIndexService(
+        config,
+        workspace,
+        new EmbeddingService(config),
+        new RerankService(config),
+      );
+      try {
+        const indexResult = await withIndexSpinner(() => vectorIndex.buildIndex());
+        console.log(
+          `\nVector index updated: ${indexResult.indexedChunks} chunk(s), ${indexResult.embeddedChunks} new/changed, ${indexResult.reusedChunks} reused.`,
+        );
+      } catch (error) {
+        console.warn(
+          `\nWarning: ingest completed, but vector index update failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        console.warn('Run `wiki index` after fixing the embedding/reranker configuration.');
+      }
     }
   } catch (e) {
     spinner?.stop();
     throw e;
   } finally {
     await logger.close();
+  }
+}
+
+async function withIndexSpinner<T>(task: () => Promise<T>): Promise<T> {
+  const spinner = new Spinner('Updating vector index…');
+  spinner.start();
+  try {
+    const result = await task();
+    spinner.stop();
+    return result;
+  } catch (error) {
+    spinner.stop();
+    throw error;
   }
 }

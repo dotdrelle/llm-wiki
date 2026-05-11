@@ -24,6 +24,14 @@ function createConfig(): AppConfig {
       maxChunksPerPage: 2,
       maxChunkChars: 3000,
       maxSourceChars: 8000,
+      vector: {
+        enabled: false,
+        embeddingModel: 'BAAI/bge-m3',
+        rerankerModel: 'BAAI/bge-reranker-v2-m3',
+        topK: 120,
+        rerankTopK: 80,
+        maxResults: 6,
+      },
     },
     mcp: {},
   };

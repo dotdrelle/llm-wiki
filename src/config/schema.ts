@@ -249,12 +249,37 @@ const retrievalSchema = z
     maxChunksPerPage: z.number().int().min(1).max(10).default(2),
     maxChunkChars: z.number().int().min(200).default(3000),
     maxSourceChars: z.number().int().min(500).default(8000),
+    vector: z
+      .object({
+        enabled: z.boolean().default(true),
+        embeddingModel: z.string().min(1).default('BAAI/bge-m3'),
+        rerankerModel: z.string().min(1).default('BAAI/bge-reranker-v2-m3'),
+        topK: z.number().int().min(1).max(200).default(120),
+        rerankTopK: z.number().int().min(1).max(100).default(80),
+        maxResults: z.number().int().min(1).max(24).default(6),
+      })
+      .default({
+        enabled: true,
+        embeddingModel: 'BAAI/bge-m3',
+        rerankerModel: 'BAAI/bge-reranker-v2-m3',
+        topK: 120,
+        rerankTopK: 80,
+        maxResults: 6,
+      }),
   })
   .default({
     maxContextFiles: 5,
     maxChunksPerPage: 2,
     maxChunkChars: 3000,
     maxSourceChars: 8000,
+    vector: {
+      enabled: true,
+      embeddingModel: 'BAAI/bge-m3',
+      rerankerModel: 'BAAI/bge-reranker-v2-m3',
+      topK: 120,
+      rerankTopK: 80,
+      maxResults: 6,
+    },
   });
 
 const mcpSchema = z
@@ -447,6 +472,15 @@ export function resolveConfig(
       maxChunksPerPage: parsed.retrieval?.maxChunksPerPage ?? 2,
       maxChunkChars: parsed.retrieval?.maxChunkChars ?? 3000,
       maxSourceChars: parsed.retrieval?.maxSourceChars ?? 8000,
+      vector: {
+        enabled: parsed.retrieval?.vector?.enabled ?? true,
+        embeddingModel: parsed.retrieval?.vector?.embeddingModel ?? 'BAAI/bge-m3',
+        rerankerModel:
+          parsed.retrieval?.vector?.rerankerModel ?? 'BAAI/bge-reranker-v2-m3',
+        topK: parsed.retrieval?.vector?.topK ?? 120,
+        rerankTopK: parsed.retrieval?.vector?.rerankTopK ?? 80,
+        maxResults: parsed.retrieval?.vector?.maxResults ?? 6,
+      },
     },
   };
 }

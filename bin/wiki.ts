@@ -8,6 +8,7 @@ import ingestCmd from '../src/commands/ingest.ts';
 import queryCmd from '../src/commands/query.ts';
 import lintCmd from '../src/commands/lint.ts';
 import buildCmd from '../src/commands/build.ts';
+import indexCmd from '../src/commands/index.ts';
 import refreshCmd from '../src/commands/refresh.ts';
 import serveCmd from '../src/commands/serve.ts';
 import doctorCmd from '../src/commands/doctor.ts';
@@ -61,6 +62,11 @@ async function main() {
     .argument('<question...>', 'Question to answer from the wiki')
     .option('--save', 'Save the answer to wiki/answers/')
     .action((questionParts, options) => queryCmd(config, questionParts.join(' '), options));
+
+  program
+    .command('index')
+    .description('Create or update the local vector index for wiki markdown pages')
+    .action(() => indexCmd(config));
 
   program
     .command('lint')

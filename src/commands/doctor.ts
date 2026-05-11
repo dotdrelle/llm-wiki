@@ -5,6 +5,9 @@ import path from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import YAML from 'yaml';
 import { splitByHeadings, splitSourceSections } from '../utils/markdown.ts';
+import { EmbeddingService } from '../services/embeddingService.ts';
+import { RerankService } from '../services/rerankService.ts';
+import { VectorIndexService } from '../services/vectorIndexService.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import type { AppConfig } from '../types.ts';
 import { pathExists, safeWriteFile } from '../utils/fs.ts';
@@ -630,6 +633,12 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
   row('maxChunksPerPage:', String(config.retrieval.maxChunksPerPage));
   row('maxChunkChars:', String(config.retrieval.maxChunkChars));
   row('maxSourceChars:', String(config.retrieval.maxSourceChars));
+  row('vector.enabled:', String(config.retrieval.vector.enabled));
+  row('vector.embedding:', config.retrieval.vector.embeddingModel);
+  row('vector.reranker:', config.retrieval.vector.rerankerModel);
+  row('vector.topK:', String(config.retrieval.vector.topK));
+  row('vector.rerankTopK:', String(config.retrieval.vector.rerankTopK));
+  row('vector.maxResults:', String(config.retrieval.vector.maxResults));
 
   console.log('\n── Provider ────────────────────────────────────────────────');
   const rawOllamaEnv = readOllamaProcessEnv();
@@ -697,7 +706,9 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
   console.log('\n── Wiki content ────────────────────────────────────────────');
   const workspace = new WorkspaceService(config);
   if (!(await pathExists(workspace.paths.wikiIndexPath))) {
-    warn('wiki/index.md missing — run `wiki init` to create it (continuing with partial data)');
+    warn(
+      'wiki/index.md missing — run `wiki init` to create it (continuing with partial data)',
+    );
   }
 
   const [pages, rawIngestedPages, indexContent, untrackedPaths, buildContext] =
@@ -767,6 +778,57 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
     );
   }
 
+  console.log('\n── Vector retrieval ────────────────────────────────────────');
+  const vectorIndex = new VectorIndexService(
+    config,
+    workspace,
+    new EmbeddingService(config),
+    new RerankService(config),
+  );
+  const vectorStats = await vectorIndex.stats();
+  row('enabled:', String(config.retrieval.vector.enabled));
+  row('index path:', vectorStats.path ?? workspace.paths.vectorIndexDir);
+  row('index:', vectorStats.exists ? `${vectorStats.rows} chunk(s)` : 'missing');
+  if (config.retrieval.vector.enabled) {
+    if (!vectorStats.exists) {
+      warn(
+        'vector retrieval enabled but index missing — run `wiki index`; lexical fallback is active until the index exists',
+      );
+    }
+    try {
+      const embeddings = await new EmbeddingService(config).embed([
+        'doctor vector check',
+      ]);
+      ok(
+        `embedding ${config.retrieval.vector.embeddingModel} OK (${embeddings[0]?.length ?? 0} dimensions)`,
+      );
+    } catch (error) {
+      warn(
+        `embedding check failed for ${config.retrieval.vector.embeddingModel}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+    try {
+      const rerank = await new RerankService(config).rerank(
+        'doctor vector check',
+        ['relevant wiki context', 'unrelated text'],
+        2,
+      );
+      ok(
+        `reranker ${config.retrieval.vector.rerankerModel} OK (${rerank.length} result(s))`,
+      );
+    } catch (error) {
+      warn(
+        `reranker check failed for ${config.retrieval.vector.rerankerModel}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  } else {
+    ok('vector retrieval disabled; lexical fallback is active');
+  }
+
   // ── context budget ───────────────────────────────────────────────────────────
   const numCtxTokens = effectiveNumCtx ?? contextWindowTokens(config);
   const SAFE_FILL = 0.9;
@@ -831,7 +893,10 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
       return;
     }
 
-    optimalSlotBatchSize = Math.max(1, Math.min(Math.floor(buildBudget / slotContent), 20));
+    optimalSlotBatchSize = Math.max(
+      1,
+      Math.min(Math.floor(buildBudget / slotContent), 20),
+    );
     safeBatchSize = Math.max(
       1,
       Math.min(Math.floor((buildBudget * SAFE_FILL) / slotContent), 20),

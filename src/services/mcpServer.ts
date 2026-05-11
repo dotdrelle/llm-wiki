@@ -20,7 +20,12 @@ export const WIKI_MCP_TOOLS = [
   {
     name: 'wiki_read_page',
     description:
-      'Read one llm-wiki markdown page under wiki/ by relative path. Use this after wiki_search_context when a returned page needs full content.',
+      'Read one llm-wiki markdown page under wiki/ by relative path. Use for targeted inspection when a page needs full content.',
+  },
+  {
+    name: 'wiki_read_pages',
+    description:
+      'Read multiple llm-wiki markdown pages under wiki/ by relative path in one call. Use after wiki_search_context, or after wiki_collect_context when additional pages are needed.',
   },
   {
     name: 'wiki_write_page',
@@ -35,14 +40,21 @@ export const WIKI_MCP_TOOLS = [
   {
     name: 'wiki_read_ingested_source',
     description:
-      'Read one llm-wiki ingested source document under raw/ingested/. Do not use this for AgentCME configuration.',
+      'Read one llm-wiki ingested source document under raw/ingested/. Use when archived raw source content is needed to verify or deepen the wiki synthesis.',
   },
   {
     name: 'wiki_search_context',
     description:
-      'Search llm-wiki for a question. Returns ranked candidate paths with excerpts, citations, and relatedPaths only; excludes wiki/answers/*. Read selected wiki pages with wiki_read_page if full content is needed.',
+      'Search llm-wiki for a question. Returns ranked candidate paths with excerpts, citations, and relatedPaths only; excerpts are for triage, not full evidence. Prefer wiki_collect_context for synthesis, architecture, audit, functional analysis, or comparison questions, but call this again if coverage is insufficient.',
+  },
+  {
+    name: 'wiki_collect_context',
+    description:
+      'Search llm-wiki, read up to 10 returned wiki pages by default, and report coverage in one call. Prefer this first for synthesis, architecture, audit, functional analysis, or comparison questions.',
   },
 ] as const;
+
+const DEFAULT_COLLECT_CONTEXT_RESULTS = 10;
 
 export function checkMcpAccessKey(
   config: AppConfig,
@@ -61,6 +73,75 @@ function textResult(text: string, options?: { isError?: boolean }): CallToolResu
     content: [{ type: 'text', text }],
     ...(options?.isError ? { isError: true } : {}),
   };
+}
+
+function uniqueValues(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+interface ReadWikiPagePayload {
+  path: string;
+  found: boolean;
+  allowed: boolean;
+  truncated: boolean;
+  content: string;
+  error?: string;
+}
+
+async function readWorkspaceWikiPage(
+  workspace: WorkspaceService,
+  pagePath: string,
+  options?: { maxPageChars?: number },
+): Promise<ReadWikiPagePayload> {
+  try {
+    const absolutePath = resolveReadableWorkspacePath(workspace, pagePath);
+    const relativeToWiki = path.relative(workspace.paths.wikiDir, absolutePath);
+    if (relativeToWiki.startsWith('..') || path.isAbsolute(relativeToWiki)) {
+      return {
+        path: pagePath,
+        found: false,
+        allowed: false,
+        truncated: false,
+        content: '',
+        error: 'Access denied: path must be under wiki/.',
+      };
+    }
+    if (!(await pathExists(absolutePath))) {
+      return {
+        path: pagePath,
+        found: false,
+        allowed: true,
+        truncated: false,
+        content: '',
+        error: `Page not found: ${pagePath}`,
+      };
+    }
+
+    const content = await readFile(absolutePath, 'utf8');
+    const maxPageChars = options?.maxPageChars;
+    const truncated =
+      typeof maxPageChars === 'number' &&
+      maxPageChars > 0 &&
+      content.length > maxPageChars;
+    return {
+      path: pagePath,
+      found: true,
+      allowed: true,
+      truncated,
+      content: truncated
+        ? `${content.slice(0, maxPageChars).trimEnd()}\n[truncated]`
+        : content,
+    };
+  } catch (error) {
+    return {
+      path: pagePath,
+      found: false,
+      allowed: false,
+      truncated: false,
+      content: '',
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 async function loggedTool<T>(
@@ -126,21 +207,34 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
 
   const readWikiPage = async ({ path: pagePath }: { path: string }) => {
     try {
-      const absolutePath = resolveReadableWorkspacePath(workspace, pagePath);
-      const relativeToWiki = path.relative(workspace.paths.wikiDir, absolutePath);
-      if (relativeToWiki.startsWith('..') || path.isAbsolute(relativeToWiki)) {
+      const page = await readWorkspaceWikiPage(workspace, pagePath);
+      if (!page.allowed) {
         return textResult('Access denied: path must be under wiki/.', { isError: true });
       }
-      if (!(await pathExists(absolutePath))) {
+      if (!page.found) {
         return textResult(`Page not found: ${pagePath}`, { isError: true });
       }
-      const content = await readFile(absolutePath, 'utf8');
-      return textResult(content);
+      return textResult(page.content);
     } catch (error) {
       return textResult(error instanceof Error ? error.message : String(error), {
         isError: true,
       });
     }
+  };
+
+  const readWikiPages = async ({
+    paths,
+    maxPageChars,
+  }: {
+    paths: string[];
+    maxPageChars?: number;
+  }) => {
+    const pages = await Promise.all(
+      uniqueValues(paths).map((pagePath) =>
+        readWorkspaceWikiPage(workspace, pagePath, { maxPageChars }),
+      ),
+    );
+    return textResult(JSON.stringify({ pages }, null, 2));
   };
 
   const writeWikiPage = async ({
@@ -192,7 +286,7 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
       .min(1)
       .optional()
       .describe(
-        'Maximum ranked candidates to return. There is no MCP hard cap; omit to use retrieval.maxContextFiles from .wikirc.yaml.',
+        'Maximum ranked candidates to return. Omit to use retrieval.vector.maxResults when vector retrieval is enabled, otherwise retrieval.maxContextFiles.',
       ),
     includeRaw: z
       .boolean()
@@ -220,7 +314,11 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
     maxExcerptChars?: number;
   }) => {
     const results = await retrieval.search(question, {
-      limit: maxResults ?? config.retrieval.maxContextFiles,
+      limit:
+        maxResults ??
+        (config.retrieval.vector.enabled
+          ? config.retrieval.vector.maxResults
+          : config.retrieval.maxContextFiles),
       includeRaw: includeRaw ?? false,
     });
     const excerptLimit = maxExcerptChars ?? config.retrieval.maxChunkChars;
@@ -242,6 +340,83 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
     return textResult(JSON.stringify(payload, null, 2));
   };
 
+  const collectWikiContext = async ({
+    question,
+    maxResults,
+    maxPageChars,
+  }: {
+    question: string;
+    maxResults?: number;
+    maxPageChars?: number;
+  }) => {
+    const results = await retrieval.search(question, {
+      limit: maxResults ?? DEFAULT_COLLECT_CONTEXT_RESULTS,
+      includeRaw: false,
+    });
+    const excerptLimit = config.retrieval.maxChunkChars;
+    const candidateResults = results.map((result) => {
+      const excerpt = result.chunk?.content ?? result.page.content;
+      return {
+        path: result.page.relativePath,
+        type: result.page.type,
+        score: result.score,
+        headingPath: result.chunk?.headingPath ?? [],
+        excerpt: truncateText(excerpt, excerptLimit),
+        citations: extractSourceCitations(excerpt),
+        relatedPaths: result.relatedPaths ?? [],
+      };
+    });
+    const readPaths = uniqueValues(
+      candidateResults
+        .map((result) => result.path)
+        .filter((resultPath) => resultPath.startsWith('wiki/')),
+    );
+    const readPages = await Promise.all(
+      readPaths.map((pagePath) =>
+        readWorkspaceWikiPage(workspace, pagePath, { maxPageChars }),
+      ),
+    );
+    const readPagePaths = readPages
+      .filter((page) => page.found && page.allowed)
+      .map((page) => page.path);
+    const notReadRawSources = uniqueValues(
+      candidateResults.flatMap((result) =>
+        [...result.citations, ...result.relatedPaths].filter((sourcePath) =>
+          sourcePath.startsWith('raw/ingested/'),
+        ),
+      ),
+    );
+    const payload = {
+      usageContract: {
+        primaryEvidence: 'readPages',
+        readPagesMeaning:
+          'Pages listed in readPagePaths were opened and their full returned content is available in readPages.',
+        excerptsRole:
+          'candidateResults.excerpt explains why a page was selected; it is search trace, not the primary evidence.',
+        followUpPolicy:
+          'If readPages do not provide enough evidence, the client may call wiki_search_context, wiki_read_page, wiki_read_pages, or wiki_read_ingested_source to improve coverage.',
+        rawSourcesPolicy:
+          'notReadRawSources are traceability references only; they were not opened and should not be treated as read evidence.',
+      },
+      question,
+      candidateResults,
+      readPagePaths,
+      readPages,
+      notReadRawSources,
+      coverage: {
+        requestedResultLimit: maxResults ?? DEFAULT_COLLECT_CONTEXT_RESULTS,
+        candidateCount: candidateResults.length,
+        readPageCount: readPagePaths.length,
+        truncatedPageCount: readPages.filter((page) => page.truncated).length,
+        notReadRawSourceCount: notReadRawSources.length,
+      },
+    };
+    console.log(
+      `[wiki-mcp] collect_context candidates=${candidateResults.length} readPages=${readPagePaths.length} truncated=${payload.coverage.truncatedPageCount} rawRefs=${notReadRawSources.length}`,
+    );
+    return textResult(JSON.stringify(payload, null, 2));
+  };
+
   server.tool(
     'wiki_list_pages',
     'List llm-wiki markdown pages under wiki/. Use this only for the llm-wiki knowledge base, not AgentCME runtime configuration.',
@@ -256,9 +431,28 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
   };
   server.tool(
     'wiki_read_page',
-    'Read one llm-wiki markdown page under wiki/ by relative path. Use this after wiki_search_context when a returned page needs full content.',
+    'Read one llm-wiki markdown page under wiki/ by relative path. Use for targeted inspection when a page needs full content.',
     readWikiPageInput,
     (input) => loggedTool('wiki_read_page', input, readWikiPage),
+  );
+
+  const readWikiPagesInput = {
+    paths: z
+      .array(z.string())
+      .min(1)
+      .describe('Relative paths from workspace root, e.g. wiki/concepts/foo.md'),
+    maxPageChars: z
+      .number()
+      .int()
+      .min(500)
+      .optional()
+      .describe('Maximum characters returned per page. Omit for full page content.'),
+  };
+  server.tool(
+    'wiki_read_pages',
+    'Read multiple llm-wiki markdown pages under wiki/ by relative path in one call. Returns a JSON object with a `pages` array; each entry has `path`, `content`, `found`, `allowed`, `truncated`, and optionally `error`. Use after wiki_search_context, or after wiki_collect_context when additional pages are needed.',
+    readWikiPagesInput,
+    (input) => loggedTool('wiki_read_pages', input, readWikiPages),
   );
 
   const writeWikiPageInput = {
@@ -286,16 +480,40 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
   };
   server.tool(
     'wiki_read_ingested_source',
-    'Read one llm-wiki ingested source document under raw/ingested/. Do not use this for AgentCME configuration.',
+    'Read one llm-wiki ingested source document under raw/ingested/. Use when archived raw source content is needed to verify or deepen the wiki synthesis.',
     readSourceInput,
     (input) => loggedTool('wiki_read_ingested_source', input, readIngestedSource),
   );
 
   server.tool(
     'wiki_search_context',
-    'Search llm-wiki for a question. Returns ranked candidate paths with excerpts, citations, and relatedPaths only; excludes wiki/answers/*. Read selected wiki pages with wiki_read_page if full content is needed.',
+    'Search llm-wiki for a question. Returns ranked candidate paths with excerpts, citations, and relatedPaths only; excerpts are for triage, not full evidence. Prefer wiki_collect_context for synthesis, architecture, audit, functional analysis, or comparison questions, but call this again if coverage is insufficient.',
     searchWikiContextInput,
     (input) => loggedTool('wiki_search_context', input, searchWikiContext),
+  );
+
+  const collectWikiContextInput = {
+    question: z.string().min(1).describe('Question or topic to search for.'),
+    maxResults: z
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe(
+        'Maximum ranked candidates to search and read. Omit to read up to 10 wiki pages.',
+      ),
+    maxPageChars: z
+      .number()
+      .int()
+      .min(500)
+      .optional()
+      .describe('Maximum characters returned per read page. Omit for full page content.'),
+  };
+  server.tool(
+    'wiki_collect_context',
+    'Search llm-wiki, read up to 10 returned wiki pages by default, and report coverage in one call. Prefer this first for synthesis, architecture, audit, functional analysis, or comparison questions.',
+    collectWikiContextInput,
+    (input) => loggedTool('wiki_collect_context', input, collectWikiContext),
   );
 
   return server;

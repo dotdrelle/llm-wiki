@@ -8,19 +8,24 @@
 
 - `bin/wiki.ts`: Commander entrypoint.
 - `src/config`: config loading and zod validation for `.wikirc.yaml`.
-- `src/services`: orchestration for workspace IO, retrieval, ingest, query, build, refresh, and lint.
+- `src/services`: orchestration for workspace IO, retrieval, ingest, query, build, refresh, lint, and vector index.
 - `src/prompts`: prompt builders for LLM interactions.
 - `src/utils`: path safety, hashing, JSON extraction, markdown helpers.
 - `src/commands/serve.ts`: local wiki UI, index tiles, source graph, and bundled D3 asset serving.
 - `src/commands/doctor.ts`: provider/config diagnostics and optional `.wikirc.yaml` correction after user confirmation.
+- `src/commands/index.ts`: `wiki index` — builds or refreshes the local LanceDB vector index.
+- `src/services/embeddingService.ts`: calls `/v1/embeddings` for vector indexing.
+- `src/services/rerankService.ts`: calls `/v1/rerank` for optional result re-ranking.
+- `src/services/vectorIndexService.ts`: LanceDB index build, incremental update, and vector search.
 - `scaffold/workspace`: files copied by `wiki init`.
 - `examples`: runnable sample inputs.
 - `tests`: Vitest coverage for config, template parsing, build flow, and path safety.
 - `Dockerfile` / `docker-compose.yml`: containerized CLI and web UI entrypoints.
+- `docs/`: user-facing reference documentation (commands, configuration, docker, mcp, templates, vector-search).
 
 ## Constraints
 
-- Local-first only. No vector database.
+- Local-first only. Vector index uses LanceDB stored on disk under `.wiki/vector-index/` — no external database.
 - Deliverables must remain regenerable and stable in Git.
 - Never write outside the workspace root.
 - Generated deliverables must not invent missing information.
@@ -69,6 +74,13 @@ retrieval:
   maxChunksPerPage: 2
   maxChunkChars: 3000
   maxSourceChars: 8000
+  vector:
+    enabled: true # run `wiki index` to build or refresh the local index
+    embeddingModel: BAAI/bge-m3
+    rerankerModel: BAAI/bge-reranker-v2-m3
+    topK: 120
+    rerankTopK: 80
+    maxResults: 6
 ```
 
 When changing `slotBatchSize`, `maxContextFiles`, `maxChunkChars`, or `numCtx`, run `wiki doctor` and make sure its final suggestions are internally consistent.

@@ -15,13 +15,11 @@ llm:
 build:
   refreshOnIngest: false
   slotBatchSize: 3
-  maxBuildContextChars: 12000
 
 retrieval:
-  maxContextFiles: 5
-  maxChunksPerPage: 2
-  maxChunkChars: 3000
-  maxSourceChars: 8000
+  vector:
+    enabled: true
+    embeddingModel: BAAI/bge-m3
 
 mcp:
   # Optional: require clients to authenticate with this value.
