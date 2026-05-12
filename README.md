@@ -6,6 +6,8 @@ Open-source implementation of [Karpathy's LLM Wiki](https://x.com/karpathy/statu
 
 A local-first CLI that turns raw project material into a durable, searchable Markdown knowledge base, then generates reproducible deliverables from templates. Works with OpenAI, Anthropic, Ollama, or any OpenAI-compatible server. Everything stays on disk as plain Markdown files.
 
+`llm-wiki` is the workspace engine: it initializes workspaces, ingests `raw/untracked`, serves a local UI, exposes a wiki MCP server, and builds/exports deliverables. For multi-workspace orchestration with a shared `agent-cme` Confluence exporter, use the sibling `llm-wiki-manager` repository.
+
 ```
 ┌──────────────────────────────────────┐  ┌─────────────────────────────────────┐
 │  raw sources                         │  │  AI assistant                       │
@@ -74,6 +76,23 @@ A local-first CLI that turns raw project material into a durable, searchable Mar
    ```
 
 Repeat steps 3–4 as new sources arrive. Run `wiki refresh` to rebuild stale deliverables without re-ingesting.
+
+## Docker and Multi-Workspace Use
+
+For a single workspace, you can use this repository's Docker Compose file by setting `WIKI_WORKSPACE`.
+
+For several workspaces, use `llm-wiki-manager` as the cockpit:
+
+```bash
+cd ../llm-wiki-manager
+./wiki-workspace list
+./wiki-workspace wiki <workspace> init
+./wiki-workspace wiki <workspace> up
+./wiki-workspace wiki <workspace> doctor
+./wiki-workspace wiki <workspace> ingest
+```
+
+`wiki init` creates workspace content and configuration. It no longer creates a workspace-local `docker-compose.yml`; Docker orchestration lives outside the workspace.
 
 ## Installation
 

@@ -17,6 +17,17 @@ Set `WIKI_WORKSPACE` to the path of an initialized wiki workspace. It is mounted
 export WIKI_WORKSPACE=/path/to/my/workspace
 ```
 
+For several workspaces, use the sibling `llm-wiki-manager` repository. It keeps one compose file at the manager root, maps each workspace path and port in `workspaces.yaml`, and starts each workspace with an isolated compose project:
+
+```bash
+cd ../llm-wiki-manager
+./wiki-workspace list
+./wiki-workspace wiki <workspace> up
+./wiki-workspace wiki <workspace> doctor
+```
+
+`wiki init` initializes the workspace content only. It does not create a workspace-local `docker-compose.yml`.
+
 ## One-shot CLI commands
 
 Use the `wiki` service (profile `cli`) for any one-off command:

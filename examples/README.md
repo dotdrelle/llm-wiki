@@ -2,6 +2,8 @@
 
 The `examples/` directory contains sample inputs for a demo workspace.
 
+These examples are for the `llm-wiki` CLI itself. If you run multiple workspaces through `llm-wiki-manager`, copy these files into the target workspace path and run commands through `./wiki-workspace wiki <workspace> ...`.
+
 ## Files
 
 - `raw/ai-adoption-notes.md` — a markdown source to drop into `raw/untracked/`
