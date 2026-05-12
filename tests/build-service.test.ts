@@ -76,6 +76,55 @@ class FakeRetrievalService {
   }
 }
 
+function wikiPage(relativePath: string, content: string): WikiPage {
+  return {
+    absolutePath: relativePath,
+    relativePath,
+    name: path.basename(relativePath, '.md'),
+    type: 'concept',
+    content,
+  };
+}
+
+class NamedRetrievalService {
+  async search(query: string): Promise<SearchResult[]> {
+    if (query.includes('Alpha')) {
+      return [
+        {
+          page: wikiPage('wiki/concepts/alpha.md', '# Alpha\n\nAlpha facts.'),
+          score: 10,
+        },
+      ];
+    }
+    if (query.includes('Beta')) {
+      return [
+        {
+          page: wikiPage('wiki/concepts/beta.md', '# Beta\n\nBeta facts.'),
+          score: 10,
+        },
+      ];
+    }
+    if (query.includes('Gamma')) {
+      return [
+        {
+          page: wikiPage('wiki/concepts/gamma.md', '# Gamma\n\nGamma facts.'),
+          score: 10,
+        },
+      ];
+    }
+    return [
+      {
+        page: wikiPage('wiki/concepts/overview.md', '# Overview\n\nOverview facts.'),
+        score: 10,
+      },
+    ];
+  }
+
+  async warmCache(): Promise<WikiPage[]> {
+    return [];
+  }
+}
+
 class SplittingLLMService {
   completeJsonCalls = 0;
 
@@ -230,6 +279,41 @@ describe('build service', () => {
     expect(llm.lastJsonRequest?.system).toContain(
       'Cite every assertion with a source marker.',
     );
+  });
+
+  it('expands build retrieval for named comparison items', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'templates'), { recursive: true });
+    await mkdir(path.join(root, 'deliverables'), { recursive: true });
+
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n', 'utf8');
+    await writeFile(
+      path.join(root, 'templates', 'comparison.md'),
+      [
+        '# Comparison',
+        '',
+        '[[INSTRUCTION: Compare the documented candidates: Alpha, Beta, Gamma.]]',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    config.retrieval.maxContextFiles = 2;
+    const workspace = new WorkspaceService(config);
+    const llm = new FakeLLMService();
+    const service = new BuildService(
+      config,
+      workspace,
+      llm as unknown as LLMService,
+      new NamedRetrievalService() as unknown as RetrievalService,
+    );
+
+    await service.build();
+
+    expect(llm.lastJsonRequest?.user).toContain('wiki/concepts/alpha.md');
+    expect(llm.lastJsonRequest?.user).toContain('wiki/concepts/beta.md');
+    expect(llm.lastJsonRequest?.user).toContain('wiki/concepts/gamma.md');
   });
 
   it('rebuilds changed-only deliverables when build-context changes', async () => {
