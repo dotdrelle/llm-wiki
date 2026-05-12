@@ -197,6 +197,16 @@ export class BuildService {
         }),
       })),
     );
+    if (this.logger) {
+      for (const slot of slots) {
+        await this.logger.info('build:slot-context', {
+          template: template.relativePath,
+          slot: slot.id,
+          contextCount: slot.context.length,
+          contextPages: slot.context.map((result) => result.page.relativePath),
+        });
+      }
+    }
 
     const batchSize = this.config.build.slotBatchSize;
     const batchCount = Math.ceil(slots.length / batchSize);
@@ -206,9 +216,9 @@ export class BuildService {
       const batch = slots.slice(batchIndex * batchSize, (batchIndex + 1) * batchSize);
       const topContextPages = [
         ...new Set(
-          batch.flatMap((s) => s.context.slice(0, 2).map((r) => r.page.relativePath)),
+          batch.flatMap((s) => s.context.map((r) => r.page.relativePath)),
         ),
-      ].slice(0, 3);
+      ].slice(0, 8);
       onBatch?.(batchIndex, topContextPages);
       onBatchLlm?.(batchIndex, topContextPages);
       const traceData = {

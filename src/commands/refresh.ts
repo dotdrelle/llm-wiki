@@ -41,7 +41,7 @@ export default async function refreshCmd(
         const batchStart = Date.now();
         const name = template.replace(/^templates\//, '').replace(/\.md$/, '');
         spinner?.update(`Building ${name} (batch ${batch.index + 1}/${batch.total})…`);
-        const ctx = topContextPages[0] ?? template;
+        const ctx = topContextPages.length > 0 ? topContextPages.join(', ') : template;
         spinner?.updateSub(() => {
           const s = ((Date.now() - batchStart) / 1000).toFixed(1);
           return `${ctx} · retrieval ${s}s`;
@@ -51,7 +51,7 @@ export default async function refreshCmd(
         const llmStart = Date.now();
         const name = template.replace(/^templates\//, '').replace(/\.md$/, '');
         spinner?.update(`Building ${name} (batch ${batch.index + 1}/${batch.total})…`);
-        const ctx = topContextPages[0] ?? template;
+        const ctx = topContextPages.length > 0 ? topContextPages.join(', ') : template;
         spinner?.updateSub(() => {
           const s = ((Date.now() - llmStart) / 1000).toFixed(1);
           return `${ctx} · LLM ${s}s`;
