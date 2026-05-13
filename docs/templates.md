@@ -32,7 +32,7 @@ description: High-level summary for stakeholders
 [[INSTRUCTION: List the project scope items documented in the wiki, grouped by domain. One bullet per item.]]
 ```
 
-Each `[[INSTRUCTION: ...]]` slot is replaced at build time by a markdown fragment produced from wiki context. Multiple slots are processed in batches (`build.slotBatchSize` per LLM call).
+Each `[[INSTRUCTION: ...]]` slot is replaced at build time by a markdown fragment produced from wiki context. Multiple slots can share one LLM call, up to `build.slotBatchSize`, but prompt limits can split batches earlier. Use `wiki build --plan` to see the exact batches and estimated input tokens before generating content.
 
 ## Prompt rules
 
@@ -49,23 +49,20 @@ Fixed context files in `build-context/` are included verbatim in every build LLM
 
 ## Importing sources
 
-`llm-wiki` ingests standard markdown files. Two tools make it easy to convert existing content.
+`llm-wiki` ingests standard markdown files. Keep source conversion outside the workspace, then copy the resulting `.md` files into `raw/untracked/`.
 
-### Confluence Markdown Exporter
+### Confluence through AgentCME
 
-[confluence-markdown-exporter](https://github.com/bdmac/confluence-markdown-exporter) exports a Confluence space as a tree of markdown files ready to drop into `raw/untracked/`.
+For Confluence, use [`AgentCME`](https://github.com/dotdrelle/AgentCME) to export Markdown and [`llm-wiki-manager`](https://github.com/dotdrelle/llm-wiki-manager) to copy selected exports into the target workspace:
 
 ```bash
-python3 -m venv .cme
-source .cme/bin/activate
-pip install --upgrade pip
-pip install confluence-markdown-exporter
-
-cme config
-cme space https://your-confluence.example/display/YOURSPACE/
+cd ../llm-wiki-manager
+./wiki-workspace cme up
+./wiki-workspace wiki <workspace> copy
+./wiki-workspace wiki <workspace> ingest
 ```
 
-The exported `.md` files can then be placed in `raw/untracked/` and ingested with `wiki ingest`.
+`agent-cme` owns Confluence credentials and writes exports under `../agent-cme/data/exports/`. `llm-wiki-manager` copies only the export directories listed under `imports` in `workspaces.yaml`.
 
 ### Markitdown
 

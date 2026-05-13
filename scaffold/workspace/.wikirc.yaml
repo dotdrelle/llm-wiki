@@ -15,11 +15,31 @@ llm:
 build:
   refreshOnIngest: false
   slotBatchSize: 3
+  maxBuildContextChars: 12000
+
+limits:
+  requestsPerMinute: 10
+  targetInputTokensPerCall: 40000
+  maxInputTokensPerCall: 50000
+  # Optional daily budget shown by `wiki build --plan`.
+  # dailyInputTokens: 1000000
 
 retrieval:
+  maxContextFiles: 5
+  maxChunksPerPage: 2
+  maxChunkChars: 3000
+  maxSourceChars: 8000
   vector:
     enabled: true
+    # Defaults to llm.baseUrl. Set this when embeddings/reranking use a separate service.
+    # baseUrl: http://127.0.0.1:7997/v1
+    # apiKey: your-vector-key
+    timeoutMs: 600000
     embeddingModel: BAAI/bge-m3
+    rerankerModel: BAAI/bge-reranker-v2-m3
+    topK: 120
+    rerankTopK: 80
+    maxResults: 6
 
 mcp:
   # Optional: require clients to authenticate with this value.

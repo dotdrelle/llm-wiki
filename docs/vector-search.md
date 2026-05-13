@@ -22,7 +22,7 @@ Compatible servers:
 | OpenAI API                                              | ✓                 | ✗        |
 | Any OpenAI-compatible server                            | ✓                 | depends  |
 
-The embedding and reranker endpoints are called against `llm.baseUrl`. If your embedding server runs on a different URL, use `provider: openai-compatible` and set `baseUrl` accordingly.
+By default, the embedding and reranker endpoints use `llm.baseUrl` and the same API key as the generation model. If embeddings/reranking run on a separate service, set `retrieval.vector.baseUrl` and optionally `retrieval.vector.apiKey`.
 
 ## Configuration
 
@@ -30,6 +30,9 @@ The embedding and reranker endpoints are called against `llm.baseUrl`. If your e
 retrieval:
   vector:
     enabled: true
+    baseUrl: http://127.0.0.1:7997/v1 # optional; defaults to llm.baseUrl
+    apiKey: VECTOR_API_KEY # optional; falls back to WIKI_VECTOR_API_KEY, ALBERT_API_KEY, then llm.apiKey
+    timeoutMs: 600000
     embeddingModel: BAAI/bge-m3 # model served by your /v1/embeddings endpoint
     rerankerModel: BAAI/bge-reranker-v2-m3 # model served by your /v1/rerank endpoint
     topK: 120 # vector candidates retrieved before re-ranking
@@ -37,14 +40,17 @@ retrieval:
     maxResults: 6 # final wiki pages returned to the LLM
 ```
 
-| Key                     | Description                                        | Default                   |
-| ----------------------- | -------------------------------------------------- | ------------------------- |
-| `vector.enabled`        | Prefer vector retrieval when an index is available | `true`                    |
-| `vector.embeddingModel` | Model name for `/v1/embeddings`                    | `BAAI/bge-m3`             |
-| `vector.rerankerModel`  | Model name for `/v1/rerank`                        | `BAAI/bge-reranker-v2-m3` |
-| `vector.topK`           | Vector candidates retrieved before re-ranking      | `120`                     |
-| `vector.rerankTopK`     | Candidates sent to the reranker                    | `80`                      |
-| `vector.maxResults`     | Maximum wiki pages returned after ranking          | `6`                       |
+| Key                     | Description                                                                 | Default                   |
+| ----------------------- | --------------------------------------------------------------------------- | ------------------------- |
+| `vector.enabled`        | Prefer vector retrieval when an index is available                          | `true`                    |
+| `vector.baseUrl`        | Base URL for `/v1/embeddings` and `/v1/rerank`                               | `llm.baseUrl`             |
+| `vector.apiKey`         | API key for vector endpoints                                                 | `WIKI_VECTOR_API_KEY`, `ALBERT_API_KEY`, then `llm.apiKey` |
+| `vector.timeoutMs`      | Timeout for vector endpoint calls                                            | `llm.timeoutMs` or `600000` |
+| `vector.embeddingModel` | Model name for `/v1/embeddings`                                             | `BAAI/bge-m3`             |
+| `vector.rerankerModel`  | Model name for `/v1/rerank`                                                 | `BAAI/bge-reranker-v2-m3` |
+| `vector.topK`           | Vector candidates retrieved before re-ranking                               | `120`                     |
+| `vector.rerankTopK`     | Candidates sent to the reranker                                             | `80`                      |
+| `vector.maxResults`     | Maximum wiki pages returned after ranking                                   | `6`                       |
 
 ## Building the index
 
@@ -74,6 +80,7 @@ llm:
 retrieval:
   vector:
     enabled: true
+    baseUrl: http://127.0.0.1:11434/v1
     embeddingModel: nomic-embed-text
     rerankerModel: BAAI/bge-reranker-v2-m3 # Ollama has no /rerank — this will be skipped gracefully
 ```

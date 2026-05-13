@@ -8,58 +8,18 @@ import { RetrievalService } from '../src/services/retrievalService.ts';
 import { VectorIndexService } from '../src/services/vectorIndexService.ts';
 import { WorkspaceService } from '../src/services/workspaceService.ts';
 
-const LOCAL_WIKI_ROOT = '/Users/dotdrelle/claude-llm-wiki';
+const LOCAL_WIKI_ROOT = process.env.LLM_WIKI_LOCAL_ROOT ?? '/path/to/local/wiki-workspace';
 const RUN_LOCAL_RETRIEVAL = process.env.LLM_WIKI_LOCAL_RETRIEVAL === '1';
+const LOCAL_RETRIEVAL_CASES_JSON = process.env.LLM_WIKI_LOCAL_RETRIEVAL_CASES;
 
 interface RetrievalCase {
   question: string;
   expectedAnyTop10: string[];
 }
 
-const retrievalCases: RetrievalCase[] = [
-  {
-    question: 'Architecture technique préconisée pour le projet JUNO',
-    expectedAnyTop10: [
-      'wiki/concepts/architecture-3-couches-ecoria-sysba.md',
-      'wiki/concepts/infrastructure-ecoria-sysba.md',
-      'wiki/concepts/modules-plugins-ecoria-sysba.md',
-      'wiki/concepts/plugins-par-couche-ecoria-sysba.md',
-      'wiki/concepts/integration-si-mf-urbanisation.md',
-      'wiki/sources/architectureecoriasysbv2.md',
-    ],
-  },
-  {
-    question: 'Exigences fonctionnelles MSI',
-    expectedAnyTop10: [
-      'wiki/concepts/exigences-fonctionnelles-msi.md',
-      'wiki/sources/exigences-msi.md',
-    ],
-  },
-  {
-    question: 'Outils existants OREA FdF ECORIA',
-    expectedAnyTop10: [
-      'wiki/concepts/outils-existants-orea-fdf-ecoria.md',
-      'wiki/sources/les-outils-existants-a-examiner.md',
-    ],
-  },
-  {
-    question: 'Modalités d’expertise AP JUNO',
-    expectedAnyTop10: [
-      'wiki/sources/modalites-dexpertise.md',
-      'wiki/concepts/domaines-expertise.md',
-      'wiki/concepts/initialisations-expertise.md',
-      'wiki/concepts/parametres-expertise-ap-juno.md',
-    ],
-  },
-  {
-    question: 'Infrastructure ECORIA SYSBA',
-    expectedAnyTop10: [
-      'wiki/concepts/infrastructure-ecoria-sysba.md',
-      'wiki/concepts/partitionnement-vm-ecoria-sysba.md',
-      'wiki/sources/architectureecoriasysbv2.md',
-    ],
-  },
-];
+const retrievalCases: RetrievalCase[] = LOCAL_RETRIEVAL_CASES_JSON
+  ? (JSON.parse(LOCAL_RETRIEVAL_CASES_JSON) as RetrievalCase[])
+  : [];
 
 class EmptyRerankService {
   async rerank() {
@@ -71,7 +31,7 @@ function formatPaths(paths: string[]): string {
   return paths.map((p, i) => `${i + 1}. ${p}`).join('\n');
 }
 
-describe.skipIf(!RUN_LOCAL_RETRIEVAL)('local wiki retrieval quality', () => {
+describe.skipIf(!RUN_LOCAL_RETRIEVAL || retrievalCases.length === 0)('local wiki retrieval quality', () => {
   beforeAll(async () => {
     await access(path.join(LOCAL_WIKI_ROOT, '.wikirc.yaml'));
     await access(path.join(LOCAL_WIKI_ROOT, '.wiki', 'vector-index'));

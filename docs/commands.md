@@ -70,11 +70,14 @@ Generates markdown deliverables from templates in `templates/`. Each `[[INSTRUCT
 wiki build
 wiki build templates/project-brief.md
 wiki build --force
+wiki build --plan
 wiki build --verbose
 wiki build --debug
 ```
 
-Slots are processed in batches of `build.slotBatchSize` per LLM call. For each slot, up to `retrieval.maxContextFiles` wiki pages are retrieved and included as context.
+`wiki build --plan` reads the same templates and wiki context as a real build, then prints the planned batches, context pages, estimated input tokens, and configured limits without calling the generation LLM.
+
+Slots are grouped up to `build.slotBatchSize`, but the build planner can split earlier when `limits.targetInputTokensPerCall` would be exceeded. If a batch is still above `limits.maxInputTokensPerCall`, retrieved context is trimmed before the LLM call.
 
 ## `wiki refresh [templates...]`
 
@@ -145,16 +148,11 @@ Checks provider connectivity, effective context size, chunk sizes, build batch s
 
 ```bash
 wiki doctor
+wiki doctor --apply
 docker compose --profile cli run --rm wiki doctor
 ```
 
-In an interactive terminal, `doctor` asks before writing suggestions:
-
-```
-Apply these changes to /path/to/.wikirc.yaml? [y/N]
-```
-
-Only `y`, `yes`, `o`, or `oui` writes the file. Non-interactive runs (CI, redirected output) never write.
+By default, `doctor` prints suggested `.wikirc.yaml` changes only. Use `--apply` to write the suggested values directly.
 
 ## `wiki mcp`
 

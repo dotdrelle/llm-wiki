@@ -17,6 +17,12 @@ llm:
   flashAttention: true
   kvCacheType: q8_0
 
+limits:
+  requestsPerMinute: 10
+  dailyInputTokens: 1000000
+  targetInputTokensPerCall: 40000
+  maxInputTokensPerCall: 50000
+
 build:
   refreshOnIngest: true
   slotBatchSize: 3
@@ -29,6 +35,9 @@ retrieval:
   maxSourceChars: 8000
   vector:
     enabled: true
+    baseUrl: http://127.0.0.1:7997/v1
+    apiKey: optional-vector-key
+    timeoutMs: 600000
     embeddingModel: BAAI/bge-m3
     rerankerModel: BAAI/bge-reranker-v2-m3
     topK: 120
@@ -144,13 +153,26 @@ OLLAMA_CONTEXT_LENGTH=32768 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0 o
 
 If Ollama runs outside the local process (Docker, remote server), set `flashAttention` and `kvCacheType` in `.wikirc.yaml` so `wiki doctor` can base its recommendations on the server configuration.
 
+## `limits`
+
+These keys describe operational and prompt budgets used by `wiki build --plan`, `wiki build`, and `wiki doctor`.
+
+| Key                        | Description                                                                                 | Default |
+| -------------------------- | ------------------------------------------------------------------------------------------- | ------- |
+| `requestsPerMinute`        | Informational request-rate budget printed by `wiki build --plan`                            | `10`    |
+| `dailyInputTokens`         | Optional daily input-token budget, printed by `wiki build --plan` when set                  | —       |
+| `targetInputTokensPerCall` | Preferred input-token budget per build call. The builder starts a new batch above this size | `40000` |
+| `maxInputTokensPerCall`    | Hard input-token budget per build call. The builder trims retrieved context above this size | `50000` |
+
+`targetInputTokensPerCall` must be less than or equal to `maxInputTokensPerCall`.
+
 ## `build`
 
-| Key                    | Description                                                                    | Default |
-| ---------------------- | ------------------------------------------------------------------------------ | ------- |
-| `refreshOnIngest`      | Automatically regenerate stale deliverables after each ingest                  | `true`  |
-| `slotBatchSize`        | Number of `[[INSTRUCTION:...]]` slots sent to the model in a single call       | `3`     |
-| `maxBuildContextChars` | Maximum characters from `build-context/` files included in each build LLM call | `12000` |
+| Key                    | Description                                                                                                   | Default |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------- | ------- |
+| `refreshOnIngest`      | Automatically regenerate stale deliverables after each ingest                                                 | `true`  |
+| `slotBatchSize`        | Maximum number of `[[INSTRUCTION:...]]` slots allowed in one build call before prompt-budget planning applies | `3`     |
+| `maxBuildContextChars` | Maximum characters from `build-context/` files included in each build LLM call                                | `12000` |
 
 ## `retrieval`
 
@@ -163,7 +185,7 @@ If Ollama runs outside the local process (Docker, remote server), set `flashAtte
 
 Vector retrieval options are documented in [vector-search.md](./vector-search.md).
 
-> **Context budget** — each LLM call includes up to `slotBatchSize × maxContextFiles × maxChunkChars` characters plus fixed prompt overhead. Run `wiki doctor` after changing these values.
+> **Context budget** — `wiki build` now plans batches using the same logic as `wiki build --plan`: it groups slots up to `build.slotBatchSize`, starts a new batch when `limits.targetInputTokensPerCall` would be exceeded, and trims retrieved context if a batch exceeds `limits.maxInputTokensPerCall`. Run `wiki doctor` and `wiki build --plan` after changing these values.
 
 ## `mcp`
 

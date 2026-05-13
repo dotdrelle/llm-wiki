@@ -6,7 +6,17 @@ Open-source implementation of [Karpathy's LLM Wiki](https://x.com/karpathy/statu
 
 A local-first CLI that turns raw project material into a durable, searchable Markdown knowledge base, then generates reproducible deliverables from templates. Works with OpenAI, Anthropic, Ollama, or any OpenAI-compatible server. Everything stays on disk as plain Markdown files.
 
-`llm-wiki` is the workspace engine: it initializes workspaces, ingests `raw/untracked`, serves a local UI, exposes a wiki MCP server, and builds/exports deliverables. For multi-workspace orchestration with a shared `agent-cme` Confluence exporter, use the sibling `llm-wiki-manager` repository.
+`llm-wiki` is the workspace engine: it initializes workspaces, ingests `raw/untracked`, serves a local UI, exposes a wiki MCP server, and builds/exports deliverables.
+
+It can run by itself, but it is one part of a three-repository toolchain:
+
+| Repository | Role |
+| ---------- | ---- |
+| [`llm-wiki`](https://github.com/dotdrelle/llm-wiki) | Local-first wiki CLI, web UI, MCP server, retrieval, and deliverable builder |
+| [`llm-wiki-manager`](https://github.com/dotdrelle/llm-wiki-manager) | Docker cockpit for multiple wiki workspaces and the shared Confluence export pipeline |
+| [`AgentCME`](https://github.com/dotdrelle/AgentCME) | Agent-controlled Confluence Markdown exporter used by the manager |
+
+Use only this repository for a single standalone workspace. Use `llm-wiki-manager` when several workspaces share one `AgentCME` exporter.
 
 ```
 ┌──────────────────────────────────────┐  ┌─────────────────────────────────────┐
@@ -48,7 +58,7 @@ A local-first CLI that turns raw project material into a durable, searchable Mar
    wiki init
    ```
 
-   Edit `.wikirc.yaml` to set your LLM provider, model, and `language`.
+   Edit `.wikirc.yaml` to set your LLM provider, model, `language`, retrieval endpoints, and prompt limits.
 
 2. **Run the doctor** to validate your configuration:
 
@@ -68,6 +78,12 @@ A local-first CLI that turns raw project material into a durable, searchable Mar
 
    ```bash
    wiki build
+   ```
+
+   To inspect the planned LLM calls before generating content:
+
+   ```bash
+   wiki build --plan
    ```
 
 6. **Export** a self-contained document from a deliverable:
@@ -92,7 +108,7 @@ cd ../llm-wiki-manager
 ./wiki-workspace wiki <workspace> ingest
 ```
 
-`wiki init` creates workspace content and configuration. It no longer creates a workspace-local `docker-compose.yml`; Docker orchestration lives outside the workspace.
+`wiki init` creates workspace content and `.wikirc.yaml`. It does not create a workspace-local `docker-compose.yml`; Docker orchestration lives either in this repository for one workspace or in `llm-wiki-manager` for several workspaces.
 
 ## Installation
 

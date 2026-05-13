@@ -121,6 +121,8 @@ build:
 retrieval:
   maxContextFiles: 4
   maxChunkChars: 2500
+  vector:
+    baseUrl: http://host.docker.internal:7997/v1
 ```
 
-Start with `numCtx: 8192` or `16384`. Larger context windows can exceed memory once the KV cache is included, even when 4-bit weights fit comfortably on disk.
+Start with `numCtx: 8192` or `16384`. Larger context windows can exceed memory once the KV cache is included, even when 4-bit weights fit comfortably on disk. Use `wiki build --plan` to check estimated build input tokens before running generation.

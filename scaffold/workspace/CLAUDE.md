@@ -35,15 +35,9 @@ This workspace follows a local-first LLM Wiki pattern.
 
 ## Doctor And Config
 
-`wiki doctor` checks provider connectivity, effective context size, wiki chunk sizes, build batch size, and Ollama memory/speed settings.
+`wiki doctor` checks provider connectivity, effective context size, wiki chunk sizes, vector retrieval, build batch planning, prompt limits, and Ollama memory/speed settings.
 
-When suggestions are available, `doctor` prints the exact `.wikirc.yaml` keys to change. In an interactive terminal it may ask:
-
-```text
-Apply these changes to /path/to/.wikirc.yaml? [y/N]
-```
-
-Only `y`, `yes`, `o`, or `oui` writes the file. Non-interactive runs only print suggestions.
+When suggestions are available, `doctor` prints the exact `.wikirc.yaml` keys to change. Use `wiki doctor --apply` to write the suggested values directly.
 
 For OpenAI GPT-5 models, `temperature` may be omitted by the CLI because some models only accept the provider default.
 
@@ -60,11 +54,17 @@ llm:
 build:
   slotBatchSize: 3
 
+limits:
+  targetInputTokensPerCall: 40000
+  maxInputTokensPerCall: 50000
+
 retrieval:
   maxContextFiles: 5
   maxChunksPerPage: 2
   maxChunkChars: 3000
   maxSourceChars: 8000
+  vector:
+    baseUrl: http://host.docker.internal:7997/v1
 ```
 
 For remote or Dockerized Ollama, `doctor` cannot inspect the server process environment. Set `flashAttention` and `kvCacheType` explicitly in `.wikirc.yaml`.

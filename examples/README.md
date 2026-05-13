@@ -21,7 +21,7 @@ wiki ingest
 wiki build
 ```
 
-`wiki build` retrieves relevant wiki chunks for each `[[INSTRUCTION: ...]]` slot and fills them using the configured LLM. The result is written to `deliverables/decision-note.md`.
+`wiki build` retrieves relevant wiki chunks for each `[[INSTRUCTION: ...]]` slot, plans batches against the configured prompt limits, and fills them using the configured LLM. The result is written to `deliverables/decision-note.md`.
 
 ## Flow with build-context
 
@@ -38,7 +38,7 @@ wiki build
 
 Each `[[INSTRUCTION: ...]]` slot in `project-brief.md` is filled with:
 
-- retrieved wiki chunks (keyword-matched from `wiki/`)
+- retrieved wiki chunks from `wiki/` (vector search when available, lexical fallback otherwise)
 - the full content of `build-context/writing-standards.md` (always present)
 
 The result is written to `deliverables/briefs/project-brief.md`.

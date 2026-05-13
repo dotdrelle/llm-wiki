@@ -141,14 +141,14 @@ describe('workspace safety', () => {
       root,
       'raw',
       'untracked',
-      'Jouvence de la chaîne de prévision production outre-mer',
-      'Jouvence de la chaîne de prévision production outre-mer',
-      'Volet fonctionnel AP JUNO',
+      'Programme exemple meteo',
+      'Programme exemple meteo',
+      'Volet fonctionnel AP Alpha',
     );
     await mkdir(sourceDir, { recursive: true });
     const sourcePath = path.join(
       sourceDir,
-      'Synthèse du positionnement des DIROM et du SRSPM.md',
+      'Synthese du positionnement des directions.md',
     );
     await writeFile(sourcePath, '# Synthèse\n\nContenu.\n', 'utf8');
     const workspace = new WorkspaceService(createConfig(root));
@@ -156,7 +156,7 @@ describe('workspace safety', () => {
     const source = await workspace.readSourceDocument(sourcePath);
 
     expect(source.archiveCitationPath).toBe(
-      'raw/ingested/jouvence-de-la-chaine-de-prevision-production-outre-mer/volet-fonctionnel-ap-juno/synthese-du-positionnement-des-dirom-et-du-srspm.md',
+      'raw/ingested/programme-exemple-meteo/volet-fonctionnel-ap-alpha/synthese-du-positionnement-des-directions.md',
     );
   });
 
