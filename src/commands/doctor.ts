@@ -5,8 +5,11 @@ import path from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import YAML from 'yaml';
 import { splitByHeadings, splitSourceSections } from '../utils/markdown.ts';
+import { BuildService } from '../services/buildService.ts';
 import { EmbeddingService } from '../services/embeddingService.ts';
+import { LLMService } from '../services/llmService.ts';
 import { RerankService } from '../services/rerankService.ts';
+import { RetrievalService } from '../services/retrievalService.ts';
 import { VectorIndexService } from '../services/vectorIndexService.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import type { AppConfig } from '../types.ts';
@@ -97,6 +100,110 @@ const row = (label: string, value: string) =>
   console.log(`  ${label.padEnd(24)} ${value}`);
 
 type SuggestedConfig = Record<string, Record<string, boolean | string | number>>;
+
+function roundUp(value: number, step: number): number {
+  return Math.ceil(value / step) * step;
+}
+
+function recommendedMaxInputTokens(config: AppConfig): number {
+  if (/albert\.api\.etalab\.gouv\.fr/i.test(config.llm.baseUrl)) {
+    return 120000;
+  }
+  if (config.llm.provider === 'ollama' && config.llm.numCtx) {
+    return Math.max(1000, Math.floor(config.llm.numCtx * 0.9));
+  }
+  return config.limits.maxInputTokensPerCall;
+}
+
+function recommendedTargetInputTokens(maxInputTokensPerCall: number): number {
+  if (maxInputTokensPerCall >= 50000) {
+    return 40000;
+  }
+  return Math.max(1000, Math.floor((maxInputTokensPerCall * 0.8) / 1000) * 1000);
+}
+
+function printYamlBlock(value: unknown): void {
+  const yaml = YAML.stringify(value).trimEnd();
+  for (const line of yaml.split('\n')) {
+    console.log(`  ${line}`);
+  }
+}
+
+function compactObject<T extends Record<string, unknown>>(value: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => typeof entry !== 'undefined'),
+  ) as Partial<T>;
+}
+
+function sameConfigValue(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function diffConfigPatch(
+  current: unknown,
+  recommended: unknown,
+): Record<string, unknown> | undefined {
+  if (
+    !recommended ||
+    typeof recommended !== 'object' ||
+    Array.isArray(recommended) ||
+    !current ||
+    typeof current !== 'object' ||
+    Array.isArray(current)
+  ) {
+    return sameConfigValue(current, recommended)
+      ? undefined
+      : (recommended as Record<string, unknown>);
+  }
+
+  const patch: Record<string, unknown> = {};
+  const currentRecord = current as Record<string, unknown>;
+  for (const [key, value] of Object.entries(recommended as Record<string, unknown>)) {
+    if (typeof value === 'undefined') continue;
+    const childPatch = diffConfigPatch(currentRecord[key], value);
+    if (typeof childPatch !== 'undefined') patch[key] = childPatch;
+  }
+  return Object.keys(patch).length > 0 ? patch : undefined;
+}
+
+function deepMergeConfig(
+  current: unknown,
+  patch: unknown,
+): Record<string, unknown> {
+  const base =
+    current && typeof current === 'object' && !Array.isArray(current)
+      ? { ...(current as Record<string, unknown>) }
+      : {};
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return base;
+
+  for (const [key, value] of Object.entries(patch as Record<string, unknown>)) {
+    if (typeof value === 'undefined') continue;
+    const currentValue = base[key];
+    base[key] =
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      currentValue &&
+      typeof currentValue === 'object' &&
+      !Array.isArray(currentValue)
+        ? deepMergeConfig(currentValue, value)
+        : value;
+  }
+
+  return base;
+}
+
+async function applyRecommendedConfig(
+  config: AppConfig,
+  recommendedConfig: Record<string, unknown>,
+): Promise<void> {
+  const configPath = config.configPath ?? path.join(config.wikiRoot, '.wikirc.yaml');
+  const rawText = (await pathExists(configPath)) ? await readFile(configPath, 'utf8') : '';
+  const rawConfig = rawText.trim() ? YAML.parse(rawText) : {};
+  const nextConfig = deepMergeConfig(rawConfig, recommendedConfig);
+  await safeWriteFile(configPath, YAML.stringify(nextConfig));
+  ok(`Updated ${configPath}`);
+}
 
 // ── Ollama /api/show ──────────────────────────────────────────────────────────
 
@@ -620,13 +727,22 @@ function printOllamaHardware(
 
 // ── main ──────────────────────────────────────────────────────────────────────
 
-export default async function doctorCmd(config: AppConfig): Promise<void> {
+export default async function doctorCmd(
+  config: AppConfig,
+  options: { apply?: boolean } = {},
+): Promise<void> {
   console.log('\n── Config ──────────────────────────────────────────────────');
   row('provider:', config.llm.provider);
   row('model:', config.llm.model);
   row('language:', config.language);
   if (config.llm.numCtx) row('numCtx:', config.llm.numCtx.toLocaleString());
   row('temperature:', String(config.llm.temperature));
+  row('requestsPerMinute:', String(config.limits.requestsPerMinute));
+  if (config.limits.dailyInputTokens) {
+    row('dailyInputTokens:', config.limits.dailyInputTokens.toLocaleString());
+  }
+  row('targetInputTokensPerCall:', config.limits.targetInputTokensPerCall.toLocaleString());
+  row('maxInputTokensPerCall:', config.limits.maxInputTokensPerCall.toLocaleString());
   row('refreshOnIngest:', String(config.build.refreshOnIngest));
   row('slotBatchSize:', String(config.build.slotBatchSize));
   row('maxContextFiles:', String(config.retrieval.maxContextFiles));
@@ -634,6 +750,7 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
   row('maxChunkChars:', String(config.retrieval.maxChunkChars));
   row('maxSourceChars:', String(config.retrieval.maxSourceChars));
   row('vector.enabled:', String(config.retrieval.vector.enabled));
+  row('vector.baseUrl:', config.retrieval.vector.baseUrl);
   row('vector.embedding:', config.retrieval.vector.embeddingModel);
   row('vector.reranker:', config.retrieval.vector.rerankerModel);
   row('vector.topK:', String(config.retrieval.vector.topK));
@@ -711,10 +828,9 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
     );
   }
 
-  const [pages, rawIngestedPages, indexContent, untrackedPaths, buildContext] =
+  const [pages, indexContent, untrackedPaths, buildContext] =
     await Promise.all([
       workspace.listWikiPages(),
-      workspace.listIngestedSourcePages(),
       workspace.readIndex(),
       workspace.listUntrackedSourcePaths(),
       workspace.readBuildContext(),
@@ -749,7 +865,6 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
       ? `${buildContext.fileCount} file(s), ${buildContext.rawTotalChars}/${config.build.maxBuildContextChars} chars (truncated)`
       : `${buildContext.fileCount} file(s), ${buildContext.content.length}/${config.build.maxBuildContextChars} chars`,
   );
-  row('ingested (archive):', `${rawIngestedPages.length} file(s) in raw/ingested`);
   row(
     'pending ingest:',
     `${untrackedPaths.length} file(s) in raw/untracked${untrackedSizes.length > 0 ? ` (avg ${avg(untrackedSizes)} chars, max ${maxUntracked} chars)` : ''}`,
@@ -829,438 +944,154 @@ export default async function doctorCmd(config: AppConfig): Promise<void> {
     ok('vector retrieval disabled; lexical fallback is active');
   }
 
-  // ── context budget ───────────────────────────────────────────────────────────
-  const numCtxTokens = effectiveNumCtx ?? contextWindowTokens(config);
-  const SAFE_FILL = 0.9;
-  const slotContent = config.retrieval.maxContextFiles * config.retrieval.maxChunkChars;
-  const baseOverhead = indexContent.length + SYSTEM_PROMPT_OVERHEAD;
-  const buildContextChars = buildContext.content.length;
-  const overhead = baseOverhead + buildContextChars;
-
-  let available = 0;
-  let buildBudget = 0;
-  let optimalSlotBatchSize = 1;
-  let safeBatchSize = 1;
-  let perSlotBudget = 0;
-  let fillRatio = 0;
-
-  if (!numCtxTokens) {
-    warn(
-      'Context window unknown for openai-compatible — set numCtx in .wikirc.yaml for full budget analysis',
-    );
-  } else {
-    const totalChars = numCtxTokens * CHARS_PER_TOKEN;
-    available = Math.round(totalChars * (1 - OUTPUT_RESERVE));
-    buildBudget = available - overhead;
-
-    console.log('\n── Context budget ───────────────────────────────────────────');
+  console.log('\n── Build plan ──────────────────────────────────────────────');
+  row('source:', 'templates/ + wiki/ + build-context/');
+  row('raw/ingested:', 'ignored here; already represented by wiki/sources');
+  row('planner:', 'same batching logic as `wiki build --plan`');
+  console.log('  … simulating build batches and provider budget');
+  try {
+    const buildPlan = await new BuildService(
+      config,
+      workspace,
+      new LLMService(config),
+      new RetrievalService(workspace, config),
+    ).planBuild();
+    row('templates:', String(buildPlan.templates.length));
+    row('planned requests:', String(buildPlan.estimatedRequests));
+    row('estimated input:', `~${buildPlan.estimatedInputTokens.toLocaleString()} token(s)`);
     row(
-      'context window:',
-      `${numCtxTokens.toLocaleString()} tokens → ~${Math.round(totalChars / 1000)}k chars`,
+      'request rate:',
+      `${config.limits.requestsPerMinute} req/min → minimum ~${Math.ceil(
+        (buildPlan.estimatedRequests / config.limits.requestsPerMinute) * 60,
+      )}s if throttled`,
     );
-    row(
-      'output reserve:',
-      `${OUTPUT_RESERVE * 100}% → ~${Math.round(available / 1000)}k chars available`,
-    );
-    row(
-      'fixed overhead:',
-      `~${Math.round(overhead / 1000)}k chars (index + build-context + system)`,
-    );
-    row(
-      'overhead detail:',
-      `index ${indexContent.length} + build-context ${buildContextChars} + system ~${SYSTEM_PROMPT_OVERHEAD} chars`,
-    );
-    if (buildContext.truncated) {
-      warn(
-        `build-context truncated: ${buildContext.rawTotalChars} chars in build-context/, maxBuildContextChars=${config.build.maxBuildContextChars}`,
+    if (config.limits.dailyInputTokens) {
+      const percent = Math.round(
+        (buildPlan.estimatedInputTokens / config.limits.dailyInputTokens) * 100,
+      );
+      row(
+        'daily budget:',
+        `${percent}% of ${config.limits.dailyInputTokens.toLocaleString()} input token(s)`,
       );
     }
-    row(
-      'slot content:',
-      `${config.retrieval.maxContextFiles} files × ${config.retrieval.maxChunkChars} chars = ~${Math.round(slotContent / 1000)}k chars/slot`,
-    );
-
-    if (buildBudget <= 0) {
-      err(
-        `fixed overhead exceeds available context by ~${Math.round(Math.abs(buildBudget) / 1000)}k chars`,
-      );
-      (suggestions.llm ??= {}).numCtx = Math.ceil(
-        overhead / (1 - OUTPUT_RESERVE) / CHARS_PER_TOKEN,
-      );
-      printSuggestions(suggestions);
-      await confirmApplySuggestions(config, suggestions);
-      console.log('');
-      return;
-    }
-
-    optimalSlotBatchSize = Math.max(
-      1,
-      Math.min(Math.floor(buildBudget / slotContent), 20),
-    );
-    safeBatchSize = Math.max(
-      1,
-      Math.min(Math.floor((buildBudget * SAFE_FILL) / slotContent), 20),
-    );
-    perSlotBudget = Math.floor(buildBudget / config.build.slotBatchSize);
-    fillRatio = (config.build.slotBatchSize * slotContent) / buildBudget;
-    row(
-      'max slotBatchSize:',
-      `${optimalSlotBatchSize} (100% fill), ${safeBatchSize} safe (${SAFE_FILL * 100}% fill)`,
-    );
-    row(
-      'current fill:',
-      `${Math.round(fillRatio * 100)}% — ${config.build.slotBatchSize} slots × ~${Math.round(slotContent / 1000)}k = ~${Math.round((config.build.slotBatchSize * slotContent) / 1000)}k / ~${Math.round(buildBudget / 1000)}k chars`,
-    );
-    row(
-      'per-slot budget:',
-      `~${Math.round(perSlotBudget / 1000)}k chars (with current slotBatchSize=${config.build.slotBatchSize})`,
-    );
-  }
-
-  // ── recommendations ──────────────────────────────────────────────────────────
-  console.log('\n── Recommendations ──────────────────────────────────────────');
-  let hasWarnings = false;
-  const canRecommendLargerPrompts =
-    config.llm.provider === 'ollama' || config.llm.provider === 'openai-compatible';
-
-  if (omitsTemperature(config)) {
-    ok(
-      `temperature ${config.llm.temperature} omitted for ${config.llm.provider}/${config.llm.model}`,
-    );
-  } else if (config.llm.temperature > 0.15) {
-    warn(
-      `temperature ${config.llm.temperature} → 0.1 recommended for structured JSON tasks`,
-    );
-    (suggestions.llm ??= {}).temperature = 0.1;
-    hasWarnings = true;
-  } else {
-    ok(`temperature ${config.llm.temperature}`);
-  }
-
-  const p95chunk = pct(chunkSizes, 95);
-  const recommendedChunkChars =
-    chunkSizes.length > 0 ? Math.max(Math.min(p95chunk + 200, 6000), 800) : 3000;
-  if (
-    recommendedChunkChars < config.retrieval.maxChunkChars - 500 ||
-    (canRecommendLargerPrompts &&
-      recommendedChunkChars > config.retrieval.maxChunkChars + 500)
-  ) {
-    warn(
-      `maxChunkChars ${config.retrieval.maxChunkChars} → ${recommendedChunkChars} (p95 chunk: ${p95chunk} chars)`,
-    );
-    (suggestions.retrieval ??= {}).maxChunkChars = recommendedChunkChars;
-    hasWarnings = true;
-  } else if (recommendedChunkChars > config.retrieval.maxChunkChars + 500) {
-    ok(
-      `maxChunkChars ${config.retrieval.maxChunkChars} (p95 chunk ${p95chunk} chars; keeping remote-provider prompt size conservative)`,
-    );
-  } else {
-    ok(`maxChunkChars ${config.retrieval.maxChunkChars} (p95 chunk: ${p95chunk} chars)`);
-  }
-
-  const sourceBudgetCap = available > 0 ? Math.floor(available * 0.15) : 50_000;
-  const recommendedSourceChars =
-    untrackedSizes.length > 0
-      ? Math.max(
-          config.retrieval.maxSourceChars,
-          Math.min(maxUntracked + 500, sourceBudgetCap),
-        )
-      : config.retrieval.maxSourceChars;
-  if (maxUntracked > config.retrieval.maxSourceChars) {
-    if (truncatedSourceSections.length === 0) {
-      ok(
-        `maxSourceChars ${config.retrieval.maxSourceChars} (largest pending source: ${maxUntracked} chars; ${largeUntracked.length} file(s) will be split into ~${largeUntrackedSections.length} section call(s))`,
-      );
-    } else if (recommendedSourceChars > config.retrieval.maxSourceChars) {
-      warn(
-        `maxSourceChars ${config.retrieval.maxSourceChars} → ${recommendedSourceChars} (largest pending source: ${maxUntracked} chars; ${truncatedSourceSections.length} section(s) still need truncation after heading split)`,
-      );
-      (suggestions.retrieval ??= {}).maxSourceChars = recommendedSourceChars;
-      hasWarnings = true;
-    } else {
-      warn(
-        `largest pending source (${maxUntracked} chars) exceeds maxSourceChars ${config.retrieval.maxSourceChars}; ingest will split by headings, but ${truncatedSourceSections.length} section(s) are still too large and may be truncated`,
-      );
-      hasWarnings = true;
-    }
-  } else if (untrackedSizes.length > 0) {
-    ok(
-      `maxSourceChars ${config.retrieval.maxSourceChars} (largest pending source: ${maxUntracked} chars)`,
-    );
-  } else {
-    ok(
-      `maxSourceChars ${config.retrieval.maxSourceChars} (no pending sources in raw/untracked)`,
-    );
-  }
-
-  if (numCtxTokens && buildBudget > 0) {
-    const currentPerSlotUsage = slotContent;
-    const effectiveChunkSize = Math.max(avg(chunkSizes) || recommendedChunkChars, 400);
-    const recommendedMaxContextFiles = Math.min(
-      Math.floor(perSlotBudget / effectiveChunkSize),
-      16,
-    );
-    if (currentPerSlotUsage > perSlotBudget) {
-      err(
-        `maxContextFiles ${config.retrieval.maxContextFiles} × maxChunkChars ${config.retrieval.maxChunkChars} = ${currentPerSlotUsage} chars/slot exceeds per-slot budget (~${perSlotBudget} chars)`,
-      );
-      (suggestions.retrieval ??= {}).maxContextFiles = Math.max(
-        Math.floor(perSlotBudget / config.retrieval.maxChunkChars),
-        1,
-      );
-      hasWarnings = true;
-    } else if (
-      canRecommendLargerPrompts &&
-      recommendedMaxContextFiles > config.retrieval.maxContextFiles + 1
-    ) {
-      warn(
-        `maxContextFiles ${config.retrieval.maxContextFiles} → ${recommendedMaxContextFiles} (budget allows, avg chunk ${effectiveChunkSize} chars)`,
-      );
-      (suggestions.retrieval ??= {}).maxContextFiles = recommendedMaxContextFiles;
-      hasWarnings = true;
-    } else {
-      ok(
-        `maxContextFiles ${config.retrieval.maxContextFiles} (${Math.round(currentPerSlotUsage / 1000)}k / ~${Math.round(perSlotBudget / 1000)}k chars per slot)`,
-      );
-    }
-
-    if (config.build.slotBatchSize > optimalSlotBatchSize) {
-      err(
-        `slotBatchSize ${config.build.slotBatchSize} overflows context window (max ${optimalSlotBatchSize} slots fit)` +
-          ` — reduce to ${safeBatchSize} to leave ${Math.round((1 - SAFE_FILL) * 100)}% headroom`,
-      );
-      (suggestions.build ??= {}).slotBatchSize = safeBatchSize;
-      hasWarnings = true;
-    } else if (config.build.slotBatchSize > safeBatchSize) {
-      warn(
-        `slotBatchSize ${config.build.slotBatchSize} fills ${Math.round(fillRatio * 100)}% of context budget` +
-          ` — instruction text and JSON overhead may push past the limit (HTTP 500).` +
-          ` Reduce to ${safeBatchSize} for a safe margin.`,
-      );
-      (suggestions.build ??= {}).slotBatchSize = safeBatchSize;
-      hasWarnings = true;
-    } else if (
-      canRecommendLargerPrompts &&
-      optimalSlotBatchSize > config.build.slotBatchSize + 1 &&
-      fillRatio < 0.7
-    ) {
-      const ollamaNoFlash =
-        config.llm.provider === 'ollama' &&
-        resolvedOllamaEnv.env.OLLAMA_FLASH_ATTENTION !== '1';
-      if (ollamaNoFlash) {
-        ok(
-          `slotBatchSize ${config.build.slotBatchSize} (${Math.round(fillRatio * 100)}% fill — enable OLLAMA_FLASH_ATTENTION before increasing batch size)`,
-        );
-      } else {
-        warn(
-          `slotBatchSize ${config.build.slotBatchSize} → ${safeBatchSize} recommended` +
-            ` — context window could fit more slots, fewer LLM calls per template`,
-        );
-        (suggestions.build ??= {}).slotBatchSize = safeBatchSize;
-        hasWarnings = true;
-      }
-    } else {
-      ok(
-        `slotBatchSize ${config.build.slotBatchSize} (${Math.round(fillRatio * 100)}% fill, safe up to ${safeBatchSize})`,
-      );
-    }
-
-    const BUILD_CONTEXT_FRACTION = 0.15;
-    const currentBatchContent = config.build.slotBatchSize * slotContent;
-    const maxBuildContextForCurrentConfig = Math.max(
-      0,
-      Math.floor(available - baseOverhead - currentBatchContent / SAFE_FILL),
-    );
-    const fractionalBuildContextChars =
-      Math.round((available * BUILD_CONTEXT_FRACTION) / 500) * 500;
-    const recommendedBuildContextChars = Math.floor(
-      Math.max(
+    for (const templatePlan of buildPlan.templates) {
+      const largestBatch = Math.max(
         0,
-        Math.min(
-          maxBuildContextForCurrentConfig >= 4000 ? fractionalBuildContextChars : 0,
-          maxBuildContextForCurrentConfig,
-        ),
+        ...templatePlan.batches.map((batch) => batch.estimatedInputTokens),
+      );
+      row(
+        templatePlan.template.replace(/^templates\//, ''),
+        `${templatePlan.instructions} slot(s), ${templatePlan.batches.length} request(s), largest ~${largestBatch.toLocaleString()} input token(s)`,
+      );
+    }
+    const overTarget = buildPlan.templates.flatMap((templatePlan) =>
+      templatePlan.batches
+        .filter((batch) => batch.exceedsTarget)
+        .map((batch) => `${templatePlan.template} batch ${batch.index + 1}`),
+    );
+    const overMax = buildPlan.templates.flatMap((templatePlan) =>
+      templatePlan.batches
+        .filter((batch) => batch.exceedsMax)
+        .map((batch) => `${templatePlan.template} batch ${batch.index + 1}`),
+    );
+    if (overMax.length > 0) {
+      err(
+        `${overMax.length} planned batch(es) exceed maxInputTokensPerCall: ${overMax
+          .slice(0, 5)
+          .join(', ')}`,
+      );
+    } else {
+      ok('planned build fits maxInputTokensPerCall');
+    }
+    if (overTarget.length > 0) {
+      warn(
+        `${overTarget.length} planned batch(es) exceed targetInputTokensPerCall but remain under the hard max`,
+      );
+    }
+
+    console.log('\n── Recommended config ──────────────────────────────────────');
+    console.log('  … deriving minimal config patch from the build plan');
+    const largestBatch = Math.max(
+      0,
+      ...buildPlan.templates.flatMap((templatePlan) =>
+        templatePlan.batches.map((batch) => batch.estimatedInputTokens),
       ),
     );
-    if (buildContext.truncated) {
-      if (
-        canRecommendLargerPrompts &&
-        recommendedBuildContextChars > config.build.maxBuildContextChars
-      ) {
-        warn(
-          `build.maxBuildContextChars ${config.build.maxBuildContextChars} → ${recommendedBuildContextChars}` +
-            ` — ${buildContext.rawTotalChars} chars in build-context/ exceed the limit` +
-            ` (capped by current build/retrieval limits and ≈${BUILD_CONTEXT_FRACTION * 100}% of available context)`,
-        );
-        (suggestions.build ??= {}).maxBuildContextChars = recommendedBuildContextChars;
-        hasWarnings = true;
-      } else {
-        warn(
-          `build-context ${buildContext.rawTotalChars} chars exceeds maxBuildContextChars (${config.build.maxBuildContextChars})` +
-            (canRecommendLargerPrompts
-              ? ` — current build/retrieval limits leave at most ${recommendedBuildContextChars} safe chars for build-context/; trim files or reduce slot/context limits`
-              : ` — keeping remote-provider prompt size conservative; trim build-context/ files or raise maxBuildContextChars manually`),
-        );
-        hasWarnings = true;
-      }
-    } else if (buildContextChars > maxBuildContextForCurrentConfig) {
-      warn(
-        `build-context uses ${buildContextChars} chars, but current build/retrieval limits leave at most ${maxBuildContextForCurrentConfig} safe chars` +
-          ` — reduce maxBuildContextChars, slotBatchSize, maxContextFiles, or maxChunkChars`,
-      );
-      if (maxBuildContextForCurrentConfig < config.build.maxBuildContextChars) {
-        (suggestions.build ??= {}).maxBuildContextChars = maxBuildContextForCurrentConfig;
-      }
-      hasWarnings = true;
-    } else {
-      ok(
-        `maxBuildContextChars ${config.build.maxBuildContextChars} (${buildContextChars} chars used, safe up to ${maxBuildContextForCurrentConfig})`,
-      );
-    }
-  } else if (!numCtxTokens) {
-    if (buildContext.truncated) {
-      warn(
-        `build-context ${buildContext.rawTotalChars} chars exceeds maxBuildContextChars (${config.build.maxBuildContextChars}) — raise to at least ${buildContext.rawTotalChars}`,
-      );
-      (suggestions.build ??= {}).maxBuildContextChars = buildContext.rawTotalChars + 500;
-      hasWarnings = true;
-    }
-    warn(
-      'Set numCtx in .wikirc.yaml to enable slotBatchSize, maxContextFiles, and context budget recommendations',
+    const recommendedHardLimit = recommendedMaxInputTokens(config);
+    const recommendedTarget = recommendedTargetInputTokens(recommendedHardLimit);
+    const recommendedBuildContextChars = Math.max(
+      1000,
+      roundUp(Math.max(buildContext.rawTotalChars, buildContext.content.length) + 2000, 1000),
     );
-  }
-
-  // ── Ollama inference speed ───────────────────────────────────────────────────
-  if (config.llm.provider === 'ollama' && ollamaInfo) {
-    console.log('\n── Ollama inference speed ───────────────────────────────────');
-
-    const flashEnabled = resolvedOllamaEnv.env.OLLAMA_FLASH_ATTENTION === '1';
-    const kvType = (resolvedOllamaEnv.env.OLLAMA_KV_CACHE_TYPE ?? 'f16').toLowerCase();
-    const { isRemote: isRemoteServer } = resolvedOllamaEnv;
-
-    if (isRemoteServer && !config.llm.flashAttention && !config.llm.kvCacheType) {
-      warn(
-        'Remote Ollama — flashAttention and kvCacheType not set in .wikirc.yaml; speed analysis uses defaults (f16, no flash attention)',
-      );
-    }
-
-    // Primary driver of per-call latency
-    const retrievalCharsPerBatch =
-      config.build.slotBatchSize *
-      config.retrieval.maxContextFiles *
-      config.retrieval.maxChunkChars;
-    const inputCharsPerBatch = retrievalCharsPerBatch + overhead;
-    const inputTokensPerBatch = Math.round(inputCharsPerBatch / CHARS_PER_TOKEN);
-    row(
-      'Input context/batch:',
-      `${config.build.slotBatchSize} slots × ${config.retrieval.maxContextFiles} files × ${config.retrieval.maxChunkChars} chars` +
-        ` + ~${Math.round(overhead / 1000)}k fixed` +
-        ` ≈ ${Math.round(inputCharsPerBatch / 1000)}k chars (~${inputTokensPerBatch.toLocaleString()} tokens)`,
+    const recommendedChunkChars = Math.max(
+      1000,
+      Math.min(6000, roundUp(pct(chunkSizes, 95) + 200, 100)),
     );
-
-    // Priority 1: flash attention — O(n²) → O(n) prefill, no quality or context loss
-    if (!flashEnabled) {
-      err(
-        `OLLAMA_FLASH_ATTENTION not set — at ~${inputTokensPerBatch.toLocaleString()} tokens/batch, prefill scales O(n²) and is likely the main per-call bottleneck`,
-      );
-      if (isRemoteServer) {
-        console.log('    Fix: add  flashAttention: true  in .wikirc.yaml (llm section)');
+    const recommendedSourceChars =
+      maxUntracked > 0
+        ? Math.max(config.retrieval.maxSourceChars, roundUp(maxUntracked + 1000, 1000))
+        : config.retrieval.maxSourceChars;
+    const vectorRecommendation = compactObject({
+      enabled: config.retrieval.vector.enabled,
+      baseUrl: config.retrieval.vector.baseUrl,
+      embeddingModel: config.retrieval.vector.embeddingModel,
+      rerankerModel: config.retrieval.vector.rerankerModel,
+      topK: config.retrieval.vector.topK,
+      rerankTopK: config.retrieval.vector.rerankTopK,
+      maxResults: config.retrieval.vector.maxResults,
+    });
+    const recommendedConfig = {
+      limits: {
+        requestsPerMinute: config.limits.requestsPerMinute,
+        ...(config.limits.dailyInputTokens
+          ? { dailyInputTokens: config.limits.dailyInputTokens }
+          : {}),
+        maxInputTokensPerCall: recommendedHardLimit,
+        targetInputTokensPerCall: recommendedTarget,
+      },
+      build: {
+        slotBatchSize: 50,
+        refreshOnIngest: config.build.refreshOnIngest,
+        maxBuildContextChars: recommendedBuildContextChars,
+      },
+      retrieval: {
+        maxContextFiles: Math.max(config.retrieval.maxContextFiles, 8),
+        maxChunkChars: recommendedChunkChars,
+        maxSourceChars: recommendedSourceChars,
+        vector: vectorRecommendation,
+      },
+    };
+    const currentComparableConfig = {
+      limits: config.limits,
+      build: config.build,
+      retrieval: {
+        maxContextFiles: config.retrieval.maxContextFiles,
+        maxChunkChars: config.retrieval.maxChunkChars,
+        maxSourceChars: config.retrieval.maxSourceChars,
+        vector: vectorRecommendation,
+      },
+    };
+    const recommendedPatch =
+      diffConfigPatch(currentComparableConfig, recommendedConfig) ?? {};
+    if (config.llm.provider !== 'ollama' && config.llm.numCtx) {
+      warn('llm.numCtx is only used for Ollama; for remote providers use limits.maxInputTokensPerCall');
+    }
+    row('basis:', `largest planned batch ~${largestBatch.toLocaleString()} input token(s)`);
+    row('action:', options.apply ? 'applying to .wikirc.yaml' : 'run `wiki doctor --apply` to write these values');
+    if (Object.keys(recommendedPatch).length > 0) {
+      printYamlBlock(recommendedPatch);
+    } else {
+      ok('No config changes recommended');
+    }
+    if (options.apply) {
+      if (Object.keys(recommendedPatch).length > 0) {
+        await applyRecommendedConfig(config, recommendedPatch);
       } else {
-        console.log('    Fix: launchctl setenv OLLAMA_FLASH_ATTENTION 1');
-        console.log('         then restart Ollama');
+        ok('No changes written.');
       }
-      hasWarnings = true;
-    } else {
-      ok('OLLAMA_FLASH_ATTENTION=1 — prefill scales linearly, not quadratically');
     }
-
-    // Priority 2: numCtx vs actual prompt — oversized numCtx wastes KV cache, no quality loss
-    const totalInputTokens = inputTokensPerBatch;
-    const ctxUtilization = effectiveNumCtx ? totalInputTokens / effectiveNumCtx : 1;
-    if (effectiveNumCtx && ctxUtilization < 0.5 && effectiveNumCtx > 8192) {
-      const suggestedCtx = Math.max(
-        4096,
-        Math.ceil((totalInputTokens * 1.5) / 1024) * 1024,
-      );
-      const kvBefore =
-        ollamaInfo.blockCount > 0
-          ? estimateKvCache(ollamaInfo, effectiveNumCtx, kvType)
-          : 0;
-      const kvAfter =
-        ollamaInfo.blockCount > 0 ? estimateKvCache(ollamaInfo, suggestedCtx, kvType) : 0;
-      const savedKv = kvBefore > 0 ? ` — saves ~${gb(kvBefore - kvAfter)} KV cache` : '';
-      const suggestedSlotBatchSize =
-        typeof suggestions.build?.slotBatchSize === 'number'
-          ? suggestions.build.slotBatchSize
-          : config.build.slotBatchSize;
-      const suggestedMaxContextFiles =
-        typeof suggestions.retrieval?.maxContextFiles === 'number'
-          ? suggestions.retrieval.maxContextFiles
-          : config.retrieval.maxContextFiles;
-      const suggestedMaxChunkChars =
-        typeof suggestions.retrieval?.maxChunkChars === 'number'
-          ? suggestions.retrieval.maxChunkChars
-          : config.retrieval.maxChunkChars;
-      const suggestedInputChars =
-        suggestedSlotBatchSize * suggestedMaxContextFiles * suggestedMaxChunkChars;
-      const suggestedBuildBudget =
-        suggestedCtx * CHARS_PER_TOKEN * (1 - OUTPUT_RESERVE) - overhead;
-      const suggestedConfigFits =
-        suggestedBuildBudget > 0 &&
-        suggestedInputChars <= suggestedBuildBudget * SAFE_FILL;
-      const suffix = suggestedConfigFits
-        ? savedKv
-        : ' if current retrieval/build limits are kept';
-      warn(
-        `numCtx ${effectiveNumCtx.toLocaleString()} but prompt uses ~${totalInputTokens.toLocaleString()} tokens` +
-          ` (${Math.round(ctxUtilization * 100)}%) — numCtx ${suggestedCtx.toLocaleString()} is sufficient${suffix}`,
-      );
-      if (!suggestions.llm?.numCtx && suggestedConfigFits) {
-        (suggestions.llm ??= {}).numCtx = suggestedCtx;
-      }
-      hasWarnings = true;
-    } else if (effectiveNumCtx) {
-      ok(
-        `numCtx ${effectiveNumCtx.toLocaleString()} — prompt uses ~${totalInputTokens.toLocaleString()} tokens (${Math.round(ctxUtilization * 100)}%)`,
-      );
-    }
-
-    // Priority 3: maxContextFiles — quality tradeoff, presented as option (not auto-suggested)
-    const OLLAMA_FAST_TARGET_TOKENS = 4000;
-    if (inputTokensPerBatch > OLLAMA_FAST_TARGET_TOKENS) {
-      const fastRetrievalBudgetChars = Math.max(
-        0,
-        OLLAMA_FAST_TARGET_TOKENS * CHARS_PER_TOKEN - overhead,
-      );
-      const fastFiles = Math.max(
-        1,
-        Math.floor(
-          fastRetrievalBudgetChars /
-            (config.build.slotBatchSize * config.retrieval.maxChunkChars),
-        ),
-      );
-      if (fastFiles < config.retrieval.maxContextFiles) {
-        warn(
-          `Speed option (quality tradeoff): maxContextFiles ${config.retrieval.maxContextFiles} → ${fastFiles}` +
-            ` — reduces context/batch to ~${OLLAMA_FAST_TARGET_TOKENS.toLocaleString()} tokens` +
-            `, fewer wiki pages per slot`,
-        );
-        hasWarnings = true;
-      }
-    } else {
-      ok(
-        `Context/batch ~${inputTokensPerBatch.toLocaleString()} tokens — reasonable for local inference`,
-      );
-    }
-  }
-
-  if (!hasWarnings && Object.keys(suggestions).length === 0) {
-    ok('Configuration looks good for the current wiki');
-  }
-
-  if (Object.keys(suggestions).length > 0) {
-    printSuggestions(suggestions);
-    await confirmApplySuggestions(config, suggestions);
+  } catch (error) {
+    warn(`build plan failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   console.log('');

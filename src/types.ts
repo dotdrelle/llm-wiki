@@ -18,6 +18,13 @@ export interface BuildConfig {
   maxBuildContextChars: number;
 }
 
+export interface LimitsConfig {
+  requestsPerMinute: number;
+  dailyInputTokens?: number;
+  maxInputTokensPerCall: number;
+  targetInputTokensPerCall: number;
+}
+
 export interface RetrievalConfig {
   maxContextFiles: number;
   maxChunksPerPage: number;
@@ -28,6 +35,9 @@ export interface RetrievalConfig {
 
 export interface VectorRetrievalConfig {
   enabled: boolean;
+  baseUrl: string;
+  apiKey?: string;
+  timeoutMs: number;
   embeddingModel: string;
   rerankerModel: string;
   topK: number;
@@ -49,6 +59,7 @@ export interface AppConfig {
   configPath?: string;
   language: string;
   llm: LlmConfig;
+  limits: LimitsConfig;
   build: BuildConfig;
   retrieval: RetrievalConfig;
   mcp: McpConfig;
@@ -56,6 +67,7 @@ export interface AppConfig {
 
 export interface BuildCommandOptions {
   force?: boolean;
+  plan?: boolean;
   verbose?: boolean;
   debug?: boolean;
   traceFile?: string;
@@ -201,6 +213,37 @@ export interface DeliverableBuildResult {
   output: string;
   changed: boolean;
   skipped: boolean;
+}
+
+export interface BuildSlotPlan {
+  id: string;
+  headingPath: string[];
+  contextPages: string[];
+  estimatedInputTokens: number;
+}
+
+export interface BuildBatchPlan {
+  index: number;
+  slotIds: string[];
+  contextPages: string[];
+  estimatedInputTokens: number;
+  exceedsTarget: boolean;
+  exceedsMax: boolean;
+}
+
+export interface TemplateBuildPlan {
+  template: string;
+  output: string;
+  instructions: number;
+  batches: BuildBatchPlan[];
+  slots: BuildSlotPlan[];
+}
+
+export interface BuildRunPlan {
+  templates: TemplateBuildPlan[];
+  estimatedRequests: number;
+  estimatedInputTokens: number;
+  limits: LimitsConfig;
 }
 
 export interface SemanticLintReport {

@@ -59,6 +59,9 @@ describe('config resolution', () => {
 
     expect(config.retrieval.vector).toEqual({
       enabled: true,
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: undefined,
+      timeoutMs: 600000,
       embeddingModel: 'BAAI/bge-m3',
       rerankerModel: 'BAAI/bge-reranker-v2-m3',
       topK: 40,

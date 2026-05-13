@@ -217,7 +217,22 @@ export class RetrievalService {
       (await pathExists(this.workspace.paths.vectorIndexDir))
     ) {
       try {
-        return await this.getVectorIndex().search(query, { limit: options?.limit });
+        const vectorResults = await this.getVectorIndex().search(query, {
+          limit: options?.limit,
+        });
+        const lexicalResults = await this.searchLexical(query, {
+          ...options,
+          limit:
+            options?.limit ??
+            Math.max(
+              this.config.retrieval.maxContextFiles,
+              this.config.retrieval.vector.maxResults,
+            ),
+        });
+        return mergeResults([...vectorResults, ...lexicalResults]).slice(
+          0,
+          options?.limit ?? this.config.retrieval.vector.maxResults,
+        );
       } catch {
         // Keep retrieval robust for ingest/build/query/MCP: vector search is an
         // optimization, while lexical search is the compatibility fallback.

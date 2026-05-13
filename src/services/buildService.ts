@@ -7,13 +7,18 @@ import {
 import { buildPromptContext } from '../prompts/systemPreamble.ts';
 import { sanitizeFrontmatter } from '../utils/markdown.ts';
 import { hashText } from '../utils/hash.ts';
+import { PromptBudgetService } from './promptBudgetService.ts';
 import type {
   AppConfig,
+  BuildBatchPlan,
   BuildContext,
+  BuildRunPlan,
   BuildState,
+  BuildSlotPlan,
   DeliverableBuildResult,
   SearchResult,
   TemplateDocument,
+  WikiPage,
 } from '../types.ts';
 import type { LLMService } from './llmService.ts';
 import type { RetrievalService } from './retrievalService.ts';
@@ -26,6 +31,7 @@ export class BuildService {
   private readonly llm: LLMService;
   private readonly retrieval: RetrievalService;
   private readonly logger?: TraceLogger;
+  private readonly budget: PromptBudgetService;
 
   constructor(
     config: AppConfig,
@@ -39,6 +45,7 @@ export class BuildService {
     this.llm = llm;
     this.retrieval = retrieval;
     this.logger = logger;
+    this.budget = new PromptBudgetService(config);
   }
 
   private isContextLengthExceeded(error: unknown): boolean {
@@ -174,8 +181,9 @@ export class BuildService {
   private async renderTemplate(
     template: TemplateDocument,
     buildContext: BuildContext,
-    onBatch?: (batchIndex: number, topContextPages: string[]) => void,
-    onBatchLlm?: (batchIndex: number, topContextPages: string[]) => void,
+    wikiPages: WikiPage[],
+    onBatch?: (batchIndex: number, batchCount: number, topContextPages: string[]) => void,
+    onBatchLlm?: (batchIndex: number, batchCount: number, topContextPages: string[]) => void,
   ): Promise<string> {
     if (template.instructions.length === 0) {
       const outputFrontmatter = sanitizeFrontmatter(template.frontmatter);
@@ -184,19 +192,7 @@ export class BuildService {
         : `${template.content.trim()}\n`;
     }
 
-    const templateFocusedQueries = this.extractFocusedQueries(template.content);
-    const slots = await Promise.all(
-      template.instructions.map(async (instruction) => ({
-        id: instruction.id,
-        instruction: instruction.instruction,
-        headingPath: instruction.headingPath,
-        surroundingText: instruction.surroundingText,
-        context: await this.searchInstructionContext({
-          ...instruction,
-          templateFocusedQueries,
-        }),
-      })),
-    );
+    const slots = await this.prepareSlots(template, wikiPages);
     if (this.logger) {
       for (const slot of slots) {
         await this.logger.info('build:slot-context', {
@@ -208,19 +204,19 @@ export class BuildService {
       }
     }
 
-    const batchSize = this.config.build.slotBatchSize;
-    const batchCount = Math.ceil(slots.length / batchSize);
+    const batches = this.planSlotBatches(template, buildContext, slots);
+    const batchCount = batches.length;
     const replacements = new Map<string, string>();
 
     for (let batchIndex = 0; batchIndex < batchCount; batchIndex++) {
-      const batch = slots.slice(batchIndex * batchSize, (batchIndex + 1) * batchSize);
+      const batch = batches[batchIndex].slots;
       const topContextPages = [
         ...new Set(
           batch.flatMap((s) => s.context.map((r) => r.page.relativePath)),
         ),
       ].slice(0, 8);
-      onBatch?.(batchIndex, topContextPages);
-      onBatchLlm?.(batchIndex, topContextPages);
+      onBatch?.(batchIndex, batchCount, topContextPages);
+      onBatchLlm?.(batchIndex, batchCount, topContextPages);
       const traceData = {
         template: template.relativePath,
         instructionCount: template.instructions.length,
@@ -244,6 +240,281 @@ export class BuildService {
     return Object.keys(outputFrontmatter).length > 0
       ? matter.stringify(renderedBody.trim(), outputFrontmatter)
       : `${renderedBody.trim()}\n`;
+  }
+
+  private async prepareSlots(
+    template: TemplateDocument,
+    wikiPages: WikiPage[],
+  ): Promise<
+    Array<{
+      id: string;
+      instruction: string;
+      headingPath: string[];
+      surroundingText: string;
+      context: SearchResult[];
+    }>
+  > {
+    const wikiPageByPath = new Map(wikiPages.map((page) => [page.relativePath, page]));
+    const templateFocusQueries = [
+      ...new Set(
+        template.instructions.flatMap((instruction) =>
+          this.extractFocusQueries(instruction.instruction),
+        ),
+      ),
+    ];
+    return Promise.all(
+      template.instructions.map(async (instruction) => {
+        const primaryContext = await this.retrieval.search(
+          `${instruction.headingPath.join(' ')} ${instruction.instruction}`,
+          {
+            limit: Math.max(24, this.config.retrieval.vector.maxResults),
+            includeRaw: false,
+          },
+        );
+        const focusContexts = await Promise.all(
+          [
+            ...new Set([
+              ...this.extractFocusQueries(instruction.instruction),
+              ...templateFocusQueries,
+            ]),
+          ]
+            .slice(0, 6)
+            .map((focus) =>
+              this.retrieval.search(
+                `${instruction.headingPath.join(' ')} ${focus}`,
+                {
+                  limit: 15,
+                  includeRaw: false,
+                },
+              ),
+            ),
+        );
+        return {
+          id: instruction.id,
+          instruction: instruction.instruction,
+          headingPath: instruction.headingPath,
+          surroundingText: instruction.surroundingText,
+          context: this.expandRelatedContext(
+            this.mergeContextResults([primaryContext, ...focusContexts].flat()),
+            wikiPageByPath,
+          ),
+        };
+      }),
+    );
+  }
+
+  private extractFocusQueries(instruction: string): string[] {
+    const listText = instruction.includes(':')
+      ? instruction.split(':').slice(1).join(':').split('.')[0]
+      : '';
+    if (!listText) return [];
+    return [
+      ...new Set(
+        listText
+          .split(/,|;|\bet\b/iu)
+          .map((item) => item.trim())
+          .filter((item) => item.length >= 3)
+          .map((item) => `${item} démonstration outil solution candidate JUNO`),
+      ),
+    ];
+  }
+
+  private mergeContextResults(results: SearchResult[]): SearchResult[] {
+    const bestByPath = new Map<string, SearchResult>();
+    for (const result of results) {
+      const existing = bestByPath.get(result.page.relativePath);
+      if (!existing || result.score > existing.score) {
+        bestByPath.set(result.page.relativePath, {
+          ...result,
+          relatedPaths: [
+            ...new Set([...(existing?.relatedPaths ?? []), ...(result.relatedPaths ?? [])]),
+          ],
+        });
+      } else if (result.relatedPaths?.length) {
+        existing.relatedPaths = [
+          ...new Set([...(existing.relatedPaths ?? []), ...result.relatedPaths]),
+        ];
+      }
+    }
+    return [...bestByPath.values()].sort((a, b) => b.score - a.score);
+  }
+
+  private expandRelatedContext(
+    context: SearchResult[],
+    wikiPageByPath: Map<string, WikiPage>,
+  ): SearchResult[] {
+    const expanded = [...context];
+    const seen = new Set(expanded.map((result) => result.page.relativePath));
+    let relatedCount = 0;
+    const maxRelated = 4;
+
+    for (const result of context) {
+      for (const relatedPath of result.relatedPaths ?? []) {
+        if (relatedCount >= maxRelated) return expanded;
+        if (!relatedPath.startsWith('wiki/') || seen.has(relatedPath)) continue;
+        const page = wikiPageByPath.get(relatedPath);
+        if (!page || page.type === 'answer') continue;
+        seen.add(relatedPath);
+        relatedCount += 1;
+        expanded.push({
+          page,
+          score: Math.max(0, result.score - 0.01),
+          relatedPaths: [],
+        });
+      }
+    }
+
+    return expanded;
+  }
+
+  private promptInputChars(
+    template: TemplateDocument,
+    buildContext: BuildContext,
+    batch: Array<{
+      id: string;
+      instruction: string;
+      headingPath: string[];
+      surroundingText: string;
+      context: SearchResult[];
+    }>,
+  ): number {
+    const prompt =
+      this.config.llm.provider === 'openai-compatible' && batch.length === 1
+        ? buildSingleSlotDeliverablePrompt({
+            template,
+            slot: batch[0],
+            buildContext: buildContext.content,
+            maxChunkChars: this.config.retrieval.maxChunkChars,
+            ctx: buildPromptContext(this.config),
+          })
+        : buildDeliverablePrompt({
+            template,
+            slots: batch,
+            buildContext: buildContext.content,
+            maxChunkChars: this.config.retrieval.maxChunkChars,
+            ctx: buildPromptContext(this.config),
+          });
+    return prompt.system.length + prompt.user.length;
+  }
+
+  private trimBatchToMax(
+    template: TemplateDocument,
+    buildContext: BuildContext,
+    batch: Array<{
+      id: string;
+      instruction: string;
+      headingPath: string[];
+      surroundingText: string;
+      context: SearchResult[];
+    }>,
+  ): void {
+    while (
+      this.promptInputChars(template, buildContext, batch) > this.budget.maxInputChars()
+    ) {
+      const slot = [...batch].sort((a, b) => b.context.length - a.context.length)[0];
+      if (!slot || slot.context.length <= 1) break;
+      slot.context.pop();
+    }
+  }
+
+  private planSlotBatches(
+    template: TemplateDocument,
+    buildContext: BuildContext,
+    slots: Array<{
+      id: string;
+      instruction: string;
+      headingPath: string[];
+      surroundingText: string;
+      context: SearchResult[];
+    }>,
+  ): Array<{
+    slots: typeof slots;
+    plan: BuildBatchPlan;
+  }> {
+    const batches: Array<{ slots: typeof slots; plan: BuildBatchPlan }> = [];
+    let current: typeof slots = [];
+    const maxSlotsPerBatch = this.config.build.slotBatchSize;
+
+    const pushCurrent = () => {
+      if (current.length === 0) return;
+      this.trimBatchToMax(template, buildContext, current);
+      const chars = this.promptInputChars(template, buildContext, current);
+      batches.push({
+        slots: current,
+        plan: this.budget.describeBatch(
+          batches.length,
+          current.map((slot) => slot.id),
+          [
+            ...new Set(
+              current.flatMap((slot) => slot.context.map((result) => result.page.relativePath)),
+            ),
+          ],
+          chars,
+        ),
+      });
+      current = [];
+    };
+
+    for (const slot of slots) {
+      const candidate = [...current, slot];
+      const candidateChars = this.promptInputChars(template, buildContext, candidate);
+      const wouldExceedTarget = candidateChars > this.budget.targetInputChars();
+      const wouldExceedSlotCap = candidate.length > maxSlotsPerBatch;
+      if (current.length > 0 && (wouldExceedTarget || wouldExceedSlotCap)) {
+        pushCurrent();
+      }
+      current.push(slot);
+    }
+    pushCurrent();
+
+    return batches;
+  }
+
+  async planBuild(options?: {
+    templates?: string[];
+    onPageLoad?: (relativePath: string, index: number, total: number) => void;
+  }): Promise<BuildRunPlan> {
+    await this.workspace.ensureInitialized();
+    const templatePaths = await this.workspace.resolveTemplateInputs(
+      options?.templates ?? [],
+    );
+    const buildContext = await this.workspace.readBuildContext();
+    const wikiPages = await this.retrieval.warmCache(options?.onPageLoad);
+    const templatePlans = [];
+
+    for (const templatePath of templatePaths) {
+      const template = await this.workspace.readTemplateDocument(templatePath);
+      const slots = await this.prepareSlots(template, wikiPages);
+      const batches = this.planSlotBatches(template, buildContext, slots);
+      const slotPlans: BuildSlotPlan[] = slots.map((slot) => {
+        const chars = this.promptInputChars(template, buildContext, [slot]);
+        return {
+          id: slot.id,
+          headingPath: slot.headingPath,
+          contextPages: slot.context.map((result) => result.page.relativePath),
+          estimatedInputTokens: this.budget.estimateTokens('x'.repeat(chars), ''),
+        };
+      });
+      templatePlans.push({
+        template: template.relativePath,
+        output: template.outputRelativePath,
+        instructions: template.instructions.length,
+        batches: batches.map((batch) => batch.plan),
+        slots: slotPlans,
+      });
+    }
+
+    return {
+      templates: templatePlans,
+      estimatedRequests: templatePlans.reduce((sum, plan) => sum + plan.batches.length, 0),
+      estimatedInputTokens: templatePlans.reduce(
+        (sum, plan) =>
+          sum +
+          plan.batches.reduce((batchSum, batch) => batchSum + batch.estimatedInputTokens, 0),
+        0,
+      ),
+      limits: this.config.limits,
+    };
   }
 
   private async renderBatch(
@@ -433,8 +704,6 @@ export class BuildService {
         continue;
       }
 
-      const batchCount =
-        Math.ceil(template.instructions.length / this.config.build.slotBatchSize) || 1;
       options?.onProgress?.(
         template.relativePath,
         { index: results.length, total: templatePaths.length },
@@ -445,14 +714,15 @@ export class BuildService {
         const rendered = await this.renderTemplate(
           template,
           buildContext,
-          (batchIndex, topContextPages) => {
+          wikiPages,
+          (batchIndex, batchCount, topContextPages) => {
             options?.onProgress?.(
               template.relativePath,
               { index: batchIndex, total: batchCount },
               topContextPages,
             );
           },
-          (batchIndex, topContextPages) => {
+          (batchIndex, batchCount, topContextPages) => {
             options?.onBatchLlm?.(
               template.relativePath,
               { index: batchIndex, total: batchCount },

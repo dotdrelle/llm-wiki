@@ -47,7 +47,7 @@ export function buildDeliverablePrompt(args: {
       'Use only the provided wiki context. Never fabricate facts, names, or numbers.',
       'When context is insufficient, write a short note: "> Évidence manquante dans le wiki — à compléter."',
       'Do not repeat headings already present in the template.',
-      'Cite factual claims with [src: path/to/wiki/page.md].',
+      'Cite factual claims with the provided Context citation path, preferably wiki/concepts/ or wiki/sources/. Do not replace a context page citation with nested raw/ingested citations unless the raw source is the only available evidence.',
       args.buildContext
         ? `Common generation rules from build-context/:\n${args.buildContext}`
         : '',
@@ -99,7 +99,7 @@ export function buildSingleSlotDeliverablePrompt(args: {
       'Use only the provided wiki context. Never fabricate facts, names, or numbers.',
       'When context is insufficient, write a short note: "> Évidence manquante dans le wiki — à compléter."',
       'Do not repeat headings already present in the template.',
-      'Cite factual claims with [src: path/to/wiki/page.md].',
+      'Cite factual claims with the provided Context citation path, preferably wiki/concepts/ or wiki/sources/. Do not replace a context page citation with nested raw/ingested citations unless the raw source is the only available evidence.',
       args.buildContext
         ? `Common generation rules from build-context/:\n${args.buildContext}`
         : '',

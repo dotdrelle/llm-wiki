@@ -35,15 +35,19 @@ async function findConfigPath(startDir: string): Promise<string | undefined> {
 }
 
 export async function loadConfig(startDir: string): Promise<AppConfig> {
-  const configPath = await findConfigPath(startDir);
+  const workspaceRoot = process.env.WIKI_WORKSPACE
+    ? path.resolve(process.env.WIKI_WORKSPACE)
+    : undefined;
+  const searchRoot = workspaceRoot ?? startDir;
+  const configPath = await findConfigPath(searchRoot);
 
   if (!configPath) {
-    return resolveConfig({}, path.resolve(startDir));
+    return resolveConfig({}, path.resolve(searchRoot));
   }
 
   const rawText = await readFile(configPath, 'utf8');
   const rawConfig = rawText.trim() ? YAML.parse(rawText) : {};
-  const wikiRoot = path.dirname(configPath);
+  const wikiRoot = workspaceRoot ?? path.dirname(configPath);
 
   return resolveConfig(rawConfig, wikiRoot, configPath);
 }

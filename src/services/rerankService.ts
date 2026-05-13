@@ -18,12 +18,12 @@ export class RerankService {
     topN: number,
   ): Promise<RerankResult[]> {
     if (documents.length === 0) return [];
-    const res = await fetch(`${this.config.llm.baseUrl.replace(/\/$/, '')}/rerank`, {
+    const res = await fetch(`${this.config.retrieval.vector.baseUrl.replace(/\/$/, '')}/rerank`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(this.config.llm.apiKey
-          ? { Authorization: `Bearer ${this.config.llm.apiKey}` }
+        ...(this.config.retrieval.vector.apiKey
+          ? { Authorization: `Bearer ${this.config.retrieval.vector.apiKey}` }
           : {}),
       },
       body: JSON.stringify({
@@ -32,7 +32,7 @@ export class RerankService {
         documents,
         top_n: Math.min(topN, documents.length),
       }),
-      signal: AbortSignal.timeout(this.config.llm.timeoutMs),
+      signal: AbortSignal.timeout(this.config.retrieval.vector.timeoutMs),
     });
 
     const raw = await res.text();

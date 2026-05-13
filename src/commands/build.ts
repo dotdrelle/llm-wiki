@@ -29,6 +29,44 @@ export default async function buildCmd(
 
   const spinner = options.verbose || options.debug ? null : new Spinner('Building deliverables…');
   try {
+    if (options.plan) {
+      spinner?.start();
+      const plan = await service.planBuild({
+        templates,
+        onPageLoad: (relativePath, index, total) => {
+          spinner?.update(`Reading wiki (${index + 1}/${total})…`);
+          spinner?.updateSub(relativePath);
+        },
+      });
+      spinner?.stop();
+      console.log(`Build plan: ${plan.estimatedRequests} request(s), ~${plan.estimatedInputTokens.toLocaleString()} input token(s)`);
+      console.log(
+        `Limits: ${plan.limits.requestsPerMinute} req/min, target ${plan.limits.targetInputTokensPerCall.toLocaleString()} input tokens/call, max ${plan.limits.maxInputTokensPerCall.toLocaleString()}`,
+      );
+      if (typeof plan.limits.dailyInputTokens === 'number') {
+        console.log(`Daily input budget: ${plan.limits.dailyInputTokens.toLocaleString()} token(s)`);
+      }
+      for (const templatePlan of plan.templates) {
+        console.log(`\n${templatePlan.template} -> ${templatePlan.output}`);
+        console.log(`  ${templatePlan.instructions} slot(s), ${templatePlan.batches.length} batch(es)`);
+        for (const batch of templatePlan.batches) {
+          const flags = [
+            batch.exceedsTarget ? 'over target' : undefined,
+            batch.exceedsMax ? 'over max' : undefined,
+          ]
+            .filter(Boolean)
+            .join(', ');
+          console.log(
+            `  - batch ${batch.index + 1}: ${batch.slotIds.length} slot(s), ~${batch.estimatedInputTokens.toLocaleString()} input token(s)${flags ? ` (${flags})` : ''}`,
+          );
+          if (batch.contextPages.length > 0) {
+            console.log(`    context: ${batch.contextPages.slice(0, 6).join(', ')}${batch.contextPages.length > 6 ? ', ...' : ''}`);
+          }
+        }
+      }
+      return;
+    }
+
     spinner?.start();
     const results = await service.build({
       templates,

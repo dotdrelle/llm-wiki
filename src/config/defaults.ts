@@ -14,6 +14,11 @@ export const defaultConfig: AppConfig = {
     temperature: 0.1,
     timeoutMs: 600000,
   },
+  limits: {
+    requestsPerMinute: 10,
+    maxInputTokensPerCall: 50000,
+    targetInputTokensPerCall: 40000,
+  },
   build: {
     refreshOnIngest: true,
     slotBatchSize: 3,
@@ -26,6 +31,8 @@ export const defaultConfig: AppConfig = {
     maxSourceChars: 8000,
     vector: {
       enabled: true,
+      baseUrl: DEFAULT_OPENAI_BASE_URL,
+      timeoutMs: 600000,
       embeddingModel: 'BAAI/bge-m3',
       rerankerModel: 'BAAI/bge-reranker-v2-m3',
       topK: 120,

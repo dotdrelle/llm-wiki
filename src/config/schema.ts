@@ -243,6 +243,28 @@ const buildSchema = z
     maxBuildContextChars: 12000,
   });
 
+const limitsSchema = z
+  .object({
+    requestsPerMinute: z.number().int().min(1).default(10),
+    dailyInputTokens: z.number().int().min(1).optional(),
+    maxInputTokensPerCall: z.number().int().min(1000).default(50000),
+    targetInputTokensPerCall: z.number().int().min(1000).default(40000),
+  })
+  .default({
+    requestsPerMinute: 10,
+    maxInputTokensPerCall: 50000,
+    targetInputTokensPerCall: 40000,
+  })
+  .superRefine((limits, ctx) => {
+    if (limits.targetInputTokensPerCall > limits.maxInputTokensPerCall) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['targetInputTokensPerCall'],
+        message: 'targetInputTokensPerCall must be <= maxInputTokensPerCall',
+      });
+    }
+  });
+
 const retrievalSchema = z
   .object({
     maxContextFiles: z.number().int().min(1).max(24).default(5),
@@ -252,6 +274,9 @@ const retrievalSchema = z
     vector: z
       .object({
         enabled: z.boolean().default(true),
+        baseUrl: z.string().url().optional(),
+        apiKey: z.string().min(1).optional(),
+        timeoutMs: z.number().int().min(1000).default(600000).optional(),
         embeddingModel: z.string().min(1).default('BAAI/bge-m3'),
         rerankerModel: z.string().min(1).default('BAAI/bge-reranker-v2-m3'),
         topK: z.number().int().min(1).max(200).default(120),
@@ -260,6 +285,7 @@ const retrievalSchema = z
       })
       .default({
         enabled: true,
+        timeoutMs: 600000,
         embeddingModel: 'BAAI/bge-m3',
         rerankerModel: 'BAAI/bge-reranker-v2-m3',
         topK: 120,
@@ -274,6 +300,8 @@ const retrievalSchema = z
     maxSourceChars: 8000,
     vector: {
       enabled: true,
+      baseUrl: DEFAULT_OPENAI_BASE_URL,
+      timeoutMs: 600000,
       embeddingModel: 'BAAI/bge-m3',
       rerankerModel: 'BAAI/bge-reranker-v2-m3',
       topK: 120,
@@ -302,6 +330,7 @@ export const rawConfigSchema = z.object({
   wikiRoot: z.string().optional(),
   language: z.string().min(2).max(20).default('fr').optional(),
   llm: llmSchema.optional(),
+  limits: limitsSchema.optional(),
   build: buildSchema.optional(),
   retrieval: retrievalSchema.optional(),
   mcp: mcpSchema.optional(),
@@ -428,6 +457,13 @@ export function resolveConfig(
     (provider === 'anthropic' ? process.env.ANTHROPIC_API_KEY : undefined) ??
     (provider === 'ollama' ? 'ollama' : undefined);
 
+  const vectorBaseUrl = parsed.retrieval?.vector?.baseUrl ?? baseUrl;
+  const vectorApiKey =
+    parsed.retrieval?.vector?.apiKey ??
+    process.env.WIKI_VECTOR_API_KEY ??
+    process.env.ALBERT_API_KEY ??
+    apiKey;
+
   const mcpCertPath = parsed.mcp?.tls?.certPath ?? process.env.WIKI_MCP_TLS_CERT_PATH;
   const mcpKeyPath = parsed.mcp?.tls?.keyPath ?? process.env.WIKI_MCP_TLS_KEY_PATH;
   const mcpCaPath = parsed.mcp?.tls?.caPath ?? process.env.WIKI_MCP_TLS_CA_PATH;
@@ -462,6 +498,12 @@ export function resolveConfig(
       flashAttention: parsed.llm?.flashAttention,
       kvCacheType: parsed.llm?.kvCacheType,
     },
+    limits: {
+      requestsPerMinute: parsed.limits?.requestsPerMinute ?? 10,
+      dailyInputTokens: parsed.limits?.dailyInputTokens,
+      maxInputTokensPerCall: parsed.limits?.maxInputTokensPerCall ?? 50000,
+      targetInputTokensPerCall: parsed.limits?.targetInputTokensPerCall ?? 40000,
+    },
     build: {
       refreshOnIngest: parsed.build?.refreshOnIngest ?? true,
       slotBatchSize: parsed.build?.slotBatchSize ?? 3,
@@ -474,6 +516,9 @@ export function resolveConfig(
       maxSourceChars: parsed.retrieval?.maxSourceChars ?? 8000,
       vector: {
         enabled: parsed.retrieval?.vector?.enabled ?? true,
+        baseUrl: vectorBaseUrl,
+        apiKey: vectorApiKey,
+        timeoutMs: parsed.retrieval?.vector?.timeoutMs ?? parsed.llm?.timeoutMs ?? 600000,
         embeddingModel: parsed.retrieval?.vector?.embeddingModel ?? 'BAAI/bge-m3',
         rerankerModel:
           parsed.retrieval?.vector?.rerankerModel ?? 'BAAI/bge-reranker-v2-m3',

@@ -80,6 +80,7 @@ async function main() {
     .description('Generate deliverables from markdown templates with [[INSTRUCTION: ...]] slots')
     .argument('[templates...]', 'Specific template files to build')
     .option('--force', 'Rebuild even if the template is already up to date')
+    .option('--plan', 'Plan batches and estimated input tokens without calling the generation LLM')
     .option('-v, --verbose', 'Print build step traces')
     .option('--debug', 'Print detailed build traces')
     .option('--trace-file <path>', 'Write traces to a specific file relative to the workspace root')
@@ -104,7 +105,8 @@ async function main() {
   program
     .command('doctor')
     .description('Check .wikirc.yaml, test provider connectivity, and recommend optimal settings')
-    .action(() => doctorCmd(config));
+    .option('--apply', 'Apply the recommended .wikirc.yaml values')
+    .action((options) => doctorCmd(config, options));
 
   program
     .command('mcp')

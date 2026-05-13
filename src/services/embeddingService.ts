@@ -9,19 +9,19 @@ export class EmbeddingService {
 
   async embed(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) return [];
-    const res = await fetch(`${this.config.llm.baseUrl.replace(/\/$/, '')}/embeddings`, {
+    const res = await fetch(`${this.config.retrieval.vector.baseUrl.replace(/\/$/, '')}/embeddings`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(this.config.llm.apiKey
-          ? { Authorization: `Bearer ${this.config.llm.apiKey}` }
+        ...(this.config.retrieval.vector.apiKey
+          ? { Authorization: `Bearer ${this.config.retrieval.vector.apiKey}` }
           : {}),
       },
       body: JSON.stringify({
         model: this.config.retrieval.vector.embeddingModel,
         input: texts,
       }),
-      signal: AbortSignal.timeout(this.config.llm.timeoutMs),
+      signal: AbortSignal.timeout(this.config.retrieval.vector.timeoutMs),
     });
 
     const raw = await res.text();

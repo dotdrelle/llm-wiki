@@ -10,5 +10,5 @@ export function formatContextResult(result: SearchResult, maxChunkChars: number)
       ? `${result.page.relativePath} — ${result.chunk.headingPath.join(' > ')}`
       : result.page.relativePath;
 
-  return `### ${label}\nScore: ${result.score}\n${content}`;
+  return `### ${label}\nContext citation: [src: ${result.page.relativePath}]\nScore: ${result.score}\n${content}`;
 }

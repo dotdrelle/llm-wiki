@@ -26,6 +26,11 @@ function createConfig(): AppConfig {
       temperature: 0.1,
       timeoutMs: 600000,
     },
+    limits: {
+      requestsPerMinute: 10,
+      maxInputTokensPerCall: 50000,
+      targetInputTokensPerCall: 40000,
+    },
     build: {
       refreshOnIngest: false,
       slotBatchSize: 5,
@@ -38,6 +43,8 @@ function createConfig(): AppConfig {
       maxSourceChars: 8000,
       vector: {
         enabled: false,
+        baseUrl: 'http://127.0.0.1:11434/v1',
+        timeoutMs: 600000,
         embeddingModel: 'BAAI/bge-m3',
         rerankerModel: 'BAAI/bge-reranker-v2-m3',
         topK: 120,
