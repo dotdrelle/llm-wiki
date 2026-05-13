@@ -11,6 +11,7 @@ import type { WorkspaceService } from './workspaceService.ts';
 import { EmbeddingService } from './embeddingService.ts';
 import { RerankService } from './rerankService.ts';
 import { VectorIndexService } from './vectorIndexService.ts';
+import type { TraceLogger } from './traceLogger.ts';
 
 const STOP_WORDS = new Set([
   'the',
@@ -176,12 +177,15 @@ function mergeResults(results: SearchResult[]): SearchResult[] {
 export class RetrievalService {
   private readonly workspace: WorkspaceService;
   private readonly config: AppConfig;
+  private readonly logger?: TraceLogger;
   private wikiPagesCache: Promise<WikiPage[]> | undefined;
   private vectorIndex: VectorIndexService | undefined;
+  private readonly loggedVectorFallbacks = new Set<string>();
 
-  constructor(workspace: WorkspaceService, config: AppConfig) {
+  constructor(workspace: WorkspaceService, config: AppConfig, logger?: TraceLogger) {
     this.workspace = workspace;
     this.config = config;
+    this.logger = logger;
   }
 
   invalidateCache(): void {
@@ -211,11 +215,12 @@ export class RetrievalService {
     query: string,
     options?: { limit?: number; includeRaw?: boolean },
   ): Promise<SearchResult[]> {
-    if (
-      !options?.includeRaw &&
-      this.config.retrieval.vector.enabled &&
-      (await pathExists(this.workspace.paths.vectorIndexDir))
-    ) {
+    if (!options?.includeRaw && this.config.retrieval.vector.enabled) {
+      if (!(await pathExists(this.workspace.paths.vectorIndexDir))) {
+        await this.logVectorFallback('missing-index', query);
+        return this.searchLexical(query, options);
+      }
+
       try {
         const vectorResults = await this.getVectorIndex().search(query, {
           limit: options?.limit,
@@ -233,13 +238,32 @@ export class RetrievalService {
           0,
           options?.limit ?? this.config.retrieval.vector.maxResults,
         );
-      } catch {
+      } catch (error) {
+        await this.logVectorFallback('vector-error', query, error);
         // Keep retrieval robust for ingest/build/query/MCP: vector search is an
         // optimization, while lexical search is the compatibility fallback.
       }
     }
 
     return this.searchLexical(query, options);
+  }
+
+  private async logVectorFallback(
+    reason: 'missing-index' | 'vector-error',
+    query: string,
+    error?: unknown,
+  ): Promise<void> {
+    if (!this.logger) return;
+    const key = reason === 'missing-index' ? reason : `${reason}:${String(error)}`;
+    if (this.loggedVectorFallbacks.has(key)) return;
+    this.loggedVectorFallbacks.add(key);
+    await this.logger.warn('retrieval:vector-fallback', {
+      reason,
+      indexPath: this.workspace.paths.vectorIndexDir,
+      queryPreview: query.slice(0, 160),
+      fallback: 'lexical',
+      ...(error ? { message: error instanceof Error ? error.message : String(error) } : {}),
+    });
   }
 
   private async searchLexical(

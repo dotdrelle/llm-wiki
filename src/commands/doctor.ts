@@ -2,7 +2,6 @@ import os from 'node:os';
 import { execSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { createInterface } from 'node:readline/promises';
 import YAML from 'yaml';
 import { splitByHeadings, splitSourceSections } from '../utils/markdown.ts';
 import { BuildService } from '../services/buildService.ts';
@@ -14,10 +13,6 @@ import { VectorIndexService } from '../services/vectorIndexService.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import type { AppConfig } from '../types.ts';
 import { pathExists, safeWriteFile } from '../utils/fs.ts';
-
-const CHARS_PER_TOKEN = 4;
-const OUTPUT_RESERVE = 0.25;
-const SYSTEM_PROMPT_OVERHEAD = 2000;
 
 // Bits per weight for common GGUF quantizations (including block overhead)
 const QUANT_BITS: Record<string, number> = {
@@ -80,17 +75,6 @@ function parseParamSize(raw: string): number {
   const n = parseFloat(m[1] ?? '0');
   const unit = (m[2] ?? '').toUpperCase();
   return unit === 'B' ? n * 1e9 : unit === 'M' ? n * 1e6 : n;
-}
-
-function contextWindowTokens(config: AppConfig): number | undefined {
-  if (config.llm.provider === 'ollama') return config.llm.numCtx;
-  if (config.llm.provider === 'openai') return 1_000_000;
-  if (config.llm.provider === 'anthropic') return 200_000;
-  return config.llm.numCtx;
-}
-
-function omitsTemperature(config: AppConfig): boolean {
-  return config.llm.provider === 'openai' && /^gpt-5(?:[.-]|$)/i.test(config.llm.model);
 }
 
 const ok = (msg: string) => console.log(`  ✓ ${msg}`);
@@ -410,67 +394,6 @@ function readOllamaProcessEnv(): {
   } catch {
     return { source: 'cli-shell', env: process.env };
   }
-}
-
-function printSuggestions(suggestions: SuggestedConfig): void {
-  console.log('\n── Suggested .wikirc.yaml changes ───────────────────────────');
-  for (const [section, keys] of Object.entries(suggestions)) {
-    console.log(`  ${section}:`);
-    for (const [key, value] of Object.entries(keys)) {
-      console.log(`    ${key}: ${value}`);
-    }
-  }
-}
-
-function applySuggestionsToObject(
-  rawConfig: unknown,
-  suggestions: SuggestedConfig,
-): Record<string, unknown> {
-  const next =
-    rawConfig && typeof rawConfig === 'object' && !Array.isArray(rawConfig)
-      ? { ...(rawConfig as Record<string, unknown>) }
-      : {};
-
-  for (const [section, keys] of Object.entries(suggestions)) {
-    const currentSection =
-      next[section] && typeof next[section] === 'object' && !Array.isArray(next[section])
-        ? { ...(next[section] as Record<string, unknown>) }
-        : {};
-    for (const [key, value] of Object.entries(keys)) {
-      currentSection[key] = value;
-    }
-    next[section] = currentSection;
-  }
-
-  return next;
-}
-
-async function confirmApplySuggestions(
-  config: AppConfig,
-  suggestions: SuggestedConfig,
-): Promise<void> {
-  if (Object.keys(suggestions).length === 0) return;
-  if (!process.stdin.isTTY) return;
-
-  const configPath = config.configPath ?? path.join(config.wikiRoot, '.wikirc.yaml');
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const answer = await rl.question(`\nApply these changes to ${configPath}? [y/N] `);
-    if (!/^(y|yes|o|oui)$/i.test(answer.trim())) {
-      console.log('No changes written.');
-      return;
-    }
-  } finally {
-    rl.close();
-  }
-
-  const rawText = (await pathExists(configPath))
-    ? await readFile(configPath, 'utf8')
-    : '';
-  const rawConfig = rawText.trim() ? YAML.parse(rawText) : {};
-  const nextConfig = applySuggestionsToObject(rawConfig, suggestions);
-  await safeWriteFile(configPath, YAML.stringify(nextConfig));
-  ok(`Updated ${configPath}`);
 }
 
 // ── provider connectivity ─────────────────────────────────────────────────────
@@ -875,9 +798,6 @@ export default async function doctorCmd(
   );
   const largeUntrackedSections = largeUntracked.flatMap((source) =>
     splitSourceSections(source.content, config.retrieval.maxSourceChars),
-  );
-  const truncatedSourceSections = largeUntrackedSections.filter((section) =>
-    section.includes('[section truncated]'),
   );
   if (largeUntracked.length > 0) {
     warn(

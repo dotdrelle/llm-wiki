@@ -337,10 +337,13 @@ export class WorkspaceService {
     });
   }
 
-  async applyWikiOperations(operations: WikiOperation[]): Promise<void> {
-    const normalizedOperations = await this.normalizeWikiOperations(operations);
+  private async applyWikiOperationsAtomic(operations: WikiOperation[]): Promise<void> {
+    const snapshots = new Map<
+      string,
+      { absolutePath: string; existed: boolean; content?: string }
+    >();
 
-    for (const operation of normalizedOperations) {
+    for (const operation of operations) {
       if (!operation.path.startsWith('wiki/')) {
         throw new Error(`Only wiki/* paths are allowed during ingest: ${operation.path}`);
       }
@@ -348,24 +351,56 @@ export class WorkspaceService {
       if (operation.type !== 'delete' && typeof operation.content !== 'string') {
         throw new Error(`Operation ${operation.path} requires content.`);
       }
-    }
 
-    for (const operation of normalizedOperations) {
       const absolutePath = resolveInside(
         this.paths.wikiDir,
         operation.path.slice('wiki/'.length),
       );
-
-      switch (operation.type) {
-        case 'create':
-        case 'update':
-          await writeIfChanged(absolutePath, operation.content ?? '');
-          break;
-        case 'delete':
-          await removeIfExists(absolutePath);
-          break;
+      if (!snapshots.has(absolutePath)) {
+        const existed = await pathExists(absolutePath);
+        snapshots.set(absolutePath, {
+          absolutePath,
+          existed,
+          ...(existed ? { content: await readFile(absolutePath, 'utf8') } : {}),
+        });
       }
     }
+
+    try {
+      for (const operation of operations) {
+        const absolutePath = resolveInside(
+          this.paths.wikiDir,
+          operation.path.slice('wiki/'.length),
+        );
+
+        switch (operation.type) {
+          case 'create':
+          case 'update':
+            await writeIfChanged(absolutePath, operation.content ?? '');
+            break;
+          case 'delete':
+            await removeIfExists(absolutePath);
+            break;
+        }
+      }
+    } catch (error) {
+      for (const snapshot of [...snapshots.values()].reverse()) {
+        if (snapshot.existed) {
+          await safeWriteFile(snapshot.absolutePath, snapshot.content ?? '');
+        } else {
+          await removeIfExists(snapshot.absolutePath);
+        }
+      }
+      throw error;
+    }
+  }
+
+  async applyWikiOperations(operations: WikiOperation[]): Promise<void> {
+    await this.applyWikiOperationsAtomic(await this.normalizeWikiOperations(operations));
+  }
+
+  async applyNormalizedWikiOperations(operations: WikiOperation[]): Promise<void> {
+    await this.applyWikiOperationsAtomic(operations);
   }
 
   async listTemplatePaths(): Promise<string[]> {

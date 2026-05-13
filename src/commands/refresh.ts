@@ -24,7 +24,7 @@ export default async function refreshCmd(
   console.log(`Trace file: ${logger.displayPath}`);
 
   const llm = new LLMService(config);
-  const retrieval = new RetrievalService(workspace, config);
+  const retrieval = new RetrievalService(workspace, config, logger);
   const service = new RefreshService(config, workspace, llm, retrieval, logger);
 
   const spinner = options.verbose || options.debug ? null : new Spinner('Building deliverables…');

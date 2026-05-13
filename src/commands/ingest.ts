@@ -52,7 +52,7 @@ export default async function ingestCmd(
   console.log(`Trace file: ${logger.displayPath}`);
 
   const llm = new LLMService(config);
-  const retrieval = new RetrievalService(workspace, config);
+  const retrieval = new RetrievalService(workspace, config, logger);
   const refresh = new RefreshService(config, workspace, llm, retrieval, logger);
   const service = new IngestService(config, workspace, llm, retrieval, refresh, logger);
 

@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -93,6 +93,33 @@ describe('workspace safety', () => {
         },
       ]),
     ).rejects.toThrow(/escapes workspace root/i);
+  });
+
+  it('rolls back already written wiki files when an atomic apply fails', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Original Index\n', 'utf8');
+    await writeFile(path.join(root, 'wiki', 'blocked'), 'not a directory\n', 'utf8');
+    const workspace = new WorkspaceService(createConfig(root));
+
+    await expect(
+      workspace.applyWikiOperations([
+        {
+          type: 'update',
+          path: 'wiki/index.md',
+          content: '# Mutated Index\n',
+        },
+        {
+          type: 'create',
+          path: 'wiki/blocked/page.md',
+          content: '# Cannot write\n',
+        },
+      ]),
+    ).rejects.toThrow();
+
+    await expect(readFile(path.join(root, 'wiki', 'index.md'), 'utf8')).resolves.toBe(
+      '# Original Index\n',
+    );
   });
 
   it('limits build-context content with maxBuildContextChars', async () => {

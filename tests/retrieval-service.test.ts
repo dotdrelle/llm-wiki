@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { RetrievalService } from '../src/services/retrievalService.ts';
 import { WorkspaceService } from '../src/services/workspaceService.ts';
 import type { AppConfig } from '../src/types.ts';
+import type { TraceLogger } from '../src/services/traceLogger.ts';
 
 function createConfig(root: string): AppConfig {
   return {
@@ -48,6 +49,34 @@ function createConfig(root: string): AppConfig {
   };
 }
 
+class MemoryTraceLogger implements TraceLogger {
+  readonly runId = 'test-run';
+  readonly filePath = '/tmp/wiki/.wiki/logs/test.log';
+  readonly displayPath = '.wiki/logs/test.log';
+  readonly debugEnabled = false;
+  readonly verboseEnabled = false;
+  readonly entries: Array<{ level: string; event: string; data?: Record<string, unknown> }> =
+    [];
+
+  async info(event: string, data?: Record<string, unknown>): Promise<void> {
+    this.entries.push({ level: 'info', event, data });
+  }
+
+  async debug(event: string, data?: Record<string, unknown>): Promise<void> {
+    this.entries.push({ level: 'debug', event, data });
+  }
+
+  async warn(event: string, data?: Record<string, unknown>): Promise<void> {
+    this.entries.push({ level: 'warn', event, data });
+  }
+
+  async error(event: string, data?: Record<string, unknown>): Promise<void> {
+    this.entries.push({ level: 'error', event, data });
+  }
+
+  async close(): Promise<void> {}
+}
+
 describe('retrieval service', () => {
   it('includes raw/ingested files only when explicitly requested', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-retrieval-'));
@@ -81,5 +110,25 @@ describe('retrieval service', () => {
     expect(withRaw.map((result) => result.page.relativePath)).toContain(
       'raw/ingested/architecture-source.md',
     );
+  });
+
+  it('logs when vector retrieval falls back to lexical search', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-retrieval-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Index\n\nArchitecture.\n', 'utf8');
+
+    const config = createConfig(root);
+    const logger = new MemoryTraceLogger();
+    const retrieval = new RetrievalService(new WorkspaceService(config), config, logger);
+
+    const results = await retrieval.search('architecture', { includeRaw: false });
+
+    expect(results.map((result) => result.page.relativePath)).toContain('wiki/index.md');
+    expect(
+      logger.entries.find((entry) => entry.event === 'retrieval:vector-fallback')?.data,
+    ).toMatchObject({
+      reason: 'missing-index',
+      fallback: 'lexical',
+    });
   });
 });

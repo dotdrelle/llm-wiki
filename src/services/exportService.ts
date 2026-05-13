@@ -112,6 +112,14 @@ export function exportOutputPath(deliverablePath: string, options: ExportOptions
   const ext = path.extname(deliverablePath);
   const base = deliverablePath.slice(0, deliverablePath.length - ext.length);
 
+  if (!options.polish && base.endsWith('.export')) {
+    return deliverablePath;
+  }
+
+  if (options.polish && base.endsWith('.export.polished')) {
+    return deliverablePath;
+  }
+
   if (options.polish && base.endsWith('.export')) {
     return `${base}.polished${ext}`;
   }

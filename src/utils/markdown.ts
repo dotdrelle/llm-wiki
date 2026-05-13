@@ -1,4 +1,3 @@
-import matter from 'gray-matter';
 import type { DeliverableReplacement, TemplateInstruction } from '../types.ts';
 
 export interface MarkdownChunk {
@@ -194,10 +193,6 @@ export function replaceInstructions(
   }
 
   return nextContent;
-}
-
-export function stripBuildFrontmatter(markdown: string): string {
-  return matter(markdown).content.trim();
 }
 
 export function sanitizeFrontmatter(

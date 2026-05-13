@@ -291,19 +291,7 @@ export class IngestService {
             delete: operationCounts.delete,
           });
 
-          if (!options?.dryRun) {
-            const applyStartedAt = Date.now();
-            await this.workspace.applyWikiOperations(citationSafeOperations);
-            this.retrieval.invalidateCache();
-            await this.logger.info('ingest:apply', {
-              source: source.relativePath,
-              durationMs: Date.now() - applyStartedAt,
-              create: operationCounts.create,
-              update: operationCounts.update,
-              delete: operationCounts.delete,
-              ...(sections.length > 1 && { section: `${sectionIndex + 1}/${sections.length}` }),
-            });
-          } else {
+          if (options?.dryRun) {
             await this.logger.info('ingest:dry-run', {
               source: source.relativePath,
               ...(sections.length > 1 && { section: `${sectionIndex + 1}/${sections.length}` }),
@@ -317,6 +305,26 @@ export class IngestService {
         }
 
         if (!options?.dryRun) {
+          const operationCounts = allOperations.reduce(
+            (counts, operation) => {
+              counts[operation.type] += 1;
+              return counts;
+            },
+            { create: 0, update: 0, delete: 0 },
+          );
+          const applyStartedAt = Date.now();
+          await this.workspace.applyNormalizedWikiOperations(allOperations);
+          this.retrieval.invalidateCache();
+          await this.logger.info('ingest:apply', {
+            source: source.relativePath,
+            durationMs: Date.now() - applyStartedAt,
+            create: operationCounts.create,
+            update: operationCounts.update,
+            delete: operationCounts.delete,
+            atomic: true,
+            sections: sections.length,
+          });
+
           const archiveStartedAt = Date.now();
           await this.workspace.archiveSource(source);
           await this.logger.info('ingest:archive', {

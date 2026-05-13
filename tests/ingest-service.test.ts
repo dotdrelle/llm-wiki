@@ -104,6 +104,14 @@ class FakeWorkspaceService {
   }
 
   async applyWikiOperations(operations: WikiOperation[]): Promise<void> {
+    await this.applyWikiOperationsAtomic(operations);
+  }
+
+  async applyNormalizedWikiOperations(operations: WikiOperation[]): Promise<void> {
+    await this.applyWikiOperationsAtomic(operations);
+  }
+
+  private async applyWikiOperationsAtomic(operations: WikiOperation[]): Promise<void> {
     if (this.failApply) {
       throw new Error('disk write failed');
     }
@@ -319,7 +327,7 @@ describe('ingest service', () => {
     ).toMatchObject({ rewrittenCitations: 1 });
   });
 
-  it('ingests oversized sources section by section before archiving once', async () => {
+  it('plans oversized sources section by section then applies atomically before archiving once', async () => {
     const workspace = new FakeWorkspaceService();
     workspace.sourceBody = [
       '# Large source',
@@ -347,12 +355,16 @@ describe('ingest service', () => {
     const results = await service.ingest([], {});
 
     expect(llm.calls).toBe(2);
-    expect(workspace.appliedBatches).toHaveLength(2);
-    expect(retrieval.invalidateCalls).toBe(2);
+    expect(workspace.appliedBatches).toHaveLength(1);
+    expect(workspace.appliedBatches[0]).toHaveLength(2);
+    expect(retrieval.invalidateCalls).toBe(1);
     expect(workspace.archivedSources).toEqual(['raw/untracked/note.md']);
     expect(results[0].plan?.operations).toHaveLength(2);
-    expect(workspace.readIndexAppliedCounts).toContain(1);
+    expect(workspace.readIndexAppliedCounts).toEqual([0, 0]);
     expect(logger.entries.some((entry) => entry.event === 'ingest:split')).toBe(true);
+    expect(
+      logger.entries.find((entry) => entry.event === 'ingest:apply')?.data,
+    ).toMatchObject({ atomic: true, sections: 2 });
   });
 
   it('continues ingesting remaining sources when one source fails', async () => {
