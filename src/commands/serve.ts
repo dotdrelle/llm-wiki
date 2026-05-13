@@ -481,15 +481,38 @@ function layout(title: string, body: string): string {
     .graph-node:hover circle { stroke: var(--accent); stroke-width: 3; }
     .graph-node.is-selected circle { stroke: var(--accent); stroke-width: 4; }
     .graph-node.is-hovered circle { stroke: #2f9e44; stroke-width: 4; }
-    .graph-node.source circle { fill: #d7663b; }
-    .graph-node.wiki circle { fill: #176b87; }
+    .graph-node.raw-source circle { fill: #d7663b; }
+    .graph-node.wiki-source circle { fill: #0e7490; }
+    .graph-node.wiki circle { fill: #c8a500; }
     .graph-node.deliverable circle { fill: #6b7f2a; }
     .graph-node.template circle { fill: #8f5c99; }
     .graph-node.context circle { fill: #a36f18; }
+    .graph-search-wrapper { padding: 0.65rem 0.75rem; }
+    .graph-toolbar { display: flex; gap: 0.4rem; align-items: center; }
+    .graph-search-field { position: relative; flex: 1 1 0; min-width: 0; }
+    .graph-search-input { width: 100%; padding: 0.45rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; font-size: 0.9rem; box-sizing: border-box; }
+    .graph-search-input:focus { outline: none; border-color: var(--accent); }
+    .graph-search-dropdown { position: absolute; top: calc(100% + 2px); left: 0; right: 0; z-index: 10; list-style: none; margin: 0; padding: 0.3rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); box-shadow: var(--shadow); max-height: 240px; overflow: auto; }
+    .graph-ctrl-group { display: flex; gap: 0.25rem; flex: 0 0 auto; }
+    .graph-ctrl-btn { width: 2rem; height: 2rem; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; font-size: 1rem; font-weight: 760; cursor: pointer; padding: 0; line-height: 1; }
+    .graph-ctrl-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+    .graph-search-result { display: grid; grid-template-columns: 0.65rem 1fr; grid-template-rows: auto auto; gap: 0 0.5rem; padding: 0.45rem 0.55rem; border-radius: 5px; cursor: pointer; align-items: center; }
+    .graph-search-result:hover { background: var(--accent-soft); }
+    .graph-search-result-dot { grid-row: 1 / 3; width: 0.65rem; height: 0.65rem; border-radius: 999px; background: var(--accent); align-self: center; }
+    .graph-search-result-dot.raw-source { background: #d7663b; }
+    .graph-search-result-dot.wiki-source { background: #0e7490; }
+    .graph-search-result-dot.wiki { background: #c8a500; }
+    .graph-search-result-dot.deliverable { background: #6b7f2a; }
+    .graph-search-result-dot.template { background: #8f5c99; }
+    .graph-search-result-dot.context { background: #a36f18; }
+    .graph-search-result-title { font-size: 0.88rem; font-weight: 620; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .graph-search-result-path { font-size: 0.76rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .graph-search-empty { padding: 0.55rem 0.65rem; color: var(--muted); font-size: 0.88rem; }
     .graph-legend { display: flex; flex-wrap: wrap; gap: 0.65rem; margin: 0.75rem 0 1.25rem; color: var(--muted); font-size: 0.9rem; }
     .legend-item::before { content: ""; display: inline-block; width: 0.7rem; height: 0.7rem; margin-right: 0.35rem; border-radius: 999px; vertical-align: -0.05rem; background: var(--accent); }
-    .legend-item.source::before { background: #d7663b; }
-    .legend-item.wiki::before { background: #176b87; }
+    .legend-item.raw-source::before { background: #d7663b; }
+    .legend-item.wiki-source::before { background: #0e7490; }
+    .legend-item.wiki::before { background: #c8a500; }
     .legend-item.deliverable::before { background: #6b7f2a; }
     .legend-item.template::before { background: #8f5c99; }
     .legend-item.context::before { background: #a36f18; }
@@ -767,11 +790,31 @@ function extractIndexTiles(markdown: string): TileSection[] {
         meta: target,
       });
     } else {
-      const text = item[1].replace(/`/g, '').trim();
-      current.tiles.push({
-        title: text,
-        meta: current.heading,
-      });
+      const srcMatch = /\[src:\s*([^\]]+)\]/i.exec(item[1]);
+      const href = srcMatch ? localHref(srcMatch[1].trim()) : undefined;
+      const stripped = item[1]
+        .replace(/\[src:\s*[^\]]+\]/gi, '')
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+        .replace(/\*\*([^*]+)\*\*/g, '$1')
+        .replace(/\*([^*]+)\*/g, '$1')
+        .replace(/`/g, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+      const emDash = /^(.+?)\s*[–—]\s*(.+)$/.exec(stripped);
+      if (emDash) {
+        const desc = emDash[2].trim();
+        current.tiles.push({
+          title: emDash[1].trim(),
+          meta: desc.length > 100 ? `${desc.slice(0, 97)}…` : desc,
+          href,
+        });
+      } else {
+        current.tiles.push({
+          title: stripped.length > 80 ? `${stripped.slice(0, 77)}…` : stripped,
+          meta: current.heading,
+          href,
+        });
+      }
     }
   }
 
@@ -883,7 +926,7 @@ async function renderSidebar(rootDir: string): Promise<string> {
 interface GraphNode {
   id: string;
   title: string;
-  type: 'source' | 'wiki' | 'deliverable' | 'template' | 'context';
+  type: 'raw-source' | 'wiki-source' | 'wiki' | 'deliverable' | 'template' | 'context';
   href: string;
   preview: string;
   raw: string;
@@ -900,12 +943,8 @@ interface GraphEdge {
 }
 
 function graphNodeType(relativePath: string): GraphNode['type'] {
-  if (
-    relativePath.startsWith('raw/ingested/') ||
-    relativePath.startsWith('wiki/sources/')
-  ) {
-    return 'source';
-  }
+  if (relativePath.startsWith('raw/ingested/')) return 'raw-source';
+  if (relativePath.startsWith('wiki/sources/')) return 'wiki-source';
   if (relativePath.startsWith('deliverables/')) return 'deliverable';
   if (relativePath.startsWith('templates/')) return 'template';
   if (relativePath.startsWith('build-context/')) return 'context';
@@ -1037,6 +1076,12 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
   const modalTargetTitle = document.querySelector('[data-modal-target-title]');
   const modalTargetBody = document.querySelector('[data-modal-target-body]');
   const modalClose = document.querySelector('[data-modal-close]');
+  const searchInput = document.querySelector('[data-graph-search]');
+  const searchDropdown = document.querySelector('[data-graph-search-dropdown]');
+  const btnZoomIn = document.querySelector('[data-graph-zoom-in]');
+  const btnZoomOut = document.querySelector('[data-graph-zoom-out]');
+  const btnCenter = document.querySelector('[data-graph-center]');
+  const btnReset = document.querySelector('[data-graph-reset]');
   const nodes = data.nodes;
   const edges = data.edges.map((edge) => ({ id: edge.id, from: edge.from, to: edge.to, source: edge.from, target: edge.to }));
   const byId = new Map(nodes.map((node) => [node.id, node]));
@@ -1049,6 +1094,87 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
   let dragNode = null;
   let panStart = null;
   let view = { x: 0, y: 0, scale: 1 };
+  let searchQuery = '';
+
+  function nodeMatchesSearch(node, query) {
+    const q = query.toLowerCase();
+    return node.id.toLowerCase().includes(q) || node.title.toLowerCase().includes(q);
+  }
+
+  function applySearchFilter(query) {
+    searchQuery = query;
+    if (!query) {
+      for (const el of nodeElements.values()) el.classList.remove('is-dimmed');
+      for (const entry of linkElements) entry.element.classList.remove('is-dimmed');
+      if (selectedId) selectNode(selectedId);
+      return;
+    }
+    const matchingIds = new Set(nodes.filter((n) => nodeMatchesSearch(n, query)).map((n) => n.id));
+    for (const [nodeId, el] of nodeElements) {
+      el.classList.toggle('is-dimmed', !matchingIds.has(nodeId));
+      el.classList.toggle('is-selected', false);
+    }
+    for (const entry of linkElements) entry.element.classList.remove('is-connected');
+  }
+
+  function escapeDropdownHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function updateDropdown(query) {
+    if (!query) { searchDropdown.hidden = true; searchDropdown.innerHTML = ''; return; }
+    const matches = nodes.filter((n) => nodeMatchesSearch(n, query)).slice(0, 8);
+    if (matches.length === 0) {
+      searchDropdown.innerHTML = '<li class="graph-search-empty">Aucun résultat</li>';
+    } else {
+      searchDropdown.innerHTML = matches.map((n) =>
+        '<li class="graph-search-result" data-node-id="' + escapeDropdownHtml(n.id) + '">' +
+        '<span class="graph-search-result-dot ' + n.type + '"></span>' +
+        '<span class="graph-search-result-title">' + escapeDropdownHtml(n.title) + '</span>' +
+        '<span class="graph-search-result-path">' + escapeDropdownHtml(n.id) + '</span>' +
+        '</li>'
+      ).join('');
+    }
+    searchDropdown.hidden = false;
+  }
+
+  function panToNode(id) {
+    const node = byId.get(id);
+    if (!node || node.x == null) return;
+    view.x = 550 - node.x * view.scale;
+    view.y = 360 - node.y * view.scale;
+    applyView();
+  }
+
+  function clearSearch() {
+    if (!searchQuery) return;
+    searchQuery = '';
+    searchInput.value = '';
+    searchDropdown.hidden = true;
+  }
+
+  function zoomBy(factor) {
+    const nextScale = Math.min(3, Math.max(0.35, view.scale * factor));
+    view.x = view.x + 550 * (view.scale - nextScale);
+    view.y = view.y + 360 * (view.scale - nextScale);
+    view.scale = nextScale;
+    applyView();
+  }
+
+  function centerSelected() {
+    const node = byId.get(selectedId);
+    if (!node || node.x == null) return;
+    const targetScale = Math.max(view.scale, 1.2);
+    view.scale = targetScale;
+    view.x = 550 - node.x * targetScale;
+    view.y = 360 - node.y * targetScale;
+    applyView();
+  }
+
+  function resetView() {
+    view = { x: 0, y: 0, scale: 1 };
+    applyView();
+  }
 
   function svgPoint(event) {
     const point = svg.createSVGPoint();
@@ -1144,6 +1270,7 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
         node.fy = null;
         simulation?.alphaTarget(0);
         dragNode = null;
+        clearSearch();
         selectNode(node.id);
       });
       group.addEventListener('dblclick', () => {
@@ -1345,8 +1472,35 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
     if (event.target === modal) closeModal();
   });
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') closeModal();
+    if (event.key === 'Escape') { closeModal(); clearSearch(); applySearchFilter(''); }
   });
+
+  searchInput.addEventListener('input', () => {
+    const query = searchInput.value.trim();
+    applySearchFilter(query);
+    updateDropdown(query);
+  });
+  searchInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { applySearchFilter(''); updateDropdown(''); searchInput.value = ''; }
+  });
+  searchDropdown.addEventListener('click', (event) => {
+    const result = event.target.closest('[data-node-id]');
+    if (!result) return;
+    const id = result.dataset.nodeId;
+    clearSearch();
+    applySearchFilter('');
+    selectNode(id);
+    panToNode(id);
+  });
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('[data-graph-search-wrapper]')) {
+      searchDropdown.hidden = true;
+    }
+  });
+  btnZoomIn.addEventListener('click', () => zoomBy(1.25));
+  btnZoomOut.addEventListener('click', () => zoomBy(1 / 1.25));
+  btnCenter.addEventListener('click', centerSelected);
+  btnReset.addEventListener('click', resetView);
 
   render();
 })();
@@ -1354,7 +1508,7 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
 }
 
 function renderGraphApp(nodes: GraphNode[], edges: GraphEdge[]): string {
-  return `<div class="graph-layout"><div class="graph-panel"><div class="graph-stage"><svg class="graph-svg" viewBox="0 0 1100 720" role="img" aria-label="Graph navigable des documents et sources" data-graph-svg><g data-graph-viewport><g data-link-layer></g><g data-node-layer></g></g></svg></div></div><aside class="relation-panel"><div class="relation-panel-header"><h2 class="relation-panel-title">Relations</h2><p class="relation-panel-meta">Ouvrez une relation pour afficher les markdown lies.</p></div><ul class="relation-list" data-relation-list></ul></aside></div>
+  return `<div class="graph-layout"><div class="graph-panel"><div class="graph-search-wrapper" data-graph-search-wrapper><div class="graph-toolbar"><div class="graph-search-field"><input class="graph-search-input" type="search" placeholder="Rechercher un n&#x0153;ud&#x2026;" aria-label="Rechercher dans le graph" data-graph-search autocomplete="off"><ul class="graph-search-dropdown" data-graph-search-dropdown hidden></ul></div><div class="graph-ctrl-group"><button class="graph-ctrl-btn" type="button" data-graph-zoom-in title="Zoom avant">+</button><button class="graph-ctrl-btn" type="button" data-graph-zoom-out title="Zoom arri&#xe8;re">&#x2212;</button><button class="graph-ctrl-btn" type="button" data-graph-center title="Centrer sur la s&#xe9;lection" style="font-size:0.9rem">&#x25CE;</button><button class="graph-ctrl-btn" type="button" data-graph-reset title="R&#xe9;initialiser la vue" style="font-size:0.9rem">&#x21BA;</button></div></div></div><div class="graph-stage"><svg class="graph-svg" viewBox="0 0 1100 720" role="img" aria-label="Graph navigable des documents et sources" data-graph-svg><g data-graph-viewport><g data-link-layer></g><g data-node-layer></g></g></svg></div></div><aside class="relation-panel"><div class="relation-panel-header"><h2 class="relation-panel-title">Relations</h2><p class="relation-panel-meta">Ouvrez une relation pour afficher les markdown lies.</p></div><ul class="relation-list" data-relation-list></ul></aside></div>
 <div class="modal-backdrop" data-relation-modal><section class="relation-modal" role="dialog" aria-modal="true" aria-labelledby="relation-modal-title"><div class="modal-header"><h2 class="modal-title" id="relation-modal-title" data-modal-title>Relation</h2><button class="modal-close" type="button" aria-label="Fermer" data-modal-close>x</button></div><div class="modal-body"><article class="modal-doc"><h3 class="modal-doc-title" data-modal-target-title></h3><div class="modal-markdown" data-modal-target-body></div></article></div></section></div>
 ${renderGraphScript(nodes, edges)}`;
 }
@@ -1362,12 +1516,13 @@ ${renderGraphScript(nodes, edges)}`;
 async function generateGraph(rootDir: string): Promise<string> {
   const sidebar = await renderSidebar(rootDir);
   const { nodes, edges } = await buildGraph(rootDir);
-  const sourceCount = nodes.filter((node) => node.type === 'source').length;
+  const rawSourceCount = nodes.filter((node) => node.type === 'raw-source').length;
+  const wikiSourceCount = nodes.filter((node) => node.type === 'wiki-source').length;
   const graph =
     nodes.length > 0
       ? renderGraphApp(nodes, edges)
       : '<p class="empty">Aucun document markdown à afficher dans le graphe.</p>';
-  const body = `${sidebar}<main class="content"><div class="hero"><h1>Graph des sources</h1><p>Les sources et documents du wiki sont représentés par relation. La taille d'un noeud dépend du nombre de liens entrants et sortants. Cliquez sur un noeud pour afficher le markdown associé.</p></div><div class="graph-legend"><span class="legend-item source">${sourceCount} source(s)</span><span class="legend-item wiki">wiki</span><span class="legend-item deliverable">livrables</span><span class="legend-item template">templates</span><span class="legend-item context">build context</span><span>${edges.length} relation(s)</span></div>${graph}</main>`;
+  const body = `${sidebar}<main class="content"><div class="hero"><h1>Graph des sources</h1><p>Les sources et documents du wiki sont représentés par relation. La taille d'un noeud dépend du nombre de liens entrants et sortants. Cliquez sur un noeud pour afficher le markdown associé.</p></div><div class="graph-legend"><span class="legend-item raw-source">${rawSourceCount} source(s) brut(s)</span><span class="legend-item wiki-source">${wikiSourceCount} source(s) wiki</span><span class="legend-item wiki">wiki</span><span class="legend-item deliverable">livrables</span><span class="legend-item template">templates</span><span class="legend-item context">build context</span><span>${edges.length} relation(s)</span></div>${graph}</main>`;
   return layout('Graph des sources', body);
 }
 
@@ -1397,6 +1552,15 @@ async function generateIndex(rootDir: string): Promise<string> {
       }
     }
   }
+
+  const SECTION_RANK = ['concept', 'source', 'answer'];
+  indexTiles.sort((a, b) => {
+    const ah = a.heading.toLowerCase();
+    const bh = b.heading.toLowerCase();
+    const ai = SECTION_RANK.findIndex((k) => ah.includes(k));
+    const bi = SECTION_RANK.findIndex((k) => bh.includes(k));
+    return (ai === -1 ? SECTION_RANK.length : ai) - (bi === -1 ? SECTION_RANK.length : bi);
+  });
 
   const tiles = renderIndexSectionBrowser(indexTiles);
   const sidebar = await renderSidebar(rootDir);
