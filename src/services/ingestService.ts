@@ -19,24 +19,38 @@ import type { WorkspaceService } from './workspaceService.ts';
 function enforceSourceCitationPath(
   operations: WikiOperation[],
   archiveCitationPath: string,
-): { operations: WikiOperation[]; rewrittenCitations: number } {
+): {
+  operations: WikiOperation[];
+  rewrittenCitations: number;
+  unreconciledCitations: number;
+} {
   let rewrittenCitations = 0;
+  let unreconciledCitations = 0;
   const operationsWithCitations = operations.map((operation) => {
     if (operation.content === undefined) return operation;
+    let validCitationMarkers = 0;
 
     const content = operation.content.replace(
       /\[src:\s*([^\]]+)\]/gi,
       (match, citationPath: string) => {
-        if (citationPath.trim() === archiveCitationPath) return match;
+        validCitationMarkers += 1;
+        const cleanCitationPath = citationPath.trim();
+        if (!cleanCitationPath) {
+          unreconciledCitations += 1;
+          return match;
+        }
+        if (cleanCitationPath === archiveCitationPath) return match;
         rewrittenCitations += 1;
         return `[src: ${archiveCitationPath}]`;
       },
     );
+    const sourceMarkers = operation.content.match(/\[src:/gi)?.length ?? 0;
+    unreconciledCitations += Math.max(0, sourceMarkers - validCitationMarkers);
 
     return content === operation.content ? operation : { ...operation, content };
   });
 
-  return { operations: operationsWithCitations, rewrittenCitations };
+  return { operations: operationsWithCitations, rewrittenCitations, unreconciledCitations };
 }
 
 export class IngestService {
@@ -249,8 +263,11 @@ export class IngestService {
           const normalizedOperations = await this.workspace.normalizeWikiOperations(
             plan.operations,
           );
-          const { operations: citationSafeOperations, rewrittenCitations } =
-            enforceSourceCitationPath(normalizedOperations, source.archiveCitationPath);
+          const {
+            operations: citationSafeOperations,
+            rewrittenCitations,
+            unreconciledCitations,
+          } = enforceSourceCitationPath(normalizedOperations, source.archiveCitationPath);
           const rewrittenPaths = normalizedOperations
             .map((operation, index) => ({
               from: plan.operations[index]?.path,
@@ -262,6 +279,7 @@ export class IngestService {
             operations: citationSafeOperations.length,
             rewrittenPaths: rewrittenPaths.length,
             rewrittenCitations,
+            unreconciledCitations,
           });
           if (this.logger.debugEnabled && rewrittenPaths.length > 0) {
             await this.logger.debug('ingest:normalize-paths', {
@@ -270,10 +288,17 @@ export class IngestService {
             });
           }
           if (rewrittenCitations > 0) {
-            await this.logger.warn('ingest:citation-path-rewrite', {
+            await this.logger.info('ingest:citation-path-rewrite', {
               source: source.relativePath,
               archivePath: source.archiveCitationPath,
               rewrittenCitations,
+            });
+          }
+          if (unreconciledCitations > 0) {
+            await this.logger.warn('ingest:citation-unreconciled', {
+              source: source.relativePath,
+              archivePath: source.archiveCitationPath,
+              unreconciledCitations,
             });
           }
 

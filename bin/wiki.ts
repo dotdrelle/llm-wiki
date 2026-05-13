@@ -142,6 +142,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(err);
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`Error: ${message}`);
   process.exit(1);
 });

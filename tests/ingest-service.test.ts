@@ -180,6 +180,22 @@ class BadCitationLLMService extends FakeLLMService {
   }
 }
 
+class UnreconciledCitationLLMService extends FakeLLMService {
+  async completeJson(): Promise<IngestPlan> {
+    this.calls += 1;
+    return {
+      summary: 'Updated wiki from source with malformed citation marker.',
+      operations: [
+        {
+          type: 'create',
+          path: 'wiki/sources/note.md',
+          content: '# Note\n\nFait documenté. [src: raw/untracked/note.md\n',
+        },
+      ],
+    };
+  }
+}
+
 class FakeRetrievalService {
   invalidateCalls = 0;
 
@@ -325,6 +341,37 @@ describe('ingest service', () => {
       logger.entries.find((entry) => entry.event === 'ingest:citation-path-rewrite')
         ?.data,
     ).toMatchObject({ rewrittenCitations: 1 });
+    expect(
+      logger.entries.find((entry) => entry.event === 'ingest:citation-path-rewrite')
+        ?.level,
+    ).toBe('info');
+    expect(
+      logger.entries.some((entry) => entry.event === 'ingest:citation-unreconciled'),
+    ).toBe(false);
+  });
+
+  it('warns when source citations cannot be reconciled', async () => {
+    const workspace = new FakeWorkspaceService();
+    const logger = new MemoryTraceLogger();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new UnreconciledCitationLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+    );
+
+    await service.ingest([], {});
+
+    expect(
+      logger.entries.find((entry) => entry.event === 'ingest:citation-unreconciled')
+        ?.level,
+    ).toBe('warn');
+    expect(
+      logger.entries.find((entry) => entry.event === 'ingest:citation-unreconciled')
+        ?.data,
+    ).toMatchObject({ unreconciledCitations: 1 });
   });
 
   it('plans oversized sources section by section then applies atomically before archiving once', async () => {

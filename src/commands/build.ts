@@ -60,7 +60,10 @@ export default async function buildCmd(
             `  - batch ${batch.index + 1}: ${batch.slotIds.length} slot(s), ~${batch.estimatedInputTokens.toLocaleString()} input token(s)${flags ? ` (${flags})` : ''}`,
           );
           if (batch.contextPages.length > 0) {
-            console.log(`    context: ${batch.contextPages.slice(0, 6).join(', ')}${batch.contextPages.length > 6 ? ', ...' : ''}`);
+            console.log('    context:');
+            for (const contextPage of batch.contextPages) {
+              console.log(`      - ${contextPage}`);
+            }
           }
         }
       }
@@ -80,7 +83,7 @@ export default async function buildCmd(
         const batchStart = Date.now();
         const name = template.replace(/^templates\//, '').replace(/\.md$/, '');
         spinner?.update(`Building ${name} (batch ${batch.index + 1}/${batch.total})…`);
-        const ctx = topContextPages.length > 0 ? topContextPages.join(', ') : template;
+        const ctx = formatContextSummary(topContextPages, template);
         spinner?.updateSub(() => {
           const s = ((Date.now() - batchStart) / 1000).toFixed(1);
           return `${ctx} · retrieval ${s}s`;
@@ -90,7 +93,7 @@ export default async function buildCmd(
         const llmStart = Date.now();
         const name = template.replace(/^templates\//, '').replace(/\.md$/, '');
         spinner?.update(`Building ${name} (batch ${batch.index + 1}/${batch.total})…`);
-        const ctx = topContextPages.length > 0 ? topContextPages.join(', ') : template;
+        const ctx = formatContextSummary(topContextPages, template);
         spinner?.updateSub(() => {
           const s = ((Date.now() - llmStart) / 1000).toFixed(1);
           return `${ctx} · LLM ${s}s`;
@@ -116,4 +119,10 @@ export default async function buildCmd(
   } finally {
     await logger.close();
   }
+}
+
+function formatContextSummary(contextPages: string[], fallback: string): string {
+  if (contextPages.length === 0) return fallback;
+  if (contextPages.length === 1) return contextPages[0];
+  return `${contextPages[0]} +${contextPages.length - 1} context page(s)`;
 }

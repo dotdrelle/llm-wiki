@@ -39,12 +39,15 @@ export class Spinner {
     this.frame++;
 
     const sub = typeof this.subLabel === 'function' ? this.subLabel() : this.subLabel;
+    const width = Math.max(20, process.stderr.columns ?? 100);
+    const label = truncateLine(this.label, Math.max(1, width - 2));
 
     if (sub !== undefined) {
-      process.stderr.write(`${up}\r${spinFrame} ${this.label}\x1b[K\n  ${sub}\x1b[J`);
+      const subLine = truncateLine(sub, Math.max(1, width - 2));
+      process.stderr.write(`${up}\r${spinFrame} ${label}\x1b[K\n  ${subLine}\x1b[J`);
       this.subWritten = true;
     } else {
-      process.stderr.write(`${up}\r${spinFrame} ${this.label}\x1b[K\x1b[J`);
+      process.stderr.write(`${up}\r${spinFrame} ${label}\x1b[K\x1b[J`);
       this.subWritten = false;
     }
   }
@@ -58,6 +61,13 @@ export class Spinner {
     const up = this.subWritten ? '\x1b[1A' : '';
     process.stderr.write(`${up}\r\x1b[J`);
   }
+}
+
+function truncateLine(value: string, maxColumns: number): string {
+  const clean = value.replace(/\s+/g, ' ').trim();
+  if (clean.length <= maxColumns) return clean;
+  if (maxColumns <= 1) return '…';
+  return `${clean.slice(0, maxColumns - 1)}…`;
 }
 
 export async function withSpinner<T>(label: string, fn: () => Promise<T>): Promise<T> {
