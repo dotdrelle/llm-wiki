@@ -697,13 +697,19 @@ function loadConfig() {
 }
 
 function loadServers() {
+  const defaults = window.__WIKI_CONFIG__?.mcpServers || [];
   try {
     const saved = JSON.parse(localStorage.getItem(LS.USER_SERVERS)||'[]');
     // Discard stale data that used old proxy-path URLs (/api/mcp/*)
     const isStale = saved.some(s => typeof s.url === 'string' && s.url.startsWith('/api/mcp'));
     if (saved.length && !isStale) {
       for (const s of saved) {
-        servers.push({...s, bearer:s.bearer||'', sessionId:null, status:'off', tools:[]});
+        // In proxy mode, always use the server-injected URL/bearer for known servers
+        // to avoid stale localhost URLs looping back to the serve container
+        const override = defaults.find(d => d.name === s.name);
+        const url = override ? override.url : s.url;
+        const bearer = override ? (override.bearer||'') : (s.bearer||'');
+        servers.push({...s, url, bearer, sessionId:null, status:'off', tools:[]});
         if(s.id >= nextId) nextId = s.id + 1;
       }
       renderCards();
@@ -711,7 +717,6 @@ function loadServers() {
     }
   } catch {}
   // No saved state (or stale) — seed from server config
-  const defaults = window.__WIKI_CONFIG__?.mcpServers || [];
   for (const s of defaults) addServer(s.name, s.url, s.bearer||'');
 }
 
