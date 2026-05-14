@@ -58,7 +58,12 @@ input[type=password]{letter-spacing:3px}
 .btn-icon{background:none;border:1px solid var(--border);border-radius:7px;color:var(--muted);cursor:pointer;padding:4px 8px;font-size:12px;flex-shrink:0;transition:all .2s;font-family:var(--font-mono)}
 .btn-icon:hover{border-color:var(--accent);color:var(--accent)}
 .btn-del:hover{border-color:var(--err) !important;color:var(--err) !important}
-.mcp-tools{border-top:1px solid var(--border);padding:8px 10px;display:flex;flex-direction:column;gap:5px}
+.mcp-tools{border-top:1px solid var(--border)}
+.mcp-tools-head{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;cursor:pointer;user-select:none;font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--muted);text-transform:uppercase;transition:color .2s}
+.mcp-tools-head:hover{color:var(--text)}
+.mcp-tools-chevron{font-size:10px;transition:transform .2s;display:inline-block}
+.mcp-tools-body{padding:0 10px 8px;display:flex;flex-direction:column;gap:5px}
+.mcp-tools-body.collapsed{display:none}
 .tool-row{display:flex;align-items:flex-start;gap:7px;padding:5px 8px;background:var(--panel-deep);border-radius:7px;font-size:11px;font-family:var(--font-mono)}
 .tool-dot{width:5px;height:5px;border-radius:50%;background:var(--ok);margin-top:4px;flex-shrink:0}
 .tool-name-t{color:var(--text);font-weight:500}
@@ -85,7 +90,21 @@ input[type=password]{letter-spacing:3px}
 .av.a{background:var(--panel-soft);border:1px solid var(--border);color:var(--accent)}
 .bubble{max-width:66%;padding:11px 14px;font-size:14px;line-height:1.7;border-radius:13px;white-space:pre-wrap;word-break:break-word}
 .msg.user .bubble{background:linear-gradient(135deg,rgba(79,126,255,.2),rgba(157,125,245,.15));border:1px solid rgba(79,126,255,.28);border-bottom-right-radius:3px}
-.msg.assistant .bubble{background:var(--panel-soft);border:1px solid var(--border);border-bottom-left-radius:3px}
+.msg.assistant .bubble{background:var(--panel-soft);border:1px solid var(--border);border-bottom-left-radius:3px;white-space:normal}
+.bubble p{margin:0 0 .6em}.bubble p:last-child{margin:0}
+.bubble h1,.bubble h2,.bubble h3,.bubble h4{font-weight:700;margin:.8em 0 .3em;line-height:1.3}
+.bubble h1{font-size:1.15em}.bubble h2{font-size:1.05em}.bubble h3,.bubble h4{font-size:.95em}
+.bubble ul,.bubble ol{padding-left:1.4em;margin:.3em 0 .6em}.bubble li{margin:.2em 0}
+.bubble code{font-family:var(--font-mono);font-size:.88em;background:var(--panel-deep);padding:1px 5px;border-radius:4px}
+.bubble pre{background:var(--panel-deep);border-radius:8px;padding:10px 12px;margin:.5em 0;overflow-x:auto}
+.bubble pre code{background:none;padding:0;font-size:.85em}
+.bubble blockquote{border-left:3px solid var(--border);margin:.4em 0;padding:.2em .8em;color:var(--muted)}
+.bubble table{border-collapse:collapse;margin:.5em 0;font-size:.9em}
+.bubble th,.bubble td{border:1px solid var(--border);padding:4px 9px}
+.bubble th{background:var(--panel-deep);font-weight:600}
+.bubble a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+.stream-cursor::after{content:'▋';animation:blink .8s step-end infinite;color:var(--accent);margin-left:1px}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
 .tc-block{margin-top:10px;background:#090d18;border:1px solid #1a2a45;border-radius:9px;overflow:hidden;font-family:var(--font-mono);font-size:12px}
 .tc-head{display:flex;align-items:center;gap:7px;padding:7px 11px;background:rgba(15,30,60,.6);border-bottom:1px solid #1a2a45;cursor:pointer;user-select:none}
 .tc-src{font-size:9px;color:var(--muted);font-style:italic}
@@ -135,25 +154,22 @@ const CHAT_BODY = `<aside id="sidebar">
     </div>
   </div>
   <div class="sb-scroll">
-    <div class="sec-label">Configuration API</div>
+    <div class="sec-label">Configuration LLM</div>
     <div class="api-block">
       <div class="field">
         <label>Base URL</label>
-        <input id="base-url" type="text" placeholder="http://localhost:8080" value="http://localhost:8080" onchange="saveConfig()">
+        <input id="base-url" type="text" placeholder="http://localhost:11434/v1" onchange="saveConfig()">
       </div>
       <div class="field">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-          <label style="margin:0">Clé API <span style="color:var(--red)">*</span></label>
+          <label style="margin:0">Clé API</label>
           <span class="key-saved" id="llm-saved">enregistrée</span>
         </div>
         <div class="secret-wrap">
-          <input id="api-key" type="password" placeholder="sk-…" autocomplete="off" required onchange="saveConfig()">
+          <input id="api-key" type="password" placeholder="sk-… (vide pour Ollama)" autocomplete="off" onchange="saveConfig()">
           <div class="secret-actions">
             <button class="secret-btn" id="reveal-btn-apikey" onclick="toggleReveal('api-key',this)" title="Afficher/masquer">
               <svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
-            </button>
-            <button class="secret-btn" onclick="clearSecret('api-key','llm-saved')" title="Effacer">
-              <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
         </div>
@@ -161,7 +177,7 @@ const CHAT_BODY = `<aside id="sidebar">
       <div class="row2">
         <div class="field">
           <label>Modèle</label>
-          <input id="model-name" type="text" placeholder="gpt-4o" value="gpt-4o" oninput="syncModel()" onchange="saveConfig()">
+          <input id="model-name" type="text" placeholder="gpt-4o" oninput="syncModel()" onchange="saveConfig()">
         </div>
         <div class="field">
           <label>Temp.</label>
@@ -212,9 +228,9 @@ let messages = [];
 let isStreaming = false;
 let sidebarOpen = true;
 let nextId = 1;
-
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function renderMd(t) { try { return typeof marked!=='undefined' ? marked.parse(t||'') : esc(t||''); } catch { return esc(t||''); } }
 
 function notify(msg, type='s') {
   const el=$('notif'); el.textContent=msg; el.className=\`show \${type}\`;
@@ -240,9 +256,9 @@ function renderTopPills() {
     .join('');
 }
 
-function addServer(name='', url='') {
+function addServer(name='', url='', bearer='') {
   const id=nextId++;
-  servers.push({id, name:name||\`MCP \${id}\`, url, bearer:'', sessionId:null, enabled:false, status:'off', tools:[]});
+  servers.push({id, name:name||\`MCP \${id}\`, url, bearer, sessionId:null, enabled:false, status:'off', tools:[]});
   renderCards(); saveServers();
 }
 
@@ -265,14 +281,21 @@ function cardHTML(s) {
   const badgeLabel={ok:\`\${s.tools.length} outils\`,err:'erreur',loading:'…',off:'off'}[s.status]||'off';
 
   const toolsHTML = (s.status==='ok'&&s.tools.length)
-    ? \`<div class="mcp-tools">\${s.tools.map(t=>\`
-        <div class="tool-row">
-          <div class="tool-dot"></div>
-          <div>
-            <div class="tool-name-t">\${esc(t.name)}</div>
-            \${t.description?\`<div class="tool-desc-t">\${esc(t.description.slice(0,60))}\${t.description.length>60?'…':''}</div>\`:''}
-          </div>
-        </div>\`).join('')}</div>\` : '';
+    ? \`<div class="mcp-tools">
+        <div class="mcp-tools-head" onclick="toggleTools(\${s.id})">
+          <span>\${s.tools.length} outil\${s.tools.length>1?'s':''}</span>
+          <span class="mcp-tools-chevron" id="tools-chevron-\${s.id}">▸</span>
+        </div>
+        <div class="mcp-tools-body collapsed" id="tools-body-\${s.id}">\${s.tools.map(t=>\`
+          <div class="tool-row">
+            <div class="tool-dot"></div>
+            <div>
+              <div class="tool-name-t">\${esc(t.name)}</div>
+              \${t.description?\`<div class="tool-desc-t">\${esc(t.description.slice(0,60))}\${t.description.length>60?'…':''}</div>\`:''}
+            </div>
+          </div>\`).join('')}
+        </div>
+      </div>\` : '';
 
   const activeClass = s.enabled&&s.status==='ok' ? 'active' : s.status==='err' ? 'error' : '';
 
@@ -326,7 +349,7 @@ async function readSSE(response) {
     const {done, value} = await reader.read();
     if (done) break;
     buf += dec.decode(value, {stream: true});
-    const lines = buf.split('\n');
+    const lines = buf.split('\\n');
     buf = lines.pop();
     for (const line of lines) {
       if (line.startsWith('data: ')) {
@@ -338,6 +361,10 @@ async function readSSE(response) {
   return result;
 }
 
+function mcpProxyUrl(server) {
+  return \`/api/mcp?url=\${encodeURIComponent(server.url)}\`;
+}
+
 async function mcpRPC(server, method, params) {
   const body = {jsonrpc: '2.0', id: Date.now(), method};
   if (params !== undefined) body.params = params;
@@ -347,7 +374,7 @@ async function mcpRPC(server, method, params) {
   };
   if (server.bearer?.trim()) headers['Authorization'] = \`Bearer \${server.bearer.trim()}\`;
   if (server.sessionId) headers['Mcp-Session-Id'] = server.sessionId;
-  const res = await fetch(server.url, {method: 'POST', headers, body: JSON.stringify(body)});
+  const res = await fetch(mcpProxyUrl(server), {method: 'POST', headers, body: JSON.stringify(body)});
   const sid = res.headers.get('Mcp-Session-Id');
   if (sid) server.sessionId = sid;
   if (!res.ok) throw new Error(\`HTTP \${res.status}\`);
@@ -365,7 +392,7 @@ async function mcpNotify(server, method, params) {
   };
   if (server.bearer?.trim()) headers['Authorization'] = \`Bearer \${server.bearer.trim()}\`;
   if (server.sessionId) headers['Mcp-Session-Id'] = server.sessionId;
-  await fetch(server.url, {method: 'POST', headers, body: JSON.stringify(body)}).catch(() => {});
+  await fetch(mcpProxyUrl(server), {method: 'POST', headers, body: JSON.stringify(body)}).catch(() => {});
 }
 
 async function connectServer(id) {
@@ -401,7 +428,7 @@ async function callMCPTool(name, args) {
   const resp = await mcpRPC(server, 'tools/call', {name, arguments: args});
   if (resp?.error) throw new Error(resp.error.message || 'Erreur tool call');
   const content = resp?.result?.content || [];
-  return content.map(c => c.text ?? JSON.stringify(c)).join('\n') || JSON.stringify(resp?.result || {});
+  return content.map(c => c.text ?? JSON.stringify(c)).join('\\n') || JSON.stringify(resp?.result || {});
 }
 
 // ── Outils actifs ───────────────────────────────────────────────────────────
@@ -437,7 +464,8 @@ function appendMsg(role, content, toolCalls=null) {
   div.className=\`msg \${role}\`;
   const av=role==='user'?'<div class="av u">Vous</div>':'<div class="av a">IA</div>';
   const tc=toolCalls?.length ? toolCalls.map((c,i)=>tcBlockHTML(c,i)).join('') : '';
-  div.innerHTML=\`\${av}<div class="bubble">\${esc(content||'')}\${tc}</div>\`;
+  const bodyHtml=role==='assistant' ? renderMd(content||'') : esc(content||'');
+  div.innerHTML=\`\${av}<div class="bubble">\${bodyHtml}\${tc}</div>\`;
   wrap.appendChild(div);
   wrap.scrollTop=wrap.scrollHeight;
   return div;
@@ -469,108 +497,140 @@ function updateTC(idx, result, ok) {
   if(st){st.textContent=ok?'✓ ok':'✗ erreur';st.className=\`tc-st \${ok?'ok':'er'}\`;}
   if(body){
     const val=typeof result==='string'?result:JSON.stringify(result,null,2);
-    body.innerHTML+=\`<div class="tc-lbl" style="margin-top:8px">Résultat</div><pre style="color:\${ok?'var(--green)':'var(--red)'}">\${esc(val)}</pre>\`;
+    body.innerHTML+=\`<div class="tc-lbl" style="margin-top:8px">Résultat</div><pre style="color:\${ok?'var(--ok)':'var(--err)'}">\${esc(val)}</pre>\`;
   }
 }
 
 function toggleTC(idx) { $(\`tc-body-\${idx}\`)?.classList.toggle('hidden'); }
 
-function addTyping() {
+function toggleTools(id) {
+  const body=$(\`tools-body-\${id}\`), chevron=$(\`tools-chevron-\${id}\`);
+  if(!body) return;
+  const collapsed=body.classList.toggle('collapsed');
+  if(chevron) chevron.textContent=collapsed?'▸':'▾';
+}
+
+function createStreamBubble() {
   removeEmpty();
   const wrap=$('messages');
   const div=document.createElement('div');
-  div.className='msg assistant'; div.id='typing';
+  div.className='msg assistant';
   div.innerHTML='<div class="av a">IA</div><div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div>';
   wrap.appendChild(div);
   wrap.scrollTop=wrap.scrollHeight;
+  return div;
 }
-function removeTyping(){$('typing')?.remove();}
+
+function setStreamContent(div, text, extra='') {
+  const bubble=div.querySelector('.bubble');
+  if(!bubble) return;
+  bubble.innerHTML=(text ? renderMd(text) : '<div class="typing"><span></span><span></span><span></span></div>')+extra;
+  $('messages').scrollTop=$('messages').scrollHeight;
+}
+
+async function fetchStream(url, headers, body, onDelta) {
+  const res=await fetch(url,{method:'POST',headers,body:JSON.stringify({...body,stream:true})});
+  if(!res.ok) throw new Error(\`API \${res.status}: \${await res.text()}\`);
+  const reader=res.body.getReader();
+  const dec=new TextDecoder();
+  let buf='', content='', tcAccum={};
+  for(;;) {
+    const {done,value}=await reader.read();
+    if(done) break;
+    buf+=dec.decode(value,{stream:true});
+    const lines=buf.split('\\n');
+    buf=lines.pop();
+    for(const line of lines) {
+      if(!line.startsWith('data: ')) continue;
+      const d=line.slice(6).trim();
+      if(!d||d==='[DONE]') continue;
+      let chunk; try{chunk=JSON.parse(d);}catch{continue;}
+      const delta=chunk.choices?.[0]?.delta;
+      if(!delta) continue;
+      if(delta.content){content+=delta.content; onDelta(content);}
+      if(delta.tool_calls) for(const tc of delta.tool_calls) {
+        const i=tc.index??0;
+        if(!tcAccum[i]) tcAccum[i]={id:'',name:'',arguments:''};
+        if(tc.id) tcAccum[i].id+=tc.id;
+        if(tc.function?.name) tcAccum[i].name+=tc.function.name;
+        if(tc.function?.arguments) tcAccum[i].arguments+=tc.function.arguments;
+      }
+    }
+  }
+  const toolCalls=Object.keys(tcAccum).length
+    ? Object.values(tcAccum).map(t=>({id:t.id,type:'function',function:{name:t.name,arguments:t.arguments}}))
+    : null;
+  return {content,toolCalls};
+}
 
 async function sendMessage() {
   if(isStreaming) return;
   const input=$('chat-input');
   const text=input.value.trim();
   if(!text) return;
-  const baseUrl=$('base-url').value.trim().replace(/\\/$/, '');
   const model=$('model-name').value.trim()||'gpt-4o';
   const temp=parseFloat($('temperature').value)||0.7;
-  if(!baseUrl){notify('Entrez une Base URL','e');return;}
-  if(!$('api-key').value.trim()){notify('Clé API obligatoire','e');$('api-key').focus();return;}
+  const useProxy=!!(window.__WIKI_CONFIG__);
+  if(!useProxy && !$('base-url').value.trim()){notify('Entrez une Base URL','e');return;}
 
   input.value=''; input.style.height='auto';
   isStreaming=true; $('send-btn').disabled=true;
   messages.push({role:'user',content:text});
   appendMsg('user',text);
-  addTyping();
 
-  let tcIdx = Date.now();
-  const MAX_TURNS = 12;
-  let turn = 0;
-
-  const activeTools = getActiveTools();
-  const toolsPayload = activeTools.length ? activeTools.map(t=>({
-    type: 'function',
-    function: {
-      name: t.name,
-      description: t.description || '',
-      parameters: t.inputSchema || t.parameters || {type:'object',properties:{}}
-    }
+  let tcIdx=Date.now();
+  const MAX_TURNS=12;
+  let turn=0;
+  const activeTools=getActiveTools();
+  const toolsPayload=activeTools.length ? activeTools.map(t=>({
+    type:'function',
+    function:{name:t.name,description:t.description||'',parameters:t.inputSchema||t.parameters||{type:'object',properties:{}}}
   })) : undefined;
+  const llmUrl=useProxy ? '/api/chat' : \`\${$('base-url').value.trim().replace(/\\/$/, '')}/v1/chat/completions\`;
+  const llmHeaders=useProxy ? {'Content-Type':'application/json'} : buildLLMHeaders();
 
+  let streamDiv=null;
   try {
-    while(turn < MAX_TURNS) {
+    while(turn<MAX_TURNS) {
       turn++;
-      const body = {
-        model, temperature:temp, messages,
-        ...(toolsPayload ? {tools:toolsPayload, tool_choice:'auto'} : {})
-      };
-      const res = await fetch(\`\${baseUrl}/v1/chat/completions\`, {
-        method:'POST', headers:buildLLMHeaders(), body:JSON.stringify(body)
-      });
-      if(!res.ok) throw new Error(\`API \${res.status}: \${await res.text()}\`);
-      const data = await res.json();
-      const msg = data.choices?.[0]?.message;
-      removeTyping();
-      if(!msg) throw new Error('Réponse vide');
+      const reqBody={model,temperature:temp,messages,...(toolsPayload?{tools:toolsPayload,tool_choice:'auto'}:{})};
+      streamDiv=createStreamBubble();
+      const {content,toolCalls}=await fetchStream(llmUrl,llmHeaders,reqBody,t=>setStreamContent(streamDiv,t));
 
-      if(msg.tool_calls?.length) {
-        messages.push(msg);
-        appendMsg('assistant', msg.content||'', msg.tool_calls.map((tc,i)=>({...tc, _domIdx:tcIdx+i})));
-        const toolResults = await Promise.all(
-          msg.tool_calls.map(async (tc, i) => {
-            const domIdx = tcIdx + i;
-            const fn = tc.function?.name;
-            let args = {}; try{args=JSON.parse(tc.function?.arguments||'{}');}catch{}
-            try {
-              const r = await callMCPTool(fn, args);
-              updateTC(domIdx, r, true);
-              return {tool_call_id:tc.id, role:'tool', name:fn, content: r};
-            } catch(e) {
-              updateTC(domIdx, e.message, false);
-              return {tool_call_id:tc.id, role:'tool', name:fn, content:\`Erreur: \${e.message}\`};
-            }
-          })
-        );
-        tcIdx += msg.tool_calls.length;
+      if(toolCalls?.length) {
+        const tcBlocks=toolCalls.map((tc,i)=>tcBlockHTML({...tc,_domIdx:tcIdx+i},tcIdx+i)).join('');
+        setStreamContent(streamDiv,content,tcBlocks);
+        messages.push({role:'assistant',content:content||null,tool_calls:toolCalls.map((tc,i)=>({...tc,_domIdx:tcIdx+i}))});
+        const toolResults=await Promise.all(toolCalls.map(async (tc,i)=>{
+          const domIdx=tcIdx+i;
+          const fn=tc.function?.name;
+          let args={}; try{args=JSON.parse(tc.function?.arguments||'{}');}catch{}
+          try {
+            const r=await callMCPTool(fn,args);
+            updateTC(domIdx,r,true);
+            return {tool_call_id:tc.id,role:'tool',name:fn,content:r};
+          } catch(e) {
+            updateTC(domIdx,e.message,false);
+            return {tool_call_id:tc.id,role:'tool',name:fn,content:\`Erreur: \${e.message}\`};
+          }
+        }));
+        tcIdx+=toolCalls.length;
         messages.push(...toolResults);
-        addTyping();
+        streamDiv=null;
         continue;
       }
 
-      messages.push(msg);
-      appendMsg('assistant', msg.content||'');
+      setStreamContent(streamDiv,content);
+      messages.push({role:'assistant',content});
       break;
     }
-    if(turn >= MAX_TURNS) {
-      appendMsg('assistant',\`⚠ Limite de chaînage atteinte (\${MAX_TURNS} tours).\`);
-    }
+    if(turn>=MAX_TURNS) appendMsg('assistant',\`⚠ Limite de chaînage atteinte (\${MAX_TURNS} tours).\`);
   } catch(err) {
-    removeTyping();
+    streamDiv?.remove();
     appendMsg('assistant',\`⚠ Erreur: \${err.message}\`);
     notify(err.message,'e');
   } finally {
-    isStreaming=false;
-    $('send-btn').disabled=false;
+    isStreaming=false; $('send-btn').disabled=false;
   }
 }
 
@@ -590,21 +650,10 @@ function toggleReveal(inputOrId, btn) {
   }
 }
 
-function clearSecret(inputId, savedId) {
-  $(inputId).value = '';
-  if (savedId) $(savedId)?.classList.remove('show');
-  saveConfig();
-  notify('Clé effacée');
-}
-
 function flashSaved(id) {
   const el=$(id); if(!el) return;
   el.classList.add('show');
 }
-
-// ── LocalStorage ────────────────────────────────────────────────────────────
-
-const LS = {CONFIG: 'mcpchat_config', SERVERS: 'mcpchat_servers'};
 
 function saveConfig() {
   const cfg = {
@@ -613,41 +662,57 @@ function saveConfig() {
     model:   $('model-name').value,
     temp:    $('temperature').value,
   };
-  localStorage.setItem(LS.CONFIG, JSON.stringify(cfg));
+  localStorage.setItem('mcpchat_config', JSON.stringify(cfg));
   if (cfg.apiKey) flashSaved('llm-saved');
 }
 
+// ── LocalStorage (user-added servers only) ──────────────────────────────────
+
+const LS = {USER_SERVERS: 'mcpchat_user_servers'};
+
 function saveServers() {
   const data = servers.map(({id,name,url,bearer,enabled}) => ({id,name,url,bearer:bearer||'',enabled}));
-  localStorage.setItem(LS.SERVERS, JSON.stringify(data));
+  localStorage.setItem(LS.USER_SERVERS, JSON.stringify(data));
 }
 
 function loadConfig() {
-  try {
-    const cfg = JSON.parse(localStorage.getItem(LS.CONFIG)||'{}');
-    if (cfg.baseUrl) $('base-url').value = cfg.baseUrl;
-    if (cfg.apiKey)  { $('api-key').value = cfg.apiKey; flashSaved('llm-saved'); }
-    if (cfg.model)   { $('model-name').value = cfg.model; syncModel(); }
-    if (cfg.temp)    $('temperature').value = cfg.temp;
-  } catch {}
+  const wc = window.__WIKI_CONFIG__;
+  if (wc) {
+    // Docker/proxy mode: show server credentials as read-only
+    if (wc.model) $('model-name').value = wc.model;
+    if (wc.temperature) $('temperature').value = String(wc.temperature);
+    if (wc.baseUrl) { $('base-url').value = wc.baseUrl; $('base-url').readOnly = true; $('base-url').style.opacity = '.7'; }
+    if (wc.apiKey)  { $('api-key').value = wc.apiKey;   $('api-key').readOnly = true;  $('api-key').style.opacity = '.7'; flashSaved('llm-saved'); }
+  } else {
+    // CLI mode: load from localStorage
+    try {
+      const cfg = JSON.parse(localStorage.getItem('mcpchat_config')||'{}');
+      if (cfg.baseUrl) $('base-url').value = cfg.baseUrl;
+      if (cfg.apiKey)  { $('api-key').value = cfg.apiKey; flashSaved('llm-saved'); }
+      if (cfg.model)   $('model-name').value = cfg.model;
+      if (cfg.temp)    $('temperature').value = cfg.temp;
+    } catch {}
+  }
+  syncModel();
 }
 
 function loadServers() {
   try {
-    const data = JSON.parse(localStorage.getItem(LS.SERVERS)||'[]');
-    if (!data.length) {
-      addServer('agent-cme', 'http://localhost:3000/mcp/');
-      addServer('llm-wiki MCP', 'http://localhost:3101/mcp');
+    const saved = JSON.parse(localStorage.getItem(LS.USER_SERVERS)||'[]');
+    // Discard stale data that used old proxy-path URLs (/api/mcp/*)
+    const isStale = saved.some(s => typeof s.url === 'string' && s.url.startsWith('/api/mcp'));
+    if (saved.length && !isStale) {
+      for (const s of saved) {
+        servers.push({...s, bearer:s.bearer||'', sessionId:null, status:'off', tools:[]});
+        if(s.id >= nextId) nextId = s.id + 1;
+      }
+      renderCards();
       return;
     }
-    for (const s of data) {
-      servers.push({...s, bearer: s.bearer||'', sessionId: null, status:'off', tools:[]});
-      if(s.id >= nextId) nextId = s.id + 1;
-    }
-    renderCards();
-  } catch {
-    addServer('agent-cme', 'http://localhost:3000/mcp/');
-  }
+  } catch {}
+  // No saved state (or stale) — seed from server config
+  const defaults = window.__WIKI_CONFIG__?.mcpServers || [];
+  for (const s of defaults) addServer(s.name, s.url, s.bearer||'');
 }
 
 // ── Init ────────────────────────────────────────────────────────────────────
@@ -695,6 +760,7 @@ ${WIKI_CSS_VARS}
 .tb-back:hover { border-color: var(--accent); color: var(--accent); }
 ${CHAT_COMPONENT_CSS}
 </style>
+<script src="/assets/marked.min.js"></script>
 </head>
 <body>
 ${CHAT_BODY}

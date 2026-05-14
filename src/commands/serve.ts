@@ -36,6 +36,10 @@ const D3_DIST_PATH = path.resolve(
   path.dirname(require.resolve('d3')),
   '../dist/d3.min.js',
 );
+const MARKED_DIST_PATH = path.resolve(
+  path.dirname(require.resolve('marked')),
+  'marked.umd.js',
+);
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -1598,6 +1602,46 @@ async function readRequestBody(req: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
+async function proxyPost(
+  req: IncomingMessage,
+  res: { writeHead: (s: number, h: Record<string, string>) => void; write: (c: Uint8Array) => void; end: () => void; headersSent?: boolean },
+  targetUrl: string,
+  extraHeaders: Record<string, string> = {},
+): Promise<void> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  const body = Buffer.concat(chunks);
+
+  const headers: Record<string, string> = {
+    'content-type': (req.headers['content-type'] as string) ?? 'application/json',
+    'accept': (req.headers['accept'] as string) ?? 'application/json, text/event-stream',
+  };
+  // Forward browser Authorization only when server doesn't override it
+  if (!extraHeaders['authorization'] && req.headers['authorization']) {
+    headers['authorization'] = req.headers['authorization'] as string;
+  }
+  Object.assign(headers, extraHeaders);
+  const sid = req.headers['mcp-session-id'];
+  if (sid) headers['mcp-session-id'] = sid as string;
+
+  const upstream = await fetch(targetUrl, { method: 'POST', headers, body });
+  const ct = upstream.headers.get('content-type') ?? 'application/json';
+  const respSid = upstream.headers.get('mcp-session-id');
+  const respHeaders: Record<string, string> = { 'content-type': ct };
+  if (respSid) respHeaders['mcp-session-id'] = respSid;
+
+  res.writeHead(upstream.status, respHeaders);
+  if (upstream.body) {
+    const reader = upstream.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(value);
+    }
+  }
+  res.end();
+}
+
 function resolveEditableMarkdown(rootDir: string, relativePath: string): string {
   const cleanRelativePath = toPosix(relativePath).replace(/^\/+/, '').replace(/\/+$/, '');
   if (!isEditableRelativePath(cleanRelativePath)) {
@@ -1707,6 +1751,25 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
         new URL(req.url ?? '/', `http://localhost`).pathname,
       );
 
+      // ── Server-side proxies (avoid CORS + Docker internal URLs) ────────────
+      if (req.method === 'POST') {
+        if (urlPath === '/api/chat') {
+          await proxyPost(req, res, `${config.llm.baseUrl}/chat/completions`, {
+            authorization: `Bearer ${config.llm.apiKey ?? ''}`,
+          });
+          return;
+        }
+        if (urlPath === '/api/mcp') {
+          const target = new URL(req.url ?? '', 'http://localhost').searchParams.get('url') ?? '';
+          if (!target) { res.writeHead(400); res.end('url param required'); return; }
+          // Add wiki bearer token server-side when the target matches the configured wiki MCP
+          const wikiTarget = process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${MCP_WIKI_PORT}/mcp`;
+          const bearer = target === wikiTarget ? (process.env.WIKI_MCP_ACCESS_KEY ?? '') : '';
+          await proxyPost(req, res, target, bearer ? { authorization: `Bearer ${bearer}` } : {});
+          return;
+        }
+      }
+
       if (urlPath.startsWith('/edit/')) {
         const relative = urlPath.replace(/^\/edit\//, '').replace(/\/+$/, '');
         if (req.method === 'GET') {
@@ -1752,13 +1815,34 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
       }
 
       if (urlPath === '/chat') {
+        const chatConfig = {
+          model: config.llm.model,
+          temperature: 0.7,
+          baseUrl: config.llm.baseUrl,
+          apiKey: config.llm.apiKey ?? '',
+          mcpServers: [
+            { name: 'llm-wiki', url: process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${MCP_WIKI_PORT}/mcp` },
+            { name: 'agent-cme', url: process.env.CME_MCP_PROXY_URL ?? `http://localhost:${MCP_CME_PORT}/mcp/` },
+          ],
+        };
+        const cfgScript = `<script>window.__WIKI_CONFIG__=${JSON.stringify(chatConfig)};</script>`;
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(CHAT_HTML);
+        res.end(CHAT_HTML.replace('</head>', `${cfgScript}</head>`));
         return;
       }
 
       if (urlPath === '/assets/d3.min.js') {
         const js = await readFile(D3_DIST_PATH, 'utf8');
+        res.writeHead(200, {
+          'Content-Type': 'application/javascript; charset=utf-8',
+          'Cache-Control': 'public, max-age=3600',
+        });
+        res.end(js);
+        return;
+      }
+
+      if (urlPath === '/assets/marked.min.js') {
+        const js = await readFile(MARKED_DIST_PATH, 'utf8');
         res.writeHead(200, {
           'Content-Type': 'application/javascript; charset=utf-8',
           'Cache-Control': 'public, max-age=3600',
