@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { spawn } from 'node:child_process';
 import path from 'node:path';
 import fg from 'fast-glob';
 import { marked } from 'marked';
@@ -1638,7 +1639,84 @@ async function generateEditPage(rootDir: string, relativePath: string): Promise<
   return layout(`Edit ${path.basename(cleanRelativePath)}`, body);
 }
 
-export default async function serveCmd(config: AppConfig, options: { port?: number }) {
+function openAppMode(url: string): void {
+  const platform = process.platform;
+
+  if (platform === 'darwin') {
+    // Try Chrome, then Edge, then Safari
+    const chromiumTry = spawn(
+      'open',
+      ['-na', 'Google Chrome', '--args', `--app=${url}`],
+      { stdio: 'ignore', detached: true },
+    );
+    chromiumTry.on('error', () => {
+      const edgeTry = spawn(
+        'open',
+        ['-na', 'Microsoft Edge', '--args', `--app=${url}`],
+        { stdio: 'ignore', detached: true },
+      );
+      edgeTry.on('error', () => {
+        spawn('open', ['-a', 'Safari', url], { stdio: 'ignore', detached: true }).unref();
+      });
+      edgeTry.unref();
+    });
+    chromiumTry.unref();
+    return;
+  }
+
+  if (platform === 'linux') {
+    // Try Chrome, then Edge, then xdg-open
+    const chromeCandidates = ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser'];
+    const edgeCandidates = ['microsoft-edge', 'microsoft-edge-stable'];
+
+    function tryNext(candidates: string[], fallback: () => void): void {
+      const [cmd, ...rest] = candidates;
+      if (!cmd) { fallback(); return; }
+      const proc = spawn(cmd, [`--app=${url}`], { stdio: 'ignore', detached: true });
+      proc.on('error', () => tryNext(rest, fallback));
+      proc.unref();
+    }
+
+    tryNext(chromeCandidates, () => {
+      tryNext(edgeCandidates, () => {
+        spawn('xdg-open', [url], { stdio: 'ignore', detached: true }).unref();
+      });
+    });
+    return;
+  }
+
+  if (platform === 'win32') {
+    // Try Chrome, then Edge, then start default
+    const chromePaths = [
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    ];
+    const edgePaths = [
+      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    ];
+
+    function tryNext(paths: string[], fallback: () => void): void {
+      const [exe, ...rest] = paths;
+      if (!exe) { fallback(); return; }
+      const proc = spawn(exe, [`--app=${url}`], { stdio: 'ignore', detached: true });
+      proc.on('error', () => tryNext(rest, fallback));
+      proc.unref();
+    }
+
+    tryNext(chromePaths, () => {
+      tryNext(edgePaths, () => {
+        spawn('cmd', ['/c', 'start', '', url], { stdio: 'ignore', detached: true, shell: true }).unref();
+      });
+    });
+    return;
+  }
+
+  // Fallback: best-effort open
+  spawn('open', [url], { stdio: 'ignore', detached: true }).unref();
+}
+
+export default async function serveCmd(config: AppConfig, options: { port?: number; open?: boolean }) {
   const workspace = new WorkspaceService(config);
   const rootDir = workspace.paths.rootDir;
   const port = options.port ?? 3000;
@@ -1764,8 +1842,10 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
   });
 
   server.listen(port, () => {
-    console.log(`wiki serve  →  http://localhost:${port}`);
+    const url = `http://localhost:${port}`;
+    console.log(`wiki serve  →  ${url}`);
     console.log('Ctrl-C to stop.');
+    if (options.open) openAppMode(url);
   });
 
   process.on('SIGINT', () => {

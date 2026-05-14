@@ -100,7 +100,8 @@ async function main() {
     .command('serve')
     .description('Start a local HTTP server to browse the wiki in a browser')
     .option('-p, --port <number>', 'Port to listen on', '3000')
-    .action((options) => serveCmd(config, { port: parseInt(options.port, 10) }));
+    .option('--open', 'Open the wiki in app mode (Chrome/Edge --app flag, or Safari/default browser)')
+    .action((options) => serveCmd(config, { port: parseInt(options.port, 10), open: Boolean(options.open) }));
 
   program
     .command('doctor')
