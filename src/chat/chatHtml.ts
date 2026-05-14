@@ -303,7 +303,7 @@ function cardHTML(s) {
           </button>
         </div>
       </div>
-      \${s.bearer ? '<span class="key-saved show" style="flex-shrink:0">token &#x2713;</span>' : '<span style="font-size:10px;color:var(--muted);flex-shrink:0;font-family:\'DM Mono\',monospace">no auth</span>'}
+      \${s.bearer ? '<span class="key-saved show" style="flex-shrink:0">token &#x2713;</span>' : '<span style="font-size:10px;color:var(--muted);flex-shrink:0;font-family:var(--font-mono)">no auth</span>'}
     </div>
     \${toolsHTML}
   </div>\`;
@@ -491,7 +491,7 @@ async function sendMessage() {
   const input=$('chat-input');
   const text=input.value.trim();
   if(!text) return;
-  const baseUrl=$('base-url').value.trim().replace(/\/$/, '');
+  const baseUrl=$('base-url').value.trim().replace(/\\/$/, '');
   const model=$('model-name').value.trim()||'gpt-4o';
   const temp=parseFloat($('temperature').value)||0.7;
   if(!baseUrl){notify('Entrez une Base URL','e');return;}

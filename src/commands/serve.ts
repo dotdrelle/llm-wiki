@@ -151,7 +151,7 @@ function layout(title: string, body: string): string {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)}</title>
   <style>
-    \${WIKI_CSS_VARS}
+    ${WIKI_CSS_VARS}
     * { box-sizing: border-box; }
     body {
       margin: 0;
