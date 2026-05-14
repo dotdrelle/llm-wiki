@@ -30,5 +30,9 @@ export default defineConfig({
     if (existsSync('examples')) {
       cpSync('examples', 'dist/examples', { recursive: true, force: true });
     }
+
+    if (existsSync('chat')) {
+      cpSync('chat', 'dist/chat', { recursive: true, force: true });
+    }
   },
 });

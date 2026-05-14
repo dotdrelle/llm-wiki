@@ -11,6 +11,13 @@ import { WorkspaceService } from '../services/workspaceService.ts';
 import { pathExists, writeIfChanged } from '../utils/fs.ts';
 import { resolveInside, toPosix } from '../utils/path.ts';
 
+const CHAT_HTML_PATH = path.resolve(
+  path.dirname(new URL(import.meta.url).pathname),
+  '../chat/index.html',
+);
+const MCP_WIKI_PORT = process.env.WIKI_MCP_HTTP_PORT ?? '3101';
+const MCP_CME_PORT = process.env.CME_MCP_PORT ?? '3000';
+
 const SERVED_DIRS = ['wiki', 'deliverables', 'templates', 'build-context'];
 const NAV_PATTERNS = [
   'wiki/**/*.md',
@@ -921,7 +928,7 @@ async function renderSidebar(rootDir: string): Promise<string> {
     .map((dir) => renderNavNode(dir))
     .join('\n');
 
-  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">wiki</span><span class="brand-subtitle">index.md comme point d'entrée</span></a><a class="side-link" href="/graph">Graph des sources</a><div class="side-search"><input class="side-search-input" type="search" placeholder="Search files" aria-label="Search files" data-side-search><p class="side-search-status" data-side-search-status>No matching files.</p></div><nav class="side-tree" aria-label="Documents markdown">${tree}</nav></aside>`;
+  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">wiki</span><span class="brand-subtitle">index.md comme point d'entrée</span></a><a class="side-link" href="/graph">Graph des sources</a><a class="side-link" href="/chat">Chat MCP</a><a class="side-link" href="http://localhost:${MCP_WIKI_PORT}/mcp" target="_blank" rel="noopener">MCP wiki ↗</a><a class="side-link" href="http://localhost:${MCP_CME_PORT}/mcp/" target="_blank" rel="noopener">MCP CME ↗</a><div class="side-search"><input class="side-search-input" type="search" placeholder="Search files" aria-label="Search files" data-side-search><p class="side-search-status" data-side-search-status>No matching files.</p></div><nav class="side-tree" aria-label="Documents markdown">${tree}</nav></aside>`;
 }
 
 interface GraphNode {
@@ -1768,6 +1775,13 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
 
         res.writeHead(405, { 'Content-Type': 'text/plain' });
         res.end('Method not allowed');
+        return;
+      }
+
+      if (urlPath === '/chat') {
+        const html = await readFile(CHAT_HTML_PATH, 'utf8');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(html);
         return;
       }
 
