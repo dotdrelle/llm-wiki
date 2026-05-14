@@ -52,6 +52,21 @@ docker compose up serve
 
 `EXPOSE 3000` in the Dockerfile does not start a server by itself — only the `serve` service does. Both `wiki` and `serve` mount the same workspace: changes from `ingest` appear in the browser after a refresh.
 
+The browser UI includes:
+
+- `/graph` for the source graph, with a collapsible relations panel;
+- `/chat` for MCP-aware chat.
+
+In Docker/manager deployments, `wiki serve` can proxy browser requests to MCP
+servers through `/api/mcp`. Set these variables on the `serve` container when the
+browser should use server-side routing:
+
+| Variable             | Purpose                                                        |
+| -------------------- | -------------------------------------------------------------- |
+| `WIKI_MCP_PROXY_URL` | URL of the workspace `wiki mcp-http` endpoint seen by `serve`  |
+| `WIKI_MCP_ACCESS_KEY` | Bearer token injected server-side for the workspace MCP server |
+| `CME_MCP_PROXY_URL`  | Optional external MCP endpoint, for example `agent-cme`        |
+
 ## MCP HTTP server
 
 ```bash

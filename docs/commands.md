@@ -129,11 +129,21 @@ Starts a local HTTP server to browse the wiki, deliverables, and templates in a 
 
 - `/` — renders `wiki/index.md` with navigation tiles
 - `/graph` — D3 force graph of wiki/source relations
+- `/chat` — browser chat UI with OpenAI-compatible tool calling over MCP
 
 ```bash
 wiki serve
 wiki serve --port 8080
 ```
+
+The chat UI can connect to one or more Streamable HTTP MCP servers. It exposes MCP
+tools as OpenAI-compatible function tools, loops over tool results, and shows the
+observable call chain as linked tiles. Tool details are collapsed by default; local
+wiki paths returned by tools can be opened in a rendered Markdown modal.
+
+When `wiki serve` runs in Docker or manager mode, `/api/chat` and `/api/mcp` act as
+server-side proxies so the browser does not need direct access to internal Docker
+hostnames or bearer tokens.
 
 With Docker, use the long-running `serve` service instead:
 

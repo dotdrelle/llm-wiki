@@ -49,6 +49,32 @@ Manual equivalent:
 
 Do not use `wiki_search_context` excerpts alone as the evidence base for synthesis-style answers. Excerpts are for triage and path selection.
 
+## Browser chat UI
+
+`wiki serve` also exposes `/chat`, a browser client for OpenAI-compatible chat
+completion endpoints with MCP tool calling.
+
+The chat UI:
+
+- connects to Streamable HTTP MCP servers from the browser through the local
+  `/api/mcp` proxy;
+- exposes discovered MCP tools as OpenAI-compatible `tools`;
+- loops over `assistant.tool_calls`, calls MCP `tools/call`, appends `role: tool`
+  results, and asks the model again until it answers or the turn limit is reached;
+- shows a visual MCP chain for observable tool activity;
+- renders tool results in compact cards, with raw JSON collapsed by default;
+- turns local `wiki/**` and `raw/ingested/**` paths into rendered Markdown modals;
+- provides an editable system-instructions drawer for MCP workflow guidance.
+
+The visual chain reports actual model-requested tools. For `wiki_collect_context`,
+the chain also shows derived internal read coverage such as `readPages`, truncated
+pages, and raw sources referenced but not opened. These derived tiles are not
+separate MCP calls; they come from the `wiki_collect_context` result payload.
+
+`tool_choice` remains `auto`, so the model decides whether a second tool call is
+needed. If `wiki_collect_context` returns enough `readPages`, a later
+`wiki_read_pages` call may not happen.
+
 ## `wiki mcp` — stdio
 
 The server must be launched from inside the workspace (or a subdirectory) so it can locate `.wikirc.yaml`.
