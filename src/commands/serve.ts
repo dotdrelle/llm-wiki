@@ -15,6 +15,7 @@ import { CHAT_HTML } from '../chat/chatHtml.ts';
 
 const MCP_WIKI_PORT = process.env.WIKI_MCP_HTTP_PORT ?? '3101';
 const MCP_CME_PORT = process.env.CME_MCP_PORT ?? '3000';
+const MCP_MAILER_PORT = process.env.MAILER_MCP_PORT ?? '3335';
 
 const SERVED_DIRS = ['wiki', 'deliverables', 'templates', 'build-context'];
 const NAV_PATTERNS = [
@@ -2037,6 +2038,7 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
           mcpServers: [
             { name: 'llm-wiki', url: process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${MCP_WIKI_PORT}/mcp` },
             { name: 'agent-cme', url: process.env.CME_MCP_PROXY_URL ?? `http://localhost:${MCP_CME_PORT}/mcp/` },
+            { name: 'donna-mailer', url: process.env.MAILER_MCP_PROXY_URL ?? `http://localhost:${MCP_MAILER_PORT}/mcp/` },
           ],
         };
         const cfgScript = `<script>window.__WIKI_CONFIG__=${JSON.stringify(chatConfig)};</script>`;
