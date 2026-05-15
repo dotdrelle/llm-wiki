@@ -51,9 +51,9 @@ Fixed context files in `build-context/` are included verbatim in every build LLM
 
 `llm-wiki` ingests standard markdown files. Keep source conversion outside the workspace, then copy the resulting `.md` files into `raw/untracked/`.
 
-### Confluence through AgentCME
+### Confluence through agent-cme
 
-For Confluence, use [`AgentCME`](https://github.com/dotdrelle/AgentCME) to export Markdown and [`llm-wiki-manager`](https://github.com/dotdrelle/llm-wiki-manager) to copy selected exports into the target workspace:
+For Confluence, use [`agent-cme`](https://github.com/dotdrelle/agent-cme) to export Markdown and [`llm-wiki-manager`](https://github.com/dotdrelle/llm-wiki-manager) to copy selected exports into the target workspace:
 
 ```bash
 cd ../llm-wiki-manager
@@ -62,7 +62,7 @@ cd ../llm-wiki-manager
 ./wiki-workspace wiki <workspace> ingest
 ```
 
-`agent-cme` owns Confluence credentials and writes exports under `../agent-cme/data/exports/`. `llm-wiki-manager` copies only the export directories listed under `imports` in `workspaces.yaml`.
+`agent-cme` owns Confluence credentials and writes exports under `../agent-cme/data/exports/`. `llm-wiki-manager` copies only the export directories listed in each workspace env file.
 
 ### Markitdown
 

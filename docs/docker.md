@@ -17,7 +17,7 @@ Set `WIKI_WORKSPACE` to the path of an initialized wiki workspace. It is mounted
 export WIKI_WORKSPACE=/path/to/my/workspace
 ```
 
-For several workspaces, use the sibling `llm-wiki-manager` repository. It keeps one compose file at the manager root, maps each workspace path and port in `workspaces.yaml`, and starts each workspace with an isolated compose project:
+For several workspaces, use the sibling `llm-wiki-manager` repository. It keeps one compose file at the manager root, maps each workspace path and port in `workspaces/<name>.env`, and starts each workspace with an isolated compose project:
 
 ```bash
 cd ../llm-wiki-manager
