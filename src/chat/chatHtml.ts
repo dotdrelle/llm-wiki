@@ -16,6 +16,16 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);height:
 .sec-label{font-size:10px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--muted);padding:16px 16px 8px;display:flex;align-items:center;justify-content:space-between}
 .sec-label button{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted2);font-size:11px;padding:2px 8px;cursor:pointer;font-family:var(--font-sans);font-weight:600;transition:border-color .2s,color .2s}
 .sec-label button:hover{border-color:var(--accent);color:var(--accent)}
+.history-list{padding:0 12px;display:flex;flex-direction:column;gap:5px}
+.history-empty{padding:8px 4px;color:var(--muted);font-size:12px;line-height:1.4}
+.history-item{display:flex;align-items:center;gap:7px;border:1px solid transparent;border-radius:9px;padding:7px 8px;background:transparent;color:var(--text);cursor:pointer;text-align:left;transition:background .2s,border-color .2s}
+.history-item:hover,.history-item.active{background:var(--panel-soft);border-color:var(--border)}
+.history-main{min-width:0;flex:1}
+.history-title{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.history-meta{margin-top:2px;font-size:10px;color:var(--muted);font-family:var(--font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.history-delete{display:none;background:none;border:none;color:var(--muted);cursor:pointer;border-radius:6px;padding:3px 5px;font-size:12px}
+.history-item:hover .history-delete{display:block}
+.history-delete:hover{color:var(--err);background:rgba(240,107,107,.08)}
 .api-block{padding:0 12px 4px;display:flex;flex-direction:column;gap:7px}
 .field label{display:block;font-size:10px;color:var(--muted);margin-bottom:4px;font-weight:600;letter-spacing:.5px}
 input,select{width:100%;background:var(--panel-soft);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:7px 10px;outline:none;transition:border-color .2s}
@@ -241,6 +251,14 @@ const CHAT_BODY = `<aside id="sidebar">
     </div>
   </div>
   <div class="sb-scroll">
+    <div class="sec-label">
+      Discussions
+      <button onclick="newConversation()">+ Nouveau</button>
+    </div>
+    <div class="history-list" id="history-list">
+      <div class="history-empty">Aucun historique.</div>
+    </div>
+    <hr class="divider">
     <div class="sec-label">Configuration LLM</div>
     <div class="api-block">
       <div class="field">
@@ -347,6 +365,9 @@ let isStreaming = false;
 let sidebarOpen = true;
 let nextId = 1;
 let streamAbortController = null;
+let currentConversationId = null;
+let historySummaries = [];
+let historySaveTimer = null;
 const DEFAULT_SYSTEM_PROMPT = \`Tu es un assistant connecté à des serveurs MCP.
 
 Quand des outils MCP sont disponibles, utilise-les si la réponse dépend d'informations externes, récentes, privées, locales ou vérifiables par ces outils.
@@ -427,6 +448,165 @@ function resetSystemPrompt() {
 
 function currentSystemPrompt() {
   return ($('system-prompt')?.value || '').trim();
+}
+
+function newConversationId() {
+  return \`conv_\${new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14)}_\${Math.random().toString(36).slice(2,8)}\`;
+}
+
+function titleFromMessages() {
+  const firstUser=messages.find(m=>m.role==='user' && m.content);
+  const text=String(firstUser?.content || 'Nouvelle discussion').replace(/\\s+/g,' ').trim();
+  return text.length>54 ? text.slice(0,53).trimEnd()+'…' : text;
+}
+
+function activeServerSnapshot() {
+  return servers.map(s=>({
+    name:s.name,
+    url:s.url,
+    enabled:!!s.enabled,
+    status:s.status,
+    toolCount:Array.isArray(s.tools)?s.tools.length:0,
+  }));
+}
+
+function collectToolHistory() {
+  const out=[];
+  for(const msg of messages) {
+    if(Array.isArray(msg.tool_calls)) out.push(...msg.tool_calls.map(tc=>({type:'call',name:tc.function?.name||tc.name||'',id:tc.id||''})));
+    if(msg.role==='tool') out.push({type:'result',name:msg.name||'',toolCallId:msg.tool_call_id||''});
+  }
+  return out;
+}
+
+function buildConversationPayload() {
+  const now=new Date().toISOString();
+  const existing=historySummaries.find(c=>c.id===currentConversationId);
+  return {
+    id: currentConversationId || newConversationId(),
+    title: titleFromMessages(),
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+    systemPrompt: currentSystemPrompt(),
+    mcpServers: activeServerSnapshot(),
+    messages,
+    toolCalls: collectToolHistory(),
+    traceHtml: [...document.querySelectorAll('.trace-card')].map(el=>el.outerHTML),
+    messageHtml: $('messages')?.innerHTML || '',
+  };
+}
+
+async function saveCurrentConversation({immediate=false}={}) {
+  if(!messages.length) return;
+  if(historySaveTimer) {
+    clearTimeout(historySaveTimer);
+    historySaveTimer=null;
+  }
+  const run=async()=>{
+    try {
+      const payload=buildConversationPayload();
+      currentConversationId=payload.id;
+      const method=historySummaries.some(c=>c.id===payload.id) ? 'PUT' : 'POST';
+      const url=method==='PUT' ? \`/api/chat/history/\${encodeURIComponent(payload.id)}\` : '/api/chat/history';
+      await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      await loadHistory();
+    } catch(e) {
+      console.warn('chat history save failed', e);
+    }
+  };
+  if(immediate) await run();
+  else historySaveTimer=setTimeout(run,500);
+}
+
+function scheduleConversationSave() {
+  saveCurrentConversation().catch(()=>{});
+}
+
+function historyMeta(item) {
+  const date=new Date(item.updatedAt);
+  const when=Number.isNaN(date.getTime()) ? '' : date.toLocaleString([], {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  const tools=item.toolCallCount ? \` · \${item.toolCallCount} outil\${item.toolCallCount>1?'s':''}\` : '';
+  return \`\${when}\${tools}\`;
+}
+
+function renderHistory() {
+  const el=$('history-list');
+  if(!el) return;
+  if(!historySummaries.length) {
+    el.innerHTML='<div class="history-empty">Aucun historique.</div>';
+    return;
+  }
+  el.innerHTML=historySummaries.map(item=>\`
+    <button class="history-item \${item.id===currentConversationId?'active':''}" onclick="loadConversation('\${esc(item.id)}')">
+      <div class="history-main">
+        <div class="history-title">\${esc(item.title||'Nouvelle discussion')}</div>
+        <div class="history-meta">\${esc(historyMeta(item))}</div>
+      </div>
+      <span class="history-delete" onclick="deleteConversation(event,'\${esc(item.id)}')" title="Supprimer">×</span>
+    </button>
+  \`).join('');
+}
+
+async function loadHistory() {
+  try {
+    const res=await fetch('/api/chat/history');
+    if(!res.ok) throw new Error(\`HTTP \${res.status}\`);
+    historySummaries=await res.json();
+    renderHistory();
+  } catch(e) {
+    console.warn('chat history load failed', e);
+  }
+}
+
+function setEmptyChat() {
+  $('messages').innerHTML=\`<div id="empty"><div class="em-icon">⬡</div><h2>MCP Chat</h2><p>Activez un serveur MCP, puis démarrez la conversation.</p></div>\`;
+}
+
+async function newConversation() {
+  if(messages.length) await saveCurrentConversation({immediate:true});
+  currentConversationId=null;
+  messages=[];
+  setEmptyChat();
+  renderHistory();
+  $('chat-input')?.focus();
+}
+
+async function loadConversation(id) {
+  if(isStreaming) stopStreaming();
+  if(messages.length && currentConversationId!==id) await saveCurrentConversation({immediate:true});
+  try {
+    const res=await fetch(\`/api/chat/history/\${encodeURIComponent(id)}\`);
+    if(!res.ok) throw new Error(\`HTTP \${res.status}\`);
+    const conv=await res.json();
+    currentConversationId=conv.id;
+    messages=Array.isArray(conv.messages) ? conv.messages : [];
+    if(conv.systemPrompt && $('system-prompt')) {
+      $('system-prompt').value=conv.systemPrompt;
+      saveSystemPrompt();
+    }
+    $('messages').innerHTML=conv.messageHtml || '';
+    if(!$('messages').innerHTML.trim()) setEmptyChat();
+    renderHistory();
+    $('messages').scrollTop=$('messages').scrollHeight;
+  } catch(e) {
+    notify(\`Historique: \${e.message}\`,'e');
+  }
+}
+
+async function deleteConversation(event, id) {
+  event.stopPropagation();
+  try {
+    const res=await fetch(\`/api/chat/history/\${encodeURIComponent(id)}\`,{method:'DELETE'});
+    if(!res.ok) throw new Error(\`HTTP \${res.status}\`);
+    if(currentConversationId===id) {
+      currentConversationId=null;
+      messages=[];
+      setEmptyChat();
+    }
+    await loadHistory();
+  } catch(e) {
+    notify(\`Suppression impossible: \${e.message}\`,'e');
+  }
 }
 
 function buildLLMHeaders() {
@@ -639,7 +819,9 @@ function findServerForTool(name) {
 
 function clearChat() {
   messages=[];
-  $('messages').innerHTML=\`<div id="empty"><div class="em-icon">⧡</div><h2>MCP Chat</h2><p>Activez un serveur MCP, puis démarrez la conversation.</p></div>\`;
+  currentConversationId=null;
+  setEmptyChat();
+  renderHistory();
 }
 
 function removeEmpty() { $('empty')?.remove(); }
@@ -1080,8 +1262,10 @@ async function sendMessage() {
   input.value=''; input.style.height='auto';
   isStreaming=true; setSendButtonStreaming(true);
   streamAbortController = new AbortController();
+  if(!currentConversationId) currentConversationId=newConversationId();
   messages.push({role:'user',content:text});
   appendMsg('user',text);
+  scheduleConversationSave();
   const runTrace=createTraceCard();
 
   let tcIdx=Date.now();
@@ -1140,6 +1324,7 @@ async function sendMessage() {
         }));
         tcIdx+=toolCalls.length;
         messages.push(...toolResults);
+        await saveCurrentConversation({immediate:true});
         streamDiv=null;
         if(streamAbortController.signal.aborted) break;
         continue;
@@ -1147,10 +1332,12 @@ async function sendMessage() {
 
       setStreamContent(streamDiv,content);
       messages.push({role:'assistant',content});
+      await saveCurrentConversation({immediate:true});
       break;
     }
     if(turn>=MAX_TURNS) {
       appendMsg('assistant',\`⚠ Limite de chaînage atteinte (\${MAX_TURNS} tours).\`);
+      await saveCurrentConversation({immediate:true});
     }
   } catch(err) {
     if(err.name==='AbortError') {
@@ -1158,13 +1345,17 @@ async function sendMessage() {
         const partial=streamDiv.dataset.copy || 'Réponse arrêtée.';
         setStreamContent(streamDiv,partial);
         streamDiv.dataset.copy=partial;
+        messages.push({role:'assistant',content:partial});
       } else {
         appendMsg('assistant','Réponse arrêtée.');
+        messages.push({role:'assistant',content:'Réponse arrêtée.'});
       }
+      await saveCurrentConversation({immediate:true});
     } else {
       streamDiv?.remove();
       appendMsg('assistant',\`⚠ Erreur: \${err.message}\`);
       notify(err.message,'e');
+      await saveCurrentConversation({immediate:true});
     }
   } finally {
     isStreaming=false;
@@ -1263,6 +1454,7 @@ function loadServers() {
 // ── Init ────────────────────────────────────────────────────────────────────
 loadConfig();
 loadServers();
+loadHistory();
 </script>`;
 
 export const CHAT_HTML = `<!DOCTYPE html>
