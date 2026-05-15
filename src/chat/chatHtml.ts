@@ -97,6 +97,13 @@ input[type=password]{letter-spacing:3px}
 .tb-clear,.tb-system{background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);padding:5px 12px;cursor:pointer;font-size:12px;font-family:var(--font-sans);font-weight:600;transition:all .2s}
 .tb-clear:hover{border-color:var(--err);color:var(--err)}
 .tb-system:hover,.tb-system.active{border-color:var(--accent);color:var(--accent)}
+.tb-production{background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);padding:5px 12px;cursor:pointer;font-size:12px;font-family:var(--font-sans);font-weight:600;transition:all .2s;display:none}
+.tb-production.visible{display:inline-flex;align-items:center;gap:6px}
+.tb-production:hover,.tb-production.active{border-color:var(--accent);color:var(--accent)}
+.tb-production-dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.tb-production-dot.running{background:var(--warn);animation:pulse 1s infinite}
+.tb-production-dot.done{background:var(--ok)}
+.tb-production-dot.failed,.tb-production-dot.cancelled{background:var(--err)}
 
 /* MESSAGES */
 #messages{flex:1;overflow-y:auto;padding:28px clamp(16px,4vw,48px) 22px;display:flex;flex-direction:column;gap:22px;align-items:center}
@@ -245,6 +252,49 @@ input[type=password]{letter-spacing:3px}
 .prompt-actions{display:flex;justify-content:flex-end;gap:8px;padding-top:2px}
 .prompt-actions button{background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);cursor:pointer;padding:7px 10px;font-size:12px;font-family:var(--font-sans);font-weight:600;transition:all .2s}
 .prompt-actions button:hover{border-color:var(--accent);color:var(--accent)}
+.production-drawer{position:fixed;inset:0;z-index:996;pointer-events:none}
+.production-drawer.open{pointer-events:auto}
+.production-panel{position:absolute;top:0;right:0;height:100%;width:min(420px,calc(100vw - 18px));background:var(--panel);border-left:1px solid var(--border);box-shadow:-18px 0 45px rgba(0,0,0,.14);transform:translateX(100%);transition:transform .24s ease;display:flex;flex-direction:column}
+.production-drawer.open .production-panel{transform:translateX(0)}
+.production-head{display:flex;align-items:center;gap:10px;padding:15px 16px;border-bottom:1px solid var(--border)}
+.production-title{flex:1;min-width:0}
+.production-title h2{font-size:15px;line-height:1.2;margin:0}
+.production-title p{font-size:11px;color:var(--muted);line-height:1.4;margin:3px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.production-close{width:30px;height:30px;border:1px solid var(--border);border-radius:8px;background:var(--panel-soft);color:var(--muted);cursor:pointer;font-size:16px;line-height:1}
+.production-close:hover{color:var(--err);border-color:var(--err)}
+.production-body{flex:1;min-height:0;overflow:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.prod-empty{color:var(--muted);font-size:13px;line-height:1.55;padding:10px 0}
+.prod-card{border:1px solid var(--border);border-radius:12px;background:var(--panel-soft);padding:12px}
+.prod-status-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.prod-main{min-width:0}
+.prod-kind{font-size:13px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prod-sub{margin-top:3px;font-size:11px;color:var(--muted);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prod-badge{font-family:var(--font-mono);font-size:10px;font-weight:700;padding:3px 8px;border-radius:99px;border:1px solid var(--border);color:var(--muted);white-space:nowrap}
+.prod-badge.running,.prod-badge.queued{border-color:rgba(245,200,66,.35);color:var(--warn);background:rgba(245,200,66,.08)}
+.prod-badge.done{border-color:rgba(45,212,160,.35);color:var(--ok);background:rgba(45,212,160,.08)}
+.prod-badge.failed,.prod-badge.cancelled{border-color:rgba(240,107,107,.35);color:var(--err);background:rgba(240,107,107,.08)}
+.prod-metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.prod-metric{border:1px solid var(--border);border-radius:9px;background:var(--panel);padding:7px 8px}
+.prod-metric-k{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+.prod-metric-v{font-size:12px;color:var(--text);font-family:var(--font-mono);margin-top:2px}
+.prod-steps{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.prod-step{display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:9px;background:var(--panel);padding:7px 8px}
+.prod-step-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0}
+.prod-step-dot.running{background:var(--warn);animation:pulse 1s infinite}
+.prod-step-dot.done{background:var(--ok)}
+.prod-step-dot.failed,.prod-step-dot.cancelled{background:var(--err)}
+.prod-step-main{min-width:0;flex:1}
+.prod-step-name{font-size:12px;font-weight:800;color:var(--text)}
+.prod-step-meta{font-size:10px;color:var(--muted);font-family:var(--font-mono);margin-top:1px}
+.prod-details{border:1px solid var(--border);border-radius:10px;background:var(--panel-soft);overflow:hidden}
+.prod-details summary{cursor:pointer;user-select:none;padding:9px 11px;font-size:12px;font-weight:800;color:var(--text);list-style:none;display:flex;justify-content:space-between;gap:10px}
+.prod-details summary::-webkit-details-marker{display:none}
+.prod-details summary::after{content:'▸';font-family:var(--font-mono);color:var(--muted)}
+.prod-details[open] summary::after{content:'▾'}
+.prod-details-body{border-top:1px solid var(--border);padding:10px 11px}
+.prod-code{font-family:var(--font-mono);font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-word;color:var(--text);background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:9px;max-height:260px;overflow:auto}
+.prod-log-line{display:block;color:var(--text)}
+.prod-log-line.muted{color:var(--muted)}
 @media (max-width: 720px){.doc-panel{inset:14px}.doc-content{padding:18px}}
 hr.divider{border:none;border-top:1px solid var(--border);margin:8px 12px}`;
 
@@ -314,6 +364,10 @@ const CHAT_BODY = `<aside id="sidebar">
     <span class="tb-model" id="model-badge">gpt-4o</span>
     <div class="tb-mcps" id="tb-mcps"></div>
     <div class="tb-actions">
+      <button class="tb-production" id="production-panel-btn" onclick="toggleProductionPanel()" title="Suivi production">
+        <span class="tb-production-dot" id="production-panel-dot"></span>
+        <span>Production</span>
+      </button>
       <button class="tb-system" id="system-drawer-btn" onclick="toggleSystemPrompt()">Instructions système</button>
       <button class="tb-clear" onclick="clearChat()">Effacer</button>
     </div>
@@ -356,6 +410,18 @@ const CHAT_BODY = `<aside id="sidebar">
     </div>
   </aside>
 </div>
+<div class="production-drawer" id="production-drawer" aria-hidden="true">
+  <aside class="production-panel" aria-label="Suivi production">
+    <div class="production-head">
+      <div class="production-title">
+        <h2>Production</h2>
+        <p id="production-subtitle">Aucun job suivi.</p>
+      </div>
+      <button class="production-close" type="button" onclick="toggleProductionPanel(false)" title="Fermer">×</button>
+    </div>
+    <div class="production-body" id="production-body"></div>
+  </aside>
+</div>
 <div class="doc-modal" id="doc-modal" aria-hidden="true">
   <div class="doc-backdrop" onclick="closeLocalDoc()"></div>
   <section class="doc-panel" role="dialog" aria-modal="true" aria-labelledby="doc-title">
@@ -378,6 +444,15 @@ let streamAbortController = null;
 let currentConversationId = null;
 let historySummaries = [];
 let historySaveTimer = null;
+let productionState = {
+  jobId: null,
+  job: null,
+  logs: [],
+  command: '',
+  traceFile: '',
+  pollTimer: null,
+  lastUpdatedAt: null,
+};
 const DEFAULT_SYSTEM_PROMPT = \`Tu es un assistant connecté à des serveurs MCP.
 
 Quand des outils MCP sont disponibles, utilise-les si la réponse dépend d'informations externes, récentes, privées, locales ou vérifiables par ces outils.
@@ -631,6 +706,7 @@ async function newConversation() {
   if(messages.length) await saveCurrentConversation({immediate:true});
   currentConversationId=null;
   messages=[];
+  resetProductionState();
   setEmptyChat();
   renderHistory();
   $('chat-input')?.focus();
@@ -651,6 +727,7 @@ async function loadConversation(id) {
     }
     $('messages').innerHTML=conv.messageHtml || '';
     if(!$('messages').innerHTML.trim()) setEmptyChat();
+    recoverProductionStateFromMessages();
     renderHistory();
     $('messages').scrollTop=$('messages').scrollHeight;
   } catch(e) {
@@ -878,6 +955,195 @@ function findServerForTool(name) {
   for(const s of servers)
     if(s.enabled&&s.status==='ok'&&s.tools.some(t=>t.name===name)) return s;
   return null;
+}
+
+// ── Suivi production ────────────────────────────────────────────────────────
+
+function productionTerminal(status) {
+  return ['done','failed','cancelled'].includes(String(status||''));
+}
+
+function parseProductionJSON(result) {
+  const data=parseToolJSON(result);
+  return data && typeof data==='object' ? data : null;
+}
+
+function resetProductionState() {
+  if(productionState.pollTimer) clearTimeout(productionState.pollTimer);
+  productionState={jobId:null,job:null,logs:[],command:'',traceFile:'',pollTimer:null,lastUpdatedAt:null};
+  renderProductionPanel();
+}
+
+function extractProductionDetails(lines) {
+  const out={command:'',traceFile:''};
+  for(const line of lines||[]) {
+    const cmd=String(line).match(/^\\[cmd\\]\\s+cwd=.*?\\s+(node\\s+.+)$/);
+    if(cmd) out.command=cmd[1];
+    const trace=String(line).match(/Trace file:\\s*(.+)$/);
+    if(trace) out.traceFile=trace[1].trim();
+  }
+  return out;
+}
+
+function formatDuration(seconds) {
+  const s=Math.max(0,Math.floor(Number(seconds)||0));
+  const m=Math.floor(s/60), r=s%60;
+  if(m<1) return \`\${r}s\`;
+  const h=Math.floor(m/60), mm=m%60;
+  return h ? \`\${h}h \${String(mm).padStart(2,'0')}m\` : \`\${m}m \${String(r).padStart(2,'0')}s\`;
+}
+
+function productionTargetLabel(job) {
+  const templates=Array.isArray(job?.templates) ? job.templates : [];
+  const deliverables=Array.isArray(job?.deliverables) ? job.deliverables : [];
+  const targets=[...templates,...deliverables].filter(Boolean);
+  if(targets.length) return targets.join(', ');
+  return job?.jobId || 'job';
+}
+
+function productionStatusLabel(status) {
+  const map={queued:'en attente',running:'en cours',done:'terminé',failed:'échec',cancelled:'annulé'};
+  return map[status] || status || 'inconnu';
+}
+
+function setProductionPanelVisible(visible) {
+  const drawer=$('production-drawer'), btn=$('production-panel-btn');
+  if(!drawer) return;
+  drawer.classList.toggle('open',!!visible);
+  drawer.setAttribute('aria-hidden',visible?'false':'true');
+  btn?.classList.toggle('active',!!visible);
+}
+
+function toggleProductionPanel(force) {
+  const drawer=$('production-drawer');
+  const next=typeof force==='boolean' ? force : !drawer?.classList.contains('open');
+  setProductionPanelVisible(next);
+  if(next && productionState.jobId) pollProductionJob({immediate:true});
+}
+
+function renderProductionPanel() {
+  const btn=$('production-panel-btn'), dot=$('production-panel-dot'), body=$('production-body'), subtitle=$('production-subtitle');
+  const job=productionState.job;
+  if(btn) btn.classList.toggle('visible',!!(productionState.jobId||job));
+  const status=String(job?.status||'');
+  if(dot) dot.className=\`tb-production-dot \${esc(status)}\`;
+  if(subtitle) subtitle.textContent=job ? \`\${productionStatusLabel(status)} · \${productionTargetLabel(job)}\` : 'Aucun job suivi.';
+  if(!body) return;
+  if(!job) {
+    body.innerHTML=productionState.jobId
+      ? \`<div class="prod-empty">Job \${esc(productionState.jobId)} détecté. Chargement du statut…</div>\`
+      : '<div class="prod-empty">Aucun job production suivi dans cette discussion. Lance un build/export/polish ou demande un statut pour rouvrir ce panneau.</div>';
+    return;
+  }
+  const steps=Array.isArray(job.steps) ? job.steps : [];
+  const logs=productionState.logs||[];
+  const details=extractProductionDetails([...(job.logTail||[]),...logs]);
+  const command=productionState.command || details.command || '';
+  const traceFile=productionState.traceFile || details.traceFile || '';
+  const logHtml=logs.length
+    ? logs.map(l=>\`<span class="prod-log-line \${String(l).trim()?'':'muted'}">\${esc(l)}</span>\`).join('')
+    : '<span class="prod-log-line muted">Aucun log chargé.</span>';
+  body.innerHTML=\`
+    <div class="prod-card">
+      <div class="prod-status-row">
+        <div class="prod-main">
+          <div class="prod-kind">\${esc(job.type||'production')} · \${esc(productionTargetLabel(job))}</div>
+          <div class="prod-sub">\${esc(job.jobId||'')}</div>
+        </div>
+        <div class="prod-badge \${esc(status)}">\${esc(productionStatusLabel(status))}</div>
+      </div>
+      <div class="prod-metrics">
+        <div class="prod-metric"><div class="prod-metric-k">Durée</div><div class="prod-metric-v">\${esc(formatDuration(job.durationSeconds))}</div></div>
+        <div class="prod-metric"><div class="prod-metric-k">Exit</div><div class="prod-metric-v">\${job.exitCode===null||job.exitCode===undefined?'—':esc(job.exitCode)}</div></div>
+      </div>
+      <div class="prod-steps">\${steps.map(step=>\`
+        <div class="prod-step">
+          <span class="prod-step-dot \${esc(step.status||'')}"></span>
+          <div class="prod-step-main">
+            <div class="prod-step-name">\${esc(step.name||'step')}</div>
+            <div class="prod-step-meta">\${esc(productionStatusLabel(step.status))}\${step.exitCode!==undefined?\` · exit \${esc(step.exitCode)}\`:''}</div>
+          </div>
+        </div>\`).join('')}</div>
+    </div>
+    <details class="prod-details" open><summary>Commande courante</summary><div class="prod-details-body"><div class="prod-code">\${esc(command||'Commande non détectée pour le moment.')}</div></div></details>
+    <details class="prod-details"><summary>Derniers logs</summary><div class="prod-details-body"><div class="prod-code">\${logHtml}</div></div></details>
+    <details class="prod-details"><summary>Trace file</summary><div class="prod-details-body"><div class="prod-code">\${esc(traceFile||'Trace file non détecté pour le moment.')}</div></div></details>
+    \${job.error?\`<div class="prod-card"><div class="prod-kind" style="color:var(--err)">Erreur</div><div class="prod-sub">\${esc(job.error)}</div></div>\`:''}
+  \`;
+}
+
+function updateProductionFromPayload(payload, {open=false, poll=false}={}) {
+  if(!payload) return;
+  if(payload.jobId && !payload.job) productionState.jobId=payload.jobId;
+  if(payload.job) {
+    productionState.job=payload.job;
+    productionState.jobId=payload.job.jobId || productionState.jobId;
+    const details=extractProductionDetails(payload.logTail||[]);
+    if(details.command) productionState.command=details.command;
+    if(details.traceFile) productionState.traceFile=details.traceFile;
+  }
+  if(Array.isArray(payload.tail)) {
+    productionState.logs=payload.tail;
+    const details=extractProductionDetails(payload.tail);
+    if(details.command) productionState.command=details.command;
+    if(details.traceFile) productionState.traceFile=details.traceFile;
+  }
+  if(Array.isArray(payload.logTail) && !productionState.logs.length) {
+    productionState.logs=payload.logTail;
+  }
+  productionState.lastUpdatedAt=new Date().toISOString();
+  renderProductionPanel();
+  if(open) setProductionPanelVisible(true);
+  if(poll && productionState.jobId) startProductionPolling();
+}
+
+function handleProductionToolResult(fn, args, result, ok) {
+  if(!String(fn||'').startsWith('production_')) return;
+  const data=parseProductionJSON(result);
+  if(!ok || !data) return;
+  if(fn==='production_start_job' && data.jobId) {
+    updateProductionFromPayload(data,{open:true,poll:false});
+    pollProductionJob({immediate:true});
+  }
+  else if(fn==='production_job_status') updateProductionFromPayload(data,{open:true,poll:!productionTerminal(data.job?.status)});
+  else if(fn==='production_job_logs') updateProductionFromPayload(data,{open:true,poll:false});
+  else if(fn==='production_list_jobs' && Array.isArray(data.jobs) && data.jobs[0] && !productionState.jobId) {
+    productionState.jobId=data.jobs[0].jobId;
+    renderProductionPanel();
+  }
+}
+
+function startProductionPolling() {
+  if(productionState.pollTimer) clearTimeout(productionState.pollTimer);
+  productionState.pollTimer=setTimeout(()=>pollProductionJob(),4200);
+}
+
+async function pollProductionJob({immediate=false}={}) {
+  if(!productionState.jobId) return;
+  if(productionState.pollTimer) {
+    clearTimeout(productionState.pollTimer);
+    productionState.pollTimer=null;
+  }
+  try {
+    const statusText=await callMCPTool('production_job_status',{jobId:productionState.jobId});
+    updateProductionFromPayload(parseProductionJSON(statusText),{open:false,poll:false});
+    const logsText=await callMCPTool('production_job_logs',{jobId:productionState.jobId,tail:120});
+    updateProductionFromPayload(parseProductionJSON(logsText),{open:false,poll:false});
+  } catch(e) {
+    console.warn('production polling failed', e);
+  }
+  renderProductionPanel();
+  if(!productionTerminal(productionState.job?.status)) startProductionPolling();
+}
+
+function recoverProductionStateFromMessages() {
+  resetProductionState();
+  for(const msg of messages) {
+    if(msg.role!=='tool' || !String(msg.name||'').startsWith('production_')) continue;
+    handleProductionToolResult(msg.name,{},msg.content,true);
+  }
+  renderProductionPanel();
+  if(productionState.jobId && !productionTerminal(productionState.job?.status)) startProductionPolling();
 }
 
 // ── Chat ────────────────────────────────────────────────────────────────────
@@ -1378,11 +1644,13 @@ async function sendMessage() {
           try {
             const r=await callMCPTool(fn,args);
             updateTC(domIdx,r,true);
+            handleProductionToolResult(fn,args,r,true);
             updateTraceStep(runTrace,\`tc-\${domIdx}\`,{summary:toolResultTraceSummary(r,true),ok:true});
             for(const step of derivedTraceStepsForTool(fn,r,true,\`tc-\${domIdx}\`)) addTraceStep(runTrace,step);
             return {tool_call_id:tc.id,role:'tool',name:fn,content:r};
           } catch(e) {
             updateTC(domIdx,e.message,false);
+            handleProductionToolResult(fn,args,e.message,false);
             updateTraceStep(runTrace,\`tc-\${domIdx}\`,{summary:e.message,ok:false});
             return {tool_call_id:tc.id,role:'tool',name:fn,content:\`Erreur: \${e.message}\`};
           }
@@ -1521,6 +1789,7 @@ loadConfig();
 loadServers();
 loadHistory();
 initSidebarSplitter();
+renderProductionPanel();
 </script>`;
 
 export const CHAT_HTML = `<!DOCTYPE html>
