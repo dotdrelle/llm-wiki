@@ -277,6 +277,13 @@ input[type=password]{letter-spacing:3px}
 .prod-metric{border:1px solid var(--border);border-radius:9px;background:var(--panel);padding:7px 8px}
 .prod-metric-k{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
 .prod-metric-v{font-size:12px;color:var(--text);font-family:var(--font-mono);margin-top:2px}
+.prod-progress{margin-top:10px;border:1px solid var(--border);border-radius:10px;background:var(--panel);padding:9px}
+.prod-progress-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px}
+.prod-progress-label{min-width:0;font-size:12px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prod-progress-percent{font-family:var(--font-mono);font-size:11px;color:var(--muted);white-space:nowrap}
+.prod-progress-track{height:7px;border-radius:99px;background:var(--panel-deep);overflow:hidden}
+.prod-progress-bar{height:100%;width:0;background:var(--accent);border-radius:99px;transition:width .25s ease}
+.prod-progress-detail{margin-top:7px;color:var(--muted);font-size:11px;line-height:1.45}
 .prod-steps{display:flex;flex-direction:column;gap:6px;margin-top:10px}
 .prod-step{display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:9px;background:var(--panel);padding:7px 8px}
 .prod-step-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0}
@@ -447,6 +454,7 @@ let historySaveTimer = null;
 let productionState = {
   jobId: null,
   job: null,
+  progress: null,
   logs: [],
   command: '',
   traceFile: '',
@@ -970,7 +978,7 @@ function parseProductionJSON(result) {
 
 function resetProductionState() {
   if(productionState.pollTimer) clearTimeout(productionState.pollTimer);
-  productionState={jobId:null,job:null,logs:[],command:'',traceFile:'',pollTimer:null,lastUpdatedAt:null};
+  productionState={jobId:null,job:null,progress:null,logs:[],command:'',traceFile:'',pollTimer:null,lastUpdatedAt:null};
   renderProductionPanel();
 }
 
@@ -1024,6 +1032,7 @@ function toggleProductionPanel(force) {
 function renderProductionPanel() {
   const btn=$('production-panel-btn'), dot=$('production-panel-dot'), body=$('production-body'), subtitle=$('production-subtitle');
   const job=productionState.job;
+  const progress=productionState.progress || {};
   if(btn) btn.classList.toggle('visible',!!(productionState.jobId||job));
   const status=String(job?.status||'');
   if(dot) dot.className=\`tb-production-dot \${esc(status)}\`;
@@ -1043,6 +1052,14 @@ function renderProductionPanel() {
   const logHtml=logs.length
     ? logs.map(l=>\`<span class="prod-log-line \${String(l).trim()?'':'muted'}">\${esc(l)}</span>\`).join('')
     : '<span class="prod-log-line muted">Aucun log chargé.</span>';
+  const percent=Number.isFinite(Number(progress.percent)) ? Math.max(0,Math.min(100,Number(progress.percent))) : null;
+  const progressLabel=progress.label || productionTargetLabel(job);
+  const progressDetail=[
+    progress.detail,
+    progress.batchCount ? \`batch \${Number(progress.batchIndex ?? 0)+1}/\${progress.batchCount}\` : null,
+    progress.instructionCount ? \`\${progress.instructionCount} instruction\${progress.instructionCount>1?'s':''}\` : null,
+    progress.lastEvent ? \`dernier: \${progress.lastEvent}\` : null,
+  ].filter(Boolean).join(' · ');
   body.innerHTML=\`
     <div class="prod-card">
       <div class="prod-status-row">
@@ -1055,6 +1072,14 @@ function renderProductionPanel() {
       <div class="prod-metrics">
         <div class="prod-metric"><div class="prod-metric-k">Durée</div><div class="prod-metric-v">\${esc(formatDuration(job.durationSeconds))}</div></div>
         <div class="prod-metric"><div class="prod-metric-k">Exit</div><div class="prod-metric-v">\${job.exitCode===null||job.exitCode===undefined?'—':esc(job.exitCode)}</div></div>
+      </div>
+      <div class="prod-progress">
+        <div class="prod-progress-top">
+          <div class="prod-progress-label">\${esc(progressLabel)}</div>
+          <div class="prod-progress-percent">\${percent===null?'—':Math.round(percent)+'%'}</div>
+        </div>
+        <div class="prod-progress-track"><div class="prod-progress-bar" style="width:\${percent===null?0:percent}%"></div></div>
+        <div class="prod-progress-detail">\${esc(progressDetail || 'Progression détaillée non disponible.')}</div>
       </div>
       <div class="prod-steps">\${steps.map(step=>\`
         <div class="prod-step">
@@ -1081,6 +1106,10 @@ function updateProductionFromPayload(payload, {open=false, poll=false}={}) {
     const details=extractProductionDetails(payload.logTail||[]);
     if(details.command) productionState.command=details.command;
     if(details.traceFile) productionState.traceFile=details.traceFile;
+  }
+  if(payload.progress) {
+    productionState.progress=payload.progress;
+    if(payload.progress.traceFile) productionState.traceFile=payload.progress.traceFile;
   }
   if(Array.isArray(payload.tail)) {
     productionState.logs=payload.tail;
