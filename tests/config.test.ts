@@ -8,8 +8,6 @@ import { resolveConfig } from '../src/config/schema.ts';
 describe('config resolution', () => {
   afterEach(() => {
     delete process.env.WIKI_MCP_AUTH_TOKEN;
-    delete process.env.WIKI_MCP_ACCESS_KEY;
-    delete process.env.WIKI_MCP_KEY;
     delete process.env.WIKI_MCP_TLS_CERT_PATH;
     delete process.env.WIKI_MCP_TLS_KEY_PATH;
     delete process.env.WIKI_MCP_TLS_CA_PATH;

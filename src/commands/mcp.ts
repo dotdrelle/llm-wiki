@@ -3,7 +3,7 @@ import type { AppConfig } from '../types.ts';
 import { checkMcpAccessKey, createWikiMcpServer } from '../services/mcpServer.ts';
 
 export default async function mcpCmd(config: AppConfig): Promise<void> {
-  const providedKey = process.env.WIKI_MCP_AUTH_TOKEN ?? process.env.WIKI_MCP_ACCESS_KEY ?? process.env.WIKI_MCP_KEY;
+  const providedKey = process.env.WIKI_MCP_AUTH_TOKEN;
   if (!checkMcpAccessKey(config, providedKey)) {
     process.stderr.write('wiki mcp: invalid or missing WIKI_MCP_AUTH_TOKEN\n');
     process.exit(1);
