@@ -90,7 +90,7 @@ Add to `.claude/settings.json` at the root of your wiki workspace:
       "command": "wiki",
       "args": ["mcp"],
       "type": "stdio",
-      "env": { "WIKI_MCP_ACCESS_KEY": "your-secret-key" }
+      "env": { "WIKI_MCP_AUTH_TOKEN": "your-secret-key" }
     }
   }
 }
@@ -110,7 +110,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
       "args": ["mcp"],
       "type": "stdio",
       "cwd": "/absolute/path/to/your/wiki-workspace",
-      "env": { "WIKI_MCP_ACCESS_KEY": "your-secret-key" }
+      "env": { "WIKI_MCP_AUTH_TOKEN": "your-secret-key" }
     }
   }
 }
@@ -186,4 +186,4 @@ mcp:
   accessKey: your-secret-key
 ```
 
-Pass the same value as `WIKI_MCP_ACCESS_KEY` in the MCP client config. If the key is configured but the env var is absent or mismatched, the server exits immediately with an error.
+Pass the same value as `WIKI_MCP_AUTH_TOKEN` in the MCP client config. If the key is configured but the env var is absent or mismatched, the server exits immediately with an error.

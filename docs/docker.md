@@ -64,7 +64,7 @@ browser should use server-side routing:
 | Variable             | Purpose                                                        |
 | -------------------- | -------------------------------------------------------------- |
 | `WIKI_MCP_PROXY_URL` | URL of the workspace `wiki mcp-http` endpoint seen by `serve`  |
-| `WIKI_MCP_ACCESS_KEY` | Bearer token injected server-side for the workspace MCP server |
+| `WIKI_MCP_AUTH_TOKEN` | Bearer token injected server-side for the workspace MCP server |
 | `CME_MCP_PROXY_URL`  | Optional external MCP endpoint, for example `agent-cme`        |
 
 ## MCP HTTP server
@@ -77,7 +77,7 @@ docker compose --profile mcp-http up mcp-http
 With TLS:
 
 ```bash
-WIKI_MCP_ACCESS_KEY=your-secret-key \
+WIKI_MCP_AUTH_TOKEN=your-secret-key \
 WIKI_MCP_TLS_CERT_PATH=/certs/fullchain.pem \
 WIKI_MCP_TLS_KEY_PATH=/certs/privkey.pem \
 WIKI_CERTS=/absolute/path/to/certs \

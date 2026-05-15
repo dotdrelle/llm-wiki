@@ -196,4 +196,4 @@ Vector retrieval options are documented in [vector-search.md](./vector-search.md
 | `tls.keyPath`  | Path to TLS private key                                    | —       |
 | `tls.caPath`   | Path to CA certificate (optional, for mutual TLS)          | —       |
 
-Env var equivalents: `WIKI_MCP_ACCESS_KEY`, `WIKI_MCP_TLS_CERT_PATH`, `WIKI_MCP_TLS_KEY_PATH`, `WIKI_MCP_TLS_CA_PATH`.
+Env var equivalents: `WIKI_MCP_AUTH_TOKEN`, `WIKI_MCP_TLS_CERT_PATH`, `WIKI_MCP_TLS_KEY_PATH`, `WIKI_MCP_TLS_CA_PATH`.

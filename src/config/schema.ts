@@ -483,6 +483,7 @@ export function resolveConfig(
     mcp: {
       accessKey:
         parsed.mcp?.accessKey ??
+        process.env.WIKI_MCP_AUTH_TOKEN ??
         process.env.WIKI_MCP_ACCESS_KEY ??
         process.env.WIKI_MCP_KEY,
       tls: mcpTls,

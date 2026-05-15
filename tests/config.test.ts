@@ -7,6 +7,7 @@ import { resolveConfig } from '../src/config/schema.ts';
 
 describe('config resolution', () => {
   afterEach(() => {
+    delete process.env.WIKI_MCP_AUTH_TOKEN;
     delete process.env.WIKI_MCP_ACCESS_KEY;
     delete process.env.WIKI_MCP_KEY;
     delete process.env.WIKI_MCP_TLS_CERT_PATH;
@@ -108,7 +109,7 @@ describe('config resolution', () => {
   });
 
   it('reads MCP settings from environment variables', () => {
-    process.env.WIKI_MCP_ACCESS_KEY = 'env-secret';
+    process.env.WIKI_MCP_AUTH_TOKEN = 'env-secret';
     process.env.WIKI_MCP_TLS_CERT_PATH = '/certs/fullchain.pem';
     process.env.WIKI_MCP_TLS_KEY_PATH = '/certs/privkey.pem';
     process.env.WIKI_MCP_TLS_CA_PATH = '/certs/ca.pem';
@@ -126,7 +127,7 @@ describe('config resolution', () => {
   });
 
   it('keeps .wikirc MCP settings ahead of environment overrides', () => {
-    process.env.WIKI_MCP_ACCESS_KEY = 'env-secret';
+    process.env.WIKI_MCP_AUTH_TOKEN = 'env-secret';
     process.env.WIKI_MCP_TLS_CERT_PATH = '/certs/env-fullchain.pem';
 
     const config = resolveConfig(

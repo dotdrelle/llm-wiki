@@ -1980,7 +1980,7 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
           if (!target) { res.writeHead(400); res.end('url param required'); return; }
           // Add wiki bearer token server-side when the target matches the configured wiki MCP
           const wikiTarget = process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${MCP_WIKI_PORT}/mcp`;
-          const wikiAccessKey = process.env.WIKI_MCP_ACCESS_KEY || config.mcp.accessKey || '';
+          const wikiAccessKey = process.env.WIKI_MCP_AUTH_TOKEN || process.env.WIKI_MCP_ACCESS_KEY || config.mcp.accessKey || '';
           const bearer = target === wikiTarget ? wikiAccessKey : '';
           await proxyPost(req, res, target, bearer ? { authorization: `Bearer ${bearer}` } : {});
           return;
