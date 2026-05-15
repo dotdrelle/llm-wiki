@@ -1978,10 +1978,17 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
         if (urlPath === '/api/mcp') {
           const target = new URL(req.url ?? '', 'http://localhost').searchParams.get('url') ?? '';
           if (!target) { res.writeHead(400); res.end('url param required'); return; }
-          // Add wiki bearer token server-side when the target matches the configured wiki MCP
           const wikiTarget = process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${MCP_WIKI_PORT}/mcp`;
-          const wikiAccessKey = process.env.WIKI_MCP_AUTH_TOKEN || config.mcp.accessKey || '';
-          const bearer = target === wikiTarget ? wikiAccessKey : '';
+          const cmeTarget = process.env.CME_MCP_PROXY_URL ?? `http://localhost:${MCP_CME_PORT}/mcp/`;
+          const mailerTarget = process.env.MAILER_MCP_PROXY_URL ?? `http://localhost:${MCP_MAILER_PORT}/mcp/`;
+          const productionTarget = process.env.PRODUCTION_MCP_PROXY_URL ?? `http://localhost:${MCP_PRODUCTION_PORT}/mcp/`;
+          const proxyTokens: Record<string, string> = {
+            [wikiTarget]: process.env.WIKI_MCP_AUTH_TOKEN || config.mcp.accessKey || '',
+            [cmeTarget]: process.env.CME_MCP_AUTH_TOKEN ?? '',
+            [mailerTarget]: process.env.MAILER_MCP_AUTH_TOKEN ?? '',
+            [productionTarget]: process.env.PRODUCTION_MCP_AUTH_TOKEN ?? '',
+          };
+          const bearer = proxyTokens[target] ?? '';
           await proxyPost(req, res, target, bearer ? { authorization: `Bearer ${bearer}` } : {});
           return;
         }
