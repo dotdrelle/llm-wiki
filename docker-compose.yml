@@ -65,8 +65,6 @@ services:
     profiles: ['mcp']
     volumes:
       - ${WIKI_WORKSPACE:?Set WIKI_WORKSPACE to an initialized llm-wiki workspace}:/workspace
-    environment:
-      - WIKI_MCP_ACCESS_KEY
     extra_hosts:
       - 'host.docker.internal:host-gateway'
 
@@ -75,11 +73,10 @@ services:
   #   docker compose --profile mcp-http up mcp-http
   #
   # Configuration:
-  #   - server key: mcp.accessKey in .wikirc.yaml or WIKI_MCP_ACCESS_KEY
+  #   - server key: mcp.accessKey in .wikirc.yaml
   #   - certificates: mcp.tls.* in .wikirc.yaml or WIKI_MCP_TLS_* variables
   #
   # HTTPS start with Docker only:
-  #   WIKI_MCP_ACCESS_KEY=your-secret-key \
   #   WIKI_MCP_TLS_CERT_PATH=/certs/fullchain.pem \
   #   WIKI_MCP_TLS_KEY_PATH=/certs/privkey.pem \
   #   WIKI_CERTS=/absolute/path/to/certs \
@@ -110,7 +107,6 @@ services:
       - ${WIKI_WORKSPACE:?Set WIKI_WORKSPACE to an initialized llm-wiki workspace}:/workspace
       - ${WIKI_CERTS:-./certs}:/certs:ro
     environment:
-      - WIKI_MCP_ACCESS_KEY
       - WIKI_MCP_TLS_CERT_PATH
       - WIKI_MCP_TLS_KEY_PATH
       - WIKI_MCP_TLS_CA_PATH
