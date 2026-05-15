@@ -12,7 +12,13 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);height:
 .sb-logo-mark{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;font-weight:800;flex-shrink:0}
 .sb-logo-text{font-size:16px;font-weight:800;letter-spacing:-.3px}
 .sb-logo-sub{font-size:10px;color:var(--muted);font-family:var(--font-mono);margin-top:1px}
-.sb-scroll{flex:1;overflow-y:auto;padding-bottom:12px}
+.sb-scroll{flex:1;min-height:0;display:grid;grid-template-rows:minmax(96px,var(--history-pane-height,38%)) 10px minmax(180px,1fr);overflow:hidden}
+.sb-pane{min-height:0;overflow-y:auto;padding-bottom:12px}
+.sb-pane.history-pane{padding-bottom:8px}
+.sb-resizer{height:10px;cursor:row-resize;display:flex;align-items:center;justify-content:center;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--panel);touch-action:none}
+.sb-resizer:hover,.sb-resizer.dragging{background:var(--panel-soft)}
+.sb-resizer::before{content:'';width:34px;height:3px;border-radius:99px;background:var(--border)}
+.sb-resizer:hover::before,.sb-resizer.dragging::before{background:var(--muted)}
 .sec-label{font-size:10px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--muted);padding:16px 16px 8px;display:flex;align-items:center;justify-content:space-between}
 .sec-label button{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted2);font-size:11px;padding:2px 8px;cursor:pointer;font-family:var(--font-sans);font-weight:600;transition:border-color .2s,color .2s}
 .sec-label button:hover{border-color:var(--accent);color:var(--accent)}
@@ -250,51 +256,55 @@ const CHAT_BODY = `<aside id="sidebar">
       <div class="sb-logo-sub">multi-server</div>
     </div>
   </div>
-  <div class="sb-scroll">
-    <div class="sec-label">
-      Discussions
-      <button onclick="newConversation()">+ Nouveau</button>
-    </div>
-    <div class="history-list" id="history-list">
-      <div class="history-empty">Aucun historique.</div>
-    </div>
-    <hr class="divider">
-    <div class="sec-label">Configuration LLM</div>
-    <div class="api-block">
-      <div class="field">
-        <label>Base URL</label>
-        <input id="base-url" type="text" placeholder="http://localhost:11434/v1" onchange="saveConfig()">
+  <div class="sb-scroll" id="sidebar-split">
+    <div class="sb-pane history-pane" id="history-pane">
+      <div class="sec-label">
+        Discussions
+        <button onclick="newConversation()">+ Nouveau</button>
       </div>
-      <div class="field">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-          <label style="margin:0">Clé API</label>
-          <span class="key-saved" id="llm-saved">enregistrée</span>
+      <div class="history-list" id="history-list">
+        <div class="history-empty">Aucun historique.</div>
+      </div>
+    </div>
+    <div class="sb-resizer" id="sidebar-resizer" title="Redimensionner les panneaux"></div>
+    <div class="sb-pane config-pane" id="config-pane">
+      <div class="sec-label">Configuration LLM</div>
+      <div class="api-block">
+        <div class="field">
+          <label>Base URL</label>
+          <input id="base-url" type="text" placeholder="http://localhost:11434/v1" onchange="saveConfig()">
         </div>
-        <div class="secret-wrap">
-          <input id="api-key" type="password" placeholder="sk-… (vide pour Ollama)" autocomplete="off" onchange="saveConfig()">
-          <div class="secret-actions">
-            <button class="secret-btn" id="reveal-btn-apikey" onclick="toggleReveal('api-key',this)" title="Afficher/masquer">
-              <svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
-            </button>
+        <div class="field">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <label style="margin:0">Clé API</label>
+            <span class="key-saved" id="llm-saved">enregistrée</span>
+          </div>
+          <div class="secret-wrap">
+            <input id="api-key" type="password" placeholder="sk-… (vide pour Ollama)" autocomplete="off" onchange="saveConfig()">
+            <div class="secret-actions">
+              <button class="secret-btn" id="reveal-btn-apikey" onclick="toggleReveal('api-key',this)" title="Afficher/masquer">
+                <svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label>Modèle</label>
+            <input id="model-name" type="text" placeholder="gpt-4o" oninput="syncModel()" onchange="saveConfig()">
+          </div>
+          <div class="field">
+            <label>Temp.</label>
+            <input id="temperature" type="number" value="0.7" min="0" max="2" step="0.1" onchange="saveConfig()">
           </div>
         </div>
       </div>
-      <div class="row2">
-        <div class="field">
-          <label>Modèle</label>
-          <input id="model-name" type="text" placeholder="gpt-4o" oninput="syncModel()" onchange="saveConfig()">
-        </div>
-        <div class="field">
-          <label>Temp.</label>
-          <input id="temperature" type="number" value="0.7" min="0" max="2" step="0.1" onchange="saveConfig()">
-        </div>
+      <div class="sec-label">
+        Serveurs MCP
+        <button onclick="addServer()">+ Ajouter</button>
       </div>
+      <div class="mcp-cards" id="mcp-cards"></div>
     </div>
-    <div class="sec-label">
-      Serveurs MCP
-      <button onclick="addServer()">+ Ajouter</button>
-    </div>
-    <div class="mcp-cards" id="mcp-cards"></div>
   </div>
 </aside>
 
@@ -390,6 +400,7 @@ Si plusieurs serveurs MCP sont actifs, choisis les outils selon le domaine de la
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 function renderMd(t) { try { return typeof marked!=='undefined' ? marked.parse(t||'') : esc(t||''); } catch { return esc(t||''); } }
+const SIDEBAR_SPLIT_KEY = 'mcpchat_sidebar_history_height';
 
 function notify(msg, type='s') {
   const el=$('notif'); el.textContent=msg; el.className=\`show \${type}\`;
@@ -400,6 +411,60 @@ function autoResize(ta) { ta.style.height='auto'; ta.style.height=Math.min(ta.sc
 function handleKey(e) { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();} }
 function toggleSidebar() { sidebarOpen=!sidebarOpen; $('sidebar').classList.toggle('collapsed',!sidebarOpen); }
 function syncModel() { $('model-badge').textContent=$('model-name').value||'modèle'; }
+
+function clampSidebarSplit(height) {
+  const split=$('sidebar-split');
+  if(!split) return height;
+  const total=split.clientHeight;
+  const minTop=96;
+  const minBottom=180;
+  return Math.max(minTop, Math.min(height, total-minBottom-10));
+}
+
+function setSidebarSplitHeight(height, persist=false) {
+  const split=$('sidebar-split');
+  if(!split) return;
+  const clamped=clampSidebarSplit(height);
+  split.style.setProperty('--history-pane-height', clamped+'px');
+  if(persist) localStorage.setItem(SIDEBAR_SPLIT_KEY, String(Math.round(clamped)));
+}
+
+function initSidebarSplitter() {
+  const split=$('sidebar-split'), handle=$('sidebar-resizer');
+  if(!split || !handle) return;
+  const saved=Number(localStorage.getItem(SIDEBAR_SPLIT_KEY));
+  if(Number.isFinite(saved) && saved>0) setSidebarSplitHeight(saved);
+
+  let dragging=false;
+  const move=e=>{
+    if(!dragging) return;
+    const rect=split.getBoundingClientRect();
+    setSidebarSplitHeight(e.clientY-rect.top,true);
+  };
+  const up=()=>{
+    if(!dragging) return;
+    dragging=false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor='';
+    document.body.style.userSelect='';
+    window.removeEventListener('pointermove',move);
+    window.removeEventListener('pointerup',up);
+  };
+  handle.addEventListener('pointerdown',e=>{
+    dragging=true;
+    handle.classList.add('dragging');
+    document.body.style.cursor='row-resize';
+    document.body.style.userSelect='none';
+    handle.setPointerCapture?.(e.pointerId);
+    window.addEventListener('pointermove',move);
+    window.addEventListener('pointerup',up);
+    e.preventDefault();
+  });
+  window.addEventListener('resize',()=>{
+    const current=parseFloat(getComputedStyle(split).getPropertyValue('--history-pane-height'));
+    if(Number.isFinite(current)) setSidebarSplitHeight(current);
+  });
+}
 
 function setSendButtonStreaming(streaming) {
   const btn=$('send-btn');
@@ -1455,6 +1520,7 @@ function loadServers() {
 loadConfig();
 loadServers();
 loadHistory();
+initSidebarSplitter();
 </script>`;
 
 export const CHAT_HTML = `<!DOCTYPE html>
