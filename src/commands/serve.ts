@@ -2039,7 +2039,7 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
         return;
       }
 
-      if (urlPath === '/chat') {
+      if (urlPath === '/chat' || urlPath === '/chat/connectors') {
         const chatConfig = {
           model: config.llm.model,
           temperature: config.llm.temperature,

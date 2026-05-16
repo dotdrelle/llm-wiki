@@ -48,6 +48,9 @@ input[type=password]{letter-spacing:3px}
 .key-saved::before{content:'●';font-size:7px}
 .row2{display:flex;gap:6px}
 .row2 .field{flex:1}
+.sb-link{display:flex;align-items:center;justify-content:space-between;margin:4px 12px 0;padding:9px 10px;border:1px solid var(--border);border-radius:9px;background:var(--panel-soft);color:var(--text);text-decoration:none;font-size:12px;font-weight:700;transition:border-color .2s,color .2s,background .2s}
+.sb-link:hover,.sb-link.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.sb-link span{font-family:var(--font-mono);font-size:10px;color:var(--muted)}
 
 /* MCP CARDS */
 .mcp-cards{padding:0 12px;display:flex;flex-direction:column;gap:8px}
@@ -104,6 +107,18 @@ input[type=password]{letter-spacing:3px}
 .tb-production-dot.running{background:var(--warn);animation:pulse 1s infinite}
 .tb-production-dot.done{background:var(--ok)}
 .tb-production-dot.failed,.tb-production-dot.cancelled{background:var(--err)}
+body.connectors-mode #messages,body.connectors-mode #input-wrap{display:none}
+body.connectors-mode #connectors-view{display:block}
+body:not(.connectors-mode) #connectors-view{display:none}
+.connectors-view{flex:1;min-height:0;overflow:auto;padding:28px clamp(18px,4vw,48px)}
+.connectors-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin:0 auto 18px;max-width:1120px}
+.connectors-title h1{font-size:22px;line-height:1.2;margin:0;color:var(--text)}
+.connectors-title p{font-size:13px;line-height:1.45;margin:5px 0 0;color:var(--muted);max-width:620px}
+.connectors-add{border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);padding:8px 12px;cursor:pointer;font-family:var(--font-sans);font-size:12px;font-weight:700}
+.connectors-add:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.connectors-grid{max-width:1120px;margin:0 auto}
+.connectors-grid .mcp-cards{padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.connectors-grid .mcp-card{min-width:0}
 
 /* MESSAGES */
 #messages{flex:1;overflow-y:auto;padding:28px clamp(16px,4vw,48px) 22px;display:flex;flex-direction:column;gap:22px;align-items:center}
@@ -356,11 +371,8 @@ const CHAT_BODY = `<aside id="sidebar">
           </div>
         </div>
       </div>
-      <div class="sec-label">
-        Serveurs MCP
-        <button onclick="addServer()">+ Ajouter</button>
-      </div>
-      <div class="mcp-cards" id="mcp-cards"></div>
+      <div class="sec-label">Connecteurs</div>
+      <a class="sb-link" id="connectors-link" href="/chat/connectors">Connecteurs MCP <span>marketplace</span></a>
     </div>
   </div>
 </aside>
@@ -377,6 +389,18 @@ const CHAT_BODY = `<aside id="sidebar">
       </button>
       <button class="tb-system" id="system-drawer-btn" onclick="toggleSystemPrompt()">Instructions système</button>
       <button class="tb-clear" onclick="clearChat()">Effacer</button>
+    </div>
+  </div>
+  <div class="connectors-view" id="connectors-view">
+    <div class="connectors-head">
+      <div class="connectors-title">
+        <h1>Connecteurs MCP</h1>
+        <p>Activez les connecteurs disponibles, ajoutez vos endpoints MCP, puis revenez au chat pour utiliser leurs outils.</p>
+      </div>
+      <button class="connectors-add" type="button" onclick="addServer()">+ Ajouter</button>
+    </div>
+    <div class="connectors-grid">
+      <div class="mcp-cards" id="mcp-cards"></div>
     </div>
   </div>
   <div id="messages">
@@ -767,7 +791,9 @@ function buildLLMHeaders() {
 }
 
 function renderTopPills() {
-  $('tb-mcps').innerHTML = servers
+  const el=$('tb-mcps');
+  if(!el) return;
+  el.innerHTML = servers
     .filter(s=>s.enabled&&s.status==='ok')
     .map(s=>\`<span class="tb-mcp-pill" title="\${esc(s.url)}">\${esc(s.name)} <span style="opacity:.6">(\${s.tools.length})</span></span>\`)
     .join('');
@@ -786,11 +812,20 @@ function removeServer(id) {
 
 function renderCards() {
   const el=$('mcp-cards');
+  if(!el) return;
   if(!servers.length) {
     el.innerHTML='<div style="padding:0 4px;font-size:12px;color:var(--muted)">Aucun serveur. Cliquez "+ Ajouter".</div>';
     return;
   }
   el.innerHTML=servers.map(s=>cardHTML(s)).join('');
+}
+
+function initPageMode() {
+  const path=location.pathname.replace(/\\/+$/,'') || '/chat';
+  const isConnectors=path==='/chat/connectors';
+  document.body.classList.toggle('connectors-mode',isConnectors);
+  $('connectors-link')?.classList.toggle('active',isConnectors);
+  if(isConnectors) renderCards();
 }
 
 function cardHTML(s) {
@@ -1838,6 +1873,7 @@ function loadServers() {
 // ── Init ────────────────────────────────────────────────────────────────────
 loadConfig();
 loadServers();
+initPageMode();
 loadHistory();
 initSidebarSplitter();
 renderProductionPanel();
