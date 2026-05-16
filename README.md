@@ -13,10 +13,13 @@ It can run by itself, but it is one part of a three-repository toolchain:
 | Repository | Role |
 | ---------- | ---- |
 | [`llm-wiki`](https://github.com/dotdrelle/llm-wiki) | Local-first wiki CLI, web UI, MCP server, retrieval, and deliverable builder |
-| [`llm-wiki-manager`](https://github.com/dotdrelle/llm-wiki-manager) | Docker cockpit for multiple wiki workspaces and the shared Confluence export pipeline |
+| [`llm-wiki-manager`](https://github.com/dotdrelle/llm-wiki-manager) | Docker cockpit for multiple wiki workspaces, workspace-scoped Confluence export, and production agents |
 | [`agent-cme`](https://github.com/dotdrelle/agent-cme) | Agent-controlled Confluence Markdown exporter used by the manager |
 
-Use only this repository for a single standalone workspace. Use `llm-wiki-manager` when several workspaces share one `agent-cme` exporter.
+Use only this repository for a single standalone workspace. Use
+`llm-wiki-manager` when you want Docker orchestration for several workspaces,
+workspace-scoped Confluence export agents, production jobs, and shared action
+agents.
 
 ```
 ┌──────────────────────────────────────┐  ┌─────────────────────────────────────┐
@@ -101,9 +104,8 @@ For several workspaces, use `llm-wiki-manager` as the cockpit:
 
 ```bash
 cd ../llm-wiki-manager
-./wiki-workspace list
-./wiki-workspace wiki <workspace> init
-./wiki-workspace wiki <workspace> up
+./wiki-workspace config <workspace>
+./wiki-workspace up <workspace>
 ./wiki-workspace wiki <workspace> doctor
 ./wiki-workspace wiki <workspace> ingest
 ```

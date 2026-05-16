@@ -155,16 +155,22 @@ If Ollama runs outside the local process (Docker, remote server), set `flashAtte
 
 ## `limits`
 
-These keys describe operational and prompt budgets used by `wiki build --plan`, `wiki build`, and `wiki doctor`.
+These keys describe operational and prompt budgets used by `wiki build --plan`, `wiki build`, `wiki ingest`, `wiki refresh`, and `wiki doctor`.
 
 | Key                        | Description                                                                                 | Default |
 | -------------------------- | ------------------------------------------------------------------------------------------- | ------- |
-| `requestsPerMinute`        | Informational request-rate budget printed by `wiki build --plan`                            | `10`    |
+| `requestsPerMinute`        | Effective LLM request throttle. Request starts are spaced at `60s / requestsPerMinute`      | `10`    |
 | `dailyInputTokens`         | Optional daily input-token budget, printed by `wiki build --plan` when set                  | —       |
 | `targetInputTokensPerCall` | Preferred input-token budget per build call. The builder starts a new batch above this size | `40000` |
 | `maxInputTokensPerCall`    | Hard input-token budget per build call. The builder trims retrieved context above this size | `50000` |
 
 `targetInputTokensPerCall` must be less than or equal to `maxInputTokensPerCall`.
+
+`requestsPerMinute` limits the start rate of generation calls across `ingest`,
+`build`, `refresh`, and JSON repair calls in the current process. With the
+default `10`, calls start at least about 6 seconds apart. Long calls are not
+penalized: if one request takes 30 seconds, the next request can start
+immediately after it finishes because the interval has already elapsed.
 
 ## `build`
 

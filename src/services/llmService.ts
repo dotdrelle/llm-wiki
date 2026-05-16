@@ -37,6 +37,14 @@ interface ProviderErrorDetails {
   message: string;
 }
 
+const rateLimiterQueues = new Map<string, Promise<void>>();
+const rateLimiterLastStart = new Map<string, number>();
+
+function requestWindowMs(): number {
+  const override = Number(process.env.LLM_WIKI_RATE_LIMIT_WINDOW_MS);
+  return Number.isFinite(override) && override > 0 ? override : 60_000;
+}
+
 function supportsTemperature(config: AppConfig): boolean {
   return !(config.llm.provider === 'openai' && /^gpt-5(?:[.-]|$)/i.test(config.llm.model));
 }
@@ -66,9 +74,16 @@ function extractTokenUsage(chunk: unknown): TokenUsage | undefined {
 export class LLMService {
   private readonly client: OpenAI;
   private readonly config: AppConfig;
+  private readonly rateLimitKey: string;
 
   constructor(config: AppConfig) {
     this.config = config;
+    this.rateLimitKey = [
+      config.llm.provider,
+      config.llm.baseUrl,
+      config.llm.apiKey ?? '',
+      config.llm.model,
+    ].join('|');
     this.client = new OpenAI({
       apiKey: config.llm.apiKey,
       baseURL: config.llm.baseUrl,
@@ -78,6 +93,36 @@ export class LLMService {
           ? { 'anthropic-version': '2023-06-01' }
           : undefined,
     });
+  }
+
+  private async throttleRequestStart(logger?: TraceLogger, label?: string): Promise<void> {
+    const requestsPerMinute = Math.max(1, Math.floor(this.config.limits.requestsPerMinute));
+    const windowMs = requestWindowMs();
+    const minIntervalMs = Math.ceil(windowMs / requestsPerMinute);
+    const previous = rateLimiterQueues.get(this.rateLimitKey) ?? Promise.resolve();
+    const next = previous
+      .catch(() => undefined)
+      .then(async () => {
+        const now = Date.now();
+        const lastStart = rateLimiterLastStart.get(this.rateLimitKey);
+        const waitMs =
+          lastStart === undefined ? 0 : Math.max(0, lastStart + minIntervalMs - now);
+        if (waitMs > 0) {
+          await logger?.info('llm:throttle', {
+            label,
+            requestsPerMinute,
+            minIntervalMs,
+            waitMs,
+          });
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+        }
+        rateLimiterLastStart.set(this.rateLimitKey, Date.now());
+      });
+    rateLimiterQueues.set(this.rateLimitKey, next);
+    await next;
+    if (rateLimiterQueues.get(this.rateLimitKey) === next) {
+      rateLimiterQueues.delete(this.rateLimitKey);
+    }
   }
 
   private extractProviderErrorDetails(error: unknown): ProviderErrorDetails {
@@ -186,6 +231,7 @@ export class LLMService {
     let content: string;
     let capturedUsage: TokenUsage | undefined;
     try {
+      await this.throttleRequestStart(request.logger, label);
       const createParams: any = {
         model: this.config.llm.model,
         messages,

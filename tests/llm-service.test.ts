@@ -145,8 +145,68 @@ describe('llm service', () => {
     expect(capturedUsage).toEqual({ inputTokens: 12, outputTokens: 3 });
   });
 
+  it('throttles LLM request starts using requestsPerMinute', async () => {
+    process.env.LLM_WIKI_RATE_LIMIT_WINDOW_MS = '50';
+    const service = new LLMService({
+      ...createConfig(),
+      llm: {
+        ...createConfig().llm,
+        model: `test-throttle-${Date.now()}`,
+      },
+      limits: {
+        ...createConfig().limits,
+        requestsPerMinute: 1,
+      },
+    });
+    const starts: number[] = [];
+
+    (
+      service as unknown as {
+        client: {
+          chat: {
+            completions: {
+              create: (
+                params: Record<string, unknown>,
+              ) => Promise<AsyncIterable<unknown>>;
+            };
+          };
+        };
+      }
+    ).client = {
+      chat: {
+        completions: {
+          create: async () => {
+            starts.push(Date.now());
+            return {
+              async *[Symbol.asyncIterator]() {
+                yield { choices: [{ delta: { content: 'ok' } }] };
+              },
+            };
+          },
+        },
+      },
+    };
+
+    try {
+      await service.completeText({ system: 's', user: 'u' });
+      await service.completeText({ system: 's', user: 'u' });
+    } finally {
+      delete process.env.LLM_WIKI_RATE_LIMIT_WINDOW_MS;
+    }
+
+    expect(starts).toHaveLength(2);
+    expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(45);
+  });
+
   it('rewrites provider billing errors into an actionable message', async () => {
-    const service = new LLMService(createConfig());
+    process.env.LLM_WIKI_RATE_LIMIT_WINDOW_MS = '20';
+    const service = new LLMService({
+      ...createConfig(),
+      llm: {
+        ...createConfig().llm,
+        model: `test-billing-${Date.now()}`,
+      },
+    });
     const creditError = Object.assign(
       new Error('Your credit balance is too low to access the Anthropic API.'),
       {
@@ -180,18 +240,22 @@ describe('llm service', () => {
       },
     };
 
-    await expect(
-      service.completeText({
-        system: 'You are a test.',
-        user: 'Return JSON.',
-      }),
-    ).rejects.toThrow(/out of credits or quota/i);
+    try {
+      await expect(
+        service.completeText({
+          system: 'You are a test.',
+          user: 'Return JSON.',
+        }),
+      ).rejects.toThrow(/out of credits or quota/i);
 
-    await expect(
-      service.completeText({
-        system: 'You are a test.',
-        user: 'Return JSON.',
-      }),
-    ).rejects.toThrow(/req_test_123/i);
+      await expect(
+        service.completeText({
+          system: 'You are a test.',
+          user: 'Return JSON.',
+        }),
+      ).rejects.toThrow(/req_test_123/i);
+    } finally {
+      delete process.env.LLM_WIKI_RATE_LIMIT_WINDOW_MS;
+    }
   });
 });

@@ -253,9 +253,9 @@ input[type=password]{letter-spacing:3px}
 .prompt-actions button{background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);cursor:pointer;padding:7px 10px;font-size:12px;font-family:var(--font-sans);font-weight:600;transition:all .2s}
 .prompt-actions button:hover{border-color:var(--accent);color:var(--accent)}
 .production-drawer{position:fixed;inset:0;z-index:996;pointer-events:none}
-.production-drawer.open{pointer-events:auto}
+.production-drawer.open{pointer-events:none}
 .production-panel{position:absolute;top:0;right:0;height:100%;width:min(420px,calc(100vw - 18px));background:var(--panel);border-left:1px solid var(--border);box-shadow:-18px 0 45px rgba(0,0,0,.14);transform:translateX(100%);transition:transform .24s ease;display:flex;flex-direction:column}
-.production-drawer.open .production-panel{transform:translateX(0)}
+.production-drawer.open .production-panel{transform:translateX(0);pointer-events:auto}
 .production-head{display:flex;align-items:center;gap:10px;padding:15px 16px;border-bottom:1px solid var(--border)}
 .production-title{flex:1;min-width:0}
 .production-title h2{font-size:15px;line-height:1.2;margin:0}
@@ -1033,6 +1033,7 @@ function renderProductionPanel() {
   const btn=$('production-panel-btn'), dot=$('production-panel-dot'), body=$('production-body'), subtitle=$('production-subtitle');
   const job=productionState.job;
   const progress=productionState.progress || {};
+  const openDetails=new Set([...document.querySelectorAll('#production-body details.prod-details[open]')].map(d=>d.dataset.detail));
   if(btn) btn.classList.toggle('visible',!!(productionState.jobId||job));
   const status=String(job?.status||'');
   if(dot) dot.className=\`tb-production-dot \${esc(status)}\`;
@@ -1054,7 +1055,19 @@ function renderProductionPanel() {
     : '<span class="prod-log-line muted">Aucun log chargé.</span>';
   const percent=Number.isFinite(Number(progress.percent)) ? Math.max(0,Math.min(100,Number(progress.percent))) : null;
   const progressLabel=progress.label || productionTargetLabel(job);
+  const sourceCount=Number(progress.sourceCount);
+  const sourceIndex=Number(progress.sourceIndex);
+  const sourceDoneCount=Number(progress.sourceDoneCount);
+  const sourceProgress=Number.isFinite(sourceCount) && sourceCount>0
+    ? Number.isFinite(sourceIndex)
+      ? \`fichier \${Math.min(sourceCount,sourceIndex+1)}/\${sourceCount}\`
+      : Number.isFinite(sourceDoneCount)
+        ? \`\${Math.min(sourceCount,sourceDoneCount)}/\${sourceCount} fichiers traités\`
+        : \`\${sourceCount} fichier\${sourceCount>1?'s':''}\`
+    : null;
   const progressDetail=[
+    progress.source ? \`fichier \${String(progress.source).split('/').pop()}\` : null,
+    sourceProgress,
     progress.detail,
     progress.batchCount ? \`batch \${Number(progress.batchIndex ?? 0)+1}/\${progress.batchCount}\` : null,
     progress.instructionCount ? \`\${progress.instructionCount} instruction\${progress.instructionCount>1?'s':''}\` : null,
@@ -1090,11 +1103,15 @@ function renderProductionPanel() {
           </div>
         </div>\`).join('')}</div>
     </div>
-    <details class="prod-details" open><summary>Commande courante</summary><div class="prod-details-body"><div class="prod-code">\${esc(command||'Commande non détectée pour le moment.')}</div></div></details>
-    <details class="prod-details"><summary>Derniers logs</summary><div class="prod-details-body"><div class="prod-code">\${logHtml}</div></div></details>
-    <details class="prod-details"><summary>Trace file</summary><div class="prod-details-body"><div class="prod-code">\${esc(traceFile||'Trace file non détecté pour le moment.')}</div></div></details>
+    <details class="prod-details" data-detail="command" open><summary>Commande courante</summary><div class="prod-details-body"><div class="prod-code">\${esc(command||'Commande non détectée pour le moment.')}</div></div></details>
+    <details class="prod-details" data-detail="logs"><summary>Derniers logs</summary><div class="prod-details-body"><div class="prod-code">\${logHtml}</div></div></details>
+    <div class="prod-card"><div class="prod-kind">Trace file</div><div class="prod-sub">\${esc(traceFile||'Trace file non détecté pour le moment.')}</div></div>
     \${job.error?\`<div class="prod-card"><div class="prod-kind" style="color:var(--err)">Erreur</div><div class="prod-sub">\${esc(job.error)}</div></div>\`:''}
   \`;
+  for(const detail of openDetails) {
+    const el=[...body.querySelectorAll('details.prod-details')].find(d=>d.dataset.detail===detail);
+    if(el) el.open=true;
+  }
 }
 
 function updateProductionFromPayload(payload, {open=false, poll=false}={}) {
@@ -1136,6 +1153,7 @@ function handleProductionToolResult(fn, args, result, ok) {
   }
   else if(fn==='production_job_status') updateProductionFromPayload(data,{open:true,poll:!productionTerminal(data.job?.status)});
   else if(fn==='production_job_logs') updateProductionFromPayload(data,{open:true,poll:false});
+  else if(fn==='production_cancel_job') updateProductionFromPayload(data,{open:true,poll:false});
   else if(fn==='production_list_jobs' && Array.isArray(data.jobs) && data.jobs[0] && !productionState.jobId) {
     productionState.jobId=data.jobs[0].jobId;
     renderProductionPanel();
@@ -1615,7 +1633,8 @@ async function sendMessage() {
   const text=input.value.trim();
   if(!text) return;
   const model=$('model-name').value.trim()||'gpt-4o';
-  const temp=parseFloat($('temperature').value)||0.7;
+  const parsedTemp=parseFloat($('temperature').value);
+  const temp=Number.isFinite(parsedTemp) ? parsedTemp : 0.7;
   const useProxy=!!(window.__WIKI_CONFIG__);
   if(!useProxy && !$('base-url').value.trim()){notify('Entrez une Base URL','e');return;}
 
@@ -1769,21 +1788,24 @@ function saveServers() {
 
 function loadConfig() {
   const wc = window.__WIKI_CONFIG__;
+  let saved = {};
+  try {
+    saved = JSON.parse(localStorage.getItem('mcpchat_config')||'{}');
+  } catch {}
   if (wc) {
-    // Docker/proxy mode: show server credentials as read-only
-    if (wc.model) $('model-name').value = wc.model;
-    if (wc.temperature) $('temperature').value = String(wc.temperature);
+    // Docker/proxy mode: show server credentials as read-only, but keep user model/temp overrides.
+    if (saved.model || wc.model) $('model-name').value = saved.model || wc.model;
+    if (saved.temp !== undefined || wc.temperature !== undefined) {
+      $('temperature').value = saved.temp !== undefined ? saved.temp : String(wc.temperature);
+    }
     if (wc.baseUrl) { $('base-url').value = wc.baseUrl; $('base-url').readOnly = true; $('base-url').style.opacity = '.7'; }
     if (wc.apiKey)  { $('api-key').value = wc.apiKey;   $('api-key').readOnly = true;  $('api-key').style.opacity = '.7'; flashSaved('llm-saved'); }
   } else {
     // CLI mode: load from localStorage
-    try {
-      const cfg = JSON.parse(localStorage.getItem('mcpchat_config')||'{}');
-      if (cfg.baseUrl) $('base-url').value = cfg.baseUrl;
-      if (cfg.apiKey)  { $('api-key').value = cfg.apiKey; flashSaved('llm-saved'); }
-      if (cfg.model)   $('model-name').value = cfg.model;
-      if (cfg.temp)    $('temperature').value = cfg.temp;
-    } catch {}
+    if (saved.baseUrl) $('base-url').value = saved.baseUrl;
+    if (saved.apiKey)  { $('api-key').value = saved.apiKey; flashSaved('llm-saved'); }
+    if (saved.model)   $('model-name').value = saved.model;
+    if (saved.temp !== undefined) $('temperature').value = saved.temp;
   }
   $('system-prompt').value = localStorage.getItem('mcpchat_system_prompt') ?? DEFAULT_SYSTEM_PROMPT;
   syncModel();

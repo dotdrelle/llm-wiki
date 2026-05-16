@@ -567,9 +567,9 @@ function layout(title: string, body: string): string {
     }
     .relation-toggle:hover { border-color: var(--accent); background: var(--accent-soft); }
     .graph-layout.relations-collapsed .relation-panel-header {
-      height: 100%;
+      height: auto;
       padding: 0.55rem 0.45rem;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
       border-bottom: 0;
       writing-mode: vertical-rl;
@@ -658,13 +658,14 @@ function layout(title: string, body: string): string {
     }
     .modal-close:hover { border-color: var(--accent); background: var(--accent-soft); }
     .modal-body { min-height: 0; overflow: auto; }
-    .modal-doc { min-width: 0; padding: 1rem; }
-    .modal-doc-title { margin: 0 0 0.7rem; color: var(--muted); font-size: 0.82rem; overflow-wrap: anywhere; }
-    .modal-markdown { overflow-wrap: anywhere; }
-    .modal-markdown h1, .modal-markdown h2, .modal-markdown h3 { line-height: 1.2; margin: 1rem 0 0.45rem; }
+    .modal-doc { min-width: 0; padding: 0.85rem 0.95rem; }
+    .modal-doc-title { margin: 0 0 0.6rem; color: var(--muted); font-size: 0.76rem; overflow-wrap: anywhere; }
+    .modal-markdown { overflow-wrap: anywhere; font-size: 0.88rem; line-height: 1.45; }
+    .modal-markdown h1, .modal-markdown h2, .modal-markdown h3 { line-height: 1.18; margin: 0.85rem 0 0.38rem; font-size: 1rem; }
     .modal-markdown h1:first-child, .modal-markdown h2:first-child, .modal-markdown h3:first-child { margin-top: 0; }
-    .modal-markdown p, .modal-markdown ul, .modal-markdown ol { margin: 0.65rem 0; }
-    .modal-markdown pre { white-space: pre-wrap; }
+    .modal-markdown p, .modal-markdown ul, .modal-markdown ol { margin: 0.5rem 0; }
+    .modal-markdown li { margin: 0.2rem 0; }
+    .modal-markdown pre { white-space: pre-wrap; font-size: 0.78rem; line-height: 1.4; }
     @media (max-width: 760px) {
       .app-shell { display: block; }
       .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
@@ -957,7 +958,7 @@ async function renderSidebar(rootDir: string): Promise<string> {
     .map((dir) => renderNavNode(dir))
     .join('\n');
 
-  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">wiki</span><span class="brand-subtitle">index.md comme point d'entrée</span></a><a class="side-link" href="/graph">Graph des sources</a><a class="side-link" href="/chat">Chat MCP</a><a class="side-link" href="http://localhost:${MCP_WIKI_PORT}/mcp" target="_blank" rel="noopener">MCP wiki ↗</a><a class="side-link" href="http://localhost:${MCP_CME_PORT}/mcp/" target="_blank" rel="noopener">MCP CME ↗</a><div class="side-search"><input class="side-search-input" type="search" placeholder="Search files" aria-label="Search files" data-side-search><p class="side-search-status" data-side-search-status>No matching files.</p></div><nav class="side-tree" aria-label="Documents markdown">${tree}</nav></aside>`;
+  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">wiki</span><span class="brand-subtitle">index.md comme point d'entrée</span></a><a class="side-link" href="/graph">Graph des sources</a><a class="side-link" href="/chat">Chat MCP</a><a class="side-link" href="http://localhost:${MCP_WIKI_PORT}/mcp" target="_blank" rel="noopener">MCP wiki ↗</a><div class="side-search"><input class="side-search-input" type="search" placeholder="Search files" aria-label="Search files" data-side-search><p class="side-search-status" data-side-search-status>No matching files.</p></div><nav class="side-tree" aria-label="Documents markdown">${tree}</nav></aside>`;
 }
 
 interface GraphNode {
@@ -2041,7 +2042,7 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
       if (urlPath === '/chat') {
         const chatConfig = {
           model: config.llm.model,
-          temperature: 0.7,
+          temperature: config.llm.temperature,
           baseUrl: config.llm.baseUrl,
           apiKey: config.llm.apiKey ?? '',
           mcpServers: [
