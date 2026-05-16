@@ -735,6 +735,7 @@ function setEmptyChat() {
 }
 
 async function newConversation() {
+  showChatView();
   if(messages.length) await saveCurrentConversation({immediate:true});
   currentConversationId=null;
   messages=[];
@@ -745,6 +746,7 @@ async function newConversation() {
 }
 
 async function loadConversation(id) {
+  showChatView();
   if(isStreaming) stopStreaming();
   if(messages.length && currentConversationId!==id) await saveCurrentConversation({immediate:true});
   try {
@@ -826,6 +828,14 @@ function initPageMode() {
   document.body.classList.toggle('connectors-mode',isConnectors);
   $('connectors-link')?.classList.toggle('active',isConnectors);
   if(isConnectors) renderCards();
+}
+
+function showChatView() {
+  document.body.classList.remove('connectors-mode');
+  $('connectors-link')?.classList.remove('active');
+  if(location.pathname.replace(/\\/+$/,'')==='/chat/connectors') {
+    history.pushState(null,'','/chat');
+  }
 }
 
 function cardHTML(s) {
@@ -1006,6 +1016,17 @@ function productionTerminal(status) {
   return ['done','failed','cancelled'].includes(String(status||''));
 }
 
+function isProductionPanelOpen() {
+  return $('production-drawer')?.classList.contains('open') || false;
+}
+
+function shouldShowProductionButton(job) {
+  const status=String(job?.status||'');
+  if(isProductionPanelOpen()) return true;
+  if(job && productionTerminal(status)) return false;
+  return !!(productionState.jobId||job);
+}
+
 function parseProductionJSON(result) {
   const data=parseToolJSON(result);
   return data && typeof data==='object' ? data : null;
@@ -1061,6 +1082,7 @@ function toggleProductionPanel(force) {
   const drawer=$('production-drawer');
   const next=typeof force==='boolean' ? force : !drawer?.classList.contains('open');
   setProductionPanelVisible(next);
+  renderProductionPanel();
   if(next && productionState.jobId) pollProductionJob({immediate:true});
 }
 
@@ -1069,7 +1091,7 @@ function renderProductionPanel() {
   const job=productionState.job;
   const progress=productionState.progress || {};
   const openDetails=new Set([...document.querySelectorAll('#production-body details.prod-details[open]')].map(d=>d.dataset.detail));
-  if(btn) btn.classList.toggle('visible',!!(productionState.jobId||job));
+  if(btn) btn.classList.toggle('visible',shouldShowProductionButton(job));
   const status=String(job?.status||'');
   if(dot) dot.className=\`tb-production-dot \${esc(status)}\`;
   if(subtitle) subtitle.textContent=job ? \`\${productionStatusLabel(status)} · \${productionTargetLabel(job)}\` : 'Aucun job suivi.';
@@ -1183,12 +1205,12 @@ function handleProductionToolResult(fn, args, result, ok) {
   const data=parseProductionJSON(result);
   if(!ok || !data) return;
   if(fn==='production_start_job' && data.jobId) {
-    updateProductionFromPayload(data,{open:true,poll:false});
+    updateProductionFromPayload(data,{open:false,poll:false});
     pollProductionJob({immediate:true});
   }
-  else if(fn==='production_job_status') updateProductionFromPayload(data,{open:true,poll:!productionTerminal(data.job?.status)});
-  else if(fn==='production_job_logs') updateProductionFromPayload(data,{open:true,poll:false});
-  else if(fn==='production_cancel_job') updateProductionFromPayload(data,{open:true,poll:false});
+  else if(fn==='production_job_status') updateProductionFromPayload(data,{open:false,poll:!productionTerminal(data.job?.status)});
+  else if(fn==='production_job_logs') updateProductionFromPayload(data,{open:false,poll:false});
+  else if(fn==='production_cancel_job') updateProductionFromPayload(data,{open:false,poll:false});
   else if(fn==='production_list_jobs' && Array.isArray(data.jobs) && data.jobs[0] && !productionState.jobId) {
     productionState.jobId=data.jobs[0].jobId;
     renderProductionPanel();
