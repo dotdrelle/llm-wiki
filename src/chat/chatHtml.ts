@@ -475,6 +475,8 @@ let streamAbortController = null;
 let currentConversationId = null;
 let historySummaries = [];
 let historySaveTimer = null;
+let conversationDirty = false;
+let historyLoadSeq = 0;
 let productionState = {
   jobId: null,
   job: null,
@@ -627,8 +629,8 @@ function newConversationId() {
   return \`conv_\${new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14)}_\${Math.random().toString(36).slice(2,8)}\`;
 }
 
-function titleFromMessages() {
-  const firstUser=messages.find(m=>m.role==='user' && m.content);
+function titleFromMessages(sourceMessages=messages) {
+  const firstUser=sourceMessages.find(m=>m.role==='user' && m.content);
   const text=String(firstUser?.content || 'Nouvelle discussion').replace(/\\s+/g,' ').trim();
   return text.length>54 ? text.slice(0,53).trimEnd()+'…' : text;
 }
@@ -643,34 +645,44 @@ function activeServerSnapshot() {
   }));
 }
 
-function collectToolHistory() {
+function collectToolHistory(sourceMessages=messages) {
   const out=[];
-  for(const msg of messages) {
+  for(const msg of sourceMessages) {
     if(Array.isArray(msg.tool_calls)) out.push(...msg.tool_calls.map(tc=>({type:'call',name:tc.function?.name||tc.name||'',id:tc.id||''})));
     if(msg.role==='tool') out.push({type:'result',name:msg.name||'',toolCallId:msg.tool_call_id||''});
   }
   return out;
 }
 
-function buildConversationPayload() {
+function buildConversationPayload(snapshot={}) {
   const now=new Date().toISOString();
-  const existing=historySummaries.find(c=>c.id===currentConversationId);
+  const id=snapshot.id || currentConversationId || newConversationId();
+  const sourceMessages=Array.isArray(snapshot.messages) ? snapshot.messages : messages;
+  const existing=historySummaries.find(c=>c.id===id);
   return {
-    id: currentConversationId || newConversationId(),
-    title: titleFromMessages(),
+    id,
+    title: titleFromMessages(sourceMessages),
     createdAt: existing?.createdAt || now,
     updatedAt: now,
-    systemPrompt: currentSystemPrompt(),
-    mcpServers: activeServerSnapshot(),
-    messages,
-    toolCalls: collectToolHistory(),
-    traceHtml: [...document.querySelectorAll('.trace-card')].map(el=>el.outerHTML),
-    messageHtml: $('messages')?.innerHTML || '',
+    systemPrompt: snapshot.systemPrompt ?? currentSystemPrompt(),
+    mcpServers: snapshot.mcpServers ?? activeServerSnapshot(),
+    messages: sourceMessages,
+    toolCalls: snapshot.toolCalls ?? collectToolHistory(sourceMessages),
+    traceHtml: snapshot.traceHtml ?? [...document.querySelectorAll('.trace-card')].map(el=>el.outerHTML),
+    messageHtml: snapshot.messageHtml ?? $('messages')?.innerHTML ?? '',
   };
 }
 
-async function saveCurrentConversation({immediate=false}={}) {
+async function persistConversationPayload(payload) {
+  const method=historySummaries.some(c=>c.id===payload.id) ? 'PUT' : 'POST';
+  const url=method==='PUT' ? \`/api/chat/history/\${encodeURIComponent(payload.id)}\` : '/api/chat/history';
+  await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  await loadHistory();
+}
+
+async function saveCurrentConversation({immediate=false, force=false}={}) {
   if(!messages.length) return;
+  if(!force && !conversationDirty) return;
   if(historySaveTimer) {
     clearTimeout(historySaveTimer);
     historySaveTimer=null;
@@ -679,10 +691,8 @@ async function saveCurrentConversation({immediate=false}={}) {
     try {
       const payload=buildConversationPayload();
       currentConversationId=payload.id;
-      const method=historySummaries.some(c=>c.id===payload.id) ? 'PUT' : 'POST';
-      const url=method==='PUT' ? \`/api/chat/history/\${encodeURIComponent(payload.id)}\` : '/api/chat/history';
-      await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-      await loadHistory();
+      await persistConversationPayload(payload);
+      conversationDirty=false;
     } catch(e) {
       console.warn('chat history save failed', e);
     }
@@ -692,6 +702,7 @@ async function saveCurrentConversation({immediate=false}={}) {
 }
 
 function scheduleConversationSave() {
+  conversationDirty=true;
   saveCurrentConversation().catch(()=>{});
 }
 
@@ -740,6 +751,7 @@ async function newConversation() {
   if(messages.length) await saveCurrentConversation({immediate:true});
   currentConversationId=null;
   messages=[];
+  conversationDirty=false;
   resetProductionState();
   setEmptyChat();
   renderHistory();
@@ -749,13 +761,40 @@ async function newConversation() {
 async function loadConversation(id) {
   showChatView();
   if(isStreaming) stopStreaming();
-  if(messages.length && currentConversationId!==id) await saveCurrentConversation({immediate:true});
+  const seq=++historyLoadSeq;
+  const previousId=currentConversationId;
+  if(previousId===id) {
+    renderHistory();
+  } else {
+    const previousSnapshot=conversationDirty && previousId && messages.length
+      ? buildConversationPayload({
+          id:previousId,
+          messages:messages.slice(),
+          systemPrompt:currentSystemPrompt(),
+          mcpServers:activeServerSnapshot(),
+          toolCalls:collectToolHistory(messages),
+          traceHtml:[...document.querySelectorAll('.trace-card')].map(el=>el.outerHTML),
+          messageHtml:$('messages')?.innerHTML || '',
+        })
+      : null;
+    currentConversationId=id;
+    renderHistory();
+    if(previousSnapshot) {
+      try {
+        await persistConversationPayload(previousSnapshot);
+      } catch(e) {
+        console.warn('chat history save failed', e);
+      }
+    }
+  }
   try {
     const res=await fetch(\`/api/chat/history/\${encodeURIComponent(id)}\`);
     if(!res.ok) throw new Error(\`HTTP \${res.status}\`);
     const conv=await res.json();
+    if(seq!==historyLoadSeq) return;
     currentConversationId=conv.id;
     messages=Array.isArray(conv.messages) ? conv.messages : [];
+    conversationDirty=false;
     if(conv.systemPrompt && $('system-prompt')) {
       $('system-prompt').value=conv.systemPrompt;
       saveSystemPrompt();
@@ -1831,6 +1870,7 @@ async function sendMessage() {
         }));
         tcIdx+=toolCalls.length;
         messages.push(...toolResults);
+        conversationDirty=true;
         await saveCurrentConversation({immediate:true});
         streamDiv=null;
         if(streamAbortController.signal.aborted) break;
@@ -1839,6 +1879,7 @@ async function sendMessage() {
 
       setStreamContent(streamDiv,content);
       messages.push({role:'assistant',content});
+      conversationDirty=true;
       await saveCurrentConversation({immediate:true});
       break;
     }
@@ -1857,6 +1898,7 @@ async function sendMessage() {
         appendMsg('assistant','Réponse arrêtée.');
         messages.push({role:'assistant',content:'Réponse arrêtée.'});
       }
+      conversationDirty=true;
       await saveCurrentConversation({immediate:true});
     } else {
       streamDiv?.remove();
