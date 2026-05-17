@@ -219,7 +219,16 @@ body:not(.connectors-mode) #connectors-view{display:none}
 
 /* INPUT */
 #input-wrap{padding:12px 18px 14px;background:linear-gradient(to top,var(--panel) 82%,rgba(255,255,255,0));display:flex;flex-direction:column;align-items:center}
-.input-box{width:min(900px,100%);display:flex;align-items:flex-end;gap:10px;background:var(--panel-soft);border:1px solid var(--border);border-radius:24px;padding:12px 12px 12px 18px;box-shadow:0 8px 24px rgba(0,0,0,.05);transition:border-color .2s,box-shadow .2s}
+.input-box{position:relative;width:min(900px,100%);display:flex;align-items:flex-end;gap:10px;background:var(--panel-soft);border:1px solid var(--border);border-radius:24px;padding:12px 12px 12px 18px;box-shadow:0 8px 24px rgba(0,0,0,.05);transition:border-color .2s,box-shadow .2s}
+.skill-ac{position:absolute;bottom:calc(100% + 8px);left:0;right:0;background:var(--panel);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.14);overflow:hidden;display:none;z-index:200;max-height:300px;overflow-y:auto}
+.skill-ac.open{display:block}
+.skill-ac-item{display:flex;align-items:flex-start;gap:9px;padding:10px 14px;cursor:pointer;transition:background .12s;border-bottom:1px solid var(--border)}
+.skill-ac-item:last-child{border-bottom:0}
+.skill-ac-item:hover,.skill-ac-item.focused{background:var(--panel-soft)}
+.skill-ac-slash{font-family:var(--font-mono);font-size:14px;font-weight:800;color:var(--accent);flex-shrink:0;padding-top:1px}
+.skill-ac-info{min-width:0}
+.skill-ac-name{font-size:13px;font-weight:700;color:var(--text)}
+.skill-ac-desc{font-size:11px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:400px}
 .input-box:focus-within{border-color:rgba(127,127,127,.45);box-shadow:0 10px 30px rgba(0,0,0,.08)}
 #chat-input{flex:1;background:none;border:none;color:var(--text);font-family:var(--font-sans);font-size:15px;resize:none;max-height:180px;overflow-y:auto;line-height:1.55;outline:none;padding:4px 0}
 #chat-input::placeholder{color:var(--muted)}
@@ -412,7 +421,8 @@ const CHAT_BODY = `<aside id="sidebar">
   </div>
   <div id="input-wrap">
     <div class="input-box">
-      <textarea id="chat-input" rows="1" placeholder="Votre message…"
+      <div class="skill-ac" id="skill-ac"></div>
+      <textarea id="chat-input" rows="1" placeholder="Votre message… (/ pour les skills)"
         oninput="autoResize(this)" onkeydown="handleKey(event)"></textarea>
       <button id="send-btn" onclick="handleSendButton()" title="Envoyer">
         <svg viewBox="0 0 24 24"><path d="M12 5l7 7-1.4 1.4L13 8.8V20h-2V8.8l-4.6 4.6L5 12z"/></svg>
@@ -477,6 +487,9 @@ let historySummaries = [];
 let historySaveTimer = null;
 let conversationDirty = false;
 let historyLoadSeq = 0;
+let skillsCache = null;
+let skillAcIdx = -1;
+let skillAcItems = [];
 let productionState = {
   jobId: null,
   job: null,
@@ -512,13 +525,59 @@ const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>
 function renderMd(t) { try { return typeof marked!=='undefined' ? marked.parse(t||'') : esc(t||''); } catch { return esc(t||''); } }
 const SIDEBAR_SPLIT_KEY = 'mcpchat_sidebar_history_height';
 
+function languageInstruction() {
+  const lang = window.__WIKI_CONFIG__?.language;
+  if (!lang || lang === 'en') return '';
+  return \`Language: write all responses in \${lang}.\`;
+}
 function notify(msg, type='s') {
   const el=$('notif'); el.textContent=msg; el.className=\`show \${type}\`;
   clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3200);
 }
 
-function autoResize(ta) { ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px'; }
-function handleKey(e) { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();} }
+function autoResize(ta) {
+  ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px';
+  const val=ta.value;
+  if(val.startsWith('/')&&!/\\s/.test(val)){
+    fetchSkillsAc().then(()=>showSkillAc(val.slice(1)));
+  } else { hideSkillAc(); }
+}
+function handleKey(e) {
+  if($('skill-ac').classList.contains('open')){
+    if(e.key==='ArrowDown'){e.preventDefault();skillAcIdx=Math.min(skillAcIdx+1,skillAcItems.length-1);updateSkillAcFocus();return;}
+    if(e.key==='ArrowUp'){e.preventDefault();skillAcIdx=Math.max(skillAcIdx-1,-1);updateSkillAcFocus();return;}
+    if(e.key==='Tab'||(e.key==='Enter'&&skillAcIdx>=0)){e.preventDefault();selectSkillAc(skillAcIdx>=0?skillAcIdx:0);return;}
+    if(e.key==='Escape'){e.preventDefault();hideSkillAc();return;}
+  }
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}
+}
+async function fetchSkillsAc(){
+  if(skillsCache!==null)return;
+  try{const r=await fetch('/api/skills');skillsCache=await r.json();}catch{skillsCache=[];}
+}
+function showSkillAc(filter){
+  const el=$('skill-ac');
+  const filtered=(skillsCache||[]).filter(s=>s.name.startsWith(filter));
+  skillAcItems=filtered;
+  if(!filtered.length){hideSkillAc();return;}
+  skillAcIdx=-1;
+  el.innerHTML=filtered.map((s,i)=>\`<div class="skill-ac-item" data-idx="\${i}" onclick="selectSkillAc(\${i})" onmouseenter="skillAcIdx=\${i};updateSkillAcFocus()"><div class="skill-ac-slash">/</div><div class="skill-ac-info"><div class="skill-ac-name">\${esc(s.name)}</div>\${s.description?'<div class="skill-ac-desc">'+esc(s.description)+'</div>':''}</div></div>\`).join('');
+  el.classList.add('open');
+}
+function hideSkillAc(){$('skill-ac').classList.remove('open');skillAcIdx=-1;skillAcItems=[];}
+function updateSkillAcFocus(){$('skill-ac').querySelectorAll('.skill-ac-item').forEach((el,i)=>el.classList.toggle('focused',i===skillAcIdx));}
+function selectSkillAc(idx){
+  const skill=skillAcItems[idx];
+  if(!skill)return;
+  const ta=$('chat-input');
+  ta.value=skill.body;
+  ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,130)+'px';
+  hideSkillAc();
+  ta.focus();
+  if(skill.params&&skill.params.length){
+    notify('Remplacez les paramètres : '+skill.params.map(p=>'{'+p+'}').join(', '),'s');
+  }
+}
 function toggleSidebar() { sidebarOpen=!sidebarOpen; $('sidebar').classList.toggle('collapsed',!sidebarOpen); }
 function syncModel() { $('model-badge').textContent=$('model-name').value||'modèle'; }
 
@@ -1828,7 +1887,9 @@ async function sendMessage() {
     while(turn<MAX_TURNS) {
       turn++;
       const systemPrompt=currentSystemPrompt();
-      const reqMessages=systemPrompt ? [{role:'system',content:systemPrompt},...messages] : messages;
+      const langLine=languageInstruction();
+      const sysContent=[systemPrompt,langLine].filter(Boolean).join('\n\n');
+      const reqMessages=sysContent ? [{role:'system',content:sysContent},...messages] : messages;
       const reqBody={model,temperature:temp,messages:reqMessages,...(toolsPayload?{tools:toolsPayload,tool_choice:'auto'}:{})};
       streamDiv=createStreamBubble();
       const {content,toolCalls}=await fetchStream(llmUrl,llmHeaders,reqBody,t=>setStreamContent(streamDiv,t),streamAbortController.signal);
@@ -2024,6 +2085,7 @@ loadHistory();
 initSidebarSplitter();
 renderProductionPanel();
 restoreEnabledServers();
+fetchSkillsAc();
 window.addEventListener('popstate', initPageMode);
 </script>`;
 

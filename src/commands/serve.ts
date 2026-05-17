@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage } from 'node:http';
-import { mkdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
@@ -44,6 +44,71 @@ const MARKED_DIST_PATH = path.resolve(
 );
 const CHAT_HISTORY_DIR = path.join('.wiki', 'chat-history');
 const CHAT_HISTORY_INDEX = 'index.json';
+const SKILLS_DIR = path.join('.wiki', 'skills');
+const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
+
+type SkillMeta = {
+  name: string;
+  description: string;
+  params: string[];
+  body: string;
+  scope: 'workspace';
+};
+
+function assertSkillName(name: string): void {
+  if (!SKILL_NAME_RE.test(name)) throw new Error('INVALID_SKILL_NAME');
+}
+
+function skillFilePath(rootDir: string, name: string): string {
+  return path.join(rootDir, SKILLS_DIR, `${name}.md`);
+}
+
+function parseSkillFile(name: string, raw: string): SkillMeta {
+  const fmMatch = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  const fm = fmMatch ? fmMatch[1] : '';
+  const body = (fmMatch ? fmMatch[2] : raw).trim();
+  let description = '';
+  const params: string[] = [];
+  let inParams = false;
+  for (const line of fm.split('\n')) {
+    const t = line.trim();
+    if (t.startsWith('description:')) { description = t.slice(12).trim(); inParams = false; }
+    else if (t === 'params:') { inParams = true; }
+    else if (inParams && t.startsWith('- ')) { params.push(t.slice(2).trim()); }
+    else if (t && !t.startsWith('#') && !t.startsWith('- ')) { inParams = false; }
+  }
+  return { name, description, params, body, scope: 'workspace' };
+}
+
+function formatSkillFile(skill: { name: string; description: string; params: string[]; body: string }): string {
+  const paramsYaml = skill.params.length
+    ? `\nparams:\n${skill.params.map((p) => `  - ${p}`).join('\n')}`
+    : '';
+  return `---\nname: ${skill.name}\ndescription: ${skill.description}${paramsYaml}\n---\n${skill.body}\n`;
+}
+
+async function listSkills(rootDir: string): Promise<SkillMeta[]> {
+  const dir = path.join(rootDir, SKILLS_DIR);
+  if (!(await pathExists(dir))) return [];
+  const files = (await readdir(dir)).filter((f) => f.endsWith('.md')).sort();
+  const skills: SkillMeta[] = [];
+  for (const file of files) {
+    const name = file.slice(0, -3);
+    try {
+      assertSkillName(name);
+      const raw = await readFile(path.join(dir, file), 'utf8');
+      skills.push(parseSkillFile(name, raw));
+    } catch { /* skip invalid */ }
+  }
+  return skills;
+}
+
+async function readSkillByName(rootDir: string, name: string): Promise<SkillMeta | null> {
+  assertSkillName(name);
+  const fp = skillFilePath(rootDir, name);
+  if (!(await pathExists(fp))) return null;
+  return parseSkillFile(name, await readFile(fp, 'utf8'));
+}
 
 type ChatHistorySummary = {
   id: string;
@@ -958,7 +1023,7 @@ async function renderSidebar(rootDir: string): Promise<string> {
     .map((dir) => renderNavNode(dir))
     .join('\n');
 
-  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">wiki</span><span class="brand-subtitle">index.md comme point d'entrée</span></a><a class="side-link" href="/graph">Graph des sources</a><a class="side-link" href="/chat">Chat MCP</a><a class="side-link" href="http://localhost:${MCP_WIKI_PORT}/mcp" target="_blank" rel="noopener">MCP wiki ↗</a><div class="side-search"><input class="side-search-input" type="search" placeholder="Search files" aria-label="Search files" data-side-search><p class="side-search-status" data-side-search-status>No matching files.</p></div><nav class="side-tree" aria-label="Documents markdown">${tree}</nav></aside>`;
+  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">wiki</span><span class="brand-subtitle">index.md comme point d'entrée</span></a><a class="side-link" href="/graph">Graph des sources</a><a class="side-link" href="/chat">Chat MCP</a><a class="side-link" href="/skills">Skills</a><a class="side-link" href="http://localhost:${MCP_WIKI_PORT}/mcp" target="_blank" rel="noopener">MCP wiki ↗</a><div class="side-search"><input class="side-search-input" type="search" placeholder="Search files" aria-label="Search files" data-side-search><p class="side-search-status" data-side-search-status>No matching files.</p></div><nav class="side-tree" aria-label="Documents markdown">${tree}</nav></aside>`;
 }
 
 interface GraphNode {
@@ -1855,6 +1920,55 @@ async function handleChatHistoryApi(rootDir: string, req: IncomingMessage, res: 
   }
 }
 
+async function handleSkillsApi(
+  rootDir: string,
+  req: IncomingMessage,
+  res: { writeHead: (s: number, h?: Record<string, string>) => void; end: (c?: string) => void },
+  urlPath: string,
+): Promise<boolean> {
+  if (urlPath !== '/api/skills' && !urlPath.startsWith('/api/skills/')) return false;
+  const name = urlPath.replace(/^\/api\/skills\/?/, '').replace(/\/+$/, '');
+  try {
+    if (!name) {
+      if (req.method === 'GET') { sendJson(res, 200, await listSkills(rootDir)); return true; }
+      sendJson(res, 405, { error: 'Method not allowed' });
+      return true;
+    }
+    assertSkillName(name);
+    if (req.method === 'GET') {
+      const skill = await readSkillByName(rootDir, name);
+      if (!skill) { sendJson(res, 404, { error: 'Skill not found' }); return true; }
+      sendJson(res, 200, skill);
+      return true;
+    }
+    if (req.method === 'POST' || req.method === 'PUT') {
+      const raw = await readRequestBody(req);
+      const data = JSON.parse(raw) as { description?: string; params?: unknown; body?: string };
+      const skill = {
+        name,
+        description: String(data.description ?? ''),
+        params: Array.isArray(data.params) ? data.params.map(String) : [],
+        body: String(data.body ?? ''),
+      };
+      await mkdir(path.join(rootDir, SKILLS_DIR), { recursive: true });
+      await safeWriteFile(skillFilePath(rootDir, name), formatSkillFile(skill));
+      sendJson(res, 200, { ...skill, scope: 'workspace' as const });
+      return true;
+    }
+    if (req.method === 'DELETE') {
+      await rm(skillFilePath(rootDir, name), { force: true });
+      sendJson(res, 200, { ok: true });
+      return true;
+    }
+    sendJson(res, 405, { error: 'Method not allowed' });
+    return true;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    sendJson(res, message === 'INVALID_SKILL_NAME' ? 400 : 500, { error: message });
+    return true;
+  }
+}
+
 async function proxyPost(
   req: IncomingMessage,
   res: { writeHead: (s: number, h: Record<string, string>) => void; write: (c: Uint8Array) => void; end: () => void; headersSent?: boolean },
@@ -1951,6 +2065,152 @@ async function generateEditPage(rootDir: string, relativePath: string): Promise<
   return layout(`Edit ${path.basename(cleanRelativePath)}`, body);
 }
 
+async function generateSkillsPage(rootDir: string): Promise<string> {
+  const sidebar = await renderSidebar(rootDir);
+  const pageStyles = `<style>
+.skills-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem;margin-top:1rem}
+.skill-card{background:var(--panel-soft);border:1px solid var(--border);border-radius:10px;padding:1rem 1.1rem;display:flex;flex-direction:column;gap:.5rem}
+.skill-card-name{font-weight:750;font-size:1rem;font-family:monospace;color:var(--accent)}
+.skill-card-desc{font-size:.88rem;color:var(--muted)}
+.skill-card-params{display:flex;flex-wrap:wrap;gap:.3rem}
+.skill-param{background:var(--panel);border:1px solid var(--border);border-radius:99px;font-size:.78rem;padding:2px 8px;color:var(--text);font-family:monospace}
+.skill-card-actions{display:flex;gap:.5rem;margin-top:auto;padding-top:.5rem;border-top:1px solid var(--border)}
+.skill-card-body-preview{font-size:.82rem;color:var(--muted2);font-family:monospace;white-space:pre-wrap;max-height:4em;overflow:hidden;border-left:2px solid var(--border);padding-left:.5rem;margin-top:.15rem}
+.editor-overlay{position:fixed;inset:0;background:rgba(15,23,42,.4);z-index:500;display:none;align-items:flex-start;justify-content:center;padding:3rem 1rem;overflow-y:auto}
+.editor-overlay.open{display:flex}
+.editor-panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;width:min(640px,100%);padding:1.5rem;display:flex;flex-direction:column;gap:1rem;box-shadow:0 18px 60px rgba(0,0,0,.2)}
+.editor-title{font-size:1.05rem;font-weight:750}
+.field-label{font-size:.82rem;font-weight:700;color:var(--muted);margin-bottom:.25rem;display:block}
+.field-sub{font-size:.78rem;color:var(--muted);margin-top:.2rem}
+.field-input,.field-textarea{width:100%;padding:.45rem .65rem;border:1px solid var(--border);border-radius:7px;background:var(--panel-soft);color:var(--text);font:inherit;font-size:.9rem;outline:none;box-sizing:border-box}
+.field-input:focus,.field-textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.field-textarea{font-family:monospace;font-size:.86rem;min-height:200px;resize:vertical;line-height:1.5}
+.editor-actions{display:flex;gap:.5rem;justify-content:flex-end}
+.empty-state{padding:2.5rem;text-align:center;color:var(--muted);border:1px dashed var(--border);border-radius:10px}
+.del-btn{color:var(--err) !important;border-color:var(--err) !important}
+.del-btn:hover{background:rgba(240,107,107,.08) !important}
+</style>`;
+
+  const body = `${sidebar}<main class="content">${pageStyles}
+<div class="hero"><h1>Skills</h1><p>Commandes réutilisables invocables avec <code style="background:var(--panel-soft);padding:1px 6px;border-radius:4px;font-size:.9em">/nom</code> dans le chat. Le corps du skill remplit le champ message pour lancer une instruction préparée.</p></div>
+<div class="page-actions"><button class="action-button" onclick="openEditor(null)">+ Nouveau skill</button></div>
+<div id="skills-list"></div>
+
+<div class="editor-overlay" id="editor-overlay" onclick="handleOverlayClick(event)">
+  <div class="editor-panel" onclick="event.stopPropagation()">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div class="editor-title" id="editor-title">Nouveau skill</div>
+      <button class="action-button" onclick="closeEditor()">✕</button>
+    </div>
+    <div>
+      <label class="field-label" for="f-name">Nom <span style="color:var(--err)">*</span></label>
+      <input class="field-input" id="f-name" type="text" placeholder="pipeline" pattern="[a-zA-Z0-9_-]{1,60}" autocomplete="off">
+      <div class="field-sub">Lettres, chiffres, - et _ uniquement. Invoqué avec /nom dans le chat.</div>
+    </div>
+    <div>
+      <label class="field-label" for="f-desc">Description</label>
+      <input class="field-input" id="f-desc" type="text" placeholder="Lance le pipeline complet via l'agent production">
+    </div>
+    <div>
+      <label class="field-label" for="f-params">Paramètres <span style="font-weight:400;color:var(--muted)">(séparés par des virgules)</span></label>
+      <input class="field-input" id="f-params" type="text" placeholder="space, template">
+      <div class="field-sub">Ex : <code style="font-size:.85em">space</code> → référencé dans le corps avec <code style="font-size:.85em">{space}</code>.</div>
+    </div>
+    <div>
+      <label class="field-label" for="f-body">Corps du skill <span style="color:var(--err)">*</span></label>
+      <textarea class="field-textarea" id="f-body" placeholder="Vérifie le statut CME avec cme_status, puis lance cme_export_run(source_name=&quot;{space}&quot;)…"></textarea>
+      <div class="field-sub">Instructions en langage naturel que le LLM suivra. Les paramètres sont insérés sous forme de placeholders à remplacer avant l'envoi.</div>
+    </div>
+    <div class="editor-actions">
+      <button class="action-button" onclick="closeEditor()">Annuler</button>
+      <button class="action-button" style="background:var(--accent);color:#fff;border-color:var(--accent)" onclick="saveSkill()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function escH(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+let skills=[];
+
+async function loadSkills(){
+  const r=await fetch('/api/skills');
+  if(!r.ok){document.getElementById('skills-list').innerHTML='<div class="empty-state"><p>Impossible de charger les skills.</p></div>';return;}
+  skills=await r.json();
+  renderList();
+}
+
+function renderList(){
+  const el=document.getElementById('skills-list');
+  if(!skills.length){
+    el.innerHTML='<div class="empty-state"><p>Aucun skill. Créez votre premier skill avec le bouton ci-dessus.</p></div>';
+    return;
+  }
+  el.innerHTML='<div class="skills-grid">'+skills.map(s=>\`
+    <div class="skill-card">
+      <div class="skill-card-name">/\${escH(s.name)}</div>
+      \${s.description?'<div class="skill-card-desc">'+escH(s.description)+'</div>':''}
+      \${s.params&&s.params.length?'<div class="skill-card-params">'+s.params.map(p=>'<span class="skill-param">{'+escH(p)+'}</span>').join('')+'</div>':''}
+      \${s.body?'<div class="skill-card-body-preview">'+escH(s.body.slice(0,120))+(s.body.length>120?'…':'')+'</div>':''}
+      <div class="skill-card-actions">
+        <button class="action-button" onclick="openEditorByIndex(\${i})">Modifier</button>
+        <button class="action-button del-btn" onclick="deleteSkillByIndex(\${i})">Supprimer</button>
+      </div>
+    </div>
+  \`).join('')+'</div>';
+}
+
+function openEditorByIndex(idx){openEditor(skills[idx]);}
+
+function openEditor(skill){
+  document.getElementById('editor-title').textContent=skill?'Modifier /'+skill.name:'Nouveau skill';
+  const nameEl=document.getElementById('f-name');
+  nameEl.value=skill?.name??'';
+  nameEl.disabled=!!skill;
+  document.getElementById('f-desc').value=skill?.description??'';
+  document.getElementById('f-params').value=(skill?.params??[]).join(', ');
+  document.getElementById('f-body').value=skill?.body??'';
+  document.getElementById('editor-overlay').classList.add('open');
+  (skill?document.getElementById('f-body'):nameEl).focus();
+}
+
+function closeEditor(){document.getElementById('editor-overlay').classList.remove('open');}
+function handleOverlayClick(e){if(e.target===document.getElementById('editor-overlay'))closeEditor();}
+
+async function saveSkill(){
+  const name=document.getElementById('f-name').value.trim();
+  const description=document.getElementById('f-desc').value.trim();
+  const params=document.getElementById('f-params').value.split(',').map(p=>p.trim()).filter(Boolean);
+  const body=document.getElementById('f-body').value;
+  if(!name){alert('Le nom est requis.');return;}
+  if(!body.trim()){alert('Le corps du skill est requis.');return;}
+  const r=await fetch('/api/skills/'+encodeURIComponent(name),{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({description,params,body}),
+  });
+  if(!r.ok){const e=await r.json();alert(e.error||'Erreur');return;}
+  closeEditor();
+  await loadSkills();
+}
+
+async function deleteSkill(name){
+  if(!confirm('Supprimer le skill /'+name+' ?'))return;
+  await fetch('/api/skills/'+encodeURIComponent(name),{method:'DELETE'});
+  await loadSkills();
+}
+
+function deleteSkillByIndex(idx){
+  const skill=skills[idx];
+  if(skill) deleteSkill(skill.name);
+}
+
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeEditor();});
+loadSkills();
+</script>
+</main>`;
+  return layout('Skills', body);
+}
+
 function openAppMode(url: string): void {
   const platform = process.platform;
 
@@ -2043,6 +2303,10 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
         return;
       }
 
+      if (await handleSkillsApi(rootDir, req, res, urlPath)) {
+        return;
+      }
+
       if (req.method === 'GET' && urlPath === '/api/production/trace') {
         try {
           const traceFile = new URL(req.url ?? '/', 'http://localhost').searchParams.get('path') ?? '';
@@ -2131,6 +2395,7 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
           temperature: config.llm.temperature,
           baseUrl: config.llm.baseUrl,
           apiKey: config.llm.apiKey ?? '',
+          language: config.language ?? 'fr',
           mcpServers: [
             { name: 'llm-wiki', url: process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${MCP_WIKI_PORT}/mcp` },
             { name: 'wiki-production', url: process.env.PRODUCTION_MCP_PROXY_URL ?? `http://localhost:${MCP_PRODUCTION_PORT}/mcp/` },
@@ -2173,6 +2438,13 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
 
       if (urlPath === '/graph') {
         const html = await generateGraph(rootDir);
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(html);
+        return;
+      }
+
+      if (urlPath === '/skills') {
+        const html = await generateSkillsPage(rootDir);
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(html);
         return;
