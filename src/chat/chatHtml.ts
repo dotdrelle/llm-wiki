@@ -116,9 +116,35 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .connectors-title p{font-size:13px;line-height:1.45;margin:5px 0 0;color:var(--muted);max-width:620px}
 .connectors-add{border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);padding:8px 12px;cursor:pointer;font-family:var(--font-sans);font-size:12px;font-weight:700}
 .connectors-add:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.connectors-section{max-width:1120px;margin:0 auto 28px}
+.connectors-section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:12px}
+.connectors-section-title h2{font-size:16px;line-height:1.25;margin:0;color:var(--text)}
+.connectors-section-title p{font-size:12px;line-height:1.45;margin:4px 0 0;color:var(--muted);max-width:640px}
 .connectors-grid{max-width:1120px;margin:0 auto}
 .connectors-grid .mcp-cards{padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
 .connectors-grid .mcp-card{min-width:0}
+.skills-manager-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.skill-manager-card{border:1px solid var(--border);border-radius:10px;background:var(--panel-soft);padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.skill-manager-name{font-family:var(--font-mono);font-size:13px;font-weight:800;color:var(--accent)}
+.skill-manager-desc{font-size:12px;color:var(--muted);line-height:1.45}
+.skill-manager-params{display:flex;flex-wrap:wrap;gap:4px}
+.skill-manager-param{font-family:var(--font-mono);font-size:10px;color:var(--text);border:1px solid var(--border);border-radius:99px;background:var(--panel);padding:2px 7px}
+.skill-manager-preview{font-family:var(--font-mono);font-size:11px;line-height:1.45;color:var(--muted2);white-space:pre-wrap;max-height:64px;overflow:hidden;border-left:2px solid var(--border);padding-left:8px}
+.skill-manager-actions{display:flex;gap:7px;margin-top:auto;padding-top:6px;border-top:1px solid var(--border)}
+.skill-manager-btn{border:1px solid var(--border);border-radius:7px;background:var(--panel);color:var(--text);padding:6px 9px;cursor:pointer;font-family:var(--font-sans);font-size:11px;font-weight:700}
+.skill-manager-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.skill-manager-btn.del:hover{border-color:var(--err);color:var(--err);background:rgba(240,107,107,.08)}
+.skill-empty{border:1px dashed var(--border);border-radius:10px;color:var(--muted);font-size:12px;line-height:1.5;padding:16px;background:var(--panel-soft)}
+.skill-editor{margin-top:12px;border:1px solid var(--border);border-radius:12px;background:var(--panel);padding:14px;display:none;flex-direction:column;gap:10px}
+.skill-editor.open{display:flex}
+.skill-editor-title{font-size:13px;font-weight:800;color:var(--text)}
+.skill-editor-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.skill-editor label{display:block;font-size:10px;font-weight:700;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+.skill-editor input,.skill-editor textarea{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;background:var(--panel-soft);color:var(--text);font-family:var(--font-sans);font-size:12px;padding:8px;outline:none}
+.skill-editor textarea{min-height:130px;resize:vertical;font-family:var(--font-mono);line-height:1.5}
+.skill-editor input:focus,.skill-editor textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.skill-editor-actions{display:flex;justify-content:flex-end;gap:8px}
+@media (max-width: 720px){.skill-editor-row{grid-template-columns:1fr}.connectors-section-head{flex-direction:column}}
 
 /* MESSAGES */
 #messages{flex:1;overflow-y:auto;padding:28px clamp(16px,4vw,48px) 22px;display:flex;flex-direction:column;gap:22px;align-items:center}
@@ -349,8 +375,8 @@ const CHAT_BODY = `<aside id="sidebar">
     </div>
     <div class="sb-resizer" id="sidebar-resizer" title="Redimensionner les panneaux"></div>
     <div class="sb-pane config-pane" id="config-pane">
-      <div class="sec-label">Connecteurs MCP</div>
-      <a class="sb-link" id="connectors-link" href="/chat/connectors" onclick="showConnectorsView(event)">Connecteurs MCP <span>marketplace</span></a>
+      <div class="sec-label">Connecteurs</div>
+      <a class="sb-link" id="connectors-link" href="/chat/connectors" onclick="showConnectorsView(event)">Connecteurs <span>MCP & skills</span></a>
       <div class="sec-label">Configuration LLM</div>
       <div class="api-block">
         <div class="field">
@@ -403,14 +429,57 @@ const CHAT_BODY = `<aside id="sidebar">
   <div class="connectors-view" id="connectors-view">
     <div class="connectors-head">
       <div class="connectors-title">
-        <h1>Connecteurs MCP</h1>
-        <p>Activez les connecteurs disponibles, ajoutez vos endpoints MCP, puis revenez au chat pour utiliser leurs outils.</p>
+        <h1>Connecteurs</h1>
+        <p>Activez les endpoints MCP et préparez vos skills réutilisables pour le chat.</p>
       </div>
-      <button class="connectors-add" type="button" onclick="addServer()">+ Ajouter</button>
     </div>
-    <div class="connectors-grid">
-      <div class="mcp-cards" id="mcp-cards"></div>
-    </div>
+    <section class="connectors-section">
+      <div class="connectors-section-head">
+        <div class="connectors-section-title">
+          <h2>Connecteurs MCP</h2>
+          <p>Activez les connecteurs disponibles, ajoutez vos endpoints MCP, puis revenez au chat pour utiliser leurs outils.</p>
+        </div>
+        <button class="connectors-add" type="button" onclick="addServer()">+ Ajouter</button>
+      </div>
+      <div class="connectors-grid">
+        <div class="mcp-cards" id="mcp-cards"></div>
+      </div>
+    </section>
+    <section class="connectors-section">
+      <div class="connectors-section-head">
+        <div class="connectors-section-title">
+          <h2>Skills</h2>
+          <p>Créez des instructions préparées, puis insérez-les dans le chat avec <strong>/</strong>.</p>
+        </div>
+        <button class="connectors-add" type="button" onclick="openSkillEditor()">+ Nouveau skill</button>
+      </div>
+      <div id="skills-manager-list"></div>
+      <div class="skill-editor" id="skill-editor">
+        <div class="skill-editor-title" id="skill-editor-title">Nouveau skill</div>
+        <div class="skill-editor-row">
+          <div>
+            <label for="skill-name">Nom</label>
+            <input id="skill-name" type="text" placeholder="pipeline" autocomplete="off">
+          </div>
+          <div>
+            <label for="skill-params">Paramètres</label>
+            <input id="skill-params" type="text" placeholder="space, template">
+          </div>
+        </div>
+        <div>
+          <label for="skill-desc">Description</label>
+          <input id="skill-desc" type="text" placeholder="Lance le pipeline complet via l'agent production">
+        </div>
+        <div>
+          <label for="skill-body">Corps du skill</label>
+          <textarea id="skill-body" placeholder="Vérifie le statut, puis lance le job demandé..."></textarea>
+        </div>
+        <div class="skill-editor-actions">
+          <button class="skill-manager-btn" type="button" onclick="closeSkillEditor()">Annuler</button>
+          <button class="skill-manager-btn" type="button" onclick="saveSkillFromEditor()">Enregistrer</button>
+        </div>
+      </div>
+    </section>
   </div>
   <div id="messages">
     <div id="empty">
@@ -490,6 +559,7 @@ let historyLoadSeq = 0;
 let skillsCache = null;
 let skillAcIdx = -1;
 let skillAcItems = [];
+let skillEditingName = null;
 let productionState = {
   jobId: null,
   job: null,
@@ -551,13 +621,17 @@ function handleKey(e) {
   }
   if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}
 }
-async function fetchSkillsAc(){
-  if(skillsCache!==null)return;
-  try{const r=await fetch('/api/skills');skillsCache=await r.json();}catch{skillsCache=[];}
+async function fetchSkillsAc(force=false){
+  if(skillsCache!==null&&!force)return;
+  try{
+    const r=await fetch('/api/skills');
+    skillsCache=r.ok ? await r.json() : [];
+  }catch{skillsCache=[];}
 }
 function showSkillAc(filter){
   const el=$('skill-ac');
-  const filtered=(skillsCache||[]).filter(s=>s.name.startsWith(filter));
+  const normalized=String(filter||'').toLowerCase();
+  const filtered=(skillsCache||[]).filter(s=>String(s.name||'').toLowerCase().startsWith(normalized));
   skillAcItems=filtered;
   if(!filtered.length){hideSkillAc();return;}
   skillAcIdx=-1;
@@ -576,6 +650,92 @@ function selectSkillAc(idx){
   ta.focus();
   if(skill.params&&skill.params.length){
     notify('Remplacez les paramètres : '+skill.params.map(p=>'{'+p+'}').join(', '),'s');
+  }
+}
+
+function renderSkillsManager() {
+  const el=$('skills-manager-list');
+  if(!el) return;
+  if(skillsCache===null) {
+    el.innerHTML='<div class="skill-empty">Chargement des skills...</div>';
+    fetchSkillsAc().then(renderSkillsManager);
+    return;
+  }
+  const skills=skillsCache||[];
+  if(!skills.length) {
+    el.innerHTML='<div class="skill-empty">Aucun skill. Créez un premier skill pour le rendre disponible avec / dans le chat.</div>';
+    return;
+  }
+  el.innerHTML=\`<div class="skills-manager-grid">\${skills.map((s,i)=>\`
+    <div class="skill-manager-card">
+      <div class="skill-manager-name">/\${esc(s.name||'')}</div>
+      \${s.description?\`<div class="skill-manager-desc">\${esc(s.description)}</div>\`:''}
+      \${Array.isArray(s.params)&&s.params.length?\`<div class="skill-manager-params">\${s.params.map(p=>\`<span class="skill-manager-param">{\${esc(p)}}</span>\`).join('')}</div>\`:''}
+      \${s.body?\`<div class="skill-manager-preview">\${esc(String(s.body).slice(0,180))}\${String(s.body).length>180?'...':''}</div>\`:''}
+      <div class="skill-manager-actions">
+        <button class="skill-manager-btn" type="button" onclick="openSkillEditor(\${i})">Modifier</button>
+        <button class="skill-manager-btn del" type="button" onclick="deleteSkillFromManager(\${i})">Supprimer</button>
+      </div>
+    </div>\`).join('')}</div>\`;
+}
+
+function openSkillEditor(idx=null) {
+  const skill=Number.isInteger(idx) ? (skillsCache||[])[idx] : null;
+  skillEditingName=skill?.name||null;
+  $('skill-editor-title').textContent=skill ? \`Modifier /\${skill.name}\` : 'Nouveau skill';
+  $('skill-name').value=skill?.name||'';
+  $('skill-name').disabled=!!skill;
+  $('skill-desc').value=skill?.description||'';
+  $('skill-params').value=Array.isArray(skill?.params) ? skill.params.join(', ') : '';
+  $('skill-body').value=skill?.body||'';
+  $('skill-editor').classList.add('open');
+  (skill ? $('skill-body') : $('skill-name')).focus();
+}
+
+function closeSkillEditor() {
+  skillEditingName=null;
+  $('skill-editor')?.classList.remove('open');
+}
+
+async function saveSkillFromEditor() {
+  const name=(skillEditingName||$('skill-name').value).trim();
+  const description=$('skill-desc').value.trim();
+  const params=$('skill-params').value.split(',').map(p=>p.trim()).filter(Boolean);
+  const body=$('skill-body').value;
+  if(!name){notify('Le nom du skill est requis.','e');return;}
+  if(!body.trim()){notify('Le corps du skill est requis.','e');return;}
+  try {
+    const r=await fetch('/api/skills/'+encodeURIComponent(name),{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({description,params,body}),
+    });
+    if(!r.ok) {
+      let msg='Enregistrement impossible';
+      try{msg=(await r.json()).error||msg;}catch{}
+      throw new Error(msg);
+    }
+    closeSkillEditor();
+    await fetchSkillsAc(true);
+    renderSkillsManager();
+    notify('Skill enregistré');
+  } catch(e) {
+    notify(e.message||String(e),'e');
+  }
+}
+
+async function deleteSkillFromManager(idx) {
+  const skill=(skillsCache||[])[idx];
+  if(!skill) return;
+  if(!confirm(\`Supprimer le skill /\${skill.name} ?\`)) return;
+  try {
+    const r=await fetch('/api/skills/'+encodeURIComponent(skill.name),{method:'DELETE'});
+    if(!r.ok) throw new Error('Suppression impossible');
+    await fetchSkillsAc(true);
+    renderSkillsManager();
+    notify('Skill supprimé');
+  } catch(e) {
+    notify(e.message||String(e),'e');
   }
 }
 function toggleSidebar() { sidebarOpen=!sidebarOpen; $('sidebar').classList.toggle('collapsed',!sidebarOpen); }
@@ -926,7 +1086,7 @@ function initPageMode() {
   const isConnectors=path==='/chat/connectors';
   document.body.classList.toggle('connectors-mode',isConnectors);
   $('connectors-link')?.classList.toggle('active',isConnectors);
-  if(isConnectors) renderCards();
+  if(isConnectors) { renderCards(); renderSkillsManager(); }
 }
 
 function showConnectorsView(event) {
@@ -934,6 +1094,7 @@ function showConnectorsView(event) {
   document.body.classList.add('connectors-mode');
   $('connectors-link')?.classList.add('active');
   renderCards();
+  renderSkillsManager();
   if(location.pathname.replace(/\\/+$/,'')!=='/chat/connectors') {
     history.pushState(null,'','/chat/connectors');
   }
