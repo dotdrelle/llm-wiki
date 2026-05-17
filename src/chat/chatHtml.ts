@@ -340,6 +340,8 @@ const CHAT_BODY = `<aside id="sidebar">
     </div>
     <div class="sb-resizer" id="sidebar-resizer" title="Redimensionner les panneaux"></div>
     <div class="sb-pane config-pane" id="config-pane">
+      <div class="sec-label">Connecteurs MCP</div>
+      <a class="sb-link" id="connectors-link" href="/chat/connectors" onclick="showConnectorsView(event)">Connecteurs MCP <span>marketplace</span></a>
       <div class="sec-label">Configuration LLM</div>
       <div class="api-block">
         <div class="field">
@@ -371,8 +373,6 @@ const CHAT_BODY = `<aside id="sidebar">
           </div>
         </div>
       </div>
-      <div class="sec-label">Connecteurs</div>
-      <a class="sb-link" id="connectors-link" href="/chat/connectors">Connecteurs MCP <span>marketplace</span></a>
     </div>
   </div>
 </aside>
@@ -828,6 +828,16 @@ function initPageMode() {
   document.body.classList.toggle('connectors-mode',isConnectors);
   $('connectors-link')?.classList.toggle('active',isConnectors);
   if(isConnectors) renderCards();
+}
+
+function showConnectorsView(event) {
+  event?.preventDefault();
+  document.body.classList.add('connectors-mode');
+  $('connectors-link')?.classList.add('active');
+  renderCards();
+  if(location.pathname.replace(/\\/+$/,'')!=='/chat/connectors') {
+    history.pushState(null,'','/chat/connectors');
+  }
 }
 
 function showChatView() {
@@ -1843,6 +1853,19 @@ function saveServers() {
   localStorage.setItem(LS.USER_SERVERS, JSON.stringify(data));
 }
 
+async function restoreEnabledServers() {
+  const toRestore=servers.filter(s=>s.enabled);
+  if(!toRestore.length) {
+    renderCards();
+    renderTopPills();
+    return;
+  }
+  renderCards();
+  for(const server of toRestore) {
+    await connectServer(server.id);
+  }
+}
+
 function loadConfig() {
   const wc = window.__WIKI_CONFIG__;
   let saved = {};
@@ -1881,7 +1904,7 @@ function loadServers() {
         const override = defaults.find(d => d.name === s.name);
         const url = override ? override.url : s.url;
         const bearer = override ? (override.bearer||'') : (s.bearer||'');
-        servers.push({...s, url, bearer, enabled:false, sessionId:null, status:'off', tools:[]});
+        servers.push({...s, url, bearer, enabled:!!s.enabled, sessionId:null, status:'off', tools:[]});
         if(s.id >= nextId) nextId = s.id + 1;
       }
       renderCards();
@@ -1899,6 +1922,8 @@ initPageMode();
 loadHistory();
 initSidebarSplitter();
 renderProductionPanel();
+restoreEnabledServers();
+window.addEventListener('popstate', initPageMode);
 </script>`;
 
 export const CHAT_HTML = `<!DOCTYPE html>

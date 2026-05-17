@@ -196,8 +196,8 @@ export class RetrievalService {
     this.vectorIndex ??= new VectorIndexService(
       this.config,
       this.workspace,
-      new EmbeddingService(this.config),
-      new RerankService(this.config),
+      new EmbeddingService(this.config, this.logger),
+      new RerankService(this.config, this.logger),
     );
     return this.vectorIndex;
   }

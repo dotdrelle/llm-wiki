@@ -12,6 +12,13 @@ import {
 } from '../utils/json.ts';
 import type { AppConfig } from '../types.ts';
 import type { TraceLogger } from './traceLogger.ts';
+import {
+  providerRateLimitKey,
+  providerRateLimitRetryDelayMs,
+  providerRateLimitRetryMaxAttempts,
+  throttleProviderRequestStart,
+  waitForProviderRateLimitRetry,
+} from './rateLimiter.ts';
 
 export interface TokenUsage {
   inputTokens: number;
@@ -35,14 +42,6 @@ interface ProviderErrorDetails {
   type?: string;
   requestId?: string;
   message: string;
-}
-
-const rateLimiterQueues = new Map<string, Promise<void>>();
-const rateLimiterLastStart = new Map<string, number>();
-
-function requestWindowMs(): number {
-  const override = Number(process.env.LLM_WIKI_RATE_LIMIT_WINDOW_MS);
-  return Number.isFinite(override) && override > 0 ? override : 60_000;
 }
 
 function supportsTemperature(config: AppConfig): boolean {
@@ -78,12 +77,7 @@ export class LLMService {
 
   constructor(config: AppConfig) {
     this.config = config;
-    this.rateLimitKey = [
-      config.llm.provider,
-      config.llm.baseUrl,
-      config.llm.apiKey ?? '',
-      config.llm.model,
-    ].join('|');
+    this.rateLimitKey = providerRateLimitKey(config.llm.baseUrl);
     this.client = new OpenAI({
       apiKey: config.llm.apiKey,
       baseURL: config.llm.baseUrl,
@@ -96,33 +90,12 @@ export class LLMService {
   }
 
   private async throttleRequestStart(logger?: TraceLogger, label?: string): Promise<void> {
-    const requestsPerMinute = Math.max(1, Math.floor(this.config.limits.requestsPerMinute));
-    const windowMs = requestWindowMs();
-    const minIntervalMs = Math.ceil(windowMs / requestsPerMinute);
-    const previous = rateLimiterQueues.get(this.rateLimitKey) ?? Promise.resolve();
-    const next = previous
-      .catch(() => undefined)
-      .then(async () => {
-        const now = Date.now();
-        const lastStart = rateLimiterLastStart.get(this.rateLimitKey);
-        const waitMs =
-          lastStart === undefined ? 0 : Math.max(0, lastStart + minIntervalMs - now);
-        if (waitMs > 0) {
-          await logger?.info('llm:throttle', {
-            label,
-            requestsPerMinute,
-            minIntervalMs,
-            waitMs,
-          });
-          await new Promise((resolve) => setTimeout(resolve, waitMs));
-        }
-        rateLimiterLastStart.set(this.rateLimitKey, Date.now());
-      });
-    rateLimiterQueues.set(this.rateLimitKey, next);
-    await next;
-    if (rateLimiterQueues.get(this.rateLimitKey) === next) {
-      rateLimiterQueues.delete(this.rateLimitKey);
-    }
+    await throttleProviderRequestStart({
+      key: this.rateLimitKey,
+      requestsPerMinute: this.config.limits.requestsPerMinute,
+      logger,
+      label,
+    });
   }
 
   private extractProviderErrorDetails(error: unknown): ProviderErrorDetails {
@@ -230,75 +203,98 @@ export class LLMService {
 
     let content: string;
     let capturedUsage: TokenUsage | undefined;
-    try {
-      await this.throttleRequestStart(request.logger, label);
-      const createParams: any = {
-        model: this.config.llm.model,
-        messages,
-        stream: true,
-        ...(this.config.llm.provider === 'ollama' && this.config.llm.numCtx
-          ? { options: { num_ctx: this.config.llm.numCtx } }
-          : {}),
-        ...(request.jsonMode &&
-        this.config.llm.provider !== 'anthropic' &&
-        this.config.llm.provider !== 'openai-compatible'
-          ? { response_format: { type: 'json_object' } }
-          : {}),
-      };
-      if (supportsTemperature(this.config)) {
-        createParams.temperature = request.temperature ?? this.config.llm.temperature;
-      }
-      // Stream tokens so the HTTP connection stays alive during long generations.
-      // Without streaming, Ollama's write timeout (~5 min) closes the connection mid-response.
-      if (this.config.llm.provider !== 'anthropic') {
-        createParams.stream_options = { include_usage: true };
-      }
-      const stream = (await this.client.chat.completions.create(createParams)) as unknown as AsyncIterable<ChatCompletionChunk>;
-      const chunks: string[] = [];
-      for await (const chunk of stream) {
-        chunks.push(chunk.choices[0]?.delta?.content ?? '');
-        const usage = extractTokenUsage(chunk);
-        if (usage) {
-          capturedUsage = usage;
+    const maxAttempts = providerRateLimitRetryMaxAttempts();
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        await this.throttleRequestStart(request.logger, label);
+        const createParams: any = {
+          model: this.config.llm.model,
+          messages,
+          stream: true,
+          ...(this.config.llm.provider === 'ollama' && this.config.llm.numCtx
+            ? { options: { num_ctx: this.config.llm.numCtx } }
+            : {}),
+          ...(request.jsonMode &&
+          this.config.llm.provider !== 'anthropic' &&
+          this.config.llm.provider !== 'openai-compatible'
+            ? { response_format: { type: 'json_object' } }
+            : {}),
+        };
+        if (supportsTemperature(this.config)) {
+          createParams.temperature = request.temperature ?? this.config.llm.temperature;
         }
-      }
-      content = stripThinkingBlocks(chunks.join(''));
-      if (capturedUsage) {
-        request.onUsage?.(capturedUsage);
-      }
-    } catch (error) {
-      const details = this.extractProviderErrorDetails(error);
+        // Stream tokens so the HTTP connection stays alive during long generations.
+        // Without streaming, Ollama's write timeout (~5 min) closes the connection mid-response.
+        if (this.config.llm.provider !== 'anthropic') {
+          createParams.stream_options = { include_usage: true };
+        }
+        const stream = (await this.client.chat.completions.create(createParams)) as unknown as AsyncIterable<ChatCompletionChunk>;
+        const chunks: string[] = [];
+        capturedUsage = undefined;
+        for await (const chunk of stream) {
+          chunks.push(chunk.choices[0]?.delta?.content ?? '');
+          const usage = extractTokenUsage(chunk);
+          if (usage) {
+            capturedUsage = usage;
+          }
+        }
+        content = stripThinkingBlocks(chunks.join(''));
+        if (capturedUsage) {
+          request.onUsage?.(capturedUsage);
+        }
+        break;
+      } catch (error) {
+        const details = this.extractProviderErrorDetails(error);
 
-      if (/timed? ?out|abort/i.test(details.message)) {
+        if (details.status === 429 && attempt < maxAttempts) {
+          const waitMs = providerRateLimitRetryDelayMs({
+            key: this.rateLimitKey,
+            source: error as { headers?: unknown },
+          });
+          await waitForProviderRateLimitRetry({
+            logger: request.logger,
+            event: 'llm:rate-limit-wait',
+            label,
+            status: details.status,
+            attempt,
+            maxAttempts,
+            waitMs,
+            traceData: request.traceData,
+          });
+          continue;
+        }
+
+        if (/timed? ?out|abort/i.test(details.message)) {
+          if (request.logger) {
+            await request.logger.error('llm:timeout', {
+              label,
+              durationMs: Date.now() - startedAt,
+              ...request.traceData,
+            });
+          }
+          throw new Error(
+            `LLM request timed out after ${this.config.llm.timeoutMs} ms. Increase llm.timeoutMs in .wikirc.yaml or reduce the prompt size.`,
+          );
+        }
+
         if (request.logger) {
-          await request.logger.error('llm:timeout', {
+          await request.logger.error('llm:error', {
             label,
             durationMs: Date.now() - startedAt,
+            status: details.status,
+            code: details.code,
+            type: details.type,
+            requestId: details.requestId,
+            message: details.message,
             ...request.traceData,
           });
         }
-        throw new Error(
-          `LLM request timed out after ${this.config.llm.timeoutMs} ms. Increase llm.timeoutMs in .wikirc.yaml or reduce the prompt size.`,
-        );
-      }
 
-      if (request.logger) {
-        await request.logger.error('llm:error', {
-          label,
-          durationMs: Date.now() - startedAt,
-          status: details.status,
-          code: details.code,
-          type: details.type,
-          requestId: details.requestId,
-          message: details.message,
-          ...request.traceData,
-        });
+        throw this.normalizeProviderError(error);
       }
-
-      throw this.normalizeProviderError(error);
     }
 
-    if (!content || typeof content !== 'string') {
+    if (!content! || typeof content !== 'string') {
       throw new Error('The model returned an empty response.');
     }
 

@@ -2052,7 +2052,7 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
             { name: 'donna-mailer', url: process.env.MAILER_MCP_PROXY_URL ?? `http://localhost:${MCP_MAILER_PORT}/mcp/` },
           ],
         };
-        const cfgScript = `<script>window.__WIKI_CONFIG__=${JSON.stringify(chatConfig)};</script>`;
+        const cfgScript = `<script>window.__WIKI_CONFIG__=${escapeScriptJson(JSON.stringify(chatConfig))};</script>`;
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(CHAT_HTML.replace('</head>', `${cfgScript}</head>`));
         return;
@@ -2145,7 +2145,19 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
     if (options.open) openAppMode(url);
   });
 
-  process.on('SIGINT', () => {
+  let shuttingDown = false;
+  const shutdown = (signal: NodeJS.Signals): void => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`wiki serve stopping (${signal})...`);
     server.close(() => process.exit(0));
-  });
+    server.closeIdleConnections?.();
+    setTimeout(() => {
+      server.closeAllConnections?.();
+      process.exit(0);
+    }, 5_000).unref();
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }

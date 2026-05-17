@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { LLMService } from '../src/services/llmService.ts';
+import { resetProviderRateLimiterForTests } from '../src/services/rateLimiter.ts';
 import type { AppConfig } from '../src/types.ts';
 
 function createConfig(): AppConfig {
@@ -59,6 +60,14 @@ function createOpenAIConfig(): AppConfig {
 }
 
 describe('llm service', () => {
+  afterEach(() => {
+    resetProviderRateLimiterForTests();
+    delete process.env.LLM_WIKI_RATE_LIMIT_WINDOW_MS;
+    delete process.env.LLM_WIKI_RATE_LIMIT_RETRY_MS;
+    delete process.env.LLM_WIKI_RATE_LIMIT_RETRY_MAX_ATTEMPTS;
+    delete process.env.LLM_WIKI_RATE_LIMIT_RETRY_SAFETY_MS;
+  });
+
   it('omits temperature for OpenAI GPT-5 models', async () => {
     const service = new LLMService(createOpenAIConfig());
     let capturedParams: Record<string, unknown> | undefined;
@@ -196,6 +205,56 @@ describe('llm service', () => {
 
     expect(starts).toHaveLength(2);
     expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(45);
+  });
+
+  it('waits and retries once after an HTTP 429 response', async () => {
+    process.env.LLM_WIKI_RATE_LIMIT_WINDOW_MS = '20';
+    process.env.LLM_WIKI_RATE_LIMIT_RETRY_MS = '20';
+    process.env.LLM_WIKI_RATE_LIMIT_RETRY_MAX_ATTEMPTS = '2';
+    process.env.LLM_WIKI_RATE_LIMIT_RETRY_SAFETY_MS = '1';
+    const service = new LLMService({
+      ...createConfig(),
+      llm: {
+        ...createConfig().llm,
+        model: `test-429-retry-${Date.now()}`,
+      },
+    });
+    const starts: number[] = [];
+
+    (
+      service as unknown as {
+        client: {
+          chat: {
+            completions: {
+              create: () => Promise<AsyncIterable<unknown>>;
+            };
+          };
+        };
+      }
+    ).client = {
+      chat: {
+        completions: {
+          create: async () => {
+            starts.push(Date.now());
+            if (starts.length === 1) {
+              throw Object.assign(new Error('10 requests per minute exceeded'), {
+                status: 429,
+                headers: {},
+              });
+            }
+            return {
+              async *[Symbol.asyncIterator]() {
+                yield { choices: [{ delta: { content: 'ok' } }] };
+              },
+            };
+          },
+        },
+      },
+    };
+
+    await expect(service.completeText({ system: 's', user: 'u' })).resolves.toBe('ok');
+    expect(starts).toHaveLength(2);
+    expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(15);
   });
 
   it('rewrites provider billing errors into an actionable message', async () => {
