@@ -1767,6 +1767,46 @@ function sendJson(res: { writeHead: (s: number, h: Record<string, string>) => vo
   res.end(JSON.stringify(data));
 }
 
+function parseTraceFields(rest: string): Record<string, string> {
+  const fields: Record<string, string> = {};
+  for (const match of rest.matchAll(/(\w+)=((?:"[^"]*")|(?:\[[^\]]*\])|(?:\S+))/g)) {
+    fields[match[1]] = match[2].replace(/^"|"$/g, '');
+  }
+  return fields;
+}
+
+async function readProductionTraceStatus(rootDir: string, traceFile: string): Promise<Record<string, unknown>> {
+  const tracePath = resolveInside(rootDir, traceFile);
+  if (!tracePath || !tracePath.startsWith(path.join(rootDir, '.wiki', 'logs') + path.sep)) {
+    throw new Error('INVALID_TRACE_PATH');
+  }
+  const lines = (await readFile(tracePath, 'utf8')).split(/\r?\n/).filter(Boolean);
+  let lastEvent = '';
+  let lastEventAt = '';
+  let waitMs: number | undefined;
+  let retryAt: string | undefined;
+  for (const line of lines) {
+    const match = line.match(/^(\S+)\s+\+\d+ms\s+\S+\s+(\S+)\s*(.*)$/);
+    if (!match) continue;
+    const [, at, event, rest] = match;
+    lastEvent = event;
+    lastEventAt = at;
+    if (event !== 'provider:throttle') {
+      waitMs = undefined;
+      retryAt = undefined;
+      continue;
+    }
+    const fields = parseTraceFields(rest);
+    const parsedWaitMs = Number(fields.waitMs);
+    waitMs = Number.isFinite(parsedWaitMs) ? parsedWaitMs : undefined;
+    retryAt = fields.retryAt;
+    if (!retryAt && waitMs !== undefined) {
+      retryAt = new Date(Date.parse(at) + waitMs).toISOString();
+    }
+  }
+  return { ok: true, traceFile, lastEvent, lastEventAt, waitMs, retryAt };
+}
+
 async function handleChatHistoryApi(rootDir: string, req: IncomingMessage, res: { writeHead: (s: number, h?: Record<string, string>) => void; end: (c?: string) => void }, urlPath: string): Promise<boolean> {
   if (!urlPath.startsWith('/api/chat/history')) return false;
   try {
@@ -2000,6 +2040,17 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
       );
 
       if (await handleChatHistoryApi(rootDir, req, res, urlPath)) {
+        return;
+      }
+
+      if (req.method === 'GET' && urlPath === '/api/production/trace') {
+        try {
+          const traceFile = new URL(req.url ?? '/', 'http://localhost').searchParams.get('path') ?? '';
+          sendJson(res, 200, await readProductionTraceStatus(rootDir, traceFile));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          sendJson(res, message === 'INVALID_TRACE_PATH' ? 400 : 404, { ok: false, error: message });
+        }
         return;
       }
 

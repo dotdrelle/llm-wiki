@@ -110,11 +110,13 @@ export async function throttleProviderRequestStart(options: {
           ? 0
           : Math.max(0, oldest + windowMs - now);
       if (waitMs > 0) {
+        const retryAt = new Date(Date.now() + waitMs).toISOString();
         await options.logger?.info('provider:throttle', {
           label: options.label,
           requestsPerMinute,
           windowMs,
           waitMs,
+          retryAt,
         });
         await new Promise((resolve) => setTimeout(resolve, waitMs));
       }

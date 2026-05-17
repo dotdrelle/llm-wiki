@@ -483,6 +483,7 @@ let productionState = {
   command: '',
   traceFile: '',
   pollTimer: null,
+  countdownTimer: null,
   lastUpdatedAt: null,
 };
 const DEFAULT_SYSTEM_PROMPT = \`Tu es un assistant connecté à des serveurs MCP.
@@ -1044,7 +1045,8 @@ function parseProductionJSON(result) {
 
 function resetProductionState() {
   if(productionState.pollTimer) clearTimeout(productionState.pollTimer);
-  productionState={jobId:null,job:null,progress:null,logs:[],command:'',traceFile:'',pollTimer:null,lastUpdatedAt:null};
+  if(productionState.countdownTimer) clearInterval(productionState.countdownTimer);
+  productionState={jobId:null,job:null,progress:null,logs:[],command:'',traceFile:'',pollTimer:null,countdownTimer:null,lastUpdatedAt:null};
   renderProductionPanel();
 }
 
@@ -1065,6 +1067,34 @@ function formatDuration(seconds) {
   if(m<1) return \`\${r}s\`;
   const h=Math.floor(m/60), mm=m%60;
   return h ? \`\${h}h \${String(mm).padStart(2,'0')}m\` : \`\${m}m \${String(r).padStart(2,'0')}s\`;
+}
+
+function retryRemainingSeconds(progress) {
+  const retryAt=progress?.retryAt ? Date.parse(progress.retryAt) : NaN;
+  if(Number.isFinite(retryAt)) return Math.max(0,Math.ceil((retryAt-Date.now())/1000));
+  const waitMs=Number(progress?.waitMs);
+  const lastAt=progress?.lastEventAt ? Date.parse(progress.lastEventAt) : NaN;
+  if(Number.isFinite(waitMs)&&Number.isFinite(lastAt)) return Math.max(0,Math.ceil((lastAt+waitMs-Date.now())/1000));
+  return null;
+}
+
+function formatCountdown(seconds) {
+  if(seconds===null) return '';
+  const s=Math.max(0,Math.floor(seconds));
+  const m=Math.floor(s/60), r=s%60;
+  return m ? \`\${m}m \${String(r).padStart(2,'0')}s\` : \`\${r}s\`;
+}
+
+function syncProductionCountdown(progress) {
+  const remaining=retryRemainingSeconds(progress);
+  if(remaining!==null && remaining>0 && !productionState.countdownTimer) {
+    productionState.countdownTimer=setInterval(()=>renderProductionPanel(),1000);
+  }
+  if((remaining===null || remaining<=0 || productionTerminal(productionState.job?.status)) && productionState.countdownTimer) {
+    clearInterval(productionState.countdownTimer);
+    productionState.countdownTimer=null;
+  }
+  return remaining;
 }
 
 function productionTargetLabel(job) {
@@ -1121,6 +1151,8 @@ function renderProductionPanel() {
     ? logs.map(l=>\`<span class="prod-log-line \${String(l).trim()?'':'muted'}">\${esc(l)}</span>\`).join('')
     : '<span class="prod-log-line muted">Aucun log chargé.</span>';
   const percent=Number.isFinite(Number(progress.percent)) ? Math.max(0,Math.min(100,Number(progress.percent))) : null;
+  const retrySeconds=syncProductionCountdown(progress);
+  const retryText=retrySeconds!==null && retrySeconds>0 ? \`reprise dans \${formatCountdown(retrySeconds)}\` : null;
   const progressLabel=progress.label || productionTargetLabel(job);
   const sourceCount=Number(progress.sourceCount);
   const sourceIndex=Number(progress.sourceIndex);
@@ -1138,6 +1170,7 @@ function renderProductionPanel() {
     progress.detail,
     progress.batchCount ? \`batch \${Number(progress.batchIndex ?? 0)+1}/\${progress.batchCount}\` : null,
     progress.instructionCount ? \`\${progress.instructionCount} instruction\${progress.instructionCount>1?'s':''}\` : null,
+    retryText,
     progress.lastEvent ? \`dernier: \${progress.lastEvent}\` : null,
   ].filter(Boolean).join(' · ');
   body.innerHTML=\`
@@ -1243,11 +1276,37 @@ async function pollProductionJob({immediate=false}={}) {
     updateProductionFromPayload(parseProductionJSON(statusText),{open:false,poll:false});
     const logsText=await callMCPTool('production_job_logs',{jobId:productionState.jobId,tail:120});
     updateProductionFromPayload(parseProductionJSON(logsText),{open:false,poll:false});
+    await refreshProductionTraceProgress();
   } catch(e) {
     console.warn('production polling failed', e);
   }
   renderProductionPanel();
   if(!productionTerminal(productionState.job?.status)) startProductionPolling();
+}
+
+async function refreshProductionTraceProgress() {
+  const traceFile=productionState.traceFile || productionState.progress?.traceFile;
+  if(!traceFile) return;
+  try {
+    const res=await fetch(\`/api/production/trace?path=\${encodeURIComponent(traceFile)}\`);
+    if(!res.ok) return;
+    const trace=await res.json();
+    if(!trace?.ok) return;
+    productionState.progress={
+      ...(productionState.progress||{}),
+      traceFile,
+      lastEvent:trace.lastEvent || productionState.progress?.lastEvent,
+      lastEventAt:trace.lastEventAt || productionState.progress?.lastEventAt,
+      waitMs:trace.waitMs,
+      retryAt:trace.retryAt,
+      detail:trace.lastEvent==='provider:throttle'
+        ? 'Quota fournisseur atteint, reprise en attente'
+        : productionState.progress?.detail,
+    };
+    renderProductionPanel();
+  } catch(e) {
+    console.warn('production trace refresh failed', e);
+  }
 }
 
 function recoverProductionStateFromMessages() {
