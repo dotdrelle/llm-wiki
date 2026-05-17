@@ -1820,6 +1820,7 @@ async function proxyPost(
   res: { writeHead: (s: number, h: Record<string, string>) => void; write: (c: Uint8Array) => void; end: () => void; headersSent?: boolean },
   targetUrl: string,
   extraHeaders: Record<string, string> = {},
+  options: { retry429?: boolean } = {},
 ): Promise<void> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -1837,7 +1838,41 @@ async function proxyPost(
   const sid = req.headers['mcp-session-id'];
   if (sid) headers['mcp-session-id'] = sid as string;
 
-  const upstream = await fetch(targetUrl, { method: 'POST', headers, body });
+  const maxAttempts = options.retry429
+    ? Math.max(
+        1,
+        Number(
+          process.env.LLM_WIKI_CHAT_RATE_LIMIT_RETRY_MAX_ATTEMPTS
+            ?? process.env.LLM_WIKI_RATE_LIMIT_RETRY_MAX_ATTEMPTS
+            ?? '10',
+        ),
+      )
+    : 1;
+  let upstream: Response | undefined;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    upstream = await fetch(targetUrl, { method: 'POST', headers, body });
+    if (upstream.status !== 429 || attempt >= maxAttempts) break;
+    const retryAfter = upstream.headers.get('retry-after');
+    const retryAfterSeconds = retryAfter ? Number(retryAfter) : NaN;
+    const retryAfterDate = retryAfter ? Date.parse(retryAfter) : NaN;
+    const fallbackMs = Math.max(0, Number(process.env.LLM_WIKI_RATE_LIMIT_RETRY_MS ?? '65000'));
+    const waitMs = Number.isFinite(retryAfterSeconds)
+      ? Math.max(0, retryAfterSeconds * 1000)
+      : Number.isFinite(retryAfterDate)
+        ? Math.max(0, retryAfterDate - Date.now())
+        : fallbackMs;
+    await upstream.text().catch(() => '');
+    console.warn(
+      `wiki serve proxy rate limited: ${targetUrl} attempt=${attempt}/${maxAttempts} waitMs=${waitMs}`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+  if (!upstream) {
+    res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' });
+    res.write(new TextEncoder().encode('Upstream request was not attempted.'));
+    res.end();
+    return;
+  }
   const ct = upstream.headers.get('content-type') ?? 'application/json';
   const respSid = upstream.headers.get('mcp-session-id');
   const respHeaders: Record<string, string> = { 'content-type': ct };
@@ -1973,7 +2008,7 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
         if (urlPath === '/api/chat') {
           await proxyPost(req, res, `${config.llm.baseUrl}/chat/completions`, {
             authorization: `Bearer ${config.llm.apiKey ?? ''}`,
-          });
+          }, { retry429: true });
           return;
         }
         if (urlPath === '/api/mcp') {
