@@ -220,12 +220,18 @@ function isEditableRelativePath(relativePath: string): boolean {
 function isManagedMarkdownRelativePath(relativePath: string): boolean {
   return (
     relativePath.endsWith('.md') &&
-    (relativePath.startsWith('deliverables/') || relativePath.startsWith('templates/'))
+    (relativePath.startsWith('deliverables/') ||
+      relativePath.startsWith('templates/') ||
+      relativePath.startsWith('build-context/'))
   );
 }
 
 function isCreatableCollection(collection: string): boolean {
-  return collection === 'deliverables' || collection === 'templates';
+  return (
+    collection === 'deliverables' ||
+    collection === 'templates' ||
+    collection === 'build-context'
+  );
 }
 
 function slugifyMarkdownTitle(value: string): string {
