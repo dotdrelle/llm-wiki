@@ -117,7 +117,11 @@ describe('deliverable response schema', () => {
     });
 
     expect(response.replacements[0]?.content).toContain('| Solution | Points forts |');
-    expect(response.replacements[0]?.content).toContain('| MFI / Synergie Web | - Expertise par zones fixes |');
-    expect(response.replacements[0]?.content).toContain('| OREA | - Expertise par polygones |');
+    expect(response.replacements[0]?.content).toContain(
+      '| MFI / Synergie Web | - Expertise par zones fixes |',
+    );
+    expect(response.replacements[0]?.content).toContain(
+      '| OREA | - Expertise par polygones |',
+    );
   });
 });

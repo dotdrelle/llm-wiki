@@ -39,6 +39,7 @@ function createConfig(root: string): AppConfig {
         apiKey: 'test-key',
         timeoutMs: 600000,
         embeddingModel: 'BAAI/bge-m3',
+        rerankEnabled: true,
         rerankerModel: 'BAAI/bge-reranker-v2-m3',
         topK: 20,
         rerankTopK: 10,
@@ -77,6 +78,12 @@ class FakeRerankService {
 class EmptyRerankService {
   async rerank() {
     return [];
+  }
+}
+
+class ThrowingRerankService {
+  async rerank() {
+    throw new Error('reranker should not be called');
   }
 }
 
@@ -122,7 +129,11 @@ describe('vector index service', () => {
   it('falls back to vector order when reranker returns no results', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-vector-empty-rerank-'));
     await mkdir(path.join(root, 'wiki'), { recursive: true });
-    await writeFile(path.join(root, 'wiki', 'fonctionnel.md'), '# Fonctionnel\n\nExpertise.\n', 'utf8');
+    await writeFile(
+      path.join(root, 'wiki', 'fonctionnel.md'),
+      '# Fonctionnel\n\nExpertise.\n',
+      'utf8',
+    );
 
     const config = createConfig(root);
     const service = new VectorIndexService(
@@ -130,6 +141,32 @@ describe('vector index service', () => {
       new WorkspaceService(config),
       new FakeEmbeddingService() as any,
       new EmptyRerankService() as any,
+    );
+
+    await service.buildIndex();
+
+    const results = await service.search('expertise');
+    expect(results[0]?.page.relativePath).toBe('wiki/fonctionnel.md');
+  });
+
+  it('skips reranker when rerankEnabled is false', async () => {
+    const root = await mkdtemp(
+      path.join(os.tmpdir(), 'llm-wiki-vector-rerank-disabled-'),
+    );
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await writeFile(
+      path.join(root, 'wiki', 'fonctionnel.md'),
+      '# Fonctionnel\n\nExpertise.\n',
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    config.retrieval.vector.rerankEnabled = false;
+    const service = new VectorIndexService(
+      config,
+      new WorkspaceService(config),
+      new FakeEmbeddingService() as any,
+      new ThrowingRerankService() as any,
     );
 
     await service.buildIndex();

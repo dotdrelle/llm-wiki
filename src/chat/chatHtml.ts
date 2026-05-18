@@ -1507,15 +1507,16 @@ function handleProductionToolResult(fn, args, result, ok) {
   const data=parseProductionJSON(result);
   if(!ok || !data) return;
   if(fn==='production_start_job' && data.jobId) {
-    updateProductionFromPayload(data,{open:false,poll:false});
+    updateProductionFromPayload(data,{open:true,poll:false});
     pollProductionJob({immediate:true});
   }
-  else if(fn==='production_job_status') updateProductionFromPayload(data,{open:false,poll:!productionTerminal(data.job?.status)});
-  else if(fn==='production_job_logs') updateProductionFromPayload(data,{open:false,poll:false});
-  else if(fn==='production_cancel_job') updateProductionFromPayload(data,{open:false,poll:false});
+  else if(fn==='production_job_status') updateProductionFromPayload(data,{open:true,poll:!productionTerminal(data.job?.status)});
+  else if(fn==='production_job_logs') updateProductionFromPayload(data,{open:true,poll:false});
+  else if(fn==='production_cancel_job') updateProductionFromPayload(data,{open:true,poll:false});
   else if(fn==='production_list_jobs' && Array.isArray(data.jobs) && data.jobs[0] && !productionState.jobId) {
     productionState.jobId=data.jobs[0].jobId;
     renderProductionPanel();
+    setProductionPanelVisible(true);
   }
 }
 
@@ -2049,7 +2050,7 @@ async function sendMessage() {
       turn++;
       const systemPrompt=currentSystemPrompt();
       const langLine=languageInstruction();
-      const sysContent=[systemPrompt,langLine].filter(Boolean).join('\n\n');
+      const sysContent=[systemPrompt,langLine].filter(Boolean).join('\\n\\n');
       const reqMessages=sysContent ? [{role:'system',content:sysContent},...messages] : messages;
       const reqBody={model,temperature:temp,messages:reqMessages,...(toolsPayload?{tools:toolsPayload,tool_choice:'auto'}:{})};
       streamDiv=createStreamBubble();
@@ -2196,11 +2197,10 @@ function loadConfig() {
     saved = JSON.parse(localStorage.getItem('mcpchat_config')||'{}');
   } catch {}
   if (wc) {
-    // Docker/proxy mode: show server credentials as read-only, but keep user model/temp overrides.
-    if (saved.model || wc.model) $('model-name').value = saved.model || wc.model;
-    if (saved.temp !== undefined || wc.temperature !== undefined) {
-      $('temperature').value = saved.temp !== undefined ? saved.temp : String(wc.temperature);
-    }
+    // Docker/proxy mode: /api/chat uses the server-side .wikirc.yaml config.
+    // Do not reuse browser overrides from another workspace.
+    if (wc.model) $('model-name').value = wc.model;
+    if (wc.temperature !== undefined) $('temperature').value = String(wc.temperature);
     if (wc.baseUrl) { $('base-url').value = wc.baseUrl; $('base-url').readOnly = true; $('base-url').style.opacity = '.7'; }
     if (wc.apiKey)  { $('api-key').value = wc.apiKey;   $('api-key').readOnly = true;  $('api-key').style.opacity = '.7'; flashSaved('llm-saved'); }
   } else {

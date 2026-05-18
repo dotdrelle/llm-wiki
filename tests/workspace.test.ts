@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { AppConfig } from '../src/types.ts';
+import { loadConfig } from '../src/config/loadConfig.ts';
 import { WorkspaceService } from '../src/services/workspaceService.ts';
 
 function createConfig(root: string): AppConfig {
@@ -37,6 +38,7 @@ function createConfig(root: string): AppConfig {
         baseUrl: 'http://127.0.0.1:11434/v1',
         timeoutMs: 600000,
         embeddingModel: 'BAAI/bge-m3',
+        rerankEnabled: true,
         rerankerModel: 'BAAI/bge-reranker-v2-m3',
         topK: 120,
         rerankTopK: 80,
@@ -48,6 +50,17 @@ function createConfig(root: string): AppConfig {
 }
 
 describe('workspace safety', () => {
+  it('scaffolds reranking disabled by default', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-init-'));
+    const config = createConfig(root);
+    const workspace = new WorkspaceService(config);
+
+    await workspace.initWorkspace({});
+
+    const initializedConfig = await loadConfig(root);
+    expect(initializedConfig.retrieval.vector.rerankEnabled).toBe(false);
+  });
+
   it('resolves bare filenames to existing wiki paths', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-'));
     await mkdir(path.join(root, 'wiki', 'sources'), { recursive: true });
@@ -193,7 +206,11 @@ describe('workspace safety', () => {
     await mkdir(path.join(root, 'raw', 'ingested'), { recursive: true });
     const sourcePath = path.join(root, 'raw', 'untracked', 'note.md');
     await writeFile(sourcePath, '# Note\n\nSame content.\n', 'utf8');
-    await writeFile(path.join(root, 'raw', 'ingested', 'note.md'), '# Note\n\nDifferent.\n', 'utf8');
+    await writeFile(
+      path.join(root, 'raw', 'ingested', 'note.md'),
+      '# Note\n\nDifferent.\n',
+      'utf8',
+    );
     const workspace = new WorkspaceService(createConfig(root));
 
     const source = await workspace.readSourceDocument(sourcePath);

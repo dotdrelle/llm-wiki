@@ -3,7 +3,9 @@ import { exportOutputPath } from '../src/services/exportService.ts';
 
 describe('export service', () => {
   it('does not append export twice to already exported deliverables', () => {
-    expect(exportOutputPath('deliverables/brief.md')).toBe('deliverables/brief.export.md');
+    expect(exportOutputPath('deliverables/brief.md')).toBe(
+      'deliverables/brief.export.md',
+    );
     expect(exportOutputPath('deliverables/brief.export.md')).toBe(
       'deliverables/brief.export.md',
     );

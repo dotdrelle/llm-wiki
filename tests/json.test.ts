@@ -75,7 +75,8 @@ describe('json utilities', () => {
         {
           type: 'create',
           path: 'wiki/sources/test.md',
-          content: '# Test\n\nLe projet "JUNO", destiné aux prévisionnistes, remplace le système.',
+          content:
+            '# Test\n\nLe projet "JUNO", destiné aux prévisionnistes, remplace le système.',
         },
       ],
     });

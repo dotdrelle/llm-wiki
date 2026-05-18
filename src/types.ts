@@ -39,6 +39,7 @@ export interface VectorRetrievalConfig {
   apiKey?: string;
   timeoutMs: number;
   embeddingModel: string;
+  rerankEnabled: boolean;
   rerankerModel: string;
   topK: number;
   rerankTopK: number;

@@ -77,6 +77,7 @@ retrieval:
   vector:
     enabled: true # run `wiki index` to build or refresh the local index
     embeddingModel: BAAI/bge-m3
+    rerankEnabled: false # scaffold default; set true only when /v1/rerank is available
     rerankerModel: BAAI/bge-reranker-v2-m3
     topK: 120
     rerankTopK: 80

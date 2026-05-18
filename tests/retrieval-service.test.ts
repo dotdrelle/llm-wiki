@@ -39,6 +39,7 @@ function createConfig(root: string): AppConfig {
         baseUrl: 'http://127.0.0.1:11434/v1',
         timeoutMs: 600000,
         embeddingModel: 'BAAI/bge-m3',
+        rerankEnabled: true,
         rerankerModel: 'BAAI/bge-reranker-v2-m3',
         topK: 120,
         rerankTopK: 80,
@@ -55,8 +56,11 @@ class MemoryTraceLogger implements TraceLogger {
   readonly displayPath = '.wiki/logs/test.log';
   readonly debugEnabled = false;
   readonly verboseEnabled = false;
-  readonly entries: Array<{ level: string; event: string; data?: Record<string, unknown> }> =
-    [];
+  readonly entries: Array<{
+    level: string;
+    event: string;
+    data?: Record<string, unknown>;
+  }> = [];
 
   async info(event: string, data?: Record<string, unknown>): Promise<void> {
     this.entries.push({ level: 'info', event, data });
@@ -115,7 +119,11 @@ describe('retrieval service', () => {
   it('logs when vector retrieval falls back to lexical search', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-retrieval-'));
     await mkdir(path.join(root, 'wiki'), { recursive: true });
-    await writeFile(path.join(root, 'wiki', 'index.md'), '# Index\n\nArchitecture.\n', 'utf8');
+    await writeFile(
+      path.join(root, 'wiki', 'index.md'),
+      '# Index\n\nArchitecture.\n',
+      'utf8',
+    );
 
     const config = createConfig(root);
     const logger = new MemoryTraceLogger();

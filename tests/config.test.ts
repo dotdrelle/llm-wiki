@@ -11,6 +11,8 @@ describe('config resolution', () => {
     delete process.env.WIKI_MCP_TLS_CERT_PATH;
     delete process.env.WIKI_MCP_TLS_KEY_PATH;
     delete process.env.WIKI_MCP_TLS_CA_PATH;
+    delete process.env.WIKI_WORKSPACE;
+    delete process.env.WIKI_WORKSPACE_PATH;
   });
 
   it('defaults Ollama base URL when provider is ollama', () => {
@@ -62,6 +64,7 @@ describe('config resolution', () => {
       apiKey: undefined,
       timeoutMs: 600000,
       embeddingModel: 'BAAI/bge-m3',
+      rerankEnabled: true,
       rerankerModel: 'BAAI/bge-reranker-v2-m3',
       topK: 40,
       rerankTopK: 80,
@@ -73,6 +76,21 @@ describe('config resolution', () => {
     const config = resolveConfig({}, '/tmp/wiki');
 
     expect(config.retrieval.vector.enabled).toBe(true);
+  });
+
+  it('parses disabled vector reranking', () => {
+    const config = resolveConfig(
+      {
+        retrieval: {
+          vector: {
+            rerankEnabled: false,
+          },
+        },
+      },
+      '/tmp/wiki',
+    );
+
+    expect(config.retrieval.vector.rerankEnabled).toBe(false);
   });
 
   it('parses MCP access key and TLS paths', () => {
@@ -177,5 +195,27 @@ describe('config resolution', () => {
     const config = await loadConfig(nested);
     expect(config.wikiRoot).toBe(root);
     expect(config.llm.provider).toBe('ollama');
+  });
+
+  it('prefers WIKI_WORKSPACE_PATH when loading config', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-config-env-'));
+    const other = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-config-other-'));
+    await writeFile(
+      path.join(root, '.wikirc.yaml'),
+      ['llm:', '  provider: ollama', '  model: llama3.1'].join('\n'),
+      'utf8',
+    );
+    await writeFile(
+      path.join(other, '.wikirc.yaml'),
+      ['llm:', '  provider: openai', '  model: gpt-4o'].join('\n'),
+      'utf8',
+    );
+    process.env.WIKI_WORKSPACE_PATH = root;
+
+    const config = await loadConfig(other);
+
+    expect(config.wikiRoot).toBe(root);
+    expect(config.llm.provider).toBe('ollama');
+    expect(config.llm.model).toBe('llama3.1');
   });
 });

@@ -150,10 +150,7 @@ function diffConfigPatch(
   return Object.keys(patch).length > 0 ? patch : undefined;
 }
 
-function deepMergeConfig(
-  current: unknown,
-  patch: unknown,
-): Record<string, unknown> {
+function deepMergeConfig(current: unknown, patch: unknown): Record<string, unknown> {
   const base =
     current && typeof current === 'object' && !Array.isArray(current)
       ? { ...(current as Record<string, unknown>) }
@@ -182,7 +179,9 @@ async function applyRecommendedConfig(
   recommendedConfig: Record<string, unknown>,
 ): Promise<void> {
   const configPath = config.configPath ?? path.join(config.wikiRoot, '.wikirc.yaml');
-  const rawText = (await pathExists(configPath)) ? await readFile(configPath, 'utf8') : '';
+  const rawText = (await pathExists(configPath))
+    ? await readFile(configPath, 'utf8')
+    : '';
   const rawConfig = rawText.trim() ? YAML.parse(rawText) : {};
   const nextConfig = deepMergeConfig(rawConfig, recommendedConfig);
   await safeWriteFile(configPath, YAML.stringify(nextConfig));
@@ -664,7 +663,10 @@ export default async function doctorCmd(
   if (config.limits.dailyInputTokens) {
     row('dailyInputTokens:', config.limits.dailyInputTokens.toLocaleString());
   }
-  row('targetInputTokensPerCall:', config.limits.targetInputTokensPerCall.toLocaleString());
+  row(
+    'targetInputTokensPerCall:',
+    config.limits.targetInputTokensPerCall.toLocaleString(),
+  );
   row('maxInputTokensPerCall:', config.limits.maxInputTokensPerCall.toLocaleString());
   row('refreshOnIngest:', String(config.build.refreshOnIngest));
   row('slotBatchSize:', String(config.build.slotBatchSize));
@@ -675,6 +677,7 @@ export default async function doctorCmd(
   row('vector.enabled:', String(config.retrieval.vector.enabled));
   row('vector.baseUrl:', config.retrieval.vector.baseUrl);
   row('vector.embedding:', config.retrieval.vector.embeddingModel);
+  row('vector.rerankEnabled:', String(config.retrieval.vector.rerankEnabled));
   row('vector.reranker:', config.retrieval.vector.rerankerModel);
   row('vector.topK:', String(config.retrieval.vector.topK));
   row('vector.rerankTopK:', String(config.retrieval.vector.rerankTopK));
@@ -751,13 +754,12 @@ export default async function doctorCmd(
     );
   }
 
-  const [pages, indexContent, untrackedPaths, buildContext] =
-    await Promise.all([
-      workspace.listWikiPages(),
-      workspace.readIndex(),
-      workspace.listUntrackedSourcePaths(),
-      workspace.readBuildContext(),
-    ]);
+  const [pages, indexContent, untrackedPaths, buildContext] = await Promise.all([
+    workspace.listWikiPages(),
+    workspace.readIndex(),
+    workspace.listUntrackedSourcePaths(),
+    workspace.readBuildContext(),
+  ]);
 
   const untrackedContents = await Promise.all(
     untrackedPaths.map(async (p) => {
@@ -844,21 +846,25 @@ export default async function doctorCmd(
         }`,
       );
     }
-    try {
-      const rerank = await new RerankService(config).rerank(
-        'doctor vector check',
-        ['relevant wiki context', 'unrelated text'],
-        2,
-      );
-      ok(
-        `reranker ${config.retrieval.vector.rerankerModel} OK (${rerank.length} result(s))`,
-      );
-    } catch (error) {
-      warn(
-        `reranker check failed for ${config.retrieval.vector.rerankerModel}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+    if (config.retrieval.vector.rerankEnabled === false) {
+      ok('reranker check skipped; reranking disabled');
+    } else {
+      try {
+        const rerank = await new RerankService(config).rerank(
+          'doctor vector check',
+          ['relevant wiki context', 'unrelated text'],
+          2,
+        );
+        ok(
+          `reranker ${config.retrieval.vector.rerankerModel} OK (${rerank.length} result(s))`,
+        );
+      } catch (error) {
+        warn(
+          `reranker check failed for ${config.retrieval.vector.rerankerModel}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
     }
   } else {
     ok('vector retrieval disabled; lexical fallback is active');
@@ -878,7 +884,10 @@ export default async function doctorCmd(
     ).planBuild();
     row('templates:', String(buildPlan.templates.length));
     row('planned requests:', String(buildPlan.estimatedRequests));
-    row('estimated input:', `~${buildPlan.estimatedInputTokens.toLocaleString()} token(s)`);
+    row(
+      'estimated input:',
+      `~${buildPlan.estimatedInputTokens.toLocaleString()} token(s)`,
+    );
     row(
       'request rate:',
       `${config.limits.requestsPerMinute} req/min → minimum ~${Math.ceil(
@@ -941,7 +950,10 @@ export default async function doctorCmd(
     const recommendedTarget = recommendedTargetInputTokens(recommendedHardLimit);
     const recommendedBuildContextChars = Math.max(
       1000,
-      roundUp(Math.max(buildContext.rawTotalChars, buildContext.content.length) + 2000, 1000),
+      roundUp(
+        Math.max(buildContext.rawTotalChars, buildContext.content.length) + 2000,
+        1000,
+      ),
     );
     const recommendedChunkChars = Math.max(
       1000,
@@ -955,6 +967,7 @@ export default async function doctorCmd(
       enabled: config.retrieval.vector.enabled,
       baseUrl: config.retrieval.vector.baseUrl,
       embeddingModel: config.retrieval.vector.embeddingModel,
+      rerankEnabled: config.retrieval.vector.rerankEnabled,
       rerankerModel: config.retrieval.vector.rerankerModel,
       topK: config.retrieval.vector.topK,
       rerankTopK: config.retrieval.vector.rerankTopK,
@@ -994,10 +1007,20 @@ export default async function doctorCmd(
     const recommendedPatch =
       diffConfigPatch(currentComparableConfig, recommendedConfig) ?? {};
     if (config.llm.provider !== 'ollama' && config.llm.numCtx) {
-      warn('llm.numCtx is only used for Ollama; for remote providers use limits.maxInputTokensPerCall');
+      warn(
+        'llm.numCtx is only used for Ollama; for remote providers use limits.maxInputTokensPerCall',
+      );
     }
-    row('basis:', `largest planned batch ~${largestBatch.toLocaleString()} input token(s)`);
-    row('action:', options.apply ? 'applying to .wikirc.yaml' : 'run `wiki doctor --apply` to write these values');
+    row(
+      'basis:',
+      `largest planned batch ~${largestBatch.toLocaleString()} input token(s)`,
+    );
+    row(
+      'action:',
+      options.apply
+        ? 'applying to .wikirc.yaml'
+        : 'run `wiki doctor --apply` to write these values',
+    );
     if (Object.keys(recommendedPatch).length > 0) {
       printYamlBlock(recommendedPatch);
     } else {

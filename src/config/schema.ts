@@ -278,6 +278,7 @@ const retrievalSchema = z
         apiKey: z.string().min(1).optional(),
         timeoutMs: z.number().int().min(1000).default(600000).optional(),
         embeddingModel: z.string().min(1).default('BAAI/bge-m3'),
+        rerankEnabled: z.boolean().default(true),
         rerankerModel: z.string().min(1).default('BAAI/bge-reranker-v2-m3'),
         topK: z.number().int().min(1).max(200).default(120),
         rerankTopK: z.number().int().min(1).max(100).default(80),
@@ -287,6 +288,7 @@ const retrievalSchema = z
         enabled: true,
         timeoutMs: 600000,
         embeddingModel: 'BAAI/bge-m3',
+        rerankEnabled: true,
         rerankerModel: 'BAAI/bge-reranker-v2-m3',
         topK: 120,
         rerankTopK: 80,
@@ -303,6 +305,7 @@ const retrievalSchema = z
       baseUrl: DEFAULT_OPENAI_BASE_URL,
       timeoutMs: 600000,
       embeddingModel: 'BAAI/bge-m3',
+      rerankEnabled: true,
       rerankerModel: 'BAAI/bge-reranker-v2-m3',
       topK: 120,
       rerankTopK: 80,
@@ -481,9 +484,7 @@ export function resolveConfig(
     configPath,
     language: parsed.language ?? 'fr',
     mcp: {
-      accessKey:
-        parsed.mcp?.accessKey ??
-        process.env.WIKI_MCP_AUTH_TOKEN,
+      accessKey: parsed.mcp?.accessKey ?? process.env.WIKI_MCP_AUTH_TOKEN,
       tls: mcpTls,
     },
     llm: {
@@ -519,6 +520,7 @@ export function resolveConfig(
         apiKey: vectorApiKey,
         timeoutMs: parsed.retrieval?.vector?.timeoutMs ?? parsed.llm?.timeoutMs ?? 600000,
         embeddingModel: parsed.retrieval?.vector?.embeddingModel ?? 'BAAI/bge-m3',
+        rerankEnabled: parsed.retrieval?.vector?.rerankEnabled ?? true,
         rerankerModel:
           parsed.retrieval?.vector?.rerankerModel ?? 'BAAI/bge-reranker-v2-m3',
         topK: parsed.retrieval?.vector?.topK ?? 120,

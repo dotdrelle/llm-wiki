@@ -39,7 +39,9 @@ describe('markdown helpers', () => {
     const normalized = normalizeSourceBody(source);
 
     expect(normalized).toContain('- Comite de suivi du 13 avril');
-    expect(normalized).toContain('[Synthese en cours](/spaces/JDLCDPPO/pages/674245662/Synthese)');
+    expect(normalized).toContain(
+      '[Synthese en cours](/spaces/JDLCDPPO/pages/674245662/Synthese)',
+    );
     expect(normalized).toContain('07 May 2026');
     expect(normalized).toContain('DONE');
     expect(normalized).not.toMatch(/<\/?(ul|li|span|time|a)\b/i);
@@ -48,7 +50,9 @@ describe('markdown helpers', () => {
 
   it('splits large sources by h2 and prefixes the document title', () => {
     const sections = splitSourceSections(
-      ['# Document', '', '## One', 'A'.repeat(30), '', '## Two', 'B'.repeat(30)].join('\n'),
+      ['# Document', '', '## One', 'A'.repeat(30), '', '## Two', 'B'.repeat(30)].join(
+        '\n',
+      ),
       60,
     );
 

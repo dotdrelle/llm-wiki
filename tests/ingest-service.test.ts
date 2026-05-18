@@ -46,6 +46,7 @@ function createConfig(): AppConfig {
         baseUrl: 'http://127.0.0.1:11434/v1',
         timeoutMs: 600000,
         embeddingModel: 'BAAI/bge-m3',
+        rerankEnabled: true,
         rerankerModel: 'BAAI/bge-reranker-v2-m3',
         topK: 120,
         rerankTopK: 80,
@@ -315,7 +316,9 @@ describe('ingest service', () => {
 
   it('rewrites model-mutated source citations to the exact archived source path', async () => {
     const workspace = new FakeWorkspaceService();
-    workspace.sourcePaths = ['/tmp/wiki/raw/untracked/Constituer l_équipe d_avant-projet.md'];
+    workspace.sourcePaths = [
+      '/tmp/wiki/raw/untracked/Constituer l_équipe d_avant-projet.md',
+    ];
     const logger = new MemoryTraceLogger();
     const service = new IngestService(
       createConfig(),

@@ -34,23 +34,25 @@ retrieval:
     apiKey: VECTOR_API_KEY # optional; falls back to WIKI_VECTOR_API_KEY, ALBERT_API_KEY, then llm.apiKey
     timeoutMs: 600000
     embeddingModel: BAAI/bge-m3 # model served by your /v1/embeddings endpoint
+    rerankEnabled: true # set false to skip /v1/rerank and keep vector distance ordering
     rerankerModel: BAAI/bge-reranker-v2-m3 # model served by your /v1/rerank endpoint
     topK: 120 # vector candidates retrieved before re-ranking
     rerankTopK: 80 # candidates sent to the reranker
     maxResults: 6 # final wiki pages returned to the LLM
 ```
 
-| Key                     | Description                                                                 | Default                   |
-| ----------------------- | --------------------------------------------------------------------------- | ------------------------- |
-| `vector.enabled`        | Prefer vector retrieval when an index is available                          | `true`                    |
-| `vector.baseUrl`        | Base URL for `/v1/embeddings` and `/v1/rerank`                               | `llm.baseUrl`             |
-| `vector.apiKey`         | API key for vector endpoints                                                 | `WIKI_VECTOR_API_KEY`, `ALBERT_API_KEY`, then `llm.apiKey` |
-| `vector.timeoutMs`      | Timeout for vector endpoint calls                                            | `llm.timeoutMs` or `600000` |
-| `vector.embeddingModel` | Model name for `/v1/embeddings`                                             | `BAAI/bge-m3`             |
-| `vector.rerankerModel`  | Model name for `/v1/rerank`                                                 | `BAAI/bge-reranker-v2-m3` |
-| `vector.topK`           | Vector candidates retrieved before re-ranking                               | `120`                     |
-| `vector.rerankTopK`     | Candidates sent to the reranker                                             | `80`                      |
-| `vector.maxResults`     | Maximum wiki pages returned after ranking                                   | `6`                       |
+| Key                     | Description                                        | Default                                                    |
+| ----------------------- | -------------------------------------------------- | ---------------------------------------------------------- |
+| `vector.enabled`        | Prefer vector retrieval when an index is available | `true`                                                     |
+| `vector.baseUrl`        | Base URL for `/v1/embeddings` and `/v1/rerank`     | `llm.baseUrl`                                              |
+| `vector.apiKey`         | API key for vector endpoints                       | `WIKI_VECTOR_API_KEY`, `ALBERT_API_KEY`, then `llm.apiKey` |
+| `vector.timeoutMs`      | Timeout for vector endpoint calls                  | `llm.timeoutMs` or `600000`                                |
+| `vector.embeddingModel` | Model name for `/v1/embeddings`                    | `BAAI/bge-m3`                                              |
+| `vector.rerankEnabled`  | Enable `/v1/rerank` after vector search            | `true`                                                     |
+| `vector.rerankerModel`  | Model name for `/v1/rerank`                        | `BAAI/bge-reranker-v2-m3`                                  |
+| `vector.topK`           | Vector candidates retrieved before re-ranking      | `120`                                                      |
+| `vector.rerankTopK`     | Candidates sent to the reranker                    | `80`                                                       |
+| `vector.maxResults`     | Maximum wiki pages returned after ranking          | `6`                                                        |
 
 ## Building the index
 
@@ -82,10 +84,10 @@ retrieval:
     enabled: true
     baseUrl: http://127.0.0.1:11434/v1
     embeddingModel: nomic-embed-text
-    rerankerModel: BAAI/bge-reranker-v2-m3 # Ollama has no /rerank — this will be skipped gracefully
+    rerankEnabled: false # Ollama has no /rerank
 ```
 
-Ollama does not expose a `/v1/rerank` endpoint. When the reranker call fails, the system falls back to distance-based ranking from the vector search. Use an `infinity-emb` sidecar if you want reranking.
+Ollama does not expose a `/v1/rerank` endpoint. Set `rerankEnabled: false` to keep distance-based ranking from the vector search. Use an `infinity-emb` sidecar if you want reranking.
 
 ## Index location
 

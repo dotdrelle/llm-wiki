@@ -291,7 +291,10 @@ export class VectorIndexService {
 
     const rerankCandidates = vectorRows.slice(0, this.config.retrieval.vector.rerankTopK);
     let rankedRows = vectorRows;
-    if (rerankCandidates.length > 0) {
+    if (
+      this.config.retrieval.vector.rerankEnabled !== false &&
+      rerankCandidates.length > 0
+    ) {
       try {
         const reranked = await this.reranker.rerank(
           query,

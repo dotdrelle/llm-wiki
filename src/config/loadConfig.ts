@@ -35,9 +35,8 @@ async function findConfigPath(startDir: string): Promise<string | undefined> {
 }
 
 export async function loadConfig(startDir: string): Promise<AppConfig> {
-  const workspaceRoot = process.env.WIKI_WORKSPACE
-    ? path.resolve(process.env.WIKI_WORKSPACE)
-    : undefined;
+  const workspaceEnv = process.env.WIKI_WORKSPACE ?? process.env.WIKI_WORKSPACE_PATH;
+  const workspaceRoot = workspaceEnv ? path.resolve(workspaceEnv) : undefined;
   const searchRoot = workspaceRoot ?? startDir;
   const configPath = await findConfigPath(searchRoot);
 

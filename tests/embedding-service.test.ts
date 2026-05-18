@@ -37,6 +37,7 @@ function createConfig(): AppConfig {
         apiKey: 'test-key',
         timeoutMs: 600000,
         embeddingModel: 'BAAI/bge-m3',
+        rerankEnabled: true,
         rerankerModel: 'BAAI/bge-reranker-v2-m3',
         topK: 120,
         rerankTopK: 80,
@@ -72,10 +73,12 @@ describe('embedding service', () => {
       })),
     );
 
-    await expect(new EmbeddingService(createConfig()).embed(['a', 'b'])).resolves.toEqual([
-      [1, 1],
-      [2, 2],
-    ]);
+    await expect(new EmbeddingService(createConfig()).embed(['a', 'b'])).resolves.toEqual(
+      [
+        [1, 1],
+        [2, 2],
+      ],
+    );
   });
 
   it('rejects incomplete embedding responses', async () => {
@@ -169,7 +172,8 @@ describe('embedding service', () => {
             ok: false,
             status: 429,
             headers: new Headers(),
-            text: async (): Promise<string> => '{"detail":"10 requests per minute exceeded"}',
+            text: async (): Promise<string> =>
+              '{"detail":"10 requests per minute exceeded"}',
           };
         }
         return {
@@ -183,7 +187,9 @@ describe('embedding service', () => {
       }),
     );
 
-    await expect(new EmbeddingService(createConfig()).embed(['a'])).resolves.toEqual([[1, 1]]);
+    await expect(new EmbeddingService(createConfig()).embed(['a'])).resolves.toEqual([
+      [1, 1],
+    ]);
     expect(starts).toHaveLength(2);
     expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(15);
   });

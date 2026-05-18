@@ -20,6 +20,7 @@ services:
     volumes:
       - ${WIKI_WORKSPACE:?Set WIKI_WORKSPACE to an initialized llm-wiki workspace}:/workspace
     environment:
+      - WIKI_WORKSPACE=/workspace
       - OPENAI_API_KEY
       - ANTHROPIC_API_KEY
     # host.docker.internal -> native macOS Ollama or another host service
@@ -42,6 +43,7 @@ services:
     volumes:
       - ${WIKI_WORKSPACE:?Set WIKI_WORKSPACE to an initialized llm-wiki workspace}:/workspace
     environment:
+      - WIKI_WORKSPACE=/workspace
       - OPENAI_API_KEY
       - ANTHROPIC_API_KEY
     ports:
@@ -65,6 +67,8 @@ services:
     profiles: ['mcp']
     volumes:
       - ${WIKI_WORKSPACE:?Set WIKI_WORKSPACE to an initialized llm-wiki workspace}:/workspace
+    environment:
+      - WIKI_WORKSPACE=/workspace
     extra_hosts:
       - 'host.docker.internal:host-gateway'
 
@@ -107,6 +111,7 @@ services:
       - ${WIKI_WORKSPACE:?Set WIKI_WORKSPACE to an initialized llm-wiki workspace}:/workspace
       - ${WIKI_CERTS:-./certs}:/certs:ro
     environment:
+      - WIKI_WORKSPACE=/workspace
       - WIKI_MCP_TLS_CERT_PATH
       - WIKI_MCP_TLS_KEY_PATH
       - WIKI_MCP_TLS_CA_PATH

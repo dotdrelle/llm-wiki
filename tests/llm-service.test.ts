@@ -35,6 +35,7 @@ function createConfig(): AppConfig {
         baseUrl: 'https://api.anthropic.com/v1',
         timeoutMs: 600000,
         embeddingModel: 'BAAI/bge-m3',
+        rerankEnabled: true,
         rerankerModel: 'BAAI/bge-reranker-v2-m3',
         topK: 120,
         rerankTopK: 80,
