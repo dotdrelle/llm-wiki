@@ -17,6 +17,10 @@ const MCP_WIKI_PORT = process.env.WIKI_MCP_HTTP_PORT ?? '3101';
 const MCP_CME_PORT = process.env.CME_MCP_PORT ?? '3000';
 const MCP_MAILER_PORT = process.env.MAILER_MCP_PORT ?? '3335';
 const MCP_PRODUCTION_PORT = process.env.PRODUCTION_MCP_PORT ?? '3336';
+const HUB_PORT = process.env.HUB_PORT ?? null;
+const HUB_TOKEN = process.env.HUB_TOKEN ?? null;
+const HUB_INTERNAL_HOST = process.env.HUB_INTERNAL_HOST ?? '127.0.0.1';
+const WORKSPACE_NAME = process.env.WORKSPACE_NAME ?? null;
 
 const SERVED_DIRS = ['wiki', 'deliverables', 'templates', 'build-context'];
 const NAV_PATTERNS = [
@@ -72,15 +76,26 @@ function parseSkillFile(name: string, raw: string): SkillMeta {
   let inParams = false;
   for (const line of fm.split('\n')) {
     const t = line.trim();
-    if (t.startsWith('description:')) { description = t.slice(12).trim(); inParams = false; }
-    else if (t === 'params:') { inParams = true; }
-    else if (inParams && t.startsWith('- ')) { params.push(t.slice(2).trim()); }
-    else if (t && !t.startsWith('#') && !t.startsWith('- ')) { inParams = false; }
+    if (t.startsWith('description:')) {
+      description = t.slice(12).trim();
+      inParams = false;
+    } else if (t === 'params:') {
+      inParams = true;
+    } else if (inParams && t.startsWith('- ')) {
+      params.push(t.slice(2).trim());
+    } else if (t && !t.startsWith('#') && !t.startsWith('- ')) {
+      inParams = false;
+    }
   }
   return { name, description, params, body, scope: 'workspace' };
 }
 
-function formatSkillFile(skill: { name: string; description: string; params: string[]; body: string }): string {
+function formatSkillFile(skill: {
+  name: string;
+  description: string;
+  params: string[];
+  body: string;
+}): string {
   const paramsYaml = skill.params.length
     ? `\nparams:\n${skill.params.map((p) => `  - ${p}`).join('\n')}`
     : '';
@@ -98,7 +113,9 @@ async function listSkills(rootDir: string): Promise<SkillMeta[]> {
       assertSkillName(name);
       const raw = await readFile(path.join(dir, file), 'utf8');
       skills.push(parseSkillFile(name, raw));
-    } catch { /* skip invalid */ }
+    } catch {
+      /* skip invalid */
+    }
   }
   return skills;
 }
@@ -224,7 +241,10 @@ async function renderMarkdown(raw: string, currentDir = ''): Promise<string> {
     const safeTitle = title ? ` title="${escapeAttr(title)}"` : '';
     return `<a href="${safeHref}"${safeTitle}>${text}</a>`;
   };
-  return marked(linkSourceCitations(linkWikiLinks(raw), currentDir), { gfm: true, renderer });
+  return marked(linkSourceCitations(linkWikiLinks(raw), currentDir), {
+    gfm: true,
+    renderer,
+  });
 }
 
 function layout(title: string, body: string): string {
@@ -265,7 +285,9 @@ function layout(title: string, body: string): string {
       position: sticky;
       top: 0;
       height: 100vh;
-      overflow: auto;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
       padding: 1.25rem;
       border-right: 1px solid var(--border);
       background: #fbfcfd;
@@ -299,7 +321,7 @@ function layout(title: string, body: string): string {
       font-size: 0.78rem;
     }
     .side-search-status.is-visible { display: block; }
-    .side-tree { margin-top: 1rem; font-size: 0.9rem; }
+    .side-tree { margin-top: 1rem; font-size: 0.9rem; flex: 1 1 0; min-height: 0; overflow-y: auto; }
     .side-folder { margin: 0.08rem 0; }
     .side-folder summary {
       display: flex;
@@ -378,6 +400,16 @@ function layout(title: string, body: string): string {
       font-weight: 680;
     }
     .side-link:hover { border-color: var(--accent); background: var(--accent-soft); }
+    .ws-switcher { flex-shrink: 0; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+    .ws-switcher-title { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.4rem; padding: 0 0.2rem; }
+    .ws-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.5rem; border-radius: 5px; font-size: 0.85rem; }
+    .ws-item.ws-active { background: var(--accent-soft); font-weight: 680; }
+    .ws-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+    .ws-dot.running { background: #4caf50; }
+    .ws-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+    .ws-btn { font-size: 0.72rem; padding: 0.15rem 0.45rem; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--text); cursor: pointer; white-space: nowrap; }
+    .ws-btn:hover:not(:disabled) { border-color: var(--accent); }
+    .ws-btn:disabled { opacity: 0.45; cursor: default; }
     .content { min-width: 0; padding: 2rem clamp(1rem, 3vw, 3rem) 3rem; }
     .topbar {
       display: flex;
@@ -757,13 +789,14 @@ ${body}
   const scrollKey = storagePrefix + 'scrollTop';
   const currentPath = decodeURIComponent(window.location.pathname).replace(/^\\//, '');
   const sidebar = document.querySelector('.sidebar');
+  const sideTree = document.querySelector('.side-tree');
   const searchInput = document.querySelector('[data-side-search]');
   const searchStatus = document.querySelector('[data-side-search-status]');
   const sideFiles = [...document.querySelectorAll('[data-side-path]')];
   const sideFolders = [...document.querySelectorAll('[data-tree-id]')];
   function saveSidebarState() {
     if (searchInput) localStorage.setItem(searchKey, searchInput.value);
-    if (sidebar) localStorage.setItem(scrollKey, String(sidebar.scrollTop));
+    if (sideTree) localStorage.setItem(scrollKey, String(sideTree.scrollTop));
   }
   document.querySelectorAll('[data-tree-id]').forEach((details) => {
     const id = details.getAttribute('data-tree-id');
@@ -825,15 +858,105 @@ ${body}
       applySidebarSearch();
     });
   }
-  sidebar?.addEventListener('scroll', () => {
-    localStorage.setItem(scrollKey, String(sidebar.scrollTop));
+  sideTree?.addEventListener('scroll', () => {
+    localStorage.setItem(scrollKey, String(sideTree.scrollTop));
   }, { passive: true });
   window.addEventListener('beforeunload', saveSidebarState);
   applySidebarSearch();
   requestAnimationFrame(() => {
     const savedScroll = Number(localStorage.getItem(scrollKey) || '0');
-    if (sidebar && Number.isFinite(savedScroll)) sidebar.scrollTop = savedScroll;
+    if (sideTree && Number.isFinite(savedScroll)) sideTree.scrollTop = savedScroll;
   });
+
+  // ── workspace switcher ────────────────────────────────────────────────────
+  (function initWsSwitcher() {
+    const el = document.getElementById('ws-switcher');
+    if (!el) return;
+    const current = el.dataset.current || '';
+    let polling = false;
+
+    function render(workspaces) {
+      const title = document.createElement('p');
+      title.className = 'ws-switcher-title';
+      title.textContent = 'Workspaces';
+      el.innerHTML = '';
+      el.appendChild(title);
+
+      workspaces.forEach(ws => {
+        const isActive  = ws.name === current;
+        const isRunning = ws.running;
+
+        const row = document.createElement('div');
+        row.className = 'ws-item' + (isActive ? ' ws-active' : '');
+
+        const dot = document.createElement('span');
+        dot.className = 'ws-dot' + (isRunning ? ' running' : '');
+
+        const nameEl = document.createElement('span');
+        nameEl.className = 'ws-name';
+        nameEl.textContent = ws.name;
+
+        const btn = document.createElement(isActive ? 'span' : 'button');
+        btn.className = 'ws-btn';
+        if (isActive) {
+          btn.textContent = 'actif';
+          btn.style.cssText = 'opacity:0.4;cursor:default';
+        } else {
+          btn.textContent = isRunning ? 'Ouvrir' : 'Démarrer';
+          btn.dataset.action = isRunning ? 'open' : 'start';
+          btn.dataset.ws = ws.name;
+          btn.addEventListener('click', () => onAction(btn.dataset.action, btn.dataset.ws, btn));
+        }
+
+        row.appendChild(dot);
+        row.appendChild(nameEl);
+        row.appendChild(btn);
+        el.appendChild(row);
+      });
+    }
+
+    async function onAction(action, wsName, btn) {
+      btn.disabled = true;
+      btn.textContent = action === 'start' ? 'Démarrage…' : 'Ouverture…';
+      try {
+        await fetch('/api/hub/workspaces/' + encodeURIComponent(wsName) + '/' + action, { method: 'POST', headers: { 'X-LLM-WIKI-HUB': '1' } });
+        if (action === 'start') {
+          btn.textContent = 'Attente…';
+          // Poll until running then open
+          for (let i = 0; i < 40; i++) {
+            await new Promise(r => setTimeout(r, 1000));
+            const list = await fetchWorkspaces();
+            if (!list) break;
+            const ws = list.find(w => w.name === wsName);
+            if (ws?.running) {
+              await fetch('/api/hub/workspaces/' + encodeURIComponent(wsName) + '/open', { method: 'POST', headers: { 'X-LLM-WIKI-HUB': '1' } });
+              break;
+            }
+          }
+        }
+      } catch {}
+      refresh();
+    }
+
+    async function fetchWorkspaces() {
+      try {
+        const r = await fetch('/api/hub/workspaces', { headers: { 'X-LLM-WIKI-HUB': '1' } });
+        if (!r.ok) return null;
+        return (await r.json()).workspaces || null;
+      } catch { return null; }
+    }
+
+    async function refresh() {
+      if (polling) return;
+      polling = true;
+      const list = await fetchWorkspaces();
+      polling = false;
+      if (list) render(list);
+    }
+
+    refresh();
+    setInterval(refresh, 5000);
+  })();
 })();
 </script>
 </body>
@@ -1023,7 +1146,10 @@ async function renderSidebar(rootDir: string): Promise<string> {
     .map((dir) => renderNavNode(dir))
     .join('\n');
 
-  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">wiki</span><span class="brand-subtitle">index.md comme point d'entrée</span></a><a class="side-link" href="/graph">Graph des sources</a><a class="side-link" href="/chat">Chat MCP</a><a class="side-link" href="http://localhost:${MCP_WIKI_PORT}/mcp" target="_blank" rel="noopener">MCP wiki ↗</a><div class="side-search"><input class="side-search-input" type="search" placeholder="Search files" aria-label="Search files" data-side-search><p class="side-search-status" data-side-search-status>No matching files.</p></div><nav class="side-tree" aria-label="Documents markdown">${tree}</nav></aside>`;
+  const wsSwitcher = HUB_PORT
+    ? `<div class="ws-switcher" id="ws-switcher" data-current="${escapeAttr(WORKSPACE_NAME ?? '')}"><p class="ws-switcher-title">Workspaces</p><p class="ws-name" style="font-size:0.8rem;color:var(--muted);padding:0 0.2rem">Chargement…</p></div>`
+    : '';
+  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">${escapeHtml(WORKSPACE_NAME ?? 'wiki')}</span><span class="brand-subtitle">index.md comme point d'entrée</span></a><a class="side-link" href="/graph">Graph des sources</a><a class="side-link" href="/chat">Chat MCP</a><a class="side-link" href="http://localhost:${MCP_WIKI_PORT}/mcp" target="_blank" rel="noopener">MCP wiki ↗</a><div class="side-search"><input class="side-search-input" type="search" placeholder="Search files" aria-label="Search files" data-side-search><p class="side-search-status" data-side-search-status>No matching files.</p></div><nav class="side-tree" aria-label="Documents markdown">${tree}</nav>${wsSwitcher}</aside>`;
 }
 
 interface GraphNode {
@@ -1667,7 +1793,9 @@ async function generateIndex(rootDir: string): Promise<string> {
     const bh = b.heading.toLowerCase();
     const ai = SECTION_RANK.findIndex((k) => ah.includes(k));
     const bi = SECTION_RANK.findIndex((k) => bh.includes(k));
-    return (ai === -1 ? SECTION_RANK.length : ai) - (bi === -1 ? SECTION_RANK.length : bi);
+    return (
+      (ai === -1 ? SECTION_RANK.length : ai) - (bi === -1 ? SECTION_RANK.length : bi)
+    );
   });
 
   const tiles = renderIndexSectionBrowser(indexTiles);
@@ -1676,7 +1804,10 @@ async function generateIndex(rootDir: string): Promise<string> {
   return layout('wiki', body);
 }
 
-async function generateDirectoryPage(rootDir: string, relativePath: string): Promise<string> {
+async function generateDirectoryPage(
+  rootDir: string,
+  relativePath: string,
+): Promise<string> {
   const cleanRelativePath = toPosix(relativePath).replace(/\/+$/, '');
   const files = (await fg(`${cleanRelativePath}/**/*.md`, { cwd: rootDir, dot: false }))
     .map(toPosix)
@@ -1762,11 +1893,12 @@ async function readChatHistoryIndex(rootDir: string): Promise<ChatHistorySummary
     const data = JSON.parse(await readFile(indexPath, 'utf8')) as unknown;
     if (!Array.isArray(data)) return [];
     return data
-      .filter((item): item is ChatHistorySummary => (
-        typeof item === 'object' &&
-        item !== null &&
-        typeof (item as ChatHistorySummary).id === 'string'
-      ))
+      .filter(
+        (item): item is ChatHistorySummary =>
+          typeof item === 'object' &&
+          item !== null &&
+          typeof (item as ChatHistorySummary).id === 'string',
+      )
       .map(summarizeConversation)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   } catch {
@@ -1774,12 +1906,20 @@ async function readChatHistoryIndex(rootDir: string): Promise<ChatHistorySummary
   }
 }
 
-async function writeChatHistoryIndex(rootDir: string, summaries: ChatHistorySummary[]): Promise<void> {
+async function writeChatHistoryIndex(
+  rootDir: string,
+  summaries: ChatHistorySummary[],
+): Promise<void> {
   await mkdir(chatHistoryDir(rootDir), { recursive: true });
   const deduped = new Map<string, ChatHistorySummary>();
   for (const summary of summaries) deduped.set(summary.id, summary);
-  const sorted = [...deduped.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  await safeWriteFile(chatHistoryIndexPath(rootDir), `${JSON.stringify(sorted, null, 2)}\n`);
+  const sorted = [...deduped.values()].sort((a, b) =>
+    b.updatedAt.localeCompare(a.updatedAt),
+  );
+  await safeWriteFile(
+    chatHistoryIndexPath(rootDir),
+    `${JSON.stringify(sorted, null, 2)}\n`,
+  );
 }
 
 function countToolCalls(messages: unknown): number {
@@ -1792,7 +1932,10 @@ function countToolCalls(messages: unknown): number {
   }, 0);
 }
 
-function normalizeConversationPayload(raw: string, existing?: ChatConversation): ChatConversation {
+function normalizeConversationPayload(
+  raw: string,
+  existing?: ChatConversation,
+): ChatConversation {
   const parsed = JSON.parse(raw || '{}') as Record<string, unknown>;
   const now = new Date().toISOString();
   const id = assertChatId(String(parsed.id || existing?.id || `conv_${Date.now()}`));
@@ -1809,16 +1952,26 @@ function normalizeConversationPayload(raw: string, existing?: ChatConversation):
   };
 }
 
-async function readConversation(rootDir: string, id: string): Promise<ChatConversation | null> {
+async function readConversation(
+  rootDir: string,
+  id: string,
+): Promise<ChatConversation | null> {
   const conversationPath = chatConversationPath(rootDir, id);
   if (!(await pathExists(conversationPath))) return null;
   return JSON.parse(await readFile(conversationPath, 'utf8')) as ChatConversation;
 }
 
-async function upsertConversation(rootDir: string, rawBody: string, existing?: ChatConversation): Promise<ChatConversation> {
+async function upsertConversation(
+  rootDir: string,
+  rawBody: string,
+  existing?: ChatConversation,
+): Promise<ChatConversation> {
   const conversation = normalizeConversationPayload(rawBody, existing);
   await mkdir(chatHistoryDir(rootDir), { recursive: true });
-  await safeWriteFile(chatConversationPath(rootDir, conversation.id), `${JSON.stringify(conversation, null, 2)}\n`);
+  await safeWriteFile(
+    chatConversationPath(rootDir, conversation.id),
+    `${JSON.stringify(conversation, null, 2)}\n`,
+  );
   const summaries = await readChatHistoryIndex(rootDir);
   await writeChatHistoryIndex(rootDir, [
     summarizeConversation(conversation),
@@ -1827,7 +1980,14 @@ async function upsertConversation(rootDir: string, rawBody: string, existing?: C
   return conversation;
 }
 
-function sendJson(res: { writeHead: (s: number, h: Record<string, string>) => void; end: (c?: string) => void }, status: number, data: unknown): void {
+function sendJson(
+  res: {
+    writeHead: (s: number, h: Record<string, string>) => void;
+    end: (c?: string) => void;
+  },
+  status: number,
+  data: unknown,
+): void {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(data));
 }
@@ -1840,9 +2000,15 @@ function parseTraceFields(rest: string): Record<string, string> {
   return fields;
 }
 
-async function readProductionTraceStatus(rootDir: string, traceFile: string): Promise<Record<string, unknown>> {
+async function readProductionTraceStatus(
+  rootDir: string,
+  traceFile: string,
+): Promise<Record<string, unknown>> {
   const tracePath = resolveInside(rootDir, traceFile);
-  if (!tracePath || !tracePath.startsWith(path.join(rootDir, '.wiki', 'logs') + path.sep)) {
+  if (
+    !tracePath ||
+    !tracePath.startsWith(path.join(rootDir, '.wiki', 'logs') + path.sep)
+  ) {
     throw new Error('INVALID_TRACE_PATH');
   }
   const lines = (await readFile(tracePath, 'utf8')).split(/\r?\n/).filter(Boolean);
@@ -1872,7 +2038,15 @@ async function readProductionTraceStatus(rootDir: string, traceFile: string): Pr
   return { ok: true, traceFile, lastEvent, lastEventAt, waitMs, retryAt };
 }
 
-async function handleChatHistoryApi(rootDir: string, req: IncomingMessage, res: { writeHead: (s: number, h?: Record<string, string>) => void; end: (c?: string) => void }, urlPath: string): Promise<boolean> {
+async function handleChatHistoryApi(
+  rootDir: string,
+  req: IncomingMessage,
+  res: {
+    writeHead: (s: number, h?: Record<string, string>) => void;
+    end: (c?: string) => void;
+  },
+  urlPath: string,
+): Promise<boolean> {
   if (!urlPath.startsWith('/api/chat/history')) return false;
   try {
     const id = urlPath.replace(/^\/api\/chat\/history\/?/, '').replace(/\/+$/, '');
@@ -1882,7 +2056,10 @@ async function handleChatHistoryApi(rootDir: string, req: IncomingMessage, res: 
         return true;
       }
       if (req.method === 'POST') {
-        const conversation = await upsertConversation(rootDir, await readRequestBody(req));
+        const conversation = await upsertConversation(
+          rootDir,
+          await readRequestBody(req),
+        );
         sendJson(res, 201, summarizeConversation(conversation));
         return true;
       }
@@ -1899,14 +2076,21 @@ async function handleChatHistoryApi(rootDir: string, req: IncomingMessage, res: 
       }
       if (req.method === 'PUT') {
         const existing = await readConversation(rootDir, id);
-        const conversation = await upsertConversation(rootDir, await readRequestBody(req), existing ?? { id } as ChatConversation);
+        const conversation = await upsertConversation(
+          rootDir,
+          await readRequestBody(req),
+          existing ?? ({ id } as ChatConversation),
+        );
         sendJson(res, 200, summarizeConversation(conversation));
         return true;
       }
       if (req.method === 'DELETE') {
         await rm(chatConversationPath(rootDir, id), { force: true });
         const summaries = await readChatHistoryIndex(rootDir);
-        await writeChatHistoryIndex(rootDir, summaries.filter((item) => item.id !== id));
+        await writeChatHistoryIndex(
+          rootDir,
+          summaries.filter((item) => item.id !== id),
+        );
         sendJson(res, 200, { ok: true });
         return true;
       }
@@ -1923,27 +2107,40 @@ async function handleChatHistoryApi(rootDir: string, req: IncomingMessage, res: 
 async function handleSkillsApi(
   rootDir: string,
   req: IncomingMessage,
-  res: { writeHead: (s: number, h?: Record<string, string>) => void; end: (c?: string) => void },
+  res: {
+    writeHead: (s: number, h?: Record<string, string>) => void;
+    end: (c?: string) => void;
+  },
   urlPath: string,
 ): Promise<boolean> {
   if (urlPath !== '/api/skills' && !urlPath.startsWith('/api/skills/')) return false;
   const name = urlPath.replace(/^\/api\/skills\/?/, '').replace(/\/+$/, '');
   try {
     if (!name) {
-      if (req.method === 'GET') { sendJson(res, 200, await listSkills(rootDir)); return true; }
+      if (req.method === 'GET') {
+        sendJson(res, 200, await listSkills(rootDir));
+        return true;
+      }
       sendJson(res, 405, { error: 'Method not allowed' });
       return true;
     }
     assertSkillName(name);
     if (req.method === 'GET') {
       const skill = await readSkillByName(rootDir, name);
-      if (!skill) { sendJson(res, 404, { error: 'Skill not found' }); return true; }
+      if (!skill) {
+        sendJson(res, 404, { error: 'Skill not found' });
+        return true;
+      }
       sendJson(res, 200, skill);
       return true;
     }
     if (req.method === 'POST' || req.method === 'PUT') {
       const raw = await readRequestBody(req);
-      const data = JSON.parse(raw) as { description?: string; params?: unknown; body?: string };
+      const data = JSON.parse(raw) as {
+        description?: string;
+        params?: unknown;
+        body?: string;
+      };
       const skill = {
         name,
         description: String(data.description ?? ''),
@@ -1971,18 +2168,24 @@ async function handleSkillsApi(
 
 async function proxyPost(
   req: IncomingMessage,
-  res: { writeHead: (s: number, h: Record<string, string>) => void; write: (c: Uint8Array) => void; end: () => void; headersSent?: boolean },
+  res: {
+    writeHead: (s: number, h: Record<string, string>) => void;
+    write: (c: Uint8Array) => void;
+    end: () => void;
+    headersSent?: boolean;
+  },
   targetUrl: string,
   extraHeaders: Record<string, string> = {},
   options: { retry429?: boolean } = {},
 ): Promise<void> {
   const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  for await (const chunk of req)
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   const body = Buffer.concat(chunks);
 
   const headers: Record<string, string> = {
     'content-type': (req.headers['content-type'] as string) ?? 'application/json',
-    'accept': (req.headers['accept'] as string) ?? 'application/json, text/event-stream',
+    accept: (req.headers['accept'] as string) ?? 'application/json, text/event-stream',
   };
   // Forward browser Authorization only when server doesn't override it
   if (!extraHeaders['authorization'] && req.headers['authorization']) {
@@ -1996,9 +2199,9 @@ async function proxyPost(
     ? Math.max(
         1,
         Number(
-          process.env.LLM_WIKI_CHAT_RATE_LIMIT_RETRY_MAX_ATTEMPTS
-            ?? process.env.LLM_WIKI_RATE_LIMIT_RETRY_MAX_ATTEMPTS
-            ?? '10',
+          process.env.LLM_WIKI_CHAT_RATE_LIMIT_RETRY_MAX_ATTEMPTS ??
+            process.env.LLM_WIKI_RATE_LIMIT_RETRY_MAX_ATTEMPTS ??
+            '10',
         ),
       )
     : 1;
@@ -2009,7 +2212,10 @@ async function proxyPost(
     const retryAfter = upstream.headers.get('retry-after');
     const retryAfterSeconds = retryAfter ? Number(retryAfter) : NaN;
     const retryAfterDate = retryAfter ? Date.parse(retryAfter) : NaN;
-    const fallbackMs = Math.max(0, Number(process.env.LLM_WIKI_RATE_LIMIT_RETRY_MS ?? '65000'));
+    const fallbackMs = Math.max(
+      0,
+      Number(process.env.LLM_WIKI_RATE_LIMIT_RETRY_MS ?? '65000'),
+    );
     const waitMs = Number.isFinite(retryAfterSeconds)
       ? Math.max(0, retryAfterSeconds * 1000)
       : Number.isFinite(retryAfterDate)
@@ -2047,7 +2253,9 @@ async function proxyPost(
 function resolveEditableMarkdown(rootDir: string, relativePath: string): string {
   const cleanRelativePath = toPosix(relativePath).replace(/^\/+/, '').replace(/\/+$/, '');
   if (!isEditableRelativePath(cleanRelativePath)) {
-    throw new Error(`FORBIDDEN_EDIT_PATH: Editing is only allowed for markdown files under ${EDITABLE_DIRS.join(', ')}`);
+    throw new Error(
+      `FORBIDDEN_EDIT_PATH: Editing is only allowed for markdown files under ${EDITABLE_DIRS.join(', ')}`,
+    );
   }
 
   return resolveInside(rootDir, cleanRelativePath);
@@ -2216,17 +2424,15 @@ function openAppMode(url: string): void {
 
   if (platform === 'darwin') {
     // Try Chrome, then Edge, then Safari
-    const chromiumTry = spawn(
-      'open',
-      ['-na', 'Google Chrome', '--args', `--app=${url}`],
-      { stdio: 'ignore', detached: true },
-    );
+    const chromiumTry = spawn('open', ['-a', 'Google Chrome', '--args', `--app=${url}`], {
+      stdio: 'ignore',
+      detached: true,
+    });
     chromiumTry.on('error', () => {
-      const edgeTry = spawn(
-        'open',
-        ['-na', 'Microsoft Edge', '--args', `--app=${url}`],
-        { stdio: 'ignore', detached: true },
-      );
+      const edgeTry = spawn('open', ['-a', 'Microsoft Edge', '--args', `--app=${url}`], {
+        stdio: 'ignore',
+        detached: true,
+      });
       edgeTry.on('error', () => {
         spawn('open', ['-a', 'Safari', url], { stdio: 'ignore', detached: true }).unref();
       });
@@ -2238,12 +2444,20 @@ function openAppMode(url: string): void {
 
   if (platform === 'linux') {
     // Try Chrome, then Edge, then xdg-open
-    const chromeCandidates = ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser'];
+    const chromeCandidates = [
+      'google-chrome',
+      'google-chrome-stable',
+      'chromium',
+      'chromium-browser',
+    ];
     const edgeCandidates = ['microsoft-edge', 'microsoft-edge-stable'];
 
     function tryNext(candidates: string[], fallback: () => void): void {
       const [cmd, ...rest] = candidates;
-      if (!cmd) { fallback(); return; }
+      if (!cmd) {
+        fallback();
+        return;
+      }
       const proc = spawn(cmd, [`--app=${url}`], { stdio: 'ignore', detached: true });
       proc.on('error', () => tryNext(rest, fallback));
       proc.unref();
@@ -2270,7 +2484,10 @@ function openAppMode(url: string): void {
 
     function tryNext(paths: string[], fallback: () => void): void {
       const [exe, ...rest] = paths;
-      if (!exe) { fallback(); return; }
+      if (!exe) {
+        fallback();
+        return;
+      }
       const proc = spawn(exe, [`--app=${url}`], { stdio: 'ignore', detached: true });
       proc.on('error', () => tryNext(rest, fallback));
       proc.unref();
@@ -2278,7 +2495,11 @@ function openAppMode(url: string): void {
 
     tryNext(chromePaths, () => {
       tryNext(edgePaths, () => {
-        spawn('cmd', ['/c', 'start', '', url], { stdio: 'ignore', detached: true, shell: true }).unref();
+        spawn('cmd', ['/c', 'start', '', url], {
+          stdio: 'ignore',
+          detached: true,
+          shell: true,
+        }).unref();
       });
     });
     return;
@@ -2288,7 +2509,10 @@ function openAppMode(url: string): void {
   spawn('open', [url], { stdio: 'ignore', detached: true }).unref();
 }
 
-export default async function serveCmd(config: AppConfig, options: { port?: number; open?: boolean }) {
+export default async function serveCmd(
+  config: AppConfig,
+  options: { port?: number; open?: boolean },
+) {
   const workspace = new WorkspaceService(config);
   const rootDir = workspace.paths.rootDir;
   const port = options.port ?? 3000;
@@ -2309,11 +2533,72 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
 
       if (req.method === 'GET' && urlPath === '/api/production/trace') {
         try {
-          const traceFile = new URL(req.url ?? '/', 'http://localhost').searchParams.get('path') ?? '';
+          const traceFile =
+            new URL(req.url ?? '/', 'http://localhost').searchParams.get('path') ?? '';
           sendJson(res, 200, await readProductionTraceStatus(rootDir, traceFile));
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          sendJson(res, message === 'INVALID_TRACE_PATH' ? 400 : 404, { ok: false, error: message });
+          sendJson(res, message === 'INVALID_TRACE_PATH' ? 400 : 404, {
+            ok: false,
+            error: message,
+          });
+        }
+        return;
+      }
+
+      // ── Hub proxy (same-origin façade over the host-side hub.js) ──────────
+      if (HUB_PORT && HUB_TOKEN && urlPath.startsWith('/api/hub/')) {
+        // CSRF guard: custom header required; reject cross-origin POSTs
+        if (!req.headers['x-llm-wiki-hub']) {
+          sendJson(res, 403, { ok: false, error: 'forbidden' });
+          return;
+        }
+        if (req.method === 'POST') {
+          const origin = req.headers['origin'] as string | undefined;
+          const host = req.headers.host;
+          let allowedOrigin = !origin;
+          if (origin && host) {
+            try {
+              const parsedOrigin = new URL(origin);
+              const [hostName, hostPort = ''] = host.split(':');
+              const sameHost =
+                origin === `http://${host}` || origin === `https://${host}`;
+              const sameLoopbackPort =
+                ['localhost', '127.0.0.1'].includes(parsedOrigin.hostname) &&
+                ['localhost', '127.0.0.1'].includes(hostName ?? '') &&
+                parsedOrigin.port === hostPort;
+              allowedOrigin = sameHost || sameLoopbackPort;
+            } catch {
+              allowedOrigin = false;
+            }
+          }
+          if (!allowedOrigin) {
+            sendJson(res, 403, { ok: false, error: 'forbidden' });
+            return;
+          }
+        }
+        const hubPath = urlPath.slice('/api/hub'.length);
+        const chunks: Buffer[] = [];
+        for await (const chunk of req)
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        const hubBody = Buffer.concat(chunks);
+        try {
+          const upstream = await fetch(
+            `http://${HUB_INTERNAL_HOST}:${HUB_PORT}${hubPath}`,
+            {
+              method: req.method ?? 'GET',
+              headers: {
+                authorization: `Bearer ${HUB_TOKEN}`,
+                'content-type': 'application/json',
+              },
+              body: hubBody.length > 0 ? hubBody : undefined,
+            },
+          );
+          const data = await upstream.text();
+          res.writeHead(upstream.status, { 'Content-Type': 'application/json' });
+          res.end(data);
+        } catch {
+          sendJson(res, 503, { ok: false, error: 'hub unavailable' });
         }
         return;
       }
@@ -2321,18 +2606,35 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
       // ── Server-side proxies (avoid CORS + Docker internal URLs) ────────────
       if (req.method === 'POST') {
         if (urlPath === '/api/chat') {
-          await proxyPost(req, res, `${config.llm.baseUrl}/chat/completions`, {
-            authorization: `Bearer ${config.llm.apiKey ?? ''}`,
-          }, { retry429: true });
+          await proxyPost(
+            req,
+            res,
+            `${config.llm.baseUrl}/chat/completions`,
+            {
+              authorization: `Bearer ${config.llm.apiKey ?? ''}`,
+            },
+            { retry429: true },
+          );
           return;
         }
         if (urlPath === '/api/mcp') {
-          const target = new URL(req.url ?? '', 'http://localhost').searchParams.get('url') ?? '';
-          if (!target) { res.writeHead(400); res.end('url param required'); return; }
-          const wikiTarget = process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${MCP_WIKI_PORT}/mcp`;
-          const cmeTarget = process.env.CME_MCP_PROXY_URL ?? `http://localhost:${MCP_CME_PORT}/mcp/`;
-          const mailerTarget = process.env.MAILER_MCP_PROXY_URL ?? `http://localhost:${MCP_MAILER_PORT}/mcp/`;
-          const productionTarget = process.env.PRODUCTION_MCP_PROXY_URL ?? `http://localhost:${MCP_PRODUCTION_PORT}/mcp/`;
+          const target =
+            new URL(req.url ?? '', 'http://localhost').searchParams.get('url') ?? '';
+          if (!target) {
+            res.writeHead(400);
+            res.end('url param required');
+            return;
+          }
+          const wikiTarget =
+            process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${MCP_WIKI_PORT}/mcp`;
+          const cmeTarget =
+            process.env.CME_MCP_PROXY_URL ?? `http://localhost:${MCP_CME_PORT}/mcp/`;
+          const mailerTarget =
+            process.env.MAILER_MCP_PROXY_URL ??
+            `http://localhost:${MCP_MAILER_PORT}/mcp/`;
+          const productionTarget =
+            process.env.PRODUCTION_MCP_PROXY_URL ??
+            `http://localhost:${MCP_PRODUCTION_PORT}/mcp/`;
           const proxyTokens: Record<string, string> = {
             [wikiTarget]: process.env.WIKI_MCP_AUTH_TOKEN || config.mcp.accessKey || '',
             [cmeTarget]: process.env.CME_MCP_AUTH_TOKEN ?? '',
@@ -2340,7 +2642,12 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
             [productionTarget]: process.env.PRODUCTION_MCP_AUTH_TOKEN ?? '',
           };
           const bearer = proxyTokens[target] ?? '';
-          await proxyPost(req, res, target, bearer ? { authorization: `Bearer ${bearer}` } : {});
+          await proxyPost(
+            req,
+            res,
+            target,
+            bearer ? { authorization: `Bearer ${bearer}` } : {},
+          );
           return;
         }
       }
@@ -2397,10 +2704,28 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
           apiKey: config.llm.apiKey ?? '',
           language: config.language ?? 'fr',
           mcpServers: [
-            { name: 'llm-wiki', url: process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${MCP_WIKI_PORT}/mcp` },
-            { name: 'wiki-production', url: process.env.PRODUCTION_MCP_PROXY_URL ?? `http://localhost:${MCP_PRODUCTION_PORT}/mcp/` },
-            { name: 'agent-cme', url: process.env.CME_MCP_PROXY_URL ?? `http://localhost:${MCP_CME_PORT}/mcp/` },
-            { name: 'donna-mailer', url: process.env.MAILER_MCP_PROXY_URL ?? `http://localhost:${MCP_MAILER_PORT}/mcp/` },
+            {
+              name: 'llm-wiki',
+              url:
+                process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${MCP_WIKI_PORT}/mcp`,
+            },
+            {
+              name: 'wiki-production',
+              url:
+                process.env.PRODUCTION_MCP_PROXY_URL ??
+                `http://localhost:${MCP_PRODUCTION_PORT}/mcp/`,
+            },
+            {
+              name: 'agent-cme',
+              url:
+                process.env.CME_MCP_PROXY_URL ?? `http://localhost:${MCP_CME_PORT}/mcp/`,
+            },
+            {
+              name: 'donna-mailer',
+              url:
+                process.env.MAILER_MCP_PROXY_URL ??
+                `http://localhost:${MCP_MAILER_PORT}/mcp/`,
+            },
           ],
         };
         const cfgScript = `<script>window.__WIKI_CONFIG__=${escapeScriptJson(JSON.stringify(chatConfig))};</script>`;
@@ -2472,9 +2797,10 @@ export default async function serveCmd(config: AppConfig, options: { port?: numb
 
       const absoluteStats = await stat(absolute);
       if (absoluteStats.isDirectory()) {
-        const html = relative === 'wiki'
-          ? await generateIndex(rootDir)
-          : await generateDirectoryPage(rootDir, relative);
+        const html =
+          relative === 'wiki'
+            ? await generateIndex(rootDir)
+            : await generateDirectoryPage(rootDir, relative);
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(html);
         return;
