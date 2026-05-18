@@ -248,12 +248,13 @@ async function renderMarkdown(raw: string, currentDir = ''): Promise<string> {
 }
 
 function layout(title: string, body: string): string {
+  const pageTitle = WORKSPACE_NAME ? `${WORKSPACE_NAME} · ${title}` : title;
   return `<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(title)}</title>
+  <title>${escapeHtml(pageTitle)}</title>
   <style>
     ${WIKI_CSS_VARS}
     * { box-sizing: border-box; }
@@ -874,6 +875,25 @@ ${body}
     if (!el) return;
     const current = el.dataset.current || '';
     let polling = false;
+    const locallyOpenedUntil = new Map();
+
+    function markLocallyOpened(wsName) {
+      locallyOpenedUntil.set(wsName, Date.now() + 20000);
+    }
+
+    function isLocallyOpened(wsName) {
+      const until = locallyOpenedUntil.get(wsName) || 0;
+      if (until > Date.now()) return true;
+      locallyOpenedUntil.delete(wsName);
+      return false;
+    }
+
+    async function heartbeat() {
+      if (!current) return;
+      try {
+        await fetch('/api/hub/workspaces/' + encodeURIComponent(current) + '/heartbeat', { method: 'POST', headers: { 'X-LLM-WIKI-HUB': '1' } });
+      } catch {}
+    }
 
     function render(workspaces) {
       const title = document.createElement('p');
@@ -885,6 +905,7 @@ ${body}
       workspaces.forEach(ws => {
         const isActive  = ws.name === current;
         const isRunning = ws.running;
+        const isOpened  = Boolean(ws.opened || isLocallyOpened(ws.name));
 
         const row = document.createElement('div');
         row.className = 'ws-item' + (isActive ? ' ws-active' : '');
@@ -896,11 +917,14 @@ ${body}
         nameEl.className = 'ws-name';
         nameEl.textContent = ws.name;
 
-        const btn = document.createElement(isActive ? 'span' : 'button');
+        const btn = document.createElement(isActive || (isRunning && isOpened) ? 'span' : 'button');
         btn.className = 'ws-btn';
         if (isActive) {
           btn.textContent = 'actif';
           btn.style.cssText = 'opacity:0.4;cursor:default';
+        } else if (isRunning && isOpened) {
+          btn.textContent = 'ouvert';
+          btn.style.cssText = 'opacity:0.45;cursor:default';
         } else {
           btn.textContent = isRunning ? 'Ouvrir' : 'Démarrer';
           btn.dataset.action = isRunning ? 'open' : 'start';
@@ -920,6 +944,10 @@ ${body}
       btn.textContent = action === 'start' ? 'Démarrage…' : 'Ouverture…';
       try {
         await fetch('/api/hub/workspaces/' + encodeURIComponent(wsName) + '/' + action, { method: 'POST', headers: { 'X-LLM-WIKI-HUB': '1' } });
+        if (action === 'open') {
+          markLocallyOpened(wsName);
+          btn.textContent = 'ouvert';
+        }
         if (action === 'start') {
           btn.textContent = 'Attente…';
           // Poll until running then open
@@ -930,6 +958,7 @@ ${body}
             const ws = list.find(w => w.name === wsName);
             if (ws?.running) {
               await fetch('/api/hub/workspaces/' + encodeURIComponent(wsName) + '/open', { method: 'POST', headers: { 'X-LLM-WIKI-HUB': '1' } });
+              markLocallyOpened(wsName);
               break;
             }
           }
@@ -954,7 +983,9 @@ ${body}
       if (list) render(list);
     }
 
+    heartbeat();
     refresh();
+    setInterval(heartbeat, 5000);
     setInterval(refresh, 5000);
   })();
 })();
@@ -2424,19 +2455,31 @@ function openAppMode(url: string): void {
 
   if (platform === 'darwin') {
     // Try Chrome, then Edge, then Safari
-    const chromiumTry = spawn('open', ['-a', 'Google Chrome', '--args', `--app=${url}`], {
-      stdio: 'ignore',
-      detached: true,
-    });
-    chromiumTry.on('error', () => {
-      const edgeTry = spawn('open', ['-a', 'Microsoft Edge', '--args', `--app=${url}`], {
+    const fallback = () => {
+      spawn('open', ['-a', 'Safari', url], { stdio: 'ignore', detached: true }).unref();
+    };
+    const openEdge = () => {
+      const edgeTry = spawn('open', ['-na', 'Microsoft Edge', '--args', `--app=${url}`], {
         stdio: 'ignore',
         detached: true,
       });
-      edgeTry.on('error', () => {
-        spawn('open', ['-a', 'Safari', url], { stdio: 'ignore', detached: true }).unref();
+      edgeTry.on('error', fallback);
+      edgeTry.on('close', (code) => {
+        if (code !== 0) fallback();
       });
       edgeTry.unref();
+    };
+    const chromiumTry = spawn(
+      'open',
+      ['-na', 'Google Chrome', '--args', `--app=${url}`],
+      {
+        stdio: 'ignore',
+        detached: true,
+      },
+    );
+    chromiumTry.on('error', openEdge);
+    chromiumTry.on('close', (code) => {
+      if (code !== 0) openEdge();
     });
     chromiumTry.unref();
     return;
