@@ -139,4 +139,32 @@ describe('retrieval service', () => {
       fallback: 'lexical',
     });
   });
+
+  it('disables vector retrieval for the process after a vector error', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-retrieval-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, '.wiki', 'vector-index'), { recursive: true });
+    await writeFile(
+      path.join(root, 'wiki', 'index.md'),
+      '# Index\n\nArchitecture.\n',
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    const retrieval = new RetrievalService(new WorkspaceService(config), config);
+    let vectorCalls = 0;
+    (
+      retrieval as unknown as { vectorIndex: { search: () => Promise<never> } }
+    ).vectorIndex = {
+      async search() {
+        vectorCalls += 1;
+        throw new Error('Vector dimension mismatch');
+      },
+    };
+
+    await retrieval.search('architecture', { includeRaw: false });
+    await retrieval.search('architecture', { includeRaw: false });
+
+    expect(vectorCalls).toBe(1);
+  });
 });

@@ -48,6 +48,7 @@ export function buildDeliverablePrompt(args: {
       'When context is insufficient, write a short note: "> Évidence manquante dans le wiki — à compléter."',
       'Do not repeat headings already present in the template.',
       'Cite factual claims with the provided Context citation path, preferably wiki/concepts/ or wiki/sources/. Do not replace a context page citation with nested raw/ingested citations unless the raw source is the only available evidence.',
+      'When sources conflict or describe different decision states, prefer the most recent dated source and explicitly treat older decision-pending notes as superseded.',
       args.buildContext
         ? `Common generation rules from build-context/:\n${args.buildContext}`
         : '',
@@ -100,6 +101,7 @@ export function buildSingleSlotDeliverablePrompt(args: {
       'When context is insufficient, write a short note: "> Évidence manquante dans le wiki — à compléter."',
       'Do not repeat headings already present in the template.',
       'Cite factual claims with the provided Context citation path, preferably wiki/concepts/ or wiki/sources/. Do not replace a context page citation with nested raw/ingested citations unless the raw source is the only available evidence.',
+      'When sources conflict or describe different decision states, prefer the most recent dated source and explicitly treat older decision-pending notes as superseded.',
       args.buildContext
         ? `Common generation rules from build-context/:\n${args.buildContext}`
         : '',

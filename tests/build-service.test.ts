@@ -133,6 +133,67 @@ class NamedRetrievalService {
   }
 }
 
+class CountingRetrievalService {
+  readonly queries: string[] = [];
+  readonly rerankQueries: string[] = [];
+
+  async search(query: string): Promise<SearchResult[]> {
+    this.queries.push(query);
+    return [
+      {
+        page: wikiPage(`wiki/concepts/${this.queries.length}.md`, `# ${query}\n\nFacts.`),
+        score: 10,
+      },
+    ];
+  }
+
+  async warmCache(): Promise<WikiPage[]> {
+    return [];
+  }
+
+  async rerankResults(query: string, results: SearchResult[]): Promise<SearchResult[]> {
+    this.rerankQueries.push(query);
+    return results;
+  }
+}
+
+class FinalContextRetrievalService {
+  async search(): Promise<SearchResult[]> {
+    return [
+      {
+        page: wikiPage('wiki/index.md', '# Index\n\nShould not be final context.'),
+        score: 100,
+      },
+      {
+        page: wikiPage('wiki/log.md', '# Log\n\nShould not be final context.'),
+        score: 99,
+      },
+      {
+        page: wikiPage(
+          'wiki/sources/old-decision.md',
+          '# Old\n\nDecision pending on 2026-03-01.',
+        ),
+        score: 98,
+      },
+      {
+        page: wikiPage(
+          'wiki/sources/new-decision.md',
+          '# New\n\nDecision settled on 2026-04-13.',
+        ),
+        score: 10,
+      },
+    ];
+  }
+
+  async warmCache(): Promise<WikiPage[]> {
+    return [];
+  }
+
+  async rerankResults(_query: string, results: SearchResult[]): Promise<SearchResult[]> {
+    return results;
+  }
+}
+
 class SplittingLLMService {
   completeJsonCalls = 0;
 
@@ -322,6 +383,83 @@ describe('build service', () => {
     expect(llm.lastJsonRequest?.user).toContain('wiki/concepts/alpha.md');
     expect(llm.lastJsonRequest?.user).toContain('wiki/concepts/beta.md');
     expect(llm.lastJsonRequest?.user).toContain('wiki/concepts/gamma.md');
+  });
+
+  it('deduplicates template focus context searches across instructions', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'templates'), { recursive: true });
+    await mkdir(path.join(root, 'deliverables'), { recursive: true });
+
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n', 'utf8');
+    await writeFile(
+      path.join(root, 'templates', 'brief.md'),
+      [
+        '# Brief',
+        '',
+        '## One',
+        '[[INSTRUCTION: Describe: Alpha, Beta.]]',
+        '',
+        '## Two',
+        '[[INSTRUCTION: Summarize: Alpha, Beta.]]',
+        '',
+        '## Three',
+        '[[INSTRUCTION: Decide: Alpha, Beta.]]',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    const retrieval = new CountingRetrievalService();
+    const service = new BuildService(
+      config,
+      new WorkspaceService(config),
+      new FakeLLMService() as unknown as LLMService,
+      retrieval as unknown as RetrievalService,
+    );
+
+    await service.build();
+
+    const focusQueries = retrieval.queries.filter((query) =>
+      query.includes('démonstration outil solution candidate JUNO'),
+    );
+    expect(focusQueries).toHaveLength(2);
+    expect(retrieval.rerankQueries).toHaveLength(3);
+    expect(focusQueries.some((query) => query.startsWith('One '))).toBe(false);
+    expect(focusQueries.some((query) => query.startsWith('Two '))).toBe(false);
+    expect(focusQueries.some((query) => query.startsWith('Three '))).toBe(false);
+  });
+
+  it('filters index/log pages and prefers newer dated context in final prompts', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'templates'), { recursive: true });
+    await mkdir(path.join(root, 'deliverables'), { recursive: true });
+
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n', 'utf8');
+    await writeFile(
+      path.join(root, 'templates', 'brief.md'),
+      ['# Brief', '', '[[INSTRUCTION: Summarize decisions.]]'].join('\n'),
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    const llm = new FakeLLMService();
+    const service = new BuildService(
+      config,
+      new WorkspaceService(config),
+      llm as unknown as LLMService,
+      new FinalContextRetrievalService() as unknown as RetrievalService,
+    );
+
+    await service.build();
+
+    const userPrompt = llm.lastJsonRequest?.user ?? '';
+    expect(userPrompt).not.toContain('wiki/index.md');
+    expect(userPrompt).not.toContain('wiki/log.md');
+    expect(userPrompt.indexOf('wiki/sources/new-decision.md')).toBeLessThan(
+      userPrompt.indexOf('wiki/sources/old-decision.md'),
+    );
   });
 
   it('rebuilds changed-only deliverables when build-context changes', async () => {

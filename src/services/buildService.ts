@@ -25,6 +25,28 @@ import type { RetrievalService } from './retrievalService.ts';
 import type { TraceLogger } from './traceLogger.ts';
 import type { WorkspaceService } from './workspaceService.ts';
 
+const FINAL_CONTEXT_EXCLUDED_PATHS = new Set(['wiki/index.md', 'wiki/log.md']);
+
+function extractMostRecentDateMs(result: SearchResult): number | undefined {
+  const text = `${result.page.relativePath}\n${result.page.name}\n${result.page.content}`;
+  const dates: number[] = [];
+
+  for (const match of text.matchAll(/\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b/g)) {
+    dates.push(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  }
+
+  for (const match of text.matchAll(/\b(\d{1,2})[/-](\d{1,2})[/-](20\d{2})\b/g)) {
+    dates.push(Date.UTC(Number(match[3]), Number(match[2]) - 1, Number(match[1])));
+  }
+
+  for (const match of text.matchAll(/\b(\d{2})(\d{2})(20\d{2})\b/g)) {
+    dates.push(Date.UTC(Number(match[3]), Number(match[2]) - 1, Number(match[1])));
+  }
+
+  const validDates = dates.filter((date) => Number.isFinite(date));
+  return validDates.length > 0 ? Math.max(...validDates) : undefined;
+}
+
 export class BuildService {
   private readonly config: AppConfig;
   private readonly workspace: WorkspaceService;
@@ -32,6 +54,7 @@ export class BuildService {
   private readonly retrieval: RetrievalService;
   private readonly logger?: TraceLogger;
   private readonly budget: PromptBudgetService;
+  private readonly contextSearchCache = new Map<string, Promise<SearchResult[]>>();
 
   constructor(
     config: AppConfig,
@@ -150,6 +173,27 @@ export class BuildService {
     return [...byPath.values()];
   }
 
+  private searchContextCached(
+    query: string,
+    options: { limit?: number; includeRaw?: boolean; rerank?: boolean },
+  ): Promise<SearchResult[]> {
+    const key = JSON.stringify({
+      query,
+      limit: options.limit,
+      includeRaw: options.includeRaw ?? false,
+      rerank: options.rerank ?? true,
+    });
+    let cached = this.contextSearchCache.get(key);
+    if (!cached) {
+      cached = this.retrieval.search(query, options).catch((error) => {
+        this.contextSearchCache.delete(key);
+        throw error;
+      });
+      this.contextSearchCache.set(key, cached);
+    }
+    return cached;
+  }
+
   private async renderSingleSlotText(
     template: TemplateDocument,
     buildContext: BuildContext,
@@ -183,7 +227,11 @@ export class BuildService {
     buildContext: BuildContext,
     wikiPages: WikiPage[],
     onBatch?: (batchIndex: number, batchCount: number, topContextPages: string[]) => void,
-    onBatchLlm?: (batchIndex: number, batchCount: number, topContextPages: string[]) => void,
+    onBatchLlm?: (
+      batchIndex: number,
+      batchCount: number,
+      topContextPages: string[],
+    ) => void,
   ): Promise<string> {
     if (template.instructions.length === 0) {
       const outputFrontmatter = sanitizeFrontmatter(template.frontmatter);
@@ -211,9 +259,7 @@ export class BuildService {
     for (let batchIndex = 0; batchIndex < batchCount; batchIndex++) {
       const batch = batches[batchIndex].slots;
       const topContextPages = [
-        ...new Set(
-          batch.flatMap((s) => s.context.map((r) => r.page.relativePath)),
-        ),
+        ...new Set(batch.flatMap((s) => s.context.map((r) => r.page.relativePath))),
       ].slice(0, 8);
       onBatch?.(batchIndex, batchCount, topContextPages);
       onBatchLlm?.(batchIndex, batchCount, topContextPages);
@@ -262,42 +308,62 @@ export class BuildService {
         ),
       ),
     ];
+    const templateFocusContextEntries: Array<[string, SearchResult[]]> =
+      await Promise.all(
+        templateFocusQueries.slice(0, 6).map(
+          async (focus) =>
+            [
+              focus,
+              await this.searchContextCached(focus, {
+                limit: 15,
+                includeRaw: false,
+                rerank: false,
+              }),
+            ] as [string, SearchResult[]],
+        ),
+      );
+    const templateFocusContexts = new Map<string, SearchResult[]>(
+      templateFocusContextEntries,
+    );
     return Promise.all(
       template.instructions.map(async (instruction) => {
-        const primaryContext = await this.retrieval.search(
+        const primaryContext = await this.searchContextCached(
           `${instruction.headingPath.join(' ')} ${instruction.instruction}`,
           {
             limit: Math.max(24, this.config.retrieval.vector.maxResults),
             includeRaw: false,
+            rerank: false,
           },
         );
+        const instructionFocusQueries = this.extractFocusQueries(
+          instruction.instruction,
+        ).filter((focus) => !templateFocusContexts.has(focus));
         const focusContexts = await Promise.all(
-          [
-            ...new Set([
-              ...this.extractFocusQueries(instruction.instruction),
-              ...templateFocusQueries,
-            ]),
-          ]
-            .slice(0, 6)
-            .map((focus) =>
-              this.retrieval.search(
-                `${instruction.headingPath.join(' ')} ${focus}`,
-                {
-                  limit: 15,
-                  includeRaw: false,
-                },
-              ),
-            ),
+          instructionFocusQueries.slice(0, 6).map((focus) =>
+            this.searchContextCached(`${instruction.headingPath.join(' ')} ${focus}`, {
+              limit: 15,
+              includeRaw: false,
+              rerank: false,
+            }),
+          ),
         );
+        const rerankQuery = `${instruction.headingPath.join(' ')} ${instruction.instruction}`;
+        const mergedContext = this.mergeContextResults(
+          [primaryContext, ...templateFocusContexts.values(), ...focusContexts].flat(),
+        );
+        const rankedContext =
+          typeof this.retrieval.rerankResults === 'function'
+            ? await this.retrieval.rerankResults(rerankQuery, mergedContext, {
+                limit: Math.max(24, this.config.retrieval.vector.maxResults),
+              })
+            : mergedContext;
+        const finalContext = this.prepareFinalContext(rankedContext);
         return {
           id: instruction.id,
           instruction: instruction.instruction,
           headingPath: instruction.headingPath,
           surroundingText: instruction.surroundingText,
-          context: this.expandRelatedContext(
-            this.mergeContextResults([primaryContext, ...focusContexts].flat()),
-            wikiPageByPath,
-          ),
+          context: this.expandRelatedContext(finalContext, wikiPageByPath),
         };
       }),
     );
@@ -327,7 +393,10 @@ export class BuildService {
         bestByPath.set(result.page.relativePath, {
           ...result,
           relatedPaths: [
-            ...new Set([...(existing?.relatedPaths ?? []), ...(result.relatedPaths ?? [])]),
+            ...new Set([
+              ...(existing?.relatedPaths ?? []),
+              ...(result.relatedPaths ?? []),
+            ]),
           ],
         });
       } else if (result.relatedPaths?.length) {
@@ -337,6 +406,21 @@ export class BuildService {
       }
     }
     return [...bestByPath.values()].sort((a, b) => b.score - a.score);
+  }
+
+  private prepareFinalContext(results: SearchResult[]): SearchResult[] {
+    return results
+      .filter((result) => !FINAL_CONTEXT_EXCLUDED_PATHS.has(result.page.relativePath))
+      .sort((a, b) => {
+        const aDate = extractMostRecentDateMs(a);
+        const bDate = extractMostRecentDateMs(b);
+        if (aDate !== undefined && bDate !== undefined && aDate !== bDate) {
+          return bDate - aDate;
+        }
+        if (aDate !== undefined && bDate === undefined) return -1;
+        if (aDate === undefined && bDate !== undefined) return 1;
+        return b.score - a.score;
+      });
   }
 
   private expandRelatedContext(
@@ -352,6 +436,7 @@ export class BuildService {
       for (const relatedPath of result.relatedPaths ?? []) {
         if (relatedCount >= maxRelated) return expanded;
         if (!relatedPath.startsWith('wiki/') || seen.has(relatedPath)) continue;
+        if (FINAL_CONTEXT_EXCLUDED_PATHS.has(relatedPath)) continue;
         const page = wikiPageByPath.get(relatedPath);
         if (!page || page.type === 'answer') continue;
         seen.add(relatedPath);
@@ -446,7 +531,9 @@ export class BuildService {
           current.map((slot) => slot.id),
           [
             ...new Set(
-              current.flatMap((slot) => slot.context.map((result) => result.page.relativePath)),
+              current.flatMap((slot) =>
+                slot.context.map((result) => result.page.relativePath),
+              ),
             ),
           ],
           chars,
@@ -506,11 +593,17 @@ export class BuildService {
 
     return {
       templates: templatePlans,
-      estimatedRequests: templatePlans.reduce((sum, plan) => sum + plan.batches.length, 0),
+      estimatedRequests: templatePlans.reduce(
+        (sum, plan) => sum + plan.batches.length,
+        0,
+      ),
       estimatedInputTokens: templatePlans.reduce(
         (sum, plan) =>
           sum +
-          plan.batches.reduce((batchSum, batch) => batchSum + batch.estimatedInputTokens, 0),
+          plan.batches.reduce(
+            (batchSum, batch) => batchSum + batch.estimatedInputTokens,
+            0,
+          ),
         0,
       ),
       limits: this.config.limits,

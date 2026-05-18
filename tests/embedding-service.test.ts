@@ -1,3 +1,6 @@
+import { mkdtemp } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EmbeddingService } from '../src/services/embeddingService.ts';
 import { LLMService } from '../src/services/llmService.ts';
@@ -79,6 +82,27 @@ describe('embedding service', () => {
         [2, 2],
       ],
     );
+  });
+
+  it('caches embeddings persistently when cache directory is provided', async () => {
+    const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-embedding-cache-'));
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          data: [{ index: 0, embedding: [1, 1] }],
+        }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      new EmbeddingService(createConfig(), undefined, cacheDir).embed(['a']),
+    ).resolves.toEqual([[1, 1]]);
+    await expect(
+      new EmbeddingService(createConfig(), undefined, cacheDir).embed(['a']),
+    ).resolves.toEqual([[1, 1]]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('rejects incomplete embedding responses', async () => {

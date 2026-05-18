@@ -55,6 +55,7 @@ const STOP_WORDS = new Set([
   'donner',
   'resume',
 ]);
+const RERANK_RESULT_MAX_CHARS = 1200;
 
 function tokenize(text: string): string[] {
   return (
@@ -109,6 +110,19 @@ function scoreText(queryTokens: string[], text: string): number {
     if (tokens.has(token)) score += 1;
   }
   return score;
+}
+
+function resultText(result: SearchResult): string {
+  const text = [
+    result.page.name,
+    result.chunk?.headingPath.join(' > '),
+    result.chunk?.content ?? result.page.content,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+  return text.length > RERANK_RESULT_MAX_CHARS
+    ? `${text.slice(0, RERANK_RESULT_MAX_CHARS).trimEnd()}\n[truncated]`
+    : text;
 }
 
 function extractIndexRelatedPaths(queryTokens: string[], indexPage: WikiPage): string[] {
@@ -181,6 +195,7 @@ export class RetrievalService {
   private wikiPagesCache: Promise<WikiPage[]> | undefined;
   private vectorIndex: VectorIndexService | undefined;
   private readonly loggedVectorFallbacks = new Set<string>();
+  private vectorDisabledAfterError = false;
 
   constructor(workspace: WorkspaceService, config: AppConfig, logger?: TraceLogger) {
     this.workspace = workspace;
@@ -196,8 +211,12 @@ export class RetrievalService {
     this.vectorIndex ??= new VectorIndexService(
       this.config,
       this.workspace,
-      new EmbeddingService(this.config, this.logger),
-      new RerankService(this.config, this.logger),
+      new EmbeddingService(
+        this.config,
+        this.logger,
+        this.workspace.paths.queryEmbeddingCacheDir,
+      ),
+      new RerankService(this.config, this.logger, this.workspace.paths.rerankCacheDir),
     );
     return this.vectorIndex;
   }
@@ -213,9 +232,13 @@ export class RetrievalService {
 
   async search(
     query: string,
-    options?: { limit?: number; includeRaw?: boolean },
+    options?: { limit?: number; includeRaw?: boolean; rerank?: boolean },
   ): Promise<SearchResult[]> {
-    if (!options?.includeRaw && this.config.retrieval.vector.enabled) {
+    if (
+      !options?.includeRaw &&
+      this.config.retrieval.vector.enabled &&
+      !this.vectorDisabledAfterError
+    ) {
       if (!(await pathExists(this.workspace.paths.vectorIndexDir))) {
         await this.logVectorFallback('missing-index', query);
         return this.searchLexical(query, options);
@@ -224,6 +247,7 @@ export class RetrievalService {
       try {
         const vectorResults = await this.getVectorIndex().search(query, {
           limit: options?.limit,
+          rerank: options?.rerank,
         });
         const lexicalResults = await this.searchLexical(query, {
           ...options,
@@ -239,6 +263,7 @@ export class RetrievalService {
           options?.limit ?? this.config.retrieval.vector.maxResults,
         );
       } catch (error) {
+        this.vectorDisabledAfterError = true;
         await this.logVectorFallback('vector-error', query, error);
         // Keep retrieval robust for ingest/build/query/MCP: vector search is an
         // optimization, while lexical search is the compatibility fallback.
@@ -248,8 +273,38 @@ export class RetrievalService {
     return this.searchLexical(query, options);
   }
 
+  async rerankResults(
+    query: string,
+    results: SearchResult[],
+    options?: { limit?: number },
+  ): Promise<SearchResult[]> {
+    if (this.config.retrieval.vector.rerankEnabled === false || results.length === 0) {
+      return results;
+    }
+
+    const limit = Math.min(options?.limit ?? results.length, results.length);
+    try {
+      const reranked = await new RerankService(
+        this.config,
+        this.logger,
+        this.workspace.paths.rerankCacheDir,
+      ).rerank(query, results.map(resultText), limit);
+      const ranked = reranked
+        .map((result) => {
+          const item = results[result.index];
+          return item ? { ...item, score: result.score } : undefined;
+        })
+        .filter((result): result is SearchResult => Boolean(result));
+      if (ranked.length === 0) return results.slice(0, limit);
+      return ranked;
+    } catch (error) {
+      await this.logVectorFallback('rerank-error', query, error);
+      return results;
+    }
+  }
+
   private async logVectorFallback(
-    reason: 'missing-index' | 'vector-error',
+    reason: 'missing-index' | 'vector-error' | 'rerank-error',
     query: string,
     error?: unknown,
   ): Promise<void> {
@@ -262,7 +317,9 @@ export class RetrievalService {
       indexPath: this.workspace.paths.vectorIndexDir,
       queryPreview: query.slice(0, 160),
       fallback: 'lexical',
-      ...(error ? { message: error instanceof Error ? error.message : String(error) } : {}),
+      ...(error
+        ? { message: error instanceof Error ? error.message : String(error) }
+        : {}),
     });
   }
 

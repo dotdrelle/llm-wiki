@@ -174,4 +174,27 @@ describe('vector index service', () => {
     const results = await service.search('expertise');
     expect(results[0]?.page.relativePath).toBe('wiki/fonctionnel.md');
   });
+
+  it('skips reranker when search rerank is false', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-vector-rerank-option-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await writeFile(
+      path.join(root, 'wiki', 'fonctionnel.md'),
+      '# Fonctionnel\n\nExpertise.\n',
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    const service = new VectorIndexService(
+      config,
+      new WorkspaceService(config),
+      new FakeEmbeddingService() as any,
+      new ThrowingRerankService() as any,
+    );
+
+    await service.buildIndex();
+
+    const results = await service.search('expertise', { rerank: false });
+    expect(results[0]?.page.relativePath).toBe('wiki/fonctionnel.md');
+  });
 });

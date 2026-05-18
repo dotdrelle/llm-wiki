@@ -97,6 +97,9 @@ export interface WorkspacePaths {
   claudePath: string;
   internalDir: string;
   logsDir: string;
+  cacheDir: string;
+  queryEmbeddingCacheDir: string;
+  rerankCacheDir: string;
   buildStatePath: string;
   rawDir: string;
   rawUntrackedDir: string;

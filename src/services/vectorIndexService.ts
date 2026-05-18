@@ -277,7 +277,10 @@ export class VectorIndexService {
     };
   }
 
-  async search(query: string, options?: { limit?: number }): Promise<SearchResult[]> {
+  async search(
+    query: string,
+    options?: { limit?: number; rerank?: boolean },
+  ): Promise<SearchResult[]> {
     const table = await this.openTable();
     if (!table) {
       throw new Error('Vector index is missing.');
@@ -292,6 +295,7 @@ export class VectorIndexService {
     const rerankCandidates = vectorRows.slice(0, this.config.retrieval.vector.rerankTopK);
     let rankedRows = vectorRows;
     if (
+      options?.rerank !== false &&
       this.config.retrieval.vector.rerankEnabled !== false &&
       rerankCandidates.length > 0
     ) {
