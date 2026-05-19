@@ -2200,7 +2200,7 @@ async function generateDirectoryPage(
   const content = tiles.length
     ? `<div class="tile-grid">${tiles.join('\n')}</div>`
     : '<p class="empty">No markdown files found in this folder.</p>';
-  const actions = isCreatableCollection(cleanRelativePath)
+  const actions = isCreatableCollection(cleanRelativePath) && cleanRelativePath !== 'deliverables'
     ? `<a class="action-link" href="${escapeHref(newMarkdownHref(cleanRelativePath))}" title="Créer un markdown">+</a>`
     : '';
   const body = `${sidebar}<main class="content">${renderTopbar(`/${cleanRelativePath}`, actions)}<div class="hero"><h1>${escapeHtml(title)}</h1><p>Markdown files under <code>${escapeHtml(cleanRelativePath)}/</code>.</p></div>${content}</main>`;
