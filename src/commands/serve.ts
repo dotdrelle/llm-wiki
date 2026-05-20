@@ -3104,7 +3104,7 @@ export default async function serveCmd(
             process.env.PRODUCTION_MCP_PROXY_URL ??
             `http://localhost:${MCP_PRODUCTION_PORT}/mcp/`;
           const proxyTokens: Record<string, string> = {
-            [wikiTarget]: process.env.WIKI_MCP_AUTH_TOKEN || config.mcp.accessKey || '',
+            [wikiTarget]: config.mcp.accessKey || '',
             [cmeTarget]: process.env.CME_MCP_AUTH_TOKEN ?? '',
             [mailerTarget]: process.env.MAILER_MCP_AUTH_TOKEN ?? '',
             [productionTarget]: process.env.PRODUCTION_MCP_AUTH_TOKEN ?? '',
