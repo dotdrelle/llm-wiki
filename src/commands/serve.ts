@@ -3103,13 +3103,14 @@ export default async function serveCmd(
           const productionTarget =
             process.env.PRODUCTION_MCP_PROXY_URL ??
             `http://localhost:${MCP_PRODUCTION_PORT}/mcp/`;
+          const normalizeTarget = (u: string) => u.replace(/\/+$/, '');
           const proxyTokens: Record<string, string> = {
-            [wikiTarget]: config.mcp.accessKey || '',
-            [cmeTarget]: process.env.CME_MCP_AUTH_TOKEN ?? '',
-            [mailerTarget]: process.env.MAILER_MCP_AUTH_TOKEN ?? '',
-            [productionTarget]: process.env.PRODUCTION_MCP_AUTH_TOKEN ?? '',
+            [normalizeTarget(wikiTarget)]: config.mcp.accessKey || '',
+            [normalizeTarget(cmeTarget)]: process.env.CME_MCP_AUTH_TOKEN ?? '',
+            [normalizeTarget(mailerTarget)]: process.env.MAILER_MCP_AUTH_TOKEN ?? '',
+            [normalizeTarget(productionTarget)]: process.env.PRODUCTION_MCP_AUTH_TOKEN ?? '',
           };
-          const bearer = proxyTokens[target] ?? '';
+          const bearer = proxyTokens[normalizeTarget(target)] ?? '';
           const browserOverrides = !!req.headers['authorization'];
           await proxyPost(
             req,

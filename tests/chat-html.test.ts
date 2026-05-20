@@ -18,12 +18,12 @@ describe('chat html', () => {
     }
   });
 
-  it('opens production status panel when production tools return data', () => {
+  it('does not auto-open production panel on tool results', () => {
     const [script] = chatScripts();
 
-    expect(script).toContain('updateProductionFromPayload(data,{open:true,poll:false});');
+    expect(script).toContain('updateProductionFromPayload(data,{open:false,poll:false});');
     expect(script).toContain(
-      'updateProductionFromPayload(data,{open:true,poll:!productionTerminal(data.job?.status)});',
+      'updateProductionFromPayload(data,{open:false,poll:!productionTerminal(data.job?.status)});',
     );
   });
 });

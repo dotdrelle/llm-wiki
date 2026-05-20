@@ -292,7 +292,7 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .doc-content ul,.doc-content ol{padding-left:1.4em;margin:.55em 0}
 .doc-content code{font-family:var(--font-mono);background:var(--panel-soft);border:1px solid var(--border);border-radius:5px;padding:1px 5px}
 .doc-content pre{overflow:auto;background:var(--panel-soft);border:1px solid var(--border);border-radius:9px;padding:12px}
-.prompt-drawer{position:fixed;inset:0;z-index:997;pointer-events:none}
+.prompt-drawer{position:fixed;top:44px;left:0;right:0;bottom:0;z-index:997;pointer-events:none}
 .prompt-drawer.open{pointer-events:auto}
 .prompt-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.22);opacity:0;transition:opacity .2s}
 .prompt-drawer.open .prompt-backdrop{opacity:1}
@@ -310,7 +310,7 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .prompt-actions{display:flex;justify-content:flex-end;gap:8px;padding-top:2px}
 .prompt-actions button{background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);cursor:pointer;padding:7px 10px;font-size:12px;font-family:var(--font-sans);font-weight:600;transition:all .2s}
 .prompt-actions button:hover{border-color:var(--accent);color:var(--accent)}
-.production-drawer{position:fixed;inset:0;z-index:996;pointer-events:none}
+.production-drawer{position:fixed;top:44px;left:0;right:0;bottom:0;z-index:996;pointer-events:none}
 .production-drawer.open{pointer-events:none}
 .production-panel{position:absolute;top:0;right:0;height:100%;width:min(420px,calc(100vw - 18px));background:var(--panel);border-left:1px solid var(--border);transform:translateX(100%);transition:transform .24s ease;display:flex;flex-direction:column}
 .production-drawer.open .production-panel{transform:translateX(0);pointer-events:auto}
@@ -1176,7 +1176,7 @@ function cardHTML(s) {
       <div class="secret-wrap" style="flex:1">
         <input type="password" value="\${esc(s.bearer||'')}" placeholder="Token Bearer (optionnel)"
           autocomplete="off" style="padding-right:34px;font-size:11px"
-          onchange="servers.find(x=>x.id==\${s.id}).bearer=this.value;saveServers()">
+          onchange="(function(el,id){const sv=servers.find(x=>x.id==id);if(!sv)return;sv.bearer=el.value;saveServers();if(sv.url)connectServer(id);})(this,\${s.id})">
         <div class="secret-actions">
           <button class="secret-btn" onclick="toggleReveal(this.closest('.secret-wrap').querySelector('input'),this)" title="Afficher/masquer">
             <svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -1184,7 +1184,9 @@ function cardHTML(s) {
         </div>
       </div>
       \${s.bearer
-        ? '<span class="key-saved show" style="flex-shrink:0">token &#x2713;</span>'
+        ? (s.status==='err'
+          ? '<span class="key-saved show" style="flex-shrink:0;background:rgba(192,57,43,.12);color:var(--err)">token &#x2717;</span>'
+          : '<span class="key-saved show" style="flex-shrink:0">token &#x2713;</span>')
         : s.injected
           ? '<span class="key-saved show" style="flex-shrink:0">token serveur &#x2713;</span>'
           : '<span style="font-size:10px;color:var(--muted);flex-shrink:0;font-family:var(--font-mono)">no auth</span>'}
@@ -1573,16 +1575,15 @@ function handleProductionToolResult(fn, args, result, ok) {
   const data=parseProductionJSON(result);
   if(!ok || !data) return;
   if(fn==='production_start_job' && data.jobId) {
-    updateProductionFromPayload(data,{open:true,poll:false});
+    updateProductionFromPayload(data,{open:false,poll:false});
     pollProductionJob({immediate:true});
   }
-  else if(fn==='production_job_status') updateProductionFromPayload(data,{open:true,poll:!productionTerminal(data.job?.status)});
-  else if(fn==='production_job_logs') updateProductionFromPayload(data,{open:true,poll:false});
-  else if(fn==='production_cancel_job') updateProductionFromPayload(data,{open:true,poll:false});
+  else if(fn==='production_job_status') updateProductionFromPayload(data,{open:false,poll:!productionTerminal(data.job?.status)});
+  else if(fn==='production_job_logs') updateProductionFromPayload(data,{open:false,poll:false});
+  else if(fn==='production_cancel_job') updateProductionFromPayload(data,{open:false,poll:false});
   else if(fn==='production_list_jobs' && Array.isArray(data.jobs) && data.jobs[0] && !productionState.jobId) {
     productionState.jobId=data.jobs[0].jobId;
     renderProductionPanel();
-    setProductionPanelVisible(true);
   }
 }
 
@@ -2293,9 +2294,9 @@ const LS = {USER_SERVERS: storageKey('mcpchat_user_servers')};
 
 function saveServers() {
   const defaults = window.__WIKI_CONFIG__?.mcpServers || [];
-  const data = servers.map(({id,name,url,bearer,enabled,status}) => {
-    const injected = defaults.some(d => d.name === name);
-    return {id,name,url,bearer:injected?'':(bearer||''),enabled:enabled&&status==='ok'};
+  const data = servers.map(s => {
+    const inDefaults = defaults.some(d => d.name === s.name);
+    return {id:s.id,name:s.name,url:s.url,bearer:inDefaults?'':(s.bearer||''),enabled:s.enabled&&s.status==='ok',injected:s.injected};
   });
   localStorage.setItem(LS.USER_SERVERS, JSON.stringify(data));
 }
@@ -2350,7 +2351,7 @@ function loadServers() {
         const override = defaults.find(d => d.name === s.name);
         const url = override ? override.url : s.url;
         const bearer = override ? (override.bearer||'') : (s.bearer||'');
-        const injected = !!override;
+        const injected = override ? true : (s.injected === true);
         servers.push({...s, url, bearer, injected, enabled:!!s.enabled, sessionId:null, status:'off', tools:[]});
         if(s.id >= nextId) nextId = s.id + 1;
       }
