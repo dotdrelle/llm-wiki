@@ -49,6 +49,10 @@ function localWindowRemainingMs(key: string): number | undefined {
   return remainingMs + readPositiveIntegerEnv('LLM_WIKI_RATE_LIMIT_RETRY_SAFETY_MS', 1_000);
 }
 
+function retryFallbackMs(): number {
+  return readPositiveIntegerEnv('LLM_WIKI_RATE_LIMIT_RETRY_MS', requestWindowMs());
+}
+
 export function providerRateLimitRetryDelayMs(options: {
   key: string;
   source?: { headers?: unknown };
@@ -64,7 +68,7 @@ export function providerRateLimitRetryDelayMs(options: {
       return Math.max(0, dateMs - Date.now());
     }
   }
-  return localWindowRemainingMs(options.key) ?? readPositiveIntegerEnv('LLM_WIKI_RATE_LIMIT_RETRY_MS', 65_000);
+  return localWindowRemainingMs(options.key) ?? retryFallbackMs();
 }
 
 export async function waitForProviderRateLimitRetry(options: {

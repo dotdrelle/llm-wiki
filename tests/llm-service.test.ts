@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { LLMService } from '../src/services/llmService.ts';
-import { resetProviderRateLimiterForTests } from '../src/services/rateLimiter.ts';
+import {
+  providerRateLimitRetryDelayMs,
+  resetProviderRateLimiterForTests,
+} from '../src/services/rateLimiter.ts';
 import type { AppConfig } from '../src/types.ts';
 
 function createConfig(): AppConfig {
@@ -206,6 +209,17 @@ describe('llm service', () => {
 
     expect(starts).toHaveLength(2);
     expect(starts[1] - starts[0]).toBeGreaterThanOrEqual(45);
+  });
+
+  it('uses the rate limit window as the 429 retry fallback', () => {
+    process.env.LLM_WIKI_RATE_LIMIT_WINDOW_MS = '60';
+
+    expect(
+      providerRateLimitRetryDelayMs({
+        key: `test-retry-fallback-${Date.now()}`,
+        source: { headers: {} },
+      }),
+    ).toBe(60);
   });
 
   it('waits and retries once after an HTTP 429 response', async () => {

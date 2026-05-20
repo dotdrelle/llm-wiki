@@ -2602,7 +2602,11 @@ async function proxyPost(
     const retryAfterDate = retryAfter ? Date.parse(retryAfter) : NaN;
     const fallbackMs = Math.max(
       0,
-      Number(process.env.LLM_WIKI_RATE_LIMIT_RETRY_MS ?? '65000'),
+      Number(
+        process.env.LLM_WIKI_RATE_LIMIT_RETRY_MS ??
+          process.env.LLM_WIKI_RATE_LIMIT_WINDOW_MS ??
+          '60000',
+      ),
     );
     const waitMs = Number.isFinite(retryAfterSeconds)
       ? Math.max(0, retryAfterSeconds * 1000)
