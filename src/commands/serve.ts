@@ -3110,11 +3110,12 @@ export default async function serveCmd(
             [productionTarget]: process.env.PRODUCTION_MCP_AUTH_TOKEN ?? '',
           };
           const bearer = proxyTokens[target] ?? '';
+          const browserOverrides = !!req.headers['authorization'];
           await proxyPost(
             req,
             res,
             target,
-            bearer ? { authorization: `Bearer ${bearer}` } : {},
+            !browserOverrides && bearer ? { authorization: `Bearer ${bearer}` } : {},
           );
           return;
         }
