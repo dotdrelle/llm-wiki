@@ -5,16 +5,22 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);height:
 ::-webkit-scrollbar{width:4px;height:4px}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 
+/* APP NAV */
+#app-nav{position:fixed;top:0;left:0;right:0;height:44px;z-index:1000;background:var(--panel);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;padding:0 12px}
+.app-nav-btn,.app-nav-link{height:30px;min-width:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:8px;background:var(--panel-soft);color:var(--muted);text-decoration:none;cursor:pointer;font-family:var(--font-sans);font-size:12px;font-weight:800;line-height:1;transition:border-color .2s,color .2s,background .2s}
+.app-nav-btn:hover,.app-nav-link:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.app-nav-link{padding:0 10px;gap:6px}
+.app-nav-title{min-width:0;font-size:13px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app-nav-spacer{flex:1}
+
 /* SIDEBAR */
-#sidebar{width:300px;min-width:300px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;transition:width .3s,min-width .3s}
+#sidebar{width:300px;min-width:300px;height:calc(100vh - 44px);margin-top:44px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;transition:width .3s,min-width .3s}
 #sidebar.collapsed{width:0;min-width:0}
 .sb-logo{padding:18px 16px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:9px}
 .sb-logo-mark{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;font-weight:800;flex-shrink:0}
 .sb-logo-main{min-width:0;flex:1}
 .sb-logo-text{font-size:16px;font-weight:800;letter-spacing:-.3px}
 .sb-logo-sub{font-size:10px;color:var(--muted);font-family:var(--font-mono);margin-top:1px}
-.sb-logo-back{margin-left:auto;color:var(--muted);text-decoration:none;font-size:11px;font-weight:700;padding:5px 8px;border:1px solid var(--border);border-radius:8px;background:var(--panel-soft);transition:border-color .2s,color .2s,background .2s;white-space:nowrap}
-.sb-logo-back:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .sb-scroll{flex:1;min-height:0;display:grid;grid-template-rows:minmax(96px,var(--history-pane-height,38%)) 10px minmax(180px,1fr);overflow:hidden}
 .sb-pane{min-height:0;overflow-y:auto;padding-bottom:12px}
 .sb-pane.history-pane{padding-bottom:8px}
@@ -92,10 +98,8 @@ input[type=password]{letter-spacing:3px}
 .tool-desc-t{color:var(--muted);font-size:10px;margin-top:1px}
 
 /* MAIN */
-#main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
+#main{flex:1;height:calc(100vh - 44px);margin-top:44px;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
 #topbar{padding:12px 18px;border-bottom:1px solid var(--border);background:var(--panel);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.tb-toggle{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:5px;border-radius:7px;line-height:1;transition:all .2s}
-.tb-toggle:hover{color:var(--text);background:var(--panel-soft)}
 .tb-model{font-family:var(--font-mono);font-size:11px;color:var(--muted2);background:var(--panel-soft);border:1px solid var(--border);padding:4px 10px;border-radius:99px}
 .tb-mcps{display:flex;gap:5px;flex-wrap:wrap}
 .tb-mcp-pill{font-size:10px;font-family:var(--font-mono);font-weight:500;padding:3px 8px;border-radius:99px;background:rgba(79,126,255,.12);border:1px solid rgba(79,126,255,.25);color:var(--accent)}
@@ -359,14 +363,21 @@ body:not(.connectors-mode) #connectors-view{display:none}
 @media (max-width: 720px){.doc-panel{inset:14px}.doc-content{padding:18px}}
 hr.divider{border:none;border-top:1px solid var(--border);margin:8px 12px}`;
 
-const CHAT_BODY = `<aside id="sidebar">
+const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
+  <button class="app-nav-btn" type="button" onclick="appBack()" title="Retour" aria-label="Retour">‹</button>
+  <a class="app-nav-link" href="/" title="Retour au wiki" aria-label="Retour au wiki">Wiki</a>
+  <button class="app-nav-btn" type="button" onclick="toggleSidebar()" title="Afficher ou masquer la sidebar" aria-label="Afficher ou masquer la sidebar">☰</button>
+  <div class="app-nav-title">MCP Chat</div>
+  <div class="app-nav-spacer"></div>
+</nav>
+
+<aside id="sidebar">
   <div class="sb-logo">
     <div class="sb-logo-mark">M</div>
     <div class="sb-logo-main">
       <div class="sb-logo-text">MCP Chat</div>
       <div class="sb-logo-sub">multi-server</div>
     </div>
-    <a class="sb-logo-back" href="/">Wiki</a>
   </div>
   <div class="sb-scroll" id="sidebar-split">
     <div class="sb-pane history-pane" id="history-pane">
@@ -419,7 +430,6 @@ const CHAT_BODY = `<aside id="sidebar">
 
 <div id="main">
   <div id="topbar">
-    <button class="tb-toggle" onclick="toggleSidebar()">☰</button>
     <span class="tb-model" id="model-badge">gpt-4o</span>
     <div class="tb-mcps" id="tb-mcps"></div>
     <div class="tb-actions">
@@ -612,6 +622,10 @@ function languageInstruction() {
 function notify(msg, type='s') {
   const el=$('notif'); el.textContent=msg; el.className=\`show \${type}\`;
   clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3200);
+}
+function appBack() {
+  if(history.length>1) history.back();
+  else location.assign('/');
 }
 
 function autoResize(ta) {
@@ -1220,10 +1234,46 @@ async function mcpRPC(server, method, params) {
   const res = await fetch(mcpProxyUrl(server), {method: 'POST', headers, body: JSON.stringify(body)});
   const sid = res.headers.get('Mcp-Session-Id');
   if (sid) server.sessionId = sid;
-  if (!res.ok) throw new Error(\`HTTP \${res.status}\`);
+  if (!res.ok) {
+    const raw=await res.text().catch(()=>'');
+    const authUrl=extractOAuthUrl(res,raw);
+    if(authUrl) {
+      openOAuthWindow(authUrl,server);
+      throw new Error(\`Authentification requise pour \${server.name}. La page OAuth a été ouverte hors du chat.\`);
+    }
+    throw new Error(raw ? \`HTTP \${res.status}: \${raw.slice(0,180)}\` : \`HTTP \${res.status}\`);
+  }
   const ct = res.headers.get('content-type') || '';
   if (ct.includes('text/event-stream')) return await readSSE(res);
   return await res.json();
+}
+
+function extractOAuthUrl(response, raw) {
+  const candidates=[
+    response.headers.get('location'),
+    response.headers.get('www-authenticate'),
+    raw,
+  ].filter(Boolean).join('\\n');
+  try {
+    const data=raw ? JSON.parse(raw) : null;
+    const direct=data?.authorizationUrl||data?.authorization_url||data?.authUrl||data?.auth_url||data?.url||data?.loginUrl||data?.login_url;
+    if(typeof direct==='string' && /^https?:\\/\\//i.test(direct)) return direct;
+  } catch {}
+  const resourceMatch=candidates.match(/resource_metadata="?([^",\\s]+)"?/i);
+  if(resourceMatch?.[1] && /^https?:\\/\\//i.test(resourceMatch[1])) return resourceMatch[1];
+  const authMatch=candidates.match(/authorization_uri="?([^",\\s]+)"?/i) || candidates.match(/authorization_url="?([^",\\s]+)"?/i);
+  if(authMatch?.[1] && /^https?:\\/\\//i.test(authMatch[1])) return authMatch[1];
+  const urlMatch=candidates.match(/https?:\\/\\/[^\\s"'<>]+/i);
+  return urlMatch?.[0] || '';
+}
+
+function openOAuthWindow(url, server) {
+  const popup=window.open(url,'mcp-oauth','noopener,noreferrer,width=980,height=780');
+  if(popup) {
+    notify(\`Auth OAuth ouverte pour \${server.name}. Revenez ici puis reconnectez le connecteur.\`);
+  } else {
+    notify(\`Popup bloquée pour \${server.name}. Ouvrez l'autorisation depuis le navigateur.\`,'e');
+  }
 }
 
 async function mcpNotify(server, method, params) {

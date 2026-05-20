@@ -2629,6 +2629,10 @@ async function proxyPost(
   const respSid = upstream.headers.get('mcp-session-id');
   const respHeaders: Record<string, string> = { 'content-type': ct };
   if (respSid) respHeaders['mcp-session-id'] = respSid;
+  for (const header of ['location', 'www-authenticate']) {
+    const value = upstream.headers.get(header);
+    if (value) respHeaders[header] = value;
+  }
 
   res.writeHead(upstream.status, respHeaders);
   if (upstream.body) {
