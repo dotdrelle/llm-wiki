@@ -1183,7 +1183,11 @@ function cardHTML(s) {
           </button>
         </div>
       </div>
-      \${s.bearer ? '<span class="key-saved show" style="flex-shrink:0">token &#x2713;</span>' : '<span style="font-size:10px;color:var(--muted);flex-shrink:0;font-family:var(--font-mono)">no auth</span>'}
+      \${s.bearer
+        ? '<span class="key-saved show" style="flex-shrink:0">token &#x2713;</span>'
+        : s.injected
+          ? '<span class="key-saved show" style="flex-shrink:0">token serveur &#x2713;</span>'
+          : '<span style="font-size:10px;color:var(--muted);flex-shrink:0;font-family:var(--font-mono)">no auth</span>'}
     </div>
     \${toolsHTML}
   </div>\`;
@@ -2346,7 +2350,8 @@ function loadServers() {
         const override = defaults.find(d => d.name === s.name);
         const url = override ? override.url : s.url;
         const bearer = override ? (override.bearer||'') : (s.bearer||'');
-        servers.push({...s, url, bearer, enabled:!!s.enabled, sessionId:null, status:'off', tools:[]});
+        const injected = !!override;
+        servers.push({...s, url, bearer, injected, enabled:!!s.enabled, sessionId:null, status:'off', tools:[]});
         if(s.id >= nextId) nextId = s.id + 1;
       }
       renderCards();
@@ -2354,7 +2359,11 @@ function loadServers() {
     }
   } catch {}
   // No saved state (or stale) — seed from server config
-  for (const s of defaults) addServer(s.name, s.url, s.bearer||'');
+  for (const s of defaults) {
+    const id=nextId++;
+    servers.push({id, name:s.name, url:s.url, bearer:s.bearer||'', injected:true, sessionId:null, enabled:false, status:'off', tools:[]});
+  }
+  renderCards(); saveServers();
 }
 
 // ── Init ────────────────────────────────────────────────────────────────────
