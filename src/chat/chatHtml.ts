@@ -1268,8 +1268,9 @@ function extractOAuthUrl(response, raw) {
 }
 
 function openOAuthWindow(url, server) {
-  const popup=window.open(url,'mcp-oauth','noopener,noreferrer,width=980,height=780');
+  const popup=window.open(url,'mcp-oauth','width=980,height=780');
   if(popup) {
+    try { popup.opener=null; } catch {}
     notify(\`Auth OAuth ouverte pour \${server.name}. Revenez ici puis reconnectez le connecteur.\`);
   } else {
     notify(\`Popup bloquée pour \${server.name}. Ouvrez l'autorisation depuis le navigateur.\`,'e');
