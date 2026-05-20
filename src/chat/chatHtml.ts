@@ -10,8 +10,11 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);height:
 #sidebar.collapsed{width:0;min-width:0}
 .sb-logo{padding:18px 16px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:9px}
 .sb-logo-mark{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;font-weight:800;flex-shrink:0}
+.sb-logo-main{min-width:0;flex:1}
 .sb-logo-text{font-size:16px;font-weight:800;letter-spacing:-.3px}
 .sb-logo-sub{font-size:10px;color:var(--muted);font-family:var(--font-mono);margin-top:1px}
+.sb-logo-back{margin-left:auto;color:var(--muted);text-decoration:none;font-size:11px;font-weight:700;padding:5px 8px;border:1px solid var(--border);border-radius:8px;background:var(--panel-soft);transition:border-color .2s,color .2s,background .2s;white-space:nowrap}
+.sb-logo-back:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .sb-scroll{flex:1;min-height:0;display:grid;grid-template-rows:minmax(96px,var(--history-pane-height,38%)) 10px minmax(180px,1fr);overflow:hidden}
 .sb-pane{min-height:0;overflow-y:auto;padding-bottom:12px}
 .sb-pane.history-pane{padding-bottom:8px}
@@ -158,7 +161,7 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .msg.assistant .msg-content{flex:1}
 .msg.user .msg-content{align-items:flex-end}
 .bubble{font-size:14px;line-height:1.72;word-break:break-word}
-.msg.user .bubble{width:min(30vw,460px);max-width:100%;background:transparent;border:0;border-radius:0;padding:4px 0;white-space:pre-wrap;text-align:right}
+.msg.user .bubble{width:max-content;max-width:min(30vw,460px);background:transparent;border:0;border-radius:0;padding:4px 0;white-space:pre-wrap;text-align:left}
 .msg.assistant .bubble{flex:1;min-width:0;padding:2px 0;white-space:normal}
 .msg-actions{display:flex;gap:6px;opacity:.45;transition:opacity .2s}
 .msg:hover .msg-actions{opacity:1}
@@ -183,7 +186,7 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .trace-s{margin-top:1px;font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .trace-link{flex:0 0 auto;width:18px;height:1px;background:var(--border);position:relative}
 .trace-link::after{content:'';position:absolute;right:0;top:-3px;border-left:5px solid var(--border);border-top:3.5px solid transparent;border-bottom:3.5px solid transparent}
-@media (max-width: 720px){.msg.user .bubble{width:min(80vw,100%)}.trace-flow{align-items:stretch;flex-direction:column}.trace-link{width:1px;height:16px;margin-left:18px}.trace-link::after{right:-3px;top:auto;bottom:0;border-left:3.5px solid transparent;border-right:3.5px solid transparent;border-top:5px solid var(--border);border-bottom:0}.trace-tile{max-width:100%}}
+@media (max-width: 720px){.msg.user .bubble{width:max-content;max-width:min(80vw,100%)}.trace-flow{align-items:stretch;flex-direction:column}.trace-link{width:1px;height:16px;margin-left:18px}.trace-link::after{right:-3px;top:auto;bottom:0;border-left:3.5px solid transparent;border-right:3.5px solid transparent;border-top:5px solid var(--border);border-bottom:0}.trace-tile{max-width:100%}}
 .bubble p{margin:0 0 .6em}.bubble p:last-child{margin:0}
 .bubble h1,.bubble h2,.bubble h3,.bubble h4{font-weight:700;margin:.8em 0 .3em;line-height:1.3}
 .bubble h1{font-size:1.15em}.bubble h2{font-size:1.05em}.bubble h3,.bubble h4{font-size:.95em}
@@ -196,6 +199,7 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .bubble th,.bubble td{border:1px solid var(--border);padding:4px 9px}
 .bubble th{background:var(--panel-deep);font-weight:600}
 .bubble a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+.bubble .instruction-ref{color:var(--warn);font-family:var(--font-mono);font-size:.92em;background:rgba(199,168,0,.08);border:1px solid rgba(199,168,0,.22);border-radius:5px;padding:1px 5px;white-space:nowrap}
 .stream-cursor::after{content:'▋';animation:blink .8s step-end infinite;color:var(--accent);margin-left:1px}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
 .tc-block{margin-top:12px;background:var(--panel-soft);border:1px solid var(--border);border-radius:12px;overflow:hidden;font-family:var(--font-mono);font-size:12px}
@@ -288,7 +292,7 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .prompt-drawer.open{pointer-events:auto}
 .prompt-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.22);opacity:0;transition:opacity .2s}
 .prompt-drawer.open .prompt-backdrop{opacity:1}
-.prompt-panel{position:absolute;top:0;right:0;height:100%;width:min(460px,calc(100vw - 18px));background:var(--panel);border-left:1px solid var(--border);box-shadow:-18px 0 45px rgba(0,0,0,.16);transform:translateX(100%);transition:transform .24s ease;display:flex;flex-direction:column}
+.prompt-panel{position:absolute;top:0;right:0;height:100%;width:min(460px,calc(100vw - 18px));background:var(--panel);border-left:1px solid var(--border);transform:translateX(100%);transition:transform .24s ease;display:flex;flex-direction:column}
 .prompt-drawer.open .prompt-panel{transform:translateX(0)}
 .prompt-head{display:flex;align-items:center;gap:10px;padding:15px 16px;border-bottom:1px solid var(--border)}
 .prompt-title{flex:1;min-width:0}
@@ -304,7 +308,7 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .prompt-actions button:hover{border-color:var(--accent);color:var(--accent)}
 .production-drawer{position:fixed;inset:0;z-index:996;pointer-events:none}
 .production-drawer.open{pointer-events:none}
-.production-panel{position:absolute;top:0;right:0;height:100%;width:min(420px,calc(100vw - 18px));background:var(--panel);border-left:1px solid var(--border);box-shadow:-18px 0 45px rgba(0,0,0,.14);transform:translateX(100%);transition:transform .24s ease;display:flex;flex-direction:column}
+.production-panel{position:absolute;top:0;right:0;height:100%;width:min(420px,calc(100vw - 18px));background:var(--panel);border-left:1px solid var(--border);transform:translateX(100%);transition:transform .24s ease;display:flex;flex-direction:column}
 .production-drawer.open .production-panel{transform:translateX(0);pointer-events:auto}
 .production-head{display:flex;align-items:center;gap:10px;padding:15px 16px;border-bottom:1px solid var(--border)}
 .production-title{flex:1;min-width:0}
@@ -358,10 +362,11 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:8px 12px}`;
 const CHAT_BODY = `<aside id="sidebar">
   <div class="sb-logo">
     <div class="sb-logo-mark">M</div>
-    <div>
+    <div class="sb-logo-main">
       <div class="sb-logo-text">MCP Chat</div>
       <div class="sb-logo-sub">multi-server</div>
     </div>
+    <a class="sb-logo-back" href="/">Wiki</a>
   </div>
   <div class="sb-scroll" id="sidebar-split">
     <div class="sb-pane history-pane" id="history-pane">
@@ -414,7 +419,7 @@ const CHAT_BODY = `<aside id="sidebar">
 
 <div id="main">
   <div id="topbar">
-    <a class="tb-back" href="/">← Wiki</a><button class="tb-toggle" onclick="toggleSidebar()">☰</button>
+    <button class="tb-toggle" onclick="toggleSidebar()">☰</button>
     <span class="tb-model" id="model-badge">gpt-4o</span>
     <div class="tb-mcps" id="tb-mcps"></div>
     <div class="tb-actions">
@@ -560,6 +565,7 @@ let skillsCache = null;
 let skillAcIdx = -1;
 let skillAcItems = [];
 let skillEditingName = null;
+const SKILL_AC_LIMIT = 8;
 let productionState = {
   jobId: null,
   job: null,
@@ -592,7 +598,10 @@ Règles spécifiques llm-wiki:
 Si plusieurs serveurs MCP sont actifs, choisis les outils selon le domaine de la question.\`;
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-function renderMd(t) { try { return typeof marked!=='undefined' ? marked.parse(t||'') : esc(t||''); } catch { return esc(t||''); } }
+function renderInstructionRefs(html) {
+  return String(html||'').replace(/\\[\\[([^\\]\\n]+)\\]\\]/g,(_,label)=>\`<span class="instruction-ref">[[\${esc(label.trim())}]]</span>\`);
+}
+function renderMd(t) { try { return renderInstructionRefs(typeof marked!=='undefined' ? marked.parse(t||'') : esc(t||'')); } catch { return renderInstructionRefs(esc(t||'')); } }
 const SIDEBAR_SPLIT_KEY = 'mcpchat_sidebar_history_height';
 
 function languageInstruction() {
@@ -631,7 +640,9 @@ async function fetchSkillsAc(force=false){
 function showSkillAc(filter){
   const el=$('skill-ac');
   const normalized=String(filter||'').toLowerCase();
-  const filtered=(skillsCache||[]).filter(s=>String(s.name||'').toLowerCase().startsWith(normalized));
+  const filtered=(skillsCache||[])
+    .filter(s=>String(s.name||'').toLowerCase().startsWith(normalized))
+    .slice(0,SKILL_AC_LIMIT);
   skillAcItems=filtered;
   if(!filtered.length){hideSkillAc();return;}
   skillAcIdx=-1;
@@ -644,12 +655,12 @@ function selectSkillAc(idx){
   const skill=skillAcItems[idx];
   if(!skill)return;
   const ta=$('chat-input');
-  ta.value=skill.body;
+  ta.value='/' + skill.name;
   ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,130)+'px';
   hideSkillAc();
   ta.focus();
   if(skill.params&&skill.params.length){
-    notify('Remplacez les paramètres : '+skill.params.map(p=>'{'+p+'}').join(', '),'s');
+    notify('Paramètres attendus : '+skill.params.map(p=>'{'+p+'}').join(', '),'s');
   }
 }
 
@@ -831,7 +842,7 @@ function closeSystemPrompt() {
 }
 
 function saveSystemPrompt() {
-  localStorage.setItem('mcpchat_system_prompt', $('system-prompt').value);
+  localStorage.setItem(storageKey('mcpchat_system_prompt'), $('system-prompt').value);
 }
 
 function resetSystemPrompt() {
@@ -850,7 +861,7 @@ function newConversationId() {
 
 function titleFromMessages(sourceMessages=messages) {
   const firstUser=sourceMessages.find(m=>m.role==='user' && m.content);
-  const text=String(firstUser?.content || 'Nouvelle discussion').replace(/\\s+/g,' ').trim();
+  const text=String(firstUser?.displayContent || firstUser?.content || 'Nouvelle discussion').replace(/\\s+/g,' ').trim();
   return text.length>54 ? text.slice(0,53).trimEnd()+'…' : text;
 }
 
@@ -1590,6 +1601,47 @@ function clearChat() {
 
 function removeEmpty() { $('empty')?.remove(); }
 
+function findSkillByName(name) {
+  const wanted=String(name||'').toLowerCase();
+  return (skillsCache||[]).find(s=>String(s.name||'').toLowerCase()===wanted) || null;
+}
+
+async function resolveSkillInvocation(text) {
+  const match=/^\\/([A-Za-z0-9_-]+)(?:\\s+([\\s\\S]*))?$/.exec(String(text||'').trim());
+  if(!match) return {displayText:text,sendText:text,skill:null};
+  await fetchSkillsAc();
+  const skill=findSkillByName(match[1]);
+  if(!skill) return {displayText:text,sendText:text,skill:null};
+
+  const args=String(match[2]||'').trim().split(/\\s+/).filter(Boolean);
+  let body=String(skill.body||'').trim();
+  if(Array.isArray(skill.params)) {
+    for(const [i,param] of skill.params.entries()) {
+      const value=args[i] || '';
+      body=body.replaceAll(\`{\${param}}\`, value);
+    }
+  }
+  if(!body) return {displayText:text,sendText:text,skill:null};
+  return {
+    displayText:text,
+    sendText:body,
+    skill:{name:skill.name,params:Array.isArray(skill.params)?skill.params:[]},
+  };
+}
+
+function requestMessagesForLLM(sourceMessages) {
+  return sourceMessages.map((msg)=>{
+    if(msg.role==='user') return {role:'user',content:msg.content};
+    if(msg.role==='assistant') {
+      const out={role:'assistant',content:msg.content ?? null};
+      if(Array.isArray(msg.tool_calls)) out.tool_calls=msg.tool_calls;
+      return out;
+    }
+    if(msg.role==='tool') return {role:'tool',tool_call_id:msg.tool_call_id,name:msg.name,content:msg.content};
+    return msg;
+  });
+}
+
 async function copyMessage(btn) {
   const msg=btn.closest('.msg');
   const text=msg?.dataset.copy || msg?.querySelector('.bubble')?.innerText || '';
@@ -2018,6 +2070,7 @@ async function sendMessage() {
   const input=$('chat-input');
   const text=input.value.trim();
   if(!text) return;
+  const resolved=await resolveSkillInvocation(text);
   const model=$('model-name').value.trim()||'gpt-4o';
   const parsedTemp=parseFloat($('temperature').value);
   const temp=Number.isFinite(parsedTemp) ? parsedTemp : 0.7;
@@ -2028,8 +2081,13 @@ async function sendMessage() {
   isStreaming=true; setSendButtonStreaming(true);
   streamAbortController = new AbortController();
   if(!currentConversationId) currentConversationId=newConversationId();
-  messages.push({role:'user',content:text});
-  appendMsg('user',text);
+  messages.push({
+    role:'user',
+    content:resolved.sendText,
+    ...(resolved.displayText!==resolved.sendText?{displayContent:resolved.displayText}:{}),
+    ...(resolved.skill?{skill:resolved.skill}:{}),
+  });
+  appendMsg('user',resolved.displayText);
   scheduleConversationSave();
   const runTrace=createTraceCard();
 
@@ -2051,7 +2109,8 @@ async function sendMessage() {
       const systemPrompt=currentSystemPrompt();
       const langLine=languageInstruction();
       const sysContent=[systemPrompt,langLine].filter(Boolean).join('\\n\\n');
-      const reqMessages=sysContent ? [{role:'system',content:sysContent},...messages] : messages;
+      const cleanMessages=requestMessagesForLLM(messages);
+      const reqMessages=sysContent ? [{role:'system',content:sysContent},...cleanMessages] : cleanMessages;
       const reqBody={model,temperature:temp,messages:reqMessages,...(toolsPayload?{tools:toolsPayload,tool_choice:'auto'}:{})};
       streamDiv=createStreamBubble();
       const {content,toolCalls}=await fetchStream(llmUrl,llmHeaders,reqBody,t=>setStreamContent(streamDiv,t),streamAbortController.signal);
@@ -2164,16 +2223,25 @@ function saveConfig() {
     model:   $('model-name').value,
     temp:    $('temperature').value,
   };
-  localStorage.setItem('mcpchat_config', JSON.stringify(cfg));
+  localStorage.setItem(storageKey('mcpchat_config'), JSON.stringify(cfg));
   if (cfg.apiKey) flashSaved('llm-saved');
 }
 
 // ── LocalStorage (user-added servers only) ──────────────────────────────────
 
-const LS = {USER_SERVERS: 'mcpchat_user_servers'};
+function storageKey(key) {
+  const scope = window.__WIKI_CONFIG__?.storageScope;
+  return scope ? \`\${key}:\${scope}\` : key;
+}
+
+const LS = {USER_SERVERS: storageKey('mcpchat_user_servers')};
 
 function saveServers() {
-  const data = servers.map(({id,name,url,bearer,enabled,status}) => ({id,name,url,bearer:bearer||'',enabled:enabled&&status==='ok'}));
+  const defaults = window.__WIKI_CONFIG__?.mcpServers || [];
+  const data = servers.map(({id,name,url,bearer,enabled,status}) => {
+    const injected = defaults.some(d => d.name === name);
+    return {id,name,url,bearer:injected?'':(bearer||''),enabled:enabled&&status==='ok'};
+  });
   localStorage.setItem(LS.USER_SERVERS, JSON.stringify(data));
 }
 
@@ -2194,7 +2262,7 @@ function loadConfig() {
   const wc = window.__WIKI_CONFIG__;
   let saved = {};
   try {
-    saved = JSON.parse(localStorage.getItem('mcpchat_config')||'{}');
+    saved = JSON.parse(localStorage.getItem(storageKey('mcpchat_config'))||'{}');
   } catch {}
   if (wc) {
     // Docker/proxy mode: /api/chat uses the server-side .wikirc.yaml config.
@@ -2210,7 +2278,7 @@ function loadConfig() {
     if (saved.model)   $('model-name').value = saved.model;
     if (saved.temp !== undefined) $('temperature').value = saved.temp;
   }
-  $('system-prompt').value = localStorage.getItem('mcpchat_system_prompt') ?? DEFAULT_SYSTEM_PROMPT;
+  $('system-prompt').value = localStorage.getItem(storageKey('mcpchat_system_prompt')) ?? DEFAULT_SYSTEM_PROMPT;
   syncModel();
 }
 
@@ -2276,18 +2344,6 @@ ${WIKI_CSS_VARS}
     --warn: #f5c842;
   }
 }
-.tb-back {
-  color: var(--muted);
-  text-decoration: none;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 5px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel);
-  transition: border-color .2s, color .2s;
-}
-.tb-back:hover { border-color: var(--accent); color: var(--accent); }
 ${CHAT_COMPONENT_CSS}
 </style>
 <script src="/assets/marked.min.js"></script>

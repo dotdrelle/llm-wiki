@@ -21,8 +21,6 @@ services:
       - ${WIKI_WORKSPACE:?Set WIKI_WORKSPACE to an initialized llm-wiki workspace}:/workspace
     environment:
       - WIKI_WORKSPACE=/workspace
-      - OPENAI_API_KEY
-      - ANTHROPIC_API_KEY
     # host.docker.internal -> native macOS Ollama or another host service
     extra_hosts:
       - 'host.docker.internal:host-gateway'
@@ -44,8 +42,6 @@ services:
       - ${WIKI_WORKSPACE:?Set WIKI_WORKSPACE to an initialized llm-wiki workspace}:/workspace
     environment:
       - WIKI_WORKSPACE=/workspace
-      - OPENAI_API_KEY
-      - ANTHROPIC_API_KEY
     ports:
       - '3100:3000'
     extra_hosts:

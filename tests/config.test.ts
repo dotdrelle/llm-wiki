@@ -72,10 +72,10 @@ describe('config resolution', () => {
     });
   });
 
-  it('enables vector retrieval by default', () => {
+  it('disables vector retrieval by default', () => {
     const config = resolveConfig({}, '/tmp/wiki');
 
-    expect(config.retrieval.vector.enabled).toBe(true);
+    expect(config.retrieval.vector.enabled).toBe(false);
   });
 
   it('parses disabled vector reranking', () => {

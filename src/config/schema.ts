@@ -273,7 +273,7 @@ const retrievalSchema = z
     maxSourceChars: z.number().int().min(500).default(8000),
     vector: z
       .object({
-        enabled: z.boolean().default(true),
+        enabled: z.boolean().default(false),
         baseUrl: z.string().url().optional(),
         apiKey: z.string().min(1).optional(),
         timeoutMs: z.number().int().min(1000).default(600000).optional(),
@@ -285,7 +285,7 @@ const retrievalSchema = z
         maxResults: z.number().int().min(1).max(24).default(6),
       })
       .default({
-        enabled: true,
+        enabled: false,
         timeoutMs: 600000,
         embeddingModel: 'BAAI/bge-m3',
         rerankEnabled: true,
@@ -301,7 +301,7 @@ const retrievalSchema = z
     maxChunkChars: 3000,
     maxSourceChars: 8000,
     vector: {
-      enabled: true,
+      enabled: false,
       baseUrl: DEFAULT_OPENAI_BASE_URL,
       timeoutMs: 600000,
       embeddingModel: 'BAAI/bge-m3',
@@ -515,7 +515,7 @@ export function resolveConfig(
       maxChunkChars: parsed.retrieval?.maxChunkChars ?? 3000,
       maxSourceChars: parsed.retrieval?.maxSourceChars ?? 8000,
       vector: {
-        enabled: parsed.retrieval?.vector?.enabled ?? true,
+        enabled: parsed.retrieval?.vector?.enabled ?? false,
         baseUrl: vectorBaseUrl,
         apiKey: vectorApiKey,
         timeoutMs: parsed.retrieval?.vector?.timeoutMs ?? parsed.llm?.timeoutMs ?? 600000,

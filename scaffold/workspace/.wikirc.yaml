@@ -3,6 +3,7 @@ language: fr
 llm:
   provider: ollama
   model: YOUR_MODEL_NAME
+  apiKey: ollama
   baseUrl: http://127.0.0.1:11434/v1
   temperature: 0.1
   timeoutMs: 600000
@@ -30,7 +31,7 @@ retrieval:
   maxChunkChars: 3000
   maxSourceChars: 8000
   vector:
-    enabled: true
+    enabled: false
     # Defaults to llm.baseUrl. Set this when embeddings/reranking use a separate service.
     # baseUrl: http://127.0.0.1:7997/v1
     # apiKey: your-vector-key

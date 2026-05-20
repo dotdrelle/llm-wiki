@@ -86,12 +86,9 @@ docker compose --profile mcp-http up mcp-http
 
 ## API keys
 
-The compose file forwards `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` automatically:
-
-```bash
-OPENAI_API_KEY=sk-... docker compose --profile cli run --rm wiki build
-ANTHROPIC_API_KEY=sk-ant-... docker compose --profile cli run --rm wiki build
-```
+Configure provider keys in the workspace `.wikirc.yaml` (`llm.apiKey` and, when
+needed, `retrieval.vector.apiKey`). The standalone compose file does not forward
+provider API key environment variables by default.
 
 ## Ollama
 

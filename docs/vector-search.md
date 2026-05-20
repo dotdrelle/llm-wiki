@@ -1,6 +1,6 @@
 # Vector search
 
-By default, `llm-wiki` prefers vector search to retrieve wiki context. It uses embeddings and an optional reranker for higher-quality retrieval, with automatic lexical fallback when the vector index is not available.
+By default, vector search is disabled so a fresh workspace works without an embedding endpoint. Enable it when you have an OpenAI-compatible embeddings service. When enabled, `llm-wiki` uses embeddings and an optional reranker for higher-quality retrieval, with automatic lexical fallback when the vector index is not available.
 
 ## How it works
 
@@ -22,7 +22,7 @@ Compatible servers:
 | OpenAI API                                              | ✓                 | ✗        |
 | Any OpenAI-compatible server                            | ✓                 | depends  |
 
-By default, the embedding and reranker endpoints use `llm.baseUrl` and the same API key as the generation model. If embeddings/reranking run on a separate service, set `retrieval.vector.baseUrl` and optionally `retrieval.vector.apiKey`.
+By default, the embedding and reranker endpoints use `llm.baseUrl` and the same API key as the generation model. If embeddings/reranking run on a separate service, set `retrieval.vector.baseUrl` and `retrieval.vector.apiKey` in the workspace `.wikirc.yaml`.
 
 ## Configuration
 
@@ -31,7 +31,7 @@ retrieval:
   vector:
     enabled: true
     baseUrl: http://127.0.0.1:7997/v1 # optional; defaults to llm.baseUrl
-    apiKey: VECTOR_API_KEY # optional; falls back to WIKI_VECTOR_API_KEY, ALBERT_API_KEY, then llm.apiKey
+    apiKey: VECTOR_API_KEY # recommended when the vector endpoint differs from llm.baseUrl
     timeoutMs: 600000
     embeddingModel: BAAI/bge-m3 # model served by your /v1/embeddings endpoint
     rerankEnabled: true # set false to skip /v1/rerank and keep vector distance ordering
@@ -43,7 +43,7 @@ retrieval:
 
 | Key                     | Description                                        | Default                                                    |
 | ----------------------- | -------------------------------------------------- | ---------------------------------------------------------- |
-| `vector.enabled`        | Prefer vector retrieval when an index is available | `true`                                                     |
+| `vector.enabled`        | Prefer vector retrieval when an index is available | `false`                                                    |
 | `vector.baseUrl`        | Base URL for `/v1/embeddings` and `/v1/rerank`     | `llm.baseUrl`                                              |
 | `vector.apiKey`         | API key for vector endpoints                       | `WIKI_VECTOR_API_KEY`, `ALBERT_API_KEY`, then `llm.apiKey` |
 | `vector.timeoutMs`      | Timeout for vector endpoint calls                  | `llm.timeoutMs` or `600000`                                |

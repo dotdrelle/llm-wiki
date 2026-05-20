@@ -61,7 +61,7 @@ agents.
    wiki init
    ```
 
-   Edit `.wikirc.yaml` to set your LLM provider, model, `language`, retrieval endpoints, and prompt limits.
+   Edit `.wikirc.yaml` to set your LLM provider, model, `baseUrl`, `apiKey`, `language`, retrieval endpoints, and prompt limits. In manager mode, this file is the workspace source of truth for LLM/vector keys.
 
 2. **Run the doctor** to validate your configuration:
 

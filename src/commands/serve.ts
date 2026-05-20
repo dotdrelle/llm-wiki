@@ -3,6 +3,7 @@ import type { IncomingMessage } from 'node:http';
 import { mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import fg from 'fast-glob';
 import { marked } from 'marked';
@@ -3226,6 +3227,11 @@ export default async function serveCmd(
           baseUrl: config.llm.baseUrl,
           apiKey: config.llm.apiKey ?? '',
           language: config.language ?? 'fr',
+          workspaceName: WORKSPACE_NAME ?? path.basename(rootDir),
+          storageScope: createHash('sha256')
+            .update(`${WORKSPACE_NAME ?? ''}:${rootDir}`)
+            .digest('hex')
+            .slice(0, 16),
           mcpServers: [
             {
               name: 'llm-wiki',

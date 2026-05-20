@@ -10,6 +10,7 @@ language: fr
 llm:
   provider: ollama
   model: qwen2.5:14b
+  apiKey: ollama
   baseUrl: http://127.0.0.1:11434/v1
   temperature: 0.1
   timeoutMs: 600000
@@ -34,7 +35,7 @@ retrieval:
   maxChunkChars: 3000
   maxSourceChars: 8000
   vector:
-    enabled: true
+    enabled: false
     baseUrl: http://127.0.0.1:7997/v1
     apiKey: optional-vector-key
     timeoutMs: 600000
@@ -58,7 +59,7 @@ retrieval:
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
 | `provider`       | `openai`, `ollama`, `anthropic`, `openai-compatible`                                                                                                 | `openai`           |
 | `model`          | Model name passed to the provider                                                                                                                    | `gpt-5-mini`       |
-| `apiKey`         | API key — falls back to `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` env vars                                                                              | —                  |
+| `apiKey`         | API key for this workspace. Recommended for remote providers. Env vars remain available as standalone fallbacks.                                     | —                  |
 | `baseUrl`        | Provider base URL                                                                                                                                    | provider-dependent |
 | `temperature`    | Sampling temperature (0–2)                                                                                                                           | `0.1`              |
 | `timeoutMs`      | Request timeout in milliseconds                                                                                                                      | `600000`           |
