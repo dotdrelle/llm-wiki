@@ -32,9 +32,8 @@ const NAV_PATTERNS = [
 ];
 const GRAPH_PATTERNS = [
   'wiki/**/*.md',
+  '!wiki/log.md',
   'deliverables/**/*.md',
-  'templates/**/*.md',
-  'build-context/**/*.md',
   'raw/ingested/**/*.md',
 ];
 const EDITABLE_DIRS = ['wiki', 'deliverables', 'templates', 'build-context'];
@@ -906,8 +905,6 @@ function layout(title: string, body: string): string {
     .graph-node.wiki-source circle { fill: #0e7490; }
     .graph-node.wiki circle { fill: #c8a500; }
     .graph-node.deliverable circle { fill: #6b7f2a; }
-    .graph-node.template circle { fill: #8f5c99; }
-    .graph-node.context circle { fill: #a36f18; }
     .graph-search-wrapper { padding: 0.65rem 0.75rem; }
     .graph-toolbar { display: flex; gap: 0.4rem; align-items: center; }
     .graph-search-field { position: relative; flex: 1 1 0; min-width: 0; }
@@ -924,8 +921,6 @@ function layout(title: string, body: string): string {
     .graph-search-result-dot.wiki-source { background: #0e7490; }
     .graph-search-result-dot.wiki { background: #c8a500; }
     .graph-search-result-dot.deliverable { background: #6b7f2a; }
-    .graph-search-result-dot.template { background: #8f5c99; }
-    .graph-search-result-dot.context { background: #a36f18; }
     .graph-search-result-title { font-size: 0.88rem; font-weight: 620; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .graph-search-result-path { font-size: 0.76rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .graph-search-empty { padding: 0.55rem 0.65rem; color: var(--muted); font-size: 0.88rem; }
@@ -935,8 +930,6 @@ function layout(title: string, body: string): string {
     .legend-item.wiki-source::before { background: #0e7490; }
     .legend-item.wiki::before { background: #c8a500; }
     .legend-item.deliverable::before { background: #6b7f2a; }
-    .legend-item.template::before { background: #8f5c99; }
-    .legend-item.context::before { background: #a36f18; }
     .relation-panel {
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -1532,7 +1525,7 @@ async function renderSidebar(rootDir: string): Promise<string> {
 interface GraphNode {
   id: string;
   title: string;
-  type: 'raw-source' | 'wiki-source' | 'wiki' | 'deliverable' | 'template' | 'context';
+  type: 'raw-source' | 'wiki-source' | 'wiki' | 'deliverable';
   href: string;
   preview: string;
   raw: string;
@@ -1552,9 +1545,21 @@ function graphNodeType(relativePath: string): GraphNode['type'] {
   if (relativePath.startsWith('raw/ingested/')) return 'raw-source';
   if (relativePath.startsWith('wiki/sources/')) return 'wiki-source';
   if (relativePath.startsWith('deliverables/')) return 'deliverable';
-  if (relativePath.startsWith('templates/')) return 'template';
-  if (relativePath.startsWith('build-context/')) return 'context';
   return 'wiki';
+}
+
+async function listGraphFiles(rootDir: string): Promise<string[]> {
+  return (await fg(GRAPH_PATTERNS, { cwd: rootDir, dot: false }))
+    .map(toPosix)
+    .sort();
+}
+
+function graphEtagForFiles(files: string[]): string {
+  return createHash('sha1').update(files.join('\0')).digest('hex');
+}
+
+async function graphEtag(rootDir: string): Promise<string> {
+  return graphEtagForFiles(await listGraphFiles(rootDir));
 }
 
 function extractGraphTargets(markdown: string, currentDir: string): string[] {
@@ -1593,10 +1598,9 @@ function markdownPreview(markdown: string): string {
 
 async function buildGraph(
   rootDir: string,
+  graphFiles?: string[],
 ): Promise<{ nodes: GraphNode[]; edges: GraphEdge[] }> {
-  const files = (await fg(GRAPH_PATTERNS, { cwd: rootDir, dot: false }))
-    .map(toPosix)
-    .sort();
+  const files = graphFiles ?? (await listGraphFiles(rootDir));
   const nodeIds = new Set(files);
   const edges: GraphEdge[] = [];
   const edgeKeys = new Set<string>();
@@ -1685,6 +1689,8 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
   const modalClose = document.querySelector('[data-modal-close]');
   const searchInput = document.querySelector('[data-graph-search]');
   const searchDropdown = document.querySelector('[data-graph-search-dropdown]');
+  const panelTitle = document.querySelector('[data-relation-panel-title]');
+  const panelMeta = document.querySelector('[data-relation-panel-meta]');
   const btnZoomIn = document.querySelector('[data-graph-zoom-in]');
   const btnZoomOut = document.querySelector('[data-graph-zoom-out]');
   const btnCenter = document.querySelector('[data-graph-center]');
@@ -1703,6 +1709,21 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
   let panStart = null;
   let view = { x: 0, y: 0, scale: 1 };
   let searchQuery = '';
+
+  async function refreshGraphWhenChanged() {
+    const currentEtag = graphLayout?.dataset.graphEtag || '';
+    if (!currentEtag) return;
+    try {
+      const response = await fetch('/api/graph-etag', { cache: 'no-store' });
+      if (!response.ok) return;
+      const payload = await response.json();
+      if (payload?.etag && payload.etag !== currentEtag) {
+        window.location.reload();
+      }
+    } catch {
+      // Ignore transient polling failures.
+    }
+  }
 
   function nodeMatchesSearch(node, query) {
     const q = query.toLowerCase();
@@ -1993,6 +2014,8 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
     const node = byId.get(id);
     if (!node) return;
     const connected = connectedIds(id);
+    panelTitle.textContent = node.title;
+    panelMeta.textContent = node.id;
 
     for (const [nodeId, element] of nodeElements) {
       element.classList.toggle('is-selected', nodeId === id);
@@ -2114,26 +2137,29 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
   });
 
   render();
+  setInterval(refreshGraphWhenChanged, 5000);
 })();
 </script>`;
 }
 
-function renderGraphApp(nodes: GraphNode[], edges: GraphEdge[]): string {
-  return `<div class="graph-layout" data-graph-layout><div class="graph-panel"><div class="graph-search-wrapper" data-graph-search-wrapper><div class="graph-toolbar"><div class="graph-search-field"><input class="graph-search-input" type="search" placeholder="Rechercher un n&#x0153;ud&#x2026;" aria-label="Rechercher dans le graph" data-graph-search autocomplete="off"><ul class="graph-search-dropdown" data-graph-search-dropdown hidden></ul></div><div class="graph-ctrl-group"><button class="graph-ctrl-btn" type="button" data-graph-zoom-in title="Zoom avant">+</button><button class="graph-ctrl-btn" type="button" data-graph-zoom-out title="Zoom arri&#xe8;re">&#x2212;</button><button class="graph-ctrl-btn" type="button" data-graph-center title="Centrer sur la s&#xe9;lection" style="font-size:0.9rem">&#x25CE;</button><button class="graph-ctrl-btn" type="button" data-graph-reset title="R&#xe9;initialiser la vue" style="font-size:0.9rem">&#x21BA;</button></div></div></div><div class="graph-stage"><svg class="graph-svg" viewBox="0 0 1100 720" role="img" aria-label="Graph navigable des documents et sources" data-graph-svg><g data-graph-viewport><g data-link-layer></g><g data-node-layer></g></g></svg></div></div><aside class="relation-panel"><div class="relation-panel-header"><button class="relation-toggle" type="button" title="Afficher/masquer les relations" aria-label="Afficher/masquer les relations" data-relation-toggle>&#9776;</button><div class="relation-panel-copy"><h2 class="relation-panel-title">Relations</h2><p class="relation-panel-meta">Ouvrez une relation pour afficher les markdown lies.</p></div></div><ul class="relation-list" data-relation-list></ul></aside></div>
+function renderGraphApp(nodes: GraphNode[], edges: GraphEdge[], etag: string): string {
+  return `<div class="graph-layout" data-graph-layout data-graph-etag="${escapeAttr(etag)}"><div class="graph-panel"><div class="graph-search-wrapper" data-graph-search-wrapper><div class="graph-toolbar"><div class="graph-search-field"><input class="graph-search-input" type="search" placeholder="Rechercher un n&#x0153;ud&#x2026;" aria-label="Rechercher dans le graph" data-graph-search autocomplete="off"><ul class="graph-search-dropdown" data-graph-search-dropdown hidden></ul></div><div class="graph-ctrl-group"><button class="graph-ctrl-btn" type="button" data-graph-zoom-in title="Zoom avant">+</button><button class="graph-ctrl-btn" type="button" data-graph-zoom-out title="Zoom arri&#xe8;re">&#x2212;</button><button class="graph-ctrl-btn" type="button" data-graph-center title="Centrer sur la s&#xe9;lection" style="font-size:0.9rem">&#x25CE;</button><button class="graph-ctrl-btn" type="button" data-graph-reset title="R&#xe9;initialiser la vue" style="font-size:0.9rem">&#x21BA;</button></div></div></div><div class="graph-stage"><svg class="graph-svg" viewBox="0 0 1100 720" role="img" aria-label="Graph navigable des documents et sources" data-graph-svg><g data-graph-viewport><g data-link-layer></g><g data-node-layer></g></g></svg></div></div><aside class="relation-panel"><div class="relation-panel-header"><button class="relation-toggle" type="button" title="Afficher/masquer les relations" aria-label="Afficher/masquer les relations" data-relation-toggle>&#9776;</button><div class="relation-panel-copy"><h2 class="relation-panel-title" data-relation-panel-title>Relations</h2><p class="relation-panel-meta" data-relation-panel-meta>Ouvrez une relation pour afficher les markdown lies.</p></div></div><ul class="relation-list" data-relation-list></ul></aside></div>
 <div class="modal-backdrop" data-relation-modal><section class="relation-modal" role="dialog" aria-modal="true" aria-labelledby="relation-modal-title"><div class="modal-header"><h2 class="modal-title" id="relation-modal-title" data-modal-title>Relation</h2><button class="modal-close" type="button" aria-label="Fermer" data-modal-close>x</button></div><div class="modal-body"><article class="modal-doc"><h3 class="modal-doc-title" data-modal-target-title></h3><div class="modal-markdown" data-modal-target-body></div></article></div></section></div>
 ${renderGraphScript(nodes, edges)}`;
 }
 
 async function generateGraph(rootDir: string): Promise<string> {
   const sidebar = await renderSidebar(rootDir);
-  const { nodes, edges } = await buildGraph(rootDir);
+  const graphFiles = await listGraphFiles(rootDir);
+  const { nodes, edges } = await buildGraph(rootDir, graphFiles);
+  const etag = graphEtagForFiles(graphFiles);
   const rawSourceCount = nodes.filter((node) => node.type === 'raw-source').length;
   const wikiSourceCount = nodes.filter((node) => node.type === 'wiki-source').length;
   const graph =
     nodes.length > 0
-      ? renderGraphApp(nodes, edges)
+      ? renderGraphApp(nodes, edges, etag)
       : '<p class="empty">Aucun document markdown à afficher dans le graphe.</p>';
-  const body = `${sidebar}<main class="content"><div class="hero"><h1>Graph des sources</h1><p>Les sources et documents du wiki sont représentés par relation. La taille d'un noeud dépend du nombre de liens entrants et sortants. Cliquez sur un noeud pour afficher le markdown associé.</p></div><div class="graph-legend"><span class="legend-item raw-source">${rawSourceCount} source(s) brut(s)</span><span class="legend-item wiki-source">${wikiSourceCount} source(s) wiki</span><span class="legend-item wiki">wiki</span><span class="legend-item deliverable">livrables</span><span class="legend-item template">templates</span><span class="legend-item context">build context</span><span>${edges.length} relation(s)</span></div>${graph}</main>`;
+  const body = `${sidebar}<main class="content"><div class="hero"><h1>Graph des sources</h1><p>Les sources et documents du wiki sont représentés par relation. La taille d'un noeud dépend du nombre de liens entrants et sortants. Cliquez sur un noeud pour afficher le markdown associé.</p></div><div class="graph-legend"><span class="legend-item raw-source">${rawSourceCount} source(s) brut(s)</span><span class="legend-item wiki-source">${wikiSourceCount} source(s) wiki</span><span class="legend-item wiki">wiki</span><span class="legend-item deliverable">livrables</span><span>${edges.length} relation(s)</span></div>${graph}</main>`;
   return layout('Graph des sources', body);
 }
 
@@ -3290,6 +3316,11 @@ export default async function serveCmd(
           'Cache-Control': 'public, max-age=3600',
         });
         res.end(js);
+        return;
+      }
+
+      if (req.method === 'GET' && urlPath === '/api/graph-etag') {
+        sendJson(res, 200, { etag: await graphEtag(rootDir) });
         return;
       }
 
