@@ -1554,12 +1554,22 @@ async function listGraphFiles(rootDir: string): Promise<string[]> {
     .sort();
 }
 
-function graphEtagForFiles(files: string[]): string {
-  return createHash('sha1').update(files.join('\0')).digest('hex');
+async function graphEtagForFiles(rootDir: string, files: string[]): Promise<string> {
+  const hash = createHash('sha1');
+  for (const file of files) {
+    const fileStat = await stat(path.join(rootDir, file));
+    hash.update(file);
+    hash.update('\0');
+    hash.update(String(fileStat.mtimeMs));
+    hash.update('\0');
+    hash.update(String(fileStat.size));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
 }
 
 async function graphEtag(rootDir: string): Promise<string> {
-  return graphEtagForFiles(await listGraphFiles(rootDir));
+  return graphEtagForFiles(rootDir, await listGraphFiles(rootDir));
 }
 
 function extractGraphTargets(markdown: string, currentDir: string): string[] {
@@ -2152,7 +2162,7 @@ async function generateGraph(rootDir: string): Promise<string> {
   const sidebar = await renderSidebar(rootDir);
   const graphFiles = await listGraphFiles(rootDir);
   const { nodes, edges } = await buildGraph(rootDir, graphFiles);
-  const etag = graphEtagForFiles(graphFiles);
+  const etag = await graphEtagForFiles(rootDir, graphFiles);
   const rawSourceCount = nodes.filter((node) => node.type === 'raw-source').length;
   const wikiSourceCount = nodes.filter((node) => node.type === 'wiki-source').length;
   const graph =

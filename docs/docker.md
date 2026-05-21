@@ -54,7 +54,7 @@ docker compose up serve
 
 The browser UI includes:
 
-- `/graph` for the source graph, with a collapsible relations panel;
+- `/graph` for the source graph, with a collapsible relations panel and automatic refresh when graph files change;
 - `/chat` for MCP-aware chat.
 
 In Docker/manager deployments, `wiki serve` can proxy browser requests to MCP
