@@ -1572,22 +1572,43 @@ async function graphEtag(rootDir: string): Promise<string> {
   return graphEtagForFiles(rootDir, await listGraphFiles(rootDir));
 }
 
-function extractGraphTargets(markdown: string, currentDir: string): string[] {
+function rawUntrackedArchiveCandidate(value: string): string | null {
+  const clean = toPosix(decodeHrefPath(value).replace(/^\/+/, '').replace(/#.*$/, ''));
+  if (clean.startsWith('raw/untracked/')) {
+    return `raw/ingested/${clean.slice('raw/untracked/'.length)}`;
+  }
+  if (clean.startsWith('wiki/raw/untracked/')) {
+    return `raw/ingested/${clean.slice('wiki/raw/untracked/'.length)}`;
+  }
+  return null;
+}
+
+function graphTargetPath(value: string, currentDir: string, nodeIds: Set<string>): string {
+  const archivedRaw = rawUntrackedArchiveCandidate(value);
+  if (archivedRaw && nodeIds.has(archivedRaw)) return archivedRaw;
+  return hrefToRelativePath(value, currentDir);
+}
+
+function extractGraphTargets(
+  markdown: string,
+  currentDir: string,
+  nodeIds: Set<string>,
+): string[] {
   const targets = new Set<string>();
   const markdownLinkPattern = /\[[^\]]+\]\(([^)]+)\)/g;
   const citationPattern = /\[src:\s*([^\]]+)\]/g;
 
   for (const match of markdown.matchAll(markdownLinkPattern)) {
     const href = match[1]?.trim();
-    if (href && href.endsWith('.md') && !isRawUntrackedReference(href)) {
-      targets.add(hrefToRelativePath(href, currentDir));
+    if (href && href.endsWith('.md')) {
+      targets.add(graphTargetPath(href, currentDir, nodeIds));
     }
   }
 
   for (const match of markdown.matchAll(citationPattern)) {
     const citationPath = match[1]?.trim();
-    if (citationPath && !isRawUntrackedReference(citationPath)) {
-      targets.add(hrefToRelativePath(citationPath, currentDir));
+    if (citationPath) {
+      targets.add(graphTargetPath(citationPath, currentDir, nodeIds));
     }
   }
 
@@ -1625,7 +1646,7 @@ async function buildGraph(
     rawContents.set(file, raw);
     previews.set(file, markdownPreview(raw));
     htmlContents.set(file, await renderMarkdown(raw, currentDir));
-    for (const target of extractGraphTargets(raw, currentDir)) {
+    for (const target of extractGraphTargets(raw, currentDir, nodeIds)) {
       if (!nodeIds.has(target) || target === file) continue;
       const edgeKey = [file, target].sort().join('\0');
       if (edgeKeys.has(edgeKey)) continue;
