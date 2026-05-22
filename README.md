@@ -1,6 +1,6 @@
 # llm-wiki
 
-[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](https://polyformproject.org/licenses/noncommercial/1.0.0/)
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
 
 Open-source implementation of [Karpathy's LLM Wiki](https://x.com/karpathy/status/2039805659525644595) ([spec](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)).
 
@@ -168,4 +168,6 @@ pnpm test
 
 ## License
 
-Released under the **PolyForm Noncommercial License 1.0.0** — free for personal, academic, and non-commercial use. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) for commercial terms.
+Released under the **PolyForm Noncommercial License 1.0.0**. See [LICENSE](LICENSE).
+
+Commercial use requires separate terms. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).

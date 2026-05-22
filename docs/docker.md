@@ -77,10 +77,10 @@ docker compose --profile mcp-http up mcp-http
 With TLS:
 
 ```bash
-WIKI_MCP_AUTH_TOKEN=your-secret-key \
+WIKI_MCP_AUTH_TOKEN=<generated-local-token> \
 WIKI_MCP_TLS_CERT_PATH=/certs/fullchain.pem \
 WIKI_MCP_TLS_KEY_PATH=/certs/privkey.pem \
-WIKI_CERTS=/absolute/path/to/certs \
+WIKI_CERTS=<absolute-path-to-certs> \
 docker compose --profile mcp-http up mcp-http
 ```
 

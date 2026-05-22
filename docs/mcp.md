@@ -90,7 +90,7 @@ Add to `.claude/settings.json` at the root of your wiki workspace:
       "command": "wiki",
       "args": ["mcp"],
       "type": "stdio",
-      "env": { "WIKI_MCP_AUTH_TOKEN": "your-secret-key" }
+      "env": { "WIKI_MCP_AUTH_TOKEN": "<generated-local-token>" }
     }
   }
 }
@@ -106,11 +106,11 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 {
   "mcpServers": {
     "llm-wiki": {
-      "command": "/absolute/path/to/wiki",
+      "command": "<absolute-path-to-wiki>",
       "args": ["mcp"],
       "type": "stdio",
-      "cwd": "/absolute/path/to/your/wiki-workspace",
-      "env": { "WIKI_MCP_AUTH_TOKEN": "your-secret-key" }
+      "cwd": "<absolute-path-to-wiki-workspace>",
+      "env": { "WIKI_MCP_AUTH_TOKEN": "<generated-local-token>" }
     }
   }
 }
@@ -157,7 +157,7 @@ Provide `certPath` and `keyPath` together; `caPath` is optional for mutual TLS.
 
 ```yaml
 mcp:
-  accessKey: your-secret-key
+  accessKey: <generated-local-token>
   tls:
     certPath: /certs/fullchain.pem
     keyPath: /certs/privkey.pem
@@ -183,7 +183,7 @@ Set an optional access key in `.wikirc.yaml`:
 
 ```yaml
 mcp:
-  accessKey: your-secret-key
+  accessKey: <generated-local-token>
 ```
 
 Pass the same value as `WIKI_MCP_AUTH_TOKEN` in the MCP client config. If the key is configured but the env var is absent or mismatched, the server exits immediately with an error.

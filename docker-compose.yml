@@ -79,14 +79,14 @@ services:
   # HTTPS start with Docker only:
   #   WIKI_MCP_TLS_CERT_PATH=/certs/fullchain.pem \
   #   WIKI_MCP_TLS_KEY_PATH=/certs/privkey.pem \
-  #   WIKI_CERTS=/absolute/path/to/certs \
+  #   WIKI_CERTS=<absolute-path-to-certs> \
   #   docker compose --profile mcp-http up mcp-http
   #
   # HTTPS start through .wikirc.yaml:
   #   - mount certificates with ${WIKI_CERTS:-./certs}:/certs:ro
   #   - configure:
   #       mcp:
-  #         accessKey: your-secret-key
+  #         accessKey: <generated-local-token>
   #         tls:
   #           certPath: /certs/fullchain.pem
   #           keyPath: /certs/privkey.pem
