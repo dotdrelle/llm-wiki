@@ -2,6 +2,10 @@
 
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
 
+<p align="center">
+  <img src="https://www.itsdonna.events/assets/KarpathyPattern.png" alt="Karpathy pattern with model, context, memory, tools, and skills" width="760">
+</p>
+
 Open-source implementation of [Karpathy's LLM Wiki](https://x.com/karpathy/status/2039805659525644595) ([spec](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)).
 
 A local-first CLI that turns raw project material into a durable, searchable Markdown knowledge base, then generates reproducible deliverables from templates. Works with OpenAI, Anthropic, Ollama, or any OpenAI-compatible server. Everything stays on disk as plain Markdown files.
