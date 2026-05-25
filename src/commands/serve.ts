@@ -17,6 +17,7 @@ import { CHAT_HTML } from '../chat/chatHtml.ts';
 const MCP_WIKI_PORT = process.env.WIKI_MCP_HTTP_PORT ?? '3101';
 const MCP_CME_PORT = process.env.CME_MCP_PORT ?? '3000';
 const MCP_MAILER_PORT = process.env.MAILER_MCP_PORT ?? '3335';
+const MCP_DOCUMENTS_PORT = process.env.DOCUMENTS_MCP_PORT ?? '3337';
 const MCP_PRODUCTION_PORT = process.env.PRODUCTION_MCP_PORT ?? '3336';
 const HUB_PORT = process.env.HUB_PORT ?? null;
 const HUB_TOKEN = process.env.HUB_TOKEN ?? null;
@@ -3157,6 +3158,9 @@ export default async function serveCmd(
           const mailerTarget =
             process.env.MAILER_MCP_PROXY_URL ??
             `http://localhost:${MCP_MAILER_PORT}/mcp/`;
+          const documentsTarget =
+            process.env.DOCUMENTS_MCP_PROXY_URL ??
+            `http://localhost:${MCP_DOCUMENTS_PORT}/mcp/`;
           const productionTarget =
             process.env.PRODUCTION_MCP_PROXY_URL ??
             `http://localhost:${MCP_PRODUCTION_PORT}/mcp/`;
@@ -3165,6 +3169,7 @@ export default async function serveCmd(
             [normalizeTarget(wikiTarget)]: config.mcp.accessKey || '',
             [normalizeTarget(cmeTarget)]: process.env.CME_MCP_AUTH_TOKEN ?? '',
             [normalizeTarget(mailerTarget)]: process.env.MAILER_MCP_AUTH_TOKEN ?? '',
+            [normalizeTarget(documentsTarget)]: process.env.DOCUMENTS_MCP_AUTH_TOKEN ?? '',
             [normalizeTarget(productionTarget)]: process.env.PRODUCTION_MCP_AUTH_TOKEN ?? '',
           };
           const bearer = proxyTokens[normalizeTarget(target)] ?? '';
@@ -3321,6 +3326,12 @@ export default async function serveCmd(
               url:
                 process.env.MAILER_MCP_PROXY_URL ??
                 `http://localhost:${MCP_MAILER_PORT}/mcp/`,
+            },
+            {
+              name: 'wiki-documents',
+              url:
+                process.env.DOCUMENTS_MCP_PROXY_URL ??
+                `http://localhost:${MCP_DOCUMENTS_PORT}/mcp/`,
             },
           ],
         };
