@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
-import type { IncomingMessage } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { createGzip } from 'node:zlib';
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -23,6 +24,8 @@ const HUB_PORT = process.env.HUB_PORT ?? null;
 const HUB_TOKEN = process.env.HUB_TOKEN ?? null;
 const HUB_INTERNAL_HOST = process.env.HUB_INTERNAL_HOST ?? '127.0.0.1';
 const WORKSPACE_NAME = process.env.WORKSPACE_NAME ?? null;
+const SERVE_TITLE = process.env.WIKI_SERVE_TITLE ?? null;
+const SERVE_LOGO = process.env.WIKI_SERVE_LOGO ?? '🧠';
 
 const SERVED_DIRS = ['wiki', 'deliverables', 'templates', 'build-context'];
 const NAV_PATTERNS = [
@@ -356,13 +359,21 @@ function renderLogMarkdown(raw: string): string {
 }
 
 function layout(title: string, body: string): string {
-  const pageTitle = WORKSPACE_NAME ? `${WORKSPACE_NAME} · ${title}` : title;
+  const displayName = SERVE_TITLE ?? WORKSPACE_NAME ?? null;
+  const pageTitle = displayName ? `${displayName} · ${title}` : title;
+  const faviconLabel = (SERVE_LOGO.trim() || (SERVE_TITLE ?? WORKSPACE_NAME ?? 'W'))
+    .slice(0, 2)
+    .toUpperCase();
+  const faviconHref = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23176b87'/><text x='16' y='22.5' font-size='17' font-family='system-ui,sans-serif' font-weight='900' text-anchor='middle' fill='white'>${encodeURIComponent(faviconLabel)}</text></svg>`;
   return `<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(pageTitle)}</title>
+  <link rel="icon" type="image/svg+xml" href="${faviconHref}">
+  <meta property="og:title" content="${escapeAttr(pageTitle)}">
+  <meta property="og:type" content="website">
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap');
     ${WIKI_CSS_VARS}
@@ -1082,11 +1093,97 @@ function layout(title: string, body: string): string {
       .sidebar { background: #121820; }
       pre { background: #101419; }
     }
+    /* ── Dashboard stats ──────────────────────────────────────── */
+    .ws-stats{display:flex;flex-wrap:wrap;gap:.65rem;margin-bottom:1.5rem}
+    .ws-stat{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:88px;padding:.75rem 1rem;border:1px solid var(--border);border-radius:8px;background:var(--panel);text-align:center;gap:.2rem}
+    .ws-stat-n{font-size:1.6rem;font-weight:800;line-height:1;color:var(--accent)}
+    .ws-stat-l{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+    .ws-stat-warn .ws-stat-n{color:#c07000}
+    .ws-stat-warn{border-color:rgba(192,112,0,.25)}
+    .ws-stat-muted .ws-stat-n{font-size:.95rem;font-weight:700}
+    /* ── Onboarding ───────────────────────────────────────────── */
+    .onboarding{max-width:720px}
+    .onboarding-steps{display:grid;gap:.75rem;margin-top:1.25rem}
+    .onboarding-step{display:flex;gap:.9rem;align-items:flex-start;padding:.9rem 1rem;border:1px solid var(--border);border-radius:8px;background:var(--panel)}
+    .onboarding-step-num{width:2rem;height:2rem;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.9rem;flex-shrink:0;margin-top:.1rem}
+    .onboarding-step-body{min-width:0}
+    .onboarding-step-title{font-weight:760;margin-bottom:.3rem}
+    .onboarding-step-desc{font-size:.88rem;color:var(--muted);line-height:1.5}
+    .onboarding-step-code{font-family:ui-monospace,monospace;font-size:.82rem;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .38rem;border-radius:4px;color:var(--text)}
+    /* ── ⌘K Palette ──────────────────────────────────────────── */
+    .palette-backdrop{position:fixed;inset:0;z-index:9000;display:none;align-items:flex-start;justify-content:center;padding-top:14vh;background:rgba(10,14,18,.42);backdrop-filter:blur(3px)}
+    .palette-backdrop.is-open{display:flex}
+    .palette{width:min(560px,calc(100vw - 2rem));border:1px solid var(--border);border-radius:12px;background:var(--panel);box-shadow:0 24px 64px rgba(0,0,0,.22),0 4px 12px rgba(0,0,0,.1);overflow:hidden;animation:paletteIn .13s ease}
+    @keyframes paletteIn{from{opacity:0;transform:translateY(-10px) scale(.97)}to{opacity:1;transform:none}}
+    .palette-head{display:flex;align-items:center;gap:.65rem;padding:.8rem 1rem;border-bottom:1px solid var(--border)}
+    .palette-search-icon{color:var(--muted);flex-shrink:0}
+    .palette-input{flex:1;background:transparent;border:none;outline:none;color:var(--text);font:inherit;font-size:1rem}
+    .palette-input::placeholder{color:var(--muted)}
+    .palette-esc{font-size:.72rem;font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.15rem .42rem;border-radius:4px;color:var(--muted)}
+    .palette-results{max-height:min(52vh,400px);overflow-y:auto;padding:.4rem}
+    .palette-item{display:flex;align-items:center;gap:.6rem;padding:.5rem .65rem;border-radius:7px;cursor:pointer;text-decoration:none;color:var(--text)}
+    .palette-item.is-sel,.palette-item:hover{background:var(--accent-soft);color:var(--accent)}
+    .palette-item-icon{width:1.9rem;height:1.9rem;border-radius:6px;background:var(--panel-soft);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:.75rem;flex-shrink:0}
+    .palette-item-body{min-width:0;flex:1}
+    .palette-item-title{font-size:.9rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .palette-item-path{font-size:.73rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:ui-monospace,monospace}
+    .palette-item.is-sel .palette-item-path,.palette-item:hover .palette-item-path{opacity:.7;color:inherit}
+    .palette-tag{font-size:.66rem;font-weight:700;padding:.1rem .38rem;border-radius:99px;flex-shrink:0}
+    .palette-tag.wiki{background:rgba(200,165,0,.14);color:#9a7a00}
+    .palette-tag.deliverables{background:rgba(107,127,42,.14);color:#5a6820}
+    .palette-tag.templates{background:rgba(23,107,135,.14);color:var(--accent)}
+    .palette-tag.build-context{background:rgba(120,80,200,.14);color:#6040b0}
+    .palette-empty{padding:2rem 1rem;text-align:center;color:var(--muted);font-size:.9rem}
+    .palette-footer{display:flex;gap:1rem;padding:.5rem 1rem;border-top:1px solid var(--border);background:var(--bg)}
+    .palette-hint{display:flex;align-items:center;gap:.38rem;font-size:.73rem;color:var(--muted)}
+    .palette-hint kbd{font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .38rem;border-radius:4px;font-size:.7rem}
+    @media(prefers-color-scheme:dark){.palette-tag.wiki{color:#d4a800}.palette-tag.deliverables{color:#9abc40}}
+    /* ── TOC ──────────────────────────────────────────────────── */
+    .doc-toc{position:fixed;top:5rem;right:1.5rem;width:200px;max-height:calc(100vh - 8rem);overflow-y:auto;display:flex;flex-direction:column;gap:.15rem;padding:.75rem;background:var(--panel);border:1px solid var(--border);border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+    .doc-toc-title{font-size:.7rem;font-weight:780;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 .5rem;padding-bottom:.4rem;border-bottom:1px solid var(--border)}
+    .doc-toc-item{font-size:.8rem;color:var(--muted);text-decoration:none;line-height:1.35;padding:.18rem .3rem;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .doc-toc-item:hover,.doc-toc-item.is-active{color:var(--accent);background:var(--accent-soft)}
+    .doc-toc-h3{padding-left:1rem;font-size:.76rem}
+    @media(max-width:1280px){.doc-toc{display:none}}
+    /* ── Print ─────────────────────────────────────────────────── */
+    @media print{.sidebar,.page-actions,.palette-backdrop,.doc-toc{display:none!important}.app-shell{display:block}.content{padding:0}.article{border:none;border-radius:0;max-width:100%;box-shadow:none}body{font-size:11pt;line-height:1.5}.topbar{display:none}}
   </style>
 </head>
 <body>
 <div class="app-shell">
 ${body}
+</div>
+<div class="modal-backdrop" id="shortcuts-modal" onclick="if(event.target===this)this.classList.remove('is-open')">
+  <div class="relation-modal" style="max-width:420px;max-height:none">
+    <div class="modal-header"><h2 class="modal-title">Raccourcis clavier</h2><button class="modal-close" onclick="document.getElementById('shortcuts-modal').classList.remove('is-open')">✕</button></div>
+    <div class="modal-body" style="padding:1rem">
+      <table style="width:100%;border-collapse:collapse;font-size:.88rem">
+        <tbody>
+          <tr><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border)"><kbd style="font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.15rem .42rem;border-radius:4px">⌘K</kbd></td><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border);color:var(--muted)">Palette de recherche globale</td></tr>
+          <tr><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border)"><kbd style="font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.15rem .42rem;border-radius:4px">⌘E</kbd></td><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border);color:var(--muted)">Éditer la page courante</td></tr>
+          <tr><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border)"><kbd style="font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.15rem .42rem;border-radius:4px">⌘B</kbd></td><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border);color:var(--muted)">Masquer / afficher la sidebar</td></tr>
+          <tr><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border)"><kbd style="font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.15rem .42rem;border-radius:4px">G</kbd></td><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border);color:var(--muted)">Aller au graphe des sources</td></tr>
+          <tr><td style="padding:.4rem .6rem"><kbd style="font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.15rem .42rem;border-radius:4px">?</kbd></td><td style="padding:.4rem .6rem;color:var(--muted)">Afficher cette aide</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<div class="palette-backdrop" id="palette-backdrop" aria-modal="true" role="dialog" aria-label="Recherche rapide">
+  <div class="palette">
+    <div class="palette-head">
+      <svg class="palette-search-icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input class="palette-input" id="palette-input" type="search" placeholder="Rechercher dans le wiki…" autocomplete="off" spellcheck="false">
+      <span class="palette-esc">Échap</span>
+    </div>
+    <div class="palette-results" id="palette-results"></div>
+    <div class="palette-footer">
+      <span class="palette-hint"><kbd>↑↓</kbd> naviguer</span>
+      <span class="palette-hint"><kbd>↵</kbd> ouvrir</span>
+      <span class="palette-hint"><kbd>Échap</kbd> fermer</span>
+      <span class="palette-hint" style="margin-left:auto"><kbd>⌘K</kbd></span>
+    </div>
+  </div>
 </div>
 <script>
 (() => {
@@ -1293,6 +1390,104 @@ ${body}
     setInterval(heartbeat, 5000);
     setInterval(refresh, 5000);
   })();
+})();
+
+// ── Raccourcis clavier globaux ───────────────────────────────────────────────
+(function initShortcuts() {
+  document.addEventListener('keydown', function(e) {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
+    // ? → modal d'aide
+    if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      const m = document.getElementById('shortcuts-modal');
+      if (m) m.classList.toggle('is-open');
+      return;
+    }
+    // ⌘E → éditer la page courante
+    if ((e.metaKey || e.ctrlKey) && e.key === 'e') {
+      const editLink = document.querySelector('a.action-link[href^="/edit/"]');
+      if (editLink) { e.preventDefault(); window.location.href = editLink.getAttribute('href'); }
+      return;
+    }
+    // ⌘B → basculer sidebar
+    if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+      e.preventDefault();
+      const sb = document.querySelector('.sidebar');
+      if (sb) sb.style.display = sb.style.display === 'none' ? '' : 'none';
+      return;
+    }
+    // G → graph
+    if (e.key === 'g' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      window.location.href = '/graph';
+    }
+    // Escape → fermer modal d'aide
+    if (e.key === 'Escape') {
+      const m = document.getElementById('shortcuts-modal');
+      if (m && m.classList.contains('is-open')) { m.classList.remove('is-open'); }
+    }
+  });
+})();
+
+// ── Palette ⌘K ──────────────────────────────────────────────────────────────
+(function initPalette() {
+  const backdrop = document.getElementById('palette-backdrop');
+  const input = document.getElementById('palette-input');
+  const results = document.getElementById('palette-results');
+  if (!backdrop || !input || !results) return;
+
+  const allFiles = [...document.querySelectorAll('[data-side-path]')].map(function(el) {
+    const p = el.getAttribute('data-side-path') || '';
+    return { path: p, title: (el.textContent || '').trim(), href: '/' + p, type: p.split('/')[0] || 'wiki' };
+  });
+  const ICONS = { wiki: '📄', deliverables: '📦', templates: '📋', 'build-context': '🧩' };
+  let selIdx = 0, cur = [];
+
+  function norm(s) { return s.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, ''); }
+  function esc(s) { return String(s).replace(/[&<>"']/g, function(c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]); }); }
+  function open() { backdrop.classList.add('is-open'); input.value = ''; show(''); requestAnimationFrame(function() { input.focus(); }); }
+  function close() { backdrop.classList.remove('is-open'); }
+
+  function show(q) {
+    const nq = norm(q.trim());
+    cur = nq
+      ? allFiles.filter(function(f) { return norm(f.path + ' ' + f.title).includes(nq); }).slice(0, 12)
+      : allFiles.slice(0, 8);
+    selIdx = 0;
+    render();
+  }
+
+  function render() {
+    if (!cur.length) { results.innerHTML = '<div class="palette-empty">Aucun résultat</div>'; return; }
+    results.innerHTML = cur.map(function(f, i) {
+      const icon = ICONS[f.type] || '📄';
+      const sel = i === selIdx ? ' is-sel' : '';
+      return '<a class="palette-item' + sel + '" href="' + esc(encodeURI(f.href)) + '" data-pi="' + i + '">' +
+        '<div class="palette-item-icon">' + esc(icon) + '</div>' +
+        '<div class="palette-item-body">' +
+          '<div class="palette-item-title">' + esc(f.title || f.path.split('/').pop() || '') + '</div>' +
+          '<div class="palette-item-path">' + esc(f.path) + '</div>' +
+        '</div>' +
+        '<span class="palette-tag ' + esc(f.type) + '">' + esc(f.type) + '</span>' +
+      '</a>';
+    }).join('');
+    results.querySelectorAll('[data-pi]').forEach(function(el) {
+      el.addEventListener('mouseenter', function() { selIdx = Number(el.dataset.pi); render(); });
+    });
+  }
+
+  input.addEventListener('input', function() { show(input.value); });
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); selIdx = Math.min(selIdx + 1, cur.length - 1); render(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); selIdx = Math.max(selIdx - 1, 0); render(); }
+    else if (e.key === 'Enter' && cur[selIdx]) { window.location.href = cur[selIdx].href; close(); }
+    else if (e.key === 'Escape') { close(); }
+  });
+  backdrop.addEventListener('click', function(e) { if (e.target === backdrop) close(); });
+  document.addEventListener('keydown', function(e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); backdrop.classList.contains('is-open') ? close() : open(); }
+    if (e.key === 'Escape' && backdrop.classList.contains('is-open')) { close(); }
+  });
 })();
 </script>
 </body>
@@ -1513,14 +1708,17 @@ async function renderSidebar(rootDir: string): Promise<string> {
   const wsSwitcher = HUB_PORT
     ? `<div class="ws-switcher" id="ws-switcher" data-current="${escapeAttr(WORKSPACE_NAME ?? '')}"><p class="ws-switcher-title">Workspaces</p><p class="ws-name" style="font-size:0.8rem;color:var(--muted);padding:0 0.2rem">Chargement…</p></div>`
     : '';
-  const workspaceName = (WORKSPACE_NAME ?? 'wiki').toUpperCase();
+  const workspaceName = SERVE_TITLE
+    ? SERVE_TITLE
+    : (WORKSPACE_NAME ?? 'wiki').toUpperCase();
   const graphIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="M8.6 8.1 10.8 15"/><path d="m15.4 8.1-2.2 6.9"/><path d="M9 6h6"/></svg>';
   const chatIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>';
   const mcpIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a6 6 0 0 1-12 0V8z"/></svg>';
-  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Raccourcis"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}</a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}</a><a class="side-action" href="http://localhost:${MCP_WIKI_PORT}/mcp" target="_blank" rel="noopener" title="MCP Wiki" aria-label="MCP Wiki">${mcpIcon}</a></div><div class="side-search"><input class="side-search-input" type="search" placeholder="Search files" aria-label="Search files" data-side-search><p class="side-search-status" data-side-search-status>No matching files.</p></div><nav class="side-tree" aria-label="Documents markdown">${tree}</nav>${wsSwitcher}</aside>`;
+  const kbdHint = `<kbd style="font-size:.68rem;font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .35rem;border-radius:4px;color:var(--muted);cursor:pointer" title="Ouvrir la recherche globale (⌘K)" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}))">⌘K</kbd>`;
+  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Raccourcis"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}</a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}</a><a class="side-action" href="http://localhost:${MCP_WIKI_PORT}/mcp" target="_blank" rel="noopener" title="MCP Wiki" aria-label="MCP Wiki">${mcpIcon}</a></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filtrer les fichiers…" aria-label="Filtrer les fichiers" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Documents markdown">${tree}</nav>${wsSwitcher}</aside>`;
 }
 
 interface GraphNode {
@@ -2180,6 +2378,70 @@ function renderGraphApp(nodes: GraphNode[], edges: GraphEdge[], etag: string): s
 ${renderGraphScript(nodes, edges)}`;
 }
 
+// ── Stats helpers ──────────────────────────────────────────────────────────
+
+async function getLastIngestTime(rootDir: string): Promise<Date | null> {
+  const logsDir = path.join(rootDir, '.wiki', 'logs');
+  if (!(await pathExists(logsDir))) return null;
+  try {
+    const files = (await readdir(logsDir))
+      .filter((f) => f.startsWith('ingest-') && f.endsWith('.log'))
+      .sort();
+    if (files.length === 0) return null;
+    const s = await stat(path.join(logsDir, files[files.length - 1]));
+    return s.mtime;
+  } catch {
+    return null;
+  }
+}
+
+function relativeTimeLabel(d: Date | null): string {
+  if (!d) return 'Jamais';
+  const diffMs = Date.now() - d.getTime();
+  const diffMin = Math.floor(diffMs / 60_000);
+  if (diffMin < 1) return "À l'instant";
+  if (diffMin < 60) return `il y a ${diffMin} min`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `il y a ${diffH}h`;
+  const diffD = Math.floor(diffH / 24);
+  if (diffD < 30) return `il y a ${diffD}j`;
+  return d.toLocaleDateString('fr-FR');
+}
+
+function renderWsStats(opts: {
+  wikiPages: number;
+  deliverables: number;
+  templates: number;
+  untracked: number;
+  lastIngest: Date | null;
+}): string {
+  const items: Array<{ n: string; l: string; cls: string }> = [
+    { n: String(opts.wikiPages), l: 'Pages wiki', cls: '' },
+    { n: String(opts.deliverables), l: 'Livrables', cls: '' },
+    { n: String(opts.templates), l: 'Templates', cls: '' },
+  ];
+  if (opts.untracked > 0)
+    items.push({ n: String(opts.untracked), l: 'En attente', cls: ' ws-stat-warn' });
+  items.push({ n: relativeTimeLabel(opts.lastIngest), l: 'Dernier ingest', cls: ' ws-stat-muted' });
+  return `<div class="ws-stats">${items
+    .map(
+      (s) =>
+        `<div class="ws-stat${s.cls}"><span class="ws-stat-n">${escapeHtml(s.n)}</span><span class="ws-stat-l">${escapeHtml(s.l)}</span></div>`,
+    )
+    .join('')}</div>`;
+}
+
+function renderOnboarding(title: string): string {
+  return `<section class="onboarding"><div class="hero"><h1>${escapeHtml(title)}</h1><p>Le wiki est vide. Suivez ces quatre étapes pour démarrer.</p></div><div class="onboarding-steps">
+<div class="onboarding-step"><div class="onboarding-step-num">1</div><div class="onboarding-step-body"><div class="onboarding-step-title">Configurer le provider LLM</div><div class="onboarding-step-desc">Éditez <code class="onboarding-step-code">.wikirc.yaml</code> pour définir votre provider (Ollama, OpenAI, Anthropic…), puis validez avec <code class="onboarding-step-code">wiki doctor</code>.</div></div></div>
+<div class="onboarding-step"><div class="onboarding-step-num">2</div><div class="onboarding-step-body"><div class="onboarding-step-title">Déposer des sources</div><div class="onboarding-step-desc">Copiez vos fichiers Markdown dans <code class="onboarding-step-code">raw/untracked/</code>. Exports Confluence, notes, PDFs convertis — tout est accepté.</div></div></div>
+<div class="onboarding-step"><div class="onboarding-step-num">3</div><div class="onboarding-step-body"><div class="onboarding-step-title">Ingérer les sources</div><div class="onboarding-step-desc">Lancez <code class="onboarding-step-code">wiki ingest</code>. Le LLM lit chaque source et peuple <code class="onboarding-step-code">wiki/</code> automatiquement.</div></div></div>
+<div class="onboarding-step"><div class="onboarding-step-num">4</div><div class="onboarding-step-body"><div class="onboarding-step-title">Générer des livrables</div><div class="onboarding-step-desc">Créez un template dans <code class="onboarding-step-code">templates/</code> puis lancez <code class="onboarding-step-code">wiki build</code> pour produire des documents depuis le wiki.</div></div></div>
+</div></section>`;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+
 async function generateGraph(rootDir: string): Promise<string> {
   const sidebar = await renderSidebar(rootDir);
   const graphFiles = await listGraphFiles(rootDir);
@@ -2196,7 +2458,32 @@ async function generateGraph(rootDir: string): Promise<string> {
 }
 
 async function generateIndex(rootDir: string): Promise<string> {
+  // ── Stats ──────────────────────────────────────────────────────────────────
+  const [wikiFiles, delivFiles, templFiles, untrackedFiles, lastIngest] = await Promise.all([
+    fg('wiki/**/*.md', { cwd: rootDir, dot: false }),
+    fg('deliverables/**/*.md', { cwd: rootDir, dot: false }),
+    fg('templates/**/*.md', { cwd: rootDir, dot: false }),
+    fg('raw/untracked/**/*', { cwd: rootDir, dot: false }),
+    getLastIngestTime(rootDir),
+  ]);
+  const statsBar = renderWsStats({
+    wikiPages: wikiFiles.length,
+    deliverables: delivFiles.length,
+    templates: templFiles.length,
+    untracked: untrackedFiles.length,
+    lastIngest,
+  });
+
+  const sidebar = await renderSidebar(rootDir);
+
+  // ── Onboarding si wiki vide ────────────────────────────────────────────────
   const indexPath = path.join(rootDir, 'wiki', 'index.md');
+  if (wikiFiles.length === 0) {
+    const title = SERVE_TITLE ?? WORKSPACE_NAME ?? 'Wiki';
+    const body = `${sidebar}<main class="content">${statsBar}${renderOnboarding(title)}</main>`;
+    return layout('Démarrage', body);
+  }
+
   const raw = (await pathExists(indexPath))
     ? await readFile(indexPath, 'utf8')
     : '# Wiki Index\n\n- wiki/index.md introuvable.';
@@ -2234,8 +2521,7 @@ async function generateIndex(rootDir: string): Promise<string> {
   });
 
   const tiles = renderIndexSectionBrowser(indexTiles);
-  const sidebar = await renderSidebar(rootDir);
-  const body = `${sidebar}<main class="content"><div class="hero"><h1>Wiki Index</h1><p>Point d'entrée du wiki local. L'index complet reste lisible à gauche, avec les principales sections disponibles en tuiles à droite.</p></div><div class="index-layout"><article class="article">${html}</article><aside class="index-aside"><h2 class="index-aside-title">Main sections</h2>${tiles}</aside></div></main>`;
+  const body = `${sidebar}<main class="content">${statsBar}<div class="hero"><h1>Wiki Index</h1><p>Point d'entrée du wiki local. L'index complet reste lisible à gauche, avec les principales sections disponibles en tuiles à droite.</p></div><div class="index-layout"><article class="article">${html}</article><aside class="index-aside"><h2 class="index-aside-title">Main sections</h2>${tiles}</aside></div></main>`;
   return layout('wiki', body);
 }
 
@@ -2280,7 +2566,11 @@ async function serveMd(
     relativePath === 'wiki/log.md'
       ? renderLogMarkdown(raw)
       : await renderMarkdown(raw, currentDir);
+  const printBtn = `<button class="action-button" onclick="window.print()" title="Imprimer / Exporter en PDF">↑ PDF</button>`;
+  const dlBtn = `<a class="action-link" href="${escapeHref(`/raw/${relativePath}`)}" download title="Télécharger le fichier Markdown source">↓ .md</a>`;
   const actions = [
+    printBtn,
+    dlBtn,
     isEditableRelativePath(relativePath)
       ? `<a class="action-link" href="${escapeHref(editHref(relativePath))}">Edit</a>`
       : '',
@@ -2288,9 +2578,44 @@ async function serveMd(
       ? `<form method="post" action="${escapeHref(deleteHref(relativePath))}" onsubmit="return confirm('Supprimer ce fichier ?')"><button class="action-button action-danger" type="submit">Supprimer</button></form>`
       : '',
   ].join('');
+  const tocScript = `<script>
+(function buildToc() {
+  const article = document.querySelector('.article');
+  if (!article) return;
+  const headings = [...article.querySelectorAll('h2,h3')];
+  if (headings.length < 3) return;
+  // Ensure IDs
+  headings.forEach(function(h, i) {
+    if (!h.id) h.id = 'h-' + i + '-' + h.textContent.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
+  });
+  const toc = document.createElement('nav');
+  toc.className = 'doc-toc';
+  const tocTitle = document.createElement('p');
+  tocTitle.className = 'doc-toc-title';
+  tocTitle.textContent = 'Sur cette page';
+  toc.appendChild(tocTitle);
+  headings.forEach(function(h) {
+    const link = document.createElement('a');
+    link.className = 'doc-toc-item doc-toc-' + h.tagName.toLowerCase();
+    link.href = '#' + h.id;
+    link.textContent = h.textContent || '';
+    toc.appendChild(link);
+  });
+  const content = document.querySelector('.content');
+  if (content) content.appendChild(toc);
+  // Scrollspy
+  const obs = new IntersectionObserver(function(entries) {
+    entries.forEach(function(e) {
+      const link = toc.querySelector('a[href="#' + e.target.id + '"]');
+      if (link) link.classList.toggle('is-active', e.isIntersecting);
+    });
+  }, { rootMargin: '-10% 0px -80% 0px' });
+  headings.forEach(function(h) { obs.observe(h); });
+})();
+</script>`;
   return layout(
     title,
-    `${sidebar}<main class="content">${renderTopbar(urlPath, actions)}<article class="article">${html}</article></main>`,
+    `${sidebar}<main class="content">${renderTopbar(urlPath, actions)}<article class="article">${html}</article>${tocScript}</main>`,
   );
 }
 
@@ -2436,6 +2761,39 @@ function sendJson(
 ): void {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(data));
+}
+
+// ── Perf helpers ──────────────────────────────────────────────────────────────
+
+function fileEtag(fileStat: Awaited<ReturnType<typeof stat>>): string {
+  return `"${fileStat.mtimeMs.toString(36)}-${fileStat.size.toString(36)}"`;
+}
+
+function acceptsGzip(req: IncomingMessage): boolean {
+  return (req.headers['accept-encoding'] ?? '').includes('gzip');
+}
+
+async function sendGzippedHtml(
+  req: IncomingMessage,
+  res: ServerResponse,
+  html: string,
+  extraHeaders: Record<string, string> = {},
+  status = 200,
+): Promise<void> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'text/html; charset=utf-8',
+    ...extraHeaders,
+  };
+  if (acceptsGzip(req)) {
+    headers['Content-Encoding'] = 'gzip';
+    res.writeHead(status, headers);
+    const gz = createGzip({ level: 6 });
+    gz.pipe(res);
+    gz.end(html);
+  } else {
+    res.writeHead(status, headers);
+    res.end(html);
+  }
 }
 
 function parseTraceFields(rest: string): Record<string, string> {
@@ -3189,8 +3547,7 @@ export default async function serveCmd(
         if (req.method === 'GET') {
           try {
             const html = await generateNewMarkdownPage(rootDir, collection);
-            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-            res.end(html);
+            await sendGzippedHtml(req, res, html);
           } catch {
             res.writeHead(403, { 'Content-Type': 'text/plain' });
             res.end('Forbidden');
@@ -3253,8 +3610,7 @@ export default async function serveCmd(
         if (req.method === 'GET') {
           try {
             const html = await generateEditPage(rootDir, relative);
-            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-            res.end(html);
+            await sendGzippedHtml(req, res, html);
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             const status = message.startsWith('FORBIDDEN_EDIT_PATH') ? 403 : 404;
@@ -3336,8 +3692,38 @@ export default async function serveCmd(
           ],
         };
         const cfgScript = `<script>window.__WIKI_CONFIG__=${escapeScriptJson(JSON.stringify(chatConfig))};</script>`;
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(CHAT_HTML.replace('</head>', `${cfgScript}</head>`));
+        await sendGzippedHtml(req, res, CHAT_HTML.replace('</head>', `${cfgScript}</head>`));
+        return;
+      }
+
+      if (req.method === 'GET' && urlPath.startsWith('/raw/')) {
+        const rawRelative = toPosix(urlPath.replace(/^\/raw\//, '').replace(/\/+$/, ''));
+        const normalizedRawRelative = toPosix(path.posix.normalize(rawRelative));
+        if (rawRelative.endsWith('.md') && isServedRelativePath(rawRelative)) {
+          if (
+            normalizedRawRelative !== rawRelative ||
+            normalizedRawRelative.startsWith('../') ||
+            normalizedRawRelative === '..'
+          ) {
+            res.writeHead(403, { 'Content-Type': 'text/plain' });
+            res.end('Forbidden');
+            return;
+          }
+          const absolute = resolveInside(rootDir, normalizedRawRelative);
+          if (await pathExists(absolute)) {
+            const content = await readFile(absolute, 'utf8');
+            const filename = path.basename(normalizedRawRelative);
+            res.writeHead(200, {
+              'Content-Type': 'text/markdown; charset=utf-8',
+              'Content-Disposition': `attachment; filename="${filename}"`,
+              'Cache-Control': 'no-store',
+            });
+            res.end(content);
+            return;
+          }
+        }
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not found');
         return;
       }
 
@@ -3368,44 +3754,44 @@ export default async function serveCmd(
 
       if (urlPath === '/') {
         const html = await generateIndex(rootDir);
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(html);
+        await sendGzippedHtml(req, res, html);
         return;
       }
 
       if (urlPath === '/graph') {
         const html = await generateGraph(rootDir);
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(html);
+        await sendGzippedHtml(req, res, html);
         return;
       }
 
       if (urlPath === '/skills') {
         const html = await generateSkillsPage(rootDir);
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(html);
+        await sendGzippedHtml(req, res, html);
         return;
       }
 
-      const relative = urlPath.replace(/^\//, '').replace(/\/+$/, '');
-      if (!isServedRelativePath(relative)) {
-        const html = await generateNotFoundPage(rootDir, urlPath);
-        res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(html);
-        return;
-      }
-
-      const absolute = path.resolve(rootDir, relative);
-      if (!absolute.startsWith(rootDir + path.sep)) {
+      const relative = toPosix(urlPath.replace(/^\//, '').replace(/\/+$/, ''));
+      const normalizedRelative = toPosix(path.posix.normalize(relative));
+      if (
+        normalizedRelative !== relative ||
+        normalizedRelative.startsWith('../') ||
+        normalizedRelative === '..'
+      ) {
         res.writeHead(403, { 'Content-Type': 'text/plain' });
         res.end('Forbidden');
         return;
       }
+      if (!isServedRelativePath(normalizedRelative)) {
+        const html = await generateNotFoundPage(rootDir, urlPath);
+        await sendGzippedHtml(req, res, html, {}, 404);
+        return;
+      }
+
+      const absolute = resolveInside(rootDir, normalizedRelative);
 
       if (!(await pathExists(absolute))) {
         const html = await generateNotFoundPage(rootDir, urlPath);
-        res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(html);
+        await sendGzippedHtml(req, res, html, {}, 404);
         return;
       }
 
@@ -3414,9 +3800,8 @@ export default async function serveCmd(
         const html =
           relative === 'wiki'
             ? await generateIndex(rootDir)
-            : await generateDirectoryPage(rootDir, relative);
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(html);
+            : await generateDirectoryPage(rootDir, normalizedRelative);
+        await sendGzippedHtml(req, res, html);
         return;
       }
 
@@ -3426,9 +3811,15 @@ export default async function serveCmd(
         return;
       }
 
+      const fileStat2 = await stat(absolute);
+      const etag = fileEtag(fileStat2);
+      if (req.headers['if-none-match'] === etag) {
+        res.writeHead(304);
+        res.end();
+        return;
+      }
       const html = await serveMd(rootDir, absolute, urlPath);
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(html);
+      await sendGzippedHtml(req, res, html, { ETag: etag, 'Cache-Control': 'no-cache' });
     } catch (err) {
       console.error(err);
       res.writeHead(500, { 'Content-Type': 'text/plain' });
