@@ -76,3 +76,16 @@ describe('serve missing feature endpoints', () => {
     expect(source).toContain('Sources présentes dans raw/untracked');
   });
 });
+
+describe('serve config reload', () => {
+  it('watches the config directory and mutates the live config object', async () => {
+    const source = await serveSource();
+
+    expect(source).toContain('export function watchConfigReload');
+    expect(source).toContain('watch(path.dirname(config.configPath)');
+    expect(source).toContain('if (filename && filename.toString() !== configFileName) return;');
+    expect(source).toContain('}, 300);');
+    expect(source).toContain('Object.assign(config, fresh);');
+    expect(source).toContain('configWatcher?.close();');
+  });
+});

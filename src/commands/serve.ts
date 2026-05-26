@@ -1,5 +1,7 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { watch } from 'node:fs';
+import type { FSWatcher } from 'node:fs';
 import { mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { createGzip } from 'node:zlib';
 import { createRequire } from 'node:module';
@@ -9,6 +11,7 @@ import path from 'node:path';
 import fg from 'fast-glob';
 import { marked } from 'marked';
 import type { AppConfig } from '../types.ts';
+import { loadConfig } from '../config/loadConfig.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import { pathExists, safeWriteFile, writeIfChanged } from '../utils/fs.ts';
 import { resolveInside, toPosix } from '../utils/path.ts';
@@ -1537,7 +1540,13 @@ ${body}
       '</a>';
     }).join('');
     results.querySelectorAll('[data-pi]').forEach(function(el) {
-      el.addEventListener('mouseenter', function() { selIdx = Number(el.dataset.pi); render(); });
+      el.addEventListener('mouseenter', function() {
+        selIdx = Number(el.dataset.pi);
+        results.querySelectorAll('.palette-item').forEach(function(item) {
+          item.classList.toggle('is-sel', Number(item.dataset.pi) === selIdx);
+        });
+      });
+      el.addEventListener('click', function() { close(); });
     });
     results.querySelector('.is-sel')?.scrollIntoView({ block: 'nearest' });
   }
@@ -2599,7 +2608,7 @@ async function generateIndex(rootDir: string): Promise<string> {
     fg('wiki/**/*.md', { cwd: rootDir, dot: false }),
     fg('deliverables/**/*.md', { cwd: rootDir, dot: false }),
     fg('templates/**/*.md', { cwd: rootDir, dot: false }),
-    fg('raw/untracked/**/*', { cwd: rootDir, dot: false }),
+    fg('raw/untracked/**/*.md', { cwd: rootDir, dot: false, onlyFiles: true }),
     getLastIngestTime(rootDir),
   ]);
   const statsBar = renderWsStats({
@@ -4102,10 +4111,13 @@ export default async function serveCmd(
   });
 
   let shuttingDown = false;
+  const configWatcher = watchConfigReload(config, rootDir);
+
   const shutdown = (signal: NodeJS.Signals): void => {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`wiki serve stopping (${signal})...`);
+    configWatcher?.close();
     server.close(() => process.exit(0));
     server.closeIdleConnections?.();
     setTimeout(() => {
@@ -4116,4 +4128,33 @@ export default async function serveCmd(
 
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+}
+
+export function watchConfigReload(config: AppConfig, rootDir: string): FSWatcher | undefined {
+  if (!config.configPath) return undefined;
+
+  const configFileName = path.basename(config.configPath);
+  let reloadTimer: ReturnType<typeof setTimeout> | undefined;
+  const watcher = watch(path.dirname(config.configPath), (_eventType, filename) => {
+    if (filename && filename.toString() !== configFileName) return;
+    clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(async () => {
+      try {
+        const fresh = await loadConfig(rootDir);
+        Object.assign(config, fresh);
+        console.log('[wiki serve] Config reloaded from .wikirc.yaml');
+      } catch (err) {
+        console.warn('[wiki serve] Config reload failed:', err instanceof Error ? err.message : err);
+      }
+    }, 300);
+  });
+
+  watcher.on('close', () => {
+    if (reloadTimer) {
+      clearTimeout(reloadTimer);
+      reloadTimer = undefined;
+    }
+  });
+
+  return watcher;
 }

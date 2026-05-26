@@ -271,10 +271,10 @@ body:not(.connectors-mode) #connectors-view{display:none}
 #send-btn.is-stop{background:var(--text)}
 #send-btn svg{width:16px;height:16px;fill:currentColor}
 .input-hint{font-size:10px;color:var(--muted);text-align:center;margin-top:7px}
-#notif{position:fixed;bottom:18px;right:18px;padding:10px 16px;border-radius:9px;font-size:12px;font-weight:600;opacity:0;transform:translateY(6px);transition:all .25s;pointer-events:none;z-index:999}
+#notif{position:fixed;bottom:18px;right:18px;padding:10px 16px;border-radius:9px;font-size:12px;font-weight:600;opacity:0;transform:translateY(6px);transition:all .25s;pointer-events:none;z-index:999;box-shadow:0 4px 20px rgba(0,0,0,.22)}
 #notif.show{opacity:1;transform:translateY(0)}
-#notif.s{background:rgba(45,212,160,.12);border:1px solid var(--ok);color:var(--ok)}
-#notif.e{background:rgba(240,107,107,.12);border:1px solid var(--err);color:var(--err)}
+#notif.s{background:var(--panel);border:1px solid var(--ok);color:var(--ok)}
+#notif.e{background:var(--panel);border:1px solid var(--err);color:var(--err)}
 .doc-modal{position:fixed;inset:0;z-index:998;display:none}
 .doc-modal.open{display:block}
 .doc-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.45);backdrop-filter:blur(2px)}
@@ -393,7 +393,7 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
     <div class="sb-pane config-pane" id="config-pane">
       <div class="sec-label">Connecteurs</div>
       <a class="sb-link" id="connectors-link" href="/chat/connectors" onclick="showConnectorsView(event)">Connecteurs <span>MCP & skills</span></a>
-      <div class="sec-label">Configuration LLM</div>
+      <div class="sec-label">Configuration LLM<button type="button" onclick="resetYamlConfig()">Reset</button></div>
       <div class="api-block">
         <div class="field">
           <label>Base URL</label>
@@ -423,7 +423,6 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
             <input id="temperature" type="number" value="0.7" min="0" max="2" step="0.1" onchange="saveConfig()">
           </div>
         </div>
-        <button class="sb-link" type="button" onclick="resetYamlConfig()" style="width:100%;margin-top:8px;text-align:left">Remettre les valeurs du YAML <span>.wikirc.yaml</span></button>
       </div>
     </div>
   </div>
