@@ -19,7 +19,7 @@ import {
   slugify,
   slugifyPath,
 } from '../utils/path.ts';
-import { parseTemplateInstructions } from '../utils/markdown.ts';
+import { normalizeGeneratedMarkdown, parseTemplateInstructions } from '../utils/markdown.ts';
 import type {
   AppConfig,
   BuildState,
@@ -379,7 +379,10 @@ export class WorkspaceService {
         switch (operation.type) {
           case 'create':
           case 'update':
-            await writeIfChanged(absolutePath, operation.content ?? '');
+            await writeIfChanged(
+              absolutePath,
+              normalizeGeneratedMarkdown(operation.content ?? ''),
+            );
             break;
           case 'delete':
             await removeIfExists(absolutePath);
@@ -532,7 +535,7 @@ export class WorkspaceService {
   }
 
   async writeDeliverable(outputAbsolutePath: string, content: string): Promise<boolean> {
-    return writeIfChanged(outputAbsolutePath, content);
+    return writeIfChanged(outputAbsolutePath, normalizeGeneratedMarkdown(content));
   }
 
   async writeAnswer(question: string, content: string): Promise<string> {

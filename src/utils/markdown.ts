@@ -204,6 +204,72 @@ export function sanitizeFrontmatter(
   return sanitized;
 }
 
+function splitFrontmatter(markdown: string): { frontmatter: string; body: string } {
+  if (!markdown.startsWith('---\n')) return { frontmatter: '', body: markdown };
+  const end = markdown.indexOf('\n---', 4);
+  if (end < 0) return { frontmatter: '', body: markdown };
+  const closeEnd = markdown.indexOf('\n', end + 4);
+  if (closeEnd < 0) return { frontmatter: `${markdown.slice(0, end + 4)}\n`, body: '' };
+  return {
+    frontmatter: markdown.slice(0, closeEnd + 1),
+    body: markdown.slice(closeEnd + 1),
+  };
+}
+
+function normalizeGeneratedLine(line: string): string {
+  return line
+    .replace(/<br\s*\/?>/gi, '  ')
+    .replace(/<\/?(strong|b)>/gi, '**')
+    .replace(/<\/?(em|i)>/gi, '*')
+    .replace(/<\/?(span|div|p)>/gi, '')
+    .replace(/<[^>]+>/g, '');
+}
+
+export function normalizeGeneratedMarkdown(markdown: string): string {
+  const { frontmatter, body } = splitFrontmatter(markdown.replace(/\r\n?/g, '\n'));
+  const lines = body.split('\n');
+  const out: string[] = [];
+  let inFence = false;
+  let seenH1 = false;
+
+  const pushBlank = () => {
+    if (out.length > 0 && out[out.length - 1] !== '') out.push('');
+  };
+
+  for (const rawLine of lines) {
+    const fence = /^`{3,}/.test(rawLine.trim());
+    if (fence) {
+      pushBlank();
+      out.push(rawLine);
+      inFence = !inFence;
+      continue;
+    }
+
+    let line = inFence ? rawLine : normalizeGeneratedLine(rawLine).replace(/[ \t]+$/g, '');
+    const heading = !inFence ? /^(#{1,6})\s+(.+?)\s*$/.exec(line) : null;
+    if (heading) {
+      let marks = heading[1];
+      if (marks.length === 1) {
+        if (seenH1) marks = '##';
+        else seenH1 = true;
+      }
+      line = `${marks} ${heading[2].trim()}`;
+      pushBlank();
+      out.push(line);
+      out.push('');
+      continue;
+    }
+
+    out.push(line);
+  }
+
+  const normalizedBody = out
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return `${frontmatter}${normalizedBody}${normalizedBody ? '\n' : ''}`;
+}
+
 function decodeHtmlEntities(value: string): string {
   return value
     .replace(/&nbsp;/gi, ' ')

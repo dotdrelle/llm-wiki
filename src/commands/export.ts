@@ -4,6 +4,7 @@ import { WorkspaceService } from '../services/workspaceService.ts';
 import { createTraceLogger } from '../services/traceLogger.ts';
 import { expandDeliverable, exportOutputPath } from '../services/exportService.ts';
 import { safeWriteFile, pathExists } from '../utils/fs.ts';
+import { normalizeGeneratedMarkdown } from '../utils/markdown.ts';
 import { resolveInside, relativeFrom } from '../utils/path.ts';
 import { Spinner } from '../utils/spinner.ts';
 
@@ -106,7 +107,7 @@ export default async function exportCmd(
     spinner?.update('Writing export…');
     spinner?.updateSub(outputRelative);
 
-    await safeWriteFile(absoluteOutput, expanded);
+    await safeWriteFile(absoluteOutput, normalizeGeneratedMarkdown(expanded));
     spinner?.stop();
     console.log(`Exported → ${outputRelative}`);
   } catch (e) {

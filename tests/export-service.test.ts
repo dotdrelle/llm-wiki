@@ -13,7 +13,7 @@ describe('export service', () => {
 
   it('polishes exported deliverables without duplicating suffixes', () => {
     expect(exportOutputPath('deliverables/brief.md', { polish: true })).toBe(
-      'deliverables/brief.export.md',
+      'deliverables/brief.export.polished.md',
     );
     expect(exportOutputPath('deliverables/brief.export.md', { polish: true })).toBe(
       'deliverables/brief.export.polished.md',

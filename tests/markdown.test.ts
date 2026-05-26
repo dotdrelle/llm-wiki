@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   extractWikiLinks,
+  normalizeGeneratedMarkdown,
   normalizeSourceBody,
   parseTemplateInstructions,
   splitSourceSections,
@@ -46,6 +47,32 @@ describe('markdown helpers', () => {
     expect(normalized).toContain('DONE');
     expect(normalized).not.toMatch(/<\/?(ul|li|span|time|a)\b/i);
     expect(normalized).not.toContain('``<');
+  });
+
+  it('normalizes generated markdown for markdownlint basics', () => {
+    const normalized = normalizeGeneratedMarkdown(
+      [
+        '---',
+        'title: Test',
+        '---',
+        '# Title',
+        'Intro<span> text</span>',
+        '##Bad stays text',
+        '## Section',
+        '<div>Body<br>next</div>',
+        '# Another title',
+        '```html',
+        '<span>kept in code</span>',
+        '```',
+      ].join('\n'),
+    );
+
+    expect(normalized).toContain('---\ntitle: Test\n---\n# Title\n\nIntro text');
+    expect(normalized).toContain('\n\n## Section\n\nBody  next');
+    expect(normalized).toContain('\n\n## Another title\n\n');
+    expect(normalized).toContain('<span>kept in code</span>');
+    expect(normalized).not.toContain('<div>');
+    expect(normalized).not.toContain('<span> text</span>');
   });
 
   it('splits large sources by h2 and prefixes the document title', () => {

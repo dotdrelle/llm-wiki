@@ -47,6 +47,7 @@ export function buildDeliverablePrompt(args: {
       'Use only the provided wiki context. Never fabricate facts, names, or numbers.',
       'When context is insufficient, write a short note: "> Évidence manquante dans le wiki — à compléter."',
       'Do not repeat headings already present in the template.',
+      'Markdown linting rules: do not emit raw HTML tags; do not emit level-1 headings unless the slot explicitly requires a document title; keep one blank line before and after any heading.',
       'Cite factual claims with the provided Context citation path, preferably wiki/concepts/ or wiki/sources/. Do not replace a context page citation with nested raw/ingested citations unless the raw source is the only available evidence.',
       'When sources conflict or describe different decision states, prefer the most recent dated source and explicitly treat older decision-pending notes as superseded.',
       args.buildContext
@@ -68,6 +69,7 @@ export function buildDeliverablePrompt(args: {
       '- Each "content" value is a markdown string (use \\n for line breaks inside JSON strings).',
       '- Do not return "content" as an object, array, or nested structure.',
       '- If evidence is missing for a slot, still include it in the array with a short note.',
+      '- Avoid raw HTML. Use plain Markdown only. Keep blank lines around headings.',
     ].join('\n'),
   };
 }
@@ -100,6 +102,7 @@ export function buildSingleSlotDeliverablePrompt(args: {
       'Use only the provided wiki context. Never fabricate facts, names, or numbers.',
       'When context is insufficient, write a short note: "> Évidence manquante dans le wiki — à compléter."',
       'Do not repeat headings already present in the template.',
+      'Markdown linting rules: do not emit raw HTML tags; do not emit level-1 headings unless the slot explicitly requires a document title; keep one blank line before and after any heading.',
       'Cite factual claims with the provided Context citation path, preferably wiki/concepts/ or wiki/sources/. Do not replace a context page citation with nested raw/ingested citations unless the raw source is the only available evidence.',
       'When sources conflict or describe different decision states, prefer the most recent dated source and explicitly treat older decision-pending notes as superseded.',
       args.buildContext
@@ -121,6 +124,7 @@ export function buildSingleSlotDeliverablePrompt(args: {
       '# Output rules',
       '- Return only markdown content for this slot.',
       '- No JSON, no markdown fence, no explanation before or after the fragment.',
+      '- Avoid raw HTML. Use plain Markdown only. Keep blank lines around headings.',
     ].join('\n'),
   };
 }

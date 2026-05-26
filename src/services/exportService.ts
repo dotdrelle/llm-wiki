@@ -120,7 +120,11 @@ export function exportOutputPath(deliverablePath: string, options: ExportOptions
     return deliverablePath;
   }
 
-  if (options.polish && base.endsWith('.export')) {
+  if (options.polish && !base.endsWith('.export')) {
+    return `${base}.export.polished${ext}`;
+  }
+
+  if (options.polish) {
     return `${base}.polished${ext}`;
   }
 

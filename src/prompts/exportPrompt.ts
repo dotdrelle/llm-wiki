@@ -20,6 +20,7 @@ export function buildExportPrompt(
       '- Preserve the document structure and heading hierarchy. Translate heading text to the configured target language when needed.',
       '- Write in the configured target language from the system instructions.',
       '- Do not add new sections or headings not present in the original.',
+      '- Markdown linting rules: keep a single top-level H1, keep one blank line before and after headings, and do not output raw HTML tags.',
       '- If sources lack enough detail to expand a section, keep the original text and append a blockquote: "> Note: insufficient source documentation to expand this section."',
     ].join('\n'),
     user: [
@@ -39,6 +40,7 @@ export function buildExportPrompt(
       'Rewrite the document above as a fully self-contained version.',
       'Replace every [src: ...] citation with detailed inline content from the sources.',
       'Keep the overall structure unchanged and keep the same heading levels.',
+      'Use plain Markdown only: no raw HTML, no extra H1 headings, and blank lines around headings.',
     ].join('\n'),
   };
 }
@@ -52,6 +54,7 @@ export function buildPolishPrompt(markdown: string, ctx: PromptContext) {
       '- Improve clarity, flow, and readability without changing the meaning.',
       '- Preserve the markdown structure and heading hierarchy. Translate heading text to the configured target language when needed.',
       '- Do not add new factual claims, examples, numbers, dates, names, conclusions, or source citations.',
+      '- Markdown linting rules: keep a single top-level H1, keep one blank line before and after headings, and do not output raw HTML tags.',
       '- Do not remove important technical or project-specific details.',
       '- Write in the configured target language from the system instructions.',
       '- Write in a natural, clear voice — as if explaining to a thoughtful colleague. Keep it simple and direct without becoming casual in formal documents.',
@@ -76,6 +79,7 @@ export function buildPolishPrompt(markdown: string, ctx: PromptContext) {
       '# Task',
       'Return a polished version of the document.',
       'Keep the same facts and markdown structure. Use the configured target language.',
+      'Use plain Markdown only: no raw HTML, no extra H1 headings, and blank lines around headings.',
     ].join('\n'),
   };
 }

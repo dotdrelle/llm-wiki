@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { createGzip } from 'node:zlib';
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
@@ -175,7 +175,14 @@ function humanTitle(value: string): string {
   return path.basename(value, '.md').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function localHref(href: string, currentDir = ''): string {
+function deliverableKind(relativePath: string): 'build' | 'export' | 'polish' {
+  const base = path.basename(relativePath, '.md');
+  if (base.endsWith('.export.polished')) return 'polish';
+  if (base.endsWith('.export')) return 'export';
+  return 'build';
+}
+
+export function localHref(href: string, currentDir = ''): string {
   if (/^(https?:|mailto:|#)/i.test(href)) return href;
   const clean = decodeHrefPath(href.replace(/^\.\//, ''));
   if (clean.startsWith('/')) {
@@ -195,12 +202,12 @@ function localHref(href: string, currentDir = ''): string {
   return `/wiki/${toPosix(clean)}`;
 }
 
-function isRawUntrackedReference(value: string): boolean {
+export function isRawUntrackedReference(value: string): boolean {
   const clean = toPosix(decodeHrefPath(value).replace(/^\/+/, '').replace(/#.*$/, ''));
   return clean.startsWith('raw/untracked/') || clean.startsWith('wiki/raw/untracked/');
 }
 
-function isServedRelativePath(relativePath: string): boolean {
+export function isServedRelativePath(relativePath: string): boolean {
   return (
     SERVED_DIRS.some(
       (dir) => relativePath === dir || relativePath.startsWith(`${dir}/`),
@@ -236,6 +243,27 @@ function isCreatableCollection(collection: string): boolean {
     collection === 'templates' ||
     collection === 'build-context'
   );
+}
+
+function templateRenameScript(relativePath: string): string {
+  return `<script>
+async function renameTemplate() {
+  const currentName = ${JSON.stringify(path.basename(relativePath, '.md'))};
+  const nextName = prompt('Nouveau nom du template', currentName);
+  if (!nextName) return;
+  const res = await fetch(${JSON.stringify(renameHref(relativePath))}, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: nextName })
+  });
+  if (!res.ok) {
+    alert('Renommage impossible');
+    return;
+  }
+  const payload = await res.json();
+  window.location.href = '/' + payload.path;
+}
+</script>`;
 }
 
 function slugifyMarkdownTitle(value: string): string {
@@ -573,6 +601,9 @@ function layout(title: string, body: string): string {
     }
     .side-file.is-active { font-weight: 720; }
     .side-file.is-active::before { background: var(--accent); opacity: 1; }
+    .side-file[data-deliverable-kind="build"]::before { background: #6b7f2a; opacity: 0.8; }
+    .side-file[data-deliverable-kind="export"]::before { background: #176b87; opacity: 0.85; }
+    .side-file[data-deliverable-kind="polish"]::before { background: #8b5cf6; opacity: 0.85; }
     .side-folder.is-search-hidden, .side-file.is-search-hidden { display: none; }
     .side-link {
       display: block;
@@ -994,6 +1025,16 @@ function layout(title: string, body: string): string {
     }
     .relation-panel-title { margin: 0; font-size: 1rem; }
     .relation-panel-meta { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.82rem; }
+    .relation-node-open {
+      display: inline-flex;
+      margin-top: 0.45rem;
+      color: var(--link);
+      font-size: 0.86rem;
+      font-weight: 680;
+      text-decoration: underline;
+      text-underline-offset: 0.18em;
+    }
+    .relation-node-open[hidden] { display: none; }
     .relation-list { list-style: none; margin: 0; padding: 0.65rem; overflow: auto; display: grid; gap: 0.55rem; }
     .relation-item {
       padding: 0.7rem;
@@ -1012,7 +1053,7 @@ function layout(title: string, body: string): string {
       text-transform: uppercase;
     }
     .relation-path { display: block; color: var(--text); font-size: 0.86rem; line-height: 1.25; overflow-wrap: anywhere; }
-    .relation-arrow { display: block; margin: 0.25rem 0; color: var(--muted); font-size: 0.78rem; }
+    .relation-arrow { display: block; margin: 0.3rem 0; color: var(--muted); font-size: 1rem; text-align: center; line-height: 1; }
     .relation-open {
       margin-top: 0.55rem;
       padding: 0;
@@ -1150,6 +1191,18 @@ function layout(title: string, body: string): string {
   </style>
 </head>
 <body>
+<script>
+window.WikiUi = window.WikiUi || {
+  escapeHtml: function(value) {
+    return String(value).replace(/[&<>"']/g, function(char) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char];
+    });
+  },
+  normalizeSearch: function(value) {
+    return String(value).toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
+  },
+};
+</script>
 <div class="app-shell">
 ${body}
 </div>
@@ -1220,14 +1273,11 @@ ${body}
     }
     link.addEventListener('click', saveSidebarState);
   });
-  function normalize(value) {
-    return value.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
-  }
   function folderHasVisibleFile(folder) {
     return Boolean(folder.querySelector('[data-side-path]:not(.is-search-hidden)'));
   }
   function applySidebarSearch() {
-    const query = normalize(searchInput?.value.trim() || '');
+    const query = window.WikiUi.normalizeSearch(searchInput?.value.trim() || '');
     let matchCount = 0;
     if (!query) {
       sideFiles.forEach((link) => link.classList.remove('is-search-hidden'));
@@ -1236,7 +1286,7 @@ ${body}
       return;
     }
     for (const link of sideFiles) {
-      const haystack = normalize((link.getAttribute('data-side-path') || '') + ' ' + link.textContent);
+      const haystack = window.WikiUi.normalizeSearch((link.getAttribute('data-side-path') || '') + ' ' + link.textContent);
       const matches = haystack.includes(query);
       link.classList.toggle('is-search-hidden', !matches);
       if (matches) {
@@ -1442,16 +1492,31 @@ ${body}
   });
   const ICONS = { wiki: '📄', deliverables: '📦', templates: '📋', 'build-context': '🧩' };
   let selIdx = 0, cur = [];
+  let previousOverflow = '';
+  let previousActiveElement = null;
 
-  function norm(s) { return s.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, ''); }
-  function esc(s) { return String(s).replace(/[&<>"']/g, function(c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]); }); }
-  function open() { backdrop.classList.add('is-open'); input.value = ''; show(''); requestAnimationFrame(function() { input.focus(); }); }
-  function close() { backdrop.classList.remove('is-open'); }
+  function open() {
+    previousActiveElement = document.activeElement;
+    previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    backdrop.classList.add('is-open');
+    input.value = '';
+    show('');
+    requestAnimationFrame(function() { input.focus({ preventScroll: true }); });
+  }
+  function close() {
+    backdrop.classList.remove('is-open');
+    document.body.style.overflow = previousOverflow;
+    if (previousActiveElement && typeof previousActiveElement.focus === 'function') {
+      previousActiveElement.focus({ preventScroll: true });
+    }
+    previousActiveElement = null;
+  }
 
   function show(q) {
-    const nq = norm(q.trim());
+    const nq = window.WikiUi.normalizeSearch(q.trim());
     cur = nq
-      ? allFiles.filter(function(f) { return norm(f.path + ' ' + f.title).includes(nq); }).slice(0, 12)
+      ? allFiles.filter(function(f) { return window.WikiUi.normalizeSearch(f.path + ' ' + f.title).includes(nq); }).slice(0, 12)
       : allFiles.slice(0, 8);
     selIdx = 0;
     render();
@@ -1462,26 +1527,46 @@ ${body}
     results.innerHTML = cur.map(function(f, i) {
       const icon = ICONS[f.type] || '📄';
       const sel = i === selIdx ? ' is-sel' : '';
-      return '<a class="palette-item' + sel + '" href="' + esc(encodeURI(f.href)) + '" data-pi="' + i + '">' +
-        '<div class="palette-item-icon">' + esc(icon) + '</div>' +
+      return '<a class="palette-item' + sel + '" href="' + window.WikiUi.escapeHtml(encodeURI(f.href)) + '" data-pi="' + i + '">' +
+        '<div class="palette-item-icon">' + window.WikiUi.escapeHtml(icon) + '</div>' +
         '<div class="palette-item-body">' +
-          '<div class="palette-item-title">' + esc(f.title || f.path.split('/').pop() || '') + '</div>' +
-          '<div class="palette-item-path">' + esc(f.path) + '</div>' +
+          '<div class="palette-item-title">' + window.WikiUi.escapeHtml(f.title || f.path.split('/').pop() || '') + '</div>' +
+          '<div class="palette-item-path">' + window.WikiUi.escapeHtml(f.path) + '</div>' +
         '</div>' +
-        '<span class="palette-tag ' + esc(f.type) + '">' + esc(f.type) + '</span>' +
+        '<span class="palette-tag ' + window.WikiUi.escapeHtml(f.type) + '">' + window.WikiUi.escapeHtml(f.type) + '</span>' +
       '</a>';
     }).join('');
     results.querySelectorAll('[data-pi]').forEach(function(el) {
       el.addEventListener('mouseenter', function() { selIdx = Number(el.dataset.pi); render(); });
     });
+    results.querySelector('.is-sel')?.scrollIntoView({ block: 'nearest' });
+  }
+
+  function moveSelection(delta) {
+    if (!cur.length) return;
+    selIdx = (selIdx + delta + cur.length) % cur.length;
+    render();
+  }
+
+  function openSelected() {
+    if (!cur[selIdx]) return;
+    window.location.href = cur[selIdx].href;
+    close();
   }
 
   input.addEventListener('input', function() { show(input.value); });
   input.addEventListener('keydown', function(e) {
-    if (e.key === 'ArrowDown') { e.preventDefault(); selIdx = Math.min(selIdx + 1, cur.length - 1); render(); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); selIdx = Math.max(selIdx - 1, 0); render(); }
-    else if (e.key === 'Enter' && cur[selIdx]) { window.location.href = cur[selIdx].href; close(); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveSelection(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); moveSelection(-1); }
+    else if (e.key === 'Enter') { e.preventDefault(); openSelected(); }
     else if (e.key === 'Escape') { close(); }
+  });
+  backdrop.addEventListener('wheel', function(e) { e.preventDefault(); }, { passive: false });
+  backdrop.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveSelection(1); input.focus({ preventScroll: true }); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); moveSelection(-1); input.focus({ preventScroll: true }); }
+    else if (e.key === 'Enter') { e.preventDefault(); openSelected(); }
+    else if (e.key === 'Escape') { e.preventDefault(); close(); }
   });
   backdrop.addEventListener('click', function(e) { if (e.target === backdrop) close(); });
   document.addEventListener('keydown', function(e) {
@@ -1512,7 +1597,7 @@ interface TileSection {
   tiles: Array<{ title: string; href?: string; meta: string }>;
 }
 
-function extractIndexTiles(markdown: string): TileSection[] {
+export function extractIndexTiles(markdown: string, currentDir = 'wiki'): TileSection[] {
   const sections: TileSection[] = [];
   let current: TileSection = { heading: 'Index', tiles: [] };
 
@@ -1529,7 +1614,7 @@ function extractIndexTiles(markdown: string): TileSection[] {
 
     const link = /\[([^\]]+)\]\(([^)]+)\)/.exec(item[1]);
     if (link?.[1] && link[2]) {
-      const href = localHref(link[2]);
+      const href = localHref(link[2], currentDir);
       current.tiles.push({
         title: link[1],
         href:
@@ -1545,7 +1630,7 @@ function extractIndexTiles(markdown: string): TileSection[] {
     if (wikiLink?.[1]) {
       const target = wikiLink[1].trim();
       const title = wikiLink[2]?.trim() || humanTitle(target);
-      const href = localHref(target);
+      const href = localHref(target, currentDir);
       current.tiles.push({
         title,
         href:
@@ -1557,7 +1642,7 @@ function extractIndexTiles(markdown: string): TileSection[] {
     } else {
       const srcMatch = /\[src:\s*([^\]]+)\]/i.exec(item[1]);
       const srcPath = srcMatch?.[1].trim();
-      const srcHref = srcPath ? localHref(srcPath) : undefined;
+      const srcHref = srcPath ? localHref(srcPath, currentDir) : undefined;
       const href =
         srcPath &&
         srcHref &&
@@ -1634,6 +1719,10 @@ function deleteHref(relativePath: string): string {
   return `/delete/${relativePath}`;
 }
 
+function renameHref(relativePath: string): string {
+  return `/rename/${relativePath}`;
+}
+
 interface NavTreeNode {
   name: string;
   path: string;
@@ -1678,7 +1767,10 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
     ...files.map((file) => {
       const title = humanTitle(file);
       const safePath = escapeAttr(toPosix(file));
-      return `<a class="side-file" href="/${safePath}" title="${safePath}" data-side-path="${safePath}">${escapeHtml(title)}</a>`;
+      const kindAttr = file.startsWith('deliverables/')
+        ? ` data-deliverable-kind="${deliverableKind(file)}"`
+        : '';
+      return `<a class="side-file" href="/${safePath}" title="${safePath}" data-side-path="${safePath}"${kindAttr}>${escapeHtml(title)}</a>`;
     }),
   ].join('\n');
 
@@ -1921,14 +2013,15 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
   const searchDropdown = document.querySelector('[data-graph-search-dropdown]');
   const panelTitle = document.querySelector('[data-relation-panel-title]');
   const panelMeta = document.querySelector('[data-relation-panel-meta]');
+  const panelNodeOpen = document.querySelector('[data-relation-node-open]');
   const btnZoomIn = document.querySelector('[data-graph-zoom-in]');
   const btnZoomOut = document.querySelector('[data-graph-zoom-out]');
   const btnCenter = document.querySelector('[data-graph-center]');
   const btnReset = document.querySelector('[data-graph-reset]');
   const btnRelationToggle = document.querySelector('[data-relation-toggle]');
-  const nodes = data.nodes;
-  const edges = data.edges.map((edge) => ({ id: edge.id, from: edge.from, to: edge.to, source: edge.from, target: edge.to }));
-  const byId = new Map(nodes.map((node) => [node.id, node]));
+  let nodes = data.nodes;
+  let edges = data.edges.map((edge) => ({ id: edge.id, from: edge.from, to: edge.to, source: edge.from, target: edge.to }));
+  let byId = new Map(nodes.map((node) => [node.id, node]));
   const nodeElements = new Map();
   const linkElements = [];
   const relationElements = new Map();
@@ -1940,6 +2033,21 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
   let view = { x: 0, y: 0, scale: 1 };
   let searchQuery = '';
 
+  function normalizeGraphData(payload) {
+    return {
+      nodes: Array.isArray(payload?.nodes) ? payload.nodes : [],
+      edges: Array.isArray(payload?.edges)
+        ? payload.edges.map((edge, index) => ({
+            id: edge.id || 'rel-' + index,
+            from: edge.from,
+            to: edge.to,
+            source: edge.from,
+            target: edge.to,
+          }))
+        : [],
+    };
+  }
+
   async function refreshGraphWhenChanged() {
     const currentEtag = graphLayout?.dataset.graphEtag || '';
     if (!currentEtag) return;
@@ -1948,10 +2056,32 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
       if (!response.ok) return;
       const payload = await response.json();
       if (payload?.etag && payload.etag !== currentEtag) {
-        window.location.reload();
+        await reloadGraphData(payload.etag);
       }
     } catch {
       // Ignore transient polling failures.
+    }
+  }
+
+  async function reloadGraphData(nextEtag) {
+    const response = await fetch('/api/graph-data', { cache: 'no-store' });
+    if (!response.ok) return;
+    const payload = await response.json();
+    const previousPositions = new Map(nodes.map((node) => [node.id, { x: node.x, y: node.y, fx: node.fx, fy: node.fy }]));
+    const normalized = normalizeGraphData(payload);
+    nodes = normalized.nodes.map((node) => {
+      const previous = previousPositions.get(node.id);
+      return previous ? { ...node, x: previous.x, y: previous.y, fx: previous.fx, fy: previous.fy } : node;
+    });
+    edges = normalized.edges;
+    byId = new Map(nodes.map((node) => [node.id, node]));
+    if (selectedId && !byId.has(selectedId)) selectedId = nodes[0]?.id || null;
+    graphLayout.dataset.graphEtag = payload.etag || nextEtag;
+    render();
+    applyView();
+    if (searchQuery) {
+      applySearchFilter(searchQuery);
+      updateDropdown(searchQuery);
     }
   }
 
@@ -1976,10 +2106,6 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
     for (const entry of linkElements) entry.element.classList.remove('is-connected');
   }
 
-  function escapeDropdownHtml(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
-
   function updateDropdown(query) {
     if (!query) { searchDropdown.hidden = true; searchDropdown.innerHTML = ''; return; }
     const matches = nodes.filter((n) => nodeMatchesSearch(n, query)).slice(0, 8);
@@ -1987,10 +2113,10 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
       searchDropdown.innerHTML = '<li class="graph-search-empty">Aucun résultat</li>';
     } else {
       searchDropdown.innerHTML = matches.map((n) =>
-        '<li class="graph-search-result" data-node-id="' + escapeDropdownHtml(n.id) + '">' +
+        '<li class="graph-search-result" data-node-id="' + window.WikiUi.escapeHtml(n.id) + '">' +
         '<span class="graph-search-result-dot ' + n.type + '"></span>' +
-        '<span class="graph-search-result-title">' + escapeDropdownHtml(n.title) + '</span>' +
-        '<span class="graph-search-result-path">' + escapeDropdownHtml(n.id) + '</span>' +
+        '<span class="graph-search-result-title">' + window.WikiUi.escapeHtml(n.title) + '</span>' +
+        '<span class="graph-search-result-path">' + window.WikiUi.escapeHtml(n.id) + '</span>' +
         '</li>'
       ).join('');
     }
@@ -2048,6 +2174,7 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
   }
 
   function render() {
+    simulation?.stop();
     linkLayer.innerHTML = '';
     nodeLayer.innerHTML = '';
     linkElements.length = 0;
@@ -2075,7 +2202,7 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
       const item = document.createElement('li');
       item.className = 'relation-item';
       item.dataset.id = edge.id;
-      item.innerHTML = '<span class="relation-path"></span><span class="relation-arrow">relie a</span><span class="relation-path"></span><button class="relation-open" type="button">Afficher les markdown</button>';
+      item.innerHTML = '<span class="relation-path"></span><span class="relation-arrow">↓</span><span class="relation-path"></span><button class="relation-open" type="button">Ouvrir</button>';
       const paths = item.querySelectorAll('.relation-path');
       paths[0].textContent = from.id;
       paths[1].textContent = to.id;
@@ -2246,6 +2373,10 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
     const connected = connectedIds(id);
     panelTitle.textContent = node.title;
     panelMeta.textContent = node.id;
+    if (panelNodeOpen) {
+      panelNodeOpen.href = node.href;
+      panelNodeOpen.hidden = false;
+    }
 
     for (const [nodeId, element] of nodeElements) {
       element.classList.toggle('is-selected', nodeId === id);
@@ -2373,7 +2504,7 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
 }
 
 function renderGraphApp(nodes: GraphNode[], edges: GraphEdge[], etag: string): string {
-  return `<div class="graph-layout" data-graph-layout data-graph-etag="${escapeAttr(etag)}"><div class="graph-panel"><div class="graph-search-wrapper" data-graph-search-wrapper><div class="graph-toolbar"><div class="graph-search-field"><input class="graph-search-input" type="search" placeholder="Rechercher un n&#x0153;ud&#x2026;" aria-label="Rechercher dans le graph" data-graph-search autocomplete="off"><ul class="graph-search-dropdown" data-graph-search-dropdown hidden></ul></div><div class="graph-ctrl-group"><button class="graph-ctrl-btn" type="button" data-graph-zoom-in title="Zoom avant">+</button><button class="graph-ctrl-btn" type="button" data-graph-zoom-out title="Zoom arri&#xe8;re">&#x2212;</button><button class="graph-ctrl-btn" type="button" data-graph-center title="Centrer sur la s&#xe9;lection" style="font-size:0.9rem">&#x25CE;</button><button class="graph-ctrl-btn" type="button" data-graph-reset title="R&#xe9;initialiser la vue" style="font-size:0.9rem">&#x21BA;</button></div></div></div><div class="graph-stage"><svg class="graph-svg" viewBox="0 0 1100 720" role="img" aria-label="Graph navigable des documents et sources" data-graph-svg><g data-graph-viewport><g data-link-layer></g><g data-node-layer></g></g></svg></div></div><aside class="relation-panel"><div class="relation-panel-header"><button class="relation-toggle" type="button" title="Afficher/masquer les relations" aria-label="Afficher/masquer les relations" data-relation-toggle>&#9776;</button><div class="relation-panel-copy"><h2 class="relation-panel-title" data-relation-panel-title>Relations</h2><p class="relation-panel-meta" data-relation-panel-meta>Ouvrez une relation pour afficher les markdown lies.</p></div></div><ul class="relation-list" data-relation-list></ul></aside></div>
+  return `<div class="graph-layout" data-graph-layout data-graph-etag="${escapeAttr(etag)}"><div class="graph-panel"><div class="graph-search-wrapper" data-graph-search-wrapper><div class="graph-toolbar"><div class="graph-search-field"><input class="graph-search-input" type="search" placeholder="Rechercher un n&#x0153;ud&#x2026;" aria-label="Rechercher dans le graph" data-graph-search autocomplete="off"><ul class="graph-search-dropdown" data-graph-search-dropdown hidden></ul></div><div class="graph-ctrl-group"><button class="graph-ctrl-btn" type="button" data-graph-zoom-in title="Zoom avant">+</button><button class="graph-ctrl-btn" type="button" data-graph-zoom-out title="Zoom arri&#xe8;re">&#x2212;</button><button class="graph-ctrl-btn" type="button" data-graph-center title="Centrer sur la s&#xe9;lection" style="font-size:0.9rem">&#x25CE;</button><button class="graph-ctrl-btn" type="button" data-graph-reset title="R&#xe9;initialiser la vue" style="font-size:0.9rem">&#x21BA;</button></div></div></div><div class="graph-stage"><svg class="graph-svg" viewBox="0 0 1100 720" role="img" aria-label="Graph navigable des documents et sources" data-graph-svg><g data-graph-viewport><g data-link-layer></g><g data-node-layer></g></g></svg></div></div><aside class="relation-panel"><div class="relation-panel-header"><button class="relation-toggle" type="button" title="Afficher/masquer les relations" aria-label="Afficher/masquer les relations" data-relation-toggle>&#9776;</button><div class="relation-panel-copy"><h2 class="relation-panel-title" data-relation-panel-title>Relations</h2><p class="relation-panel-meta" data-relation-panel-meta>Ouvrez une relation pour afficher les markdown lies.</p><a class="relation-node-open" data-relation-node-open href="#" hidden>Ouvrir la page</a></div></div><ul class="relation-list" data-relation-list></ul></aside></div>
 <div class="modal-backdrop" data-relation-modal><section class="relation-modal" role="dialog" aria-modal="true" aria-labelledby="relation-modal-title"><div class="modal-header"><h2 class="modal-title" id="relation-modal-title" data-modal-title>Relation</h2><button class="modal-close" type="button" aria-label="Fermer" data-modal-close>x</button></div><div class="modal-body"><article class="modal-doc"><h3 class="modal-doc-title" data-modal-target-title></h3><div class="modal-markdown" data-modal-target-body></div></article></div></section></div>
 ${renderGraphScript(nodes, edges)}`;
 }
@@ -2415,18 +2546,23 @@ function renderWsStats(opts: {
   untracked: number;
   lastIngest: Date | null;
 }): string {
-  const items: Array<{ n: string; l: string; cls: string }> = [
+  const items: Array<{ n: string; l: string; cls: string; title?: string }> = [
     { n: String(opts.wikiPages), l: 'Pages wiki', cls: '' },
     { n: String(opts.deliverables), l: 'Livrables', cls: '' },
     { n: String(opts.templates), l: 'Templates', cls: '' },
   ];
   if (opts.untracked > 0)
-    items.push({ n: String(opts.untracked), l: 'En attente', cls: ' ws-stat-warn' });
+    items.push({
+      n: String(opts.untracked),
+      l: 'En attente',
+      cls: ' ws-stat-warn',
+      title: 'Sources présentes dans raw/untracked : lancez wiki ingest pour les intégrer au wiki.',
+    });
   items.push({ n: relativeTimeLabel(opts.lastIngest), l: 'Dernier ingest', cls: ' ws-stat-muted' });
   return `<div class="ws-stats">${items
     .map(
       (s) =>
-        `<div class="ws-stat${s.cls}"><span class="ws-stat-n">${escapeHtml(s.n)}</span><span class="ws-stat-l">${escapeHtml(s.l)}</span></div>`,
+        `<div class="ws-stat${s.cls}"${s.title ? ` title="${escapeAttr(s.title)}"` : ''}><span class="ws-stat-n">${escapeHtml(s.n)}</span><span class="ws-stat-l">${escapeHtml(s.l)}</span></div>`,
     )
     .join('')}</div>`;
 }
@@ -2568,9 +2704,13 @@ async function serveMd(
       : await renderMarkdown(raw, currentDir);
   const printBtn = `<button class="action-button" onclick="window.print()" title="Imprimer / Exporter en PDF">↑ PDF</button>`;
   const dlBtn = `<a class="action-link" href="${escapeHref(`/raw/${relativePath}`)}" download title="Télécharger le fichier Markdown source">↓ .md</a>`;
+  const renameBtn = relativePath.startsWith('templates/')
+    ? `<button class="action-button" type="button" onclick="renameTemplate()">Renommer</button>`
+    : '';
   const actions = [
     printBtn,
     dlBtn,
+    renameBtn,
     isEditableRelativePath(relativePath)
       ? `<a class="action-link" href="${escapeHref(editHref(relativePath))}">Edit</a>`
       : '',
@@ -2615,7 +2755,7 @@ async function serveMd(
 </script>`;
   return layout(
     title,
-    `${sidebar}<main class="content">${renderTopbar(urlPath, actions)}<article class="article">${html}</article>${tocScript}</main>`,
+    `${sidebar}<main class="content">${renderTopbar(urlPath, actions)}<article class="article">${html}</article>${tocScript}${renameBtn ? templateRenameScript(relativePath) : ''}</main>`,
   );
 }
 
@@ -2761,6 +2901,10 @@ function sendJson(
 ): void {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(data));
+}
+
+export function isRawDownloadRequestPath(urlPath: string): boolean {
+  return urlPath.startsWith('/raw/') && !urlPath.startsWith('/raw/ingested/');
 }
 
 // ── Perf helpers ──────────────────────────────────────────────────────────────
@@ -3062,6 +3206,34 @@ async function proxyPost(
   res.end();
 }
 
+function headerString(value: string | string[] | undefined): string | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (!raw) return undefined;
+  return raw.replace(/[\r\n]/g, '').trim();
+}
+
+function chatLlmProxyTarget(req: IncomingMessage, config: AppConfig): {
+  url: string;
+  headers: Record<string, string>;
+} {
+  const overrideBaseUrl = headerString(req.headers['x-llm-wiki-llm-base-url']);
+  const overrideApiKey = headerString(req.headers['x-llm-wiki-llm-api-key']);
+  let baseUrl = config.llm.baseUrl;
+  if (overrideBaseUrl) {
+    const parsed = new URL(overrideBaseUrl);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      throw new Error('INVALID_LLM_BASE_URL');
+    }
+    baseUrl = overrideBaseUrl;
+  }
+  return {
+    url: `${baseUrl.replace(/\/+$/, '')}/chat/completions`,
+    headers: {
+      authorization: `Bearer ${overrideApiKey ?? config.llm.apiKey ?? ''}`,
+    },
+  };
+}
+
 function resolveEditableMarkdown(rootDir: string, relativePath: string): string {
   const cleanRelativePath = toPosix(relativePath).replace(/^\/+/, '').replace(/\/+$/, '');
   if (!isEditableRelativePath(cleanRelativePath)) {
@@ -3118,6 +3290,7 @@ async function createMarkdownDocument(
   if (await pathExists(absolute)) {
     throw new Error('MARKDOWN_ALREADY_EXISTS');
   }
+  // Manual UI input is preserved verbatim; generated Markdown is normalized at write sites.
   await safeWriteFile(absolute, content);
   return relativePath;
 }
@@ -3133,6 +3306,37 @@ async function deleteMarkdownDocument(
   const absolute = resolveInside(rootDir, cleanRelativePath);
   await rm(absolute, { force: true });
   return cleanRelativePath.split('/')[0] ?? '';
+}
+
+async function renameTemplateDocument(
+  rootDir: string,
+  relativePath: string,
+  rawBody: string,
+): Promise<string> {
+  const cleanRelativePath = toPosix(relativePath).replace(/^\/+/, '').replace(/\/+$/, '');
+  if (!cleanRelativePath.startsWith('templates/') || !cleanRelativePath.endsWith('.md')) {
+    throw new Error('FORBIDDEN_RENAME_PATH');
+  }
+  const payload = JSON.parse(rawBody || '{}') as { name?: string };
+  const rawName = String(payload.name ?? '').trim();
+  const fileName = rawName.endsWith('.md') ? rawName : `${rawName}.md`;
+  if (!fileName || fileName.includes('/') || fileName.includes('\\')) {
+    throw new Error('INVALID_RENAME_TARGET');
+  }
+  const source = resolveInside(rootDir, cleanRelativePath);
+  if (!(await pathExists(source))) {
+    throw new Error('RENAME_SOURCE_NOT_FOUND');
+  }
+  const targetRelativePath = toPosix(path.posix.join(path.posix.dirname(cleanRelativePath), fileName));
+  if (!targetRelativePath.startsWith('templates/') || !targetRelativePath.endsWith('.md')) {
+    throw new Error('FORBIDDEN_RENAME_TARGET');
+  }
+  const target = resolveInside(rootDir, targetRelativePath);
+  if (await pathExists(target)) {
+    throw new Error('RENAME_TARGET_EXISTS');
+  }
+  await rename(source, target);
+  return targetRelativePath;
 }
 
 async function generateNotFoundPage(rootDir: string, urlPath: string): Promise<string> {
@@ -3209,7 +3413,6 @@ async function generateSkillsPage(rootDir: string): Promise<string> {
 </div>
 
 <script>
-function escH(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 let skills=[];
 
 async function loadSkills(){
@@ -3227,10 +3430,10 @@ function renderList(){
   }
   el.innerHTML='<div class="skills-grid">'+skills.map(s=>\`
     <div class="skill-card">
-      <div class="skill-card-name">/\${escH(s.name)}</div>
-      \${s.description?'<div class="skill-card-desc">'+escH(s.description)+'</div>':''}
-      \${s.params&&s.params.length?'<div class="skill-card-params">'+s.params.map(p=>'<span class="skill-param">{'+escH(p)+'}</span>').join('')+'</div>':''}
-      \${s.body?'<div class="skill-card-body-preview">'+escH(s.body.slice(0,120))+(s.body.length>120?'…':'')+'</div>':''}
+      <div class="skill-card-name">/\${window.WikiUi.escapeHtml(s.name)}</div>
+      \${s.description?'<div class="skill-card-desc">'+window.WikiUi.escapeHtml(s.description)+'</div>':''}
+      \${s.params&&s.params.length?'<div class="skill-card-params">'+s.params.map(p=>'<span class="skill-param">{'+window.WikiUi.escapeHtml(p)+'}</span>').join('')+'</div>':''}
+      \${s.body?'<div class="skill-card-body-preview">'+window.WikiUi.escapeHtml(s.body.slice(0,120))+(s.body.length>120?'…':'')+'</div>':''}
       <div class="skill-card-actions">
         <button class="action-button" onclick="openEditorByIndex(\${i})">Modifier</button>
         <button class="action-button del-btn" onclick="deleteSkillByIndex(\${i})">Supprimer</button>
@@ -3490,15 +3693,14 @@ export default async function serveCmd(
       // ── Server-side proxies (avoid CORS + Docker internal URLs) ────────────
       if (req.method === 'POST') {
         if (urlPath === '/api/chat') {
-          await proxyPost(
-            req,
-            res,
-            `${config.llm.baseUrl}/chat/completions`,
-            {
-              authorization: `Bearer ${config.llm.apiKey ?? ''}`,
-            },
-            { retry429: true },
-          );
+          try {
+            const llmTarget = chatLlmProxyTarget(req, config);
+            await proxyPost(req, res, llmTarget.url, llmTarget.headers, { retry429: true });
+          } catch (err) {
+            sendJson(res, 400, {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
           return;
         }
         if (urlPath === '/api/mcp') {
@@ -3592,7 +3794,10 @@ export default async function serveCmd(
         if (req.method === 'POST') {
           try {
             const collection = await deleteMarkdownDocument(rootDir, relative);
-            res.writeHead(303, { Location: escapeHref(`/${collection}`) });
+            res.writeHead(303, {
+              Location: escapeHref(`/${collection}`),
+              'Cache-Control': 'no-store, no-cache, must-revalidate',
+            });
             res.end();
           } catch {
             res.writeHead(403, { 'Content-Type': 'text/plain' });
@@ -3602,6 +3807,28 @@ export default async function serveCmd(
         }
         res.writeHead(405, { 'Content-Type': 'text/plain' });
         res.end('Method not allowed');
+        return;
+      }
+
+      if (urlPath.startsWith('/rename/')) {
+        const relative = urlPath.replace(/^\/rename\//, '').replace(/\/+$/, '');
+        if (req.method === 'PATCH') {
+          try {
+            const renamedPath = await renameTemplateDocument(
+              rootDir,
+              relative,
+              await readRequestBody(req),
+            );
+            sendJson(res, 200, { ok: true, path: renamedPath });
+          } catch (err) {
+            sendJson(res, 400, {
+              ok: false,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+          return;
+        }
+        sendJson(res, 405, { error: 'Method not allowed' });
         return;
       }
 
@@ -3631,6 +3858,7 @@ export default async function serveCmd(
               res.end('Missing content field');
               return;
             }
+            // Manual edits must round-trip exactly; generated Markdown is normalized elsewhere.
             await writeIfChanged(absolute, content);
             res.writeHead(303, { Location: escapeHref(`/${toPosix(relative)}`) });
             res.end();
@@ -3696,7 +3924,7 @@ export default async function serveCmd(
         return;
       }
 
-      if (req.method === 'GET' && urlPath.startsWith('/raw/')) {
+      if (req.method === 'GET' && isRawDownloadRequestPath(urlPath)) {
         const rawRelative = toPosix(urlPath.replace(/^\/raw\//, '').replace(/\/+$/, ''));
         const normalizedRawRelative = toPosix(path.posix.normalize(rawRelative));
         if (rawRelative.endsWith('.md') && isServedRelativePath(rawRelative)) {
@@ -3749,6 +3977,45 @@ export default async function serveCmd(
 
       if (req.method === 'GET' && urlPath === '/api/graph-etag') {
         sendJson(res, 200, { etag: await graphEtag(rootDir) });
+        return;
+      }
+
+      if (req.method === 'GET' && urlPath === '/api/graph-data') {
+        const graphFiles = await listGraphFiles(rootDir);
+        const etag = await graphEtagForFiles(rootDir, graphFiles);
+        const graph = await buildGraph(rootDir, graphFiles);
+        sendJson(res, 200, {
+          etag,
+          nodes: graph.nodes,
+          edges: graph.edges.map((edge, index) => ({ ...edge, id: `rel-${index}` })),
+        });
+        return;
+      }
+
+      if (urlPath === '/api/llm-config') {
+        if (req.method === 'GET') {
+          sendJson(res, 200, {
+            model: config.llm.model,
+            temperature: config.llm.temperature,
+            baseUrl: config.llm.baseUrl,
+            apiKey: config.llm.apiKey ?? '',
+          });
+          return;
+        }
+        if (req.method === 'PATCH') {
+          const body = JSON.parse(await readRequestBody(req) || '{}') as Record<string, unknown>;
+          sendJson(res, 200, {
+            ok: true,
+            override: {
+              model: typeof body.model === 'string' ? body.model : undefined,
+              temperature: typeof body.temperature === 'number' ? body.temperature : undefined,
+              baseUrl: typeof body.baseUrl === 'string' ? body.baseUrl : undefined,
+              apiKey: typeof body.apiKey === 'string' ? body.apiKey : undefined,
+            },
+          });
+          return;
+        }
+        sendJson(res, 405, { error: 'Method not allowed' });
         return;
       }
 

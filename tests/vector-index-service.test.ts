@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -144,6 +144,31 @@ describe('vector index service', () => {
     );
 
     await service.buildIndex();
+
+    const results = await service.search('expertise');
+    expect(results[0]?.page.relativePath).toBe('wiki/fonctionnel.md');
+  });
+
+  it('recreates the internal vector index directory when .wiki is missing', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-vector-missing-dir-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await writeFile(
+      path.join(root, 'wiki', 'fonctionnel.md'),
+      '# Fonctionnel\n\nExpertise.\n',
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    const workspace = new WorkspaceService(config);
+    const service = new VectorIndexService(
+      config,
+      workspace,
+      new FakeEmbeddingService() as any,
+      new EmptyRerankService() as any,
+    );
+
+    await service.buildIndex();
+    await expect(access(workspace.paths.vectorIndexDir)).resolves.toBeUndefined();
 
     const results = await service.search('expertise');
     expect(results[0]?.page.relativePath).toBe('wiki/fonctionnel.md');

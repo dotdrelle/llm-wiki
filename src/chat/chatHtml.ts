@@ -423,6 +423,7 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
             <input id="temperature" type="number" value="0.7" min="0" max="2" step="0.1" onchange="saveConfig()">
           </div>
         </div>
+        <button class="sb-link" type="button" onclick="resetYamlConfig()" style="width:100%;margin-top:8px;text-align:left">Remettre les valeurs du YAML <span>.wikirc.yaml</span></button>
       </div>
     </div>
   </div>
@@ -571,6 +572,7 @@ let historySummaries = [];
 let historySaveTimer = null;
 let conversationDirty = false;
 let historyLoadSeq = 0;
+let clearChatSeq = 0;
 let skillsCache = null;
 let skillAcIdx = -1;
 let skillAcItems = [];
@@ -1076,6 +1078,16 @@ function buildLLMHeaders() {
   return h;
 }
 
+function buildProxyLLMHeaders() {
+  const h={'Content-Type':'application/json'};
+  const yaml=window.__WIKI_CONFIG__||{};
+  const baseUrl=$('base-url').value.trim();
+  const apiKey=$('api-key').value.trim();
+  if(baseUrl && baseUrl!==yaml.baseUrl) h['X-LLM-Wiki-LLM-Base-Url']=baseUrl;
+  if(apiKey && apiKey!==yaml.apiKey) h['X-LLM-Wiki-LLM-API-Key']=apiKey;
+  return h;
+}
+
 function renderTopPills() {
   const el=$('tb-mcps');
   if(!el) return;
@@ -1092,6 +1104,7 @@ function addServer(name='', url='', bearer='') {
 }
 
 function removeServer(id) {
+  if(!confirm('Supprimer ce connecteur ?')) return;
   servers=servers.filter(s=>s.id!==id);
   renderCards(); renderTopPills(); saveServers();
 }
@@ -1648,11 +1661,40 @@ function recoverProductionStateFromMessages() {
 
 // ── Chat ────────────────────────────────────────────────────────────────────
 
-function clearChat() {
+async function clearChat() {
+  clearChatSeq++;
+  if(isStreaming) stopStreaming();
+  if(historySaveTimer) {
+    clearTimeout(historySaveTimer);
+    historySaveTimer=null;
+  }
+  const id=currentConversationId;
   messages=[];
-  currentConversationId=null;
+  conversationDirty=false;
+  resetProductionState();
   setEmptyChat();
-  renderHistory();
+  if(id) {
+    try {
+      const existing=historySummaries.find(c=>c.id===id);
+      await persistConversationPayload({
+        id,
+        title:'Nouvelle discussion',
+        createdAt:existing?.createdAt || new Date().toISOString(),
+        updatedAt:new Date().toISOString(),
+        systemPrompt:currentSystemPrompt(),
+        mcpServers:activeServerSnapshot(),
+        messages:[],
+        toolCalls:[],
+        traceHtml:[],
+        messageHtml:'',
+      });
+      currentConversationId=id;
+    } catch(e) {
+      notify(\`Effacement impossible: \${e.message}\`,'e');
+    }
+  } else {
+    renderHistory();
+  }
 }
 
 function removeEmpty() { $('empty')?.remove(); }
@@ -1824,7 +1866,17 @@ function uniqueCount(values) {
 }
 
 function localDocHref(path) {
-  const clean=String(path||'').trim().replace(/^\\/+/, '');
+  let clean=String(path||'').trim();
+  if(/^https?:\\/\\//i.test(clean)) {
+    try {
+      const url=new URL(clean, window.location.href);
+      if(url.origin!==window.location.origin) return null;
+      clean=url.pathname;
+    } catch {
+      return null;
+    }
+  }
+  clean=clean.replace(/^\\/+/, '').replace(/#.*$/, '');
   if(!clean) return null;
   if(
     clean.startsWith('wiki/') ||
@@ -1947,6 +1999,39 @@ function toolResultSummaryHTML(result, ok) {
     </div>\`;
   }
 
+  if(data?.jobs && Array.isArray(data.jobs)) {
+    const shown=data.jobs.slice(0,8);
+    return \`<div class="tc-summary">
+      <div class="tc-summary-head"><span>\${data.jobs.length} job\${data.jobs.length>1?'s':''} production</span><span class="tc-pill">\${esc(data.workspace||'workspace')}</span></div>
+      <div class="tc-list">\${shown.map(job=>\`<div class="tc-item">
+        <div class="tc-item-title"><span>\${esc(job.type||'production')} · \${esc(productionStatusLabel(job.status))}</span></div>
+        <div class="tc-item-meta">\${esc(job.jobId||'')}\${job.error?\` · \${esc(job.error)}\`:''}</div>
+        \${Array.isArray(job.producedFiles)&&job.producedFiles.length?\`<div class="tc-doc-chip-row">\${job.producedFiles.slice(0,5).map(p=>docButtonHTML(p,p,true)).join('')}</div>\`:''}
+      </div>\`).join('')}</div>
+      \${data.jobs.length>shown.length?\`<div class="tc-item-meta">+\${data.jobs.length-shown.length} autres jobs</div>\`:''}
+      <details class="tc-raw"><summary>JSON brut</summary><pre>\${esc(raw)}</pre></details>
+    </div>\`;
+  }
+
+  if(data?.job || data?.jobId) {
+    const job=data.job || data;
+    const status=String(job.status||data.status||'');
+    const produced=Array.isArray(job.producedFiles) ? job.producedFiles : (Array.isArray(data.producedFiles) ? data.producedFiles : []);
+    const logTail=Array.isArray(data.logTail) ? data.logTail : (Array.isArray(data.tail) ? data.tail : []);
+    const terminal=productionTerminal(status);
+    return \`<div class="tc-summary">
+      <div class="tc-summary-head">
+        <span>Production \${esc(productionStatusLabel(status))}</span>
+        \${job.jobId?\`<span class="tc-pill">\${esc(job.jobId)}</span>\`:''}
+        \${terminal?\`<span class="tc-pill">\${esc(status)}</span>\`:''}
+      </div>
+      \${produced.length?\`<div class="tc-item"><div class="tc-item-meta">Fichiers produits</div><div class="tc-doc-chip-row">\${produced.slice(0,8).map(p=>docButtonHTML(p,p,true)).join('')}\${produced.length>8?'<span class="tc-item-meta">…</span>':''}</div></div>\`:''}
+      \${job.error?\`<div class="tc-item-excerpt" style="color:var(--err)">\${esc(job.error)}</div>\`:''}
+      \${logTail.length?\`<details class="tc-raw"><summary>Console</summary><pre>\${esc(logTail.slice(-80).join('\\n'))}</pre></details>\`:''}
+      <details class="tc-raw"><summary>JSON brut</summary><pre>\${esc(raw)}</pre></details>
+    </div>\`;
+  }
+
   return \`<div class="tc-summary">
     <div class="tc-summary-head"><span>Résultat</span></div>
     <pre>\${esc(shortText(raw,1800))}</pre>
@@ -1965,6 +2050,11 @@ function toolResultTraceSummary(result, ok) {
     return \`\${candidates} candidat\${candidates>1?'s':''} · \${pages} page\${pages>1?'s':''}\`;
   }
   if(data?.pages && Array.isArray(data.pages)) return \`\${data.pages.length} page\${data.pages.length>1?'s':''}\`;
+  if(data?.jobs && Array.isArray(data.jobs)) return \`\${data.jobs.length} job\${data.jobs.length>1?'s':''} production\`;
+  if(data?.job || data?.jobId) {
+    const job=data.job || data;
+    return \`production \${productionStatusLabel(job.status||data.status)}\`;
+  }
   const text=typeof result==='string'?result:JSON.stringify(result);
   return shortText(text,70);
 }
@@ -2156,9 +2246,13 @@ async function sendMessage() {
     function:{name:t.name,description:t.description||'',parameters:t.inputSchema||t.parameters||{type:'object',properties:{}}}
   })) : undefined;
   const llmUrl=useProxy ? '/api/chat' : \`\${$('base-url').value.trim().replace(/\\/$/, '')}/v1/chat/completions\`;
-  const llmHeaders=useProxy ? {'Content-Type':'application/json'} : buildLLMHeaders();
+  const llmHeaders=useProxy ? buildProxyLLMHeaders() : buildLLMHeaders();
 
   let streamDiv=null;
+  let streamText='';
+  let streamFinalized=false;
+  let streamMessagePersisted=false;
+  const streamClearSeq=clearChatSeq;
   try {
     while(turn<MAX_TURNS) {
       turn++;
@@ -2169,14 +2263,23 @@ async function sendMessage() {
       const reqMessages=sysContent ? [{role:'system',content:sysContent},...cleanMessages] : cleanMessages;
       const reqBody={model,temperature:temp,messages:reqMessages,...(toolsPayload?{tools:toolsPayload,tool_choice:'auto'}:{})};
       streamDiv=createStreamBubble();
-      const {content,toolCalls}=await fetchStream(llmUrl,llmHeaders,reqBody,t=>setStreamContent(streamDiv,t),streamAbortController.signal);
+      streamText='';
+      streamFinalized=false;
+      streamMessagePersisted=false;
+      const {content,toolCalls}=await fetchStream(llmUrl,llmHeaders,reqBody,t=>{
+        streamText=t;
+        setStreamContent(streamDiv,t);
+      },streamAbortController.signal);
       if(streamAbortController.signal.aborted) break;
+      streamText=content;
 
       if(toolCalls?.length) {
         const tcWithIdx=toolCalls.map((tc,i)=>({...tc,_domIdx:tcIdx+i}));
         const tcBlocks=tcWithIdx.map((tc,i)=>tcBlockHTML(tc,i)).join('');
         setStreamContent(streamDiv,content,tcBlocks);
+        streamFinalized=true;
         messages.push({role:'assistant',content:content||null,tool_calls:tcWithIdx.map(({_domIdx,...tc})=>tc)});
+        streamMessagePersisted=true;
         for(const tc of tcWithIdx) {
           const fn=tc.function?.name||'?';
           const server=findServerForTool(fn);
@@ -2216,7 +2319,9 @@ async function sendMessage() {
       }
 
       setStreamContent(streamDiv,content);
+      streamFinalized=true;
       messages.push({role:'assistant',content});
+      streamMessagePersisted=true;
       conversationDirty=true;
       await saveCurrentConversation({immediate:true});
       break;
@@ -2226,12 +2331,16 @@ async function sendMessage() {
       await saveCurrentConversation({immediate:true});
     }
   } catch(err) {
+    if(streamClearSeq!==clearChatSeq) return;
     if(err.name==='AbortError') {
       if(streamDiv) {
         const partial=streamDiv.dataset.copy || 'Réponse arrêtée.';
         setStreamContent(streamDiv,partial);
+        streamText=partial;
+        streamFinalized=true;
         streamDiv.dataset.copy=partial;
         messages.push({role:'assistant',content:partial});
+        streamMessagePersisted=true;
       } else {
         appendMsg('assistant','Réponse arrêtée.');
         messages.push({role:'assistant',content:'Réponse arrêtée.'});
@@ -2239,12 +2348,30 @@ async function sendMessage() {
       conversationDirty=true;
       await saveCurrentConversation({immediate:true});
     } else {
-      streamDiv?.remove();
-      appendMsg('assistant',\`⚠ Erreur: \${err.message}\`);
+      if(streamDiv) {
+        const errorText=streamText || \`⚠ Erreur: \${err.message}\`;
+        setStreamContent(streamDiv,errorText);
+        streamText=errorText;
+        streamFinalized=true;
+        messages.push({role:'assistant',content:errorText});
+        streamMessagePersisted=true;
+      } else {
+        appendMsg('assistant',\`⚠ Erreur: \${err.message}\`);
+      }
       notify(err.message,'e');
+      conversationDirty=true;
       await saveCurrentConversation({immediate:true});
     }
   } finally {
+    if(streamDiv && !streamFinalized && streamClearSeq===clearChatSeq) {
+      const finalText=streamText || (streamAbortController?.signal.aborted ? 'Réponse arrêtée.' : '');
+      setStreamContent(streamDiv,finalText);
+      if(finalText && !streamMessagePersisted) {
+        messages.push({role:'assistant',content:finalText});
+        conversationDirty=true;
+        await saveCurrentConversation({immediate:true});
+      }
+    }
     isStreaming=false;
     streamAbortController=null;
     setSendButtonStreaming(false);
@@ -2280,7 +2407,29 @@ function saveConfig() {
     temp:    $('temperature').value,
   };
   localStorage.setItem(storageKey('mcpchat_config'), JSON.stringify(cfg));
+  fetch('/api/llm-config',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    baseUrl:cfg.baseUrl,
+    apiKey:cfg.apiKey,
+    model:cfg.model,
+    temperature:Number(cfg.temp),
+  })}).catch(()=>{});
   if (cfg.apiKey) flashSaved('llm-saved');
+}
+
+async function resetYamlConfig() {
+  const wc = window.__WIKI_CONFIG__;
+  let cfg = wc;
+  try {
+    const res=await fetch('/api/llm-config',{cache:'no-store'});
+    if(res.ok) cfg=await res.json();
+  } catch {}
+  localStorage.removeItem(storageKey('mcpchat_config'));
+  if(cfg?.baseUrl) $('base-url').value=cfg.baseUrl;
+  if(cfg?.apiKey!==undefined) $('api-key').value=cfg.apiKey||'';
+  if(cfg?.model) $('model-name').value=cfg.model;
+  if(cfg?.temperature!==undefined) $('temperature').value=String(cfg.temperature);
+  syncModel();
+  flashSaved('llm-saved');
 }
 
 // ── LocalStorage (user-added servers only) ──────────────────────────────────
@@ -2321,12 +2470,11 @@ function loadConfig() {
     saved = JSON.parse(localStorage.getItem(storageKey('mcpchat_config'))||'{}');
   } catch {}
   if (wc) {
-    // Docker/proxy mode: /api/chat uses the server-side .wikirc.yaml config.
-    // Do not reuse browser overrides from another workspace.
+    // Proxy mode defaults to .wikirc.yaml but keeps workspace-scoped browser overrides.
     if (wc.model) $('model-name').value = wc.model;
     if (wc.temperature !== undefined) $('temperature').value = String(wc.temperature);
-    if (wc.baseUrl) { $('base-url').value = wc.baseUrl; $('base-url').readOnly = true; $('base-url').style.opacity = '.7'; }
-    if (wc.apiKey)  { $('api-key').value = wc.apiKey;   $('api-key').readOnly = true;  $('api-key').style.opacity = '.7'; flashSaved('llm-saved'); }
+    if (wc.baseUrl) $('base-url').value = wc.baseUrl;
+    if (wc.apiKey)  { $('api-key').value = wc.apiKey; flashSaved('llm-saved'); }
   } else {
     // CLI mode: load from localStorage
     if (saved.baseUrl) $('base-url').value = saved.baseUrl;
@@ -2334,6 +2482,10 @@ function loadConfig() {
     if (saved.model)   $('model-name').value = saved.model;
     if (saved.temp !== undefined) $('temperature').value = saved.temp;
   }
+  if (saved.baseUrl) $('base-url').value = saved.baseUrl;
+  if (saved.apiKey)  { $('api-key').value = saved.apiKey; flashSaved('llm-saved'); }
+  if (saved.model)   $('model-name').value = saved.model;
+  if (saved.temp !== undefined) $('temperature').value = saved.temp;
   $('system-prompt').value = localStorage.getItem(storageKey('mcpchat_system_prompt')) ?? DEFAULT_SYSTEM_PROMPT;
   syncModel();
 }
