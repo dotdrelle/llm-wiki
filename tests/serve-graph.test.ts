@@ -45,6 +45,15 @@ describe('serve command palette', () => {
     expect(source).toContain('data-side-path="${safePath}"');
     expect(source).toContain("document.querySelectorAll('[data-side-path]')");
   });
+
+  it('invalidates cached markdown pages when the sidebar file list changes', async () => {
+    const source = await serveSource();
+
+    expect(source).toContain('async function navigationEtag(rootDir: string)');
+    expect(source).toContain('const etag = pageEtag(fileStat2, await navigationEtag(rootDir));');
+    expect(source).toContain('function requestHasEtag(req: IncomingMessage, etag: string)');
+    expect(source).toContain("'Cache-Control': 'no-store, no-cache, must-revalidate'");
+  });
 });
 
 describe('serve deliverables ui', () => {
@@ -56,6 +65,10 @@ describe('serve deliverables ui', () => {
     expect(source).toContain("return 'build';");
     expect(source).toContain('data-deliverable-kind="${deliverableKind(file)}"');
     expect(source).toContain("'Cache-Control': 'no-store, no-cache, must-revalidate'");
+    expect(source).toContain("isCreatableCollection(node.name) && node.name !== 'deliverables'");
+    expect(source).toContain('class="delete-confirm"');
+    expect(source).toContain('delete-confirm-panel');
+    expect(source).not.toContain("confirm('Supprimer ce fichier ?')");
   });
 });
 
@@ -74,6 +87,20 @@ describe('serve missing feature endpoints', () => {
     const source = await serveSource();
 
     expect(source).toContain('Sources présentes dans raw/untracked');
+  });
+});
+
+describe('serve chat proxy', () => {
+  it('reports unreachable LLM upstreams as a gateway error with Docker guidance', async () => {
+    const source = await serveSource();
+
+    expect(source).toContain('function upstreamFetchFailureMessage');
+    expect(source).toContain("sendJson(res, 502");
+    expect(source).toContain('retryNetwork?: boolean');
+    expect(source).toContain('setTimeout(resolve, 250)');
+    expect(source).toContain('LLM upstream unreachable at ${target}: ${detail}');
+    expect(source).toContain('retryNetwork: true');
+    expect(source).toContain('use the container network hostname, not 127.0.0.1');
   });
 });
 

@@ -336,8 +336,8 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .prod-metric-k{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
 .prod-metric-v{font-size:12px;color:var(--text);font-family:var(--font-mono);margin-top:2px}
 .prod-progress{margin-top:10px;border:1px solid var(--border);border-radius:10px;background:var(--panel);padding:9px}
-.prod-progress-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px}
-.prod-progress-label{min-width:0;font-size:12px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prod-progress-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:7px}
+.prod-progress-label{min-width:0;flex:1;font-size:12px;font-weight:800;color:var(--text);line-height:1.35;overflow-wrap:anywhere}
 .prod-progress-percent{font-family:var(--font-mono);font-size:11px;color:var(--muted);white-space:nowrap}
 .prod-progress-track{height:7px;border-radius:99px;background:var(--panel-deep);overflow:hidden}
 .prod-progress-bar{height:100%;width:0;background:var(--accent);border-radius:99px;transition:width .25s ease}
@@ -587,6 +587,7 @@ let productionState = {
   pollTimer: null,
   countdownTimer: null,
   lastUpdatedAt: null,
+  notifiedTerminalJobIds: new Set(),
 };
 const DEFAULT_SYSTEM_PROMPT = \`Tu es un assistant connecté à des serveurs MCP.
 
@@ -1259,11 +1260,21 @@ async function mcpRPC(server, method, params) {
       openOAuthWindow(authUrl,server);
       throw new Error(\`Authentification requise pour \${server.name}. La page OAuth a été ouverte hors du chat.\`);
     }
-    throw new Error(raw ? \`HTTP \${res.status}: \${raw.slice(0,180)}\` : \`HTTP \${res.status}\`);
+    const err=new Error(raw ? \`HTTP \${res.status}: \${raw.slice(0,180)}\` : \`HTTP \${res.status}\`);
+    err.status=res.status;
+    err.raw=raw;
+    throw err;
   }
   const ct = res.headers.get('content-type') || '';
   if (ct.includes('text/event-stream')) return await readSSE(res);
   return await res.json();
+}
+
+function isMcpSessionOrNetworkFailure(err) {
+  const status=err?.status;
+  const text=String(err?.raw || err?.message || err || '');
+  return status===400 || status===404 || status===409 || status===410 || status===502 || status===503 ||
+    /session|mcp-session-id|no valid session|not found|fetch failed|terminated|socket|econnreset|econnrefused|und_err/i.test(text);
 }
 
 function extractOAuthUrl(response, raw) {
@@ -1312,20 +1323,7 @@ async function connectServer(id) {
   if(!s.url) { notify('URL manquante','e'); return; }
   s.status='loading'; s.sessionId=null; renderCards();
   try {
-    // Poignée de main MCP
-    const initResp = await mcpRPC(s, 'initialize', {
-      protocolVersion: '2024-11-05',
-      capabilities: {},
-      clientInfo: {name: 'MCPChat', version: '1.0'}
-    });
-    if (initResp?.error) throw new Error(initResp.error.message || 'initialize échoué');
-    await mcpNotify(s, 'notifications/initialized', {});
-
-    // Récupération des outils
-    const toolsResp = await mcpRPC(s, 'tools/list');
-    if (toolsResp?.error) throw new Error(toolsResp.error.message || 'tools/list échoué');
-    s.tools = toolsResp?.result?.tools || [];
-    s.status='ok'; s.enabled=true;
+    await reconnectMCPServer(s);
     notify(\`✓ \${s.name} : \${s.tools.length} outil(s)\`);
   } catch(err) {
     s.status='err'; s.enabled=false;
@@ -1334,10 +1332,42 @@ async function connectServer(id) {
   renderCards(); renderTopPills(); saveServers();
 }
 
+async function reconnectMCPServer(server) {
+  server.sessionId=null;
+  const initResp = await mcpRPC(server, 'initialize', {
+    protocolVersion: '2024-11-05',
+    capabilities: {},
+    clientInfo: {name: 'MCPChat', version: '1.0'}
+  });
+  if (initResp?.error) throw new Error(initResp.error.message || 'initialize échoué');
+  await mcpNotify(server, 'notifications/initialized', {});
+
+  const toolsResp = await mcpRPC(server, 'tools/list');
+  if (toolsResp?.error) throw new Error(toolsResp.error.message || 'tools/list échoué');
+  server.tools = toolsResp?.result?.tools || [];
+  server.status='ok';
+  server.enabled=true;
+}
+
 async function callMCPTool(name, args) {
   const server=findServerForTool(name);
   if(!server) throw new Error(\`Aucun serveur MCP actif pour "\${name}"\`);
-  const resp = await mcpRPC(server, 'tools/call', {name, arguments: args});
+  let resp;
+  try {
+    resp = await mcpRPC(server, 'tools/call', {name, arguments: args});
+  } catch(err) {
+    if(!isMcpSessionOrNetworkFailure(err)) throw err;
+    notify(\`\${server.name} : reconnexion MCP...\`);
+    await reconnectMCPServer(server);
+    renderCards(); renderTopPills(); saveServers();
+    resp = await mcpRPC(server, 'tools/call', {name, arguments: args});
+  }
+  if (resp?.error && isMcpSessionOrNetworkFailure(resp.error)) {
+    notify(\`\${server.name} : session MCP expirée, reconnexion...\`);
+    await reconnectMCPServer(server);
+    renderCards(); renderTopPills(); saveServers();
+    resp = await mcpRPC(server, 'tools/call', {name, arguments: args});
+  }
   if (resp?.error) throw new Error(resp.error.message || 'Erreur tool call');
   const content = resp?.result?.content || [];
   return content.map(c => c.text ?? JSON.stringify(c)).join('\\n') || JSON.stringify(resp?.result || {});
@@ -1385,7 +1415,7 @@ function parseProductionJSON(result) {
 function resetProductionState() {
   if(productionState.pollTimer) clearTimeout(productionState.pollTimer);
   if(productionState.countdownTimer) clearInterval(productionState.countdownTimer);
-  productionState={jobId:null,job:null,progress:null,logs:[],command:'',traceFile:'',pollTimer:null,countdownTimer:null,lastUpdatedAt:null};
+  productionState={jobId:null,job:null,progress:null,logs:[],command:'',traceFile:'',pollTimer:null,countdownTimer:null,lastUpdatedAt:null,notifiedTerminalJobIds:new Set()};
   renderProductionPanel();
 }
 
@@ -1558,6 +1588,7 @@ function updateProductionFromPayload(payload, {open=false, poll=false}={}) {
   if(payload.jobId && !payload.job) productionState.jobId=payload.jobId;
   if(payload.job) {
     productionState.job=payload.job;
+    if(Array.isArray(payload.producedFiles)) productionState.job.producedFiles=payload.producedFiles;
     productionState.jobId=payload.job.jobId || productionState.jobId;
     const details=extractProductionDetails(payload.logTail||[]);
     if(details.command) productionState.command=details.command;
@@ -1599,6 +1630,66 @@ function handleProductionToolResult(fn, args, result, ok) {
   }
 }
 
+function productionToolSummary(toolResults) {
+  const parsed=toolResults.map(r=>parseProductionJSON(r.content)).filter(Boolean);
+  const latestWithJob=[...parsed].reverse().find(d=>d.job);
+  const latestJob=latestWithJob?.job;
+  const started=[...parsed].reverse().find(d=>d.jobId && d.status);
+  const busy=[...parsed].reverse().find(d=>d.error==='workspace_busy');
+  const listed=[...parsed].reverse().find(d=>Array.isArray(d.jobs));
+  if(busy) {
+    return \`Production déjà en cours : job \${busy.activeJobId || 'actif'}. Le suivi continue dans le panneau Production.\`;
+  }
+  if(latestJob) {
+    const status=productionStatusLabel(latestJob.status);
+    const target=productionTargetLabel(latestJob);
+    const progress=latestWithJob.progress?.percent;
+    const progressText=Number.isFinite(Number(progress)) ? \` · \${Math.round(Number(progress))}%\` : '';
+    const suffix=productionTerminal(latestJob.status)
+      ? latestJob.status==='failed' && latestJob.error
+        ? \` Erreur : \${latestJob.error}\`
+        : ''
+      : ' Le suivi continue dans le panneau Production.';
+    return \`Production \${status} : \${target}\${progressText}.\${suffix}\`;
+  }
+  if(started) {
+    return \`Production lancée : job \${started.jobId} (\${productionStatusLabel(started.status)}). Le suivi continue dans le panneau Production.\`;
+  }
+  if(listed) {
+    return listed.jobs.length
+      ? \`\${listed.jobs.length} job\${listed.jobs.length>1?'s':''} production trouvé\${listed.jobs.length>1?'s':''}. Le panneau Production suit le job actif si disponible.\`
+      : 'Aucun job production récent.';
+  }
+  return 'Action production exécutée. Le panneau Production a été mis à jour.';
+}
+
+function productionTerminalChatSummary(job) {
+  const status=String(job?.status||'');
+  const target=productionTargetLabel(job);
+  const duration=job?.durationSeconds!==undefined ? \` en \${formatDuration(job.durationSeconds)}\` : '';
+  const files=Array.isArray(job?.producedFiles) ? job.producedFiles : [];
+  const filesText=files.length
+    ? \`\\n\\nFichiers produits:\\n\${files.slice(0,8).map(f=>\`- \${String(f)}\`).join('\\n')}\${files.length>8?'\\n- ...':''}\`
+    : '';
+  if(status==='done') return \`Production terminée : \${target}\${duration}.\${filesText}\`;
+  if(status==='failed') return \`Production en échec : \${target}\${duration}.\${job?.error?\`\\n\\nErreur : \${job.error}\`:''}\`;
+  if(status==='cancelled') return \`Production annulée : \${target}\${duration}.\`;
+  return \`Production \${productionStatusLabel(status)} : \${target}.\`;
+}
+
+async function notifyProductionTerminalInChat() {
+  const job=productionState.job;
+  const jobId=job?.jobId || productionState.jobId;
+  if(!jobId || !productionTerminal(job?.status)) return;
+  if(productionState.notifiedTerminalJobIds.has(jobId)) return;
+  productionState.notifiedTerminalJobIds.add(jobId);
+  const summary=productionTerminalChatSummary(job);
+  appendMsg('assistant',summary);
+  messages.push({role:'assistant',content:summary});
+  conversationDirty=true;
+  await saveCurrentConversation({immediate:true});
+}
+
 function startProductionPolling() {
   if(productionState.pollTimer) clearTimeout(productionState.pollTimer);
   productionState.pollTimer=setTimeout(()=>pollProductionJob(),4200);
@@ -1620,7 +1711,8 @@ async function pollProductionJob({immediate=false}={}) {
     console.warn('production polling failed', e);
   }
   renderProductionPanel();
-  if(!productionTerminal(productionState.job?.status)) startProductionPolling();
+  if(productionTerminal(productionState.job?.status)) await notifyProductionTerminalInChat();
+  else startProductionPolling();
 }
 
 async function refreshProductionTraceProgress() {
@@ -1727,14 +1819,25 @@ async function resolveSkillInvocation(text) {
 }
 
 function requestMessagesForLLM(sourceMessages) {
-  return sourceMessages.map((msg)=>{
+  const lastToolAssistantIndex=sourceMessages.findLastIndex?.(
+    (msg)=>msg.role==='assistant'&&Array.isArray(msg.tool_calls)&&msg.tool_calls.length,
+  ) ?? -1;
+  const preserveTailToolExchange=lastToolAssistantIndex>=0 &&
+    sourceMessages.slice(lastToolAssistantIndex+1).length>0 &&
+    sourceMessages.slice(lastToolAssistantIndex+1).every((msg)=>msg.role==='tool');
+  const preserveFrom=preserveTailToolExchange ? lastToolAssistantIndex : sourceMessages.length;
+  return sourceMessages.flatMap((msg,idx)=>{
     if(msg.role==='user') return {role:'user',content:msg.content};
     if(msg.role==='assistant') {
       const out={role:'assistant',content:msg.content ?? null};
-      if(Array.isArray(msg.tool_calls)) out.tool_calls=msg.tool_calls;
+      if(idx>=preserveFrom && Array.isArray(msg.tool_calls)) out.tool_calls=msg.tool_calls;
       return out;
     }
-    if(msg.role==='tool') return {role:'tool',tool_call_id:msg.tool_call_id,name:msg.name,content:msg.content};
+    if(msg.role==='tool') {
+      return idx>=preserveFrom
+        ? {role:'tool',tool_call_id:msg.tool_call_id,name:msg.name,content:msg.content}
+        : [];
+    }
     return msg;
   });
 }
@@ -2177,7 +2280,15 @@ function setStreamContent(div, text, extra='') {
 
 async function fetchStream(url, headers, body, onDelta, signal) {
   const res=await fetch(url,{method:'POST',headers,body:JSON.stringify({...body,stream:true}),signal});
-  if(!res.ok) throw new Error(\`API \${res.status}: \${await res.text()}\`);
+  if(!res.ok) {
+    const raw=await res.text();
+    let message=raw;
+    try {
+      const parsed=JSON.parse(raw);
+      message=[parsed.error,parsed.hint].filter(Boolean).join('\\n');
+    } catch {}
+    throw new Error(\`API \${res.status}: \${message||res.statusText}\`);
+  }
   const reader=res.body.getReader();
   const dec=new TextDecoder();
   let buf='', content='', tcAccum={};
@@ -2312,6 +2423,14 @@ async function sendMessage() {
         messages.push(...toolResults);
         conversationDirty=true;
         await saveCurrentConversation({immediate:true});
+        if(tcWithIdx.every(tc=>String(tc.function?.name||'').startsWith('production_'))) {
+          const summary=productionToolSummary(toolResults);
+          appendMsg('assistant',summary);
+          messages.push({role:'assistant',content:summary});
+          conversationDirty=true;
+          await saveCurrentConversation({immediate:true});
+          break;
+        }
         streamDiv=null;
         if(streamAbortController.signal.aborted) break;
         continue;

@@ -668,6 +668,23 @@ function layout(title: string, body: string): string {
     }
     .action-danger { color: var(--err); border-color: color-mix(in srgb, var(--err) 55%, var(--border)); }
     .action-danger:hover { border-color: var(--err); background: color-mix(in srgb, var(--err) 10%, var(--panel)); color: var(--err); }
+    .delete-confirm { position: relative; }
+    .delete-confirm-panel {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 0.45rem);
+      z-index: 20;
+      width: min(20rem, calc(100vw - 2rem));
+      padding: 0.8rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 18px 45px rgba(15, 23, 42, 0.16);
+    }
+    .delete-confirm-panel[hidden] { display: none; }
+    .delete-confirm-title { margin: 0 0 0.25rem; font-weight: 760; color: var(--text); }
+    .delete-confirm-text { margin: 0 0 0.7rem; color: var(--muted); font-size: 0.84rem; line-height: 1.45; }
+    .delete-confirm-actions { display: flex; justify-content: flex-end; gap: 0.45rem; }
     .hero {
       margin-bottom: 1.5rem;
       padding: clamp(1.3rem, 3vw, 2rem);
@@ -1786,7 +1803,7 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
   const open = depth === 0 ? ' open' : '';
   const label = node.name === 'build-context' ? 'build context' : node.name;
   const action =
-    depth === 0 && isCreatableCollection(node.name)
+    depth === 0 && isCreatableCollection(node.name) && node.name !== 'deliverables'
       ? `<a class="side-folder-action" href="${escapeHref(newMarkdownHref(node.name))}" title="Créer un markdown" aria-label="Créer dans ${escapeAttr(node.name)}" onclick="event.stopPropagation()">+</a>`
       : '';
   return `<details class="side-folder"${open} data-tree-id="${escapeAttr(node.path)}"><summary><span class="side-folder-label">${escapeHtml(label)}</span>${action}</summary><div class="side-folder-children">${children}</div></details>`;
@@ -2724,7 +2741,7 @@ async function serveMd(
       ? `<a class="action-link" href="${escapeHref(editHref(relativePath))}">Edit</a>`
       : '',
     isManagedMarkdownRelativePath(relativePath)
-      ? `<form method="post" action="${escapeHref(deleteHref(relativePath))}" onsubmit="return confirm('Supprimer ce fichier ?')"><button class="action-button action-danger" type="submit">Supprimer</button></form>`
+      ? `<form class="delete-confirm" method="post" action="${escapeHref(deleteHref(relativePath))}"><button class="action-button action-danger" type="button" onclick="this.form.querySelector('.delete-confirm-panel').hidden=false">Supprimer</button><div class="delete-confirm-panel" hidden><p class="delete-confirm-title">Supprimer ce fichier ?</p><p class="delete-confirm-text">${escapeHtml(relativePath)} sera supprimé du workspace.</p><div class="delete-confirm-actions"><button class="action-button" type="button" onclick="this.closest('.delete-confirm-panel').hidden=true">Annuler</button><button class="action-button action-danger" type="submit">Supprimer</button></div></div></form>`
       : '',
   ].join('');
   const tocScript = `<script>
@@ -2922,6 +2939,41 @@ function fileEtag(fileStat: Awaited<ReturnType<typeof stat>>): string {
   return `"${fileStat.mtimeMs.toString(36)}-${fileStat.size.toString(36)}"`;
 }
 
+async function navigationEtag(rootDir: string): Promise<string> {
+  const hash = createHash('sha256');
+  const files = (await fg(NAV_PATTERNS, { cwd: rootDir, dot: false }))
+    .map(toPosix)
+    .sort();
+  for (const file of files) {
+    const fileStat = await stat(resolveInside(rootDir, file));
+    hash.update(file);
+    hash.update('\0');
+    hash.update(String(fileStat.mtimeMs));
+    hash.update('\0');
+    hash.update(String(fileStat.size));
+    hash.update('\0');
+  }
+  return `"nav-${hash.digest('hex').slice(0, 16)}"`;
+}
+
+function pageEtag(
+  fileStat: Awaited<ReturnType<typeof stat>>,
+  navEtag: string,
+): string {
+  return `"page-${fileEtag(fileStat).replace(/^"|"$/g, '')}-${navEtag.replace(/^"|"$/g, '')}"`;
+}
+
+function requestHasEtag(req: IncomingMessage, etag: string): boolean {
+  const raw = req.headers['if-none-match'];
+  const values = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  return values.some((value) =>
+    value
+      .split(',')
+      .map((item: string) => item.trim())
+      .includes(etag),
+  );
+}
+
 function acceptsGzip(req: IncomingMessage): boolean {
   return (req.headers['accept-encoding'] ?? '').includes('gzip');
 }
@@ -2935,6 +2987,7 @@ async function sendGzippedHtml(
 ): Promise<void> {
   const headers: Record<string, string> = {
     'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store, no-cache, must-revalidate',
     ...extraHeaders,
   };
   if (acceptsGzip(req)) {
@@ -3133,7 +3186,7 @@ async function proxyPost(
   },
   targetUrl: string,
   extraHeaders: Record<string, string> = {},
-  options: { retry429?: boolean } = {},
+  options: { retry429?: boolean; retryNetwork?: boolean } = {},
 ): Promise<void> {
   const chunks: Buffer[] = [];
   for await (const chunk of req)
@@ -3152,7 +3205,7 @@ async function proxyPost(
   const sid = req.headers['mcp-session-id'];
   if (sid) headers['mcp-session-id'] = sid as string;
 
-  const maxAttempts = options.retry429
+  const rateLimitAttempts = options.retry429
     ? Math.max(
         1,
         Number(
@@ -3162,9 +3215,27 @@ async function proxyPost(
         ),
       )
     : 1;
+  const maxAttempts = Math.max(rateLimitAttempts, options.retryNetwork ? 2 : 1);
   let upstream: Response | undefined;
+  let networkFailures = 0;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    upstream = await fetch(targetUrl, { method: 'POST', headers, body });
+    try {
+      upstream = await fetch(targetUrl, { method: 'POST', headers, body });
+    } catch (err) {
+      if (options.retryNetwork && networkFailures < 1) {
+        networkFailures += 1;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        continue;
+      }
+      const message = upstreamFetchFailureMessage(targetUrl, err);
+      console.warn(`[wiki serve] ${message}`);
+      sendJson(res, 502, {
+        error: message,
+        hint:
+          'Check that the LLM service is running and reachable from the wiki container/WSL environment. For Docker/Rancher, use the container network hostname, not 127.0.0.1 unless the LLM runs in the same container.',
+      });
+      return;
+    }
     if (upstream.status !== 429 || attempt >= maxAttempts) break;
     const retryAfter = upstream.headers.get('retry-after');
     const retryAfterSeconds = retryAfter ? Number(retryAfter) : NaN;
@@ -3213,6 +3284,25 @@ async function proxyPost(
     }
   }
   res.end();
+}
+
+function upstreamFetchFailureMessage(targetUrl: string, err: unknown): string {
+  let target = targetUrl;
+  try {
+    const parsed = new URL(targetUrl);
+    target = `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  } catch {
+    /* keep raw target */
+  }
+  const cause = (err as { cause?: unknown })?.cause;
+  const causeMessage =
+    cause instanceof Error
+      ? cause.message
+      : typeof cause === 'object' && cause && 'message' in cause
+        ? String((cause as { message?: unknown }).message)
+        : '';
+  const detail = causeMessage || (err instanceof Error ? err.message : String(err));
+  return `LLM upstream unreachable at ${target}: ${detail}`;
 }
 
 function headerString(value: string | string[] | undefined): string | undefined {
@@ -3704,7 +3794,10 @@ export default async function serveCmd(
         if (urlPath === '/api/chat') {
           try {
             const llmTarget = chatLlmProxyTarget(req, config);
-            await proxyPost(req, res, llmTarget.url, llmTarget.headers, { retry429: true });
+            await proxyPost(req, res, llmTarget.url, llmTarget.headers, {
+              retry429: true,
+              retryNetwork: true,
+            });
           } catch (err) {
             sendJson(res, 400, {
               error: err instanceof Error ? err.message : String(err),
@@ -3748,6 +3841,7 @@ export default async function serveCmd(
             res,
             target,
             !browserOverrides && bearer ? { authorization: `Bearer ${bearer}` } : {},
+            { retryNetwork: true },
           );
           return;
         }
@@ -4088,8 +4182,8 @@ export default async function serveCmd(
       }
 
       const fileStat2 = await stat(absolute);
-      const etag = fileEtag(fileStat2);
-      if (req.headers['if-none-match'] === etag) {
+      const etag = pageEtag(fileStat2, await navigationEtag(rootDir));
+      if (requestHasEtag(req, etag)) {
         res.writeHead(304);
         res.end();
         return;
