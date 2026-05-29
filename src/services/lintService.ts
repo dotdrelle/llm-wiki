@@ -1,9 +1,10 @@
 import path from 'node:path';
+import matter from 'gray-matter';
 import { semanticLintSchema } from '../config/schema.ts';
 import { buildSemanticLintPrompt } from '../prompts/lintPrompt.ts';
 import { buildPromptContext } from '../prompts/systemPreamble.ts';
 import { extractSourceCitations, extractWikiLinks } from '../utils/markdown.ts';
-import { canonicalizeName } from '../utils/path.ts';
+import { canonicalizeName, slugify } from '../utils/path.ts';
 import { pathExists } from '../utils/fs.ts';
 import type { AppConfig, LintReport } from '../types.ts';
 import type { LLMService } from './llmService.ts';
@@ -91,12 +92,38 @@ export class LintService {
       }
     }
 
+    const flatConceptPages: string[] = [];
+    const conceptPagesMissingGroup: string[] = [];
+    const conceptGroups = new Map<string, Set<string>>();
+    for (const page of pages.filter((candidate) => candidate.type === 'concept')) {
+      const withinConcepts = page.relativePath.replace(/^wiki\/concepts\//, '');
+      const parsed = matter(page.content);
+      const group = typeof parsed.data.group === 'string' ? parsed.data.group.trim() : '';
+      if (!withinConcepts.includes('/')) {
+        flatConceptPages.push(page.relativePath);
+      }
+      if (!group) {
+        conceptPagesMissingGroup.push(page.relativePath);
+      } else {
+        const key = slugify(group);
+        const groups = conceptGroups.get(key) ?? new Set<string>();
+        groups.add(group);
+        conceptGroups.set(key, groups);
+      }
+    }
+    const duplicateConceptGroups = [...conceptGroups.entries()]
+      .map(([key, groups]) => ({ key, groups: [...groups].sort() }))
+      .filter((entry) => entry.groups.length > 1);
+
     const report: LintReport = {
       deadLinks,
       orphanPages,
       missingSources,
       staleDeliverables,
       unresolvedInstructions,
+      flatConceptPages,
+      conceptPagesMissingGroup,
+      duplicateConceptGroups,
     };
 
     if (options?.withLlm) {

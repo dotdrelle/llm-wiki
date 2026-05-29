@@ -262,5 +262,8 @@ export interface LintReport {
   missingSources: Array<{ file: string; citation: string }>;
   staleDeliverables: string[];
   unresolvedInstructions: string[];
+  flatConceptPages: string[];
+  conceptPagesMissingGroup: string[];
+  duplicateConceptGroups: Array<{ key: string; groups: string[] }>;
   semantic?: SemanticLintReport;
 }

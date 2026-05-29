@@ -9,6 +9,7 @@ import queryCmd from '../src/commands/query.ts';
 import lintCmd from '../src/commands/lint.ts';
 import buildCmd from '../src/commands/build.ts';
 import indexCmd from '../src/commands/index.ts';
+import groupConceptsCmd from '../src/commands/groupConcepts.ts';
 import refreshCmd from '../src/commands/refresh.ts';
 import serveCmd from '../src/commands/serve.ts';
 import doctorCmd from '../src/commands/doctor.ts';
@@ -67,6 +68,12 @@ async function main() {
     .command('index')
     .description('Create or update the local vector index for wiki markdown pages')
     .action(() => indexCmd(config));
+
+  program
+    .command('group-concepts')
+    .description('Plan or apply grouping of flat wiki/concepts pages using frontmatter group')
+    .option('--apply', 'Move grouped concept files and update wiki links')
+    .action((options) => groupConceptsCmd(config, options));
 
   program
     .command('lint')

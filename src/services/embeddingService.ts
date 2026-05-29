@@ -13,6 +13,21 @@ import {
 } from './rateLimiter.ts';
 import type { TraceLogger } from './traceLogger.ts';
 
+function neutralizeEmbeddingText(value: string): string {
+  return value
+    .replace(/\[src:[^\]]+\]/g, '[source]')
+    .replace(/\b[\w.-]+(?:\/[\w./-]+)+\b/g, '[path]');
+}
+
+function plainEmbeddingText(value: string): string {
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w\s.,;:()-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export class EmbeddingService {
   private readonly config: AppConfig;
   private readonly logger?: TraceLogger;
@@ -90,25 +105,10 @@ export class EmbeddingService {
     }
   }
 
-  async embed(texts: string[]): Promise<number[][]> {
-    if (texts.length === 0) return [];
-    const cached = await Promise.all(texts.map((text) => this.readCachedEmbedding(text)));
-    const missingInputs = texts
-      .map((text, index) => ({ text, index }))
-      .filter((item) => !cached[item.index]);
-    if (missingInputs.length === 0) {
-      return cached as number[][];
-    }
-
-    let raw = '';
-    const maxAttempts = providerRateLimitRetryMaxAttempts();
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      await throttleProviderRequestStart({
-        key: providerRateLimitKey(this.config.retrieval.vector.baseUrl),
-        requestsPerMinute: this.config.limits.requestsPerMinute,
-        logger: this.logger,
-        label: 'embedding',
-      });
+  private async fetchMissingEmbeddings(
+    missingInputs: Array<{ text: string; index: number }>,
+  ): Promise<number[][]> {
+    const fetchInputs = async (input: string[]): Promise<{ res: Response; raw: string }> => {
       const res = await fetch(
         `${this.config.retrieval.vector.baseUrl.replace(/\/$/, '')}/embeddings`,
         {
@@ -121,13 +121,26 @@ export class EmbeddingService {
           },
           body: JSON.stringify({
             model: this.config.retrieval.vector.embeddingModel,
-            input: missingInputs.map((item) => item.text),
+            input,
           }),
           signal: AbortSignal.timeout(this.config.retrieval.vector.timeoutMs),
         },
       );
+      return { res, raw: await res.text() };
+    };
 
-      raw = await res.text();
+    let raw = '';
+    const maxAttempts = providerRateLimitRetryMaxAttempts();
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      await throttleProviderRequestStart({
+        key: providerRateLimitKey(this.config.retrieval.vector.baseUrl),
+        requestsPerMinute: this.config.limits.requestsPerMinute,
+        logger: this.logger,
+        label: 'embedding',
+      });
+      const response = await fetchInputs(missingInputs.map((item) => item.text));
+      const res = response.res;
+      raw = response.raw;
       if (res.status === 429 && attempt < maxAttempts) {
         const waitMs = providerRateLimitRetryDelayMs({
           key: providerRateLimitKey(this.config.retrieval.vector.baseUrl),
@@ -145,7 +158,37 @@ export class EmbeddingService {
         continue;
       }
       if (!res.ok) {
-        throw new Error(`Embedding request failed with HTTP ${res.status}: ${raw}`);
+        if (missingInputs.length > 1) {
+          const midpoint = Math.ceil(missingInputs.length / 2);
+          const left = await this.fetchMissingEmbeddings(missingInputs.slice(0, midpoint));
+          const right = await this.fetchMissingEmbeddings(missingInputs.slice(midpoint));
+          return [...left, ...right];
+        }
+        const fallbackInputs = [
+          neutralizeEmbeddingText(missingInputs[0].text),
+          plainEmbeddingText(missingInputs[0].text),
+        ].filter(
+          (value, index, values) =>
+            value !== missingInputs[0].text && values.indexOf(value) === index,
+        );
+        let fallbackOk = false;
+        for (const fallbackInput of fallbackInputs) {
+          await this.logger?.warn('embedding:neutralized-input', {
+            status: res.status,
+            chars: missingInputs[0].text.length,
+            hash: hashText(missingInputs[0].text).slice(0, 12),
+          });
+          const retry = await fetchInputs([fallbackInput]);
+          raw = retry.raw;
+          if (retry.res.ok) {
+            fallbackOk = true;
+            break;
+          }
+        }
+        if (fallbackOk) break;
+        throw new Error(
+          `Embedding request failed with HTTP ${res.status} for one input (${missingInputs[0].text.length} chars, sha256=${hashText(missingInputs[0].text).slice(0, 12)}): ${raw}`,
+        );
       }
       break;
     }
@@ -155,11 +198,17 @@ export class EmbeddingService {
     };
     const embeddings = data.data ?? [];
     if (embeddings.length !== missingInputs.length) {
+      if (missingInputs.length > 1) {
+        const midpoint = Math.ceil(missingInputs.length / 2);
+        const left = await this.fetchMissingEmbeddings(missingInputs.slice(0, midpoint));
+        const right = await this.fetchMissingEmbeddings(missingInputs.slice(midpoint));
+        return [...left, ...right];
+      }
       throw new Error(
-        `Embedding response returned ${embeddings.length} vector(s) for ${missingInputs.length} input(s).`,
+        `Embedding response returned ${embeddings.length} vector(s) for 1 input.`,
       );
     }
-    const fetched = embeddings
+    return embeddings
       .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
       .map((item) => {
         if (!Array.isArray(item.embedding)) {
@@ -167,6 +216,19 @@ export class EmbeddingService {
         }
         return item.embedding;
       });
+  }
+
+  async embed(texts: string[]): Promise<number[][]> {
+    if (texts.length === 0) return [];
+    const cached = await Promise.all(texts.map((text) => this.readCachedEmbedding(text)));
+    const missingInputs = texts
+      .map((text, index) => ({ text, index }))
+      .filter((item) => !cached[item.index]);
+    if (missingInputs.length === 0) {
+      return cached as number[][];
+    }
+
+    const fetched = await this.fetchMissingEmbeddings(missingInputs);
     await Promise.all(
       missingInputs.map((item, index) =>
         this.writeCachedEmbedding(item.text, fetched[index] ?? []),

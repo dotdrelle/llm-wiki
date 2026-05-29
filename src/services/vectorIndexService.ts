@@ -257,16 +257,18 @@ export class VectorIndexService {
     }
 
     const db = await this.connect();
+    const tableNames = await db.tableNames();
     if (rows.length === 0) {
-      const names = await db.tableNames();
-      if (names.includes(TABLE_NAME)) {
+      if (tableNames.includes(TABLE_NAME)) {
         await db.dropTable(TABLE_NAME);
       }
     } else {
       const tableData = makeArrowTable(rows as unknown as Record<string, unknown>[], {
         vectorColumns: { vector: { type: new Float32() } },
       });
-      await db.createTable(TABLE_NAME, tableData, { mode: 'overwrite' });
+      await db.createTable(TABLE_NAME, tableData, {
+        mode: tableNames.includes(TABLE_NAME) ? 'overwrite' : 'create',
+      });
     }
 
     return {

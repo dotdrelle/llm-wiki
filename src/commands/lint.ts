@@ -37,6 +37,21 @@ export default async function lintCmd(
     console.log(`  - ${deliverable}`);
   }
 
+  console.log('Flat concept pages:', report.flatConceptPages.length);
+  for (const conceptPage of report.flatConceptPages) {
+    console.log(`  - ${conceptPage}`);
+  }
+
+  console.log('Concept pages missing group:', report.conceptPagesMissingGroup.length);
+  for (const conceptPage of report.conceptPagesMissingGroup) {
+    console.log(`  - ${conceptPage}`);
+  }
+
+  console.log('Duplicate concept groups:', report.duplicateConceptGroups.length);
+  for (const duplicateGroup of report.duplicateConceptGroups) {
+    console.log(`  - ${duplicateGroup.key}: ${duplicateGroup.groups.join(', ')}`);
+  }
+
   if (report.semantic) {
     console.log('Semantic contradictions:', report.semantic.contradictions.length);
     console.log('Missing concepts:', report.semantic.missingConcepts.length);

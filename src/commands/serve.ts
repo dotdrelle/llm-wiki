@@ -9,16 +9,18 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import fg from 'fast-glob';
+import matter from 'gray-matter';
 import { marked } from 'marked';
 import type { AppConfig } from '../types.ts';
 import { loadConfig } from '../config/loadConfig.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import { pathExists, safeWriteFile, writeIfChanged } from '../utils/fs.ts';
-import { resolveInside, toPosix } from '../utils/path.ts';
+import { extractWikiLinks } from '../utils/markdown.ts';
+import { canonicalizeName, resolveInside, toPosix } from '../utils/path.ts';
 import { WIKI_CSS_VARS } from '../chat/theme.ts';
 import { CHAT_HTML } from '../chat/chatHtml.ts';
 
-const MCP_WIKI_PORT = process.env.WIKI_MCP_HTTP_PORT ?? '3101';
+const MCP_WIKI_PORT = process.env.WIKI_MCP_HTTP_PORT ?? process.env.WIKI_MCP_PORT ?? '3101';
 const MCP_CME_PORT = process.env.CME_MCP_PORT ?? '3000';
 const MCP_MAILER_PORT = process.env.MAILER_MCP_PORT ?? '3335';
 const MCP_DOCUMENTS_PORT = process.env.DOCUMENTS_MCP_PORT ?? '3337';
@@ -241,11 +243,7 @@ function isManagedMarkdownRelativePath(relativePath: string): boolean {
 }
 
 function isCreatableCollection(collection: string): boolean {
-  return (
-    collection === 'deliverables' ||
-    collection === 'templates' ||
-    collection === 'build-context'
-  );
+  return collection === 'templates' || collection === 'build-context';
 }
 
 function templateRenameScript(relativePath: string): string {
@@ -478,24 +476,29 @@ function layout(title: string, body: string): string {
     }
     .side-actions {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 0.45rem;
-      margin-bottom: 0.9rem;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.5rem;
+      margin-bottom: 1rem;
     }
     .side-action {
       display: inline-flex;
       align-items: center;
       justify-content: center;
+      gap: 0.45rem;
       min-width: 0;
-      min-height: 2.35rem;
+      min-height: 2.75rem;
+      padding: 0 0.65rem;
       border: 1px solid var(--border);
       border-radius: 6px;
       background: var(--panel);
       color: var(--text);
       text-decoration: none;
+      font-size: 0.86rem;
+      font-weight: 720;
     }
     .side-action:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
-    .side-action svg { width: 1rem; height: 1rem; stroke: currentColor; }
+    .side-action svg { width: 1.05rem; height: 1.05rem; stroke: currentColor; flex-shrink: 0; }
+    .side-action span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .side-search {
       margin: 0.9rem 0 0.65rem;
     }
@@ -746,6 +749,36 @@ function layout(title: string, body: string): string {
       display: grid;
       gap: 0.6rem;
     }
+    .section-browser-group {
+      margin-top: 0.55rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      overflow: hidden;
+    }
+    .section-browser-group summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      min-height: 2.2rem;
+      padding: 0.55rem 0.7rem;
+      color: var(--text);
+      font-size: 0.86rem;
+      font-weight: 730;
+    }
+    .section-browser-group summary span:last-child {
+      color: var(--muted);
+      font-family: ui-monospace, monospace;
+      font-size: 0.78rem;
+      font-weight: 650;
+    }
+    .section-browser-group .section-browser-tiles {
+      margin: 0;
+      padding: 0.6rem;
+      border-top: 1px solid var(--border);
+      background: var(--panel-soft);
+    }
     .tile-section { margin: 1.5rem 0 2rem; }
     .index-aside .tile-section { margin: 0 0 1rem; }
     .section-title { margin: 0 0 0.65rem; font-size: 0.98rem; color: var(--muted); font-weight: 760; }
@@ -781,6 +814,8 @@ function layout(title: string, body: string): string {
     .article h1, .article h2, .article h3 { line-height: 1.2; letter-spacing: 0; }
     .article h1 { margin-top: 0; }
     .article img { max-width: 100%; }
+    .index-layout .article ul { columns: 2; column-gap: 2rem; }
+    .index-layout .article ul li { break-inside: avoid; }
     .log-article {
       max-width: 1160px;
       padding: clamp(1.1rem, 2.6vw, 2rem);
@@ -1172,16 +1207,16 @@ function layout(title: string, body: string): string {
     .onboarding-step-desc{font-size:.88rem;color:var(--muted);line-height:1.5}
     .onboarding-step-code{font-family:ui-monospace,monospace;font-size:.82rem;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .38rem;border-radius:4px;color:var(--text)}
     /* ── ⌘K Palette ──────────────────────────────────────────── */
-    .palette-backdrop{position:fixed;inset:0;z-index:9000;display:none;align-items:flex-start;justify-content:center;padding-top:14vh;background:rgba(10,14,18,.42);backdrop-filter:blur(3px)}
+    .palette-backdrop{position:fixed;inset:0;z-index:9000;display:none;align-items:flex-start;justify-content:center;padding-top:10vh;background:rgba(10,14,18,.42);backdrop-filter:blur(3px)}
     .palette-backdrop.is-open{display:flex}
-    .palette{width:min(560px,calc(100vw - 2rem));border:1px solid var(--border);border-radius:12px;background:var(--panel);box-shadow:0 24px 64px rgba(0,0,0,.22),0 4px 12px rgba(0,0,0,.1);overflow:hidden;animation:paletteIn .13s ease}
+    .palette{width:min(700px,calc(100vw - 2rem));border:1px solid var(--border);border-radius:14px;background:var(--panel);box-shadow:0 24px 64px rgba(0,0,0,.22),0 4px 12px rgba(0,0,0,.1);overflow:hidden;animation:paletteIn .13s ease}
     @keyframes paletteIn{from{opacity:0;transform:translateY(-10px) scale(.97)}to{opacity:1;transform:none}}
-    .palette-head{display:flex;align-items:center;gap:.65rem;padding:.8rem 1rem;border-bottom:1px solid var(--border)}
+    .palette-head{display:flex;align-items:center;gap:.65rem;padding:1rem 1.2rem;border-bottom:1px solid var(--border)}
     .palette-search-icon{color:var(--muted);flex-shrink:0}
-    .palette-input{flex:1;background:transparent;border:none;outline:none;color:var(--text);font:inherit;font-size:1rem}
+    .palette-input{flex:1;background:transparent;border:none;outline:none;color:var(--text);font:inherit;font-size:1.05rem}
     .palette-input::placeholder{color:var(--muted)}
     .palette-esc{font-size:.72rem;font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.15rem .42rem;border-radius:4px;color:var(--muted)}
-    .palette-results{max-height:min(52vh,400px);overflow-y:auto;padding:.4rem}
+    .palette-results{max-height:min(58vh,480px);overflow-y:auto;padding:.5rem}
     .palette-item{display:flex;align-items:center;gap:.6rem;padding:.5rem .65rem;border-radius:7px;cursor:pointer;text-decoration:none;color:var(--text)}
     .palette-item.is-sel,.palette-item:hover{background:var(--accent-soft);color:var(--accent)}
     .palette-item-icon{width:1.9rem;height:1.9rem;border-radius:6px;background:var(--panel-soft);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:.75rem;flex-shrink:0}
@@ -1228,32 +1263,31 @@ ${body}
 </div>
 <div class="modal-backdrop" id="shortcuts-modal" onclick="if(event.target===this)this.classList.remove('is-open')">
   <div class="relation-modal" style="max-width:420px;max-height:none">
-    <div class="modal-header"><h2 class="modal-title">Raccourcis clavier</h2><button class="modal-close" onclick="document.getElementById('shortcuts-modal').classList.remove('is-open')">✕</button></div>
+    <div class="modal-header"><h2 class="modal-title">Keyboard shortcuts</h2><button class="modal-close" onclick="document.getElementById('shortcuts-modal').classList.remove('is-open')">✕</button></div>
     <div class="modal-body" style="padding:1rem">
       <table style="width:100%;border-collapse:collapse;font-size:.88rem">
         <tbody>
-          <tr><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border)"><kbd style="font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.15rem .42rem;border-radius:4px">⌘K</kbd></td><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border);color:var(--muted)">Palette de recherche globale</td></tr>
-          <tr><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border)"><kbd style="font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.15rem .42rem;border-radius:4px">⌘E</kbd></td><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border);color:var(--muted)">Éditer la page courante</td></tr>
-          <tr><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border)"><kbd style="font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.15rem .42rem;border-radius:4px">⌘B</kbd></td><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border);color:var(--muted)">Masquer / afficher la sidebar</td></tr>
-          <tr><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border)"><kbd style="font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.15rem .42rem;border-radius:4px">G</kbd></td><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border);color:var(--muted)">Aller au graphe des sources</td></tr>
-          <tr><td style="padding:.4rem .6rem"><kbd style="font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.15rem .42rem;border-radius:4px">?</kbd></td><td style="padding:.4rem .6rem;color:var(--muted)">Afficher cette aide</td></tr>
+          <tr><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border)"><kbd style="font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.15rem .42rem;border-radius:4px">⌘K</kbd></td><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border);color:var(--muted)">Global search palette</td></tr>
+          <tr><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border)"><kbd style="font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.15rem .42rem;border-radius:4px">⌘E</kbd></td><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border);color:var(--muted)">Edit current page</td></tr>
+          <tr><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border)"><kbd style="font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.15rem .42rem;border-radius:4px">⌘B</kbd></td><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border);color:var(--muted)">Hide / show sidebar</td></tr>
+          <tr><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border)"><kbd style="font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.15rem .42rem;border-radius:4px">G</kbd></td><td style="padding:.4rem .6rem;border-bottom:1px solid var(--border);color:var(--muted)">Go to source graph</td></tr>
+          <tr><td style="padding:.4rem .6rem"><kbd style="font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.15rem .42rem;border-radius:4px">?</kbd></td><td style="padding:.4rem .6rem;color:var(--muted)">Show this help</td></tr>
         </tbody>
       </table>
     </div>
   </div>
 </div>
-<div class="palette-backdrop" id="palette-backdrop" aria-modal="true" role="dialog" aria-label="Recherche rapide">
+<div class="palette-backdrop" id="palette-backdrop" aria-modal="true" role="dialog" aria-label="Quick search">
   <div class="palette">
     <div class="palette-head">
-      <svg class="palette-search-icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-      <input class="palette-input" id="palette-input" type="search" placeholder="Rechercher dans le wiki…" autocomplete="off" spellcheck="false">
-      <span class="palette-esc">Échap</span>
+      <svg class="palette-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input class="palette-input" id="palette-input" type="search" placeholder="Search wiki…" autocomplete="off" spellcheck="false">
+      <span class="palette-esc">Esc</span>
     </div>
     <div class="palette-results" id="palette-results"></div>
     <div class="palette-footer">
-      <span class="palette-hint"><kbd>↑↓</kbd> naviguer</span>
-      <span class="palette-hint"><kbd>↵</kbd> ouvrir</span>
-      <span class="palette-hint"><kbd>Échap</kbd> fermer</span>
+      <span class="palette-hint"><kbd>↵</kbd> open</span>
+      <span class="palette-hint"><kbd>Esc</kbd> close</span>
       <span class="palette-hint" style="margin-left:auto"><kbd>⌘K</kbd></span>
     </div>
   </div>
@@ -1582,16 +1616,11 @@ ${body}
 
   input.addEventListener('input', function() { show(input.value); });
   input.addEventListener('keydown', function(e) {
-    if (e.key === 'ArrowDown') { e.preventDefault(); moveSelection(1); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); moveSelection(-1); }
-    else if (e.key === 'Enter') { e.preventDefault(); openSelected(); }
+    if (e.key === 'Enter') { e.preventDefault(); openSelected(); }
     else if (e.key === 'Escape') { close(); }
   });
-  backdrop.addEventListener('wheel', function(e) { e.preventDefault(); }, { passive: false });
   backdrop.addEventListener('keydown', function(e) {
-    if (e.key === 'ArrowDown') { e.preventDefault(); moveSelection(1); input.focus({ preventScroll: true }); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); moveSelection(-1); input.focus({ preventScroll: true }); }
-    else if (e.key === 'Enter') { e.preventDefault(); openSelected(); }
+    if (e.key === 'Enter') { e.preventDefault(); openSelected(); }
     else if (e.key === 'Escape') { e.preventDefault(); close(); }
   });
   backdrop.addEventListener('click', function(e) { if (e.target === backdrop) close(); });
@@ -1620,7 +1649,7 @@ function breadcrumb(urlPath: string): string {
 
 interface TileSection {
   heading: string;
-  tiles: Array<{ title: string; href?: string; meta: string }>;
+  tiles: Array<{ title: string; href?: string; meta: string; group?: string }>;
 }
 
 export function extractIndexTiles(markdown: string, currentDir = 'wiki'): TileSection[] {
@@ -1713,6 +1742,44 @@ function renderTile(tile: { title: string; href?: string; meta: string }): strin
     : `<div class="tile">${content}</div>`;
 }
 
+function conceptGroupFromPath(relativePath: string): string | undefined {
+  const parts = toPosix(relativePath).split('/');
+  if (parts[0] !== 'wiki' || parts[1] !== 'concepts' || parts.length < 4) {
+    return undefined;
+  }
+  return humanTitle(parts[2]);
+}
+
+async function readPageGroup(rootDir: string, href: string): Promise<string | undefined> {
+  if (!href.startsWith('/wiki/concepts/')) return undefined;
+  const relativePath = href.replace(/^\//, '');
+  const pathGroup = conceptGroupFromPath(relativePath);
+  try {
+    const raw = await readFile(resolveInside(rootDir, relativePath), 'utf8');
+    const parsed = matter(raw);
+    const group = parsed.data.group;
+    if (typeof group === 'string' && group.trim()) return group.trim();
+  } catch {
+    return pathGroup;
+  }
+  return pathGroup;
+}
+
+async function hydrateConceptTileGroups(
+  rootDir: string,
+  sections: TileSection[],
+): Promise<void> {
+  for (const section of sections) {
+    const isConceptSection = section.heading.toLowerCase().includes('concept');
+    for (const tile of section.tiles) {
+      if (!tile.href?.startsWith('/wiki/concepts/')) continue;
+      tile.group =
+        (await readPageGroup(rootDir, tile.href)) ||
+        (isConceptSection ? 'Concepts' : section.heading);
+    }
+  }
+}
+
 function renderIndexSectionBrowser(sections: TileSection[]): string {
   if (sections.length === 0) {
     return '<p class="empty">No index sections found.</p>';
@@ -1721,10 +1788,21 @@ function renderIndexSectionBrowser(sections: TileSection[]): string {
   return sections
     .map((section) => {
       const count = section.tiles.length;
-      const tiles = section.tiles.length
-        ? section.tiles.map(renderTile).join('\n')
-        : '<p class="empty">No pages in this section.</p>';
-      return `<details class="section-browser"><summary><span class="section-browser-summary"><span class="section-browser-title">${escapeHtml(section.heading)}</span><span class="section-browser-meta">${count} item${count === 1 ? '' : 's'}</span></span></summary><div class="section-browser-tiles">${tiles}</div></details>`;
+      const grouped = new Map<string, typeof section.tiles>();
+      for (const tile of section.tiles) {
+        if (!tile.group) continue;
+        const tiles = grouped.get(tile.group) ?? [];
+        tiles.push(tile);
+        grouped.set(tile.group, tiles);
+      }
+      const groupsHtml = [...grouped.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(
+          ([group, tiles]) =>
+            `<details class="section-browser-group"><summary><span>${escapeHtml(group)}</span><span>${tiles.length}</span></summary><div class="section-browser-tiles">${tiles.map(renderTile).join('')}</div></details>`,
+        )
+        .join('');
+      return `<details class="section-browser"${groupsHtml ? ' open' : ''}><summary><span class="section-browser-summary"><span class="section-browser-title">${escapeHtml(section.heading)}</span><span class="section-browser-meta">${count} item${count === 1 ? '' : 's'}</span></span></summary>${groupsHtml}</details>`;
     })
     .join('\n');
 }
@@ -1803,7 +1881,7 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
   const open = depth === 0 ? ' open' : '';
   const label = node.name === 'build-context' ? 'build context' : node.name;
   const action =
-    depth === 0 && isCreatableCollection(node.name) && node.name !== 'deliverables'
+    depth === 0 && isCreatableCollection(node.name)
       ? `<a class="side-folder-action" href="${escapeHref(newMarkdownHref(node.name))}" title="Créer un markdown" aria-label="Créer dans ${escapeAttr(node.name)}" onclick="event.stopPropagation()">+</a>`
       : '';
   return `<details class="side-folder"${open} data-tree-id="${escapeAttr(node.path)}"><summary><span class="side-folder-label">${escapeHtml(label)}</span>${action}</summary><div class="side-folder-children">${children}</div></details>`;
@@ -1833,10 +1911,8 @@ async function renderSidebar(rootDir: string): Promise<string> {
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="M8.6 8.1 10.8 15"/><path d="m15.4 8.1-2.2 6.9"/><path d="M9 6h6"/></svg>';
   const chatIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>';
-  const mcpIcon =
-    '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a6 6 0 0 1-12 0V8z"/></svg>';
-  const kbdHint = `<kbd style="font-size:.68rem;font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .35rem;border-radius:4px;color:var(--muted);cursor:pointer" title="Ouvrir la recherche globale (⌘K)" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}))">⌘K</kbd>`;
-  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Raccourcis"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}</a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}</a><a class="side-action" href="http://localhost:${MCP_WIKI_PORT}/mcp" target="_blank" rel="noopener" title="MCP Wiki" aria-label="MCP Wiki">${mcpIcon}</a></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filtrer les fichiers…" aria-label="Filtrer les fichiers" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Documents markdown">${tree}</nav>${wsSwitcher}</aside>`;
+const kbdHint = `<kbd style="font-size:.68rem;font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .35rem;border-radius:4px;color:var(--muted);cursor:pointer" title="Open global search (⌘K)" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}))">⌘K</kbd>`;
+  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}<span>Chat</span></a><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}<span>Graph</span></a></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filtrer les fichiers…" aria-label="Filtrer les fichiers" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Documents markdown">${tree}</nav>${wsSwitcher}</aside>`;
 }
 
 interface GraphNode {
@@ -1847,6 +1923,7 @@ interface GraphNode {
   preview: string;
   raw: string;
   html: string;
+  group?: string;
   degree: number;
   x: number;
   y: number;
@@ -1906,6 +1983,35 @@ function graphTargetPath(value: string, currentDir: string, nodeIds: Set<string>
   return hrefToRelativePath(value, currentDir);
 }
 
+function graphWikiTargetPath(
+  value: string,
+  currentDir: string,
+  nodeIds: Set<string>,
+): string {
+  const clean = value.trim();
+  const candidates = [
+    graphTargetPath(clean, currentDir, nodeIds),
+    clean.endsWith('.md') ? '' : graphTargetPath(`${clean}.md`, currentDir, nodeIds),
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    if (nodeIds.has(candidate)) return candidate;
+  }
+
+  if (!clean.includes('/')) {
+    const canonical = canonicalizeName(clean);
+    const matches = [...nodeIds].filter((nodeId) => {
+      const basename = path.basename(nodeId, '.md');
+      return (
+        canonicalizeName(basename) === canonical ||
+        canonicalizeName(humanTitle(nodeId)) === canonical
+      );
+    });
+    if (matches.length === 1) return matches[0];
+  }
+
+  return candidates[0] || graphTargetPath(clean, currentDir, nodeIds);
+}
+
 function extractGraphTargets(
   markdown: string,
   currentDir: string,
@@ -1929,7 +2035,19 @@ function extractGraphTargets(
     }
   }
 
+  for (const wikiLink of extractWikiLinks(markdown)) {
+    targets.add(graphWikiTargetPath(wikiLink, currentDir, nodeIds));
+  }
+
   return [...targets];
+}
+
+function graphConceptGroup(relativePath: string, markdown: string): string | undefined {
+  if (!relativePath.startsWith('wiki/concepts/')) return undefined;
+  const parsed = matter(markdown);
+  const group = parsed.data.group;
+  if (typeof group === 'string' && group.trim()) return group.trim();
+  return conceptGroupFromPath(relativePath);
 }
 
 function markdownPreview(markdown: string): string {
@@ -1956,6 +2074,7 @@ async function buildGraph(
   const previews = new Map<string, string>();
   const rawContents = new Map<string, string>();
   const htmlContents = new Map<string, string>();
+  const groups = new Map<string, string>();
 
   for (const file of files) {
     const raw = await readFile(path.join(rootDir, file), 'utf8');
@@ -1963,6 +2082,8 @@ async function buildGraph(
     rawContents.set(file, raw);
     previews.set(file, markdownPreview(raw));
     htmlContents.set(file, await renderMarkdown(raw, currentDir));
+    const group = graphConceptGroup(file, raw);
+    if (group) groups.set(file, group);
     for (const target of extractGraphTargets(raw, currentDir, nodeIds)) {
       if (!nodeIds.has(target) || target === file) continue;
       const edgeKey = [file, target].sort().join('\0');
@@ -2000,6 +2121,7 @@ async function buildGraph(
       preview: previews.get(file) || '(Aucun contenu lisible dans ce fichier.)',
       raw: rawContents.get(file) ?? '',
       html: htmlContents.get(file) ?? '',
+      group: groups.get(file),
       degree: nodeDegree,
       x: Math.round(cx + Math.cos(angle) * rx),
       y: Math.round(cy + Math.sin(angle) * ry),
@@ -2113,7 +2235,7 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
 
   function nodeMatchesSearch(node, query) {
     const q = query.toLowerCase();
-    return node.id.toLowerCase().includes(q) || node.title.toLowerCase().includes(q);
+    return node.id.toLowerCase().includes(q) || node.title.toLowerCase().includes(q) || String(node.group || '').toLowerCase().includes(q);
   }
 
   function applySearchFilter(query) {
@@ -2142,7 +2264,7 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
         '<li class="graph-search-result" data-node-id="' + window.WikiUi.escapeHtml(n.id) + '">' +
         '<span class="graph-search-result-dot ' + n.type + '"></span>' +
         '<span class="graph-search-result-title">' + window.WikiUi.escapeHtml(n.title) + '</span>' +
-        '<span class="graph-search-result-path">' + window.WikiUi.escapeHtml(n.id) + '</span>' +
+        '<span class="graph-search-result-path">' + window.WikiUi.escapeHtml(n.group ? n.group + ' · ' + n.id : n.id) + '</span>' +
         '</li>'
       ).join('');
     }
@@ -2398,7 +2520,7 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
     if (!node) return;
     const connected = connectedIds(id);
     panelTitle.textContent = node.title;
-    panelMeta.textContent = node.id;
+    panelMeta.textContent = node.group ? node.group + ' · ' + node.id : node.id;
     if (panelNodeOpen) {
       panelNodeOpen.href = node.href;
       panelNodeOpen.hidden = false;
@@ -2553,16 +2675,16 @@ async function getLastIngestTime(rootDir: string): Promise<Date | null> {
 }
 
 function relativeTimeLabel(d: Date | null): string {
-  if (!d) return 'Jamais';
+  if (!d) return 'Never';
   const diffMs = Date.now() - d.getTime();
   const diffMin = Math.floor(diffMs / 60_000);
-  if (diffMin < 1) return "À l'instant";
-  if (diffMin < 60) return `il y a ${diffMin} min`;
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin} min ago`;
   const diffH = Math.floor(diffMin / 60);
-  if (diffH < 24) return `il y a ${diffH}h`;
+  if (diffH < 24) return `${diffH}h ago`;
   const diffD = Math.floor(diffH / 24);
-  if (diffD < 30) return `il y a ${diffD}j`;
-  return d.toLocaleDateString('fr-FR');
+  if (diffD < 30) return `${diffD}d ago`;
+  return d.toLocaleDateString('en-US');
 }
 
 function renderWsStats(opts: {
@@ -2573,18 +2695,18 @@ function renderWsStats(opts: {
   lastIngest: Date | null;
 }): string {
   const items: Array<{ n: string; l: string; cls: string; title?: string }> = [
-    { n: String(opts.wikiPages), l: 'Pages wiki', cls: '' },
-    { n: String(opts.deliverables), l: 'Livrables', cls: '' },
+    { n: String(opts.wikiPages), l: 'Wiki pages', cls: '' },
+    { n: String(opts.deliverables), l: 'Deliverables', cls: '' },
     { n: String(opts.templates), l: 'Templates', cls: '' },
   ];
   if (opts.untracked > 0)
     items.push({
       n: String(opts.untracked),
-      l: 'En attente',
+      l: 'Pending',
       cls: ' ws-stat-warn',
-      title: 'Sources présentes dans raw/untracked : lancez wiki ingest pour les intégrer au wiki.',
+      title: 'Sources in raw/untracked — run wiki ingest to integrate them into the wiki.',
     });
-  items.push({ n: relativeTimeLabel(opts.lastIngest), l: 'Dernier ingest', cls: ' ws-stat-muted' });
+  items.push({ n: relativeTimeLabel(opts.lastIngest), l: 'Last ingest', cls: ' ws-stat-muted' });
   return `<div class="ws-stats">${items
     .map(
       (s) =>
@@ -2671,6 +2793,8 @@ async function generateIndex(rootDir: string): Promise<string> {
     }
   }
 
+  await hydrateConceptTileGroups(rootDir, indexTiles);
+
   const SECTION_RANK = ['concept', 'source', 'answer'];
   indexTiles.sort((a, b) => {
     const ah = a.heading.toLowerCase();
@@ -2707,7 +2831,7 @@ async function generateDirectoryPage(
   const content = tiles.length
     ? `<div class="tile-grid">${tiles.join('\n')}</div>`
     : '<p class="empty">No markdown files found in this folder.</p>';
-  const actions = isCreatableCollection(cleanRelativePath) && cleanRelativePath !== 'deliverables'
+  const actions = isCreatableCollection(cleanRelativePath)
     ? `<a class="action-link" href="${escapeHref(newMarkdownHref(cleanRelativePath))}" title="Créer un markdown">+</a>`
     : '';
   const body = `${sidebar}<main class="content">${renderTopbar(`/${cleanRelativePath}`, actions)}<div class="hero"><h1>${escapeHtml(title)}</h1><p>Markdown files under <code>${escapeHtml(cleanRelativePath)}/</code>.</p></div>${content}</main>`;
@@ -2934,45 +3058,6 @@ export function isRawDownloadRequestPath(urlPath: string): boolean {
 }
 
 // ── Perf helpers ──────────────────────────────────────────────────────────────
-
-function fileEtag(fileStat: Awaited<ReturnType<typeof stat>>): string {
-  return `"${fileStat.mtimeMs.toString(36)}-${fileStat.size.toString(36)}"`;
-}
-
-async function navigationEtag(rootDir: string): Promise<string> {
-  const hash = createHash('sha256');
-  const files = (await fg(NAV_PATTERNS, { cwd: rootDir, dot: false }))
-    .map(toPosix)
-    .sort();
-  for (const file of files) {
-    const fileStat = await stat(resolveInside(rootDir, file));
-    hash.update(file);
-    hash.update('\0');
-    hash.update(String(fileStat.mtimeMs));
-    hash.update('\0');
-    hash.update(String(fileStat.size));
-    hash.update('\0');
-  }
-  return `"nav-${hash.digest('hex').slice(0, 16)}"`;
-}
-
-function pageEtag(
-  fileStat: Awaited<ReturnType<typeof stat>>,
-  navEtag: string,
-): string {
-  return `"page-${fileEtag(fileStat).replace(/^"|"$/g, '')}-${navEtag.replace(/^"|"$/g, '')}"`;
-}
-
-function requestHasEtag(req: IncomingMessage, etag: string): boolean {
-  const raw = req.headers['if-none-match'];
-  const values = Array.isArray(raw) ? raw : raw ? [raw] : [];
-  return values.some((value) =>
-    value
-      .split(',')
-      .map((item: string) => item.trim())
-      .includes(etag),
-  );
-}
 
 function acceptsGzip(req: IncomingMessage): boolean {
   return (req.headers['accept-encoding'] ?? '').includes('gzip');
@@ -3277,10 +3362,14 @@ async function proxyPost(
   res.writeHead(upstream.status, respHeaders);
   if (upstream.body) {
     const reader = upstream.body.getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      res.write(value);
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(value);
+      }
+    } catch (err) {
+      console.warn(`[wiki serve] ${upstreamFetchFailureMessage(targetUrl, err)}`);
     }
   }
   res.end();
@@ -3301,8 +3390,15 @@ function upstreamFetchFailureMessage(targetUrl: string, err: unknown): string {
       : typeof cause === 'object' && cause && 'message' in cause
         ? String((cause as { message?: unknown }).message)
         : '';
-  const detail = causeMessage || (err instanceof Error ? err.message : String(err));
-  return `LLM upstream unreachable at ${target}: ${detail}`;
+  const raw = causeMessage || (err instanceof Error ? err.message : String(err));
+  const detail = /fetch failed|econnrefused|connection refused/i.test(raw)
+    ? 'connection refused (service not running?)'
+    : /enotfound|getaddrinfo/i.test(raw)
+      ? 'host not found'
+      : /timeout|timedout|etimedout/i.test(raw)
+        ? 'connection timed out'
+        : raw;
+  return `Upstream unreachable (${target}): ${detail}`;
 }
 
 function headerString(value: string | string[] | undefined): string | undefined {
@@ -3319,7 +3415,12 @@ function chatLlmProxyTarget(req: IncomingMessage, config: AppConfig): {
   const overrideApiKey = headerString(req.headers['x-llm-wiki-llm-api-key']);
   let baseUrl = config.llm.baseUrl;
   if (overrideBaseUrl) {
-    const parsed = new URL(overrideBaseUrl);
+    let parsed: URL;
+    try {
+      parsed = new URL(overrideBaseUrl);
+    } catch {
+      throw new Error('INVALID_LLM_BASE_URL');
+    }
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       throw new Error('INVALID_LLM_BASE_URL');
     }
@@ -3331,6 +3432,11 @@ function chatLlmProxyTarget(req: IncomingMessage, config: AppConfig): {
       authorization: `Bearer ${overrideApiKey ?? config.llm.apiKey ?? ''}`,
     },
   };
+}
+
+function chatProxyErrorStatus(err: unknown): number {
+  const message = err instanceof Error ? err.message : String(err);
+  return message === 'INVALID_LLM_BASE_URL' ? 400 : 502;
 }
 
 function resolveEditableMarkdown(rootDir: string, relativePath: string): string {
@@ -3799,9 +3905,19 @@ export default async function serveCmd(
               retryNetwork: true,
             });
           } catch (err) {
-            sendJson(res, 400, {
-              error: err instanceof Error ? err.message : String(err),
-            });
+            if (!res.headersSent) {
+              const status = chatProxyErrorStatus(err);
+              sendJson(res, status, {
+                error: err instanceof Error ? err.message : String(err),
+                ...(status === 502
+                  ? {
+                      hint: 'Check that the LLM service is running and reachable from the wiki process.',
+                    }
+                  : {}),
+              });
+            } else {
+              res.end();
+            }
           }
           return;
         }
@@ -4181,15 +4297,8 @@ export default async function serveCmd(
         return;
       }
 
-      const fileStat2 = await stat(absolute);
-      const etag = pageEtag(fileStat2, await navigationEtag(rootDir));
-      if (requestHasEtag(req, etag)) {
-        res.writeHead(304);
-        res.end();
-        return;
-      }
       const html = await serveMd(rootDir, absolute, urlPath);
-      await sendGzippedHtml(req, res, html, { ETag: etag, 'Cache-Control': 'no-cache' });
+      await sendGzippedHtml(req, res, html);
     } catch (err) {
       console.error(err);
       res.writeHead(500, { 'Content-Type': 'text/plain' });

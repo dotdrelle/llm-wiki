@@ -18,21 +18,27 @@ describe('chat html', () => {
     }
   });
 
-  it('does not auto-open production panel on tool results', () => {
+  it('keeps production updates inside the trace chain', () => {
     const [script] = chatScripts();
 
     expect(script).toContain('updateProductionFromPayload(data,{open:false,poll:false});');
     expect(script).toContain(
-      'updateProductionFromPayload(data,{open:false,poll:!productionTerminal(data.job?.status)});',
+      'updateProductionFromPayload(data,{open:false,poll:!recover && !productionTerminal(data.job?.status)});',
     );
+    expect(script).toContain('function renderProductionTrace()');
+    expect(script).not.toContain('function renderProductionPanel()');
   });
 
   it('finalizes streaming bubbles on abort or errors', () => {
     const [script] = chatScripts();
 
     expect(script).toContain('let streamFinalized=false;');
-    expect(script).toContain('message=[parsed.error,parsed.hint].filter(Boolean).join');
-    expect(script).toContain("streamAbortController?.signal.aborted ? 'Réponse arrêtée.' : ''");
+    expect(script).toContain('const normalize=(value)=>');
+    expect(script).toContain('message=[normalize(parsed.error),normalize(parsed.hint)].filter(Boolean).join');
+    expect(script).toContain('Chat server unreachable. Check that the wiki server is running.');
+    expect(script).toContain('LLM unreachable. Check that the LLM service is running and the Base URL is reachable.');
+    expect(script).toContain('Invalid LLM configuration. Check the Base URL in chat settings.');
+    expect(script).toContain("chatText('Response stopped.','Réponse arrêtée.')");
     expect(script).toContain('setStreamContent(streamDiv,finalText);');
   });
 
@@ -50,15 +56,32 @@ describe('chat html', () => {
   it('confirms before deleting a connector', () => {
     const [script] = chatScripts();
 
-    expect(script).toContain("if(!confirm('Supprimer ce connecteur ?')) return;");
+    expect(script).toContain("if(!confirm('Delete this connector?')) return;");
   });
 
-  it('summarizes production job terminal output and produced files', () => {
+  it('keeps production tool result cards compact', () => {
     const [script] = chatScripts();
 
-    expect(script).toContain('Fichiers produits');
     expect(script).toContain('Production ${esc(productionStatusLabel(status))}');
-    expect(script).toContain('<summary>Console</summary>');
+    expect(script).toContain('Details, logs and timing in the chain view.');
+    expect(script).toContain('produced file');
+    expect(script).toContain('const produced=Array.isArray(job.producedFiles)');
+    expect(script).not.toContain('<summary>Console</summary>');
+  });
+
+  it('renders generic JSON results as structured cards', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain('function genericJsonSummaryHTML(data, raw)');
+    expect(script).toContain('function genericJsonTableHTML(rows)');
+    expect(script).toContain('function genericJsonObjectHTML(obj)');
+    expect(script).toContain('function genericJsonArraySectionHTML(key, rows)');
+    expect(script).toContain('const arrayEntries=entries.filter(([,value])=>Array.isArray(value));');
+    expect(script).toContain('function productionTemplatesSummaryHTML(data, raw)');
+    expect(script).toContain('const productionTemplates=productionTemplatesSummaryHTML(data, raw);');
+    expect(script).toContain('Unmatched deliverables');
+    expect(script).toContain('tc-json-table');
+    expect(script).toContain('Structured result');
   });
 
   it('supports runtime llm overrides and yaml reset', () => {
@@ -73,7 +96,8 @@ describe('chat html', () => {
   it('summarizes multiple production jobs', () => {
     const [script] = chatScripts();
 
-    expect(script).toContain("job${data.jobs.length>1?'s':''} production");
+    expect(script).toContain("production job${data.jobs.length>1?'s':''}");
+
     expect(script).toContain("if(data?.jobs && Array.isArray(data.jobs))");
   });
 
@@ -82,17 +106,39 @@ describe('chat html', () => {
 
     expect(script).toContain('function isMcpSessionOrNetworkFailure');
     expect(script).toContain('async function reconnectMCPServer(server)');
-    expect(script).toContain("notify(`${server.name} : reconnexion MCP...`);");
+    expect(script).toContain('const MCP_STALE_SESSION_MS = 5 * 60 * 1000;');
+    expect(script).toContain('const MCP_REQUEST_TIMEOUT_MS = 60 * 1000;');
+    expect(script).toContain('function mcpSessionIsStale(server)');
+    expect(script).toContain('if(mcpSessionIsStale(server))');
+    expect(script).toContain("notify(`${server.name}: reconnecting MCP...`);");
     expect(script).toContain("resp = await mcpRPC(server, 'tools/call', {name, arguments: args});");
+    expect(script).toContain('MCP timeout after');
   });
 
   it('stops LLM chaining after production-only tool calls', () => {
     const [script] = chatScripts();
 
     expect(script).toContain('function productionToolSummary(toolResults)');
-    expect(script).toContain("tcWithIdx.every(tc=>String(tc.function?.name||'').startsWith('production_'))");
+    expect(script).toContain('function handleProductionToolResult(fn, args, result, ok, {recover=false}={})');
+    expect(script).toContain('if(!recover) pollProductionJob({immediate:true});');
+    expect(script).toContain('poll:!recover && !productionTerminal(data.job?.status)');
+    expect(script).toContain('function isProductionToolName(name)');
+    expect(script).toContain('function chatLanguageIsFrench()');
+    expect(script).toContain('function chatText(en, fr)');
+    expect(script).toContain('return productionTerminalChatSummary(latestJob);');
+    expect(script).toContain('productionState.notifiedTerminalJobIds.add(jobId);');
+    expect(script).toContain('tcWithIdx.every(tc=>isProductionToolName(tc.function?.name))');
     expect(script).toContain('const summary=productionToolSummary(toolResults);');
-    expect(script).toContain('Le suivi continue dans le panneau Production.');
+    expect(script).toContain('Tracking in the chain view.');
+    expect(script).toContain('Le suivi est dans le chaînage.');
+  });
+
+  it('does not report chain limit after a normal break on the final allowed turn', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain('let completedWithoutLimit=false;');
+    expect(script).toContain('completedWithoutLimit=true;');
+    expect(script).toContain('if(turn>=MAX_TURNS && !completedWithoutLimit)');
   });
 
   it('does not replay stale tool messages before a new user turn', () => {
@@ -109,15 +155,39 @@ describe('chat html', () => {
 
     expect(script).toContain('notifiedTerminalJobIds: new Set()');
     expect(script).toContain('async function notifyProductionTerminalInChat()');
+    expect(script).toContain('Production completed');
     expect(script).toContain('Production terminée');
-    expect(script).toContain('Fichiers produits:');
+    expect(script).toContain("messages.slice(-8).some(m=>m?.role==='assistant' && m?.content===summary)");
+    expect(script).toContain('handleProductionToolResult(msg.name,{},msg.content,true,{recover:true});');
+    expect(script).not.toContain('if(productionState.jobId && !productionTerminal(productionState.job?.status)) startProductionPolling();');
+    expect(script).not.toContain('Fichiers produits:');
     expect(script).toContain('if(productionTerminal(productionState.job?.status)) await notifyProductionTerminalInChat();');
   });
 
-  it('lets long production progress labels wrap instead of truncating early', () => {
-    expect(CHAT_HTML).toContain('.prod-progress-top{display:flex;align-items:flex-start;');
-    expect(CHAT_HTML).toContain('.prod-progress-label{min-width:0;flex:1;');
+  it('renders production details inline in the trace card', () => {
+    expect(CHAT_HTML).toContain('.trace-flow{display:flex;align-items:center;gap:7px;row-gap:8px;flex-wrap:wrap;');
+    expect(CHAT_HTML).toContain('.trace-detail-title{min-width:0;');
+    expect(CHAT_HTML).toContain('.trace-tile.running,.trace-tile.done,.trace-tile.failed,.trace-tile.cancelled{padding-right:10px}');
+    expect(CHAT_HTML).toContain(".trace-tile.running::before{content:'';position:absolute;top:-4px;right:7px;");
     expect(CHAT_HTML).toContain('overflow-wrap:anywhere');
-    expect(CHAT_HTML).not.toContain('.prod-progress-label{min-width:0;font-size:12px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}');
+    expect(CHAT_HTML).toContain('function toggleTraceStep(traceId, stepId)');
+    expect(CHAT_HTML).not.toContain('production-drawer');
+  });
+
+  it('keeps chained tool output in a single trace card instead of stacked chat cards', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain('function updateTraceToolResult(trace, targetId, result, ok');
+    expect(script).toContain('function removeStreamBubble(div)');
+    expect(script).toContain('removeStreamBubble(streamDiv);');
+    expect(script).toContain('updateTraceToolResult(runTrace,`tc-${domIdx}`,r,true');
+    expect(script).toContain('const clickable=step.detail || step.resultHtml || step.targetId;');
+    expect(script).toContain('if(step.detail || step.resultHtml)');
+    expect(script).toContain('function hydrateTraceCard(card)');
+    expect(script).toContain('productionState.trace=hydrateTraceCard(traceCards[traceCards.length-1]);');
+    expect(script).toContain('function rememberTraceDetailState(trace)');
+    expect(script).toContain('restoreTraceOpenDetails(detailWrap, selected?.openDetailIndexes);');
+    expect(script).not.toContain('setStreamContent(streamDiv,content,tcBlocks);');
+    expect(script).not.toContain('const tcBlocks=tcWithIdx.map');
   });
 });

@@ -107,13 +107,6 @@ input[type=password]{letter-spacing:3px}
 .tb-clear,.tb-system{background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);padding:5px 12px;cursor:pointer;font-size:12px;font-family:var(--font-sans);font-weight:600;transition:all .2s}
 .tb-clear:hover{border-color:var(--err);color:var(--err)}
 .tb-system:hover,.tb-system.active{border-color:var(--accent);color:var(--accent)}
-.tb-production{background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);padding:5px 12px;cursor:pointer;font-size:12px;font-family:var(--font-sans);font-weight:600;transition:all .2s;display:none}
-.tb-production.visible{display:inline-flex;align-items:center;gap:6px}
-.tb-production:hover,.tb-production.active{border-color:var(--accent);color:var(--accent)}
-.tb-production-dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
-.tb-production-dot.running{background:var(--warn);animation:pulse 1s infinite}
-.tb-production-dot.done{background:var(--ok)}
-.tb-production-dot.failed,.tb-production-dot.cancelled{background:var(--err)}
 body.connectors-mode #messages,body.connectors-mode #input-wrap{display:none}
 body.connectors-mode #connectors-view{display:block}
 body:not(.connectors-mode) #connectors-view{display:none}
@@ -179,18 +172,35 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .trace-chevron{font-family:var(--font-mono);font-size:11px;color:var(--muted)}
 .trace-body{padding-top:10px}
 .trace-body.collapsed{display:none}
-.trace-flow{display:flex;align-items:center;gap:7px;overflow-x:auto;padding:2px 0 4px}
-.trace-tile{position:relative;flex:0 0 auto;max-width:180px;border:1px solid var(--border);background:var(--panel);border-radius:13px;padding:7px 10px;cursor:default}
+.trace-flow{display:flex;align-items:center;gap:7px;row-gap:8px;flex-wrap:wrap;overflow-x:visible;padding:2px 0 4px}
+.trace-tile{position:relative;flex:0 0 auto;max-width:180px;border:1px solid var(--border);background:var(--panel);border-radius:13px;padding:7px 10px;cursor:default;text-align:left}
 .trace-tile.tool{background:rgba(79,126,255,.08);border-color:rgba(79,126,255,.22);cursor:pointer}
+.trace-tile.production{background:rgba(45,212,160,.07);border-color:rgba(45,212,160,.2);cursor:pointer}
 .trace-tile.internal{background:rgba(127,127,127,.06);border-style:dashed}
 .trace-tile.error{background:rgba(240,107,107,.08);border-color:rgba(240,107,107,.24)}
 .trace-tile.final{background:rgba(45,212,160,.08);border-color:rgba(45,212,160,.24)}
+.trace-tile.active{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+.trace-tile.running,.trace-tile.done,.trace-tile.failed,.trace-tile.cancelled{padding-right:10px}
+.trace-tile.running::before{content:'';position:absolute;top:-4px;right:7px;width:7px;height:7px;border-radius:50%;background:var(--warn);animation:pulse 1s infinite;box-shadow:0 0 0 2px var(--bg)}
+.trace-tile.done::before{content:'';position:absolute;top:-4px;right:7px;width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 2px var(--bg)}
+.trace-tile.failed::before,.trace-tile.cancelled::before{content:'';position:absolute;top:-4px;right:7px;width:7px;height:7px;border-radius:50%;background:var(--err);box-shadow:0 0 0 2px var(--bg)}
 .trace-k{font-family:var(--font-mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
 .trace-v{margin-top:2px;font-size:12px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .trace-s{margin-top:1px;font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .trace-link{flex:0 0 auto;width:18px;height:1px;background:var(--border);position:relative}
 .trace-link::after{content:'';position:absolute;right:0;top:-3px;border-left:5px solid var(--border);border-top:3.5px solid transparent;border-bottom:3.5px solid transparent}
-@media (max-width: 720px){.msg.user .bubble{width:max-content;max-width:min(80vw,100%)}.trace-flow{align-items:stretch;flex-direction:column}.trace-link{width:1px;height:16px;margin-left:18px}.trace-link::after{right:-3px;top:auto;bottom:0;border-left:3.5px solid transparent;border-right:3.5px solid transparent;border-top:5px solid var(--border);border-bottom:0}.trace-tile{max-width:100%}}
+.trace-detail{margin-top:10px;border:1px solid var(--border);border-radius:12px;background:var(--panel);padding:10px 11px}
+.trace-detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px}
+.trace-detail-title{min-width:0;font-size:13px;font-weight:850;color:var(--text);overflow-wrap:anywhere}
+.trace-detail-meta{font-family:var(--font-mono);font-size:10px;color:var(--muted);white-space:nowrap}
+.trace-detail-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:8px 0}
+.trace-detail-cell{border:1px solid var(--border);border-radius:8px;background:var(--panel-soft);padding:6px 8px;min-width:0}
+.trace-detail-k{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+.trace-detail-v{margin-top:2px;font-family:var(--font-mono);font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trace-detail-line{font-size:11px;line-height:1.45;color:var(--muted);overflow-wrap:anywhere}
+.trace-detail-log{margin-top:8px;font-family:var(--font-mono);font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-word;color:var(--text);background:var(--panel-soft);border:1px solid var(--border);border-radius:8px;padding:8px;max-height:220px;overflow:auto}
+.trace-tool-result{margin-top:8px}
+@media (max-width: 720px){.msg.user .bubble{width:max-content;max-width:min(80vw,100%)}.trace-flow{align-items:stretch;flex-direction:column}.trace-link{width:1px;height:16px;margin-left:18px}.trace-link::after{right:-3px;top:auto;bottom:0;border-left:3.5px solid transparent;border-right:3.5px solid transparent;border-top:5px solid var(--border);border-bottom:0}.trace-tile{max-width:100%}.trace-detail-grid{grid-template-columns:1fr}}
 .bubble p{margin:0 0 .6em}.bubble p:last-child{margin:0}
 .bubble h1,.bubble h2,.bubble h3,.bubble h4{font-weight:700;margin:.8em 0 .3em;line-height:1.3}
 .bubble h1{font-size:1.15em}.bubble h2{font-size:1.05em}.bubble h3,.bubble h4{font-size:.95em}
@@ -310,17 +320,6 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .prompt-actions{display:flex;justify-content:flex-end;gap:8px;padding-top:2px}
 .prompt-actions button{background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);cursor:pointer;padding:7px 10px;font-size:12px;font-family:var(--font-sans);font-weight:600;transition:all .2s}
 .prompt-actions button:hover{border-color:var(--accent);color:var(--accent)}
-.production-drawer{position:fixed;top:44px;left:0;right:0;bottom:0;z-index:996;pointer-events:none}
-.production-drawer.open{pointer-events:none}
-.production-panel{position:absolute;top:0;right:0;height:100%;width:min(420px,calc(100vw - 18px));background:var(--panel);border-left:1px solid var(--border);transform:translateX(100%);transition:transform .24s ease;display:flex;flex-direction:column}
-.production-drawer.open .production-panel{transform:translateX(0);pointer-events:auto}
-.production-head{display:flex;align-items:center;gap:10px;padding:15px 16px;border-bottom:1px solid var(--border)}
-.production-title{flex:1;min-width:0}
-.production-title h2{font-size:15px;line-height:1.2;margin:0}
-.production-title p{font-size:11px;color:var(--muted);line-height:1.4;margin:3px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.production-close{width:30px;height:30px;border:1px solid var(--border);border-radius:8px;background:var(--panel-soft);color:var(--muted);cursor:pointer;font-size:16px;line-height:1}
-.production-close:hover{color:var(--err);border-color:var(--err)}
-.production-body{flex:1;min-height:0;overflow:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
 .prod-empty{color:var(--muted);font-size:13px;line-height:1.55;padding:10px 0}
 .prod-card{border:1px solid var(--border);border-radius:12px;background:var(--panel-soft);padding:12px}
 .prod-status-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
@@ -361,12 +360,20 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .prod-log-line{display:block;color:var(--text)}
 .prod-log-line.muted{color:var(--muted)}
 @media (max-width: 720px){.doc-panel{inset:14px}.doc-content{padding:18px}}
+.err-modal{position:fixed;inset:0;z-index:999;display:none;align-items:center;justify-content:center}
+.err-modal.open{display:flex}
+.err-modal .err-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.45);backdrop-filter:blur(2px)}
+.err-dialog{position:relative;background:var(--panel);border:1px solid rgba(240,107,107,.35);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.25);max-width:440px;width:calc(100% - 48px);padding:20px 22px}
+.err-dialog-title{font-size:14px;font-weight:700;color:var(--err);margin:0 0 10px}
+.err-dialog-msg{font-size:13px;line-height:1.55;color:var(--text);white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto}
+.err-dialog-foot{margin-top:16px;display:flex;justify-content:flex-end}
+.err-dialog-foot button{background:var(--panel-soft);border:1px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:12px;padding:6px 14px;font-family:var(--font-sans)}
+.err-dialog-foot button:hover{border-color:var(--accent);color:var(--accent)}
 hr.divider{border:none;border-top:1px solid var(--border);margin:8px 12px}`;
 
 const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
-  <button class="app-nav-btn" type="button" onclick="appBack()" title="Retour" aria-label="Retour">‹</button>
-  <a class="app-nav-link" href="/" title="Retour au wiki" aria-label="Retour au wiki">Wiki</a>
-  <button class="app-nav-btn" type="button" onclick="toggleSidebar()" title="Afficher ou masquer la sidebar" aria-label="Afficher ou masquer la sidebar">☰</button>
+  <button class="app-nav-btn" type="button" onclick="toggleSidebar()" title="Toggle sidebar" aria-label="Toggle sidebar">☰</button>
+  <a class="app-nav-link" href="/" title="Back to wiki" aria-label="Back to wiki">Wiki</a>
   <div class="app-nav-title">MCP Chat</div>
   <div class="app-nav-spacer"></div>
 </nav>
@@ -382,18 +389,18 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
   <div class="sb-scroll" id="sidebar-split">
     <div class="sb-pane history-pane" id="history-pane">
       <div class="sec-label">
-        Discussions
-        <button onclick="newConversation()">+ Nouveau</button>
+        Conversations
+        <button onclick="newConversation()">+ New</button>
       </div>
       <div class="history-list" id="history-list">
-        <div class="history-empty">Aucun historique.</div>
+        <div class="history-empty">No history.</div>
       </div>
     </div>
     <div class="sb-resizer" id="sidebar-resizer" title="Redimensionner les panneaux"></div>
     <div class="sb-pane config-pane" id="config-pane">
-      <div class="sec-label">Connecteurs</div>
-      <a class="sb-link" id="connectors-link" href="/chat/connectors" onclick="showConnectorsView(event)">Connecteurs <span>MCP & skills</span></a>
-      <div class="sec-label">Configuration LLM<button type="button" onclick="resetYamlConfig()">Reset</button></div>
+      <div class="sec-label">Connectors</div>
+      <a class="sb-link" id="connectors-link" href="/chat/connectors" onclick="showConnectorsView(event)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a6 6 0 0 1-12 0V8z"/></svg> Connectors <span>MCP & skills</span></a>
+      <div class="sec-label">LLM Config<button type="button" onclick="resetYamlConfig()">Reset</button></div>
       <div class="api-block">
         <div class="field">
           <label>Base URL</label>
@@ -401,13 +408,13 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
         </div>
         <div class="field">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-            <label style="margin:0">Clé API</label>
-            <span class="key-saved" id="llm-saved">enregistrée</span>
+            <label style="margin:0">API Key</label>
+            <span class="key-saved" id="llm-saved">saved</span>
           </div>
           <div class="secret-wrap">
-            <input id="api-key" type="password" placeholder="sk-… (vide pour Ollama)" autocomplete="off" onchange="saveConfig()">
+            <input id="api-key" type="password" placeholder="sk-… (leave empty for Ollama)" autocomplete="off" onchange="saveConfig()">
             <div class="secret-actions">
-              <button class="secret-btn" id="reveal-btn-apikey" onclick="toggleReveal('api-key',this)" title="Afficher/masquer">
+              <button class="secret-btn" id="reveal-btn-apikey" onclick="toggleReveal('api-key',this)" title="Show/hide">
                 <svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
               </button>
             </div>
@@ -415,7 +422,7 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
         </div>
         <div class="row2">
           <div class="field">
-            <label>Modèle</label>
+            <label>Model</label>
             <input id="model-name" type="text" placeholder="gpt-4o" oninput="syncModel()" onchange="saveConfig()">
           </div>
           <div class="field">
@@ -433,28 +440,24 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
     <span class="tb-model" id="model-badge">gpt-4o</span>
     <div class="tb-mcps" id="tb-mcps"></div>
     <div class="tb-actions">
-      <button class="tb-production" id="production-panel-btn" onclick="toggleProductionPanel()" title="Suivi production">
-        <span class="tb-production-dot" id="production-panel-dot"></span>
-        <span>Production</span>
-      </button>
-      <button class="tb-system" id="system-drawer-btn" onclick="toggleSystemPrompt()">Instructions système</button>
-      <button class="tb-clear" onclick="clearChat()">Effacer</button>
+      <button class="tb-system" id="system-drawer-btn" onclick="toggleSystemPrompt()">System instructions</button>
+      <button class="tb-clear" onclick="clearChat()">Clear</button>
     </div>
   </div>
   <div class="connectors-view" id="connectors-view">
     <div class="connectors-head">
       <div class="connectors-title">
-        <h1>Connecteurs</h1>
-        <p>Activez les endpoints MCP et préparez vos skills réutilisables pour le chat.</p>
+        <h1>Connectors</h1>
+        <p>Enable MCP endpoints and prepare your reusable skills for chat.</p>
       </div>
     </div>
     <section class="connectors-section">
       <div class="connectors-section-head">
         <div class="connectors-section-title">
-          <h2>Connecteurs MCP</h2>
-          <p>Activez les connecteurs disponibles, ajoutez vos endpoints MCP, puis revenez au chat pour utiliser leurs outils.</p>
+          <h2>MCP Connectors</h2>
+          <p>Enable available connectors, add your MCP endpoints, then return to chat to use their tools.</p>
         </div>
-        <button class="connectors-add" type="button" onclick="addServer()">+ Ajouter</button>
+        <button class="connectors-add" type="button" onclick="addServer()">+ Add</button>
       </div>
       <div class="connectors-grid">
         <div class="mcp-cards" id="mcp-cards"></div>
@@ -464,34 +467,34 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
       <div class="connectors-section-head">
         <div class="connectors-section-title">
           <h2>Skills</h2>
-          <p>Créez des instructions préparées, puis insérez-les dans le chat avec <strong>/</strong>.</p>
+          <p>Create prepared prompts and insert them into chat with <strong>/</strong>.</p>
         </div>
-        <button class="connectors-add" type="button" onclick="openSkillEditor()">+ Nouveau skill</button>
+        <button class="connectors-add" type="button" onclick="openSkillEditor()">+ New skill</button>
       </div>
       <div id="skills-manager-list"></div>
       <div class="skill-editor" id="skill-editor">
-        <div class="skill-editor-title" id="skill-editor-title">Nouveau skill</div>
+        <div class="skill-editor-title" id="skill-editor-title">New skill</div>
         <div class="skill-editor-row">
           <div>
-            <label for="skill-name">Nom</label>
+            <label for="skill-name">Name</label>
             <input id="skill-name" type="text" placeholder="pipeline" autocomplete="off">
           </div>
           <div>
-            <label for="skill-params">Paramètres</label>
+            <label for="skill-params">Parameters</label>
             <input id="skill-params" type="text" placeholder="space, template">
           </div>
         </div>
         <div>
           <label for="skill-desc">Description</label>
-          <input id="skill-desc" type="text" placeholder="Lance le pipeline complet via l'agent production">
+          <input id="skill-desc" type="text" placeholder="Run the full pipeline via the production agent">
         </div>
         <div>
-          <label for="skill-body">Corps du skill</label>
-          <textarea id="skill-body" placeholder="Vérifie le statut, puis lance le job demandé..."></textarea>
+          <label for="skill-body">Skill body</label>
+          <textarea id="skill-body" placeholder="Check status, then run the requested job..."></textarea>
         </div>
         <div class="skill-editor-actions">
-          <button class="skill-manager-btn" type="button" onclick="closeSkillEditor()">Annuler</button>
-          <button class="skill-manager-btn" type="button" onclick="saveSkillFromEditor()">Enregistrer</button>
+          <button class="skill-manager-btn" type="button" onclick="closeSkillEditor()">Cancel</button>
+          <button class="skill-manager-btn" type="button" onclick="saveSkillFromEditor()">Save</button>
         </div>
       </div>
     </section>
@@ -500,51 +503,39 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
     <div id="empty">
       <div class="em-icon">⬡</div>
       <h2>MCP Chat</h2>
-      <p>Activez un serveur MCP, puis démarrez la conversation.</p>
+      <p>Enable an MCP server, then start the conversation.</p>
     </div>
   </div>
   <div id="input-wrap">
     <div class="input-box">
       <div class="skill-ac" id="skill-ac"></div>
-      <textarea id="chat-input" rows="1" placeholder="Votre message… (/ pour les skills)"
+      <textarea id="chat-input" rows="1" placeholder="Your message… (/ for skills)"
         oninput="autoResize(this)" onkeydown="handleKey(event)"></textarea>
       <button id="send-btn" onclick="handleSendButton()" title="Envoyer">
         <svg viewBox="0 0 24 24"><path d="M12 5l7 7-1.4 1.4L13 8.8V20h-2V8.8l-4.6 4.6L5 12z"/></svg>
       </button>
     </div>
-    <div class="input-hint">Entrée pour envoyer · Shift+Entrée pour saut de ligne</div>
+    <div class="input-hint">Enter to send · Shift+Enter for new line</div>
   </div>
 </div>
 
 <div id="notif"></div>
 <div class="prompt-drawer" id="system-prompt-drawer" aria-hidden="true">
   <div class="prompt-backdrop" onclick="closeSystemPrompt()"></div>
-  <aside class="prompt-panel" aria-label="Instructions système">
+  <aside class="prompt-panel" aria-label="System instructions">
     <div class="prompt-head">
       <div class="prompt-title">
-        <h2>Instructions système</h2>
-        <p>Injectées au modèle à chaque appel, sans apparaître dans l'historique.</p>
+        <h2>System instructions</h2>
+        <p>Injected into the model on every call, without appearing in history.</p>
       </div>
-      <button class="prompt-close" type="button" onclick="closeSystemPrompt()" title="Fermer">×</button>
+      <button class="prompt-close" type="button" onclick="closeSystemPrompt()" title="Close">×</button>
     </div>
     <div class="prompt-body">
       <textarea id="system-prompt" spellcheck="false" onchange="saveSystemPrompt()" oninput="saveSystemPrompt()"></textarea>
       <div class="prompt-actions">
-        <button type="button" onclick="resetSystemPrompt()">Réinitialiser</button>
+        <button type="button" onclick="resetSystemPrompt()">Reset</button>
       </div>
     </div>
-  </aside>
-</div>
-<div class="production-drawer" id="production-drawer" aria-hidden="true">
-  <aside class="production-panel" aria-label="Suivi production">
-    <div class="production-head">
-      <div class="production-title">
-        <h2>Production</h2>
-        <p id="production-subtitle">Aucun job suivi.</p>
-      </div>
-      <button class="production-close" type="button" onclick="toggleProductionPanel(false)" title="Fermer">×</button>
-    </div>
-    <div class="production-body" id="production-body"></div>
   </aside>
 </div>
 <div class="doc-modal" id="doc-modal" aria-hidden="true">
@@ -552,11 +543,19 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
   <section class="doc-panel" role="dialog" aria-modal="true" aria-labelledby="doc-title">
     <div class="doc-head">
       <div class="doc-title" id="doc-title">Document</div>
-      <a class="doc-open" id="doc-open" href="#" target="_blank" rel="noopener">Ouvrir</a>
-      <button class="doc-close" type="button" onclick="closeLocalDoc()" title="Fermer">×</button>
+      <a class="doc-open" id="doc-open" href="#" target="_blank" rel="noopener">Open</a>
+      <button class="doc-close" type="button" onclick="closeLocalDoc()" title="Close">×</button>
     </div>
     <div class="doc-content" id="doc-content"></div>
   </section>
+</div>
+<div class="err-modal" id="err-modal" aria-hidden="true">
+  <div class="err-backdrop" onclick="closeErrModal()"></div>
+  <div class="err-dialog" role="dialog" aria-modal="true">
+    <div class="err-dialog-title" id="err-modal-title">Error</div>
+    <div class="err-dialog-msg" id="err-modal-msg"></div>
+    <div class="err-dialog-foot"><button onclick="closeErrModal()">Close</button></div>
+  </div>
 </div>
 
 <script>
@@ -584,6 +583,7 @@ let productionState = {
   logs: [],
   command: '',
   traceFile: '',
+  trace: null,
   pollTimer: null,
   countdownTimer: null,
   lastUpdatedAt: null,
@@ -615,11 +615,23 @@ function renderInstructionRefs(html) {
 }
 function renderMd(t) { try { return renderInstructionRefs(typeof marked!=='undefined' ? marked.parse(t||'') : esc(t||'')); } catch { return renderInstructionRefs(esc(t||'')); } }
 const SIDEBAR_SPLIT_KEY = 'mcpchat_sidebar_history_height';
+const traceRegistry = new Map();
+let nextTraceId = 1;
+const MCP_STALE_SESSION_MS = 5 * 60 * 1000;
+const MCP_REQUEST_TIMEOUT_MS = 60 * 1000;
 
 function languageInstruction() {
   const lang = window.__WIKI_CONFIG__?.language;
   if (!lang || lang === 'en') return '';
-  return \`Language: write all responses in \${lang}.\`;
+  let label = lang;
+  try { label = new Intl.DisplayNames([lang], { type: 'language' }).of(lang) ?? lang; } catch {}
+  return \`IMPORTANT: réponds toujours dans la langue configurée: \${lang} (\${label}). Après un appel d'outil, traduis et synthétise les informations utiles dans cette langue; ne conserve une autre langue que pour les noms propres, chemins, commandes, codes et citations exactes.\`;
+}
+function chatLanguageIsFrench() {
+  return /^fr(?:-|$)/i.test(String(window.__WIKI_CONFIG__?.language || ''));
+}
+function chatText(en, fr) {
+  return chatLanguageIsFrench() ? fr : en;
 }
 function notify(msg, type='s') {
   const el=$('notif'); el.textContent=msg; el.className=\`show \${type}\`;
@@ -676,7 +688,7 @@ function selectSkillAc(idx){
   hideSkillAc();
   ta.focus();
   if(skill.params&&skill.params.length){
-    notify('Paramètres attendus : '+skill.params.map(p=>'{'+p+'}').join(', '),'s');
+    notify('Expected parameters: '+skill.params.map(p=>'{'+p+'}').join(', '),'s');
   }
 }
 
@@ -684,13 +696,13 @@ function renderSkillsManager() {
   const el=$('skills-manager-list');
   if(!el) return;
   if(skillsCache===null) {
-    el.innerHTML='<div class="skill-empty">Chargement des skills...</div>';
+    el.innerHTML='<div class="skill-empty">Loading skills...</div>';
     fetchSkillsAc().then(renderSkillsManager);
     return;
   }
   const skills=skillsCache||[];
   if(!skills.length) {
-    el.innerHTML='<div class="skill-empty">Aucun skill. Créez un premier skill pour le rendre disponible avec / dans le chat.</div>';
+    el.innerHTML='<div class="skill-empty">No skills. Create your first skill to make it available with / in chat.</div>';
     return;
   }
   el.innerHTML=\`<div class="skills-manager-grid">\${skills.map((s,i)=>\`
@@ -700,8 +712,8 @@ function renderSkillsManager() {
       \${Array.isArray(s.params)&&s.params.length?\`<div class="skill-manager-params">\${s.params.map(p=>\`<span class="skill-manager-param">{\${esc(p)}}</span>\`).join('')}</div>\`:''}
       \${s.body?\`<div class="skill-manager-preview">\${esc(String(s.body).slice(0,180))}\${String(s.body).length>180?'...':''}</div>\`:''}
       <div class="skill-manager-actions">
-        <button class="skill-manager-btn" type="button" onclick="openSkillEditor(\${i})">Modifier</button>
-        <button class="skill-manager-btn del" type="button" onclick="deleteSkillFromManager(\${i})">Supprimer</button>
+        <button class="skill-manager-btn" type="button" onclick="openSkillEditor(\${i})">Edit</button>
+        <button class="skill-manager-btn del" type="button" onclick="deleteSkillFromManager(\${i})">Delete</button>
       </div>
     </div>\`).join('')}</div>\`;
 }
@@ -709,7 +721,7 @@ function renderSkillsManager() {
 function openSkillEditor(idx=null) {
   const skill=Number.isInteger(idx) ? (skillsCache||[])[idx] : null;
   skillEditingName=skill?.name||null;
-  $('skill-editor-title').textContent=skill ? \`Modifier /\${skill.name}\` : 'Nouveau skill';
+  $('skill-editor-title').textContent=skill ? \`Edit /\${skill.name}\` : 'New skill';
   $('skill-name').value=skill?.name||'';
   $('skill-name').disabled=!!skill;
   $('skill-desc').value=skill?.description||'';
@@ -729,8 +741,8 @@ async function saveSkillFromEditor() {
   const description=$('skill-desc').value.trim();
   const params=$('skill-params').value.split(',').map(p=>p.trim()).filter(Boolean);
   const body=$('skill-body').value;
-  if(!name){notify('Le nom du skill est requis.','e');return;}
-  if(!body.trim()){notify('Le corps du skill est requis.','e');return;}
+  if(!name){notify('Skill name is required.','e');return;}
+  if(!body.trim()){notify('Skill body is required.','e');return;}
   try {
     const r=await fetch('/api/skills/'+encodeURIComponent(name),{
       method:'POST',
@@ -738,14 +750,14 @@ async function saveSkillFromEditor() {
       body:JSON.stringify({description,params,body}),
     });
     if(!r.ok) {
-      let msg='Enregistrement impossible';
+      let msg='Save failed';
       try{msg=(await r.json()).error||msg;}catch{}
       throw new Error(msg);
     }
     closeSkillEditor();
     await fetchSkillsAc(true);
     renderSkillsManager();
-    notify('Skill enregistré');
+    notify('Skill saved');
   } catch(e) {
     notify(e.message||String(e),'e');
   }
@@ -754,19 +766,19 @@ async function saveSkillFromEditor() {
 async function deleteSkillFromManager(idx) {
   const skill=(skillsCache||[])[idx];
   if(!skill) return;
-  if(!confirm(\`Supprimer le skill /\${skill.name} ?\`)) return;
+  if(!confirm(\`Delete skill /\${skill.name}?\`)) return;
   try {
     const r=await fetch('/api/skills/'+encodeURIComponent(skill.name),{method:'DELETE'});
-    if(!r.ok) throw new Error('Suppression impossible');
+    if(!r.ok) throw new Error('Deletion failed');
     await fetchSkillsAc(true);
     renderSkillsManager();
-    notify('Skill supprimé');
+    notify('Skill deleted');
   } catch(e) {
     notify(e.message||String(e),'e');
   }
 }
 function toggleSidebar() { sidebarOpen=!sidebarOpen; $('sidebar').classList.toggle('collapsed',!sidebarOpen); }
-function syncModel() { $('model-badge').textContent=$('model-name').value||'modèle'; }
+function syncModel() { $('model-badge').textContent=$('model-name').value||'model'; }
 
 function clampSidebarSplit(height) {
   const split=$('sidebar-split');
@@ -826,7 +838,7 @@ function setSendButtonStreaming(streaming) {
   const btn=$('send-btn');
   if(!btn) return;
   btn.classList.toggle('is-stop',streaming);
-  btn.title=streaming?'Arrêter':'Envoyer';
+  btn.title=streaming?'Stop':'Send';
   btn.innerHTML=streaming
     ? '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>'
     : '<svg viewBox="0 0 24 24"><path d="M12 5l7 7-1.4 1.4L13 8.8V20h-2V8.8l-4.6 4.6L5 12z"/></svg>';
@@ -864,7 +876,7 @@ function saveSystemPrompt() {
 function resetSystemPrompt() {
   $('system-prompt').value = DEFAULT_SYSTEM_PROMPT;
   saveSystemPrompt();
-  notify('Instructions réinitialisées');
+  notify('Instructions reset');
 }
 
 function currentSystemPrompt() {
@@ -877,7 +889,7 @@ function newConversationId() {
 
 function titleFromMessages(sourceMessages=messages) {
   const firstUser=sourceMessages.find(m=>m.role==='user' && m.content);
-  const text=String(firstUser?.displayContent || firstUser?.content || 'Nouvelle discussion').replace(/\\s+/g,' ').trim();
+  const text=String(firstUser?.displayContent || firstUser?.content || 'New conversation').replace(/\\s+/g,' ').trim();
   return text.length>54 ? text.slice(0,53).trimEnd()+'…' : text;
 }
 
@@ -955,7 +967,7 @@ function scheduleConversationSave() {
 function historyMeta(item) {
   const date=new Date(item.updatedAt);
   const when=Number.isNaN(date.getTime()) ? '' : date.toLocaleString([], {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-  const tools=item.toolCallCount ? \` · \${item.toolCallCount} outil\${item.toolCallCount>1?'s':''}\` : '';
+  const tools=item.toolCallCount ? \` · \${item.toolCallCount} tool\${item.toolCallCount>1?'s':''}\` : '';
   return \`\${when}\${tools}\`;
 }
 
@@ -963,16 +975,16 @@ function renderHistory() {
   const el=$('history-list');
   if(!el) return;
   if(!historySummaries.length) {
-    el.innerHTML='<div class="history-empty">Aucun historique.</div>';
+    el.innerHTML='<div class="history-empty">No history.</div>';
     return;
   }
   el.innerHTML=historySummaries.map(item=>\`
     <button class="history-item \${item.id===currentConversationId?'active':''}" onclick="loadConversation('\${esc(item.id)}')">
       <div class="history-main">
-        <div class="history-title">\${esc(item.title||'Nouvelle discussion')}</div>
+        <div class="history-title">\${esc(item.title||'New conversation')}</div>
         <div class="history-meta">\${esc(historyMeta(item))}</div>
       </div>
-      <span class="history-delete" onclick="deleteConversation(event,'\${esc(item.id)}')" title="Supprimer">×</span>
+      <span class="history-delete" onclick="deleteConversation(event,'\${esc(item.id)}')" title="Delete">×</span>
     </button>
   \`).join('');
 }
@@ -989,7 +1001,7 @@ async function loadHistory() {
 }
 
 function setEmptyChat() {
-  $('messages').innerHTML=\`<div id="empty"><div class="em-icon">⬡</div><h2>MCP Chat</h2><p>Activez un serveur MCP, puis démarrez la conversation.</p></div>\`;
+  $('messages').innerHTML=\`<div id="empty"><div class="em-icon">⬡</div><h2>MCP Chat</h2><p>Enable an MCP server, then start the conversation.</p></div>\`;
 }
 
 async function newConversation() {
@@ -1051,7 +1063,7 @@ async function loadConversation(id) {
     renderHistory();
     $('messages').scrollTop=$('messages').scrollHeight;
   } catch(e) {
-    notify(\`Historique: \${e.message}\`,'e');
+    notify(\`History: \${e.message}\`,'e');
   }
 }
 
@@ -1067,7 +1079,7 @@ async function deleteConversation(event, id) {
     }
     await loadHistory();
   } catch(e) {
-    notify(\`Suppression impossible: \${e.message}\`,'e');
+    notify(\`Deletion failed: \${e.message}\`,'e');
   }
 }
 
@@ -1104,7 +1116,7 @@ function addServer(name='', url='', bearer='') {
 }
 
 function removeServer(id) {
-  if(!confirm('Supprimer ce connecteur ?')) return;
+  if(!confirm('Delete this connector?')) return;
   servers=servers.filter(s=>s.id!==id);
   renderCards(); renderTopPills(); saveServers();
 }
@@ -1113,7 +1125,7 @@ function renderCards() {
   const el=$('mcp-cards');
   if(!el) return;
   if(!servers.length) {
-    el.innerHTML='<div style="padding:0 4px;font-size:12px;color:var(--muted)">Aucun serveur. Cliquez "+ Ajouter".</div>';
+    el.innerHTML='<div style="padding:0 4px;font-size:12px;color:var(--muted)">No server. Click &quot;+ Add&quot;.</div>';
     return;
   }
   el.innerHTML=servers.map(s=>cardHTML(s)).join('');
@@ -1148,12 +1160,12 @@ function showChatView() {
 
 function cardHTML(s) {
   const badgeClass={ok:'ok',err:'err',loading:'loading',off:'off'}[s.status]||'off';
-  const badgeLabel={ok:\`\${s.tools.length} outils\`,err:'erreur',loading:'…',off:'off'}[s.status]||'off';
+  const badgeLabel={ok:\`\${s.tools.length} tools\`,err:'error',loading:'…',off:'off'}[s.status]||'off';
 
   const toolsHTML = (s.status==='ok'&&s.tools.length)
     ? \`<div class="mcp-tools">
         <div class="mcp-tools-head" onclick="toggleTools(\${s.id})">
-          <span>\${s.tools.length} outil\${s.tools.length>1?'s':''}</span>
+          <span>\${s.tools.length} tool\${s.tools.length>1?'s':''}</span>
           <span class="mcp-tools-chevron" id="tools-chevron-\${s.id}">▸</span>
         </div>
         <div class="mcp-tools-body collapsed" id="tools-body-\${s.id}">\${s.tools.map(t=>\`
@@ -1175,23 +1187,23 @@ function cardHTML(s) {
         <input type="checkbox" \${s.enabled&&s.status==='ok'?'checked':''} onchange="toggleServer(\${s.id},this.checked)">
         <div class="mcp-toggle-track"><div class="mcp-toggle-thumb"></div></div>
       </label>
-      <input class="mcp-name-input" type="text" value="\${esc(s.name)}" placeholder="Nom"
+      <input class="mcp-name-input" type="text" value="\${esc(s.name)}" placeholder="Name"
         onchange="servers.find(x=>x.id==\${s.id}).name=this.value;renderTopPills();saveServers()">
       <span class="mcp-badge \${badgeClass}">\${badgeLabel}</span>
     </div>
     <div class="mcp-url-row">
       <input type="text" value="\${esc(s.url)}" placeholder="http://localhost:3000/mcp/"
         onchange="servers.find(x=>x.id==\${s.id}).url=this.value;saveServers()" style="flex:1">
-      <button class="btn-icon" onclick="connectServer(\${s.id})" title="Connecter">&#x21BB;</button>
-      <button class="btn-icon btn-del" onclick="removeServer(\${s.id})" title="Supprimer">&#x2715;</button>
+      <button class="btn-icon" onclick="connectServer(\${s.id})" title="Connect">&#x21BB;</button>
+      <button class="btn-icon btn-del" onclick="removeServer(\${s.id})" title="Remove">&#x2715;</button>
     </div>
     <div class="mcp-bearer-row">
       <div class="secret-wrap" style="flex:1">
-        <input type="password" value="\${esc(s.bearer||'')}" placeholder="Token Bearer (optionnel)"
+        <input type="password" value="\${esc(s.bearer||'')}" placeholder="Bearer token (optional)"
           autocomplete="off" style="padding-right:34px;font-size:11px"
           onchange="(function(el,id){const sv=servers.find(x=>x.id==id);if(!sv)return;sv.bearer=el.value;saveServers();if(sv.url)connectServer(id);})(this,\${s.id})">
         <div class="secret-actions">
-          <button class="secret-btn" onclick="toggleReveal(this.closest('.secret-wrap').querySelector('input'),this)" title="Afficher/masquer">
+          <button class="secret-btn" onclick="toggleReveal(this.closest('.secret-wrap').querySelector('input'),this)" title="Show/hide">
             <svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
         </div>
@@ -1201,7 +1213,7 @@ function cardHTML(s) {
           ? '<span class="key-saved show" style="flex-shrink:0;background:rgba(192,57,43,.12);color:var(--err)">token &#x2717;</span>'
           : '<span class="key-saved show" style="flex-shrink:0">token &#x2713;</span>')
         : s.injected
-          ? '<span class="key-saved show" style="flex-shrink:0">token serveur &#x2713;</span>'
+          ? '<span class="key-saved show" style="flex-shrink:0">server token &#x2713;</span>'
           : '<span style="font-size:10px;color:var(--muted);flex-shrink:0;font-family:var(--font-mono)">no auth</span>'}
     </div>
     \${toolsHTML}
@@ -1250,31 +1262,50 @@ async function mcpRPC(server, method, params) {
   };
   if (server.bearer?.trim()) headers['Authorization'] = \`Bearer \${server.bearer.trim()}\`;
   if (server.sessionId) headers['Mcp-Session-Id'] = server.sessionId;
-  const res = await fetch(mcpProxyUrl(server), {method: 'POST', headers, body: JSON.stringify(body)});
-  const sid = res.headers.get('Mcp-Session-Id');
-  if (sid) server.sessionId = sid;
-  if (!res.ok) {
-    const raw=await res.text().catch(()=>'');
-    const authUrl=extractOAuthUrl(res,raw);
-    if(authUrl) {
-      openOAuthWindow(authUrl,server);
-      throw new Error(\`Authentification requise pour \${server.name}. La page OAuth a été ouverte hors du chat.\`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), MCP_REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(mcpProxyUrl(server), {method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal});
+    const sid = res.headers.get('Mcp-Session-Id');
+    if (sid) server.sessionId = sid;
+    server.lastMcpActivityAt = Date.now();
+    if (!res.ok) {
+      const raw=await res.text().catch(()=>'');
+      if(res.status===401) {
+        const authUrl=extractOAuthUrl(res,raw);
+        if(authUrl) {
+          openOAuthWindow(authUrl,server);
+          throw new Error(\`Authentication required for \${server.name}. The OAuth page has been opened outside of chat.\`);
+        }
+      }
+      const err=new Error(raw ? \`HTTP \${res.status}: \${raw.slice(0,180)}\` : \`HTTP \${res.status}\`);
+      err.status=res.status;
+      err.raw=raw;
+      throw err;
     }
-    const err=new Error(raw ? \`HTTP \${res.status}: \${raw.slice(0,180)}\` : \`HTTP \${res.status}\`);
-    err.status=res.status;
-    err.raw=raw;
-    throw err;
+    const ct = res.headers.get('content-type') || '';
+    return ct.includes('text/event-stream') ? await readSSE(res) : await res.json();
+  } catch(err) {
+    const e = new Error(err?.name==='AbortError' ? \`MCP timeout after \${Math.round(MCP_REQUEST_TIMEOUT_MS/1000)}s\` : (err?.message || String(err)));
+    e.raw = e.message;
+    e.status = err?.status;
+    throw e;
+  } finally {
+    clearTimeout(timeout);
   }
-  const ct = res.headers.get('content-type') || '';
-  if (ct.includes('text/event-stream')) return await readSSE(res);
-  return await res.json();
+}
+
+function mcpSessionIsStale(server) {
+  if(!server?.sessionId) return false;
+  const last=Number(server.lastMcpActivityAt || 0);
+  return !last || Date.now() - last > MCP_STALE_SESSION_MS;
 }
 
 function isMcpSessionOrNetworkFailure(err) {
   const status=err?.status;
   const text=String(err?.raw || err?.message || err || '');
   return status===400 || status===404 || status===409 || status===410 || status===502 || status===503 ||
-    /session|mcp-session-id|no valid session|not found|fetch failed|terminated|socket|econnreset|econnrefused|und_err/i.test(text);
+    /session|mcp-session-id|no valid session|not found|fetch failed|timeout|aborted|terminated|socket|econnreset|econnrefused|und_err/i.test(text);
 }
 
 function extractOAuthUrl(response, raw) {
@@ -1300,9 +1331,9 @@ function openOAuthWindow(url, server) {
   const popup=window.open(url,'mcp-oauth','width=980,height=780');
   if(popup) {
     try { popup.opener=null; } catch {}
-    notify(\`Auth OAuth ouverte pour \${server.name}. Revenez ici puis reconnectez le connecteur.\`);
+    notify(\`OAuth auth opened for \${server.name}. Come back here then reconnect the connector.\`);
   } else {
-    notify(\`Popup bloquée pour \${server.name}. Ouvrez l'autorisation depuis le navigateur.\`,'e');
+    notify(\`Popup blocked for \${server.name}. Open the authorization from the browser.\`,'e');
   }
 }
 
@@ -1320,14 +1351,14 @@ async function mcpNotify(server, method, params) {
 
 async function connectServer(id) {
   const s=servers.find(x=>x.id===id); if(!s) return;
-  if(!s.url) { notify('URL manquante','e'); return; }
+  if(!s.url) { notify('Missing URL','e'); return; }
   s.status='loading'; s.sessionId=null; renderCards();
   try {
     await reconnectMCPServer(s);
-    notify(\`✓ \${s.name} : \${s.tools.length} outil(s)\`);
+    notify(\`✓ \${s.name}: \${s.tools.length} tool(s)\`);
   } catch(err) {
     s.status='err'; s.enabled=false;
-    notify(\`\${s.name} : \${err.message}\`, 'e');
+    showErrModal(\`MCP connection — \${s.name}\`, mcpConnectErrorMessage(err));
   }
   renderCards(); renderTopPills(); saveServers();
 }
@@ -1339,36 +1370,42 @@ async function reconnectMCPServer(server) {
     capabilities: {},
     clientInfo: {name: 'MCPChat', version: '1.0'}
   });
-  if (initResp?.error) throw new Error(initResp.error.message || 'initialize échoué');
+  if (initResp?.error) throw new Error(initResp.error.message || 'initialize failed');
   await mcpNotify(server, 'notifications/initialized', {});
 
   const toolsResp = await mcpRPC(server, 'tools/list');
-  if (toolsResp?.error) throw new Error(toolsResp.error.message || 'tools/list échoué');
+  if (toolsResp?.error) throw new Error(toolsResp.error.message || 'tools/list failed');
   server.tools = toolsResp?.result?.tools || [];
   server.status='ok';
   server.enabled=true;
+  server.lastMcpActivityAt=Date.now();
 }
 
 async function callMCPTool(name, args) {
   const server=findServerForTool(name);
-  if(!server) throw new Error(\`Aucun serveur MCP actif pour "\${name}"\`);
+  if(!server) throw new Error(\`No active MCP server for "\${name}"\`);
   let resp;
   try {
+    if(mcpSessionIsStale(server)) {
+      notify(\`\${server.name}: inactive MCP session, reconnecting...\`);
+      await reconnectMCPServer(server);
+      renderCards(); renderTopPills(); saveServers();
+    }
     resp = await mcpRPC(server, 'tools/call', {name, arguments: args});
   } catch(err) {
     if(!isMcpSessionOrNetworkFailure(err)) throw err;
-    notify(\`\${server.name} : reconnexion MCP...\`);
+    notify(\`\${server.name}: reconnecting MCP...\`);
     await reconnectMCPServer(server);
     renderCards(); renderTopPills(); saveServers();
     resp = await mcpRPC(server, 'tools/call', {name, arguments: args});
   }
   if (resp?.error && isMcpSessionOrNetworkFailure(resp.error)) {
-    notify(\`\${server.name} : session MCP expirée, reconnexion...\`);
+    notify(\`\${server.name}: expired MCP session, reconnecting...\`);
     await reconnectMCPServer(server);
     renderCards(); renderTopPills(); saveServers();
     resp = await mcpRPC(server, 'tools/call', {name, arguments: args});
   }
-  if (resp?.error) throw new Error(resp.error.message || 'Erreur tool call');
+  if (resp?.error) throw new Error(resp.error.message || 'Tool call error');
   const content = resp?.result?.content || [];
   return content.map(c => c.text ?? JSON.stringify(c)).join('\\n') || JSON.stringify(resp?.result || {});
 }
@@ -1396,17 +1433,6 @@ function productionTerminal(status) {
   return ['done','failed','cancelled'].includes(String(status||''));
 }
 
-function isProductionPanelOpen() {
-  return $('production-drawer')?.classList.contains('open') || false;
-}
-
-function shouldShowProductionButton(job) {
-  const status=String(job?.status||'');
-  if(isProductionPanelOpen()) return true;
-  if(job && productionTerminal(status)) return false;
-  return !!(productionState.jobId||job);
-}
-
 function parseProductionJSON(result) {
   const data=parseToolJSON(result);
   return data && typeof data==='object' ? data : null;
@@ -1415,8 +1441,8 @@ function parseProductionJSON(result) {
 function resetProductionState() {
   if(productionState.pollTimer) clearTimeout(productionState.pollTimer);
   if(productionState.countdownTimer) clearInterval(productionState.countdownTimer);
-  productionState={jobId:null,job:null,progress:null,logs:[],command:'',traceFile:'',pollTimer:null,countdownTimer:null,lastUpdatedAt:null,notifiedTerminalJobIds:new Set()};
-  renderProductionPanel();
+  productionState={jobId:null,job:null,progress:null,logs:[],command:'',traceFile:'',trace:null,pollTimer:null,countdownTimer:null,lastUpdatedAt:null,notifiedTerminalJobIds:new Set()};
+  renderProductionTrace();
 }
 
 function extractProductionDetails(lines) {
@@ -1457,7 +1483,7 @@ function formatCountdown(seconds) {
 function syncProductionCountdown(progress) {
   const remaining=retryRemainingSeconds(progress);
   if(remaining!==null && remaining>0 && !productionState.countdownTimer) {
-    productionState.countdownTimer=setInterval(()=>renderProductionPanel(),1000);
+    productionState.countdownTimer=setInterval(()=>renderProductionTrace(),1000);
   }
   if((remaining===null || remaining<=0 || productionTerminal(productionState.job?.status)) && productionState.countdownTimer) {
     clearInterval(productionState.countdownTimer);
@@ -1475,112 +1501,99 @@ function productionTargetLabel(job) {
 }
 
 function productionStatusLabel(status) {
-  const map={queued:'en attente',running:'en cours',done:'terminé',failed:'échec',cancelled:'annulé'};
-  return map[status] || status || 'inconnu';
+  const map={queued:'pending',running:'running',done:'done',failed:'failed',cancelled:'cancelled'};
+  return map[status] || status || 'unknown';
 }
 
-function setProductionPanelVisible(visible) {
-  const drawer=$('production-drawer'), btn=$('production-panel-btn');
-  if(!drawer) return;
-  drawer.classList.toggle('open',!!visible);
-  drawer.setAttribute('aria-hidden',visible?'false':'true');
-  btn?.classList.toggle('active',!!visible);
+function productionChatStatusLabel(status) {
+  if(!chatLanguageIsFrench()) return productionStatusLabel(status);
+  const map={queued:'en attente',running:'en cours',done:'terminée',failed:'échouée',cancelled:'annulée'};
+  return map[status] || status || 'inconnue';
 }
 
-function toggleProductionPanel(force) {
-  const drawer=$('production-drawer');
-  const next=typeof force==='boolean' ? force : !drawer?.classList.contains('open');
-  setProductionPanelVisible(next);
-  renderProductionPanel();
-  if(next && productionState.jobId) pollProductionJob({immediate:true});
+function isProductionToolName(name) {
+  return String(name||'').startsWith('production_');
 }
 
-function renderProductionPanel() {
-  const btn=$('production-panel-btn'), dot=$('production-panel-dot'), body=$('production-body'), subtitle=$('production-subtitle');
-  const job=productionState.job;
-  const progress=productionState.progress || {};
-  const openDetails=new Set([...document.querySelectorAll('#production-body details.prod-details[open]')].map(d=>d.dataset.detail));
-  if(btn) btn.classList.toggle('visible',shouldShowProductionButton(job));
-  const status=String(job?.status||'');
-  if(dot) dot.className=\`tb-production-dot \${esc(status)}\`;
-  if(subtitle) subtitle.textContent=job ? \`\${productionStatusLabel(status)} · \${productionTargetLabel(job)}\` : 'Aucun job suivi.';
-  if(!body) return;
-  if(!job) {
-    body.innerHTML=productionState.jobId
-      ? \`<div class="prod-empty">Job \${esc(productionState.jobId)} détecté. Chargement du statut…</div>\`
-      : '<div class="prod-empty">Aucun job production suivi dans cette discussion. Lance un build/export/polish ou demande un statut pour rouvrir ce panneau.</div>';
-    return;
-  }
-  const steps=Array.isArray(job.steps) ? job.steps : [];
-  const logs=productionState.logs||[];
-  const details=extractProductionDetails([...(job.logTail||[]),...logs]);
-  const command=productionState.command || details.command || '';
-  const traceFile=productionState.traceFile || details.traceFile || '';
-  const logHtml=logs.length
-    ? logs.map(l=>\`<span class="prod-log-line \${String(l).trim()?'':'muted'}">\${esc(l)}</span>\`).join('')
-    : '<span class="prod-log-line muted">Aucun log chargé.</span>';
-  const percent=Number.isFinite(Number(progress.percent)) ? Math.max(0,Math.min(100,Number(progress.percent))) : null;
+function productionProgressDetail(job, progress) {
+  const sourceCount=Number(progress?.sourceCount);
+  const sourceIndex=Number(progress?.sourceIndex);
+  const sourceDoneCount=Number(progress?.sourceDoneCount);
   const retrySeconds=syncProductionCountdown(progress);
-  const retryText=retrySeconds!==null && retrySeconds>0 ? \`reprise dans \${formatCountdown(retrySeconds)}\` : null;
-  const progressLabel=progress.label || productionTargetLabel(job);
-  const sourceCount=Number(progress.sourceCount);
-  const sourceIndex=Number(progress.sourceIndex);
-  const sourceDoneCount=Number(progress.sourceDoneCount);
+  const retryText=retrySeconds!==null && retrySeconds>0 ? \`retry in \${formatCountdown(retrySeconds)}\` : null;
   const sourceProgress=Number.isFinite(sourceCount) && sourceCount>0
     ? Number.isFinite(sourceIndex)
-      ? \`fichier \${Math.min(sourceCount,sourceIndex+1)}/\${sourceCount}\`
+      ? \`file \${Math.min(sourceCount,sourceIndex+1)}/\${sourceCount}\`
       : Number.isFinite(sourceDoneCount)
-        ? \`\${Math.min(sourceCount,sourceDoneCount)}/\${sourceCount} fichiers traités\`
-        : \`\${sourceCount} fichier\${sourceCount>1?'s':''}\`
+        ? \`\${Math.min(sourceCount,sourceDoneCount)}/\${sourceCount} files processed\`
+        : \`\${sourceCount} file\${sourceCount>1?'s':''}\`
     : null;
-  const progressDetail=[
-    progress.source ? \`fichier \${String(progress.source).split('/').pop()}\` : null,
+  return [
+    progress?.source ? \`file \${String(progress.source).split('/').pop()}\` : null,
     sourceProgress,
-    progress.detail,
-    progress.batchCount ? \`batch \${Number(progress.batchIndex ?? 0)+1}/\${progress.batchCount}\` : null,
-    progress.instructionCount ? \`\${progress.instructionCount} instruction\${progress.instructionCount>1?'s':''}\` : null,
+    progress?.detail,
+    progress?.batchCount ? \`batch \${Number(progress.batchIndex ?? 0)+1}/\${progress.batchCount}\` : null,
+    progress?.instructionCount ? \`\${progress.instructionCount} instruction\${progress.instructionCount>1?'s':''}\` : null,
     retryText,
-    progress.lastEvent ? \`dernier: \${progress.lastEvent}\` : null,
+    progress?.lastEvent ? \`last: \${progress.lastEvent}\` : null,
+    job?.error ? \`error: \${job.error}\` : null,
   ].filter(Boolean).join(' · ');
-  body.innerHTML=\`
-    <div class="prod-card">
-      <div class="prod-status-row">
-        <div class="prod-main">
-          <div class="prod-kind">\${esc(job.type||'production')} · \${esc(productionTargetLabel(job))}</div>
-          <div class="prod-sub">\${esc(job.jobId||'')}</div>
-        </div>
-        <div class="prod-badge \${esc(status)}">\${esc(productionStatusLabel(status))}</div>
-      </div>
-      <div class="prod-metrics">
-        <div class="prod-metric"><div class="prod-metric-k">Durée</div><div class="prod-metric-v">\${esc(formatDuration(job.durationSeconds))}</div></div>
-        <div class="prod-metric"><div class="prod-metric-k">Exit</div><div class="prod-metric-v">\${job.exitCode===null||job.exitCode===undefined?'—':esc(job.exitCode)}</div></div>
-      </div>
-      <div class="prod-progress">
-        <div class="prod-progress-top">
-          <div class="prod-progress-label">\${esc(progressLabel)}</div>
-          <div class="prod-progress-percent">\${percent===null?'—':Math.round(percent)+'%'}</div>
-        </div>
-        <div class="prod-progress-track"><div class="prod-progress-bar" style="width:\${percent===null?0:percent}%"></div></div>
-        <div class="prod-progress-detail">\${esc(progressDetail || 'Progression détaillée non disponible.')}</div>
-      </div>
-      <div class="prod-steps">\${steps.map(step=>\`
-        <div class="prod-step">
-          <span class="prod-step-dot \${esc(step.status||'')}"></span>
-          <div class="prod-step-main">
-            <div class="prod-step-name">\${esc(step.name||'step')}</div>
-            <div class="prod-step-meta">\${esc(productionStatusLabel(step.status))}\${step.exitCode!==undefined?\` · exit \${esc(step.exitCode)}\`:''}</div>
-          </div>
-        </div>\`).join('')}</div>
-    </div>
-    <details class="prod-details" data-detail="command" open><summary>Commande courante</summary><div class="prod-details-body"><div class="prod-code">\${esc(command||'Commande non détectée pour le moment.')}</div></div></details>
-    <details class="prod-details" data-detail="logs"><summary>Derniers logs</summary><div class="prod-details-body"><div class="prod-code">\${logHtml}</div></div></details>
-    <div class="prod-card"><div class="prod-kind">Trace file</div><div class="prod-sub">\${esc(traceFile||'Trace file non détecté pour le moment.')}</div></div>
-    \${job.error?\`<div class="prod-card"><div class="prod-kind" style="color:var(--err)">Erreur</div><div class="prod-sub">\${esc(job.error)}</div></div>\`:''}
-  \`;
-  for(const detail of openDetails) {
-    const el=[...body.querySelectorAll('details.prod-details')].find(d=>d.dataset.detail===detail);
-    if(el) el.open=true;
+}
+
+function productionStepDetail(step, job, progress) {
+  const logs=productionState.logs||[];
+  const details=extractProductionDetails([...(job?.logTail||[]),...logs]);
+  const command=productionState.command || details.command || '';
+  const traceFile=productionState.traceFile || details.traceFile || progress?.traceFile || '';
+  const status=String(step?.status||job?.status||'');
+  const percent=Number.isFinite(Number(progress?.percent)) ? Math.max(0,Math.min(100,Number(progress.percent))) : null;
+  const logLines=logs.length ? logs.slice(-80).join('\\n') : 'No logs loaded.';
+  return {
+    title: step?.name || job?.type || 'production',
+    status,
+    duration: formatDuration(step?.durationSeconds ?? job?.durationSeconds),
+    exitCode: step?.exitCode ?? job?.exitCode,
+    percent,
+    detail: productionProgressDetail(job, progress || {}),
+    command,
+    traceFile,
+    logs: logLines,
+    error: job?.error || '',
+  };
+}
+
+function renderProductionTrace() {
+  const trace=productionState.trace;
+  if(!trace) return;
+  const job=productionState.job;
+  const progress=productionState.progress || {};
+  if(!job && !productionState.jobId) return;
+  const steps=Array.isArray(job?.steps) && job.steps.length ? job.steps : [{name:job?.type||'production',status:job?.status||'queued'}];
+  steps.forEach((step,index)=>{
+    const id=\`prod-\${productionState.jobId||job?.jobId||'job'}-\${step.name||index}\`.replace(/[^a-zA-Z0-9_-]/g,'-');
+    const detail=productionStepDetail(step,job,progress);
+    const status=String(detail.status||'');
+    const percentText=detail.percent===null ? '' : \` · \${Math.round(detail.percent)}%\`;
+    const patch={
+      id,
+      type:'production',
+      kind:'Production',
+      title:step.name||job?.type||'production',
+      summary:\`\${productionStatusLabel(status)}\${percentText}\`,
+      status,
+      ok: status==='failed' || status==='cancelled' ? false : true,
+      detail,
+    };
+    const existing=trace.steps.find(s=>s.id===id);
+    if(existing) Object.assign(existing,patch);
+    else trace.steps.push(patch);
+  });
+  if(!trace.selectedStepId) {
+    const running=trace.steps.find(s=>s.type==='production' && ['running','queued'].includes(String(s.status||'')));
+    if(running) trace.selectedStepId=running.id;
   }
+  trace.el?.classList.remove('empty');
+  renderTrace(trace);
 }
 
 function updateProductionFromPayload(payload, {open=false, poll=false}={}) {
@@ -1608,25 +1621,24 @@ function updateProductionFromPayload(payload, {open=false, poll=false}={}) {
     productionState.logs=payload.logTail;
   }
   productionState.lastUpdatedAt=new Date().toISOString();
-  renderProductionPanel();
-  if(open) setProductionPanelVisible(true);
+  renderProductionTrace();
   if(poll && productionState.jobId) startProductionPolling();
 }
 
-function handleProductionToolResult(fn, args, result, ok) {
+function handleProductionToolResult(fn, args, result, ok, {recover=false}={}) {
   if(!String(fn||'').startsWith('production_')) return;
   const data=parseProductionJSON(result);
   if(!ok || !data) return;
   if(fn==='production_start_job' && data.jobId) {
     updateProductionFromPayload(data,{open:false,poll:false});
-    pollProductionJob({immediate:true});
+    if(!recover) pollProductionJob({immediate:true});
   }
-  else if(fn==='production_job_status') updateProductionFromPayload(data,{open:false,poll:!productionTerminal(data.job?.status)});
+  else if(fn==='production_job_status') updateProductionFromPayload(data,{open:false,poll:!recover && !productionTerminal(data.job?.status)});
   else if(fn==='production_job_logs') updateProductionFromPayload(data,{open:false,poll:false});
   else if(fn==='production_cancel_job') updateProductionFromPayload(data,{open:false,poll:false});
   else if(fn==='production_list_jobs' && Array.isArray(data.jobs) && data.jobs[0] && !productionState.jobId) {
     productionState.jobId=data.jobs[0].jobId;
-    renderProductionPanel();
+    renderProductionTrace();
   }
 }
 
@@ -1638,52 +1650,75 @@ function productionToolSummary(toolResults) {
   const busy=[...parsed].reverse().find(d=>d.error==='workspace_busy');
   const listed=[...parsed].reverse().find(d=>Array.isArray(d.jobs));
   if(busy) {
-    return \`Production déjà en cours : job \${busy.activeJobId || 'actif'}. Le suivi continue dans le panneau Production.\`;
+    return chatLanguageIsFrench()
+      ? \`Production déjà en cours : job \${busy.activeJobId || 'actif'}. Le suivi est dans le chaînage.\`
+      : \`Production already running: job \${busy.activeJobId || 'active'}. Tracking in the chain view.\`;
   }
   if(latestJob) {
-    const status=productionStatusLabel(latestJob.status);
+    if(productionTerminal(latestJob.status)) {
+      const jobId=latestJob.jobId || latestWithJob.jobId || productionState.jobId;
+      if(jobId) productionState.notifiedTerminalJobIds.add(jobId);
+      return productionTerminalChatSummary(latestJob);
+    }
+    const status=productionChatStatusLabel(latestJob.status);
     const target=productionTargetLabel(latestJob);
     const progress=latestWithJob.progress?.percent;
     const progressText=Number.isFinite(Number(progress)) ? \` · \${Math.round(Number(progress))}%\` : '';
     const suffix=productionTerminal(latestJob.status)
       ? latestJob.status==='failed' && latestJob.error
-        ? \` Erreur : \${latestJob.error}\`
+        ? chatLanguageIsFrench() ? \` Erreur : \${latestJob.error}\` : \` Error: \${latestJob.error}\`
         : ''
-      : ' Le suivi continue dans le panneau Production.';
-    return \`Production \${status} : \${target}\${progressText}.\${suffix}\`;
+      : chatText(' Tracking in the chain view.',' Le suivi est dans le chaînage.');
+    return \`Production \${status}: \${target}\${progressText}.\${suffix}\`;
   }
   if(started) {
-    return \`Production lancée : job \${started.jobId} (\${productionStatusLabel(started.status)}). Le suivi continue dans le panneau Production.\`;
+    return chatLanguageIsFrench()
+      ? \`Production démarrée : job \${started.jobId} (\${productionChatStatusLabel(started.status)}). Le suivi est dans le chaînage.\`
+      : \`Production started: job \${started.jobId} (\${productionChatStatusLabel(started.status)}). Tracking in the chain view.\`;
   }
   if(listed) {
+    if(chatLanguageIsFrench()) {
+      return listed.jobs.length
+        ? \`\${listed.jobs.length} job\${listed.jobs.length>1?'s':''} de production trouvé\${listed.jobs.length>1?'s':''}. Le chaînage suit le job actif s'il est disponible.\`
+        : 'Aucun job de production récent.';
+    }
     return listed.jobs.length
-      ? \`\${listed.jobs.length} job\${listed.jobs.length>1?'s':''} production trouvé\${listed.jobs.length>1?'s':''}. Le panneau Production suit le job actif si disponible.\`
-      : 'Aucun job production récent.';
+      ? \`\${listed.jobs.length} production job\${listed.jobs.length>1?'s':''} found. Chaining tracks the active job if available.\`
+      : 'No recent production job.';
   }
-  return 'Action production exécutée. Le panneau Production a été mis à jour.';
+  return chatText('Production action executed. Chaining updated.','Action de production exécutée. Chaînage mis à jour.');
 }
 
 function productionTerminalChatSummary(job) {
   const status=String(job?.status||'');
   const target=productionTargetLabel(job);
-  const duration=job?.durationSeconds!==undefined ? \` en \${formatDuration(job.durationSeconds)}\` : '';
-  const files=Array.isArray(job?.producedFiles) ? job.producedFiles : [];
-  const filesText=files.length
-    ? \`\\n\\nFichiers produits:\\n\${files.slice(0,8).map(f=>\`- \${String(f)}\`).join('\\n')}\${files.length>8?'\\n- ...':''}\`
+  const duration=job?.durationSeconds!==undefined
+    ? chatLanguageIsFrench() ? \` en \${formatDuration(job.durationSeconds)}\` : \` in \${formatDuration(job.durationSeconds)}\`
     : '';
-  if(status==='done') return \`Production terminée : \${target}\${duration}.\${filesText}\`;
-  if(status==='failed') return \`Production en échec : \${target}\${duration}.\${job?.error?\`\\n\\nErreur : \${job.error}\`:''}\`;
-  if(status==='cancelled') return \`Production annulée : \${target}\${duration}.\`;
-  return \`Production \${productionStatusLabel(status)} : \${target}.\`;
+  if(chatLanguageIsFrench()) {
+    if(status==='done') return \`Production terminée : \${target}\${duration}.\`;
+    if(status==='failed') return \`Production échouée : \${target}\${duration}.\${job?.error?\` Erreur : \${job.error}\`:''}\`;
+    if(status==='cancelled') return \`Production annulée : \${target}\${duration}.\`;
+    return \`Production \${productionChatStatusLabel(status)} : \${target}.\`;
+  }
+  if(status==='done') return \`Production completed: \${target}\${duration}.\`;
+  if(status==='failed') return \`Production failed: \${target}\${duration}.\${job?.error?\` Error: \${job.error}\`:''}\`;
+  if(status==='cancelled') return \`Production cancelled: \${target}\${duration}.\`;
+  return \`Production \${productionChatStatusLabel(status)}: \${target}.\`;
 }
 
 async function notifyProductionTerminalInChat() {
   const job=productionState.job;
   const jobId=job?.jobId || productionState.jobId;
   if(!jobId || !productionTerminal(job?.status)) return;
-  if(productionState.notifiedTerminalJobIds.has(jobId)) return;
-  productionState.notifiedTerminalJobIds.add(jobId);
   const summary=productionTerminalChatSummary(job);
+  if(productionState.notifiedTerminalJobIds.has(jobId)) return;
+  const alreadyInChat=messages.slice(-8).some(m=>m?.role==='assistant' && m?.content===summary);
+  if(alreadyInChat) {
+    productionState.notifiedTerminalJobIds.add(jobId);
+    return;
+  }
+  productionState.notifiedTerminalJobIds.add(jobId);
   appendMsg('assistant',summary);
   messages.push({role:'assistant',content:summary});
   conversationDirty=true;
@@ -1710,7 +1745,7 @@ async function pollProductionJob({immediate=false}={}) {
   } catch(e) {
     console.warn('production polling failed', e);
   }
-  renderProductionPanel();
+  renderProductionTrace();
   if(productionTerminal(productionState.job?.status)) await notifyProductionTerminalInChat();
   else startProductionPolling();
 }
@@ -1731,10 +1766,10 @@ async function refreshProductionTraceProgress() {
       waitMs:trace.waitMs,
       retryAt:trace.retryAt,
       detail:trace.lastEvent==='provider:throttle'
-        ? 'Quota fournisseur atteint, reprise en attente'
+        ? 'Provider quota reached, retry pending'
         : productionState.progress?.detail,
     };
-    renderProductionPanel();
+    renderProductionTrace();
   } catch(e) {
     console.warn('production trace refresh failed', e);
   }
@@ -1742,12 +1777,13 @@ async function refreshProductionTraceProgress() {
 
 function recoverProductionStateFromMessages() {
   resetProductionState();
+  const traceCards=Array.from(document.querySelectorAll('.trace-card'));
+  productionState.trace=hydrateTraceCard(traceCards[traceCards.length-1]);
   for(const msg of messages) {
     if(msg.role!=='tool' || !String(msg.name||'').startsWith('production_')) continue;
-    handleProductionToolResult(msg.name,{},msg.content,true);
+    handleProductionToolResult(msg.name,{},msg.content,true,{recover:true});
   }
-  renderProductionPanel();
-  if(productionState.jobId && !productionTerminal(productionState.job?.status)) startProductionPolling();
+  renderProductionTrace();
 }
 
 // ── Chat ────────────────────────────────────────────────────────────────────
@@ -1769,7 +1805,7 @@ async function clearChat() {
       const existing=historySummaries.find(c=>c.id===id);
       await persistConversationPayload({
         id,
-        title:'Nouvelle discussion',
+        title:'New conversation',
         createdAt:existing?.createdAt || new Date().toISOString(),
         updatedAt:new Date().toISOString(),
         systemPrompt:currentSystemPrompt(),
@@ -1781,7 +1817,7 @@ async function clearChat() {
       });
       currentConversationId=id;
     } catch(e) {
-      notify(\`Effacement impossible: \${e.message}\`,'e');
+      notify(\`Clear failed: \${e.message}\`,'e');
     }
   } else {
     renderHistory();
@@ -1829,7 +1865,7 @@ function requestMessagesForLLM(sourceMessages) {
   return sourceMessages.flatMap((msg,idx)=>{
     if(msg.role==='user') return {role:'user',content:msg.content};
     if(msg.role==='assistant') {
-      const out={role:'assistant',content:msg.content ?? null};
+      const out={role:'assistant',content:msg.content ?? ''};
       if(idx>=preserveFrom && Array.isArray(msg.tool_calls)) out.tool_calls=msg.tool_calls;
       return out;
     }
@@ -1848,10 +1884,10 @@ async function copyMessage(btn) {
   if(!text.trim()) return;
   try {
     await navigator.clipboard.writeText(text);
-    btn.textContent='Copié';
-    setTimeout(()=>btn.textContent='Copier',1200);
+    btn.textContent='Copied';
+    setTimeout(()=>btn.textContent='Copy',1200);
   } catch {
-    notify('Copie impossible','e');
+    notify('Copy failed','e');
   }
 }
 
@@ -1861,10 +1897,10 @@ function appendMsg(role, content, toolCalls=null) {
   const div=document.createElement('div');
   div.className=\`msg \${role}\`;
   div.dataset.copy=content||'';
-  const av=role==='user'?'<div class="av u">Vous</div>':'';
+  const av=role==='user'?'<div class="av u">You</div>':'';
   const tc=toolCalls?.length ? toolCalls.map((c,i)=>tcBlockHTML(c,i)).join('') : '';
   const bodyHtml=role==='assistant' ? renderMd(content||'') : esc(content||'');
-  div.innerHTML=\`\${av}<div class="msg-content"><div class="bubble">\${bodyHtml}\${tc}</div><div class="msg-actions"><button class="msg-action" onclick="copyMessage(this)">Copier</button></div></div>\`;
+  div.innerHTML=\`\${av}<div class="msg-content"><div class="bubble">\${bodyHtml}\${tc}</div><div class="msg-actions"><button class="msg-action" onclick="copyMessage(this)">Copy</button></div></div>\`;
   wrap.appendChild(div);
   wrap.scrollTop=wrap.scrollHeight;
   return div;
@@ -1874,10 +1910,43 @@ function createTraceCard() {
   const wrap=$('messages');
   const div=document.createElement('div');
   div.className='trace-card empty';
-  div.innerHTML='<div class="trace-head" onclick="toggleTrace(this)"><div class="trace-title"><span>Chaînage MCP</span><span class="trace-meta">0 appel</span></div><span class="trace-chevron">▾</span></div><div class="trace-body"><div class="trace-flow"></div></div>';
+  const traceId=\`trace-\${nextTraceId++}\`;
+  div.dataset.traceId=traceId;
+  div.innerHTML='<div class="trace-head" onclick="toggleTrace(this)"><div class="trace-title"><span>MCP chain</span><span class="trace-meta">0 call</span></div><span class="trace-chevron">▾</span></div><div class="trace-body"><div class="trace-flow"></div><div class="trace-detail-wrap"></div></div>';
   wrap.appendChild(div);
   wrap.scrollTop=wrap.scrollHeight;
-  return {el:div,steps:[]};
+  const trace={id:traceId,el:div,steps:[],selectedStepId:null};
+  traceRegistry.set(traceId,trace);
+  return trace;
+}
+
+function hydrateTraceCard(card) {
+  if(!card) return null;
+  let traceId=card.dataset.traceId;
+  if(!traceId) {
+    traceId=\`trace-\${nextTraceId++}\`;
+    card.dataset.traceId=traceId;
+  }
+  const steps=Array.from(card.querySelectorAll('.trace-flow .trace-tile')).map((tile,i)=>{
+    const onclick=tile.getAttribute('onclick') || '';
+    const stepId=onclick.match(/toggleTraceStep\\('[^']+','([^']+)'\\)/)?.[1] || \`step-\${traceId}-\${i}\`;
+    const classes=Array.from(tile.classList || []);
+    const type=classes.find(c=>['tool','production','internal','final'].includes(c)) || 'internal';
+    const status=classes.find(c=>['queued','running','done','failed','cancelled'].includes(c)) || '';
+    return {
+      id:stepId,
+      type,
+      status,
+      kind:tile.querySelector('.trace-k')?.textContent || '',
+      title:tile.querySelector('.trace-v')?.textContent || '',
+      summary:tile.querySelector('.trace-s')?.textContent || '',
+      ok:!classes.includes('error'),
+    };
+  });
+  const active=steps.find((_,i)=>card.querySelectorAll('.trace-flow .trace-tile')[i]?.classList.contains('active'));
+  const trace={id:traceId,el:card,steps,selectedStepId:active?.id || null};
+  traceRegistry.set(traceId,trace);
+  return trace;
 }
 
 function toggleTrace(head) {
@@ -1887,23 +1956,86 @@ function toggleTrace(head) {
   if(chev) chev.textContent=collapsed?'▸':'▾';
 }
 
-function traceStepHTML(step) {
-  const cls=['trace-tile',step.type,step.ok===false?'error':''].filter(Boolean).join(' ');
-  const click=step.targetId ? \` onclick="scrollToTool('\${esc(step.targetId)}')"\` : '';
-  return \`<div class="\${cls}"\${click}>
+function traceStepHTML(trace, step) {
+  if(!step.id) step.id=\`step-\${trace.id}-\${trace.steps.indexOf(step)}\`;
+  const active=trace.selectedStepId===step.id;
+  const cls=['trace-tile',step.type,step.status,active?'active':'',step.ok===false?'error':''].filter(Boolean).join(' ');
+  const clickable=step.detail || step.resultHtml || step.targetId;
+  const click=clickable ? \` onclick="toggleTraceStep('\${esc(trace.id)}','\${esc(step.id)}')"\` : '';
+  return \`<button class="\${cls}" type="button"\${click}>
     <div class="trace-k">\${esc(step.kind)}</div>
     <div class="trace-v">\${esc(step.title)}</div>
     \${step.summary?\`<div class="trace-s">\${esc(step.summary)}</div>\`:''}
+  </button>\`;
+}
+
+function traceDetailHTML(step) {
+  if(!step) return '';
+  const d=step.detail;
+  if(!d && step.resultHtml) {
+    return \`<div class="trace-detail">
+      <div class="trace-detail-head">
+        <div class="trace-detail-title">\${esc(step.title || 'tool')}</div>
+        <div class="trace-detail-meta">\${esc(step.summary || '')}</div>
+      </div>
+      \${step.assistantText?\`<div class="trace-detail-line">\${esc(step.assistantText)}</div>\`:''}
+      <div class="trace-tool-result">\${step.resultHtml}</div>
+    </div>\`;
+  }
+  if(!d) return '';
+  const exit=d.exitCode===null || d.exitCode===undefined ? '—' : d.exitCode;
+  const percent=d.percent===null || d.percent===undefined ? '—' : \`\${Math.round(Number(d.percent))}%\`;
+  return \`<div class="trace-detail">
+    <div class="trace-detail-head">
+      <div class="trace-detail-title">\${esc(d.title || step.title || 'production')}</div>
+      <div class="trace-detail-meta">\${esc(productionStatusLabel(d.status || step.status))}</div>
+    </div>
+    <div class="trace-detail-grid">
+      <div class="trace-detail-cell"><div class="trace-detail-k">Duration</div><div class="trace-detail-v">\${esc(d.duration || '—')}</div></div>
+      <div class="trace-detail-cell"><div class="trace-detail-k">Exit</div><div class="trace-detail-v">\${esc(exit)}</div></div>
+      <div class="trace-detail-cell"><div class="trace-detail-k">Progress</div><div class="trace-detail-v">\${esc(percent)}</div></div>
+    </div>
+    \${d.detail?\`<div class="trace-detail-line">\${esc(d.detail)}</div>\`:''}
+    \${d.command?\`<div class="trace-detail-line"><strong>Command</strong> · \${esc(d.command)}</div>\`:''}
+    \${d.traceFile?\`<div class="trace-detail-line"><strong>Trace</strong> · \${esc(d.traceFile)}</div>\`:''}
+    \${d.error?\`<div class="trace-detail-line" style="color:var(--err)">\${esc(d.error)}</div>\`:''}
+    \${d.logs?\`<div class="trace-detail-log">\${esc(d.logs)}</div>\`:''}
   </div>\`;
+}
+
+function traceOpenDetails(container) {
+  return Array.from(container?.querySelectorAll('details') || [])
+    .map((el,i)=>el.open ? i : -1)
+    .filter(i=>i>=0);
+}
+
+function restoreTraceOpenDetails(container, openIndexes) {
+  if(!container || !Array.isArray(openIndexes) || !openIndexes.length) return;
+  const details=Array.from(container.querySelectorAll('details'));
+  openIndexes.forEach(i=>{ if(details[i]) details[i].open=true; });
+}
+
+function rememberTraceDetailState(trace) {
+  const detailWrap=trace?.el?.querySelector('.trace-detail-wrap');
+  const selected=trace?.steps?.find(s=>s.id===trace.selectedStepId);
+  if(!detailWrap || !selected) return;
+  selected.openDetailIndexes=traceOpenDetails(detailWrap);
 }
 
 function renderTrace(trace) {
   if(!trace?.el) return;
+  rememberTraceDetailState(trace);
   const flow=trace.el.querySelector('.trace-flow');
+  const detailWrap=trace.el.querySelector('.trace-detail-wrap');
   const meta=trace.el.querySelector('.trace-meta');
   const toolCount=trace.steps.filter(s=>s.type==='tool').length;
-  if(meta) meta.textContent=\`\${toolCount} appel\${toolCount>1?'s':''} · \${trace.steps.length} étape\${trace.steps.length>1?'s':''}\`;
-  flow.innerHTML=trace.steps.map((s,i)=>traceStepHTML(s)+(i<trace.steps.length-1?'<div class="trace-link"></div>':'')).join('');
+  if(meta) meta.textContent=\`\${toolCount} call\${toolCount>1?'s':''} · \${trace.steps.length} step\${trace.steps.length>1?'s':''}\`;
+  flow.innerHTML=trace.steps.map((s,i)=>traceStepHTML(trace,s)+(i<trace.steps.length-1?'<div class="trace-link"></div>':'')).join('');
+  const selected=trace.steps.find(s=>s.id===trace.selectedStepId);
+  if(detailWrap) {
+    detailWrap.innerHTML=traceDetailHTML(selected);
+    restoreTraceOpenDetails(detailWrap, selected?.openDetailIndexes);
+  }
 }
 
 function addTraceStep(trace, step) {
@@ -1918,6 +2050,33 @@ function updateTraceStep(trace, targetId, patch) {
   const step=trace.steps.find(s=>s.targetId===targetId);
   if(step) Object.assign(step,patch);
   renderTrace(trace);
+}
+
+function updateTraceToolResult(trace, targetId, result, ok, assistantText='') {
+  if(!trace) return;
+  const step=trace.steps.find(s=>s.targetId===targetId);
+  if(!step) return;
+  Object.assign(step,{
+    summary:toolResultTraceSummary(result,ok),
+    ok,
+    resultHtml:toolResultSummaryHTML(result,ok),
+    assistantText,
+  });
+  renderTrace(trace);
+}
+
+function toggleTraceStep(traceId, stepId) {
+  const trace=traceRegistry.get(traceId);
+  if(!trace) return;
+  const step=trace.steps.find(s=>s.id===stepId);
+  if(!step) return;
+  if(step.detail || step.resultHtml) {
+    rememberTraceDetailState(trace);
+    trace.selectedStepId = trace.selectedStepId===stepId ? null : stepId;
+    renderTrace(trace);
+    return;
+  }
+  if(step.targetId) scrollToTool(step.targetId);
 }
 
 function scrollToTool(id) {
@@ -1944,7 +2103,7 @@ function tcBlockHTML(tc, fallbackIdx) {
       <span class="tc-status"><span class="tc-st run" id="tc-st-\${idx}">…</span><span class="tc-expand" id="tc-exp-\${idx}">▾</span></span>
     </div>
     <div class="tc-body args-collapsed" id="tc-body-\${idx}">
-      <button class="tc-args-toggle" type="button" onclick="toggleTCArgs(event,\${idx})">Afficher les arguments</button>
+      <button class="tc-args-toggle" type="button" onclick="toggleTCArgs(event,\${idx})">Show arguments</button>
       <div class="tc-args">
         <div class="tc-lbl" style="margin-top:8px">Arguments</div>
         <pre>\${esc(args)}</pre>
@@ -2004,6 +2163,110 @@ function docChipRowHTML(paths, limit=3) {
   return \`<div class="tc-doc-chip-row">\${shown.map(p=>docButtonHTML(p,p,true)).join('')}\${unique.length>shown.length?\`<span class="tc-item-meta">+\${unique.length-shown.length}</span>\`:''}</div>\`;
 }
 
+function jsonPreviewValue(value) {
+  if(value===null || value===undefined) return '—';
+  if(typeof value==='string' || typeof value==='number' || typeof value==='boolean') return String(value);
+  if(Array.isArray(value)) return \`\${value.length} item\${value.length>1?'s':''}\`;
+  if(typeof value==='object') return \`\${Object.keys(value).length} field\${Object.keys(value).length>1?'s':''}\`;
+  return String(value);
+}
+
+function flatJsonColumns(rows) {
+  const keys=[];
+  for(const row of rows) {
+    if(!row || typeof row!=='object' || Array.isArray(row)) return [];
+    for(const key of Object.keys(row)) {
+      const value=row[key];
+      if(value && typeof value==='object') continue;
+      if(!keys.includes(key)) keys.push(key);
+      if(keys.length>=5) return keys;
+    }
+  }
+  return keys;
+}
+
+function genericJsonTableHTML(rows) {
+  const cols=flatJsonColumns(rows);
+  if(!cols.length) return '';
+  const shown=rows.slice(0,8);
+  return \`<div class="tc-json-table-wrap"><table class="tc-json-table"><thead><tr>\${cols.map(c=>\`<th>\${esc(c)}</th>\`).join('')}</tr></thead><tbody>\${shown.map(row=>\`<tr>\${cols.map(c=>\`<td>\${esc(shortText(jsonPreviewValue(row?.[c]),90))}</td>\`).join('')}</tr>\`).join('')}</tbody></table></div>\${rows.length>shown.length?\`<div class="tc-item-meta">+\${rows.length-shown.length} more rows</div>\`:''}\`;
+}
+
+function genericJsonObjectHTML(obj) {
+  const entries=Object.entries(obj||{});
+  const shown=entries.slice(0,12);
+  return \`<div class="trace-detail-grid">\${shown.map(([key,value])=>\`<div class="trace-detail-cell"><div class="trace-detail-k">\${esc(key)}</div><div class="trace-detail-v">\${esc(shortText(jsonPreviewValue(value),110))}</div></div>\`).join('')}</div>\${entries.length>shown.length?\`<div class="tc-item-meta">+\${entries.length-shown.length} more fields</div>\`:''}\`;
+}
+
+function genericJsonArraySectionHTML(key, rows) {
+  const table=genericJsonTableHTML(rows);
+  return \`<div class="tc-item">
+    <div class="tc-item-meta">\${esc(key)} · \${rows.length} item\${rows.length>1?'s':''}</div>
+    \${table || \`<div class="tc-list">\${rows.slice(0,8).map(item=>\`<div class="tc-item"><div class="tc-item-title"><span>\${esc(shortText(jsonPreviewValue(item),140))}</span></div></div>\`).join('')}</div>\`}
+  </div>\`;
+}
+
+function genericJsonSummaryHTML(data, raw) {
+  if(!data) return '';
+  if(Array.isArray(data)) {
+    const table=genericJsonTableHTML(data);
+    return \`<div class="tc-summary"><div class="tc-summary-head"><span>\${data.length} item\${data.length>1?'s':''}</span><span class="tc-pill">array</span></div>\${table || \`<div class="tc-list">\${data.slice(0,10).map(item=>\`<div class="tc-item"><div class="tc-item-title"><span>\${esc(shortText(jsonPreviewValue(item),140))}</span></div></div>\`).join('')}</div>\`}<details class="tc-raw"><summary>Raw JSON</summary><pre>\${esc(raw)}</pre></details></div>\`;
+  }
+  if(typeof data==='object') {
+    const entries=Object.entries(data);
+    const arrayEntry=entries.length===1 && Array.isArray(entries[0][1]) ? entries[0] : null;
+    if(arrayEntry) {
+      const [key,rows]=arrayEntry;
+      const table=genericJsonTableHTML(rows);
+      return \`<div class="tc-summary"><div class="tc-summary-head"><span>\${esc(key)}</span><span class="tc-pill">\${rows.length} item\${rows.length>1?'s':''}</span></div>\${table || \`<div class="tc-list">\${rows.slice(0,10).map(item=>\`<div class="tc-item"><div class="tc-item-title"><span>\${esc(shortText(jsonPreviewValue(item),140))}</span></div></div>\`).join('')}</div>\`}<details class="tc-raw"><summary>Raw JSON</summary><pre>\${esc(raw)}</pre></details></div>\`;
+    }
+    const arrayEntries=entries.filter(([,value])=>Array.isArray(value));
+    if(arrayEntries.length>1) {
+      const scalarEntries=entries
+        .filter(([,value])=>!Array.isArray(value) && (value===null || typeof value!=='object'))
+        .slice(0,4);
+      const total=arrayEntries.reduce((sum,[,rows])=>sum+rows.length,0);
+      return \`<div class="tc-summary">
+        <div class="tc-summary-head">
+          <span>\${total} item\${total>1?'s':''}</span>
+          \${arrayEntries.slice(0,4).map(([key,rows])=>\`<span class="tc-pill">\${esc(key)}: \${rows.length}</span>\`).join('')}
+        </div>
+        \${scalarEntries.length?genericJsonObjectHTML(Object.fromEntries(scalarEntries)):''}
+        \${arrayEntries.slice(0,4).map(([key,rows])=>genericJsonArraySectionHTML(key,rows)).join('')}
+        \${arrayEntries.length>4?\`<div class="tc-item-meta">+\${arrayEntries.length-4} more sections</div>\`:''}
+        <details class="tc-raw"><summary>Raw JSON</summary><pre>\${esc(raw)}</pre></details>
+      </div>\`;
+    }
+    return \`<div class="tc-summary"><div class="tc-summary-head"><span>Structured result</span><span class="tc-pill">\${entries.length} field\${entries.length>1?'s':''}</span></div>\${genericJsonObjectHTML(data)}<details class="tc-raw"><summary>Raw JSON</summary><pre>\${esc(raw)}</pre></details></div>\`;
+  }
+  return '';
+}
+
+function productionTemplatesSummaryHTML(data, raw) {
+  if(!Array.isArray(data?.templates)) return '';
+  const templates=data.templates;
+  const unmatched=Array.isArray(data.unmatchedDeliverables) ? data.unmatchedDeliverables : [];
+  const shown=templates.slice(0,10);
+  return \`<div class="tc-summary">
+    <div class="tc-summary-head">
+      <span>\${templates.length} template\${templates.length>1?'s':''}</span>
+      <span class="tc-pill">\${esc(data.workspace||'workspace')}</span>
+      \${unmatched.length?\`<span class="tc-pill">\${unmatched.length} unmatched</span>\`:''}
+    </div>
+    <div class="tc-list">\${shown.map(t=>\`<div class="tc-item">
+      <div class="tc-item-title"><span>\${docButtonHTML(t.templatePath||\`templates/\${t.template}\`,t.template||t.templatePath||'template')}</span></div>
+      <div class="tc-item-meta">Deliverable: \${docButtonHTML(t.deliverablePath||\`deliverables/\${t.deliverable}\`,t.deliverable||t.deliverablePath||'deliverable')}</div>
+      <div class="tc-doc-chip-row"><span class="tc-pill">\${t.deliverableExists?'exists':'missing'}</span></div>
+    </div>\`).join('')}</div>
+    \${templates.length>shown.length?\`<div class="tc-item-meta">+\${templates.length-shown.length} more templates</div>\`:''}
+    \${unmatched.length?\`<div class="tc-item">
+      <div class="tc-item-meta">Unmatched deliverables</div>
+      <div class="tc-doc-chip-row">\${unmatched.slice(0,8).map(d=>docButtonHTML(d.deliverablePath,d.deliverable||d.deliverablePath,true)).join('')}\${unmatched.length>8?\`<span class="tc-item-meta">+\${unmatched.length-8} more</span>\`:''}</div>
+    </div>\`:''}
+    <details class="tc-raw"><summary>Raw JSON</summary><pre>\${esc(raw)}</pre></details>
+  </div>\`;
+}
+
 function wikiResultItemHTML(item) {
   const title=(item.headingPath&&item.headingPath.length) ? item.headingPath.join(' / ') : item.path;
   const citeCount=uniqueCount(item.citations);
@@ -2039,7 +2302,7 @@ async function openLocalDoc(href, label) {
     const article=doc.querySelector('article.article');
     content.innerHTML=article ? \`<article class="article">\${article.innerHTML}</article>\` : \`<article class="article">\${renderMd(text)}</article>\`;
   } catch(e) {
-    content.innerHTML=\`<article class="article"><p style="color:var(--err)">Impossible de charger \${esc(label||href)}: \${esc(e.message)}</p></article>\`;
+    content.innerHTML=\`<article class="article"><p style="color:var(--err)">Failed to load \${esc(label||href)}: \${esc(e.message)}</p></article>\`;
   }
 }
 
@@ -2049,10 +2312,39 @@ function closeLocalDoc() {
   modal?.setAttribute('aria-hidden','true');
 }
 
+function showErrModal(title, msg) {
+  const modal=$('err-modal'); if(!modal) return;
+  $('err-modal-title').textContent=title;
+  $('err-modal-msg').textContent=msg;
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden','false');
+}
+function closeErrModal() {
+  const modal=$('err-modal');
+  modal?.classList.remove('open');
+  modal?.setAttribute('aria-hidden','true');
+}
+function mcpConnectErrorMessage(err) {
+  const raw=err?.message||String(err);
+  try {
+    const m=raw.match(/HTTP \\d+: ([{].+[}])/s);
+    if(m) {
+      const body=JSON.parse(m[1]);
+      const detail=body.error||body.message||'';
+      if(/fetch failed|connexion refus|econnrefused|service non d/i.test(detail))
+        return 'MCP service unreachable — check that the server is running.';
+      if(detail) return detail;
+    }
+  } catch {}
+  if(/fetch failed|failed to fetch|econnrefused/i.test(raw))
+    return 'MCP service unreachable — check that the server is running.';
+  return raw;
+}
+
 function toolResultSummaryHTML(result, ok) {
   const raw=typeof result==='string'?result:JSON.stringify(result,null,2);
   if(!ok) {
-    return \`<div class="tc-summary"><div class="tc-summary-head">Erreur tool</div><pre style="color:var(--err)">\${esc(raw)}</pre></div>\`;
+    return \`<div class="tc-summary"><div class="tc-summary-head">Tool error</div><pre style="color:var(--err)">\${esc(raw)}</pre></div>\`;
   }
   const data=parseToolJSON(result);
 
@@ -2060,12 +2352,12 @@ function toolResultSummaryHTML(result, ok) {
     const shown=data.results.slice(0,6);
     return \`<div class="tc-summary">
       <div class="tc-summary-head">
-        <span>\${data.results.length} résultat\${data.results.length>1?'s':''}</span>
+        <span>\${data.results.length} result\${data.results.length>1?'s':''}</span>
         <span class="tc-pill">search</span>
       </div>
       <div class="tc-list">\${shown.map(wikiResultItemHTML).join('')}</div>
-      \${data.results.length>shown.length?\`<div class="tc-item-meta">+\${data.results.length-shown.length} autres résultats masqués</div>\`:''}
-      <details class="tc-raw"><summary>JSON brut</summary><pre>\${esc(raw)}</pre></details>
+      \${data.results.length>shown.length?\`<div class="tc-item-meta">+\${data.results.length-shown.length} more results hidden</div>\`:''}
+      <details class="tc-raw"><summary>Raw JSON</summary><pre>\${esc(raw)}</pre></details>
     </div>\`;
   }
 
@@ -2076,14 +2368,14 @@ function toolResultSummaryHTML(result, ok) {
     const pagePaths=(data.readPagePaths||pages.map(p=>p.path)).filter(Boolean);
     return \`<div class="tc-summary">
       <div class="tc-summary-head">
-        <span>Contexte collecté</span>
-        <span class="tc-pill">\${coverage.readPageCount ?? pagePaths.length} page\${(coverage.readPageCount ?? pagePaths.length)>1?'s':''} lue\${(coverage.readPageCount ?? pagePaths.length)>1?'s':''}</span>
-        <span class="tc-pill">\${coverage.candidateCount ?? data.candidateResults.length} candidat\${(coverage.candidateCount ?? data.candidateResults.length)>1?'s':''}</span>
-        \${coverage.truncatedPageCount?\`<span class="tc-pill">\${coverage.truncatedPageCount} tronquée\${coverage.truncatedPageCount>1?'s':''}</span>\`:''}
+        <span>Collected context</span>
+        <span class="tc-pill">\${coverage.readPageCount ?? pagePaths.length} page\${(coverage.readPageCount ?? pagePaths.length)>1?'s':''} read</span>
+        <span class="tc-pill">\${coverage.candidateCount ?? data.candidateResults.length} candidate\${(coverage.candidateCount ?? data.candidateResults.length)>1?'s':''}</span>
+        \${coverage.truncatedPageCount?\`<span class="tc-pill">\${coverage.truncatedPageCount} truncated</span>\`:''}
       </div>
-      \${pagePaths.length?\`<div class="tc-item"><div class="tc-item-meta">Pages ouvertes</div><div class="tc-doc-chip-row">\${pagePaths.slice(0,8).map(p=>docButtonHTML(p,p,true)).join('')}\${pagePaths.length>8?'<span class="tc-item-meta">…</span>':''}</div></div>\`:''}
+      \${pagePaths.length?\`<div class="tc-item"><div class="tc-item-meta">Opened pages</div><div class="tc-doc-chip-row">\${pagePaths.slice(0,8).map(p=>docButtonHTML(p,p,true)).join('')}\${pagePaths.length>8?'<span class="tc-item-meta">…</span>':''}</div></div>\`:''}
       <div class="tc-list">\${shown.map(wikiResultItemHTML).join('')}</div>
-      <details class="tc-raw"><summary>JSON brut</summary><pre>\${esc(raw)}</pre></details>
+      <details class="tc-raw"><summary>Raw JSON</summary><pre>\${esc(raw)}</pre></details>
     </div>\`;
   }
 
@@ -2093,69 +2385,115 @@ function toolResultSummaryHTML(result, ok) {
       <div class="tc-summary-head"><span>\${data.pages.length} page\${data.pages.length>1?'s':''}</span><span class="tc-pill">read</span></div>
       <div class="tc-list">\${shown.map(p=>\`<div class="tc-item">
         <div class="tc-item-title"><span>\${docButtonHTML(p.path,p.path||'page')}</span></div>
-        <div class="tc-item-meta">\${p.found?'trouvée':'introuvable'}\${p.truncated?' · tronquée':''}</div>
+        <div class="tc-item-meta">\${p.found?'found':'not found'}\${p.truncated?' · truncated':''}</div>
         \${p.content?\`<div class="tc-item-excerpt">\${esc(shortText(p.content,260))}</div>\`:''}
         \${p.error?\`<div class="tc-item-excerpt">\${esc(p.error)}</div>\`:''}
       </div>\`).join('')}</div>
-      <details class="tc-raw"><summary>JSON brut</summary><pre>\${esc(raw)}</pre></details>
+      <details class="tc-raw"><summary>Raw JSON</summary><pre>\${esc(raw)}</pre></details>
     </div>\`;
   }
 
   if(data?.jobs && Array.isArray(data.jobs)) {
     const shown=data.jobs.slice(0,8);
     return \`<div class="tc-summary">
-      <div class="tc-summary-head"><span>\${data.jobs.length} job\${data.jobs.length>1?'s':''} production</span><span class="tc-pill">\${esc(data.workspace||'workspace')}</span></div>
+      <div class="tc-summary-head"><span>\${data.jobs.length} production job\${data.jobs.length>1?'s':''}</span><span class="tc-pill">\${esc(data.workspace||'workspace')}</span></div>
       <div class="tc-list">\${shown.map(job=>\`<div class="tc-item">
         <div class="tc-item-title"><span>\${esc(job.type||'production')} · \${esc(productionStatusLabel(job.status))}</span></div>
         <div class="tc-item-meta">\${esc(job.jobId||'')}\${job.error?\` · \${esc(job.error)}\`:''}</div>
         \${Array.isArray(job.producedFiles)&&job.producedFiles.length?\`<div class="tc-doc-chip-row">\${job.producedFiles.slice(0,5).map(p=>docButtonHTML(p,p,true)).join('')}</div>\`:''}
       </div>\`).join('')}</div>
-      \${data.jobs.length>shown.length?\`<div class="tc-item-meta">+\${data.jobs.length-shown.length} autres jobs</div>\`:''}
-      <details class="tc-raw"><summary>JSON brut</summary><pre>\${esc(raw)}</pre></details>
+      \${data.jobs.length>shown.length?\`<div class="tc-item-meta">+\${data.jobs.length-shown.length} more jobs</div>\`:''}
+      <details class="tc-raw"><summary>Raw JSON</summary><pre>\${esc(raw)}</pre></details>
     </div>\`;
   }
+
+  const productionTemplates=productionTemplatesSummaryHTML(data, raw);
+  if(productionTemplates) return productionTemplates;
 
   if(data?.job || data?.jobId) {
     const job=data.job || data;
     const status=String(job.status||data.status||'');
-    const produced=Array.isArray(job.producedFiles) ? job.producedFiles : (Array.isArray(data.producedFiles) ? data.producedFiles : []);
-    const logTail=Array.isArray(data.logTail) ? data.logTail : (Array.isArray(data.tail) ? data.tail : []);
     const terminal=productionTerminal(status);
+    const produced=Array.isArray(job.producedFiles) ? job.producedFiles : (Array.isArray(data.producedFiles) ? data.producedFiles : []);
+    const duration=job.durationSeconds===null || job.durationSeconds===undefined ? '' : \`<span class="tc-pill">\${esc(formatDuration(job.durationSeconds))}</span>\`;
+    const exit=job.exitCode===null || job.exitCode===undefined ? '' : \`<span class="tc-pill">exit \${esc(job.exitCode)}</span>\`;
+    const progress=data.progress?.percent ?? job.progress?.percent;
+    const progressPill=Number.isFinite(Number(progress)) ? \`<span class="tc-pill">\${Math.round(Number(progress))}%</span>\` : '';
     return \`<div class="tc-summary">
       <div class="tc-summary-head">
         <span>Production \${esc(productionStatusLabel(status))}</span>
         \${job.jobId?\`<span class="tc-pill">\${esc(job.jobId)}</span>\`:''}
         \${terminal?\`<span class="tc-pill">\${esc(status)}</span>\`:''}
+        \${duration}\${exit}\${progressPill}
       </div>
-      \${produced.length?\`<div class="tc-item"><div class="tc-item-meta">Fichiers produits</div><div class="tc-doc-chip-row">\${produced.slice(0,8).map(p=>docButtonHTML(p,p,true)).join('')}\${produced.length>8?'<span class="tc-item-meta">…</span>':''}</div></div>\`:''}
+      \${produced.length?\`<div class="tc-item"><div class="tc-item-meta">\${produced.length} produced file\${produced.length>1?'s':''}</div><div class="tc-doc-chip-row">\${produced.slice(0,10).map(p=>docButtonHTML(p,p,true)).join('')}\${produced.length>10?'<span class="tc-item-meta">…</span>':''}</div></div>\`:''}
+      <div class="tc-item-meta">Details, logs and timing in the chain view.</div>
       \${job.error?\`<div class="tc-item-excerpt" style="color:var(--err)">\${esc(job.error)}</div>\`:''}
-      \${logTail.length?\`<details class="tc-raw"><summary>Console</summary><pre>\${esc(logTail.slice(-80).join('\\n'))}</pre></details>\`:''}
-      <details class="tc-raw"><summary>JSON brut</summary><pre>\${esc(raw)}</pre></details>
+      <details class="tc-raw"><summary>Raw JSON</summary><pre>\${esc(raw)}</pre></details>
+    </div>\`;
+  }
+
+  const genericJson=genericJsonSummaryHTML(data, raw);
+  if(genericJson) return genericJson;
+
+  // newline-separated path list (wiki_list_pages format: "path/to/page.md [type]")
+  const lines=raw.split('\\n').map(l=>l.trim()).filter(Boolean);
+  if(lines.length>0 && lines.every(l=>/\\[\\w+\\]$/.test(l))) {
+    const byType={};
+    for(const l of lines) {
+      const m=l.match(/^(.+)\\s+\\[(\\w+)\\]$/);
+      if(!m) continue;
+      const [,p,t]=m;
+      (byType[t]=byType[t]||[]).push(p);
+    }
+    const groups=Object.entries(byType);
+    return \`<div class="tc-summary">
+      <div class="tc-summary-head"><span>\${lines.length} item\${lines.length>1?'s':''}</span>\${groups.map(([t])=>\`<span class="tc-pill">\${esc(t)}</span>\`).join('')}</div>
+      \${groups.map(([t,ps])=>\`<div class="tc-item">
+        <div class="tc-item-meta">\${esc(t)}</div>
+        <div class="tc-doc-chip-row">\${ps.slice(0,12).map(p=>docButtonHTML(p,p,true)).join('')}\${ps.length>12?\`<span class="tc-item-meta">+\${ps.length-12} more</span>\`:''}</div>
+      </div>\`).join('')}
     </div>\`;
   }
 
   return \`<div class="tc-summary">
-    <div class="tc-summary-head"><span>Résultat</span></div>
-    <pre>\${esc(shortText(raw,1800))}</pre>
-    \${raw.length>1800?\`<details class="tc-raw"><summary>Voir tout</summary><pre>\${esc(raw)}</pre></details>\`:''}
+    <div class="tc-summary-head"><span>Result</span></div>
+    <pre>\${esc(raw.length>1800?raw.slice(0,1799)+'…':raw)}</pre>
+    \${raw.length>1800?\`<details class="tc-raw"><summary>Show all</summary><pre>\${esc(raw)}</pre></details>\`:''}
   </div>\`;
 }
 
 function toolResultTraceSummary(result, ok) {
-  if(!ok) return 'erreur';
+  if(!ok) return 'error';
   const data=parseToolJSON(result);
-  if(data?.results && Array.isArray(data.results)) return \`\${data.results.length} résultat\${data.results.length>1?'s':''}\`;
+  if(data?.results && Array.isArray(data.results)) return \`\${data.results.length} result\${data.results.length>1?'s':''}\`;
   if(data?.candidateResults && Array.isArray(data.candidateResults)) {
     const coverage=data.coverage||{};
     const pages=coverage.readPageCount ?? (Array.isArray(data.readPages)?data.readPages.length:0);
     const candidates=coverage.candidateCount ?? data.candidateResults.length;
-    return \`\${candidates} candidat\${candidates>1?'s':''} · \${pages} page\${pages>1?'s':''}\`;
+    return \`\${candidates} candidate\${candidates>1?'s':''} · \${pages} page\${pages>1?'s':''}\`;
   }
   if(data?.pages && Array.isArray(data.pages)) return \`\${data.pages.length} page\${data.pages.length>1?'s':''}\`;
-  if(data?.jobs && Array.isArray(data.jobs)) return \`\${data.jobs.length} job\${data.jobs.length>1?'s':''} production\`;
+  if(data?.jobs && Array.isArray(data.jobs)) return \`\${data.jobs.length} production job\${data.jobs.length>1?'s':''}\`;
   if(data?.job || data?.jobId) {
     const job=data.job || data;
-    return \`production \${productionStatusLabel(job.status||data.status)}\`;
+    const produced=Array.isArray(job.producedFiles) ? job.producedFiles : (Array.isArray(data.producedFiles) ? data.producedFiles : []);
+    const bits=[\`production \${productionStatusLabel(job.status||data.status)}\`];
+    if(produced.length) bits.push(\`\${produced.length} file\${produced.length>1?'s':''}\`);
+    if(job.durationSeconds!==null && job.durationSeconds!==undefined) bits.push(formatDuration(job.durationSeconds));
+    return bits.join(' · ');
+  }
+  if(Array.isArray(data)) return \`\${data.length} item\${data.length>1?'s':''}\`;
+  if(data && typeof data==='object') {
+    const entries=Object.entries(data);
+    const arrayEntry=entries.length===1 && Array.isArray(entries[0][1]) ? entries[0] : null;
+    if(arrayEntry) return \`\${arrayEntry[1].length} \${arrayEntry[0]}\`;
+    const arrayEntries=entries.filter(([,value])=>Array.isArray(value));
+    if(arrayEntries.length>1) {
+      const total=arrayEntries.reduce((sum,[,rows])=>sum+rows.length,0);
+      return \`\${total} item\${total>1?'s':''} · \${arrayEntries.map(([key,rows])=>\`\${key} \${rows.length}\`).slice(0,2).join(' · ')}\`;
+    }
+    return \`\${entries.length} field\${entries.length>1?'s':''}\`;
   }
   const text=typeof result==='string'?result:JSON.stringify(result);
   return shortText(text,70);
@@ -2172,9 +2510,9 @@ function derivedTraceStepsForTool(fn, result, ok, targetId) {
     if(readCount>0) {
       steps.push({
         type:'internal',
-        kind:'Interne',
+        kind:'Internal',
         title:'readPages',
-        summary:\`\${readCount} page\${readCount>1?'s':''} lue\${readCount>1?'s':''}\`,
+        summary:\`\${readCount} page\${readCount>1?'s':''} read\`,
         targetId,
       });
     }
@@ -2182,8 +2520,8 @@ function derivedTraceStepsForTool(fn, result, ok, targetId) {
     if(truncated>0) {
       steps.push({
         type:'internal',
-        kind:'Couverture',
-        title:'pages tronquées',
+        kind:'Coverage',
+        title:'truncated pages',
         summary:\`\${truncated} page\${truncated>1?'s':''}\`,
         targetId,
         ok:false,
@@ -2193,8 +2531,8 @@ function derivedTraceStepsForTool(fn, result, ok, targetId) {
     if(rawCount>0) {
       steps.push({
         type:'internal',
-        kind:'Références',
-        title:'raw non lues',
+        kind:'References',
+        title:'unread raw',
         summary:\`\${rawCount} source\${rawCount>1?'s':''}\`,
         targetId,
       });
@@ -2205,8 +2543,8 @@ function derivedTraceStepsForTool(fn, result, ok, targetId) {
     const wikiCount=data.results.filter(r=>String(r.path||'').startsWith('wiki/')).length;
     return wikiCount ? [{
       type:'internal',
-      kind:'Candidats',
-      title:'pages candidates',
+      kind:'Candidates',
+      title:'candidate pages',
       summary:\`\${wikiCount} page\${wikiCount>1?'s':''}\`,
       targetId,
     }] : [];
@@ -2215,9 +2553,9 @@ function derivedTraceStepsForTool(fn, result, ok, targetId) {
     const found=data.pages.filter(p=>p.found).length;
     return [{
       type:'internal',
-      kind:'Lecture',
-      title:'pages ouvertes',
-      summary:\`\${found}/\${data.pages.length} trouvée\${found>1?'s':''}\`,
+      kind:'Reading',
+      title:'opened pages',
+      summary:\`\${found}/\${data.pages.length} found\`,
       targetId,
     }];
   }
@@ -2228,7 +2566,7 @@ function updateTC(idx, result, ok) {
   const st=$(\`tc-st-\${idx}\`), body=$(\`tc-body-\${idx}\`);
   if(st){st.textContent=ok?'✓':'!';st.className=\`tc-st \${ok?'ok':'er'}\`;}
   if(body){
-    body.innerHTML+=\`<div class="tc-lbl" style="margin-top:8px">Résultat</div>\${toolResultSummaryHTML(result,ok)}\`;
+    body.innerHTML+=\`<div class="tc-lbl" style="margin-top:8px">Result</div>\${toolResultSummaryHTML(result,ok)}\`;
     body.classList.add('hidden');
     const exp=$(\`tc-exp-\${idx}\`);
     if(exp) exp.textContent='▸';
@@ -2248,7 +2586,7 @@ function toggleTCArgs(event, idx) {
   const body=$(\`tc-body-\${idx}\`);
   if(!body) return;
   const collapsed=body.classList.toggle('args-collapsed');
-  event.currentTarget.textContent=collapsed?'Afficher les arguments':'Masquer les arguments';
+  event.currentTarget.textContent=collapsed?'Show arguments':'Hide arguments';
 }
 
 function toggleTools(id) {
@@ -2263,10 +2601,15 @@ function createStreamBubble() {
   const wrap=$('messages');
   const div=document.createElement('div');
   div.className='msg assistant';
-  div.innerHTML='<div class="msg-content"><div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div><div class="msg-actions"><button class="msg-action" onclick="copyMessage(this)">Copier</button></div></div>';
+  div.innerHTML='<div class="msg-content"><div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div><div class="msg-actions"><button class="msg-action" onclick="copyMessage(this)">Copy</button></div></div>';
   wrap.appendChild(div);
   wrap.scrollTop=wrap.scrollHeight;
   return div;
+}
+
+function removeStreamBubble(div) {
+  if(!div) return;
+  div.remove();
 }
 
 function setStreamContent(div, text, extra='') {
@@ -2279,14 +2622,32 @@ function setStreamContent(div, text, extra='') {
 }
 
 async function fetchStream(url, headers, body, onDelta, signal) {
-  const res=await fetch(url,{method:'POST',headers,body:JSON.stringify({...body,stream:true}),signal});
+  let res;
+  try {
+    res=await fetch(url,{method:'POST',headers,body:JSON.stringify({...body,stream:true}),signal});
+  } catch(e) {
+    const detail=e instanceof Error ? e.message : String(e);
+    throw new Error(\`Chat server unreachable. Check that the wiki server is running. \${detail}\`);
+  }
   if(!res.ok) {
     const raw=await res.text();
     let message=raw;
     try {
       const parsed=JSON.parse(raw);
-      message=[parsed.error,parsed.hint].filter(Boolean).join('\\n');
+      const normalize=(value)=>{
+        if(value==null) return '';
+        if(typeof value==='string') return value;
+        if(typeof value.message==='string') return value.message;
+        try { return JSON.stringify(value); } catch { return String(value); }
+      };
+      message=[normalize(parsed.error),normalize(parsed.hint)].filter(Boolean).join('\\n');
     } catch {}
+    if(res.status===502) {
+      const detail=message ? \`\\n\${message}\` : '';
+      message=\`LLM unreachable. Check that the LLM service is running and the Base URL is reachable.\${detail}\`;
+    } else if(res.status===400 && /INVALID_LLM_BASE_URL|Invalid URL/i.test(message)) {
+      message='Invalid LLM configuration. Check the Base URL in chat settings.';
+    }
     throw new Error(\`API \${res.status}: \${message||res.statusText}\`);
   }
   const reader=res.body.getReader();
@@ -2331,7 +2692,7 @@ async function sendMessage() {
   const parsedTemp=parseFloat($('temperature').value);
   const temp=Number.isFinite(parsedTemp) ? parsedTemp : 0.7;
   const useProxy=!!(window.__WIKI_CONFIG__);
-  if(!useProxy && !$('base-url').value.trim()){notify('Entrez une Base URL','e');return;}
+  if(!useProxy && !$('base-url').value.trim()){notify('Enter a Base URL','e');return;}
 
   input.value=''; input.style.height='auto';
   isStreaming=true; setSendButtonStreaming(true);
@@ -2363,6 +2724,7 @@ async function sendMessage() {
   let streamFinalized=false;
   let streamMessagePersisted=false;
   const streamClearSeq=clearChatSeq;
+  let completedWithoutLimit=false;
   try {
     while(turn<MAX_TURNS) {
       turn++;
@@ -2385,20 +2747,21 @@ async function sendMessage() {
 
       if(toolCalls?.length) {
         const tcWithIdx=toolCalls.map((tc,i)=>({...tc,_domIdx:tcIdx+i}));
-        const tcBlocks=tcWithIdx.map((tc,i)=>tcBlockHTML(tc,i)).join('');
-        setStreamContent(streamDiv,content,tcBlocks);
+        removeStreamBubble(streamDiv);
         streamFinalized=true;
         messages.push({role:'assistant',content:content||null,tool_calls:tcWithIdx.map(({_domIdx,...tc})=>tc)});
         streamMessagePersisted=true;
         for(const tc of tcWithIdx) {
           const fn=tc.function?.name||'?';
           const server=findServerForTool(fn);
+          if(isProductionToolName(fn)) productionState.trace=runTrace;
           addTraceStep(runTrace,{
             type:'tool',
             kind:server?.name||'MCP',
             title:fn,
-            summary:'appel en cours',
+            summary:'calling...',
             targetId:\`tc-\${tc._domIdx}\`,
+            assistantText:content||'',
           });
         }
         const toolResults=await Promise.all(tcWithIdx.map(async (tc)=>{
@@ -2407,28 +2770,29 @@ async function sendMessage() {
           let args={}; try{args=JSON.parse(tc.function?.arguments||'{}');}catch{}
           try {
             const r=await callMCPTool(fn,args);
-            updateTC(domIdx,r,true);
+            if(isProductionToolName(fn)) productionState.trace=runTrace;
             handleProductionToolResult(fn,args,r,true);
-            updateTraceStep(runTrace,\`tc-\${domIdx}\`,{summary:toolResultTraceSummary(r,true),ok:true});
+            updateTraceToolResult(runTrace,\`tc-\${domIdx}\`,r,true,content||'');
             for(const step of derivedTraceStepsForTool(fn,r,true,\`tc-\${domIdx}\`)) addTraceStep(runTrace,step);
             return {tool_call_id:tc.id,role:'tool',name:fn,content:r};
           } catch(e) {
-            updateTC(domIdx,e.message,false);
+            if(isProductionToolName(fn)) productionState.trace=runTrace;
             handleProductionToolResult(fn,args,e.message,false);
-            updateTraceStep(runTrace,\`tc-\${domIdx}\`,{summary:e.message,ok:false});
-            return {tool_call_id:tc.id,role:'tool',name:fn,content:\`Erreur: \${e.message}\`};
+            updateTraceToolResult(runTrace,\`tc-\${domIdx}\`,e.message,false,content||'');
+            return {tool_call_id:tc.id,role:'tool',name:fn,content:\`\${chatText('Error:','Erreur :')} \${e.message}\`};
           }
         }));
         tcIdx+=toolCalls.length;
         messages.push(...toolResults);
         conversationDirty=true;
         await saveCurrentConversation({immediate:true});
-        if(tcWithIdx.every(tc=>String(tc.function?.name||'').startsWith('production_'))) {
+        if(tcWithIdx.every(tc=>isProductionToolName(tc.function?.name))) {
           const summary=productionToolSummary(toolResults);
           appendMsg('assistant',summary);
           messages.push({role:'assistant',content:summary});
           conversationDirty=true;
           await saveCurrentConversation({immediate:true});
+          completedWithoutLimit=true;
           break;
         }
         streamDiv=null;
@@ -2442,17 +2806,22 @@ async function sendMessage() {
       streamMessagePersisted=true;
       conversationDirty=true;
       await saveCurrentConversation({immediate:true});
+      completedWithoutLimit=true;
       break;
     }
-    if(turn>=MAX_TURNS) {
-      appendMsg('assistant',\`⚠ Limite de chaînage atteinte (\${MAX_TURNS} tours).\`);
+    if(turn>=MAX_TURNS && !completedWithoutLimit) {
+      const limitText=chatLanguageIsFrench()
+        ? \`⚠ Limite de chaînage atteinte (\${MAX_TURNS} tours).\`
+        : \`⚠ Chaining limit reached (\${MAX_TURNS} turns).\`;
+      appendMsg('assistant',limitText);
+      messages.push({role:'assistant',content:limitText});
       await saveCurrentConversation({immediate:true});
     }
   } catch(err) {
     if(streamClearSeq!==clearChatSeq) return;
     if(err.name==='AbortError') {
       if(streamDiv) {
-        const partial=streamDiv.dataset.copy || 'Réponse arrêtée.';
+        const partial=streamDiv.dataset.copy || chatText('Response stopped.','Réponse arrêtée.');
         setStreamContent(streamDiv,partial);
         streamText=partial;
         streamFinalized=true;
@@ -2460,21 +2829,22 @@ async function sendMessage() {
         messages.push({role:'assistant',content:partial});
         streamMessagePersisted=true;
       } else {
-        appendMsg('assistant','Réponse arrêtée.');
-        messages.push({role:'assistant',content:'Réponse arrêtée.'});
+        const stopped=chatText('Response stopped.','Réponse arrêtée.');
+        appendMsg('assistant',stopped);
+        messages.push({role:'assistant',content:stopped});
       }
       conversationDirty=true;
       await saveCurrentConversation({immediate:true});
     } else {
       if(streamDiv) {
-        const errorText=streamText || \`⚠ Erreur: \${err.message}\`;
+        const errorText=streamText || \`\${chatText('⚠ Error:','⚠ Erreur :')} \${err.message}\`;
         setStreamContent(streamDiv,errorText);
         streamText=errorText;
         streamFinalized=true;
         messages.push({role:'assistant',content:errorText});
         streamMessagePersisted=true;
       } else {
-        appendMsg('assistant',\`⚠ Erreur: \${err.message}\`);
+        appendMsg('assistant',\`\${chatText('⚠ Error:','⚠ Erreur :')} \${err.message}\`);
       }
       notify(err.message,'e');
       conversationDirty=true;
@@ -2482,7 +2852,7 @@ async function sendMessage() {
     }
   } finally {
     if(streamDiv && !streamFinalized && streamClearSeq===clearChatSeq) {
-      const finalText=streamText || (streamAbortController?.signal.aborted ? 'Réponse arrêtée.' : '');
+      const finalText=streamText || (streamAbortController?.signal.aborted ? chatText('Response stopped.','Réponse arrêtée.') : '');
       setStreamContent(streamDiv,finalText);
       if(finalText && !streamMessagePersisted) {
         messages.push({role:'assistant',content:finalText});
@@ -2643,7 +3013,7 @@ loadServers();
 initPageMode();
 loadHistory();
 initSidebarSplitter();
-renderProductionPanel();
+renderProductionTrace();
 restoreEnabledServers();
 fetchSkillsAc();
 window.addEventListener('popstate', initPageMode);

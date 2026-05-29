@@ -100,6 +100,15 @@ agents.
 
 Repeat steps 3–4 as new sources arrive. Run `wiki refresh` to rebuild stale deliverables without re-ingesting.
 
+### Concept grouping (optional)
+
+During ingest the LLM assigns a `group` field in the YAML frontmatter of each concept page and can place new pages directly into `wiki/concepts/<group>/`. For existing flat workspaces, `wiki group-concepts` reads the frontmatter and reorganises the files:
+
+```bash
+wiki group-concepts          # dry-run: shows planned moves
+wiki group-concepts --apply  # moves files and rewrites all wiki links
+```
+
 ## Docker and Multi-Workspace Use
 
 For a single workspace, you can use this repository's Docker Compose file by setting `WIKI_WORKSPACE`.
@@ -151,7 +160,7 @@ pnpm test
 ├── wiki/
 │   ├── index.md
 │   ├── log.md
-│   ├── concepts/
+│   ├── concepts/           ← flat or grouped (wiki/concepts/<group>/)
 │   ├── sources/
 │   └── answers/
 ├── templates/

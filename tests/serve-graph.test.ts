@@ -7,6 +7,35 @@ async function serveSource(): Promise<string> {
 }
 
 describe('serve graph ui', () => {
+  it('renders sidebar chat and graph actions as two wide buttons', async () => {
+    const source = await serveSource();
+
+    expect(source).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
+    expect(source).toContain('min-height: 2.75rem;');
+    expect(source).toContain('<span>Chat</span>');
+    expect(source).toContain('<span>Graph</span>');
+  });
+
+  it('groups concept tiles from frontmatter or concept subfolders', async () => {
+    const source = await serveSource();
+
+    expect(source).toContain('async function hydrateConceptTileGroups');
+    expect(source).toContain("parsed.data.group");
+    expect(source).toContain("href.startsWith('/wiki/concepts/')");
+    expect(source).toContain('await hydrateConceptTileGroups(rootDir, indexTiles);');
+    expect(source).toContain('section-browser-group');
+  });
+
+  it('uses concept groups and wiki links in graph data', async () => {
+    const source = await serveSource();
+
+    expect(source).toContain('function graphWikiTargetPath');
+    expect(source).toContain('extractWikiLinks(markdown)');
+    expect(source).toContain('function graphConceptGroup');
+    expect(source).toContain('group: groups.get(file)');
+    expect(source).toContain("node.group ? node.group + ' · ' + node.id : node.id");
+  });
+
   it('refreshes graph data without reloading the page', async () => {
     const source = await serveSource();
 
@@ -34,7 +63,7 @@ describe('serve command palette', () => {
     expect(source).toContain("document.body.style.overflow = 'hidden';");
     expect(source).toContain('document.body.style.overflow = previousOverflow;');
     expect(source).toContain('input.focus({ preventScroll: true });');
-    expect(source).toContain("backdrop.addEventListener('wheel'");
+    expect(source).not.toContain("backdrop.addEventListener('wheel'");
     expect(source).toContain('function moveSelection(delta)');
     expect(source).toContain('function openSelected()');
   });
@@ -46,13 +75,15 @@ describe('serve command palette', () => {
     expect(source).toContain("document.querySelectorAll('[data-side-path]')");
   });
 
-  it('invalidates cached markdown pages when the sidebar file list changes', async () => {
+  it('serves markdown pages without browser cache so sidebar changes are fresh', async () => {
     const source = await serveSource();
 
-    expect(source).toContain('async function navigationEtag(rootDir: string)');
-    expect(source).toContain('const etag = pageEtag(fileStat2, await navigationEtag(rootDir));');
-    expect(source).toContain('function requestHasEtag(req: IncomingMessage, etag: string)');
     expect(source).toContain("'Cache-Control': 'no-store, no-cache, must-revalidate'");
+    expect(source).toContain('const html = await serveMd(rootDir, absolute, urlPath);');
+    expect(source).toContain('await sendGzippedHtml(req, res, html);');
+    expect(source).not.toContain('async function navigationEtag(rootDir: string)');
+    expect(source).not.toContain('function pageEtag(');
+    expect(source).not.toContain('function requestHasEtag(');
   });
 });
 
@@ -65,7 +96,12 @@ describe('serve deliverables ui', () => {
     expect(source).toContain("return 'build';");
     expect(source).toContain('data-deliverable-kind="${deliverableKind(file)}"');
     expect(source).toContain("'Cache-Control': 'no-store, no-cache, must-revalidate'");
-    expect(source).toContain("isCreatableCollection(node.name) && node.name !== 'deliverables'");
+    expect(source).toContain(
+      "return collection === 'templates' || collection === 'build-context';",
+    );
+    expect(source).toContain('depth === 0 && isCreatableCollection(node.name)');
+    expect(source).not.toContain("node.name !== 'deliverables'");
+    expect(source).not.toContain("cleanRelativePath !== 'deliverables'");
     expect(source).toContain('class="delete-confirm"');
     expect(source).toContain('delete-confirm-panel');
     expect(source).not.toContain("confirm('Supprimer ce fichier ?')");
@@ -86,7 +122,7 @@ describe('serve missing feature endpoints', () => {
   it('explains pending raw sources in the dashboard', async () => {
     const source = await serveSource();
 
-    expect(source).toContain('Sources présentes dans raw/untracked');
+    expect(source).toContain('Sources in raw/untracked');
   });
 });
 
@@ -98,9 +134,14 @@ describe('serve chat proxy', () => {
     expect(source).toContain("sendJson(res, 502");
     expect(source).toContain('retryNetwork?: boolean');
     expect(source).toContain('setTimeout(resolve, 250)');
-    expect(source).toContain('LLM upstream unreachable at ${target}: ${detail}');
+    expect(source).toContain('Upstream unreachable (${target}): ${detail}');
     expect(source).toContain('retryNetwork: true');
     expect(source).toContain('use the container network hostname, not 127.0.0.1');
+    expect(source).toContain('process.env.WIKI_MCP_HTTP_PORT ?? process.env.WIKI_MCP_PORT');
+    expect(source).toContain('try {');
+    expect(source).toContain('const { done, value } = await reader.read();');
+    expect(source).toContain('function chatProxyErrorStatus');
+    expect(source).toContain("message === 'INVALID_LLM_BASE_URL' ? 400 : 502");
   });
 });
 

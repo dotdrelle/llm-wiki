@@ -112,14 +112,77 @@ describe('embedding service', () => {
         ok: true,
         text: async () =>
           JSON.stringify({
-            data: [{ index: 0, embedding: [1, 1] }],
+            data: [],
           }),
       })),
     );
 
-    await expect(new EmbeddingService(createConfig()).embed(['a', 'b'])).rejects.toThrow(
-      /returned 1 vector\(s\) for 2 input\(s\)/,
+    await expect(new EmbeddingService(createConfig()).embed(['a'])).rejects.toThrow(
+      /returned 0 vector\(s\) for 1 input/,
     );
+  });
+
+  it('splits failed embedding batches and preserves order', async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { input?: string[] };
+      const input = body.input ?? [];
+      if (input.length > 1) {
+        return {
+          ok: false,
+          status: 403,
+          text: async (): Promise<string> => 'forbidden batch',
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async (): Promise<string> =>
+          JSON.stringify({
+            data: [{ index: 0, embedding: [input[0].charCodeAt(0)] }],
+          }),
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(new EmbeddingService(createConfig()).embed(['a', 'b', 'c'])).resolves.toEqual(
+      [[97], [98], [99]],
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
+
+  it('neutralizes path-like references when a single embedding input is rejected', async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { input?: string[] };
+      const input = body.input ?? [];
+      if (input.some((item) => item.includes('raw/ingested/project/page.md'))) {
+        return {
+          ok: false,
+          status: 403,
+          text: async (): Promise<string> => 'forbidden input',
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async (): Promise<string> =>
+          JSON.stringify({
+            data: [{ index: 0, embedding: [3, 3] }],
+          }),
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      new EmbeddingService(createConfig()).embed([
+        'Reference [src: raw/ingested/project/page.md] avec contenu.',
+      ]),
+    ).resolves.toEqual([[3, 3]]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const retryBody = JSON.parse(String(fetchMock.mock.calls[1][1]?.body ?? '{}')) as {
+      input: string[];
+    };
+    expect(retryBody.input[0]).toContain('[source]');
+    expect(retryBody.input[0]).not.toContain('raw/ingested/project/page.md');
   });
 
   it('shares provider throttling with LLM requests for the same base URL', async () => {
