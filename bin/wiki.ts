@@ -31,13 +31,31 @@ const packageVersion = (() => {
   }
 })();
 
+function workspaceFromArgv(argv: string[]): string | undefined {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--workspace' || arg === '-w') {
+      return argv[i + 1];
+    }
+    if (arg.startsWith('--workspace=')) {
+      return arg.slice('--workspace='.length);
+    }
+  }
+  return undefined;
+}
+
 async function main() {
+  const workspaceArg = workspaceFromArgv(process.argv.slice(2));
+  if (workspaceArg) {
+    process.env.WIKI_WORKSPACE = workspaceArg;
+  }
   const config = await loadConfig(process.cwd());
 
   program
     .name('wiki')
     .description('Local-first LLM wiki CLI')
-    .version(packageVersion);
+    .version(packageVersion)
+    .option('-w, --workspace <path>', 'Workspace root containing .wikirc.yaml');
 
   program
     .command('init')
