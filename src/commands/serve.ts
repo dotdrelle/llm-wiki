@@ -4096,6 +4096,10 @@ export default async function serveCmd(
       }
 
       if (urlPath === '/chat' || urlPath === '/chat/connectors') {
+        const systemPromptPath = path.join(workspace.paths.internalDir, 'system-prompt.md');
+        const systemPrompt = (await pathExists(systemPromptPath))
+          ? (await readFile(systemPromptPath, 'utf8')).trim()
+          : undefined;
         const chatConfig = {
           model: config.llm.model,
           temperature: config.llm.temperature,
@@ -4103,6 +4107,7 @@ export default async function serveCmd(
           apiKey: config.llm.apiKey ?? '',
           language: config.language ?? 'fr',
           workspaceName: WORKSPACE_NAME ?? path.basename(rootDir),
+          ...(systemPrompt ? { systemPrompt } : {}),
           storageScope: createHash('sha256')
             .update(`${WORKSPACE_NAME ?? ''}:${rootDir}`)
             .digest('hex')

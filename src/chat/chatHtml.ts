@@ -209,9 +209,10 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .bubble pre{background:var(--panel-deep);border-radius:8px;padding:10px 12px;margin:.5em 0;overflow-x:auto}
 .bubble pre code{background:none;padding:0;font-size:.85em}
 .bubble blockquote{border-left:3px solid var(--border);margin:.4em 0;padding:.2em .8em;color:var(--muted)}
-.bubble table{border-collapse:collapse;margin:.5em 0;font-size:.9em}
-.bubble th,.bubble td{border:1px solid var(--border);padding:4px 9px}
-.bubble th{background:var(--panel-deep);font-weight:600}
+.bubble .table-wrap{overflow-x:auto;max-width:100%;margin:.5em 0}
+.bubble table{border-collapse:collapse;font-size:.9em;min-width:100%}
+.bubble th,.bubble td{border:1px solid var(--border);padding:4px 9px;word-break:break-word;overflow-wrap:anywhere}
+.bubble th{background:var(--panel-deep);font-weight:600;white-space:nowrap}
 .bubble a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .bubble .instruction-ref{color:var(--warn);font-family:var(--font-mono);font-size:.92em;background:rgba(199,168,0,.08);border:1px solid rgba(199,168,0,.22);border-radius:5px;padding:1px 5px;white-space:nowrap}
 .stream-cursor::after{content:'▋';animation:blink .8s step-end infinite;color:var(--accent);margin-left:1px}
@@ -589,31 +590,37 @@ let productionState = {
   lastUpdatedAt: null,
   notifiedTerminalJobIds: new Set(),
 };
-const DEFAULT_SYSTEM_PROMPT = \`Tu es un assistant connecté à des serveurs MCP.
+const DEFAULT_SYSTEM_PROMPT = \`You are an assistant connected to MCP servers.
 
-Quand des outils MCP sont disponibles, utilise-les si la réponse dépend d'informations externes, récentes, privées, locales ou vérifiables par ces outils.
+When MCP tools are available, use them if the answer depends on external, recent, private, local, or tool-verifiable information.
 
-Après chaque résultat d'outil:
-- analyse si le résultat suffit pour répondre;
-- si le résultat est incomplet, ambigu, tronqué ou seulement exploratoire, appelle un autre outil pertinent avant de répondre;
-- ne prétends pas avoir lu une source complète si l'outil n'a retourné qu'un extrait ou une liste de candidats.
-- formule les requêtes d'outil en langage naturel; n'utilise pas d'opérateurs de moteur de recherche comme OR ou site: sauf si l'outil le demande explicitement.
-- demande peu de résultats au départ (5 à 10) et augmente seulement si la couverture est insuffisante.
+After each tool result:
+- assess whether the result is sufficient to answer;
+- if the result is incomplete, ambiguous, truncated, or only exploratory, call another relevant tool before responding;
+- do not claim to have read a complete source if the tool only returned an excerpt or a list of candidates;
+- phrase tool queries in natural language; do not use search engine operators like OR or site: unless the tool explicitly requires them;
+- request a small number of results initially (5 to 10) and increase only if coverage is insufficient.
 
-Règles spécifiques llm-wiki:
-- Pour les questions de synthèse, architecture, analyse fonctionnelle, audit ou comparaison, commence par wiki_collect_context quand il est disponible.
-- Utilise readPages comme preuve principale.
-- Les candidateResults et excerpts servent à identifier les pages candidates, pas à établir seuls une réponse complète.
-- Si readPages est vide, tronqué ou insuffisant, appelle wiki_read_page, wiki_read_pages, wiki_search_context ou wiki_read_ingested_source pour compléter.
-- Signale les limites de couverture si les résultats sont insuffisants ou tronqués.
+llm-wiki specific rules:
+- For synthesis, architecture, functional analysis, audit, or comparison questions, start with wiki_collect_context when it is available.
+- Use readPages as the primary evidence.
+- candidateResults and excerpts identify candidate pages — they are not sufficient alone to establish a complete answer.
+- If readPages is empty, truncated, or insufficient, call wiki_read_page, wiki_read_pages, wiki_search_context, or wiki_read_ingested_source to improve coverage.
+- Report coverage limitations when results are insufficient or truncated.
 
-Si plusieurs serveurs MCP sont actifs, choisis les outils selon le domaine de la question.\`;
+When multiple MCP servers are active, choose tools based on the domain of the question.\`;
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 function renderInstructionRefs(html) {
   return String(html||'').replace(/\\[\\[([^\\]\\n]+)\\]\\]/g,(_,label)=>\`<span class="instruction-ref">[[\${esc(label.trim())}]]</span>\`);
 }
-function renderMd(t) { try { return renderInstructionRefs(typeof marked!=='undefined' ? marked.parse(t||'') : esc(t||'')); } catch { return renderInstructionRefs(esc(t||'')); } }
+function renderMd(t) {
+  try {
+    let html = typeof marked!=='undefined' ? marked.parse(t||'') : esc(t||'');
+    html = String(html).split('<table').join('<div class="table-wrap"><table').split('</table>').join('</table></div>');
+    return renderInstructionRefs(html);
+  } catch { return renderInstructionRefs(esc(t||'')); }
+}
 const SIDEBAR_SPLIT_KEY = 'mcpchat_sidebar_history_height';
 const traceRegistry = new Map();
 let nextTraceId = 1;
@@ -2974,7 +2981,7 @@ function loadConfig() {
   if (saved.apiKey)  { $('api-key').value = saved.apiKey; flashSaved('llm-saved'); }
   if (saved.model)   $('model-name').value = saved.model;
   if (saved.temp !== undefined) $('temperature').value = saved.temp;
-  $('system-prompt').value = localStorage.getItem(storageKey('mcpchat_system_prompt')) ?? DEFAULT_SYSTEM_PROMPT;
+  $('system-prompt').value = localStorage.getItem(storageKey('mcpchat_system_prompt')) ?? window.__WIKI_CONFIG__?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
   syncModel();
 }
 
