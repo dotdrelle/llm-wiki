@@ -1,9 +1,12 @@
 import { existsSync } from 'node:fs';
-import { copyFile, mkdir, readFile, rename, stat } from 'node:fs/promises';
+import { copyFile, cp, lstat, mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import fg from 'fast-glob';
 import matter from 'gray-matter';
+import YAML from 'yaml';
 import { buildStateSchema } from '../config/schema.ts';
 import {
   removeIfExists,
@@ -29,7 +32,21 @@ import type {
   WikiOperation,
   WikiPage,
   WorkspacePaths,
+  AddSkillResult,
 } from '../types.ts';
+
+const execFileAsync = promisify(execFile);
+const SKILL_REQUIRED_PATHS = ['skill.yaml', 'templates', 'build-context', '.wiki/skills'];
+const SKILL_INSTALL_PATHS = [
+  'skill.yaml',
+  'templates',
+  'build-context',
+  '.wiki/skills',
+  '.wiki/system-prompt.md',
+  'CLAUDE.md',
+];
+const SKILL_ALLOWED_ROOTS = ['templates/', 'build-context/', '.wiki/skills/'];
+const SKILL_ALLOWED_FILES = new Set(['skill.yaml', 'CLAUDE.md', '.wiki/system-prompt.md']);
 
 function inferWikiPageType(relativePath: string): WikiPage['type'] {
   if (relativePath === 'wiki/index.md') {
@@ -120,6 +137,175 @@ export class WorkspaceService {
       await mkdir(path.dirname(to), { recursive: true });
       await copyFile(from, to);
     }
+  }
+
+  private async prepareSkillSource(
+    source: string,
+    tmpRoot: string,
+  ): Promise<{ sourceDir: string; sourceLabel: string }> {
+    if (isUrl(source)) {
+      if (!source.toLowerCase().endsWith('.zip')) {
+        throw new Error('Remote skill sources must be .zip files.');
+      }
+      const zipPath = path.join(tmpRoot, 'skill.zip');
+      const response = await fetch(source);
+      if (!response.ok) {
+        throw new Error(`Failed to download skill: HTTP ${response.status}`);
+      }
+      const buffer = Buffer.from(await response.arrayBuffer());
+      await writeFile(zipPath, buffer);
+      return {
+        sourceDir: await this.extractSkillZip(zipPath, tmpRoot),
+        sourceLabel: source,
+      };
+    }
+
+    const absoluteSource = path.resolve(source);
+    const sourceStats = await stat(absoluteSource).catch(() => undefined);
+    if (!sourceStats) {
+      throw new Error(`Skill source not found: ${source}`);
+    }
+
+    if (sourceStats.isDirectory()) {
+      return { sourceDir: absoluteSource, sourceLabel: absoluteSource };
+    }
+
+    if (sourceStats.isFile() && absoluteSource.toLowerCase().endsWith('.zip')) {
+      return {
+        sourceDir: await this.extractSkillZip(absoluteSource, tmpRoot),
+        sourceLabel: absoluteSource,
+      };
+    }
+
+    throw new Error('Skill source must be a directory, a .zip file, or an HTTP(S) .zip URL.');
+  }
+
+  private async extractSkillZip(zipPath: string, tmpRoot: string): Promise<string> {
+    const listing = await execFileAsync('unzip', ['-Z1', zipPath]).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Unable to inspect skill zip with unzip: ${message}`);
+    });
+
+    const entries = listing.stdout
+      .split(/\r?\n/)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    if (entries.length === 0) {
+      throw new Error('Skill zip is empty.');
+    }
+    for (const entry of entries) {
+      assertSafeRelativePath(entry);
+    }
+
+    const extractDir = path.join(tmpRoot, 'extract');
+    await mkdir(extractDir, { recursive: true });
+    await execFileAsync('unzip', ['-q', zipPath, '-d', extractDir]).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Unable to extract skill zip with unzip: ${message}`);
+    });
+    return this.findSkillRoot(extractDir);
+  }
+
+  private async findSkillRoot(extractDir: string): Promise<string> {
+    if (await pathExists(path.join(extractDir, 'skill.yaml'))) {
+      return extractDir;
+    }
+
+    const entries = await readdir(extractDir, { withFileTypes: true });
+    const directories = entries.filter((entry) => entry.isDirectory());
+    if (directories.length === 1) {
+      const nestedRoot = path.join(extractDir, directories[0].name);
+      if (await pathExists(path.join(nestedRoot, 'skill.yaml'))) {
+        return nestedRoot;
+      }
+    }
+
+    throw new Error('Skill package must contain skill.yaml at its root.');
+  }
+
+  private async validateSkillSource(sourceDir: string): Promise<Record<string, unknown>> {
+    const root = await this.findSkillRoot(sourceDir);
+    for (const requiredPath of SKILL_REQUIRED_PATHS) {
+      if (!(await pathExists(path.join(root, requiredPath)))) {
+        throw new Error(`Skill package is missing required path: ${requiredPath}`);
+      }
+    }
+
+    const paths = await scanSkillTree(root);
+    for (const relativePath of paths) {
+      assertAllowedSkillPath(relativePath);
+    }
+
+    const metadata = YAML.parse(await readFile(path.join(root, 'skill.yaml'), 'utf8'));
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      throw new Error('skill.yaml must contain a YAML object.');
+    }
+    return metadata as Record<string, unknown>;
+  }
+
+  async addSkill(source: string): Promise<AddSkillResult> {
+    await this.ensureInitialized();
+    const runId = `add-skill-${timestampForPath()}`;
+    const tmpRoot = path.join(this.paths.internalDir, 'tmp', runId);
+    const backupDir = path.join(tmpRoot, 'backup');
+    await mkdir(tmpRoot, { recursive: true });
+
+    const prepared = await this.prepareSkillSource(source, tmpRoot);
+    const sourceRoot = await this.findSkillRoot(prepared.sourceDir);
+    const metadata = await this.validateSkillSource(sourceRoot);
+    const installPaths: string[] = [];
+    for (const relativePath of SKILL_INSTALL_PATHS) {
+      if (await pathExists(path.join(sourceRoot, relativePath))) {
+        installPaths.push(relativePath);
+      }
+    }
+
+    const backupTargets: string[] = [];
+    for (const relativePath of installPaths) {
+      const target = path.join(this.paths.rootDir, relativePath);
+      if (await pathExists(target)) {
+        const backupTarget = path.join(backupDir, relativePath);
+        await mkdir(path.dirname(backupTarget), { recursive: true });
+        await cp(target, backupTarget, { recursive: true, force: true });
+        backupTargets.push(relativePath);
+      }
+    }
+
+    const installed: string[] = [];
+    for (const relativePath of installPaths) {
+      const target = path.join(this.paths.rootDir, relativePath);
+      await removeIfExists(target);
+      const sourcePath = path.join(sourceRoot, relativePath);
+      await mkdir(path.dirname(target), { recursive: true });
+      await cp(sourcePath, target, { recursive: true, force: true });
+      installed.push(relativePath);
+    }
+
+    const installState = {
+      name: typeof metadata.name === 'string' ? metadata.name : undefined,
+      version: typeof metadata.version === 'string' ? metadata.version : undefined,
+      source: prepared.sourceLabel,
+      installedAt: new Date().toISOString(),
+      backupDir: relativeFrom(this.paths.rootDir, backupDir),
+      backupTargets,
+      installed,
+    };
+    await safeWriteFile(
+      path.join(this.paths.internalDir, 'skill-install.json'),
+      `${JSON.stringify(installState, null, 2)}\n`,
+    );
+    await this.appendLog(
+      'add-skill',
+      `${installState.name ?? 'unknown'} ${installState.version ?? ''}`.trim(),
+    );
+
+    return {
+      name: installState.name,
+      version: installState.version,
+      source: prepared.sourceLabel,
+      backupDir: installState.backupDir,
+      installed,
+    };
   }
 
   async appendLog(action: string, details: string): Promise<void> {
@@ -597,4 +783,64 @@ export class WorkspaceService {
     const canonicalTarget = canonicalizeName(target);
     return pages.find((page) => canonicalizeName(page.name) === canonicalTarget);
   }
+}
+
+function timestampForPath(date = new Date()): string {
+  return date.toISOString().replace(/[:.]/g, '-');
+}
+
+function isUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+function normalizeSkillRelativePath(value: string): string {
+  return value.split(path.sep).join('/').replace(/^\.\/+/, '');
+}
+
+function assertSafeRelativePath(relativePath: string): void {
+  const normalized = normalizeSkillRelativePath(relativePath);
+  if (
+    !normalized ||
+    normalized.startsWith('/') ||
+    /^[A-Za-z]:\//.test(normalized) ||
+    normalized.split('/').includes('..')
+  ) {
+    throw new Error(`Unsafe skill package path: ${relativePath}`);
+  }
+}
+
+function assertAllowedSkillPath(relativePath: string): void {
+  const normalized = normalizeSkillRelativePath(relativePath);
+  assertSafeRelativePath(normalized);
+  if (SKILL_ALLOWED_FILES.has(normalized)) return;
+  if (SKILL_ALLOWED_ROOTS.some((prefix) => normalized.startsWith(prefix))) return;
+  if (
+    normalized === '.wiki' ||
+    normalized === '.wiki/skills' ||
+    normalized === 'templates' ||
+    normalized === 'build-context'
+  ) {
+    return;
+  }
+  throw new Error(`Unexpected path in skill package: ${relativePath}`);
+}
+
+async function scanSkillTree(rootDir: string, relativeDir = ''): Promise<string[]> {
+  const dir = path.join(rootDir, relativeDir);
+  const entries = await readdir(dir, { withFileTypes: true });
+  const paths: string[] = [];
+  for (const entry of entries) {
+    const relativePath = normalizeSkillRelativePath(path.join(relativeDir, entry.name));
+    assertSafeRelativePath(relativePath);
+    const absolutePath = path.join(rootDir, relativePath);
+    const stats = await lstat(absolutePath);
+    if (stats.isSymbolicLink()) {
+      throw new Error(`Symlinks are not allowed in skill packages: ${relativePath}`);
+    }
+    paths.push(relativePath);
+    if (entry.isDirectory()) {
+      paths.push(...(await scanSkillTree(rootDir, relativePath)));
+    }
+  }
+  return paths;
 }

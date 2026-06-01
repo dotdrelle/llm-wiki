@@ -1,7 +1,7 @@
-# Règles de citation pour notes projet
+# Citation Rules
 
-Toute information factuelle doit garder une trace de sa source.
+Every factual claim should remain traceable to the wiki context or an ingested source.
 
-Si l’information est absente, créer une lacune.
+If the evidence is missing, mark the point as an open question instead of inventing an answer.
 
-Si l’information est déduite, indiquer qu’elle est déduite.
+If a statement is inferred, say that it is inferred from the available sources.

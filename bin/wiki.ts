@@ -16,6 +16,7 @@ import doctorCmd from '../src/commands/doctor.ts';
 import mcpCmd from '../src/commands/mcp.ts';
 import mcpHttpCmd from '../src/commands/mcpHttp.ts';
 import exportCmd from '../src/commands/export.ts';
+import addSkillCmd from '../src/commands/addSkill.ts';
 
 const program = new Command();
 const packageVersion = (() => {
@@ -62,6 +63,12 @@ async function main() {
     .description('Initialize a local wiki workspace')
     .option('-f, --force', 'Force overwrite existing directories')
     .action((options) => initCmd(config, options));
+
+  program
+    .command('add-skill')
+    .description('Install a workspace skill from a directory, .zip file, or HTTP(S) .zip URL')
+    .argument('<source>', 'Skill directory, .zip file, or HTTP(S) .zip URL')
+    .action((source) => addSkillCmd(config, source));
 
   program
     .command('ingest')

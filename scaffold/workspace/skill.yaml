@@ -1,0 +1,13 @@
+name: basic
+version: 0.1.0
+title: Basic wiki workspace
+description: Minimal English scaffold for ingesting sources and generating a simple sourced note.
+language: en
+entrypoints:
+  templatesDir: templates
+  buildContextDir: build-context
+  uiSkillDir: .wiki/skills
+  systemPrompt: .wiki/system-prompt.md
+  claude: CLAUDE.md
+compatibility:
+  llmWiki: ">=0.1.0"

@@ -1,4 +1,4 @@
-language: fr
+language: en
 
 llm:
   provider: ollama

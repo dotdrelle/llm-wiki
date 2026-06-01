@@ -90,6 +90,14 @@ export interface IngestCommandOptions {
   traceFile?: string;
 }
 
+export interface AddSkillResult {
+  name?: string;
+  version?: string;
+  source: string;
+  backupDir: string;
+  installed: string[];
+}
+
 export interface WorkspacePaths {
   rootDir: string;
   configPath: string;

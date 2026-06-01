@@ -61,6 +61,70 @@ describe('workspace safety', () => {
     expect(initializedConfig.retrieval.vector.rerankEnabled).toBe(false);
   });
 
+  it('installs a workspace skill by backing up and replacing skill-owned paths', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-skill-'));
+    const skillRoot = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-skill-'));
+    const workspace = new WorkspaceService(createConfig(root));
+    await workspace.initWorkspace({});
+    await writeFile(path.join(root, 'templates', 'old.md'), '# Old\n', 'utf8');
+
+    await mkdir(path.join(skillRoot, 'templates'), { recursive: true });
+    await mkdir(path.join(skillRoot, 'build-context', 'rules'), { recursive: true });
+    await mkdir(path.join(skillRoot, '.wiki', 'skills'), { recursive: true });
+    await writeFile(
+      path.join(skillRoot, 'skill.yaml'),
+      'name: test-skill\nversion: 1.2.3\n',
+      'utf8',
+    );
+    await writeFile(path.join(skillRoot, 'CLAUDE.md'), '# Test Skill\n', 'utf8');
+    await writeFile(
+      path.join(skillRoot, '.wiki', 'system-prompt.md'),
+      'Use the test skill.\n',
+      'utf8',
+    );
+    await writeFile(path.join(skillRoot, 'templates', 'note.md'), '# Note\n', 'utf8');
+    await writeFile(
+      path.join(skillRoot, 'build-context', 'rules', 'style.md'),
+      '# Style\n',
+      'utf8',
+    );
+    await writeFile(path.join(skillRoot, '.wiki', 'skills', 'status.md'), '# Status\n', 'utf8');
+
+    const result = await workspace.addSkill(skillRoot);
+
+    expect(result.name).toBe('test-skill');
+    expect(result.version).toBe('1.2.3');
+    await expect(readFile(path.join(root, 'templates', 'note.md'), 'utf8')).resolves.toBe(
+      '# Note\n',
+    );
+    await expect(readFile(path.join(root, 'templates', 'old.md'), 'utf8')).rejects.toThrow();
+    await expect(
+      readFile(path.join(root, result.backupDir, 'templates', 'old.md'), 'utf8'),
+    ).resolves.toBe('# Old\n');
+    await expect(
+      readFile(path.join(root, '.wiki', 'skill-install.json'), 'utf8'),
+    ).resolves.toContain('"name": "test-skill"');
+  });
+
+  it('rejects skill packages with paths outside the supported workspace layout', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-skill-'));
+    const skillRoot = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-skill-'));
+    const workspace = new WorkspaceService(createConfig(root));
+    await workspace.initWorkspace({});
+
+    await mkdir(path.join(skillRoot, 'templates'), { recursive: true });
+    await mkdir(path.join(skillRoot, 'build-context'), { recursive: true });
+    await mkdir(path.join(skillRoot, '.wiki', 'skills'), { recursive: true });
+    await mkdir(path.join(skillRoot, 'wiki'), { recursive: true });
+    await writeFile(path.join(skillRoot, 'skill.yaml'), 'name: bad\n', 'utf8');
+    await writeFile(path.join(skillRoot, 'templates', 'note.md'), '# Note\n', 'utf8');
+    await writeFile(path.join(skillRoot, 'build-context', 'rules.md'), '# Rules\n', 'utf8');
+    await writeFile(path.join(skillRoot, '.wiki', 'skills', 'status.md'), '# Status\n', 'utf8');
+    await writeFile(path.join(skillRoot, 'wiki', 'index.md'), '# Bad\n', 'utf8');
+
+    await expect(workspace.addSkill(skillRoot)).rejects.toThrow(/unexpected path/i);
+  });
+
   it('resolves bare filenames to existing wiki paths', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-'));
     await mkdir(path.join(root, 'wiki', 'sources'), { recursive: true });
