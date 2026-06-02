@@ -2,118 +2,232 @@
 
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
 
-<p align="center">
-  <img src="https://www.itsdonna.events/assets/KarpathyPattern.png" alt="Karpathy pattern with model, context, memory, tools, and skills" width="760">
-</p>
+`llm-wiki` is a local-first Markdown knowledge engine.
 
-Open-source implementation of [Karpathy's LLM Wiki](https://x.com/karpathy/status/2039805659525644595) ([spec](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)).
+It turns raw project material into a persistent wiki, builds a local retrieval
+index, and regenerates deliverables from templates. It works as a standalone CLI
+or as the workspace engine used by `llm-wiki-manager`.
 
-A local-first CLI that turns raw project material into a durable, searchable Markdown knowledge base, then generates reproducible deliverables from templates. Works with OpenAI, Anthropic, Ollama, or any OpenAI-compatible server. Everything stays on disk as plain Markdown files.
+The core rule is simple: the workspace is the source of truth. Sources, wiki
+pages, templates, build rules, generated deliverables, traces, and skill state
+all live on disk.
 
-`llm-wiki` is the workspace engine: it initializes workspaces, ingests `raw/untracked`, serves a local UI, exposes a wiki MCP server, and builds/exports deliverables.
-
-It can run by itself, but it is one part of a three-repository toolchain:
+## Toolchain
 
 | Repository | Role |
-| ---------- | ---- |
-| [`llm-wiki`](https://github.com/dotdrelle/llm-wiki) | Local-first wiki CLI, web UI, MCP server, retrieval, and deliverable builder |
-| [`llm-wiki-manager`](https://github.com/dotdrelle/llm-wiki-manager) | Docker cockpit for multiple wiki workspaces, workspace-scoped Confluence export, and production agents |
-| [`agent-cme`](https://github.com/dotdrelle/agent-cme) | Agent-controlled Confluence Markdown exporter used by the manager |
+| --- | --- |
+| [`llm-wiki`](https://github.com/dotdrelle/llm-wiki) | Workspace engine: CLI, web UI, MCP server, retrieval, deliverables, skills |
+| [`llm-wiki-manager`](https://github.com/dotdrelle/llm-wiki-manager) | Multi-workspace cockpit, Docker orchestration, `dot` shell |
+| [`agent-cme`](https://github.com/dotdrelle/agent-cme) | Workspace-scoped Confluence to Markdown exporter |
+| [`agent-wiki-production`](https://github.com/dotdrelle/agent-wiki-production) | Workspace-scoped production jobs |
+| [`agent-mailer-api`](https://github.com/dotdrelle/agent-mailer-api) | Optional external mailer MCP endpoint |
 
-Use only this repository for a single standalone workspace. Use
-`llm-wiki-manager` when you want Docker orchestration for several workspaces,
-workspace-scoped Confluence export agents, production jobs, and shared action
-agents.
+## What It Does
 
-```
-┌──────────────────────────────────────┐  ┌─────────────────────────────────────┐
-│  raw sources                         │  │  AI assistant                       │
-│  notes, exports, Confluence, PDFs    │  │                                     │
-│  → raw/untracked/                    │  │  wiki mcp-http  (Streamable HTTP)   │
-└──────────────┬───────────────────────┘  │  wiki_read_page(s) · wiki_write_page │
-               │  wiki ingest  (LLM)      │  wiki_search_context · wiki_collect_context│
-               ▼                          └──────────────────┬──────────────────┘
-┌──────────────────────────────────────┐                     │
-│  wiki/                        ◄──────┼─────────────────────┘
-│  ├── index.md                        │── wiki index ──► ┌────────────────────┐
-│  ├── concepts/                       │   (embeddings)   │ .wiki/vector-index │
-│  ├── sources/  (raw/ingested/)       │◄─────────────────┤   (LanceDB)        │
-│  └── answers/                        │   (retrieval)    └────────────────────┘
-└──────┬────────────────┬──────────────┘
-       │  wiki query    │  wiki build / refresh  (LLM)
-       ▼                ▼
-┌────────────┐  ┌───────────────────────────────────────┐
-│  answers   │  │  templates/  [[INSTRUCTION: ...]]     │
-└────────────┘  │  build-context/  (fixed context)      │
-                └──────────────────────┬────────────────┘
-                                       ▼
-                              ┌─────────────────┐
-                              │  deliverables/  │
-                              └────────┬────────┘
-                                       │  wiki export  (LLM)
-                                       ▼
-                              ┌─────────────────┐
-                              │  *.export.md    │
-                              └─────────────────┘
+```text
+raw/untracked/
+  -> wiki ingest
+  -> wiki/
+       index.md
+       concepts/
+       sources/
+       answers/
+  -> wiki index
+  -> .wiki/vector-index/
+  -> wiki build
+  -> deliverables/
+  -> wiki export
 ```
 
-## Quick start
+Main capabilities:
 
-1. **Initialize a workspace** in an empty directory:
+- initialize a workspace with `wiki init`;
+- ingest Markdown sources from `raw/untracked/`;
+- maintain durable wiki pages under `wiki/`;
+- query the wiki with lexical and optional vector retrieval;
+- generate deliverables from `templates/` and `build-context/`;
+- export deliverables with inline source detail;
+- serve a local web UI and MCP endpoint;
+- install a complete workspace skill with `wiki add-skill`.
 
-   ```bash
-   wiki init
-   ```
-
-   Edit `.wikirc.yaml` to set your LLM provider, model, `baseUrl`, `apiKey`, `language`, retrieval endpoints, and prompt limits. In manager mode, this file is the workspace source of truth for LLM/vector keys.
-
-2. **Run the doctor** to validate your configuration:
-
-   ```bash
-   wiki doctor
-   ```
-
-3. **Drop sources** into `raw/untracked/` (Markdown, Confluence exports, etc.).
-
-4. **Ingest** — the LLM reads each source and updates `wiki/`:
-
-   ```bash
-   wiki ingest
-   ```
-
-5. **Build deliverables** from templates in `templates/`:
-
-   ```bash
-   wiki build
-   ```
-
-   To inspect the planned LLM calls before generating content:
-
-   ```bash
-   wiki build --plan
-   ```
-
-6. **Export** a self-contained document from a deliverable:
-   ```bash
-   wiki export deliverables/project-brief.md --polish
-   ```
-
-Repeat steps 3–4 as new sources arrive. Run `wiki refresh` to rebuild stale deliverables without re-ingesting.
-
-### Concept grouping (optional)
-
-During ingest the LLM assigns a `group` field in the YAML frontmatter of each concept page and can place new pages directly into `wiki/concepts/<group>/`. For existing flat workspaces, `wiki group-concepts` reads the frontmatter and reorganises the files:
+## Quick Start
 
 ```bash
-wiki group-concepts          # dry-run: shows planned moves
-wiki group-concepts --apply  # moves files and rewrites all wiki links
+wiki init
 ```
 
-## Docker and Multi-Workspace Use
+Edit `.wikirc.yaml` with your provider, model, endpoint, key, language, and
+retrieval settings.
 
-For a single workspace, you can use this repository's Docker Compose file by setting `WIKI_WORKSPACE`.
+Validate the workspace:
 
-For several workspaces, use `llm-wiki-manager` as the cockpit:
+```bash
+wiki doctor
+```
+
+Add Markdown source files:
+
+```text
+raw/untracked/my-source.md
+```
+
+Ingest them:
+
+```bash
+wiki ingest
+```
+
+Build deliverables:
+
+```bash
+wiki build
+```
+
+Inspect planned LLM calls before building:
+
+```bash
+wiki build --plan
+```
+
+Export a generated deliverable:
+
+```bash
+wiki export deliverables/basic-note.md --polish
+```
+
+## Workspace Layout
+
+```text
+.
+├── .wikirc.yaml              # provider/model/retrieval config
+├── skill.yaml                # installed workspace skill metadata
+├── CLAUDE.md                 # optional operator/agent instructions
+├── .wiki/
+│   ├── build-state.json
+│   ├── logs/
+│   ├── skills/              # slash/chat skills exposed by UI and shell
+│   ├── system-prompt.md     # optional workspace LLM behavior prompt
+│   ├── tmp/                 # backups and temporary install data
+│   └── vector-index/        # LanceDB index created by `wiki index`
+├── raw/
+│   ├── untracked/           # new source material
+│   └── ingested/            # archived source material after ingest
+├── wiki/
+│   ├── index.md
+│   ├── log.md
+│   ├── concepts/
+│   ├── sources/
+│   └── answers/
+├── templates/
+├── build-context/
+├── deliverables/
+└── docs/
+```
+
+## Workspace Skills
+
+A workspace skill is a complete installable method for one workspace. It may
+define templates, build rules, chat/shell skills, a system prompt, and operator
+instructions.
+
+Install a skill from a directory, local zip file, or HTTP(S) zip URL:
+
+```bash
+wiki add-skill ./my-skill
+wiki add-skill ./my-skill.zip
+wiki add-skill https://example.test/my-skill.zip
+```
+
+Required package layout:
+
+```text
+skill.yaml
+templates/
+build-context/
+.wiki/skills/
+```
+
+Optional package paths:
+
+```text
+.wiki/system-prompt.md
+CLAUDE.md
+```
+
+Install behavior:
+
+- the package is validated before modifying the workspace;
+- path traversal and symlinks are rejected;
+- each standard path present in the package replaces the same workspace path;
+- the previous workspace path is backed up first under
+  `.wiki/tmp/add-skill-*/backup`;
+- old files from the previous skill do not remain mixed with the new one.
+
+This is intentionally one-skill-per-workspace. Installing a skill changes the
+workspace method.
+
+The default scaffold is the `basic` skill: English, small, and suitable for a
+demo ingest/build cycle. It includes one demo source in `raw/untracked/`.
+
+## Core Commands
+
+```bash
+wiki init
+wiki add-skill <directory-or-zip-or-url>
+wiki doctor
+wiki ingest [files...]
+wiki index
+wiki query "question"
+wiki build [templates...]
+wiki build --plan
+wiki refresh [templates...]
+wiki export <deliverable> [--polish]
+wiki lint [--with-llm]
+wiki serve --port 3000
+wiki mcp
+wiki mcp-http --port 3333
+```
+
+## Configuration
+
+Important `.wikirc.yaml` sections:
+
+```yaml
+language: en
+
+llm:
+  provider: ollama
+  model: YOUR_MODEL_NAME
+  apiKey: ollama
+  baseUrl: http://127.0.0.1:11434/v1
+  temperature: 0.1
+  timeoutMs: 600000
+
+build:
+  refreshOnIngest: false
+  slotBatchSize: 3
+  maxBuildContextChars: 12000
+
+retrieval:
+  maxContextFiles: 5
+  maxChunksPerPage: 2
+  maxChunkChars: 3000
+  maxSourceChars: 8000
+  vector:
+    enabled: false
+    embeddingModel: BAAI/bge-m3
+    rerankEnabled: false
+```
+
+Run `wiki doctor` after changing provider, model, context size, batch size, or
+retrieval limits.
+
+## Docker And Manager Use
+
+For one standalone workspace, this repository can run directly or via its own
+Docker setup.
+
+For several workspaces, use `llm-wiki-manager`:
 
 ```bash
 cd ../llm-wiki-manager
@@ -123,9 +237,10 @@ cd ../llm-wiki-manager
 ./wiki-workspace wiki <workspace> ingest
 ```
 
-`wiki init` creates workspace content and `.wikirc.yaml`. It does not create a workspace-local `docker-compose.yml`; Docker orchestration lives either in this repository for one workspace or in `llm-wiki-manager` for several workspaces.
+The manager owns Docker orchestration. The workspace still owns `.wikirc.yaml`,
+templates, build context, skills, raw sources, and generated content.
 
-## Installation
+## Development
 
 Requires Node.js 22+.
 
@@ -133,54 +248,32 @@ Requires Node.js 22+.
 corepack enable
 pnpm install
 pnpm build
-pnpm link --global   # makes `wiki` available system-wide
+pnpm link --global
 ```
 
-Development:
+Useful commands:
 
 ```bash
-pnpm dev ingest      # run without building first
+pnpm dev doctor
+pnpm dev add-skill ./path/to/skill
 pnpm typecheck
+pnpm lint
 pnpm test
-```
-
-## Workspace layout
-
-```text
-.
-├── .wikirc.yaml
-├── CLAUDE.md
-├── .wiki/                  ← internal, gitignored
-│   ├── build-state.json
-│   ├── logs/
-│   └── vector-index/       ← created by `wiki index`
-├── raw/
-│   ├── untracked/          ← drop sources here
-│   └── ingested/           ← archived after ingest
-├── wiki/
-│   ├── index.md
-│   ├── log.md
-│   ├── concepts/           ← flat or grouped (wiki/concepts/<group>/)
-│   ├── sources/
-│   └── answers/
-├── templates/
-├── build-context/
-└── deliverables/
 ```
 
 ## Documentation
 
-| Topic                                          | Description                                              |
-| ---------------------------------------------- | -------------------------------------------------------- |
-| [docs/commands.md](docs/commands.md)           | All CLI commands with options and examples               |
-| [docs/configuration.md](docs/configuration.md) | `.wikirc.yaml` reference (all keys and providers)        |
-| [docs/docker.md](docs/docker.md)               | Docker and docker-compose setup                          |
-| [docs/mcp.md](docs/mcp.md)                     | MCP integration (Claude Desktop, Claude Code, OpenWebUI) |
-| [docs/templates.md](docs/templates.md)         | Deliverable templates and importing sources              |
-| [docs/vector-search.md](docs/vector-search.md) | Optional vector retrieval with LanceDB                   |
+| Topic | File |
+| --- | --- |
+| Commands | `docs/commands.md` |
+| Configuration | `docs/configuration.md` |
+| Docker | `docs/docker.md` |
+| MCP | `docs/mcp.md` |
+| Templates | `docs/templates.md` |
+| Vector search | `docs/vector-search.md` |
 
 ## License
 
-Released under the **PolyForm Noncommercial License 1.0.0**. See [LICENSE](LICENSE).
+Released under the PolyForm Noncommercial License 1.0.0. See `LICENSE`.
 
-Commercial use requires separate terms. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+Commercial use requires separate terms. See `COMMERCIAL-LICENSE.md`.

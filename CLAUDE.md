@@ -1,126 +1,124 @@
 # Repository Guide
 
-## Goal
+## Purpose
 
-`llm-wiki` is a local-first Node.js 22 CLI that maintains a persistent markdown wiki from source documents, then regenerates derived markdown deliverables from templates.
+`llm-wiki` is the local-first workspace engine. It ingests Markdown sources into
+a persistent wiki, builds retrieval indexes, and regenerates deliverables from
+workspace templates and build context.
+
+The repository should stay usable as a standalone CLI and as the engine called
+by `llm-wiki-manager`.
 
 ## Architecture
 
-- `bin/wiki.ts`: Commander entrypoint — registers all subcommands.
-- `src/config`: config loading and zod validation for `.wikirc.yaml`.
-- `src/services`: orchestration layer for all features (see list below).
-- `src/prompts`: prompt builders for LLM interactions.
-- `src/utils`: path safety, hashing, JSON extraction, markdown helpers, fs utilities.
-- `src/chat/`: browser chat UI HTML generation and theming (`chatHtml.ts`, `theme.ts`).
+```text
+bin/wiki.ts              Commander CLI entrypoint
+src/commands/           Thin command wrappers
+src/config/             .wikirc.yaml loading, defaults, schema
+src/services/           Main orchestration and IO
+src/prompts/            Prompt builders
+src/utils/              Path safety, fs, hashing, markdown, JSON helpers
+src/chat/               Browser chat UI generation
+scaffold/workspace/     Default workspace copied by `wiki init`
+tests/                  Vitest coverage
+docs/                   User-facing references
+```
 
-### Commands (`src/commands/`)
+## Commands
 
-- `serve.ts`: local HTTP server — renders `wiki/` and deliverables as markdown, serves `/graph` (D3 source/wiki relation graph with live refresh), `/chat` (browser chat UI with MCP tool calling), and `/api/chat` + `/api/mcp` as server-side proxies for Docker/manager mode. Also manages workspace skills under `.wiki/skills/`.
-- `doctor.ts`: provider/config diagnostics; prints suggested `.wikirc.yaml` changes. Use `--apply` to write them directly (replaces the old interactive-confirmation flow).
-- `index.ts`: `wiki index` — builds or refreshes the local LanceDB vector index.
-- `ingest.ts`: reads `raw/untracked/`, LLM-generates wiki updates, archives sources to `raw/ingested/`, then auto-runs `refresh`.
-- `build.ts`: generates deliverables from templates; `--plan` shows batches and token estimates without calling the LLM.
-- `refresh.ts`: rebuilds only stale deliverables from `.wiki/build-state.json`.
-- `export.ts`: expands deliverable citation markers into inline source detail; `--polish` adds a second editorial pass.
-- `query.ts`: answers a freeform question from wiki context; `--save` writes to `wiki/answers/`.
-- `lint.ts`: static checks — dead links, orphan pages, missing source citations, stale deliverables, unresolved `[[INSTRUCTION:]]` slots; `--with-llm` adds semantic checks; `--json` emits structured output.
-- `mcp.ts`: stdio MCP server (for Claude Desktop / Claude Code integration).
-- `mcpHttp.ts`: Streamable HTTP MCP server (for manager/agent use, with optional bearer token auth and TLS).
-- `init.ts`: scaffolds a new workspace from `scaffold/workspace`.
+- `init`: copy `scaffold/workspace` into the workspace.
+- `add-skill`: install a workspace skill from a directory, local zip, or HTTP(S)
+  zip URL.
+- `doctor`: validate config/provider/retrieval/build planning.
+- `ingest`: read `raw/untracked/`, create/update wiki pages, archive sources.
+- `index`: build/update `.wiki/vector-index`.
+- `query`: answer a question from wiki context.
+- `build`: generate deliverables from `templates/`.
+- `refresh`: rebuild stale deliverables from `.wiki/build-state.json`.
+- `export`: expand citations into source detail, optionally polish.
+- `lint`: static and optional semantic checks.
+- `serve`: local web UI, graph, chat, skill editor, API proxy.
+- `mcp`: stdio MCP server.
+- `mcp-http`: Streamable HTTP MCP server.
 
-### Services (`src/services/`)
+## Skill Model
 
-- `workspaceService.ts`: workspace IO, path resolution, file enumeration.
+A workspace skill is a complete installable method. It uses the same path layout
+as the workspace:
+
+```text
+skill.yaml
+templates/
+build-context/
+.wiki/skills/
+.wiki/system-prompt.md  # optional
+CLAUDE.md               # optional
+```
+
+`wiki add-skill` behavior:
+
+- validates the package before writing;
+- rejects path traversal and symlinks;
+- backs up every replaced path under `.wiki/tmp/add-skill-*/backup`;
+- replaces only standard paths present in the package;
+- writes `.wiki/skill-install.json`;
+- appends a wiki log entry.
+
+This is one-skill-per-workspace. Do not implement multi-skill merging unless the
+whole model is deliberately redesigned.
+
+The default scaffold is a minimal English `basic` skill. Keep it small and
+generic.
+
+## Important Services
+
+- `workspaceService.ts`: workspace paths, source resolution, wiki writes,
+  build-context reads, skill installation.
 - `ingestService.ts`: source-to-wiki LLM pipeline.
-- `buildService.ts`: template-slot batching and LLM generation.
-- `refreshService.ts`: stale-deliverable detection and rebuild.
-- `exportService.ts`: citation expansion and editorial polish.
-- `queryService.ts`: single-question retrieval and answer generation.
-- `lintService.ts`: static and semantic lint checks.
-- `retrievalService.ts`: keyword + optional vector retrieval, context assembly.
-- `vectorIndexService.ts`: LanceDB index build, incremental update, and vector search.
-- `embeddingService.ts`: calls `/v1/embeddings` for vector indexing.
-- `rerankService.ts`: calls `/v1/rerank` for optional result re-ranking.
-- `llmService.ts`: LLM provider abstraction (OpenAI-compatible, Anthropic, Ollama).
-- `mcpServer.ts`: MCP tool definitions (`wiki_list_pages`, `wiki_read_page`, `wiki_read_pages`, `wiki_write_page`, `wiki_search_context`, `wiki_collect_context`, `wiki_list_ingested_sources`, `wiki_read_ingested_source`).
-- `promptBudgetService.ts`: token budget calculations for context trimming.
-- `rateLimiter.ts`: per-provider request rate limiting with retry logic.
-- `traceLogger.ts`: structured trace logging to `.wiki/logs/`.
+- `buildService.ts`: template slot batching and generation.
+- `refreshService.ts`: stale deliverable detection.
+- `exportService.ts`: citation expansion and polish.
+- `retrievalService.ts`: lexical/vector context assembly.
+- `vectorIndexService.ts`: LanceDB index management.
+- `embeddingService.ts`: OpenAI-compatible embeddings.
+- `rerankService.ts`: optional reranking endpoint.
+- `llmService.ts`: provider abstraction.
+- `mcpServer.ts`: MCP tools for reading/searching/writing wiki content.
 
-### Other
+## Safety Rules
 
-- `scaffold/workspace`: files copied by `wiki init`.
-- `SKILL.md`: workspace operator skill definition (used by AI assistants in manager/Cowork mode).
-- `examples`: runnable sample inputs.
-- `tests`: Vitest coverage for config, template parsing, build flow, and path safety.
-- `Dockerfile` / `docker-compose.yml`: containerized CLI and web UI entrypoints.
-- `docs/`: user-facing reference documentation (commands, configuration, docker, mcp, templates, vector-search).
-
-## Constraints
-
-- Local-first only. Vector index uses LanceDB stored on disk under `.wiki/vector-index/` — no external database.
-- Deliverables must remain regenerable and stable in Git.
 - Never write outside the workspace root.
-- Generated deliverables must not invent missing information.
-- `wiki doctor` prints suggested `.wikirc.yaml` changes in all modes. `--apply` writes them directly; without it, no file is modified.
-- Keep Docker CLI usage and server usage separate: `wiki` is for one-shot commands; `serve` is the long-running web UI.
-- The Docker runtime image must include production dependencies. The built CLI still imports runtime packages; `serve` resolves `d3/dist/d3.min.js` and `marked.umd.js` from `node_modules`.
-- For Ollama diagnostics, local process env detection is valid only for local Ollama. Remote/containerized Ollama needs `.wikirc.yaml` hints such as `flashAttention` and `kvCacheType`.
-- MCP auth: `wiki mcp` requires `WIKI_MCP_AUTH_TOKEN` env var. `wiki mcp-http` validates Bearer tokens on each request; the serve proxy injects the token server-side so the browser never sees it.
-- Workspace skills live under `.wiki/skills/` (name regex `^[a-zA-Z0-9_-]{1,60}$`); they are scoped to the workspace and exposed through the chat UI.
+- Treat `raw/untracked/` as the only ingest input area.
+- Treat `deliverables/` as generated and reproducible.
+- Do not invent facts in generated content; cite available context.
+- Preserve MCP bearer-token behavior: the browser must not receive workspace MCP
+  tokens.
+- Keep skill package installation constrained to the standard layout.
+- Do not allow skill zips or directories to install symlinks.
+- Keep Docker one-shot CLI usage separate from long-running `serve`.
 
-## Common Commands
+## Validation
 
-```bash
-pnpm typecheck          # tsc --noEmit
-pnpm lint               # eslint .
-pnpm test               # vitest run
-pnpm run build          # tsup
-pnpm dev ingest         # run without building (Node experimental strip-types)
-```
-
-Docker:
+Run before committing changes:
 
 ```bash
-docker compose build
-docker compose up serve
-docker compose --profile cli run --rm wiki doctor
-docker compose --profile cli run --rm wiki doctor --apply   # write suggestions
-docker compose --profile cli run --rm wiki ingest
-docker compose --profile cli run --rm wiki lint
-docker compose --profile cli run --rm wiki index
+pnpm typecheck
+pnpm lint
+pnpm test
 ```
 
-`EXPOSE 3000` does not start `wiki serve`. The `serve` service explicitly runs `serve --port 3000`; the `wiki` service is reserved for one-shot CLI commands. Both mount the same workspace, so changes from `ingest` are visible in the web UI after browser refresh.
+Focused checks:
 
-## Config Notes
-
-Important `.wikirc.yaml` keys:
-
-```yaml
-llm:
-  provider: ollama
-  baseUrl: http://host.docker.internal:11434/v1
-  numCtx: 32768
-  flashAttention: true
-  kvCacheType: q8_0
-
-build:
-  slotBatchSize: 3
-
-retrieval:
-  maxContextFiles: 5
-  maxChunksPerPage: 2
-  maxChunkChars: 3000
-  maxSourceChars: 8000
-  vector:
-    enabled: true # run `wiki index` to build or refresh the local index
-    embeddingModel: BAAI/bge-m3
-    rerankEnabled: false # scaffold default; set true only when /v1/rerank is available
-    rerankerModel: BAAI/bge-reranker-v2-m3
-    topK: 120
-    rerankTopK: 80
-    maxResults: 6
+```bash
+pnpm exec vitest run tests/workspace.test.ts
+pnpm dev add-skill ./path/to/skill
+pnpm dev build --plan
 ```
 
-When changing `slotBatchSize`, `maxContextFiles`, `maxChunkChars`, or `numCtx`, run `wiki doctor` and make sure its final suggestions are internally consistent.
+## Docker Notes
+
+The runtime image must include production dependencies. The built CLI imports
+runtime packages, and `serve` resolves browser assets from `node_modules`.
+
+`EXPOSE 3000` does not start `wiki serve`. Compose services must explicitly run
+the desired command.

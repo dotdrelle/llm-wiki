@@ -151,6 +151,50 @@ Authorization: Bearer <mcp.accessKey>
 
 If `mcp.accessKey` is not set, the endpoint accepts unauthenticated connections — only do this on a trusted network.
 
+### Claude Code HTTP client config
+
+For Claude Code project config, add an HTTP MCP server to `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "llm-wiki": {
+      "type": "http",
+      "url": "http://127.0.0.1:3333/mcp",
+      "headers": {
+        "Authorization": "Bearer <generated-local-token>"
+      }
+    }
+  }
+}
+```
+
+When the server is started by Docker, use the published host port:
+
+```json
+{
+  "mcpServers": {
+    "llm-wiki": {
+      "type": "http",
+      "url": "http://127.0.0.1:3101/mcp",
+      "headers": {
+        "Authorization": "Bearer <generated-local-token>"
+      }
+    }
+  }
+}
+```
+
+Equivalent Claude Code CLI form:
+
+```bash
+claude mcp add-json llm-wiki '{"type":"http","url":"http://127.0.0.1:3101/mcp","headers":{"Authorization":"Bearer <generated-local-token>"}}'
+```
+
+Use the same token value as `mcp.accessKey` in `.wikirc.yaml`.
+`type: "streamable-http"` is also accepted by Claude Code, but `type: "http"`
+is the shorter form used here.
+
 ### HTTPS / TLS
 
 Provide `certPath` and `keyPath` together; `caPath` is optional for mutual TLS.
@@ -186,4 +230,10 @@ mcp:
   accessKey: <generated-local-token>
 ```
 
-Pass the same value as `WIKI_MCP_AUTH_TOKEN` in the MCP client config. If the key is configured but the env var is absent or mismatched, the server exits immediately with an error.
+For `wiki mcp` stdio, pass the same value as `WIKI_MCP_AUTH_TOKEN` in the MCP client config. If the key is configured but the env var is absent or mismatched, the server exits immediately with an error.
+
+For `wiki mcp-http`, pass the same value in the HTTP request header:
+
+```http
+Authorization: Bearer <generated-local-token>
+```
