@@ -54,6 +54,16 @@ describe('serve graph ui', () => {
     expect(source).not.toContain('Afficher les markdown');
     expect(source).not.toContain('relie a');
   });
+
+  it('can expand the graph to use most of the page', async () => {
+    const source = await serveSource();
+
+    expect(source).toContain('data-graph-expand');
+    expect(source).toContain('graph-page-expanded');
+    expect(source).toContain('graphLayout.classList.toggle');
+    expect(source).toContain("graphLayout.closest('main')?.classList.toggle('graph-page-expanded'");
+    expect(source).toContain('height: calc(100vh - 9.5rem);');
+  });
 });
 
 describe('serve command palette', () => {

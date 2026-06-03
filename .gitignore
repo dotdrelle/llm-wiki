@@ -162,5 +162,9 @@ dist
 
 # End of https://www.toptal.com/developers/gitignore/api/node,visualstudiocode
 .wiki/
+!scaffold/workspace/.wiki/
+!scaffold/workspace/.wiki/system-prompt.md
+!scaffold/workspace/.wiki/skills/
+!scaffold/workspace/.wiki/skills/**
 coverage/
 .DS_Store

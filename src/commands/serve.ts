@@ -985,6 +985,13 @@ function layout(title: string, body: string): string {
       align-items: stretch;
     }
     .graph-layout.relations-collapsed { grid-template-columns: minmax(0, 1fr) 2.8rem; }
+    .graph-page-expanded .hero,
+    .graph-page-expanded .graph-legend { display: none; }
+    .graph-page-expanded { padding-top: 1rem; padding-bottom: 1rem; }
+    .graph-layout.graph-expanded { grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); }
+    .graph-layout.graph-expanded.relations-collapsed { grid-template-columns: minmax(0, 1fr) 2.8rem; }
+    .graph-layout.graph-expanded .graph-stage { height: calc(100vh - 9.5rem); max-height: none; }
+    .graph-layout.graph-expanded .relation-panel { max-height: calc(100vh - 9.5rem); }
     .graph-stage { height: min(68vh, 720px); min-height: 440px; touch-action: none; }
     .graph-svg.is-panning { cursor: grabbing; }
     .graph-svg { display: block; width: 100%; height: 100%; background: radial-gradient(circle at 50% 50%, var(--panel-soft), transparent 68%); }
@@ -2166,6 +2173,7 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
   const btnZoomOut = document.querySelector('[data-graph-zoom-out]');
   const btnCenter = document.querySelector('[data-graph-center]');
   const btnReset = document.querySelector('[data-graph-reset]');
+  const btnExpand = document.querySelector('[data-graph-expand]');
   const btnRelationToggle = document.querySelector('[data-relation-toggle]');
   let nodes = data.nodes;
   let edges = data.edges.map((edge) => ({ id: edge.id, from: edge.from, to: edge.to, source: edge.from, target: edge.to }));
@@ -2307,6 +2315,16 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
   function resetView() {
     view = { x: 0, y: 0, scale: 1 };
     applyView();
+  }
+
+  function setGraphExpanded(expanded) {
+    graphLayout.classList.toggle('graph-expanded', expanded);
+    graphLayout.closest('main')?.classList.toggle('graph-page-expanded', expanded);
+    if (btnExpand) {
+      btnExpand.setAttribute('aria-pressed', expanded ? 'true' : 'false');
+      btnExpand.title = expanded ? 'Réduire le graph' : 'Agrandir le graph';
+      btnExpand.textContent = expanded ? '↙' : '↗';
+    }
   }
 
   function svgPoint(event) {
@@ -2641,10 +2659,14 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
   btnZoomOut.addEventListener('click', () => zoomBy(1 / 1.25));
   btnCenter.addEventListener('click', centerSelected);
   btnReset.addEventListener('click', resetView);
+  btnExpand?.addEventListener('click', () => {
+    setGraphExpanded(!graphLayout.classList.contains('graph-expanded'));
+  });
   btnRelationToggle.addEventListener('click', () => {
     graphLayout.classList.toggle('relations-collapsed');
   });
 
+  setGraphExpanded(false);
   render();
   setInterval(refreshGraphWhenChanged, 5000);
 })();
@@ -2652,7 +2674,7 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
 }
 
 function renderGraphApp(nodes: GraphNode[], edges: GraphEdge[], etag: string): string {
-  return `<div class="graph-layout" data-graph-layout data-graph-etag="${escapeAttr(etag)}"><div class="graph-panel"><div class="graph-search-wrapper" data-graph-search-wrapper><div class="graph-toolbar"><div class="graph-search-field"><input class="graph-search-input" type="search" placeholder="Rechercher un n&#x0153;ud&#x2026;" aria-label="Rechercher dans le graph" data-graph-search autocomplete="off"><ul class="graph-search-dropdown" data-graph-search-dropdown hidden></ul></div><div class="graph-ctrl-group"><button class="graph-ctrl-btn" type="button" data-graph-zoom-in title="Zoom avant">+</button><button class="graph-ctrl-btn" type="button" data-graph-zoom-out title="Zoom arri&#xe8;re">&#x2212;</button><button class="graph-ctrl-btn" type="button" data-graph-center title="Centrer sur la s&#xe9;lection" style="font-size:0.9rem">&#x25CE;</button><button class="graph-ctrl-btn" type="button" data-graph-reset title="R&#xe9;initialiser la vue" style="font-size:0.9rem">&#x21BA;</button></div></div></div><div class="graph-stage"><svg class="graph-svg" viewBox="0 0 1100 720" role="img" aria-label="Graph navigable des documents et sources" data-graph-svg><g data-graph-viewport><g data-link-layer></g><g data-node-layer></g></g></svg></div></div><aside class="relation-panel"><div class="relation-panel-header"><button class="relation-toggle" type="button" title="Afficher/masquer les relations" aria-label="Afficher/masquer les relations" data-relation-toggle>&#9776;</button><div class="relation-panel-copy"><h2 class="relation-panel-title" data-relation-panel-title>Relations</h2><p class="relation-panel-meta" data-relation-panel-meta>Ouvrez une relation pour afficher les markdown lies.</p><a class="relation-node-open" data-relation-node-open href="#" hidden>Ouvrir la page</a></div></div><ul class="relation-list" data-relation-list></ul></aside></div>
+  return `<div class="graph-layout" data-graph-layout data-graph-etag="${escapeAttr(etag)}"><div class="graph-panel"><div class="graph-search-wrapper" data-graph-search-wrapper><div class="graph-toolbar"><div class="graph-search-field"><input class="graph-search-input" type="search" placeholder="Rechercher un n&#x0153;ud&#x2026;" aria-label="Rechercher dans le graph" data-graph-search autocomplete="off"><ul class="graph-search-dropdown" data-graph-search-dropdown hidden></ul></div><div class="graph-ctrl-group"><button class="graph-ctrl-btn" type="button" data-graph-zoom-in title="Zoom avant">+</button><button class="graph-ctrl-btn" type="button" data-graph-zoom-out title="Zoom arri&#xe8;re">&#x2212;</button><button class="graph-ctrl-btn" type="button" data-graph-center title="Centrer sur la s&#xe9;lection" style="font-size:0.9rem">&#x25CE;</button><button class="graph-ctrl-btn" type="button" data-graph-reset title="R&#xe9;initialiser la vue" style="font-size:0.9rem">&#x21BA;</button><button class="graph-ctrl-btn" type="button" data-graph-expand title="Agrandir le graph" aria-label="Agrandir le graph" aria-pressed="false" style="font-size:0.9rem">&#x2197;</button></div></div></div><div class="graph-stage"><svg class="graph-svg" viewBox="0 0 1100 720" role="img" aria-label="Graph navigable des documents et sources" data-graph-svg><g data-graph-viewport><g data-link-layer></g><g data-node-layer></g></g></svg></div></div><aside class="relation-panel"><div class="relation-panel-header"><button class="relation-toggle" type="button" title="Afficher/masquer les relations" aria-label="Afficher/masquer les relations" data-relation-toggle>&#9776;</button><div class="relation-panel-copy"><h2 class="relation-panel-title" data-relation-panel-title>Relations</h2><p class="relation-panel-meta" data-relation-panel-meta>Ouvrez une relation pour afficher les markdown lies.</p><a class="relation-node-open" data-relation-node-open href="#" hidden>Ouvrir la page</a></div></div><ul class="relation-list" data-relation-list></ul></aside></div>
 <div class="modal-backdrop" data-relation-modal><section class="relation-modal" role="dialog" aria-modal="true" aria-labelledby="relation-modal-title"><div class="modal-header"><h2 class="modal-title" id="relation-modal-title" data-modal-title>Relation</h2><button class="modal-close" type="button" aria-label="Fermer" data-modal-close>x</button></div><div class="modal-body"><article class="modal-doc"><h3 class="modal-doc-title" data-modal-target-title></h3><div class="modal-markdown" data-modal-target-body></div></article></div></section></div>
 ${renderGraphScript(nodes, edges)}`;
 }

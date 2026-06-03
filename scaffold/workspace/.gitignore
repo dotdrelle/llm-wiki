@@ -1,5 +1,8 @@
 .wikirc.yaml
-.wiki/
+.wiki/cache/
+.wiki/logs/
+.wiki/tmp/
+.wiki/vector-index/
 node_modules/
 dist/
 coverage/
