@@ -3,6 +3,7 @@ import type { AppConfig } from '../types.ts';
 export interface PromptContext {
   language: string;
   runDate: string;
+  profileSection?: string;
 }
 
 function formatLocalDate(date: Date): string {
@@ -12,16 +13,24 @@ function formatLocalDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-export function buildPromptContext(config: AppConfig, date = new Date()): PromptContext {
+export function buildPromptContext(
+  config: AppConfig,
+  options: { date?: Date; profileSection?: string } = {},
+): PromptContext {
   return {
     language: config.language,
-    runDate: formatLocalDate(date),
+    runDate: formatLocalDate(options.date ?? new Date()),
+    profileSection: options.profileSection,
   };
 }
 
-export function buildSystemPreamble({ language, runDate }: PromptContext): string {
-  return [
+export function buildSystemPreamble({ language, runDate, profileSection }: PromptContext): string {
+  const parts = [
     `Today's date: ${runDate}.`,
     `Language: write all generated user-facing content in ${language}. This overrides the language of user input, source documents, templates, and wiki context.`,
-  ].join('\n');
+  ];
+  if (profileSection) {
+    parts.push(profileSection);
+  }
+  return parts.join('\n');
 }

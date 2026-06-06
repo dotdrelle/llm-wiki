@@ -207,12 +207,15 @@ export class BuildService {
     traceData: Record<string, unknown>,
     label: string,
   ): Promise<string> {
+    const profileSection = await this.workspace.loadProfileSection(
+      this.config.limits.maxProfileChars,
+    );
     const prompt = buildSingleSlotDeliverablePrompt({
       template,
       slot,
       buildContext: buildContext.content,
       maxChunkChars: this.config.retrieval.maxChunkChars,
-      ctx: buildPromptContext(this.config),
+      ctx: buildPromptContext(this.config, { profileSection }),
     });
     return this.llm.completeText({
       ...prompt,
@@ -622,6 +625,9 @@ export class BuildService {
     }>,
     traceData: Record<string, unknown>,
   ): Promise<Array<{ id: string; content: string }>> {
+    const profileSection = await this.workspace.loadProfileSection(
+      this.config.limits.maxProfileChars,
+    );
     if (this.config.llm.provider === 'openai-compatible' && batch.length === 1) {
       if (this.logger) {
         await this.logger.info('build:text-render', {
@@ -649,7 +655,7 @@ export class BuildService {
       slots: batch,
       buildContext: buildContext.content,
       maxChunkChars: this.config.retrieval.maxChunkChars,
-      ctx: buildPromptContext(this.config),
+      ctx: buildPromptContext(this.config, { profileSection }),
     });
 
     try {

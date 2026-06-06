@@ -23,6 +23,7 @@ limits:
   dailyInputTokens: 1000000
   targetInputTokensPerCall: 40000
   maxInputTokensPerCall: 50000
+  maxProfileChars: 4000
 
 build:
   refreshOnIngest: true

@@ -4119,9 +4119,11 @@ export default async function serveCmd(
 
       if (urlPath === '/chat' || urlPath === '/chat/connectors') {
         const systemPromptPath = path.join(workspace.paths.internalDir, 'system-prompt.md');
-        const systemPrompt = (await pathExists(systemPromptPath))
+        const systemPromptBase = (await pathExists(systemPromptPath))
           ? (await readFile(systemPromptPath, 'utf8')).trim()
           : undefined;
+        const profileSection = await workspace.loadProfileSection(config.limits.maxProfileChars);
+        const systemPrompt = [systemPromptBase, profileSection].filter(Boolean).join('\n\n') || undefined;
         const chatConfig = {
           model: config.llm.model,
           temperature: config.llm.temperature,

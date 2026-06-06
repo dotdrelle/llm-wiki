@@ -29,11 +29,14 @@ export class QueryService {
       limit: this.config.retrieval.maxContextFiles,
       includeRaw: false,
     });
+    const profileSection = await this.workspace.loadProfileSection(
+      this.config.limits.maxProfileChars,
+    );
     const prompt = buildQueryPrompt(
       question,
       context,
       this.config.retrieval.maxChunkChars,
-      buildPromptContext(this.config),
+      buildPromptContext(this.config, { profileSection }),
     );
     return this.llm.completeText(prompt);
   }

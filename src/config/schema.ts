@@ -249,11 +249,13 @@ const limitsSchema = z
     dailyInputTokens: z.number().int().min(1).optional(),
     maxInputTokensPerCall: z.number().int().min(1000).default(50000),
     targetInputTokensPerCall: z.number().int().min(1000).default(40000),
+    maxProfileChars: z.number().int().min(100).default(4000),
   })
   .default({
     requestsPerMinute: 10,
     maxInputTokensPerCall: 50000,
     targetInputTokensPerCall: 40000,
+    maxProfileChars: 4000,
   })
   .superRefine((limits, ctx) => {
     if (limits.targetInputTokensPerCall > limits.maxInputTokensPerCall) {
@@ -503,6 +505,7 @@ export function resolveConfig(
       dailyInputTokens: parsed.limits?.dailyInputTokens,
       maxInputTokensPerCall: parsed.limits?.maxInputTokensPerCall ?? 50000,
       targetInputTokensPerCall: parsed.limits?.targetInputTokensPerCall ?? 40000,
+      maxProfileChars: parsed.limits?.maxProfileChars ?? 4000,
     },
     build: {
       refreshOnIngest: parsed.build?.refreshOnIngest ?? true,

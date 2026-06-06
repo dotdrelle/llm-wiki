@@ -98,6 +98,9 @@ export class IngestService {
   ): Promise<IngestResult[]> {
     const runStartedAt = Date.now();
     await this.workspace.ensureInitialized();
+    const profileSection = await this.workspace.loadProfileSection(
+      this.config.limits.maxProfileChars,
+    );
     await this.logger.info('ingest:run-start', {
       inputCount: inputs.length,
       dryRun: Boolean(options?.dryRun),
@@ -226,7 +229,7 @@ export class IngestService {
             relevantPages,
             sourcePagePath,
             maxChunkChars,
-            ctx: buildPromptContext(this.config),
+            ctx: buildPromptContext(this.config, { profileSection }),
           });
           await this.logger.info('ingest:prompt', {
             source: source.relativePath,

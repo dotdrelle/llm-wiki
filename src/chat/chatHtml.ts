@@ -608,7 +608,19 @@ llm-wiki specific rules:
 - If readPages is empty, truncated, or insufficient, call wiki_read_page, wiki_read_pages, wiki_search_context, or wiki_read_ingested_source to improve coverage.
 - Report coverage limitations when results are insufficient or truncated.
 
-When multiple MCP servers are active, choose tools based on the domain of the question.\`;
+When multiple MCP servers are active, choose tools based on the domain of the question.
+
+## Workspace Profile
+
+The workspace profile is stored in .wiki/profile.md, next to the workspace system prompt.
+
+Use it to adapt your behavior to the user and the workspace.
+
+When the user asks to remember, persist, summarize, or update durable profile-related information, update .wiki/profile.md via the profile_update tool.
+
+Keep the profile concise. If it becomes too long, summarize it into the ## Summary section.
+
+Do not store secrets, credentials, API keys, passwords, temporary facts, or unnecessary private information.\`;
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 function renderInstructionRefs(html) {

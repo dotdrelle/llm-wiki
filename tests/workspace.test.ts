@@ -22,6 +22,7 @@ function createConfig(root: string): AppConfig {
       requestsPerMinute: 10,
       maxInputTokensPerCall: 50000,
       targetInputTokensPerCall: 40000,
+      maxProfileChars: 4000,
     },
     build: {
       refreshOnIngest: true,
@@ -59,6 +60,58 @@ describe('workspace safety', () => {
 
     const initializedConfig = await loadConfig(root);
     expect(initializedConfig.retrieval.vector.rerankEnabled).toBe(false);
+    await expect(readFile(path.join(root, '.wiki', 'profile.md'), 'utf8')).resolves.toContain(
+      '# Workspace Profile',
+    );
+  });
+
+  it('loads the full workspace profile when it is within the character limit', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-profile-'));
+    const workspace = new WorkspaceService(createConfig(root));
+    await mkdir(path.join(root, '.wiki'), { recursive: true });
+    await writeFile(
+      path.join(root, '.wiki', 'profile.md'),
+      '# Workspace Profile\n\n## User Preferences\n\n- Prefers concise French answers.\n',
+      'utf8',
+    );
+
+    const section = await workspace.loadProfileSection(4000);
+
+    expect(section).toContain('The workspace profile is stored in `.wiki/profile.md`');
+    expect(section).toContain('- Prefers concise French answers.');
+  });
+
+  it('loads only the profile summary when the profile exceeds the character limit', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-profile-'));
+    const workspace = new WorkspaceService(createConfig(root));
+    await mkdir(path.join(root, '.wiki'), { recursive: true });
+    await writeFile(
+      path.join(root, '.wiki', 'profile.md'),
+      `# Workspace Profile\n\n## Summary\n\nConcise durable profile.\n\n## Notes\n\n${'Long note. '.repeat(100)}`,
+      'utf8',
+    );
+
+    const section = await workspace.loadProfileSection(100);
+
+    expect(section).toContain('## Summary\n\nConcise durable profile.');
+    expect(section).not.toContain('Long note.');
+  });
+
+  it('warns when a profile exceeds the character limit without a summary', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-profile-'));
+    const workspace = new WorkspaceService(createConfig(root));
+    await mkdir(path.join(root, '.wiki'), { recursive: true });
+    await writeFile(
+      path.join(root, '.wiki', 'profile.md'),
+      `# Workspace Profile\n\n## Notes\n\n${'Long note. '.repeat(100)}`,
+      'utf8',
+    );
+
+    const section = await workspace.loadProfileSection(100);
+
+    expect(section).toContain('Profile exceeds maxProfileChars limit');
+    expect(section).toContain('profile_update tool');
+    expect(section).not.toContain('Long note.');
   });
 
   it('installs a workspace skill by backing up and replacing skill-owned paths', async () => {

@@ -34,6 +34,7 @@ export async function expandDeliverable(
   const absolutePath = resolveInside(workspace.paths.rootDir, deliverablePath);
   const content = await workspace.readTextFile(absolutePath);
   const citedPaths = [...new Set(extractSourceCitations(content))];
+  const profileSection = await workspace.loadProfileSection(config.limits.maxProfileChars);
 
   await logger.info('export:start', { deliverable: deliverablePath, citations: citedPaths.length });
 
@@ -76,7 +77,7 @@ export async function expandDeliverable(
       return content;
     }
 
-    const promptCtx = buildPromptContext(config);
+    const promptCtx = buildPromptContext(config, { profileSection });
     const polishPrompt = buildPolishPrompt(content, promptCtx);
     await logger.debug('export:polish-prompt', {
       chars: polishPrompt.system.length + polishPrompt.user.length,
@@ -88,7 +89,7 @@ export async function expandDeliverable(
     return result;
   }
 
-  const promptCtx = buildPromptContext(config);
+  const promptCtx = buildPromptContext(config, { profileSection });
   const prompt = buildExportPrompt(content, sources, promptCtx);
   await logger.debug('export:prompt', { chars: prompt.system.length + prompt.user.length });
 

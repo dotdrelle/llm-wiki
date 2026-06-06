@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -51,6 +51,16 @@ export const WIKI_MCP_TOOLS = [
     name: 'wiki_collect_context',
     description:
       'Search llm-wiki, read up to 10 returned wiki pages by default, and report coverage in one call. Prefer this first for synthesis, architecture, audit, functional analysis, or comparison questions.',
+  },
+  {
+    name: 'profile_read',
+    description:
+      'Read the workspace profile from .wiki/profile.md. Returns the full content, character count, and maxProfileChars limit.',
+  },
+  {
+    name: 'profile_update',
+    description:
+      'Write the workspace profile to .wiki/profile.md. Use only when the user explicitly asks to remember, persist, summarize, or update durable profile information.',
   },
 ] as const;
 
@@ -552,6 +562,41 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
     'Search llm-wiki, read up to 10 returned wiki pages by default, and report coverage in one call. Prefer this first for synthesis, architecture, audit, functional analysis, or comparison questions.',
     collectWikiContextInput,
     (input) => loggedTool('wiki_collect_context', input, collectWikiContext),
+  );
+
+  const profilePath = path.join(workspace.paths.internalDir, 'profile.md');
+
+  const readProfile = async () => {
+    const exists = await pathExists(profilePath);
+    if (!exists) {
+      return textResult(
+        `No profile found at .wiki/profile.md.\nchars: 0\nmaxProfileChars: ${config.limits.maxProfileChars}`,
+      );
+    }
+    const content = (await readFile(profilePath, 'utf8')).trim();
+    return textResult(
+      `${content}\n\n---\nchars: ${content.length}\nmaxProfileChars: ${config.limits.maxProfileChars}`,
+    );
+  };
+
+  server.tool(
+    'profile_read',
+    'Read the workspace profile from .wiki/profile.md. Returns the full content, character count, and maxProfileChars limit.',
+    {},
+    () => loggedTool('profile_read', {}, readProfile),
+  );
+
+  const updateProfile = async ({ content }: { content: string }) => {
+    await writeFile(profilePath, content, 'utf8');
+    console.error(`Profile updated: .wiki/profile.md`);
+    return textResult(`Profile updated: .wiki/profile.md`);
+  };
+
+  server.tool(
+    'profile_update',
+    'Write the workspace profile to .wiki/profile.md. Use only when the user explicitly asks to remember, persist, summarize, or update durable profile information.',
+    { content: z.string().describe('Full Markdown content to write to .wiki/profile.md.') },
+    (input) => loggedTool('profile_update', input, updateProfile),
   );
 
   return server;

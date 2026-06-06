@@ -30,6 +30,7 @@ function createConfig(): AppConfig {
       requestsPerMinute: 10,
       maxInputTokensPerCall: 50000,
       targetInputTokensPerCall: 40000,
+      maxProfileChars: 4000,
     },
     build: {
       refreshOnIngest: false,
@@ -67,6 +68,10 @@ class FakeWorkspaceService {
   failApply = false;
 
   async ensureInitialized(): Promise<void> {}
+
+  async loadProfileSection(): Promise<string> {
+    return '';
+  }
 
   async resolveSourceInputs(): Promise<string[]> {
     return this.sourcePaths;

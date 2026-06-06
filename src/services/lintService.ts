@@ -127,10 +127,13 @@ export class LintService {
     };
 
     if (options?.withLlm) {
+      const profileSection = await this.workspace.loadProfileSection(
+        this.config.limits.maxProfileChars,
+      );
       const prompt = buildSemanticLintPrompt(
         await this.workspace.readIndex(),
         pages,
-        buildPromptContext(this.config),
+        buildPromptContext(this.config, { profileSection }),
       );
       report.semantic = await this.llm.completeJson(prompt, semanticLintSchema);
     }

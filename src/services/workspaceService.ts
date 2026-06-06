@@ -783,6 +783,35 @@ export class WorkspaceService {
     const canonicalTarget = canonicalizeName(target);
     return pages.find((page) => canonicalizeName(page.name) === canonicalTarget);
   }
+
+  async loadProfileSection(maxProfileChars: number): Promise<string> {
+    const profilePath = path.join(this.paths.internalDir, 'profile.md');
+    if (!(await pathExists(profilePath))) {
+      return '';
+    }
+    const content = (await readFile(profilePath, 'utf8')).trim();
+    if (!content) return '';
+
+    const header = `## Workspace Profile
+
+The workspace profile is stored in \`.wiki/profile.md\`, next to the workspace system prompt.
+Use it to adapt your behavior to the user and the workspace.
+When the user asks to remember, persist, summarize, or update durable profile-related information, update \`.wiki/profile.md\` via the profile_update tool.
+Keep the profile concise. If it becomes too long, summarize it into the \`## Summary\` section.
+Do not store secrets, credentials, API keys, passwords, temporary facts, or unnecessary private information.`;
+
+    if (content.length <= maxProfileChars) {
+      return `${header}\n\n${content}`;
+    }
+
+    const summaryMatch = /^## Summary\s*\n([\s\S]*?)(?=\n## |\s*$)/m.exec(content);
+    if (summaryMatch) {
+      const summary = summaryMatch[1].trim();
+      return `${header}\n\n## Summary\n\n${summary}`;
+    }
+
+    return `${header}\n\n[Profile exceeds maxProfileChars limit and has no ## Summary section. Ask the user to summarize \`.wiki/profile.md\` into the ## Summary section.]`;
+  }
 }
 
 function timestampForPath(date = new Date()): string {

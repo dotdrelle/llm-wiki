@@ -22,6 +22,7 @@ limits:
   requestsPerMinute: 10
   targetInputTokensPerCall: 40000
   maxInputTokensPerCall: 50000
+  maxProfileChars: 4000
   # Optional daily budget shown by `wiki build --plan`.
   # dailyInputTokens: 1000000
 

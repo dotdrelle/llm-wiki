@@ -57,6 +57,7 @@ build:
 limits:
   targetInputTokensPerCall: 40000
   maxInputTokensPerCall: 50000
+  maxProfileChars: 4000
 
 retrieval:
   maxContextFiles: 5

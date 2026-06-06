@@ -23,6 +23,7 @@ function createConfig(root: string): AppConfig {
       requestsPerMinute: 10,
       maxInputTokensPerCall: 50000,
       targetInputTokensPerCall: 40000,
+      maxProfileChars: 4000,
     },
     build: {
       refreshOnIngest: true,

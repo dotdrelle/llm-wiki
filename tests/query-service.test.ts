@@ -18,6 +18,7 @@ function createConfig(): AppConfig {
       requestsPerMinute: 10,
       maxInputTokensPerCall: 50000,
       targetInputTokensPerCall: 40000,
+      maxProfileChars: 4000,
     },
     build: {
       refreshOnIngest: true,
@@ -50,7 +51,10 @@ describe('query service', () => {
     let includeRaw: boolean | undefined;
     const service = new QueryService(
       createConfig(),
-      { ensureInitialized: async () => undefined } as any,
+      {
+        ensureInitialized: async () => undefined,
+        loadProfileSection: async () => '',
+      } as any,
       { completeText: async () => 'answer' } as any,
       {
         search: async (_question: string, options: { includeRaw?: boolean }) => {

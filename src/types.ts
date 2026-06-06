@@ -23,6 +23,7 @@ export interface LimitsConfig {
   dailyInputTokens?: number;
   maxInputTokensPerCall: number;
   targetInputTokensPerCall: number;
+  maxProfileChars: number;
 }
 
 export interface RetrievalConfig {
