@@ -1,8 +1,12 @@
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { RetrievalService } from '../src/services/retrievalService.ts';
+import {
+  VectorIndexConfigMismatchError,
+  type VectorIndex,
+} from '../src/services/vectorIndexService.ts';
 import { WorkspaceService } from '../src/services/workspaceService.ts';
 import type { AppConfig } from '../src/types.ts';
 import type { TraceLogger } from '../src/services/traceLogger.ts';
@@ -141,7 +145,7 @@ describe('retrieval service', () => {
     });
   });
 
-  it('disables vector retrieval for the process after a vector error', async () => {
+  it('disables vector retrieval after repeated consecutive vector errors', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-retrieval-'));
     await mkdir(path.join(root, 'wiki'), { recursive: true });
     await mkdir(path.join(root, '.wiki', 'vector-index'), { recursive: true });
@@ -152,20 +156,86 @@ describe('retrieval service', () => {
     );
 
     const config = createConfig(root);
-    const retrieval = new RetrievalService(new WorkspaceService(config), config);
+    const logger = new MemoryTraceLogger();
+    const retrieval = new RetrievalService(new WorkspaceService(config), config, logger);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     let vectorCalls = 0;
     (
-      retrieval as unknown as { vectorIndex: { search: () => Promise<never> } }
+      retrieval as unknown as { vectorIndex: VectorIndex }
     ).vectorIndex = {
+      stats: async () => ({ exists: true, rows: 1 }),
+      buildIndex: async () => {
+        throw new Error('buildIndex should not be called');
+      },
       async search() {
         vectorCalls += 1;
         throw new Error('Vector dimension mismatch');
       },
     };
 
-    await retrieval.search('architecture', { includeRaw: false });
-    await retrieval.search('architecture', { includeRaw: false });
+    try {
+      await retrieval.search('architecture', { includeRaw: false });
+      await retrieval.search('architecture', { includeRaw: false });
+      await retrieval.search('architecture', { includeRaw: false });
+      await retrieval.search('architecture', { includeRaw: false });
+    } finally {
+      warn.mockRestore();
+    }
+
+    expect(vectorCalls).toBe(3);
+    expect(
+      logger.entries.find((entry) => entry.data?.disabled === true)?.data,
+    ).toMatchObject({
+      reason: 'vector-error',
+      consecutiveErrors: 3,
+      fallback: 'lexical',
+    });
+  });
+
+  it('disables vector retrieval immediately on index config mismatch', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-retrieval-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, '.wiki', 'vector-index'), { recursive: true });
+    await writeFile(
+      path.join(root, 'wiki', 'index.md'),
+      '# Index\n\nArchitecture.\n',
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    const logger = new MemoryTraceLogger();
+    const retrieval = new RetrievalService(new WorkspaceService(config), config, logger);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let vectorCalls = 0;
+    (
+      retrieval as unknown as { vectorIndex: VectorIndex }
+    ).vectorIndex = {
+      stats: async () => ({ exists: true, rows: 1 }),
+      buildIndex: async () => {
+        throw new Error('buildIndex should not be called');
+      },
+      async search() {
+        vectorCalls += 1;
+        throw new VectorIndexConfigMismatchError(
+          'Vector index was built with a different embedding model. Rebuild with `wiki index`.',
+        );
+      },
+    };
+
+    try {
+      await retrieval.search('architecture', { includeRaw: false });
+      await retrieval.search('architecture', { includeRaw: false });
+    } finally {
+      warn.mockRestore();
+    }
 
     expect(vectorCalls).toBe(1);
+    expect(
+      logger.entries.find((entry) => entry.data?.reason === 'vector-index-mismatch')?.data,
+    ).toMatchObject({
+      reason: 'vector-index-mismatch',
+      disabled: true,
+      fallback: 'lexical',
+    });
   });
 });

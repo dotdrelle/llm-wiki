@@ -15,6 +15,7 @@ import type { RerankService } from './rerankService.ts';
 import type { WorkspaceService } from './workspaceService.ts';
 
 const TABLE_NAME = 'wiki_chunks';
+const META_TABLE_NAME = '_meta';
 const EMBED_BATCH_SIZE = 16;
 const EMBED_BATCH_MAX_CHARS = 24_000;
 const RERANK_MAX_CHARS = 1200;
@@ -36,6 +37,7 @@ export interface VectorIndexStats {
   exists: boolean;
   rows: number;
   path?: string;
+  metadata?: VectorIndexMetadata;
 }
 
 export interface VectorIndexBuildResult {
@@ -43,6 +45,28 @@ export interface VectorIndexBuildResult {
   embeddedChunks: number;
   reusedChunks: number;
   indexedPages: number;
+  metadata: VectorIndexMetadata;
+}
+
+export interface VectorIndex {
+  stats(): Promise<VectorIndexStats>;
+  buildIndex(): Promise<VectorIndexBuildResult>;
+  search(
+    query: string,
+    options?: { limit?: number; rerank?: boolean },
+  ): Promise<SearchResult[]>;
+}
+
+export interface VectorIndexMetadata {
+  schemaVersion: number;
+  provider: string;
+  embeddingModel: string;
+  dimension: number;
+  builtAt: string;
+}
+
+interface VectorIndexMetadataRow extends VectorIndexMetadata {
+  key: string;
 }
 
 function chunkId(page: WikiPage, index: number, part: number): string {
@@ -132,7 +156,28 @@ function normalizeVector(value: unknown): number[] | undefined {
   return undefined;
 }
 
-export class VectorIndexService {
+export class VectorIndexConfigMismatchError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'VectorIndexConfigMismatchError';
+  }
+}
+
+function providerKey(config: AppConfig): string {
+  return config.retrieval.vector.baseUrl.replace(/\/+$/, '');
+}
+
+function expectedMetadata(config: AppConfig, dimension: number): VectorIndexMetadata {
+  return {
+    schemaVersion: 1,
+    provider: providerKey(config),
+    embeddingModel: config.retrieval.vector.embeddingModel,
+    dimension,
+    builtAt: new Date().toISOString(),
+  };
+}
+
+export class VectorIndexService implements VectorIndex {
   private readonly config: AppConfig;
   private readonly workspace: WorkspaceService;
   private readonly embeddings: EmbeddingService;
@@ -161,6 +206,59 @@ export class VectorIndexService {
     const names = await db.tableNames();
     if (!names.includes(TABLE_NAME)) return undefined;
     return db.openTable(TABLE_NAME);
+  }
+
+  private async readMetadata(): Promise<VectorIndexMetadata | undefined> {
+    if (!(await pathExists(this.workspace.paths.vectorIndexDir))) return undefined;
+    const db = await this.connect();
+    const names = await db.tableNames();
+    if (!names.includes(META_TABLE_NAME)) return undefined;
+    const table = await db.openTable(META_TABLE_NAME);
+    const rows = (await table.query().toArray()) as VectorIndexMetadataRow[];
+    const row = rows.find((candidate) => candidate.key === 'index') ?? rows[0];
+    if (!row) return undefined;
+    return {
+      schemaVersion: Number(row.schemaVersion ?? 0),
+      provider: String(row.provider ?? ''),
+      embeddingModel: String(row.embeddingModel ?? ''),
+      dimension: Number(row.dimension ?? 0),
+      builtAt: String(row.builtAt ?? ''),
+    };
+  }
+
+  private async writeMetadata(metadata: VectorIndexMetadata): Promise<void> {
+    const db = await this.connect();
+    const tableNames = await db.tableNames();
+    await db.createTable(META_TABLE_NAME, [{ key: 'index', ...metadata }], {
+      mode: tableNames.includes(META_TABLE_NAME) ? 'overwrite' : 'create',
+    });
+  }
+
+  private async assertCompatibleMetadata(queryDimension: number): Promise<void> {
+    const metadata = await this.readMetadata();
+    if (!metadata) {
+      throw new VectorIndexConfigMismatchError(
+        'Vector index metadata is missing. Rebuild the index with `wiki index`.',
+      );
+    }
+    const expectedProvider = providerKey(this.config);
+    const expectedModel = this.config.retrieval.vector.embeddingModel;
+    const mismatches = [
+      metadata.provider !== expectedProvider
+        ? `provider ${metadata.provider || '(unknown)'} -> ${expectedProvider}`
+        : null,
+      metadata.embeddingModel !== expectedModel
+        ? `embedding model ${metadata.embeddingModel || '(unknown)'} -> ${expectedModel}`
+        : null,
+      metadata.dimension !== queryDimension
+        ? `dimension ${metadata.dimension || '(unknown)'} -> ${queryDimension}`
+        : null,
+    ].filter(Boolean);
+    if (mismatches.length > 0) {
+      throw new VectorIndexConfigMismatchError(
+        `Vector index was built with different embedding settings (${mismatches.join(', ')}). Rebuild with \`wiki index\`.`,
+      );
+    }
   }
 
   private buildRowsWithoutVectors(pages: WikiPage[]): Omit<VectorRow, 'vector'>[] {
@@ -212,6 +310,7 @@ export class VectorIndexService {
       exists: true,
       rows: await table.countRows(),
       path: this.workspace.paths.vectorIndexDir,
+      metadata: await this.readMetadata(),
     };
   }
 
@@ -258,6 +357,8 @@ export class VectorIndexService {
 
     const db = await this.connect();
     const tableNames = await db.tableNames();
+    const firstVector = rows.find((row) => row.vector.length > 0)?.vector;
+    const metadata = expectedMetadata(this.config, firstVector?.length ?? 0);
     if (rows.length === 0) {
       if (tableNames.includes(TABLE_NAME)) {
         await db.dropTable(TABLE_NAME);
@@ -270,12 +371,14 @@ export class VectorIndexService {
         mode: tableNames.includes(TABLE_NAME) ? 'overwrite' : 'create',
       });
     }
+    await this.writeMetadata(metadata);
 
     return {
       indexedChunks: rows.length,
       embeddedChunks,
       reusedChunks,
       indexedPages: new Set(rows.map((row) => row.path)).size,
+      metadata,
     };
   }
 
@@ -289,6 +392,7 @@ export class VectorIndexService {
     }
 
     const [queryVector] = await this.embeddings.embed([query]);
+    await this.assertCompatibleMetadata(queryVector.length);
     const vectorRows = (await table
       .vectorSearch(queryVector)
       .limit(this.config.retrieval.vector.topK)

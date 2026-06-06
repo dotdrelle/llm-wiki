@@ -121,7 +121,10 @@ export default async function ingestCmd(
         `\nIngest completed with ${failed.length} failed source(s). See ${logger.displayPath}.`,
       );
       process.exitCode = 1;
-    } else if (!options.dryRun && config.retrieval.vector.enabled) {
+    }
+
+    const hasChangedSources = results.some((result) => !result.failed && !result.skipped);
+    if (!options.dryRun && config.retrieval.vector.enabled && hasChangedSources) {
       const vectorIndex = new VectorIndexService(
         config,
         workspace,

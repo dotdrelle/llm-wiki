@@ -10,7 +10,11 @@ import type { MarkdownChunk } from '../utils/markdown.ts';
 import type { WorkspaceService } from './workspaceService.ts';
 import { EmbeddingService } from './embeddingService.ts';
 import { RerankService } from './rerankService.ts';
-import { VectorIndexService } from './vectorIndexService.ts';
+import {
+  VectorIndexService,
+  VectorIndexConfigMismatchError,
+  type VectorIndex,
+} from './vectorIndexService.ts';
 import type { TraceLogger } from './traceLogger.ts';
 
 const STOP_WORDS = new Set([
@@ -56,6 +60,7 @@ const STOP_WORDS = new Set([
   'resume',
 ]);
 const RERANK_RESULT_MAX_CHARS = 1200;
+const VECTOR_DISABLE_AFTER_CONSECUTIVE_ERRORS = 3;
 
 function tokenize(text: string): string[] {
   return (
@@ -193,9 +198,10 @@ export class RetrievalService {
   private readonly config: AppConfig;
   private readonly logger?: TraceLogger;
   private wikiPagesCache: Promise<WikiPage[]> | undefined;
-  private vectorIndex: VectorIndexService | undefined;
+  private vectorIndex: VectorIndex | undefined;
   private readonly loggedVectorFallbacks = new Set<string>();
   private vectorDisabledAfterError = false;
+  private consecutiveVectorErrors = 0;
 
   constructor(workspace: WorkspaceService, config: AppConfig, logger?: TraceLogger) {
     this.workspace = workspace;
@@ -207,7 +213,7 @@ export class RetrievalService {
     this.wikiPagesCache = undefined;
   }
 
-  private getVectorIndex(): VectorIndexService {
+  private getVectorIndex(): VectorIndex {
     this.vectorIndex ??= new VectorIndexService(
       this.config,
       this.workspace,
@@ -249,6 +255,7 @@ export class RetrievalService {
           limit: options?.limit,
           rerank: options?.rerank,
         });
+        this.consecutiveVectorErrors = 0;
         const lexicalResults = await this.searchLexical(query, {
           ...options,
           limit:
@@ -263,8 +270,27 @@ export class RetrievalService {
           options?.limit ?? this.config.retrieval.vector.maxResults,
         );
       } catch (error) {
-        this.vectorDisabledAfterError = true;
-        await this.logVectorFallback('vector-error', query, error);
+        if (error instanceof VectorIndexConfigMismatchError) {
+          this.vectorDisabledAfterError = true;
+          const message = error.message;
+          await this.logVectorFallback('vector-index-mismatch', query, error, { disabled: true });
+          console.warn(`Warning: vector retrieval disabled — ${message}`);
+        } else {
+          this.consecutiveVectorErrors += 1;
+          if (this.consecutiveVectorErrors >= VECTOR_DISABLE_AFTER_CONSECUTIVE_ERRORS) {
+            this.vectorDisabledAfterError = true;
+          }
+          await this.logVectorFallback('vector-error', query, error, {
+            consecutiveErrors: this.consecutiveVectorErrors,
+            disabled: this.vectorDisabledAfterError,
+          });
+          if (this.vectorDisabledAfterError) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.warn(
+              `Warning: vector retrieval disabled after ${this.consecutiveVectorErrors} consecutive error(s); using lexical fallback. ${message}`,
+            );
+          }
+        }
         // Keep retrieval robust for ingest/build/query/MCP: vector search is an
         // optimization, while lexical search is the compatibility fallback.
       }
@@ -304,12 +330,15 @@ export class RetrievalService {
   }
 
   private async logVectorFallback(
-    reason: 'missing-index' | 'vector-error' | 'rerank-error',
+    reason: 'missing-index' | 'vector-error' | 'vector-index-mismatch' | 'rerank-error',
     query: string,
     error?: unknown,
+    details: Record<string, unknown> = {},
   ): Promise<void> {
     if (!this.logger) return;
-    const key = reason === 'missing-index' ? reason : `${reason}:${String(error)}`;
+    const key = reason === 'missing-index'
+      ? reason
+      : `${reason}:${String(error)}:${details.disabled ? 'disabled' : 'active'}`;
     if (this.loggedVectorFallbacks.has(key)) return;
     this.loggedVectorFallbacks.add(key);
     await this.logger.warn('retrieval:vector-fallback', {
@@ -317,6 +346,7 @@ export class RetrievalService {
       indexPath: this.workspace.paths.vectorIndexDir,
       queryPreview: query.slice(0, 160),
       fallback: 'lexical',
+      ...details,
       ...(error
         ? { message: error instanceof Error ? error.message : String(error) }
         : {}),

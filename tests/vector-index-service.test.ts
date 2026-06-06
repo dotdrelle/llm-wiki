@@ -117,6 +117,8 @@ describe('vector index service', () => {
     const second = await service.buildIndex();
     const results = await service.search('architecture fonctionnelle expertise');
 
+    expect(first.metadata.embeddingModel).toBe('BAAI/bge-m3');
+    expect(first.metadata.dimension).toBe(3);
     expect(first.indexedPages).toBe(1);
     expect(first.indexedChunks).toBe(1);
     expect(second.embeddedChunks).toBe(0);
@@ -124,6 +126,38 @@ describe('vector index service', () => {
     expect(results[0]?.page.relativePath).toBe('wiki/concepts/fonctionnel.md');
     expect(results.map((result) => result.page.relativePath)).not.toContain(
       'wiki/answers/old.md',
+    );
+  });
+
+  it('rejects searches when the configured embedding model no longer matches the index', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-vector-meta-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await writeFile(
+      path.join(root, 'wiki', 'fonctionnel.md'),
+      '# Fonctionnel\n\nExpertise.\n',
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    const workspace = new WorkspaceService(config);
+    const service = new VectorIndexService(
+      config,
+      workspace,
+      new FakeEmbeddingService() as any,
+      new EmptyRerankService() as any,
+    );
+    await service.buildIndex();
+
+    config.retrieval.vector.embeddingModel = 'text-embedding-3-small';
+    const changedService = new VectorIndexService(
+      config,
+      workspace,
+      new FakeEmbeddingService() as any,
+      new EmptyRerankService() as any,
+    );
+
+    await expect(changedService.search('expertise')).rejects.toThrow(
+      /built with different embedding settings.*wiki index/i,
     );
   });
 

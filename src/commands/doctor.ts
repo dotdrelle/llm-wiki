@@ -826,6 +826,14 @@ export default async function doctorCmd(
   row('enabled:', String(config.retrieval.vector.enabled));
   row('index path:', vectorStats.path ?? workspace.paths.vectorIndexDir);
   row('index:', vectorStats.exists ? `${vectorStats.rows} chunk(s)` : 'missing');
+  if (vectorStats.metadata) {
+    row('index embedding:', vectorStats.metadata.embeddingModel);
+    row('index provider:', vectorStats.metadata.provider);
+    row('index dimensions:', String(vectorStats.metadata.dimension));
+    row('index built:', vectorStats.metadata.builtAt);
+  } else if (vectorStats.exists) {
+    warn('vector index metadata missing — run `wiki index` to rebuild with current metadata');
+  }
   if (config.retrieval.vector.enabled) {
     if (!vectorStats.exists) {
       warn(
@@ -836,9 +844,20 @@ export default async function doctorCmd(
       const embeddings = await new EmbeddingService(config).embed([
         'doctor vector check',
       ]);
+      const embeddingDimension = embeddings[0]?.length ?? 0;
       ok(
-        `embedding ${config.retrieval.vector.embeddingModel} OK (${embeddings[0]?.length ?? 0} dimensions)`,
+        `embedding ${config.retrieval.vector.embeddingModel} OK (${embeddingDimension} dimensions)`,
       );
+      const expectedProvider = config.retrieval.vector.baseUrl.replace(/\/+$/, '');
+      if (vectorStats.metadata) {
+        if (
+          vectorStats.metadata.provider !== expectedProvider ||
+          vectorStats.metadata.embeddingModel !== config.retrieval.vector.embeddingModel ||
+          vectorStats.metadata.dimension !== embeddingDimension
+        ) {
+          warn('vector index embedding settings differ from current config — run `wiki index`');
+        }
+      }
     } catch (error) {
       warn(
         `embedding check failed for ${config.retrieval.vector.embeddingModel}: ${
