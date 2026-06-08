@@ -8,6 +8,10 @@ This workspace follows a local-first LLM Wiki pattern.
 - `wiki ingest` continues after per-source failures; check the final summary and trace log for failed sources.
 - Use `wiki query` to ask questions grounded in the wiki.
 - Use `wiki build` or `wiki refresh` to regenerate deliverables from templates.
+- Use `wiki build --stabilize` when an existing deliverable should keep unchanged
+  sections verbatim; only factually or structurally different sections are merged
+  by the LLM. First builds without an existing deliverable behave like normal
+  builds.
 - Use `wiki serve` to browse the wiki UI. `/` renders `wiki/index.md`; `/graph` shows source/wiki relations.
 - Use `wiki doctor` after changing `.wikirc.yaml`, model, context size, retrieval limits, or Ollama settings.
 

@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   extractWikiLinks,
   normalizeGeneratedMarkdown,
+  normalizeHeadingPathKey,
   normalizeSourceBody,
   parseTemplateInstructions,
+  splitMarkdownSections,
   splitSourceSections,
 } from '../src/utils/markdown.ts';
 
@@ -23,6 +25,39 @@ describe('markdown helpers', () => {
     expect(instructions).toHaveLength(2);
     expect(instructions[0].headingPath).toEqual(['Brief', 'Summary']);
     expect(instructions[1].headingPath).toEqual(['Brief', 'Risks']);
+  });
+
+  it('splits markdown sections by full heading path', () => {
+    const document = splitMarkdownSections(
+      [
+        '---',
+        'title: Brief',
+        '---',
+        'Intro.',
+        '',
+        '# Brief',
+        '',
+        '## A',
+        '',
+        '### Risques',
+        '',
+        'A risks.',
+        '',
+        '## B',
+        '',
+        '### Risques',
+        '',
+        'B risks.',
+      ].join('\n'),
+    );
+
+    const keys = document.sections.map((section) =>
+      normalizeHeadingPathKey(section.headingPath),
+    );
+    expect(document.frontmatter).toContain('title: Brief');
+    expect(document.preamble).toBe('Intro.');
+    expect(keys).toContain('brief > a > risques');
+    expect(keys).toContain('brief > b > risques');
   });
 
   it('extracts wiki links with aliases', () => {

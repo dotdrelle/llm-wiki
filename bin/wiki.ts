@@ -112,6 +112,7 @@ async function main() {
     .description('Generate deliverables from markdown templates with [[INSTRUCTION: ...]] slots')
     .argument('[templates...]', 'Specific template files to build')
     .option('--force', 'Rebuild even if the template is already up to date')
+    .option('--stabilize', 'Preserve unchanged existing deliverable sections while applying changed sections')
     .option('--plan', 'Plan batches and estimated input tokens without calling the generation LLM')
     .option('-v, --verbose', 'Print build step traces')
     .option('--debug', 'Print detailed build traces')

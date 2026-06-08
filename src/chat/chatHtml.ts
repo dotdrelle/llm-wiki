@@ -1578,7 +1578,7 @@ function productionStepDetail(step, job, progress) {
   const percent=Number.isFinite(Number(progress?.percent)) ? Math.max(0,Math.min(100,Number(progress.percent))) : null;
   const logLines=logs.length ? logs.slice(-80).join('\\n') : 'No logs loaded.';
   return {
-    title: step?.name || job?.type || 'production',
+    title: progress?.phase || step?.name || job?.type || 'production',
     status,
     duration: formatDuration(step?.durationSeconds ?? job?.durationSeconds),
     exitCode: step?.exitCode ?? job?.exitCode,
@@ -1607,7 +1607,7 @@ function renderProductionTrace() {
       id,
       type:'production',
       kind:'Production',
-      title:step.name||job?.type||'production',
+      title:progress?.phase||step.name||job?.type||'production',
       summary:\`\${productionStatusLabel(status)}\${percentText}\`,
       status,
       ok: status==='failed' || status==='cancelled' ? false : true,

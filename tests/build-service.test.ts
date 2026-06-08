@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -70,8 +70,16 @@ class FakeLLMService {
     };
   }
 
-  async completeText() {
+  async completeText(request?: { user?: string }) {
     this.completeTextCalls += 1;
+    if (request?.user?.includes('# Candidate section')) {
+      return (
+        request.user
+          .split('# Candidate section')[1]
+          ?.split('---')[0]
+          ?.trim() ?? 'Text fallback summary. [src: wiki/concepts/local-first.md]'
+      );
+    }
     return 'Text fallback summary. [src: wiki/concepts/local-first.md]';
   }
 }
@@ -274,6 +282,81 @@ describe('build service', () => {
 
     const state = await workspace.readBuildState();
     expect(state.deliverables['templates/brief.md']).toBeDefined();
+  });
+
+  it('stabilizes existing deliverables and removes sidecars on normal build', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-stabilize-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'templates'), { recursive: true });
+    await mkdir(path.join(root, 'deliverables'), { recursive: true });
+
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n', 'utf8');
+    await writeFile(
+      path.join(root, 'deliverables', 'brief.md'),
+      [
+        '# Brief',
+        '',
+        '## Stable',
+        '',
+        'Keep exact old text.',
+        '',
+        '## Changed',
+        '',
+        'Old value.',
+      ].join('\n'),
+      'utf8',
+    );
+    await writeFile(
+      path.join(root, 'templates', 'brief.md'),
+      [
+        '---',
+        'output: brief.md',
+        '---',
+        '',
+        '# Brief',
+        '',
+        '## Stable',
+        '',
+        'Keep exact old text.',
+        '',
+        '## Changed',
+        '',
+        'New value.',
+        '',
+        '## Added',
+        '',
+        'New section.',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    const workspace = new WorkspaceService(config);
+    const service = new BuildService(
+      config,
+      workspace,
+      new FakeLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+    );
+
+    const [stabilizedResult] = await service.build({ stabilize: true });
+    const outputPath = path.join(root, 'deliverables', 'brief.md');
+    const output = await workspace.readTextFile(outputPath);
+    const sidecarPath = workspace.deriveChangesSidecarPath(outputPath);
+    const sidecar = JSON.parse(await readFile(sidecarPath, 'utf8'));
+    const deliverableFiles = await readdir(path.join(root, 'deliverables'));
+
+    expect(stabilizedResult.stabilized?.kept).toContain('Brief > Stable');
+    expect(stabilizedResult.stabilized?.merged).toContain('Brief > Changed');
+    expect(stabilizedResult.stabilized?.inserted).toContain('Brief > Added');
+    expect(output).toContain('Keep exact old text.');
+    expect(output).toContain('New value.');
+    expect(output).toContain('New section.');
+    expect(sidecar.kept).toContain('Brief > Stable');
+    expect(deliverableFiles.some((file) => file.startsWith('.tmp.'))).toBe(false);
+
+    await service.build();
+    await expect(readFile(sidecarPath, 'utf8')).rejects.toThrow();
   });
 
   it('renders single-slot openai-compatible templates without JSON first', async () => {

@@ -75,9 +75,15 @@ export default async function buildCmd(
       templates,
       force: options.force,
       changedOnly: false,
+      stabilize: options.stabilize,
       onPageLoad: (relativePath, index, total) => {
         spinner?.update(`Reading wiki (${index + 1}/${total})…`);
         spinner?.updateSub(relativePath);
+      },
+      onStabilize: (template, output) => {
+        const name = template.replace(/^templates\//, '').replace(/\.md$/, '');
+        spinner?.update(`Stabilizing ${name}…`);
+        spinner?.updateSub(output);
       },
       onProgress: (template, batch, topContextPages) => {
         const batchStart = Date.now();
@@ -108,8 +114,11 @@ export default async function buildCmd(
     }
 
     for (const result of results) {
+      const stabilized = result.stabilized
+        ? `, stabilized: ${result.stabilized.kept.length} kept, ${result.stabilized.merged.length} merged, ${result.stabilized.inserted.length} inserted, ${result.stabilized.removed.length} removed`
+        : '';
       console.log(
-        `${result.template} -> ${result.output} (${result.changed ? 'updated' : 'unchanged'})`,
+        `${result.template} -> ${result.output} (${result.changed ? 'updated' : 'unchanged'}${stabilized})`,
       );
     }
 

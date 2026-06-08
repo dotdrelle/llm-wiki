@@ -1,3 +1,4 @@
+import { rm } from 'node:fs/promises';
 import matter from 'gray-matter';
 import { deliverableResponseSchema } from '../config/schema.ts';
 import {
@@ -8,6 +9,7 @@ import { buildPromptContext } from '../prompts/systemPreamble.ts';
 import { sanitizeFrontmatter } from '../utils/markdown.ts';
 import { hashText } from '../utils/hash.ts';
 import { PromptBudgetService } from './promptBudgetService.ts';
+import { StabilizeService } from './stabilizeService.ts';
 import type {
   AppConfig,
   BuildBatchPlan,
@@ -17,6 +19,7 @@ import type {
   BuildSlotPlan,
   DeliverableBuildResult,
   SearchResult,
+  StabilizeDiff,
   TemplateDocument,
   WikiPage,
 } from '../types.ts';
@@ -743,6 +746,8 @@ export class BuildService {
       topContextPages: string[],
     ) => void;
     onPageLoad?: (relativePath: string, index: number, total: number) => void;
+    stabilize?: boolean;
+    onStabilize?: (template: string, output: string) => void;
   }): Promise<DeliverableBuildResult[]> {
     await this.workspace.ensureInitialized();
     const templatePaths = await this.workspace.resolveTemplateInputs(
@@ -762,6 +767,7 @@ export class BuildService {
         buildContextTruncated: buildContext.truncated,
         force: Boolean(options?.force),
         changedOnly: Boolean(options?.changedOnly),
+        stabilize: Boolean(options?.stabilize),
       });
     }
 
@@ -810,7 +816,7 @@ export class BuildService {
       );
 
       try {
-        const rendered = await this.renderTemplate(
+        let rendered = await this.renderTemplate(
           template,
           buildContext,
           wikiPages,
@@ -829,10 +835,68 @@ export class BuildService {
             );
           },
         );
-        const changed = await this.workspace.writeDeliverable(
-          template.outputAbsolutePath,
-          rendered,
-        );
+        let changed = false;
+        let stabilized: StabilizeDiff | undefined;
+        if (options?.stabilize) {
+          options.onStabilize?.(template.relativePath, template.outputRelativePath);
+          const tmpPath = this.workspace.deriveTmpDeliverablePath(
+            template.outputAbsolutePath,
+          );
+          try {
+            const existing = await this.workspace.readDeliverableIfExists(
+              template.outputAbsolutePath,
+            );
+            if (existing !== null) {
+              await this.logger?.info('build:stabilize-start', {
+                template: template.relativePath,
+                output: template.outputRelativePath,
+                tmpPath,
+                existingSize: existing.length,
+                newSize: rendered.length,
+              });
+              await this.workspace.writeDeliverable(tmpPath, rendered);
+              const result = await new StabilizeService(
+                this.config,
+                this.llm,
+                this.logger,
+              ).stabilize(existing, rendered);
+              rendered = result.markdown;
+              stabilized = result.diff;
+              changed = await this.workspace.writeDeliverable(
+                template.outputAbsolutePath,
+                rendered,
+              );
+              await this.workspace.writeChangesSidecar(
+                template.outputAbsolutePath,
+                result.diff,
+              );
+            } else {
+              changed = await this.workspace.writeDeliverable(
+                template.outputAbsolutePath,
+                rendered,
+              );
+              await this.workspace.deleteChangesSidecarIfExists(
+                template.outputAbsolutePath,
+              );
+            }
+          } catch (error) {
+            await this.logger?.error('build:stabilize-failed', {
+              template: template.relativePath,
+              output: template.outputRelativePath,
+              tmpPath,
+              message: error instanceof Error ? error.message : String(error),
+            });
+            throw error;
+          } finally {
+            await rm(tmpPath, { force: true });
+          }
+        } else {
+          changed = await this.workspace.writeDeliverable(
+            template.outputAbsolutePath,
+            rendered,
+          );
+          await this.workspace.deleteChangesSidecarIfExists(template.outputAbsolutePath);
+        }
 
         nextState.deliverables[template.relativePath] = {
           templateHash,
@@ -847,6 +911,7 @@ export class BuildService {
           output: template.outputRelativePath,
           changed,
           skipped: false,
+          stabilized,
         });
 
         if (this.logger) {
@@ -854,6 +919,7 @@ export class BuildService {
             template: template.relativePath,
             output: template.outputRelativePath,
             changed,
+            stabilized,
             durationMs: Date.now() - templateStartedAt,
           });
         }

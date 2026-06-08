@@ -109,6 +109,7 @@ describe('serve deliverables ui', () => {
     expect(source).toContain(
       "return collection === 'templates' || collection === 'build-context';",
     );
+    expect(source).toContain("segment.startsWith('.tmp.') || segment.startsWith('.changes.')");
     expect(source).toContain('depth === 0 && isCreatableCollection(node.name)');
     expect(source).not.toContain("node.name !== 'deliverables'");
     expect(source).not.toContain("cleanRelativePath !== 'deliverables'");

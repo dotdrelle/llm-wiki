@@ -213,11 +213,18 @@ export function isRawUntrackedReference(value: string): boolean {
 }
 
 export function isServedRelativePath(relativePath: string): boolean {
+  if (isHiddenDeliverableSupportPath(relativePath)) return false;
   return (
     SERVED_DIRS.some(
       (dir) => relativePath === dir || relativePath.startsWith(`${dir}/`),
     ) || relativePath.startsWith('raw/ingested/')
   );
+}
+
+function isHiddenDeliverableSupportPath(relativePath: string): boolean {
+  return relativePath
+    .split('/')
+    .some((segment) => segment.startsWith('.tmp.') || segment.startsWith('.changes.'));
 }
 
 function hrefToRelativePath(href: string, currentDir = ''): string {
@@ -1248,6 +1255,11 @@ function layout(title: string, body: string): string {
     .doc-toc-item:hover,.doc-toc-item.is-active{color:var(--accent);background:var(--accent-soft)}
     .doc-toc-h3{padding-left:1rem;font-size:.76rem}
     @media(max-width:1280px){.doc-toc{display:none}}
+    /* ── Stabilize tags ───────────────────────────────────────── */
+    .section-tag{display:inline-flex;align-items:center;margin-left:.5rem;padding:.08rem .42rem;border:1px solid var(--border);border-radius:999px;background:var(--panel-soft);color:var(--muted);font-size:.58rem;font-weight:760;letter-spacing:.05em;text-transform:uppercase;vertical-align:middle;font-family:ui-sans-serif,system-ui,sans-serif;line-height:1.5}
+    .section-tag-modified{border-color:color-mix(in srgb,var(--accent) 35%,var(--border));color:var(--accent);background:var(--accent-soft)}
+    .section-tag-inserted{border-color:color-mix(in srgb,#22c55e 35%,var(--border));color:#16a34a;background:rgba(34,197,94,.08)}
+    .stabilize-badge{display:inline-flex;align-items:center;gap:.4rem;padding:.28rem .65rem;margin-bottom:1rem;border:1px solid var(--border);border-radius:6px;background:var(--panel-soft);color:var(--muted);font-size:.78rem}
     /* ── Print ─────────────────────────────────────────────────── */
     @media print{.sidebar,.page-actions,.palette-backdrop,.doc-toc{display:none!important}.app-shell{display:block}.content{padding:0}.article{border:none;border-radius:0;max-width:100%;box-shadow:none}body{font-size:11pt;line-height:1.5}.topbar{display:none}}
   </style>
@@ -2860,16 +2872,96 @@ async function generateDirectoryPage(
   return layout(title, body);
 }
 
-async function serveMd(
+function deriveSidecarPath(filePath: string): string {
+  const parsed = path.parse(filePath);
+  return path.join(parsed.dir, `.changes.${parsed.name}${parsed.ext}.json`);
+}
+
+function normalizeChangedPath(label: string): string {
+  return label
+    .split(' > ')
+    .map((part) => part.trim().toLowerCase().replace(/\s+/g, ' '))
+    .join(' > ');
+}
+
+function injectChangeTags(
+  raw: string,
+  modifiedPaths: Set<string>,
+  insertedPaths: Set<string>,
+): string {
+  const headingStack: Array<{ depth: number; title: string }> = [];
+  let inFence = false;
+  return raw
+    .split('\n')
+    .map((line) => {
+      if (/^`{3,}/.test(line.trim())) inFence = !inFence;
+      if (inFence) return line;
+      const match = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
+      if (!match) return line;
+      const depth = match[1].length;
+      const title = match[2].trim();
+      while (headingStack.length > 0 && headingStack.at(-1)!.depth >= depth) {
+        headingStack.pop();
+      }
+      headingStack.push({ depth, title });
+      const key = headingStack
+        .map((h) => h.title.trim().toLowerCase().replace(/\s+/g, ' '))
+        .join(' > ');
+      if (modifiedPaths.has(key)) {
+        return `${match[1]} ${title} <span class="section-tag section-tag-modified">modifié</span>`;
+      }
+      if (insertedPaths.has(key)) {
+        return `${match[1]} ${title} <span class="section-tag section-tag-inserted">nouveau</span>`;
+      }
+      return line;
+    })
+    .join('\n');
+}
+
+export async function serveMd(
   rootDir: string,
   filePath: string,
   urlPath: string,
 ): Promise<string> {
-  const raw = await readFile(filePath, 'utf8');
+  const relativePath = urlPath.replace(/^\//, '');
+  const isDeliverable = relativePath.startsWith('deliverables/');
+  const [rawContent, sidecarRaw] = await Promise.all([
+    readFile(filePath, 'utf8'),
+    isDeliverable ? readFile(deriveSidecarPath(filePath), 'utf8').catch(() => null) : Promise.resolve(null),
+  ]);
+  let raw = rawContent;
+  let stabilizeBadge = '';
+  if (sidecarRaw) {
+    try {
+      const sidecar = JSON.parse(sidecarRaw) as {
+        stabilizedAt: string;
+        kept: string[];
+        merged: string[];
+        inserted: string[];
+        removed: string[];
+      };
+      const modifiedPaths = new Set((sidecar.merged ?? []).map(normalizeChangedPath));
+      const insertedPaths = new Set((sidecar.inserted ?? []).map(normalizeChangedPath));
+      if (modifiedPaths.size > 0 || insertedPaths.size > 0) {
+        raw = injectChangeTags(raw, modifiedPaths, insertedPaths);
+      }
+      const parts = [
+        sidecar.kept?.length ? `${sidecar.kept.length} conservée${sidecar.kept.length > 1 ? 's' : ''}` : '',
+        sidecar.merged?.length ? `${sidecar.merged.length} modifiée${sidecar.merged.length > 1 ? 's' : ''}` : '',
+        sidecar.inserted?.length ? `${sidecar.inserted.length} insérée${sidecar.inserted.length > 1 ? 's' : ''}` : '',
+        sidecar.removed?.length ? `${sidecar.removed.length} supprimée${sidecar.removed.length > 1 ? 's' : ''}` : '',
+      ].filter(Boolean).join(' · ');
+      const date = new Date(sidecar.stabilizedAt).toLocaleString('fr-FR', {
+        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+      });
+      stabilizeBadge = `<div class="stabilize-badge">Stabilisé le ${escapeHtml(date)} · ${escapeHtml(parts)}</div>`;
+    } catch {
+      // malformed sidecar — ignore
+    }
+  }
   const currentDir = toPosix(path.dirname(urlPath.replace(/^\//, '')));
   const title = path.basename(filePath, '.md');
   const sidebar = await renderSidebar(rootDir);
-  const relativePath = urlPath.replace(/^\//, '');
   const html =
     relativePath === 'wiki/log.md'
       ? renderLogMarkdown(raw)
@@ -2927,7 +3019,7 @@ async function serveMd(
 </script>`;
   return layout(
     title,
-    `${sidebar}<main class="content">${renderTopbar(urlPath, actions)}<article class="article">${html}</article>${tocScript}${renameBtn ? templateRenameScript(relativePath) : ''}</main>`,
+    `${sidebar}<main class="content">${renderTopbar(urlPath, actions)}${stabilizeBadge}<article class="article">${html}</article>${tocScript}${renameBtn ? templateRenameScript(relativePath) : ''}</main>`,
   );
 }
 

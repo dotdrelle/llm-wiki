@@ -73,6 +73,7 @@ export interface BuildCommandOptions {
   verbose?: boolean;
   debug?: boolean;
   traceFile?: string;
+  stabilize?: boolean;
 }
 
 export interface RefreshCommandOptions {
@@ -226,6 +227,19 @@ export interface DeliverableBuildResult {
   output: string;
   changed: boolean;
   skipped: boolean;
+  stabilized?: StabilizeDiff;
+}
+
+export interface StabilizeDiff {
+  kept: string[];
+  merged: string[];
+  inserted: string[];
+  removed: string[];
+}
+
+export interface StabilizeResult {
+  markdown: string;
+  diff: StabilizeDiff;
 }
 
 export interface BuildSlotPlan {

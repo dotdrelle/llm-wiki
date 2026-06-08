@@ -6,6 +6,19 @@ export interface MarkdownChunk {
   content: string;
 }
 
+export interface MarkdownSection {
+  headingPath: string[];
+  headingLevel: number;
+  headingText: string;
+  markdown: string;
+}
+
+export interface MarkdownSectionDocument {
+  frontmatter: string;
+  preamble: string;
+  sections: MarkdownSection[];
+}
+
 export function splitByHeadings(content: string, maxLevel = 3): MarkdownChunk[] {
   const lines = content.split('\n');
   const chunks: MarkdownChunk[] = [];
@@ -46,6 +59,87 @@ export function splitByHeadings(content: string, maxLevel = 3): MarkdownChunk[] 
 
   flush();
   return chunks.length > 0 ? chunks : [{ headingPath: [], heading: '', content: content.trim() }];
+}
+
+function splitMarkdownFrontmatter(markdown: string): { frontmatter: string; body: string } {
+  if (!markdown.startsWith('---\n')) return { frontmatter: '', body: markdown };
+  const end = markdown.indexOf('\n---', 4);
+  if (end < 0) return { frontmatter: '', body: markdown };
+  const closeEnd = markdown.indexOf('\n', end + 4);
+  if (closeEnd < 0) {
+    return { frontmatter: `${markdown.slice(0, end + 4)}\n`, body: '' };
+  }
+  return {
+    frontmatter: markdown.slice(0, closeEnd + 1),
+    body: markdown.slice(closeEnd + 1),
+  };
+}
+
+export function normalizeHeadingPathKey(headingPath: string[]): string {
+  return headingPath
+    .map((part) => part.trim().toLowerCase().replace(/\s+/g, ' '))
+    .join(' > ');
+}
+
+export function splitMarkdownSections(markdown: string): MarkdownSectionDocument {
+  const { frontmatter, body } = splitMarkdownFrontmatter(markdown.replace(/\r\n?/g, '\n'));
+  const lines = body.split('\n');
+  const sections: MarkdownSection[] = [];
+  const headingStack: Array<{ depth: number; title: string }> = [];
+  const preambleLines: string[] = [];
+  let currentLines: string[] = [];
+  let currentHeading:
+    | { headingPath: string[]; headingLevel: number; headingText: string }
+    | undefined;
+  let inFence = false;
+
+  const flush = () => {
+    if (!currentHeading) return;
+    const markdown = currentLines.join('\n').trim();
+    if (!markdown) return;
+    sections.push({
+      ...currentHeading,
+      markdown,
+    });
+  };
+
+  for (const line of lines) {
+    if (/^`{3,}/.test(line.trim())) {
+      inFence = !inFence;
+    }
+
+    const headingMatch = !inFence ? /^(#{1,6})\s+(.+?)\s*$/.exec(line) : null;
+    if (headingMatch) {
+      flush();
+      const depth = headingMatch[1].length;
+      const title = headingMatch[2].trim();
+      while (headingStack.length > 0 && headingStack.at(-1)!.depth >= depth) {
+        headingStack.pop();
+      }
+      headingStack.push({ depth, title });
+      currentHeading = {
+        headingPath: headingStack.map((entry) => entry.title),
+        headingLevel: depth,
+        headingText: title,
+      };
+      currentLines = [line];
+      continue;
+    }
+
+    if (currentHeading) {
+      currentLines.push(line);
+    } else {
+      preambleLines.push(line);
+    }
+  }
+
+  flush();
+
+  return {
+    frontmatter,
+    preamble: preambleLines.join('\n').trim(),
+    sections,
+  };
 }
 
 export function extractWikiLinks(content: string): string[] {
@@ -204,18 +298,6 @@ export function sanitizeFrontmatter(
   return sanitized;
 }
 
-function splitFrontmatter(markdown: string): { frontmatter: string; body: string } {
-  if (!markdown.startsWith('---\n')) return { frontmatter: '', body: markdown };
-  const end = markdown.indexOf('\n---', 4);
-  if (end < 0) return { frontmatter: '', body: markdown };
-  const closeEnd = markdown.indexOf('\n', end + 4);
-  if (closeEnd < 0) return { frontmatter: `${markdown.slice(0, end + 4)}\n`, body: '' };
-  return {
-    frontmatter: markdown.slice(0, closeEnd + 1),
-    body: markdown.slice(closeEnd + 1),
-  };
-}
-
 function normalizeGeneratedLine(line: string): string {
   return line
     .replace(/<br\s*\/?>/gi, '  ')
@@ -226,7 +308,7 @@ function normalizeGeneratedLine(line: string): string {
 }
 
 export function normalizeGeneratedMarkdown(markdown: string): string {
-  const { frontmatter, body } = splitFrontmatter(markdown.replace(/\r\n?/g, '\n'));
+  const { frontmatter, body } = splitMarkdownFrontmatter(markdown.replace(/\r\n?/g, '\n'));
   const lines = body.split('\n');
   const out: string[] = [];
   let inFence = false;

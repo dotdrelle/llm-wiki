@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { copyFile, cp, lstat, mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { copyFile, cp, lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -33,6 +33,7 @@ import type {
   WikiPage,
   WorkspacePaths,
   AddSkillResult,
+  StabilizeDiff,
 } from '../types.ts';
 
 const execFileAsync = promisify(execFile);
@@ -724,6 +725,50 @@ export class WorkspaceService {
     return writeIfChanged(outputAbsolutePath, normalizeGeneratedMarkdown(content));
   }
 
+  async readDeliverableIfExists(outputAbsolutePath: string): Promise<string | null> {
+    const absolutePath = resolveInside(
+      this.paths.rootDir,
+      relativeFrom(this.paths.rootDir, outputAbsolutePath),
+    );
+    if (!(await pathExists(absolutePath))) return null;
+    return readFile(absolutePath, 'utf8');
+  }
+
+  deriveTmpDeliverablePath(outputAbsolutePath: string): string {
+    const absolutePath = resolveInside(
+      this.paths.rootDir,
+      relativeFrom(this.paths.rootDir, outputAbsolutePath),
+    );
+    const parsed = path.parse(absolutePath);
+    const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
+    const shortId = hashText(`${absolutePath}:${stamp}:${Math.random()}`).slice(0, 8);
+    return path.join(parsed.dir, `.tmp.${parsed.name}.${stamp}_${shortId}${parsed.ext}`);
+  }
+
+  deriveChangesSidecarPath(outputAbsolutePath: string): string {
+    const absolutePath = resolveInside(
+      this.paths.rootDir,
+      relativeFrom(this.paths.rootDir, outputAbsolutePath),
+    );
+    const parsed = path.parse(absolutePath);
+    return path.join(parsed.dir, `.changes.${parsed.name}${parsed.ext}.json`);
+  }
+
+  async writeChangesSidecar(
+    outputAbsolutePath: string,
+    diff: StabilizeDiff,
+  ): Promise<void> {
+    const sidecarPath = this.deriveChangesSidecarPath(outputAbsolutePath);
+    await safeWriteFile(
+      sidecarPath,
+      `${JSON.stringify({ stabilizedAt: new Date().toISOString(), ...diff }, null, 2)}\n`,
+    );
+  }
+
+  async deleteChangesSidecarIfExists(outputAbsolutePath: string): Promise<void> {
+    await rm(this.deriveChangesSidecarPath(outputAbsolutePath), { force: true });
+  }
+
   async writeAnswer(question: string, content: string): Promise<string> {
     const slug = slugify(question.slice(0, 80));
     const absolutePath = path.join(this.paths.wikiAnswersDir, `${slug}.md`);
@@ -739,7 +784,13 @@ export class WorkspaceService {
       cwd: this.paths.deliverablesDir,
       absolute: true,
     });
-    return files.sort();
+    return files
+      .filter((file) =>
+        !relativeFrom(this.paths.deliverablesDir, file)
+          .split('/')
+          .some((part) => part.startsWith('.tmp.') || part.startsWith('.changes.')),
+      )
+      .sort();
   }
 
   async readTextFile(absolutePath: string): Promise<string> {

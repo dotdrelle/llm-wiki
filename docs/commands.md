@@ -103,12 +103,20 @@ Generates markdown deliverables from templates in `templates/`. Each `[[INSTRUCT
 wiki build
 wiki build templates/project-brief.md
 wiki build --force
+wiki build --stabilize
 wiki build --plan
 wiki build --verbose
 wiki build --debug
 ```
 
 `wiki build --plan` reads the same templates and wiki context as a real build, then prints the planned batches, context pages, estimated input tokens, and configured limits without calling the generation LLM.
+
+`wiki build --stabilize` first renders a fresh candidate, then, when the target
+deliverable already exists, merges changed sections back into the previous
+deliverable. Unchanged sections are preserved verbatim, a hidden
+`.changes.<deliverable>.json` sidecar records kept/merged/inserted/removed
+sections, and temporary `.tmp.*` candidates are deleted after the run. A normal
+`wiki build` removes any previous stabilization sidecar for the deliverable.
 
 Slots are grouped up to `build.slotBatchSize`, but the build planner can split earlier when `limits.targetInputTokensPerCall` would be exceeded. If a batch is still above `limits.maxInputTokensPerCall`, retrieved context is trimmed before the LLM call.
 
