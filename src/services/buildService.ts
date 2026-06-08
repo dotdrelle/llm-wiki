@@ -29,6 +29,17 @@ import type { TraceLogger } from './traceLogger.ts';
 import type { WorkspaceService } from './workspaceService.ts';
 
 const FINAL_CONTEXT_EXCLUDED_PATHS = new Set(['wiki/index.md', 'wiki/log.md']);
+const PLAN_WORDS_EXCLUDED = new Set([
+  'dans',
+  'avec',
+  'pour',
+  'des',
+  'les',
+  'une',
+  'section',
+  'document',
+  'template',
+]);
 
 function extractMostRecentDateMs(result: SearchResult): number | undefined {
   const text = `${result.page.relativePath}\n${result.page.name}\n${result.page.content}`;
@@ -375,6 +386,77 @@ export class BuildService {
     );
   }
 
+  private prepareSlotsForPlan(
+    template: TemplateDocument,
+    wikiPages: WikiPage[],
+  ): Array<{
+    id: string;
+    instruction: string;
+    headingPath: string[];
+    surroundingText: string;
+    context: SearchResult[];
+  }> {
+    const candidates = wikiPages.filter(
+      (page) => !FINAL_CONTEXT_EXCLUDED_PATHS.has(page.relativePath) && page.type !== 'answer',
+    );
+    const limit = Math.max(1, this.config.retrieval.maxContextFiles);
+
+    return template.instructions.map((instruction) => {
+      const queryWords = this.planQueryWords(
+        `${instruction.headingPath.join(' ')} ${instruction.instruction}`,
+      );
+      const scored = candidates
+        .map((page) => ({
+          page,
+          score: this.planPageScore(page, queryWords),
+        }))
+        .filter((result) => result.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit);
+
+      return {
+        id: instruction.id,
+        instruction: instruction.instruction,
+        headingPath: instruction.headingPath,
+        surroundingText: instruction.surroundingText,
+        context: scored,
+      };
+    });
+  }
+
+  private planQueryWords(text: string): string[] {
+    return [
+      ...new Set(
+        text
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .match(/[a-z0-9-]{3,}/g)
+          ?.filter((word) => !PLAN_WORDS_EXCLUDED.has(word)) ?? [],
+      ),
+    ].slice(0, 24);
+  }
+
+  private planPageScore(page: WikiPage, queryWords: string[]): number {
+    if (queryWords.length === 0) return 0;
+    const pathAndTitle = `${page.relativePath} ${page.name}`
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    const content = page.content
+      .slice(0, Math.max(this.config.retrieval.maxChunkChars * 4, 8000))
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    let score = 0;
+    for (const word of queryWords) {
+      if (pathAndTitle.includes(word)) score += 3;
+      if (content.includes(word)) score += 1;
+    }
+    return score;
+  }
+
   private extractFocusQueries(instruction: string): string[] {
     const listText = instruction.includes(':')
       ? instruction.split(':').slice(1).join(':').split('.')[0]
@@ -566,6 +648,7 @@ export class BuildService {
   async planBuild(options?: {
     templates?: string[];
     onPageLoad?: (relativePath: string, index: number, total: number) => void;
+    fastContext?: boolean;
   }): Promise<BuildRunPlan> {
     await this.workspace.ensureInitialized();
     const templatePaths = await this.workspace.resolveTemplateInputs(
@@ -577,7 +660,9 @@ export class BuildService {
 
     for (const templatePath of templatePaths) {
       const template = await this.workspace.readTemplateDocument(templatePath);
-      const slots = await this.prepareSlots(template, wikiPages);
+      const slots = options?.fastContext
+        ? this.prepareSlotsForPlan(template, wikiPages)
+        : await this.prepareSlots(template, wikiPages);
       const batches = this.planSlotBatches(template, buildContext, slots);
       const slotPlans: BuildSlotPlan[] = slots.map((slot) => {
         const chars = this.promptInputChars(template, buildContext, [slot]);

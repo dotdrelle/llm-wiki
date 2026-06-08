@@ -892,7 +892,7 @@ export default async function doctorCmd(
   console.log('\n── Build plan ──────────────────────────────────────────────');
   row('source:', 'templates/ + wiki/ + build-context/');
   row('raw/ingested:', 'ignored here; already represented by wiki/sources');
-  row('planner:', 'same batching logic as `wiki build --plan`');
+  row('planner:', 'same batching logic with fast local context approximation');
   console.log('  … simulating build batches and provider budget');
   try {
     const buildPlan = await new BuildService(
@@ -900,7 +900,7 @@ export default async function doctorCmd(
       workspace,
       new LLMService(config),
       new RetrievalService(workspace, config),
-    ).planBuild();
+    ).planBuild({ fastContext: true });
     row('templates:', String(buildPlan.templates.length));
     row('planned requests:', String(buildPlan.estimatedRequests));
     row(
