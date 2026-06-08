@@ -123,11 +123,14 @@ describe('chat html', () => {
     expect(script).toContain('if(!recover) pollProductionJob({immediate:true});');
     expect(script).toContain('poll:!recover && !productionTerminal(data.job?.status)');
     expect(script).toContain('function isProductionToolName(name)');
+    expect(script).toContain('function shouldStopAfterProductionTools(toolCalls)');
+    expect(script).toContain("'production_start_job'");
+    expect(script).toContain("'production_job_status'");
     expect(script).toContain('function chatLanguageIsFrench()');
     expect(script).toContain('function chatText(en, fr)');
     expect(script).toContain('return productionTerminalChatSummary(latestJob);');
     expect(script).toContain('productionState.notifiedTerminalJobIds.add(jobId);');
-    expect(script).toContain('tcWithIdx.every(tc=>isProductionToolName(tc.function?.name))');
+    expect(script).toContain('if(shouldStopAfterProductionTools(tcWithIdx))');
     expect(script).toContain('const summary=productionToolSummary(toolResults);');
     expect(script).toContain('Tracking in the chain view.');
     expect(script).toContain('Le suivi est dans le chaînage.');

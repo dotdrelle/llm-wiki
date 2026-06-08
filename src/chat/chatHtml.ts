@@ -1534,6 +1534,16 @@ function isProductionToolName(name) {
   return String(name||'').startsWith('production_');
 }
 
+function shouldStopAfterProductionTools(toolCalls) {
+  if(!toolCalls?.length || !toolCalls.every(tc=>isProductionToolName(tc.function?.name))) return false;
+  return toolCalls.some(tc=>[
+    'production_start_job',
+    'production_job_status',
+    'production_job_logs',
+    'production_cancel_job',
+  ].includes(String(tc.function?.name||'')));
+}
+
 function productionProgressDetail(job, progress) {
   const sourceCount=Number(progress?.sourceCount);
   const sourceIndex=Number(progress?.sourceIndex);
@@ -2047,7 +2057,9 @@ function renderTrace(trace) {
   const flow=trace.el.querySelector('.trace-flow');
   const detailWrap=trace.el.querySelector('.trace-detail-wrap');
   const meta=trace.el.querySelector('.trace-meta');
-  const toolCount=trace.steps.filter(s=>s.type==='tool').length;
+  const toolCount=trace.steps
+    .filter(s=>s.type==='tool')
+    .reduce((count,s)=>count+(Number(s.callCount)||1),0);
   if(meta) meta.textContent=\`\${toolCount} call\${toolCount>1?'s':''} · \${trace.steps.length} step\${trace.steps.length>1?'s':''}\`;
   flow.innerHTML=trace.steps.map((s,i)=>traceStepHTML(trace,s)+(i<trace.steps.length-1?'<div class="trace-link"></div>':'')).join('');
   const selected=trace.steps.find(s=>s.id===trace.selectedStepId);
@@ -2059,6 +2071,19 @@ function renderTrace(trace) {
 
 function addTraceStep(trace, step) {
   if(!trace) return;
+  if(step.compactKey) {
+    const existing=trace.steps.find(s=>s.compactKey===step.compactKey);
+    if(existing) {
+      Object.assign(existing,step,{
+        id:existing.id,
+        callCount:(Number(existing.callCount)||1)+1,
+        firstTargetId:existing.firstTargetId || existing.targetId,
+      });
+      renderTrace(trace);
+      return;
+    }
+    step.callCount=1;
+  }
   trace.steps.push(step);
   if(step.type==='tool') trace.el?.classList.remove('empty');
   renderTrace(trace);
@@ -2075,13 +2100,21 @@ function updateTraceToolResult(trace, targetId, result, ok, assistantText='') {
   if(!trace) return;
   const step=trace.steps.find(s=>s.targetId===targetId);
   if(!step) return;
+  const summary=toolResultTraceSummary(result,ok);
   Object.assign(step,{
-    summary:toolResultTraceSummary(result,ok),
+    summary:Number(step.callCount)>1 ? summary+' · ×'+step.callCount : summary,
     ok,
     resultHtml:toolResultSummaryHTML(result,ok),
     assistantText,
   });
   renderTrace(trace);
+}
+
+function compactTraceKeyForTool(fn, server) {
+  const name=String(fn||'');
+  if(name==='cme_export_status') return (server?.id || server?.name || 'MCP')+':'+name;
+  if(/(?:^|_)status$/.test(name) && name!=='cme_status') return (server?.id || server?.name || 'MCP')+':'+name;
+  return '';
 }
 
 function toggleTraceStep(traceId, stepId) {
@@ -2728,7 +2761,7 @@ async function sendMessage() {
   const runTrace=createTraceCard();
 
   let tcIdx=Date.now();
-  const MAX_TURNS=12;
+  const MAX_TURNS=24;
   let turn=0;
   const activeTools=getActiveTools();
   const toolsPayload=activeTools.length ? activeTools.map(t=>({
@@ -2780,6 +2813,7 @@ async function sendMessage() {
             title:fn,
             summary:'calling...',
             targetId:\`tc-\${tc._domIdx}\`,
+            compactKey:compactTraceKeyForTool(fn,server),
             assistantText:content||'',
           });
         }
@@ -2805,7 +2839,7 @@ async function sendMessage() {
         messages.push(...toolResults);
         conversationDirty=true;
         await saveCurrentConversation({immediate:true});
-        if(tcWithIdx.every(tc=>isProductionToolName(tc.function?.name))) {
+        if(shouldStopAfterProductionTools(tcWithIdx)) {
           const summary=productionToolSummary(toolResults);
           appendMsg('assistant',summary);
           messages.push({role:'assistant',content:summary});
