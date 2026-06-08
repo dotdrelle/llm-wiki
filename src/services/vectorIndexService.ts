@@ -46,6 +46,8 @@ export interface VectorIndexBuildResult {
   reusedChunks: number;
   indexedPages: number;
   metadata: VectorIndexMetadata;
+  reusedExistingIndex: boolean;
+  rebuiltForConfigChange: boolean;
 }
 
 export interface VectorIndex {
@@ -175,6 +177,19 @@ function expectedMetadata(config: AppConfig, dimension: number): VectorIndexMeta
     dimension,
     builtAt: new Date().toISOString(),
   };
+}
+
+function metadataMatchesConfig(
+  config: AppConfig,
+  metadata: VectorIndexMetadata | undefined,
+  dimension: number,
+): boolean {
+  return (
+    Boolean(metadata) &&
+    metadata?.provider === providerKey(config) &&
+    metadata.embeddingModel === config.retrieval.vector.embeddingModel &&
+    metadata.dimension === dimension
+  );
 }
 
 export class VectorIndexService implements VectorIndex {
@@ -317,20 +332,45 @@ export class VectorIndexService implements VectorIndex {
   async buildIndex(): Promise<VectorIndexBuildResult> {
     const pages = await this.workspace.listWikiPages();
     const rowsWithoutVectors = this.buildRowsWithoutVectors(pages);
+    const firstRow = rowsWithoutVectors[0];
+    const [probeVector] = firstRow ? await this.embeddings.embed([firstRow.content]) : [];
+    const currentDimension = probeVector?.length ?? 0;
+    const existingMetadata = await this.readMetadata();
+    const canReuseExisting = metadataMatchesConfig(
+      this.config,
+      existingMetadata,
+      currentDimension,
+    );
     const existingById = new Map<string, VectorRow>();
     const existing = await this.openTable();
-    if (existing) {
+    const rebuiltForConfigChange = Boolean(existing) && !canReuseExisting;
+    if (existing && canReuseExisting) {
       for (const row of (await existing.query().toArray()) as VectorRow[]) {
         existingById.set(row.id, row);
       }
     }
+    const probedEmbeddings = new Map<string, number[]>();
+    if (!canReuseExisting && firstRow && probeVector) {
+      probedEmbeddings.set(firstRow.id, probeVector);
+    }
+    const reusableExistingVector = (row: Omit<VectorRow, 'vector'>): number[] | undefined => {
+      const existingRow = existingById.get(row.id);
+      if (!existingRow || existingRow.hash !== row.hash) return undefined;
+      const vector = normalizeVector(existingRow.vector);
+      return vector?.length === currentDimension ? vector : undefined;
+    };
 
     const rows: VectorRow[] = [];
-    let embeddedChunks = 0;
+    let embeddedChunks = probedEmbeddings.size;
     let reusedChunks = 0;
     for (const batch of embeddingBatches(rowsWithoutVectors)) {
-      const missing = batch.filter((row) => existingById.get(row.id)?.hash !== row.hash);
+      const missing = batch.filter(
+        (row) => !reusableExistingVector(row) && !probedEmbeddings.has(row.id),
+      );
       const embedded = new Map<string, number[]>();
+      for (const [id, vector] of probedEmbeddings) {
+        embedded.set(id, vector);
+      }
       if (missing.length > 0) {
         const vectors = await this.embeddings.embed(missing.map((row) => row.content));
         missing.forEach((row, index) => {
@@ -340,15 +380,12 @@ export class VectorIndexService implements VectorIndex {
       }
 
       for (const row of batch) {
-        const existingRow = existingById.get(row.id);
-        const vector =
-          existingRow && existingRow.hash === row.hash
-            ? normalizeVector(existingRow.vector)
-            : embedded.get(row.id);
+        const existingVector = reusableExistingVector(row);
+        const vector = existingVector ?? embedded.get(row.id);
         if (!vector) {
           throw new Error(`Missing embedding for ${row.path}`);
         }
-        if (existingRow && existingRow.hash === row.hash) {
+        if (existingVector) {
           reusedChunks += 1;
         }
         rows.push({ ...row, vector });
@@ -357,8 +394,7 @@ export class VectorIndexService implements VectorIndex {
 
     const db = await this.connect();
     const tableNames = await db.tableNames();
-    const firstVector = rows.find((row) => row.vector.length > 0)?.vector;
-    const metadata = expectedMetadata(this.config, firstVector?.length ?? 0);
+    const metadata = expectedMetadata(this.config, currentDimension);
     if (rows.length === 0) {
       if (tableNames.includes(TABLE_NAME)) {
         await db.dropTable(TABLE_NAME);
@@ -379,6 +415,8 @@ export class VectorIndexService implements VectorIndex {
       reusedChunks,
       indexedPages: new Set(rows.map((row) => row.path)).size,
       metadata,
+      reusedExistingIndex: canReuseExisting,
+      rebuiltForConfigChange,
     };
   }
 

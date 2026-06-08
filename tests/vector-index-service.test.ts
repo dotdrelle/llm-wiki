@@ -64,6 +64,18 @@ class FakeEmbeddingService {
   }
 }
 
+class DimensionEmbeddingService {
+  dimension = 3;
+
+  async embed(texts: string[]): Promise<number[][]> {
+    return texts.map((text) => {
+      const vector = Array.from({ length: this.dimension }, () => 0);
+      vector[0] = text.includes('expertise') ? 1 : 0;
+      return vector;
+    });
+  }
+}
+
 class FakeRerankService {
   async rerank(_query: string, documents: string[], topN: number) {
     return documents
@@ -159,6 +171,38 @@ describe('vector index service', () => {
     await expect(changedService.search('expertise')).rejects.toThrow(
       /built with different embedding settings.*wiki index/i,
     );
+  });
+
+  it('rebuilds unchanged chunks when the embedding dimension changes', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-vector-dimension-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await writeFile(
+      path.join(root, 'wiki', 'fonctionnel.md'),
+      '# Fonctionnel\n\nExpertise.\n',
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    const workspace = new WorkspaceService(config);
+    const embeddings = new DimensionEmbeddingService();
+    const service = new VectorIndexService(
+      config,
+      workspace,
+      embeddings as any,
+      new EmptyRerankService() as any,
+    );
+
+    const first = await service.buildIndex();
+    embeddings.dimension = 2;
+    const second = await service.buildIndex();
+    const results = await service.search('expertise');
+
+    expect(first.metadata.dimension).toBe(3);
+    expect(second.metadata.dimension).toBe(2);
+    expect(second.embeddedChunks).toBe(1);
+    expect(second.reusedChunks).toBe(0);
+    expect(second.rebuiltForConfigChange).toBe(true);
+    expect(results[0]?.page.relativePath).toBe('wiki/fonctionnel.md');
   });
 
   it('falls back to vector order when reranker returns no results', async () => {

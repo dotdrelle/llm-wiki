@@ -21,4 +21,9 @@ export default async function indexCmd(config: AppConfig): Promise<void> {
   console.log(
     `Embeddings: ${result.embeddedChunks} new/changed, ${result.reusedChunks} reused.`,
   );
+  if (result.rebuiltForConfigChange) {
+    console.warn(
+      'Existing vector index was built with different embedding settings and was rebuilt.',
+    );
+  }
 }
