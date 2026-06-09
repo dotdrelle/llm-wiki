@@ -110,6 +110,20 @@ describe('markdown helpers', () => {
     expect(normalized).not.toContain('<span> text</span>');
   });
 
+  it('moves generated preamble after the first h1', () => {
+    const normalized = normalizeGeneratedMarkdown(
+      ['Context before title.', '', '# Title', '', 'Body.'].join('\n'),
+    );
+
+    expect(normalized).toBe('# Title\n\nContext before title.\n\nBody.\n');
+  });
+
+  it('adds a fallback h1 when generated markdown has no heading', () => {
+    const normalized = normalizeGeneratedMarkdown('Body only.', 'source-note');
+
+    expect(normalized).toBe('# source note\n\nBody only.\n');
+  });
+
   it('splits large sources by h2 and prefixes the document title', () => {
     const sections = splitSourceSections(
       ['# Document', '', '## One', 'A'.repeat(30), '', '## Two', 'B'.repeat(30)].join(

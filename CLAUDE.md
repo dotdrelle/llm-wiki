@@ -79,7 +79,7 @@ generic.
 - `refreshService.ts`: stale deliverable detection.
 - `exportService.ts`: citation expansion and polish.
 - `retrievalService.ts`: lexical/vector context assembly.
-- `vectorIndexService.ts`: LanceDB index management.
+- `vectorIndexService.ts`: LanceDB index management. Oversized chunks (token limit errors from the embedding API) are skipped for vector indexing only — lexical search still covers them. Non-limit errors (auth, network, config) remain blocking. `VectorIndexBuildResult` exposes `skippedChunks`, `skippedPages`, and `warnings`; the `index` command prints a warning when chunks are skipped.
 - `embeddingService.ts`: OpenAI-compatible embeddings.
 - `rerankService.ts`: optional reranking endpoint.
 - `llmService.ts`: provider abstraction.

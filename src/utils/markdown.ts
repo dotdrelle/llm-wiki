@@ -307,7 +307,51 @@ function normalizeGeneratedLine(line: string): string {
     .replace(/<[^>]+>/g, '');
 }
 
-export function normalizeGeneratedMarkdown(markdown: string): string {
+function normalizeFallbackTitle(title: string | undefined): string {
+  const normalized = title?.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return normalized || 'Untitled';
+}
+
+function ensureFirstBodyLineIsH1(body: string, fallbackTitle?: string): string {
+  if (!body) return `# ${normalizeFallbackTitle(fallbackTitle)}`;
+
+  const lines = body.split('\n');
+  let inFence = false;
+  let firstHeadingIndex = -1;
+  let firstHeading: RegExpExecArray | null = null;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (/^`{3,}/.test(line.trim())) {
+      inFence = !inFence;
+      continue;
+    }
+
+    if (inFence) continue;
+
+    const heading = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
+    if (heading) {
+      firstHeadingIndex = index;
+      firstHeading = heading;
+      break;
+    }
+  }
+
+  if (!firstHeading) {
+    return `# ${normalizeFallbackTitle(fallbackTitle)}\n\n${body}`;
+  }
+
+  const titleLine = `# ${firstHeading[2].trim()}`;
+  if (firstHeadingIndex === 0) {
+    return [titleLine, ...lines.slice(1)].join('\n');
+  }
+
+  const preamble = lines.slice(0, firstHeadingIndex).join('\n').trim();
+  const rest = lines.slice(firstHeadingIndex + 1).join('\n').trim();
+  return [titleLine, preamble, rest].filter(Boolean).join('\n\n');
+}
+
+export function normalizeGeneratedMarkdown(markdown: string, fallbackTitle?: string): string {
   const { frontmatter, body } = splitMarkdownFrontmatter(markdown.replace(/\r\n?/g, '\n'));
   const lines = body.split('\n');
   const out: string[] = [];
@@ -345,10 +389,13 @@ export function normalizeGeneratedMarkdown(markdown: string): string {
     out.push(line);
   }
 
-  const normalizedBody = out
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  const normalizedBody = ensureFirstBodyLineIsH1(
+    out
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim(),
+    fallbackTitle,
+  );
   return `${frontmatter}${normalizedBody}${normalizedBody ? '\n' : ''}`;
 }
 

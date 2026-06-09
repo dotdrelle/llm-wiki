@@ -45,6 +45,9 @@ export interface VectorIndexBuildResult {
   embeddedChunks: number;
   reusedChunks: number;
   indexedPages: number;
+  skippedChunks: number;
+  skippedPages: string[];
+  warnings: string[];
   metadata: VectorIndexMetadata;
   reusedExistingIndex: boolean;
   rebuiltForConfigChange: boolean;
@@ -192,6 +195,24 @@ function metadataMatchesConfig(
   );
 }
 
+function isEmbeddingInputLimitError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /\b(token|tokens|context|maximum|limit|too long|too large|8192|context_length_exceeded)\b/i.test(
+    message,
+  );
+}
+
+function embeddingSkipWarning(row: Omit<VectorRow, 'vector'>, error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return [
+    `Skipped vector embedding for ${row.path}`,
+    row.heading ? ` (${row.heading})` : '',
+    `: input too large (${row.content.length.toLocaleString()} chars).`,
+    ' Lexical search will still cover this content.',
+    message ? ` Provider message: ${message.slice(0, 240)}` : '',
+  ].join('');
+}
+
 export class VectorIndexService implements VectorIndex {
   private readonly config: AppConfig;
   private readonly workspace: WorkspaceService;
@@ -332,8 +353,36 @@ export class VectorIndexService implements VectorIndex {
   async buildIndex(): Promise<VectorIndexBuildResult> {
     const pages = await this.workspace.listWikiPages();
     const rowsWithoutVectors = this.buildRowsWithoutVectors(pages);
-    const firstRow = rowsWithoutVectors[0];
-    const [probeVector] = firstRow ? await this.embeddings.embed([firstRow.content]) : [];
+    const skippedRows = new Set<string>();
+    const skippedPages = new Set<string>();
+    const warnings: string[] = [];
+    const skipRow = (row: Omit<VectorRow, 'vector'>, error: unknown) => {
+      skippedRows.add(row.id);
+      skippedPages.add(row.path);
+      warnings.push(embeddingSkipWarning(row, error));
+    };
+    const embedSingle = async (
+      row: Omit<VectorRow, 'vector'>,
+    ): Promise<number[] | undefined> => {
+      try {
+        const [vector] = await this.embeddings.embed([row.content]);
+        return vector;
+      } catch (error) {
+        if (!isEmbeddingInputLimitError(error)) throw error;
+        skipRow(row, error);
+        return undefined;
+      }
+    };
+
+    let firstRow: Omit<VectorRow, 'vector'> | undefined;
+    let probeVector: number[] | undefined;
+    for (const row of rowsWithoutVectors) {
+      probeVector = await embedSingle(row);
+      if (probeVector) {
+        firstRow = row;
+        break;
+      }
+    }
     const currentDimension = probeVector?.length ?? 0;
     const existingMetadata = await this.readMetadata();
     const canReuseExisting = metadataMatchesConfig(
@@ -365,21 +414,36 @@ export class VectorIndexService implements VectorIndex {
     let reusedChunks = 0;
     for (const batch of embeddingBatches(rowsWithoutVectors)) {
       const missing = batch.filter(
-        (row) => !reusableExistingVector(row) && !probedEmbeddings.has(row.id),
+        (row) =>
+          !skippedRows.has(row.id) &&
+          !reusableExistingVector(row) &&
+          !probedEmbeddings.has(row.id),
       );
       const embedded = new Map<string, number[]>();
       for (const [id, vector] of probedEmbeddings) {
         embedded.set(id, vector);
       }
       if (missing.length > 0) {
-        const vectors = await this.embeddings.embed(missing.map((row) => row.content));
-        missing.forEach((row, index) => {
-          embedded.set(row.id, vectors[index]);
-        });
-        embeddedChunks += missing.length;
+        try {
+          const vectors = await this.embeddings.embed(missing.map((row) => row.content));
+          missing.forEach((row, index) => {
+            embedded.set(row.id, vectors[index]);
+          });
+          embeddedChunks += missing.length;
+        } catch (error) {
+          if (!isEmbeddingInputLimitError(error)) throw error;
+          for (const row of missing) {
+            const vector = await embedSingle(row);
+            if (vector) {
+              embedded.set(row.id, vector);
+              embeddedChunks += 1;
+            }
+          }
+        }
       }
 
       for (const row of batch) {
+        if (skippedRows.has(row.id)) continue;
         const existingVector = reusableExistingVector(row);
         const vector = existingVector ?? embedded.get(row.id);
         if (!vector) {
@@ -414,6 +478,9 @@ export class VectorIndexService implements VectorIndex {
       embeddedChunks,
       reusedChunks,
       indexedPages: new Set(rows.map((row) => row.path)).size,
+      skippedChunks: skippedRows.size,
+      skippedPages: [...skippedPages].sort(),
+      warnings,
       metadata,
       reusedExistingIndex: canReuseExisting,
       rebuiltForConfigChange,

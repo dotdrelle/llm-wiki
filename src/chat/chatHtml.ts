@@ -597,6 +597,7 @@ When MCP tools are available, use them if the answer depends on external, recent
 After each tool result:
 - assess whether the result is sufficient to answer;
 - if the result is incomplete, ambiguous, truncated, or only exploratory, call another relevant tool before responding;
+- status, list, and logs tools are observational: after one observational result, answer from it instead of chaining more observational calls unless the user explicitly asked to monitor or compare several statuses;
 - do not claim to have read a complete source if the tool only returned an excerpt or a list of candidates;
 - phrase tool queries in natural language; do not use search engine operators like OR or site: unless the tool explicitly requires them;
 - request a small number of results initially (5 to 10) and increase only if coverage is insufficient.
@@ -1534,14 +1535,62 @@ function isProductionToolName(name) {
   return String(name||'').startsWith('production_');
 }
 
+function toolCallFunctionName(tc) {
+  return String(tc?.function?.name || tc?.name || '');
+}
+
+function toolCallArgsObject(tc) {
+  try { return JSON.parse(tc?.function?.arguments || '{}'); } catch { return {}; }
+}
+
+function stableToolArgsKey(value) {
+  if(Array.isArray(value)) return '['+value.map(stableToolArgsKey).join(',')+']';
+  if(value && typeof value==='object') {
+    return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+stableToolArgsKey(value[k])).join(',')+'}';
+  }
+  return JSON.stringify(value);
+}
+
+function toolCallRepeatKey(tc) {
+  return \`\${toolCallFunctionName(tc)}:\${stableToolArgsKey(toolCallArgsObject(tc))}\`;
+}
+
+function isObserverToolName(name) {
+  const fn=String(name||'');
+  return /(?:^|_)(status|list|logs?|history|trace|summary|stats)$/i.test(fn) ||
+    /(?:^|_)list_/i.test(fn) ||
+    /^cme_(?:status|sources_list|export_status)$/i.test(fn) ||
+    /^production_(?:list_jobs|job_status|job_logs)$/i.test(fn);
+}
+
+function observerToolLoopSummary(toolResults, repeated=false) {
+  const names=[...new Set((toolResults||[]).map(r=>r.name).filter(Boolean))];
+  const prefix=repeated
+    ? chatText('Observation chain stopped after repeated status/list calls.','Chaînage d’observation arrêté après des appels status/list répétés.')
+    : chatText('Observation complete.','Observation terminée.');
+  const details=(toolResults||[]).map((r)=>{
+    const data=parseToolJSON(r.content);
+    if(data?.job || data?.jobId) return productionToolSummary([r]);
+    if(data?.jobs && Array.isArray(data.jobs)) return productionToolSummary([r]);
+    if(data?.sources && Array.isArray(data.sources)) return chatLanguageIsFrench()
+      ? \`\${data.sources.length} source\${data.sources.length>1?'s':''} CME configurée\${data.sources.length>1?'s':''}.\`
+      : \`\${data.sources.length} CME source\${data.sources.length>1?'s':''} configured.\`;
+    if(data?.status || data?.state) return \`\${r.name}: \${data.status || data.state}\`;
+    return \`\${r.name}: \${shortText(r.content,220)}\`;
+  }).filter(Boolean);
+  return [prefix,names.length?\`\${chatText('Tools:','Outils :')} \${names.join(', ')}\`:null,...details]
+    .filter(Boolean)
+    .join('\\n');
+}
+
 function shouldStopAfterProductionTools(toolCalls) {
-  if(!toolCalls?.length || !toolCalls.every(tc=>isProductionToolName(tc.function?.name))) return false;
+  if(!toolCalls?.length || !toolCalls.every(tc=>isProductionToolName(toolCallFunctionName(tc)))) return false;
   return toolCalls.some(tc=>[
     'production_start_job',
     'production_job_status',
     'production_job_logs',
     'production_cancel_job',
-  ].includes(String(tc.function?.name||'')));
+  ].includes(toolCallFunctionName(tc)));
 }
 
 function productionProgressDetail(job, progress) {
@@ -2112,8 +2161,7 @@ function updateTraceToolResult(trace, targetId, result, ok, assistantText='') {
 
 function compactTraceKeyForTool(fn, server) {
   const name=String(fn||'');
-  if(name==='cme_export_status') return (server?.id || server?.name || 'MCP')+':'+name;
-  if(/(?:^|_)status$/.test(name) && name!=='cme_status') return (server?.id || server?.name || 'MCP')+':'+name;
+  if(isObserverToolName(name)) return (server?.id || server?.name || 'MCP')+':'+name;
   return '';
 }
 
@@ -2777,6 +2825,7 @@ async function sendMessage() {
   let streamMessagePersisted=false;
   const streamClearSeq=clearChatSeq;
   let completedWithoutLimit=false;
+  const toolRepeatCounts=new Map();
   try {
     while(turn<MAX_TURNS) {
       turn++;
@@ -2799,12 +2848,29 @@ async function sendMessage() {
 
       if(toolCalls?.length) {
         const tcWithIdx=toolCalls.map((tc,i)=>({...tc,_domIdx:tcIdx+i}));
+        const repeatedObservation=tcWithIdx.some((tc)=>{
+          const key=toolCallRepeatKey(tc);
+          const count=(toolRepeatCounts.get(key)||0)+1;
+          toolRepeatCounts.set(key,count);
+          return count>1 && isObserverToolName(toolCallFunctionName(tc));
+        });
+        if(repeatedObservation && tcWithIdx.every(tc=>isObserverToolName(toolCallFunctionName(tc)))) {
+          removeStreamBubble(streamDiv);
+          streamFinalized=true;
+          const summary=observerToolLoopSummary([],true);
+          appendMsg('assistant',summary);
+          messages.push({role:'assistant',content:summary});
+          conversationDirty=true;
+          await saveCurrentConversation({immediate:true});
+          completedWithoutLimit=true;
+          break;
+        }
         removeStreamBubble(streamDiv);
         streamFinalized=true;
         messages.push({role:'assistant',content:content||null,tool_calls:tcWithIdx.map(({_domIdx,...tc})=>tc)});
         streamMessagePersisted=true;
         for(const tc of tcWithIdx) {
-          const fn=tc.function?.name||'?';
+          const fn=toolCallFunctionName(tc)||'?';
           const server=findServerForTool(fn);
           if(isProductionToolName(fn)) productionState.trace=runTrace;
           addTraceStep(runTrace,{
@@ -2819,8 +2885,8 @@ async function sendMessage() {
         }
         const toolResults=await Promise.all(tcWithIdx.map(async (tc)=>{
           const domIdx=tc._domIdx;
-          const fn=tc.function?.name;
-          let args={}; try{args=JSON.parse(tc.function?.arguments||'{}');}catch{}
+          const fn=toolCallFunctionName(tc);
+          const args=toolCallArgsObject(tc);
           try {
             const r=await callMCPTool(fn,args);
             if(isProductionToolName(fn)) productionState.trace=runTrace;
@@ -2839,6 +2905,15 @@ async function sendMessage() {
         messages.push(...toolResults);
         conversationDirty=true;
         await saveCurrentConversation({immediate:true});
+        if(tcWithIdx.every(tc=>isObserverToolName(toolCallFunctionName(tc)))) {
+          const summary=observerToolLoopSummary(toolResults);
+          appendMsg('assistant',summary);
+          messages.push({role:'assistant',content:summary});
+          conversationDirty=true;
+          await saveCurrentConversation({immediate:true});
+          completedWithoutLimit=true;
+          break;
+        }
         if(shouldStopAfterProductionTools(tcWithIdx)) {
           const summary=productionToolSummary(toolResults);
           appendMsg('assistant',summary);

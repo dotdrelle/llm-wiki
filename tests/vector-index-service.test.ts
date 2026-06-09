@@ -76,6 +76,15 @@ class DimensionEmbeddingService {
   }
 }
 
+class SizeLimitEmbeddingService {
+  async embed(texts: string[]): Promise<number[][]> {
+    if (texts.some((text) => text.includes('oversized'))) {
+      throw new Error('Input tokens exceed the configured limit of 8192 tokens.');
+    }
+    return texts.map((text) => [text.includes('expertise') ? 1 : 0, 0]);
+  }
+}
+
 class FakeRerankService {
   async rerank(_query: string, documents: string[], topN: number) {
     return documents
@@ -203,6 +212,37 @@ describe('vector index service', () => {
     expect(second.reusedChunks).toBe(0);
     expect(second.rebuiltForConfigChange).toBe(true);
     expect(results[0]?.page.relativePath).toBe('wiki/fonctionnel.md');
+  });
+
+  it('skips chunks rejected by the embedding input token limit', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-vector-skip-large-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await writeFile(
+      path.join(root, 'wiki', 'large.md'),
+      '# Large\n\noversized content.\n',
+      'utf8',
+    );
+    await writeFile(
+      path.join(root, 'wiki', 'small.md'),
+      '# Small\n\nExpertise.\n',
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    const service = new VectorIndexService(
+      config,
+      new WorkspaceService(config),
+      new SizeLimitEmbeddingService() as any,
+      new EmptyRerankService() as any,
+    );
+
+    const result = await service.buildIndex();
+
+    expect(result.indexedChunks).toBe(1);
+    expect(result.indexedPages).toBe(1);
+    expect(result.skippedChunks).toBe(1);
+    expect(result.skippedPages).toEqual(['wiki/large.md']);
+    expect(result.warnings[0]).toContain('wiki/large.md');
   });
 
   it('falls back to vector order when reranker returns no results', async () => {

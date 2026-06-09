@@ -49,6 +49,11 @@ const SKILL_INSTALL_PATHS = [
 const SKILL_ALLOWED_ROOTS = ['templates/', 'build-context/', '.wiki/skills/'];
 const SKILL_ALLOWED_FILES = new Set(['skill.yaml', 'CLAUDE.md', '.wiki/system-prompt.md']);
 
+function fallbackTitleFromWikiPath(wikiPath: string): string {
+  const fileName = path.basename(wikiPath, path.extname(wikiPath));
+  return fileName.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Untitled';
+}
+
 function inferWikiPageType(relativePath: string): WikiPage['type'] {
   if (relativePath === 'wiki/index.md') {
     return 'index';
@@ -568,7 +573,10 @@ export class WorkspaceService {
           case 'update':
             await writeIfChanged(
               absolutePath,
-              normalizeGeneratedMarkdown(operation.content ?? ''),
+              normalizeGeneratedMarkdown(
+                operation.content ?? '',
+                fallbackTitleFromWikiPath(operation.path),
+              ),
             );
             break;
           case 'delete':

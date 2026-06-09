@@ -136,6 +136,17 @@ export default async function ingestCmd(
         console.log(
           `\nVector index updated: ${indexResult.indexedChunks} chunk(s), ${indexResult.embeddedChunks} new/changed, ${indexResult.reusedChunks} reused.`,
         );
+        if (indexResult.skippedChunks > 0) {
+          console.warn(
+            `Warning: skipped vector embeddings for ${indexResult.skippedChunks} oversized chunk(s) from ${indexResult.skippedPages.length} page(s). Lexical search will still cover those documents.`,
+          );
+          for (const warning of indexResult.warnings.slice(0, 5)) {
+            console.warn(`- ${warning}`);
+          }
+          if (indexResult.warnings.length > 5) {
+            console.warn(`- ... ${indexResult.warnings.length - 5} more skipped chunk(s).`);
+          }
+        }
       } catch (error) {
         console.warn(
           `\nWarning: ingest completed, but vector index update failed: ${

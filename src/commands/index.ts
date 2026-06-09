@@ -21,6 +21,17 @@ export default async function indexCmd(config: AppConfig): Promise<void> {
   console.log(
     `Embeddings: ${result.embeddedChunks} new/changed, ${result.reusedChunks} reused.`,
   );
+  if (result.skippedChunks > 0) {
+    console.warn(
+      `Warning: skipped vector embeddings for ${result.skippedChunks} oversized chunk(s) from ${result.skippedPages.length} page(s). Lexical search will still cover those documents.`,
+    );
+    for (const warning of result.warnings.slice(0, 5)) {
+      console.warn(`- ${warning}`);
+    }
+    if (result.warnings.length > 5) {
+      console.warn(`- ... ${result.warnings.length - 5} more skipped chunk(s).`);
+    }
+  }
   if (result.rebuiltForConfigChange) {
     console.warn(
       'Existing vector index was built with different embedding settings and was rebuilt.',
