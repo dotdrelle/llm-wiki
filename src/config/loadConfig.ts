@@ -36,6 +36,11 @@ async function findConfigPath(startDir: string): Promise<string | undefined> {
 
 export async function loadConfig(startDir: string): Promise<AppConfig> {
   const workspaceEnv = process.env.WIKI_WORKSPACE ?? process.env.WIKI_WORKSPACE_PATH;
+  if (workspaceEnv && !path.isAbsolute(workspaceEnv)) {
+    process.stderr.write(
+      `Warning: WIKI_WORKSPACE_PATH "${workspaceEnv}" is a relative path — resolved against process.cwd() as "${path.resolve(workspaceEnv)}". Use an absolute path to avoid CWD-dependent resolution.\n`,
+    );
+  }
   const workspaceRoot = workspaceEnv ? path.resolve(workspaceEnv) : undefined;
   const searchRoot = workspaceRoot ?? startDir;
   const configPath = await findConfigPath(searchRoot);
