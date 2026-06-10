@@ -1,6 +1,8 @@
 # Configuration
 
 The CLI looks for `.wikirc.yaml` or `.wikirc.yml` in the current directory or its parents.
+Set `WIKI_CONFIG_PATH` to load a specific config file inside the workspace, for example
+`WIKI_CONFIG_PATH=.wikirc.yaml.openai`.
 
 ## Full example
 

@@ -11,6 +11,7 @@ describe('config resolution', () => {
     delete process.env.WIKI_MCP_TLS_CERT_PATH;
     delete process.env.WIKI_MCP_TLS_KEY_PATH;
     delete process.env.WIKI_MCP_TLS_CA_PATH;
+    delete process.env.WIKI_CONFIG_PATH;
     delete process.env.WIKI_WORKSPACE;
     delete process.env.WIKI_WORKSPACE_PATH;
   });
@@ -217,5 +218,28 @@ describe('config resolution', () => {
     expect(config.wikiRoot).toBe(root);
     expect(config.llm.provider).toBe('ollama');
     expect(config.llm.model).toBe('llama3.1');
+  });
+
+  it('loads explicit WIKI_CONFIG_PATH inside the workspace', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-config-explicit-'));
+    await writeFile(
+      path.join(root, '.wikirc.yaml'),
+      ['llm:', '  provider: ollama', '  model: default-model'].join('\n'),
+      'utf8',
+    );
+    await writeFile(
+      path.join(root, '.wikirc.yaml.openai'),
+      ['llm:', '  provider: openai', '  model: gpt-4o'].join('\n'),
+      'utf8',
+    );
+    process.env.WIKI_WORKSPACE_PATH = root;
+    process.env.WIKI_CONFIG_PATH = '.wikirc.yaml.openai';
+
+    const config = await loadConfig(root);
+
+    expect(config.configPath).toBe(path.join(root, '.wikirc.yaml.openai'));
+    expect(config.wikiRoot).toBe(root);
+    expect(config.llm.provider).toBe('openai');
+    expect(config.llm.model).toBe('gpt-4o');
   });
 });
