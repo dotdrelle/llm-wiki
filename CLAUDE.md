@@ -85,6 +85,20 @@ generic.
 - `llmService.ts`: provider abstraction.
 - `mcpServer.ts`: MCP tools for reading/searching/writing wiki content.
 
+## Config and Environment
+
+- `WIKI_CONFIG_PATH`: if set, resolves relative to the workspace root and loads
+  that file instead of searching for `.wikirc.yaml`. Used by
+  `agent-wiki-production` to pass a specific config profile (e.g.
+  `.wikirc.yaml.openai`) per job.
+- `WIKI_RUN_CALLER`: if set (to a job ID by `agent-wiki-production`), included
+  in `trace:init` log events as `caller`. Used to link CLI trace files back to
+  the production job that launched them.
+
+Trace logger (`src/services/traceLogger.ts`) enriches `trace:init` events with
+`configFile`, `provider`, `model`, and `caller` when available, so logs are
+attributable to their source workspace, provider, and job.
+
 ## Safety Rules
 
 - Never write outside the workspace root.

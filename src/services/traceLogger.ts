@@ -24,6 +24,10 @@ interface CreateTraceLoggerOptions {
   verbose?: boolean;
   debug?: boolean;
   traceFile?: string;
+  configFile?: string;
+  provider?: string;
+  model?: string;
+  caller?: string;
 }
 
 function formatValue(value: unknown): string {
@@ -90,12 +94,19 @@ class FileTraceLogger implements TraceLogger {
     this.debugEnabled = Boolean(args.debug);
   }
 
-  async init(command: string): Promise<void> {
+  async init(
+    command: string,
+    meta?: { configFile?: string; provider?: string; model?: string; caller?: string },
+  ): Promise<void> {
     await mkdir(path.dirname(this.filePath), { recursive: true });
     await this.info('trace:init', {
       command,
       runId: this.runId,
       traceFile: this.displayPath,
+      ...(meta?.configFile ? { configFile: meta.configFile } : {}),
+      ...(meta?.provider ? { provider: meta.provider } : {}),
+      ...(meta?.model ? { model: meta.model } : {}),
+      ...(meta?.caller ? { caller: meta.caller } : {}),
     });
   }
 
@@ -180,6 +191,11 @@ export async function createTraceLogger(
     runId,
   });
 
-  await logger.init(options.command);
+  await logger.init(options.command, {
+    configFile: options.configFile,
+    provider: options.provider,
+    model: options.model,
+    caller: options.caller,
+  });
   return logger;
 }

@@ -22,8 +22,6 @@ import { CHAT_HTML } from '../chat/chatHtml.ts';
 
 const MCP_WIKI_PORT = process.env.WIKI_MCP_HTTP_PORT ?? process.env.WIKI_MCP_PORT ?? '3101';
 const MCP_CME_PORT = process.env.CME_MCP_PORT ?? '3000';
-const MCP_MAILER_PORT = process.env.MAILER_MCP_PORT ?? '3335';
-const MCP_DOCUMENTS_PORT = process.env.DOCUMENTS_MCP_PORT ?? '3337';
 const MCP_PRODUCTION_PORT = process.env.PRODUCTION_MCP_PORT ?? '3336';
 const HUB_PORT = process.env.HUB_PORT ?? null;
 const HUB_TOKEN = process.env.HUB_TOKEN ?? null;
@@ -67,6 +65,49 @@ type SkillMeta = {
   body: string;
   scope: 'workspace';
 };
+
+type ExternalMcpEndpoint = {
+  name: string;
+  url: string;
+  headers: Record<string, string>;
+};
+
+function normalizeMcpHeaders(headers: unknown): Record<string, string> {
+  if (!headers || typeof headers !== 'object' || Array.isArray(headers)) return {};
+  return Object.fromEntries(
+    Object.entries(headers)
+      .filter(([key, value]) => key && typeof value === 'string' && value)
+      .map(([key, value]) => [key.toLowerCase(), value]),
+  );
+}
+
+async function loadExternalMcpEndpoints(rootDir: string): Promise<ExternalMcpEndpoint[]> {
+  const candidates = [
+    path.join(rootDir, '.wiki', 'mcp.endpoints.json'),
+    '/mcp.endpoints.json',
+    path.join(process.cwd(), 'mcp.endpoints.json'),
+  ];
+  for (const filePath of candidates) {
+    try {
+      const info = await stat(filePath);
+      if (!info.isFile()) continue;
+      const raw = JSON.parse(await readFile(filePath, 'utf8'));
+      const servers = raw?.mcpServers ?? raw?.servers ?? {};
+      if (!servers || typeof servers !== 'object' || Array.isArray(servers)) return [];
+      return Object.entries(servers)
+        .filter(([, endpoint]) => endpoint && typeof endpoint === 'object' && 'url' in endpoint)
+        .map(([name, endpoint]) => ({
+          name,
+          url: String((endpoint as { url?: unknown }).url),
+          headers: normalizeMcpHeaders((endpoint as { headers?: unknown }).headers),
+        }))
+        .filter((endpoint) => endpoint.url);
+    } catch {
+      // Missing or invalid external endpoint files are ignored; workspace MCPs still work.
+    }
+  }
+  return [];
+}
 
 function assertSkillName(name: string): void {
   if (!SKILL_NAME_RE.test(name)) throw new Error('INVALID_SKILL_NAME');
@@ -3922,6 +3963,7 @@ export default async function serveCmd(
   const workspace = new WorkspaceService(config);
   const rootDir = workspace.paths.rootDir;
   const port = options.port ?? 3000;
+  const externalMcpEndpoints = await loadExternalMcpEndpoints(rootDir);
 
   const server = createServer(async (req, res) => {
     try {
@@ -4047,30 +4089,30 @@ export default async function serveCmd(
             process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${MCP_WIKI_PORT}/mcp`;
           const cmeTarget =
             process.env.CME_MCP_PROXY_URL ?? `http://localhost:${MCP_CME_PORT}/mcp/`;
-          const mailerTarget =
-            process.env.MAILER_MCP_PROXY_URL ??
-            `http://localhost:${MCP_MAILER_PORT}/mcp/`;
-          const documentsTarget =
-            process.env.DOCUMENTS_MCP_PROXY_URL ??
-            `http://localhost:${MCP_DOCUMENTS_PORT}/mcp/`;
           const productionTarget =
             process.env.PRODUCTION_MCP_PROXY_URL ??
             `http://localhost:${MCP_PRODUCTION_PORT}/mcp/`;
           const normalizeTarget = (u: string) => u.replace(/\/+$/, '');
-          const proxyTokens: Record<string, string> = {
-            [normalizeTarget(wikiTarget)]: config.mcp.accessKey || '',
-            [normalizeTarget(cmeTarget)]: process.env.CME_MCP_AUTH_TOKEN ?? '',
-            [normalizeTarget(mailerTarget)]: process.env.MAILER_MCP_AUTH_TOKEN ?? '',
-            [normalizeTarget(documentsTarget)]: process.env.DOCUMENTS_MCP_AUTH_TOKEN ?? '',
-            [normalizeTarget(productionTarget)]: process.env.PRODUCTION_MCP_AUTH_TOKEN ?? '',
+          const proxyHeaders: Record<string, Record<string, string>> = {
+            [normalizeTarget(wikiTarget)]: config.mcp.accessKey
+              ? { authorization: `Bearer ${config.mcp.accessKey}` }
+              : {},
+            [normalizeTarget(cmeTarget)]: process.env.CME_MCP_AUTH_TOKEN
+              ? { authorization: `Bearer ${process.env.CME_MCP_AUTH_TOKEN}` }
+              : {},
+            [normalizeTarget(productionTarget)]: process.env.PRODUCTION_MCP_AUTH_TOKEN
+              ? { authorization: `Bearer ${process.env.PRODUCTION_MCP_AUTH_TOKEN}` }
+              : {},
           };
-          const bearer = proxyTokens[normalizeTarget(target)] ?? '';
-          const browserOverrides = !!req.headers['authorization'];
+          for (const endpoint of externalMcpEndpoints) {
+            proxyHeaders[normalizeTarget(endpoint.url)] = endpoint.headers;
+          }
+          const headers = proxyHeaders[normalizeTarget(target)] ?? {};
           await proxyPost(
             req,
             res,
             target,
-            !browserOverrides && bearer ? { authorization: `Bearer ${bearer}` } : {},
+            headers,
             { retryNetwork: true },
           );
           return;
@@ -4245,18 +4287,10 @@ export default async function serveCmd(
               url:
                 process.env.CME_MCP_PROXY_URL ?? `http://localhost:${MCP_CME_PORT}/mcp/`,
             },
-            {
-              name: 'donna-mailer',
-              url:
-                process.env.MAILER_MCP_PROXY_URL ??
-                `http://localhost:${MCP_MAILER_PORT}/mcp/`,
-            },
-            {
-              name: 'wiki-documents',
-              url:
-                process.env.DOCUMENTS_MCP_PROXY_URL ??
-                `http://localhost:${MCP_DOCUMENTS_PORT}/mcp/`,
-            },
+            ...externalMcpEndpoints.map((endpoint) => ({
+              name: endpoint.name,
+              url: endpoint.url,
+            })),
           ],
         };
         const cfgScript = `<script>window.__WIKI_CONFIG__=${escapeScriptJson(JSON.stringify(chatConfig))};</script>`;

@@ -31,6 +31,10 @@ export default async function exportCmd(
     verbose: options.verbose,
     debug: options.debug,
     traceFile: options.traceFile,
+    configFile: config.configPath,
+    provider: config.llm.provider,
+    model: config.llm.model,
+    caller: process.env.WIKI_RUN_CALLER,
   });
   console.log(`Trace file: ${logger.displayPath}`);
 
