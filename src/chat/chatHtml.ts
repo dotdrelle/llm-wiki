@@ -1714,15 +1714,15 @@ function renderProductionTrace() {
       ok: status==='failed' || status==='cancelled' ? false : true,
       detail,
     };
-    const existing=trace.steps.find(s=>s.id===id);
-    if(existing) Object.assign(existing,patch);
-    else trace.steps.push(patch);
+    dispatchChatAgentEvent(trace,'trace_step_upsert',{
+      origin:'poll',
+      payload:{step:patch},
+    });
   });
   if(!trace.selectedStepId) {
     const running=trace.steps.find(s=>s.type==='production' && ['running','queued'].includes(String(s.status||'')));
     if(running) trace.selectedStepId=running.id;
   }
-  trace.el?.classList.remove('empty');
   renderTrace(trace);
 }
 
@@ -2050,6 +2050,111 @@ function createTraceCard() {
   return trace;
 }
 
+function createChatAgentProjection() {
+  return {chain:[],activities:{},plan:null,status:'idle',summary:null};
+}
+
+function createChatAgentEvent(type, {origin='system', payload={}}={}) {
+  return {
+    id:\`\${Date.now().toString(36)}-\${Math.random().toString(36).slice(2,10)}\`,
+    ts:new Date().toISOString(),
+    type,
+    origin,
+    payload,
+  };
+}
+
+function dispatchChatAgentEvent(trace, type, {origin='system', payload={}}={}) {
+  if(!trace) return null;
+  const event=createChatAgentEvent(type,{origin,payload});
+  trace.agentEvents ||= [];
+  trace.agentProjection ||= createChatAgentProjection();
+  trace.agentEvents.push(event);
+  applyChatAgentEvent(trace.agentProjection,event);
+  trace.steps=trace.agentProjection.chain;
+  if(trace.steps.some(s=>s.type==='tool' || s.type==='production')) trace.el?.classList.remove('empty');
+  renderTrace(trace);
+  return event;
+}
+
+function applyChatAgentEvent(state, event) {
+  const p=event.payload||{};
+  if(event.type==='run_started') {
+    state.status='running';
+    state.chain=[];
+    state.activities={};
+    state.plan=null;
+    state.summary=null;
+    return;
+  }
+  if(event.type==='tool_call_started') {
+    upsertChatTraceStep(state,{
+      type:'tool',
+      status:'running',
+      kind:p.kind||'MCP',
+      title:p.name||'tool',
+      summary:p.summary||'calling...',
+      targetId:p.targetId||p.callId,
+      compactKey:p.compactKey||'',
+      assistantText:p.assistantText||'',
+    });
+    return;
+  }
+  if(event.type==='tool_call_result') {
+    const targetId=p.targetId||p.callId;
+    const step=state.chain.find(s=>s.targetId===targetId || s.callId===targetId);
+    if(!step) return;
+    const ok=p.ok!==false;
+    Object.assign(step,{
+      status:ok?'done':'failed',
+      summary:Number(step.callCount)>1 ? \`\${toolResultTraceSummary(p.result,ok)} · ×\${step.callCount}\` : toolResultTraceSummary(p.result,ok),
+      ok,
+      resultHtml:toolResultSummaryHTML(p.result,ok),
+      assistantText:p.assistantText||step.assistantText||'',
+    });
+    return;
+  }
+  if(event.type==='trace_step_upsert') {
+    upsertChatTraceStep(state,p.step||{});
+    return;
+  }
+  if(event.type==='activity_upserted') {
+    const activity=p.activity||null;
+    if(activity?.key) state.activities[activity.key]=activity;
+    return;
+  }
+  if(event.type==='run_summary') {
+    state.summary=String(p.content||'');
+    return;
+  }
+  if(event.type==='run_done') state.status='done';
+  if(event.type==='run_error') state.status='error';
+}
+
+function upsertChatTraceStep(state, rawStep) {
+  const step={...rawStep};
+  if(step.compactKey) {
+    const existing=state.chain.find(s=>s.compactKey===step.compactKey);
+    if(existing) {
+      Object.assign(existing,step,{
+        id:existing.id,
+        callCount:(Number(existing.callCount)||1)+1,
+        firstTargetId:existing.firstTargetId || existing.targetId,
+      });
+      return existing;
+    }
+    step.callCount=1;
+  }
+  const key=step.id || step.targetId;
+  const existing=key ? state.chain.find(s=>s.id===key || s.targetId===key) : null;
+  if(existing) {
+    Object.assign(existing,step,{id:existing.id});
+    return existing;
+  }
+  state.chain.push(step);
+  return step;
+}
+
 function hydrateTraceCard(card) {
   if(!card) return null;
   let traceId=card.dataset.traceId;
@@ -2168,47 +2273,6 @@ function renderTrace(trace) {
     detailWrap.innerHTML=traceDetailHTML(selected);
     restoreTraceOpenDetails(detailWrap, selected?.openDetailIndexes);
   }
-}
-
-function addTraceStep(trace, step) {
-  if(!trace) return;
-  if(step.compactKey) {
-    const existing=trace.steps.find(s=>s.compactKey===step.compactKey);
-    if(existing) {
-      Object.assign(existing,step,{
-        id:existing.id,
-        callCount:(Number(existing.callCount)||1)+1,
-        firstTargetId:existing.firstTargetId || existing.targetId,
-      });
-      renderTrace(trace);
-      return;
-    }
-    step.callCount=1;
-  }
-  trace.steps.push(step);
-  if(step.type==='tool') trace.el?.classList.remove('empty');
-  renderTrace(trace);
-}
-
-function updateTraceStep(trace, targetId, patch) {
-  if(!trace) return;
-  const step=trace.steps.find(s=>s.targetId===targetId);
-  if(step) Object.assign(step,patch);
-  renderTrace(trace);
-}
-
-function updateTraceToolResult(trace, targetId, result, ok, assistantText='') {
-  if(!trace) return;
-  const step=trace.steps.find(s=>s.targetId===targetId);
-  if(!step) return;
-  const summary=toolResultTraceSummary(result,ok);
-  Object.assign(step,{
-    summary:Number(step.callCount)>1 ? summary+' · ×'+step.callCount : summary,
-    ok,
-    resultHtml:toolResultSummaryHTML(result,ok),
-    assistantText,
-  });
-  renderTrace(trace);
 }
 
 function compactTraceKeyForTool(fn, server) {
@@ -2884,6 +2948,10 @@ async function sendMessage() {
   appendMsg('user',resolved.displayText);
   scheduleConversationSave();
   const runTrace=createTraceCard();
+  dispatchChatAgentEvent(runTrace,'run_started',{
+    origin:'user',
+    payload:{content:resolved.sendText},
+  });
 
   let tcIdx=Date.now();
   const MAX_TURNS=24;
@@ -2935,10 +3003,12 @@ async function sendMessage() {
           removeStreamBubble(streamDiv);
           streamFinalized=true;
           const summary=observerToolLoopSummary([],true);
+          dispatchChatAgentEvent(runTrace,'run_summary',{origin:'system',payload:{content:summary}});
           appendMsg('assistant',summary);
           messages.push({role:'assistant',content:summary});
           conversationDirty=true;
           await saveCurrentConversation({immediate:true});
+          dispatchChatAgentEvent(runTrace,'run_done',{origin:'system'});
           completedWithoutLimit=true;
           break;
         }
@@ -2950,14 +3020,16 @@ async function sendMessage() {
           const fn=toolCallFunctionName(tc)||'?';
           const server=findServerForTool(fn);
           if(isProductionToolName(fn)) productionState.trace=runTrace;
-          addTraceStep(runTrace,{
-            type:'tool',
-            kind:server?.name||'MCP',
-            title:fn,
-            summary:'calling...',
-            targetId:\`tc-\${tc._domIdx}\`,
-            compactKey:compactTraceKeyForTool(fn,server),
-            assistantText:content||'',
+          dispatchChatAgentEvent(runTrace,'tool_call_started',{
+            origin:'tool',
+            payload:{
+              callId:tc.id,
+              name:fn,
+              kind:server?.name||'MCP',
+              targetId:\`tc-\${tc._domIdx}\`,
+              compactKey:compactTraceKeyForTool(fn,server),
+              assistantText:content||'',
+            },
           });
         }
         const toolResults=await Promise.all(tcWithIdx.map(async (tc)=>{
@@ -2968,13 +3040,24 @@ async function sendMessage() {
             const r=await callMCPTool(fn,args);
             if(isProductionToolName(fn)) productionState.trace=runTrace;
             handleProductionToolResult(fn,args,r,true);
-            updateTraceToolResult(runTrace,\`tc-\${domIdx}\`,r,true,content||'');
-            for(const step of derivedTraceStepsForTool(fn,r,true,\`tc-\${domIdx}\`)) addTraceStep(runTrace,step);
+            dispatchChatAgentEvent(runTrace,'tool_call_result',{
+              origin:'tool',
+              payload:{callId:tc.id,targetId:\`tc-\${domIdx}\`,name:fn,ok:true,result:r,assistantText:content||''},
+            });
+            for(const step of derivedTraceStepsForTool(fn,r,true,\`tc-\${domIdx}\`)) {
+              dispatchChatAgentEvent(runTrace,'trace_step_upsert',{
+                origin:'tool',
+                payload:{step},
+              });
+            }
             return {tool_call_id:tc.id,role:'tool',name:fn,content:r};
           } catch(e) {
             if(isProductionToolName(fn)) productionState.trace=runTrace;
             handleProductionToolResult(fn,args,e.message,false);
-            updateTraceToolResult(runTrace,\`tc-\${domIdx}\`,e.message,false,content||'');
+            dispatchChatAgentEvent(runTrace,'tool_call_result',{
+              origin:'tool',
+              payload:{callId:tc.id,targetId:\`tc-\${domIdx}\`,name:fn,ok:false,result:e.message,assistantText:content||''},
+            });
             return {tool_call_id:tc.id,role:'tool',name:fn,content:\`\${chatText('Error:','Erreur :')} \${e.message}\`};
           }
         }));
@@ -2984,19 +3067,23 @@ async function sendMessage() {
         await saveCurrentConversation({immediate:true});
         if(tcWithIdx.every(tc=>isObserverToolName(toolCallFunctionName(tc)))) {
           const summary=observerToolLoopSummary(toolResults);
+          dispatchChatAgentEvent(runTrace,'run_summary',{origin:'system',payload:{content:summary}});
           appendMsg('assistant',summary);
           messages.push({role:'assistant',content:summary});
           conversationDirty=true;
           await saveCurrentConversation({immediate:true});
+          dispatchChatAgentEvent(runTrace,'run_done',{origin:'system'});
           completedWithoutLimit=true;
           break;
         }
         if(shouldStopAfterProductionTools(tcWithIdx)) {
           const summary=productionToolSummary(toolResults);
+          dispatchChatAgentEvent(runTrace,'run_summary',{origin:'system',payload:{content:summary}});
           appendMsg('assistant',summary);
           messages.push({role:'assistant',content:summary});
           conversationDirty=true;
           await saveCurrentConversation({immediate:true});
+          dispatchChatAgentEvent(runTrace,'run_done',{origin:'system'});
           completedWithoutLimit=true;
           break;
         }
@@ -3011,6 +3098,7 @@ async function sendMessage() {
       streamMessagePersisted=true;
       conversationDirty=true;
       await saveCurrentConversation({immediate:true});
+      dispatchChatAgentEvent(runTrace,'run_done',{origin:'llm'});
       completedWithoutLimit=true;
       break;
     }
@@ -3020,6 +3108,7 @@ async function sendMessage() {
         : \`⚠ Chaining limit reached (\${MAX_TURNS} turns).\`;
       appendMsg('assistant',limitText);
       messages.push({role:'assistant',content:limitText});
+      dispatchChatAgentEvent(runTrace,'run_error',{origin:'system',payload:{message:limitText}});
       await saveCurrentConversation({immediate:true});
     }
   } catch(err) {
@@ -3039,6 +3128,7 @@ async function sendMessage() {
         messages.push({role:'assistant',content:stopped});
       }
       conversationDirty=true;
+      dispatchChatAgentEvent(runTrace,'run_error',{origin:'system',payload:{message:streamText || 'aborted'}});
       await saveCurrentConversation({immediate:true});
     } else {
       if(streamDiv) {
@@ -3051,6 +3141,7 @@ async function sendMessage() {
       } else {
         appendMsg('assistant',\`\${chatText('⚠ Error:','⚠ Erreur :')} \${err.message}\`);
       }
+      dispatchChatAgentEvent(runTrace,'run_error',{origin:'system',payload:{message:err.message}});
       notify(err.message,'e');
       conversationDirty=true;
       await saveCurrentConversation({immediate:true});

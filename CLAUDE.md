@@ -18,7 +18,7 @@ src/config/             .wikirc.yaml loading, defaults, schema
 src/services/           Main orchestration and IO
 src/prompts/            Prompt builders
 src/utils/              Path safety, fs, hashing, markdown, JSON helpers
-src/chat/               Browser chat UI generation
+src/chat/               Browser chat UI generation; chatHtml.ts contains a self-contained event bus (createChatAgentEvent / dispatchChatAgentEvent / applyChatAgentEvent) mirroring the manager's AgentRunEvent contract
 scaffold/workspace/     Default workspace copied by `wiki init`
 tests/                  Vitest coverage
 docs/                   User-facing references
@@ -37,7 +37,7 @@ docs/                   User-facing references
 - `refresh`: rebuild stale deliverables from `.wiki/build-state.json`.
 - `export`: expand citations into source detail, optionally polish.
 - `lint`: static and optional semantic checks.
-- `serve`: local web UI, graph, chat, skill editor, API proxy.
+- `serve`: local web UI, graph, chat (event-driven trace), skill editor, API proxy.
 - `mcp`: stdio MCP server.
 - `mcp-http`: Streamable HTTP MCP server.
 
@@ -84,6 +84,29 @@ generic.
 - `rerankService.ts`: optional reranking endpoint.
 - `llmService.ts`: provider abstraction.
 - `mcpServer.ts`: MCP tools for reading/searching/writing wiki content.
+
+## Serve Chat — Event System
+
+`chatHtml.ts` embeds a self-contained typed event bus that mirrors the
+`llm-wiki-manager` `AgentRunEvent` contract:
+
+```
+run_started          clears chain, activities, plan, summary (stale state guard)
+tool_call_started    adds a running step to the trace chain
+tool_call_result     finalises the step (done / failed)
+trace_step_upsert    upserts a derived production/observer step
+activity_upserted    registers activity in state.activities
+run_summary          stores the final assistant text
+run_done / run_error marks the run terminal
+```
+
+All trace card mutations in `sendMessage` go through `dispatchChatAgentEvent`.
+`trace.steps` is kept as an alias for `trace.agentProjection.chain` so existing
+renderers (`renderTrace`, `traceStepHTML`, etc.) continue to work unchanged.
+
+Do not add direct `trace.steps.push()` calls outside the event handlers. Use
+`dispatchChatAgentEvent(trace, 'trace_step_upsert', { origin, payload: { step } })`
+instead.
 
 ## Config and Environment
 

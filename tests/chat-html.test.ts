@@ -181,10 +181,14 @@ describe('chat html', () => {
   it('keeps chained tool output in a single trace card instead of stacked chat cards', () => {
     const [script] = chatScripts();
 
-    expect(script).toContain('function updateTraceToolResult(trace, targetId, result, ok');
+    expect(script).toContain('function dispatchChatAgentEvent(trace, type');
+    expect(script).toContain("dispatchChatAgentEvent(runTrace,'tool_call_started'");
+    expect(script).toContain("dispatchChatAgentEvent(runTrace,'tool_call_result'");
+    expect(script).toContain("dispatchChatAgentEvent(runTrace,'trace_step_upsert'");
+    expect(script).toContain("dispatchChatAgentEvent(runTrace,'run_summary'");
     expect(script).toContain('function removeStreamBubble(div)');
     expect(script).toContain('removeStreamBubble(streamDiv);');
-    expect(script).toContain('updateTraceToolResult(runTrace,`tc-${domIdx}`,r,true');
+    expect(script).toContain("payload:{callId:tc.id,targetId:`tc-${domIdx}`,name:fn,ok:true,result:r");
     expect(script).toContain('const clickable=step.detail || step.resultHtml || step.targetId;');
     expect(script).toContain('if(step.detail || step.resultHtml)');
     expect(script).toContain('function hydrateTraceCard(card)');
@@ -193,5 +197,20 @@ describe('chat html', () => {
     expect(script).toContain('restoreTraceOpenDetails(detailWrap, selected?.openDetailIndexes);');
     expect(script).not.toContain('setStreamContent(streamDiv,content,tcBlocks);');
     expect(script).not.toContain('const tcBlocks=tcWithIdx.map');
+  });
+
+  it('drives serve trace state through agent events', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain('function createChatAgentProjection()');
+    expect(script).toContain('function createChatAgentEvent(type');
+    expect(script).toContain('function applyChatAgentEvent(state, event)');
+    expect(script).toContain("if(event.type==='run_started')");
+    expect(script).toContain('state.activities={};');
+    expect(script).toContain("if(event.type==='activity_upserted')");
+    expect(script).toContain("dispatchChatAgentEvent(runTrace,'run_started'");
+    expect(script).toContain("dispatchChatAgentEvent(trace,'trace_step_upsert'");
+    expect(script).toContain("dispatchChatAgentEvent(runTrace,'run_done'");
+    expect(script).toContain("dispatchChatAgentEvent(runTrace,'run_error'");
   });
 });
