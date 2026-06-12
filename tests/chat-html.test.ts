@@ -168,7 +168,8 @@ describe('chat html', () => {
   });
 
   it('renders production details inline in the trace card', () => {
-    expect(CHAT_HTML).toContain('.trace-flow{display:flex;align-items:center;gap:7px;row-gap:8px;flex-wrap:wrap;');
+    expect(CHAT_HTML).toContain('.trace-flow{display:flex;align-items:stretch;gap:7px;row-gap:8px;flex-wrap:wrap;');
+    expect(CHAT_HTML).toContain('.trace-v{margin-top:2px;font-size:12px;font-weight:800;color:var(--text);overflow-wrap:anywhere;white-space:normal}');
     expect(CHAT_HTML).toContain('.trace-detail-title{min-width:0;');
     expect(CHAT_HTML).toContain('.trace-tile.running,.trace-tile.done,.trace-tile.failed,.trace-tile.cancelled{padding-right:10px}');
     expect(CHAT_HTML).toContain(".trace-tile.running::before{content:'';position:absolute;top:-4px;right:7px;");

@@ -172,8 +172,8 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .trace-chevron{font-family:var(--font-mono);font-size:11px;color:var(--muted)}
 .trace-body{padding-top:10px}
 .trace-body.collapsed{display:none}
-.trace-flow{display:flex;align-items:center;gap:7px;row-gap:8px;flex-wrap:wrap;overflow-x:visible;padding:2px 0 4px}
-.trace-tile{position:relative;flex:0 0 auto;max-width:180px;border:1px solid var(--border);background:var(--panel);border-radius:13px;padding:7px 10px;cursor:default;text-align:left}
+.trace-flow{display:flex;align-items:stretch;gap:7px;row-gap:8px;flex-wrap:wrap;overflow-x:visible;padding:2px 0 4px}
+.trace-tile{position:relative;flex:1 1 210px;min-width:180px;max-width:100%;border:1px solid var(--border);background:var(--panel);border-radius:13px;padding:7px 10px;cursor:default;text-align:left}
 .trace-tile.tool{background:rgba(79,126,255,.08);border-color:rgba(79,126,255,.22);cursor:pointer}
 .trace-tile.production{background:rgba(45,212,160,.07);border-color:rgba(45,212,160,.2);cursor:pointer}
 .trace-tile.internal{background:rgba(127,127,127,.06);border-style:dashed}
@@ -185,18 +185,18 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .trace-tile.done::before{content:'';position:absolute;top:-4px;right:7px;width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 2px var(--bg)}
 .trace-tile.failed::before,.trace-tile.cancelled::before{content:'';position:absolute;top:-4px;right:7px;width:7px;height:7px;border-radius:50%;background:var(--err);box-shadow:0 0 0 2px var(--bg)}
 .trace-k{font-family:var(--font-mono);font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
-.trace-v{margin-top:2px;font-size:12px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.trace-s{margin-top:1px;font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trace-v{margin-top:2px;font-size:12px;font-weight:800;color:var(--text);overflow-wrap:anywhere;white-space:normal}
+.trace-s{margin-top:1px;font-size:10px;line-height:1.35;color:var(--muted);overflow-wrap:anywhere;white-space:normal}
 .trace-link{flex:0 0 auto;width:18px;height:1px;background:var(--border);position:relative}
 .trace-link::after{content:'';position:absolute;right:0;top:-3px;border-left:5px solid var(--border);border-top:3.5px solid transparent;border-bottom:3.5px solid transparent}
 .trace-detail{margin-top:10px;border:1px solid var(--border);border-radius:12px;background:var(--panel);padding:10px 11px}
 .trace-detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px}
 .trace-detail-title{min-width:0;font-size:13px;font-weight:850;color:var(--text);overflow-wrap:anywhere}
-.trace-detail-meta{font-family:var(--font-mono);font-size:10px;color:var(--muted);white-space:nowrap}
+.trace-detail-meta{font-family:var(--font-mono);font-size:10px;color:var(--muted);overflow-wrap:anywhere;white-space:normal;text-align:right}
 .trace-detail-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:8px 0}
 .trace-detail-cell{border:1px solid var(--border);border-radius:8px;background:var(--panel-soft);padding:6px 8px;min-width:0}
 .trace-detail-k{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
-.trace-detail-v{margin-top:2px;font-family:var(--font-mono);font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trace-detail-v{margin-top:2px;font-family:var(--font-mono);font-size:11px;color:var(--text);overflow-wrap:anywhere;white-space:normal}
 .trace-detail-line{font-size:11px;line-height:1.45;color:var(--muted);overflow-wrap:anywhere}
 .trace-detail-log{margin-top:8px;font-family:var(--font-mono);font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-word;color:var(--text);background:var(--panel-soft);border:1px solid var(--border);border-radius:8px;padding:8px;max-height:220px;overflow:auto}
 .trace-tool-result{margin-top:8px}
@@ -240,15 +240,20 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .tc-pill{display:inline-flex;align-items:center;border:1px solid var(--border);border-radius:99px;padding:2px 7px;color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:500}
 .tc-list{display:flex;flex-direction:column;gap:6px}
 .tc-item{background:var(--panel);border:1px solid var(--border);border-radius:9px;padding:8px 10px;font-family:var(--font-sans)}
-.tc-item-title{display:flex;align-items:center;gap:7px;min-width:0;font-size:12px;font-weight:700;color:var(--text)}
-.tc-item-path{font-family:var(--font-mono);font-size:10px;color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tc-doc-btn{display:inline-flex;max-width:100%;align-items:center;gap:5px;background:none;border:none;color:var(--accent);font:inherit;cursor:pointer;padding:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tc-item-title{display:flex;align-items:center;gap:7px;min-width:0;font-size:12px;font-weight:700;color:var(--text);overflow-wrap:anywhere}
+.tc-item-title span{min-width:0;overflow-wrap:anywhere}
+.tc-item-path{font-family:var(--font-mono);font-size:10px;color:var(--accent);overflow-wrap:anywhere;white-space:normal}
+.tc-doc-btn{display:inline;max-width:100%;background:none;border:none;color:var(--accent);font:inherit;cursor:pointer;padding:0;text-align:left;overflow-wrap:anywhere;white-space:normal}
 .tc-doc-btn:hover{text-decoration:underline;text-underline-offset:2px}
 .tc-doc-chip-row{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
-.tc-doc-chip{display:inline-flex;max-width:100%;align-items:center;border:1px solid var(--border);border-radius:99px;background:var(--panel-soft);color:var(--accent);font-family:var(--font-mono);font-size:10px;padding:3px 7px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tc-doc-chip{display:inline-flex;max-width:100%;align-items:center;border:1px solid var(--border);border-radius:8px;background:var(--panel-soft);color:var(--accent);font-family:var(--font-mono);font-size:10px;line-height:1.35;padding:3px 7px;cursor:pointer;overflow-wrap:anywhere;white-space:normal;text-align:left}
 .tc-doc-chip:hover{border-color:var(--accent)}
-.tc-item-meta{margin-top:3px;color:var(--muted);font-size:11px}
+.tc-item-meta{margin-top:3px;color:var(--muted);font-size:11px;overflow-wrap:anywhere}
 .tc-item-excerpt{margin-top:5px;color:var(--muted2);font-size:12px;line-height:1.45;white-space:pre-wrap}
+.tc-json-table-wrap{max-width:100%;overflow:auto}
+.tc-json-table{width:100%;border-collapse:collapse;font-size:11px}
+.tc-json-table th,.tc-json-table td{border:1px solid var(--border);padding:5px 7px;text-align:left;vertical-align:top;overflow-wrap:anywhere;white-space:normal}
+.tc-json-table th{background:var(--panel-soft);color:var(--muted);font-weight:700}
 .tc-raw{margin-top:8px}
 .tc-raw summary{cursor:pointer;color:var(--muted);font-family:var(--font-sans);font-size:11px;font-weight:600}
 .tc-raw pre{margin-top:6px}
@@ -1555,6 +1560,62 @@ function toolCallRepeatKey(tc) {
   return \`\${toolCallFunctionName(tc)}:\${stableToolArgsKey(toolCallArgsObject(tc))}\`;
 }
 
+function isPossiblyTruncatedToolResult(data, raw='') {
+  const text=String(raw||'');
+  if(/\\b(stdout_tail|stderr_tail|tail|truncated)\\b/i.test(text)) return true;
+  if(data && typeof data==='object') {
+    if(data.truncated === true || data.isTruncated === true) return true;
+    if(data.coverage?.truncatedPageCount > 0) return true;
+    if(data.stdout_tail || data.stderr_tail) return true;
+  }
+  return false;
+}
+
+function scalarSummaryBits(data, limit=5) {
+  if(!data || typeof data!=='object' || Array.isArray(data)) return [];
+  return Object.entries(data)
+    .filter(([,value])=>value===null || ['string','number','boolean'].includes(typeof value))
+    .slice(0,limit)
+    .map(([key,value])=>\`\${key}: \${shortText(value,80)}\`);
+}
+
+function observerResultSummary(r) {
+  const raw=typeof r.content==='string' ? r.content : JSON.stringify(r.content,null,2);
+  const data=parseToolJSON(r.content);
+  const warnings=isPossiblyTruncatedToolResult(data,raw)
+    ? [chatText('result may be partial/truncated','résultat possiblement partiel/tronqué')]
+    : [];
+  if(data?.job || data?.jobId || (data?.jobs && Array.isArray(data.jobs))) {
+    return [productionToolSummary([r]),...warnings].filter(Boolean).join('\\n');
+  }
+  if(data?.sources && Array.isArray(data.sources)) {
+    const sourceLines=data.sources.slice(0,12).map((source,i)=>{
+      const name=source?.name || source?.id || source?.source || source?.path || source?.url || \`source \${i+1}\`;
+      const meta=[source?.type,source?.status,source?.path,source?.url].filter(Boolean).map(v=>shortText(v,70)).join(' · ');
+      return \`- \${name}\${meta ? \` — \${meta}\` : ''}\`;
+    });
+    const more=data.sources.length>sourceLines.length ? [\`- +\${data.sources.length-sourceLines.length} \${chatText('more source(s)','source(s) en plus')}\`] : [];
+    const header=chatLanguageIsFrench()
+      ? \`\${data.sources.length} source\${data.sources.length>1?'s':''} CME configurée\${data.sources.length>1?'s':''}.\`
+      : \`\${data.sources.length} CME source\${data.sources.length>1?'s':''} configured.\`;
+    return [header,...sourceLines,...more,...warnings].join('\\n');
+  }
+  if(Array.isArray(data)) {
+    const shown=data.slice(0,8).map((item)=>\`- \${shortText(typeof item==='object' ? JSON.stringify(item) : item,140)}\`);
+    return [\`\${data.length} item\${data.length>1?'s':''}.\`,...shown,...warnings].join('\\n');
+  }
+  if(data && typeof data==='object') {
+    const bits=scalarSummaryBits(data,6);
+    const arrayBits=Object.entries(data)
+      .filter(([,value])=>Array.isArray(value))
+      .slice(0,4)
+      .map(([key,value])=>\`\${key}: \${value.length}\`);
+    const lines=[...bits,...arrayBits].map(bit=>\`- \${bit}\`);
+    return [\`\${r.name}: \${toolResultTraceSummary(r.content,true)}\`,...lines,...warnings].filter(Boolean).join('\\n');
+  }
+  return \`\${r.name}: \${shortText(raw,500)}\${warnings.length ? \`\\n- \${warnings[0]}\` : ''}\`;
+}
+
 function isObserverToolName(name) {
   const fn=String(name||'');
   return /(?:^|_)(status|list|logs?|history|trace|summary|stats)$/i.test(fn) ||
@@ -1568,16 +1629,7 @@ function observerToolLoopSummary(toolResults, repeated=false) {
   const prefix=repeated
     ? chatText('Observation chain stopped after repeated status/list calls.','Chaînage d’observation arrêté après des appels status/list répétés.')
     : chatText('Observation complete.','Observation terminée.');
-  const details=(toolResults||[]).map((r)=>{
-    const data=parseToolJSON(r.content);
-    if(data?.job || data?.jobId) return productionToolSummary([r]);
-    if(data?.jobs && Array.isArray(data.jobs)) return productionToolSummary([r]);
-    if(data?.sources && Array.isArray(data.sources)) return chatLanguageIsFrench()
-      ? \`\${data.sources.length} source\${data.sources.length>1?'s':''} CME configurée\${data.sources.length>1?'s':''}.\`
-      : \`\${data.sources.length} CME source\${data.sources.length>1?'s':''} configured.\`;
-    if(data?.status || data?.state) return \`\${r.name}: \${data.status || data.state}\`;
-    return \`\${r.name}: \${shortText(r.content,220)}\`;
-  }).filter(Boolean);
+  const details=(toolResults||[]).map(observerResultSummary).filter(Boolean);
   return [prefix,names.length?\`\${chatText('Tools:','Outils :')} \${names.join(', ')}\`:null,...details]
     .filter(Boolean)
     .join('\\n');
@@ -2510,6 +2562,27 @@ function toolResultSummaryHTML(result, ok) {
   const productionTemplates=productionTemplatesSummaryHTML(data, raw);
   if(productionTemplates) return productionTemplates;
 
+  if(data?.sources && Array.isArray(data.sources)) {
+    const shown=data.sources.slice(0,12);
+    const tail=data.stdout_tail || data.stderr_tail || data.tail || '';
+    return \`<div class="tc-summary">
+      <div class="tc-summary-head">
+        <span>\${data.sources.length} source\${data.sources.length>1?'s':''}</span>
+        <span class="tc-pill">CME</span>
+        \${isPossiblyTruncatedToolResult(data,raw)?'<span class="tc-pill">partial/tail</span>':''}
+      </div>
+      <div class="tc-list">\${shown.map((source,i)=>\`
+        <div class="tc-item">
+          <div class="tc-item-title"><span>\${esc(source?.name || source?.id || source?.source || \`source \${i+1}\`)}</span></div>
+          <div class="tc-item-meta">\${esc([source?.type,source?.status,source?.path,source?.url].filter(Boolean).join(' · '))}</div>
+          \${source?.description || source?.summary ? \`<div class="tc-item-excerpt">\${esc(source.description || source.summary)}</div>\` : ''}
+        </div>\`).join('')}</div>
+      \${data.sources.length>shown.length?\`<div class="tc-item-meta">+\${data.sources.length-shown.length} more sources</div>\`:''}
+      \${tail?\`<details class="tc-raw"><summary>Output tail</summary><pre>\${esc(String(tail))}</pre></details>\`:''}
+      <details class="tc-raw"><summary>Raw JSON</summary><pre>\${esc(raw)}</pre></details>
+    </div>\`;
+  }
+
   if(data?.job || data?.jobId) {
     const job=data.job || data;
     const status=String(job.status||data.status||'');
@@ -2574,6 +2647,10 @@ function toolResultTraceSummary(result, ok) {
     return \`\${candidates} candidate\${candidates>1?'s':''} · \${pages} page\${pages>1?'s':''}\`;
   }
   if(data?.pages && Array.isArray(data.pages)) return \`\${data.pages.length} page\${data.pages.length>1?'s':''}\`;
+  if(data?.sources && Array.isArray(data.sources)) {
+    const tail=isPossiblyTruncatedToolResult(data,typeof result==='string'?result:JSON.stringify(result));
+    return \`\${data.sources.length} source\${data.sources.length>1?'s':''}\${tail?' · partial/tail':''}\`;
+  }
   if(data?.jobs && Array.isArray(data.jobs)) return \`\${data.jobs.length} production job\${data.jobs.length>1?'s':''}\`;
   if(data?.job || data?.jobId) {
     const job=data.job || data;
