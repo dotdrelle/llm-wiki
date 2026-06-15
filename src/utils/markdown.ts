@@ -247,6 +247,19 @@ function headingPathAtIndex(content: string, index: number): string[] {
   return stack.map((entry) => entry.title);
 }
 
+function headingLevelAtIndex(content: string, index: number): number {
+  const before = content.slice(0, index);
+  const headingPattern = /^(#{1,6})\s+(.+)$/gm;
+  let match: RegExpExecArray | null;
+  let level = 0;
+
+  while ((match = headingPattern.exec(before)) !== null) {
+    level = match[1].length;
+  }
+
+  return level;
+}
+
 export function parseTemplateInstructions(content: string): TemplateInstruction[] {
   const instructions: TemplateInstruction[] = [];
   const pattern = /\[\[INSTRUCTION:\s*([\s\S]*?)\]\]/g;
@@ -264,6 +277,7 @@ export function parseTemplateInstructions(content: string): TemplateInstruction[
       token: match[0],
       instruction: match[1].trim(),
       headingPath: headingPathAtIndex(content, match.index),
+      headingLevel: headingLevelAtIndex(content, match.index),
       surroundingText,
     });
 

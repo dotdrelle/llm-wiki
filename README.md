@@ -83,6 +83,11 @@ Build deliverables:
 wiki build
 ```
 
+Generated slot replacements are normalized before they are written into the
+template: escaped Markdown newlines such as `\n` are restored, a repeated slot
+heading is removed when the template already provides it, and generated
+subheadings are shifted below the template heading level.
+
 Inspect planned LLM calls before building:
 
 ```bash

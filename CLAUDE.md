@@ -75,7 +75,10 @@ generic.
 - `workspaceService.ts`: workspace paths, source resolution, wiki writes,
   build-context reads, skill installation.
 - `ingestService.ts`: source-to-wiki LLM pipeline.
-- `buildService.ts`: template slot batching and generation.
+- `buildService.ts`: template slot batching and generation. Slot replacements
+  are normalized before insertion: escaped Markdown newlines are restored,
+  headings that repeat the template slot heading are removed, and generated
+  subheadings are shifted below the template heading level.
 - `refreshService.ts`: stale deliverable detection.
 - `exportService.ts`: citation expansion and polish.
 - `retrievalService.ts`: lexical/vector context assembly.

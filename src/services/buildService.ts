@@ -41,6 +41,54 @@ const PLAN_WORDS_EXCLUDED = new Set([
   'template',
 ]);
 
+function normalizeReplacementContent(content: string): string {
+  return content
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\n')
+    .replace(/\\`/g, '`')
+    .trim();
+}
+
+function normalizeHeadingTextForCompare(text: string): string {
+  return text
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLocaleLowerCase('fr');
+}
+
+function stripRepeatedSlotHeading(content: string, headingPath: string[]): string {
+  const expected = headingPath.at(-1);
+  if (!expected) return content;
+  const lines = content.split('\n');
+  const firstMeaningfulIndex = lines.findIndex((line) => line.trim() !== '');
+  if (firstMeaningfulIndex < 0) return content;
+  const heading = /^(#{1,6})\s+(.+?)\s*$/.exec(lines[firstMeaningfulIndex] ?? '');
+  if (!heading) return content;
+  if (
+    normalizeHeadingTextForCompare(heading[2]) !==
+    normalizeHeadingTextForCompare(expected)
+  ) {
+    return content;
+  }
+  lines.splice(firstMeaningfulIndex, 1);
+  return lines.join('\n').trim();
+}
+
+function normalizeReplacementHeadingLevels(content: string, parentHeadingLevel: number): string {
+  if (parentHeadingLevel <= 0) return content;
+  const firstHeading = /^(#{1,6})\s+.+$/m.exec(content);
+  if (!firstHeading) return content;
+  const firstLevel = firstHeading[1].length;
+  const delta = parentHeadingLevel + 1 - firstLevel;
+  if (delta <= 0) return content;
+
+  return content.replace(/^(#{1,6})(\s+.+)$/gm, (_match, marks: string, rest: string) => {
+    const nextLevel = Math.min(6, marks.length + delta);
+    return `${'#'.repeat(nextLevel)}${rest}`;
+  });
+}
+
 function extractMostRecentDateMs(result: SearchResult): number | undefined {
   const text = `${result.page.relativePath}\n${result.page.name}\n${result.page.content}`;
   const dates: number[] = [];
@@ -288,7 +336,17 @@ export class BuildService {
       };
       const response = await this.renderBatch(template, buildContext, batch, traceData);
       for (const item of response) {
-        replacements.set(item.id, item.content.trim());
+        const instruction = template.instructions.find(({ id }) => id === item.id);
+        const normalized = normalizeReplacementContent(item.content);
+        replacements.set(
+          item.id,
+          instruction
+            ? normalizeReplacementHeadingLevels(
+                stripRepeatedSlotHeading(normalized, instruction.headingPath),
+                instruction.headingLevel,
+              )
+            : normalized,
+        );
       }
     }
     let renderedBody = template.content;

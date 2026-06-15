@@ -84,6 +84,46 @@ class FakeLLMService {
   }
 }
 
+class EscapedNewlineLLMService {
+  async completeJson() {
+    return {
+      replacements: [
+        {
+          id: 'instruction-1',
+          content:
+            'Intro.\\n\\n### Tableau\\n\\n| Colonne | Source |\\n|---|---|\\n| Valeur | [src: wiki/concepts/local-first.md] |\\n\\n`À confirmer`',
+        },
+      ],
+    };
+  }
+}
+
+class RepeatedHeadingLLMService {
+  async completeJson() {
+    return {
+      replacements: [
+        {
+          id: 'instruction-1',
+          content: '### Section\n\nBody. [src: wiki/concepts/local-first.md]',
+        },
+      ],
+    };
+  }
+}
+
+class ShallowHeadingLLMService {
+  async completeJson() {
+    return {
+      replacements: [
+        {
+          id: 'instruction-1',
+          content: '### Child\n\nBody. [src: wiki/concepts/local-first.md]',
+        },
+      ],
+    };
+  }
+}
+
 class FakeRetrievalService {
   async search(): Promise<SearchResult[]> {
     return [];
@@ -282,6 +322,103 @@ describe('build service', () => {
 
     const state = await workspace.readBuildState();
     expect(state.deliverables['templates/brief.md']).toBeDefined();
+  });
+
+  it('normalizes escaped markdown line breaks in generated replacements', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-escaped-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'templates'), { recursive: true });
+    await mkdir(path.join(root, 'deliverables'), { recursive: true });
+
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n', 'utf8');
+    await writeFile(
+      path.join(root, 'templates', 'brief.md'),
+      ['# Brief', '', '[[INSTRUCTION: Summarize.]]'].join('\n'),
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    const workspace = new WorkspaceService(config);
+    const service = new BuildService(
+      config,
+      workspace,
+      new EscapedNewlineLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+    );
+
+    await service.build();
+
+    const output = await workspace.readTextFile(
+      path.join(root, 'deliverables', 'brief.md'),
+    );
+    expect(output).not.toContain('\\n');
+    expect(output).toContain('### Tableau\n\n| Colonne | Source |');
+    expect(output).toContain('`À confirmer`');
+  });
+
+  it('removes a generated heading that repeats the template slot heading', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-heading-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'templates'), { recursive: true });
+    await mkdir(path.join(root, 'deliverables'), { recursive: true });
+
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n', 'utf8');
+    await writeFile(
+      path.join(root, 'templates', 'brief.md'),
+      ['# Brief', '', '## Section', '', '[[INSTRUCTION: Fill section.]]'].join(
+        '\n',
+      ),
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    const workspace = new WorkspaceService(config);
+    const service = new BuildService(
+      config,
+      workspace,
+      new RepeatedHeadingLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+    );
+
+    await service.build();
+
+    const output = await workspace.readTextFile(
+      path.join(root, 'deliverables', 'brief.md'),
+    );
+    expect(output.match(/Section/g)).toHaveLength(1);
+    expect(output).toContain('## Section\n\nBody.');
+  });
+
+  it('shifts generated headings below the template slot heading level', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-level-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'templates'), { recursive: true });
+    await mkdir(path.join(root, 'deliverables'), { recursive: true });
+
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n', 'utf8');
+    await writeFile(
+      path.join(root, 'templates', 'brief.md'),
+      ['# Brief', '', '### Parent', '', '[[INSTRUCTION: Fill section.]]'].join(
+        '\n',
+      ),
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    const workspace = new WorkspaceService(config);
+    const service = new BuildService(
+      config,
+      workspace,
+      new ShallowHeadingLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+    );
+
+    await service.build();
+
+    const output = await workspace.readTextFile(
+      path.join(root, 'deliverables', 'brief.md'),
+    );
+    expect(output).toContain('### Parent\n\n#### Child\n\nBody.');
   });
 
   it('stabilizes existing deliverables and removes sidecars on normal build', async () => {

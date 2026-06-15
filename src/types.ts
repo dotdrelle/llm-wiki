@@ -183,6 +183,7 @@ export interface TemplateInstruction {
   token: string;
   instruction: string;
   headingPath: string[];
+  headingLevel: number;
   surroundingText: string;
 }
 
