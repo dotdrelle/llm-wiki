@@ -174,6 +174,32 @@ workspace method.
 The default scaffold is the `basic` skill: English, small, and suitable for a
 demo ingest/build cycle. It includes one demo source in `raw/untracked/`.
 
+### Chat skills in `wiki serve`
+
+The served chat exposes workspace skills as slash commands. Typing a matching
+skill such as `/wiki-sync` sends the skill body to the LLM while keeping the
+displayed command readable in the conversation.
+
+Skill runs keep going across status/list/log tool calls. Observation summaries
+are not allowed to end a skill early; the run continues until the skill's actual
+action has started or completed. Intermediate assistant status text remains
+visible and is updated by later status or final output instead of disappearing.
+
+The scaffolded `/wiki-sync` skill runs the Confluence-to-wiki path:
+
+```text
+cme_status
+-> cme_sources_list
+-> cme_export_run
+-> cme_export_status
+-> production_start_job {"type":"ingest"}
+-> production_job_status
+```
+
+The final ingest step intentionally uses the `wiki-production` MCP server. The
+llm-wiki MCP server is read/search/write oriented and does not expose a
+`wiki_ingest` tool.
+
 ## Core Commands
 
 ```bash

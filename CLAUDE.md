@@ -111,6 +111,27 @@ Do not add direct `trace.steps.push()` calls outside the event handlers. Use
 `dispatchChatAgentEvent(trace, 'trace_step_upsert', { origin, payload: { step } })`
 instead.
 
+## Serve Chat — Skills
+
+Slash entries in the browser chat first resolve against workspace skills from
+`.wiki/skills/`. A matching skill replaces the user-facing slash command with
+the skill body before the LLM turn starts.
+
+Skill runs are multi-step workflows. Do not let observation-only tool calls
+(`*_status`, `*_list`, logs, history, summaries) auto-finalize a skill run; the
+LLM must continue until the skill's requested action has actually started or
+completed. The generic "Observation complete" guard is only for normal chat
+questions, not for active skills.
+
+When a streamed assistant message precedes tool calls, keep it visible as the
+run status. Later status or final output should update that same bubble instead
+of removing it, so users can read the current state while MCP tools run.
+
+The default `/wiki-sync` skill exports all CME sources, then ingests the
+exported Markdown through the `wiki-production` MCP server with
+`production_start_job` and `type: "ingest"`. The llm-wiki MCP does not expose a
+`wiki_ingest` tool.
+
 ## Config and Environment
 
 - `WIKI_CONFIG_PATH`: if set, resolves relative to the workspace root and loads

@@ -1723,7 +1723,6 @@ function renderProductionTrace() {
     const running=trace.steps.find(s=>s.type==='production' && ['running','queued'].includes(String(s.status||'')));
     if(running) trace.selectedStepId=running.id;
   }
-  renderTrace(trace);
 }
 
 function updateProductionFromPayload(payload, {open=false, poll=false}={}) {
@@ -2067,12 +2066,13 @@ function createChatAgentEvent(type, {origin='system', payload={}}={}) {
 function dispatchChatAgentEvent(trace, type, {origin='system', payload={}}={}) {
   if(!trace) return null;
   const event=createChatAgentEvent(type,{origin,payload});
-  trace.agentEvents ||= [];
   trace.agentProjection ||= createChatAgentProjection();
-  trace.agentEvents.push(event);
   applyChatAgentEvent(trace.agentProjection,event);
   trace.steps=trace.agentProjection.chain;
-  if(trace.steps.some(s=>s.type==='tool' || s.type==='production')) trace.el?.classList.remove('empty');
+  if(!trace._hasVisibleSteps && trace.steps.some(s=>s.type==='tool' || s.type==='production')) {
+    trace._hasVisibleSteps=true;
+    trace.el?.classList.remove('empty');
+  }
   renderTrace(trace);
   return event;
 }
@@ -2102,12 +2102,13 @@ function applyChatAgentEvent(state, event) {
   }
   if(event.type==='tool_call_result') {
     const targetId=p.targetId||p.callId;
-    const step=state.chain.find(s=>s.targetId===targetId || s.callId===targetId);
+    const step=state.chain.find(s=>s.targetId===targetId);
     if(!step) return;
     const ok=p.ok!==false;
+    const baseSummary=toolResultTraceSummary(p.result,ok);
     Object.assign(step,{
       status:ok?'done':'failed',
-      summary:Number(step.callCount)>1 ? \`\${toolResultTraceSummary(p.result,ok)} · ×\${step.callCount}\` : toolResultTraceSummary(p.result,ok),
+      summary:Number(step.callCount)>1 ? \`\${baseSummary} · ×\${step.callCount}\` : baseSummary,
       ok,
       resultHtml:toolResultSummaryHTML(p.result,ok),
       assistantText:p.assistantText||step.assistantText||'',
@@ -2144,6 +2145,8 @@ function upsertChatTraceStep(state, rawStep) {
       return existing;
     }
     step.callCount=1;
+    state.chain.push(step);
+    return step;
   }
   const key=step.id || step.targetId;
   const existing=key ? state.chain.find(s=>s.id===key || s.targetId===key) : null;
@@ -2853,6 +2856,29 @@ function removeStreamBubble(div) {
   div.remove();
 }
 
+function keepOrReplaceStatusBubble(currentDiv, text, statusDiv) {
+  const value=String(text||'').trim();
+  if(!value) {
+    removeStreamBubble(currentDiv);
+    return statusDiv || null;
+  }
+  if(statusDiv && statusDiv!==currentDiv && statusDiv.isConnected) {
+    setStreamContent(statusDiv,value);
+    removeStreamBubble(currentDiv);
+    return statusDiv;
+  }
+  setStreamContent(currentDiv,value);
+  return currentDiv;
+}
+
+function publishAssistantOutput(content, statusDiv) {
+  if(statusDiv && statusDiv.isConnected) {
+    setStreamContent(statusDiv,content);
+    return statusDiv;
+  }
+  return appendMsg('assistant',content);
+}
+
 function setStreamContent(div, text, extra='') {
   const bubble=div.querySelector('.bubble');
   if(!bubble) return;
@@ -2929,6 +2955,7 @@ async function sendMessage() {
   const text=input.value.trim();
   if(!text) return;
   const resolved=await resolveSkillInvocation(text);
+  const isSkillRun=!!resolved.skill;
   const model=$('model-name').value.trim()||'gpt-4o';
   const parsedTemp=parseFloat($('temperature').value);
   const temp=Number.isFinite(parsedTemp) ? parsedTemp : 0.7;
@@ -2968,6 +2995,7 @@ async function sendMessage() {
   let streamText='';
   let streamFinalized=false;
   let streamMessagePersisted=false;
+  let statusDiv=null;
   const streamClearSeq=clearChatSeq;
   let completedWithoutLimit=false;
   const toolRepeatCounts=new Map();
@@ -2999,12 +3027,12 @@ async function sendMessage() {
           toolRepeatCounts.set(key,count);
           return count>1 && isObserverToolName(toolCallFunctionName(tc));
         });
-        if(repeatedObservation && tcWithIdx.every(tc=>isObserverToolName(toolCallFunctionName(tc)))) {
-          removeStreamBubble(streamDiv);
+        if(!isSkillRun && repeatedObservation && tcWithIdx.every(tc=>isObserverToolName(toolCallFunctionName(tc)))) {
+          statusDiv=keepOrReplaceStatusBubble(streamDiv,content,statusDiv);
           streamFinalized=true;
           const summary=observerToolLoopSummary([],true);
           dispatchChatAgentEvent(runTrace,'run_summary',{origin:'system',payload:{content:summary}});
-          appendMsg('assistant',summary);
+          statusDiv=publishAssistantOutput(summary,statusDiv);
           messages.push({role:'assistant',content:summary});
           conversationDirty=true;
           await saveCurrentConversation({immediate:true});
@@ -3012,7 +3040,7 @@ async function sendMessage() {
           completedWithoutLimit=true;
           break;
         }
-        removeStreamBubble(streamDiv);
+        statusDiv=keepOrReplaceStatusBubble(streamDiv,content,statusDiv);
         streamFinalized=true;
         messages.push({role:'assistant',content:content||null,tool_calls:tcWithIdx.map(({_domIdx,...tc})=>tc)});
         streamMessagePersisted=true;
@@ -3065,10 +3093,10 @@ async function sendMessage() {
         messages.push(...toolResults);
         conversationDirty=true;
         await saveCurrentConversation({immediate:true});
-        if(tcWithIdx.every(tc=>isObserverToolName(toolCallFunctionName(tc)))) {
+        if(!isSkillRun && tcWithIdx.every(tc=>isObserverToolName(toolCallFunctionName(tc)))) {
           const summary=observerToolLoopSummary(toolResults);
           dispatchChatAgentEvent(runTrace,'run_summary',{origin:'system',payload:{content:summary}});
-          appendMsg('assistant',summary);
+          statusDiv=publishAssistantOutput(summary,statusDiv);
           messages.push({role:'assistant',content:summary});
           conversationDirty=true;
           await saveCurrentConversation({immediate:true});
@@ -3079,7 +3107,7 @@ async function sendMessage() {
         if(shouldStopAfterProductionTools(tcWithIdx)) {
           const summary=productionToolSummary(toolResults);
           dispatchChatAgentEvent(runTrace,'run_summary',{origin:'system',payload:{content:summary}});
-          appendMsg('assistant',summary);
+          statusDiv=publishAssistantOutput(summary,statusDiv);
           messages.push({role:'assistant',content:summary});
           conversationDirty=true;
           await saveCurrentConversation({immediate:true});
@@ -3092,7 +3120,13 @@ async function sendMessage() {
         continue;
       }
 
-      setStreamContent(streamDiv,content);
+      if(statusDiv && statusDiv!==streamDiv && statusDiv.isConnected) {
+        setStreamContent(statusDiv,content);
+        removeStreamBubble(streamDiv);
+      } else {
+        setStreamContent(streamDiv,content);
+        statusDiv=streamDiv;
+      }
       streamFinalized=true;
       messages.push({role:'assistant',content});
       streamMessagePersisted=true;
