@@ -3,11 +3,11 @@ import { createServer as createHttpsServer } from 'node:https';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { watch } from 'node:fs';
 import type { FSWatcher } from 'node:fs';
-import { mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { createGzip } from 'node:zlib';
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import fg from 'fast-glob';
 import matter from 'gray-matter';
@@ -29,6 +29,9 @@ const HUB_INTERNAL_HOST = process.env.HUB_INTERNAL_HOST ?? '127.0.0.1';
 const WORKSPACE_NAME = process.env.WORKSPACE_NAME ?? null;
 const SERVE_TITLE = process.env.WIKI_SERVE_TITLE ?? null;
 const SERVE_LOGO = process.env.WIKI_SERVE_LOGO ?? '🧠';
+const DOCUMENT_INPUT_DIR = process.env.DOCUMENT_INPUT_DIR ?? '/documents/input';
+const DOCUMENT_UPLOADS_DIR = process.env.DOCUMENT_UPLOADS_DIR ?? '/documents/uploads';
+const DOCUMENT_MAX_UPLOAD_BYTES = Number(process.env.DOCUMENT_MAX_UPLOAD_BYTES ?? 50 * 1024 * 1024);
 
 const SERVED_DIRS = ['wiki', 'deliverables', 'templates', 'build-context'];
 const NAV_PATTERNS = [
@@ -70,6 +73,22 @@ type ExternalMcpEndpoint = {
   name: string;
   url: string;
   headers: Record<string, string>;
+};
+
+type DocumentUploadRecord = {
+  id: string;
+  workspace: string;
+  filename: string;
+  storedPath: string;
+  agentPath: string;
+  status: 'stored' | 'converting' | 'converted' | 'failed';
+  provider: string | null;
+  outputPath: string | null;
+  method: string | null;
+  bytes: number;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 function interpolateEnv(value: string): string {
@@ -3073,11 +3092,15 @@ export async function serveMd(
 }
 
 async function readRequestBody(req: IncomingMessage): Promise<string> {
+  return (await readRequestBuffer(req)).toString('utf8');
+}
+
+async function readRequestBuffer(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of req) {
     chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
   }
-  return Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks);
 }
 
 function chatHistoryDir(rootDir: string): string {
@@ -3214,6 +3237,264 @@ function sendJson(
 ): void {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(data));
+}
+
+const DOCUMENT_EXTENSIONS = new Set([
+  '.txt', '.md', '.markdown', '.csv', '.json', '.xml', '.yaml', '.yml', '.html', '.htm', '.rtf',
+  '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.webp',
+  '.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.ods', '.odp',
+  '.pdf',
+]);
+
+function sanitizeUploadFilename(filename: string): string {
+  const name = path.basename(filename || 'upload.bin')
+    .normalize('NFKD')
+    .replace(/[^\w.\- ]+/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^\.+/g, '')
+    .slice(0, 120);
+  return name || 'upload.bin';
+}
+
+function assertDocumentUpload(filename: string, bytes: number): void {
+  const ext = path.extname(filename).toLowerCase();
+  if (!DOCUMENT_EXTENSIONS.has(ext)) throw new Error(`Unsupported document type: ${ext || 'no extension'}`);
+  const max = Number.isFinite(DOCUMENT_MAX_UPLOAD_BYTES) && DOCUMENT_MAX_UPLOAD_BYTES > 0
+    ? DOCUMENT_MAX_UPLOAD_BYTES
+    : 50 * 1024 * 1024;
+  if (bytes > max) throw new Error(`Document is too large: ${bytes} bytes (max ${max}).`);
+}
+
+function documentManifestPath(workspaceName: string): string {
+  return path.join(DOCUMENT_UPLOADS_DIR, `${workspaceName}.jsonl`);
+}
+
+async function readDocumentUploads(workspaceName: string): Promise<DocumentUploadRecord[]> {
+  const filePath = documentManifestPath(workspaceName);
+  if (!(await pathExists(filePath))) return [];
+  const raw = await readFile(filePath, 'utf8');
+  return raw.split(/\r?\n/).filter(Boolean).flatMap((line) => {
+    try {
+      return [JSON.parse(line) as DocumentUploadRecord];
+    } catch {
+      return [];
+    }
+  });
+}
+
+async function writeDocumentUploads(workspaceName: string, records: DocumentUploadRecord[]): Promise<void> {
+  await mkdir(DOCUMENT_UPLOADS_DIR, { recursive: true });
+  const filePath = documentManifestPath(workspaceName);
+  const tmp = `${filePath}.tmp.${process.pid}`;
+  const body = records.map((record) => JSON.stringify(record)).join('\n');
+  await writeFile(tmp, body ? `${body}\n` : '', 'utf8');
+  await rename(tmp, filePath);
+}
+
+async function upsertDocumentUpload(record: DocumentUploadRecord): Promise<DocumentUploadRecord> {
+  const records = await readDocumentUploads(record.workspace);
+  const index = records.findIndex((item) => item.id === record.id);
+  if (index === -1) records.unshift(record);
+  else records[index] = { ...records[index], ...record };
+  await writeDocumentUploads(record.workspace, records);
+  return record;
+}
+
+function parseMultipartUpload(body: Buffer, contentType: string): { filename: string; content: Buffer } {
+  const boundary = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i)?.[1]
+    ?? contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i)?.[2];
+  if (!boundary) throw new Error('Missing multipart boundary.');
+  const marker = Buffer.from(`--${boundary}`);
+  let offset = 0;
+  while (offset < body.length) {
+    const start = body.indexOf(marker, offset);
+    if (start === -1) break;
+    const headerStart = start + marker.length;
+    if (body.slice(headerStart, headerStart + 2).toString() === '--') break;
+    const partStart = body.slice(headerStart, headerStart + 2).toString() === '\r\n'
+      ? headerStart + 2
+      : headerStart;
+    const headerEnd = body.indexOf(Buffer.from('\r\n\r\n'), partStart);
+    if (headerEnd === -1) break;
+    const headers = body.slice(partStart, headerEnd).toString('utf8');
+    const filename = headers.match(/filename="([^"]+)"/i)?.[1];
+    const name = headers.match(/name="([^"]+)"/i)?.[1];
+    const next = body.indexOf(marker, headerEnd + 4);
+    if (next === -1) break;
+    let content = body.slice(headerEnd + 4, next);
+    if (content.slice(-2).toString() === '\r\n') content = content.slice(0, -2);
+    if (filename && (!name || name === 'file')) {
+      return { filename, content };
+    }
+    offset = next;
+  }
+  throw new Error('No file part found.');
+}
+
+function parseMcpPayload(text: string): unknown {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('event:') || trimmed.startsWith('data:')) {
+    const data = trimmed
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice('data:'.length).trim())
+      .join('\n');
+    return data ? JSON.parse(data) : null;
+  }
+  return JSON.parse(trimmed);
+}
+
+async function postMcp(endpoint: ExternalMcpEndpoint & { sessionId?: string }, method: string, params?: unknown): Promise<unknown> {
+  const headers = () => ({
+    accept: 'application/json, text/event-stream',
+    'content-type': 'application/json',
+    ...endpoint.headers,
+    ...(endpoint.sessionId ? { 'mcp-session-id': endpoint.sessionId } : {}),
+  });
+  const request = async (rpcMethod: string, rpcParams?: unknown) => {
+    const response = await fetch(endpoint.url, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method: rpcMethod, params: rpcParams }),
+    });
+    const sid = response.headers.get('mcp-session-id');
+    if (sid) endpoint.sessionId = sid;
+    const text = await response.text();
+    return { response, text };
+  };
+  let { response, text } = await request(method, params);
+  if (response.status === 400 && /session ID/i.test(text)) {
+    endpoint.sessionId = undefined;
+    const init = await request('initialize', {
+      protocolVersion: '2025-06-18',
+      capabilities: {},
+      clientInfo: { name: 'llm-wiki-serve', version: 'upload' },
+    });
+    if (!init.response.ok || !endpoint.sessionId) throw new Error(`initialize failed: ${init.response.status}`);
+    await request('notifications/initialized', {});
+    ({ response, text } = await request(method, params));
+  }
+  if (!response.ok) throw new Error(`${response.status} ${text.slice(0, 160)}`.trim());
+  const payload = parseMcpPayload(text) as { error?: { message?: string }; result?: unknown } | null;
+  if (payload?.error) throw new Error(payload.error.message ?? JSON.stringify(payload.error));
+  return payload?.result ?? null;
+}
+
+function isMcpUnavailable(err: unknown): boolean {
+  const text = err instanceof Error ? err.message : String(err);
+  return /fetch failed|ECONNREFUSED|ECONNRESET|ENOTFOUND|ETIMEDOUT|timeout|initialize failed|502|503|504/i.test(text);
+}
+
+function mcpTextResult(result: unknown): string {
+  const content = (result as { content?: unknown })?.content;
+  if (!Array.isArray(content)) return JSON.stringify(result ?? {}, null, 2);
+  return content
+    .map((item) => {
+      if (item && typeof item === 'object' && (item as { type?: string }).type === 'text') {
+        return String((item as { text?: unknown }).text ?? '');
+      }
+      return JSON.stringify(item);
+    })
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+async function convertDocumentUpload(record: DocumentUploadRecord, externalMcpEndpoints: ExternalMcpEndpoint[]): Promise<DocumentUploadRecord> {
+  const endpoint = externalMcpEndpoints.find((item) => item.name === 'documents');
+  if (!endpoint) {
+    record.status = 'stored';
+    record.provider = null;
+    record.error = 'documents MCP endpoint is not configured';
+    record.updatedAt = new Date().toISOString();
+    return upsertDocumentUpload(record);
+  }
+  record.status = 'converting';
+  record.provider = 'documents';
+  record.error = null;
+  record.updatedAt = new Date().toISOString();
+  await upsertDocumentUpload(record);
+  try {
+    const stem = record.filename.replace(/\.[^.]+$/, '');
+    const result = await postMcp({ ...endpoint }, 'tools/call', {
+      name: 'documents_convert_to_markdown',
+      arguments: {
+        workspace: record.workspace,
+        filePath: record.agentPath,
+        outputFilename: `${record.id}-${stem}.md`,
+      },
+    });
+    const parsed = JSON.parse(mcpTextResult(result) || '{}') as { ok?: boolean; error?: string; outputPath?: string; method?: string };
+    if (parsed.ok === false) throw new Error(parsed.error || 'documents conversion failed');
+    record.status = 'converted';
+    record.outputPath = parsed.outputPath ?? null;
+    record.method = parsed.method ?? null;
+    record.error = null;
+  } catch (err) {
+    record.status = isMcpUnavailable(err) ? 'stored' : 'failed';
+    record.error = err instanceof Error ? err.message : String(err);
+  }
+  record.updatedAt = new Date().toISOString();
+  return upsertDocumentUpload(record);
+}
+
+async function handleDocumentUploadsApi(
+  req: IncomingMessage,
+  res: ServerResponse,
+  urlPath: string,
+  externalMcpEndpoints: ExternalMcpEndpoint[],
+): Promise<boolean> {
+  const workspaceName = WORKSPACE_NAME ?? path.basename(process.env.WIKI_WORKSPACE_PATH ?? process.cwd());
+  if (urlPath === '/api/uploads' && req.method === 'GET') {
+    sendJson(res, 200, { ok: true, uploads: await readDocumentUploads(workspaceName) });
+    return true;
+  }
+  if (urlPath === '/api/upload' && req.method === 'POST') {
+    try {
+      const contentType = String(req.headers['content-type'] ?? '');
+      const { filename: rawFilename, content } = parseMultipartUpload(await readRequestBuffer(req), contentType);
+      const filename = sanitizeUploadFilename(rawFilename);
+      assertDocumentUpload(filename, content.length);
+      const id = randomUUID().slice(0, 8);
+      const storedFilename = `${id}-${filename}`;
+      const inputDir = path.join(DOCUMENT_INPUT_DIR, workspaceName);
+      await mkdir(inputDir, { recursive: true });
+      const storedPath = path.join(inputDir, storedFilename);
+      await writeFile(storedPath, content);
+      const now = new Date().toISOString();
+      let record: DocumentUploadRecord = {
+        id,
+        workspace: workspaceName,
+        filename,
+        storedPath,
+        agentPath: `/documents/input/${workspaceName}/${storedFilename}`,
+        status: 'stored',
+        provider: null,
+        outputPath: null,
+        method: null,
+        bytes: content.length,
+        error: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await upsertDocumentUpload(record);
+      record = await convertDocumentUpload(record, externalMcpEndpoints);
+      sendJson(res, 200, { ok: true, upload: record });
+    } catch (err) {
+      sendJson(res, 400, { ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+    return true;
+  }
+  const convertMatch = urlPath.match(/^\/api\/uploads\/([^/]+)\/convert$/);
+  if (convertMatch && req.method === 'POST') {
+    const id = convertMatch[1];
+    const record = (await readDocumentUploads(workspaceName)).find((item) => item.id === id);
+    if (!record) sendJson(res, 404, { ok: false, error: 'upload not found' });
+    else sendJson(res, 200, { ok: true, upload: await convertDocumentUpload(record, externalMcpEndpoints) });
+    return true;
+  }
+  return false;
 }
 
 export function isRawDownloadRequestPath(urlPath: string): boolean {
@@ -4000,6 +4281,10 @@ export default async function serveCmd(
       }
 
       if (await handleSkillsApi(rootDir, req, res, urlPath)) {
+        return;
+      }
+
+      if (await handleDocumentUploadsApi(req, res, urlPath, externalMcpEndpoints)) {
         return;
       }
 

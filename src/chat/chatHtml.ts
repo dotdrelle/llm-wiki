@@ -282,6 +282,9 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .input-box:focus-within{border-color:rgba(127,127,127,.45);box-shadow:0 10px 30px rgba(0,0,0,.08)}
 #chat-input{flex:1;background:none;border:none;color:var(--text);font-family:var(--font-sans);font-size:15px;resize:none;max-height:180px;overflow-y:auto;line-height:1.55;outline:none;padding:4px 0}
 #chat-input::placeholder{color:var(--muted)}
+.attach-btn{background:transparent;border:1px solid var(--border);border-radius:50%;width:34px;height:34px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--muted);transition:border-color .2s,color .2s,background .2s}
+.attach-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--panel)}
+.attach-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 #send-btn{background:var(--text);border:none;border-radius:50%;width:34px;height:34px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .2s,transform .2s,background .2s;color:var(--bg)}
 #send-btn:hover{opacity:.82;transform:scale(1.04)}
 #send-btn.is-stop{background:var(--text)}
@@ -515,8 +518,12 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
   <div id="input-wrap">
     <div class="input-box">
       <div class="skill-ac" id="skill-ac"></div>
+      <input id="doc-upload-input" type="file" hidden onchange="uploadSelectedDocument(this)">
       <textarea id="chat-input" rows="1" placeholder="Your message… (/ for skills)"
         oninput="autoResize(this)" onkeydown="handleKey(event)"></textarea>
+      <button class="attach-btn" type="button" onclick="openDocumentUpload()" title="Upload document" aria-label="Upload document">
+        <svg viewBox="0 0 24 24"><path d="M21.4 11.6 12 21a6 6 0 0 1-8.5-8.5l9.9-9.9a4 4 0 0 1 5.7 5.7L9.2 18.2a2 2 0 0 1-2.8-2.8l9.2-9.2"/></svg>
+      </button>
       <button id="send-btn" onclick="handleSendButton()" title="Envoyer">
         <svg viewBox="0 0 24 24"><path d="M12 5l7 7-1.4 1.4L13 8.8V20h-2V8.8l-4.6 4.6L5 12z"/></svg>
       </button>
@@ -661,6 +668,43 @@ function chatText(en, fr) {
 function notify(msg, type='s') {
   const el=$('notif'); el.textContent=msg; el.className=\`show \${type}\`;
   clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3200);
+}
+function openDocumentUpload() {
+  $('doc-upload-input')?.click();
+}
+async function uploadSelectedDocument(input) {
+  const file=input?.files?.[0];
+  if(!file) return;
+  input.value='';
+  const status=appendMsg('assistant',\`Document upload\\n\\n1. Store upload: running\\n2. Convert: pending\\n3. Write Markdown: pending\`);
+  try {
+    const form=new FormData();
+    form.append('file',file,file.name);
+    const res=await fetch('/api/upload',{method:'POST',body:form});
+    const data=await res.json().catch(()=>({ok:false,error:'Invalid upload response'}));
+    if(!res.ok||data.ok===false) throw new Error(data.error||\`HTTP \${res.status}\`);
+    const upload=data.upload||{};
+    const converted=upload.status==='converted';
+    const lines=[
+      'Document upload',
+      '',
+      \`1. Store upload: done\`,
+      \`2. Convert: \${converted?'done':upload.status}\`,
+      \`3. Write Markdown: \${converted?'done':'pending'}\`,
+      '',
+      \`id: \${upload.id||'-'}\`,
+      \`file: \${upload.filename||file.name}\`,
+      upload.outputPath ? \`output: \${upload.outputPath}\` : null,
+      upload.method ? \`method: \${upload.method}\` : null,
+      upload.error ? \`note: \${upload.error}\` : null,
+    ].filter(Boolean).join('\\n');
+    setStreamContent(status,lines);
+    notify(converted?'Document converted':'Document stored');
+  } catch(err) {
+    const message=err?.message||String(err);
+    setStreamContent(status,\`Document upload\\n\\n1. Store upload: failed\\n2. Convert: pending\\n3. Write Markdown: pending\\n\\nerror: \${message}\`);
+    notify(message,'e');
+  }
 }
 function appBack() {
   if(history.length>1) history.back();
