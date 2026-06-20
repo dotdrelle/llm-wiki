@@ -11,6 +11,9 @@ describe('config resolution', () => {
     delete process.env.WIKI_MCP_TLS_CERT_PATH;
     delete process.env.WIKI_MCP_TLS_KEY_PATH;
     delete process.env.WIKI_MCP_TLS_CA_PATH;
+    delete process.env.WIKI_SERVE_TLS_CERT_PATH;
+    delete process.env.WIKI_SERVE_TLS_KEY_PATH;
+    delete process.env.WIKI_SERVE_TLS_CA_PATH;
     delete process.env.WIKI_CONFIG_PATH;
     delete process.env.WIKI_WORKSPACE;
     delete process.env.WIKI_WORKSPACE_PATH;
@@ -94,7 +97,7 @@ describe('config resolution', () => {
     expect(config.retrieval.vector.rerankEnabled).toBe(false);
   });
 
-  it('parses MCP access key and TLS paths', () => {
+  it('parses MCP access key and ignores YAML TLS paths', () => {
     const config = resolveConfig(
       {
         mcp: {
@@ -111,11 +114,7 @@ describe('config resolution', () => {
 
     expect(config.mcp).toEqual({
       accessKey: 'secret',
-      tls: {
-        certPath: 'certs/fullchain.pem',
-        keyPath: 'certs/privkey.pem',
-        caPath: 'certs/ca.pem',
-      },
+      tls: undefined,
     });
   });
 
@@ -143,7 +142,7 @@ describe('config resolution', () => {
     });
   });
 
-  it('keeps .wikirc MCP settings ahead of environment overrides', () => {
+  it('keeps .wikirc MCP access key ahead of environment overrides and reads TLS from env', () => {
     process.env.WIKI_MCP_AUTH_TOKEN = 'env-secret';
     process.env.WIKI_MCP_TLS_CERT_PATH = '/certs/env-fullchain.pem';
 
@@ -163,8 +162,7 @@ describe('config resolution', () => {
     expect(config.mcp).toEqual({
       accessKey: 'yaml-secret',
       tls: {
-        certPath: 'certs/fullchain.pem',
-        keyPath: 'certs/privkey.pem',
+        certPath: '/certs/env-fullchain.pem',
       },
     });
   });

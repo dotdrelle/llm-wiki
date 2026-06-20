@@ -65,7 +65,9 @@ browser should use server-side routing:
 | -------------------- | -------------------------------------------------------------- |
 | `WIKI_MCP_PROXY_URL` | URL of the workspace `wiki mcp-http` endpoint seen by `serve`  |
 | `WIKI_MCP_AUTH_TOKEN` | Bearer token injected server-side for the workspace MCP server |
-| `CME_MCP_PROXY_URL`  | Optional external MCP endpoint, for example `agent-cme`        |
+
+External MCP endpoints such as `agent-cme` are loaded from
+`mcp.endpoints.json` instead of dedicated proxy environment variables.
 
 ## MCP HTTP server
 

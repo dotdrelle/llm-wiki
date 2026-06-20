@@ -54,21 +54,20 @@ source `.md` files there before running `wiki ingest`.
 
 ### Confluence through agent-cme
 
-For Confluence, use [`llm-wiki-manager`](https://github.com/dotdrelle/llm-wiki-manager)
-to launch a workspace-scoped [`agent-cme`](https://github.com/dotdrelle/agent-cme)
-instance. The manager mounts the workspace so CME exports Markdown directly into
-`raw/untracked/`:
+For Confluence, run the global [`agent-cme`](https://github.com/dotdrelle/agent-cme)
+MCP server and register it in `llm-wiki-manager/mcp.endpoints.json`. The target
+workspace is passed to `cme_export_run`, so exported Markdown lands directly in
+that workspace's `raw/untracked/`:
 
 ```bash
-cd ../llm-wiki-manager
-./wiki-workspace cme <workspace> up
+WORKSPACES_ROOT=/path/to/workspaces \
+  docker compose -f agent-external/agent-cme/docker-compose.yml up -d
 ./wiki-workspace wiki <workspace> ingest
 ```
 
-In manager mode, CME credentials and source manifests live under
-`<workspace>/.cme/`, while exported Markdown lands in
-`<workspace>/raw/untracked/`. There is no separate copy step for CME-sourced
-data.
+CME credentials and source manifests live in the global agent data volume, while
+exported Markdown lands in `<workspace>/raw/untracked/`. There is no separate
+copy step for CME-sourced data.
 
 ### Markitdown
 

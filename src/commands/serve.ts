@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { watch } from 'node:fs';
 import type { FSWatcher } from 'node:fs';
@@ -21,8 +22,7 @@ import { WIKI_CSS_VARS } from '../chat/theme.ts';
 import { CHAT_HTML } from '../chat/chatHtml.ts';
 
 const MCP_WIKI_PORT = process.env.WIKI_MCP_HTTP_PORT ?? process.env.WIKI_MCP_PORT ?? '3101';
-const MCP_CME_PORT = process.env.CME_MCP_PORT ?? '3000';
-const MCP_PRODUCTION_PORT = process.env.PRODUCTION_MCP_PORT ?? '3336';
+const MCP_PRODUCTION_PORT = process.env.PRODUCTION_MCP_PORT ?? '3102';
 const HUB_PORT = process.env.HUB_PORT ?? null;
 const HUB_TOKEN = process.env.HUB_TOKEN ?? null;
 const HUB_INTERNAL_HOST = process.env.HUB_INTERNAL_HOST ?? '127.0.0.1';
@@ -72,12 +72,20 @@ type ExternalMcpEndpoint = {
   headers: Record<string, string>;
 };
 
+function interpolateEnv(value: string): string {
+  return value.replace(/\$\{([^}]+)\}/g, (_, expr: string) => {
+    const sep = expr.indexOf(':-');
+    if (sep !== -1) return process.env[expr.slice(0, sep)] ?? expr.slice(sep + 2);
+    return process.env[expr] ?? '';
+  });
+}
+
 function normalizeMcpHeaders(headers: unknown): Record<string, string> {
   if (!headers || typeof headers !== 'object' || Array.isArray(headers)) return {};
   return Object.fromEntries(
     Object.entries(headers)
       .filter(([key, value]) => key && typeof value === 'string' && value)
-      .map(([key, value]) => [key.toLowerCase(), value]),
+      .map(([key, value]) => [key.toLowerCase(), interpolateEnv(value)]),
   );
 }
 
@@ -98,7 +106,7 @@ async function loadExternalMcpEndpoints(rootDir: string): Promise<ExternalMcpEnd
         .filter(([, endpoint]) => endpoint && typeof endpoint === 'object' && 'url' in endpoint)
         .map(([name, endpoint]) => ({
           name,
-          url: String((endpoint as { url?: unknown }).url),
+          url: interpolateEnv(String((endpoint as { url?: unknown }).url)),
           headers: normalizeMcpHeaders((endpoint as { headers?: unknown }).headers),
         }))
         .filter((endpoint) => endpoint.url);
@@ -3956,6 +3964,20 @@ function openAppMode(url: string): void {
   spawn('open', [url], { stdio: 'ignore', detached: true }).unref();
 }
 
+async function serveTlsOptions(config: AppConfig): Promise<{ cert: Buffer; key: Buffer; ca?: Buffer } | undefined> {
+  const { certPath, keyPath, caPath } = config.serve?.tls ?? {};
+  if (!certPath && !keyPath && !caPath) return undefined;
+  if (!certPath || !keyPath) {
+    throw new Error('serve.tls.certPath and serve.tls.keyPath must both be set for HTTPS.');
+  }
+  const resolvePath = (value: string) =>
+    path.isAbsolute(value) ? value : resolveInside(config.wikiRoot, value);
+  const cert = await readFile(resolvePath(certPath));
+  const key = await readFile(resolvePath(keyPath));
+  const ca = caPath ? await readFile(resolvePath(caPath)) : undefined;
+  return ca ? { cert, key, ca } : { cert, key };
+}
+
 export default async function serveCmd(
   config: AppConfig,
   options: { port?: number; open?: boolean },
@@ -3964,8 +3986,10 @@ export default async function serveCmd(
   const rootDir = workspace.paths.rootDir;
   const port = options.port ?? 3000;
   const externalMcpEndpoints = await loadExternalMcpEndpoints(rootDir);
+  const tls = await serveTlsOptions(config);
+  const server = tls ? createHttpsServer(tls) : createServer();
 
-  const server = createServer(async (req, res) => {
+  server.on('request', async (req, res) => {
     try {
       const urlPath = decodeURIComponent(
         new URL(req.url ?? '/', `http://localhost`).pathname,
@@ -4087,8 +4111,6 @@ export default async function serveCmd(
           }
           const wikiTarget =
             process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${MCP_WIKI_PORT}/mcp`;
-          const cmeTarget =
-            process.env.CME_MCP_PROXY_URL ?? `http://localhost:${MCP_CME_PORT}/mcp/`;
           const productionTarget =
             process.env.PRODUCTION_MCP_PROXY_URL ??
             `http://localhost:${MCP_PRODUCTION_PORT}/mcp/`;
@@ -4096,9 +4118,6 @@ export default async function serveCmd(
           const proxyHeaders: Record<string, Record<string, string>> = {
             [normalizeTarget(wikiTarget)]: config.mcp.accessKey
               ? { authorization: `Bearer ${config.mcp.accessKey}` }
-              : {},
-            [normalizeTarget(cmeTarget)]: process.env.CME_MCP_AUTH_TOKEN
-              ? { authorization: `Bearer ${process.env.CME_MCP_AUTH_TOKEN}` }
               : {},
             [normalizeTarget(productionTarget)]: process.env.PRODUCTION_MCP_AUTH_TOKEN
               ? { authorization: `Bearer ${process.env.PRODUCTION_MCP_AUTH_TOKEN}` }
@@ -4282,11 +4301,6 @@ export default async function serveCmd(
                 process.env.PRODUCTION_MCP_PROXY_URL ??
                 `http://localhost:${MCP_PRODUCTION_PORT}/mcp/`,
             },
-            {
-              name: 'agent-cme',
-              url:
-                process.env.CME_MCP_PROXY_URL ?? `http://localhost:${MCP_CME_PORT}/mcp/`,
-            },
             ...externalMcpEndpoints.map((endpoint) => ({
               name: endpoint.name,
               url: endpoint.url,
@@ -4462,7 +4476,7 @@ export default async function serveCmd(
   });
 
   server.listen(port, () => {
-    const url = `http://localhost:${port}`;
+    const url = `${tls ? 'https' : 'http'}://localhost:${port}`;
     console.log(`wiki serve  →  ${url}`);
     console.log('Ctrl-C to stop.');
     if (options.open) openAppMode(url);

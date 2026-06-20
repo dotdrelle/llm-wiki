@@ -142,6 +142,21 @@ exported Markdown through the `wiki-production` MCP server with
   in `trace:init` log events as `caller`. Used to link CLI trace files back to
   the production job that launched them.
 
+### TLS
+
+Both `serve` and `mcp-http` support HTTPS via env vars (paths are resolved
+relative to the workspace root if not absolute):
+
+| Command   | Cert env var                | Key env var                | CA env var (optional)     |
+| --------- | --------------------------- | -------------------------- | ------------------------- |
+| `serve`   | `WIKI_SERVE_TLS_CERT_PATH`  | `WIKI_SERVE_TLS_KEY_PATH`  | `WIKI_SERVE_TLS_CA_PATH`  |
+| `mcp-http`| `WIKI_MCP_TLS_CERT_PATH`    | `WIKI_MCP_TLS_KEY_PATH`    | `WIKI_MCP_TLS_CA_PATH`    |
+
+Both env vars (`CERT` and `KEY`) must be set together; providing only one is an
+error. When neither is set, the server starts in plain HTTP mode. TLS is
+infrastructure config — set it in Docker Compose or the environment only, not
+in `.wikirc.yaml`.
+
 Trace logger (`src/services/traceLogger.ts`) enriches `trace:init` events with
 `configFile`, `provider`, `model`, and `caller` when available, so logs are
 attributable to their source workspace, provider, and job.

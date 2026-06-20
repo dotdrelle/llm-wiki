@@ -28,6 +28,14 @@ This workspace follows a local-first LLM Wiki pattern.
 - `build-context/`: shared generation rules injected only during `wiki build` and `wiki refresh`.
 - `deliverables/`: generated markdown outputs; these should stay reproducible.
 
+## External Agents
+
+External acquisition agents are workspace-agnostic. The active workspace is
+passed as a tool argument by the orchestrator, so tools such as `cme_export_run`
+and `documents_convert_to_markdown` write new Markdown into this workspace's
+`raw/untracked/` directory. Do not store agent runtime state or credentials in
+the workspace.
+
 ## Content Rules
 
 - Generated content must never invent facts that are not documented in the wiki.

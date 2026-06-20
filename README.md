@@ -221,34 +221,60 @@ wiki mcp-http --port 3333
 
 ## Configuration
 
-Important `.wikirc.yaml` sections:
+Complete `.wikirc.yaml` reference (all fields; only set what you need):
 
 ```yaml
-language: en
+language: fr   # or en, de, … (2-20 chars)
 
 llm:
-  provider: ollama
+  provider: ollama                          # ollama | openai | openai-compatible | anthropic
   model: YOUR_MODEL_NAME
-  apiKey: ollama
+  apiKey: ollama                            # optional — leave empty for Ollama
   baseUrl: http://127.0.0.1:11434/v1
-  temperature: 0.1
-  timeoutMs: 600000
+  temperature: 0.1                          # 0–2, default 0.1
+  timeoutMs: 600000                         # per-request timeout in ms
+  # Ollama-specific (ignored for other providers)
+  numCtx: 32768                             # context window size
+  flashAttention: true                      # enable flash attention
+  kvCacheType: q8_0                         # f16 | q8_0 | q4_0
+
+limits:
+  requestsPerMinute: 10                     # rate cap (default 10)
+  dailyInputTokens: 1000000                 # optional daily budget
+  maxInputTokensPerCall: 50000              # hard cap per LLM call
+  targetInputTokensPerCall: 40000           # soft target for batch planning
+  maxProfileChars: 4000                     # max chars for source profiles
 
 build:
-  refreshOnIngest: false
-  slotBatchSize: 3
-  maxBuildContextChars: 12000
+  refreshOnIngest: true                     # rebuild stale deliverables after ingest
+  slotBatchSize: 3                          # template slots per LLM call
+  maxBuildContextChars: 12000              # max chars of context per build call
 
 retrieval:
-  maxContextFiles: 5
-  maxChunksPerPage: 2
-  maxChunkChars: 3000
-  maxSourceChars: 8000
+  maxContextFiles: 5                        # max wiki pages fed to LLM
+  maxChunksPerPage: 2                       # max vector chunks per page
+  maxChunkChars: 3000                       # max chars per chunk
+  maxSourceChars: 8000                      # max chars per source citation
   vector:
-    enabled: false
+    enabled: false                          # set true to enable vector search
+    baseUrl: http://127.0.0.1:7997/v1       # OpenAI-compatible embeddings endpoint
+    apiKey: optional-key
+    timeoutMs: 600000
     embeddingModel: BAAI/bge-m3
-    rerankEnabled: false
+    rerankEnabled: true
+    rerankerModel: BAAI/bge-reranker-v2-m3
+    topK: 120                               # candidates retrieved before rerank
+    rerankTopK: 80                          # candidates after rerank
+    maxResults: 6                           # final results passed to LLM
+
+# MCP HTTP server bearer token (optional)
+mcp:
+  accessKey: your-bearer-token
 ```
+
+TLS certificates (`WIKI_MCP_TLS_CERT_PATH`, `WIKI_SERVE_TLS_CERT_PATH`, etc.)
+are set via environment variables or Docker Compose only — they are
+infrastructure config, not workspace config. See `CLAUDE.md` for the full list.
 
 Run `wiki doctor` after changing provider, model, context size, batch size, or
 retrieval limits.

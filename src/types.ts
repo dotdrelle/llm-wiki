@@ -47,13 +47,19 @@ export interface VectorRetrievalConfig {
   maxResults: number;
 }
 
+export interface TlsConfig {
+  certPath?: string;
+  keyPath?: string;
+  caPath?: string;
+}
+
 export interface McpConfig {
   accessKey?: string;
-  tls?: {
-    certPath?: string;
-    keyPath?: string;
-    caPath?: string;
-  };
+  tls?: TlsConfig;
+}
+
+export interface ServeConfig {
+  tls?: TlsConfig;
 }
 
 export interface AppConfig {
@@ -65,6 +71,7 @@ export interface AppConfig {
   build: BuildConfig;
   retrieval: RetrievalConfig;
   mcp: McpConfig;
+  serve?: ServeConfig;
 }
 
 export interface BuildCommandOptions {

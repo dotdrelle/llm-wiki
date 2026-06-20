@@ -320,14 +320,14 @@ const mcpSchema = z
     (value) => value ?? {},
     z.object({
       accessKey: z.string().min(1).optional(),
-      tls: z
-        .object({
-          certPath: z.string().min(1).optional(),
-          keyPath: z.string().min(1).optional(),
-          caPath: z.string().min(1).optional(),
-        })
-        .optional(),
     }),
+  )
+  .default({});
+
+const serveSchema = z
+  .preprocess(
+    (value) => value ?? {},
+    z.object({}),
   )
   .default({});
 
@@ -339,6 +339,7 @@ export const rawConfigSchema = z.object({
   build: buildSchema.optional(),
   retrieval: retrievalSchema.optional(),
   mcp: mcpSchema.optional(),
+  serve: serveSchema.optional(),
 });
 
 export const wikiOperationSchema = z.preprocess(
@@ -469,15 +470,27 @@ export function resolveConfig(
     process.env.ALBERT_API_KEY ??
     apiKey;
 
-  const mcpCertPath = parsed.mcp?.tls?.certPath ?? process.env.WIKI_MCP_TLS_CERT_PATH;
-  const mcpKeyPath = parsed.mcp?.tls?.keyPath ?? process.env.WIKI_MCP_TLS_KEY_PATH;
-  const mcpCaPath = parsed.mcp?.tls?.caPath ?? process.env.WIKI_MCP_TLS_CA_PATH;
+  const mcpCertPath = process.env.WIKI_MCP_TLS_CERT_PATH;
+  const mcpKeyPath = process.env.WIKI_MCP_TLS_KEY_PATH;
+  const mcpCaPath = process.env.WIKI_MCP_TLS_CA_PATH;
   const mcpTls =
     mcpCertPath || mcpKeyPath || mcpCaPath
       ? {
           ...(mcpCertPath ? { certPath: mcpCertPath } : {}),
           ...(mcpKeyPath ? { keyPath: mcpKeyPath } : {}),
           ...(mcpCaPath ? { caPath: mcpCaPath } : {}),
+        }
+      : undefined;
+
+  const serveCertPath = process.env.WIKI_SERVE_TLS_CERT_PATH;
+  const serveKeyPath = process.env.WIKI_SERVE_TLS_KEY_PATH;
+  const serveCaPath = process.env.WIKI_SERVE_TLS_CA_PATH;
+  const serveTls =
+    serveCertPath || serveKeyPath || serveCaPath
+      ? {
+          ...(serveCertPath ? { certPath: serveCertPath } : {}),
+          ...(serveKeyPath ? { keyPath: serveKeyPath } : {}),
+          ...(serveCaPath ? { caPath: serveCaPath } : {}),
         }
       : undefined;
 
@@ -488,6 +501,9 @@ export function resolveConfig(
     mcp: {
       accessKey: parsed.mcp?.accessKey ?? process.env.WIKI_MCP_AUTH_TOKEN,
       tls: mcpTls,
+    },
+    serve: {
+      tls: serveTls,
     },
     llm: {
       provider,
