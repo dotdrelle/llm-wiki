@@ -672,11 +672,88 @@ function notify(msg, type='s') {
 function openDocumentUpload() {
   $('doc-upload-input')?.click();
 }
+function formatBytes(bytes) {
+  const value=Number(bytes);
+  if(!Number.isFinite(value)||value<0) return null;
+  const units=['B','KB','MB','GB'];
+  let size=value;
+  let unit=0;
+  while(size>=1024&&unit<units.length-1) { size/=1024; unit++; }
+  return \`\${size.toFixed(unit===0?0:1)} \${units[unit]}\`;
+}
+function uploadOutputLabel(outputPath) {
+  const text=String(outputPath||'');
+  const marker='/raw/untracked/';
+  const index=text.indexOf(marker);
+  if(index!==-1) return \`raw/untracked/\${text.slice(index+marker.length)}\`;
+  return text;
+}
+function uploadMethodLabel(method) {
+  const labels={
+    'pdf-text': chatText('PDF text extraction','Extraction texte PDF'),
+    'pdf-ocr': chatText('PDF OCR','OCR PDF'),
+    'image-ocr': chatText('Image OCR','OCR image'),
+    'docx-xml': chatText('DOCX text extraction','Extraction texte DOCX'),
+    'libreoffice-pdf': chatText('Office conversion','Conversion Office'),
+    'text': chatText('Text import','Import texte'),
+  };
+  return labels[method]||method||null;
+}
+function formatUploadProgressMessage(file, elapsedMs=0) {
+  const elapsed=Math.max(0,Math.round(elapsedMs/1000));
+  const size=formatBytes(file?.size);
+  return [
+    chatText('Document upload','Import de document'),
+    '',
+    \`\${chatText('File','Fichier')}: \${file?.name||'-'}\${size?\` (\${size})\`:''}\`,
+    elapsed>0 ? \`\${chatText('Elapsed','Temps ecoule')}: \${elapsed}s\` : null,
+    '',
+    \`1. \${chatText('Store upload','Stockage')}: \${chatText('running','en cours')}\`,
+    \`2. \${chatText('Convert','Conversion')}: \${chatText('pending','en attente')}\`,
+    \`3. \${chatText('Write Markdown','Ecriture Markdown')}: \${chatText('pending','en attente')}\`,
+    '',
+    chatText(
+      'Large files and OCR can take several minutes. Keep this tab open.',
+      'Les gros fichiers et l OCR peuvent prendre plusieurs minutes. Gardez cet onglet ouvert.',
+    ),
+  ].filter(Boolean).join('\\n');
+}
+function formatUploadResultMessage(upload, fallbackFile, elapsedMs=0) {
+  const converted=upload.status==='converted';
+  const stored=upload.status==='stored';
+  const failed=upload.status==='failed';
+  const size=formatBytes(upload.bytes??fallbackFile?.size);
+  const output=uploadOutputLabel(upload.outputPath);
+  const method=uploadMethodLabel(upload.method);
+  const elapsed=Math.max(0,Math.round(elapsedMs/1000));
+  const status=converted
+    ? chatText('Converted to Markdown','Converti en Markdown')
+    : stored
+      ? chatText('Stored, conversion pending','Stocke, conversion en attente')
+      : failed
+        ? chatText('Conversion failed','Conversion en echec')
+        : upload.status||chatText('Unknown','Inconnu');
+  return [
+    chatText('Document ready','Document pret'),
+    '',
+    \`\${chatText('Status','Statut')}: \${status}\`,
+    \`\${chatText('File','Fichier')}: \${upload.filename||fallbackFile?.name||'-'}\${size?\` (\${size})\`:''}\`,
+    output ? \`\${chatText('Markdown','Markdown')}: \${output}\` : null,
+    method ? \`\${chatText('Conversion','Conversion')}: \${method}\` : null,
+    elapsed>0 ? \`\${chatText('Duration','Duree')}: \${elapsed}s\` : null,
+    '',
+    \`\${chatText('Upload id','Id upload')}: \${upload.id||'-'}\`,
+    upload.error ? \`\${chatText('Note','Note')}: \${upload.error}\` : null,
+    converted ? \`\\n\${chatText('Next step: run ingest to integrate this source into the wiki.','Suite: lancez ingest pour integrer cette source dans le wiki.')}\` : null,
+  ].filter(Boolean).join('\\n');
+}
 async function uploadSelectedDocument(input) {
   const file=input?.files?.[0];
   if(!file) return;
   input.value='';
-  const status=appendMsg('assistant',\`Document upload\\n\\n1. Store upload: running\\n2. Convert: pending\\n3. Write Markdown: pending\`);
+  const startedAt=Date.now();
+  const status=appendMsg('assistant',formatUploadProgressMessage(file));
+  const timer=setInterval(()=>setStreamContent(status,formatUploadProgressMessage(file,Date.now()-startedAt)),5000);
   try {
     const form=new FormData();
     form.append('file',file,file.name);
@@ -685,25 +762,19 @@ async function uploadSelectedDocument(input) {
     if(!res.ok||data.ok===false) throw new Error(data.error||\`HTTP \${res.status}\`);
     const upload=data.upload||{};
     const converted=upload.status==='converted';
-    const lines=[
-      'Document upload',
-      '',
-      \`1. Store upload: done\`,
-      \`2. Convert: \${converted?'done':upload.status}\`,
-      \`3. Write Markdown: \${converted?'done':'pending'}\`,
-      '',
-      \`id: \${upload.id||'-'}\`,
-      \`file: \${upload.filename||file.name}\`,
-      upload.outputPath ? \`output: \${upload.outputPath}\` : null,
-      upload.method ? \`method: \${upload.method}\` : null,
-      upload.error ? \`note: \${upload.error}\` : null,
-    ].filter(Boolean).join('\\n');
-    setStreamContent(status,lines);
+    setStreamContent(status,formatUploadResultMessage(upload,file,Date.now()-startedAt));
     notify(converted?'Document converted':'Document stored');
   } catch(err) {
     const message=err?.message||String(err);
-    setStreamContent(status,\`Document upload\\n\\n1. Store upload: failed\\n2. Convert: pending\\n3. Write Markdown: pending\\n\\nerror: \${message}\`);
+    setStreamContent(status,[
+      chatText('Document upload failed','Import de document en echec'),
+      '',
+      \`\${chatText('File','Fichier')}: \${file.name}\`,
+      \`\${chatText('Error','Erreur')}: \${message}\`,
+    ].join('\\n'));
     notify(message,'e');
+  } finally {
+    clearInterval(timer);
   }
 }
 function appBack() {

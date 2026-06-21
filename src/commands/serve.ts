@@ -3095,10 +3095,16 @@ async function readRequestBody(req: IncomingMessage): Promise<string> {
   return (await readRequestBuffer(req)).toString('utf8');
 }
 
-async function readRequestBuffer(req: IncomingMessage): Promise<Buffer> {
+async function readRequestBuffer(req: IncomingMessage, maxBytes?: number): Promise<Buffer> {
   const chunks: Buffer[] = [];
+  let total = 0;
   for await (const chunk of req) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+    const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+    total += buffer.length;
+    if (maxBytes && total > maxBytes) {
+      throw new Error(`Request body is too large: ${total} bytes (max ${maxBytes}).`);
+    }
+    chunks.push(buffer);
   }
   return Buffer.concat(chunks);
 }
@@ -3301,6 +3307,18 @@ async function upsertDocumentUpload(record: DocumentUploadRecord): Promise<Docum
   return record;
 }
 
+async function removeDocumentUploadsForFilename(workspaceName: string, filename: string): Promise<void> {
+  const records = await readDocumentUploads(workspaceName);
+  const removed = records.filter((item) => item.filename === filename);
+  if (removed.length === 0) return;
+  for (const record of removed) {
+    for (const filePath of [record.storedPath, record.outputPath]) {
+      if (filePath) await rm(filePath, { force: true }).catch(() => {});
+    }
+  }
+  await writeDocumentUploads(workspaceName, records.filter((item) => item.filename !== filename));
+}
+
 function parseMultipartUpload(body: Buffer, contentType: string): { filename: string; content: Buffer } {
   const boundary = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i)?.[1]
     ?? contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i)?.[2];
@@ -3453,9 +3471,13 @@ async function handleDocumentUploadsApi(
   if (urlPath === '/api/upload' && req.method === 'POST') {
     try {
       const contentType = String(req.headers['content-type'] ?? '');
-      const { filename: rawFilename, content } = parseMultipartUpload(await readRequestBuffer(req), contentType);
+      const maxUploadBytes = Number.isFinite(DOCUMENT_MAX_UPLOAD_BYTES) && DOCUMENT_MAX_UPLOAD_BYTES > 0
+        ? DOCUMENT_MAX_UPLOAD_BYTES
+        : 50 * 1024 * 1024;
+      const { filename: rawFilename, content } = parseMultipartUpload(await readRequestBuffer(req, maxUploadBytes + 1024 * 1024), contentType);
       const filename = sanitizeUploadFilename(rawFilename);
       assertDocumentUpload(filename, content.length);
+      await removeDocumentUploadsForFilename(workspaceName, filename);
       const id = randomUUID().slice(0, 8);
       const storedFilename = `${id}-${filename}`;
       const inputDir = path.join(DOCUMENT_INPUT_DIR, workspaceName);
