@@ -46,7 +46,7 @@ const GRAPH_PATTERNS = [
   'deliverables/**/*.md',
   'raw/ingested/**/*.md',
 ];
-const EDITABLE_DIRS = ['wiki', 'deliverables', 'templates', 'build-context'];
+const EDITABLE_DIRS = ['wiki', 'deliverables', 'templates', 'build-context', 'raw/untracked'];
 const require = createRequire(import.meta.url);
 const D3_DIST_PATH = path.resolve(
   path.dirname(require.resolve('d3')),
@@ -686,6 +686,118 @@ function layout(title: string, body: string): string {
     .side-file[data-deliverable-kind="export"]::before { background: #176b87; opacity: 0.85; }
     .side-file[data-deliverable-kind="polish"]::before { background: #8b5cf6; opacity: 0.85; }
     .side-folder.is-search-hidden, .side-file.is-search-hidden { display: none; }
+    .side-untracked {
+      flex: 0 0 auto;
+      max-height: 42vh;
+      margin-top: 0.85rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--border);
+      min-height: 0;
+    }
+    .side-untracked[open] {
+      flex: 1 1 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .side-untracked summary {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      min-height: 2rem;
+      padding: 0.28rem 0.45rem;
+      border-radius: 6px;
+      color: var(--text);
+      cursor: pointer;
+      list-style: none;
+      user-select: none;
+      font-weight: 760;
+    }
+    .side-untracked summary::-webkit-details-marker { display: none; }
+    .side-untracked summary::before {
+      content: "▸";
+      width: 0.8rem;
+      color: var(--muted);
+      font-size: 0.74rem;
+      transition: transform 120ms ease;
+    }
+    .side-untracked[open] > summary::before { transform: rotate(90deg); }
+    .side-untracked summary:hover { background: var(--panel-soft); color: var(--accent); }
+    .side-untracked-count {
+      margin-left: auto;
+      min-width: 1.45rem;
+      height: 1.45rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 0.76rem;
+      font-weight: 820;
+    }
+    .side-untracked-list {
+      flex: 1 1 0;
+      min-height: 0;
+      overflow-y: auto;
+      margin: 0.35rem 0 0;
+      padding: 0;
+      list-style: none;
+    }
+    .side-untracked-item {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      min-height: 1.9rem;
+      border-radius: 6px;
+    }
+    .side-untracked-link {
+      flex: 1;
+      min-width: 0;
+      padding: 0.24rem 0.35rem 0.24rem 1.2rem;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-decoration: none;
+      position: relative;
+    }
+    .side-untracked-link::before {
+      content: "";
+      position: absolute;
+      left: 0.45rem;
+      top: 0.78rem;
+      width: 0.38rem;
+      height: 0.38rem;
+      border-radius: 999px;
+      background: #b7791f;
+      opacity: 0.85;
+    }
+    .side-untracked-link:hover {
+      background: var(--panel-soft);
+      color: var(--accent);
+    }
+    .side-untracked-delete {
+      flex: 0 0 auto;
+      width: 1.55rem;
+      height: 1.55rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid transparent;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font: inherit;
+      font-size: 1rem;
+      line-height: 1;
+    }
+    .side-untracked-delete:hover { border-color: var(--err); background: color-mix(in srgb, var(--err) 10%, var(--panel)); color: var(--err); }
+    .side-untracked-empty {
+      margin: 0.45rem 0.45rem 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
     .side-link {
       display: block;
       margin: 0.45rem 0;
@@ -1414,6 +1526,34 @@ ${body}
     }
     link.addEventListener('click', saveSidebarState);
   });
+  function syncUntrackedCount() {
+    const countEl = document.querySelector('[data-untracked-count]');
+    const list = document.querySelector('[data-untracked-list]');
+    if (!countEl || !list) return;
+    const next = list.querySelectorAll('.side-untracked-item').length;
+    countEl.textContent = String(next);
+    if (next === 0) list.innerHTML = '<li class="side-untracked-empty">Aucune source en attente.</li>';
+  }
+  document.querySelectorAll('[data-untracked-delete]').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const relativePath = button.getAttribute('data-untracked-delete') || '';
+      if (!relativePath) return;
+      if (!confirm('Supprimer cette source en attente ?\\n' + relativePath)) return;
+      button.disabled = true;
+      try {
+        const response = await fetch('/api/untracked/' + encodeURIComponent(relativePath), { method: 'DELETE' });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.ok === false) throw new Error(payload.error || 'Delete failed');
+        button.closest('.side-untracked-item')?.remove();
+        syncUntrackedCount();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : String(err));
+        button.disabled = false;
+      }
+    });
+  });
   function folderHasVisibleFile(folder) {
     return Boolean(folder.querySelector('[data-side-path]:not(.is-search-hidden)'));
   }
@@ -1974,12 +2114,31 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
   return `<details class="side-folder"${open} data-tree-id="${escapeAttr(node.path)}"><summary><span class="side-folder-label">${escapeHtml(label)}</span>${action}</summary><div class="side-folder-children">${children}</div></details>`;
 }
 
-async function renderSidebar(rootDir: string): Promise<string> {
-  const root = createNavNode('workspace', '');
-  const files = (await fg(NAV_PATTERNS, { cwd: rootDir, dot: false }))
+async function renderUntrackedSidebar(rootDir: string): Promise<string> {
+  const files = (await fg('raw/untracked/**/*.md', { cwd: rootDir, dot: false, onlyFiles: true }))
     .map(toPosix)
-    .sort();
-  for (const file of files) {
+    .sort((a, b) => a.localeCompare(b));
+  const count = files.length;
+  const open = count > 0 ? ' open' : '';
+  const items = count > 0
+    ? files
+      .map((file) => {
+        const title = humanTitle(file);
+        const safePath = escapeAttr(file);
+        return `<li class="side-untracked-item"><a class="side-untracked-link" href="${escapeHref(editHref(file))}" title="${safePath}">${escapeHtml(title)}</a><button class="side-untracked-delete" type="button" title="Supprimer ${safePath}" aria-label="Supprimer ${safePath}" data-untracked-delete="${safePath}">×</button></li>`;
+      })
+      .join('\n')
+    : '<li class="side-untracked-empty">Aucune source en attente.</li>';
+  return `<details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span><span class="side-untracked-count" data-untracked-count>${count}</span></summary><ul class="side-untracked-list" data-untracked-list>${items}</ul></details>`;
+}
+
+async function renderSidebar(rootDir: string): Promise<string> {
+  const [navFiles, untrackedPanel] = await Promise.all([
+    fg(NAV_PATTERNS, { cwd: rootDir, dot: false }),
+    renderUntrackedSidebar(rootDir),
+  ]);
+  const root = createNavNode('workspace', '');
+  for (const file of navFiles.map(toPosix).sort()) {
     addNavPath(root, file);
   }
 
@@ -1999,7 +2158,7 @@ async function renderSidebar(rootDir: string): Promise<string> {
   const chatIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>';
 const kbdHint = `<kbd style="font-size:.68rem;font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .35rem;border-radius:4px;color:var(--muted);cursor:pointer" title="Open global search (⌘K)" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}))">⌘K</kbd>`;
-  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}<span>Chat</span></a><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}<span>Graph</span></a></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filtrer les fichiers…" aria-label="Filtrer les fichiers" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Documents markdown">${tree}</nav>${wsSwitcher}</aside>`;
+  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}<span>Chat</span></a><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}<span>Graph</span></a></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filtrer les fichiers…" aria-label="Filtrer les fichiers" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Documents markdown">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside>`;
 }
 
 interface GraphNode {
@@ -3519,6 +3678,46 @@ async function handleDocumentUploadsApi(
   return false;
 }
 
+async function handleUntrackedApi(
+  rootDir: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+  urlPath: string,
+): Promise<boolean> {
+  const match = urlPath.match(/^\/api\/untracked\/(.+)$/);
+  if (!match || req.method !== 'DELETE') return false;
+  const relativePath = toPosix(match[1] ?? '').replace(/^\/+|\/+$/g, '');
+  if (!relativePath.endsWith('.md') || !relativePath.startsWith('raw/untracked/')) {
+    sendJson(res, 400, { ok: false, error: 'invalid untracked markdown path' });
+    return true;
+  }
+  try {
+    const absolute = resolveInside(rootDir, relativePath);
+    await rm(absolute, { force: true });
+    await removeEmptyUntrackedParents(rootDir, path.dirname(relativePath));
+    sendJson(res, 200, { ok: true, path: relativePath });
+  } catch (err) {
+    sendJson(res, 400, { ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
+  return true;
+}
+
+async function removeEmptyUntrackedParents(rootDir: string, relativeDir: string): Promise<void> {
+  const untrackedRoot = resolveInside(rootDir, 'raw/untracked');
+  let current = resolveInside(rootDir, relativeDir);
+  while (current !== untrackedRoot && current.startsWith(`${untrackedRoot}${path.sep}`)) {
+    let entries: string[];
+    try {
+      entries = await readdir(current);
+    } catch {
+      return;
+    }
+    if (entries.length > 0) return;
+    await rm(current, { recursive: false });
+    current = path.dirname(current);
+  }
+}
+
 export function isRawDownloadRequestPath(urlPath: string): boolean {
   return urlPath.startsWith('/raw/') && !urlPath.startsWith('/raw/ingested/');
 }
@@ -4307,6 +4506,10 @@ export default async function serveCmd(
       }
 
       if (await handleDocumentUploadsApi(req, res, urlPath, externalMcpEndpoints)) {
+        return;
+      }
+
+      if (await handleUntrackedApi(rootDir, req, res, urlPath)) {
         return;
       }
 
