@@ -2158,7 +2158,7 @@ async function renderSidebar(rootDir: string): Promise<string> {
   const chatIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>';
 const kbdHint = `<kbd style="font-size:.68rem;font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .35rem;border-radius:4px;color:var(--muted);cursor:pointer" title="Open global search (⌘K)" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}))">⌘K</kbd>`;
-  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}<span>Chat</span></a><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}<span>Graph</span></a></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filtrer les fichiers…" aria-label="Filtrer les fichiers" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Documents markdown">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside>`;
+  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}<span>Graph</span></a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}<span>Chat</span></a></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filtrer les fichiers…" aria-label="Filtrer les fichiers" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Documents markdown">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside>`;
 }
 
 interface GraphNode {
@@ -3512,7 +3512,9 @@ function parseMultipartUpload(body: Buffer, contentType: string): { filename: st
 function parseMcpPayload(text: string): unknown {
   const trimmed = text.trim();
   if (!trimmed) return null;
-  if (trimmed.startsWith('event:') || trimmed.startsWith('data:')) {
+  const firstLine = trimmed.split(/\r?\n/)[0] ?? '';
+  const isSSE = firstLine.startsWith('event:') || firstLine.startsWith('data:') || firstLine.startsWith(':');
+  if (isSSE) {
     const data = trimmed
       .split(/\r?\n/)
       .filter((line) => line.startsWith('data:'))
@@ -3578,6 +3580,34 @@ function mcpTextResult(result: unknown): string {
     .join('\n\n');
 }
 
+async function pollDocumentConversionJob(
+  endpoint: ExternalMcpEndpoint & { sessionId?: string },
+  jobId: string,
+  maxWaitMs = 300_000,
+): Promise<{ ok: boolean; outputPath?: string; method?: string; error?: string }> {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 2500));
+    try {
+      const result = await postMcp(endpoint, 'tools/call', {
+        name: 'documents_conversion_status',
+        arguments: { jobId },
+      });
+      const poll = JSON.parse(mcpTextResult(result) || '{}') as { ok?: boolean; error?: string; outputPath?: string; method?: string; _activity?: { terminal?: boolean; status?: string; error?: string } };
+      const activity = poll._activity;
+      if (activity?.terminal) {
+        if (poll.ok === false || activity.status === 'failed' || activity.status === 'error') {
+          return { ok: false, error: poll.error ?? activity.error ?? 'conversion failed' };
+        }
+        return { ok: true, outputPath: poll.outputPath, method: poll.method };
+      }
+    } catch {
+      // transient poll error — retry
+    }
+  }
+  return { ok: false, error: 'conversion timeout' };
+}
+
 async function convertDocumentUpload(record: DocumentUploadRecord, externalMcpEndpoints: ExternalMcpEndpoint[]): Promise<DocumentUploadRecord> {
   const endpoint = externalMcpEndpoints.find((item) => item.name === 'documents');
   if (!endpoint) {
@@ -3594,7 +3624,8 @@ async function convertDocumentUpload(record: DocumentUploadRecord, externalMcpEn
   await upsertDocumentUpload(record);
   try {
     const stem = record.filename.replace(/\.[^.]+$/, '');
-    const result = await postMcp({ ...endpoint }, 'tools/call', {
+    const sessionEndpoint: ExternalMcpEndpoint & { sessionId?: string } = { ...endpoint };
+    const result = await postMcp(sessionEndpoint, 'tools/call', {
       name: 'documents_convert_to_markdown',
       arguments: {
         workspace: record.workspace,
@@ -3602,11 +3633,22 @@ async function convertDocumentUpload(record: DocumentUploadRecord, externalMcpEn
         outputFilename: `${record.id}-${stem}.md`,
       },
     });
-    const parsed = JSON.parse(mcpTextResult(result) || '{}') as { ok?: boolean; error?: string; outputPath?: string; method?: string };
+    const parsed = JSON.parse(mcpTextResult(result) || '{}') as { ok?: boolean; error?: string; outputPath?: string; method?: string; jobId?: string; _activity?: { terminal?: boolean } };
     if (parsed.ok === false) throw new Error(parsed.error || 'documents conversion failed');
+
+    let outputPath = parsed.outputPath;
+    let method = parsed.method;
+
+    if (parsed.jobId && !parsed._activity?.terminal) {
+      const poll = await pollDocumentConversionJob(sessionEndpoint, parsed.jobId);
+      if (!poll.ok) throw new Error(poll.error || 'conversion failed');
+      outputPath = poll.outputPath;
+      method = poll.method;
+    }
+
     record.status = 'converted';
-    record.outputPath = parsed.outputPath ?? null;
-    record.method = parsed.method ?? null;
+    record.outputPath = outputPath ?? null;
+    record.method = method ?? null;
     record.error = null;
   } catch (err) {
     record.status = isMcpUnavailable(err) ? 'stored' : 'failed';
