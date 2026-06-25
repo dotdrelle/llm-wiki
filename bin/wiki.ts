@@ -3,6 +3,7 @@ declare const __PKG_VERSION__: string;
 import { readFileSync } from 'node:fs';
 import { Command } from 'commander';
 import { loadConfig } from '../src/config/loadConfig.ts';
+import { loadWorkspaceEnv } from '../src/config/loadEnv.ts';
 import initCmd from '../src/commands/init.ts';
 import ingestCmd from '../src/commands/ingest.ts';
 import queryCmd from '../src/commands/query.ts';
@@ -50,6 +51,7 @@ async function main() {
   if (workspaceArg) {
     process.env.WIKI_WORKSPACE = workspaceArg;
   }
+  await loadWorkspaceEnv(process.cwd());
   const config = await loadConfig(process.cwd());
 
   program

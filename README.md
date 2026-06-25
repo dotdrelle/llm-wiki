@@ -276,6 +276,10 @@ TLS certificates (`WIKI_MCP_TLS_CERT_PATH`, `WIKI_SERVE_TLS_CERT_PATH`, etc.)
 are set via environment variables or Docker Compose only — they are
 infrastructure config, not workspace config. See `CLAUDE.md` for the full list.
 
+The CLI automatically loads `.env` from the selected workspace before reading
+`.wikirc.yaml` or interpolating `.wiki/mcp.endpoints.json`. Variables already
+exported by the shell keep priority over values from `.env`.
+
 Run `wiki doctor` after changing provider, model, context size, batch size, or
 retrieval limits.
 

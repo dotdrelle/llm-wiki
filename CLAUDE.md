@@ -14,7 +14,7 @@ by `llm-wiki-manager`.
 ```text
 bin/wiki.ts              Commander CLI entrypoint
 src/commands/           Thin command wrappers
-src/config/             .wikirc.yaml loading, defaults, schema
+src/config/             .wikirc.yaml loading, defaults, schema; loadEnv.ts loads workspace `.env` before config
 src/services/           Main orchestration and IO
 src/prompts/            Prompt builders
 src/utils/              Path safety, fs, hashing, markdown, JSON helpers

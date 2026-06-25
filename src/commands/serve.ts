@@ -21,17 +21,21 @@ import { canonicalizeName, resolveInside, toPosix } from '../utils/path.ts';
 import { WIKI_CSS_VARS } from '../chat/theme.ts';
 import { CHAT_HTML } from '../chat/chatHtml.ts';
 
-const MCP_WIKI_PORT = process.env.WIKI_MCP_HTTP_PORT ?? process.env.WIKI_MCP_PORT ?? '3101';
-const MCP_PRODUCTION_PORT = process.env.PRODUCTION_MCP_PORT ?? '3102';
-const HUB_PORT = process.env.HUB_PORT ?? null;
-const HUB_TOKEN = process.env.HUB_TOKEN ?? null;
-const HUB_INTERNAL_HOST = process.env.HUB_INTERNAL_HOST ?? '127.0.0.1';
-const WORKSPACE_NAME = process.env.WORKSPACE_NAME ?? null;
-const SERVE_TITLE = process.env.WIKI_SERVE_TITLE ?? null;
-const SERVE_LOGO = process.env.WIKI_SERVE_LOGO ?? '🧠';
-const DOCUMENT_INPUT_DIR = process.env.DOCUMENT_INPUT_DIR ?? '/documents/input';
-const DOCUMENT_UPLOADS_DIR = process.env.DOCUMENT_UPLOADS_DIR ?? '/documents/uploads';
-const DOCUMENT_MAX_UPLOAD_BYTES = Number(process.env.DOCUMENT_MAX_UPLOAD_BYTES ?? 50 * 1024 * 1024);
+const mcpWikiPort = () => process.env.WIKI_MCP_HTTP_PORT ?? process.env.WIKI_MCP_PORT ?? '3101';
+const mcpProductionPort = () => process.env.PRODUCTION_MCP_PORT ?? '3102';
+const hubPort = () => process.env.HUB_PORT ?? null;
+const hubToken = () => process.env.HUB_TOKEN ?? null;
+const hubInternalHost = () => process.env.HUB_INTERNAL_HOST ?? '127.0.0.1';
+const workspaceNameFromEnv = () => process.env.WORKSPACE_NAME ?? null;
+const serveTitle = () => process.env.WIKI_SERVE_TITLE ?? null;
+const serveLogo = () => process.env.WIKI_SERVE_LOGO ?? '🧠';
+function resolveDocumentInputDir(rootDir: string): string {
+  return process.env.DOCUMENT_INPUT_DIR ?? path.join(rootDir, '.wiki', 'documents', 'input');
+}
+function resolveDocumentUploadsDir(rootDir: string): string {
+  return process.env.DOCUMENT_UPLOADS_DIR ?? path.join(rootDir, '.wiki', 'documents', 'uploads');
+}
+const documentMaxUploadBytes = () => Number(process.env.DOCUMENT_MAX_UPLOAD_BYTES ?? 50 * 1024 * 1024);
 
 const SERVED_DIRS = ['wiki', 'deliverables', 'templates', 'build-context'];
 const NAV_PATTERNS = [
@@ -103,8 +107,9 @@ function normalizeMcpHeaders(headers: unknown): Record<string, string> {
   if (!headers || typeof headers !== 'object' || Array.isArray(headers)) return {};
   return Object.fromEntries(
     Object.entries(headers)
-      .filter(([key, value]) => key && typeof value === 'string' && value)
-      .map(([key, value]) => [key.toLowerCase(), interpolateEnv(value)]),
+      .filter(([key, value]) => key && typeof value === 'string')
+      .map(([key, value]) => [key.toLowerCase(), interpolateEnv(value as string)])
+      .filter(([, value]) => value.trim() && !/^Bearer\s*$/i.test(value)),
   );
 }
 
@@ -463,9 +468,9 @@ function renderLogMarkdown(raw: string): string {
 }
 
 function layout(title: string, body: string): string {
-  const displayName = SERVE_TITLE ?? WORKSPACE_NAME ?? null;
+  const displayName = serveTitle() ?? workspaceNameFromEnv() ?? null;
   const pageTitle = displayName ? `${displayName} · ${title}` : title;
-  const faviconLabel = (SERVE_LOGO.trim() || (SERVE_TITLE ?? WORKSPACE_NAME ?? 'W'))
+  const faviconLabel = (serveLogo().trim() || (serveTitle() ?? workspaceNameFromEnv() ?? 'W'))
     .slice(0, 2)
     .toUpperCase();
   const faviconHref = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23176b87'/><text x='16' y='22.5' font-size='17' font-family='system-ui,sans-serif' font-weight='900' text-anchor='middle' fill='white'>${encodeURIComponent(faviconLabel)}</text></svg>`;
@@ -686,18 +691,39 @@ function layout(title: string, body: string): string {
     .side-file[data-deliverable-kind="export"]::before { background: #176b87; opacity: 0.85; }
     .side-file[data-deliverable-kind="polish"]::before { background: #8b5cf6; opacity: 0.85; }
     .side-folder.is-search-hidden, .side-file.is-search-hidden { display: none; }
+    .side-pending-resizer {
+      display: none;
+      flex-shrink: 0;
+      height: 8px;
+      cursor: row-resize;
+      align-items: center;
+      justify-content: center;
+      touch-action: none;
+    }
+    .side-pending-resizer.is-visible { display: flex; }
+    .side-pending-resizer:hover,
+    .side-pending-resizer.dragging { background: var(--panel-soft); }
+    .side-pending-resizer::before {
+      content: '';
+      width: 34px;
+      height: 3px;
+      border-radius: 99px;
+      background: var(--border);
+    }
+    .side-pending-resizer:hover::before,
+    .side-pending-resizer.dragging::before { background: var(--muted); }
     .side-untracked {
       flex: 0 0 auto;
-      max-height: 42vh;
-      margin-top: 0.85rem;
-      padding-top: 0.75rem;
+      margin-top: 0;
+      padding-top: 0.4rem;
       border-top: 1px solid var(--border);
       min-height: 0;
     }
     .side-untracked[open] {
-      flex: 1 1 0;
+      flex: 0 0 var(--pending-height, 32vh);
       display: flex;
       flex-direction: column;
+      overflow: hidden;
     }
     .side-untracked summary {
       display: flex;
@@ -753,7 +779,7 @@ function layout(title: string, body: string): string {
     .side-untracked-link {
       flex: 1;
       min-width: 0;
-      padding: 0.24rem 0.35rem 0.24rem 1.2rem;
+      padding: 0.24rem 1.35rem 0.24rem 1.2rem;
       color: var(--text);
       overflow: hidden;
       text-overflow: ellipsis;
@@ -775,6 +801,15 @@ function layout(title: string, body: string): string {
     .side-untracked-link:hover {
       background: var(--panel-soft);
       color: var(--accent);
+    }
+    .side-untracked-link:hover::after {
+      content: "✏";
+      position: absolute;
+      right: 0.35rem;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 0.7rem;
+      opacity: 0.55;
     }
     .side-untracked-delete {
       flex: 0 0 auto;
@@ -1172,9 +1207,24 @@ function layout(title: string, body: string): string {
       align-items: stretch;
     }
     .graph-layout.relations-collapsed { grid-template-columns: minmax(0, 1fr) 2.8rem; }
-    .graph-page-expanded .hero,
-    .graph-page-expanded .graph-legend { display: none; }
+    .graph-page-expanded .hero { display: none; }
     .graph-page-expanded { padding-top: 1rem; padding-bottom: 1rem; }
+    .graph-page-expanded .graph-legend {
+      position: fixed;
+      bottom: 1.1rem;
+      left: var(--graph-legend-left, 1rem);
+      z-index: 5;
+      max-width: calc(100vw - var(--graph-legend-left, 1rem) - 1rem);
+      margin: 0;
+      padding: 0.35rem 0.85rem;
+      background: color-mix(in srgb, var(--panel) 90%, transparent);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.78rem;
+      gap: 0.55rem;
+    }
     .graph-layout.graph-expanded { grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); }
     .graph-layout.graph-expanded.relations-collapsed { grid-template-columns: minmax(0, 1fr) 2.8rem; }
     .graph-layout.graph-expanded .graph-stage { height: calc(100vh - 9.5rem); max-height: none; }
@@ -1601,6 +1651,62 @@ ${body}
     const savedScroll = Number(localStorage.getItem(scrollKey) || '0');
     if (sideTree && Number.isFinite(savedScroll)) sideTree.scrollTop = savedScroll;
   });
+
+  // ── pending panel resizer ─────────────────────────────────────────────────
+  (function initPendingResizer() {
+    const sb = document.querySelector('.sidebar');
+    const handle = document.querySelector('[data-pending-resizer]');
+    const panel = document.querySelector('[data-untracked-panel]');
+    if (!sb || !handle || !panel) return;
+    const PKEY = 'llm-wiki:sidebar:pendingHeight';
+    function clamp(px) {
+      return Math.max(60, Math.min(px, sb.clientHeight * 0.72));
+    }
+    function applyHeight(px, persist) {
+      const v = clamp(px);
+      sb.style.setProperty('--pending-height', v + 'px');
+      if (persist) localStorage.setItem(PKEY, String(Math.round(v)));
+    }
+    function syncResizer() {
+      handle.classList.toggle('is-visible', panel.open);
+      if (!panel.open) {
+        sb.style.removeProperty('--pending-height');
+      } else {
+        const saved = Number(localStorage.getItem(PKEY));
+        if (Number.isFinite(saved) && saved > 0) applyHeight(saved);
+        else applyHeight(panel.offsetHeight);
+      }
+    }
+    panel.addEventListener('toggle', syncResizer);
+    syncResizer();
+    let startY = 0, startH = 0, dragging = false;
+    const onMove = e => {
+      if (!dragging) return;
+      applyHeight(startH + (startY - e.clientY), true);
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      handle.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    handle.addEventListener('pointerdown', e => {
+      startY = e.clientY;
+      startH = parseFloat(sb.style.getPropertyValue('--pending-height')) || panel.offsetHeight;
+      dragging = true;
+      handle.classList.add('dragging');
+      document.body.style.cursor = 'row-resize';
+      document.body.style.userSelect = 'none';
+      handle.setPointerCapture?.(e.pointerId);
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      e.preventDefault();
+    });
+    window.addEventListener('resize', syncResizer);
+  })();
 
   // ── workspace switcher ────────────────────────────────────────────────────
   (function initWsSwitcher() {
@@ -2125,11 +2231,11 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
       .map((file) => {
         const title = humanTitle(file);
         const safePath = escapeAttr(file);
-        return `<li class="side-untracked-item"><a class="side-untracked-link" href="${escapeHref(editHref(file))}" title="${safePath}">${escapeHtml(title)}</a><button class="side-untracked-delete" type="button" title="Supprimer ${safePath}" aria-label="Supprimer ${safePath}" data-untracked-delete="${safePath}">×</button></li>`;
+        return `<li class="side-untracked-item"><a class="side-untracked-link" href="${escapeHref(editHref(file))}" title="Éditer ${safePath}" aria-label="Éditer ${safePath}">${escapeHtml(title)}</a><button class="side-untracked-delete" type="button" title="Supprimer ${safePath}" aria-label="Supprimer ${safePath}" data-untracked-delete="${safePath}">×</button></li>`;
       })
       .join('\n')
     : '<li class="side-untracked-empty">Aucune source en attente.</li>';
-  return `<details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span><span class="side-untracked-count" data-untracked-count>${count}</span></summary><ul class="side-untracked-list" data-untracked-list>${items}</ul></details>`;
+  return `<div class="side-pending-resizer" data-pending-resizer title="Redimensionner le panneau Pending" role="separator" aria-orientation="horizontal"></div><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span><span class="side-untracked-count" data-untracked-count>${count}</span></summary><ul class="side-untracked-list" data-untracked-list>${items}</ul></details>`;
 }
 
 async function renderSidebar(rootDir: string): Promise<string> {
@@ -2147,12 +2253,13 @@ async function renderSidebar(rootDir: string): Promise<string> {
     .map((dir) => renderNavNode(dir))
     .join('\n');
 
-  const wsSwitcher = HUB_PORT
-    ? `<div class="ws-switcher" id="ws-switcher" data-current="${escapeAttr(WORKSPACE_NAME ?? '')}"><p class="ws-switcher-title">Workspaces</p><p class="ws-name" style="font-size:0.8rem;color:var(--muted);padding:0 0.2rem">Chargement…</p></div>`
+  const wsSwitcher = hubPort()
+    ? `<div class="ws-switcher" id="ws-switcher" data-current="${escapeAttr(workspaceNameFromEnv() ?? '')}"><p class="ws-switcher-title">Workspaces</p><p class="ws-name" style="font-size:0.8rem;color:var(--muted);padding:0 0.2rem">Chargement…</p></div>`
     : '';
-  const workspaceName = SERVE_TITLE
-    ? SERVE_TITLE
-    : (WORKSPACE_NAME ?? 'wiki').toUpperCase();
+  const configuredServeTitle = serveTitle();
+  const workspaceName = configuredServeTitle
+    ? configuredServeTitle
+    : (workspaceNameFromEnv() ?? 'wiki').toUpperCase();
   const graphIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="M8.6 8.1 10.8 15"/><path d="m15.4 8.1-2.2 6.9"/><path d="M9 6h6"/></svg>';
   const chatIcon =
@@ -2393,6 +2500,8 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
     return;
   }
   const graphLayout = document.querySelector('[data-graph-layout]');
+  const graphPanel = graphLayout?.querySelector('.graph-panel');
+  const graphPage = graphLayout?.closest('main');
   const svg = document.querySelector('[data-graph-svg]');
   const viewport = document.querySelector('[data-graph-viewport]');
   const linkLayer = document.querySelector('[data-link-layer]');
@@ -2558,13 +2667,25 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
 
   function setGraphExpanded(expanded) {
     graphLayout.classList.toggle('graph-expanded', expanded);
-    graphLayout.closest('main')?.classList.toggle('graph-page-expanded', expanded);
+    graphPage?.classList.toggle('graph-page-expanded', expanded);
+    syncExpandedLegendPosition();
     if (btnExpand) {
       btnExpand.setAttribute('aria-pressed', expanded ? 'true' : 'false');
       btnExpand.title = expanded ? 'Réduire le graph' : 'Agrandir le graph';
       btnExpand.textContent = expanded ? '↙' : '↗';
     }
   }
+
+  function syncExpandedLegendPosition() {
+    if (!graphPage?.classList.contains('graph-page-expanded') || !graphPanel) {
+      graphPage?.style.removeProperty('--graph-legend-left');
+      return;
+    }
+    const left = Math.max(8, graphPanel.getBoundingClientRect().left + 12);
+    graphPage.style.setProperty('--graph-legend-left', left + 'px');
+  }
+
+  window.addEventListener('resize', syncExpandedLegendPosition);
 
   function svgPoint(event) {
     const point = svg.createSVGPoint();
@@ -3024,7 +3145,7 @@ async function generateIndex(rootDir: string): Promise<string> {
   // ── Onboarding si wiki vide ────────────────────────────────────────────────
   const indexPath = path.join(rootDir, 'wiki', 'index.md');
   if (wikiFiles.length === 0) {
-    const title = SERVE_TITLE ?? WORKSPACE_NAME ?? 'Wiki';
+    const title = serveTitle() ?? workspaceNameFromEnv() ?? 'Wiki';
     const body = `${sidebar}<main class="content">${statsBar}${renderOnboarding(title)}</main>`;
     return layout('Démarrage', body);
   }
@@ -3425,18 +3546,19 @@ function sanitizeUploadFilename(filename: string): string {
 function assertDocumentUpload(filename: string, bytes: number): void {
   const ext = path.extname(filename).toLowerCase();
   if (!DOCUMENT_EXTENSIONS.has(ext)) throw new Error(`Unsupported document type: ${ext || 'no extension'}`);
-  const max = Number.isFinite(DOCUMENT_MAX_UPLOAD_BYTES) && DOCUMENT_MAX_UPLOAD_BYTES > 0
-    ? DOCUMENT_MAX_UPLOAD_BYTES
+  const configuredMax = documentMaxUploadBytes();
+  const max = Number.isFinite(configuredMax) && configuredMax > 0
+    ? configuredMax
     : 50 * 1024 * 1024;
   if (bytes > max) throw new Error(`Document is too large: ${bytes} bytes (max ${max}).`);
 }
 
-function documentManifestPath(workspaceName: string): string {
-  return path.join(DOCUMENT_UPLOADS_DIR, `${workspaceName}.jsonl`);
+function documentManifestPath(rootDir: string, workspaceName: string): string {
+  return path.join(resolveDocumentUploadsDir(rootDir), `${workspaceName}.jsonl`);
 }
 
-async function readDocumentUploads(workspaceName: string): Promise<DocumentUploadRecord[]> {
-  const filePath = documentManifestPath(workspaceName);
+async function readDocumentUploads(rootDir: string, workspaceName: string): Promise<DocumentUploadRecord[]> {
+  const filePath = documentManifestPath(rootDir, workspaceName);
   if (!(await pathExists(filePath))) return [];
   const raw = await readFile(filePath, 'utf8');
   return raw.split(/\r?\n/).filter(Boolean).flatMap((line) => {
@@ -3448,26 +3570,26 @@ async function readDocumentUploads(workspaceName: string): Promise<DocumentUploa
   });
 }
 
-async function writeDocumentUploads(workspaceName: string, records: DocumentUploadRecord[]): Promise<void> {
-  await mkdir(DOCUMENT_UPLOADS_DIR, { recursive: true });
-  const filePath = documentManifestPath(workspaceName);
+async function writeDocumentUploads(rootDir: string, workspaceName: string, records: DocumentUploadRecord[]): Promise<void> {
+  await mkdir(resolveDocumentUploadsDir(rootDir), { recursive: true });
+  const filePath = documentManifestPath(rootDir, workspaceName);
   const tmp = `${filePath}.tmp.${process.pid}`;
   const body = records.map((record) => JSON.stringify(record)).join('\n');
   await writeFile(tmp, body ? `${body}\n` : '', 'utf8');
   await rename(tmp, filePath);
 }
 
-async function upsertDocumentUpload(record: DocumentUploadRecord): Promise<DocumentUploadRecord> {
-  const records = await readDocumentUploads(record.workspace);
+async function upsertDocumentUpload(rootDir: string, record: DocumentUploadRecord): Promise<DocumentUploadRecord> {
+  const records = await readDocumentUploads(rootDir, record.workspace);
   const index = records.findIndex((item) => item.id === record.id);
   if (index === -1) records.unshift(record);
   else records[index] = { ...records[index], ...record };
-  await writeDocumentUploads(record.workspace, records);
+  await writeDocumentUploads(rootDir, record.workspace, records);
   return record;
 }
 
-async function removeDocumentUploadsForFilename(workspaceName: string, filename: string): Promise<void> {
-  const records = await readDocumentUploads(workspaceName);
+async function removeDocumentUploadsForFilename(rootDir: string, workspaceName: string, filename: string): Promise<void> {
+  const records = await readDocumentUploads(rootDir, workspaceName);
   const removed = records.filter((item) => item.filename === filename);
   if (removed.length === 0) return;
   for (const record of removed) {
@@ -3475,7 +3597,7 @@ async function removeDocumentUploadsForFilename(workspaceName: string, filename:
       if (filePath) await rm(filePath, { force: true }).catch(() => {});
     }
   }
-  await writeDocumentUploads(workspaceName, records.filter((item) => item.filename !== filename));
+  await writeDocumentUploads(rootDir, workspaceName, records.filter((item) => item.filename !== filename));
 }
 
 function parseMultipartUpload(body: Buffer, contentType: string): { filename: string; content: Buffer } {
@@ -3608,20 +3730,20 @@ async function pollDocumentConversionJob(
   return { ok: false, error: 'conversion timeout' };
 }
 
-async function convertDocumentUpload(record: DocumentUploadRecord, externalMcpEndpoints: ExternalMcpEndpoint[]): Promise<DocumentUploadRecord> {
+async function convertDocumentUpload(rootDir: string, record: DocumentUploadRecord, externalMcpEndpoints: ExternalMcpEndpoint[]): Promise<DocumentUploadRecord> {
   const endpoint = externalMcpEndpoints.find((item) => item.name === 'documents');
   if (!endpoint) {
     record.status = 'stored';
     record.provider = null;
     record.error = 'documents MCP endpoint is not configured';
     record.updatedAt = new Date().toISOString();
-    return upsertDocumentUpload(record);
+    return upsertDocumentUpload(rootDir, record);
   }
   record.status = 'converting';
   record.provider = 'documents';
   record.error = null;
   record.updatedAt = new Date().toISOString();
-  await upsertDocumentUpload(record);
+  await upsertDocumentUpload(rootDir, record);
   try {
     const stem = record.filename.replace(/\.[^.]+$/, '');
     const sessionEndpoint: ExternalMcpEndpoint & { sessionId?: string } = { ...endpoint };
@@ -3655,33 +3777,35 @@ async function convertDocumentUpload(record: DocumentUploadRecord, externalMcpEn
     record.error = err instanceof Error ? err.message : String(err);
   }
   record.updatedAt = new Date().toISOString();
-  return upsertDocumentUpload(record);
+  return upsertDocumentUpload(rootDir, record);
 }
 
 async function handleDocumentUploadsApi(
+  rootDir: string,
   req: IncomingMessage,
   res: ServerResponse,
   urlPath: string,
   externalMcpEndpoints: ExternalMcpEndpoint[],
 ): Promise<boolean> {
-  const workspaceName = WORKSPACE_NAME ?? path.basename(process.env.WIKI_WORKSPACE_PATH ?? process.cwd());
+  const workspaceName = workspaceNameFromEnv() ?? path.basename(process.env.WIKI_WORKSPACE_PATH ?? process.cwd());
   if (urlPath === '/api/uploads' && req.method === 'GET') {
-    sendJson(res, 200, { ok: true, uploads: await readDocumentUploads(workspaceName) });
+    sendJson(res, 200, { ok: true, uploads: await readDocumentUploads(rootDir, workspaceName) });
     return true;
   }
   if (urlPath === '/api/upload' && req.method === 'POST') {
     try {
       const contentType = String(req.headers['content-type'] ?? '');
-      const maxUploadBytes = Number.isFinite(DOCUMENT_MAX_UPLOAD_BYTES) && DOCUMENT_MAX_UPLOAD_BYTES > 0
-        ? DOCUMENT_MAX_UPLOAD_BYTES
+      const configuredMax = documentMaxUploadBytes();
+      const maxUploadBytes = Number.isFinite(configuredMax) && configuredMax > 0
+        ? configuredMax
         : 50 * 1024 * 1024;
       const { filename: rawFilename, content } = parseMultipartUpload(await readRequestBuffer(req, maxUploadBytes + 1024 * 1024), contentType);
       const filename = sanitizeUploadFilename(rawFilename);
       assertDocumentUpload(filename, content.length);
-      await removeDocumentUploadsForFilename(workspaceName, filename);
+      await removeDocumentUploadsForFilename(rootDir, workspaceName, filename);
       const id = randomUUID().slice(0, 8);
       const storedFilename = `${id}-${filename}`;
-      const inputDir = path.join(DOCUMENT_INPUT_DIR, workspaceName);
+      const inputDir = path.join(resolveDocumentInputDir(rootDir), workspaceName);
       await mkdir(inputDir, { recursive: true });
       const storedPath = path.join(inputDir, storedFilename);
       await writeFile(storedPath, content);
@@ -3691,7 +3815,7 @@ async function handleDocumentUploadsApi(
         workspace: workspaceName,
         filename,
         storedPath,
-        agentPath: `/documents/input/${workspaceName}/${storedFilename}`,
+        agentPath: `${resolveDocumentInputDir(rootDir)}/${workspaceName}/${storedFilename}`,
         status: 'stored',
         provider: null,
         outputPath: null,
@@ -3701,8 +3825,8 @@ async function handleDocumentUploadsApi(
         createdAt: now,
         updatedAt: now,
       };
-      await upsertDocumentUpload(record);
-      record = await convertDocumentUpload(record, externalMcpEndpoints);
+      await upsertDocumentUpload(rootDir, record);
+      record = await convertDocumentUpload(rootDir, record, externalMcpEndpoints);
       sendJson(res, 200, { ok: true, upload: record });
     } catch (err) {
       sendJson(res, 400, { ok: false, error: err instanceof Error ? err.message : String(err) });
@@ -3712,9 +3836,9 @@ async function handleDocumentUploadsApi(
   const convertMatch = urlPath.match(/^\/api\/uploads\/([^/]+)\/convert$/);
   if (convertMatch && req.method === 'POST') {
     const id = convertMatch[1];
-    const record = (await readDocumentUploads(workspaceName)).find((item) => item.id === id);
+    const record = (await readDocumentUploads(rootDir, workspaceName)).find((item) => item.id === id);
     if (!record) sendJson(res, 404, { ok: false, error: 'upload not found' });
-    else sendJson(res, 200, { ok: true, upload: await convertDocumentUpload(record, externalMcpEndpoints) });
+    else sendJson(res, 200, { ok: true, upload: await convertDocumentUpload(rootDir, record, externalMcpEndpoints) });
     return true;
   }
   return false;
@@ -4165,7 +4289,8 @@ async function generateEditPage(rootDir: string, relativePath: string): Promise<
   }
   const raw = await readFile(absolute, 'utf8');
   const sidebar = await renderSidebar(rootDir);
-  const body = `${sidebar}<main class="content">${renderTopbar(`/${cleanRelativePath}`)}<form class="edit-form" method="post" action="${escapeHref(editHref(cleanRelativePath))}"><div class="hero"><h1>Edit ${escapeHtml(cleanRelativePath)}</h1><div class="page-actions"><button class="action-button" type="submit">Save</button><a class="action-link" href="${escapeHref(`/${cleanRelativePath}`)}">Cancel</a></div></div><textarea class="edit-textarea" name="content" spellcheck="false">${escapeHtml(raw)}</textarea></form></main>`;
+  const cancelHref = isRawUntrackedReference(cleanRelativePath) ? '/' : `/${cleanRelativePath}`;
+  const body = `${sidebar}<main class="content">${renderTopbar(`/${cleanRelativePath}`)}<form class="edit-form" method="post" action="${escapeHref(editHref(cleanRelativePath))}"><div class="hero"><h1>Edit ${escapeHtml(cleanRelativePath)}</h1><div class="page-actions"><button class="action-button" type="submit">Save</button><a class="action-link" href="${escapeHref(cancelHref)}">Cancel</a></div></div><textarea class="edit-textarea" name="content" spellcheck="false">${escapeHtml(raw)}</textarea></form></main>`;
   return layout(`Edit ${path.basename(cleanRelativePath)}`, body);
 }
 
@@ -4547,7 +4672,7 @@ export default async function serveCmd(
         return;
       }
 
-      if (await handleDocumentUploadsApi(req, res, urlPath, externalMcpEndpoints)) {
+      if (await handleDocumentUploadsApi(rootDir, req, res, urlPath, externalMcpEndpoints)) {
         return;
       }
 
@@ -4571,7 +4696,7 @@ export default async function serveCmd(
       }
 
       // ── Hub proxy (same-origin façade over the host-side hub.js) ──────────
-      if (HUB_PORT && HUB_TOKEN && urlPath.startsWith('/api/hub/')) {
+      if (hubPort() && hubToken() && urlPath.startsWith('/api/hub/')) {
         // CSRF guard: custom header required; reject cross-origin POSTs
         if (!req.headers['x-llm-wiki-hub']) {
           sendJson(res, 403, { ok: false, error: 'forbidden' });
@@ -4608,11 +4733,11 @@ export default async function serveCmd(
         const hubBody = Buffer.concat(chunks);
         try {
           const upstream = await fetch(
-            `http://${HUB_INTERNAL_HOST}:${HUB_PORT}${hubPath}`,
+            `http://${hubInternalHost()}:${hubPort()}${hubPath}`,
             {
               method: req.method ?? 'GET',
               headers: {
-                authorization: `Bearer ${HUB_TOKEN}`,
+                authorization: `Bearer ${hubToken()}`,
                 'content-type': 'application/json',
               },
               body: hubBody.length > 0 ? hubBody : undefined,
@@ -4662,10 +4787,10 @@ export default async function serveCmd(
             return;
           }
           const wikiTarget =
-            process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${MCP_WIKI_PORT}/mcp`;
+            process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${mcpWikiPort()}/mcp`;
           const productionTarget =
             process.env.PRODUCTION_MCP_PROXY_URL ??
-            `http://localhost:${MCP_PRODUCTION_PORT}/mcp/`;
+            `http://localhost:${mcpProductionPort()}/mcp/`;
           const normalizeTarget = (u: string) => u.replace(/\/+$/, '');
           const proxyHeaders: Record<string, Record<string, string>> = {
             [normalizeTarget(wikiTarget)]: config.mcp.accessKey
@@ -4806,7 +4931,11 @@ export default async function serveCmd(
             }
             // Manual edits must round-trip exactly; generated Markdown is normalized elsewhere.
             await writeIfChanged(absolute, content);
-            res.writeHead(303, { Location: escapeHref(`/${toPosix(relative)}`) });
+            const savedRelative = toPosix(relative);
+            const redirectAfterSave = isRawUntrackedReference(savedRelative)
+              ? escapeHref(editHref(savedRelative))
+              : escapeHref(`/${savedRelative}`);
+            res.writeHead(303, { Location: redirectAfterSave });
             res.end();
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
@@ -4835,23 +4964,23 @@ export default async function serveCmd(
           baseUrl: config.llm.baseUrl,
           apiKey: config.llm.apiKey ?? '',
           language: config.language ?? 'fr',
-          workspaceName: WORKSPACE_NAME ?? path.basename(rootDir),
+          workspaceName: workspaceNameFromEnv() ?? path.basename(rootDir),
           ...(systemPrompt ? { systemPrompt } : {}),
           storageScope: createHash('sha256')
-            .update(`${WORKSPACE_NAME ?? ''}:${rootDir}`)
+            .update(`${workspaceNameFromEnv() ?? ''}:${rootDir}`)
             .digest('hex')
             .slice(0, 16),
           mcpServers: [
             {
               name: 'llm-wiki',
               url:
-                process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${MCP_WIKI_PORT}/mcp`,
+                process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${mcpWikiPort()}/mcp`,
             },
             {
               name: 'wiki-production',
               url:
                 process.env.PRODUCTION_MCP_PROXY_URL ??
-                `http://localhost:${MCP_PRODUCTION_PORT}/mcp/`,
+                `http://localhost:${mcpProductionPort()}/mcp/`,
             },
             ...externalMcpEndpoints.map((endpoint) => ({
               name: endpoint.name,

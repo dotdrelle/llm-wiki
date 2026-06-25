@@ -84,6 +84,13 @@ describe('chat html', () => {
     expect(script).toContain('Structured result');
   });
 
+  it('wraps and constrains preformatted tool summaries', () => {
+    expect(CHAT_HTML).toContain('.tc-body pre,.tc-summary pre{');
+    expect(CHAT_HTML).toContain('white-space:pre-wrap;word-break:break-word;');
+    expect(CHAT_HTML).toContain('max-height:220px;overflow:auto');
+    expect(CHAT_HTML).toContain('.tc-summary{display:flex;flex-direction:column;gap:8px;min-width:0}');
+  });
+
   it('supports runtime llm overrides and yaml reset', () => {
     const [script] = chatScripts();
 

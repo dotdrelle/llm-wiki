@@ -16,6 +16,27 @@ describe('serve graph ui', () => {
     expect(source).toContain('<span>Graph</span>');
   });
 
+  it('renders a persistent draggable Pending panel resizer', async () => {
+    const source = await serveSource();
+
+    expect(source).toContain('data-pending-resizer');
+    expect(source).toContain("role=\"separator\" aria-orientation=\"horizontal\"");
+    expect(source).toContain('flex: 0 0 var(--pending-height, 32vh);');
+    expect(source).toContain("const PKEY = 'llm-wiki:sidebar:pendingHeight';");
+    expect(source).toContain('startH + (startY - e.clientY)');
+    expect(source).toContain("panel.addEventListener('toggle', syncResizer);");
+  });
+
+  it('opens Pending markdown in the editor and keeps save/cancel on valid routes', async () => {
+    const source = await serveSource();
+
+    expect(source).toContain('href="${escapeHref(editHref(file))}"');
+    expect(source).toContain('title="Éditer ${safePath}"');
+    expect(source).toContain("const cancelHref = isRawUntrackedReference(cleanRelativePath) ? '/'");
+    expect(source).toContain('const redirectAfterSave = isRawUntrackedReference(savedRelative)');
+    expect(source).toContain('? escapeHref(editHref(savedRelative))');
+  });
+
   it('groups concept tiles from frontmatter or concept subfolders', async () => {
     const source = await serveSource();
 
@@ -61,8 +82,17 @@ describe('serve graph ui', () => {
     expect(source).toContain('data-graph-expand');
     expect(source).toContain('graph-page-expanded');
     expect(source).toContain('graphLayout.classList.toggle');
-    expect(source).toContain("graphLayout.closest('main')?.classList.toggle('graph-page-expanded'");
+    expect(source).toContain("graphPage?.classList.toggle('graph-page-expanded'");
     expect(source).toContain('height: calc(100vh - 9.5rem);');
+  });
+
+  it('anchors the expanded graph legend to the actual graph panel', async () => {
+    const source = await serveSource();
+
+    expect(source).toContain('left: var(--graph-legend-left, 1rem);');
+    expect(source).toContain('graphPanel.getBoundingClientRect().left + 12');
+    expect(source).toContain("window.addEventListener('resize', syncExpandedLegendPosition);");
+    expect(source).toContain('-webkit-backdrop-filter: blur(6px);');
   });
 });
 

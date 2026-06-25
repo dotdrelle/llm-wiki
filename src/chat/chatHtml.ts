@@ -233,9 +233,9 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .tc-args-toggle{background:none;border:none;color:var(--muted);cursor:pointer;font-family:var(--font-sans);font-size:11px;font-weight:700;padding:0}
 .tc-args-toggle:hover{color:var(--accent)}
 .tc-lbl{font-size:9px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
-.tc-body pre{background:var(--panel);border:1px solid var(--border);border-radius:9px;color:var(--text);white-space:pre-wrap;word-break:break-word;font-size:11px;max-height:220px;overflow:auto}
+.tc-body pre,.tc-summary pre{background:var(--panel);border:1px solid var(--border);border-radius:9px;color:var(--text);white-space:pre-wrap;word-break:break-word;font-size:11px;max-height:220px;overflow:auto}
 .tc-body.hidden{display:none}
-.tc-summary{display:flex;flex-direction:column;gap:8px}
+.tc-summary{display:flex;flex-direction:column;gap:8px;min-width:0}
 .tc-summary-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--text);font-family:var(--font-sans);font-size:12px;font-weight:700}
 .tc-pill{display:inline-flex;align-items:center;border:1px solid var(--border);border-radius:99px;padding:2px 7px;color:var(--muted);font-family:var(--font-mono);font-size:10px;font-weight:500}
 .tc-list{display:flex;flex-direction:column;gap:6px}
