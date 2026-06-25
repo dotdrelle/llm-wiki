@@ -111,6 +111,30 @@ Do not add direct `trace.steps.push()` calls outside the event handlers. Use
 `dispatchChatAgentEvent(trace, 'trace_step_upsert', { origin, payload: { step } })`
 instead.
 
+### MCP presentation surfaces
+
+MCP calls can appear in three deliberately separate surfaces:
+
+- the **MCP Chain** keeps the technical call/result trace;
+- the **chat observation card** presents read-only status/list results inline;
+- the persistent **Activity panel** tracks uploads and actionable/asynchronous
+  MCP work, including `_activity.plan`, `_activity.progress`, and polling.
+
+Classification should prefer MCP tool annotations (`readOnlyHint`,
+`destructiveHint`) and use naming heuristics only as a fallback for older or
+external servers. Read-only observations should not create Activity entries
+unless the server explicitly returns an `_activity` contract.
+
+`parseToolJSON` accepts direct JSON, fenced JSON, and JSON embedded in a textual
+MCP envelope. Keep HTML escaping at the final renderer boundary. The plain-text
+summary must still be stored in `messages[]` and used for copy/context even when
+the visible chat response is rendered as structured HTML.
+
+Activity state is persisted per workspace in local storage. Partial activity
+updates must make timer decisions from the merged activity state, not only from
+the incoming patch. Keep upload rendering compact in `actCardHTML`; do not
+duplicate asynchronous plan steps in observation cards.
+
 ## Serve Chat — Skills
 
 Slash entries in the browser chat first resolve against workspace skills from

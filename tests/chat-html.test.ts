@@ -72,7 +72,7 @@ describe('chat html', () => {
   it('renders generic JSON results as structured cards', () => {
     const [script] = chatScripts();
 
-    expect(script).toContain('function genericJsonSummaryHTML(data, raw)');
+    expect(script).toContain("function genericJsonSummaryHTML(data, raw, toolName='MCP')");
     expect(script).toContain('function genericJsonTableHTML(rows)');
     expect(script).toContain('function genericJsonObjectHTML(obj)');
     expect(script).toContain('function genericJsonArraySectionHTML(key, rows)');
@@ -89,6 +89,73 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('white-space:pre-wrap;word-break:break-word;');
     expect(CHAT_HTML).toContain('max-height:220px;overflow:auto');
     expect(CHAT_HTML).toContain('.tc-summary{display:flex;flex-direction:column;gap:8px;min-width:0}');
+  });
+
+  it('routes document uploads to the activity panel', () => {
+    const [script] = chatScripts();
+
+    expect(CHAT_HTML).toContain('#activity-panel{');
+    expect(CHAT_HTML).toContain('.act-card{');
+    expect(script).toContain('function uploadDocumentRequest(form,onUploaded)');
+    expect(script).toContain('function upsertActivity(item)');
+    expect(script).toContain('function renderActivities()');
+    expect(script).toContain("kind:'upload'");
+    expect(script).toContain("const ACT_STORE_KEY=storageKey('llm-wiki-chat:activities');");
+    expect(script).toContain("upsertActivity({id:actId,phase:'conversion'});");
+    expect(script).toContain("function isActivityActive(status){return status==='running'||status==='queued';}");
+    expect(script).toContain("if(!isActivityActive(item.status)) return item;");
+    expect(CHAT_HTML).toContain('height:calc(100vh - 44px);margin-top:44px;');
+    expect(script).not.toContain('function buildUploadCardHTML');
+    expect(script).not.toContain('function buildUploadResultCardHTML');
+    expect(script).not.toContain("actElapsed(item)<2");
+  });
+
+  it('tracks actionable and asynchronous MCP calls in the activity panel', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain('function shouldTrackMcpTool(tool,server=null)');
+    expect(script).toContain('definition?.annotations?.readOnlyHint===false');
+    expect(script).toContain('function ingestMcpActivityResult(tool,args,server,result');
+    expect(script).toContain('const contract=data?._activity;');
+    expect(script).toContain('function scheduleActivityPoll(item)');
+    expect(script).toContain("callMCPTool(item.poll.tool,item.poll.args||{},{trackActivity:false})");
+    expect(script).toContain("mailer_send_email:args.dryRun?");
+    expect(script).toContain("cme_export_run:chatText(");
+    expect(script).toContain("production_start_job:chatText(");
+    expect(script).toContain('async function callMCPTool(name, args, {trackActivity=true}={})');
+  });
+
+  it('uses a generic MCP presentation contract across activity, chain and chat', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain('function mcpToolDefinition(name, server=null)');
+    expect(script).toContain('annotations?.readOnlyHint===true');
+    expect(script).toContain('annotations?.readOnlyHint===false');
+    expect(script).toContain('function mcpObjectCardHTML(toolName, data');
+    expect(script).toContain("mcpObjectCardHTML(toolName||chatText('MCP result','Résultat MCP'),data,{raw})");
+    expect(script).toContain('resultHtml:toolResultSummaryHTML(p.result,ok,p.name||step.title)');
+    expect(script).toContain('sourceLabel:server.name');
+    expect(script).toContain('publishAssistantOutput(observerToolLoopHTML(toolResults),statusDiv,{html:true,plainText:summary})');
+    expect(script).toContain("messages.push({role:'assistant',content:summary});");
+  });
+
+  it('accepts JSON returned directly, in a markdown fence or inside an MCP envelope', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain("const fenced=raw.match(/\\x60{3}(?:json)?\\s*([\\s\\S]*?)\\x60{3}/i);");
+    expect(script).toContain("const startIndexes=[raw.indexOf('{'),raw.indexOf('[')]");
+    expect(script).toContain('candidates.push(raw.slice(start,i+1));');
+
+    const source = script.match(/function parseToolJSON\(result\) \{[\s\S]*?\n\}\n\nfunction shortText/)?.[0]
+      .replace(/\n\nfunction shortText$/, '');
+    expect(source).toBeTruthy();
+    const context: Record<string, unknown> = {};
+    vm.runInNewContext(`${source};this.parseToolJSON=parseToolJSON;`, context);
+    const parseToolJSON = context.parseToolJSON as (value: string) => unknown;
+
+    expect(parseToolJSON('{"status":"configured"}')).toEqual({ status: 'configured' });
+    expect(parseToolJSON('```json\n{"status":"running"}\n```')).toEqual({ status: 'running' });
+    expect(parseToolJSON('MCP result:\n{"status":"done"}\nEnd.')).toEqual({ status: 'done' });
   });
 
   it('supports runtime llm overrides and yaml reset', () => {

@@ -200,6 +200,57 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .trace-detail-line{font-size:11px;line-height:1.45;color:var(--muted);overflow-wrap:anywhere}
 .trace-detail-log{margin-top:8px;font-family:var(--font-mono);font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-word;color:var(--text);background:var(--panel-soft);border:1px solid var(--border);border-radius:8px;padding:8px;max-height:220px;overflow:auto}
 .trace-tool-result{margin-top:8px}
+@keyframes upload-pulse{0%,100%{opacity:1}50%{opacity:.45}}
+/* ACTIVITY PANEL */
+#activity-panel{width:320px;min-width:320px;height:calc(100vh - 44px);margin-top:44px;background:var(--panel);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;transition:width .25s,min-width .25s;flex-shrink:0}
+#activity-panel.closed{width:0;min-width:0}
+.act-panel-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--border);flex-shrink:0;min-height:44px}
+.act-panel-title{font-size:13px;font-weight:800;color:var(--text)}
+.act-panel-close{background:none;border:none;cursor:pointer;color:var(--muted);padding:2px 6px;border-radius:6px;font-size:16px;line-height:1}
+.act-panel-close:hover{color:var(--text);background:var(--panel-soft)}
+.act-body{flex:1;overflow-y:auto;padding:10px 10px 18px;display:flex;flex-direction:column;gap:10px}
+.act-section-head{display:flex;align-items:center;justify-content:space-between;padding:2px 4px 6px}
+.act-section-title{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.act-dismiss-all{font-size:10px;color:var(--muted);background:none;border:none;cursor:pointer;padding:2px 4px;border-radius:4px}
+.act-dismiss-all:hover{color:var(--text);background:var(--panel-soft)}
+.act-empty{font-size:12px;color:var(--muted2);text-align:center;padding:22px 10px}
+.act-card{background:var(--panel-soft);border:1px solid var(--border);border-radius:10px;padding:10px 11px;display:flex;flex-direction:column;gap:7px}
+.act-card.running{border-color:color-mix(in srgb,var(--accent) 35%,var(--border))}
+.act-card-head{display:flex;align-items:flex-start;gap:8px}
+.act-card-icon{font-size:16px;flex-shrink:0;margin-top:1px;line-height:1}
+.act-card-info{flex:1;min-width:0}
+.act-card-name{font-size:12px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.act-card-meta{font-size:10px;color:var(--muted);margin-top:1px}
+.act-badge{font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:99px;flex-shrink:0;margin-top:2px}
+.act-badge.running{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}
+.act-badge.done{background:color-mix(in srgb,#22c55e 14%,transparent);color:#16a34a}
+.act-badge.stored{background:color-mix(in srgb,#f59e0b 14%,transparent);color:#b45309}
+.act-badge.failed{background:color-mix(in srgb,var(--err) 14%,transparent);color:var(--err)}
+.act-steps{display:flex;flex-direction:column;gap:3px}
+.act-step{display:flex;align-items:center;gap:6px;font-size:11px}
+.act-step-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.act-step.done .act-step-dot{background:#22c55e}
+.act-step.running .act-step-dot{background:var(--accent);animation:upload-pulse 1.2s ease-in-out infinite}
+.act-step.pending .act-step-dot,.act-step.failed .act-step-dot{background:var(--border)}
+.act-step.failed .act-step-dot{background:var(--err)}
+.act-step-label{flex:1;color:var(--text)}
+.act-step.pending .act-step-label{color:var(--muted)}
+.act-step.failed .act-step-label{color:var(--err)}
+.act-step-val{font-size:10px;color:var(--muted);font-family:var(--font-mono)}
+.act-step.done .act-step-val{color:#16a34a}
+.act-step.running .act-step-val{color:var(--accent)}
+.act-output{font-size:10px;color:var(--muted);font-family:var(--font-mono);background:var(--panel-deep);border-radius:5px;padding:4px 7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;title:attr(title)}
+.act-output:hover{color:var(--text)}
+.act-error{font-size:10px;color:var(--err);font-family:var(--font-mono);background:color-mix(in srgb,var(--err) 8%,transparent);border-radius:5px;padding:5px 7px;word-break:break-all}
+.act-actions{display:flex;gap:5px}
+.act-btn{font-size:10px;font-weight:700;border:1px solid var(--border);border-radius:6px;background:var(--panel);color:var(--muted);padding:4px 9px;cursor:pointer;font-family:var(--font-sans)}
+.act-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.act-btn.del:hover{border-color:var(--err);color:var(--err);background:color-mix(in srgb,var(--err) 8%,transparent)}
+.tb-act-btn{position:relative;background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);padding:5px 10px;cursor:pointer;font-size:12px;font-family:var(--font-sans);font-weight:700;display:flex;align-items:center;gap:5px;transition:all .2s}
+.tb-act-btn:hover,.tb-act-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.tb-act-badge{min-width:16px;height:16px;border-radius:99px;background:var(--accent);color:#fff;font-size:9px;font-weight:800;display:none;align-items:center;justify-content:center;padding:0 4px;margin-left:2px}
+.tb-act-badge.visible{display:flex}
+@media(max-width:900px){#activity-panel{position:fixed;top:44px;right:0;height:calc(100vh - 44px);margin-top:0;z-index:999;box-shadow:-4px 0 24px rgba(0,0,0,.18);transform:translateX(0);transition:transform .25s,width .25s}#activity-panel.closed{width:320px;min-width:320px;transform:translateX(100%)}}
 @media (max-width: 720px){.msg.user .bubble{width:max-content;max-width:min(80vw,100%)}.trace-flow{align-items:stretch;flex-direction:column}.trace-link{width:1px;height:16px;margin-left:18px}.trace-link::after{right:-3px;top:auto;bottom:0;border-left:3.5px solid transparent;border-right:3.5px solid transparent;border-top:5px solid var(--border);border-bottom:0}.trace-tile{max-width:100%}.trace-detail-grid{grid-template-columns:1fr}}
 .bubble p{margin:0 0 .6em}.bubble p:last-child{margin:0}
 .bubble h1,.bubble h2,.bubble h3,.bubble h4{font-weight:700;margin:.8em 0 .3em;line-height:1.3}
@@ -216,6 +267,25 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .bubble a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .bubble .instruction-ref{color:var(--warn);font-family:var(--font-mono);font-size:.92em;background:rgba(199,168,0,.08);border:1px solid rgba(199,168,0,.22);border-radius:5px;padding:1px 5px;white-space:nowrap}
 .stream-cursor::after{content:'▋';animation:blink .8s step-end infinite;color:var(--accent);margin-left:1px}
+/* OBS CARD */
+.obs-wrap{display:flex;flex-direction:column;gap:6px}
+.obs-chip{font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted);text-transform:uppercase}
+.obs-card{background:var(--panel-soft);border:1px solid var(--border);border-radius:10px;overflow:hidden;font-family:var(--font-sans)}
+.obs-card-head{display:flex;align-items:center;justify-content:space-between;padding:7px 11px;border-bottom:1px solid var(--border);background:var(--panel)}
+.obs-tool-name{font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--text)}
+.obs-badge{font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:99px;flex-shrink:0}
+.obs-badge.ok{background:color-mix(in srgb,#22c55e 14%,transparent);color:#16a34a}
+.obs-badge.fail{background:color-mix(in srgb,var(--err) 14%,transparent);color:var(--err)}
+.obs-badge.run{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}
+.obs-badge.queue{background:color-mix(in srgb,var(--accent) 9%,transparent);color:var(--muted2)}
+.obs-badge.warn{background:color-mix(in srgb,#f59e0b 14%,transparent);color:#b45309}
+.obs-kv-grid{display:grid;grid-template-columns:max-content 1fr;padding:4px 0}
+.obs-k{font-family:var(--font-mono);font-size:10px;color:var(--muted);padding:3px 8px 3px 11px;white-space:nowrap;align-self:start}
+.obs-v{font-family:var(--font-mono);font-size:11px;color:var(--text);padding:3px 11px 3px 0;word-break:break-all;align-self:start}
+.obs-action-hint{font-size:11px;color:var(--accent);padding:6px 11px;border-top:1px solid var(--border);background:color-mix(in srgb,var(--accent) 5%,transparent)}
+.obs-error-hint{font-size:11px;color:var(--err);padding:6px 11px;border-top:1px solid var(--border);background:color-mix(in srgb,var(--err) 5%,transparent)}
+.obs-list{padding:4px 11px 8px;display:flex;flex-direction:column;gap:3px}
+.obs-list-item{font-size:11px;color:var(--text);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
 .tc-block{margin-top:12px;background:var(--panel-soft);border:1px solid var(--border);border-radius:12px;overflow:hidden;font-family:var(--font-mono);font-size:12px}
 .tc-head{display:flex;align-items:center;gap:7px;padding:9px 12px;background:var(--panel);border-bottom:1px solid var(--border);cursor:pointer;user-select:none}
@@ -451,6 +521,9 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
     <div class="tb-actions">
       <button class="tb-system" id="system-drawer-btn" onclick="toggleSystemPrompt()">System instructions</button>
       <button class="tb-clear" onclick="clearChat()">Clear</button>
+      <button class="tb-act-btn" id="tb-act-btn" onclick="toggleActivityPanel()" title="Activités">
+        Activités<span class="tb-act-badge" id="tb-act-badge"></span>
+      </button>
     </div>
   </div>
   <div class="connectors-view" id="connectors-view">
@@ -532,6 +605,13 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
   </div>
 </div>
 
+<aside id="activity-panel" class="closed">
+  <div class="act-panel-head">
+    <span class="act-panel-title">Activités</span>
+    <button class="act-panel-close" onclick="toggleActivityPanel()" title="Fermer">×</button>
+  </div>
+  <div class="act-body" id="activity-body"></div>
+</aside>
 <div id="notif"></div>
 <div class="prompt-drawer" id="system-prompt-drawer" aria-hidden="true">
   <div class="prompt-backdrop" onclick="closeSystemPrompt()"></div>
@@ -669,6 +749,335 @@ function notify(msg, type='s') {
   const el=$('notif'); el.textContent=msg; el.className=\`show \${type}\`;
   clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3200);
 }
+
+/* ── Activity Panel ─────────────────────────────────────────────────── */
+const ACT_STORE_KEY=storageKey('llm-wiki-chat:activities');
+const ACT_PANEL_KEY=storageKey('llm-wiki-chat:activity-panel-open');
+let _activities=[];
+let _actTimer=null;
+const _activityPollTimers=new Map();
+function isActivityActive(status){return status==='running'||status==='queued';}
+function clearPollTimer(id){const t=_activityPollTimers.get(id);if(t)clearTimeout(t);_activityPollTimers.delete(id);}
+
+function activityTerminalStatus(status) {
+  return ['done','success','completed','complete','converted','stored','failed','error','cancelled','canceled'].includes(String(status||'').toLowerCase());
+}
+function normalizeActivityStatus(status, terminal=false) {
+  const value=String(status||'').toLowerCase();
+  if(['done','success','completed','complete','converted'].includes(value)) return 'done';
+  if(value==='stored') return 'stored';
+  if(['failed','error'].includes(value)) return 'failed';
+  if(['cancelled','canceled'].includes(value)) return 'cancelled';
+  if(['queued','pending','starting'].includes(value)) return 'queued';
+  if(value==='running'||!terminal) return 'running';
+  return value||'done';
+}
+function activitySourceLabel(source) {
+  const labels={production:'Production',cme:'CME',documents:'Documents',mailer:'Mailer'};
+  return labels[source]||source||'MCP';
+}
+function activityToolLabel(tool,args={}) {
+  const labels={
+    production_start_job:chatText('Production job','Job de production'),
+    production_cancel_job:chatText('Cancel production','Annulation production'),
+    cme_export_run:chatText('Confluence export','Export Confluence'),
+    cme_export_cancel:chatText('Cancel Confluence export','Annulation export Confluence'),
+    cme_setup:chatText('Configure CME','Configuration CME'),
+    cme_source_add:chatText('Add Confluence source','Ajout source Confluence'),
+    cme_source_remove:chatText('Remove Confluence source','Suppression source Confluence'),
+    documents_convert_to_markdown:chatText('Document conversion','Conversion document'),
+    mailer_send_email:args.dryRun?chatText('Email preview','Aperçu email'):chatText('Send email','Envoi email'),
+  };
+  return labels[tool]||String(tool||'MCP action').replace(/_/g,' ');
+}
+function activitySourceForTool(tool,server) {
+  const prefix=String(tool||'').split('_')[0];
+  if(['production','cme','documents','mailer'].includes(prefix)) return prefix;
+  return String(server?.name||prefix||'mcp').toLowerCase();
+}
+function shouldTrackMcpTool(tool,server=null) {
+  const definition=mcpToolDefinition(tool,server);
+  if(isObserverToolName(tool,server)) return false;
+  if(definition?.annotations?.readOnlyHint===false||definition?.annotations?.destructiveHint===true) return true;
+  return /(?:^|_)(?:start|run|send|create|add|remove|delete|update|setup|configure|convert|cancel|import|export|ingest|build|polish)(?:_|$)/i.test(String(tool||''));
+}
+function activityArgsSummary(tool,args={}) {
+  if(String(tool).startsWith('mailer_')) return [args.to,args.subject].filter(Boolean).join(' · ');
+  if(String(tool).startsWith('cme_')) return [args.source_name||args.name,args.workspace].filter(Boolean).join(' · ');
+  if(String(tool).startsWith('production_')) return [args.type,...(args.steps||[])].filter(Boolean).join(' · ');
+  if(String(tool).startsWith('documents_')) return args.filename||args.filePath||'';
+  return Object.entries(args||{})
+    .filter(([,value])=>value!==null&&value!==undefined&&['string','number','boolean'].includes(typeof value))
+    .slice(0,3)
+    .map(([key,value])=>key+': '+shortText(value,60))
+    .join(' · ');
+}
+function activityResultSummary(data,raw='') {
+  if(!data||typeof data!=='object') return shortText(raw,180);
+  const status=data.status||data.state||data.result||null;
+  return [
+    status?String(status):null,
+    data.messageId?'messageId: '+data.messageId:null,
+    data.dryRun===true?chatText('Preview only','Aperçu uniquement'):null,
+    data.outputPath?uploadOutputLabel(data.outputPath):null,
+    data.message||data.summary||data.detail,
+  ].filter(Boolean).join(' · ')||shortText(raw,180);
+}
+function activityFromContract(contract, fallback={}) {
+  const terminal=contract?.terminal===true||activityTerminalStatus(contract?.status);
+  return {
+    ...fallback,
+    remoteId:String(contract?.id||fallback.remoteId||fallback.id||''),
+    source:String(contract?.source||fallback.source||'mcp'),
+    kind:String(contract?.kind||fallback.kind||'mcp'),
+    label:String(contract?.label||fallback.label||activitySourceLabel(contract?.source)),
+    status:normalizeActivityStatus(contract?.status,terminal),
+    progress:contract?.progress||fallback.progress||null,
+    plan:contract?.plan||fallback.plan||null,
+    poll:terminal?null:(contract?.poll||fallback.poll||null),
+    error:contract?.error||fallback.error||null,
+    terminal,
+    startedAt:contract?.startedAt||fallback.startedAt||Date.now(),
+    updatedAt:Date.now(),
+  };
+}
+function activityByRemoteId(remoteId,source) {
+  return _activities.find(item=>item.remoteId===String(remoteId)&&(!source||item.source===source));
+}
+function ingestMcpActivityResult(tool,args,server,result,{activityId=null,error=null}={}) {
+  const raw=typeof result==='string'?result:JSON.stringify(result??{});
+  const data=parseToolJSON(result);
+  const contract=data?._activity;
+  const source=activitySourceForTool(tool,server);
+  const existing=(contract?.id&&activityByRemoteId(contract.id,contract.source||source))
+    ||(activityId&&_activities.find(item=>item.id===activityId));
+  const id=existing?.id||activityId||'mcp-'+source+'-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
+  const fallback={
+    id,kind:'mcp',source,sourceLabel:server?.name||activitySourceLabel(source),tool,args,
+    label:activityToolLabel(tool,args),
+    detail:activityArgsSummary(tool,args),
+    status:error?'failed':'done',
+    error:error?String(error):null,
+    resultSummary:error?null:activityResultSummary(data,raw),
+    startedAt:existing?.startedAt||Date.now(),
+  };
+  if(contract) {
+    upsertActivity(activityFromContract(contract,{...existing,...fallback,id}));
+    return id;
+  }
+  if(existing||shouldTrackMcpTool(tool,server)||error) {
+    const failed=error||data?.ok===false;
+    upsertActivity({
+      ...existing,...fallback,id,
+      status:failed?'failed':'done',
+      error:error?String(error):(data?.error||null),
+      terminal:true,
+      poll:null,
+    });
+  }
+  return id;
+}
+function scheduleActivityPoll(item) {
+  if(!item?.poll?.tool||item.terminal||activityTerminalStatus(item.status)) return;
+  if(item.source==='production') return;
+  if(_activityPollTimers.has(item.id)) return;
+  const delay=Math.max(750,Number(item.poll.intervalMs)||2500);
+  const timer=setTimeout(async()=>{
+    _activityPollTimers.delete(item.id);
+    try {
+      const result=await callMCPTool(item.poll.tool,item.poll.args||{},{trackActivity:false});
+      ingestMcpActivityResult(item.poll.tool,item.poll.args||{},findServerForTool(item.poll.tool),result,{activityId:item.id});
+    } catch(error) {
+      upsertActivity({...item,status:'failed',terminal:true,poll:null,error:error?.message||String(error)});
+    }
+  },delay);
+  _activityPollTimers.set(item.id,timer);
+}
+
+function loadActivities() {
+  try { _activities=JSON.parse(localStorage.getItem(ACT_STORE_KEY)||'[]'); } catch { _activities=[]; }
+  let changed=false;
+  _activities=_activities.map(item=>{
+    if(!isActivityActive(item.status)) return item;
+    if(item.poll?.tool) return item;
+    changed=true;
+    return {...item,status:'failed',error:item.error||chatText('Interrupted by page reload. Retry the conversion if available.','Interrompu par le rechargement de la page. Relancez la conversion si elle est disponible.'),updatedAt:Date.now()};
+  });
+  if(changed) saveActivities();
+}
+function saveActivities() {
+  const keep=_activities.slice(-60);
+  _activities=keep;
+  try { localStorage.setItem(ACT_STORE_KEY,JSON.stringify(keep)); } catch {}
+}
+function upsertActivity(item) {
+  const idx=_activities.findIndex(a=>a.id===item.id);
+  let merged;
+  if(idx>=0) { merged={..._activities[idx],...item,updatedAt:Date.now()}; _activities[idx]=merged; }
+  else { merged={...item,updatedAt:Date.now(),startedAt:item.startedAt||Date.now()}; _activities.push(merged); }
+  saveActivities();
+  renderActivities();
+  updateActivityBadge();
+  if(isActivityActive(merged.status)&&!_actTimer) _actTimer=setInterval(renderActivities,1000);
+  if(!isActivityActive(merged.status)){const anyRunning=_activities.some(a=>isActivityActive(a.status));if(!anyRunning){clearInterval(_actTimer);_actTimer=null;}}
+  scheduleActivityPoll(merged);
+}
+function dismissActivity(id) {
+  clearPollTimer(id);
+  _activities=_activities.filter(a=>a.id!==id);
+  saveActivities(); renderActivities(); updateActivityBadge();
+}
+function dismissAllDone() {
+  for(const item of _activities.filter(a=>!isActivityActive(a.status))) clearPollTimer(item.id);
+  _activities=_activities.filter(a=>isActivityActive(a.status));
+  saveActivities(); renderActivities(); updateActivityBadge();
+}
+function actElapsed(item) {
+  return Math.max(0,Math.round((Date.now()-(item.startedAt||Date.now()))/1000));
+}
+function actUploadSteps(item) {
+  const st=item.status;
+  const storeRunning=st==='running'&&item.phase!=='conversion';
+  if(st==='running') return [
+    {state:storeRunning?'running':'done',label:chatText('Storage','Stockage'),val:storeRunning?chatText('running…','en cours…'):'ok'},
+    {state:storeRunning?'pending':'running',label:chatText('Conversion','Conversion'),val:storeRunning?'–':chatText('running…','en cours…')},
+    {state:'pending',label:chatText('Write Markdown','Écriture Markdown'),val:'–'},
+  ];
+  if(st==='converted') return [
+    {state:'done',label:chatText('Storage','Stockage'),val:'ok'},
+    {state:'done',label:chatText('Conversion','Conversion'),val:item.method||'ok'},
+    {state:'done',label:chatText('Write Markdown','Écriture Markdown'),val:'ok'},
+  ];
+  if(st==='stored') return [
+    {state:'done',label:chatText('Storage','Stockage'),val:'ok'},
+    {state:'pending',label:chatText('Conversion','Conversion'),val:chatText('no agent','sans agent')},
+    {state:'pending',label:chatText('Write Markdown','Écriture Markdown'),val:'–'},
+  ];
+  return [
+    {state:'done',label:chatText('Storage','Stockage'),val:'ok'},
+    {state:'failed',label:chatText('Conversion','Conversion'),val:chatText('failed','échec')},
+    {state:'pending',label:chatText('Write Markdown','Écriture Markdown'),val:'–'},
+  ];
+}
+function actCardHTML(item) {
+  const running=isActivityActive(item.status);
+  const converted=item.status==='converted';
+  const stored=item.status==='stored';
+  const elapsed=actElapsed(item);
+  const size=formatBytes(item.bytes);
+  const meta=[size,elapsed>0?elapsed+'s':null].filter(Boolean).join(' · ');
+  const done=item.status==='done';
+  const badge=running?'running':(converted||done)?'done':stored?'stored':'failed';
+  const badgeLabel=running?chatText('Running','En cours'):(converted||done)?chatText('Done','Terminé'):stored?chatText('Stored','Stocké'):item.status==='cancelled'?chatText('Cancelled','Annulé'):chatText('Failed','Échec');
+  const steps=item.kind==='upload'?actUploadSteps(item):activityPlanSteps(item);
+  const stepsHtml=steps.map(s=>\`<div class="act-step \${s.state}"><span class="act-step-dot"></span><span class="act-step-label">\${esc(s.label)}</span><span class="act-step-val">\${esc(s.val)}</span></div>\`).join('');
+  const output=item.outputPath?uploadOutputLabel(item.outputPath):(item.resultSummary||null);
+  const outputHtml=output?\`<div class="act-output" title="\${esc(output)}" onclick="copyText(\${esc(JSON.stringify(output))})">\${esc(output)}</div>\`:'';
+  const errorHtml=item.error?\`<div class="act-error">\${esc(item.error)}</div>\`:'';
+  const retryHtml=(item.status==='stored'||item.status==='failed')&&item.uploadId
+    ?\`<button class="act-btn" onclick="retryConvert(\${esc(JSON.stringify(item.uploadId))},\${esc(JSON.stringify(item.id))})">\${chatText('Retry','Relancer')}</button>\`
+    :'';
+  const hint=converted?\`<div class="act-card-meta">\${chatText('Ready · run ingest to integrate.','Prêt · lancez ingest pour intégrer.')}</div>\`
+    :stored?\`<div class="act-card-meta">\${chatText('Stored, no conversion agent.','Stocké, pas d\\'agent de conversion.')}</div>\`
+    :'';
+  const icon={production:'⚙',cme:'⇄',documents:'📄',mailer:'✉'}[item.source]||(item.kind==='upload'?'📄':'⌁');
+  const sourceMeta=item.source&&item.kind!=='upload'?(item.sourceLabel||activitySourceLabel(item.source)):null;
+  const fullMeta=[sourceMeta,item.detail,meta].filter(Boolean).join(' · ');
+  return \`<div class="act-card \${running?'running':''}" data-act-id="\${esc(item.id)}">
+<div class="act-card-head"><span class="act-card-icon">\${icon}</span><div class="act-card-info"><div class="act-card-name">\${esc(item.label||item.filename||'-')}</div>\${fullMeta?\`<div class="act-card-meta">\${esc(fullMeta)}</div>\`:''}</div><span class="act-badge \${badge}">\${badgeLabel}</span></div>
+\${stepsHtml?\`<div class="act-steps">\${stepsHtml}</div>\`:''}
+\${outputHtml}\${errorHtml}\${hint}
+<div class="act-actions">\${retryHtml}<button class="act-btn del" onclick="dismissActivity(\${esc(JSON.stringify(item.id))})">\${chatText('Dismiss','Fermer')}</button></div>
+</div>\`;
+}
+function activityPlanSteps(item) {
+  const planSteps=Array.isArray(item.plan?.steps)?item.plan.steps:[];
+  const progress=item.progress||{};
+  if(planSteps.length) {
+    const stepId=String(progress.stepId||'');
+    const matchedIndex=stepId?planSteps.findIndex(step=>String(step.id||step.name||'')===stepId):-1;
+    const activeIndex=matchedIndex>=0?matchedIndex:Math.max(0,Number(progress.stepIndex||1)-1);
+    return planSteps.map((step,index)=>({
+      state:item.status==='failed'&&index===activeIndex?'failed':index<activeIndex?'done':index===activeIndex&&!item.terminal?'running':item.terminal&&item.status==='done'?'done':'pending',
+      label:step.label||step.name||step.id||'Step '+(index+1),
+      val:index===activeIndex
+        ? (progress.detail||(progress.percent!==undefined?String(Math.round(Number(progress.percent)||0))+'%':''))
+        : '',
+    }));
+  }
+  if(item.progress) return [{
+    state:item.status==='failed'?'failed':item.terminal?'done':'running',
+    label:progress.step||progress.stepId||activityToolLabel(item.tool,item.args),
+    val:progress.detail||(progress.percent!==undefined?String(Math.round(Number(progress.percent)||0))+'%':''),
+  }];
+  return [];
+}
+function renderActivities() {
+  const el=$('activity-body');
+  if(!el) return;
+  const uploads=_activities.filter(a=>a.kind==='upload');
+  const mcp=_activities.filter(a=>a.kind!=='upload');
+  if(!_activities.length){el.innerHTML=\`<div class="act-empty">\${chatText('No activity yet.','Aucune activité.')}</div>\`;return;}
+  const hasDone=_activities.some(a=>!isActivityActive(a.status));
+  const dismissBtn=hasDone?\`<button class="act-dismiss-all" onclick="dismissAllDone()">\${chatText('Clear all','Tout effacer')}</button>\`:'';
+  const section=(title,items)=>items.length?\`<div class="act-section-head"><span class="act-section-title">\${title}</span></div>\${items.map(actCardHTML).join('')}\`:'';
+  el.innerHTML=\`<div class="act-section-head"><span class="act-section-title">\${chatText('Activity','Activités')}</span>\${dismissBtn}</div>\`
+    +section(chatText('Uploads','Uploads'),uploads)
+    +section('MCP',mcp);
+}
+function updateActivityBadge() {
+  const count=_activities.filter(a=>isActivityActive(a.status)).length;
+  const badge=$('tb-act-badge');
+  if(!badge) return;
+  badge.textContent=count>0?String(count):'';
+  badge.classList.toggle('visible',count>0);
+  const btn=$('tb-act-btn');
+  if(btn) btn.classList.toggle('active',count>0||!$('activity-panel')?.classList.contains('closed'));
+}
+function toggleActivityPanel() {
+  const panel=$('activity-panel');
+  if(!panel) return;
+  const opening=panel.classList.toggle('closed');
+  try { localStorage.setItem(ACT_PANEL_KEY,opening?'0':'1'); } catch {}
+  updateActivityBadge();
+}
+function openActivityPanel() {
+  const panel=$('activity-panel');
+  if(!panel) return;
+  panel.classList.remove('closed');
+  try { localStorage.setItem(ACT_PANEL_KEY,'1'); } catch {}
+  updateActivityBadge();
+}
+function copyText(text) {
+  navigator.clipboard?.writeText(text).then(()=>notify(chatText('Copied','Copié'))).catch(()=>notify(text));
+}
+async function retryConvert(uploadId, actId) {
+  upsertActivity({id:actId,status:'running',phase:'conversion',error:null,outputPath:null,startedAt:Date.now()});
+  try {
+    const res=await fetch(\`/api/uploads/\${encodeURIComponent(uploadId)}/convert\`,{method:'POST'});
+    const data=await res.json().catch(()=>({ok:false,error:'Invalid response'}));
+    if(!res.ok||data.ok===false) throw new Error(data.error||\`HTTP \${res.status}\`);
+    const u=data.upload||{};
+    upsertActivity({id:actId,status:u.status,outputPath:u.outputPath,method:u.method,error:u.error||null});
+    notify(u.status==='converted'?chatText('Converted','Converti'):chatText('Stored','Stocké'));
+  } catch(err) {
+    upsertActivity({id:actId,status:'failed',error:err?.message||String(err)});
+    notify(err?.message||String(err),'e');
+  }
+}
+(function initActivityPanel(){
+  loadActivities();
+  renderActivities();
+  updateActivityBadge();
+  try {
+    const open=localStorage.getItem(ACT_PANEL_KEY)==='1';
+    if(open) $('activity-panel')?.classList.remove('closed');
+  } catch {}
+  if(_activities.some(a=>isActivityActive(a.status))&&!_actTimer) _actTimer=setInterval(renderActivities,1000);
+  _activities.forEach(scheduleActivityPoll);
+})();
+/* ── end Activity Panel ─────────────────────────────────────────────── */
+
 function openDocumentUpload() {
   $('doc-upload-input')?.click();
 }
@@ -699,82 +1108,45 @@ function uploadMethodLabel(method) {
   };
   return labels[method]||method||null;
 }
-function formatUploadProgressMessage(file, elapsedMs=0) {
-  const elapsed=Math.max(0,Math.round(elapsedMs/1000));
-  const size=formatBytes(file?.size);
-  return [
-    chatText('Document upload','Import de document'),
-    '',
-    \`\${chatText('File','Fichier')}: \${file?.name||'-'}\${size?\` (\${size})\`:''}\`,
-    elapsed>0 ? \`\${chatText('Elapsed','Temps ecoule')}: \${elapsed}s\` : null,
-    '',
-    \`1. \${chatText('Store upload','Stockage')}: \${chatText('running','en cours')}\`,
-    \`2. \${chatText('Convert','Conversion')}: \${chatText('pending','en attente')}\`,
-    \`3. \${chatText('Write Markdown','Ecriture Markdown')}: \${chatText('pending','en attente')}\`,
-    '',
-    chatText(
-      'Large files and OCR can take several minutes. Keep this tab open.',
-      'Les gros fichiers et l OCR peuvent prendre plusieurs minutes. Gardez cet onglet ouvert.',
-    ),
-  ].filter(Boolean).join('\\n');
-}
-function formatUploadResultMessage(upload, fallbackFile, elapsedMs=0) {
-  const converted=upload.status==='converted';
-  const stored=upload.status==='stored';
-  const failed=upload.status==='failed';
-  const size=formatBytes(upload.bytes??fallbackFile?.size);
-  const output=uploadOutputLabel(upload.outputPath);
-  const method=uploadMethodLabel(upload.method);
-  const elapsed=Math.max(0,Math.round(elapsedMs/1000));
-  const status=converted
-    ? chatText('Converted to Markdown','Converti en Markdown')
-    : stored
-      ? chatText('Stored, conversion pending','Stocke, conversion en attente')
-      : failed
-        ? chatText('Conversion failed','Conversion en echec')
-        : upload.status||chatText('Unknown','Inconnu');
-  return [
-    chatText('Document ready','Document pret'),
-    '',
-    \`\${chatText('Status','Statut')}: \${status}\`,
-    \`\${chatText('File','Fichier')}: \${upload.filename||fallbackFile?.name||'-'}\${size?\` (\${size})\`:''}\`,
-    output ? \`\${chatText('Markdown','Markdown')}: \${output}\` : null,
-    method ? \`\${chatText('Conversion','Conversion')}: \${method}\` : null,
-    elapsed>0 ? \`\${chatText('Duration','Duree')}: \${elapsed}s\` : null,
-    '',
-    \`\${chatText('Upload id','Id upload')}: \${upload.id||'-'}\`,
-    upload.error ? \`\${chatText('Note','Note')}: \${upload.error}\` : null,
-    converted ? \`\\n\${chatText('Next step: run ingest to integrate this source into the wiki.','Suite: lancez ingest pour integrer cette source dans le wiki.')}\` : null,
-  ].filter(Boolean).join('\\n');
+function uploadDocumentRequest(form,onUploaded) {
+  return new Promise((resolve,reject)=>{
+    const xhr=new XMLHttpRequest();
+    xhr.open('POST','/api/upload');
+    xhr.upload.addEventListener('load',()=>onUploaded?.());
+    xhr.addEventListener('load',()=>{
+      let data;
+      try { data=JSON.parse(xhr.responseText||'{}'); }
+      catch { data={ok:false,error:'Invalid upload response'}; }
+      if(xhr.status<200||xhr.status>=300||data.ok===false) {
+        reject(new Error(data.error||\`HTTP \${xhr.status}\`));
+        return;
+      }
+      resolve(data);
+    });
+    xhr.addEventListener('error',()=>reject(new Error('Document upload failed')));
+    xhr.addEventListener('abort',()=>reject(new Error('Document upload cancelled')));
+    xhr.send(form);
+  });
 }
 async function uploadSelectedDocument(input) {
   const file=input?.files?.[0];
   if(!file) return;
   input.value='';
-  const startedAt=Date.now();
-  const status=appendMsg('assistant',formatUploadProgressMessage(file));
-  const timer=setInterval(()=>setStreamContent(status,formatUploadProgressMessage(file,Date.now()-startedAt)),5000);
+  const actId='upload-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
+  upsertActivity({id:actId,kind:'upload',label:file.name,filename:file.name,bytes:file.size,status:'running',startedAt:Date.now()});
+  openActivityPanel();
   try {
     const form=new FormData();
     form.append('file',file,file.name);
-    const res=await fetch('/api/upload',{method:'POST',body:form});
-    const data=await res.json().catch(()=>({ok:false,error:'Invalid upload response'}));
-    if(!res.ok||data.ok===false) throw new Error(data.error||\`HTTP \${res.status}\`);
+    const data=await uploadDocumentRequest(form,()=>{
+      upsertActivity({id:actId,phase:'conversion'});
+    });
     const upload=data.upload||{};
-    const converted=upload.status==='converted';
-    setStreamContent(status,formatUploadResultMessage(upload,file,Date.now()-startedAt));
-    notify(converted?'Document converted':'Document stored');
+    upsertActivity({id:actId,status:upload.status||'stored',outputPath:upload.outputPath||null,method:upload.method||null,uploadId:upload.id||null,error:upload.error||null});
+    notify(upload.status==='converted'?chatText('Document converted','Document converti'):chatText('Document stored','Document stocké'));
   } catch(err) {
-    const message=err?.message||String(err);
-    setStreamContent(status,[
-      chatText('Document upload failed','Import de document en echec'),
-      '',
-      \`\${chatText('File','Fichier')}: \${file.name}\`,
-      \`\${chatText('Error','Erreur')}: \${message}\`,
-    ].join('\\n'));
-    notify(message,'e');
-  } finally {
-    clearInterval(timer);
+    upsertActivity({id:actId,status:'failed',error:err?.message||String(err)});
+    notify(err?.message||String(err),'e');
   }
 }
 function appBack() {
@@ -1521,33 +1893,51 @@ async function reconnectMCPServer(server) {
   server.lastMcpActivityAt=Date.now();
 }
 
-async function callMCPTool(name, args) {
+async function callMCPTool(name, args, {trackActivity=true}={}) {
   const server=findServerForTool(name);
   if(!server) throw new Error(\`No active MCP server for "\${name}"\`);
-  let resp;
+  const tracked=trackActivity&&shouldTrackMcpTool(name,server);
+  const source=tracked?activitySourceForTool(name,server):null;
+  const activityId=source?\`mcp-\${source}-\${Date.now()}-\${Math.random().toString(36).slice(2,7)}\`:null;
+  if(activityId) {
+    upsertActivity({
+      id:activityId,kind:'mcp',source,sourceLabel:server.name,tool:name,args,
+      label:activityToolLabel(name,args),detail:activityArgsSummary(name,args),
+      status:'running',startedAt:Date.now(),terminal:false,
+    });
+    openActivityPanel();
+  }
   try {
-    if(mcpSessionIsStale(server)) {
-      notify(\`\${server.name}: inactive MCP session, reconnecting...\`);
+    let resp;
+    try {
+      if(mcpSessionIsStale(server)) {
+        notify(\`\${server.name}: inactive MCP session, reconnecting...\`);
+        await reconnectMCPServer(server);
+        renderCards(); renderTopPills(); saveServers();
+      }
+      resp = await mcpRPC(server, 'tools/call', {name, arguments: args});
+    } catch(err) {
+      if(!isMcpSessionOrNetworkFailure(err)) throw err;
+      notify(\`\${server.name}: reconnecting MCP...\`);
       await reconnectMCPServer(server);
       renderCards(); renderTopPills(); saveServers();
+      resp = await mcpRPC(server, 'tools/call', {name, arguments: args});
     }
-    resp = await mcpRPC(server, 'tools/call', {name, arguments: args});
-  } catch(err) {
-    if(!isMcpSessionOrNetworkFailure(err)) throw err;
-    notify(\`\${server.name}: reconnecting MCP...\`);
-    await reconnectMCPServer(server);
-    renderCards(); renderTopPills(); saveServers();
-    resp = await mcpRPC(server, 'tools/call', {name, arguments: args});
+    if (resp?.error && isMcpSessionOrNetworkFailure(resp.error)) {
+      notify(\`\${server.name}: expired MCP session, reconnecting...\`);
+      await reconnectMCPServer(server);
+      renderCards(); renderTopPills(); saveServers();
+      resp = await mcpRPC(server, 'tools/call', {name, arguments: args});
+    }
+    if (resp?.error) throw new Error(resp.error.message || 'Tool call error');
+    const content = resp?.result?.content || [];
+    const result=content.map(c => c.text ?? JSON.stringify(c)).join('\\n') || JSON.stringify(resp?.result || {});
+    ingestMcpActivityResult(name,args,server,result,{activityId});
+    return result;
+  } catch(error) {
+    ingestMcpActivityResult(name,args,server,null,{activityId,error:error?.message||String(error)});
+    throw error;
   }
-  if (resp?.error && isMcpSessionOrNetworkFailure(resp.error)) {
-    notify(\`\${server.name}: expired MCP session, reconnecting...\`);
-    await reconnectMCPServer(server);
-    renderCards(); renderTopPills(); saveServers();
-    resp = await mcpRPC(server, 'tools/call', {name, arguments: args});
-  }
-  if (resp?.error) throw new Error(resp.error.message || 'Tool call error');
-  const content = resp?.result?.content || [];
-  return content.map(c => c.text ?? JSON.stringify(c)).join('\\n') || JSON.stringify(resp?.result || {});
 }
 
 // ── Outils actifs ───────────────────────────────────────────────────────────
@@ -1731,12 +2121,19 @@ function observerResultSummary(r) {
   return \`\${r.name}: \${shortText(raw,500)}\${warnings.length ? \`\\n- \${warnings[0]}\` : ''}\`;
 }
 
-function isObserverToolName(name) {
+function mcpToolDefinition(name, server=null) {
+  const owner=server||findServerForTool(name);
+  return owner?.tools?.find(tool=>tool.name===name)||null;
+}
+
+function isObserverToolName(name, server=null) {
   const fn=String(name||'');
+  const annotations=mcpToolDefinition(fn,server)?.annotations;
+  if(annotations?.readOnlyHint===true && annotations?.destructiveHint!==true) return true;
+  if(annotations?.readOnlyHint===false || annotations?.destructiveHint===true) return false;
   return /(?:^|_)(status|list|logs?|history|trace|summary|stats)$/i.test(fn) ||
     /(?:^|_)list_/i.test(fn) ||
-    /^cme_(?:status|sources_list|export_status)$/i.test(fn) ||
-    /^production_(?:list_jobs|job_status|job_logs)$/i.test(fn);
+    /(?:^|_)(?:get|read|show|describe|inspect|check|search|find|query|fetch)(?:_|$)/i.test(fn);
 }
 
 function observerToolLoopSummary(toolResults, repeated=false) {
@@ -1748,6 +2145,60 @@ function observerToolLoopSummary(toolResults, repeated=false) {
   return [prefix,names.length?\`\${chatText('Tools:','Outils :')} \${names.join(', ')}\`:null,...details]
     .filter(Boolean)
     .join('\\n');
+}
+
+function observerStatusBadgeClass(status) {
+  const v=String(status||'').toLowerCase().replace(/[\\s_-]/g,'');
+  if(/^(ok|configured|connected|done|success|complete|converted)$/.test(v)) return 'ok';
+  if(/^(notconfigured|missing|disconnected|failed|error)$/.test(v)) return 'fail';
+  if(/^(running|active|starting|started)$/.test(v)) return 'run';
+  if(/^(queued|pending|waiting)$/.test(v)) return 'queue';
+  if(/^(stored|partial|warning)$/.test(v)) return 'warn';
+  return '';
+}
+function mcpObjectCardHTML(toolName, data, {raw=''}={}) {
+  const status=data.status||data.state||data.connectionStatus||null;
+  const actionRequired=data.action_required||data.actionRequired||null;
+  const error=data.error||data.errorMessage||null;
+  const skip=new Set(['status','state','action_required','actionRequired','error','errorMessage','_activity']);
+  const kvRows=Object.entries(data)
+    .filter(([k,v])=>!skip.has(k)&&v!==null&&v!==undefined&&typeof v!=='object')
+    .slice(0,14)
+    .map(([k,v])=>\`<span class="obs-k">\${esc(k)}</span><span class="obs-v">\${esc(String(v))}</span>\`)
+    .join('');
+  const complexRows=Object.entries(data)
+    .filter(([k,v])=>!skip.has(k)&&v!==null&&typeof v==='object')
+    .slice(0,4)
+    .map(([k,v])=>{
+      const count=Array.isArray(v)?v.length:Object.keys(v||{}).length;
+      return \`<span class="obs-list-item" title="\${esc(JSON.stringify(v))}">\${esc(k)}: \${count} \${Array.isArray(v)?'items':'fields'}</span>\`;
+    })
+    .join('');
+  const badgeHtml=status?\`<span class="obs-badge \${observerStatusBadgeClass(status)}">\${esc(status)}</span>\`:'';
+  const actionHtml=actionRequired?\`<div class="obs-action-hint">⚡ \${esc(actionRequired)}</div>\`:'';
+  const errorHtml=error?\`<div class="obs-error-hint">\${esc(String(error))}</div>\`:'';
+  const rawHtml=raw?\`<details class="tc-raw"><summary>Raw JSON</summary><pre>\${esc(raw)}</pre></details>\`:'';
+  return \`<div class="obs-card"><div class="obs-card-head"><span class="obs-tool-name">\${esc(toolName)}</span>\${badgeHtml}</div>\${kvRows?\`<div class="obs-kv-grid">\${kvRows}</div>\`:''}\${complexRows?\`<div class="obs-list">\${complexRows}</div>\`:''}\${actionHtml}\${errorHtml}\${rawHtml}</div>\`;
+}
+function observerResultHTML(r) {
+  const data=parseToolJSON(r.content);
+  const name=r.name||'tool';
+  if(data?.job||data?.jobId||(data?.jobs&&Array.isArray(data.jobs))) return renderMd(observerResultSummary(r));
+  if(data&&typeof data==='object'&&!Array.isArray(data)) return mcpObjectCardHTML(name,data);
+  if(Array.isArray(data)&&data.length>0) {
+    const items=data.slice(0,10);
+    const extra=data.length>items.length?\`<span class="obs-list-item" style="color:var(--muted)">+\${data.length-items.length} more</span>\`:'';
+    const rows=items.map(item=>\`<span class="obs-list-item">\${esc(typeof item==='object'?JSON.stringify(item):String(item))}</span>\`).join('');
+    return \`<div class="obs-card"><div class="obs-card-head"><span class="obs-tool-name">\${esc(name)}</span><span class="obs-badge ok">\${data.length} items</span></div><div class="obs-list">\${rows}\${extra}</div></div>\`;
+  }
+  return renderMd(observerResultSummary(r));
+}
+function observerToolLoopHTML(toolResults, repeated=false) {
+  const chip=repeated
+    ? chatText('Observation chain stopped','Chaîne d\\'observation arrêtée')
+    : chatText('Observation complete','Observation terminée');
+  const cards=(toolResults||[]).map(observerResultHTML).join('');
+  return \`<div class="obs-wrap"><div class="obs-chip">\${chip}</div>\${cards}</div>\`;
 }
 
 function shouldStopAfterProductionTools(toolCalls) {
@@ -2135,15 +2586,15 @@ async function copyMessage(btn) {
   }
 }
 
-function appendMsg(role, content, toolCalls=null) {
+function appendMsg(role, content, toolCalls=null, {html=false,plainText=null}={}) {
   removeEmpty();
   const wrap=$('messages');
   const div=document.createElement('div');
   div.className=\`msg \${role}\`;
-  div.dataset.copy=content||'';
+  div.dataset.copy=plainText??content??'';
   const av=role==='user'?'<div class="av u">You</div>':'';
   const tc=toolCalls?.length ? toolCalls.map((c,i)=>tcBlockHTML(c,i)).join('') : '';
-  const bodyHtml=role==='assistant' ? renderMd(content||'') : esc(content||'');
+  const bodyHtml=html ? (content||'') : (role==='assistant' ? renderMd(content||'') : esc(content||''));
   div.innerHTML=\`\${av}<div class="msg-content"><div class="bubble">\${bodyHtml}\${tc}</div><div class="msg-actions"><button class="msg-action" onclick="copyMessage(this)">Copy</button></div></div>\`;
   wrap.appendChild(div);
   wrap.scrollTop=wrap.scrollHeight;
@@ -2225,7 +2676,7 @@ function applyChatAgentEvent(state, event) {
       status:ok?'done':'failed',
       summary:Number(step.callCount)>1 ? \`\${baseSummary} · ×\${step.callCount}\` : baseSummary,
       ok,
-      resultHtml:toolResultSummaryHTML(p.result,ok),
+      resultHtml:toolResultSummaryHTML(p.result,ok,p.name||step.title),
       assistantText:p.assistantText||step.assistantText||'',
     });
     return;
@@ -2448,7 +2899,38 @@ function tcBlockHTML(tc, fallbackIdx) {
 
 function parseToolJSON(result) {
   if(typeof result !== 'string') return result;
-  try { return JSON.parse(result); } catch { return null; }
+  const raw=result.trim();
+  if(!raw) return null;
+  try { return JSON.parse(raw); } catch {}
+  const candidates=[];
+  const fenced=raw.match(/\\x60{3}(?:json)?\\s*([\\s\\S]*?)\\x60{3}/i);
+  if(fenced?.[1]) candidates.push(fenced[1].trim());
+  const startIndexes=[raw.indexOf('{'),raw.indexOf('[')].filter(index=>index>=0).sort((a,b)=>a-b);
+  if(startIndexes.length) {
+    const start=startIndexes[0];
+    const opening=raw[start];
+    const closing=opening==='{'?'}':']';
+    let depth=0,quoted=false,escaped=false;
+    for(let i=start;i<raw.length;i++) {
+      const ch=raw[i];
+      if(quoted) {
+        if(escaped) escaped=false;
+        else if(ch==='\\\\') escaped=true;
+        else if(ch==='"') quoted=false;
+        continue;
+      }
+      if(ch==='"') { quoted=true; continue; }
+      if(ch===opening) depth++;
+      if(ch===closing && --depth===0) {
+        candidates.push(raw.slice(start,i+1));
+        break;
+      }
+    }
+  }
+  for(const candidate of candidates) {
+    try { return JSON.parse(candidate); } catch {}
+  }
+  return null;
 }
 
 function shortText(value, max=180) {
@@ -2540,13 +3022,16 @@ function genericJsonArraySectionHTML(key, rows) {
   </div>\`;
 }
 
-function genericJsonSummaryHTML(data, raw) {
+function genericJsonSummaryHTML(data, raw, toolName='MCP') {
   if(!data) return '';
   if(Array.isArray(data)) {
     const table=genericJsonTableHTML(data);
     return \`<div class="tc-summary"><div class="tc-summary-head"><span>\${data.length} item\${data.length>1?'s':''}</span><span class="tc-pill">array</span></div>\${table || \`<div class="tc-list">\${data.slice(0,10).map(item=>\`<div class="tc-item"><div class="tc-item-title"><span>\${esc(shortText(jsonPreviewValue(item),140))}</span></div></div>\`).join('')}</div>\`}<details class="tc-raw"><summary>Raw JSON</summary><pre>\${esc(raw)}</pre></details></div>\`;
   }
   if(typeof data==='object') {
+    if(data.status!==undefined||data.state!==undefined||data.connectionStatus!==undefined||data.action_required!==undefined||data.actionRequired!==undefined) {
+      return mcpObjectCardHTML(toolName||chatText('MCP result','Résultat MCP'),data,{raw});
+    }
     const entries=Object.entries(data);
     const arrayEntry=entries.length===1 && Array.isArray(entries[0][1]) ? entries[0] : null;
     if(arrayEntry) {
@@ -2675,7 +3160,7 @@ function mcpConnectErrorMessage(err) {
   return raw;
 }
 
-function toolResultSummaryHTML(result, ok) {
+function toolResultSummaryHTML(result, ok, toolName='MCP') {
   const raw=typeof result==='string'?result:JSON.stringify(result,null,2);
   if(!ok) {
     return \`<div class="tc-summary"><div class="tc-summary-head">Tool error</div><pre style="color:var(--err)">\${esc(raw)}</pre></div>\`;
@@ -2788,7 +3273,7 @@ function toolResultSummaryHTML(result, ok) {
     </div>\`;
   }
 
-  const genericJson=genericJsonSummaryHTML(data, raw);
+  const genericJson=genericJsonSummaryHTML(data, raw, toolName);
   if(genericJson) return genericJson;
 
   // newline-separated path list (wiki_list_pages format: "path/to/page.md [type]")
@@ -2821,6 +3306,13 @@ function toolResultSummaryHTML(result, ok) {
 function toolResultTraceSummary(result, ok) {
   if(!ok) return 'error';
   const data=parseToolJSON(result);
+  if(data && typeof data==='object' && !Array.isArray(data)) {
+    const status=data.status||data.state||data.connectionStatus;
+    if(status) {
+      const action=data.action_required||data.actionRequired;
+      return [String(status),action?shortText(action,45):null].filter(Boolean).join(' · ');
+    }
+  }
   if(data?.results && Array.isArray(data.results)) return \`\${data.results.length} result\${data.results.length>1?'s':''}\`;
   if(data?.candidateResults && Array.isArray(data.candidateResults)) {
     const coverage=data.coverage||{};
@@ -2986,19 +3478,19 @@ function keepOrReplaceStatusBubble(currentDiv, text, statusDiv) {
   return currentDiv;
 }
 
-function publishAssistantOutput(content, statusDiv) {
+function publishAssistantOutput(content, statusDiv, opts={}) {
   if(statusDiv && statusDiv.isConnected) {
-    setStreamContent(statusDiv,content);
+    setStreamContent(statusDiv,content,'',opts);
     return statusDiv;
   }
-  return appendMsg('assistant',content);
+  return appendMsg('assistant',content,null,opts);
 }
 
-function setStreamContent(div, text, extra='') {
+function setStreamContent(div, text, extra='', {html=false,plainText=null}={}) {
   const bubble=div.querySelector('.bubble');
   if(!bubble) return;
-  div.dataset.copy=text||'';
-  const main=text ? renderMd(text) : (extra ? '' : '<div class="typing"><span></span><span></span><span></span></div>');
+  div.dataset.copy=plainText??text??'';
+  const main=html ? (text||'') : (text ? renderMd(text) : (extra ? '' : '<div class="typing"><span></span><span></span><span></span></div>'));
   bubble.innerHTML=main+extra;
   $('messages').scrollTop=$('messages').scrollHeight;
 }
@@ -3147,7 +3639,7 @@ async function sendMessage() {
           streamFinalized=true;
           const summary=observerToolLoopSummary([],true);
           dispatchChatAgentEvent(runTrace,'run_summary',{origin:'system',payload:{content:summary}});
-          statusDiv=publishAssistantOutput(summary,statusDiv);
+          statusDiv=publishAssistantOutput(observerToolLoopHTML([],true),statusDiv,{html:true,plainText:summary});
           messages.push({role:'assistant',content:summary});
           conversationDirty=true;
           await saveCurrentConversation({immediate:true});
@@ -3211,7 +3703,7 @@ async function sendMessage() {
         if(!isSkillRun && tcWithIdx.every(tc=>isObserverToolName(toolCallFunctionName(tc)))) {
           const summary=observerToolLoopSummary(toolResults);
           dispatchChatAgentEvent(runTrace,'run_summary',{origin:'system',payload:{content:summary}});
-          statusDiv=publishAssistantOutput(summary,statusDiv);
+          statusDiv=publishAssistantOutput(observerToolLoopHTML(toolResults),statusDiv,{html:true,plainText:summary});
           messages.push({role:'assistant',content:summary});
           conversationDirty=true;
           await saveCurrentConversation({immediate:true});
