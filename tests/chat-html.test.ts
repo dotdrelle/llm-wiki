@@ -110,6 +110,25 @@ describe('chat html', () => {
     expect(script).not.toContain("actElapsed(item)<2");
   });
 
+  it('offers setup discovery from the empty chat and activity panel', () => {
+    const [script] = chatScripts();
+
+    expect(CHAT_HTML).toContain('Start setup guide');
+    expect(CHAT_HTML).toContain('Fill workspace profile');
+    expect(CHAT_HTML).toContain('Get contextual tips');
+    expect(CHAT_HTML).toContain("onclick=\"submitSuggestion('/guide')\"");
+    expect(CHAT_HTML).toContain('onclick="submitSuggestion(getTipsPrompt())"');
+    expect(script).toContain('function maybeAutoStartGuide');
+    expect(script).toContain('function applyWorkspaceTitle');
+    expect(script).toContain('function getTipsPrompt');
+    expect(script).toContain('available read-only tools');
+    expect(script).toContain('active connectors');
+    expect(script).toContain('actual state you found');
+    expect(script).toContain("findSkillByName('guide')");
+    expect(script).toContain("storageKey('llm-wiki-guide-autostart-done')");
+    expect(script).toContain("submitSuggestion('/guide')");
+  });
+
   it('tracks actionable and asynchronous MCP calls in the activity panel', () => {
     const [script] = chatScripts();
 

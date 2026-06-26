@@ -15,6 +15,17 @@ This workspace follows a local-first LLM Wiki pattern.
 - Use `wiki serve` to browse the wiki UI. `/` renders `wiki/index.md`; `/graph` shows source/wiki relations.
 - Use `wiki doctor` after changing `.wikirc.yaml`, model, context size, retrieval limits, or Ollama settings.
 
+## Donna Guide
+
+- `/guide` launches Donna's setup and discovery workflow.
+- Donna checks LLM settings, connected MCP capabilities, source connectors,
+  wiki content, and generation actions.
+- First visit in `wiki serve` may auto-start `/guide` once per workspace.
+- The empty chat also offers `Start setup guide` and `Fill workspace profile`.
+- Keep connector credentials in Donna's flow: ask for the fields required by
+  the connected setup tool, then call that setup tool when the user confirms.
+- Use the Activity tab to follow imports, exports, uploads, and jobs.
+
 ## Workspace Layout
 
 - `.wikirc.yaml`: local configuration.
@@ -31,10 +42,9 @@ This workspace follows a local-first LLM Wiki pattern.
 ## External Agents
 
 External acquisition agents are workspace-agnostic. The active workspace is
-passed as a tool argument by the orchestrator, so tools such as `cme_export_run`
-and `documents_convert_to_markdown` write new Markdown into this workspace's
-`raw/untracked/` directory. Do not store agent runtime state or credentials in
-the workspace.
+passed as a tool argument by the orchestrator, so source/import tools write new
+Markdown into this workspace's `raw/untracked/` directory. Do not store agent
+runtime state or credentials in the workspace.
 
 ## Content Rules
 

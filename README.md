@@ -200,6 +200,41 @@ The final ingest step intentionally uses the `wiki-production` MCP server. The
 llm-wiki MCP server is read/search/write oriented and does not expose a
 `wiki_ingest` tool.
 
+### Donna — interactive setup and discovery guide
+
+The scaffolded `/guide` skill turns the chat into a step-by-step guided
+onboarding session. It is designed for first-time users or anyone who wants to
+verify that all workspace components are properly connected.
+
+Donna (the `/guide` persona) works through five stages:
+
+1. **LLM** — confirms the model is reachable (pre-configured from `.wikirc.yaml`
+   in `wiki serve` mode; sidebar fields in standalone mode).
+2. **Connected Capabilities** — calls available read-only tools to discover
+   which connectors are active and which need setup.
+3. **Configure Missing Connectors** — if a connector is present but not
+   configured, asks only for the required credentials, then calls the matching
+   setup tool after confirmation.
+4. **Source Selection** — lists configured sources and offers to launch the
+   appropriate sync or import workflow.
+5. **Wiki Content & Deliverables** — inspects existing wiki pages and available
+   templates; proposes the right generation action.
+
+`/guide` is generic: it works with any combination of connectors present in the
+workspace, not just Confluence or the default agent set.
+
+The empty chat also offers two quick-start tiles alongside `/guide`:
+
+- **Fill workspace profile** — prompts the user to describe the workspace
+  context so that answers and deliverables are better tailored.
+- **Get contextual tips** — Donna inspects the actual workspace state with the
+  available read-only tools and returns 3 specific next-step suggestions in the
+  configured workspace language.
+
+On first visit (no conversation history), `/guide` starts automatically once,
+then requires an explicit click. The auto-start flag is stored in local storage
+per workspace scope and can be reset by clearing browser data.
+
 ## Core Commands
 
 ```bash

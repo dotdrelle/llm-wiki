@@ -213,7 +213,9 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .act-section-title{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .act-dismiss-all{font-size:10px;color:var(--muted);background:none;border:none;cursor:pointer;padding:2px 4px;border-radius:4px}
 .act-dismiss-all:hover{color:var(--text);background:var(--panel-soft)}
-.act-empty{font-size:12px;color:var(--muted2);text-align:center;padding:22px 10px}
+.act-empty{font-size:12px;color:var(--muted2);text-align:center;padding:22px 10px;line-height:1.5}
+.act-empty-btn{margin-top:10px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);font-size:12px;font-weight:700;font-family:var(--font-sans);padding:8px 10px;cursor:pointer}
+.act-empty-btn:hover{border-color:var(--accent);color:var(--accent)}
 .act-card{background:var(--panel-soft);border:1px solid var(--border);border-radius:10px;padding:10px 11px;display:flex;flex-direction:column;gap:7px}
 .act-card.running{border-color:color-mix(in srgb,var(--accent) 35%,var(--border))}
 .act-card-head{display:flex;align-items:flex-start;gap:8px}
@@ -336,6 +338,12 @@ body:not(.connectors-mode) #connectors-view{display:none}
 #empty .em-icon{font-size:36px;opacity:.6}
 #empty h2{font-size:17px;font-weight:800;color:var(--muted2)}
 #empty p{font-size:12px;text-align:center;max-width:260px;line-height:1.7;color:var(--muted)}
+.empty-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:8px;width:min(620px,100%)}
+.empty-tile{border:1px solid var(--border);border-radius:10px;background:var(--panel);box-shadow:var(--shadow);padding:13px 14px;text-align:left;color:var(--text);cursor:pointer;font-family:var(--font-sans);transition:border-color .18s,transform .18s,box-shadow .18s}
+.empty-tile:hover{border-color:var(--accent);transform:translateY(-1px);box-shadow:0 10px 24px rgba(15,23,42,.09)}
+.empty-tile-title{display:block;font-size:13px;font-weight:800;margin-bottom:4px}
+.empty-tile-desc{display:block;font-size:11px;line-height:1.45;color:var(--muted)}
+@media(max-width:640px){.empty-actions{grid-template-columns:1fr}}
 
 /* INPUT */
 #input-wrap{padding:12px 18px 14px;background:linear-gradient(to top,var(--panel) 82%,rgba(255,255,255,0));display:flex;flex-direction:column;align-items:center}
@@ -449,6 +457,26 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .err-dialog-foot button{background:var(--panel-soft);border:1px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:12px;padding:6px 14px;font-family:var(--font-sans)}
 .err-dialog-foot button:hover{border-color:var(--accent);color:var(--accent)}
 hr.divider{border:none;border-top:1px solid var(--border);margin:8px 12px}`;
+
+const EMPTY_CHAT_HTML = `<div id="empty">
+  <div class="em-icon">⬡</div>
+  <h2>MCP Chat</h2>
+  <p>Enable an MCP server, then start the conversation.</p>
+  <div class="empty-actions">
+    <button class="empty-tile" type="button" onclick="submitSuggestion('/guide')">
+      <span class="empty-tile-title">Start setup guide</span>
+      <span class="empty-tile-desc">Let Donna check LLM, connectors, sources, wiki content, and deliverables.</span>
+    </button>
+    <button class="empty-tile" type="button" onclick="submitSuggestion('Help me fill my workspace profile.')">
+      <span class="empty-tile-title">Fill workspace profile</span>
+      <span class="empty-tile-desc">Describe your context so answers and deliverables fit this workspace.</span>
+    </button>
+    <button class="empty-tile" type="button" onclick="submitSuggestion(getTipsPrompt())">
+      <span class="empty-tile-title">Get contextual tips</span>
+      <span class="empty-tile-desc">Donna checks the workspace state and gives 3 specific next-step suggestions.</span>
+    </button>
+  </div>
+</div>`;
 
 const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
   <button class="app-nav-btn" type="button" onclick="toggleSidebar()" title="Toggle sidebar" aria-label="Toggle sidebar">☰</button>
@@ -582,11 +610,7 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
     </section>
   </div>
   <div id="messages">
-    <div id="empty">
-      <div class="em-icon">⬡</div>
-      <h2>MCP Chat</h2>
-      <p>Enable an MCP server, then start the conversation.</p>
-    </div>
+    ${EMPTY_CHAT_HTML}
   </div>
   <div id="input-wrap">
     <div class="input-box">
@@ -744,6 +768,12 @@ function chatLanguageIsFrench() {
 }
 function chatText(en, fr) {
   return chatLanguageIsFrench() ? fr : en;
+}
+function getTipsPrompt() {
+  return chatText(
+    \`Inspect the current workspace state with the available read-only tools before answering. Check what you can about wiki content, configured source connectors, recent jobs or activities, and available generation actions. Choose the relevant tools from the active connectors; if no useful tool is available, say that clearly. Then give 3 short actionable tips tailored to the actual state you found — not generic advice. Keep each tip to 2 sentences max.\`,
+    \`Inspecte l'état actuel du workspace avec les outils disponibles en lecture seule avant de répondre. Vérifie ce que tu peux sur le contenu du wiki, les connecteurs de sources configurés, les jobs ou activités récents, et les actions de génération disponibles. Choisis les outils pertinents parmi les connecteurs actifs ; si aucun outil utile n'est disponible, dis-le clairement. Donne ensuite 3 conseils courts et actionnables adaptés à l'état réel trouvé — pas de conseils génériques. Maximum 2 phrases par conseil.\`
+  );
 }
 function notify(msg, type='s') {
   const el=$('notif'); el.textContent=msg; el.className=\`show \${type}\`;
@@ -1017,7 +1047,11 @@ function renderActivities() {
   if(!el) return;
   const uploads=_activities.filter(a=>a.kind==='upload');
   const mcp=_activities.filter(a=>a.kind!=='upload');
-  if(!_activities.length){el.innerHTML=\`<div class="act-empty">\${chatText('No activity yet.','Aucune activité.')}</div>\`;return;}
+  if(!_activities.length){
+    const guideBtn=findSkillByName('guide')?\`<br><button class="act-empty-btn" type="button" onclick="submitSuggestion('/guide')">\${chatText('Start setup guide','Lancer le guide')}</button>\`:'';
+    el.innerHTML=\`<div class="act-empty">\${chatText('No activity yet.','Aucune activité.')}\${guideBtn}</div>\`;
+    return;
+  }
   const hasDone=_activities.some(a=>!isActivityActive(a.status));
   const dismissBtn=hasDone?\`<button class="act-dismiss-all" onclick="dismissAllDone()">\${chatText('Clear all','Tout effacer')}</button>\`:'';
   const section=(title,items)=>items.length?\`<div class="act-section-head"><span class="act-section-title">\${title}</span></div>\${items.map(actCardHTML).join('')}\`:'';
@@ -1202,6 +1236,15 @@ function selectSkillAc(idx){
   if(skill.params&&skill.params.length){
     notify('Expected parameters: '+skill.params.map(p=>'{'+p+'}').join(', '),'s');
   }
+}
+
+function submitSuggestion(text) {
+  showChatView();
+  const ta=$('chat-input');
+  if(!ta || isStreaming) return;
+  ta.value=String(text||'');
+  autoResize(ta);
+  sendMessage();
 }
 
 function renderSkillsManager() {
@@ -1507,13 +1550,15 @@ async function loadHistory() {
     if(!res.ok) throw new Error(\`HTTP \${res.status}\`);
     historySummaries=await res.json();
     renderHistory();
+    return true;
   } catch(e) {
     console.warn('chat history load failed', e);
+    return false;
   }
 }
 
 function setEmptyChat() {
-  $('messages').innerHTML=\`<div id="empty"><div class="em-icon">⬡</div><h2>MCP Chat</h2><p>Enable an MCP server, then start the conversation.</p></div>\`;
+  $('messages').innerHTML=\`${EMPTY_CHAT_HTML}\`;
 }
 
 async function newConversation() {
@@ -3888,6 +3933,17 @@ async function restoreEnabledServers() {
   }
 }
 
+function applyWorkspaceTitle() {
+  const wsName = window.__WIKI_CONFIG__?.workspaceName;
+  if (!wsName) return;
+  const label = \`CHAT (\${wsName})\`;
+  document.title = label;
+  const navTitle = document.querySelector('.app-nav-title');
+  if (navTitle) navTitle.textContent = label;
+  const logoText = document.querySelector('.sb-logo-text');
+  if (logoText) logoText.textContent = label;
+}
+
 function loadConfig() {
   const wc = window.__WIKI_CONFIG__;
   let saved = {};
@@ -3944,16 +4000,32 @@ function loadServers() {
   renderCards(); saveServers();
 }
 
+async function maybeAutoStartGuide({historyLoaded=false}={}) {
+  if(!historyLoaded) return;
+  if(messages.length || currentConversationId || historySummaries.length) return;
+  if(!findSkillByName('guide')) return;
+  const key = storageKey('llm-wiki-guide-autostart-done');
+  try {
+    if(localStorage.getItem(key)==='1') return;
+    localStorage.setItem(key,'1');
+  } catch {}
+  submitSuggestion('/guide');
+}
+
 // ── Init ────────────────────────────────────────────────────────────────────
-loadConfig();
-loadServers();
-initPageMode();
-loadHistory();
-initSidebarSplitter();
-renderProductionTrace();
-restoreEnabledServers();
-fetchSkillsAc();
-window.addEventListener('popstate', initPageMode);
+async function initChat() {
+  applyWorkspaceTitle();
+  loadConfig();
+  loadServers();
+  initPageMode();
+  const historyLoaded=await loadHistory();
+  initSidebarSplitter();
+  renderProductionTrace();
+  await Promise.all([restoreEnabledServers(),fetchSkillsAc()]);
+  await maybeAutoStartGuide({historyLoaded});
+  window.addEventListener('popstate', initPageMode);
+}
+initChat();
 </script>`;
 
 export const CHAT_HTML = `<!DOCTYPE html>

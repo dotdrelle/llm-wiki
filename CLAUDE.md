@@ -2,23 +2,21 @@
 
 ## Purpose
 
-`llm-wiki` is the local-first workspace engine. It ingests Markdown sources into
-a persistent wiki, builds retrieval indexes, and regenerates deliverables from
-workspace templates and build context.
+`llm-wiki` is the local-first workspace engine. It ingests Markdown sources,
+maintains a persistent wiki, builds retrieval indexes, serves the browser UI,
+and regenerates deliverables from templates and build context.
 
-The repository should stay usable as a standalone CLI and as the engine called
-by `llm-wiki-manager`.
+Keep it usable both as a standalone CLI and as the engine called by
+`llm-wiki-manager`.
 
-## Architecture
+## Layout
 
 ```text
 bin/wiki.ts              Commander CLI entrypoint
 src/commands/           Thin command wrappers
-src/config/             .wikirc.yaml loading, defaults, schema; loadEnv.ts loads workspace `.env` before config
-src/services/           Main orchestration and IO
+src/services/           Orchestration, IO, LLM, retrieval, MCP
 src/prompts/            Prompt builders
-src/utils/              Path safety, fs, hashing, markdown, JSON helpers
-src/chat/               Browser chat UI generation; chatHtml.ts contains a self-contained event bus (createChatAgentEvent / dispatchChatAgentEvent / applyChatAgentEvent) mirroring the manager's AgentRunEvent contract
+src/chat/chatHtml.ts    Self-contained browser chat UI
 scaffold/workspace/     Default workspace copied by `wiki init`
 tests/                  Vitest coverage
 docs/                   User-facing references
@@ -26,164 +24,105 @@ docs/                   User-facing references
 
 ## Commands
 
-- `init`: copy `scaffold/workspace` into the workspace.
-- `add-skill`: install a workspace skill from a directory, local zip, or HTTP(S)
-  zip URL.
-- `doctor`: validate config/provider/retrieval/build planning.
-- `ingest`: read `raw/untracked/`, create/update wiki pages, archive sources.
+- `init`: copy `scaffold/workspace`.
+- `add-skill`: install one workspace skill package.
+- `doctor`: validate provider, retrieval, build planning, and config.
+- `ingest`: read `raw/untracked/`, update wiki pages, archive sources.
 - `index`: build/update `.wiki/vector-index`.
-- `query`: answer a question from wiki context.
-- `build`: generate deliverables from `templates/`.
-- `refresh`: rebuild stale deliverables from `.wiki/build-state.json`.
-- `export`: expand citations into source detail, optionally polish.
-- `lint`: static and optional semantic checks.
-- `serve`: local web UI, graph, chat (event-driven trace), skill editor, API proxy.
-- `mcp`: stdio MCP server.
-- `mcp-http`: Streamable HTTP MCP server.
+- `query`: answer from wiki context.
+- `build`, `refresh`, `export`, `lint`: generate and verify deliverables.
+- `serve`: web UI, graph, chat, skills, API proxy.
+- `mcp`, `mcp-http`: expose wiki tools over MCP.
 
-## Skill Model
+## Workspace Skill Model
 
-A workspace skill is a complete installable method. It uses the same path layout
-as the workspace:
+A workspace skill package uses this layout:
 
 ```text
 skill.yaml
 templates/
 build-context/
 .wiki/skills/
-.wiki/system-prompt.md  # optional
-CLAUDE.md               # optional
+.wiki/system-prompt.md
+CLAUDE.md
 ```
 
-`wiki add-skill` behavior:
+`wiki add-skill` validates before writing, rejects traversal and symlinks,
+backs up replaced files under `.wiki/tmp/add-skill-*/backup`, replaces only
+standard package paths, writes `.wiki/skill-install.json`, and appends a log
+entry. This is intentionally one-skill-per-workspace; do not add multi-skill
+merging without redesigning the model.
 
-- validates the package before writing;
-- rejects path traversal and symlinks;
-- backs up every replaced path under `.wiki/tmp/add-skill-*/backup`;
-- replaces only standard paths present in the package;
-- writes `.wiki/skill-install.json`;
-- appends a wiki log entry.
+The default scaffold includes small UI skills such as `/status`, `/wiki-sync`,
+`/pipeline`, and `/guide`. Keep scaffold skills generic and English by default.
 
-This is one-skill-per-workspace. Do not implement multi-skill merging unless the
-whole model is deliberately redesigned.
+## Serve Chat
 
-The default scaffold is a minimal English `basic` skill. Keep it small and
-generic.
+`src/chat/chatHtml.ts` is a self-contained browser app. It has three separate
+surfaces:
+
+- MCP chain: technical call/result trace.
+- Chat observation cards: compact read-only status/list results.
+- Activity panel: uploads and actionable/asynchronous MCP work.
+
+Trace mutations in `sendMessage` must go through `dispatchChatAgentEvent`.
+Do not add direct `trace.steps.push()` mutations outside event handlers.
+`parseToolJSON` accepts direct JSON, fenced JSON, and JSON embedded in textual
+MCP envelopes; escape HTML at renderer boundaries.
+
+Read-only observations should not create Activity entries unless the MCP server
+returns an `_activity` contract. Async/actionable tools should be tracked in
+Activity when they return `_activity.plan`, `_activity.progress`, or poll data.
+
+## Serve Skills And Donna
+
+Browser slash entries resolve against workspace skills from `.wiki/skills/`.
+When `/guide` exists, the empty chat shows a `Start setup guide` tile, and the
+empty Activity panel suggests the same action. First visit may auto-start
+`/guide` only when:
+
+- history loaded successfully,
+- no conversation/history exists,
+- the `guide` skill exists,
+- localStorage has not recorded `llm-wiki-guide-autostart-done` for this
+  workspace.
+
+The second empty-chat tile, `Fill workspace profile`, should prompt the user to
+populate `.wiki/profile.md`; it must not mutate files without confirmation.
+
+Skill runs are multi-step workflows. Do not let observation-only tool calls
+(`*_status`, `*_list`, logs, history, summaries) auto-finalize a skill run.
+Sync/import skills should use the connected source tools first, then an ingest
+or production job when available. The llm-wiki MCP does not expose a
+`wiki_ingest` tool; ingestion is normally launched through the production/job
+runner or the CLI.
 
 ## Important Services
 
-- `workspaceService.ts`: workspace paths, source resolution, wiki writes,
-  build-context reads, skill installation.
+- `workspaceService.ts`: path safety, workspace IO, skill installation.
 - `ingestService.ts`: source-to-wiki LLM pipeline.
-- `buildService.ts`: template slot batching and generation. Slot replacements
-  are normalized before insertion: escaped Markdown newlines are restored,
-  headings that repeat the template slot heading are removed, and generated
-  subheadings are shifted below the template heading level.
+- `buildService.ts`: template slot batching and generation.
 - `refreshService.ts`: stale deliverable detection.
 - `exportService.ts`: citation expansion and polish.
 - `retrievalService.ts`: lexical/vector context assembly.
-- `vectorIndexService.ts`: LanceDB index management. Oversized chunks (token limit errors from the embedding API) are skipped for vector indexing only — lexical search still covers them. Non-limit errors (auth, network, config) remain blocking. `VectorIndexBuildResult` exposes `skippedChunks`, `skippedPages`, and `warnings`; the `index` command prints a warning when chunks are skipped.
-- `embeddingService.ts`: OpenAI-compatible embeddings.
-- `rerankService.ts`: optional reranking endpoint.
-- `llmService.ts`: provider abstraction.
-- `mcpServer.ts`: MCP tools for reading/searching/writing wiki content.
+- `vectorIndexService.ts`: LanceDB index management; oversized chunks are
+  skipped for vector indexing only, with warnings.
+- `llmService.ts`: OpenAI-compatible provider abstraction.
+- `mcpServer.ts`: wiki MCP tools.
 
-## Serve Chat — Event System
+## Config And Environment
 
-`chatHtml.ts` embeds a self-contained typed event bus that mirrors the
-`llm-wiki-manager` `AgentRunEvent` contract:
+- `WIKI_CONFIG_PATH`: load a specific `.wikirc` profile, relative to workspace
+  when not absolute.
+- `WIKI_RUN_CALLER`: included in trace init events to link CLI traces to
+  production jobs.
+- TLS for `serve`: `WIKI_SERVE_TLS_CERT_PATH`, `WIKI_SERVE_TLS_KEY_PATH`,
+  optional `WIKI_SERVE_TLS_CA_PATH`.
+- TLS for `mcp-http`: `WIKI_MCP_TLS_CERT_PATH`, `WIKI_MCP_TLS_KEY_PATH`,
+  optional `WIKI_MCP_TLS_CA_PATH`.
 
-```
-run_started          clears chain, activities, plan, summary (stale state guard)
-tool_call_started    adds a running step to the trace chain
-tool_call_result     finalises the step (done / failed)
-trace_step_upsert    upserts a derived production/observer step
-activity_upserted    registers activity in state.activities
-run_summary          stores the final assistant text
-run_done / run_error marks the run terminal
-```
-
-All trace card mutations in `sendMessage` go through `dispatchChatAgentEvent`.
-`trace.steps` is kept as an alias for `trace.agentProjection.chain` so existing
-renderers (`renderTrace`, `traceStepHTML`, etc.) continue to work unchanged.
-
-Do not add direct `trace.steps.push()` calls outside the event handlers. Use
-`dispatchChatAgentEvent(trace, 'trace_step_upsert', { origin, payload: { step } })`
-instead.
-
-### MCP presentation surfaces
-
-MCP calls can appear in three deliberately separate surfaces:
-
-- the **MCP Chain** keeps the technical call/result trace;
-- the **chat observation card** presents read-only status/list results inline;
-- the persistent **Activity panel** tracks uploads and actionable/asynchronous
-  MCP work, including `_activity.plan`, `_activity.progress`, and polling.
-
-Classification should prefer MCP tool annotations (`readOnlyHint`,
-`destructiveHint`) and use naming heuristics only as a fallback for older or
-external servers. Read-only observations should not create Activity entries
-unless the server explicitly returns an `_activity` contract.
-
-`parseToolJSON` accepts direct JSON, fenced JSON, and JSON embedded in a textual
-MCP envelope. Keep HTML escaping at the final renderer boundary. The plain-text
-summary must still be stored in `messages[]` and used for copy/context even when
-the visible chat response is rendered as structured HTML.
-
-Activity state is persisted per workspace in local storage. Partial activity
-updates must make timer decisions from the merged activity state, not only from
-the incoming patch. Keep upload rendering compact in `actCardHTML`; do not
-duplicate asynchronous plan steps in observation cards.
-
-## Serve Chat — Skills
-
-Slash entries in the browser chat first resolve against workspace skills from
-`.wiki/skills/`. A matching skill replaces the user-facing slash command with
-the skill body before the LLM turn starts.
-
-Skill runs are multi-step workflows. Do not let observation-only tool calls
-(`*_status`, `*_list`, logs, history, summaries) auto-finalize a skill run; the
-LLM must continue until the skill's requested action has actually started or
-completed. The generic "Observation complete" guard is only for normal chat
-questions, not for active skills.
-
-When a streamed assistant message precedes tool calls, keep it visible as the
-run status. Later status or final output should update that same bubble instead
-of removing it, so users can read the current state while MCP tools run.
-
-The default `/wiki-sync` skill exports all CME sources, then ingests the
-exported Markdown through the `wiki-production` MCP server with
-`production_start_job` and `type: "ingest"`. The llm-wiki MCP does not expose a
-`wiki_ingest` tool.
-
-## Config and Environment
-
-- `WIKI_CONFIG_PATH`: if set, resolves relative to the workspace root and loads
-  that file instead of searching for `.wikirc.yaml`. Used by
-  `agent-wiki-production` to pass a specific config profile (e.g.
-  `.wikirc.yaml.openai`) per job.
-- `WIKI_RUN_CALLER`: if set (to a job ID by `agent-wiki-production`), included
-  in `trace:init` log events as `caller`. Used to link CLI trace files back to
-  the production job that launched them.
-
-### TLS
-
-Both `serve` and `mcp-http` support HTTPS via env vars (paths are resolved
-relative to the workspace root if not absolute):
-
-| Command   | Cert env var                | Key env var                | CA env var (optional)     |
-| --------- | --------------------------- | -------------------------- | ------------------------- |
-| `serve`   | `WIKI_SERVE_TLS_CERT_PATH`  | `WIKI_SERVE_TLS_KEY_PATH`  | `WIKI_SERVE_TLS_CA_PATH`  |
-| `mcp-http`| `WIKI_MCP_TLS_CERT_PATH`    | `WIKI_MCP_TLS_KEY_PATH`    | `WIKI_MCP_TLS_CA_PATH`    |
-
-Both env vars (`CERT` and `KEY`) must be set together; providing only one is an
-error. When neither is set, the server starts in plain HTTP mode. TLS is
-infrastructure config — set it in Docker Compose or the environment only, not
-in `.wikirc.yaml`.
-
-Trace logger (`src/services/traceLogger.ts`) enriches `trace:init` events with
-`configFile`, `provider`, `model`, and `caller` when available, so logs are
-attributable to their source workspace, provider, and job.
+TLS paths resolve relative to the workspace when not absolute. Cert and key
+must be supplied together. Keep TLS in env/Compose, not `.wikirc.yaml`.
 
 ## Safety Rules
 
@@ -191,15 +130,14 @@ attributable to their source workspace, provider, and job.
 - Treat `raw/untracked/` as the only ingest input area.
 - Treat `deliverables/` as generated and reproducible.
 - Do not invent facts in generated content; cite available context.
-- Preserve MCP bearer-token behavior: the browser must not receive workspace MCP
-  tokens.
-- Keep skill package installation constrained to the standard layout.
-- Do not allow skill zips or directories to install symlinks.
+- Preserve MCP bearer-token behavior: browser clients must not receive
+  workspace MCP tokens.
+- Keep skill install constrained to standard paths and reject symlinks.
 - Keep Docker one-shot CLI usage separate from long-running `serve`.
 
 ## Validation
 
-Run before committing changes:
+Before broad changes:
 
 ```bash
 pnpm typecheck
@@ -210,15 +148,11 @@ pnpm test
 Focused checks:
 
 ```bash
-pnpm exec vitest run tests/workspace.test.ts
+pnpm exec vitest run tests/chat-html.test.ts
 pnpm dev add-skill ./path/to/skill
 pnpm dev build --plan
 ```
 
-## Docker Notes
-
-The runtime image must include production dependencies. The built CLI imports
-runtime packages, and `serve` resolves browser assets from `node_modules`.
-
-`EXPOSE 3000` does not start `wiki serve`. Compose services must explicitly run
-the desired command.
+Runtime image note: `dist/bin/wiki.js` imports runtime dependencies and `serve`
+resolves browser assets from `node_modules`. `EXPOSE 3000` does not start
+`wiki serve`; Compose must run the desired command explicitly.
