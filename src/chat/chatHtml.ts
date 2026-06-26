@@ -338,7 +338,7 @@ body:not(.connectors-mode) #connectors-view{display:none}
 #empty .em-icon{font-size:36px;opacity:.6}
 #empty h2{font-size:17px;font-weight:800;color:var(--muted2)}
 #empty p{font-size:12px;text-align:center;max-width:260px;line-height:1.7;color:var(--muted)}
-.empty-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:8px;width:min(620px,100%)}
+.empty-actions{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:10px;margin-top:8px;width:min(620px,100%)}
 .empty-tile{border:1px solid var(--border);border-radius:10px;background:var(--panel);box-shadow:var(--shadow);padding:13px 14px;text-align:left;color:var(--text);cursor:pointer;font-family:var(--font-sans);transition:border-color .18s,transform .18s,box-shadow .18s}
 .empty-tile:hover{border-color:var(--accent);transform:translateY(-1px);box-shadow:0 10px 24px rgba(15,23,42,.09)}
 .empty-tile-title{display:block;font-size:13px;font-weight:800;margin-bottom:4px}
