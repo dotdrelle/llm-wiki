@@ -19,7 +19,7 @@ build:
   maxBuildContextChars: 12000
 
 limits:
-  requestsPerMinute: 10
+  requestsPerMinute: 50
   targetInputTokensPerCall: 40000
   maxInputTokensPerCall: 50000
   maxProfileChars: 4000
