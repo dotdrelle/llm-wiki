@@ -74,6 +74,11 @@ Read-only observations should not create Activity entries unless the MCP server
 returns an `_activity` contract. Async/actionable tools should be tracked in
 Activity when they return `_activity.plan`, `_activity.progress`, or poll data.
 
+All browser UI, MCP-facing labels, status strings, activity labels, and tests
+for those surfaces must stay in English. The workspace `.wikirc` language is
+used only for generated LLM-facing content and assistant answers, not for
+local UI chrome.
+
 ## Serve Skills And Donna
 
 Browser slash entries resolve against workspace skills from `.wiki/skills/`.

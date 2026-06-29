@@ -65,14 +65,14 @@ describe('serve link handling', () => {
     const html = await serveMd(root, deliverablePath, '/deliverables/brief.md');
 
     expect(html).toContain('class="stabilize-badge"');
-    expect(html).toContain('1 conservée');
-    expect(html).toContain('1 modifiée');
-    expect(html).toContain('1 insérée');
+    expect(html).toContain('1 kept');
+    expect(html).toContain('1 modified');
+    expect(html).toContain('1 inserted');
     expect(html).toContain(
-      '<span class="section-tag section-tag-modified">modifié</span>',
+      '<span class="section-tag section-tag-modified">modified</span>',
     );
     expect(html).toContain(
-      '<span class="section-tag section-tag-inserted">nouveau</span>',
+      '<span class="section-tag section-tag-inserted">new</span>',
     );
   });
 });
