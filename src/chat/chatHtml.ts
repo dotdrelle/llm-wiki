@@ -886,8 +886,7 @@ function ingestMcpActivityResult(tool,args,server,result,{activityId=null,error=
     startedAt:existing?.startedAt||Date.now(),
   };
   if(contract) {
-    const item=activityFromContract(contract,{...existing,...fallback,id});
-    upsertActivity(item);
+    upsertActivity(activityFromContract(contract,{...existing,...fallback,id}));
     return id;
   }
   if(existing||shouldTrackMcpTool(tool,server)||error) {
@@ -1040,13 +1039,14 @@ function activityPlanSteps(item) {
 function renderActivities() {
   const el=$('activity-body');
   if(!el) return;
-  const rev=[..._activities].reverse();
-  const uploads=rev.filter(a=>a.kind==='upload');
-  const mcp=rev.filter(a=>a.kind!=='upload');
   if(!_activities.length){
     const guideBtn=findSkillByName('guide')?\`<br><button class="act-empty-btn" type="button" onclick="submitSuggestion('/guide')">Start setup guide</button>\`:'';
     el.innerHTML=\`<div class="act-empty">No activity yet.\${guideBtn}</div>\`;
     return;
+  }
+  const uploads=[],mcp=[];
+  for(let i=_activities.length-1;i>=0;i--) {
+    (_activities[i].kind==='upload'?uploads:mcp).push(_activities[i]);
   }
   const hasDone=_activities.some(a=>!isActivityActive(a.status));
   const dismissBtn=hasDone?\`<button class="act-dismiss-all" onclick="dismissAllDone()">Clear all</button>\`:'';
@@ -2108,9 +2108,6 @@ function productionStatusLabel(status) {
   return map[status] || status || 'unknown';
 }
 
-function productionChatStatusLabel(status) {
-  return productionStatusLabel(status);
-}
 
 function isProductionToolName(name) {
   return String(name||'').startsWith('production_');
@@ -2270,18 +2267,12 @@ function observerToolLoopHTML(toolResults, repeated=false) {
   return \`<div class="obs-wrap"><div class="obs-chip">\${chip}</div>\${cards}</div>\`;
 }
 
-function toolResultsFallbackSummary(toolResults) {
-  if(!toolResults?.length) return '';
-  return toolResults.every(r=>isProductionToolName(r.name))
-    ? productionToolSummary(toolResults)
-    : observerToolLoopSummary(toolResults,false);
-}
-
-function toolResultsFallbackHTML(toolResults) {
-  if(!toolResults?.length) return '';
-  return toolResults.every(r=>isProductionToolName(r.name))
-    ? renderMd(productionToolSummary(toolResults))
-    : observerToolLoopHTML(toolResults,false);
+function toolResultsFallback(toolResults) {
+  if(!toolResults?.length) return null;
+  const isProd=toolResults.every(r=>isProductionToolName(r.name));
+  const text=isProd?productionToolSummary(toolResults):observerToolLoopSummary(toolResults,false);
+  const html=isProd?renderMd(text):observerToolLoopHTML(toolResults,false);
+  return {text,html};
 }
 
 function shouldStopAfterProductionTools(toolCalls) {
@@ -2436,7 +2427,7 @@ function productionToolSummary(toolResults) {
       if(jobId) productionState.notifiedTerminalJobIds.add(jobId);
       return productionTerminalChatSummary(latestJob);
     }
-    const status=productionChatStatusLabel(latestJob.status);
+    const status=productionStatusLabel(latestJob.status);
     const target=productionTargetLabel(latestJob);
     const progress=latestWithJob.progress?.percent;
     const progressText=Number.isFinite(Number(progress)) ? \` · \${Math.round(Number(progress))}%\` : '';
@@ -2448,7 +2439,7 @@ function productionToolSummary(toolResults) {
     return \`Production \${status}: \${target}\${progressText}.\${suffix}\`;
   }
   if(started) {
-    return \`Production started: job \${started.jobId} (\${productionChatStatusLabel(started.status)}). Tracking in agent orchestration.\`;
+    return \`Production started: job \${started.jobId} (\${productionStatusLabel(started.status)}). Tracking in agent orchestration.\`;
   }
   if(listed) {
     return listed.jobs.length
@@ -2467,7 +2458,7 @@ function productionTerminalChatSummary(job) {
   if(status==='done') return \`Production completed: \${target}\${duration}.\`;
   if(status==='failed') return \`Production failed: \${target}\${duration}.\${job?.error?\` Error: \${job.error}\`:''}\`;
   if(status==='cancelled') return \`Production cancelled: \${target}\${duration}.\`;
-  return \`Production \${productionChatStatusLabel(status)}: \${target}.\`;
+  return \`Production \${productionStatusLabel(status)}: \${target}.\`;
 }
 
 async function notifyProductionTerminalInChat() {
@@ -3787,8 +3778,10 @@ async function sendMessage() {
         continue;
       }
 
-      const finalContent=String(content||'').trim() ? content : toolResultsFallbackSummary(lastToolResults);
-      const finalHtml=String(content||'').trim() ? null : toolResultsFallbackHTML(lastToolResults);
+      const hasContent=String(content||'').trim();
+      const fb=hasContent?null:toolResultsFallback(lastToolResults);
+      const finalContent=hasContent?content:(fb?.text||'');
+      const finalHtml=fb?.html||null;
       if(finalHtml) {
         const target=(statusDiv && statusDiv!==streamDiv && statusDiv.isConnected) ? statusDiv : streamDiv;
         statusDiv=publishAssistantOutput(finalHtml,target,{html:true,plainText:finalContent});
@@ -4014,6 +4007,7 @@ function loadServers() {
     const isStale = saved.some(s => typeof s.url === 'string' && s.url.startsWith('/api/mcp'));
     if (saved.length && !isStale) {
       const seen=new Set();
+      let dirty=false;
       for (const s of saved) {
         // In proxy mode, always use the server-injected URL/bearer for known servers
         // to avoid stale localhost URLs looping back to the serve container
@@ -4021,8 +4015,9 @@ function loadServers() {
         const override = defaults.find(d => d.name === sName)
           || (sName.startsWith('agent-') ? defaults.find(d => d.name === sName.slice('agent-'.length)) : null);
         const name = override ? override.name : s.name;
-        if(seen.has(name)) continue;
+        if(seen.has(name)) { dirty=true; continue; }
         seen.add(name);
+        if(override && name !== sName) dirty=true;
         const url = override ? override.url : s.url;
         const bearer = override ? (override.bearer||'') : (s.bearer||'');
         const injected = override ? true : (s.injected === true);
@@ -4031,11 +4026,12 @@ function loadServers() {
       }
       for (const s of defaults) {
         if(seen.has(s.name)) continue;
+        dirty=true;
         const id=nextId++;
         servers.push({id, name:s.name, url:s.url, bearer:s.bearer||'', injected:true, enabled:false, status:'off', tools:[]});
       }
       renderCards();
-      saveServers();
+      if(dirty) saveServers();
       return;
     }
   } catch {}

@@ -162,7 +162,7 @@ describe('chat html', () => {
 
     expect(script).toContain("const title='Agent orchestration';");
     expect(script).not.toContain('MCP chain');
-    expect(script).toContain('upsertActivity(item);');
+    expect(script).toContain('upsertActivity(activityFromContract(contract,{...existing,...fallback,id}));');
     const ingestSource = script.match(/function ingestMcpActivityResult\(tool,args,server,result,[\s\S]*?\n\}\nfunction scheduleActivityPoll/)?.[0] ?? '';
     expect(ingestSource).not.toContain('openActivityPanel();');
     const callSource = script.match(/async function callMCPTool\(name, args,[\s\S]*?\n\}\n\n\/\/ ── Active tools/)?.[0] ?? '';
@@ -172,12 +172,12 @@ describe('chat html', () => {
   it('renders a tool-result fallback when the LLM final answer is empty', () => {
     const [script] = chatScripts();
 
-    expect(script).toContain('function toolResultsFallbackSummary(toolResults)');
-    expect(script).toContain('function toolResultsFallbackHTML(toolResults)');
+    expect(script).toContain('function toolResultsFallback(toolResults)');
+    expect(script).toContain('const isProd=toolResults.every(r=>isProductionToolName(r.name));');
     expect(script).toContain('let lastToolResults=[];');
     expect(script).toContain('lastToolResults=toolResults;');
-    expect(script).toContain("const finalContent=String(content||'').trim() ? content : toolResultsFallbackSummary(lastToolResults);");
-    expect(script).toContain("const finalHtml=String(content||'').trim() ? null : toolResultsFallbackHTML(lastToolResults);");
+    expect(script).toContain("const hasContent=String(content||'').trim();");
+    expect(script).toContain("const fb=hasContent?null:toolResultsFallback(lastToolResults);");
   });
 
   it('migrates saved injected MCP server aliases to current serve defaults', () => {
@@ -187,9 +187,9 @@ describe('chat html', () => {
     expect(script).toContain("sName.slice('agent-'.length)");
     expect(script).toContain('const sName=String(s?.name||');
     expect(script).toContain('const name = override ? override.name : s.name;');
-    expect(script).toContain('if(seen.has(name)) continue;');
+    expect(script).toContain('if(seen.has(name)) { dirty=true; continue; }');
     expect(script).toContain('if(seen.has(s.name)) continue;');
-    expect(script).toContain('saveServers();');
+    expect(script).toContain('if(dirty) saveServers();');
   });
 
   it('uses a generic MCP presentation contract across activity, chain and chat', () => {
@@ -300,7 +300,6 @@ describe('chat html', () => {
 
     expect(script).toContain('notifiedTerminalJobIds: new Set()');
     expect(script).toContain('async function notifyProductionTerminalInChat()');
-    expect(script).toContain('Production completed');
     expect(script).toContain('Production completed');
     expect(script).toContain("messages.slice(-8).some(m=>m?.role==='assistant' && m?.content===summary)");
     expect(script).toContain('handleProductionToolResult(msg.name,{},msg.content,true,{recover:true});');
