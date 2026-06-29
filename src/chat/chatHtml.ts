@@ -552,8 +552,8 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
     <div class="tb-actions">
       <button class="tb-system" id="system-drawer-btn" onclick="toggleSystemPrompt()">System instructions</button>
       <button class="tb-clear" onclick="clearChat()">Clear</button>
-      <button class="tb-act-btn" id="tb-act-btn" onclick="toggleActivityPanel()" title="Activités">
-        Activités<span class="tb-act-badge" id="tb-act-badge"></span>
+      <button class="tb-act-btn" id="tb-act-btn" onclick="toggleActivityPanel()" title="Activity">
+        Activity<span class="tb-act-badge" id="tb-act-badge"></span>
       </button>
     </div>
   </div>
@@ -624,7 +624,7 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
       <button class="attach-btn" type="button" onclick="openDocumentUpload()" title="Upload document" aria-label="Upload document">
         <svg viewBox="0 0 24 24"><path d="M21.4 11.6 12 21a6 6 0 0 1-8.5-8.5l9.9-9.9a4 4 0 0 1 5.7 5.7L9.2 18.2a2 2 0 0 1-2.8-2.8l9.2-9.2"/></svg>
       </button>
-      <button id="send-btn" onclick="handleSendButton()" title="Envoyer">
+      <button id="send-btn" onclick="handleSendButton()" title="Send">
         <svg viewBox="0 0 24 24"><path d="M12 5l7 7-1.4 1.4L13 8.8V20h-2V8.8l-4.6 4.6L5 12z"/></svg>
       </button>
     </div>
@@ -634,8 +634,8 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
 
 <aside id="activity-panel" class="closed">
   <div class="act-panel-head">
-    <span class="act-panel-title">Activités</span>
-    <button class="act-panel-close" onclick="toggleActivityPanel()" title="Fermer">×</button>
+    <span class="act-panel-title">Activity</span>
+    <button class="act-panel-close" onclick="toggleActivityPanel()" title="Close">×</button>
   </div>
   <div class="act-body" id="activity-body"></div>
 </aside>
@@ -764,19 +764,10 @@ function languageInstruction() {
   if (!lang || lang === 'en') return '';
   let label = lang;
   try { label = new Intl.DisplayNames([lang], { type: 'language' }).of(lang) ?? lang; } catch {}
-  return \`IMPORTANT: réponds toujours dans la langue configurée: \${lang} (\${label}). Après un appel d'outil, traduis et synthétise les informations utiles dans cette langue; ne conserve une autre langue que pour les noms propres, chemins, commandes, codes et citations exactes.\`;
-}
-function chatLanguageIsFrench() {
-  return /^fr(?:-|$)/i.test(String(window.__WIKI_CONFIG__?.language || ''));
-}
-function chatText(en, fr) {
-  return chatLanguageIsFrench() ? fr : en;
+  return \`IMPORTANT: always answer in the configured language: \${lang} (\${label}). After a tool call, translate and summarize the useful information in that language; keep another language only for proper nouns, paths, commands, code, and exact quotations.\`;
 }
 function getTipsPrompt() {
-  return chatText(
-    \`Inspect the current workspace state with the available read-only tools before answering. Check what you can about wiki content, configured source connectors, recent jobs or activities, and available generation actions. Choose the relevant tools from the active connectors; if no useful tool is available, say that clearly. Then give 3 short actionable tips tailored to the actual state you found — not generic advice. Keep each tip to 2 sentences max.\`,
-    \`Inspecte l'état actuel du workspace avec les outils disponibles en lecture seule avant de répondre. Vérifie ce que tu peux sur le contenu du wiki, les connecteurs de sources configurés, les jobs ou activités récents, et les actions de génération disponibles. Choisis les outils pertinents parmi les connecteurs actifs ; si aucun outil utile n'est disponible, dis-le clairement. Donne ensuite 3 conseils courts et actionnables adaptés à l'état réel trouvé — pas de conseils génériques. Maximum 2 phrases par conseil.\`
-  );
+  return \`Inspect the current workspace state with the available read-only tools before answering. Check what you can about wiki content, configured source connectors, recent jobs or activities, and available generation actions. Choose the relevant tools from the active connectors; if no useful tool is available, say that clearly. Then give 3 short actionable tips tailored to the actual state you found, not generic advice. Keep each tip to 2 sentences max.\`;
 }
 function notify(msg, type='s') {
   const el=$('notif'); el.textContent=msg; el.className=\`show \${type}\`;
@@ -811,15 +802,15 @@ function activitySourceLabel(source) {
 }
 function activityToolLabel(tool,args={}) {
   const labels={
-    production_start_job:chatText('Production job','Job de production'),
-    production_cancel_job:chatText('Cancel production','Annulation production'),
-    cme_export_run:chatText('Confluence export','Export Confluence'),
-    cme_export_cancel:chatText('Cancel Confluence export','Annulation export Confluence'),
-    cme_setup:chatText('Configure CME','Configuration CME'),
-    cme_source_add:chatText('Add Confluence source','Ajout source Confluence'),
-    cme_source_remove:chatText('Remove Confluence source','Suppression source Confluence'),
-    documents_convert_to_markdown:chatText('Document conversion','Conversion document'),
-    mailer_send_email:args.dryRun?chatText('Email preview','Aperçu email'):chatText('Send email','Envoi email'),
+    production_start_job:'Production job',
+    production_cancel_job:'Cancel production',
+    cme_export_run:'Confluence export',
+    cme_export_cancel:'Cancel Confluence export',
+    cme_setup:'Configure CME',
+    cme_source_add:'Add Confluence source',
+    cme_source_remove:'Remove Confluence source',
+    documents_convert_to_markdown:'Document conversion',
+    mailer_send_email:args.dryRun?'Email preview':'Send email',
   };
   return labels[tool]||String(tool||'MCP action').replace(/_/g,' ');
 }
@@ -851,7 +842,7 @@ function activityResultSummary(data,raw='') {
   return [
     status?String(status):null,
     data.messageId?'messageId: '+data.messageId:null,
-    data.dryRun===true?chatText('Preview only','Aperçu uniquement'):null,
+    data.dryRun===true?'Preview only':null,
     data.outputPath?uploadOutputLabel(data.outputPath):null,
     data.message||data.summary||data.detail,
   ].filter(Boolean).join(' · ')||shortText(raw,180);
@@ -895,7 +886,8 @@ function ingestMcpActivityResult(tool,args,server,result,{activityId=null,error=
     startedAt:existing?.startedAt||Date.now(),
   };
   if(contract) {
-    upsertActivity(activityFromContract(contract,{...existing,...fallback,id}));
+    const item=activityFromContract(contract,{...existing,...fallback,id});
+    upsertActivity(item);
     return id;
   }
   if(existing||shouldTrackMcpTool(tool,server)||error) {
@@ -934,7 +926,7 @@ function loadActivities() {
     if(!isActivityActive(item.status)) return item;
     if(item.poll?.tool) return item;
     changed=true;
-    return {...item,status:'failed',error:item.error||chatText('Interrupted by page reload. Retry the conversion if available.','Interrompu par le rechargement de la page. Relancez la conversion si elle est disponible.'),updatedAt:Date.now()};
+    return {...item,status:'failed',error:item.error||'Interrupted by page reload. Retry the conversion if available.',updatedAt:Date.now()};
   });
   if(changed) saveActivities();
 }
@@ -972,24 +964,24 @@ function actUploadSteps(item) {
   const st=item.status;
   const storeRunning=st==='running'&&item.phase!=='conversion';
   if(st==='running') return [
-    {state:storeRunning?'running':'done',label:chatText('Storage','Stockage'),val:storeRunning?chatText('running…','en cours…'):'ok'},
-    {state:storeRunning?'pending':'running',label:chatText('Conversion','Conversion'),val:storeRunning?'–':chatText('running…','en cours…')},
-    {state:'pending',label:chatText('Write Markdown','Écriture Markdown'),val:'–'},
+    {state:storeRunning?'running':'done',label:'Storage',val:storeRunning?'running...':'ok'},
+    {state:storeRunning?'pending':'running',label:'Conversion',val:storeRunning?'–':'running...'},
+    {state:'pending',label:'Write Markdown',val:'–'},
   ];
   if(st==='converted') return [
-    {state:'done',label:chatText('Storage','Stockage'),val:'ok'},
-    {state:'done',label:chatText('Conversion','Conversion'),val:item.method||'ok'},
-    {state:'done',label:chatText('Write Markdown','Écriture Markdown'),val:'ok'},
+    {state:'done',label:'Storage',val:'ok'},
+    {state:'done',label:'Conversion',val:item.method||'ok'},
+    {state:'done',label:'Write Markdown',val:'ok'},
   ];
   if(st==='stored') return [
-    {state:'done',label:chatText('Storage','Stockage'),val:'ok'},
-    {state:'pending',label:chatText('Conversion','Conversion'),val:chatText('no agent','sans agent')},
-    {state:'pending',label:chatText('Write Markdown','Écriture Markdown'),val:'–'},
+    {state:'done',label:'Storage',val:'ok'},
+    {state:'pending',label:'Conversion',val:'no agent'},
+    {state:'pending',label:'Write Markdown',val:'–'},
   ];
   return [
-    {state:'done',label:chatText('Storage','Stockage'),val:'ok'},
-    {state:'failed',label:chatText('Conversion','Conversion'),val:chatText('failed','échec')},
-    {state:'pending',label:chatText('Write Markdown','Écriture Markdown'),val:'–'},
+    {state:'done',label:'Storage',val:'ok'},
+    {state:'failed',label:'Conversion',val:'failed'},
+    {state:'pending',label:'Write Markdown',val:'–'},
   ];
 }
 function actCardHTML(item) {
@@ -1001,17 +993,17 @@ function actCardHTML(item) {
   const meta=[size,elapsed>0?elapsed+'s':null].filter(Boolean).join(' · ');
   const done=item.status==='done';
   const badge=running?'running':(converted||done)?'done':stored?'stored':'failed';
-  const badgeLabel=running?chatText('Running','En cours'):(converted||done)?chatText('Done','Terminé'):stored?chatText('Stored','Stocké'):item.status==='cancelled'?chatText('Cancelled','Annulé'):chatText('Failed','Échec');
+  const badgeLabel=running?'Running':(converted||done)?'Done':stored?'Stored':item.status==='cancelled'?'Cancelled':'Failed';
   const steps=item.kind==='upload'?actUploadSteps(item):activityPlanSteps(item);
   const stepsHtml=steps.map(s=>\`<div class="act-step \${s.state}"><span class="act-step-dot"></span><span class="act-step-label">\${esc(s.label)}</span><span class="act-step-val">\${esc(s.val)}</span></div>\`).join('');
   const output=item.outputPath?uploadOutputLabel(item.outputPath):(item.resultSummary||null);
   const outputHtml=output?\`<div class="act-output" title="\${esc(output)}" onclick="copyText(\${esc(JSON.stringify(output))})">\${esc(output)}</div>\`:'';
   const errorHtml=item.error?\`<div class="act-error">\${esc(item.error)}</div>\`:'';
   const retryHtml=(item.status==='stored'||item.status==='failed')&&item.uploadId
-    ?\`<button class="act-btn" onclick="retryConvert(\${esc(JSON.stringify(item.uploadId))},\${esc(JSON.stringify(item.id))})">\${chatText('Retry','Relancer')}</button>\`
+    ?\`<button class="act-btn" onclick="retryConvert(\${esc(JSON.stringify(item.uploadId))},\${esc(JSON.stringify(item.id))})">Retry</button>\`
     :'';
-  const hint=converted?\`<div class="act-card-meta">\${chatText('Ready · run ingest to integrate.','Prêt · lancez ingest pour intégrer.')}</div>\`
-    :stored?\`<div class="act-card-meta">\${chatText('Stored, no conversion agent.','Stocké, pas d\\'agent de conversion.')}</div>\`
+  const hint=converted?\`<div class="act-card-meta">Ready · run ingest to integrate.</div>\`
+    :stored?\`<div class="act-card-meta">Stored, no conversion agent.</div>\`
     :'';
   const icon={production:'⚙',cme:'⇄',documents:'📄',mailer:'✉'}[item.source]||(item.kind==='upload'?'📄':'⌁');
   const sourceMeta=item.source&&item.kind!=='upload'?(item.sourceLabel||activitySourceLabel(item.source)):null;
@@ -1020,7 +1012,7 @@ function actCardHTML(item) {
 <div class="act-card-head"><span class="act-card-icon">\${icon}</span><div class="act-card-info"><div class="act-card-name">\${esc(item.label||item.filename||'-')}</div>\${fullMeta?\`<div class="act-card-meta">\${esc(fullMeta)}</div>\`:''}</div><span class="act-badge \${badge}">\${badgeLabel}</span></div>
 \${stepsHtml?\`<div class="act-steps">\${stepsHtml}</div>\`:''}
 \${outputHtml}\${errorHtml}\${hint}
-<div class="act-actions">\${retryHtml}<button class="act-btn del" onclick="dismissActivity(\${esc(JSON.stringify(item.id))})">\${chatText('Dismiss','Fermer')}</button></div>
+<div class="act-actions">\${retryHtml}<button class="act-btn del" onclick="dismissActivity(\${esc(JSON.stringify(item.id))})">Dismiss</button></div>
 </div>\`;
 }
 function activityPlanSteps(item) {
@@ -1048,18 +1040,19 @@ function activityPlanSteps(item) {
 function renderActivities() {
   const el=$('activity-body');
   if(!el) return;
-  const uploads=_activities.filter(a=>a.kind==='upload');
-  const mcp=_activities.filter(a=>a.kind!=='upload');
+  const rev=[..._activities].reverse();
+  const uploads=rev.filter(a=>a.kind==='upload');
+  const mcp=rev.filter(a=>a.kind!=='upload');
   if(!_activities.length){
-    const guideBtn=findSkillByName('guide')?\`<br><button class="act-empty-btn" type="button" onclick="submitSuggestion('/guide')">\${chatText('Start setup guide','Lancer le guide')}</button>\`:'';
-    el.innerHTML=\`<div class="act-empty">\${chatText('No activity yet.','Aucune activité.')}\${guideBtn}</div>\`;
+    const guideBtn=findSkillByName('guide')?\`<br><button class="act-empty-btn" type="button" onclick="submitSuggestion('/guide')">Start setup guide</button>\`:'';
+    el.innerHTML=\`<div class="act-empty">No activity yet.\${guideBtn}</div>\`;
     return;
   }
   const hasDone=_activities.some(a=>!isActivityActive(a.status));
-  const dismissBtn=hasDone?\`<button class="act-dismiss-all" onclick="dismissAllDone()">\${chatText('Clear all','Tout effacer')}</button>\`:'';
+  const dismissBtn=hasDone?\`<button class="act-dismiss-all" onclick="dismissAllDone()">Clear all</button>\`:'';
   const section=(title,items)=>items.length?\`<div class="act-section-head"><span class="act-section-title">\${title}</span></div>\${items.map(actCardHTML).join('')}\`:'';
-  el.innerHTML=\`<div class="act-section-head"><span class="act-section-title">\${chatText('Activity','Activités')}</span>\${dismissBtn}</div>\`
-    +section(chatText('Uploads','Uploads'),uploads)
+  el.innerHTML=\`<div class="act-section-head"><span class="act-section-title">Activity</span>\${dismissBtn}</div>\`
+    +section('Uploads',uploads)
     +section('MCP',mcp);
 }
 function updateActivityBadge() {
@@ -1086,7 +1079,7 @@ function openActivityPanel() {
   updateActivityBadge();
 }
 function copyText(text) {
-  navigator.clipboard?.writeText(text).then(()=>notify(chatText('Copied','Copié'))).catch(()=>notify(text));
+  navigator.clipboard?.writeText(text).then(()=>notify('Copied')).catch(()=>notify(text));
 }
 async function retryConvert(uploadId, actId) {
   upsertActivity({id:actId,status:'running',phase:'conversion',error:null,outputPath:null,startedAt:Date.now()});
@@ -1096,7 +1089,7 @@ async function retryConvert(uploadId, actId) {
     if(!res.ok||data.ok===false) throw new Error(data.error||\`HTTP \${res.status}\`);
     const u=data.upload||{};
     upsertActivity({id:actId,status:u.status,outputPath:u.outputPath,method:u.method,error:u.error||null});
-    notify(u.status==='converted'?chatText('Converted','Converti'):chatText('Stored','Stocké'));
+    notify(u.status==='converted'?'Converted':'Stored');
   } catch(err) {
     upsertActivity({id:actId,status:'failed',error:err?.message||String(err)});
     notify(err?.message||String(err),'e');
@@ -1136,12 +1129,12 @@ function uploadOutputLabel(outputPath) {
 }
 function uploadMethodLabel(method) {
   const labels={
-    'pdf-text': chatText('PDF text extraction','Extraction texte PDF'),
-    'pdf-ocr': chatText('PDF OCR','OCR PDF'),
-    'image-ocr': chatText('Image OCR','OCR image'),
-    'docx-xml': chatText('DOCX text extraction','Extraction texte DOCX'),
-    'libreoffice-pdf': chatText('Office conversion','Conversion Office'),
-    'text': chatText('Text import','Import texte'),
+    'pdf-text': 'PDF text extraction',
+    'pdf-ocr': 'PDF OCR',
+    'image-ocr': 'Image OCR',
+    'docx-xml': 'DOCX text extraction',
+    'libreoffice-pdf': 'Office conversion',
+    'text': 'Text import',
   };
   return labels[method]||method||null;
 }
@@ -1180,7 +1173,7 @@ async function uploadSelectedDocument(input) {
     });
     const upload=data.upload||{};
     upsertActivity({id:actId,status:upload.status||'stored',outputPath:upload.outputPath||null,method:upload.method||null,uploadId:upload.id||null,error:upload.error||null});
-    notify(upload.status==='converted'?chatText('Document converted','Document converti'):chatText('Document stored','Document stocké'));
+    notify(upload.status==='converted'?'Document converted':'Document stored');
   } catch(err) {
     upsertActivity({id:actId,status:'failed',error:err?.message||String(err)});
     notify(err?.message||String(err),'e');
@@ -1958,7 +1951,6 @@ async function callMCPTool(name, args, {trackActivity=true}={}) {
       label:activityToolLabel(name,args),detail:activityArgsSummary(name,args),
       status:'running',startedAt:Date.now(),terminal:false,
     });
-    openActivityPanel();
   }
   try {
     let resp;
@@ -1993,7 +1985,7 @@ async function callMCPTool(name, args, {trackActivity=true}={}) {
   }
 }
 
-// ── Outils actifs ───────────────────────────────────────────────────────────
+// ── Active tools ────────────────────────────────────────────────────────────
 
 function getActiveTools() {
   const out=[];
@@ -2004,7 +1996,35 @@ function getActiveTools() {
   return out;
 }
 
+function uniqueToolsByName(tools) {
+  const byName=new Map();
+  for(const tool of tools||[]) {
+    const name=String(tool?.name||'').trim();
+    if(!name) continue;
+    const existing=byName.get(name);
+    const preferred=preferredServerNameForTool(name);
+    if(!existing || (preferred && tool?._server?.name===preferred && existing?._server?.name!==preferred)) {
+      byName.set(name,tool);
+    }
+  }
+  return [...byName.values()];
+}
+
+function preferredServerNameForTool(name) {
+  const text=String(name||'');
+  const prefix=text.split('_',1)[0];
+  if(prefix && servers.some(s=>s.name===prefix)) return prefix;
+  if(text.startsWith('production_')) return 'wiki-production';
+  if(text.startsWith('wiki_') || text.startsWith('profile_')) return 'llm-wiki';
+  return null;
+}
+
 function findServerForTool(name) {
+  const preferred=preferredServerNameForTool(name);
+  if(preferred) {
+    const owner=servers.find(s=>s.name===preferred&&s.enabled&&s.status==='ok'&&s.tools.some(t=>t.name===name));
+    if(owner) return owner;
+  }
   for(const s of servers)
     if(s.enabled&&s.status==='ok'&&s.tools.some(t=>t.name===name)) return s;
   return null;
@@ -2089,9 +2109,7 @@ function productionStatusLabel(status) {
 }
 
 function productionChatStatusLabel(status) {
-  if(!chatLanguageIsFrench()) return productionStatusLabel(status);
-  const map={queued:'en attente',running:'en cours',done:'terminée',failed:'échouée',cancelled:'annulée'};
-  return map[status] || status || 'inconnue';
+  return productionStatusLabel(status);
 }
 
 function isProductionToolName(name) {
@@ -2141,7 +2159,7 @@ function observerResultSummary(r) {
   const raw=typeof r.content==='string' ? r.content : JSON.stringify(r.content,null,2);
   const data=parseToolJSON(r.content);
   const warnings=isPossiblyTruncatedToolResult(data,raw)
-    ? [chatText('result may be partial/truncated','résultat possiblement partiel/tronqué')]
+    ? ['result may be partial/truncated']
     : [];
   if(data?.job || data?.jobId || (data?.jobs && Array.isArray(data.jobs))) {
     return [productionToolSummary([r]),...warnings].filter(Boolean).join('\\n');
@@ -2152,10 +2170,8 @@ function observerResultSummary(r) {
       const meta=[source?.type,source?.status,source?.path,source?.url].filter(Boolean).map(v=>shortText(v,70)).join(' · ');
       return \`- \${name}\${meta ? \` — \${meta}\` : ''}\`;
     });
-    const more=data.sources.length>sourceLines.length ? [\`- +\${data.sources.length-sourceLines.length} \${chatText('more source(s)','source(s) en plus')}\`] : [];
-    const header=chatLanguageIsFrench()
-      ? \`\${data.sources.length} source\${data.sources.length>1?'s':''} CME configurée\${data.sources.length>1?'s':''}.\`
-      : \`\${data.sources.length} CME source\${data.sources.length>1?'s':''} configured.\`;
+    const more=data.sources.length>sourceLines.length ? [\`- +\${data.sources.length-sourceLines.length} more source(s)\`] : [];
+    const header=\`\${data.sources.length} CME source\${data.sources.length>1?'s':''} configured.\`;
     return [header,...sourceLines,...more,...warnings].join('\\n');
   }
   if(Array.isArray(data)) {
@@ -2192,10 +2208,10 @@ function isObserverToolName(name, server=null) {
 function observerToolLoopSummary(toolResults, repeated=false) {
   const names=[...new Set((toolResults||[]).map(r=>r.name).filter(Boolean))];
   const prefix=repeated
-    ? chatText('Observation chain stopped after repeated status/list calls.','Chaînage d’observation arrêté après des appels status/list répétés.')
-    : chatText('Observation complete.','Observation terminée.');
+    ? 'Observation chain stopped after repeated status/list calls.'
+    : 'Observation complete.';
   const details=(toolResults||[]).map(observerResultSummary).filter(Boolean);
-  return [prefix,names.length?\`\${chatText('Tools:','Outils :')} \${names.join(', ')}\`:null,...details]
+  return [prefix,names.length?\`Tools: \${names.join(', ')}\`:null,...details]
     .filter(Boolean)
     .join('\\n');
 }
@@ -2248,10 +2264,24 @@ function observerResultHTML(r) {
 }
 function observerToolLoopHTML(toolResults, repeated=false) {
   const chip=repeated
-    ? chatText('Observation chain stopped','Chaîne d\\'observation arrêtée')
-    : chatText('Observation complete','Observation terminée');
+    ? 'Observation chain stopped'
+    : 'Observation complete';
   const cards=(toolResults||[]).map(observerResultHTML).join('');
   return \`<div class="obs-wrap"><div class="obs-chip">\${chip}</div>\${cards}</div>\`;
+}
+
+function toolResultsFallbackSummary(toolResults) {
+  if(!toolResults?.length) return '';
+  return toolResults.every(r=>isProductionToolName(r.name))
+    ? productionToolSummary(toolResults)
+    : observerToolLoopSummary(toolResults,false);
+}
+
+function toolResultsFallbackHTML(toolResults) {
+  if(!toolResults?.length) return '';
+  return toolResults.every(r=>isProductionToolName(r.name))
+    ? renderMd(productionToolSummary(toolResults))
+    : observerToolLoopHTML(toolResults,false);
 }
 
 function shouldStopAfterProductionTools(toolCalls) {
@@ -2398,9 +2428,7 @@ function productionToolSummary(toolResults) {
   const busy=[...parsed].reverse().find(d=>d.error==='workspace_busy');
   const listed=[...parsed].reverse().find(d=>Array.isArray(d.jobs));
   if(busy) {
-    return chatLanguageIsFrench()
-      ? \`Production déjà en cours : job \${busy.activeJobId || 'actif'}. Le suivi est dans le chaînage.\`
-      : \`Production already running: job \${busy.activeJobId || 'active'}. Tracking in the chain view.\`;
+    return \`Production already running: job \${busy.activeJobId || 'active'}. Tracking in agent orchestration.\`;
   }
   if(latestJob) {
     if(productionTerminal(latestJob.status)) {
@@ -2414,41 +2442,28 @@ function productionToolSummary(toolResults) {
     const progressText=Number.isFinite(Number(progress)) ? \` · \${Math.round(Number(progress))}%\` : '';
     const suffix=productionTerminal(latestJob.status)
       ? latestJob.status==='failed' && latestJob.error
-        ? chatLanguageIsFrench() ? \` Erreur : \${latestJob.error}\` : \` Error: \${latestJob.error}\`
+        ? \` Error: \${latestJob.error}\`
         : ''
-      : chatText(' Tracking in the chain view.',' Le suivi est dans le chaînage.');
+      : ' Tracking in agent orchestration.';
     return \`Production \${status}: \${target}\${progressText}.\${suffix}\`;
   }
   if(started) {
-    return chatLanguageIsFrench()
-      ? \`Production démarrée : job \${started.jobId} (\${productionChatStatusLabel(started.status)}). Le suivi est dans le chaînage.\`
-      : \`Production started: job \${started.jobId} (\${productionChatStatusLabel(started.status)}). Tracking in the chain view.\`;
+    return \`Production started: job \${started.jobId} (\${productionChatStatusLabel(started.status)}). Tracking in agent orchestration.\`;
   }
   if(listed) {
-    if(chatLanguageIsFrench()) {
-      return listed.jobs.length
-        ? \`\${listed.jobs.length} job\${listed.jobs.length>1?'s':''} de production trouvé\${listed.jobs.length>1?'s':''}. Le chaînage suit le job actif s'il est disponible.\`
-        : 'Aucun job de production récent.';
-    }
     return listed.jobs.length
-      ? \`\${listed.jobs.length} production job\${listed.jobs.length>1?'s':''} found. Chaining tracks the active job if available.\`
+      ? \`\${listed.jobs.length} production job\${listed.jobs.length>1?'s':''} found. Agent orchestration tracks the active job if available.\`
       : 'No recent production job.';
   }
-  return chatText('Production action executed. Chaining updated.','Action de production exécutée. Chaînage mis à jour.');
+  return 'Production action executed. Agent orchestration updated.';
 }
 
 function productionTerminalChatSummary(job) {
   const status=String(job?.status||'');
   const target=productionTargetLabel(job);
   const duration=job?.durationSeconds!==undefined
-    ? chatLanguageIsFrench() ? \` en \${formatDuration(job.durationSeconds)}\` : \` in \${formatDuration(job.durationSeconds)}\`
+    ? \` in \${formatDuration(job.durationSeconds)}\`
     : '';
-  if(chatLanguageIsFrench()) {
-    if(status==='done') return \`Production terminée : \${target}\${duration}.\`;
-    if(status==='failed') return \`Production échouée : \${target}\${duration}.\${job?.error?\` Erreur : \${job.error}\`:''}\`;
-    if(status==='cancelled') return \`Production annulée : \${target}\${duration}.\`;
-    return \`Production \${productionChatStatusLabel(status)} : \${target}.\`;
-  }
   if(status==='done') return \`Production completed: \${target}\${duration}.\`;
   if(status==='failed') return \`Production failed: \${target}\${duration}.\${job?.error?\` Error: \${job.error}\`:''}\`;
   if(status==='cancelled') return \`Production cancelled: \${target}\${duration}.\`;
@@ -2660,7 +2675,8 @@ function createTraceCard() {
   div.className='trace-card empty';
   const traceId=\`trace-\${nextTraceId++}\`;
   div.dataset.traceId=traceId;
-  div.innerHTML='<div class="trace-head" onclick="toggleTrace(this)"><div class="trace-title"><span>MCP chain</span><span class="trace-meta">0 call</span></div><span class="trace-chevron">▾</span></div><div class="trace-body"><div class="trace-flow"></div><div class="trace-detail-wrap"></div></div>';
+  const title='Agent orchestration';
+  div.innerHTML=\`<div class="trace-head" onclick="toggleTrace(this)"><div class="trace-title"><span>\${title}</span><span class="trace-meta">0 call</span></div><span class="trace-chevron">▾</span></div><div class="trace-body"><div class="trace-flow"></div><div class="trace-detail-wrap"></div></div>\`;
   wrap.appendChild(div);
   wrap.scrollTop=wrap.scrollHeight;
   const trace={id:traceId,el:div,steps:[],selectedStepId:null};
@@ -3083,7 +3099,7 @@ function genericJsonSummaryHTML(data, raw, toolName='MCP') {
   }
   if(typeof data==='object') {
     if(data.status!==undefined||data.state!==undefined||data.connectionStatus!==undefined||data.action_required!==undefined||data.actionRequired!==undefined) {
-      return mcpObjectCardHTML(toolName||chatText('MCP result','Résultat MCP'),data,{raw});
+      return mcpObjectCardHTML(toolName||'MCP result',data,{raw});
     }
     const entries=Object.entries(data);
     const arrayEntry=entries.length===1 && Array.isArray(entries[0][1]) ? entries[0] : null;
@@ -3320,7 +3336,7 @@ function toolResultSummaryHTML(result, ok, toolName='MCP') {
         \${duration}\${exit}\${progressPill}
       </div>
       \${produced.length?\`<div class="tc-item"><div class="tc-item-meta">\${produced.length} produced file\${produced.length>1?'s':''}</div><div class="tc-doc-chip-row">\${produced.slice(0,10).map(p=>docButtonHTML(p,p,true)).join('')}\${produced.length>10?'<span class="tc-item-meta">…</span>':''}</div></div>\`:''}
-      <div class="tc-item-meta">Details, logs and timing in the chain view.</div>
+      <div class="tc-item-meta">Details, logs and timing in agent orchestration.</div>
       \${job.error?\`<div class="tc-item-excerpt" style="color:var(--err)">\${esc(job.error)}</div>\`:''}
       <details class="tc-raw"><summary>Raw JSON</summary><pre>\${esc(raw)}</pre></details>
     </div>\`;
@@ -3643,7 +3659,7 @@ async function sendMessage() {
   let tcIdx=Date.now();
   const MAX_TURNS=24;
   let turn=0;
-  const activeTools=getActiveTools();
+  const activeTools=uniqueToolsByName(getActiveTools());
   const toolsPayload=activeTools.length ? activeTools.map(t=>({
     type:'function',
     function:{name:t.name,description:t.description||'',parameters:t.inputSchema||t.parameters||{type:'object',properties:{}}}
@@ -3659,6 +3675,7 @@ async function sendMessage() {
   const streamClearSeq=clearChatSeq;
   let completedWithoutLimit=false;
   const toolRepeatCounts=new Map();
+  let lastToolResults=[];
   try {
     while(turn<MAX_TURNS) {
       turn++;
@@ -3746,9 +3763,10 @@ async function sendMessage() {
               origin:'tool',
               payload:{callId:tc.id,targetId:\`tc-\${domIdx}\`,name:fn,ok:false,result:e.message,assistantText:content||''},
             });
-            return {tool_call_id:tc.id,role:'tool',name:fn,content:\`\${chatText('Error:','Erreur :')} \${e.message}\`};
+            return {tool_call_id:tc.id,role:'tool',name:fn,content:\`Error: \${e.message}\`};
           }
         }));
+        lastToolResults=toolResults;
         tcIdx+=toolCalls.length;
         messages.push(...toolResults);
         conversationDirty=true;
@@ -3769,15 +3787,21 @@ async function sendMessage() {
         continue;
       }
 
-      if(statusDiv && statusDiv!==streamDiv && statusDiv.isConnected) {
-        setStreamContent(statusDiv,content);
+      const finalContent=String(content||'').trim() ? content : toolResultsFallbackSummary(lastToolResults);
+      const finalHtml=String(content||'').trim() ? null : toolResultsFallbackHTML(lastToolResults);
+      if(finalHtml) {
+        const target=(statusDiv && statusDiv!==streamDiv && statusDiv.isConnected) ? statusDiv : streamDiv;
+        statusDiv=publishAssistantOutput(finalHtml,target,{html:true,plainText:finalContent});
+        if(target!==streamDiv && streamDiv) removeStreamBubble(streamDiv);
+      } else if(statusDiv && statusDiv!==streamDiv && statusDiv.isConnected) {
+        setStreamContent(statusDiv,finalContent);
         removeStreamBubble(streamDiv);
       } else {
-        setStreamContent(streamDiv,content);
+        setStreamContent(streamDiv,finalContent);
         statusDiv=streamDiv;
       }
       streamFinalized=true;
-      messages.push({role:'assistant',content});
+      messages.push({role:'assistant',content:finalContent});
       streamMessagePersisted=true;
       conversationDirty=true;
       await saveCurrentConversation({immediate:true});
@@ -3786,9 +3810,7 @@ async function sendMessage() {
       break;
     }
     if(turn>=MAX_TURNS && !completedWithoutLimit) {
-      const limitText=chatLanguageIsFrench()
-        ? \`⚠ Limite de chaînage atteinte (\${MAX_TURNS} tours).\`
-        : \`⚠ Chaining limit reached (\${MAX_TURNS} turns).\`;
+      const limitText=\`Warning: chaining limit reached (\${MAX_TURNS} turns).\`;
       appendMsg('assistant',limitText);
       messages.push({role:'assistant',content:limitText});
       dispatchChatAgentEvent(runTrace,'run_error',{origin:'system',payload:{message:limitText}});
@@ -3798,7 +3820,7 @@ async function sendMessage() {
     if(streamClearSeq!==clearChatSeq) return;
     if(err.name==='AbortError') {
       if(streamDiv) {
-        const partial=streamDiv.dataset.copy || chatText('Response stopped.','Réponse arrêtée.');
+        const partial=streamDiv.dataset.copy || 'Response stopped.';
         setStreamContent(streamDiv,partial);
         streamText=partial;
         streamFinalized=true;
@@ -3806,7 +3828,7 @@ async function sendMessage() {
         messages.push({role:'assistant',content:partial});
         streamMessagePersisted=true;
       } else {
-        const stopped=chatText('Response stopped.','Réponse arrêtée.');
+        const stopped='Response stopped.';
         appendMsg('assistant',stopped);
         messages.push({role:'assistant',content:stopped});
       }
@@ -3815,14 +3837,14 @@ async function sendMessage() {
       await saveCurrentConversation({immediate:true});
     } else {
       if(streamDiv) {
-        const errorText=streamText || \`\${chatText('⚠ Error:','⚠ Erreur :')} \${err.message}\`;
+        const errorText=streamText || \`Error: \${err.message}\`;
         setStreamContent(streamDiv,errorText);
         streamText=errorText;
         streamFinalized=true;
         messages.push({role:'assistant',content:errorText});
         streamMessagePersisted=true;
       } else {
-        appendMsg('assistant',\`\${chatText('⚠ Error:','⚠ Erreur :')} \${err.message}\`);
+        appendMsg('assistant',\`Error: \${err.message}\`);
       }
       dispatchChatAgentEvent(runTrace,'run_error',{origin:'system',payload:{message:err.message}});
       notify(err.message,'e');
@@ -3831,7 +3853,7 @@ async function sendMessage() {
     }
   } finally {
     if(streamDiv && !streamFinalized && streamClearSeq===clearChatSeq) {
-      const finalText=streamText || (streamAbortController?.signal.aborted ? chatText('Response stopped.','Réponse arrêtée.') : '');
+      const finalText=streamText || (streamAbortController?.signal.aborted ? 'Response stopped.' : '');
       setStreamContent(streamDiv,finalText);
       if(finalText && !streamMessagePersisted) {
         messages.push({role:'assistant',content:finalText});
@@ -3991,17 +4013,29 @@ function loadServers() {
     // Discard stale data that used old proxy-path URLs (/api/mcp/*)
     const isStale = saved.some(s => typeof s.url === 'string' && s.url.startsWith('/api/mcp'));
     if (saved.length && !isStale) {
+      const seen=new Set();
       for (const s of saved) {
         // In proxy mode, always use the server-injected URL/bearer for known servers
         // to avoid stale localhost URLs looping back to the serve container
-        const override = defaults.find(d => d.name === s.name);
+        const sName=String(s?.name||'');
+        const override = defaults.find(d => d.name === sName)
+          || (sName.startsWith('agent-') ? defaults.find(d => d.name === sName.slice('agent-'.length)) : null);
+        const name = override ? override.name : s.name;
+        if(seen.has(name)) continue;
+        seen.add(name);
         const url = override ? override.url : s.url;
         const bearer = override ? (override.bearer||'') : (s.bearer||'');
         const injected = override ? true : (s.injected === true);
-        servers.push({...s, url, bearer, injected, enabled:!!s.enabled, sessionId:null, status:'off', tools:[]});
+        servers.push({...s, name, url, bearer, injected, enabled:!!s.enabled, sessionId:null, status:'off', tools:[]});
         if(s.id >= nextId) nextId = s.id + 1;
       }
+      for (const s of defaults) {
+        if(seen.has(s.name)) continue;
+        const id=nextId++;
+        servers.push({id, name:s.name, url:s.url, bearer:s.bearer||'', injected:true, enabled:false, status:'off', tools:[]});
+      }
       renderCards();
+      saveServers();
       return;
     }
   } catch {}

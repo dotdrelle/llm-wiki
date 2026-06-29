@@ -30,8 +30,8 @@ describe('serve graph ui', () => {
   it('opens Pending markdown in the editor and keeps save/cancel on valid routes', async () => {
     const source = await serveSource();
 
-    expect(source).toContain('href="${escapeHref(editHref(file))}"');
-    expect(source).toContain('title="Éditer ${safePath}"');
+    expect(source).toContain('href="${escapeHref(`/${file}`)}"');
+    expect(source).toContain('title="${safePath}"');
     expect(source).toContain("const cancelHref = isRawUntrackedReference(cleanRelativePath) ? '/'");
     expect(source).toContain('const redirectAfterSave = isRawUntrackedReference(savedRelative)');
     expect(source).toContain('? escapeHref(editHref(savedRelative))');
@@ -71,7 +71,7 @@ describe('serve graph ui', () => {
 
     expect(source).toContain('data-relation-node-open');
     expect(source).toContain('<span class="relation-arrow">↓</span>');
-    expect(source).toContain('type="button">Ouvrir</button>');
+    expect(source).toContain('type="button">Open</button>');
     expect(source).not.toContain('Afficher les markdown');
     expect(source).not.toContain('relie a');
   });
@@ -145,7 +145,7 @@ describe('serve deliverables ui', () => {
     expect(source).not.toContain("cleanRelativePath !== 'deliverables'");
     expect(source).toContain('class="delete-confirm"');
     expect(source).toContain('delete-confirm-panel');
-    expect(source).not.toContain("confirm('Supprimer ce fichier ?')");
+    expect(source).not.toContain("confirm('Delete this file?')");
   });
 });
 

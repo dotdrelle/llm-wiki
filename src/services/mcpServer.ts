@@ -15,7 +15,7 @@ export const WIKI_MCP_TOOLS = [
   {
     name: 'wiki_list_pages',
     description:
-      'List llm-wiki markdown pages under wiki/. Use this only for the llm-wiki knowledge base, not agent-cme runtime configuration.',
+      'List llm-wiki markdown pages under wiki/. Use this only for the llm-wiki knowledge base, not CME runtime configuration.',
   },
   {
     name: 'wiki_read_page',
@@ -35,7 +35,7 @@ export const WIKI_MCP_TOOLS = [
   {
     name: 'wiki_list_ingested_sources',
     description:
-      'List source documents already ingested into llm-wiki under raw/ingested/. Do not use this for agent-cme configured export sources.',
+      'List source documents already ingested into llm-wiki under raw/ingested/. Do not use this for CME configured export sources.',
   },
   {
     name: 'wiki_read_ingested_source',
@@ -461,7 +461,7 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
 
   server.tool(
     'wiki_list_pages',
-    'List llm-wiki markdown pages under wiki/. Use this only for the llm-wiki knowledge base, not agent-cme runtime configuration.',
+    'List llm-wiki markdown pages under wiki/. Use this only for the llm-wiki knowledge base, not CME runtime configuration.',
     {},
     (input) => loggedTool('wiki_list_pages', input, listWikiPages),
   );
@@ -512,7 +512,7 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
 
   server.tool(
     'wiki_list_ingested_sources',
-    'List source documents already ingested into llm-wiki under raw/ingested/. Do not use this for agent-cme configured export sources.',
+    'List source documents already ingested into llm-wiki under raw/ingested/. Do not use this for CME configured export sources.',
     {},
     (input) => loggedTool('wiki_list_ingested_sources', input, listIngestedSources),
   );

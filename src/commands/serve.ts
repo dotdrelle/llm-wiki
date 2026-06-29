@@ -37,7 +37,7 @@ function resolveDocumentUploadsDir(rootDir: string): string {
 }
 const documentMaxUploadBytes = () => Number(process.env.DOCUMENT_MAX_UPLOAD_BYTES ?? 50 * 1024 * 1024);
 
-const SERVED_DIRS = ['wiki', 'deliverables', 'templates', 'build-context'];
+const SERVED_DIRS = ['wiki', 'deliverables', 'templates', 'build-context', 'raw/untracked'];
 const NAV_PATTERNS = [
   'wiki/**/*.md',
   'deliverables/**/*.md',
@@ -365,7 +365,7 @@ function linkSourceCitations(raw: string, currentDir = ''): string {
     if (!cleanPath.endsWith('.md')) return match;
     const href = localHref(cleanPath, currentDir);
     if (isRawUntrackedReference(cleanPath) || isRawUntrackedReference(href)) {
-      return `<span class="source-citation source-citation-stale" title="Source brute archivée ou déplacée">[src: ${escapeHtml(cleanPath)}]</span>`;
+      return `<span class="source-citation source-citation-stale" title="Raw source archived or moved">[src: ${escapeHtml(cleanPath)}]</span>`;
     }
     return `<a class="source-citation" href="${escapeHref(href)}" title="${escapeAttr(cleanPath)}">[src: ${escapeHtml(cleanPath)}]</a>`;
   });
@@ -391,7 +391,7 @@ async function renderMarkdown(raw: string, currentDir = ''): Promise<string> {
     if (isRawUntrackedReference(href) || isRawUntrackedReference(resolvedHref)) {
       const safeTitle = title
         ? ` title="${escapeAttr(title)}"`
-        : ' title="Source brute archivée ou déplacée"';
+        : ' title="Raw source archived or moved"';
       return `<span class="stale-reference"${safeTitle}>${text}</span>`;
     }
     const safeHref = escapeHref(resolvedHref);
@@ -453,7 +453,7 @@ function renderLogMarkdown(raw: string): string {
     const date = new Date(timestamp);
     const displayDate = Number.isNaN(date.getTime())
       ? timestamp
-      : date.toLocaleString('fr-FR', {
+      : date.toLocaleString('en-US', {
           year: 'numeric',
           month: '2-digit',
           day: '2-digit',
@@ -527,7 +527,7 @@ function layout(title: string, body: string): string {
       cursor: help;
     }
     .stale-reference::after {
-      content: " indisponible";
+      content: " unavailable";
       color: var(--muted);
       font-size: 0.72em;
       font-weight: 680;
@@ -721,8 +721,6 @@ function layout(title: string, body: string): string {
     }
     .side-untracked[open] {
       flex: 0 0 var(--pending-height, 32vh);
-      display: flex;
-      flex-direction: column;
       overflow: hidden;
     }
     .side-untracked summary {
@@ -762,25 +760,26 @@ function layout(title: string, body: string): string {
       font-weight: 820;
     }
     .side-untracked-list {
-      flex: 1 1 0;
-      min-height: 0;
       overflow-y: auto;
-      margin: 0.35rem 0 0;
-      padding: 0;
+      scrollbar-width: thin;
+      max-height: calc(var(--pending-height, 32vh) - 3rem);
+      margin: 0.25rem 0 0;
+      padding: 0 0 0.25rem;
       list-style: none;
     }
     .side-untracked-item {
       display: flex;
       align-items: center;
-      gap: 0.35rem;
-      min-height: 1.9rem;
-      border-radius: 6px;
+      gap: 0.3rem;
+      min-height: 1.55rem;
+      border-radius: 5px;
     }
     .side-untracked-link {
       flex: 1;
       min-width: 0;
-      padding: 0.24rem 1.35rem 0.24rem 1.2rem;
+      padding: 0.15rem 1.2rem 0.15rem 1rem;
       color: var(--text);
+      font-size: 0.8rem;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -790,10 +789,11 @@ function layout(title: string, body: string): string {
     .side-untracked-link::before {
       content: "";
       position: absolute;
-      left: 0.45rem;
-      top: 0.78rem;
-      width: 0.38rem;
-      height: 0.38rem;
+      left: 0.35rem;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 0.32rem;
+      height: 0.32rem;
       border-radius: 999px;
       background: #b7791f;
       opacity: 0.85;
@@ -1130,13 +1130,21 @@ function layout(title: string, body: string): string {
     }
     .edit-form .hero {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: space-between;
       gap: 1rem;
+      min-width: 0;
     }
     .edit-form .hero .page-actions {
       flex-shrink: 0;
-      justify-content: flex-end;
+    }
+    .edit-path-label {
+      flex: 1 1 0;
+      min-width: 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.8rem;
+      color: var(--muted);
+      word-break: break-all;
     }
     .edit-textarea {
       width: 100%;
@@ -1582,7 +1590,7 @@ ${body}
     if (!countEl || !list) return;
     const next = list.querySelectorAll('.side-untracked-item').length;
     countEl.textContent = String(next);
-    if (next === 0) list.innerHTML = '<li class="side-untracked-empty">Aucune source en attente.</li>';
+    if (next === 0) list.innerHTML = '<li class="side-untracked-empty">No pending sources.</li>';
   }
   document.querySelectorAll('[data-untracked-delete]').forEach((button) => {
     button.addEventListener('click', async (event) => {
@@ -1590,7 +1598,7 @@ ${body}
       event.stopPropagation();
       const relativePath = button.getAttribute('data-untracked-delete') || '';
       if (!relativePath) return;
-      if (!confirm('Supprimer cette source en attente ?\\n' + relativePath)) return;
+      if (!confirm('Delete this pending source?\\n' + relativePath)) return;
       button.disabled = true;
       try {
         const response = await fetch('/api/untracked/' + encodeURIComponent(relativePath), { method: 'DELETE' });
@@ -1759,13 +1767,13 @@ ${body}
         const btn = document.createElement(isActive || (isRunning && isOpened) ? 'span' : 'button');
         btn.className = 'ws-btn';
         if (isActive) {
-          btn.textContent = 'actif';
+          btn.textContent = 'active';
           btn.style.cssText = 'opacity:0.4;cursor:default';
         } else if (isRunning && isOpened) {
-          btn.textContent = 'ouvert';
+          btn.textContent = 'open';
           btn.style.cssText = 'opacity:0.45;cursor:default';
         } else {
-          btn.textContent = isRunning ? 'Ouvrir' : 'Démarrer';
+          btn.textContent = isRunning ? 'Open' : 'Start';
           btn.dataset.action = isRunning ? 'open' : 'start';
           btn.dataset.ws = ws.name;
           btn.addEventListener('click', () => onAction(btn.dataset.action, btn.dataset.ws, btn));
@@ -1780,15 +1788,15 @@ ${body}
 
     async function onAction(action, wsName, btn) {
       btn.disabled = true;
-      btn.textContent = action === 'start' ? 'Démarrage…' : 'Ouverture…';
+      btn.textContent = action === 'start' ? 'Starting...' : 'Opening...';
       try {
         await fetch('/api/hub/workspaces/' + encodeURIComponent(wsName) + '/' + action, { method: 'POST', headers: { 'X-LLM-WIKI-HUB': '1' } });
         if (action === 'open') {
           markLocallyOpened(wsName);
-          btn.textContent = 'ouvert';
+          btn.textContent = 'open';
         }
         if (action === 'start') {
-          btn.textContent = 'Attente…';
+          btn.textContent = 'Waiting...';
           // Poll until running then open
           for (let i = 0; i < 40; i++) {
             await new Promise(r => setTimeout(r, 1000));
@@ -1829,24 +1837,24 @@ ${body}
   })();
 })();
 
-// ── Raccourcis clavier globaux ───────────────────────────────────────────────
+// ── Global keyboard shortcuts ────────────────────────────────────────────────
 (function initShortcuts() {
   document.addEventListener('keydown', function(e) {
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
-    // ? → modal d'aide
+    // ? -> help modal
     if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault();
       const m = document.getElementById('shortcuts-modal');
       if (m) m.classList.toggle('is-open');
       return;
     }
-    // ⌘E → éditer la page courante
+    // Cmd/Ctrl+E -> edit the current page
     if ((e.metaKey || e.ctrlKey) && e.key === 'e') {
       const editLink = document.querySelector('a.action-link[href^="/edit/"]');
       if (editLink) { e.preventDefault(); window.location.href = editLink.getAttribute('href'); }
       return;
     }
-    // ⌘B → basculer sidebar
+    // Cmd/Ctrl+B -> toggle sidebar
     if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
       e.preventDefault();
       const sb = document.querySelector('.sidebar');
@@ -1910,7 +1918,7 @@ ${body}
   }
 
   function render() {
-    if (!cur.length) { results.innerHTML = '<div class="palette-empty">Aucun résultat</div>'; return; }
+    if (!cur.length) { results.innerHTML = '<div class="palette-empty">No results</div>'; return; }
     results.innerHTML = cur.map(function(f, i) {
       const icon = ICONS[f.type] || '📄';
       const sel = i === selIdx ? ' is-sel' : '';
@@ -2215,7 +2223,7 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
   const label = node.name === 'build-context' ? 'build context' : node.name;
   const action =
     depth === 0 && isCreatableCollection(node.name)
-      ? `<a class="side-folder-action" href="${escapeHref(newMarkdownHref(node.name))}" title="Créer un markdown" aria-label="Créer dans ${escapeAttr(node.name)}" onclick="event.stopPropagation()">+</a>`
+      ? `<a class="side-folder-action" href="${escapeHref(newMarkdownHref(node.name))}" title="Create Markdown" aria-label="Create in ${escapeAttr(node.name)}" onclick="event.stopPropagation()">+</a>`
       : '';
   return `<details class="side-folder"${open} data-tree-id="${escapeAttr(node.path)}"><summary><span class="side-folder-label">${escapeHtml(label)}</span>${action}</summary><div class="side-folder-children">${children}</div></details>`;
 }
@@ -2231,11 +2239,11 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
       .map((file) => {
         const title = humanTitle(file);
         const safePath = escapeAttr(file);
-        return `<li class="side-untracked-item"><a class="side-untracked-link" href="${escapeHref(editHref(file))}" title="Éditer ${safePath}" aria-label="Éditer ${safePath}">${escapeHtml(title)}</a><button class="side-untracked-delete" type="button" title="Supprimer ${safePath}" aria-label="Supprimer ${safePath}" data-untracked-delete="${safePath}">×</button></li>`;
+        return `<li class="side-untracked-item"><a class="side-untracked-link" href="${escapeHref(`/${file}`)}" title="${safePath}" aria-label="${safePath}">${escapeHtml(title)}</a><button class="side-untracked-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-untracked-delete="${safePath}">×</button></li>`;
       })
       .join('\n')
-    : '<li class="side-untracked-empty">Aucune source en attente.</li>';
-  return `<div class="side-pending-resizer" data-pending-resizer title="Redimensionner le panneau Pending" role="separator" aria-orientation="horizontal"></div><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span><span class="side-untracked-count" data-untracked-count>${count}</span></summary><ul class="side-untracked-list" data-untracked-list>${items}</ul></details>`;
+    : '<li class="side-untracked-empty">No pending sources.</li>';
+  return `<div class="side-pending-resizer" data-pending-resizer title="Resize Pending panel" role="separator" aria-orientation="horizontal"></div><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span><span class="side-untracked-count" data-untracked-count>${count}</span></summary><ul class="side-untracked-list" data-untracked-list>${items}</ul></details>`;
 }
 
 async function renderSidebar(rootDir: string): Promise<string> {
@@ -2254,7 +2262,7 @@ async function renderSidebar(rootDir: string): Promise<string> {
     .join('\n');
 
   const wsSwitcher = hubPort()
-    ? `<div class="ws-switcher" id="ws-switcher" data-current="${escapeAttr(workspaceNameFromEnv() ?? '')}"><p class="ws-switcher-title">Workspaces</p><p class="ws-name" style="font-size:0.8rem;color:var(--muted);padding:0 0.2rem">Chargement…</p></div>`
+    ? `<div class="ws-switcher" id="ws-switcher" data-current="${escapeAttr(workspaceNameFromEnv() ?? '')}"><p class="ws-switcher-title">Workspaces</p><p class="ws-name" style="font-size:0.8rem;color:var(--muted);padding:0 0.2rem">Loading...</p></div>`
     : '';
   const configuredServeTitle = serveTitle();
   const workspaceName = configuredServeTitle
@@ -2265,7 +2273,7 @@ async function renderSidebar(rootDir: string): Promise<string> {
   const chatIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>';
 const kbdHint = `<kbd style="font-size:.68rem;font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .35rem;border-radius:4px;color:var(--muted);cursor:pointer" title="Open global search (⌘K)" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}))">⌘K</kbd>`;
-  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}<span>Graph</span></a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}<span>Chat</span></a></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filtrer les fichiers…" aria-label="Filtrer les fichiers" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Documents markdown">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside>`;
+  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}<span>Graph</span></a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}<span>Chat</span></a></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Markdown documents">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside>`;
 }
 
 interface GraphNode {
@@ -2471,7 +2479,7 @@ async function buildGraph(
       title: humanTitle(file),
       type: graphNodeType(file),
       href: `/${file}`,
-      preview: previews.get(file) || '(Aucun contenu lisible dans ce fichier.)',
+      preview: previews.get(file) || '(No readable content in this file.)',
       raw: rawContents.get(file) ?? '',
       html: htmlContents.get(file) ?? '',
       group: groups.get(file),
@@ -2496,7 +2504,7 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
 (() => {
   const data = JSON.parse(document.getElementById('graph-data').textContent || '{"nodes":[],"edges":[]}');
   if (!window.d3) {
-    document.querySelector('[data-relation-list]').innerHTML = '<li class="relation-item">d3-force est indisponible: le bundle local /assets/d3.min.js n a pas pu etre charge.</li>';
+    document.querySelector('[data-relation-list]').innerHTML = '<li class="relation-item">d3-force is unavailable: the local /assets/d3.min.js bundle could not be loaded.</li>';
     return;
   }
   const graphLayout = document.querySelector('[data-graph-layout]');
@@ -2614,7 +2622,7 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
     if (!query) { searchDropdown.hidden = true; searchDropdown.innerHTML = ''; return; }
     const matches = nodes.filter((n) => nodeMatchesSearch(n, query)).slice(0, 8);
     if (matches.length === 0) {
-      searchDropdown.innerHTML = '<li class="graph-search-empty">Aucun résultat</li>';
+      searchDropdown.innerHTML = '<li class="graph-search-empty">No results</li>';
     } else {
       searchDropdown.innerHTML = matches.map((n) =>
         '<li class="graph-search-result" data-node-id="' + window.WikiUi.escapeHtml(n.id) + '">' +
@@ -2671,7 +2679,7 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
     syncExpandedLegendPosition();
     if (btnExpand) {
       btnExpand.setAttribute('aria-pressed', expanded ? 'true' : 'false');
-      btnExpand.title = expanded ? 'Réduire le graph' : 'Agrandir le graph';
+      btnExpand.title = expanded ? 'Collapse graph' : 'Expand graph';
       btnExpand.textContent = expanded ? '↙' : '↗';
     }
   }
@@ -2728,7 +2736,7 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
       const item = document.createElement('li');
       item.className = 'relation-item';
       item.dataset.id = edge.id;
-      item.innerHTML = '<span class="relation-path"></span><span class="relation-arrow">↓</span><span class="relation-path"></span><button class="relation-open" type="button">Ouvrir</button>';
+      item.innerHTML = '<span class="relation-path"></span><span class="relation-arrow">↓</span><span class="relation-path"></span><button class="relation-open" type="button">Open</button>';
       const paths = item.querySelectorAll('.relation-path');
       paths[0].textContent = from.id;
       paths[1].textContent = to.id;
@@ -2740,7 +2748,7 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
     }
 
     if (edges.length === 0) {
-      relationList.innerHTML = '<li class="relation-item">Aucune relation detectee entre les documents markdown.</li>';
+      relationList.innerHTML = '<li class="relation-item">No relations detected between Markdown documents.</li>';
     } else {
       sortRelations(selectedId);
     }
@@ -3034,8 +3042,8 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
 }
 
 function renderGraphApp(nodes: GraphNode[], edges: GraphEdge[], etag: string): string {
-  return `<div class="graph-layout" data-graph-layout data-graph-etag="${escapeAttr(etag)}"><div class="graph-panel"><div class="graph-search-wrapper" data-graph-search-wrapper><div class="graph-toolbar"><div class="graph-search-field"><input class="graph-search-input" type="search" placeholder="Rechercher un n&#x0153;ud&#x2026;" aria-label="Rechercher dans le graph" data-graph-search autocomplete="off"><ul class="graph-search-dropdown" data-graph-search-dropdown hidden></ul></div><div class="graph-ctrl-group"><button class="graph-ctrl-btn" type="button" data-graph-zoom-in title="Zoom avant">+</button><button class="graph-ctrl-btn" type="button" data-graph-zoom-out title="Zoom arri&#xe8;re">&#x2212;</button><button class="graph-ctrl-btn" type="button" data-graph-center title="Centrer sur la s&#xe9;lection" style="font-size:0.9rem">&#x25CE;</button><button class="graph-ctrl-btn" type="button" data-graph-reset title="R&#xe9;initialiser la vue" style="font-size:0.9rem">&#x21BA;</button><button class="graph-ctrl-btn" type="button" data-graph-expand title="Agrandir le graph" aria-label="Agrandir le graph" aria-pressed="false" style="font-size:0.9rem">&#x2197;</button></div></div></div><div class="graph-stage"><svg class="graph-svg" viewBox="0 0 1100 720" role="img" aria-label="Graph navigable des documents et sources" data-graph-svg><g data-graph-viewport><g data-link-layer></g><g data-node-layer></g></g></svg></div></div><aside class="relation-panel"><div class="relation-panel-header"><button class="relation-toggle" type="button" title="Afficher/masquer les relations" aria-label="Afficher/masquer les relations" data-relation-toggle>&#9776;</button><div class="relation-panel-copy"><h2 class="relation-panel-title" data-relation-panel-title>Relations</h2><p class="relation-panel-meta" data-relation-panel-meta>Ouvrez une relation pour afficher les markdown lies.</p><a class="relation-node-open" data-relation-node-open href="#" hidden>Ouvrir la page</a></div></div><ul class="relation-list" data-relation-list></ul></aside></div>
-<div class="modal-backdrop" data-relation-modal><section class="relation-modal" role="dialog" aria-modal="true" aria-labelledby="relation-modal-title"><div class="modal-header"><h2 class="modal-title" id="relation-modal-title" data-modal-title>Relation</h2><button class="modal-close" type="button" aria-label="Fermer" data-modal-close>x</button></div><div class="modal-body"><article class="modal-doc"><h3 class="modal-doc-title" data-modal-target-title></h3><div class="modal-markdown" data-modal-target-body></div></article></div></section></div>
+  return `<div class="graph-layout" data-graph-layout data-graph-etag="${escapeAttr(etag)}"><div class="graph-panel"><div class="graph-search-wrapper" data-graph-search-wrapper><div class="graph-toolbar"><div class="graph-search-field"><input class="graph-search-input" type="search" placeholder="Search node..." aria-label="Search graph" data-graph-search autocomplete="off"><ul class="graph-search-dropdown" data-graph-search-dropdown hidden></ul></div><div class="graph-ctrl-group"><button class="graph-ctrl-btn" type="button" data-graph-zoom-in title="Zoom in">+</button><button class="graph-ctrl-btn" type="button" data-graph-zoom-out title="Zoom out">&#x2212;</button><button class="graph-ctrl-btn" type="button" data-graph-center title="Center on selection" style="font-size:0.9rem">&#x25CE;</button><button class="graph-ctrl-btn" type="button" data-graph-reset title="Reset view" style="font-size:0.9rem">&#x21BA;</button><button class="graph-ctrl-btn" type="button" data-graph-expand title="Expand graph" aria-label="Expand graph" aria-pressed="false" style="font-size:0.9rem">&#x2197;</button></div></div></div><div class="graph-stage"><svg class="graph-svg" viewBox="0 0 1100 720" role="img" aria-label="Navigable document and source graph" data-graph-svg><g data-graph-viewport><g data-link-layer></g><g data-node-layer></g></g></svg></div></div><aside class="relation-panel"><div class="relation-panel-header"><button class="relation-toggle" type="button" title="Show/hide relations" aria-label="Show/hide relations" data-relation-toggle>&#9776;</button><div class="relation-panel-copy"><h2 class="relation-panel-title" data-relation-panel-title>Relations</h2><p class="relation-panel-meta" data-relation-panel-meta>Open a relation to view linked Markdown.</p><a class="relation-node-open" data-relation-node-open href="#" hidden>Open page</a></div></div><ul class="relation-list" data-relation-list></ul></aside></div>
+<div class="modal-backdrop" data-relation-modal><section class="relation-modal" role="dialog" aria-modal="true" aria-labelledby="relation-modal-title"><div class="modal-header"><h2 class="modal-title" id="relation-modal-title" data-modal-title>Relation</h2><button class="modal-close" type="button" aria-label="Close" data-modal-close>x</button></div><div class="modal-body"><article class="modal-doc"><h3 class="modal-doc-title" data-modal-target-title></h3><div class="modal-markdown" data-modal-target-body></div></article></div></section></div>
 ${renderGraphScript(nodes, edges)}`;
 }
 
@@ -3098,11 +3106,11 @@ function renderWsStats(opts: {
 }
 
 function renderOnboarding(title: string): string {
-  return `<section class="onboarding"><div class="hero"><h1>${escapeHtml(title)}</h1><p>Le wiki est vide. Suivez ces quatre étapes pour démarrer.</p></div><div class="onboarding-steps">
-<div class="onboarding-step"><div class="onboarding-step-num">1</div><div class="onboarding-step-body"><div class="onboarding-step-title">Configurer le provider LLM</div><div class="onboarding-step-desc">Éditez <code class="onboarding-step-code">.wikirc.yaml</code> pour définir votre provider (Ollama, OpenAI, Anthropic…), puis validez avec <code class="onboarding-step-code">wiki doctor</code>.</div></div></div>
-<div class="onboarding-step"><div class="onboarding-step-num">2</div><div class="onboarding-step-body"><div class="onboarding-step-title">Déposer des sources</div><div class="onboarding-step-desc">Copiez vos fichiers Markdown dans <code class="onboarding-step-code">raw/untracked/</code>. Exports Confluence, notes, PDFs convertis — tout est accepté.</div></div></div>
-<div class="onboarding-step"><div class="onboarding-step-num">3</div><div class="onboarding-step-body"><div class="onboarding-step-title">Ingérer les sources</div><div class="onboarding-step-desc">Lancez <code class="onboarding-step-code">wiki ingest</code>. Le LLM lit chaque source et peuple <code class="onboarding-step-code">wiki/</code> automatiquement.</div></div></div>
-<div class="onboarding-step"><div class="onboarding-step-num">4</div><div class="onboarding-step-body"><div class="onboarding-step-title">Générer des livrables</div><div class="onboarding-step-desc">Créez un template dans <code class="onboarding-step-code">templates/</code> puis lancez <code class="onboarding-step-code">wiki build</code> pour produire des documents depuis le wiki.</div></div></div>
+  return `<section class="onboarding"><div class="hero"><h1>${escapeHtml(title)}</h1><p>The wiki is empty. Follow these four steps to get started.</p></div><div class="onboarding-steps">
+<div class="onboarding-step"><div class="onboarding-step-num">1</div><div class="onboarding-step-body"><div class="onboarding-step-title">Configure the LLM provider</div><div class="onboarding-step-desc">Edit <code class="onboarding-step-code">.wikirc.yaml</code> to set your provider (Ollama, OpenAI, Anthropic...), then validate with <code class="onboarding-step-code">wiki doctor</code>.</div></div></div>
+<div class="onboarding-step"><div class="onboarding-step-num">2</div><div class="onboarding-step-body"><div class="onboarding-step-title">Add sources</div><div class="onboarding-step-desc">Copy your Markdown files into <code class="onboarding-step-code">raw/untracked/</code>. Confluence exports, notes, converted PDFs: all are accepted.</div></div></div>
+<div class="onboarding-step"><div class="onboarding-step-num">3</div><div class="onboarding-step-body"><div class="onboarding-step-title">Ingest sources</div><div class="onboarding-step-desc">Run <code class="onboarding-step-code">wiki ingest</code>. The LLM reads each source and populates <code class="onboarding-step-code">wiki/</code> automatically.</div></div></div>
+<div class="onboarding-step"><div class="onboarding-step-num">4</div><div class="onboarding-step-body"><div class="onboarding-step-title">Generate deliverables</div><div class="onboarding-step-desc">Create a template in <code class="onboarding-step-code">templates/</code>, then run <code class="onboarding-step-code">wiki build</code> to produce documents from the wiki.</div></div></div>
 </div></section>`;
 }
 
@@ -3118,9 +3126,9 @@ async function generateGraph(rootDir: string): Promise<string> {
   const graph =
     nodes.length > 0
       ? renderGraphApp(nodes, edges, etag)
-      : '<p class="empty">Aucun document markdown à afficher dans le graphe.</p>';
-  const body = `${sidebar}<main class="content"><div class="hero"><h1>Graph des sources</h1><p>Les sources et documents du wiki sont représentés par relation. La taille d'un noeud dépend du nombre de liens entrants et sortants. Cliquez sur un noeud pour afficher le markdown associé.</p></div><div class="graph-legend"><span class="legend-item raw-source">${rawSourceCount} source(s) brut(s)</span><span class="legend-item wiki-source">${wikiSourceCount} source(s) wiki</span><span class="legend-item wiki">wiki</span><span class="legend-item deliverable">livrables</span><span>${edges.length} relation(s)</span></div>${graph}</main>`;
-  return layout('Graph des sources', body);
+      : '<p class="empty">No Markdown documents to display in the graph.</p>';
+  const body = `${sidebar}<main class="content"><div class="hero"><h1>Source Graph</h1><p>Wiki sources and documents are represented by relation. Node size depends on incoming and outgoing link count. Click a node to display the associated Markdown.</p></div><div class="graph-legend"><span class="legend-item raw-source">${rawSourceCount} raw source(s)</span><span class="legend-item wiki-source">${wikiSourceCount} wiki source(s)</span><span class="legend-item wiki">wiki</span><span class="legend-item deliverable">deliverables</span><span>${edges.length} relation(s)</span></div>${graph}</main>`;
+  return layout('Source Graph', body);
 }
 
 async function generateIndex(rootDir: string): Promise<string> {
@@ -3147,12 +3155,12 @@ async function generateIndex(rootDir: string): Promise<string> {
   if (wikiFiles.length === 0) {
     const title = serveTitle() ?? workspaceNameFromEnv() ?? 'Wiki';
     const body = `${sidebar}<main class="content">${statsBar}${renderOnboarding(title)}</main>`;
-    return layout('Démarrage', body);
+    return layout('Getting Started', body);
   }
 
   const raw = (await pathExists(indexPath))
     ? await readFile(indexPath, 'utf8')
-    : '# Wiki Index\n\n- wiki/index.md introuvable.';
+    : '# Wiki Index\n\n- wiki/index.md not found.';
   const html = await renderMarkdown(raw, 'wiki');
 
   const indexTiles = extractIndexTiles(raw);
@@ -3189,7 +3197,7 @@ async function generateIndex(rootDir: string): Promise<string> {
   });
 
   const tiles = renderIndexSectionBrowser(indexTiles);
-  const body = `${sidebar}<main class="content">${statsBar}<div class="hero"><h1>Wiki Index</h1><p>Point d'entrée du wiki local. L'index complet reste lisible à gauche, avec les principales sections disponibles en tuiles à droite.</p></div><div class="index-layout"><article class="article">${html}</article><aside class="index-aside"><h2 class="index-aside-title">Main sections</h2>${tiles}</aside></div></main>`;
+  const body = `${sidebar}<main class="content">${statsBar}<div class="hero"><h1>Wiki Index</h1><p>Entry point for the local wiki. The full index remains readable on the left, with the main sections available as tiles on the right.</p></div><div class="index-layout"><article class="article">${html}</article><aside class="index-aside"><h2 class="index-aside-title">Main sections</h2>${tiles}</aside></div></main>`;
   return layout('wiki', body);
 }
 
@@ -3214,7 +3222,7 @@ async function generateDirectoryPage(
     ? `<div class="tile-grid">${tiles.join('\n')}</div>`
     : '<p class="empty">No markdown files found in this folder.</p>';
   const actions = isCreatableCollection(cleanRelativePath)
-    ? `<a class="action-link" href="${escapeHref(newMarkdownHref(cleanRelativePath))}" title="Créer un markdown">+</a>`
+    ? `<a class="action-link" href="${escapeHref(newMarkdownHref(cleanRelativePath))}" title="Create Markdown">+</a>`
     : '';
   const body = `${sidebar}<main class="content">${renderTopbar(`/${cleanRelativePath}`, actions)}<div class="hero"><h1>${escapeHtml(title)}</h1><p>Markdown files under <code>${escapeHtml(cleanRelativePath)}/</code>.</p></div>${content}</main>`;
   return layout(title, body);
@@ -3256,10 +3264,10 @@ function injectChangeTags(
         .map((h) => h.title.trim().toLowerCase().replace(/\s+/g, ' '))
         .join(' > ');
       if (modifiedPaths.has(key)) {
-        return `${match[1]} ${title} <span class="section-tag section-tag-modified">modifié</span>`;
+        return `${match[1]} ${title} <span class="section-tag section-tag-modified">modified</span>`;
       }
       if (insertedPaths.has(key)) {
-        return `${match[1]} ${title} <span class="section-tag section-tag-inserted">nouveau</span>`;
+        return `${match[1]} ${title} <span class="section-tag section-tag-inserted">new</span>`;
       }
       return line;
     })
@@ -3294,15 +3302,15 @@ export async function serveMd(
         raw = injectChangeTags(raw, modifiedPaths, insertedPaths);
       }
       const parts = [
-        sidecar.kept?.length ? `${sidecar.kept.length} conservée${sidecar.kept.length > 1 ? 's' : ''}` : '',
-        sidecar.merged?.length ? `${sidecar.merged.length} modifiée${sidecar.merged.length > 1 ? 's' : ''}` : '',
-        sidecar.inserted?.length ? `${sidecar.inserted.length} insérée${sidecar.inserted.length > 1 ? 's' : ''}` : '',
-        sidecar.removed?.length ? `${sidecar.removed.length} supprimée${sidecar.removed.length > 1 ? 's' : ''}` : '',
+        sidecar.kept?.length ? `${sidecar.kept.length} kept` : '',
+        sidecar.merged?.length ? `${sidecar.merged.length} modified` : '',
+        sidecar.inserted?.length ? `${sidecar.inserted.length} inserted` : '',
+        sidecar.removed?.length ? `${sidecar.removed.length} removed` : '',
       ].filter(Boolean).join(' · ');
-      const date = new Date(sidecar.stabilizedAt).toLocaleString('fr-FR', {
+      const date = new Date(sidecar.stabilizedAt).toLocaleString('en-US', {
         day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
       });
-      stabilizeBadge = `<div class="stabilize-badge">Stabilisé le ${escapeHtml(date)} · ${escapeHtml(parts)}</div>`;
+      stabilizeBadge = `<div class="stabilize-badge">Stabilized on ${escapeHtml(date)} · ${escapeHtml(parts)}</div>`;
     } catch {
       // malformed sidecar — ignore
     }
@@ -3314,10 +3322,10 @@ export async function serveMd(
     relativePath === 'wiki/log.md'
       ? renderLogMarkdown(raw)
       : await renderMarkdown(raw, currentDir);
-  const printBtn = `<button class="action-button" onclick="window.print()" title="Imprimer / Exporter en PDF">↑ PDF</button>`;
-  const dlBtn = `<a class="action-link" href="${escapeHref(`/raw/${relativePath}`)}" download title="Télécharger le fichier Markdown source">↓ .md</a>`;
+  const printBtn = `<button class="action-button" onclick="window.print()" title="Print / Export to PDF">↑ PDF</button>`;
+  const dlBtn = `<a class="action-link" href="${escapeHref(`/raw/${relativePath}`)}" download title="Download source Markdown file">↓ .md</a>`;
   const renameBtn = relativePath.startsWith('templates/')
-    ? `<button class="action-button" type="button" onclick="renameTemplate()">Renommer</button>`
+    ? `<button class="action-button" type="button" onclick="renameTemplate()">Rename</button>`
     : '';
   const actions = [
     printBtn,
@@ -3327,7 +3335,7 @@ export async function serveMd(
       ? `<a class="action-link" href="${escapeHref(editHref(relativePath))}">Edit</a>`
       : '',
     isManagedMarkdownRelativePath(relativePath)
-      ? `<form class="delete-confirm" method="post" action="${escapeHref(deleteHref(relativePath))}"><button class="action-button action-danger" type="button" onclick="this.form.querySelector('.delete-confirm-panel').hidden=false">Supprimer</button><div class="delete-confirm-panel" hidden><p class="delete-confirm-title">Supprimer ce fichier ?</p><p class="delete-confirm-text">${escapeHtml(relativePath)} sera supprimé du workspace.</p><div class="delete-confirm-actions"><button class="action-button" type="button" onclick="this.closest('.delete-confirm-panel').hidden=true">Annuler</button><button class="action-button action-danger" type="submit">Supprimer</button></div></div></form>`
+      ? `<form class="delete-confirm" method="post" action="${escapeHref(deleteHref(relativePath))}"><button class="action-button action-danger" type="button" onclick="this.form.querySelector('.delete-confirm-panel').hidden=false">Delete</button><div class="delete-confirm-panel" hidden><p class="delete-confirm-title">Delete this file?</p><p class="delete-confirm-text">${escapeHtml(relativePath)} will be deleted from the workspace.</p><div class="delete-confirm-actions"><button class="action-button" type="button" onclick="this.closest('.delete-confirm-panel').hidden=true">Cancel</button><button class="action-button action-danger" type="submit">Delete</button></div></div></form>`
       : '',
   ].join('');
   const tocScript = `<script>
@@ -3885,7 +3893,7 @@ async function removeEmptyUntrackedParents(rootDir: string, relativeDir: string)
 }
 
 export function isRawDownloadRequestPath(urlPath: string): boolean {
-  return urlPath.startsWith('/raw/') && !urlPath.startsWith('/raw/ingested/');
+  return urlPath.startsWith('/raw/') && !urlPath.startsWith('/raw/ingested/') && !urlPath.startsWith('/raw/untracked/');
 }
 
 // ── Perf helpers ──────────────────────────────────────────────────────────────
@@ -4290,7 +4298,7 @@ async function generateEditPage(rootDir: string, relativePath: string): Promise<
   const raw = await readFile(absolute, 'utf8');
   const sidebar = await renderSidebar(rootDir);
   const cancelHref = isRawUntrackedReference(cleanRelativePath) ? '/' : `/${cleanRelativePath}`;
-  const body = `${sidebar}<main class="content">${renderTopbar(`/${cleanRelativePath}`)}<form class="edit-form" method="post" action="${escapeHref(editHref(cleanRelativePath))}"><div class="hero"><h1>Edit ${escapeHtml(cleanRelativePath)}</h1><div class="page-actions"><button class="action-button" type="submit">Save</button><a class="action-link" href="${escapeHref(cancelHref)}">Cancel</a></div></div><textarea class="edit-textarea" name="content" spellcheck="false">${escapeHtml(raw)}</textarea></form></main>`;
+  const body = `${sidebar}<main class="content"><form class="edit-form" method="post" action="${escapeHref(editHref(cleanRelativePath))}"><div class="hero"><span class="edit-path-label">${escapeHtml(cleanRelativePath)}</span><div class="page-actions"><button class="action-button" type="submit">Save</button><a class="action-link" href="${escapeHref(cancelHref)}">Cancel</a></div></div><textarea class="edit-textarea" name="content" spellcheck="false">${escapeHtml(raw)}</textarea></form></main>`;
   return layout(`Edit ${path.basename(cleanRelativePath)}`, body);
 }
 
@@ -4302,8 +4310,8 @@ async function generateNewMarkdownPage(
     throw new Error('FORBIDDEN_CREATE_PATH');
   }
   const sidebar = await renderSidebar(rootDir);
-  const defaultContent = '# Nouveau document\n\n';
-  const body = `${sidebar}<main class="content">${renderTopbar(`/${collection}`)}<form class="edit-form" method="post" action="${escapeHref(newMarkdownHref(collection))}"><div class="hero"><h1>Nouveau ${escapeHtml(collection)}</h1><div class="page-actions"><button class="action-button" type="submit">Créer</button><a class="action-link" href="${escapeHref(`/${collection}`)}">Cancel</a></div></div><label class="field-label" for="new-md-title">Nom du fichier</label><input class="field-input" id="new-md-title" name="title" type="text" placeholder="analyse-fonctionnelle" required autocomplete="off"><textarea class="edit-textarea" name="content" spellcheck="false">${escapeHtml(defaultContent)}</textarea></form></main>`;
+  const defaultContent = '# New document\n\n';
+  const body = `${sidebar}<main class="content">${renderTopbar(`/${collection}`)}<form class="edit-form" method="post" action="${escapeHref(newMarkdownHref(collection))}"><div class="hero"><h1>New ${escapeHtml(collection)}</h1><div class="page-actions"><button class="action-button" type="submit">Create</button><a class="action-link" href="${escapeHref(`/${collection}`)}">Cancel</a></div></div><label class="field-label" for="new-md-title">File name</label><input class="field-input" id="new-md-title" name="title" type="text" placeholder="functional-analysis" required autocomplete="off"><textarea class="edit-textarea" name="content" spellcheck="false">${escapeHtml(defaultContent)}</textarea></form></main>`;
   return layout(`New ${collection}`, body);
 }
 
@@ -4380,10 +4388,10 @@ async function generateNotFoundPage(rootDir: string, urlPath: string): Promise<s
   const sidebar = await renderSidebar(rootDir);
   const cleanPath = toPosix(urlPath.replace(/^\/+/, '')) || '/';
   const rawUntrackedHint = isRawUntrackedReference(cleanPath)
-    ? '<p>Cette URL pointe vers <code>raw/untracked</code>. Ces fichiers sont des sources temporaires et peuvent être archivés ou déplacés après ingestion.</p>'
-    : '<p>La page demandée n’existe pas dans ce workspace, ou le fichier a été déplacé.</p>';
-  const body = `${sidebar}<main class="content"><section class="not-found-panel"><h1>Document introuvable</h1>${rawUntrackedHint}<code class="not-found-path">${escapeHtml(cleanPath)}</code><div class="page-actions"><button class="action-button" type="button" onclick="history.length > 1 ? history.back() : location.assign('/')">Retour</button><a class="action-link" href="/">Accueil</a></div></section></main>`;
-  return layout('Document introuvable', body);
+    ? '<p>This URL points to <code>raw/untracked</code>. These files are temporary sources and may be archived or moved after ingestion.</p>'
+    : '<p>The requested page does not exist in this workspace, or the file was moved.</p>';
+  const body = `${sidebar}<main class="content"><section class="not-found-panel"><h1>Document not found</h1>${rawUntrackedHint}<code class="not-found-path">${escapeHtml(cleanPath)}</code><div class="page-actions"><button class="action-button" type="button" onclick="history.length > 1 ? history.back() : location.assign('/')">Back</button><a class="action-link" href="/">Home</a></div></section></main>`;
+  return layout('Document not found', body);
 }
 
 async function generateSkillsPage(rootDir: string): Promise<string> {
@@ -4413,38 +4421,38 @@ async function generateSkillsPage(rootDir: string): Promise<string> {
 </style>`;
 
   const body = `${sidebar}<main class="content">${pageStyles}
-<div class="hero"><h1>Skills</h1><p>Commandes réutilisables invocables avec <code style="background:var(--panel-soft);padding:1px 6px;border-radius:4px;font-size:.9em">/nom</code> dans le chat. Le corps du skill remplit le champ message pour lancer une instruction préparée.</p></div>
-<div class="page-actions"><button class="action-button" onclick="openEditor(null)">+ Nouveau skill</button></div>
+<div class="hero"><h1>Skills</h1><p>Reusable commands invoked with <code style="background:var(--panel-soft);padding:1px 6px;border-radius:4px;font-size:.9em">/name</code> in chat. The skill body fills the message field to run a prepared instruction.</p></div>
+<div class="page-actions"><button class="action-button" onclick="openEditor(null)">+ New skill</button></div>
 <div id="skills-list"></div>
 
 <div class="editor-overlay" id="editor-overlay" onclick="handleOverlayClick(event)">
   <div class="editor-panel" onclick="event.stopPropagation()">
     <div style="display:flex;align-items:center;justify-content:space-between">
-      <div class="editor-title" id="editor-title">Nouveau skill</div>
+      <div class="editor-title" id="editor-title">New skill</div>
       <button class="action-button" onclick="closeEditor()">✕</button>
     </div>
     <div>
-      <label class="field-label" for="f-name">Nom <span style="color:var(--err)">*</span></label>
+      <label class="field-label" for="f-name">Name <span style="color:var(--err)">*</span></label>
       <input class="field-input" id="f-name" type="text" placeholder="pipeline" pattern="[a-zA-Z0-9_-]{1,60}" autocomplete="off">
-      <div class="field-sub">Lettres, chiffres, - et _ uniquement. Invoqué avec /nom dans le chat.</div>
+      <div class="field-sub">Letters, digits, - and _ only. Invoked as /name in chat.</div>
     </div>
     <div>
       <label class="field-label" for="f-desc">Description</label>
-      <input class="field-input" id="f-desc" type="text" placeholder="Lance le pipeline complet via l'agent production">
+      <input class="field-input" id="f-desc" type="text" placeholder="Run the full pipeline through the production agent">
     </div>
     <div>
-      <label class="field-label" for="f-params">Paramètres <span style="font-weight:400;color:var(--muted)">(séparés par des virgules)</span></label>
+      <label class="field-label" for="f-params">Parameters <span style="font-weight:400;color:var(--muted)">(comma-separated)</span></label>
       <input class="field-input" id="f-params" type="text" placeholder="space, template">
-      <div class="field-sub">Ex : <code style="font-size:.85em">space</code> → référencé dans le corps avec <code style="font-size:.85em">{space}</code>.</div>
+      <div class="field-sub">Example: <code style="font-size:.85em">space</code> is referenced in the body as <code style="font-size:.85em">{space}</code>.</div>
     </div>
     <div>
-      <label class="field-label" for="f-body">Corps du skill <span style="color:var(--err)">*</span></label>
-      <textarea class="field-textarea" id="f-body" placeholder="Vérifie le statut CME avec cme_status, puis lance cme_export_run(source_name=&quot;{space}&quot;)…"></textarea>
-      <div class="field-sub">Instructions en langage naturel que le LLM suivra. Les paramètres sont insérés sous forme de placeholders à remplacer avant l'envoi.</div>
+      <label class="field-label" for="f-body">Skill body <span style="color:var(--err)">*</span></label>
+      <textarea class="field-textarea" id="f-body" placeholder="Check CME status with cme_status, then run cme_export_run(source_name=&quot;{space}&quot;)..."></textarea>
+      <div class="field-sub">Natural-language instructions the LLM will follow. Parameters are inserted as placeholders to replace before sending.</div>
     </div>
     <div class="editor-actions">
-      <button class="action-button" onclick="closeEditor()">Annuler</button>
-      <button class="action-button" style="background:var(--accent);color:#fff;border-color:var(--accent)" onclick="saveSkill()">Enregistrer</button>
+      <button class="action-button" onclick="closeEditor()">Cancel</button>
+      <button class="action-button" style="background:var(--accent);color:#fff;border-color:var(--accent)" onclick="saveSkill()">Save</button>
     </div>
   </div>
 </div>
@@ -4454,7 +4462,7 @@ let skills=[];
 
 async function loadSkills(){
   const r=await fetch('/api/skills');
-  if(!r.ok){document.getElementById('skills-list').innerHTML='<div class="empty-state"><p>Impossible de charger les skills.</p></div>';return;}
+  if(!r.ok){document.getElementById('skills-list').innerHTML='<div class="empty-state"><p>Unable to load skills.</p></div>';return;}
   skills=await r.json();
   renderList();
 }
@@ -4462,7 +4470,7 @@ async function loadSkills(){
 function renderList(){
   const el=document.getElementById('skills-list');
   if(!skills.length){
-    el.innerHTML='<div class="empty-state"><p>Aucun skill. Créez votre premier skill avec le bouton ci-dessus.</p></div>';
+    el.innerHTML='<div class="empty-state"><p>No skills. Create your first skill with the button above.</p></div>';
     return;
   }
   el.innerHTML='<div class="skills-grid">'+skills.map(s=>\`
@@ -4472,8 +4480,8 @@ function renderList(){
       \${s.params&&s.params.length?'<div class="skill-card-params">'+s.params.map(p=>'<span class="skill-param">{'+window.WikiUi.escapeHtml(p)+'}</span>').join('')+'</div>':''}
       \${s.body?'<div class="skill-card-body-preview">'+window.WikiUi.escapeHtml(s.body.slice(0,120))+(s.body.length>120?'…':'')+'</div>':''}
       <div class="skill-card-actions">
-        <button class="action-button" onclick="openEditorByIndex(\${i})">Modifier</button>
-        <button class="action-button del-btn" onclick="deleteSkillByIndex(\${i})">Supprimer</button>
+        <button class="action-button" onclick="openEditorByIndex(\${i})">Edit</button>
+        <button class="action-button del-btn" onclick="deleteSkillByIndex(\${i})">Delete</button>
       </div>
     </div>
   \`).join('')+'</div>';
@@ -4482,7 +4490,7 @@ function renderList(){
 function openEditorByIndex(idx){openEditor(skills[idx]);}
 
 function openEditor(skill){
-  document.getElementById('editor-title').textContent=skill?'Modifier /'+skill.name:'Nouveau skill';
+  document.getElementById('editor-title').textContent=skill?'Edit /'+skill.name:'New skill';
   const nameEl=document.getElementById('f-name');
   nameEl.value=skill?.name??'';
   nameEl.disabled=!!skill;
@@ -4501,20 +4509,20 @@ async function saveSkill(){
   const description=document.getElementById('f-desc').value.trim();
   const params=document.getElementById('f-params').value.split(',').map(p=>p.trim()).filter(Boolean);
   const body=document.getElementById('f-body').value;
-  if(!name){alert('Le nom est requis.');return;}
-  if(!body.trim()){alert('Le corps du skill est requis.');return;}
+  if(!name){alert('Name is required.');return;}
+  if(!body.trim()){alert('Skill body is required.');return;}
   const r=await fetch('/api/skills/'+encodeURIComponent(name),{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({description,params,body}),
   });
-  if(!r.ok){const e=await r.json();alert(e.error||'Erreur');return;}
+  if(!r.ok){const e=await r.json();alert(e.error||'Error');return;}
   closeEditor();
   await loadSkills();
 }
 
 async function deleteSkill(name){
-  if(!confirm('Supprimer le skill /'+name+' ?'))return;
+  if(!confirm('Delete skill /'+name+'?'))return;
   await fetch('/api/skills/'+encodeURIComponent(name),{method:'DELETE'});
   await loadSkills();
 }
@@ -4695,7 +4703,7 @@ export default async function serveCmd(
         return;
       }
 
-      // ── Hub proxy (same-origin façade over the host-side hub.js) ──────────
+      // ── Hub proxy (same-origin facade over the host-side hub.js) ──────────
       if (hubPort() && hubToken() && urlPath.startsWith('/api/hub/')) {
         // CSRF guard: custom header required; reject cross-origin POSTs
         if (!req.headers['x-llm-wiki-hub']) {

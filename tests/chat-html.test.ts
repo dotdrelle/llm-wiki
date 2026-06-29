@@ -38,7 +38,7 @@ describe('chat html', () => {
     expect(script).toContain('Chat server unreachable. Check that the wiki server is running.');
     expect(script).toContain('LLM unreachable. Check that the LLM service is running and the Base URL is reachable.');
     expect(script).toContain('Invalid LLM configuration. Check the Base URL in chat settings.');
-    expect(script).toContain("chatText('Response stopped.','Réponse arrêtée.')");
+    expect(script).toContain("const partial=streamDiv.dataset.copy || 'Response stopped.';");
     expect(script).toContain('setStreamContent(streamDiv,finalText);');
   });
 
@@ -63,7 +63,7 @@ describe('chat html', () => {
     const [script] = chatScripts();
 
     expect(script).toContain('Production ${esc(productionStatusLabel(status))}');
-    expect(script).toContain('Details, logs and timing in the chain view.');
+    expect(script).toContain('Details, logs and timing in agent orchestration.');
     expect(script).toContain('produced file');
     expect(script).toContain('const produced=Array.isArray(job.producedFiles)');
     expect(script).not.toContain('<summary>Console</summary>');
@@ -140,9 +140,56 @@ describe('chat html', () => {
     expect(script).toContain('function scheduleActivityPoll(item)');
     expect(script).toContain("callMCPTool(item.poll.tool,item.poll.args||{},{trackActivity:false})");
     expect(script).toContain("mailer_send_email:args.dryRun?");
-    expect(script).toContain("cme_export_run:chatText(");
-    expect(script).toContain("production_start_job:chatText(");
+    expect(script).toContain("cme_export_run:'Confluence export'");
+    expect(script).toContain("production_start_job:'Production job'");
     expect(script).toContain('async function callMCPTool(name, args, {trackActivity=true}={})');
+  });
+
+  it('deduplicates MCP tools before sending them to strict LLM providers', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain('function uniqueToolsByName(tools)');
+    expect(script).toContain('const byName=new Map();');
+    expect(script).toContain('function preferredServerNameForTool(name)');
+    expect(script).toContain("const prefix=text.split('_',1)[0];");
+    expect(script).toContain('if(prefix && servers.some(s=>s.name===prefix)) return prefix;');
+    expect(script).toContain("const owner=servers.find(s=>s.name===preferred&&s.enabled&&s.status==='ok'&&s.tools.some(t=>t.name===name));");
+    expect(script).toContain('const activeTools=uniqueToolsByName(getActiveTools());');
+  });
+
+  it('presents MCP calls as agent orchestration and records activities from agent contracts', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain("const title='Agent orchestration';");
+    expect(script).not.toContain('MCP chain');
+    expect(script).toContain('upsertActivity(item);');
+    const ingestSource = script.match(/function ingestMcpActivityResult\(tool,args,server,result,[\s\S]*?\n\}\nfunction scheduleActivityPoll/)?.[0] ?? '';
+    expect(ingestSource).not.toContain('openActivityPanel();');
+    const callSource = script.match(/async function callMCPTool\(name, args,[\s\S]*?\n\}\n\n\/\/ ── Active tools/)?.[0] ?? '';
+    expect(callSource).not.toContain('openActivityPanel();');
+  });
+
+  it('renders a tool-result fallback when the LLM final answer is empty', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain('function toolResultsFallbackSummary(toolResults)');
+    expect(script).toContain('function toolResultsFallbackHTML(toolResults)');
+    expect(script).toContain('let lastToolResults=[];');
+    expect(script).toContain('lastToolResults=toolResults;');
+    expect(script).toContain("const finalContent=String(content||'').trim() ? content : toolResultsFallbackSummary(lastToolResults);");
+    expect(script).toContain("const finalHtml=String(content||'').trim() ? null : toolResultsFallbackHTML(lastToolResults);");
+  });
+
+  it('migrates saved injected MCP server aliases to current serve defaults', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain("sName.startsWith('agent-')");
+    expect(script).toContain("sName.slice('agent-'.length)");
+    expect(script).toContain('const sName=String(s?.name||');
+    expect(script).toContain('const name = override ? override.name : s.name;');
+    expect(script).toContain('if(seen.has(name)) continue;');
+    expect(script).toContain('if(seen.has(s.name)) continue;');
+    expect(script).toContain('saveServers();');
   });
 
   it('uses a generic MCP presentation contract across activity, chain and chat', () => {
@@ -152,7 +199,7 @@ describe('chat html', () => {
     expect(script).toContain('annotations?.readOnlyHint===true');
     expect(script).toContain('annotations?.readOnlyHint===false');
     expect(script).toContain('function mcpObjectCardHTML(toolName, data');
-    expect(script).toContain("mcpObjectCardHTML(toolName||chatText('MCP result','Résultat MCP'),data,{raw})");
+    expect(script).toContain("mcpObjectCardHTML(toolName||'MCP result',data,{raw})");
     expect(script).toContain('resultHtml:toolResultSummaryHTML(p.result,ok,p.name||step.title)');
     expect(script).toContain('sourceLabel:server.name');
     expect(script).not.toContain('publishAssistantOutput(observerToolLoopHTML(toolResults),statusDiv,{html:true,plainText:summary})');
@@ -221,14 +268,14 @@ describe('chat html', () => {
     expect(script).toContain('function shouldStopAfterProductionTools(toolCalls)');
     expect(script).toContain("'production_start_job'");
     expect(script).toContain("'production_job_status'");
-    expect(script).toContain('function chatLanguageIsFrench()');
-    expect(script).toContain('function chatText(en, fr)');
+    expect(script).not.toContain('function chatLanguageIsFrench()');
+    expect(script).not.toContain('function chatText(en, fr)');
     expect(script).toContain('return productionTerminalChatSummary(latestJob);');
     expect(script).toContain('productionState.notifiedTerminalJobIds.add(jobId);');
     expect(script).toContain('if(shouldStopAfterProductionTools(tcWithIdx))');
     expect(script).toContain('const summary=productionToolSummary(toolResults);');
-    expect(script).toContain('Tracking in the chain view.');
-    expect(script).toContain('Le suivi est dans le chaînage.');
+    expect(script).toContain('Tracking in agent orchestration.');
+    expect(script).not.toContain("Le suivi est dans l\\'orchestration agentique.");
   });
 
   it('does not report chain limit after a normal break on the final allowed turn', () => {
@@ -254,7 +301,7 @@ describe('chat html', () => {
     expect(script).toContain('notifiedTerminalJobIds: new Set()');
     expect(script).toContain('async function notifyProductionTerminalInChat()');
     expect(script).toContain('Production completed');
-    expect(script).toContain('Production terminée');
+    expect(script).toContain('Production completed');
     expect(script).toContain("messages.slice(-8).some(m=>m?.role==='assistant' && m?.content===summary)");
     expect(script).toContain('handleProductionToolResult(msg.name,{},msg.content,true,{recover:true});');
     expect(script).not.toContain('if(productionState.jobId && !productionTerminal(productionState.job?.status)) startProductionPolling();');
