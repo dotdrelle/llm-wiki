@@ -341,6 +341,9 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .empty-actions{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:10px;margin-top:8px;width:min(620px,100%)}
 .empty-tile{border:1px solid var(--border);border-radius:10px;background:var(--panel);box-shadow:var(--shadow);padding:13px 14px;text-align:left;color:var(--text);cursor:pointer;font-family:var(--font-sans);transition:border-color .18s,transform .18s,box-shadow .18s}
 .empty-tile:hover{border-color:var(--accent);transform:translateY(-1px);box-shadow:0 10px 24px rgba(15,23,42,.09)}
+.empty-tile.wide{grid-column:1/-1}
+.empty-tile.needs-setup{border-color:var(--warn);background:rgba(245,200,66,.1);box-shadow:0 0 0 3px rgba(245,200,66,.12),var(--shadow)}
+.empty-tile.needs-setup .empty-tile-title{color:var(--warn)}
 .empty-tile-title{display:block;font-size:13px;font-weight:800;margin-bottom:4px}
 .empty-tile-desc{display:block;font-size:11px;line-height:1.45;color:var(--muted)}
 @media(max-width:640px){.empty-actions{grid-template-columns:1fr}}
@@ -463,7 +466,7 @@ const EMPTY_CHAT_HTML = `<div id="empty">
   <h2>MCP Chat</h2>
   <p>Enable an MCP server, then start the conversation.</p>
   <div class="empty-actions">
-    <button class="empty-tile" type="button" onclick="submitSuggestion('/guide')">
+    <button class="empty-tile setup-guide-tile" type="button" onclick="submitSuggestion('/guide')">
       <span class="empty-tile-title">Start setup guide</span>
       <span class="empty-tile-desc">Let Donna check LLM, connectors, sources, wiki content, and deliverables.</span>
     </button>
@@ -471,7 +474,7 @@ const EMPTY_CHAT_HTML = `<div id="empty">
       <span class="empty-tile-title">Fill workspace profile</span>
       <span class="empty-tile-desc">Describe your context so answers and deliverables fit this workspace.</span>
     </button>
-    <button class="empty-tile" type="button" onclick="submitSuggestion(getTipsPrompt())">
+    <button class="empty-tile wide" type="button" onclick="submitSuggestion(getTipsPrompt())">
       <span class="empty-tile-title">Get contextual tips</span>
       <span class="empty-tile-desc">Donna checks the workspace state and gives 3 specific next-step suggestions.</span>
     </button>
@@ -1941,6 +1944,11 @@ async function reconnectMCPServer(server) {
 async function callMCPTool(name, args, {trackActivity=true}={}) {
   const server=findServerForTool(name);
   if(!server) throw new Error(\`No active MCP server for "\${name}"\`);
+  const requestedWorkspace=String(args?.workspace||'').trim();
+  if(String(name||'').startsWith('cme_') && name!=='cme_export_cancel' && (!requestedWorkspace||requestedWorkspace==='default')) {
+    const wsName=window.__WIKI_CONFIG__?.workspaceName;
+    if(wsName) args={...(args||{}),workspace:wsName};
+  }
   const tracked=trackActivity&&shouldTrackMcpTool(name,server);
   const source=tracked?activitySourceForTool(name,server):null;
   const activityId=source?\`mcp-\${source}-\${Date.now()}-\${Math.random().toString(36).slice(2,7)}\`:null;
@@ -3745,17 +3753,6 @@ async function sendMessage() {
         messages.push(...toolResults);
         conversationDirty=true;
         await saveCurrentConversation({immediate:true});
-        if(!isSkillRun && tcWithIdx.every(tc=>isObserverToolName(toolCallFunctionName(tc)))) {
-          const summary=observerToolLoopSummary(toolResults);
-          dispatchChatAgentEvent(runTrace,'run_summary',{origin:'system',payload:{content:summary}});
-          statusDiv=publishAssistantOutput(observerToolLoopHTML(toolResults),statusDiv,{html:true,plainText:summary});
-          messages.push({role:'assistant',content:summary});
-          conversationDirty=true;
-          await saveCurrentConversation({immediate:true});
-          dispatchChatAgentEvent(runTrace,'run_done',{origin:'system'});
-          completedWithoutLimit=true;
-          break;
-        }
         if(shouldStopAfterProductionTools(tcWithIdx)) {
           const summary=productionToolSummary(toolResults);
           dispatchChatAgentEvent(runTrace,'run_summary',{origin:'system',payload:{content:summary}});
@@ -3884,6 +3881,7 @@ function saveConfig() {
     temperature:Number(cfg.temp),
   })}).catch(()=>{});
   if (cfg.apiKey) flashSaved('llm-saved');
+  applySetupGuideHighlight();
 }
 
 async function resetYamlConfig() {
@@ -3900,6 +3898,7 @@ async function resetYamlConfig() {
   if(cfg?.temperature!==undefined) $('temperature').value=String(cfg.temperature);
   syncModel();
   flashSaved('llm-saved');
+  applySetupGuideHighlight();
 }
 
 // ── LocalStorage (user-added servers only) ──────────────────────────────────
@@ -3944,6 +3943,19 @@ function applyWorkspaceTitle() {
   if (logoText) logoText.textContent = label;
 }
 
+function applySetupGuideHighlight() {
+  const tile = document.querySelector('.setup-guide-tile');
+  if (!tile) return;
+  const wc = window.__WIKI_CONFIG__ || {};
+  const configured = Boolean(
+    wc.provider &&
+    ($('base-url')?.value || wc.baseUrl) &&
+    ($('api-key')?.value || wc.apiKey) &&
+    ($('model-name')?.value || wc.model),
+  );
+  tile.classList.toggle('needs-setup', wc.llmConfigured === false && !configured);
+}
+
 function loadConfig() {
   const wc = window.__WIKI_CONFIG__;
   let saved = {};
@@ -3969,6 +3981,7 @@ function loadConfig() {
   if (saved.temp !== undefined) $('temperature').value = saved.temp;
   $('system-prompt').value = localStorage.getItem(storageKey('mcpchat_system_prompt')) ?? window.__WIKI_CONFIG__?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
   syncModel();
+  applySetupGuideHighlight();
 }
 
 function loadServers() {
@@ -4000,29 +4013,17 @@ function loadServers() {
   renderCards(); saveServers();
 }
 
-async function maybeAutoStartGuide({historyLoaded=false}={}) {
-  if(!historyLoaded) return;
-  if(messages.length || currentConversationId || historySummaries.length) return;
-  if(!findSkillByName('guide')) return;
-  const key = storageKey('llm-wiki-guide-autostart-done');
-  try {
-    if(localStorage.getItem(key)==='1') return;
-    localStorage.setItem(key,'1');
-  } catch {}
-  submitSuggestion('/guide');
-}
-
 // ── Init ────────────────────────────────────────────────────────────────────
 async function initChat() {
   applyWorkspaceTitle();
   loadConfig();
+  applySetupGuideHighlight();
   loadServers();
   initPageMode();
-  const historyLoaded=await loadHistory();
+  await loadHistory();
   initSidebarSplitter();
   renderProductionTrace();
   await Promise.all([restoreEnabledServers(),fetchSkillsAc()]);
-  await maybeAutoStartGuide({historyLoaded});
   window.addEventListener('popstate', initPageMode);
 }
 initChat();

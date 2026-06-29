@@ -4958,11 +4958,19 @@ export default async function serveCmd(
           : undefined;
         const profileSection = await workspace.loadProfileSection(config.limits.maxProfileChars);
         const systemPrompt = [systemPromptBase, profileSection].filter(Boolean).join('\n\n') || undefined;
+        const llmConfigured = Boolean(
+          config.llm.provider &&
+          config.llm.baseUrl &&
+          config.llm.apiKey &&
+          config.llm.model,
+        );
         const chatConfig = {
+          provider: config.llm.provider,
           model: config.llm.model,
           temperature: config.llm.temperature,
           baseUrl: config.llm.baseUrl,
           apiKey: config.llm.apiKey ?? '',
+          llmConfigured,
           language: config.language ?? 'fr',
           workspaceName: workspaceNameFromEnv() ?? path.basename(rootDir),
           ...(systemPrompt ? { systemPrompt } : {}),

@@ -1,7 +1,7 @@
 FROM node:26-slim AS builder
 WORKDIR /build
 RUN npm install --global pnpm@10.29.2
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build && pnpm prune --prod && mkdir -p /dist-workspace

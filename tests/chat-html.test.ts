@@ -118,15 +118,16 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('Get contextual tips');
     expect(CHAT_HTML).toContain("onclick=\"submitSuggestion('/guide')\"");
     expect(CHAT_HTML).toContain('onclick="submitSuggestion(getTipsPrompt())"');
-    expect(script).toContain('function maybeAutoStartGuide');
+    expect(CHAT_HTML).toContain('empty-tile wide');
+    expect(script).not.toContain('function maybeAutoStartGuide');
     expect(script).toContain('function applyWorkspaceTitle');
+    expect(script).toContain('function applySetupGuideHighlight');
     expect(script).toContain('function getTipsPrompt');
     expect(script).toContain('available read-only tools');
     expect(script).toContain('active connectors');
     expect(script).toContain('actual state you found');
-    expect(script).toContain("findSkillByName('guide')");
-    expect(script).toContain("storageKey('llm-wiki-guide-autostart-done')");
     expect(script).toContain("submitSuggestion('/guide')");
+    expect(script).toContain("tile.classList.toggle('needs-setup'");
   });
 
   it('tracks actionable and asynchronous MCP calls in the activity panel', () => {
@@ -154,7 +155,8 @@ describe('chat html', () => {
     expect(script).toContain("mcpObjectCardHTML(toolName||chatText('MCP result','Résultat MCP'),data,{raw})");
     expect(script).toContain('resultHtml:toolResultSummaryHTML(p.result,ok,p.name||step.title)');
     expect(script).toContain('sourceLabel:server.name');
-    expect(script).toContain('publishAssistantOutput(observerToolLoopHTML(toolResults),statusDiv,{html:true,plainText:summary})');
+    expect(script).not.toContain('publishAssistantOutput(observerToolLoopHTML(toolResults),statusDiv,{html:true,plainText:summary})');
+    expect(script).toContain('publishAssistantOutput(observerToolLoopHTML([],true),statusDiv,{html:true,plainText:summary})');
     expect(script).toContain("messages.push({role:'assistant',content:summary});");
   });
 
