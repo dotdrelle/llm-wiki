@@ -4015,9 +4015,9 @@ function loadServers() {
         const name = override ? override.name : s.name;
         if(seen.has(name)) { dirty=true; continue; }
         seen.add(name);
+        if(override) dirty=true;
         const url = override ? override.url : s.url;
         const bearer = override ? (override.bearer||'') : (s.bearer||'');
-        if(override && (name !== sName || url !== s.url || bearer !== (s.bearer||''))) dirty=true;
         const injected = override ? true : (s.injected === true);
         servers.push({...s, name, url, bearer, injected, enabled:!!s.enabled, sessionId:null, status:'off', tools:[]});
         if(s.id >= nextId) nextId = s.id + 1;
