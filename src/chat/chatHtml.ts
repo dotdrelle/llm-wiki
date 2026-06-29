@@ -1044,10 +1044,9 @@ function renderActivities() {
     el.innerHTML=\`<div class="act-empty">No activity yet.\${guideBtn}</div>\`;
     return;
   }
-  const uploads=[],mcp=[];
-  for(let i=_activities.length-1;i>=0;i--) {
-    (_activities[i].kind==='upload'?uploads:mcp).push(_activities[i]);
-  }
+  const rev=[..._activities].reverse();
+  const uploads=rev.filter(a=>a.kind==='upload');
+  const mcp=rev.filter(a=>a.kind!=='upload');
   const hasDone=_activities.some(a=>!isActivityActive(a.status));
   const dismissBtn=hasDone?\`<button class="act-dismiss-all" onclick="dismissAllDone()">Clear all</button>\`:'';
   const section=(title,items)=>items.length?\`<div class="act-section-head"><span class="act-section-title">\${title}</span></div>\${items.map(actCardHTML).join('')}\`:'';
@@ -2107,7 +2106,6 @@ function productionStatusLabel(status) {
   const map={queued:'pending',running:'running',done:'done',failed:'failed',cancelled:'cancelled'};
   return map[status] || status || 'unknown';
 }
-
 
 function isProductionToolName(name) {
   return String(name||'').startsWith('production_');
@@ -4017,9 +4015,9 @@ function loadServers() {
         const name = override ? override.name : s.name;
         if(seen.has(name)) { dirty=true; continue; }
         seen.add(name);
-        if(override && name !== sName) dirty=true;
         const url = override ? override.url : s.url;
         const bearer = override ? (override.bearer||'') : (s.bearer||'');
+        if(override && (name !== sName || url !== s.url || bearer !== (s.bearer||''))) dirty=true;
         const injected = override ? true : (s.injected === true);
         servers.push({...s, name, url, bearer, injected, enabled:!!s.enabled, sessionId:null, status:'off', tools:[]});
         if(s.id >= nextId) nextId = s.id + 1;
