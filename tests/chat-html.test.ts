@@ -354,4 +354,18 @@ describe('chat html', () => {
     expect(script).toContain("dispatchChatAgentEvent(runTrace,'run_done'");
     expect(script).toContain("dispatchChatAgentEvent(runTrace,'run_error'");
   });
+
+  it('connects the activity panel to the manager runtime when configured', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain('function connectRuntimePanel()');
+    expect(script).toContain("fetch('/api/runtime/state',{cache:'no-store'})");
+    expect(script).toContain("new EventSource('/api/runtime/events')");
+    expect(script).toContain('if(runtimeFetchPending) return;');
+    expect(script).toContain("fetch('/api/runtime/run'");
+    expect(script).toContain("fetch('/api/runtime/cancel'");
+    expect(script).toContain('function toggleAgentMode()');
+    expect(script).toContain('function runtimeTaskPanelHTML()');
+    expect(script).toContain("Runtime activity");
+  });
 });

@@ -56,6 +56,32 @@ merging without redesigning the model.
 The default scaffold includes small UI skills such as `/status`, `/wiki-sync`,
 `/pipeline`, and `/guide`. Keep scaffold skills generic and English by default.
 
+## Agent Runtime Integration
+
+`wiki serve` can connect to a `llm-wiki-manager` agent runtime
+(`WIKI_MANAGER_RUNTIME_URL`, `WIKI_MANAGER_RUNTIME_TOKEN`). When configured,
+`serve.ts` proxies three routes:
+
+- `GET /api/runtime/state` → runtime `/state`
+- `GET /api/runtime/events` → runtime `/events/stream` (SSE pass-through)
+- `POST /api/runtime/run` → runtime `/run` (injects `workspace: WORKSPACE_NAME`)
+- `POST /api/runtime/cancel` → runtime `/cancel`
+
+`proxyRuntimeJson` accepts an optional `extra` object merged into the POST body
+before forwarding. The workspace injection (`{ workspace: workspaceNameFromEnv() }`)
+is applied at the `/run` route so the runtime knows which workspace to load via
+`/use`. Do not send runtime tokens to the browser — the proxy adds the
+`Authorization` header server-side from `WIKI_MANAGER_RUNTIME_TOKEN`.
+
+In `chatHtml.ts`, the Agent mode toggle (`toggleAgentMode()`) switches the chat
+from local LLM to runtime dispatch. When running, the Send button becomes Stop
+(POST `/api/runtime/cancel`). The Activity panel is populated from `runtimeState`
+fetched via `/api/runtime/state` and kept fresh by the SSE stream with a 200ms
+leading-edge debounce on `agent_event` messages.
+
+`window.__WIKI_CONFIG__.runtime.enabled` is `true` when `WIKI_MANAGER_RUNTIME_URL`
+is set; chatHtml uses this to show/hide the Agent mode toggle.
+
 ## Serve Chat
 
 `src/chat/chatHtml.ts` is a self-contained browser app. It has three separate
@@ -121,6 +147,11 @@ runner or the CLI.
   when not absolute.
 - `WIKI_RUN_CALLER`: included in trace init events to link CLI traces to
   production jobs.
+- `WIKI_MANAGER_RUNTIME_URL`: URL of the `llm-wiki-manager` runtime
+  (e.g. `http://host.docker.internal:7788`). Enables the Agent mode UI and
+  runtime proxy routes in serve.
+- `WIKI_MANAGER_RUNTIME_TOKEN`: Bearer token for the runtime. Added as
+  `Authorization` header by the proxy; never forwarded to browser clients.
 - TLS for `serve`: `WIKI_SERVE_TLS_CERT_PATH`, `WIKI_SERVE_TLS_KEY_PATH`,
   optional `WIKI_SERVE_TLS_CA_PATH`.
 - TLS for `mcp-http`: `WIKI_MCP_TLS_CERT_PATH`, `WIKI_MCP_TLS_KEY_PATH`,

@@ -248,6 +248,8 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .act-btn{font-size:10px;font-weight:700;border:1px solid var(--border);border-radius:6px;background:var(--panel);color:var(--muted);padding:4px 9px;cursor:pointer;font-family:var(--font-sans)}
 .act-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .act-btn.del:hover{border-color:var(--err);color:var(--err);background:color-mix(in srgb,var(--err) 8%,transparent)}
+.runtime-status{font-size:10px;color:var(--muted);font-family:var(--font-mono);padding:0 4px 6px}
+.runtime-log{font-family:var(--font-mono);font-size:10px;line-height:1.4;color:var(--muted2);background:var(--panel-deep);border:1px solid var(--border);border-radius:8px;padding:7px 8px;white-space:pre-wrap;word-break:break-word}
 .tb-act-btn{position:relative;background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);padding:5px 10px;cursor:pointer;font-size:12px;font-family:var(--font-sans);font-weight:700;display:flex;align-items:center;gap:5px;transition:all .2s}
 .tb-act-btn:hover,.tb-act-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .tb-act-badge{min-width:16px;height:16px;border-radius:99px;background:var(--accent);color:#fff;font-size:9px;font-weight:800;display:none;align-items:center;justify-content:center;padding:0 4px;margin-left:2px}
@@ -366,6 +368,10 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .attach-btn{background:transparent;border:1px solid var(--border);border-radius:50%;width:34px;height:34px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--muted);transition:border-color .2s,color .2s,background .2s}
 .attach-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--panel)}
 .attach-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.agent-mode-btn{border:1px solid var(--border);border-radius:999px;background:transparent;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:7px 9px;cursor:pointer;font-family:var(--font-sans);transition:border-color .2s,color .2s,background .2s}
+.agent-mode-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--panel)}
+.agent-mode-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.agent-mode-btn.disabled{opacity:.45;cursor:not-allowed}
 #send-btn{background:var(--text);border:none;border-radius:50%;width:34px;height:34px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .2s,transform .2s,background .2s;color:var(--bg)}
 #send-btn:hover{opacity:.82;transform:scale(1.04)}
 #send-btn.is-stop{background:var(--text)}
@@ -621,6 +627,7 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
       <input id="doc-upload-input" type="file" hidden onchange="uploadSelectedDocument(this)">
       <textarea id="chat-input" rows="1" placeholder="Your message… (/ for skills)"
         oninput="autoResize(this)" onkeydown="handleKey(event)"></textarea>
+      <button id="agent-mode-btn" class="agent-mode-btn" type="button" onclick="toggleAgentMode()" title="Send prompts to the agent runtime">Agent</button>
       <button class="attach-btn" type="button" onclick="openDocumentUpload()" title="Upload document" aria-label="Upload document">
         <svg viewBox="0 0 24 24"><path d="M21.4 11.6 12 21a6 6 0 0 1-8.5-8.5l9.9-9.9a4 4 0 0 1 5.7 5.7L9.2 18.2a2 2 0 0 1-2.8-2.8l9.2-9.2"/></svg>
       </button>
@@ -777,8 +784,13 @@ function notify(msg, type='s') {
 /* ── Activity Panel ─────────────────────────────────────────────────── */
 const ACT_STORE_KEY=storageKey('llm-wiki-chat:activities');
 const ACT_PANEL_KEY=storageKey('llm-wiki-chat:activity-panel-open');
+const AGENT_MODE_KEY=storageKey('llm-wiki-chat:agent-mode');
 let _activities=[];
 let _actTimer=null;
+let runtimeState=null;
+let runtimeConnected=false;
+let runtimeFetchPending=false;
+let agentMode=localStorage.getItem(AGENT_MODE_KEY)==='1';
 const _activityPollTimers=new Map();
 function isActivityActive(status){return status==='running'||status==='queued';}
 function clearPollTimer(id){const t=_activityPollTimers.get(id);if(t)clearTimeout(t);_activityPollTimers.delete(id);}
@@ -998,9 +1010,11 @@ function actCardHTML(item) {
   const output=item.outputPath?uploadOutputLabel(item.outputPath):(item.resultSummary||null);
   const outputHtml=output?\`<div class="act-output" title="\${esc(output)}" onclick="copyText(\${esc(JSON.stringify(output))})">\${esc(output)}</div>\`:'';
   const errorHtml=item.error?\`<div class="act-error">\${esc(item.error)}</div>\`:'';
+  const runtimeCard=String(item.kind||'').startsWith('runtime');
   const retryHtml=(item.status==='stored'||item.status==='failed')&&item.uploadId
     ?\`<button class="act-btn" onclick="retryConvert(\${esc(JSON.stringify(item.uploadId))},\${esc(JSON.stringify(item.id))})">Retry</button>\`
     :'';
+  const dismissHtml=runtimeCard?'':\`<button class="act-btn del" onclick="dismissActivity(\${esc(JSON.stringify(item.id))})">Dismiss</button>\`;
   const hint=converted?\`<div class="act-card-meta">Ready · run ingest to integrate.</div>\`
     :stored?\`<div class="act-card-meta">Stored, no conversion agent.</div>\`
     :'';
@@ -1011,7 +1025,7 @@ function actCardHTML(item) {
 <div class="act-card-head"><span class="act-card-icon">\${icon}</span><div class="act-card-info"><div class="act-card-name">\${esc(item.label||item.filename||'-')}</div>\${fullMeta?\`<div class="act-card-meta">\${esc(fullMeta)}</div>\`:''}</div><span class="act-badge \${badge}">\${badgeLabel}</span></div>
 \${stepsHtml?\`<div class="act-steps">\${stepsHtml}</div>\`:''}
 \${outputHtml}\${errorHtml}\${hint}
-<div class="act-actions">\${retryHtml}<button class="act-btn del" onclick="dismissActivity(\${esc(JSON.stringify(item.id))})">Dismiss</button></div>
+\${retryHtml||dismissHtml?\`<div class="act-actions">\${retryHtml}\${dismissHtml}</div>\`:''}
 </div>\`;
 }
 function activityPlanSteps(item) {
@@ -1039,7 +1053,7 @@ function activityPlanSteps(item) {
 function renderActivities() {
   const el=$('activity-body');
   if(!el) return;
-  if(!_activities.length){
+  if(!_activities.length&&!runtimeState){
     const guideBtn=findSkillByName('guide')?\`<br><button class="act-empty-btn" type="button" onclick="submitSuggestion('/guide')">Start setup guide</button>\`:'';
     el.innerHTML=\`<div class="act-empty">No activity yet.\${guideBtn}</div>\`;
     return;
@@ -1050,12 +1064,14 @@ function renderActivities() {
   const hasDone=_activities.some(a=>!isActivityActive(a.status));
   const dismissBtn=hasDone?\`<button class="act-dismiss-all" onclick="dismissAllDone()">Clear all</button>\`:'';
   const section=(title,items)=>items.length?\`<div class="act-section-head"><span class="act-section-title">\${title}</span></div>\${items.map(actCardHTML).join('')}\`:'';
-  el.innerHTML=\`<div class="act-section-head"><span class="act-section-title">Activity</span>\${dismissBtn}</div>\`
+  el.innerHTML=runtimeTaskPanelHTML()
+    +\`<div class="act-section-head"><span class="act-section-title">Local activity</span>\${dismissBtn}</div>\`
     +section('Uploads',uploads)
     +section('MCP',mcp);
 }
 function updateActivityBadge() {
-  const count=_activities.filter(a=>isActivityActive(a.status)).length;
+  const runtimeCount=Array.isArray(runtimeState?.activities)?runtimeState.activities.filter(a=>isActivityActive(normalizeActivityStatus(a.status,a.terminal))).length:0;
+  const count=_activities.filter(a=>isActivityActive(a.status)).length+runtimeCount;
   const badge=$('tb-act-badge');
   if(!badge) return;
   badge.textContent=count>0?String(count):'';
@@ -1104,8 +1120,100 @@ async function retryConvert(uploadId, actId) {
   } catch {}
   if(_activities.some(a=>isActivityActive(a.status))&&!_actTimer) _actTimer=setInterval(renderActivities,1000);
   _activities.forEach(scheduleActivityPoll);
+  connectRuntimePanel();
 })();
 /* ── end Activity Panel ─────────────────────────────────────────────── */
+
+function runtimeTaskPanelHTML() {
+  if(!runtimeState) {
+    if(window.__WIKI_CONFIG__?.runtime?.enabled) return '<div class="runtime-status">Runtime connecting...</div>';
+    return '';
+  }
+  const plan=Array.isArray(runtimeState.plan)?runtimeState.plan:[];
+  const activities=Array.isArray(runtimeState.activities)?runtimeState.activities:[];
+  const queue=Array.isArray(runtimeState.queue)?runtimeState.queue:[];
+  const logs=Array.isArray(runtimeState.logs)?runtimeState.logs.slice(-6):[];
+  const status=\`<div class="runtime-status">Runtime \${runtimeConnected?'connected':'disconnected'} · \${esc(runtimeState.status||'idle')}</div>\`;
+  const planCards=plan.map((step,index)=>actCardHTML({
+    id:'runtime-plan-'+(step.id||step.step||index),
+    kind:'runtime-plan',
+    source:'runtime',
+    label:step.description||step.label||'Plan step',
+    detail:'Plan step '+(step.step||index+1),
+    status:normalizeActivityStatus(step.status,activityTerminalStatus(step.status)),
+    terminal:activityTerminalStatus(step.status),
+    plan:{steps:[{label:step.description||step.label||'Step'}]},
+    progress:{stepIndex:1,detail:step.status||''},
+    startedAt:Date.now(),
+  })).join('');
+  const activityCards=activities.map((activity,index)=>actCardHTML(runtimeActivityToCard(activity,index))).join('');
+  const queueCards=queue.map((item,index)=>actCardHTML({
+    id:'runtime-queue-'+(item.id||index),
+    kind:'runtime-queue',
+    source:'runtime',
+    label:item.label||item.tool||item.type||'Queued task',
+    detail:item.dependsOn||item.depends_on||item.status||'waiting',
+    status:'queued',
+    terminal:false,
+    startedAt:Date.now(),
+  })).join('');
+  const logsHtml=logs.length?\`<div class="act-section-head"><span class="act-section-title">Logs</span></div><div class="runtime-log">\${esc(logs.join('\\n'))}</div>\`:'';
+  return status
+    +(planCards?\`<div class="act-section-head"><span class="act-section-title">Plan</span></div>\${planCards}\`:'')
+    +(queueCards?\`<div class="act-section-head"><span class="act-section-title">Queue</span></div>\${queueCards}\`:'')
+    +(activityCards?\`<div class="act-section-head"><span class="act-section-title">Runtime activity</span></div>\${activityCards}\`:'')
+    +logsHtml;
+}
+
+function runtimeActivityToCard(activity,index=0) {
+  return {
+    id:'runtime-act-'+(activity.key||activity.id||index),
+    remoteId:activity.id||activity.key||'',
+    kind:'runtime',
+    source:activity.source||'runtime',
+    sourceLabel:activity.source||'Runtime',
+    tool:activity.tool||activity.poll?.tool||'runtime',
+    label:activity.label||activity.id||'Runtime activity',
+    detail:activity.progress?.detail||activity.status||'',
+    status:normalizeActivityStatus(activity.status,activity.terminal),
+    progress:activity.progress||null,
+    plan:activity.plan||null,
+    poll:null,
+    error:activity.error||null,
+    terminal:Boolean(activity.terminal),
+    startedAt:Date.parse(activity.startedAt||activity.createdAt||activity.updatedAt||'')||Date.now(),
+    updatedAt:Date.parse(activity.updatedAt||'')||Date.now(),
+  };
+}
+
+async function fetchRuntimeState() {
+  if(!window.__WIKI_CONFIG__?.runtime?.enabled) return;
+  const res=await fetch('/api/runtime/state',{cache:'no-store'});
+  if(!res.ok) throw new Error('runtime unavailable');
+  runtimeState=await res.json();
+  runtimeConnected=true;
+  renderActivities();
+  updateActivityBadge();
+  updateAgentModeUI();
+}
+
+function connectRuntimePanel() {
+  if(!window.__WIKI_CONFIG__?.runtime?.enabled) return;
+  fetchRuntimeState().catch(()=>{runtimeConnected=false;renderActivities();});
+  const events=new EventSource('/api/runtime/events');
+  events.addEventListener('state',(event)=>{
+    try { runtimeState=JSON.parse(event.data); runtimeConnected=true; renderActivities(); updateActivityBadge(); updateAgentModeUI(); } catch {}
+  });
+  events.addEventListener('agent_event',()=>{
+    if(runtimeFetchPending) return;
+    runtimeFetchPending=true;
+    setTimeout(()=>{
+      runtimeFetchPending=false;
+      fetchRuntimeState().catch(()=>{runtimeConnected=false;renderActivities();});
+    },200);
+  });
+  events.onerror=()=>{runtimeConnected=false;renderActivities();updateAgentModeUI();};
+}
 
 function openDocumentUpload() {
   $('doc-upload-input')?.click();
@@ -1394,13 +1502,64 @@ function setSendButtonStreaming(streaming) {
     : '<svg viewBox="0 0 24 24"><path d="M12 5l7 7-1.4 1.4L13 8.8V20h-2V8.8l-4.6 4.6L5 12z"/></svg>';
 }
 
+function runtimeEnabled() {
+  return Boolean(window.__WIKI_CONFIG__?.runtime?.enabled);
+}
+
+function runtimeIsRunning() {
+  return String(runtimeState?.status||'').toLowerCase()==='running';
+}
+
+function updateAgentModeUI() {
+  const btn=$('agent-mode-btn');
+  if(btn) {
+    btn.classList.toggle('active',agentMode);
+    btn.classList.toggle('disabled',!runtimeEnabled());
+    btn.title=runtimeEnabled()
+      ? (agentMode?'Agent mode: prompts run through wiki-manager runtime':'Chat mode: prompts run locally in serve')
+      : 'Runtime not configured';
+  }
+  if(agentMode && runtimeIsRunning() && !isStreaming) {
+    setSendButtonStreaming(true);
+  } else if(!isStreaming) {
+    setSendButtonStreaming(false);
+  }
+}
+
+function toggleAgentMode() {
+  if(!runtimeEnabled()) {
+    notify('Runtime is not configured.','e');
+    return;
+  }
+  agentMode=!agentMode;
+  localStorage.setItem(AGENT_MODE_KEY,agentMode?'1':'0');
+  updateAgentModeUI();
+  notify(agentMode?'Agent mode on':'Chat mode on');
+}
+
 function handleSendButton() {
+  if(agentMode && runtimeIsRunning()) {
+    void cancelRuntimeRun();
+    return;
+  }
   if(isStreaming) stopStreaming();
   else sendMessage();
 }
 
 function stopStreaming() {
   streamAbortController?.abort();
+}
+
+async function cancelRuntimeRun() {
+  if(!runtimeEnabled()) return;
+  try {
+    const res=await fetch('/api/runtime/cancel',{method:'POST'});
+    if(!res.ok) throw new Error('runtime cancel failed');
+    notify('Runtime cancel requested');
+    await fetchRuntimeState().catch(()=>{});
+  } catch(e) {
+    notify(e?.message||String(e),'e');
+  }
 }
 
 function toggleSystemPrompt() {
@@ -3619,6 +3778,10 @@ async function sendMessage() {
   const input=$('chat-input');
   const text=input.value.trim();
   if(!text) return;
+  if(agentMode) {
+    await sendRuntimeAgentMessage(input,text);
+    return;
+  }
   const resolved=await resolveSkillInvocation(text);
   const isSkillRun=!!resolved.skill;
   const model=$('model-name').value.trim()||'gpt-4o';
@@ -3858,6 +4021,49 @@ async function sendMessage() {
   }
 }
 
+async function sendRuntimeAgentMessage(input,text) {
+  if(!runtimeEnabled()) {
+    notify('Runtime is not configured.','e');
+    return;
+  }
+  if(runtimeIsRunning()) {
+    notify('Runtime is already running.','e');
+    return;
+  }
+  input.value='';
+  input.style.height='auto';
+  if(!currentConversationId) currentConversationId=newConversationId();
+  messages.push({role:'user',content:text});
+  appendMsg('user',text);
+  try {
+    const res=await fetch('/api/runtime/run',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({input:text}),
+    });
+    if(!res.ok) {
+      let message=res.statusText;
+      try {
+        const data=await res.json();
+        message=data?.error||data?.message||message;
+      } catch {}
+      throw new Error(\`Runtime \${res.status}: \${message}\`);
+    }
+    runtimeState={...(runtimeState||{}),status:'running'};
+    runtimeConnected=true;
+    messages.push({role:'assistant',content:'Runtime run accepted. Follow progress in Activity.'});
+    appendMsg('assistant','Runtime run accepted. Follow progress in Activity.');
+    scheduleConversationSave();
+    renderActivities();
+    updateActivityBadge();
+    updateAgentModeUI();
+    openActivityPanel();
+    fetchRuntimeState().catch(()=>{});
+  } catch(e) {
+    notify(e?.message||String(e),'e');
+  }
+}
+
 // ── Champs secrets ──────────────────────────────────────────────────────────
 
 const SVG_EYE     = \`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>\`;
@@ -4051,6 +4257,7 @@ async function initChat() {
   await loadHistory();
   initSidebarSplitter();
   renderProductionTrace();
+  updateAgentModeUI();
   await Promise.all([restoreEnabledServers(),fetchSkillsAc()]);
   window.addEventListener('popstate', initPageMode);
 }

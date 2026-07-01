@@ -26,6 +26,8 @@ const mcpProductionPort = () => process.env.PRODUCTION_MCP_PORT ?? '3102';
 const hubPort = () => process.env.HUB_PORT ?? null;
 const hubToken = () => process.env.HUB_TOKEN ?? null;
 const hubInternalHost = () => process.env.HUB_INTERNAL_HOST ?? '127.0.0.1';
+const runtimeUrl = () => process.env.WIKI_MANAGER_RUNTIME_URL ?? process.env.RUNTIME_URL ?? null;
+const runtimeToken = () => process.env.WIKI_MANAGER_RUNTIME_TOKEN ?? process.env.RUNTIME_AUTH_TOKEN ?? null;
 const workspaceNameFromEnv = () => process.env.WORKSPACE_NAME ?? null;
 const serveTitle = () => process.env.WIKI_SERVE_TITLE ?? null;
 const serveLogo = () => process.env.WIKI_SERVE_LOGO ?? '🧠';
@@ -3533,6 +3535,89 @@ function sendJson(
   res.end(JSON.stringify(data));
 }
 
+function runtimeHeaders(): Record<string, string> {
+  const token = runtimeToken();
+  return token ? { authorization: `Bearer ${token}` } : {};
+}
+
+function runtimeTarget(pathname: string): string | null {
+  const base = runtimeUrl();
+  if (!base) return null;
+  return `${base.replace(/\/+$/, '')}${pathname}`;
+}
+
+async function proxyRuntimeJson(
+  req: IncomingMessage,
+  res: ServerResponse,
+  pathname: string,
+  extra?: Record<string, unknown>,
+): Promise<void> {
+  const target = runtimeTarget(pathname);
+  if (!target) {
+    sendJson(res, 503, { ok: false, error: 'runtime not configured' });
+    return;
+  }
+  let body = req.method === 'POST' ? await readRequestBuffer(req, 1024 * 1024) : null;
+  if (extra && body) {
+    try {
+      body = Buffer.from(JSON.stringify({ ...JSON.parse(body.toString()), ...extra }));
+    } catch { /* malformed body — pass through as-is */ }
+  }
+  try {
+    const upstream = await fetch(target, {
+      method: req.method ?? 'GET',
+      headers: {
+        ...runtimeHeaders(),
+        ...(body ? { 'content-type': 'application/json' } : {}),
+      },
+      body: body && body.length > 0 ? body : undefined,
+    });
+    const text = await upstream.text();
+    res.writeHead(upstream.status, { 'Content-Type': upstream.headers.get('content-type') ?? 'application/json' });
+    res.end(text);
+  } catch {
+    sendJson(res, 503, { ok: false, error: 'runtime unavailable' });
+  }
+}
+
+async function proxyRuntimeEvents(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const target = runtimeTarget('/events/stream');
+  if (!target) {
+    sendJson(res, 503, { ok: false, error: 'runtime not configured' });
+    return;
+  }
+  const controller = new AbortController();
+  req.on('close', () => controller.abort());
+  try {
+    const upstream = await fetch(target, {
+      headers: {
+        ...runtimeHeaders(),
+        accept: 'text/event-stream',
+      },
+      signal: controller.signal,
+    });
+    if (!upstream.ok || !upstream.body) {
+      sendJson(res, upstream.status || 503, { ok: false, error: 'runtime stream unavailable' });
+      return;
+    }
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    });
+    const reader = upstream.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(Buffer.from(value));
+    }
+    res.end();
+  } catch {
+    if (!res.headersSent) sendJson(res, 503, { ok: false, error: 'runtime unavailable' });
+    else res.end();
+  }
+}
+
 const DOCUMENT_EXTENSIONS = new Set([
   '.txt', '.md', '.markdown', '.csv', '.json', '.xml', '.yaml', '.yml', '.html', '.htm', '.rtf',
   '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.webp',
@@ -4703,6 +4788,24 @@ export default async function serveCmd(
         return;
       }
 
+      if (urlPath === '/api/runtime/state' && req.method === 'GET') {
+        await proxyRuntimeJson(req, res, '/state');
+        return;
+      }
+      if (urlPath === '/api/runtime/events' && req.method === 'GET') {
+        await proxyRuntimeEvents(req, res);
+        return;
+      }
+      if (urlPath === '/api/runtime/run' && req.method === 'POST') {
+        const wsName = workspaceNameFromEnv();
+        await proxyRuntimeJson(req, res, '/run', wsName ? { workspace: wsName } : undefined);
+        return;
+      }
+      if (urlPath === '/api/runtime/cancel' && req.method === 'POST') {
+        await proxyRuntimeJson(req, res, '/cancel');
+        return;
+      }
+
       // ── Hub proxy (same-origin facade over the host-side hub.js) ──────────
       if (hubPort() && hubToken() && urlPath.startsWith('/api/hub/')) {
         // CSRF guard: custom header required; reject cross-origin POSTs
@@ -4986,6 +5089,9 @@ export default async function serveCmd(
             .update(`${workspaceNameFromEnv() ?? ''}:${rootDir}`)
             .digest('hex')
             .slice(0, 16),
+          runtime: {
+            enabled: Boolean(runtimeUrl()),
+          },
           mcpServers: [
             {
               name: 'llm-wiki',
