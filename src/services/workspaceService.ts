@@ -49,6 +49,17 @@ const SKILL_INSTALL_PATHS = [
 const SKILL_ALLOWED_ROOTS = ['templates/', 'build-context/', '.wiki/skills/'];
 const SKILL_ALLOWED_FILES = new Set(['skill.yaml', 'CLAUDE.md', '.wiki/system-prompt.md']);
 
+const UTF8_DECODER = new TextDecoder('utf-8', { fatal: true });
+const LATIN1_DECODER = new TextDecoder('iso-8859-1');
+
+function decodeBuffer(buffer: Buffer): { text: string; encoding?: 'latin-1' } {
+  try {
+    return { text: UTF8_DECODER.decode(buffer) };
+  } catch {
+    return { text: LATIN1_DECODER.decode(buffer), encoding: 'latin-1' };
+  }
+}
+
 function fallbackTitleFromWikiPath(wikiPath: string): string {
   const fileName = path.basename(wikiPath, path.extname(wikiPath));
   return fileName.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Untitled';
@@ -378,15 +389,7 @@ export class WorkspaceService {
   async readSourceDocument(sourcePath: string): Promise<SourceDocument> {
     const absolutePath = path.resolve(sourcePath);
     const buffer = await readFile(absolutePath);
-    let rawContent: string;
-    let detectedEncoding: SourceDocument['detectedEncoding'];
-    try {
-      rawContent = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
-    } catch {
-      // File contains invalid UTF-8 bytes; treat as Latin-1 (common for legacy Confluence exports).
-      rawContent = new TextDecoder('iso-8859-1').decode(buffer);
-      detectedEncoding = 'latin-1';
-    }
+    const { text: rawContent, encoding: detectedEncoding } = decodeBuffer(buffer);
     const parsed = matter(rawContent);
     const relativePath = relativeFrom(this.paths.rootDir, absolutePath);
     const relativeToUntracked = relativeFrom(this.paths.rawUntrackedDir, absolutePath);
@@ -408,6 +411,7 @@ export class WorkspaceService {
       frontmatter: parsed.data,
       rawContent,
       body: parsed.content.trim(),
+      rawByteLength: buffer.byteLength,
       ...(detectedEncoding && { detectedEncoding }),
     };
   }
@@ -418,10 +422,12 @@ export class WorkspaceService {
       return false;
     }
     const archivedStats = await stat(archivedPath);
-    if (archivedStats.size !== Buffer.byteLength(source.rawContent, 'utf8')) {
+    const expectedByteLength = source.rawByteLength ?? Buffer.byteLength(source.rawContent, 'utf8');
+    if (archivedStats.size !== expectedByteLength) {
       return false;
     }
-    const archivedContent = await readFile(archivedPath, 'utf8');
+    const archivedBuffer = await readFile(archivedPath);
+    const { text: archivedContent } = decodeBuffer(archivedBuffer);
     return archivedContent === source.rawContent;
   }
 
