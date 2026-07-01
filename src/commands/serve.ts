@@ -79,6 +79,7 @@ type ExternalMcpEndpoint = {
   name: string;
   url: string;
   headers: Record<string, string>;
+  bearer?: string;
 };
 
 type DocumentUploadRecord = {
@@ -130,11 +131,17 @@ async function loadExternalMcpEndpoints(rootDir: string): Promise<ExternalMcpEnd
       if (!servers || typeof servers !== 'object' || Array.isArray(servers)) return [];
       return Object.entries(servers)
         .filter(([, endpoint]) => endpoint && typeof endpoint === 'object' && 'url' in endpoint)
-        .map(([name, endpoint]) => ({
-          name,
-          url: interpolateEnv(String((endpoint as { url?: unknown }).url)),
-          headers: normalizeMcpHeaders((endpoint as { headers?: unknown }).headers),
-        }))
+        .map(([name, endpoint]) => {
+          const headers = normalizeMcpHeaders((endpoint as { headers?: unknown }).headers);
+          const authHeader = headers['authorization'] ?? '';
+          const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+          return {
+            name,
+            url: interpolateEnv(String((endpoint as { url?: unknown }).url)),
+            headers,
+            bearer,
+          };
+        })
         .filter((endpoint) => endpoint.url);
     } catch {
       // Missing or invalid external endpoint files are ignored; workspace MCPs still work.
@@ -5104,11 +5111,9 @@ export default async function serveCmd(
                 process.env.PRODUCTION_MCP_PROXY_URL ??
                 `http://localhost:${mcpProductionPort()}/mcp/`,
             },
-            ...externalMcpEndpoints.map((endpoint) => {
-              const authHeader = endpoint.headers['authorization'] ?? '';
-              const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-              return { name: endpoint.name, url: endpoint.url, ...(bearer ? { bearer } : {}) };
-            }),
+            ...externalMcpEndpoints.map(({ name, url, bearer }) => ({
+              name, url, ...(bearer ? { bearer } : {}),
+            })),
           ],
         };
         const cfgScript = `<script>window.__WIKI_CONFIG__=${escapeScriptJson(JSON.stringify(chatConfig))};</script>`;

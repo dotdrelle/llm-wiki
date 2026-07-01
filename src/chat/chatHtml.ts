@@ -14,8 +14,8 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);height:
 .app-nav-spacer{flex:1}
 
 /* SIDEBAR */
-#sidebar{width:300px;min-width:300px;height:calc(100vh - 44px);margin-top:44px;background:var(--panel);display:flex;flex-direction:column;overflow:hidden;transition:width .3s,min-width .3s}
-#sidebar.collapsed{width:0!important;min-width:0!important}
+#sidebar{width:var(--sidebar-w,300px);min-width:var(--sidebar-w,300px);height:calc(100vh - 44px);margin-top:44px;background:var(--panel);display:flex;flex-direction:column;overflow:hidden;transition:width .3s,min-width .3s}
+#sidebar.collapsed{width:0;min-width:0}
 .main-resizer{width:6px;cursor:col-resize;display:flex;align-items:center;justify-content:center;border-left:1px solid var(--border);border-right:1px solid var(--border);background:var(--panel);touch-action:none;flex-shrink:0;height:calc(100vh - 44px);margin-top:44px}
 .main-resizer:hover,.main-resizer.dragging{background:var(--panel-soft)}
 .main-resizer::before{content:'';width:3px;height:34px;border-radius:99px;background:var(--border)}
@@ -694,7 +694,6 @@ let servers = [];
 let messages = [];
 let isStreaming = false;
 let sidebarOpen = true;
-let savedSidebarWidth = 300;
 let nextId = 1;
 let streamAbortController = null;
 let currentConversationId = null;
@@ -1441,18 +1440,7 @@ async function deleteSkillFromManager(idx) {
     notify(e.message||String(e),'e');
   }
 }
-function toggleSidebar() {
-  sidebarOpen=!sidebarOpen;
-  const sidebar=$('sidebar');
-  if(!sidebarOpen) {
-    sidebar.style.width='';
-    sidebar.style.minWidth='';
-  } else {
-    sidebar.style.width=savedSidebarWidth+'px';
-    sidebar.style.minWidth=savedSidebarWidth+'px';
-  }
-  sidebar.classList.toggle('collapsed',!sidebarOpen);
-}
+function toggleSidebar() { sidebarOpen=!sidebarOpen; $('sidebar').classList.toggle('collapsed',!sidebarOpen); }
 function syncModel() { $('model-badge').textContent=$('model-name').value||'model'; }
 
 function clampSidebarSplit(height) {
@@ -1509,48 +1497,32 @@ function initSidebarSplitter() {
   });
 }
 
-function clampMainSplit(width) {
-  const minSidebar=180;
-  const minMain=320;
-  return Math.max(minSidebar, Math.min(width, window.innerWidth-minMain));
-}
-
-function setMainSplitWidth(width, persist=false) {
-  const sidebar=$('sidebar');
-  if(!sidebar) return;
-  const clamped=clampMainSplit(width);
-  savedSidebarWidth=clamped;
-  sidebar.style.width=clamped+'px';
-  sidebar.style.minWidth=clamped+'px';
-  if(persist) localStorage.setItem(MAIN_SPLIT_KEY, String(Math.round(clamped)));
-}
-
 function initMainSplitter() {
   const sidebar=$('sidebar'), handle=$('main-resizer');
   if(!sidebar || !handle) return;
-  const saved=Number(localStorage.getItem(MAIN_SPLIT_KEY));
-  if(Number.isFinite(saved) && saved>0) setMainSplitWidth(saved);
 
-  let dragging=false;
-  const move=e=>{
-    if(!dragging) return;
-    setMainSplitWidth(e.clientX, true);
+  const setSidebarW=(width, persist=false)=>{
+    const clamped=Math.max(180, Math.min(width, window.innerWidth-320));
+    sidebar.style.setProperty('--sidebar-w', clamped+'px');
+    if(persist) localStorage.setItem(MAIN_SPLIT_KEY, String(Math.round(clamped)));
   };
-  const up=()=>{
-    if(!dragging) return;
-    dragging=false;
-    handle.classList.remove('dragging');
-    document.body.style.cursor='';
-    document.body.style.userSelect='';
-    window.removeEventListener('pointermove',move);
-    window.removeEventListener('pointerup',up);
-  };
+
+  const saved=Number(localStorage.getItem(MAIN_SPLIT_KEY));
+  if(Number.isFinite(saved) && saved>0) setSidebarW(saved);
+
   handle.addEventListener('pointerdown',e=>{
-    dragging=true;
     handle.classList.add('dragging');
     document.body.style.cursor='col-resize';
     document.body.style.userSelect='none';
     handle.setPointerCapture?.(e.pointerId);
+    const move=e=>setSidebarW(e.clientX, true);
+    const up=()=>{
+      handle.classList.remove('dragging');
+      document.body.style.cursor='';
+      document.body.style.userSelect='';
+      window.removeEventListener('pointermove',move);
+      window.removeEventListener('pointerup',up);
+    };
     window.addEventListener('pointermove',move);
     window.addEventListener('pointerup',up);
     e.preventDefault();

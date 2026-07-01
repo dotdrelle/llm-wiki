@@ -372,15 +372,18 @@ describe('chat html', () => {
   it('supports resizing the main sidebar split', () => {
     const [script] = chatScripts();
 
-    expect(CHAT_HTML).toContain('#sidebar.collapsed{width:0!important;min-width:0!important}');
+    expect(CHAT_HTML).toContain(
+      '#sidebar{width:var(--sidebar-w,300px);min-width:var(--sidebar-w,300px);',
+    );
+    expect(CHAT_HTML).toContain('#sidebar.collapsed{width:0;min-width:0}');
     expect(CHAT_HTML).toContain('.main-resizer{width:6px;cursor:col-resize;');
     expect(CHAT_HTML).toContain('<div class="main-resizer" id="main-resizer"></div>');
     expect(script).toContain("const MAIN_SPLIT_KEY = 'mcpchat_sidebar_width';");
-    expect(script).toContain('let savedSidebarWidth = 300;');
     expect(script).toContain('function initMainSplitter()');
-    expect(script).toContain('const minSidebar=180;');
-    expect(script).toContain('const minMain=320;');
-    expect(script).toContain('setMainSplitWidth(e.clientX, true);');
+    expect(script).toContain('const setSidebarW=(width, persist=false)=>');
+    expect(script).toContain('const clamped=Math.max(180, Math.min(width, window.innerWidth-320));');
+    expect(script).toContain("sidebar.style.setProperty('--sidebar-w', clamped+'px');");
+    expect(script).toContain('const move=e=>setSidebarW(e.clientX, true);');
     expect(script).toContain("localStorage.setItem(MAIN_SPLIT_KEY, String(Math.round(clamped)));");
     expect(script).toContain('initMainSplitter();');
   });
