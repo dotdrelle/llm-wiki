@@ -317,6 +317,31 @@ describe('workspace safety', () => {
     );
   });
 
+  it('falls back to Latin-1 when a source file is not valid UTF-8', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-'));
+    await mkdir(path.join(root, 'raw', 'untracked'), { recursive: true });
+    const sourcePath = path.join(root, 'raw', 'untracked', 'modalites.md');
+    await writeFile(
+      sourcePath,
+      Buffer.from([
+        ...Buffer.from('# Modalit'),
+        0xe9,
+        ...Buffer.from('s\n\nContenu r'),
+        0xe9,
+        ...Buffer.from('sum'),
+        0xe9,
+        ...Buffer.from('.\n'),
+      ]),
+    );
+    const workspace = new WorkspaceService(createConfig(root));
+
+    const source = await workspace.readSourceDocument(sourcePath);
+
+    expect(source.detectedEncoding).toBe('latin-1');
+    expect(source.rawContent).toContain('# Modalités');
+    expect(source.body).toContain('Contenu résumé.');
+  });
+
   it('does not treat an archived source with a different byte size as unchanged', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-'));
     await mkdir(path.join(root, 'raw', 'untracked'), { recursive: true });

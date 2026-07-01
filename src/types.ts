@@ -144,6 +144,8 @@ export interface SourceDocument {
   frontmatter: Record<string, unknown>;
   rawContent: string;
   body: string;
+  /** Present only when the file was not valid UTF-8 and was decoded as Latin-1 instead */
+  detectedEncoding?: 'utf-8' | 'latin-1';
 }
 
 export type WikiPageType = 'index' | 'concept' | 'source' | 'answer' | 'other';

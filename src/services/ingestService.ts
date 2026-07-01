@@ -16,6 +16,15 @@ import type { RetrievalService } from './retrievalService.ts';
 import type { TraceLogger } from './traceLogger.ts';
 import type { WorkspaceService } from './workspaceService.ts';
 
+async function withRetry<T>(fn: () => Promise<T>, delayMs = 3000): Promise<T> {
+  try {
+    return await fn();
+  } catch {
+    await new Promise((r) => setTimeout(r, delayMs));
+    return fn();
+  }
+}
+
 function enforceSourceCitationPath(
   operations: WikiOperation[],
   archiveCitationPath: string,
@@ -134,7 +143,15 @@ export class IngestService {
           title: source.title,
           sizeBytes: source.rawContent.length,
           durationMs: Date.now() - readStartedAt,
+          ...(source.detectedEncoding && { detectedEncoding: source.detectedEncoding }),
         });
+        if (source.detectedEncoding) {
+          await this.logger.warn('ingest:encoding-fallback', {
+            source: source.relativePath,
+            encoding: source.detectedEncoding,
+            advice: 'Source file is not valid UTF-8. Re-export from Confluence with UTF-8 encoding to avoid potential character corruption.',
+          });
+        }
 
         if (!options?.force) {
           const unchanged = await this.workspace.isSourceUnchangedSinceIngest(source);
@@ -244,17 +261,19 @@ export class IngestService {
             sectionTotal: sections.length,
           };
           options?.onSourceLlm?.(sourcePath, i, sourcePaths.length, progress);
-          const plan = await this.llm.completeJson(
-            {
-              ...prompt,
-              label: 'ingest_plan',
-              logger: this.logger,
-              traceData: { source: source.relativePath },
-              onUsage: (usage) => {
-                options?.onSourceUsage?.(sourcePath, i, sourcePaths.length, usage, progress);
+          const plan = await withRetry(() =>
+            this.llm.completeJson(
+              {
+                ...prompt,
+                label: 'ingest_plan',
+                logger: this.logger,
+                traceData: { source: source.relativePath },
+                onUsage: (usage) => {
+                  options?.onSourceUsage?.(sourcePath, i, sourcePaths.length, usage, progress);
+                },
               },
-            },
-            ingestPlanSchema,
+              ingestPlanSchema,
+            ),
           );
           await this.logger.info('ingest:plan', {
             source: source.relativePath,

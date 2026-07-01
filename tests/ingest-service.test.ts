@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { IngestService } from '../src/services/ingestService.ts';
 import type { LLMService } from '../src/services/llmService.ts';
 import type { RefreshService } from '../src/services/refreshService.ts';
@@ -64,6 +64,7 @@ class FakeWorkspaceService {
   archivedSources: string[] = [];
   sourcePaths = ['/tmp/wiki/raw/untracked/note.md'];
   sourceBody = 'Body.';
+  detectedEncoding?: SourceDocument['detectedEncoding'];
   readIndexAppliedCounts: number[] = [];
   failApply = false;
 
@@ -93,6 +94,7 @@ class FakeWorkspaceService {
       frontmatter: {},
       rawContent: `# ${slug}\n\n${this.sourceBody}\n`,
       body: this.sourceBody,
+      ...(this.detectedEncoding && { detectedEncoding: this.detectedEncoding }),
     };
   }
 
@@ -154,6 +156,25 @@ class FailingOnceLLMService extends FakeLLMService {
   async completeJson(): Promise<IngestPlan> {
     this.calls += 1;
     if (this.calls === 1) {
+      throw new Error('model returned malformed JSON');
+    }
+    return {
+      summary: 'Updated wiki from second note.',
+      operations: [
+        {
+          type: 'create',
+          path: 'wiki/sources/second.md',
+          content: '# Second\n\n[src: raw/ingested/second.md]\n',
+        },
+      ],
+    };
+  }
+}
+
+class FailingTwiceThenSuccessLLMService extends FakeLLMService {
+  async completeJson(): Promise<IngestPlan> {
+    this.calls += 1;
+    if (this.calls <= 2) {
       throw new Error('model returned malformed JSON');
     }
     return {
@@ -382,6 +403,33 @@ describe('ingest service', () => {
     ).toMatchObject({ unreconciledCitations: 1 });
   });
 
+  it('warns when a source was decoded with the Latin-1 fallback', async () => {
+    const workspace = new FakeWorkspaceService();
+    workspace.detectedEncoding = 'latin-1';
+    const logger = new MemoryTraceLogger();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new FakeLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+    );
+
+    await service.ingest([], {});
+
+    expect(logger.entries.find((entry) => entry.event === 'ingest:source')?.data)
+      .toMatchObject({ detectedEncoding: 'latin-1' });
+    expect(logger.entries.find((entry) => entry.event === 'ingest:encoding-fallback'))
+      .toMatchObject({
+        level: 'warn',
+        data: {
+          source: 'raw/untracked/note.md',
+          encoding: 'latin-1',
+        },
+      });
+  });
+
   it('plans oversized sources section by section then applies atomically before archiving once', async () => {
     const workspace = new FakeWorkspaceService();
     workspace.sourceBody = [
@@ -422,14 +470,45 @@ describe('ingest service', () => {
     ).toMatchObject({ atomic: true, sections: 2 });
   });
 
+  it('retries a transient LLM planning failure once before failing the source', async () => {
+    vi.useFakeTimers();
+    try {
+      const workspace = new FakeWorkspaceService();
+      const logger = new MemoryTraceLogger();
+      const llm = new FailingOnceLLMService();
+      const service = new IngestService(
+        createConfig(),
+        workspace as unknown as WorkspaceService,
+        llm as unknown as LLMService,
+        new FakeRetrievalService() as unknown as RetrievalService,
+        { refresh: async () => [] } as unknown as RefreshService,
+        logger,
+      );
+
+      const ingest = service.ingest([], {});
+      await vi.waitFor(() => expect(llm.calls).toBe(1));
+      await vi.advanceTimersByTimeAsync(3000);
+      const results = await ingest;
+
+      expect(llm.calls).toBe(2);
+      expect(results).toHaveLength(1);
+      expect(results[0].failed).toBeUndefined();
+      expect(workspace.archivedSources).toEqual(['raw/untracked/note.md']);
+      expect(logger.entries.some((entry) => entry.event === 'ingest:source-failed')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('continues ingesting remaining sources when one source fails', async () => {
+    vi.useFakeTimers();
     const workspace = new FakeWorkspaceService();
     workspace.sourcePaths = [
       '/tmp/wiki/raw/untracked/first.md',
       '/tmp/wiki/raw/untracked/second.md',
     ];
     const logger = new MemoryTraceLogger();
-    const llm = new FailingOnceLLMService();
+    const llm = new FailingTwiceThenSuccessLLMService();
     const service = new IngestService(
       createConfig(),
       workspace as unknown as WorkspaceService,
@@ -439,26 +518,34 @@ describe('ingest service', () => {
       logger,
     );
 
-    const results = await service.ingest([], {});
+    try {
+      const ingest = service.ingest([], {});
+      await vi.waitFor(() => expect(llm.calls).toBe(1));
+      await vi.advanceTimersByTimeAsync(3000);
+      const results = await ingest;
 
-    expect(results).toHaveLength(2);
-    expect(results[0]).toMatchObject({
-      source: 'raw/untracked/first.md',
-      failed: true,
-    });
-    expect(results[1].source).toBe('raw/untracked/second.md');
-    expect(results[1].failed).toBeUndefined();
-    expect(workspace.appliedOperations).toHaveLength(1);
-    expect(workspace.archivedSources).toEqual(['raw/untracked/second.md']);
-    expect(logger.entries.some((entry) => entry.event === 'ingest:source-failed')).toBe(
-      true,
-    );
-    expect(
-      logger.entries.find((entry) => entry.event === 'ingest:run-done')?.data,
-    ).toMatchObject({
-      failed: 1,
-      status: 'partial_failure',
-    });
+      expect(llm.calls).toBe(3);
+      expect(results).toHaveLength(2);
+      expect(results[0]).toMatchObject({
+        source: 'raw/untracked/first.md',
+        failed: true,
+      });
+      expect(results[1].source).toBe('raw/untracked/second.md');
+      expect(results[1].failed).toBeUndefined();
+      expect(workspace.appliedOperations).toHaveLength(1);
+      expect(workspace.archivedSources).toEqual(['raw/untracked/second.md']);
+      expect(logger.entries.some((entry) => entry.event === 'ingest:source-failed')).toBe(
+        true,
+      );
+      expect(
+        logger.entries.find((entry) => entry.event === 'ingest:run-done')?.data,
+      ).toMatchObject({
+        failed: 1,
+        status: 'partial_failure',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not report a source as successful when applying operations fails', async () => {

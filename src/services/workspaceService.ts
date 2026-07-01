@@ -377,7 +377,16 @@ export class WorkspaceService {
 
   async readSourceDocument(sourcePath: string): Promise<SourceDocument> {
     const absolutePath = path.resolve(sourcePath);
-    const rawContent = await readFile(absolutePath, 'utf8');
+    const buffer = await readFile(absolutePath);
+    let rawContent: string;
+    let detectedEncoding: SourceDocument['detectedEncoding'];
+    try {
+      rawContent = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+    } catch {
+      // File contains invalid UTF-8 bytes; treat as Latin-1 (common for legacy Confluence exports).
+      rawContent = new TextDecoder('iso-8859-1').decode(buffer);
+      detectedEncoding = 'latin-1';
+    }
     const parsed = matter(rawContent);
     const relativePath = relativeFrom(this.paths.rootDir, absolutePath);
     const relativeToUntracked = relativeFrom(this.paths.rawUntrackedDir, absolutePath);
@@ -399,6 +408,7 @@ export class WorkspaceService {
       frontmatter: parsed.data,
       rawContent,
       body: parsed.content.trim(),
+      ...(detectedEncoding && { detectedEncoding }),
     };
   }
 
