@@ -14,8 +14,12 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);height:
 .app-nav-spacer{flex:1}
 
 /* SIDEBAR */
-#sidebar{width:300px;min-width:300px;height:calc(100vh - 44px);margin-top:44px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;transition:width .3s,min-width .3s}
-#sidebar.collapsed{width:0;min-width:0}
+#sidebar{width:300px;min-width:300px;height:calc(100vh - 44px);margin-top:44px;background:var(--panel);display:flex;flex-direction:column;overflow:hidden;transition:width .3s,min-width .3s}
+#sidebar.collapsed{width:0!important;min-width:0!important}
+.main-resizer{width:6px;cursor:col-resize;display:flex;align-items:center;justify-content:center;border-left:1px solid var(--border);border-right:1px solid var(--border);background:var(--panel);touch-action:none;flex-shrink:0;height:calc(100vh - 44px);margin-top:44px}
+.main-resizer:hover,.main-resizer.dragging{background:var(--panel-soft)}
+.main-resizer::before{content:'';width:3px;height:34px;border-radius:99px;background:var(--border)}
+.main-resizer:hover::before,.main-resizer.dragging::before{background:var(--muted)}
 .sb-logo{padding:18px 16px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:9px}
 .sb-logo-mark{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;font-weight:800;flex-shrink:0}
 .sb-logo-main{min-width:0;flex:1}
@@ -550,7 +554,7 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
     </div>
   </div>
 </aside>
-
+<div class="main-resizer" id="main-resizer"></div>
 <div id="main">
   <div id="topbar">
     <span class="tb-model" id="model-badge">gpt-4o</span>
@@ -690,6 +694,7 @@ let servers = [];
 let messages = [];
 let isStreaming = false;
 let sidebarOpen = true;
+let savedSidebarWidth = 300;
 let nextId = 1;
 let streamAbortController = null;
 let currentConversationId = null;
@@ -761,6 +766,7 @@ function renderMd(t) {
   } catch { return renderInstructionRefs(esc(t||'')); }
 }
 const SIDEBAR_SPLIT_KEY = 'mcpchat_sidebar_history_height';
+const MAIN_SPLIT_KEY = 'mcpchat_sidebar_width';
 const traceRegistry = new Map();
 let nextTraceId = 1;
 const MCP_STALE_SESSION_MS = 5 * 60 * 1000;
@@ -1435,7 +1441,18 @@ async function deleteSkillFromManager(idx) {
     notify(e.message||String(e),'e');
   }
 }
-function toggleSidebar() { sidebarOpen=!sidebarOpen; $('sidebar').classList.toggle('collapsed',!sidebarOpen); }
+function toggleSidebar() {
+  sidebarOpen=!sidebarOpen;
+  const sidebar=$('sidebar');
+  if(!sidebarOpen) {
+    sidebar.style.width='';
+    sidebar.style.minWidth='';
+  } else {
+    sidebar.style.width=savedSidebarWidth+'px';
+    sidebar.style.minWidth=savedSidebarWidth+'px';
+  }
+  sidebar.classList.toggle('collapsed',!sidebarOpen);
+}
 function syncModel() { $('model-badge').textContent=$('model-name').value||'model'; }
 
 function clampSidebarSplit(height) {
@@ -1489,6 +1506,54 @@ function initSidebarSplitter() {
   window.addEventListener('resize',()=>{
     const current=parseFloat(getComputedStyle(split).getPropertyValue('--history-pane-height'));
     if(Number.isFinite(current)) setSidebarSplitHeight(current);
+  });
+}
+
+function clampMainSplit(width) {
+  const minSidebar=180;
+  const minMain=320;
+  return Math.max(minSidebar, Math.min(width, window.innerWidth-minMain));
+}
+
+function setMainSplitWidth(width, persist=false) {
+  const sidebar=$('sidebar');
+  if(!sidebar) return;
+  const clamped=clampMainSplit(width);
+  savedSidebarWidth=clamped;
+  sidebar.style.width=clamped+'px';
+  sidebar.style.minWidth=clamped+'px';
+  if(persist) localStorage.setItem(MAIN_SPLIT_KEY, String(Math.round(clamped)));
+}
+
+function initMainSplitter() {
+  const sidebar=$('sidebar'), handle=$('main-resizer');
+  if(!sidebar || !handle) return;
+  const saved=Number(localStorage.getItem(MAIN_SPLIT_KEY));
+  if(Number.isFinite(saved) && saved>0) setMainSplitWidth(saved);
+
+  let dragging=false;
+  const move=e=>{
+    if(!dragging) return;
+    setMainSplitWidth(e.clientX, true);
+  };
+  const up=()=>{
+    if(!dragging) return;
+    dragging=false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor='';
+    document.body.style.userSelect='';
+    window.removeEventListener('pointermove',move);
+    window.removeEventListener('pointerup',up);
+  };
+  handle.addEventListener('pointerdown',e=>{
+    dragging=true;
+    handle.classList.add('dragging');
+    document.body.style.cursor='col-resize';
+    document.body.style.userSelect='none';
+    handle.setPointerCapture?.(e.pointerId);
+    window.addEventListener('pointermove',move);
+    window.addEventListener('pointerup',up);
+    e.preventDefault();
   });
 }
 
@@ -4223,7 +4288,7 @@ function loadServers() {
         seen.add(name);
         if(override) dirty=true;
         const url = override ? override.url : s.url;
-        const bearer = override ? (override.bearer||'') : (s.bearer||'');
+        const bearer = override ? (override.bearer || s.bearer || '') : (s.bearer || '');
         const injected = override ? true : (s.injected === true);
         servers.push({...s, name, url, bearer, injected, enabled:!!s.enabled, sessionId:null, status:'off', tools:[]});
         if(s.id >= nextId) nextId = s.id + 1;
@@ -4256,6 +4321,7 @@ async function initChat() {
   initPageMode();
   await loadHistory();
   initSidebarSplitter();
+  initMainSplitter();
   renderProductionTrace();
   updateAgentModeUI();
   await Promise.all([restoreEnabledServers(),fetchSkillsAc()]);

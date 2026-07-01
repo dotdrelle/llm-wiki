@@ -5104,10 +5104,11 @@ export default async function serveCmd(
                 process.env.PRODUCTION_MCP_PROXY_URL ??
                 `http://localhost:${mcpProductionPort()}/mcp/`,
             },
-            ...externalMcpEndpoints.map((endpoint) => ({
-              name: endpoint.name,
-              url: endpoint.url,
-            })),
+            ...externalMcpEndpoints.map((endpoint) => {
+              const authHeader = endpoint.headers['authorization'] ?? '';
+              const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+              return { name: endpoint.name, url: endpoint.url, ...(bearer ? { bearer } : {}) };
+            }),
           ],
         };
         const cfgScript = `<script>window.__WIKI_CONFIG__=${escapeScriptJson(JSON.stringify(chatConfig))};</script>`;
