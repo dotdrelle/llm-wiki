@@ -94,22 +94,22 @@ describe('retrieval service', () => {
     await writeFile(path.join(root, 'wiki', 'index.md'), '# Index\n', 'utf8');
     await writeFile(
       path.join(root, 'wiki', 'concepts', 'architecture.md'),
-      '# Architecture\n\nSynthese architecture JUNO.\n',
+      '# Architecture\n\nSynthese architecture ACME.\n',
       'utf8',
     );
     await writeFile(
       path.join(root, 'raw', 'ingested', 'architecture-source.md'),
-      '# Source\n\nArchitecture source brute JUNO.\n',
+      '# Source\n\nArchitecture source brute ACME.\n',
       'utf8',
     );
 
     const config = createConfig(root);
     const retrieval = new RetrievalService(new WorkspaceService(config), config);
 
-    const wikiOnly = await retrieval.search('architecture source brute JUNO', {
+    const wikiOnly = await retrieval.search('architecture source brute ACME', {
       includeRaw: false,
     });
-    const withRaw = await retrieval.search('architecture source brute JUNO', {
+    const withRaw = await retrieval.search('architecture source brute ACME', {
       includeRaw: true,
     });
 

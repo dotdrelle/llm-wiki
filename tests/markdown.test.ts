@@ -67,7 +67,7 @@ describe('markdown helpers', () => {
 
   it('normalizes Confluence-style HTML before ingestion', () => {
     const source = [
-      'Actualites\t<ul><li>Comite de suivi du 13 avril<ul><li>``<a href="/spaces/JDLCDPPO/pages/674245662/Synthese">Synthese en cours</a></li>``',
+      'Actualites\t<ul><li>Comite de suivi du 13 avril<ul><li>``<a href="/spaces/PROJ/pages/100000010/Synthese">Synthese en cours</a></li>``',
       '<li><span style="color:var(--ds-text,#172b4d);">Point de RDV le <time class="date-upcoming" datetime="2026-05-07">07 May 2026</time> <span class="status-macro">DONE</span></li>',
       '</ul>',
     ].join('');
@@ -76,7 +76,7 @@ describe('markdown helpers', () => {
 
     expect(normalized).toContain('- Comite de suivi du 13 avril');
     expect(normalized).toContain(
-      '[Synthese en cours](/spaces/JDLCDPPO/pages/674245662/Synthese)',
+      '[Synthese en cours](/spaces/PROJ/pages/100000010/Synthese)',
     );
     expect(normalized).toContain('07 May 2026');
     expect(normalized).toContain('DONE');

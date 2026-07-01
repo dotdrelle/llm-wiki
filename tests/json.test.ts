@@ -67,7 +67,7 @@ describe('json utilities', () => {
 
   it('escapes quoted text followed by a comma inside object string values', () => {
     const raw =
-      '{"operations":[{"type":"create","path":"wiki/sources/test.md","content":"# Test\\n\\nLe projet "JUNO", destiné aux prévisionnistes, remplace le système."}]}';
+      '{"operations":[{"type":"create","path":"wiki/sources/test.md","content":"# Test\\n\\nLe projet "ACME", destiné aux utilisateurs, remplace le système."}]}';
     const repaired = fixUnescapedQuotes(raw);
 
     expect(JSON.parse(repaired)).toEqual({
@@ -76,7 +76,7 @@ describe('json utilities', () => {
           type: 'create',
           path: 'wiki/sources/test.md',
           content:
-            '# Test\n\nLe projet "JUNO", destiné aux prévisionnistes, remplace le système.',
+            '# Test\n\nLe projet "ACME", destiné aux utilisateurs, remplace le système.',
         },
       ],
     });

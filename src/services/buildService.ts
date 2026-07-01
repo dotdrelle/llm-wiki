@@ -526,7 +526,7 @@ export class BuildService {
           .split(/,|;|\bet\b/iu)
           .map((item) => item.trim())
           .filter((item) => item.length >= 3)
-          .map((item) => `${item} démonstration outil solution candidate JUNO`),
+          .map((item) => `${item} démonstration outil solution candidate ACME`),
       ),
     ];
   }

@@ -183,7 +183,7 @@ describe('workspace safety', () => {
     await mkdir(path.join(root, 'wiki', 'sources'), { recursive: true });
     await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n', 'utf8');
     await writeFile(
-      path.join(root, 'wiki', 'sources', 'accompagnement-ap-juno.md'),
+      path.join(root, 'wiki', 'sources', 'accompagnement-ap-acme.md'),
       '# Accompagnement\n',
       'utf8',
     );
@@ -197,14 +197,14 @@ describe('workspace safety', () => {
       },
       {
         type: 'update',
-        path: 'accompagnement-ap-juno.md',
+        path: 'accompagnement-ap-acme.md',
         content: '# Updated\n',
       },
     ]);
 
     expect(operations.map((operation) => operation.path)).toEqual([
       'wiki/index.md',
-      'wiki/sources/accompagnement-ap-juno.md',
+      'wiki/sources/accompagnement-ap-acme.md',
     ]);
   });
 
