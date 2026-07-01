@@ -541,7 +541,7 @@ function layout(title: string, body: string): string {
       font-size: 0.72em;
       font-weight: 680;
     }
-    .app-shell { min-height: 100vh; display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); }
+    .app-shell { min-height: 100vh; display: grid; grid-template-columns: var(--wiki-sidebar-w, 280px) 6px minmax(0, 1fr); }
     .sidebar {
       position: sticky;
       top: 0;
@@ -550,9 +550,33 @@ function layout(title: string, body: string): string {
       display: flex;
       flex-direction: column;
       padding: 1.25rem;
-      border-right: 1px solid var(--border);
       background: #fbfcfd;
     }
+    .wiki-main-resizer {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      cursor: col-resize;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-left: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+      background: #fbfcfd;
+      touch-action: none;
+      z-index: 2;
+    }
+    .wiki-main-resizer:hover,
+    .wiki-main-resizer.dragging { background: var(--panel-soft); }
+    .wiki-main-resizer::before {
+      content: '';
+      width: 3px;
+      height: 34px;
+      border-radius: 99px;
+      background: var(--border);
+    }
+    .wiki-main-resizer:hover::before,
+    .wiki-main-resizer.dragging::before { background: var(--muted); }
     .brand { display: block; margin-bottom: 0.8rem; color: var(--text); text-decoration: none; }
     .brand-title {
       display: block;
@@ -1438,6 +1462,7 @@ function layout(title: string, body: string): string {
     @media (max-width: 760px) {
       .app-shell { display: block; }
       .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
+      .wiki-main-resizer { display: none; }
       .content { padding: 1rem; }
       .topbar { display: block; }
       .index-layout { grid-template-columns: 1fr; }
@@ -1447,7 +1472,7 @@ function layout(title: string, body: string): string {
       .log-arrow { display: none; }
     }
     @media (prefers-color-scheme: dark) {
-      .sidebar { background: #121820; }
+      .sidebar, .wiki-main-resizer { background: #121820; }
       pre { background: #101419; }
     }
     /* ── Dashboard stats ──────────────────────────────────────── */
@@ -1668,6 +1693,41 @@ ${body}
     const savedScroll = Number(localStorage.getItem(scrollKey) || '0');
     if (sideTree && Number.isFinite(savedScroll)) sideTree.scrollTop = savedScroll;
   });
+
+  // ── main sidebar resizer ─────────────────────────────────────────────────
+  (function initMainSidebarResizer() {
+    const shell = document.querySelector('.app-shell');
+    const handle = document.querySelector('[data-wiki-main-resizer]');
+    if (!shell || !sidebar || !handle) return;
+    const WKEY = 'llm-wiki:sidebar:width';
+    function clamp(px) {
+      return Math.max(220, Math.min(px, window.innerWidth - 420));
+    }
+    function applyWidth(px, persist) {
+      const v = clamp(px);
+      shell.style.setProperty('--wiki-sidebar-w', v + 'px');
+      if (persist) localStorage.setItem(WKEY, String(Math.round(v)));
+    }
+    const savedWidth = Number(localStorage.getItem(WKEY));
+    if (Number.isFinite(savedWidth) && savedWidth > 0) applyWidth(savedWidth, false);
+    const onMove = e => applyWidth(e.clientX, true);
+    const onUp = () => {
+      handle.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    handle.addEventListener('pointerdown', e => {
+      handle.classList.add('dragging');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      handle.setPointerCapture?.(e.pointerId);
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      e.preventDefault();
+    });
+  })();
 
   // ── pending panel resizer ─────────────────────────────────────────────────
   (function initPendingResizer() {
@@ -2282,7 +2342,7 @@ async function renderSidebar(rootDir: string): Promise<string> {
   const chatIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>';
 const kbdHint = `<kbd style="font-size:.68rem;font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .35rem;border-radius:4px;color:var(--muted);cursor:pointer" title="Open global search (⌘K)" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}))">⌘K</kbd>`;
-  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}<span>Graph</span></a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}<span>Chat</span></a></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Markdown documents">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside>`;
+  return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}<span>Graph</span></a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}<span>Chat</span></a></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Markdown documents">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside><div class="wiki-main-resizer" data-wiki-main-resizer title="Resize sidebar" role="separator" aria-orientation="vertical"></div>`;
 }
 
 interface GraphNode {

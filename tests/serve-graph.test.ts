@@ -16,6 +16,19 @@ describe('serve graph ui', () => {
     expect(source).toContain('<span>Graph</span>');
   });
 
+  it('renders a persistent draggable main sidebar resizer', async () => {
+    const source = await serveSource();
+
+    expect(source).toContain('grid-template-columns: var(--wiki-sidebar-w, 280px) 6px minmax(0, 1fr);');
+    expect(source).toContain('class="wiki-main-resizer" data-wiki-main-resizer');
+    expect(source).toContain('role="separator" aria-orientation="vertical"');
+    expect(source).toContain('function initMainSidebarResizer()');
+    expect(source).toContain("const WKEY = 'llm-wiki:sidebar:width';");
+    expect(source).toContain('return Math.max(220, Math.min(px, window.innerWidth - 420));');
+    expect(source).toContain("shell.style.setProperty('--wiki-sidebar-w', v + 'px');");
+    expect(source).toContain("document.body.style.cursor = 'col-resize';");
+  });
+
   it('renders a persistent draggable Pending panel resizer', async () => {
     const source = await serveSource();
 
