@@ -60,18 +60,34 @@ The default scaffold includes small UI skills such as `/status`, `/wiki-sync`,
 
 `wiki serve` can connect to a `llm-wiki-manager` agent runtime
 (`WIKI_MANAGER_RUNTIME_URL`, `WIKI_MANAGER_RUNTIME_TOKEN`). When configured,
-`serve.ts` proxies three routes:
+`serve.ts` proxies these routes:
 
 - `GET /api/runtime/state` → runtime `/state`
 - `GET /api/runtime/events` → runtime `/events/stream` (SSE pass-through)
 - `POST /api/runtime/run` → runtime `/run` (injects `workspace: WORKSPACE_NAME`)
 - `POST /api/runtime/cancel` → runtime `/cancel`
+- `GET`/`POST /api/runtime/control` → runtime `/control` (status/explain/enqueue
+  while a run is active — see `llm-wiki-manager/CLAUDE.md`'s control lane
+  section)
+- `GET /api/config/profiles`, `POST /api/config/use` → runtime `/config/*`
+  (`.wikirc` profile switching, described below)
 
 `proxyRuntimeJson` accepts an optional `extra` object merged into the POST body
 before forwarding. The workspace injection (`{ workspace: workspaceNameFromEnv() }`)
 is applied at the `/run` route so the runtime knows which workspace to load via
 `/use`. Do not send runtime tokens to the browser — the proxy adds the
 `Authorization` header server-side from `WIKI_MANAGER_RUNTIME_TOKEN`.
+
+`GET /api/config/profiles` and `POST /api/config/use` proxy the runtime's
+`.wikirc` profile switcher — the manager is the canonical source of which
+profile is active. Serve never trusts the manager's raw `config` payload as
+`AppConfig` directly: `mirrorRuntimeConfig` takes only the returned
+`fileName`, validates it with `resolveProfileConfigPath` (must match
+`.wikirc.yaml` or `.wikirc.yaml.*`, checked against path traversal via
+`resolveInside`), then re-derives the config locally through the normal
+`loadConfig()`/zod schema path before mirroring it into the live `config`
+object. This keeps Serve's config shape schema-validated even though the
+manager and Serve are separate processes with separate `.wikirc` parsers.
 
 In `chatHtml.ts`, the Agent mode toggle (`toggleAgentMode()`) switches the chat
 from local LLM to runtime dispatch. When running, the Send button becomes Stop

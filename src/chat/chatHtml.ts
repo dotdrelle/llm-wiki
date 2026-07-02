@@ -105,6 +105,10 @@ input[type=password]{letter-spacing:3px}
 #main{flex:1;height:calc(100vh - 44px);margin-top:44px;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
 #topbar{padding:12px 18px;border-bottom:1px solid var(--border);background:var(--panel);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .tb-model{font-family:var(--font-mono);font-size:11px;color:var(--muted2);background:var(--panel-soft);border:1px solid var(--border);padding:4px 10px;border-radius:99px}
+.tb-profile{display:none;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
+.tb-profile.visible{display:flex}
+.tb-profile-select{max-width:190px;border:1px solid var(--border);border-radius:8px;background:var(--panel-soft);color:var(--text);font:600 11px var(--font-sans);padding:4px 8px}
+.tb-profile-select:disabled{opacity:.55;cursor:not-allowed}
 .tb-mcps{display:flex;gap:5px;flex-wrap:wrap}
 .tb-mcp-pill{font-size:10px;font-family:var(--font-mono);font-weight:500;padding:3px 8px;border-radius:99px;background:rgba(79,126,255,.12);border:1px solid rgba(79,126,255,.25);color:var(--accent)}
 .tb-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
@@ -232,6 +236,7 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .act-badge.done{background:color-mix(in srgb,#22c55e 14%,transparent);color:#16a34a}
 .act-badge.stored{background:color-mix(in srgb,#f59e0b 14%,transparent);color:#b45309}
 .act-badge.failed{background:color-mix(in srgb,var(--err) 14%,transparent);color:var(--err)}
+.act-badge.cancelled{background:color-mix(in srgb,var(--muted) 14%,transparent);color:var(--muted)}
 .act-steps{display:flex;flex-direction:column;gap:3px}
 .act-step{display:flex;align-items:center;gap:6px;font-size:11px}
 .act-step-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
@@ -248,12 +253,15 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .act-output{font-size:10px;color:var(--muted);font-family:var(--font-mono);background:var(--panel-deep);border-radius:5px;padding:4px 7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;title:attr(title)}
 .act-output:hover{color:var(--text)}
 .act-error{font-size:10px;color:var(--err);font-family:var(--font-mono);background:color-mix(in srgb,var(--err) 8%,transparent);border-radius:5px;padding:5px 7px;word-break:break-all}
-.act-actions{display:flex;gap:5px}
+.act-actions{display:flex;gap:5px;justify-content:flex-end}
 .act-btn{font-size:10px;font-weight:700;border:1px solid var(--border);border-radius:6px;background:var(--panel);color:var(--muted);padding:4px 9px;cursor:pointer;font-family:var(--font-sans)}
 .act-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .act-btn.del:hover{border-color:var(--err);color:var(--err);background:color-mix(in srgb,var(--err) 8%,transparent)}
 .runtime-status{font-size:10px;color:var(--muted);font-family:var(--font-mono);padding:0 4px 6px}
 .runtime-log{font-family:var(--font-mono);font-size:10px;line-height:1.4;color:var(--muted2);background:var(--panel-deep);border:1px solid var(--border);border-radius:8px;padding:7px 8px;white-space:pre-wrap;word-break:break-word}
+.runtime-section-toggle{border:1px solid var(--border);border-radius:6px;background:var(--panel);color:var(--muted);font-size:10px;font-weight:800;font-family:var(--font-sans);padding:2px 7px;cursor:pointer}
+.runtime-section-toggle:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.runtime-section-collapsed{display:none}
 .tb-act-btn{position:relative;background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);padding:5px 10px;cursor:pointer;font-size:12px;font-family:var(--font-sans);font-weight:700;display:flex;align-items:center;gap:5px;transition:all .2s}
 .tb-act-btn:hover,.tb-act-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .tb-act-badge{min-width:16px;height:16px;border-radius:99px;background:var(--accent);color:#fff;font-size:9px;font-weight:800;display:none;align-items:center;justify-content:center;padding:0 4px;margin-left:2px}
@@ -503,7 +511,7 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
     <div class="sb-logo-mark">M</div>
     <div class="sb-logo-main">
       <div class="sb-logo-text">MCP Chat</div>
-      <div class="sb-logo-sub">multi-server</div>
+      <div class="sb-logo-sub">workspace chat</div>
     </div>
   </div>
   <div class="sb-scroll" id="sidebar-split">
@@ -558,6 +566,10 @@ const CHAT_BODY = `<nav id="app-nav" aria-label="Navigation application">
 <div id="main">
   <div id="topbar">
     <span class="tb-model" id="model-badge">gpt-4o</span>
+    <label class="tb-profile" id="profile-picker-wrap" title="Active .wikirc profile managed by wiki-manager runtime">
+      Profile
+      <select class="tb-profile-select" id="profile-picker" onchange="switchConfigProfile(this.value)"></select>
+    </label>
     <div class="tb-mcps" id="tb-mcps"></div>
     <div class="tb-actions">
       <button class="tb-system" id="system-drawer-btn" onclick="toggleSystemPrompt()">System instructions</button>
@@ -790,6 +802,7 @@ function notify(msg, type='s') {
 const ACT_STORE_KEY=storageKey('llm-wiki-chat:activities');
 const ACT_PANEL_KEY=storageKey('llm-wiki-chat:activity-panel-open');
 const AGENT_MODE_KEY=storageKey('llm-wiki-chat:agent-mode');
+const RUNTIME_SECTION_KEY_PREFIX='llm-wiki-chat:runtime-section:';
 let _activities=[];
 let _actTimer=null;
 let runtimeState=null;
@@ -974,7 +987,11 @@ function dismissAllDone() {
   saveActivities(); renderActivities(); updateActivityBadge();
 }
 function actElapsed(item) {
-  return Math.max(0,Math.round((Date.now()-(item.startedAt||Date.now()))/1000));
+  const started=Number(item.startedAt)||Date.now();
+  const finished=!isActivityActive(item.status)
+    ? Number(item.finishedAt||item.completedAt||item.endedAt||item.updatedAt)||Date.now()
+    : Date.now();
+  return Math.max(0,Math.round((finished-started)/1000));
 }
 function actUploadSteps(item) {
   const st=item.status;
@@ -1000,6 +1017,7 @@ function actUploadSteps(item) {
     {state:'pending',label:'Write Markdown',val:'–'},
   ];
 }
+const ACT_CARD_BADGES={running:'Running',done:'Done',stored:'Stored',cancelled:'Cancelled',failed:'Failed'};
 function actCardHTML(item) {
   const running=isActivityActive(item.status);
   const converted=item.status==='converted';
@@ -1008,8 +1026,8 @@ function actCardHTML(item) {
   const size=formatBytes(item.bytes);
   const meta=[size,elapsed>0?elapsed+'s':null].filter(Boolean).join(' · ');
   const done=item.status==='done';
-  const badge=running?'running':(converted||done)?'done':stored?'stored':'failed';
-  const badgeLabel=running?'Running':(converted||done)?'Done':stored?'Stored':item.status==='cancelled'?'Cancelled':'Failed';
+  const badge=running?'running':(converted||done)?'done':stored?'stored':item.status==='cancelled'?'cancelled':'failed';
+  const badgeLabel=ACT_CARD_BADGES[badge];
   const steps=item.kind==='upload'?actUploadSteps(item):activityPlanSteps(item);
   const stepsHtml=steps.map(s=>\`<div class="act-step \${s.state}"><span class="act-step-dot"></span><span class="act-step-label">\${esc(s.label)}</span><span class="act-step-val">\${esc(s.val)}</span></div>\`).join('');
   const output=item.outputPath?uploadOutputLabel(item.outputPath):(item.resultSummary||null);
@@ -1019,6 +1037,7 @@ function actCardHTML(item) {
   const retryHtml=(item.status==='stored'||item.status==='failed')&&item.uploadId
     ?\`<button class="act-btn" onclick="retryConvert(\${esc(JSON.stringify(item.uploadId))},\${esc(JSON.stringify(item.id))})">Retry</button>\`
     :'';
+  const statusHtml=runtimeCard?\`<button class="act-btn" onclick="askRuntimeStatus(\${esc(JSON.stringify(item.statusTarget||item.remoteId||item.id))})">Status</button>\`:'';
   const dismissHtml=runtimeCard?'':\`<button class="act-btn del" onclick="dismissActivity(\${esc(JSON.stringify(item.id))})">Dismiss</button>\`;
   const hint=converted?\`<div class="act-card-meta">Ready · run ingest to integrate.</div>\`
     :stored?\`<div class="act-card-meta">Stored, no conversion agent.</div>\`
@@ -1030,7 +1049,7 @@ function actCardHTML(item) {
 <div class="act-card-head"><span class="act-card-icon">\${icon}</span><div class="act-card-info"><div class="act-card-name">\${esc(item.label||item.filename||'-')}</div>\${fullMeta?\`<div class="act-card-meta">\${esc(fullMeta)}</div>\`:''}</div><span class="act-badge \${badge}">\${badgeLabel}</span></div>
 \${stepsHtml?\`<div class="act-steps">\${stepsHtml}</div>\`:''}
 \${outputHtml}\${errorHtml}\${hint}
-\${retryHtml||dismissHtml?\`<div class="act-actions">\${retryHtml}\${dismissHtml}</div>\`:''}
+\${retryHtml||statusHtml||dismissHtml?\`<div class="act-actions">\${retryHtml}\${statusHtml}\${dismissHtml}</div>\`:''}
 </div>\`;
 }
 function activityPlanSteps(item) {
@@ -1073,6 +1092,12 @@ function renderActivities() {
     +\`<div class="act-section-head"><span class="act-section-title">Local activity</span>\${dismissBtn}</div>\`
     +section('Uploads',uploads)
     +section('MCP',mcp);
+  const runtimeRunning=Array.isArray(runtimeState?.activities)
+    ? runtimeState.activities.some(a=>isActivityActive(normalizeActivityStatus(a.status,a.terminal)))
+    : false;
+  const anyRunning=_activities.some(a=>isActivityActive(a.status))||runtimeRunning;
+  if(anyRunning&&!_actTimer) _actTimer=setInterval(renderActivities,1000);
+  if(!anyRunning&&_actTimer){clearInterval(_actTimer);_actTimer=null;}
 }
 function updateActivityBadge() {
   const runtimeCount=Array.isArray(runtimeState?.activities)?runtimeState.activities.filter(a=>isActivityActive(normalizeActivityStatus(a.status,a.terminal))).length:0;
@@ -1100,6 +1125,57 @@ function openActivityPanel() {
 }
 function copyText(text) {
   navigator.clipboard?.writeText(text).then(()=>notify('Copied')).catch(()=>notify(text));
+}
+function runtimeStatusMarkdown(target) {
+  const id=String(target||'run courant').trim()||'run courant';
+  if(!runtimeState) return \`Aucun etat runtime disponible pour \${id}.\`;
+  const plan=Array.isArray(runtimeState.plan)?runtimeState.plan:[];
+  const activities=Array.isArray(runtimeState.activities)?runtimeState.activities:[];
+  const queue=Array.isArray(runtimeState.queue)?runtimeState.queue:[];
+  const logs=Array.isArray(runtimeState.logs)?runtimeState.logs.slice(-5):[];
+  const line=(label,value)=>\`- \${label}: \${value||'-'}\`;
+  const planLines=plan.slice(0,8).map((step,index)=>line(\`Plan \${step.step||index+1}\`,\`\${step.status||'pending'} - \${step.description||step.label||step.id||'step'}\`));
+  const activityLines=activities.slice(0,8).map((activity,index)=>line(activity.id||activity.key||\`Activity \${index+1}\`,\`\${activity.status||'-'} - \${activity.label||activity.tool||activity.source||'runtime'}\`));
+  const queueLines=queue.slice(0,8).map((item,index)=>line(item.id||item.jobId||\`Queue \${index+1}\`,\`\${item.status||'waiting'} - \${item.label||item.tool||item.type||'task'}\`));
+  return [
+    \`Statut runtime pour \${id}\`,
+    '',
+    line('Runtime',runtimeState.status||'idle'),
+    line('Connexion',runtimeConnected?'connected':'disconnected'),
+    '',
+    planLines.length?['Plan',...planLines].join('\\n'):'Plan\\n- Aucun plan visible.',
+    '',
+    activityLines.length?['Activites',...activityLines].join('\\n'):'Activites\\n- Aucune activite runtime visible.',
+    '',
+    queueLines.length?['Queue',...queueLines].join('\\n'):'Queue\\n- Aucun element en attente.',
+    logs.length?['','Derniers logs',...logs.map(log=>\`- \${log}\`)].join('\\n'):'',
+  ].filter(Boolean).join('\\n');
+}
+function askRuntimeStatus(target) {
+  const id=String(target||'run courant').trim()||'run courant';
+  const prompt=\`Statut de \${id}\`;
+  const answer=runtimeStatusMarkdown(id);
+  openActivityPanel();
+  showChatView();
+  if(!currentConversationId) currentConversationId=newConversationId();
+  messages.push({role:'user',content:prompt});
+  appendMsg('user',prompt);
+  messages.push({role:'assistant',content:answer});
+  appendMsg('assistant',answer);
+  scheduleConversationSave();
+}
+function runtimeSectionCollapsed(name) {
+  try { return localStorage.getItem(storageKey(RUNTIME_SECTION_KEY_PREFIX+name))==='1'; } catch { return false; }
+}
+function toggleRuntimeSection(name) {
+  const collapsed=!runtimeSectionCollapsed(name);
+  try { localStorage.setItem(storageKey(RUNTIME_SECTION_KEY_PREFIX+name),collapsed?'1':'0'); } catch {}
+  renderActivities();
+}
+function runtimeSectionHTML(name,title,html) {
+  if(!html) return '';
+  const collapsed=runtimeSectionCollapsed(name);
+  return \`<div class="act-section-head"><span class="act-section-title">\${esc(title)}</span><button class="runtime-section-toggle" type="button" onclick="toggleRuntimeSection('\${esc(name)}')">\${collapsed?'Expand':'Collapse'}</button></div><div class="\${collapsed?'runtime-section-collapsed':''}">\${html}</div>\`;
 }
 async function retryConvert(uploadId, actId) {
   upsertActivity({id:actId,status:'running',phase:'conversion',error:null,outputPath:null,startedAt:Date.now()});
@@ -1129,6 +1205,11 @@ async function retryConvert(uploadId, actId) {
 })();
 /* ── end Activity Panel ─────────────────────────────────────────────── */
 
+function runtimeTime(value,fallback=Date.now()) {
+  if(value==null) return fallback;
+  const parsed=typeof value==='number'?value:Date.parse(String(value));
+  return Number.isFinite(parsed)&&parsed>0?parsed:fallback;
+}
 function runtimeTaskPanelHTML() {
   if(!runtimeState) {
     if(window.__WIKI_CONFIG__?.runtime?.enabled) return '<div class="runtime-status">Runtime connecting...</div>';
@@ -1138,42 +1219,53 @@ function runtimeTaskPanelHTML() {
   const activities=Array.isArray(runtimeState.activities)?runtimeState.activities:[];
   const queue=Array.isArray(runtimeState.queue)?runtimeState.queue:[];
   const logs=Array.isArray(runtimeState.logs)?runtimeState.logs.slice(-6):[];
+  const runStartedAt=runtimeTime(runtimeState.startedAt||runtimeState.createdAt||runtimeState.updatedAt);
+  const runUpdatedAt=runtimeTime(runtimeState.finishedAt||runtimeState.completedAt||runtimeState.updatedAt,runStartedAt);
   const status=\`<div class="runtime-status">Runtime \${runtimeConnected?'connected':'disconnected'} · \${esc(runtimeState.status||'idle')}</div>\`;
   const planCards=plan.map((step,index)=>actCardHTML({
     id:'runtime-plan-'+(step.id||step.step||index),
     kind:'runtime-plan',
     source:'runtime',
+    remoteId:step.id||step.step||index,
+    statusTarget:step.id||step.step||\`plan step \${index+1}\`,
     label:step.description||step.label||'Plan step',
     detail:'Plan step '+(step.step||index+1),
     status:normalizeActivityStatus(step.status,activityTerminalStatus(step.status)),
     terminal:activityTerminalStatus(step.status),
     plan:{steps:[{label:step.description||step.label||'Step'}]},
     progress:{stepIndex:1,detail:step.status||''},
-    startedAt:Date.now(),
+    startedAt:runtimeTime(step.startedAt||step.createdAt,runStartedAt),
+    updatedAt:runtimeTime(step.finishedAt||step.completedAt||step.updatedAt,runUpdatedAt),
   })).join('');
-  const activityCards=activities.map((activity,index)=>actCardHTML(runtimeActivityToCard(activity,index))).join('');
+  const activityCards=activities.map((activity,index)=>actCardHTML(runtimeActivityToCard(activity,index,runStartedAt,runUpdatedAt))).join('');
   const queueCards=queue.map((item,index)=>actCardHTML({
     id:'runtime-queue-'+(item.id||index),
     kind:'runtime-queue',
     source:'runtime',
+    remoteId:item.id||item.jobId||index,
+    statusTarget:item.id||item.jobId||item.label||item.tool||\`queue item \${index+1}\`,
     label:item.label||item.tool||item.type||'Queued task',
     detail:item.dependsOn||item.depends_on||item.status||'waiting',
-    status:'queued',
-    terminal:false,
-    startedAt:Date.now(),
+    status:normalizeActivityStatus(item.status||'queued',activityTerminalStatus(item.status)),
+    terminal:activityTerminalStatus(item.status),
+    startedAt:runtimeTime(item.startedAt||item.createdAt,runStartedAt),
+    updatedAt:runtimeTime(item.finishedAt||item.completedAt||item.updatedAt,runUpdatedAt),
   })).join('');
   const logsHtml=logs.length?\`<div class="act-section-head"><span class="act-section-title">Logs</span></div><div class="runtime-log">\${esc(logs.join('\\n'))}</div>\`:'';
   return status
-    +(planCards?\`<div class="act-section-head"><span class="act-section-title">Plan</span></div>\${planCards}\`:'')
-    +(queueCards?\`<div class="act-section-head"><span class="act-section-title">Queue</span></div>\${queueCards}\`:'')
+    +runtimeSectionHTML('plan','Plan',planCards)
+    +runtimeSectionHTML('queue','Queue',queueCards)
     +(activityCards?\`<div class="act-section-head"><span class="act-section-title">Runtime activity</span></div>\${activityCards}\`:'')
     +logsHtml;
 }
 
-function runtimeActivityToCard(activity,index=0) {
+function runtimeActivityToCard(activity,index=0,runStartedAt=Date.now(),runUpdatedAt=runStartedAt) {
+  const started=runtimeTime(activity.startedAt||activity.createdAt||activity.updatedAt,runStartedAt);
+  const updated=runtimeTime(activity.finishedAt||activity.completedAt||activity.endedAt||activity.updatedAt,runUpdatedAt);
   return {
     id:'runtime-act-'+(activity.key||activity.id||index),
     remoteId:activity.id||activity.key||'',
+    statusTarget:activity.id||activity.key||activity.label||\`runtime activity \${index+1}\`,
     kind:'runtime',
     source:activity.source||'runtime',
     sourceLabel:activity.source||'Runtime',
@@ -1186,8 +1278,8 @@ function runtimeActivityToCard(activity,index=0) {
     poll:null,
     error:activity.error||null,
     terminal:Boolean(activity.terminal),
-    startedAt:Date.parse(activity.startedAt||activity.createdAt||activity.updatedAt||'')||Date.now(),
-    updatedAt:Date.parse(activity.updatedAt||'')||Date.now(),
+    startedAt:started,
+    updatedAt:updated,
   };
 }
 
@@ -4157,6 +4249,80 @@ async function resetYamlConfig() {
   applySetupGuideHighlight();
 }
 
+function applyServerConfig(config) {
+  if(!config||typeof config!=='object') return;
+  const llm=config.llm||config;
+  window.__WIKI_CONFIG__={...(window.__WIKI_CONFIG__||{}),
+    provider:llm.provider??window.__WIKI_CONFIG__?.provider,
+    model:llm.model??window.__WIKI_CONFIG__?.model,
+    temperature:llm.temperature??window.__WIKI_CONFIG__?.temperature,
+    baseUrl:llm.baseUrl??window.__WIKI_CONFIG__?.baseUrl,
+    apiKey:llm.apiKey??window.__WIKI_CONFIG__?.apiKey,
+    llmConfigured:Boolean(llm.provider&&llm.baseUrl&&llm.apiKey&&llm.model),
+    language:config.language??window.__WIKI_CONFIG__?.language,
+  };
+  if(llm.baseUrl) $('base-url').value=llm.baseUrl;
+  if(llm.apiKey!==undefined) $('api-key').value=llm.apiKey||'';
+  if(llm.model) $('model-name').value=llm.model;
+  if(llm.temperature!==undefined) $('temperature').value=String(llm.temperature);
+  syncModel();
+  applySetupGuideHighlight();
+}
+
+async function loadConfigProfiles() {
+  const wrap=$('profile-picker-wrap');
+  const select=$('profile-picker');
+  if(!wrap||!select||!window.__WIKI_CONFIG__?.runtime?.enabled) return;
+  try {
+    const res=await fetch('/api/config/profiles',{cache:'no-store'});
+    if(!res.ok) throw new Error('profiles unavailable');
+    const data=await res.json();
+    const profiles=Array.isArray(data.items)&&data.items.length
+      ? data.items.map(item=>({name:item.name,label:item.fileName?item.name+' ('+item.fileName+')':item.name}))
+      : (Array.isArray(data.profiles)?data.profiles.map(name=>({name,label:name})):[]);
+    if(!profiles.length) return;
+    select.innerHTML=profiles.map(profile=>\`<option value="\${esc(profile.name)}">\${esc(profile.label)}</option>\`).join('');
+    select.value=data.active||profiles[0].name;
+    select.dataset.active=select.value;
+    select.disabled=false;
+    wrap.classList.add('visible');
+  } catch {
+    select.disabled=true;
+    wrap.classList.remove('visible');
+  }
+}
+
+async function switchConfigProfile(profile) {
+  const select=$('profile-picker');
+  if(!profile||!select) return;
+  const previous=select.dataset.active||select.value;
+  select.disabled=true;
+  try {
+    const res=await fetch('/api/config/use',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({profile}),
+    });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok||data.ok===false) throw new Error(data.error||data.message||\`HTTP \${res.status}\`);
+    select.dataset.active=data.active||profile;
+    select.value=data.active||profile;
+    applyServerConfig(data.config);
+    servers.forEach(server=>{ server.sessionId=null; server.status=server.enabled?'off':server.status; server.tools=[]; });
+    servers=[];
+    nextId=1;
+    loadServers();
+    renderTopPills();
+    fetchRuntimeState().catch(()=>{});
+    notify('Config profile: '+(data.active||profile));
+  } catch(err) {
+    select.value=previous;
+    notify(err?.message||String(err),'e');
+  } finally {
+    select.disabled=false;
+  }
+}
+
 // ── LocalStorage (user-added servers only) ──────────────────────────────────
 
 function storageKey(key) {
@@ -4288,6 +4454,7 @@ function loadServers() {
 async function initChat() {
   applyWorkspaceTitle();
   loadConfig();
+  await loadConfigProfiles();
   applySetupGuideHighlight();
   loadServers();
   initPageMode();

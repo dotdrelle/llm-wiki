@@ -18,6 +18,8 @@ export interface RerankResult {
   score: number;
 }
 
+const RERANK_MAX_DOCUMENTS_PER_REQUEST = 64;
+
 export class RerankService {
   private readonly config: AppConfig;
   private readonly logger?: TraceLogger;
@@ -152,6 +154,28 @@ export class RerankService {
     const cached = await this.readCachedRerank(query, documents, effectiveTopN);
     if (cached) return cached;
 
+    const results: RerankResult[] = [];
+    for (let offset = 0; offset < documents.length; offset += RERANK_MAX_DOCUMENTS_PER_REQUEST) {
+      const batch = documents.slice(offset, offset + RERANK_MAX_DOCUMENTS_PER_REQUEST);
+      const batchTopN = Math.min(effectiveTopN, batch.length);
+      const batchResults = await this.rerankRequest(query, batch, batchTopN);
+      results.push(
+        ...batchResults.map((result) => ({
+          index: result.index + offset,
+          score: result.score,
+        })),
+      );
+    }
+    const ranked = results.sort((a, b) => b.score - a.score).slice(0, effectiveTopN);
+    await this.writeCachedRerank(query, documents, effectiveTopN, ranked);
+    return ranked;
+  }
+
+  private async rerankRequest(
+    query: string,
+    documents: string[],
+    effectiveTopN: number,
+  ): Promise<RerankResult[]> {
     let raw = '';
     const maxAttempts = providerRateLimitRetryMaxAttempts();
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -213,7 +237,6 @@ export class RerankService {
           typeof item.index === 'number' && typeof item.relevance_score === 'number',
       )
       .map((item) => ({ index: item.index, score: item.relevance_score }));
-    await this.writeCachedRerank(query, documents, effectiveTopN, results);
     return results;
   }
 }

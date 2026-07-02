@@ -336,6 +336,14 @@ cd ../llm-wiki-manager
 The manager owns Docker orchestration. The workspace still owns `.wikirc.yaml`,
 templates, build context, skills, raw sources, and generated content.
 
+When `WIKI_MANAGER_RUNTIME_URL` points `wiki serve` at a running
+`llm-wiki-manager` agent runtime, the chat UI gains an Agent mode toggle
+(agentic runs through the shared runtime instead of a local LLM call), a
+config-profile picker in the chat header to switch `.wikirc` profiles without
+restarting `serve`, and status/queue visibility into runs started from either
+the browser or the manager shell. See `llm-wiki-manager`'s README for the
+runtime's control lane and config-switching endpoints.
+
 ## Development
 
 Requires Node.js 22+.

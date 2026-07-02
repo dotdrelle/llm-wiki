@@ -110,6 +110,18 @@ describe('chat html', () => {
     expect(script).not.toContain("actElapsed(item)<2");
   });
 
+  it('offers runtime-backed config profile switching without page reload', () => {
+    const [script] = chatScripts();
+
+    expect(CHAT_HTML).toContain('id="profile-picker"');
+    expect(CHAT_HTML).toContain('/api/config/profiles');
+    expect(CHAT_HTML).toContain('/api/config/use');
+    expect(script).toContain('function loadConfigProfiles()');
+    expect(script).toContain('function switchConfigProfile(profile)');
+    expect(script).toContain('applyServerConfig(data.config)');
+    expect(script).not.toContain('window.location.reload()');
+  });
+
   it('offers setup discovery from the empty chat and activity panel', () => {
     const [script] = chatScripts();
 

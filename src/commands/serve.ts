@@ -1162,11 +1162,20 @@ function layout(title: string, body: string): string {
       gap: 0.85rem;
     }
     .edit-form .hero {
+      position: sticky;
+      top: 0.75rem;
+      z-index: 8;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 1rem;
       min-width: 0;
+      padding: 0.85rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--panel) 94%, transparent);
+      -webkit-backdrop-filter: blur(8px);
+      backdrop-filter: blur(8px);
     }
     .edit-form .hero .page-actions {
       flex-shrink: 0;
@@ -1174,10 +1183,34 @@ function layout(title: string, body: string): string {
     .edit-path-label {
       flex: 1 1 0;
       min-width: 0;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.45rem;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       font-size: 0.8rem;
       color: var(--muted);
       word-break: break-all;
+    }
+    .edit-file-state {
+      display: inline-flex;
+      align-items: center;
+      flex: 0 0 auto;
+      padding: 0.12rem 0.45rem;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--muted);
+      background: var(--panel-soft);
+      font-family: inherit;
+      font-size: 0.72rem;
+      font-weight: 760;
+      line-height: 1.35;
+      white-space: nowrap;
+    }
+    .edit-file-state.is-new {
+      border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+      color: var(--accent);
+      background: var(--accent-soft);
     }
     .edit-textarea {
       width: 100%;
@@ -1393,6 +1426,8 @@ function layout(title: string, body: string): string {
       text-transform: uppercase;
     }
     .relation-path { display: block; color: var(--text); font-size: 0.86rem; line-height: 1.25; overflow-wrap: anywhere; }
+    .relation-title { display: block; color: var(--text); font-size: 0.9rem; font-weight: 720; line-height: 1.25; overflow-wrap: anywhere; }
+    .relation-subpath { display: block; margin-top: 0.12rem; color: var(--muted); font-size: 0.74rem; line-height: 1.25; overflow-wrap: anywhere; }
     .relation-arrow { display: block; margin: 0.3rem 0; color: var(--muted); font-size: 1rem; text-align: center; line-height: 1; }
     .relation-open {
       margin-top: 0.55rem;
@@ -2805,10 +2840,12 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
       const item = document.createElement('li');
       item.className = 'relation-item';
       item.dataset.id = edge.id;
-      item.innerHTML = '<span class="relation-path"></span><span class="relation-arrow">↓</span><span class="relation-path"></span><button class="relation-open" type="button">Open</button>';
+      item.innerHTML = '<span class="relation-path"><span class="relation-title"></span><span class="relation-subpath"></span></span><span class="relation-arrow">↓</span><span class="relation-path"><span class="relation-title"></span><span class="relation-subpath"></span></span><button class="relation-open" type="button">Open</button>';
       const paths = item.querySelectorAll('.relation-path');
-      paths[0].textContent = from.id;
-      paths[1].textContent = to.id;
+      paths[0].querySelector('.relation-title').textContent = from.title;
+      paths[0].querySelector('.relation-subpath').textContent = from.id;
+      paths[1].querySelector('.relation-title').textContent = to.title;
+      paths[1].querySelector('.relation-subpath').textContent = to.id;
       item.querySelector('button').addEventListener('click', () => openRelation(edge.id));
       item.addEventListener('mouseenter', () => highlightRelation(edge.id));
       item.addEventListener('mouseleave', clearRelationHover);
@@ -3618,6 +3655,7 @@ async function proxyRuntimeJson(
   res: ServerResponse,
   pathname: string,
   extra?: Record<string, unknown>,
+  onSuccess?: (parsed: unknown) => Promise<unknown> | unknown,
 ): Promise<void> {
   const target = runtimeTarget(pathname);
   if (!target) {
@@ -3639,7 +3677,18 @@ async function proxyRuntimeJson(
       },
       body: body && body.length > 0 ? body : undefined,
     });
-    const text = await upstream.text();
+    let text = await upstream.text();
+    if (onSuccess && upstream.ok && text) {
+      const parsed = (() => { try { return JSON.parse(text); } catch { return undefined; } })();
+      if (parsed !== undefined) {
+        try {
+          text = JSON.stringify(await onSuccess(parsed));
+        } catch (err) {
+          sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) });
+          return;
+        }
+      }
+    }
     res.writeHead(upstream.status, { 'Content-Type': upstream.headers.get('content-type') ?? 'application/json' });
     res.end(text);
   } catch {
@@ -3647,8 +3696,8 @@ async function proxyRuntimeJson(
   }
 }
 
-async function proxyRuntimeEvents(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const target = runtimeTarget('/events/stream');
+async function proxyRuntimeEvents(req: IncomingMessage, res: ServerResponse, pathname = '/events/stream'): Promise<void> {
+  const target = runtimeTarget(pathname);
   if (!target) {
     sendJson(res, 503, { ok: false, error: 'runtime not configured' });
     return;
@@ -4441,16 +4490,41 @@ function resolveEditableMarkdown(rootDir: string, relativePath: string): string 
   return resolveInside(rootDir, cleanRelativePath);
 }
 
+function fileStateLabel(info: { birthtimeMs: number; mtime: Date; mtimeMs: number }): {
+  state: 'new' | 'updated';
+  label: string;
+  title: string;
+} {
+  const createdAt = Number.isFinite(info.birthtimeMs) ? info.birthtimeMs : info.mtimeMs;
+  const isNew = Math.abs(info.mtimeMs - createdAt) < 5_000;
+  const updatedAt = info.mtime;
+  const fullDate = updatedAt.toLocaleString('en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return {
+    state: isNew ? 'new' : 'updated',
+    label: `${isNew ? 'new' : 'updated'} ${relativeTimeLabel(updatedAt)}`,
+    title: `Modified ${fullDate}`,
+  };
+}
+
 async function generateEditPage(rootDir: string, relativePath: string): Promise<string> {
   const cleanRelativePath = toPosix(relativePath).replace(/^\/+/, '');
   const absolute = resolveEditableMarkdown(rootDir, cleanRelativePath);
-  if (!(await pathExists(absolute))) {
+  const fileInfo = await stat(absolute).catch(() => null);
+  if (!fileInfo) {
     throw new Error(`File not found: ${cleanRelativePath}`);
   }
   const raw = await readFile(absolute, 'utf8');
   const sidebar = await renderSidebar(rootDir);
   const cancelHref = isRawUntrackedReference(cleanRelativePath) ? '/' : `/${cleanRelativePath}`;
-  const body = `${sidebar}<main class="content"><form class="edit-form" method="post" action="${escapeHref(editHref(cleanRelativePath))}"><div class="hero"><span class="edit-path-label">${escapeHtml(cleanRelativePath)}</span><div class="page-actions"><button class="action-button" type="submit">Save</button><a class="action-link" href="${escapeHref(cancelHref)}">Cancel</a></div></div><textarea class="edit-textarea" name="content" spellcheck="false">${escapeHtml(raw)}</textarea></form></main>`;
+  const fileState = fileStateLabel(fileInfo);
+  const fileStateHtml = `<span class="edit-file-state ${fileState.state === 'new' ? 'is-new' : ''}" title="${escapeAttr(fileState.title)}">${escapeHtml(fileState.label)}</span>`;
+  const body = `${sidebar}<main class="content"><form class="edit-form" method="post" action="${escapeHref(editHref(cleanRelativePath))}"><div class="hero"><span class="edit-path-label"><span>${escapeHtml(cleanRelativePath)}</span>${fileStateHtml}</span><div class="page-actions"><button class="action-button" type="submit">Save</button><a class="action-link" href="${escapeHref(cancelHref)}">Cancel</a></div></div><textarea class="edit-textarea" name="content" spellcheck="false">${escapeHtml(raw)}</textarea></form></main>`;
   return layout(`Edit ${path.basename(cleanRelativePath)}`, body);
 }
 
@@ -4817,6 +4891,59 @@ export default async function serveCmd(
   const externalMcpEndpoints = await loadExternalMcpEndpoints(rootDir);
   const tls = await serveTlsOptions(config);
   const server = tls ? createHttpsServer(tls) : createServer();
+  let configWatcher: FSWatcher | undefined;
+
+  const runtimePathForWorkspace = (pathname: string): string => {
+    const wsName = workspaceNameFromEnv();
+    if (!wsName) return pathname;
+    const separator = pathname.includes('?') ? '&' : '?';
+    return `${pathname}${separator}workspace=${encodeURIComponent(wsName)}`;
+  };
+
+  const restartConfigWatcher = (): void => {
+    configWatcher?.close();
+    configWatcher = watchConfigReload(config, rootDir);
+  };
+
+  const resolveProfileConfigPath = (fileName: unknown): string => {
+    if (typeof fileName !== 'string' || !fileName.trim()) {
+      throw new Error('runtime config switch did not return a profile fileName');
+    }
+    const clean = toPosix(fileName.trim());
+    if (clean !== '.wikirc.yaml' && !clean.startsWith('.wikirc.yaml.')) {
+      throw new Error(`invalid runtime config profile fileName: ${clean}`);
+    }
+    resolveInside(rootDir, clean); // throws on path traversal
+    return clean;
+  };
+
+  const mirrorRuntimeConfig = async (payload: unknown): Promise<AppConfig> => {
+    const fileName = resolveProfileConfigPath((payload as { fileName?: unknown })?.fileName);
+    const previousConfigPath = process.env.WIKI_CONFIG_PATH;
+    config.configPath = path.resolve(rootDir, fileName);
+    process.env.WIKI_CONFIG_PATH = fileName;
+    let fresh: AppConfig;
+    try {
+      fresh = await loadConfig(rootDir);
+    } finally {
+      if (previousConfigPath === undefined) delete process.env.WIKI_CONFIG_PATH;
+      else process.env.WIKI_CONFIG_PATH = previousConfigPath;
+    }
+    Object.assign(config, fresh);
+    restartConfigWatcher();
+    return fresh;
+  };
+
+  const proxyRuntimeConfigUse = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const wsName = workspaceNameFromEnv();
+    await proxyRuntimeJson(
+      req,
+      res,
+      runtimePathForWorkspace('/config/use'),
+      wsName ? { workspace: wsName } : undefined,
+      async (parsed) => ({ ...(parsed as Record<string, unknown>), config: await mirrorRuntimeConfig(parsed) }),
+    );
+  };
 
   server.on('request', async (req, res) => {
     try {
@@ -4856,11 +4983,11 @@ export default async function serveCmd(
       }
 
       if (urlPath === '/api/runtime/state' && req.method === 'GET') {
-        await proxyRuntimeJson(req, res, '/state');
+        await proxyRuntimeJson(req, res, runtimePathForWorkspace('/state'));
         return;
       }
       if (urlPath === '/api/runtime/events' && req.method === 'GET') {
-        await proxyRuntimeEvents(req, res);
+        await proxyRuntimeEvents(req, res, runtimePathForWorkspace('/events/stream'));
         return;
       }
       if (urlPath === '/api/runtime/run' && req.method === 'POST') {
@@ -4869,7 +4996,19 @@ export default async function serveCmd(
         return;
       }
       if (urlPath === '/api/runtime/cancel' && req.method === 'POST') {
-        await proxyRuntimeJson(req, res, '/cancel');
+        await proxyRuntimeJson(req, res, runtimePathForWorkspace('/cancel'));
+        return;
+      }
+      if (urlPath === '/api/runtime/control' && (req.method === 'GET' || req.method === 'POST')) {
+        await proxyRuntimeJson(req, res, runtimePathForWorkspace('/control'));
+        return;
+      }
+      if (urlPath === '/api/config/profiles' && req.method === 'GET') {
+        await proxyRuntimeJson(req, res, runtimePathForWorkspace('/config/profiles'));
+        return;
+      }
+      if (urlPath === '/api/config/use' && req.method === 'POST') {
+        await proxyRuntimeConfigUse(req, res);
         return;
       }
 
@@ -5352,7 +5491,7 @@ export default async function serveCmd(
   });
 
   let shuttingDown = false;
-  const configWatcher = watchConfigReload(config, rootDir);
+  configWatcher = watchConfigReload(config, rootDir);
 
   const shutdown = (signal: NodeJS.Signals): void => {
     if (shuttingDown) return;

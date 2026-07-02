@@ -88,4 +88,43 @@ describe('rerank service', () => {
     expect(first).toEqual(second);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it('splits rerank requests above the provider batch limit', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-rerank-root-'));
+    const requestSizes: number[] = [];
+    const fetchMock = vi.fn(async (_url: unknown, init: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        documents?: string[];
+      };
+      const documents = body.documents ?? [];
+      requestSizes.push(documents.length);
+      return {
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            results: documents.map((_, index) => ({
+              index,
+              relevance_score: index,
+            })),
+          }),
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const documents = Array.from({ length: 66 }, (_, index) => `document ${index}`);
+    const results = await new RerankService(createConfig(root)).rerank(
+      'architecture',
+      documents,
+      66,
+    );
+
+    expect(requestSizes).toEqual([64, 2]);
+    expect(results.slice(0, 3)).toEqual([
+      { index: 63, score: 63 },
+      { index: 62, score: 62 },
+      { index: 61, score: 61 },
+    ]);
+    expect(results).toContainEqual({ index: 65, score: 1 });
+  });
 });

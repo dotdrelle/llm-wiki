@@ -83,6 +83,9 @@ describe('serve graph ui', () => {
     const source = await serveSource();
 
     expect(source).toContain('data-relation-node-open');
+    expect(source).toContain('class="relation-title"');
+    expect(source).toContain('class="relation-subpath"');
+    expect(source).toContain("querySelector('.relation-title').textContent = from.title");
     expect(source).toContain('<span class="relation-arrow">↓</span>');
     expect(source).toContain('type="button">Open</button>');
     expect(source).not.toContain('Afficher les markdown');
@@ -137,6 +140,17 @@ describe('serve command palette', () => {
     expect(source).not.toContain('async function navigationEtag(rootDir: string)');
     expect(source).not.toContain('function pageEtag(');
     expect(source).not.toContain('function requestHasEtag(');
+  });
+
+  it('keeps wiki editor actions sticky and shows file freshness', async () => {
+    const source = await serveSource();
+
+    expect(source).toContain('.edit-form .hero {');
+    expect(source).toContain('position: sticky;');
+    expect(source).toContain('.edit-file-state');
+    expect(source).toContain('function fileStateLabel');
+    expect(source).toContain("label: `${isNew ? 'new' : 'updated'} ${relativeTimeLabel(updatedAt)}`");
+    expect(source).toContain('<span class="edit-path-label"><span>${escapeHtml(cleanRelativePath)}</span>${fileStateHtml}</span>');
   });
 });
 
@@ -209,5 +223,38 @@ describe('serve config reload', () => {
     expect(source).toContain('}, 300);');
     expect(source).toContain('Object.assign(config, fresh);');
     expect(source).toContain('configWatcher?.close();');
+  });
+
+  it('proxies config profile switching through the manager runtime and mirrors returned config', async () => {
+    const source = await serveSource();
+
+    expect(source).toContain("urlPath === '/api/config/profiles'");
+    expect(source).toContain("urlPath === '/api/config/use'");
+    expect(source).toContain("runtimePathForWorkspace('/config/profiles')");
+    expect(source).toContain("runtimePathForWorkspace('/config/use')");
+    expect(source).toContain('const resolveProfileConfigPath');
+    expect(source).toContain('const mirrorRuntimeConfig = async');
+    expect(source).toContain('process.env.WIKI_CONFIG_PATH = fileName;');
+    expect(source).toContain('fresh = await loadConfig(rootDir);');
+    expect(source).toContain('Object.assign(config, fresh);');
+    expect(source).not.toContain('Object.assign(config, nextConfig);');
+    expect(source).toContain('restartConfigWatcher();');
+  });
+
+  it('proxies limited runtime control without touching config mirroring', async () => {
+    const source = await serveSource();
+
+    expect(source).toContain("urlPath === '/api/runtime/control'");
+    expect(source).toContain("runtimePathForWorkspace('/control')");
+    expect(source).toContain("req.method === 'GET' || req.method === 'POST'");
+  });
+
+  it('scopes runtime state, events and cancel proxies to the active workspace', async () => {
+    const source = await serveSource();
+
+    expect(source).toContain("runtimePathForWorkspace('/state')");
+    expect(source).toContain("runtimePathForWorkspace('/events/stream')");
+    expect(source).toContain("runtimePathForWorkspace('/cancel')");
+    expect(source).toContain("async function proxyRuntimeEvents(req: IncomingMessage, res: ServerResponse, pathname = '/events/stream')");
   });
 });
