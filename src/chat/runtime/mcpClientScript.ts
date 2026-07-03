@@ -203,31 +203,6 @@ async function callMCPTool(name, args, {trackActivity=true}={}) {
   }
 }
 
-// ── Active tools ────────────────────────────────────────────────────────────
-
-function getActiveTools() {
-  const out=[];
-  for(const s of servers) {
-    if(!s.enabled||s.status!=='ok') continue;
-    for(const t of s.tools) out.push({...t, _server:s});
-  }
-  return out;
-}
-
-function uniqueToolsByName(tools) {
-  const byName=new Map();
-  for(const tool of tools||[]) {
-    const name=String(tool?.name||'').trim();
-    if(!name) continue;
-    const existing=byName.get(name);
-    const preferred=preferredServerNameForTool(name);
-    if(!existing || (preferred && tool?._server?.name===preferred && existing?._server?.name!==preferred)) {
-      byName.set(name,tool);
-    }
-  }
-  return [...byName.values()];
-}
-
 function preferredServerNameForTool(name) {
   const text=String(name||'');
   const prefix=text.split('_',1)[0];

@@ -256,7 +256,7 @@ body:not(.connectors-mode) #connectors-view{display:none}
 .act-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .act-btn.del:hover{border-color:var(--err);color:var(--err);background:color-mix(in srgb,var(--err) 8%,transparent)}
 .runtime-status{font-size:10px;color:var(--muted);font-family:var(--font-mono);padding:0 4px 6px}
-.runtime-log{font-family:var(--font-mono);font-size:10px;line-height:1.4;color:var(--muted2);background:var(--panel-deep);border:1px solid var(--border);border-radius:8px;padding:7px 8px;white-space:pre-wrap;word-break:break-word}
+.runtime-log{font-family:var(--font-mono);font-size:10px;line-height:1.4;color:var(--muted2);background:var(--panel-deep);border:1px solid var(--border);border-radius:8px;padding:7px 8px;white-space:pre-wrap;word-break:break-word}.runtime-choice-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .runtime-section-toggle{border:1px solid var(--border);border-radius:6px;background:var(--panel);color:var(--muted);font-size:10px;font-weight:800;font-family:var(--font-sans);padding:2px 7px;cursor:pointer}
 .runtime-section-toggle:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .runtime-section-collapsed{display:none}

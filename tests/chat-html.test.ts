@@ -157,16 +157,19 @@ describe('chat html', () => {
     expect(script).toContain('async function callMCPTool(name, args, {trackActivity=true}={})');
   });
 
-  it('deduplicates MCP tools before sending them to strict LLM providers', () => {
+  it('keeps local chat conversational without sending MCP tools to the browser LLM loop', () => {
     const [script] = chatScripts();
+    const sendSource = script.match(/async function sendMessage\(\) \{[\s\S]*?\n\}\n\nasync function sendRuntimeAgentMessage/)?.[0] ?? '';
 
-    expect(script).toContain('function uniqueToolsByName(tools)');
-    expect(script).toContain('const byName=new Map();');
     expect(script).toContain('function preferredServerNameForTool(name)');
     expect(script).toContain("const prefix=text.split('_',1)[0];");
     expect(script).toContain('if(prefix && servers.some(s=>s.name===prefix)) return prefix;');
     expect(script).toContain("const owner=servers.find(s=>s.name===preferred&&s.enabled&&s.status==='ok'&&s.tools.some(t=>t.name===name));");
-    expect(script).toContain('const activeTools=uniqueToolsByName(getActiveTools());');
+    expect(sendSource).toContain('const reqBody={model,temperature:temp,messages:reqMessages};');
+    expect(sendSource).not.toContain('tool_choice');
+    expect(sendSource).not.toContain('toolsPayload');
+    expect(sendSource).not.toContain('callMCPTool(fn,args)');
+    expect(sendSource).not.toContain('while(turn<MAX_TURNS)');
   });
 
   it('presents MCP calls as agent orchestration and records activities from agent contracts', () => {
@@ -181,15 +184,15 @@ describe('chat html', () => {
     expect(callSource).not.toContain('openActivityPanel();');
   });
 
-  it('renders a tool-result fallback when the LLM final answer is empty', () => {
+  it('uses a plain fallback when local chat returns no final text', () => {
     const [script] = chatScripts();
+    const sendSource = script.match(/async function sendMessage\(\) \{[\s\S]*?\n\}\n\nasync function sendRuntimeAgentMessage/)?.[0] ?? '';
 
     expect(script).toContain('function toolResultsFallback(toolResults)');
     expect(script).toContain('const isProd=toolResults.every(r=>isProductionToolName(r.name));');
-    expect(script).toContain('let lastToolResults=[];');
-    expect(script).toContain('lastToolResults=toolResults;');
-    expect(script).toContain("const hasContent=String(content||'').trim();");
-    expect(script).toContain("const fb=hasContent?null:toolResultsFallback(lastToolResults);");
+    expect(sendSource).toContain("const finalContent=String(content||'').trim() ? content : 'No response.';");
+    expect(sendSource).not.toContain('toolResultsFallback(lastToolResults)');
+    expect(sendSource).not.toContain('let lastToolResults=[];');
   });
 
   it('migrates saved injected MCP server aliases to current serve defaults', () => {
@@ -215,8 +218,7 @@ describe('chat html', () => {
     expect(script).toContain('resultHtml:toolResultSummaryHTML(p.result,ok,p.name||step.title)');
     expect(script).toContain('sourceLabel:server.name');
     expect(script).not.toContain('publishAssistantOutput(observerToolLoopHTML(toolResults),statusDiv,{html:true,plainText:summary})');
-    expect(script).toContain('publishAssistantOutput(observerToolLoopHTML([],true),statusDiv,{html:true,plainText:summary})');
-    expect(script).toContain("messages.push({role:'assistant',content:summary});");
+    expect(script).not.toContain('publishAssistantOutput(observerToolLoopHTML([],true),statusDiv,{html:true,plainText:summary})');
   });
 
   it('accepts JSON returned directly, in a markdown fence or inside an MCP envelope', () => {
@@ -269,8 +271,9 @@ describe('chat html', () => {
     expect(script).toContain('MCP timeout after');
   });
 
-  it('stops LLM chaining after production-only tool calls', () => {
+  it('keeps production summaries for runtime traces without local LLM chaining', () => {
     const [script] = chatScripts();
+    const sendSource = script.match(/async function sendMessage\(\) \{[\s\S]*?\n\}\n\nasync function sendRuntimeAgentMessage/)?.[0] ?? '';
 
     expect(script).toContain('function productionToolSummary(toolResults)');
     expect(script).toContain('function handleProductionToolResult(fn, args, result, ok, {recover=false}={})');
@@ -284,18 +287,18 @@ describe('chat html', () => {
     expect(script).not.toContain('function chatText(en, fr)');
     expect(script).toContain('return productionTerminalChatSummary(latestJob);');
     expect(script).toContain('productionState.notifiedTerminalJobIds.add(jobId);');
-    expect(script).toContain('if(shouldStopAfterProductionTools(tcWithIdx))');
-    expect(script).toContain('const summary=productionToolSummary(toolResults);');
+    expect(sendSource).not.toContain('if(shouldStopAfterProductionTools(tcWithIdx))');
+    expect(sendSource).not.toContain('const summary=productionToolSummary(toolResults);');
     expect(script).toContain('Tracking in agent orchestration.');
     expect(script).not.toContain("Le suivi est dans l\\'orchestration agentique.");
   });
 
-  it('does not report chain limit after a normal break on the final allowed turn', () => {
+  it('does not keep a browser-side LLM chaining limit', () => {
     const [script] = chatScripts();
+    const sendSource = script.match(/async function sendMessage\(\) \{[\s\S]*?\n\}\n\nasync function sendRuntimeAgentMessage/)?.[0] ?? '';
 
-    expect(script).toContain('let completedWithoutLimit=false;');
-    expect(script).toContain('completedWithoutLimit=true;');
-    expect(script).toContain('if(turn>=MAX_TURNS && !completedWithoutLimit)');
+    expect(sendSource).not.toContain('MAX_TURNS');
+    expect(sendSource).not.toContain('completedWithoutLimit');
   });
 
   it('does not replay stale tool messages before a new user turn', () => {
@@ -333,15 +336,16 @@ describe('chat html', () => {
 
   it('keeps chained tool output in a single trace card instead of stacked chat cards', () => {
     const [script] = chatScripts();
+    const sendSource = script.match(/async function sendMessage\(\) \{[\s\S]*?\n\}\n\nasync function sendRuntimeAgentMessage/)?.[0] ?? '';
 
     expect(script).toContain('function dispatchChatAgentEvent(trace, type');
-    expect(script).toContain("dispatchChatAgentEvent(runTrace,'tool_call_started'");
-    expect(script).toContain("dispatchChatAgentEvent(runTrace,'tool_call_result'");
-    expect(script).toContain("dispatchChatAgentEvent(runTrace,'trace_step_upsert'");
-    expect(script).toContain("dispatchChatAgentEvent(runTrace,'run_summary'");
+    expect(sendSource).not.toContain("dispatchChatAgentEvent(runTrace,'tool_call_started'");
+    expect(sendSource).not.toContain("dispatchChatAgentEvent(runTrace,'tool_call_result'");
+    expect(sendSource).not.toContain("dispatchChatAgentEvent(runTrace,'trace_step_upsert'");
+    expect(sendSource).not.toContain("dispatchChatAgentEvent(runTrace,'run_summary'");
     expect(script).toContain('function removeStreamBubble(div)');
-    expect(script).toContain('removeStreamBubble(streamDiv);');
-    expect(script).toContain("payload:{callId:tc.id,targetId:`tc-${domIdx}`,name:fn,ok:true,result:r");
+    expect(sendSource).not.toContain('removeStreamBubble(streamDiv);');
+    expect(script).not.toContain("payload:{callId:tc.id,targetId:`tc-${domIdx}`,name:fn,ok:true,result:r");
     expect(script).toContain('const clickable=step.detail || step.resultHtml || step.targetId;');
     expect(script).toContain('if(step.detail || step.resultHtml)');
     expect(script).toContain('function hydrateTraceCard(card)');
@@ -354,6 +358,7 @@ describe('chat html', () => {
 
   it('drives serve trace state through agent events', () => {
     const [script] = chatScripts();
+    const sendSource = script.match(/async function sendMessage\(\) \{[\s\S]*?\n\}\n\nasync function sendRuntimeAgentMessage/)?.[0] ?? '';
 
     expect(script).toContain('function createChatAgentProjection()');
     expect(script).toContain('function createChatAgentEvent(type');
@@ -361,10 +366,10 @@ describe('chat html', () => {
     expect(script).toContain("if(event.type==='run_started')");
     expect(script).toContain('state.activities={};');
     expect(script).toContain("if(event.type==='activity_upserted')");
-    expect(script).toContain("dispatchChatAgentEvent(runTrace,'run_started'");
     expect(script).toContain("dispatchChatAgentEvent(trace,'trace_step_upsert'");
-    expect(script).toContain("dispatchChatAgentEvent(runTrace,'run_done'");
-    expect(script).toContain("dispatchChatAgentEvent(runTrace,'run_error'");
+    expect(sendSource).not.toContain("dispatchChatAgentEvent(runTrace,'run_started'");
+    expect(sendSource).not.toContain("dispatchChatAgentEvent(runTrace,'run_done'");
+    expect(sendSource).not.toContain("dispatchChatAgentEvent(runTrace,'run_error'");
   });
 
   it('connects the activity panel to the manager runtime when configured', () => {
@@ -374,11 +379,38 @@ describe('chat html', () => {
     expect(script).toContain("fetch('/api/runtime/state',{cache:'no-store'})");
     expect(script).toContain("new EventSource('/api/runtime/events')");
     expect(script).toContain('if(runtimeFetchPending) return;');
-    expect(script).toContain("fetch('/api/runtime/run'");
+    expect(script).toContain("runningBeforeFetch?'/api/runtime/control':'/api/runtime/run'");
     expect(script).toContain("fetch('/api/runtime/cancel'");
     expect(script).toContain('function toggleAgentMode()');
     expect(script).toContain('function runtimeTaskPanelHTML()');
     expect(script).toContain("Runtime activity");
+  });
+
+  it('renders the active runtime run card with inspect and cancel controls', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain('function runtimeRunCardHTML(plan,activities)');
+    expect(script).toContain('Run — ${esc(title)}');
+    expect(script).toContain('data-run-id="${esc(runId)}"');
+    expect(script).toContain('data-turn-id="${esc(turnId)}"');
+    expect(script).toContain('data-workspace="${esc(workspace)}"');
+    expect(script).toContain('onclick="askRuntimeStatus(${jsArg(runId||title)})">Inspecter</button>');
+    expect(script).toContain('onclick="cancelRuntimeRun()">Annuler</button>');
+    expect(script).toContain('const runCard=runtimeRunCardHTML(plan,activities);');
+  });
+
+  it('sends agent-mode messages through the runtime control lane while a run is active', () => {
+    const [script] = chatScripts();
+
+    expect(script).not.toContain("notify('Runtime is already running.'");
+    expect(script).toContain("runningBeforeFetch?'/api/runtime/control':'/api/runtime/run'");
+    expect(script).toContain("body:runningBeforeFetch?controlBody:JSON.stringify({input:text})");
+    expect(script).toContain("data?.kind==='ambiguous'");
+    expect(script).toContain('function handleSendButton()');
+    expect(script).not.toContain('if(agentMode && runtimeIsRunning())');
+    expect(script).toContain('function runtimeChoiceHTML(text, choices=[])');
+    expect(script).toContain('function sendRuntimeControlChoice(intent,text)');
+    expect(script).toContain("body:JSON.stringify({action:intent==='enqueue'?'enqueue':'message',intent,input:text})");
   });
 
   it('supports resizing the main sidebar split', () => {

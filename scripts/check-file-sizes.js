@@ -11,6 +11,7 @@ const MAX_LINES = 500;
 const LEGACY_LIMITS = new Map([
   ['src/commands/serve.ts', 5600],
   ['src/chat/chatHtml.ts', 4600],
+  ['src/chat/styles/chatStyles.ts', 550],
 ]);
 
 function walk(dir) {

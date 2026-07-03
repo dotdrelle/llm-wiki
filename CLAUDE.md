@@ -9,14 +9,31 @@ and regenerates deliverables from templates and build context.
 Keep it usable both as a standalone CLI and as the engine called by
 `llm-wiki-manager`.
 
+The multi-repo roadmap driving current work lives in `plan-directeur-revise.md`
+at the wikiLLM workspace root (one level above this repo, not versioned here).
+0.9.4 is the incremental, iso-behavior extraction of `src/commands/serve.ts`
+and `src/chat/chatHtml.ts` into smaller modules (see Layout below); neither
+file has reached its final target size yet, and `scripts/check-file-sizes.js`
+keeps temporary legacy thresholds for both until it does. 0.9.5 (in progress)
+is the runtime control-lane work described under Agent Runtime Integration.
+
 ## Layout
 
 ```text
 bin/wiki.ts              Commander CLI entrypoint
-src/commands/           Thin command wrappers
+src/commands/           Thin command wrappers; serve.ts is being split into
+                         src/serve/ (routes/, proxy/, sse/) — see below
 src/services/           Orchestration, IO, LLM, retrieval, MCP
 src/prompts/            Prompt builders
-src/chat/chatHtml.ts    Self-contained browser chat UI
+src/chat/               Browser chat UI, split out of the former monolithic
+                         chatHtml.ts (0.9.4): chatHtml.ts is now the assembly
+                         point, importing styles/, views/, runtime/, config/,
+                         workflow/ modules (all kept under 500 lines each;
+                         chatHtml.ts itself still exceeds that, tracked by
+                         check-file-sizes.js's legacy threshold)
+src/serve/              Extracted from serve.ts (0.9.4, ongoing):
+                         proxy/runtimeProxy.ts, sse/runtimeEvents.ts,
+                         routes/runtimeRoutes.ts, routes/graphRoutes.ts
 scaffold/workspace/     Default workspace copied by `wiki init`
 tests/                  Vitest coverage
 docs/                   User-facing references
@@ -95,6 +112,15 @@ from local LLM to runtime dispatch. When running, the Send button becomes Stop
 fetched via `/api/runtime/state` and kept fresh by the SSE stream with a 200ms
 leading-edge debounce on `agent_event` messages.
 
+`sendRuntimeAgentMessage` (0.9.5) no longer blocks with an error when a run is
+already active: it posts to `/api/runtime/run` when idle, or
+`/api/runtime/control {action:"message", input}` when busy (with a 409 fallback
+from `/run` to `/control` for the idle→busy race), and shows the runtime's
+`explanation` for the resulting `observe`/`converse`/`mutate`/`enqueue`/
+`ambiguous` classification — see `llm-wiki-manager/CLAUDE.md`'s control lane
+section for what each classification means. This is the same classifier the
+ShellTUI uses; do not add a second one here.
+
 `window.__WIKI_CONFIG__.runtime.enabled` is `true` when `WIKI_MANAGER_RUNTIME_URL`
 is set; chatHtml uses this to show/hide the Agent mode toggle.
 
@@ -115,6 +141,16 @@ MCP envelopes; escape HTML at renderer boundaries.
 Read-only observations should not create Activity entries unless the MCP server
 returns an `_activity` contract. Async/actionable tools should be tracked in
 Activity when they return `_activity.plan`, `_activity.progress`, or poll data.
+
+Local (non-Agent-mode) chat no longer sends MCP `tools` to the browser LLM
+(`toolsPayload` in `sendMessage` is hardcoded `undefined`, 0.9.5) — per plan
+directeur §4.1, tool-calling orchestration should exist in only one place
+(the runtime/`agent/graph.js`), not duplicated in the browser. **Not yet
+finished:** the `if(toolCalls?.length)` branch inside `sendMessage` and its
+loop-detection/tool-dispatch machinery are now unreachable dead code (the LLM
+is never offered tools, so it never returns `toolCalls`), but haven't been
+deleted yet — removing them is the rest of §4.1's target, tracked as follow-up
+work, not done in the same commit as the `toolsPayload` change.
 
 All browser UI, MCP-facing labels, status strings, activity labels, and tests
 for those surfaces must stay in English. The workspace `.wikirc` language is

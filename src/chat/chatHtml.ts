@@ -71,6 +71,7 @@ Keep the profile concise. If it becomes too long, summarize it into the ## Summa
 Do not store secrets, credentials, API keys, passwords, temporary facts, or unnecessary private information.\`;
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const jsArg = value => esc(JSON.stringify(value));
 function renderInstructionRefs(html) {
   return String(html||'').replace(/\\[\\[([^\\]\\n]+)\\]\\]/g,(_,label)=>\`<span class="instruction-ref">[[\${esc(label.trim())}]]</span>\`);
 }
@@ -122,6 +123,7 @@ function runtimeTaskPanelHTML() {
   const runStartedAt=runtimeTime(runtimeState.startedAt||runtimeState.createdAt||runtimeState.updatedAt);
   const runUpdatedAt=runtimeTime(runtimeState.finishedAt||runtimeState.completedAt||runtimeState.updatedAt,runStartedAt);
   const status=\`<div class="runtime-status">Runtime \${runtimeConnected?'connected':'disconnected'} · \${esc(runtimeState.status||'idle')}</div>\`;
+  const runCard=runtimeRunCardHTML(plan,activities);
   const planCards=plan.map((step,index)=>actCardHTML({
     id:'runtime-plan-'+(step.id||step.step||index),
     kind:'runtime-plan',
@@ -153,10 +155,29 @@ function runtimeTaskPanelHTML() {
   })).join('');
   const logsHtml=logs.length?\`<div class="act-section-head"><span class="act-section-title">Logs</span></div><div class="runtime-log">\${esc(logs.join('\\n'))}</div>\`:'';
   return status
+    +runCard
     +runtimeSectionHTML('plan','Plan',planCards)
     +runtimeSectionHTML('queue','Queue',queueCards)
     +(activityCards?\`<div class="act-section-head"><span class="act-section-title">Runtime activity</span></div>\${activityCards}\`:'')
     +logsHtml;
+}
+
+function runtimeRunCardHTML(plan,activities) {
+  if(!runtimeIsRunning()) return '';
+  const doneCount=plan.filter(step=>String(step.status||'').toLowerCase()==='done').length;
+  const runningStep=plan.find(step=>String(step.status||'').toLowerCase()==='running');
+  const title=runtimeState?.summary || runningStep?.description || activities.find(activity=>isActivityActive(normalizeActivityStatus(activity.status,activity.terminal)))?.label || 'Runtime run';
+  const runId=runtimeState?.runId || runtimeState?.currentRunId || activities.find(activity=>activity.runId)?.runId || '';
+  const turnId=runtimeState?.turnId || activities.find(activity=>activity.turnId)?.turnId || '';
+  const workspace=runtimeState?.workspace || window.__WIKI_CONFIG__?.workspaceName || '';
+  const meta=[
+    '● En cours',
+    plan.length?\`\${doneCount} tâche\${doneCount>1?'s':''} terminée\${doneCount>1?'s':''}\`:null,
+    runId?\`runId: \${runId}\`:null,
+    turnId?\`turnId: \${turnId}\`:null,
+    workspace?\`workspace: \${workspace}\`:null,
+  ].filter(Boolean).join(' · ');
+  return \`<div class="act-card running" data-run-id="\${esc(runId)}" data-turn-id="\${esc(turnId)}" data-workspace="\${esc(workspace)}"><div class="act-card-head"><span class="act-card-icon">▶</span><div class="act-card-info"><div class="act-card-name">Run — \${esc(title)}</div><div class="act-card-meta">\${esc(meta)}</div></div><span class="act-badge running">En cours</span></div><div class="act-actions"><button class="act-btn" type="button" onclick="askRuntimeStatus(\${jsArg(runId||title)})">Inspecter</button><button class="act-btn del" type="button" onclick="cancelRuntimeRun()">Annuler</button></div></div>\`;
 }
 
 function runtimeActivityToCard(activity,index=0,runStartedAt=Date.now(),runUpdatedAt=runStartedAt) {
@@ -548,9 +569,7 @@ function updateAgentModeUI() {
       ? (agentMode?'Agent mode: prompts run through wiki-manager runtime':'Chat mode: prompts run locally in serve')
       : 'Runtime not configured';
   }
-  if(agentMode && runtimeIsRunning() && !isStreaming) {
-    setSendButtonStreaming(true);
-  } else if(!isStreaming) {
+  if(!isStreaming) {
     setSendButtonStreaming(false);
   }
 }
@@ -567,10 +586,6 @@ function toggleAgentMode() {
 }
 
 function handleSendButton() {
-  if(agentMode && runtimeIsRunning()) {
-    void cancelRuntimeRun();
-    return;
-  }
   if(isStreaming) stopStreaming();
   else sendMessage();
 }
@@ -1093,6 +1108,18 @@ function appendMsg(role, content, toolCalls=null, {html=false,plainText=null}={}
   wrap.appendChild(div);
   wrap.scrollTop=wrap.scrollHeight;
   return div;
+}
+
+function runtimeChoiceHTML(text, choices=[]) {
+  const items=Array.isArray(choices)&&choices.length ? choices : [
+    {intent:'observe',label:'Ask about this run'},
+    {intent:'mutate',label:'Propose a change'},
+    {intent:'enqueue',label:'Queue future run'},
+  ];
+  return \`<div>\${renderMd(text)}<div class="runtime-choice-row">\${items.map(choice=>{
+    const intent=choice.intent||choice.action||'converse';
+    return \`<button class="act-btn" type="button" onclick="sendRuntimeControlChoice(\${jsArg(intent)},\${jsArg(text)})">\${esc(choice.label||intent)}</button>\`;
+  }).join('')}</div></div>\`;
 }
 
 function createTraceCard() {
@@ -2061,7 +2088,6 @@ async function sendMessage() {
     return;
   }
   const resolved=await resolveSkillInvocation(text);
-  const isSkillRun=!!resolved.skill;
   const model=$('model-name').value.trim()||'gpt-4o';
   const parsedTemp=parseFloat($('temperature').value);
   const temp=Number.isFinite(parsedTemp) ? parsedTemp : 0.7;
@@ -2080,20 +2106,7 @@ async function sendMessage() {
   });
   appendMsg('user',resolved.displayText);
   scheduleConversationSave();
-  const runTrace=createTraceCard();
-  dispatchChatAgentEvent(runTrace,'run_started',{
-    origin:'user',
-    payload:{content:resolved.sendText},
-  });
 
-  let tcIdx=Date.now();
-  const MAX_TURNS=24;
-  let turn=0;
-  const activeTools=uniqueToolsByName(getActiveTools());
-  const toolsPayload=activeTools.length ? activeTools.map(t=>({
-    type:'function',
-    function:{name:t.name,description:t.description||'',parameters:t.inputSchema||t.parameters||{type:'object',properties:{}}}
-  })) : undefined;
   const llmUrl=useProxy ? '/api/chat' : \`\${$('base-url').value.trim().replace(/\\/$/, '')}/v1/chat/completions\`;
   const llmHeaders=useProxy ? buildProxyLLMHeaders() : buildLLMHeaders();
 
@@ -2101,153 +2114,28 @@ async function sendMessage() {
   let streamText='';
   let streamFinalized=false;
   let streamMessagePersisted=false;
-  let statusDiv=null;
   const streamClearSeq=clearChatSeq;
-  let completedWithoutLimit=false;
-  const toolRepeatCounts=new Map();
-  let lastToolResults=[];
   try {
-    while(turn<MAX_TURNS) {
-      turn++;
-      const systemPrompt=currentSystemPrompt();
-      const langLine=languageInstruction();
-      const sysContent=[systemPrompt,langLine].filter(Boolean).join('\\n\\n');
-      const cleanMessages=requestMessagesForLLM(messages);
-      const reqMessages=sysContent ? [{role:'system',content:sysContent},...cleanMessages] : cleanMessages;
-      const reqBody={model,temperature:temp,messages:reqMessages,...(toolsPayload?{tools:toolsPayload,tool_choice:'auto'}:{})};
-      streamDiv=createStreamBubble();
-      streamText='';
-      streamFinalized=false;
-      streamMessagePersisted=false;
-      const {content,toolCalls}=await fetchStream(llmUrl,llmHeaders,reqBody,t=>{
-        streamText=t;
-        setStreamContent(streamDiv,t);
-      },streamAbortController.signal);
-      if(streamAbortController.signal.aborted) break;
-      streamText=content;
-
-      if(toolCalls?.length) {
-        const tcWithIdx=toolCalls.map((tc,i)=>({...tc,_domIdx:tcIdx+i}));
-        const repeatedObservation=tcWithIdx.some((tc)=>{
-          const key=toolCallRepeatKey(tc);
-          const count=(toolRepeatCounts.get(key)||0)+1;
-          toolRepeatCounts.set(key,count);
-          return count>1 && isObserverToolName(toolCallFunctionName(tc));
-        });
-        if(!isSkillRun && repeatedObservation && tcWithIdx.every(tc=>isObserverToolName(toolCallFunctionName(tc)))) {
-          statusDiv=keepOrReplaceStatusBubble(streamDiv,content,statusDiv);
-          streamFinalized=true;
-          const summary=observerToolLoopSummary([],true);
-          dispatchChatAgentEvent(runTrace,'run_summary',{origin:'system',payload:{content:summary}});
-          statusDiv=publishAssistantOutput(observerToolLoopHTML([],true),statusDiv,{html:true,plainText:summary});
-          messages.push({role:'assistant',content:summary});
-          conversationDirty=true;
-          await saveCurrentConversation({immediate:true});
-          dispatchChatAgentEvent(runTrace,'run_done',{origin:'system'});
-          completedWithoutLimit=true;
-          break;
-        }
-        statusDiv=keepOrReplaceStatusBubble(streamDiv,content,statusDiv);
-        streamFinalized=true;
-        messages.push({role:'assistant',content:content||null,tool_calls:tcWithIdx.map(({_domIdx,...tc})=>tc)});
-        streamMessagePersisted=true;
-        for(const tc of tcWithIdx) {
-          const fn=toolCallFunctionName(tc)||'?';
-          const server=findServerForTool(fn);
-          if(isProductionToolName(fn)) productionState.trace=runTrace;
-          dispatchChatAgentEvent(runTrace,'tool_call_started',{
-            origin:'tool',
-            payload:{
-              callId:tc.id,
-              name:fn,
-              kind:server?.name||'MCP',
-              targetId:\`tc-\${tc._domIdx}\`,
-              compactKey:compactTraceKeyForTool(fn,server),
-              assistantText:content||'',
-            },
-          });
-        }
-        const toolResults=await Promise.all(tcWithIdx.map(async (tc)=>{
-          const domIdx=tc._domIdx;
-          const fn=toolCallFunctionName(tc);
-          const args=toolCallArgsObject(tc);
-          try {
-            const r=await callMCPTool(fn,args);
-            if(isProductionToolName(fn)) productionState.trace=runTrace;
-            handleProductionToolResult(fn,args,r,true);
-            dispatchChatAgentEvent(runTrace,'tool_call_result',{
-              origin:'tool',
-              payload:{callId:tc.id,targetId:\`tc-\${domIdx}\`,name:fn,ok:true,result:r,assistantText:content||''},
-            });
-            for(const step of derivedTraceStepsForTool(fn,r,true,\`tc-\${domIdx}\`)) {
-              dispatchChatAgentEvent(runTrace,'trace_step_upsert',{
-                origin:'tool',
-                payload:{step},
-              });
-            }
-            return {tool_call_id:tc.id,role:'tool',name:fn,content:r};
-          } catch(e) {
-            if(isProductionToolName(fn)) productionState.trace=runTrace;
-            handleProductionToolResult(fn,args,e.message,false);
-            dispatchChatAgentEvent(runTrace,'tool_call_result',{
-              origin:'tool',
-              payload:{callId:tc.id,targetId:\`tc-\${domIdx}\`,name:fn,ok:false,result:e.message,assistantText:content||''},
-            });
-            return {tool_call_id:tc.id,role:'tool',name:fn,content:\`Error: \${e.message}\`};
-          }
-        }));
-        lastToolResults=toolResults;
-        tcIdx+=toolCalls.length;
-        messages.push(...toolResults);
-        conversationDirty=true;
-        await saveCurrentConversation({immediate:true});
-        if(shouldStopAfterProductionTools(tcWithIdx)) {
-          const summary=productionToolSummary(toolResults);
-          dispatchChatAgentEvent(runTrace,'run_summary',{origin:'system',payload:{content:summary}});
-          statusDiv=publishAssistantOutput(summary,statusDiv);
-          messages.push({role:'assistant',content:summary});
-          conversationDirty=true;
-          await saveCurrentConversation({immediate:true});
-          dispatchChatAgentEvent(runTrace,'run_done',{origin:'system'});
-          completedWithoutLimit=true;
-          break;
-        }
-        streamDiv=null;
-        if(streamAbortController.signal.aborted) break;
-        continue;
-      }
-
-      const hasContent=String(content||'').trim();
-      const fb=hasContent?null:toolResultsFallback(lastToolResults);
-      const finalContent=hasContent?content:(fb?.text||'');
-      const finalHtml=fb?.html||null;
-      if(finalHtml) {
-        const target=(statusDiv && statusDiv!==streamDiv && statusDiv.isConnected) ? statusDiv : streamDiv;
-        statusDiv=publishAssistantOutput(finalHtml,target,{html:true,plainText:finalContent});
-        if(target!==streamDiv && streamDiv) removeStreamBubble(streamDiv);
-      } else if(statusDiv && statusDiv!==streamDiv && statusDiv.isConnected) {
-        setStreamContent(statusDiv,finalContent);
-        removeStreamBubble(streamDiv);
-      } else {
-        setStreamContent(streamDiv,finalContent);
-        statusDiv=streamDiv;
-      }
-      streamFinalized=true;
-      messages.push({role:'assistant',content:finalContent});
-      streamMessagePersisted=true;
-      conversationDirty=true;
-      await saveCurrentConversation({immediate:true});
-      dispatchChatAgentEvent(runTrace,'run_done',{origin:'llm'});
-      completedWithoutLimit=true;
-      break;
-    }
-    if(turn>=MAX_TURNS && !completedWithoutLimit) {
-      const limitText=\`Warning: chaining limit reached (\${MAX_TURNS} turns).\`;
-      appendMsg('assistant',limitText);
-      messages.push({role:'assistant',content:limitText});
-      dispatchChatAgentEvent(runTrace,'run_error',{origin:'system',payload:{message:limitText}});
-      await saveCurrentConversation({immediate:true});
-    }
+    const systemPrompt=currentSystemPrompt();
+    const langLine=languageInstruction();
+    const sysContent=[systemPrompt,langLine].filter(Boolean).join('\\n\\n');
+    const cleanMessages=requestMessagesForLLM(messages);
+    const reqMessages=sysContent ? [{role:'system',content:sysContent},...cleanMessages] : cleanMessages;
+    const reqBody={model,temperature:temp,messages:reqMessages};
+    streamDiv=createStreamBubble();
+    const {content}=await fetchStream(llmUrl,llmHeaders,reqBody,t=>{
+      streamText=t;
+      setStreamContent(streamDiv,t);
+    },streamAbortController.signal);
+    if(streamAbortController.signal.aborted) return;
+    streamText=content;
+    const finalContent=String(content||'').trim() ? content : 'No response.';
+    setStreamContent(streamDiv,finalContent);
+    streamFinalized=true;
+    messages.push({role:'assistant',content:finalContent});
+    streamMessagePersisted=true;
+    conversationDirty=true;
+    await saveCurrentConversation({immediate:true});
   } catch(err) {
     if(streamClearSeq!==clearChatSeq) return;
     if(err.name==='AbortError') {
@@ -2265,7 +2153,6 @@ async function sendMessage() {
         messages.push({role:'assistant',content:stopped});
       }
       conversationDirty=true;
-      dispatchChatAgentEvent(runTrace,'run_error',{origin:'system',payload:{message:streamText || 'aborted'}});
       await saveCurrentConversation({immediate:true});
     } else {
       if(streamDiv) {
@@ -2278,7 +2165,6 @@ async function sendMessage() {
       } else {
         appendMsg('assistant',\`Error: \${err.message}\`);
       }
-      dispatchChatAgentEvent(runTrace,'run_error',{origin:'system',payload:{message:err.message}});
       notify(err.message,'e');
       conversationDirty=true;
       await saveCurrentConversation({immediate:true});
@@ -2304,39 +2190,86 @@ async function sendRuntimeAgentMessage(input,text) {
     notify('Runtime is not configured.','e');
     return;
   }
-  if(runtimeIsRunning()) {
-    notify('Runtime is already running.','e');
-    return;
-  }
   input.value='';
   input.style.height='auto';
   if(!currentConversationId) currentConversationId=newConversationId();
   messages.push({role:'user',content:text});
   appendMsg('user',text);
   try {
-    const res=await fetch('/api/runtime/run',{
+    const controlBody=JSON.stringify({action:'message',input:text});
+    // Read runtimeIsRunning() fresh before and after the request (not hoisted
+    // to one shared value): an SSE update can flip it while the fetch below
+    // is in flight, and the 409 fallback exists specifically to catch that.
+    const runningBeforeFetch=runtimeIsRunning();
+    let res=await fetch(runningBeforeFetch?'/api/runtime/control':'/api/runtime/run',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({input:text}),
+      body:runningBeforeFetch?controlBody:JSON.stringify({input:text}),
     });
-    if(!res.ok) {
+    if(res.status===409 && !runtimeIsRunning()) {
+      res=await fetch('/api/runtime/control',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:controlBody,
+      });
+    }
+    let data={};
+    try { data=await res.json(); } catch {}
+    if(!res.ok && data?.kind!=='ambiguous') {
       let message=res.statusText;
-      try {
-        const data=await res.json();
-        message=data?.error||data?.message||message;
-      } catch {}
+      message=data?.error||data?.message||message;
       throw new Error(\`Runtime \${res.status}: \${message}\`);
     }
-    runtimeState={...(runtimeState||{}),status:'running'};
+    const reply=data?.explanation
+      || (data?.kind==='mutate'?'Plan change recorded as a proposal. It is not applied automatically yet.'
+        : data?.kind==='enqueue'?'Request queued for a future run.'
+          : data?.kind==='ambiguous'?'I am not sure whether this is a question, a change to this run, or a future run. Choose explicitly in the runtime controls.'
+            : 'Runtime run accepted. Follow progress in Activity.');
+    // /run responses carry no status field (a run was just started, so
+    // 'running' is correct); /control message responses spread controlStatus()
+    // and already carry the real status ('idle' unless observe/enqueue
+    // actually started or kept a run going) — trust that instead of assuming.
+    runtimeState={...(runtimeState||{}),status:data?.status ?? 'running'};
     runtimeConnected=true;
-    messages.push({role:'assistant',content:'Runtime run accepted. Follow progress in Activity.'});
-    appendMsg('assistant','Runtime run accepted. Follow progress in Activity.');
+    messages.push({role:'assistant',content:reply});
+    if(data?.kind==='ambiguous') appendMsg('assistant',runtimeChoiceHTML(text,data.choices),null,{html:true,plainText:reply});
+    else appendMsg('assistant',reply);
     scheduleConversationSave();
     renderActivities();
     updateActivityBadge();
     updateAgentModeUI();
     openActivityPanel();
     fetchRuntimeState().catch(()=>{});
+  } catch(e) {
+    notify(e?.message||String(e),'e');
+  }
+}
+
+async function sendRuntimeControlChoice(intent,text) {
+  if(!runtimeEnabled()) {
+    notify('Runtime is not configured.','e');
+    return;
+  }
+  try {
+    const res=await fetch('/api/runtime/control',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:intent==='enqueue'?'enqueue':'message',intent,input:text}),
+    });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data?.error||data?.message||\`Runtime \${res.status}\`);
+    const reply=data?.explanation
+      || (data?.kind==='enqueue'?'Request queued for a future run.'
+        : data?.kind==='mutate'?'Plan change recorded as a proposal. It is not applied automatically yet.'
+          : data?.kind==='observe'?'Runtime status refreshed.'
+            : 'Runtime control accepted.');
+    messages.push({role:'assistant',content:reply});
+    appendMsg('assistant',reply);
+    scheduleConversationSave();
+    fetchRuntimeState().catch(()=>{});
+    renderActivities();
+    updateActivityBadge();
+    openActivityPanel();
   } catch(e) {
     notify(e?.message||String(e),'e');
   }
