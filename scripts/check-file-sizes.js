@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import process from 'node:process';
+import { URL } from 'node:url';
+import { Console } from 'node:console';
 
 const ROOT = new URL('..', import.meta.url).pathname;
+const logger = new Console(process.stdout, process.stderr);
 const MAX_LINES = 500;
 const LEGACY_LIMITS = new Map([
   ['src/commands/serve.ts', 5600],
@@ -33,11 +37,11 @@ for (const file of files) {
   const limit = LEGACY_LIMITS.get(rel) ?? MAX_LINES;
   const lines = readFileSync(file, 'utf8').split('\n').length;
   const ok = lines <= limit;
-  console.log(`${ok ? 'ok' : 'FAIL'} ${rel}: ${lines}/${limit}`);
+  logger.log(`${ok ? 'ok' : 'FAIL'} ${rel}: ${lines}/${limit}`);
   if (!ok) failures.push({ rel, lines, limit });
 }
 
 if (failures.length) {
-  console.error('\nFile size check failed.');
+  logger.error('\nFile size check failed.');
   process.exit(1);
 }

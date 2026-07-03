@@ -11,7 +11,7 @@ import { resolveInside } from '../utils/path.ts';
 import { extractSourceCitations } from '../utils/markdown.ts';
 import type { AppConfig } from '../types.ts';
 
-const LLM_WIKI_VERSION = '0.9.3';
+const LLM_WIKI_VERSION = '0.9.4';
 
 export const WIKI_MCP_TOOLS = [
   {
