@@ -20,6 +20,9 @@ import { extractWikiLinks } from '../utils/markdown.ts';
 import { canonicalizeName, resolveInside, toPosix } from '../utils/path.ts';
 import { WIKI_CSS_VARS } from '../chat/theme.ts';
 import { CHAT_HTML } from '../chat/chatHtml.ts';
+import { proxyRuntimeJson, type RuntimeProxyDeps } from '../serve/proxy/runtimeProxy.ts';
+import { handleGraphRoutes } from '../serve/routes/graphRoutes.ts';
+import { handleRuntimeRoutes } from '../serve/routes/runtimeRoutes.ts';
 
 const mcpWikiPort = () => process.env.WIKI_MCP_HTTP_PORT ?? process.env.WIKI_MCP_PORT ?? '3101';
 const mcpProductionPort = () => process.env.PRODUCTION_MCP_PORT ?? '3102';
@@ -66,6 +69,7 @@ const CHAT_HISTORY_DIR = path.join('.wiki', 'chat-history');
 const CHAT_HISTORY_INDEX = 'index.json';
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
+const LLM_WIKI_VERSION = '0.9.3';
 
 type SkillMeta = {
   name: string;
@@ -3639,100 +3643,12 @@ function sendJson(
   res.end(JSON.stringify(data));
 }
 
-function runtimeHeaders(): Record<string, string> {
-  const token = runtimeToken();
-  return token ? { authorization: `Bearer ${token}` } : {};
-}
-
-function runtimeTarget(pathname: string): string | null {
-  const base = runtimeUrl();
-  if (!base) return null;
-  return `${base.replace(/\/+$/, '')}${pathname}`;
-}
-
-async function proxyRuntimeJson(
-  req: IncomingMessage,
-  res: ServerResponse,
-  pathname: string,
-  extra?: Record<string, unknown>,
-  onSuccess?: (parsed: unknown) => Promise<unknown> | unknown,
-): Promise<void> {
-  const target = runtimeTarget(pathname);
-  if (!target) {
-    sendJson(res, 503, { ok: false, error: 'runtime not configured' });
-    return;
-  }
-  let body = req.method === 'POST' ? await readRequestBuffer(req, 1024 * 1024) : null;
-  if (extra && body) {
-    try {
-      body = Buffer.from(JSON.stringify({ ...JSON.parse(body.toString()), ...extra }));
-    } catch { /* malformed body — pass through as-is */ }
-  }
-  try {
-    const upstream = await fetch(target, {
-      method: req.method ?? 'GET',
-      headers: {
-        ...runtimeHeaders(),
-        ...(body ? { 'content-type': 'application/json' } : {}),
-      },
-      body: body && body.length > 0 ? body : undefined,
-    });
-    let text = await upstream.text();
-    if (onSuccess && upstream.ok && text) {
-      const parsed = (() => { try { return JSON.parse(text); } catch { return undefined; } })();
-      if (parsed !== undefined) {
-        try {
-          text = JSON.stringify(await onSuccess(parsed));
-        } catch (err) {
-          sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) });
-          return;
-        }
-      }
-    }
-    res.writeHead(upstream.status, { 'Content-Type': upstream.headers.get('content-type') ?? 'application/json' });
-    res.end(text);
-  } catch {
-    sendJson(res, 503, { ok: false, error: 'runtime unavailable' });
-  }
-}
-
-async function proxyRuntimeEvents(req: IncomingMessage, res: ServerResponse, pathname = '/events/stream'): Promise<void> {
-  const target = runtimeTarget(pathname);
-  if (!target) {
-    sendJson(res, 503, { ok: false, error: 'runtime not configured' });
-    return;
-  }
-  const controller = new AbortController();
-  req.on('close', () => controller.abort());
-  try {
-    const upstream = await fetch(target, {
-      headers: {
-        ...runtimeHeaders(),
-        accept: 'text/event-stream',
-      },
-      signal: controller.signal,
-    });
-    if (!upstream.ok || !upstream.body) {
-      sendJson(res, upstream.status || 503, { ok: false, error: 'runtime stream unavailable' });
-      return;
-    }
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    });
-    const reader = upstream.body.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      res.write(Buffer.from(value));
-    }
-    res.end();
-  } catch {
-    if (!res.headersSent) sendJson(res, 503, { ok: false, error: 'runtime unavailable' });
-    else res.end();
-  }
-}
+const runtimeProxyDeps: RuntimeProxyDeps = {
+  runtimeUrl,
+  runtimeToken,
+  readRequestBuffer,
+  sendJson,
+};
 
 const DOCUMENT_EXTENSIONS = new Set([
   '.txt', '.md', '.markdown', '.csv', '.json', '.xml', '.yaml', '.yml', '.html', '.htm', '.rtf',
@@ -3880,7 +3796,7 @@ async function postMcp(endpoint: ExternalMcpEndpoint & { sessionId?: string }, m
     const init = await request('initialize', {
       protocolVersion: '2025-06-18',
       capabilities: {},
-      clientInfo: { name: 'llm-wiki-serve', version: 'upload' },
+      clientInfo: { name: 'llm-wiki-serve', version: LLM_WIKI_VERSION },
     });
     if (!init.response.ok || !endpoint.sessionId) throw new Error(`initialize failed: ${init.response.status}`);
     await request('notifications/initialized', {});
@@ -4940,6 +4856,7 @@ export default async function serveCmd(
       req,
       res,
       runtimePathForWorkspace('/config/use'),
+      runtimeProxyDeps,
       wsName ? { workspace: wsName } : undefined,
       async (parsed) => ({ ...(parsed as Record<string, unknown>), config: await mirrorRuntimeConfig(parsed) }),
     );
@@ -4982,33 +4899,12 @@ export default async function serveCmd(
         return;
       }
 
-      if (urlPath === '/api/runtime/state' && req.method === 'GET') {
-        await proxyRuntimeJson(req, res, runtimePathForWorkspace('/state'));
-        return;
-      }
-      if (urlPath === '/api/runtime/events' && req.method === 'GET') {
-        await proxyRuntimeEvents(req, res, runtimePathForWorkspace('/events/stream'));
-        return;
-      }
-      if (urlPath === '/api/runtime/run' && req.method === 'POST') {
-        const wsName = workspaceNameFromEnv();
-        await proxyRuntimeJson(req, res, '/run', wsName ? { workspace: wsName } : undefined);
-        return;
-      }
-      if (urlPath === '/api/runtime/cancel' && req.method === 'POST') {
-        await proxyRuntimeJson(req, res, runtimePathForWorkspace('/cancel'));
-        return;
-      }
-      if (urlPath === '/api/runtime/control' && (req.method === 'GET' || req.method === 'POST')) {
-        await proxyRuntimeJson(req, res, runtimePathForWorkspace('/control'));
-        return;
-      }
-      if (urlPath === '/api/config/profiles' && req.method === 'GET') {
-        await proxyRuntimeJson(req, res, runtimePathForWorkspace('/config/profiles'));
-        return;
-      }
-      if (urlPath === '/api/config/use' && req.method === 'POST') {
-        await proxyRuntimeConfigUse(req, res);
+      if (await handleRuntimeRoutes(req, res, urlPath, {
+        proxyDeps: runtimeProxyDeps,
+        runtimePathForWorkspace,
+        proxyRuntimeConfigUse,
+        workspaceNameFromEnv,
+      })) {
         return;
       }
 
@@ -5371,22 +5267,16 @@ export default async function serveCmd(
         return;
       }
 
-      if (req.method === 'GET' && urlPath === '/api/graph-etag') {
-        sendJson(res, 200, { etag: await graphEtag(rootDir) });
-        return;
-      }
-
-      if (req.method === 'GET' && urlPath === '/api/graph-data') {
-        const graphFiles = await listGraphFiles(rootDir);
-        const etag = await graphEtagForFiles(rootDir, graphFiles);
-        const graph = await buildGraph(rootDir, graphFiles);
-        sendJson(res, 200, {
-          etag,
-          nodes: graph.nodes,
-          edges: graph.edges.map((edge, index) => ({ ...edge, id: `rel-${index}` })),
-        });
-        return;
-      }
+      if (await handleGraphRoutes(req, res, urlPath, {
+        rootDir,
+        sendJson,
+        sendGzippedHtml,
+        graphEtag,
+        listGraphFiles,
+        graphEtagForFiles,
+        buildGraph,
+        generateGraph,
+      })) return;
 
       if (urlPath === '/api/llm-config') {
         if (req.method === 'GET') {
@@ -5417,12 +5307,6 @@ export default async function serveCmd(
 
       if (urlPath === '/') {
         const html = await generateIndex(rootDir);
-        await sendGzippedHtml(req, res, html);
-        return;
-      }
-
-      if (urlPath === '/graph') {
-        const html = await generateGraph(rootDir);
         await sendGzippedHtml(req, res, html);
         return;
       }

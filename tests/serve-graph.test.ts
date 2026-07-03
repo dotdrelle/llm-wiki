@@ -6,6 +6,18 @@ async function serveSource(): Promise<string> {
   return readFile(path.resolve(import.meta.dirname, '../src/commands/serve.ts'), 'utf8');
 }
 
+async function runtimeEventsSource(): Promise<string> {
+  return readFile(path.resolve(import.meta.dirname, '../src/serve/sse/runtimeEvents.ts'), 'utf8');
+}
+
+async function runtimeRoutesSource(): Promise<string> {
+  return readFile(path.resolve(import.meta.dirname, '../src/serve/routes/runtimeRoutes.ts'), 'utf8');
+}
+
+async function graphRoutesSource(): Promise<string> {
+  return readFile(path.resolve(import.meta.dirname, '../src/serve/routes/graphRoutes.ts'), 'utf8');
+}
+
 describe('serve graph ui', () => {
   it('renders sidebar chat and graph actions as two wide buttons', async () => {
     const source = await serveSource();
@@ -77,6 +89,17 @@ describe('serve graph ui', () => {
     expect(source).toContain("fetch('/api/graph-data', { cache: 'no-store' })");
     expect(source).toContain('simulation?.stop();');
     expect(source).not.toContain('window.location.reload();');
+  });
+
+  it('routes graph page and graph data through the extracted graph route module', async () => {
+    const source = await serveSource();
+    const routesSource = await graphRoutesSource();
+
+    expect(source).toContain('handleGraphRoutes(req, res, urlPath');
+    expect(routesSource).toContain("urlPath === '/api/graph-etag'");
+    expect(routesSource).toContain("urlPath === '/api/graph-data'");
+    expect(routesSource).toContain("urlPath === '/graph'");
+    expect(routesSource).toContain("edges: graph.edges.map((edge, index) => ({ ...edge, id: `rel-${index}` }))");
   });
 
   it('shows direct node open link and concise relation actions', async () => {
@@ -227,10 +250,11 @@ describe('serve config reload', () => {
 
   it('proxies config profile switching through the manager runtime and mirrors returned config', async () => {
     const source = await serveSource();
+    const routesSource = await runtimeRoutesSource();
 
-    expect(source).toContain("urlPath === '/api/config/profiles'");
-    expect(source).toContain("urlPath === '/api/config/use'");
-    expect(source).toContain("runtimePathForWorkspace('/config/profiles')");
+    expect(routesSource).toContain("urlPath === '/api/config/profiles'");
+    expect(routesSource).toContain("urlPath === '/api/config/use'");
+    expect(routesSource).toContain("deps.runtimePathForWorkspace('/config/profiles')");
     expect(source).toContain("runtimePathForWorkspace('/config/use')");
     expect(source).toContain('const resolveProfileConfigPath');
     expect(source).toContain('const mirrorRuntimeConfig = async');
@@ -242,19 +266,35 @@ describe('serve config reload', () => {
   });
 
   it('proxies limited runtime control without touching config mirroring', async () => {
-    const source = await serveSource();
+    const routesSource = await runtimeRoutesSource();
 
-    expect(source).toContain("urlPath === '/api/runtime/control'");
-    expect(source).toContain("runtimePathForWorkspace('/control')");
-    expect(source).toContain("req.method === 'GET' || req.method === 'POST'");
+    expect(routesSource).toContain("urlPath === '/api/runtime/control'");
+    expect(routesSource).toContain("deps.runtimePathForWorkspace('/control')");
+    expect(routesSource).toContain("req.method === 'GET' || req.method === 'POST'");
   });
 
   it('scopes runtime state, events and cancel proxies to the active workspace', async () => {
     const source = await serveSource();
+    const eventsSource = await runtimeEventsSource();
+    const routesSource = await runtimeRoutesSource();
 
-    expect(source).toContain("runtimePathForWorkspace('/state')");
-    expect(source).toContain("runtimePathForWorkspace('/events/stream')");
-    expect(source).toContain("runtimePathForWorkspace('/cancel')");
-    expect(source).toContain("async function proxyRuntimeEvents(req: IncomingMessage, res: ServerResponse, pathname = '/events/stream')");
+    expect(source).toContain('const runtimePathForWorkspace = (pathname: string): string => {');
+    expect(source).toContain('return `${pathname}${separator}workspace=${encodeURIComponent(wsName)}`;');
+    expect(routesSource).toContain("deps.runtimePathForWorkspace('/state')");
+    expect(routesSource).toContain("deps.runtimePathForWorkspace('/events/stream')");
+    expect(routesSource).toContain("deps.runtimePathForWorkspace('/cancel')");
+    expect(routesSource).toContain("await proxyRuntimeJson(req, res, '/run', deps.proxyDeps, wsName ? { workspace: wsName } : undefined);");
+    expect(eventsSource).toContain('export async function proxyRuntimeEvents');
+    expect(eventsSource).toContain("accept: 'text/event-stream'");
+    expect(eventsSource).toContain("res.writeHead(200, {");
+    expect(eventsSource).toContain("'Content-Type': 'text/event-stream'");
+    expect(eventsSource).toContain("'Cache-Control': 'no-cache'");
+  });
+
+  it('uses the coordinated release version for serve MCP handshakes', async () => {
+    const source = await serveSource();
+
+    expect(source).toMatch(/const LLM_WIKI_VERSION = '[^']+';/);
+    expect(source).toContain("clientInfo: { name: 'llm-wiki-serve', version: LLM_WIKI_VERSION }");
   });
 });

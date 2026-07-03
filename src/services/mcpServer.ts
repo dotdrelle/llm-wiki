@@ -11,6 +11,8 @@ import { resolveInside } from '../utils/path.ts';
 import { extractSourceCitations } from '../utils/markdown.ts';
 import type { AppConfig } from '../types.ts';
 
+const LLM_WIKI_VERSION = '0.9.3';
+
 export const WIKI_MCP_TOOLS = [
   {
     name: 'wiki_list_pages',
@@ -219,7 +221,7 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
 
   const server = new McpServer({
     name: 'llm-wiki',
-    version: '1.0.0',
+    version: LLM_WIKI_VERSION,
   });
 
   const listWikiPages = async () => {
