@@ -116,9 +116,19 @@ function runtimeTaskPanelHTML() {
     if(window.__WIKI_CONFIG__?.runtime?.enabled) return '<div class="runtime-status">Runtime connecting...</div>';
     return '';
   }
-  const plan=Array.isArray(runtimeState.plan)?runtimeState.plan:[];
-  const activities=Array.isArray(runtimeState.activities)?runtimeState.activities:[];
-  const queue=Array.isArray(runtimeState.queue)?runtimeState.queue:[];
+  const workflowNodes=Array.isArray(runtimeState.workflow?.nodes)?runtimeState.workflow.nodes:null;
+  const workflowTasks=workflowNodes?.filter(node=>node.type==='task')||null;
+  const workflowActivities=workflowNodes?.filter(node=>node.type==='activity')||null;
+  const workflowQueue=workflowNodes?.filter(node=>node.type==='queue')||null;
+  const plan=workflowTasks
+    ? workflowTasks.map((node,index)=>({...(node.raw||{}),step:node.step||index+1,description:node.description||node.label,status:node.status,activityKey:node.activityKey}))
+    : Array.isArray(runtimeState.plan)?runtimeState.plan:[];
+  const activities=workflowActivities
+    ? workflowActivities.map(node=>({...(node.raw||{}),key:node.key,label:node.label,status:node.status,terminal:['done','failed','cancelled'].includes(String(node.status)),progress:node.progress}))
+    : Array.isArray(runtimeState.activities)?runtimeState.activities:[];
+  const queue=workflowQueue
+    ? workflowQueue.map(node=>({...(node.raw||{}),id:node.itemId||node.id,label:node.label,status:node.status}))
+    : Array.isArray(runtimeState.queue)?runtimeState.queue:[];
   const logs=Array.isArray(runtimeState.logs)?runtimeState.logs.slice(-6):[];
   const runStartedAt=runtimeTime(runtimeState.startedAt||runtimeState.createdAt||runtimeState.updatedAt);
   const runUpdatedAt=runtimeTime(runtimeState.finishedAt||runtimeState.completedAt||runtimeState.updatedAt,runStartedAt);

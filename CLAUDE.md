@@ -14,8 +14,13 @@ at the wikiLLM workspace root (one level above this repo, not versioned here).
 0.9.4 is the incremental, iso-behavior extraction of `src/commands/serve.ts`
 and `src/chat/chatHtml.ts` into smaller modules (see Layout below); neither
 file has reached its final target size yet, and `scripts/check-file-sizes.js`
-keeps temporary legacy thresholds for both until it does. 0.9.5 (in progress)
-is the runtime control-lane work described under Agent Runtime Integration.
+keeps temporary legacy thresholds for both until it does. 0.9.5 is the runtime
+control-lane work described under Agent Runtime Integration. 0.9.6 is the
+`projectWorkflow` canonical projection (defined in `llm-wiki-manager`); this
+repo consumes it as `runtimeState.workflow.nodes` in `runtimeTaskPanelHTML`
+(`chatHtml.ts`), falling back to the legacy `runtimeState.plan`/`.activities`
+shape when a runtime predates 0.9.6. Both 0.9.5 and 0.9.6 are implemented in
+the working tree, not yet released/tagged.
 
 ## Layout
 

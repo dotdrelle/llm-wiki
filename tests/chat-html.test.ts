@@ -383,6 +383,10 @@ describe('chat html', () => {
     expect(script).toContain("fetch('/api/runtime/cancel'");
     expect(script).toContain('function toggleAgentMode()');
     expect(script).toContain('function runtimeTaskPanelHTML()');
+    expect(script).toContain('const workflowNodes=Array.isArray(runtimeState.workflow?.nodes)?runtimeState.workflow.nodes:null;');
+    expect(script).toContain("const workflowTasks=workflowNodes?.filter(node=>node.type==='task')||null;");
+    expect(script).toContain("const workflowActivities=workflowNodes?.filter(node=>node.type==='activity')||null;");
+    expect(script).toContain("const workflowQueue=workflowNodes?.filter(node=>node.type==='queue')||null;");
     expect(script).toContain("Runtime activity");
   });
 
