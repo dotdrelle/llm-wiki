@@ -18,6 +18,10 @@ async function graphRoutesSource(): Promise<string> {
   return readFile(path.resolve(import.meta.dirname, '../src/serve/routes/graphRoutes.ts'), 'utf8');
 }
 
+async function uploadRoutesSource(): Promise<string> {
+  return readFile(path.resolve(import.meta.dirname, '../src/serve/routes/uploadRoutes.ts'), 'utf8');
+}
+
 async function graphCoreSource(): Promise<string> {
   return readFile(path.resolve(import.meta.dirname, '../src/graph/core/graphLayoutBase.ts'), 'utf8');
 }
@@ -342,8 +346,10 @@ describe('serve config reload', () => {
 
   it('uses the coordinated release version for serve MCP handshakes', async () => {
     const source = await serveSource();
+    const uploadSource = await uploadRoutesSource();
 
     expect(source).toMatch(/const LLM_WIKI_VERSION = '[^']+';/);
-    expect(source).toContain("clientInfo: { name: 'llm-wiki-serve', version: LLM_WIKI_VERSION }");
+    expect(source).toContain('version: LLM_WIKI_VERSION');
+    expect(uploadSource).toContain("clientInfo: { name: 'llm-wiki-serve', version }");
   });
 });
