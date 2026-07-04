@@ -2,6 +2,15 @@
 
 A `Dockerfile` and `docker-compose.yml` are included. The image builds the TypeScript CLI into `dist/` and installs production dependencies in the runtime layer (required by runtime-loaded packages such as the local D3 bundle used by `wiki serve`).
 
+The image entrypoint is `node /app/bin/wiki.js`. Compose commands append wiki
+subcommands to that entrypoint: `serve --port 3000`, `mcp-http --host 0.0.0.0`,
+or one-shot CLI commands such as `doctor` and `ingest`.
+
+The project requires Node.js 22+ for local development. The Docker image uses a
+current Node runtime and does not require Bun. Bun is used by the sibling
+`llm-wiki-manager` project only; do not use Bun to run this package directly
+unless you are explicitly testing manager orchestration.
+
 ## Build
 
 ```bash
@@ -51,6 +60,10 @@ docker compose up serve
 ```
 
 `EXPOSE 3000` in the Dockerfile does not start a server by itself — only the `serve` service does. Both `wiki` and `serve` mount the same workspace: changes from `ingest` appear in the browser after a refresh.
+
+The `serve` and `mcp-http` services include Docker healthchecks implemented with
+Node's built-in `fetch`, so the runtime image does not need `curl` or shell
+packages.
 
 The browser UI includes:
 

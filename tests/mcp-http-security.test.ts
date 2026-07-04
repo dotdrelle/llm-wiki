@@ -1,6 +1,12 @@
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  clearSharedMcpServices,
   createMcpRateLimiter,
+  getSharedMcpServices,
+  mcpServiceContextKey,
   mcpScopesForToken,
   mcpToolScope,
 } from '../src/commands/mcpHttp.ts';
@@ -84,5 +90,45 @@ describe('MCP HTTP security helpers', () => {
     expect(blocked.ok).toBe(false);
     expect(blocked.retryAfterMs).toBeGreaterThan(0);
     expect(limiter.check('client', 2101).ok).toBe(true);
+  });
+
+  it('keys shared MCP services by workspace and retrieval config without secrets', () => {
+    const first = config({ readToken: 'read-a', writeToken: 'write-a' });
+    first.wikiRoot = '/tmp/wiki-a';
+    first.retrieval.maxContextFiles = 5;
+    const second = config({ readToken: 'read-b', writeToken: 'write-b' });
+    second.wikiRoot = '/tmp/wiki-b';
+    second.retrieval.maxContextFiles = 9;
+
+    const firstKey = mcpServiceContextKey(first);
+    const secondKey = mcpServiceContextKey(second);
+
+    expect(firstKey).not.toBe(secondKey);
+    expect(firstKey).not.toContain('read-a');
+    expect(firstKey).not.toContain('write-a');
+  });
+
+  it('reuses shared MCP services until the context TTL expires', async () => {
+    const previousTtl = process.env.WIKI_MCP_CONTEXT_TTL_MS;
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-mcp-http-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Index\n', 'utf8');
+    const appConfig = config({});
+    appConfig.wikiRoot = root;
+    process.env.WIKI_MCP_CONTEXT_TTL_MS = '50';
+    clearSharedMcpServices();
+
+    try {
+      const first = await getSharedMcpServices(appConfig, 1000);
+      const second = await getSharedMcpServices(appConfig, 1025);
+      const third = await getSharedMcpServices(appConfig, 1100);
+
+      expect(second).toBe(first);
+      expect(third).not.toBe(first);
+    } finally {
+      clearSharedMcpServices();
+      if (previousTtl === undefined) delete process.env.WIKI_MCP_CONTEXT_TTL_MS;
+      else process.env.WIKI_MCP_CONTEXT_TTL_MS = previousTtl;
+    }
   });
 });

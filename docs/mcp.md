@@ -162,6 +162,13 @@ read+write token for compatibility. HTTP rate limiting is enabled by default:
 `WIKI_MCP_RATE_LIMIT_REQUESTS` defaults to `120` requests per window and
 `WIKI_MCP_RATE_LIMIT_WINDOW_MS` defaults to `60000`.
 
+`wiki mcp-http` shares `WorkspaceService` and `RetrievalService` per
+workspace/config key so repeated HTTP requests do not recreate retrieval clients
+and caches. The protocol `McpServer` and HTTP transport remain request-scoped.
+`WIKI_MCP_CONTEXT_TTL_MS` controls the shared service context lifetime; default
+is `30000`, and `0` keeps the context for the process lifetime. Write tools
+invalidate retrieval cache after wiki writes.
+
 ### Claude Code HTTP client config
 
 For Claude Code project config, add an HTTP MCP server to `.mcp.json`:

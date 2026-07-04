@@ -372,6 +372,7 @@ pnpm test
 | Commands | `docs/commands.md` |
 | Configuration | `docs/configuration.md` |
 | Docker | `docs/docker.md` |
+| Industrialisation / multi-user | `docs/industrialisation.md` |
 | MCP | `docs/mcp.md` |
 | Templates | `docs/templates.md` |
 | Vector search | `docs/vector-search.md` |

@@ -48,6 +48,18 @@ services:
       - '3100:3000'
     extra_hosts:
       - 'host.docker.internal:host-gateway'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
   # MCP stdio server for connecting an AI assistant (Claude Desktop / Claude Code).
@@ -119,6 +131,18 @@ services:
       - '${WIKI_MCP_HTTP_PORT:-3101}:3333'
     extra_hosts:
       - 'host.docker.internal:host-gateway'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3333/mcp',{headers:{accept:'text/html'}}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
   # Containerized Ollama - Linux + NVIDIA GPU only.

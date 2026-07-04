@@ -11,6 +11,7 @@ The following uses are **not allowed** without a separate written commercial lic
 - use by or on behalf of a company, business, consultancy, agency, client, public or private organization for commercial objectives;
 - integration into a commercial product, SaaS, internal business tool, paid service, client deliverable or professional workflow;
 - resale, sublicensing, redistribution for commercial purposes, or monetization of the software;
+- distribution of container images or hosted instances for commercial purposes;
 - use of modified versions, forks, derivatives or adaptations for commercial purposes;
 - use in training, support, consulting, implementation or managed services sold to third parties.
 

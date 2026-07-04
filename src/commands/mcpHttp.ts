@@ -7,7 +7,9 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { AppConfig } from '../types.ts';
 import {
   WIKI_MCP_TOOLS,
+  createWikiMcpServices,
   createWikiMcpServer,
+  type WikiMcpServices,
 } from '../services/mcpServer.ts';
 import { pruneWindowTimestamps } from '../services/rateLimiter.ts';
 import { resolveInside } from '../utils/path.ts';
@@ -19,6 +21,14 @@ interface McpHttpOptions {
 }
 
 type McpScope = 'read' | 'write';
+
+interface SharedMcpContext {
+  key: string;
+  services: WikiMcpServices;
+  createdAt: number;
+}
+
+const sharedMcpContexts = new Map<string, SharedMcpContext>();
 
 function bearerToken(req: IncomingMessage): string | undefined {
   const raw = req.headers.authorization;
@@ -101,6 +111,54 @@ function rateLimitKey(req: IncomingMessage, token: string | undefined): string {
   const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
   const ip = forwarded || req.socket.remoteAddress || 'unknown';
   return token ? `token:${token}` : `ip:${ip}`;
+}
+
+function sharedContextTtlMs(): number {
+  const value = Number(process.env.WIKI_MCP_CONTEXT_TTL_MS ?? 30_000);
+  return Number.isFinite(value) && value >= 0 ? Math.floor(value) : 30_000;
+}
+
+export function mcpServiceContextKey(config: AppConfig): string {
+  return JSON.stringify({
+    wikiRoot: path.resolve(config.wikiRoot),
+    configPath: config.configPath ? path.resolve(config.configPath) : null,
+    language: config.language,
+    retrieval: {
+      maxContextFiles: config.retrieval.maxContextFiles,
+      maxChunksPerPage: config.retrieval.maxChunksPerPage,
+      maxChunkChars: config.retrieval.maxChunkChars,
+      maxSourceChars: config.retrieval.maxSourceChars,
+      vector: {
+        enabled: config.retrieval.vector.enabled,
+        baseUrl: config.retrieval.vector.baseUrl,
+        embeddingModel: config.retrieval.vector.embeddingModel,
+        rerankEnabled: config.retrieval.vector.rerankEnabled,
+        rerankerModel: config.retrieval.vector.rerankerModel,
+        topK: config.retrieval.vector.topK,
+        rerankTopK: config.retrieval.vector.rerankTopK,
+        maxResults: config.retrieval.vector.maxResults,
+      },
+    },
+  });
+}
+
+export async function getSharedMcpServices(
+  config: AppConfig,
+  now = Date.now(),
+): Promise<WikiMcpServices> {
+  const key = mcpServiceContextKey(config);
+  const ttlMs = sharedContextTtlMs();
+  const existing = sharedMcpContexts.get(key);
+  if (existing && (ttlMs === 0 || now - existing.createdAt <= ttlMs)) {
+    return existing.services;
+  }
+  const services = await createWikiMcpServices(config);
+  sharedMcpContexts.set(key, { key, services, createdAt: now });
+  return services;
+}
+
+export function clearSharedMcpServices(): void {
+  sharedMcpContexts.clear();
 }
 
 function reject(res: ServerResponse, status: number, message: string): void {
@@ -289,7 +347,8 @@ export default async function mcpHttpCmd(
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
       });
-      const server = await createWikiMcpServer(config);
+      const services = await getSharedMcpServices(config);
+      const server = await createWikiMcpServer(config, services);
       await server.connect(transport);
       // Body was already consumed above to check scopes; handleRequest's
       // parsedBody param (its documented mechanism for exactly this case —

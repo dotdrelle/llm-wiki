@@ -12,7 +12,12 @@ import { extractSourceCitations } from '../utils/markdown.ts';
 import { hashText } from '../utils/hash.ts';
 import type { AppConfig } from '../types.ts';
 
-const LLM_WIKI_VERSION = '0.10.4';
+const LLM_WIKI_VERSION = '0.11.0';
+
+export interface WikiMcpServices {
+  workspace: WorkspaceService;
+  retrieval: RetrievalService;
+}
 
 export const WIKI_MCP_TOOLS = [
   {
@@ -305,11 +310,18 @@ function resolveReadableWorkspacePath(
   return absolutePath;
 }
 
-export async function createWikiMcpServer(config: AppConfig): Promise<McpServer> {
+export async function createWikiMcpServices(config: AppConfig): Promise<WikiMcpServices> {
   const workspace = new WorkspaceService(config);
   await workspace.ensureInitialized();
   const retrieval = new RetrievalService(workspace, config);
+  return { workspace, retrieval };
+}
 
+export async function createWikiMcpServer(
+  config: AppConfig,
+  services?: WikiMcpServices,
+): Promise<McpServer> {
+  const { workspace, retrieval } = services ?? await createWikiMcpServices(config);
   const server = new McpServer({
     name: 'llm-wiki',
     version: LLM_WIKI_VERSION,
@@ -400,6 +412,7 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
       }, null, 2));
     }
     await workspace.applyWikiOperations([{ type: 'update', path: pagePath, content }]);
+    retrieval.invalidateCache();
     await appendAuditRecord(workspace, {
       tool: 'wiki_write_page',
       target: pagePath,
