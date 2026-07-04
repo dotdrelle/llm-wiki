@@ -9,7 +9,7 @@ const ROOT = new URL('..', import.meta.url).pathname;
 const logger = new Console(process.stdout, process.stderr);
 const MAX_LINES = 800;
 const LEGACY_LIMITS = new Map([
-  ['src/commands/serve.ts', 4130],
+  ['src/commands/serve.ts', 4030],
   ['src/chat/chatHtml.ts', 2400],
   ['src/chat/styles/chatStyles.ts', 550],
 ]);

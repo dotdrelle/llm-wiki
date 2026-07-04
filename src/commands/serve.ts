@@ -7,7 +7,6 @@ import { mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { createGzip } from 'node:zlib';
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import path from 'node:path';
 import fg from 'fast-glob';
 import matter from 'gray-matter';
@@ -18,7 +17,6 @@ import { WorkspaceService } from '../services/workspaceService.ts';
 import { pathExists, safeWriteFile } from '../utils/fs.ts';
 import { resolveInside, toPosix } from '../utils/path.ts';
 import { WIKI_CSS_VARS } from '../chat/theme.ts';
-import { CHAT_HTML } from '../chat/chatHtml.ts';
 import { renderGraphApp } from '../graph/core/graphLayoutBase.ts';
 import {
   buildWikiGraph,
@@ -31,6 +29,7 @@ import {
   type WikiGraphNode,
 } from '../graph/wiki/projection.ts';
 import type { RuntimeProxyDeps } from '../serve/proxy/runtimeProxy.ts';
+import { handleChatRoutes } from '../serve/routes/chatRoutes.ts';
 import { handleConfigRoutes } from '../serve/routes/configRoutes.ts';
 import { handleGraphRoutes } from '../serve/routes/graphRoutes.ts';
 import { handleMcpRoutes } from '../serve/routes/mcpRoutes.ts';
@@ -3301,44 +3300,6 @@ function upstreamFetchFailureMessage(targetUrl: string, err: unknown): string {
   return `Upstream unreachable (${target}): ${detail}`;
 }
 
-function headerString(value: string | string[] | undefined): string | undefined {
-  const raw = Array.isArray(value) ? value[0] : value;
-  if (!raw) return undefined;
-  return raw.replace(/[\r\n]/g, '').trim();
-}
-
-function chatLlmProxyTarget(req: IncomingMessage, config: AppConfig): {
-  url: string;
-  headers: Record<string, string>;
-} {
-  const overrideBaseUrl = headerString(req.headers['x-llm-wiki-llm-base-url']);
-  const overrideApiKey = headerString(req.headers['x-llm-wiki-llm-api-key']);
-  let baseUrl = config.llm.baseUrl;
-  if (overrideBaseUrl) {
-    let parsed: URL;
-    try {
-      parsed = new URL(overrideBaseUrl);
-    } catch {
-      throw new Error('INVALID_LLM_BASE_URL');
-    }
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      throw new Error('INVALID_LLM_BASE_URL');
-    }
-    baseUrl = overrideBaseUrl;
-  }
-  return {
-    url: `${baseUrl.replace(/\/+$/, '')}/chat/completions`,
-    headers: {
-      authorization: `Bearer ${overrideApiKey ?? config.llm.apiKey ?? ''}`,
-    },
-  };
-}
-
-function chatProxyErrorStatus(err: unknown): number {
-  const message = err instanceof Error ? err.message : String(err);
-  return message === 'INVALID_LLM_BASE_URL' ? 400 : 502;
-}
-
 function resolveEditableMarkdown(rootDir: string, relativePath: string): string {
   const cleanRelativePath = toPosix(relativePath).replace(/^\/+/, '').replace(/\/+$/, '');
   if (!isEditableRelativePath(cleanRelativePath)) {
@@ -3918,32 +3879,24 @@ export default async function serveCmd(
         return;
       }
 
+      if (await handleChatRoutes(req, res, urlPath, {
+        config,
+        externalMcpEndpoints,
+        mcpWikiPort,
+        mcpProductionPort,
+        proxyPost,
+        rootDir,
+        runtimeUrl,
+        sendGzippedHtml,
+        sendJson,
+        workspace,
+        workspaceNameFromEnv,
+      })) {
+        return;
+      }
+
       // ── Server-side proxies (avoid CORS + Docker internal URLs) ────────────
       if (req.method === 'POST') {
-        if (urlPath === '/api/chat') {
-          try {
-            const llmTarget = chatLlmProxyTarget(req, config);
-            await proxyPost(req, res, llmTarget.url, llmTarget.headers, {
-              retry429: true,
-              retryNetwork: true,
-            });
-          } catch (err) {
-            if (!res.headersSent) {
-              const status = chatProxyErrorStatus(err);
-              sendJson(res, status, {
-                error: err instanceof Error ? err.message : String(err),
-                ...(status === 502
-                  ? {
-                      hint: 'Check that the LLM service is running and reachable from the wiki process.',
-                    }
-                  : {}),
-              });
-            } else {
-              res.end();
-            }
-          }
-          return;
-        }
         if (await handleMcpRoutes(req, res, urlPath, {
           mcpAccessKey: () => config.mcp.accessKey,
           externalMcpEndpoints,
@@ -3953,58 +3906,6 @@ export default async function serveCmd(
         })) {
           return;
         }
-      }
-
-      if (urlPath === '/chat' || urlPath === '/chat/connectors') {
-        const systemPromptPath = path.join(workspace.paths.internalDir, 'system-prompt.md');
-        const systemPromptBase = (await pathExists(systemPromptPath))
-          ? (await readFile(systemPromptPath, 'utf8')).trim()
-          : undefined;
-        const profileSection = await workspace.loadProfileSection(config.limits.maxProfileChars);
-        const systemPrompt = [systemPromptBase, profileSection].filter(Boolean).join('\n\n') || undefined;
-        const llmConfigured = Boolean(
-          config.llm.provider &&
-          config.llm.baseUrl &&
-          config.llm.apiKey &&
-          config.llm.model,
-        );
-        const chatConfig = {
-          provider: config.llm.provider,
-          model: config.llm.model,
-          temperature: config.llm.temperature,
-          baseUrl: config.llm.baseUrl,
-          apiKey: config.llm.apiKey ?? '',
-          llmConfigured,
-          language: config.language ?? 'fr',
-          workspaceName: workspaceNameFromEnv() ?? path.basename(rootDir),
-          ...(systemPrompt ? { systemPrompt } : {}),
-          storageScope: createHash('sha256')
-            .update(`${workspaceNameFromEnv() ?? ''}:${rootDir}`)
-            .digest('hex')
-            .slice(0, 16),
-          runtime: {
-            enabled: Boolean(runtimeUrl()),
-          },
-          mcpServers: [
-            {
-              name: 'llm-wiki',
-              url:
-                process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${mcpWikiPort()}/mcp`,
-            },
-            {
-              name: 'wiki-production',
-              url:
-                process.env.PRODUCTION_MCP_PROXY_URL ??
-                `http://localhost:${mcpProductionPort()}/mcp/`,
-            },
-            ...externalMcpEndpoints.map(({ name, url, bearer }) => ({
-              name, url, ...(bearer ? { bearer } : {}),
-            })),
-          ],
-        };
-        const cfgScript = `<script>window.__WIKI_CONFIG__=${escapeScriptJson(JSON.stringify(chatConfig))};</script>`;
-        await sendGzippedHtml(req, res, CHAT_HTML.replace('</head>', `${cfgScript}</head>`));
-        return;
       }
 
       if (urlPath === '/assets/d3.min.js') {

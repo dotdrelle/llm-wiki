@@ -26,6 +26,10 @@ async function configRoutesSource(): Promise<string> {
   return readFile(path.resolve(import.meta.dirname, '../src/serve/routes/configRoutes.ts'), 'utf8');
 }
 
+async function chatRoutesSource(): Promise<string> {
+  return readFile(path.resolve(import.meta.dirname, '../src/serve/routes/chatRoutes.ts'), 'utf8');
+}
+
 async function wikiRoutesSource(): Promise<string> {
   return readFile(path.resolve(import.meta.dirname, '../src/serve/routes/wikiRoutes.ts'), 'utf8');
 }
@@ -264,13 +268,14 @@ describe('serve missing feature endpoints', () => {
   it('exposes template rename and llm config controls', async () => {
     const source = await serveSource();
     const configSource = await configRoutesSource();
+    const chatSource = await chatRoutesSource();
     const wikiSource = await wikiRoutesSource();
 
     expect(source).toContain('function renameHref(relativePath: string)');
     expect(wikiSource).toContain("urlPath.startsWith('/rename/')");
     expect(source).toContain('async function renameTemplate()');
     expect(configSource).toContain("urlPath !== '/api/llm-config'");
-    expect(source).toContain("req.headers['x-llm-wiki-llm-base-url']");
+    expect(chatSource).toContain("req.headers['x-llm-wiki-llm-base-url']");
   });
 
   it('explains pending raw sources in the dashboard', async () => {
@@ -282,7 +287,7 @@ describe('serve missing feature endpoints', () => {
 
 describe('serve chat proxy', () => {
   it('reports unreachable LLM upstreams as a gateway error with Docker guidance', async () => {
-    const source = await serveSource();
+    const source = `${await serveSource()}\n${await chatRoutesSource()}`;
 
     expect(source).toContain('function upstreamFetchFailureMessage');
     expect(source).toContain("sendJson(res, 502");
