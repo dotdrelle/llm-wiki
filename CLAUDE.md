@@ -9,6 +9,10 @@ and regenerates deliverables from templates and build context.
 Keep it usable both as a standalone CLI and as the engine called by
 `llm-wiki-manager`.
 
+0.11.0 is an industrialized single-user deployment baseline. Multi-user support
+is specified in `docs/industrialisation.md` and planned for 0.12.0; do not treat
+the runtime/write APIs as a shared multi-user boundary before that lot lands.
+
 The multi-repo roadmap driving current work lives in `plan-directeur-revise.md`
 at the wikiLLM workspace root (one level above this repo, not versioned here).
 0.9.4 is the incremental, iso-behavior extraction of `src/commands/serve.ts`

@@ -1,7 +1,9 @@
 # Industrialisation and multi-user readiness
 
-Version 0.11.0 prepares the runtime for shared deployments without changing the
-single-workspace local-first contract.
+Version 0.11.0 is an industrialized single-user deployment baseline. This
+document specifies the multi-user boundary, but the implementation is planned
+for 0.12.0. Until then, runtime write access must stay local/proxied and must
+not be exposed as a shared multi-user surface.
 
 ## MCP HTTP service sharing
 
@@ -21,7 +23,8 @@ or API keys. `WIKI_MCP_CONTEXT_TTL_MS` controls context lifetime. Default:
 
 Write tools invalidate retrieval cache after wiki writes. External filesystem
 changes can remain cached until the context TTL expires; use a short TTL in
-shared deployments where files can be modified outside `wiki mcp-http`.
+controlled single-user deployments where files can be modified outside
+`wiki mcp-http`.
 
 ## Multi-user boundary
 
@@ -40,9 +43,11 @@ Required model:
 - cancellation: run owner or admin only, unless a service account policy says
   otherwise.
 
-Until that model is implemented, `wiki mcp-http` should be treated as a
-workspace-scoped service endpoint protected by bearer tokens, not as a
-multi-tenant application boundary.
+Until that model is implemented, `wiki mcp-http` and the manager runtime should
+be treated as workspace-scoped service endpoints protected by bearer tokens, not
+as multi-tenant application boundaries. The manager runtime binds to
+`127.0.0.1` by default; exposed-host mode (`--host 0.0.0.0`) is an explicit
+deployment choice, not the default.
 
 ## Packaging contract
 
