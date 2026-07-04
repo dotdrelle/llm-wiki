@@ -184,6 +184,7 @@ export class RerankService {
         requestsPerMinute: this.config.limits.requestsPerMinute,
         logger: this.logger,
         label: 'rerank',
+        workspaceRoot: this.config.wikiRoot,
       });
       const res = await fetch(
         `${this.config.retrieval.vector.baseUrl.replace(/\/$/, '')}/rerank`,

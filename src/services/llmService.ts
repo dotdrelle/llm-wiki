@@ -95,6 +95,7 @@ export class LLMService {
       requestsPerMinute: this.config.limits.requestsPerMinute,
       logger,
       label,
+      workspaceRoot: this.config.wikiRoot,
     });
   }
 

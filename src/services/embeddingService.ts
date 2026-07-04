@@ -137,6 +137,7 @@ export class EmbeddingService {
         requestsPerMinute: this.config.limits.requestsPerMinute,
         logger: this.logger,
         label: 'embedding',
+        workspaceRoot: this.config.wikiRoot,
       });
       const response = await fetchInputs(missingInputs.map((item) => item.text));
       const res = response.res;
