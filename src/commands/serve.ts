@@ -15,7 +15,7 @@ import { marked } from 'marked';
 import type { AppConfig } from '../types.ts';
 import { loadConfig } from '../config/loadConfig.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
-import { pathExists, safeWriteFile, writeIfChanged } from '../utils/fs.ts';
+import { pathExists, safeWriteFile } from '../utils/fs.ts';
 import { resolveInside, toPosix } from '../utils/path.ts';
 import { WIKI_CSS_VARS } from '../chat/theme.ts';
 import { CHAT_HTML } from '../chat/chatHtml.ts';
@@ -36,6 +36,7 @@ import { handleGraphRoutes } from '../serve/routes/graphRoutes.ts';
 import { handleMcpRoutes } from '../serve/routes/mcpRoutes.ts';
 import { handleRuntimeRoutes } from '../serve/routes/runtimeRoutes.ts';
 import { handleUploadRoutes, type ExternalMcpEndpoint } from '../serve/routes/uploadRoutes.ts';
+import { handleWikiRoutes } from '../serve/routes/wikiRoutes.ts';
 
 const mcpWikiPort = () => process.env.WIKI_MCP_HTTP_PORT ?? process.env.WIKI_MCP_PORT ?? '3101';
 const mcpProductionPort = () => process.env.PRODUCTION_MCP_PORT ?? '3102';
@@ -3954,142 +3955,6 @@ export default async function serveCmd(
         }
       }
 
-      if (urlPath.startsWith('/new/')) {
-        const collection = urlPath.replace(/^\/new\//, '').replace(/\/+$/, '');
-        if (req.method === 'GET') {
-          try {
-            const html = await generateNewMarkdownPage(rootDir, collection);
-            await sendGzippedHtml(req, res, html);
-          } catch {
-            res.writeHead(403, { 'Content-Type': 'text/plain' });
-            res.end('Forbidden');
-          }
-          return;
-        }
-        if (req.method === 'POST') {
-          try {
-            const relativePath = await createMarkdownDocument(
-              rootDir,
-              collection,
-              await readRequestBody(req),
-            );
-            res.writeHead(303, { Location: escapeHref(`/${relativePath}`) });
-            res.end();
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            const status =
-              message === 'MARKDOWN_ALREADY_EXISTS'
-                ? 409
-                : message === 'INVALID_MARKDOWN_TITLE'
-                  ? 400
-                  : 403;
-            res.writeHead(status, { 'Content-Type': 'text/plain' });
-            res.end(
-              status === 409
-                ? 'File already exists'
-                : status === 400
-                  ? 'Invalid title'
-                  : 'Forbidden',
-            );
-          }
-          return;
-        }
-        res.writeHead(405, { 'Content-Type': 'text/plain' });
-        res.end('Method not allowed');
-        return;
-      }
-
-      if (urlPath.startsWith('/delete/')) {
-        const relative = urlPath.replace(/^\/delete\//, '').replace(/\/+$/, '');
-        if (req.method === 'POST') {
-          try {
-            const collection = await deleteMarkdownDocument(rootDir, relative);
-            res.writeHead(303, {
-              Location: escapeHref(`/${collection}`),
-              'Cache-Control': 'no-store, no-cache, must-revalidate',
-            });
-            res.end();
-          } catch {
-            res.writeHead(403, { 'Content-Type': 'text/plain' });
-            res.end('Forbidden');
-          }
-          return;
-        }
-        res.writeHead(405, { 'Content-Type': 'text/plain' });
-        res.end('Method not allowed');
-        return;
-      }
-
-      if (urlPath.startsWith('/rename/')) {
-        const relative = urlPath.replace(/^\/rename\//, '').replace(/\/+$/, '');
-        if (req.method === 'PATCH') {
-          try {
-            const renamedPath = await renameTemplateDocument(
-              rootDir,
-              relative,
-              await readRequestBody(req),
-            );
-            sendJson(res, 200, { ok: true, path: renamedPath });
-          } catch (err) {
-            sendJson(res, 400, {
-              ok: false,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          }
-          return;
-        }
-        sendJson(res, 405, { error: 'Method not allowed' });
-        return;
-      }
-
-      if (urlPath.startsWith('/edit/')) {
-        const relative = urlPath.replace(/^\/edit\//, '').replace(/\/+$/, '');
-        if (req.method === 'GET') {
-          try {
-            const html = await generateEditPage(rootDir, relative);
-            await sendGzippedHtml(req, res, html);
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            const status = message.startsWith('FORBIDDEN_EDIT_PATH') ? 403 : 404;
-            res.writeHead(status, { 'Content-Type': 'text/plain' });
-            res.end(status === 403 ? 'Forbidden' : 'Not found');
-          }
-          return;
-        }
-
-        if (req.method === 'POST') {
-          try {
-            const absolute = resolveEditableMarkdown(rootDir, relative);
-            const body = await readRequestBody(req);
-            const params = new URLSearchParams(body);
-            const content = params.get('content');
-            if (content === null) {
-              res.writeHead(400, { 'Content-Type': 'text/plain' });
-              res.end('Missing content field');
-              return;
-            }
-            // Manual edits must round-trip exactly; generated Markdown is normalized elsewhere.
-            await writeIfChanged(absolute, content);
-            const savedRelative = toPosix(relative);
-            const redirectAfterSave = isRawUntrackedReference(savedRelative)
-              ? escapeHref(editHref(savedRelative))
-              : escapeHref(`/${savedRelative}`);
-            res.writeHead(303, { Location: redirectAfterSave });
-            res.end();
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            const status = message.startsWith('FORBIDDEN_EDIT_PATH') ? 403 : 404;
-            res.writeHead(status, { 'Content-Type': 'text/plain' });
-            res.end(status === 403 ? 'Forbidden' : 'Not found');
-          }
-          return;
-        }
-
-        res.writeHead(405, { 'Content-Type': 'text/plain' });
-        res.end('Method not allowed');
-        return;
-      }
-
       if (urlPath === '/chat' || urlPath === '/chat/connectors') {
         const systemPromptPath = path.join(workspace.paths.internalDir, 'system-prompt.md');
         const systemPromptBase = (await pathExists(systemPromptPath))
@@ -4142,37 +4007,6 @@ export default async function serveCmd(
         return;
       }
 
-      if (req.method === 'GET' && isRawDownloadRequestPath(urlPath)) {
-        const rawRelative = toPosix(urlPath.replace(/^\/raw\//, '').replace(/\/+$/, ''));
-        const normalizedRawRelative = toPosix(path.posix.normalize(rawRelative));
-        if (rawRelative.endsWith('.md') && isServedRelativePath(rawRelative)) {
-          if (
-            normalizedRawRelative !== rawRelative ||
-            normalizedRawRelative.startsWith('../') ||
-            normalizedRawRelative === '..'
-          ) {
-            res.writeHead(403, { 'Content-Type': 'text/plain' });
-            res.end('Forbidden');
-            return;
-          }
-          const absolute = resolveInside(rootDir, normalizedRawRelative);
-          if (await pathExists(absolute)) {
-            const content = await readFile(absolute, 'utf8');
-            const filename = path.basename(normalizedRawRelative);
-            res.writeHead(200, {
-              'Content-Type': 'text/markdown; charset=utf-8',
-              'Content-Disposition': `attachment; filename="${filename}"`,
-              'Cache-Control': 'no-store',
-            });
-            res.end(content);
-            return;
-          }
-        }
-        res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('Not found');
-        return;
-      }
-
       if (urlPath === '/assets/d3.min.js') {
         const js = await readFile(D3_DIST_PATH, 'utf8');
         res.writeHead(200, {
@@ -4204,61 +4038,27 @@ export default async function serveCmd(
         generateGraph,
       })) return;
 
-      if (urlPath === '/') {
-        const html = await generateIndex(rootDir);
-        await sendGzippedHtml(req, res, html);
-        return;
-      }
-
-      if (urlPath === '/skills') {
-        const html = await generateSkillsPage(rootDir);
-        await sendGzippedHtml(req, res, html);
-        return;
-      }
-
-      const relative = toPosix(urlPath.replace(/^\//, '').replace(/\/+$/, ''));
-      const normalizedRelative = toPosix(path.posix.normalize(relative));
-      if (
-        normalizedRelative !== relative ||
-        normalizedRelative.startsWith('../') ||
-        normalizedRelative === '..'
-      ) {
-        res.writeHead(403, { 'Content-Type': 'text/plain' });
-        res.end('Forbidden');
-        return;
-      }
-      if (!isServedRelativePath(normalizedRelative)) {
-        const html = await generateNotFoundPage(rootDir, urlPath);
-        await sendGzippedHtml(req, res, html, {}, 404);
-        return;
-      }
-
-      const absolute = resolveInside(rootDir, normalizedRelative);
-
-      if (!(await pathExists(absolute))) {
-        const html = await generateNotFoundPage(rootDir, urlPath);
-        await sendGzippedHtml(req, res, html, {}, 404);
-        return;
-      }
-
-      const absoluteStats = await stat(absolute);
-      if (absoluteStats.isDirectory()) {
-        const html =
-          relative === 'wiki'
-            ? await generateIndex(rootDir)
-            : await generateDirectoryPage(rootDir, normalizedRelative);
-        await sendGzippedHtml(req, res, html);
-        return;
-      }
-
-      if (!absolute.endsWith('.md')) {
-        res.writeHead(415, { 'Content-Type': 'text/plain' });
-        res.end('Only .md files are served');
-        return;
-      }
-
-      const html = await serveMd(rootDir, absolute, urlPath);
-      await sendGzippedHtml(req, res, html);
+      if (await handleWikiRoutes(req, res, urlPath, {
+        rootDir,
+        createMarkdownDocument,
+        deleteMarkdownDocument,
+        escapeHref,
+        generateDirectoryPage,
+        generateEditPage,
+        generateIndex,
+        generateNewMarkdownPage,
+        generateNotFoundPage,
+        generateSkillsPage,
+        isRawDownloadRequestPath,
+        isRawUntrackedReference,
+        isServedRelativePath,
+        readRequestBody,
+        renameTemplateDocument,
+        resolveEditableMarkdown,
+        sendGzippedHtml,
+        sendJson,
+        serveMd,
+      })) return;
     } catch (err) {
       console.error(err);
       res.writeHead(500, { 'Content-Type': 'text/plain' });

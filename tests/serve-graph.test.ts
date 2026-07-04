@@ -26,6 +26,10 @@ async function configRoutesSource(): Promise<string> {
   return readFile(path.resolve(import.meta.dirname, '../src/serve/routes/configRoutes.ts'), 'utf8');
 }
 
+async function wikiRoutesSource(): Promise<string> {
+  return readFile(path.resolve(import.meta.dirname, '../src/serve/routes/wikiRoutes.ts'), 'utf8');
+}
+
 async function graphCoreSource(): Promise<string> {
   return readFile(path.resolve(import.meta.dirname, '../src/graph/core/graphLayoutBase.ts'), 'utf8');
 }
@@ -81,13 +85,13 @@ describe('serve graph ui', () => {
   });
 
   it('opens Pending markdown in the editor and keeps save/cancel on valid routes', async () => {
-    const source = await serveSource();
+    const source = `${await serveSource()}\n${await wikiRoutesSource()}`;
 
     expect(source).toContain('href="${escapeHref(`/${file}`)}"');
     expect(source).toContain('title="${safePath}"');
     expect(source).toContain("const cancelHref = isRawUntrackedReference(cleanRelativePath) ? '/'");
-    expect(source).toContain('const redirectAfterSave = isRawUntrackedReference(savedRelative)');
-    expect(source).toContain('? escapeHref(editHref(savedRelative))');
+    expect(source).toContain('const redirectAfterSave = deps.isRawUntrackedReference(savedRelative)');
+    expect(source).toContain("? deps.escapeHref(`/edit/${savedRelative}`)");
   });
 
   it('groups concept tiles from frontmatter or concept subfolders', async () => {
@@ -212,11 +216,11 @@ describe('serve command palette', () => {
   });
 
   it('serves markdown pages without browser cache so sidebar changes are fresh', async () => {
-    const source = await serveSource();
+    const source = `${await serveSource()}\n${await wikiRoutesSource()}`;
 
     expect(source).toContain("'Cache-Control': 'no-store, no-cache, must-revalidate'");
-    expect(source).toContain('const html = await serveMd(rootDir, absolute, urlPath);');
-    expect(source).toContain('await sendGzippedHtml(req, res, html);');
+    expect(source).toContain('const html = await deps.serveMd(rootDir, absolute, urlPath);');
+    expect(source).toContain('await deps.sendGzippedHtml(req, res, html);');
     expect(source).not.toContain('async function navigationEtag(rootDir: string)');
     expect(source).not.toContain('function pageEtag(');
     expect(source).not.toContain('function requestHasEtag(');
@@ -260,9 +264,10 @@ describe('serve missing feature endpoints', () => {
   it('exposes template rename and llm config controls', async () => {
     const source = await serveSource();
     const configSource = await configRoutesSource();
+    const wikiSource = await wikiRoutesSource();
 
     expect(source).toContain('function renameHref(relativePath: string)');
-    expect(source).toContain("urlPath.startsWith('/rename/')");
+    expect(wikiSource).toContain("urlPath.startsWith('/rename/')");
     expect(source).toContain('async function renameTemplate()');
     expect(configSource).toContain("urlPath !== '/api/llm-config'");
     expect(source).toContain("req.headers['x-llm-wiki-llm-base-url']");
