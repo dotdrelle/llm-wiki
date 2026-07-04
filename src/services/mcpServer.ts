@@ -1,4 +1,5 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { appendFile, readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -11,7 +12,7 @@ import { resolveInside } from '../utils/path.ts';
 import { extractSourceCitations } from '../utils/markdown.ts';
 import type { AppConfig } from '../types.ts';
 
-const LLM_WIKI_VERSION = '0.9.4';
+const LLM_WIKI_VERSION = '0.10.1';
 
 export const WIKI_MCP_TOOLS = [
   {
@@ -90,6 +91,100 @@ function textResult(text: string, options?: { isError?: boolean }): CallToolResu
     content: [{ type: 'text', text }],
     ...(options?.isError ? { isError: true } : {}),
   };
+}
+
+function sha256Text(text: string): string {
+  return createHash('sha256').update(text).digest('hex');
+}
+
+function diffPreview(before: string, after: string): string {
+  if (before === after) return 'No content change.';
+  const beforeLines = before.split('\n');
+  const afterLines = after.split('\n');
+  let firstChange = 0;
+  while (
+    firstChange < beforeLines.length
+    && firstChange < afterLines.length
+    && beforeLines[firstChange] === afterLines[firstChange]
+  ) {
+    firstChange += 1;
+  }
+  let beforeTail = beforeLines.length - 1;
+  let afterTail = afterLines.length - 1;
+  while (
+    beforeTail >= firstChange
+    && afterTail >= firstChange
+    && beforeLines[beforeTail] === afterLines[afterTail]
+  ) {
+    beforeTail -= 1;
+    afterTail -= 1;
+  }
+  const start = Math.max(0, firstChange - 3);
+  const endBefore = Math.min(beforeLines.length - 1, beforeTail + 3);
+  const endAfter = Math.min(afterLines.length - 1, afterTail + 3);
+  const lines = [
+    '--- before',
+    '+++ after',
+    ...(start > 0 ? ['...'] : []),
+    ...beforeLines.slice(start, endBefore + 1).map((line) => `- ${line}`),
+    ...afterLines.slice(start, endAfter + 1).map((line) => `+ ${line}`),
+    ...(endBefore < beforeLines.length - 1 || endAfter < afterLines.length - 1 ? ['...'] : []),
+  ];
+  return truncateText(lines.join('\n'), 4000);
+}
+
+export function createWritePreviewPayload({
+  target,
+  before,
+  after,
+  confirmed,
+  dryRun,
+  written,
+}: {
+  target: string;
+  before: string;
+  after: string;
+  confirmed: boolean;
+  dryRun: boolean;
+  written: boolean;
+}) {
+  return {
+    target,
+    dryRun,
+    confirmed,
+    written,
+    requiresConfirmation: !written,
+    beforeChars: before.length,
+    afterChars: after.length,
+    beforeSha256: sha256Text(before),
+    afterSha256: sha256Text(after),
+    changed: before !== after,
+    preview: diffPreview(before, after),
+  };
+}
+
+async function appendAuditRecord(
+  workspace: WorkspaceService,
+  record: Record<string, unknown>,
+): Promise<void> {
+  const auditPath = path.join(workspace.paths.internalDir, 'audit.log');
+  await appendFile(auditPath, `${JSON.stringify({
+    ts: new Date().toISOString(),
+    ...record,
+  })}\n`, 'utf8');
+}
+
+function resolveWritableWikiPath(
+  workspace: WorkspaceService,
+  requestedPath: string,
+): string {
+  const normalizedPath = requestedPath.trim().replace(/\\/g, '/').replace(/^\.\//, '');
+  const absolutePath = resolveInside(workspace.paths.rootDir, normalizedPath);
+  const relativeToWiki = path.relative(workspace.paths.wikiDir, absolutePath);
+  if (relativeToWiki.startsWith('..') || path.isAbsolute(relativeToWiki)) {
+    throw new Error('Access denied: path must be under wiki/.');
+  }
+  return absolutePath;
 }
 
 function uniqueValues(values: string[]): string[] {
@@ -273,11 +368,51 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
   const writeWikiPage = async ({
     path: pagePath,
     content,
+    confirm,
+    dryRun,
   }: {
     path: string;
     content: string;
+    confirm?: boolean;
+    dryRun?: boolean;
   }) => {
+    const absolutePath = resolveWritableWikiPath(workspace, pagePath);
+    const before = (await pathExists(absolutePath)) ? await readFile(absolutePath, 'utf8') : '';
+    const confirmed = confirm === true;
+    const previewOnly = dryRun === true || !confirmed;
+    const payload = createWritePreviewPayload({
+      target: pagePath,
+      before,
+      after: content,
+      confirmed,
+      dryRun: dryRun === true,
+      written: !previewOnly,
+    });
+    if (previewOnly) {
+      await appendAuditRecord(workspace, {
+        tool: 'wiki_write_page',
+        target: pagePath,
+        action: dryRun === true ? 'dry_run' : 'preview_required',
+        confirmed,
+        contentChars: content.length,
+        beforeSha256: payload.beforeSha256,
+        afterSha256: payload.afterSha256,
+      });
+      return textResult(JSON.stringify({
+        ...payload,
+        message: 'Preview only. Re-run with confirm=true to write.',
+      }, null, 2));
+    }
     await workspace.applyWikiOperations([{ type: 'update', path: pagePath, content }]);
+    await appendAuditRecord(workspace, {
+      tool: 'wiki_write_page',
+      target: pagePath,
+      action: 'write',
+      confirmed,
+      contentChars: content.length,
+      beforeSha256: payload.beforeSha256,
+      afterSha256: payload.afterSha256,
+    });
     return textResult(`Written: ${pagePath}`);
   };
 
@@ -504,10 +639,18 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
   const writeWikiPageInput = {
     path: z.string().describe('Relative path from workspace root, must start with wiki/'),
     content: z.string().describe('Full markdown content to write'),
+    confirm: z
+      .boolean()
+      .optional()
+      .describe('Must be true to write. Omit or false returns a diff preview only.'),
+    dryRun: z
+      .boolean()
+      .optional()
+      .describe('When true, return the write preview and audit the attempt without writing.'),
   };
   server.tool(
     'wiki_write_page',
-    'Create or update one llm-wiki markdown page under wiki/. Use this only for wiki content edits.',
+    'Create or update one llm-wiki markdown page under wiki/. Returns a diff preview unless confirm=true; dryRun=true never writes.',
     writeWikiPageInput,
     (input) => loggedTool('wiki_write_page', input, writeWikiPage),
   );
@@ -588,16 +731,85 @@ export async function createWikiMcpServer(config: AppConfig): Promise<McpServer>
     () => loggedTool('profile_read', {}, readProfile),
   );
 
-  const updateProfile = async ({ content }: { content: string }) => {
+  const updateProfile = async ({
+    content,
+    confirm,
+    dryRun,
+  }: {
+    content: string;
+    confirm?: boolean;
+    dryRun?: boolean;
+  }) => {
+    if (content.length > config.limits.maxProfileChars) {
+      await appendAuditRecord(workspace, {
+        tool: 'profile_update',
+        target: '.wiki/profile.md',
+        action: 'rejected_limit',
+        contentChars: content.length,
+        maxProfileChars: config.limits.maxProfileChars,
+      });
+      return textResult(JSON.stringify({
+        error: 'Profile exceeds maxProfileChars limit.',
+        contentChars: content.length,
+        maxProfileChars: config.limits.maxProfileChars,
+        written: false,
+      }, null, 2), { isError: true });
+    }
+    const before = (await pathExists(profilePath)) ? await readFile(profilePath, 'utf8') : '';
+    const confirmed = confirm === true;
+    const previewOnly = dryRun === true || !confirmed;
+    const payload = createWritePreviewPayload({
+      target: '.wiki/profile.md',
+      before,
+      after: content,
+      confirmed,
+      dryRun: dryRun === true,
+      written: !previewOnly,
+    });
+    if (previewOnly) {
+      await appendAuditRecord(workspace, {
+        tool: 'profile_update',
+        target: '.wiki/profile.md',
+        action: dryRun === true ? 'dry_run' : 'preview_required',
+        confirmed,
+        contentChars: content.length,
+        beforeSha256: payload.beforeSha256,
+        afterSha256: payload.afterSha256,
+      });
+      return textResult(JSON.stringify({
+        ...payload,
+        maxProfileChars: config.limits.maxProfileChars,
+        message: 'Preview only. Re-run with confirm=true to write.',
+      }, null, 2));
+    }
     await writeFile(profilePath, content, 'utf8');
+    await appendAuditRecord(workspace, {
+      tool: 'profile_update',
+      target: '.wiki/profile.md',
+      action: 'write',
+      confirmed,
+      contentChars: content.length,
+      beforeSha256: payload.beforeSha256,
+      afterSha256: payload.afterSha256,
+    });
     console.error(`Profile updated: .wiki/profile.md`);
     return textResult(`Profile updated: .wiki/profile.md`);
   };
 
   server.tool(
     'profile_update',
-    'Write the workspace profile to .wiki/profile.md. Use only when the user explicitly asks to remember, persist, summarize, or update durable profile information.',
-    { content: z.string().describe('Full Markdown content to write to .wiki/profile.md.') },
+    'Write the workspace profile to .wiki/profile.md. Returns a diff preview unless confirm=true; dryRun=true never writes; maxProfileChars is enforced.',
+    {
+      content: z.string().describe('Full Markdown content to write to .wiki/profile.md.'),
+      confirm: z
+        .boolean()
+        .optional()
+        .describe('Must be true to write. Omit or false returns a diff preview only.'),
+      dryRun: z
+        .boolean()
+        .optional()
+        .describe('When true, return the write preview and audit the attempt without writing.'),
+    },
     (input) => loggedTool('profile_update', input, updateProfile),
   );
 

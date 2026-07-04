@@ -73,7 +73,7 @@ const CHAT_HISTORY_DIR = path.join('.wiki', 'chat-history');
 const CHAT_HISTORY_INDEX = 'index.json';
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
-const LLM_WIKI_VERSION = '0.9.4';
+const LLM_WIKI_VERSION = '0.10.1';
 
 type SkillMeta = {
   name: string;
