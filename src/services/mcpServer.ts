@@ -1,5 +1,4 @@
 import { appendFile, readFile, writeFile } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -10,6 +9,7 @@ import { RetrievalService } from './retrievalService.ts';
 import { pathExists } from '../utils/fs.ts';
 import { resolveInside } from '../utils/path.ts';
 import { extractSourceCitations } from '../utils/markdown.ts';
+import { hashText } from '../utils/hash.ts';
 import type { AppConfig } from '../types.ts';
 
 const LLM_WIKI_VERSION = '0.10.4';
@@ -93,10 +93,6 @@ function textResult(text: string, options?: { isError?: boolean }): CallToolResu
   };
 }
 
-function sha256Text(text: string): string {
-  return createHash('sha256').update(text).digest('hex');
-}
-
 function diffPreview(before: string, after: string): string {
   if (before === after) return 'No content change.';
   const beforeLines = before.split('\n');
@@ -156,8 +152,8 @@ export function createWritePreviewPayload({
     requiresConfirmation: !written,
     beforeChars: before.length,
     afterChars: after.length,
-    beforeSha256: sha256Text(before),
-    afterSha256: sha256Text(after),
+    beforeSha256: hashText(before),
+    afterSha256: hashText(after),
     changed: before !== after,
     preview: diffPreview(before, after),
   };

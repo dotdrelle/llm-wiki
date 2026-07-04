@@ -272,7 +272,16 @@ runner or the CLI.
   `transient` errors (rate limit, timeout, connection reset) retry once with
   backoff and emit `ingest:retry`; anything else is `unknown` and still gets
   one retry. Do not add a second retry/classification path elsewhere — this
-  is the only ingestion retry mechanism.
+  is the only ingestion retry mechanism. `buildReviewOperations`'s
+  `existingPages` map comes from `this.retrieval.warmCache()` (cached,
+  invalidated by the existing `this.retrieval.invalidateCache()` call right
+  after an apply) — not a raw `workspace.listWikiPages()` call, which would
+  re-scan the whole wiki tree per source in a multi-source ingest and, if
+  hoisted naively above the loop instead, would make a later source's diff
+  preview ignore an earlier source's just-applied changes in the same run.
+  Hashing anywhere in this repo goes through `utils/hash.ts`'s `hashText`;
+  don't add a second SHA-256 wrapper (this happened once already, in
+  `mcpServer.ts`, and was consolidated).
 - `buildService.ts`: template slot batching and generation.
 - `refreshService.ts`: stale deliverable detection.
 - `exportService.ts`: citation expansion and polish.
@@ -321,6 +330,17 @@ runner or the CLI.
   once (for scope classification) and passed to the MCP SDK's
   `transport.handleRequest(req, res, parsedBody)` — its documented mechanism
   for a pre-read body — rather than reconstructing a fake request stream.
+  `hasAnyMcpToken(config)` is the single "is any token configured" check —
+  don't re-derive the `accessKey || readToken || writeToken` condition
+  inline elsewhere. `createMcpRateLimiter`'s sliding window shares its
+  timestamp-pruning primitive (`pruneWindowTimestamps`, in
+  `services/rateLimiter.ts`) with the outbound provider throttle
+  (`throttleProviderRequestStart`) — same windowing math, reject-on-limit
+  here vs. wait-and-retry there. Known, accepted gap: neither this map nor
+  its per-token/IP counterpart in each Python agent evicts a key once its
+  bucket empties, so a long-running process accumulates one entry per
+  distinct caller seen over its lifetime; fixing that needs a periodic
+  sweep, not attempted yet.
 
 TLS paths resolve relative to the workspace when not absolute. Cert and key
 must be supplied together. Keep TLS in env/Compose, not `.wikirc.yaml`.

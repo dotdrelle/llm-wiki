@@ -239,8 +239,13 @@ class UnreconciledCitationLLMService extends FakeLLMService {
 class FakeRetrievalService {
   invalidateCalls = 0;
 
+  constructor(private wikiPages: WikiPage[] = []) {}
+
   async search(): Promise<SearchResult[]> {
     return [];
+  }
+  async warmCache(): Promise<WikiPage[]> {
+    return this.wikiPages;
   }
   invalidateCache(): void {
     this.invalidateCalls += 1;
@@ -499,7 +504,7 @@ describe('ingest service', () => {
       createConfig(),
       workspace as unknown as WorkspaceService,
       new FakeLLMService() as unknown as LLMService,
-      new FakeRetrievalService() as unknown as RetrievalService,
+      new FakeRetrievalService(workspace.wikiPages) as unknown as RetrievalService,
       { refresh: async () => [] } as unknown as RefreshService,
       logger,
     );

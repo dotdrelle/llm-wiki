@@ -120,11 +120,6 @@ function enforceSourceCitationPath(
   return { operations: operationsWithCitations, rewrittenCitations, unreconciledCitations };
 }
 
-function countLines(value: string): number {
-  if (!value) return 0;
-  return value.split(/\r?\n/).length;
-}
-
 function diffPreview(before: string, after: string): IngestReviewOperation['diff'] {
   if (before === after) {
     return {
@@ -137,18 +132,20 @@ function diffPreview(before: string, after: string): IngestReviewOperation['diff
 
   const beforeLines = before.split(/\r?\n/);
   const afterLines = after.split(/\r?\n/);
+  const beforeLineSet = new Set(beforeLines);
+  const afterLineSet = new Set(afterLines);
   const preview: string[] = [];
   const maxPreviewLines = 12;
 
   for (const line of beforeLines) {
-    if (!afterLines.includes(line)) {
+    if (!afterLineSet.has(line)) {
       preview.push(`- ${line}`);
     }
     if (preview.length >= maxPreviewLines) break;
   }
   if (preview.length < maxPreviewLines) {
     for (const line of afterLines) {
-      if (!beforeLines.includes(line)) {
+      if (!beforeLineSet.has(line)) {
         preview.push(`+ ${line}`);
       }
       if (preview.length >= maxPreviewLines) break;
@@ -157,8 +154,8 @@ function diffPreview(before: string, after: string): IngestReviewOperation['diff
 
   return {
     changed: true,
-    addedLines: Math.max(0, countLines(after) - countLines(before)),
-    removedLines: Math.max(0, countLines(before) - countLines(after)),
+    addedLines: Math.max(0, afterLines.length - beforeLines.length),
+    removedLines: Math.max(0, beforeLines.length - afterLines.length),
     preview,
   };
 }
@@ -508,7 +505,7 @@ export class IngestService {
         }
 
         const existingPages = new Map(
-          (await this.workspace.listWikiPages()).map((page) => [page.relativePath, page]),
+          (await this.retrieval.warmCache()).map((page) => [page.relativePath, page]),
         );
         const review = buildReviewOperations({
           operations: allOperations,

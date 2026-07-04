@@ -92,10 +92,6 @@ interface Bm25Corpus {
   averageLength: number;
 }
 
-function uniqueTokens(tokens: string[]): Set<string> {
-  return new Set(tokens);
-}
-
 function countTokens(tokens: string[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const token of tokens) counts.set(token, (counts.get(token) ?? 0) + 1);
@@ -109,6 +105,8 @@ function buildBm25Corpus(pages: WikiPage[]): Bm25Corpus {
 
   for (const page of pages) {
     const chunks = splitByHeadings(page.content);
+    const nameTokens = tokenize(page.name);
+    const pathTokens = tokenize(page.relativePath);
     for (const chunk of chunks) {
       const tokens = tokenize(chunk.content);
       const document: LexicalDocument = {
@@ -118,12 +116,12 @@ function buildBm25Corpus(pages: WikiPage[]): Bm25Corpus {
         tokens,
         tokenCounts: countTokens(tokens),
         headingTokens: tokenize(chunk.heading),
-        nameTokens: tokenize(page.name),
-        pathTokens: tokenize(page.relativePath),
+        nameTokens,
+        pathTokens,
       };
       documents.push(document);
       totalLength += Math.max(1, tokens.length);
-      for (const token of uniqueTokens(tokens)) {
+      for (const token of new Set(tokens)) {
         documentFrequency.set(token, (documentFrequency.get(token) ?? 0) + 1);
       }
     }
@@ -136,19 +134,13 @@ function buildBm25Corpus(pages: WikiPage[]): Bm25Corpus {
   };
 }
 
-function bm25TermScore({
-  termFrequency,
-  documentFrequency,
-  documentLength,
-  averageLength,
-  documentCount,
-}: {
-  termFrequency: number;
-  documentFrequency: number;
-  documentLength: number;
-  averageLength: number;
-  documentCount: number;
-}): number {
+function bm25TermScore(
+  termFrequency: number,
+  documentFrequency: number,
+  documentLength: number,
+  averageLength: number,
+  documentCount: number,
+): number {
   if (termFrequency <= 0 || documentFrequency <= 0 || documentCount <= 0) return 0;
   const idf = Math.log(1 + (documentCount - documentFrequency + 0.5) / (documentFrequency + 0.5));
   const denominator = termFrequency
@@ -162,13 +154,13 @@ function scoreDocument(queryTokens: string[], document: LexicalDocument, corpus:
   let score = 0;
 
   for (const [token, queryFrequency] of queryCounts) {
-    score += queryFrequency * bm25TermScore({
-      termFrequency: document.tokenCounts.get(token) ?? 0,
-      documentFrequency: corpus.documentFrequency.get(token) ?? 0,
+    score += queryFrequency * bm25TermScore(
+      document.tokenCounts.get(token) ?? 0,
+      corpus.documentFrequency.get(token) ?? 0,
       documentLength,
-      averageLength: corpus.averageLength,
-      documentCount: corpus.documents.length,
-    });
+      corpus.averageLength,
+      corpus.documents.length,
+    );
     if (document.headingTokens.includes(token)) score += 1.8;
     if (document.nameTokens.includes(token)) score += 3.6;
     if (document.pathTokens.includes(token)) score += 1.4;

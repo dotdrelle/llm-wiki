@@ -31,9 +31,13 @@ export function providerRateLimitRetryMaxAttempts(): number {
   return readPositiveIntegerEnv('LLM_WIKI_RATE_LIMIT_RETRY_MAX_ATTEMPTS', 3);
 }
 
-function pruneStarts(key: string, now: number, windowMs: number): number[] {
+export function pruneWindowTimestamps(timestamps: number[], now: number, windowMs: number): number[] {
   const threshold = now - windowMs;
-  const starts = (rateLimiterStarts.get(key) ?? []).filter((startedAt) => startedAt > threshold);
+  return timestamps.filter((startedAt) => startedAt > threshold);
+}
+
+function pruneStarts(key: string, now: number, windowMs: number): number[] {
+  const starts = pruneWindowTimestamps(rateLimiterStarts.get(key) ?? [], now, windowMs);
   rateLimiterStarts.set(key, starts);
   return starts;
 }

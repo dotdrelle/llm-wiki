@@ -9,6 +9,7 @@ import {
   WIKI_MCP_TOOLS,
   createWikiMcpServer,
 } from '../services/mcpServer.ts';
+import { pruneWindowTimestamps } from '../services/rateLimiter.ts';
 import { resolveInside } from '../utils/path.ts';
 
 interface McpHttpOptions {
@@ -38,8 +39,12 @@ export function mcpToolScope(toolName: string | undefined): McpScope {
   return toolName === 'wiki_write_page' || toolName === 'profile_update' ? 'write' : 'read';
 }
 
+export function hasAnyMcpToken(config: AppConfig): boolean {
+  return Boolean(config.mcp.accessKey || config.mcp.readToken || config.mcp.writeToken);
+}
+
 export function mcpScopesForToken(config: AppConfig, token: string | undefined): McpScope[] | null {
-  if (!config.mcp.accessKey && !config.mcp.readToken && !config.mcp.writeToken) return ['read', 'write'];
+  if (!hasAnyMcpToken(config)) return ['read', 'write'];
   if (constantTimeEqual(token, config.mcp.accessKey)) return ['read', 'write'];
   if (constantTimeEqual(token, config.mcp.writeToken)) return ['read', 'write'];
   if (constantTimeEqual(token, config.mcp.readToken)) return ['read'];
@@ -79,8 +84,7 @@ export function createMcpRateLimiter({
   const safeWindowMs = Number.isFinite(windowMs) && windowMs > 0 ? Math.floor(windowMs) : 60_000;
   return {
     check(key: string, now = Date.now()) {
-      const threshold = now - safeWindowMs;
-      const bucket = (buckets.get(key) ?? []).filter((item) => item > threshold);
+      const bucket = pruneWindowTimestamps(buckets.get(key) ?? [], now, safeWindowMs);
       if (bucket.length >= safeLimit) {
         buckets.set(key, bucket);
         const retryAfterMs = Math.max(1, safeWindowMs - (now - bucket[0]));
@@ -133,12 +137,10 @@ function renderLandingPage(
   endpointUrl: string,
   scheme: string,
 ): string {
-  const authStatus = config.mcp.accessKey
-    || config.mcp.readToken
-    || config.mcp.writeToken
+  const authStatus = hasAnyMcpToken(config)
     ? 'Bearer token enabled'
     : 'Warning: mcp.accessKey is not configured; the endpoint accepts unauthenticated clients.';
-  const workspaceStatus = config.mcp.accessKey || config.mcp.readToken || config.mcp.writeToken ? 'Protected workspace' : config.wikiRoot;
+  const workspaceStatus = hasAnyMcpToken(config) ? 'Protected workspace' : config.wikiRoot;
   const tools = WIKI_MCP_TOOLS.map(
     (tool) =>
       `<li><code>${escapeHtml(tool.name)}</code><span>${escapeHtml(tool.description)}</span></li>`,
@@ -312,7 +314,7 @@ export default async function mcpHttpCmd(
   httpServer.listen(port, host, () => {
     const scheme = tls ? 'https' : 'http';
     console.log(`wiki mcp-http -> ${scheme}://${host}:${port}${endpointPath}`);
-    if (!config.mcp.accessKey && !config.mcp.readToken && !config.mcp.writeToken) {
+    if (!hasAnyMcpToken(config)) {
       console.log(
         'Warning: mcp.accessKey is not configured; the endpoint accepts unauthenticated clients.',
       );
