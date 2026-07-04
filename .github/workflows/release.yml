@@ -10,6 +10,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: llm-wiki
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/llm-wiki-manager
+          path: llm-wiki-manager
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/agent-wiki-production
+          path: agent-wiki-production
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/agent-cme
+          path: agent-external/agent-cme
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/agent-mailer-api
+          path: agent-external/agent-mailer-api
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/agent-wiki-documents
+          path: agent-external/agent-wiki-documents
       - uses: pnpm/action-setup@v4
         with:
           version: 11.9.0
@@ -18,9 +40,17 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          cache-dependency-path: llm-wiki/pnpm-lock.yaml
+      - run: node llm-wiki-manager/scripts/check-versions.js
       - run: pnpm install --frozen-lockfile
+        working-directory: llm-wiki
       - run: pnpm run typecheck
+        working-directory: llm-wiki
       - run: pnpm run lint
+        working-directory: llm-wiki
       - run: pnpm run check-file-sizes
+        working-directory: llm-wiki
       - run: pnpm test
+        working-directory: llm-wiki
       - run: pnpm run build
+        working-directory: llm-wiki
