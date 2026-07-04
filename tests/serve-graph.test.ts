@@ -3,7 +3,11 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 async function serveSource(): Promise<string> {
-  return readFile(path.resolve(import.meta.dirname, '../src/commands/serve.ts'), 'utf8');
+  const [serve, html] = await Promise.all([
+    readFile(path.resolve(import.meta.dirname, '../src/commands/serve.ts'), 'utf8'),
+    readFile(path.resolve(import.meta.dirname, '../src/serve/html/wikiHtml.ts'), 'utf8'),
+  ]);
+  return `${serve}\n${html}`;
 }
 
 async function runtimeEventsSource(): Promise<string> {
