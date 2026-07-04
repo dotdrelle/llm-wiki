@@ -21,6 +21,7 @@ export interface BuildConfig {
 export interface LimitsConfig {
   requestsPerMinute: number;
   dailyInputTokens?: number;
+  maxInFlightRequests?: number;
   maxInputTokensPerCall: number;
   targetInputTokensPerCall: number;
   maxProfileChars: number;

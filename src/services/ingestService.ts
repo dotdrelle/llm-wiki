@@ -4,6 +4,7 @@ import { buildIngestPrompt } from '../prompts/ingestPrompt.ts';
 import { buildPromptContext } from '../prompts/systemPreamble.ts';
 import { hashText } from '../utils/hash.ts';
 import { normalizeSourceBody, splitSourceSections } from '../utils/markdown.ts';
+import { mapWithConcurrency } from '../utils/concurrency.ts';
 import type { TokenUsage } from './llmService.ts';
 import type {
   AppConfig,
@@ -20,6 +21,12 @@ import type { RetrievalService } from './retrievalService.ts';
 import type { TraceLogger } from './traceLogger.ts';
 import type { WorkspaceService } from './workspaceService.ts';
 
+interface IngestSectionResult {
+  operations: WikiOperation[];
+  summary: string;
+  retry?: IngestRetryInfo;
+}
+
 function classifyIngestError(error: unknown): IngestRetryInfo['classification'] {
   const message = error instanceof Error ? error.message : String(error);
   if (
@@ -29,8 +36,9 @@ function classifyIngestError(error: unknown): IngestRetryInfo['classification'] 
     return 'validation';
   }
   if (
-    /\b(429|rate limit|timeout|timed out|ECONNRESET|ECONNREFUSED|ETIMEDOUT|fetch failed|temporar)/i
-      .test(message) ||
+    /\b(429|rate limit|timeout|timed out|ECONNRESET|ECONNREFUSED|ETIMEDOUT|fetch failed|temporar)/i.test(
+      message,
+    ) ||
     message.includes('model returned malformed JSON') ||
     message.includes('malformed JSON')
   ) {
@@ -117,7 +125,11 @@ function enforceSourceCitationPath(
     return content === operation.content ? operation : { ...operation, content };
   });
 
-  return { operations: operationsWithCitations, rewrittenCitations, unreconciledCitations };
+  return {
+    operations: operationsWithCitations,
+    rewrittenCitations,
+    unreconciledCitations,
+  };
 }
 
 function diffPreview(before: string, after: string): IngestReviewOperation['diff'] {
@@ -178,7 +190,7 @@ function buildReviewOperations({
   return operations.map((operation) => {
     const before = existingPages.get(operation.path)?.content ?? '';
     const beforeExists = existingPages.has(operation.path);
-    const after = operation.type === 'delete' ? '' : operation.content ?? '';
+    const after = operation.type === 'delete' ? '' : (operation.content ?? '');
     const afterExists = operation.type !== 'delete';
     const rejected = rejectedPaths.has(operation.path);
 
@@ -286,7 +298,8 @@ export class IngestService {
           await this.logger.warn('ingest:encoding-fallback', {
             source: source.relativePath,
             encoding: source.detectedEncoding,
-            advice: 'Source file is not valid UTF-8. Re-export from Confluence with UTF-8 encoding to avoid potential character corruption.',
+            advice:
+              'Source file is not valid UTF-8. Re-export from Confluence with UTF-8 encoding to avoid potential character corruption.',
           });
         }
 
@@ -321,9 +334,10 @@ export class IngestService {
 
         const { maxChunkChars, maxSourceChars } = this.config.retrieval;
         const rawBody = normalizeSourceBody(source.body ?? '');
-        const sections = rawBody.length > maxSourceChars
-          ? splitSourceSections(rawBody, maxSourceChars)
-          : [rawBody];
+        const sections =
+          rawBody.length > maxSourceChars
+            ? splitSourceSections(rawBody, maxSourceChars)
+            : [rawBody];
 
         if (sections.length > 1) {
           await this.logger.info('ingest:split', {
@@ -335,174 +349,198 @@ export class IngestService {
         }
 
         const sourcePagePath = path.posix.join('wiki', 'sources', `${source.slug}.md`);
-        const allOperations: WikiOperation[] = [];
-        let lastSummary = '';
+        const sectionResults = await mapWithConcurrency(
+          sections,
+          this.config.limits.maxInFlightRequests ?? 3,
+          async (body, sectionIndex): Promise<IngestSectionResult> => {
+            const sectionLabel =
+              sections.length > 1
+                ? ` (section ${sectionIndex + 1}/${sections.length})`
+                : '';
 
-        for (const [sectionIndex, body] of sections.entries()) {
-          const sectionLabel = sections.length > 1
-            ? ` (section ${sectionIndex + 1}/${sections.length})`
-            : '';
-
-          const contextStartedAt = Date.now();
-          const relevantPages = await this.retrieval.search(body || source.title, {
-            limit: this.config.retrieval.maxContextFiles,
-            includeRaw: false,
-          });
-          await this.logger.info('ingest:context', {
-            source: source.relativePath,
-            pagesFound: relevantPages.length,
-            durationMs: Date.now() - contextStartedAt,
-            ...(sections.length > 1 && { section: `${sectionIndex + 1}/${sections.length}` }),
-          });
-          if (this.logger.debugEnabled) {
-            await this.logger.debug('ingest:context-pages', {
-              source: source.relativePath,
-              pages: relevantPages.map((page) => ({
-                path: page.page.relativePath,
-                score: page.score,
-              })),
+            const contextStartedAt = Date.now();
+            const relevantPages = await this.retrieval.search(body || source.title, {
+              limit: this.config.retrieval.maxContextFiles,
+              includeRaw: false,
             });
-          }
-
-          const relevantPagesTruncated = relevantPages.filter(
-            (r) => (r.chunk?.content ?? r.page.content).length > maxChunkChars,
-          ).length;
-          if (relevantPagesTruncated > 0) {
-            await this.logger.info('ingest:truncation', {
+            await this.logger.info('ingest:context', {
               source: source.relativePath,
-              field: 'relevantPages',
-              truncatedPageCount: relevantPagesTruncated,
-              truncatedToCharsPerPage: maxChunkChars,
+              pagesFound: relevantPages.length,
+              durationMs: Date.now() - contextStartedAt,
+              ...(sections.length > 1 && {
+                section: `${sectionIndex + 1}/${sections.length}`,
+              }),
             });
-          }
+            if (this.logger.debugEnabled) {
+              await this.logger.debug('ingest:context-pages', {
+                source: source.relativePath,
+                pages: relevantPages.map((page) => ({
+                  path: page.page.relativePath,
+                  score: page.score,
+                })),
+              });
+            }
 
-          const prompt = buildIngestPrompt({
-            source,
-            body,
-            indexContent: await this.workspace.readIndex(),
-            relevantPages,
-            sourcePagePath,
-            maxChunkChars,
-            ctx: buildPromptContext(this.config, { profileSection }),
-          });
-          await this.logger.info('ingest:prompt', {
-            source: source.relativePath,
-            promptChars: prompt.system.length + prompt.user.length,
-            relevantPages: relevantPages.length,
-            sourcePagePath,
-            ...(sections.length > 1 && { section: `${sectionIndex + 1}/${sections.length}` }),
-          });
+            const relevantPagesTruncated = relevantPages.filter(
+              (r) => (r.chunk?.content ?? r.page.content).length > maxChunkChars,
+            ).length;
+            if (relevantPagesTruncated > 0) {
+              await this.logger.info('ingest:truncation', {
+                source: source.relativePath,
+                field: 'relevantPages',
+                truncatedPageCount: relevantPagesTruncated,
+                truncatedToCharsPerPage: maxChunkChars,
+              });
+            }
 
-          const progress = {
-            sectionIndex,
-            sectionTotal: sections.length,
-          };
-          options?.onSourceLlm?.(sourcePath, i, sourcePaths.length, progress);
-          const { value: plan, retry } = await withRetry(
-            () => this.llm.completeJson(
+            const prompt = buildIngestPrompt({
+              source,
+              body,
+              indexContent: await this.workspace.readIndex(),
+              relevantPages,
+              sourcePagePath,
+              maxChunkChars,
+              ctx: buildPromptContext(this.config, { profileSection }),
+            });
+            await this.logger.info('ingest:prompt', {
+              source: source.relativePath,
+              promptChars: prompt.system.length + prompt.user.length,
+              relevantPages: relevantPages.length,
+              sourcePagePath,
+              ...(sections.length > 1 && {
+                section: `${sectionIndex + 1}/${sections.length}`,
+              }),
+            });
+
+            const progress = {
+              sectionIndex,
+              sectionTotal: sections.length,
+            };
+            options?.onSourceLlm?.(sourcePath, i, sourcePaths.length, progress);
+            const { value: plan, retry } = await withRetry(
+              () =>
+                this.llm.completeJson(
+                  {
+                    ...prompt,
+                    label: 'ingest_plan',
+                    logger: this.logger,
+                    traceData: { source: source.relativePath },
+                    onUsage: (usage) => {
+                      options?.onSourceUsage?.(
+                        sourcePath,
+                        i,
+                        sourcePaths.length,
+                        usage,
+                        progress,
+                      );
+                    },
+                  },
+                  ingestPlanSchema,
+                ),
               {
-                ...prompt,
-                label: 'ingest_plan',
-                logger: this.logger,
-                traceData: { source: source.relativePath },
-                onUsage: (usage) => {
-                  options?.onSourceUsage?.(sourcePath, i, sourcePaths.length, usage, progress);
+                onRetry: async (retryInfo) => {
+                  await this.logger.warn('ingest:retry', {
+                    source: source.relativePath,
+                    attempts: retryInfo.attempts,
+                    retries: retryInfo.retries,
+                    classification: retryInfo.classification,
+                    nextDelayMs: retryInfo.nextDelayMs,
+                    message: retryInfo.message,
+                    ...(sections.length > 1 && {
+                      section: `${sectionIndex + 1}/${sections.length}`,
+                    }),
+                  });
                 },
               },
-              ingestPlanSchema,
-            ),
-            {
-              onRetry: async (retryInfo) => {
-                await this.logger.warn('ingest:retry', {
-                  source: source.relativePath,
-                  attempts: retryInfo.attempts,
-                  retries: retryInfo.retries,
-                  classification: retryInfo.classification,
-                  nextDelayMs: retryInfo.nextDelayMs,
-                  message: retryInfo.message,
-                  ...(sections.length > 1 && {
-                    section: `${sectionIndex + 1}/${sections.length}`,
-                  }),
-                });
-              },
-            },
-          );
-          sourceRetry = retry.retries > 0 ? retry : sourceRetry;
-          await this.logger.info('ingest:plan', {
-            source: source.relativePath,
-            operations: plan.operations.length,
-            summary: plan.summary,
-            ...(sections.length > 1 && { section: `${sectionIndex + 1}/${sections.length}` }),
-          });
+            );
+            await this.logger.info('ingest:plan', {
+              source: source.relativePath,
+              operations: plan.operations.length,
+              summary: plan.summary,
+              ...(sections.length > 1 && {
+                section: `${sectionIndex + 1}/${sections.length}`,
+              }),
+            });
 
-          const normalizedOperations = await this.workspace.normalizeWikiOperations(
-            plan.operations,
-          );
-          const {
-            operations: citationSafeOperations,
-            rewrittenCitations,
-            unreconciledCitations,
-          } = enforceSourceCitationPath(normalizedOperations, source.archiveCitationPath);
-          const rewrittenPaths = normalizedOperations
-            .map((operation, index) => ({
-              from: plan.operations[index]?.path,
-              to: operation.path,
-            }))
-            .filter((rewrite) => rewrite.from !== rewrite.to);
-          await this.logger.info('ingest:normalize', {
-            source: source.relativePath,
-            operations: citationSafeOperations.length,
-            rewrittenPaths: rewrittenPaths.length,
-            rewrittenCitations,
-            unreconciledCitations,
-          });
-          if (this.logger.debugEnabled && rewrittenPaths.length > 0) {
-            await this.logger.debug('ingest:normalize-paths', {
-              source: source.relativePath,
-              rewrites: rewrittenPaths,
-            });
-          }
-          if (rewrittenCitations > 0) {
-            await this.logger.info('ingest:citation-path-rewrite', {
-              source: source.relativePath,
-              archivePath: source.archiveCitationPath,
+            const normalizedOperations = await this.workspace.normalizeWikiOperations(
+              plan.operations,
+            );
+            const {
+              operations: citationSafeOperations,
               rewrittenCitations,
-            });
-          }
-          if (unreconciledCitations > 0) {
-            await this.logger.warn('ingest:citation-unreconciled', {
+              unreconciledCitations,
+            } = enforceSourceCitationPath(
+              normalizedOperations,
+              source.archiveCitationPath,
+            );
+            const rewrittenPaths = normalizedOperations
+              .map((operation, index) => ({
+                from: plan.operations[index]?.path,
+                to: operation.path,
+              }))
+              .filter((rewrite) => rewrite.from !== rewrite.to);
+            await this.logger.info('ingest:normalize', {
               source: source.relativePath,
-              archivePath: source.archiveCitationPath,
+              operations: citationSafeOperations.length,
+              rewrittenPaths: rewrittenPaths.length,
+              rewrittenCitations,
               unreconciledCitations,
             });
-          }
+            if (this.logger.debugEnabled && rewrittenPaths.length > 0) {
+              await this.logger.debug('ingest:normalize-paths', {
+                source: source.relativePath,
+                rewrites: rewrittenPaths,
+              });
+            }
+            if (rewrittenCitations > 0) {
+              await this.logger.info('ingest:citation-path-rewrite', {
+                source: source.relativePath,
+                archivePath: source.archiveCitationPath,
+                rewrittenCitations,
+              });
+            }
+            if (unreconciledCitations > 0) {
+              await this.logger.warn('ingest:citation-unreconciled', {
+                source: source.relativePath,
+                archivePath: source.archiveCitationPath,
+                unreconciledCitations,
+              });
+            }
 
-          const operationCounts = citationSafeOperations.reduce(
-            (counts, operation) => {
-              counts[operation.type] += 1;
-              return counts;
-            },
-            { create: 0, update: 0, delete: 0 },
-          );
-          await this.logger.info('ingest:operations', {
-            source: source.relativePath,
-            create: operationCounts.create,
-            update: operationCounts.update,
-            delete: operationCounts.delete,
-          });
-
-          if (options?.dryRun) {
-            await this.logger.info('ingest:dry-run', {
+            const operationCounts = citationSafeOperations.reduce(
+              (counts, operation) => {
+                counts[operation.type] += 1;
+                return counts;
+              },
+              { create: 0, update: 0, delete: 0 },
+            );
+            await this.logger.info('ingest:operations', {
               source: source.relativePath,
-              ...(sections.length > 1 && { section: `${sectionIndex + 1}/${sections.length}` }),
+              create: operationCounts.create,
+              update: operationCounts.update,
+              delete: operationCounts.delete,
             });
-          }
 
-          allOperations.push(...citationSafeOperations);
-          lastSummary = sections.length > 1
-            ? `${plan.summary}${sectionLabel}`
-            : plan.summary;
-        }
+            if (options?.dryRun) {
+              await this.logger.info('ingest:dry-run', {
+                source: source.relativePath,
+                ...(sections.length > 1 && {
+                  section: `${sectionIndex + 1}/${sections.length}`,
+                }),
+              });
+            }
+
+            return {
+              operations: citationSafeOperations,
+              summary:
+                sections.length > 1 ? `${plan.summary}${sectionLabel}` : plan.summary,
+              ...(retry.retries > 0 && { retry }),
+            };
+          },
+        );
+        const allOperations = sectionResults.flatMap((result) => result.operations);
+        const lastSummary = sectionResults.at(-1)?.summary ?? '';
+        sourceRetry = sectionResults.findLast((result) => result.retry)?.retry;
 
         const existingPages = new Map(
           (await this.retrieval.warmCache()).map((page) => [page.relativePath, page]),
@@ -535,7 +573,8 @@ export class IngestService {
           dryRun: Boolean(options?.dryRun),
         });
 
-        const allOperationsRejected = allOperations.length > 0 && applyOperations.length === 0;
+        const allOperationsRejected =
+          allOperations.length > 0 && applyOperations.length === 0;
         if (!options?.dryRun && allOperationsRejected) {
           await this.logger.info('ingest:apply-skip', {
             source: source.relativePath,

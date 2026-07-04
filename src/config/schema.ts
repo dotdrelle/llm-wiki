@@ -247,12 +247,14 @@ const limitsSchema = z
   .object({
     requestsPerMinute: z.number().int().min(1).default(10),
     dailyInputTokens: z.number().int().min(1).optional(),
+    maxInFlightRequests: z.number().int().min(1).max(16).default(3),
     maxInputTokensPerCall: z.number().int().min(1000).default(50000),
     targetInputTokensPerCall: z.number().int().min(1000).default(40000),
     maxProfileChars: z.number().int().min(100).default(4000),
   })
   .default({
     requestsPerMinute: 10,
+    maxInFlightRequests: 3,
     maxInputTokensPerCall: 50000,
     targetInputTokensPerCall: 40000,
     maxProfileChars: 4000,
@@ -326,12 +328,7 @@ const mcpSchema = z
   )
   .default({});
 
-const serveSchema = z
-  .preprocess(
-    (value) => value ?? {},
-    z.object({}),
-  )
-  .default({});
+const serveSchema = z.preprocess((value) => value ?? {}, z.object({})).default({});
 
 export const rawConfigSchema = z.object({
   wikiRoot: z.string().optional(),
@@ -526,6 +523,7 @@ export function resolveConfig(
     limits: {
       requestsPerMinute: parsed.limits?.requestsPerMinute ?? 10,
       dailyInputTokens: parsed.limits?.dailyInputTokens,
+      maxInFlightRequests: parsed.limits?.maxInFlightRequests ?? 3,
       maxInputTokensPerCall: parsed.limits?.maxInputTokensPerCall ?? 50000,
       targetInputTokensPerCall: parsed.limits?.targetInputTokensPerCall ?? 40000,
       maxProfileChars: parsed.limits?.maxProfileChars ?? 4000,

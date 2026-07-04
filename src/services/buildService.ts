@@ -8,6 +8,7 @@ import {
 import { buildPromptContext } from '../prompts/systemPreamble.ts';
 import { sanitizeFrontmatter } from '../utils/markdown.ts';
 import { hashText } from '../utils/hash.ts';
+import { mapWithConcurrency } from '../utils/concurrency.ts';
 import { PromptBudgetService } from './promptBudgetService.ts';
 import { StabilizeService } from './stabilizeService.ts';
 import type {
@@ -51,10 +52,7 @@ function normalizeReplacementContent(content: string): string {
 }
 
 function normalizeHeadingTextForCompare(text: string): string {
-  return text
-    .trim()
-    .replace(/\s+/g, ' ')
-    .toLocaleLowerCase('fr');
+  return text.trim().replace(/\s+/g, ' ').toLocaleLowerCase('fr');
 }
 
 function stripRepeatedSlotHeading(content: string, headingPath: string[]): string {
@@ -75,7 +73,10 @@ function stripRepeatedSlotHeading(content: string, headingPath: string[]): strin
   return lines.join('\n').trim();
 }
 
-function normalizeReplacementHeadingLevels(content: string, parentHeadingLevel: number): string {
+function normalizeReplacementHeadingLevels(
+  content: string,
+  parentHeadingLevel: number,
+): string {
   if (parentHeadingLevel <= 0) return content;
   const firstHeading = /^(#{1,6})\s+.+$/m.exec(content);
   if (!firstHeading) return content;
@@ -321,20 +322,26 @@ export class BuildService {
     const batchCount = batches.length;
     const replacements = new Map<string, string>();
 
-    for (let batchIndex = 0; batchIndex < batchCount; batchIndex++) {
-      const batch = batches[batchIndex].slots;
-      const topContextPages = [
-        ...new Set(batch.flatMap((s) => s.context.map((r) => r.page.relativePath))),
-      ].slice(0, 8);
-      onBatch?.(batchIndex, batchCount, topContextPages);
-      onBatchLlm?.(batchIndex, batchCount, topContextPages);
-      const traceData = {
-        template: template.relativePath,
-        instructionCount: template.instructions.length,
-        batchIndex,
-        batchCount,
-      };
-      const response = await this.renderBatch(template, buildContext, batch, traceData);
+    const renderedBatches = await mapWithConcurrency(
+      batches,
+      this.config.limits.maxInFlightRequests ?? 3,
+      async (plannedBatch, batchIndex) => {
+        const batch = plannedBatch.slots;
+        const topContextPages = [
+          ...new Set(batch.flatMap((s) => s.context.map((r) => r.page.relativePath))),
+        ].slice(0, 8);
+        onBatch?.(batchIndex, batchCount, topContextPages);
+        onBatchLlm?.(batchIndex, batchCount, topContextPages);
+        const traceData = {
+          template: template.relativePath,
+          instructionCount: template.instructions.length,
+          batchIndex,
+          batchCount,
+        };
+        return this.renderBatch(template, buildContext, batch, traceData);
+      },
+    );
+    for (const response of renderedBatches) {
       for (const item of response) {
         const instruction = template.instructions.find(({ id }) => id === item.id);
         const normalized = normalizeReplacementContent(item.content);
@@ -455,7 +462,8 @@ export class BuildService {
     context: SearchResult[];
   }> {
     const candidates = wikiPages.filter(
-      (page) => !FINAL_CONTEXT_EXCLUDED_PATHS.has(page.relativePath) && page.type !== 'answer',
+      (page) =>
+        !FINAL_CONTEXT_EXCLUDED_PATHS.has(page.relativePath) && page.type !== 'answer',
     );
     const limit = Math.max(1, this.config.retrieval.maxContextFiles);
 

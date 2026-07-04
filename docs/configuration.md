@@ -22,6 +22,7 @@ llm:
 
 limits:
   requestsPerMinute: 10
+  maxInFlightRequests: 3
   dailyInputTokens: 1000000
   targetInputTokensPerCall: 40000
   maxInputTokensPerCall: 50000
@@ -165,17 +166,18 @@ These keys describe operational and prompt budgets used by `wiki build --plan`, 
 | Key                        | Description                                                                                 | Default |
 | -------------------------- | ------------------------------------------------------------------------------------------- | ------- |
 | `requestsPerMinute`        | Effective LLM request throttle. Request starts are spaced at `60s / requestsPerMinute`      | `10`    |
+| `maxInFlightRequests`      | Maximum concurrent in-job provider calls for section/batch generation                       | `3`     |
 | `dailyInputTokens`         | Optional daily input-token budget, printed by `wiki build --plan` when set                  | —       |
 | `targetInputTokensPerCall` | Preferred input-token budget per build call. The builder starts a new batch above this size | `40000` |
 | `maxInputTokensPerCall`    | Hard input-token budget per build call. The builder trims retrieved context above this size | `50000` |
 
 `targetInputTokensPerCall` must be less than or equal to `maxInputTokensPerCall`.
 
-`requestsPerMinute` limits the start rate of generation calls across `ingest`,
-`build`, `refresh`, and JSON repair calls in the current process. With the
-default `10`, calls start at least about 6 seconds apart. Long calls are not
-penalized: if one request takes 30 seconds, the next request can start
-immediately after it finishes because the interval has already elapsed.
+`requestsPerMinute` limits the start rate of provider calls across `ingest`,
+`build`, `refresh`, embeddings, and rerank calls. Processes in the same
+workspace share the budget through `.wiki/rate-limit/`; `maxInFlightRequests`
+only controls how many calls a single job may keep in flight while the shared
+throttle decides when each request is allowed to start.
 
 ## `build`
 

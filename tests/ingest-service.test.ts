@@ -268,6 +268,30 @@ class SectionedLLMService extends FakeLLMService {
   }
 }
 
+class ConcurrentIngestLLMService extends FakeLLMService {
+  active = 0;
+  maxActive = 0;
+
+  async completeJson(): Promise<IngestPlan> {
+    this.calls += 1;
+    const call = this.calls;
+    this.active += 1;
+    this.maxActive = Math.max(this.maxActive, this.active);
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    this.active -= 1;
+    return {
+      summary: `Updated section ${call}.`,
+      operations: [
+        {
+          type: 'update',
+          path: 'wiki/sources/note.md',
+          content: `# Note\n\nSection ${call}. [src: raw/ingested/note.md]\n`,
+        },
+      ],
+    };
+  }
+}
+
 class FailingRefreshService {
   async refresh() {
     throw new Error('Your credit balance is too low to access the Anthropic API.');
@@ -436,16 +460,18 @@ describe('ingest service', () => {
 
     await service.ingest([], {});
 
-    expect(logger.entries.find((entry) => entry.event === 'ingest:source')?.data)
-      .toMatchObject({ detectedEncoding: 'latin-1' });
-    expect(logger.entries.find((entry) => entry.event === 'ingest:encoding-fallback'))
-      .toMatchObject({
-        level: 'warn',
-        data: {
-          source: 'raw/untracked/note.md',
-          encoding: 'latin-1',
-        },
-      });
+    expect(
+      logger.entries.find((entry) => entry.event === 'ingest:source')?.data,
+    ).toMatchObject({ detectedEncoding: 'latin-1' });
+    expect(
+      logger.entries.find((entry) => entry.event === 'ingest:encoding-fallback'),
+    ).toMatchObject({
+      level: 'warn',
+      data: {
+        source: 'raw/untracked/note.md',
+        encoding: 'latin-1',
+      },
+    });
   });
 
   it('plans oversized sources section by section then applies atomically before archiving once', async () => {
@@ -486,6 +512,47 @@ describe('ingest service', () => {
     expect(
       logger.entries.find((entry) => entry.event === 'ingest:apply')?.data,
     ).toMatchObject({ atomic: true, sections: 2 });
+  });
+
+  it('limits concurrent ingest section LLM calls', async () => {
+    const workspace = new FakeWorkspaceService();
+    workspace.sourceBody = [
+      '# Large source',
+      '',
+      '## First section',
+      'A'.repeat(70),
+      '',
+      '## Second section',
+      'B'.repeat(70),
+      '',
+      '## Third section',
+      'C'.repeat(70),
+      '',
+      '## Fourth section',
+      'D'.repeat(70),
+    ].join('\n');
+    const config = createConfig();
+    config.retrieval.maxSourceChars = 120;
+    config.limits.maxInFlightRequests = 2;
+    const logger = new MemoryTraceLogger();
+    const llm = new ConcurrentIngestLLMService();
+    const retrieval = new FakeRetrievalService();
+    const service = new IngestService(
+      config,
+      workspace as unknown as WorkspaceService,
+      llm as unknown as LLMService,
+      retrieval as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+    );
+
+    const results = await service.ingest([], {});
+
+    expect(llm.calls).toBe(4);
+    expect(llm.maxActive).toBeLessThanOrEqual(2);
+    expect(llm.maxActive).toBeGreaterThan(1);
+    expect(workspace.appliedBatches).toHaveLength(1);
+    expect(results[0].plan?.operations).toHaveLength(4);
   });
 
   it('returns review diffs for planned wiki operations', async () => {
@@ -545,8 +612,9 @@ describe('ingest service', () => {
     expect(results[0].plan?.operations).toEqual([]);
     expect(workspace.appliedOperations).toEqual([]);
     expect(workspace.archivedSources).toEqual([]);
-    expect(logger.entries.find((entry) => entry.event === 'ingest:apply-skip')?.data)
-      .toMatchObject({ reason: 'all operations rejected' });
+    expect(
+      logger.entries.find((entry) => entry.event === 'ingest:apply-skip')?.data,
+    ).toMatchObject({ reason: 'all operations rejected' });
   });
 
   it('retries a transient LLM planning failure once before failing the source', async () => {
@@ -578,7 +646,9 @@ describe('ingest service', () => {
         classification: 'transient',
       });
       expect(workspace.archivedSources).toEqual(['raw/untracked/note.md']);
-      expect(logger.entries.some((entry) => entry.event === 'ingest:source-failed')).toBe(false);
+      expect(logger.entries.some((entry) => entry.event === 'ingest:source-failed')).toBe(
+        false,
+      );
       expect(logger.entries.some((entry) => entry.event === 'ingest:retry')).toBe(true);
     } finally {
       vi.useRealTimers();

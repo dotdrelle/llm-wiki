@@ -9,7 +9,11 @@ import { EmbeddingService } from '../services/embeddingService.ts';
 import { LLMService } from '../services/llmService.ts';
 import { RerankService } from '../services/rerankService.ts';
 import { RetrievalService } from '../services/retrievalService.ts';
-import { EMBED_BATCH_MAX_CHARS, EMBED_BATCH_SIZE, VectorIndexService } from '../services/vectorIndexService.ts';
+import {
+  EMBED_BATCH_MAX_CHARS,
+  EMBED_BATCH_SIZE,
+  VectorIndexService,
+} from '../services/vectorIndexService.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import type { AppConfig } from '../types.ts';
 import { pathExists, safeWriteFile } from '../utils/fs.ts';
@@ -660,6 +664,7 @@ export default async function doctorCmd(
   if (config.llm.numCtx) row('numCtx:', config.llm.numCtx.toLocaleString());
   row('temperature:', String(config.llm.temperature));
   row('requestsPerMinute:', String(config.limits.requestsPerMinute));
+  row('maxInFlightRequests:', String(config.limits.maxInFlightRequests ?? 3));
   if (config.limits.dailyInputTokens) {
     row('dailyInputTokens:', config.limits.dailyInputTokens.toLocaleString());
   }
@@ -826,7 +831,10 @@ export default async function doctorCmd(
   row('enabled:', String(config.retrieval.vector.enabled));
   row('index path:', vectorStats.path ?? workspace.paths.vectorIndexDir);
   row('index:', vectorStats.exists ? `${vectorStats.rows} chunk(s)` : 'missing');
-  row('batch size:', `${EMBED_BATCH_SIZE} chunks / ${EMBED_BATCH_MAX_CHARS.toLocaleString('en-US')} chars`);
+  row(
+    'batch size:',
+    `${EMBED_BATCH_SIZE} chunks / ${EMBED_BATCH_MAX_CHARS.toLocaleString('en-US')} chars`,
+  );
   row('fallback:', 'lexical search remains active on vector errors');
   if (vectorStats.metadata) {
     row('index embedding:', vectorStats.metadata.embeddingModel);
@@ -834,7 +842,9 @@ export default async function doctorCmd(
     row('index dimensions:', String(vectorStats.metadata.dimension));
     row('index built:', vectorStats.metadata.builtAt);
   } else if (vectorStats.exists) {
-    warn('vector index metadata missing — run `wiki index` to rebuild with current metadata');
+    warn(
+      'vector index metadata missing — run `wiki index` to rebuild with current metadata',
+    );
   }
   if (config.retrieval.vector.enabled) {
     if (!vectorStats.exists) {
@@ -854,10 +864,13 @@ export default async function doctorCmd(
       if (vectorStats.metadata) {
         if (
           vectorStats.metadata.provider !== expectedProvider ||
-          vectorStats.metadata.embeddingModel !== config.retrieval.vector.embeddingModel ||
+          vectorStats.metadata.embeddingModel !==
+            config.retrieval.vector.embeddingModel ||
           vectorStats.metadata.dimension !== embeddingDimension
         ) {
-          warn('vector index embedding settings differ from current config — run `wiki index`');
+          warn(
+            'vector index embedding settings differ from current config — run `wiki index`',
+          );
         }
       }
     } catch (error) {

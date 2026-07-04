@@ -280,6 +280,7 @@ llm:
 
 limits:
   requestsPerMinute: 10                     # rate cap (default 10)
+  maxInFlightRequests: 3                    # concurrent in-job provider calls
   dailyInputTokens: 1000000                 # optional daily budget
   maxInputTokensPerCall: 50000              # hard cap per LLM call
   targetInputTokensPerCall: 40000           # soft target for batch planning

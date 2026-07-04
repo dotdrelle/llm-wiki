@@ -74,10 +74,8 @@ class FakeLLMService {
     this.completeTextCalls += 1;
     if (request?.user?.includes('# Candidate section')) {
       return (
-        request.user
-          .split('# Candidate section')[1]
-          ?.split('---')[0]
-          ?.trim() ?? 'Text fallback summary. [src: wiki/concepts/local-first.md]'
+        request.user.split('# Candidate section')[1]?.split('---')[0]?.trim() ??
+        'Text fallback summary. [src: wiki/concepts/local-first.md]'
       );
     }
     return 'Text fallback summary. [src: wiki/concepts/local-first.md]';
@@ -270,6 +268,33 @@ class SplittingLLMService {
   }
 }
 
+class ConcurrentBuildLLMService {
+  active = 0;
+  maxActive = 0;
+  completeJsonCalls = 0;
+
+  async completeJson(request: { user: string }) {
+    this.completeJsonCalls += 1;
+    this.active += 1;
+    this.maxActive = Math.max(this.maxActive, this.active);
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    this.active -= 1;
+    const ids = [...request.user.matchAll(/^## (instruction-\d+)$/gm)].map(
+      (match) => match[1],
+    );
+    return {
+      replacements: ids.map((id) => ({
+        id,
+        content: `Rendered ${id}. [src: wiki/index.md]`,
+      })),
+    };
+  }
+
+  async completeText() {
+    return 'Text fallback. [src: wiki/index.md]';
+  }
+}
+
 describe('build service', () => {
   it('renders a template and stores build state', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-'));
@@ -365,9 +390,7 @@ describe('build service', () => {
     await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n', 'utf8');
     await writeFile(
       path.join(root, 'templates', 'brief.md'),
-      ['# Brief', '', '## Section', '', '[[INSTRUCTION: Fill section.]]'].join(
-        '\n',
-      ),
+      ['# Brief', '', '## Section', '', '[[INSTRUCTION: Fill section.]]'].join('\n'),
       'utf8',
     );
 
@@ -398,9 +421,7 @@ describe('build service', () => {
     await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n', 'utf8');
     await writeFile(
       path.join(root, 'templates', 'brief.md'),
-      ['# Brief', '', '### Parent', '', '[[INSTRUCTION: Fill section.]]'].join(
-        '\n',
-      ),
+      ['# Brief', '', '### Parent', '', '[[INSTRUCTION: Fill section.]]'].join('\n'),
       'utf8',
     );
 
@@ -767,5 +788,47 @@ describe('build service', () => {
     expect(output).toContain('Rendered instruction-1.');
     expect(output).toContain('Rendered instruction-2.');
     expect(output).toContain('Rendered instruction-3.');
+  });
+
+  it('limits concurrent build batch LLM calls', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-concurrency-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'templates'), { recursive: true });
+    await mkdir(path.join(root, 'deliverables'), { recursive: true });
+
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n', 'utf8');
+    await writeFile(
+      path.join(root, 'templates', 'brief.md'),
+      [
+        '# Brief',
+        '',
+        '[[INSTRUCTION: Fill first.]]',
+        '',
+        '[[INSTRUCTION: Fill second.]]',
+        '',
+        '[[INSTRUCTION: Fill third.]]',
+        '',
+        '[[INSTRUCTION: Fill fourth.]]',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    config.build.slotBatchSize = 1;
+    config.limits.maxInFlightRequests = 2;
+    const workspace = new WorkspaceService(config);
+    const llm = new ConcurrentBuildLLMService();
+    const service = new BuildService(
+      config,
+      workspace,
+      llm as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+    );
+
+    await service.build();
+
+    expect(llm.completeJsonCalls).toBe(4);
+    expect(llm.maxActive).toBeLessThanOrEqual(2);
+    expect(llm.maxActive).toBeGreaterThan(1);
   });
 });
