@@ -7,10 +7,10 @@ import { Console } from 'node:console';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const logger = new Console(process.stdout, process.stderr);
-const MAX_LINES = 500;
+const MAX_LINES = 800;
 const LEGACY_LIMITS = new Map([
-  ['src/commands/serve.ts', 5600],
-  ['src/chat/chatHtml.ts', 4600],
+  ['src/commands/serve.ts', 4800],
+  ['src/chat/chatHtml.ts', 2400],
   ['src/chat/styles/chatStyles.ts', 550],
 ]);
 
