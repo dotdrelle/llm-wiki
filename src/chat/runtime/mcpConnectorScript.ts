@@ -1,4 +1,4 @@
-export const MCP_CLIENT_SCRIPT = `// ── MCP JSON-RPC over Streamable HTTP ──────────────────────────────────────
+export const MCP_CONNECTOR_SCRIPT = `// ── MCP connector controls over Streamable HTTP ────────────────────────────
 
 async function readSSE(response) {
   const reader = response.body.getReader();
@@ -139,7 +139,7 @@ async function reconnectMCPServer(server) {
   const initResp = await mcpRPC(server, 'initialize', {
     protocolVersion: '2024-11-05',
     capabilities: {},
-    clientInfo: {name: 'MCPChat', version: '0.11.0'}
+    clientInfo: {name: 'WikiChatConnector', version: '0.11.0'}
   });
   if (initResp?.error) throw new Error(initResp.error.message || 'initialize failed');
   await mcpNotify(server, 'notifications/initialized', {});

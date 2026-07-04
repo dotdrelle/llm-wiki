@@ -179,6 +179,8 @@ describe('chat html', () => {
     const [script] = chatScripts();
     const sendSource = script.match(/async function sendMessage\(\) \{[\s\S]*?\n\}\n\nasync function sendRuntimeAgentMessage/)?.[0] ?? '';
 
+    expect(CHAT_HTML).not.toContain('mcpClientScript');
+    expect(script).toContain("clientInfo: {name: 'WikiChatConnector', version: '0.11.0'}");
     expect(script).toContain('function preferredServerNameForTool(name)');
     expect(script).toContain("const prefix=text.split('_',1)[0];");
     expect(script).toContain('if(prefix && servers.some(s=>s.name===prefix)) return prefix;');
@@ -188,6 +190,9 @@ describe('chat html', () => {
     expect(sendSource).not.toContain('toolsPayload');
     expect(sendSource).not.toContain('callMCPTool(fn,args)');
     expect(sendSource).not.toContain('while(turn<MAX_TURNS)');
+    expect(script).not.toContain('delta.tool_calls');
+    expect(script).not.toContain('tool_call_id');
+    expect(script).not.toContain('tool_calls');
   });
 
   it('presents MCP calls as agent orchestration and records activities from agent contracts', () => {
@@ -319,13 +324,15 @@ describe('chat html', () => {
     expect(sendSource).not.toContain('completedWithoutLimit');
   });
 
-  it('does not replay stale tool messages before a new user turn', () => {
+  it('drops legacy tool messages before sending local chat context', () => {
     const [script] = chatScripts();
 
-    expect(script).toContain('const preserveTailToolExchange=lastToolAssistantIndex>=0');
-    expect(script).toContain("sourceMessages.slice(lastToolAssistantIndex+1).every((msg)=>msg.role==='tool')");
-    expect(script).toContain("if(msg.role==='tool')");
-    expect(script).toContain('idx>=preserveFrom');
+    expect(script).toContain('function requestMessagesForLLM(sourceMessages)');
+    expect(script).toContain("if(msg.role==='assistant') return {role:'assistant',content:msg.content ?? ''};");
+    expect(script).not.toContain('preserveTailToolExchange');
+    expect(script).not.toContain("if(msg.role==='tool')");
+    expect(script).not.toContain('tool_call_id');
+    expect(script).not.toContain('tool_calls');
   });
 
   it('posts a chat message when a production job reaches a terminal state', () => {

@@ -2,7 +2,7 @@ import { CHAT_STYLE } from './styles/chatStyles.ts';
 import { PRODUCTION_STATE_SCRIPT } from './workflow/productionStateScript.ts';
 import { PRODUCTION_TRACE_SCRIPT } from './workflow/productionTraceScript.ts';
 import { OBSERVER_TOOLS_SCRIPT } from './views/observerToolsScript.ts';
-import { MCP_CLIENT_SCRIPT } from './runtime/mcpClientScript.ts';
+import { MCP_CONNECTOR_SCRIPT } from './runtime/mcpConnectorScript.ts';
 import { CONFIG_SCRIPT } from './config/configScript.ts';
 import { ACTIVITY_PANEL_SCRIPT } from './runtime/activityPanelScript.ts';
 import { RUNTIME_GRAPH_SCRIPT } from './runtime/runtimeGraphScript.ts';
@@ -668,15 +668,6 @@ function activeServerSnapshot() {
   }));
 }
 
-function collectToolHistory(sourceMessages=messages) {
-  const out=[];
-  for(const msg of sourceMessages) {
-    if(Array.isArray(msg.tool_calls)) out.push(...msg.tool_calls.map(tc=>({type:'call',name:tc.function?.name||tc.name||'',id:tc.id||''})));
-    if(msg.role==='tool') out.push({type:'result',name:msg.name||'',toolCallId:msg.tool_call_id||''});
-  }
-  return out;
-}
-
 function buildConversationPayload(snapshot={}) {
   const now=new Date().toISOString();
   const id=snapshot.id || currentConversationId || newConversationId();
@@ -690,7 +681,6 @@ function buildConversationPayload(snapshot={}) {
     systemPrompt: snapshot.systemPrompt ?? currentSystemPrompt(),
     mcpServers: snapshot.mcpServers ?? activeServerSnapshot(),
     messages: sourceMessages,
-    toolCalls: snapshot.toolCalls ?? collectToolHistory(sourceMessages),
     traceHtml: snapshot.traceHtml ?? [...document.querySelectorAll('.trace-card')].map(el=>el.outerHTML),
     messageHtml: snapshot.messageHtml ?? $('messages')?.innerHTML ?? '',
   };
@@ -797,7 +787,6 @@ async function loadConversation(id) {
           messages:messages.slice(),
           systemPrompt:currentSystemPrompt(),
           mcpServers:activeServerSnapshot(),
-          toolCalls:collectToolHistory(messages),
           traceHtml:[...document.querySelectorAll('.trace-card')].map(el=>el.outerHTML),
           messageHtml:$('messages')?.innerHTML || '',
         })
@@ -1012,7 +1001,7 @@ async function toggleServer(id, checked) {
   else { renderCards(); renderTopPills(); saveServers(); }
 }
 
-${MCP_CLIENT_SCRIPT}
+${MCP_CONNECTOR_SCRIPT}
 
 ${PRODUCTION_STATE_SCRIPT}
 
@@ -1045,7 +1034,6 @@ async function clearChat() {
         systemPrompt:currentSystemPrompt(),
         mcpServers:activeServerSnapshot(),
         messages:[],
-        toolCalls:[],
         traceHtml:[],
         messageHtml:'',
       });
@@ -1089,25 +1077,9 @@ async function resolveSkillInvocation(text) {
 }
 
 function requestMessagesForLLM(sourceMessages) {
-  const lastToolAssistantIndex=sourceMessages.findLastIndex?.(
-    (msg)=>msg.role==='assistant'&&Array.isArray(msg.tool_calls)&&msg.tool_calls.length,
-  ) ?? -1;
-  const preserveTailToolExchange=lastToolAssistantIndex>=0 &&
-    sourceMessages.slice(lastToolAssistantIndex+1).length>0 &&
-    sourceMessages.slice(lastToolAssistantIndex+1).every((msg)=>msg.role==='tool');
-  const preserveFrom=preserveTailToolExchange ? lastToolAssistantIndex : sourceMessages.length;
-  return sourceMessages.flatMap((msg,idx)=>{
+  return sourceMessages.flatMap((msg)=>{
     if(msg.role==='user') return {role:'user',content:msg.content};
-    if(msg.role==='assistant') {
-      const out={role:'assistant',content:msg.content ?? ''};
-      if(idx>=preserveFrom && Array.isArray(msg.tool_calls)) out.tool_calls=msg.tool_calls;
-      return out;
-    }
-    if(msg.role==='tool') {
-      return idx>=preserveFrom
-        ? {role:'tool',tool_call_id:msg.tool_call_id,name:msg.name,content:msg.content}
-        : [];
-    }
+    if(msg.role==='assistant') return {role:'assistant',content:msg.content ?? ''};
     return msg;
   });
 }
@@ -1125,16 +1097,15 @@ async function copyMessage(btn) {
   }
 }
 
-function appendMsg(role, content, toolCalls=null, {html=false,plainText=null}={}) {
+function appendMsg(role, content, {html=false,plainText=null}={}) {
   removeEmpty();
   const wrap=$('messages');
   const div=document.createElement('div');
   div.className=\`msg \${role}\`;
   div.dataset.copy=plainText??content??'';
   const av=role==='user'?'<div class="av u">You</div>':'';
-  const tc=toolCalls?.length ? toolCalls.map((c,i)=>tcBlockHTML(c,i)).join('') : '';
   const bodyHtml=html ? (content||'') : (role==='assistant' ? renderMd(content||'') : esc(content||''));
-  div.innerHTML=\`\${av}<div class="msg-content"><div class="bubble">\${bodyHtml}\${tc}</div><div class="msg-actions"><button class="msg-action" onclick="copyMessage(this)">Copy</button></div></div>\`;
+  div.innerHTML=\`\${av}<div class="msg-content"><div class="bubble">\${bodyHtml}</div><div class="msg-actions"><button class="msg-action" onclick="copyMessage(this)">Copy</button></div></div>\`;
   wrap.appendChild(div);
   wrap.scrollTop=wrap.scrollHeight;
   return div;
@@ -1423,30 +1394,6 @@ function scrollToTool(id) {
   el.style.outline='2px solid var(--accent)';
   el.style.outlineOffset='2px';
   setTimeout(()=>{el.style.outline='';el.style.outlineOffset='';},1200);
-}
-
-function tcBlockHTML(tc, fallbackIdx) {
-  const idx = tc._domIdx !== undefined ? tc._domIdx : fallbackIdx;
-  const fn=tc.function?.name||tc.name||'?';
-  let args='{}';
-  try{args=JSON.stringify(JSON.parse(tc.function?.arguments||'{}'),null,2);}catch{args=tc.function?.arguments||'{}';}
-  const server=findServerForTool(fn);
-  const src=server?\`<span class="tc-src">\${esc(server.name)}</span>\`:'';
-  return \`<div class="tc-block" id="tc-\${idx}">
-    <div class="tc-head" onclick="toggleTC(\${idx})">
-      <span style="color:var(--accent);font-size:11px">⌁</span>
-      \${src}
-      <span class="tc-fn">\${esc(fn)}</span>
-      <span class="tc-status"><span class="tc-st run" id="tc-st-\${idx}">…</span><span class="tc-expand" id="tc-exp-\${idx}">▾</span></span>
-    </div>
-    <div class="tc-body args-collapsed" id="tc-body-\${idx}">
-      <button class="tc-args-toggle" type="button" onclick="toggleTCArgs(event,\${idx})">Show arguments</button>
-      <div class="tc-args">
-        <div class="tc-lbl" style="margin-top:8px">Arguments</div>
-        <pre>\${esc(args)}</pre>
-      </div>
-    </div>
-  </div>\`;
 }
 
 function parseToolJSON(result) {
@@ -1965,33 +1912,6 @@ function derivedTraceStepsForTool(fn, result, ok, targetId) {
   return [];
 }
 
-function updateTC(idx, result, ok) {
-  const st=$(\`tc-st-\${idx}\`), body=$(\`tc-body-\${idx}\`);
-  if(st){st.textContent=ok?'✓':'!';st.className=\`tc-st \${ok?'ok':'er'}\`;}
-  if(body){
-    body.innerHTML+=\`<div class="tc-lbl" style="margin-top:8px">Result</div>\${toolResultSummaryHTML(result,ok)}\`;
-    body.classList.add('hidden');
-    const exp=$(\`tc-exp-\${idx}\`);
-    if(exp) exp.textContent='▸';
-  }
-}
-
-function toggleTC(idx) {
-  const body=$(\`tc-body-\${idx}\`);
-  const exp=$(\`tc-exp-\${idx}\`);
-  if(!body) return;
-  const hidden=body.classList.toggle('hidden');
-  if(exp) exp.textContent=hidden?'▸':'▾';
-}
-
-function toggleTCArgs(event, idx) {
-  event.stopPropagation();
-  const body=$(\`tc-body-\${idx}\`);
-  if(!body) return;
-  const collapsed=body.classList.toggle('args-collapsed');
-  event.currentTarget.textContent=collapsed?'Show arguments':'Hide arguments';
-}
-
 function toggleTools(id) {
   const body=$(\`tools-body-\${id}\`), chevron=$(\`tools-chevron-\${id}\`);
   if(!body) return;
@@ -2035,7 +1955,7 @@ function publishAssistantOutput(content, statusDiv, opts={}) {
     setStreamContent(statusDiv,content,'',opts);
     return statusDiv;
   }
-  return appendMsg('assistant',content,null,opts);
+  return appendMsg('assistant',content,opts);
 }
 
 function setStreamContent(div, text, extra='', {html=false,plainText=null}={}) {
@@ -2078,7 +1998,7 @@ async function fetchStream(url, headers, body, onDelta, signal) {
   }
   const reader=res.body.getReader();
   const dec=new TextDecoder();
-  let buf='', content='', tcAccum={};
+  let buf='', content='';
   for(;;) {
     const {done,value}=await reader.read();
     if(done) break;
@@ -2093,19 +2013,9 @@ async function fetchStream(url, headers, body, onDelta, signal) {
       const delta=chunk.choices?.[0]?.delta;
       if(!delta) continue;
       if(delta.content){content+=delta.content; onDelta(content);}
-      if(delta.tool_calls) for(const tc of delta.tool_calls) {
-        const i=tc.index??0;
-        if(!tcAccum[i]) tcAccum[i]={id:'',name:'',arguments:''};
-        if(tc.id) tcAccum[i].id+=tc.id;
-        if(tc.function?.name) tcAccum[i].name+=tc.function.name;
-        if(tc.function?.arguments) tcAccum[i].arguments+=tc.function.arguments;
-      }
     }
   }
-  const toolCalls=Object.keys(tcAccum).length
-    ? Object.values(tcAccum).map(t=>({id:t.id,type:'function',function:{name:t.name,arguments:t.arguments}}))
-    : null;
-  return {content,toolCalls};
+  return {content};
 }
 
 async function sendMessage() {
@@ -2262,7 +2172,7 @@ async function sendRuntimeAgentMessage(input,text) {
     runtimeState={...(runtimeState||{}),status:data?.status ?? 'running'};
     runtimeConnected=true;
     messages.push({role:'assistant',content:reply});
-    if(data?.kind==='ambiguous') appendMsg('assistant',runtimeChoiceHTML(text,data.choices),null,{html:true,plainText:reply});
+    if(data?.kind==='ambiguous') appendMsg('assistant',runtimeChoiceHTML(text,data.choices),{html:true,plainText:reply});
     else appendMsg('assistant',reply);
     scheduleConversationSave();
     renderActivities();
