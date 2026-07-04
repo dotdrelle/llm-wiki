@@ -1,6 +1,7 @@
 export const ACTIVITY_PANEL_SCRIPT = `/* ── Activity Panel ─────────────────────────────────────────────────── */
 const ACT_STORE_KEY=storageKey('llm-wiki-chat:activities');
 const ACT_PANEL_KEY=storageKey('llm-wiki-chat:activity-panel-open');
+const ACT_VIEW_KEY=storageKey('llm-wiki-chat:activity-view');
 const AGENT_MODE_KEY=storageKey('llm-wiki-chat:agent-mode');
 const RUNTIME_SECTION_KEY_PREFIX='llm-wiki-chat:runtime-section:';
 let _activities=[];
@@ -9,6 +10,8 @@ let runtimeState=null;
 let runtimeConnected=false;
 let runtimeFetchPending=false;
 let agentMode=localStorage.getItem(AGENT_MODE_KEY)==='1';
+let activityView=localStorage.getItem(ACT_VIEW_KEY)==='graph'?'graph':'list';
+let selectedWorkflowNodeId=null;
 const _activityPollTimers=new Map();
 function isActivityActive(status){return status==='running'||status==='queued';}
 function clearPollTimer(id){const t=_activityPollTimers.get(id);if(t)clearTimeout(t);_activityPollTimers.delete(id);}
@@ -277,6 +280,21 @@ function activityPlanSteps(item) {
 function renderActivities() {
   const el=$('activity-body');
   if(!el) return;
+  syncActivityViewTabs();
+  if(activityView==='graph') {
+    const center=$('runtime-graph-center');
+    if(document.body.classList.contains('execution-mode')&&center) {
+      center.innerHTML=runtimeWorkflowGraphCenterHTML();
+      el.innerHTML=runtimeWorkflowInspectorHTML();
+    } else {
+      if(center) center.innerHTML='';
+      el.innerHTML=runtimeWorkflowGraphHTML();
+    }
+    requestAnimationFrame(renderRuntimeWorkflowGraph);
+    return;
+  }
+  const center=$('runtime-graph-center');
+  if(center&&!document.body.classList.contains('execution-mode')) center.innerHTML='';
   if(!_activities.length&&!runtimeState){
     const guideBtn=findSkillByName('guide')?\`<br><button class="act-empty-btn" type="button" onclick="submitSuggestion('/guide')">Start setup guide</button>\`:'';
     el.innerHTML=\`<div class="act-empty">No activity yet.\${guideBtn}</div>\`;
@@ -322,6 +340,22 @@ function openActivityPanel() {
   panel.classList.remove('closed');
   try { localStorage.setItem(ACT_PANEL_KEY,'1'); } catch {}
   updateActivityBadge();
+}
+function setActivityView(view) {
+  activityView=view==='graph'?'graph':'list';
+  try { localStorage.setItem(ACT_VIEW_KEY,activityView); } catch {}
+  if(activityView==='graph'&&!document.body.classList.contains('execution-mode')) {
+    document.body.classList.remove('connectors-mode');
+    document.body.classList.add('execution-mode');
+    if(location.pathname.replace(/\\/+$/,'')!=='/chat/execution') history.pushState(null,'','/chat/execution');
+  } else if(activityView==='list'&&document.body.classList.contains('execution-mode')) {
+    showChatView();
+  }
+  renderActivities();
+}
+function syncActivityViewTabs() {
+  $('act-view-list')?.classList.toggle('active',activityView==='list');
+  $('act-view-graph')?.classList.toggle('active',activityView==='graph');
 }
 function copyText(text) {
   navigator.clipboard?.writeText(text).then(()=>notify('Copied')).catch(()=>notify(text));

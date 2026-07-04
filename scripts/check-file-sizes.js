@@ -29,6 +29,7 @@ const files = [
   join(ROOT, 'src', 'commands', 'serve.ts'),
   join(ROOT, 'src', 'chat', 'chatHtml.ts'),
   ...walk(join(ROOT, 'src', 'serve')),
+  ...walk(join(ROOT, 'src', 'graph')),
   ...walk(join(ROOT, 'src', 'chat')).filter((file) => !file.endsWith('/chatHtml.ts')),
 ];
 

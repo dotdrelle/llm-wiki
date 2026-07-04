@@ -16,10 +16,20 @@ import type { AppConfig } from '../types.ts';
 import { loadConfig } from '../config/loadConfig.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import { pathExists, safeWriteFile, writeIfChanged } from '../utils/fs.ts';
-import { extractWikiLinks } from '../utils/markdown.ts';
-import { canonicalizeName, resolveInside, toPosix } from '../utils/path.ts';
+import { resolveInside, toPosix } from '../utils/path.ts';
 import { WIKI_CSS_VARS } from '../chat/theme.ts';
 import { CHAT_HTML } from '../chat/chatHtml.ts';
+import { renderGraphApp } from '../graph/core/graphLayoutBase.ts';
+import {
+  buildWikiGraph,
+  listWikiGraphFiles as listGraphFiles,
+  wikiGraphEtag as graphEtag,
+  wikiGraphEtagForFiles as graphEtagForFiles,
+  WIKI_GRAPH_DAG_COLUMN_ORDER,
+  WIKI_GRAPH_RELATION_LABELS,
+  type WikiGraphEdge,
+  type WikiGraphNode,
+} from '../graph/wiki/projection.ts';
 import { proxyRuntimeJson, type RuntimeProxyDeps } from '../serve/proxy/runtimeProxy.ts';
 import { handleGraphRoutes } from '../serve/routes/graphRoutes.ts';
 import { handleRuntimeRoutes } from '../serve/routes/runtimeRoutes.ts';
@@ -48,12 +58,6 @@ const NAV_PATTERNS = [
   'deliverables/**/*.md',
   'templates/**/*.md',
   'build-context/**/*.md',
-];
-const GRAPH_PATTERNS = [
-  'wiki/**/*.md',
-  '!wiki/log.md',
-  'deliverables/**/*.md',
-  'raw/ingested/**/*.md',
 ];
 const EDITABLE_DIRS = ['wiki', 'deliverables', 'templates', 'build-context', 'raw/untracked'];
 const require = createRequire(import.meta.url);
@@ -1324,13 +1328,24 @@ function layout(title: string, body: string): string {
     .graph-node.raw-source circle { fill: #d7663b; }
     .graph-node.wiki-source circle { fill: #0e7490; }
     .graph-node.wiki circle { fill: #c8a500; }
+    .graph-node.template circle { fill: #7c3aed; }
+    .graph-node.build-context circle { fill: #2563eb; }
     .graph-node.deliverable circle { fill: #6b7f2a; }
+    .graph-node-secondary { fill: var(--muted) !important; font-size: 9px !important; font-weight: 520 !important; }
+    .graph-link.cites { stroke-dasharray: 4 4; }
+    .graph-link.generated_from,
+    .graph-link.uses_template,
+    .graph-link.uses_context { stroke: #64748b; }
+    .graph-link.produces { stroke: #6b7f2a; }
     .graph-search-wrapper { padding: 0.65rem 0.75rem; }
     .graph-toolbar { display: flex; gap: 0.4rem; align-items: center; }
     .graph-search-field { position: relative; flex: 1 1 0; min-width: 0; }
     .graph-search-input { width: 100%; padding: 0.45rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; font-size: 0.9rem; box-sizing: border-box; }
     .graph-search-input:focus { outline: none; border-color: var(--accent); }
     .graph-search-dropdown { position: absolute; top: calc(100% + 2px); left: 0; right: 0; z-index: 10; list-style: none; margin: 0; padding: 0.3rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); box-shadow: var(--shadow); max-height: 240px; overflow: auto; }
+    .graph-mode-group { display: inline-flex; gap: 0.2rem; padding: 0.16rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-soft); }
+    .graph-mode-btn { min-height: 1.68rem; padding: 0 0.45rem; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font: inherit; font-size: 0.76rem; font-weight: 760; cursor: pointer; }
+    .graph-mode-btn.is-active { background: var(--panel); color: var(--text); box-shadow: 0 0 0 1px var(--border); }
     .graph-ctrl-group { display: flex; gap: 0.25rem; flex: 0 0 auto; }
     .graph-ctrl-btn { width: 2rem; height: 2rem; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; font-size: 1rem; font-weight: 760; cursor: pointer; padding: 0; line-height: 1; }
     .graph-ctrl-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
@@ -1340,6 +1355,8 @@ function layout(title: string, body: string): string {
     .graph-search-result-dot.raw-source { background: #d7663b; }
     .graph-search-result-dot.wiki-source { background: #0e7490; }
     .graph-search-result-dot.wiki { background: #c8a500; }
+    .graph-search-result-dot.template { background: #7c3aed; }
+    .graph-search-result-dot.build-context { background: #2563eb; }
     .graph-search-result-dot.deliverable { background: #6b7f2a; }
     .graph-search-result-title { font-size: 0.88rem; font-weight: 620; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .graph-search-result-path { font-size: 0.76rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1349,7 +1366,15 @@ function layout(title: string, body: string): string {
     .legend-item.raw-source::before { background: #d7663b; }
     .legend-item.wiki-source::before { background: #0e7490; }
     .legend-item.wiki::before { background: #c8a500; }
+    .legend-item.template::before { background: #7c3aed; }
+    .legend-item.build-context::before { background: #2563eb; }
     .legend-item.deliverable::before { background: #6b7f2a; }
+    .graph-list-view { position: absolute; inset: 3.7rem 0 0; overflow: auto; padding: 0.7rem; background: var(--panel); }
+    .graph-list-row { width: 100%; display: grid; grid-template-columns: 0.8rem 1fr auto; gap: 0.55rem; align-items: center; padding: 0.55rem 0.65rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+    .graph-list-row + .graph-list-row { margin-top: 0.45rem; }
+    .graph-list-row small { display: block; margin-top: 0.12rem; color: var(--muted); font-size: 0.74rem; overflow-wrap: anywhere; }
+    .graph-list-row em { color: var(--muted); font-size: 0.72rem; font-style: normal; font-weight: 760; }
+    .graph-list-row.is-dimmed { opacity: 0.32; }
     .relation-panel {
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -1402,6 +1427,9 @@ function layout(title: string, body: string): string {
     }
     .relation-panel-title { margin: 0; font-size: 1rem; }
     .relation-panel-meta { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.82rem; }
+    .relation-inspector { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.18rem 0.5rem; margin: 0.55rem 0 0; font-size: 0.76rem; }
+    .relation-inspector dt { color: var(--muted); font-weight: 760; }
+    .relation-inspector dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
     .relation-node-open {
       display: inline-flex;
       margin-top: 0.45rem;
@@ -1421,6 +1449,7 @@ function layout(title: string, body: string): string {
     }
     .relation-item.is-active { border-color: var(--accent); background: var(--accent-soft); }
     .relation-item.is-hovered { border-color: #2f9e44; box-shadow: inset 3px 0 0 #2f9e44; }
+    .relation-kind { display: inline-flex; margin-bottom: 0.42rem; padding: 0.08rem 0.38rem; border-radius: 999px; background: var(--panel-soft); color: var(--muted); font-size: 0.68rem; font-weight: 780; text-transform: uppercase; }
     .relation-group-label {
       margin: 0.35rem 0 0.15rem;
       color: var(--muted);
@@ -2384,777 +2413,28 @@ const kbdHint = `<kbd style="font-size:.68rem;font-family:ui-monospace,monospace
   return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}<span>Graph</span></a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}<span>Chat</span></a></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Markdown documents">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside><div class="wiki-main-resizer" data-wiki-main-resizer title="Resize sidebar" role="separator" aria-orientation="vertical"></div>`;
 }
 
-interface GraphNode {
-  id: string;
-  title: string;
-  type: 'raw-source' | 'wiki-source' | 'wiki' | 'deliverable';
-  href: string;
-  preview: string;
-  raw: string;
-  html: string;
-  group?: string;
-  degree: number;
-  x: number;
-  y: number;
-  r: number;
-}
-
-interface GraphEdge {
-  from: string;
-  to: string;
-}
-
-function graphNodeType(relativePath: string): GraphNode['type'] {
-  if (relativePath.startsWith('raw/ingested/')) return 'raw-source';
-  if (relativePath.startsWith('wiki/sources/')) return 'wiki-source';
-  if (relativePath.startsWith('deliverables/')) return 'deliverable';
-  return 'wiki';
-}
-
-async function listGraphFiles(rootDir: string): Promise<string[]> {
-  return (await fg(GRAPH_PATTERNS, { cwd: rootDir, dot: false }))
-    .map(toPosix)
-    .sort();
-}
-
-async function graphEtagForFiles(rootDir: string, files: string[]): Promise<string> {
-  const hash = createHash('sha1');
-  for (const file of files) {
-    const fileStat = await stat(path.join(rootDir, file));
-    hash.update(file);
-    hash.update('\0');
-    hash.update(String(fileStat.mtimeMs));
-    hash.update('\0');
-    hash.update(String(fileStat.size));
-    hash.update('\0');
-  }
-  return hash.digest('hex');
-}
-
-async function graphEtag(rootDir: string): Promise<string> {
-  return graphEtagForFiles(rootDir, await listGraphFiles(rootDir));
-}
-
-function rawUntrackedArchiveCandidate(value: string): string | null {
-  const clean = toPosix(decodeHrefPath(value).replace(/^\/+/, '').replace(/#.*$/, ''));
-  if (clean.startsWith('raw/untracked/')) {
-    return `raw/ingested/${clean.slice('raw/untracked/'.length)}`;
-  }
-  if (clean.startsWith('wiki/raw/untracked/')) {
-    return `raw/ingested/${clean.slice('wiki/raw/untracked/'.length)}`;
-  }
-  return null;
-}
-
-function graphTargetPath(value: string, currentDir: string, nodeIds: Set<string>): string {
-  const archivedRaw = rawUntrackedArchiveCandidate(value);
-  if (archivedRaw && nodeIds.has(archivedRaw)) return archivedRaw;
-  return hrefToRelativePath(value, currentDir);
-}
-
-function graphWikiTargetPath(
-  value: string,
-  currentDir: string,
-  nodeIds: Set<string>,
-): string {
-  const clean = value.trim();
-  const candidates = [
-    graphTargetPath(clean, currentDir, nodeIds),
-    clean.endsWith('.md') ? '' : graphTargetPath(`${clean}.md`, currentDir, nodeIds),
-  ].filter(Boolean);
-  for (const candidate of candidates) {
-    if (nodeIds.has(candidate)) return candidate;
-  }
-
-  if (!clean.includes('/')) {
-    const canonical = canonicalizeName(clean);
-    const matches = [...nodeIds].filter((nodeId) => {
-      const basename = path.basename(nodeId, '.md');
-      return (
-        canonicalizeName(basename) === canonical ||
-        canonicalizeName(humanTitle(nodeId)) === canonical
-      );
-    });
-    if (matches.length === 1) return matches[0];
-  }
-
-  return candidates[0] || graphTargetPath(clean, currentDir, nodeIds);
-}
-
-function extractGraphTargets(
-  markdown: string,
-  currentDir: string,
-  nodeIds: Set<string>,
-): string[] {
-  const targets = new Set<string>();
-  const markdownLinkPattern = /\[[^\]]+\]\(([^)]+)\)/g;
-  const citationPattern = /\[src:\s*([^\]]+)\]/g;
-
-  for (const match of markdown.matchAll(markdownLinkPattern)) {
-    const href = match[1]?.trim();
-    if (href && href.endsWith('.md')) {
-      targets.add(graphTargetPath(href, currentDir, nodeIds));
-    }
-  }
-
-  for (const match of markdown.matchAll(citationPattern)) {
-    const citationPath = match[1]?.trim();
-    if (citationPath) {
-      targets.add(graphTargetPath(citationPath, currentDir, nodeIds));
-    }
-  }
-
-  for (const wikiLink of extractWikiLinks(markdown)) {
-    targets.add(graphWikiTargetPath(wikiLink, currentDir, nodeIds));
-  }
-
-  return [...targets];
-}
-
-function graphConceptGroup(relativePath: string, markdown: string): string | undefined {
-  if (!relativePath.startsWith('wiki/concepts/')) return undefined;
-  const parsed = matter(markdown);
-  const group = parsed.data.group;
-  if (typeof group === 'string' && group.trim()) return group.trim();
-  return conceptGroupFromPath(relativePath);
-}
-
-function markdownPreview(markdown: string): string {
-  const plain = markdown
-    .replace(/^---[\s\S]*?---\s*/m, '')
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/!\[[^\]]*]\([^)]+\)/g, ' ')
-    .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
-    .replace(/[#>*_`|~-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return plain.length > 900 ? `${plain.slice(0, 900)}...` : plain;
-}
+type GraphNode = WikiGraphNode;
+type GraphEdge = WikiGraphEdge;
 
 async function buildGraph(
   rootDir: string,
   graphFiles?: string[],
 ): Promise<{ nodes: GraphNode[]; edges: GraphEdge[] }> {
-  const files = graphFiles ?? (await listGraphFiles(rootDir));
-  const nodeIds = new Set(files);
-  const edges: GraphEdge[] = [];
-  const edgeKeys = new Set<string>();
-  const degree = new Map(files.map((file) => [file, 0]));
-  const previews = new Map<string, string>();
-  const rawContents = new Map<string, string>();
-  const htmlContents = new Map<string, string>();
-  const groups = new Map<string, string>();
-
-  for (const file of files) {
-    const raw = await readFile(path.join(rootDir, file), 'utf8');
-    const currentDir = toPosix(path.posix.dirname(file));
-    rawContents.set(file, raw);
-    previews.set(file, markdownPreview(raw));
-    htmlContents.set(file, await renderMarkdown(raw, currentDir));
-    const group = graphConceptGroup(file, raw);
-    if (group) groups.set(file, group);
-    for (const target of extractGraphTargets(raw, currentDir, nodeIds)) {
-      if (!nodeIds.has(target) || target === file) continue;
-      const edgeKey = [file, target].sort().join('\0');
-      if (edgeKeys.has(edgeKey)) continue;
-      edgeKeys.add(edgeKey);
-      edges.push({ from: file, to: target });
-      degree.set(file, (degree.get(file) ?? 0) + 1);
-      degree.set(target, (degree.get(target) ?? 0) + 1);
-    }
-  }
-
-  const width = 1100;
-  const height = 720;
-  const cx = width / 2;
-  const cy = height / 2;
-  const rx = 430;
-  const ry = 260;
-  const sortedFiles = [...files].sort((a, b) => {
-    const typeOrder = graphNodeType(a).localeCompare(graphNodeType(b));
-    return typeOrder || a.localeCompare(b);
-  });
-  const maxDegree = Math.max(1, ...sortedFiles.map((file) => degree.get(file) ?? 0));
-
-  const nodes = sortedFiles.map((file, index): GraphNode => {
-    const angle =
-      sortedFiles.length > 1
-        ? (Math.PI * 2 * index) / sortedFiles.length - Math.PI / 2
-        : 0;
-    const nodeDegree = degree.get(file) ?? 0;
-    return {
-      id: file,
-      title: humanTitle(file),
-      type: graphNodeType(file),
-      href: `/${file}`,
-      preview: previews.get(file) || '(No readable content in this file.)',
-      raw: rawContents.get(file) ?? '',
-      html: htmlContents.get(file) ?? '',
-      group: groups.get(file),
-      degree: nodeDegree,
-      x: Math.round(cx + Math.cos(angle) * rx),
-      y: Math.round(cy + Math.sin(angle) * ry),
-      r: Math.round(9 + (nodeDegree / maxDegree) * 20),
-    };
-  });
-
-  return { nodes, edges };
+  return buildWikiGraph(rootDir, {
+    decodeHrefPath,
+    hrefToRelativePath,
+    humanTitle,
+    renderMarkdown,
+  }, graphFiles);
 }
 
-function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[]): string {
-  const graphData = JSON.stringify({
-    nodes,
-    edges: edges.map((edge, index) => ({ ...edge, id: `rel-${index}` })),
+function renderWikiGraphApp(nodes: GraphNode[], edges: GraphEdge[], etag: string): string {
+  return renderGraphApp(nodes, edges, etag, {
+    escapeAttr,
+    escapeScriptJson,
+    dagColumnOrder: WIKI_GRAPH_DAG_COLUMN_ORDER,
+    relationLabels: WIKI_GRAPH_RELATION_LABELS,
   });
-  return `<script type="application/json" id="graph-data">${escapeScriptJson(graphData)}</script>
-<script src="/assets/d3.min.js"></script>
-<script>
-(() => {
-  const data = JSON.parse(document.getElementById('graph-data').textContent || '{"nodes":[],"edges":[]}');
-  if (!window.d3) {
-    document.querySelector('[data-relation-list]').innerHTML = '<li class="relation-item">d3-force is unavailable: the local /assets/d3.min.js bundle could not be loaded.</li>';
-    return;
-  }
-  const graphLayout = document.querySelector('[data-graph-layout]');
-  const graphPanel = graphLayout?.querySelector('.graph-panel');
-  const graphPage = graphLayout?.closest('main');
-  const svg = document.querySelector('[data-graph-svg]');
-  const viewport = document.querySelector('[data-graph-viewport]');
-  const linkLayer = document.querySelector('[data-link-layer]');
-  const nodeLayer = document.querySelector('[data-node-layer]');
-  const relationList = document.querySelector('[data-relation-list]');
-  const modal = document.querySelector('[data-relation-modal]');
-  const modalTitle = document.querySelector('[data-modal-title]');
-  const modalTargetTitle = document.querySelector('[data-modal-target-title]');
-  const modalTargetBody = document.querySelector('[data-modal-target-body]');
-  const modalClose = document.querySelector('[data-modal-close]');
-  const searchInput = document.querySelector('[data-graph-search]');
-  const searchDropdown = document.querySelector('[data-graph-search-dropdown]');
-  const panelTitle = document.querySelector('[data-relation-panel-title]');
-  const panelMeta = document.querySelector('[data-relation-panel-meta]');
-  const panelNodeOpen = document.querySelector('[data-relation-node-open]');
-  const btnZoomIn = document.querySelector('[data-graph-zoom-in]');
-  const btnZoomOut = document.querySelector('[data-graph-zoom-out]');
-  const btnCenter = document.querySelector('[data-graph-center]');
-  const btnReset = document.querySelector('[data-graph-reset]');
-  const btnExpand = document.querySelector('[data-graph-expand]');
-  const btnRelationToggle = document.querySelector('[data-relation-toggle]');
-  let nodes = data.nodes;
-  let edges = data.edges.map((edge) => ({ id: edge.id, from: edge.from, to: edge.to, source: edge.from, target: edge.to }));
-  let byId = new Map(nodes.map((node) => [node.id, node]));
-  const nodeElements = new Map();
-  const linkElements = [];
-  const relationElements = new Map();
-  const relationItems = new Map();
-  let simulation = null;
-  let selectedId = nodes[0]?.id || null;
-  let dragNode = null;
-  let panStart = null;
-  let view = { x: 0, y: 0, scale: 1 };
-  let searchQuery = '';
-
-  function normalizeGraphData(payload) {
-    return {
-      nodes: Array.isArray(payload?.nodes) ? payload.nodes : [],
-      edges: Array.isArray(payload?.edges)
-        ? payload.edges.map((edge, index) => ({
-            id: edge.id || 'rel-' + index,
-            from: edge.from,
-            to: edge.to,
-            source: edge.from,
-            target: edge.to,
-          }))
-        : [],
-    };
-  }
-
-  async function refreshGraphWhenChanged() {
-    const currentEtag = graphLayout?.dataset.graphEtag || '';
-    if (!currentEtag) return;
-    try {
-      const response = await fetch('/api/graph-etag', { cache: 'no-store' });
-      if (!response.ok) return;
-      const payload = await response.json();
-      if (payload?.etag && payload.etag !== currentEtag) {
-        await reloadGraphData(payload.etag);
-      }
-    } catch {
-      // Ignore transient polling failures.
-    }
-  }
-
-  async function reloadGraphData(nextEtag) {
-    const response = await fetch('/api/graph-data', { cache: 'no-store' });
-    if (!response.ok) return;
-    const payload = await response.json();
-    const previousPositions = new Map(nodes.map((node) => [node.id, { x: node.x, y: node.y, fx: node.fx, fy: node.fy }]));
-    const normalized = normalizeGraphData(payload);
-    nodes = normalized.nodes.map((node) => {
-      const previous = previousPositions.get(node.id);
-      return previous ? { ...node, x: previous.x, y: previous.y, fx: previous.fx, fy: previous.fy } : node;
-    });
-    edges = normalized.edges;
-    byId = new Map(nodes.map((node) => [node.id, node]));
-    if (selectedId && !byId.has(selectedId)) selectedId = nodes[0]?.id || null;
-    graphLayout.dataset.graphEtag = payload.etag || nextEtag;
-    render();
-    applyView();
-    if (searchQuery) {
-      applySearchFilter(searchQuery);
-      updateDropdown(searchQuery);
-    }
-  }
-
-  function nodeMatchesSearch(node, query) {
-    const q = query.toLowerCase();
-    return node.id.toLowerCase().includes(q) || node.title.toLowerCase().includes(q) || String(node.group || '').toLowerCase().includes(q);
-  }
-
-  function applySearchFilter(query) {
-    searchQuery = query;
-    if (!query) {
-      for (const el of nodeElements.values()) el.classList.remove('is-dimmed');
-      for (const entry of linkElements) entry.element.classList.remove('is-dimmed');
-      if (selectedId) selectNode(selectedId);
-      return;
-    }
-    const matchingIds = new Set(nodes.filter((n) => nodeMatchesSearch(n, query)).map((n) => n.id));
-    for (const [nodeId, el] of nodeElements) {
-      el.classList.toggle('is-dimmed', !matchingIds.has(nodeId));
-      el.classList.toggle('is-selected', false);
-    }
-    for (const entry of linkElements) entry.element.classList.remove('is-connected');
-  }
-
-  function updateDropdown(query) {
-    if (!query) { searchDropdown.hidden = true; searchDropdown.innerHTML = ''; return; }
-    const matches = nodes.filter((n) => nodeMatchesSearch(n, query)).slice(0, 8);
-    if (matches.length === 0) {
-      searchDropdown.innerHTML = '<li class="graph-search-empty">No results</li>';
-    } else {
-      searchDropdown.innerHTML = matches.map((n) =>
-        '<li class="graph-search-result" data-node-id="' + window.WikiUi.escapeHtml(n.id) + '">' +
-        '<span class="graph-search-result-dot ' + n.type + '"></span>' +
-        '<span class="graph-search-result-title">' + window.WikiUi.escapeHtml(n.title) + '</span>' +
-        '<span class="graph-search-result-path">' + window.WikiUi.escapeHtml(n.group ? n.group + ' · ' + n.id : n.id) + '</span>' +
-        '</li>'
-      ).join('');
-    }
-    searchDropdown.hidden = false;
-  }
-
-  function panToNode(id) {
-    const node = byId.get(id);
-    if (!node || node.x == null) return;
-    view.x = 550 - node.x * view.scale;
-    view.y = 360 - node.y * view.scale;
-    applyView();
-  }
-
-  function clearSearch() {
-    if (!searchQuery) return;
-    searchQuery = '';
-    searchInput.value = '';
-    searchDropdown.hidden = true;
-  }
-
-  function zoomBy(factor) {
-    const nextScale = Math.min(3, Math.max(0.35, view.scale * factor));
-    view.x = view.x + 550 * (view.scale - nextScale);
-    view.y = view.y + 360 * (view.scale - nextScale);
-    view.scale = nextScale;
-    applyView();
-  }
-
-  function centerSelected() {
-    const node = byId.get(selectedId);
-    if (!node || node.x == null) return;
-    const targetScale = Math.max(view.scale, 1.2);
-    view.scale = targetScale;
-    view.x = 550 - node.x * targetScale;
-    view.y = 360 - node.y * targetScale;
-    applyView();
-  }
-
-  function resetView() {
-    view = { x: 0, y: 0, scale: 1 };
-    applyView();
-  }
-
-  function setGraphExpanded(expanded) {
-    graphLayout.classList.toggle('graph-expanded', expanded);
-    graphPage?.classList.toggle('graph-page-expanded', expanded);
-    syncExpandedLegendPosition();
-    if (btnExpand) {
-      btnExpand.setAttribute('aria-pressed', expanded ? 'true' : 'false');
-      btnExpand.title = expanded ? 'Collapse graph' : 'Expand graph';
-      btnExpand.textContent = expanded ? '↙' : '↗';
-    }
-  }
-
-  function syncExpandedLegendPosition() {
-    if (!graphPage?.classList.contains('graph-page-expanded') || !graphPanel) {
-      graphPage?.style.removeProperty('--graph-legend-left');
-      return;
-    }
-    const left = Math.max(8, graphPanel.getBoundingClientRect().left + 12);
-    graphPage.style.setProperty('--graph-legend-left', left + 'px');
-  }
-
-  window.addEventListener('resize', syncExpandedLegendPosition);
-
-  function svgPoint(event) {
-    const point = svg.createSVGPoint();
-    point.x = event.clientX;
-    point.y = event.clientY;
-    const matrix = viewport.getScreenCTM();
-    return matrix ? point.matrixTransform(matrix.inverse()) : { x: point.x, y: point.y };
-  }
-
-  function applyView() {
-    viewport.setAttribute('transform', 'translate(' + view.x + ' ' + view.y + ') scale(' + view.scale + ')');
-  }
-
-  function render() {
-    simulation?.stop();
-    linkLayer.innerHTML = '';
-    nodeLayer.innerHTML = '';
-    linkElements.length = 0;
-    nodeElements.clear();
-
-    for (const edge of edges) {
-      const from = byId.get(edge.source);
-      const to = byId.get(edge.target);
-      if (!from || !to) continue;
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.classList.add('graph-link');
-      line.dataset.from = edge.source;
-      line.dataset.to = edge.target;
-      linkLayer.appendChild(line);
-      linkElements.push({ element: line, edge });
-    }
-
-    relationList.innerHTML = '';
-    relationElements.clear();
-    relationItems.clear();
-    for (const edge of edges) {
-      const from = byId.get(edge.from);
-      const to = byId.get(edge.to);
-      if (!from || !to) continue;
-      const item = document.createElement('li');
-      item.className = 'relation-item';
-      item.dataset.id = edge.id;
-      item.innerHTML = '<span class="relation-path"><span class="relation-title"></span><span class="relation-subpath"></span></span><span class="relation-arrow">↓</span><span class="relation-path"><span class="relation-title"></span><span class="relation-subpath"></span></span><button class="relation-open" type="button">Open</button>';
-      const paths = item.querySelectorAll('.relation-path');
-      paths[0].querySelector('.relation-title').textContent = from.title;
-      paths[0].querySelector('.relation-subpath').textContent = from.id;
-      paths[1].querySelector('.relation-title').textContent = to.title;
-      paths[1].querySelector('.relation-subpath').textContent = to.id;
-      item.querySelector('button').addEventListener('click', () => openRelation(edge.id));
-      item.addEventListener('mouseenter', () => highlightRelation(edge.id));
-      item.addEventListener('mouseleave', clearRelationHover);
-      relationElements.set(edge.id, item);
-      relationItems.set(edge.id, { edge, element: item });
-    }
-
-    if (edges.length === 0) {
-      relationList.innerHTML = '<li class="relation-item">No relations detected between Markdown documents.</li>';
-    } else {
-      sortRelations(selectedId);
-    }
-
-    for (const node of nodes) {
-      const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      group.classList.add('graph-node', node.type);
-      group.dataset.id = node.id;
-
-      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      circle.setAttribute('r', String(node.r));
-      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      label.setAttribute('text-anchor', 'middle');
-      label.textContent = node.title;
-      const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-      title.textContent = node.id + ' · ' + node.degree + ' lien(s)';
-
-      group.append(title, circle, label);
-      group.addEventListener('pointerdown', (event) => {
-        event.stopPropagation();
-        dragNode = node;
-        node.fx = node.x;
-        node.fy = node.y;
-        simulation?.alphaTarget(0.25).restart();
-        group.classList.add('is-dragging');
-        group.setPointerCapture(event.pointerId);
-      });
-      group.addEventListener('pointermove', (event) => {
-        if (dragNode !== node) return;
-        const point = svgPoint(event);
-        node.fx = point.x;
-        node.fy = point.y;
-        updatePositions();
-      });
-      group.addEventListener('pointerup', (event) => {
-        group.classList.remove('is-dragging');
-        group.releasePointerCapture(event.pointerId);
-        node.fx = null;
-        node.fy = null;
-        simulation?.alphaTarget(0);
-        dragNode = null;
-        clearSearch();
-        selectNode(node.id);
-      });
-      group.addEventListener('dblclick', () => {
-        window.location.href = node.href;
-      });
-
-      nodeLayer.appendChild(group);
-      nodeElements.set(node.id, group);
-    }
-
-    simulation = d3.forceSimulation(nodes)
-      .force('link', d3.forceLink(edges).id((node) => node.id).distance((edge) => {
-        const sourceDegree = edge.source.degree || 0;
-        const targetDegree = edge.target.degree || 0;
-        return 110 + Math.min(sourceDegree + targetDegree, 10) * 10;
-      }).strength(0.55))
-      .force('charge', d3.forceManyBody().strength((node) => -260 - node.r * 12))
-      .force('center', d3.forceCenter(550, 360))
-      .force('collision', d3.forceCollide().radius((node) => node.r + 34).strength(0.9))
-      .force('x', d3.forceX(550).strength(0.035))
-      .force('y', d3.forceY(360).strength(0.035))
-      .on('tick', updatePositions);
-
-    if (selectedId) selectNode(selectedId);
-  }
-
-  function updatePositions() {
-    for (const entry of linkElements) {
-      const line = entry.element;
-      const from = typeof entry.edge.source === 'object' ? entry.edge.source : byId.get(entry.edge.source);
-      const to = typeof entry.edge.target === 'object' ? entry.edge.target : byId.get(entry.edge.target);
-      if (!from || !to) continue;
-      line.setAttribute('x1', String(from.x));
-      line.setAttribute('y1', String(from.y));
-      line.setAttribute('x2', String(to.x));
-      line.setAttribute('y2', String(to.y));
-    }
-
-    for (const node of nodes) {
-      const group = nodeElements.get(node.id);
-      if (!group) continue;
-      group.setAttribute('transform', 'translate(' + node.x + ' ' + node.y + ')');
-      const label = group.querySelector('text');
-      label.setAttribute('y', String(node.r + 16));
-    }
-  }
-
-  function connectedIds(id) {
-    const ids = new Set([id]);
-    for (const edge of edges) {
-      const sourceId = typeof edge.source === 'object' ? edge.source.id : edge.source;
-      const targetId = typeof edge.target === 'object' ? edge.target.id : edge.target;
-      if (sourceId === id) ids.add(targetId);
-      if (targetId === id) ids.add(sourceId);
-    }
-    return ids;
-  }
-
-  function edgeNodeIds(edge) {
-    const sourceId = typeof edge.source === 'object' ? edge.source.id : edge.source;
-    const targetId = typeof edge.target === 'object' ? edge.target.id : edge.target;
-    return { sourceId, targetId };
-  }
-
-  function relationWeight(edge) {
-    const { sourceId, targetId } = edgeNodeIds(edge);
-    return (byId.get(sourceId)?.degree || 0) + (byId.get(targetId)?.degree || 0);
-  }
-
-  function sortedRelationItems(focusId) {
-    return [...relationItems.values()].sort((left, right) => {
-      const leftIds = edgeNodeIds(left.edge);
-      const rightIds = edgeNodeIds(right.edge);
-      const leftFocused = focusId && (leftIds.sourceId === focusId || leftIds.targetId === focusId);
-      const rightFocused = focusId && (rightIds.sourceId === focusId || rightIds.targetId === focusId);
-      if (leftFocused !== rightFocused) return leftFocused ? -1 : 1;
-      const weightDiff = relationWeight(right.edge) - relationWeight(left.edge);
-      if (weightDiff !== 0) return weightDiff;
-      return (leftIds.sourceId + leftIds.targetId).localeCompare(rightIds.sourceId + rightIds.targetId);
-    });
-  }
-
-  function appendRelationLabel(text) {
-    const label = document.createElement('li');
-    label.className = 'relation-group-label';
-    label.textContent = text;
-    relationList.appendChild(label);
-  }
-
-  function sortRelations(focusId) {
-    if (relationItems.size === 0) return;
-    relationList.innerHTML = '';
-    let focusedAdded = false;
-    let otherAdded = false;
-    for (const item of sortedRelationItems(focusId)) {
-      const { sourceId, targetId } = edgeNodeIds(item.edge);
-      const isFocused = Boolean(focusId && (sourceId === focusId || targetId === focusId));
-      if (isFocused && !focusedAdded) {
-        appendRelationLabel('Relations du noeud selectionne');
-        focusedAdded = true;
-      }
-      if (!isFocused && !otherAdded) {
-        appendRelationLabel(focusedAdded ? 'Autres relations' : 'Relations les plus connectees');
-        otherAdded = true;
-      }
-      relationList.appendChild(item.element);
-    }
-  }
-
-  function selectNode(id) {
-    selectedId = id;
-    const node = byId.get(id);
-    if (!node) return;
-    const connected = connectedIds(id);
-    panelTitle.textContent = node.title;
-    panelMeta.textContent = node.group ? node.group + ' · ' + node.id : node.id;
-    if (panelNodeOpen) {
-      panelNodeOpen.href = node.href;
-      panelNodeOpen.hidden = false;
-    }
-
-    for (const [nodeId, element] of nodeElements) {
-      element.classList.toggle('is-selected', nodeId === id);
-      element.classList.toggle('is-dimmed', !connected.has(nodeId));
-    }
-    for (const entry of linkElements) {
-      const { sourceId, targetId } = edgeNodeIds(entry.edge);
-      const isConnected = sourceId === id || targetId === id;
-      entry.element.classList.toggle('is-connected', isConnected);
-    }
-    for (const [relationId, element] of relationElements) {
-      const edge = edges.find((candidate) => candidate.id === relationId);
-      if (!edge) continue;
-      const { sourceId, targetId } = edgeNodeIds(edge);
-      element.classList.toggle('is-active', sourceId === id || targetId === id);
-    }
-    sortRelations(id);
-  }
-
-  function highlightRelation(id) {
-    const edge = edges.find((candidate) => candidate.id === id);
-    if (!edge) return;
-    const { sourceId, targetId } = edgeNodeIds(edge);
-    for (const [nodeId, element] of nodeElements) {
-      element.classList.toggle('is-hovered', nodeId === sourceId || nodeId === targetId);
-    }
-    for (const entry of linkElements) {
-      entry.element.classList.toggle('is-hovered', entry.edge.id === id);
-    }
-    for (const [relationId, element] of relationElements) {
-      element.classList.toggle('is-hovered', relationId === id);
-    }
-  }
-
-  function clearRelationHover() {
-    for (const element of nodeElements.values()) element.classList.remove('is-hovered');
-    for (const entry of linkElements) entry.element.classList.remove('is-hovered');
-    for (const element of relationElements.values()) element.classList.remove('is-hovered');
-  }
-
-  function openRelation(id) {
-    const edge = edges.find((candidate) => candidate.id === id);
-    if (!edge) return;
-    const { sourceId, targetId } = edgeNodeIds(edge);
-    const source = byId.get(sourceId);
-    const target = byId.get(targetId);
-    if (!source || !target) return;
-    highlightRelation(id);
-    modalTitle.textContent = source.title + ' -> ' + target.title;
-    modalTargetTitle.textContent = target.id;
-    modalTargetBody.innerHTML = target.html;
-    modal.classList.add('is-open');
-  }
-
-  function closeModal() {
-    modal.classList.remove('is-open');
-  }
-
-  svg.addEventListener('pointerdown', (event) => {
-    if (event.target.closest('.graph-node')) return;
-    panStart = { x: event.clientX, y: event.clientY, viewX: view.x, viewY: view.y };
-    svg.classList.add('is-panning');
-    svg.setPointerCapture(event.pointerId);
-  });
-  svg.addEventListener('pointermove', (event) => {
-    if (!panStart) return;
-    view.x = panStart.viewX + (event.clientX - panStart.x);
-    view.y = panStart.viewY + (event.clientY - panStart.y);
-    applyView();
-  });
-  svg.addEventListener('pointerup', (event) => {
-    panStart = null;
-    svg.classList.remove('is-panning');
-    svg.releasePointerCapture(event.pointerId);
-  });
-  svg.addEventListener('wheel', (event) => {
-    event.preventDefault();
-    const delta = event.deltaY > 0 ? 0.9 : 1.1;
-    const nextScale = Math.min(3, Math.max(0.35, view.scale * delta));
-    view.scale = nextScale;
-    applyView();
-  }, { passive: false });
-  modalClose.addEventListener('click', closeModal);
-  modal.addEventListener('click', (event) => {
-    if (event.target === modal) closeModal();
-  });
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') { closeModal(); clearSearch(); applySearchFilter(''); }
-  });
-
-  searchInput.addEventListener('input', () => {
-    const query = searchInput.value.trim();
-    applySearchFilter(query);
-    updateDropdown(query);
-  });
-  searchInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') { applySearchFilter(''); updateDropdown(''); searchInput.value = ''; }
-  });
-  searchDropdown.addEventListener('click', (event) => {
-    const result = event.target.closest('[data-node-id]');
-    if (!result) return;
-    const id = result.dataset.nodeId;
-    clearSearch();
-    applySearchFilter('');
-    selectNode(id);
-    panToNode(id);
-  });
-  document.addEventListener('click', (event) => {
-    if (!event.target.closest('[data-graph-search-wrapper]')) {
-      searchDropdown.hidden = true;
-    }
-  });
-  btnZoomIn.addEventListener('click', () => zoomBy(1.25));
-  btnZoomOut.addEventListener('click', () => zoomBy(1 / 1.25));
-  btnCenter.addEventListener('click', centerSelected);
-  btnReset.addEventListener('click', resetView);
-  btnExpand?.addEventListener('click', () => {
-    setGraphExpanded(!graphLayout.classList.contains('graph-expanded'));
-  });
-  btnRelationToggle.addEventListener('click', () => {
-    graphLayout.classList.toggle('relations-collapsed');
-  });
-
-  setGraphExpanded(false);
-  render();
-  setInterval(refreshGraphWhenChanged, 5000);
-})();
-</script>`;
-}
-
-function renderGraphApp(nodes: GraphNode[], edges: GraphEdge[], etag: string): string {
-  return `<div class="graph-layout" data-graph-layout data-graph-etag="${escapeAttr(etag)}"><div class="graph-panel"><div class="graph-search-wrapper" data-graph-search-wrapper><div class="graph-toolbar"><div class="graph-search-field"><input class="graph-search-input" type="search" placeholder="Search node..." aria-label="Search graph" data-graph-search autocomplete="off"><ul class="graph-search-dropdown" data-graph-search-dropdown hidden></ul></div><div class="graph-ctrl-group"><button class="graph-ctrl-btn" type="button" data-graph-zoom-in title="Zoom in">+</button><button class="graph-ctrl-btn" type="button" data-graph-zoom-out title="Zoom out">&#x2212;</button><button class="graph-ctrl-btn" type="button" data-graph-center title="Center on selection" style="font-size:0.9rem">&#x25CE;</button><button class="graph-ctrl-btn" type="button" data-graph-reset title="Reset view" style="font-size:0.9rem">&#x21BA;</button><button class="graph-ctrl-btn" type="button" data-graph-expand title="Expand graph" aria-label="Expand graph" aria-pressed="false" style="font-size:0.9rem">&#x2197;</button></div></div></div><div class="graph-stage"><svg class="graph-svg" viewBox="0 0 1100 720" role="img" aria-label="Navigable document and source graph" data-graph-svg><g data-graph-viewport><g data-link-layer></g><g data-node-layer></g></g></svg></div></div><aside class="relation-panel"><div class="relation-panel-header"><button class="relation-toggle" type="button" title="Show/hide relations" aria-label="Show/hide relations" data-relation-toggle>&#9776;</button><div class="relation-panel-copy"><h2 class="relation-panel-title" data-relation-panel-title>Relations</h2><p class="relation-panel-meta" data-relation-panel-meta>Open a relation to view linked Markdown.</p><a class="relation-node-open" data-relation-node-open href="#" hidden>Open page</a></div></div><ul class="relation-list" data-relation-list></ul></aside></div>
-<div class="modal-backdrop" data-relation-modal><section class="relation-modal" role="dialog" aria-modal="true" aria-labelledby="relation-modal-title"><div class="modal-header"><h2 class="modal-title" id="relation-modal-title" data-modal-title>Relation</h2><button class="modal-close" type="button" aria-label="Close" data-modal-close>x</button></div><div class="modal-body"><article class="modal-doc"><h3 class="modal-doc-title" data-modal-target-title></h3><div class="modal-markdown" data-modal-target-body></div></article></div></section></div>
-${renderGraphScript(nodes, edges)}`;
 }
 
 // ── Stats helpers ──────────────────────────────────────────────────────────
@@ -3233,11 +2513,13 @@ async function generateGraph(rootDir: string): Promise<string> {
   const etag = await graphEtagForFiles(rootDir, graphFiles);
   const rawSourceCount = nodes.filter((node) => node.type === 'raw-source').length;
   const wikiSourceCount = nodes.filter((node) => node.type === 'wiki-source').length;
+  const templateCount = nodes.filter((node) => node.type === 'template').length;
+  const contextCount = nodes.filter((node) => node.type === 'build-context').length;
   const graph =
     nodes.length > 0
-      ? renderGraphApp(nodes, edges, etag)
+      ? renderWikiGraphApp(nodes, edges, etag)
       : '<p class="empty">No Markdown documents to display in the graph.</p>';
-  const body = `${sidebar}<main class="content"><div class="hero"><h1>Source Graph</h1><p>Wiki sources and documents are represented by relation. Node size depends on incoming and outgoing link count. Click a node to display the associated Markdown.</p></div><div class="graph-legend"><span class="legend-item raw-source">${rawSourceCount} raw source(s)</span><span class="legend-item wiki-source">${wikiSourceCount} wiki source(s)</span><span class="legend-item wiki">wiki</span><span class="legend-item deliverable">deliverables</span><span>${edges.length} relation(s)</span></div>${graph}</main>`;
+  const body = `${sidebar}<main class="content"><div class="hero"><h1>Wiki Graph</h1><p>Pages, sources, templates, build context and deliverables are represented as document relations. Use Radial, DAG or Liste mode to inspect the same wiki projection.</p></div><div class="graph-legend"><span class="legend-item raw-source">${rawSourceCount} raw source(s)</span><span class="legend-item wiki-source">${wikiSourceCount} wiki source(s)</span><span class="legend-item wiki">wiki</span><span class="legend-item template">${templateCount} template(s)</span><span class="legend-item build-context">${contextCount} context file(s)</span><span class="legend-item deliverable">deliverables</span><span>${edges.length} relation(s)</span></div>${graph}</main>`;
   return layout('Source Graph', body);
 }
 

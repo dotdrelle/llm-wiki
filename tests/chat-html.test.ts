@@ -110,6 +110,24 @@ describe('chat html', () => {
     expect(script).not.toContain("actElapsed(item)<2");
   });
 
+  it('exposes runtime activity list and graph views backed by workflow data', () => {
+    const [script] = chatScripts();
+
+    expect(CHAT_HTML).toContain('id="act-view-list"');
+    expect(CHAT_HTML).toContain('id="act-view-graph"');
+    expect(CHAT_HTML).toContain('id="execution-view"');
+    expect(CHAT_HTML).toContain('id="runtime-graph-center"');
+    expect(CHAT_HTML).toContain('body.execution-mode #execution-view{display:flex}');
+    expect(CHAT_HTML).toContain('<script src="/assets/d3.min.js"></script>');
+    expect(script).toContain("const ACT_VIEW_KEY=storageKey('llm-wiki-chat:activity-view');");
+    expect(script).toContain('function runtimeWorkflowGraphData()');
+    expect(script).toContain('runtimeState?.workflow||{}');
+    expect(script).toContain('function renderRuntimeWorkflowGraph()');
+    expect(script).toContain('function renderRuntimeWorkflowInspector()');
+    expect(script).toContain('function showExecutionView(event)');
+    expect(script).toContain("if(activityView==='graph')");
+  });
+
   it('offers runtime-backed config profile switching without page reload', () => {
     const [script] = chatScripts();
 

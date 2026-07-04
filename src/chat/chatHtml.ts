@@ -5,6 +5,7 @@ import { OBSERVER_TOOLS_SCRIPT } from './views/observerToolsScript.ts';
 import { MCP_CLIENT_SCRIPT } from './runtime/mcpClientScript.ts';
 import { CONFIG_SCRIPT } from './config/configScript.ts';
 import { ACTIVITY_PANEL_SCRIPT } from './runtime/activityPanelScript.ts';
+import { RUNTIME_GRAPH_SCRIPT } from './runtime/runtimeGraphScript.ts';
 import { CHAT_MARKUP, EMPTY_CHAT_HTML } from './views/chatView.ts';
 
 const CHAT_BODY = `${CHAT_MARKUP}\n\n<script>\nlet servers = [];
@@ -105,6 +106,7 @@ function notify(msg, type='s') {
 }
 
 ${ACTIVITY_PANEL_SCRIPT}
+${RUNTIME_GRAPH_SCRIPT}
 
 function runtimeTime(value,fallback=Date.now()) {
   if(value==null) return fallback;
@@ -899,14 +901,18 @@ function renderCards() {
 function initPageMode() {
   const path=location.pathname.replace(/\\/+$/,'') || '/chat';
   const isConnectors=path==='/chat/connectors';
+  const isExecution=path==='/chat/execution';
   document.body.classList.toggle('connectors-mode',isConnectors);
+  document.body.classList.toggle('execution-mode',isExecution);
   $('connectors-link')?.classList.toggle('active',isConnectors);
   if(isConnectors) { renderCards(); renderSkillsManager(); }
+  if(isExecution) { activityView='graph'; openActivityPanel(); renderActivities(); }
 }
 
 function showConnectorsView(event) {
   event?.preventDefault();
   document.body.classList.add('connectors-mode');
+  document.body.classList.remove('execution-mode');
   $('connectors-link')?.classList.add('active');
   renderCards();
   renderSkillsManager();
@@ -917,9 +923,23 @@ function showConnectorsView(event) {
 
 function showChatView() {
   document.body.classList.remove('connectors-mode');
+  document.body.classList.remove('execution-mode');
   $('connectors-link')?.classList.remove('active');
-  if(location.pathname.replace(/\\/+$/,'')==='/chat/connectors') {
+  if(['/chat/connectors','/chat/execution'].includes(location.pathname.replace(/\\/+$/,''))) {
     history.pushState(null,'','/chat');
+  }
+}
+
+function showExecutionView(event) {
+  event?.preventDefault();
+  document.body.classList.remove('connectors-mode');
+  document.body.classList.add('execution-mode');
+  $('connectors-link')?.classList.remove('active');
+  activityView='graph';
+  openActivityPanel();
+  renderActivities();
+  if(location.pathname.replace(/\\/+$/,'')!=='/chat/execution') {
+    history.pushState(null,'','/chat/execution');
   }
 }
 
@@ -2316,6 +2336,7 @@ export const CHAT_HTML = `<!DOCTYPE html>
 <title>MCP Chat</title>
 ${CHAT_STYLE}
 <script src="/assets/marked.min.js"></script>
+<script src="/assets/d3.min.js"></script>
 </head>
 <body>
 ${CHAT_BODY}

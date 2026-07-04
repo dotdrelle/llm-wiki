@@ -21,6 +21,8 @@ export const EMPTY_CHAT_HTML = `<div id="empty">
 export const CHAT_MARKUP = `<nav id="app-nav" aria-label="Navigation application">
   <button class="app-nav-btn" type="button" onclick="toggleSidebar()" title="Toggle sidebar" aria-label="Toggle sidebar">☰</button>
   <a class="app-nav-link" href="/" title="Back to wiki" aria-label="Back to wiki">Wiki</a>
+  <button class="app-nav-link" type="button" onclick="showChatView()" title="Chat">Chat</button>
+  <button class="app-nav-link" type="button" onclick="showExecutionView()" title="Execution">Exécution</button>
   <div class="app-nav-title">MCP Chat</div>
   <div class="app-nav-spacer"></div>
 </nav>
@@ -156,6 +158,16 @@ export const CHAT_MARKUP = `<nav id="app-nav" aria-label="Navigation application
   <div id="messages">
     ${EMPTY_CHAT_HTML}
   </div>
+  <div class="execution-view" id="execution-view">
+    <div class="execution-head">
+      <div>
+        <h1>Exécution</h1>
+        <p>Run, tasks, agents, MCP calls and outputs from the canonical runtime workflow projection.</p>
+      </div>
+      <button type="button" onclick="openActivityPanel();setActivityView('graph')">Inspecteur</button>
+    </div>
+    <div id="runtime-graph-center"></div>
+  </div>
   <div id="input-wrap">
     <div class="input-box">
       <div class="skill-ac" id="skill-ac"></div>
@@ -177,6 +189,10 @@ export const CHAT_MARKUP = `<nav id="app-nav" aria-label="Navigation application
 <aside id="activity-panel" class="closed">
   <div class="act-panel-head">
     <span class="act-panel-title">Activity</span>
+    <div class="act-view-tabs" role="tablist" aria-label="Activity view">
+      <button class="act-view-tab active" id="act-view-list" type="button" onclick="setActivityView('list')">Liste</button>
+      <button class="act-view-tab" id="act-view-graph" type="button" onclick="setActivityView('graph')">Graphe</button>
+    </div>
     <button class="act-panel-close" onclick="toggleActivityPanel()" title="Close">×</button>
   </div>
   <div class="act-body" id="activity-body"></div>

@@ -19,8 +19,38 @@ control-lane work described under Agent Runtime Integration. 0.9.6 is the
 `projectWorkflow` canonical projection (defined in `llm-wiki-manager`); this
 repo consumes it as `runtimeState.workflow.nodes` in `runtimeTaskPanelHTML`
 (`chatHtml.ts`), falling back to the legacy `runtimeState.plan`/`.activities`
-shape when a runtime predates 0.9.6. Both 0.9.5 and 0.9.6 are implemented in
-the working tree, not yet released/tagged.
+shape when a runtime predates 0.9.6. 0.9.7 extracted the `/graph` page out of
+`serve.ts` into `src/graph/` — a reusable D3 core (`src/graph/core/`: viewport,
+selection, interactions, layout/render) plus a first, wiki-only projection
+(`src/graph/wiki/projection.ts`: `buildWikiGraph`). `src/graph/core/graphTypes.ts`
+defines `GraphNode`/`GraphEdge`/`GraphRenderDeps` with **plain-string** `type`
+fields and no projection-specific concepts (no "page", "citation", etc.) —
+`core/` must stay genuinely projection-agnostic. Anything vocabulary-specific
+(DAG column order, relation-label text) is injected through `GraphRenderDeps`
+(`dagColumnOrder`, `relationLabels`) by the caller — see
+`WIKI_GRAPH_DAG_COLUMN_ORDER`/`WIKI_GRAPH_RELATION_LABELS` in
+`src/graph/wiki/projection.ts` for the wiki projection's values — never
+hardcoded inside `core/` itself (this was fixed after initially leaking wiki
+type names into `graphLayoutBase.ts`/`graphSelection.ts`; don't reintroduce
+that). 0.10.2 adds the Run/Task graph (see Serve Chat's Execution view below),
+built on `src/graph/core/graphForce.ts` — the actual shared D3 mechanics
+(radial force-simulation layout, node/link SVG creation) factored out for both
+consumers. `src/graph/runtime/` stays an empty placeholder: the Run/Task
+projection ended up living in `src/chat/runtime/runtimeGraphScript.ts`
+instead (it consumes live `runtimeState.workflow` data via the same in-browser
+script pipeline as the rest of the chat runtime UI, not a static-file
+`buildXGraph()` projection like `graph/wiki/projection.ts` — there was nothing
+Node/build-time to put in `graph/runtime/`). What *is* shared is
+`graphForce.ts`'s D3 layer: `computeRadialForceLayout`/`renderForceLinks`/
+`createForceNode` are called by both `runtimeGraphScript.ts` and (available
+for) `graphLayoutBase.ts`'s radial mode. `graphLayoutBase.ts`'s own
+toolbar/search/relation-panel/modal chrome and its DAG/Liste modes stay
+wiki-specific — the Run/Task graph deliberately has none of that (plan
+directeur §9.1: graph + inspector only, no page-content modal, no search). Do
+not reintroduce a second, independent `d3.forceSimulation`/SVG-node-creation
+implementation anywhere in this repo; extend `graphForce.ts` instead. 0.9.5,
+0.9.6, 0.9.7, 0.10.0 (in `llm-wiki-manager` only), and 0.10.2 are all
+implemented in the working tree, not yet released/tagged.
 
 ## Layout
 
@@ -39,6 +69,27 @@ src/chat/               Browser chat UI, split out of the former monolithic
 src/serve/              Extracted from serve.ts (0.9.4, ongoing):
                          proxy/runtimeProxy.ts, sse/runtimeEvents.ts,
                          routes/runtimeRoutes.ts, routes/graphRoutes.ts
+                         (graphRoutes.ts calls into src/graph/, see below —
+                         no graph-building logic duplicated here)
+src/graph/              /graph page, extracted out of serve.ts (0.9.7):
+                         core/ is the reusable D3 socle (graphTypes.ts —
+                         GraphNode/GraphEdge/GraphRenderDeps, projection-
+                         agnostic; graphForce.ts — radial force-simulation
+                         layout + node/link SVG creation, shared by both
+                         graph consumers, added 0.10.2; graphViewport.ts,
+                         graphSelection.ts, graphInteractions.ts,
+                         graphLayoutBase.ts — zoom/pan, selection, focus,
+                         search, relation panel/modal, the Radial/DAG/Liste
+                         modes, all wiki-specific chrome built on top of
+                         graphForce.ts/graphViewport.ts); wiki/projection.ts
+                         is the first projection consuming it, over wiki
+                         pages/sources/citations/templates/build-context/
+                         deliverables; runtime/ stays an empty placeholder
+                         (see its README) — the 0.10.2 Run/Task graph's
+                         projection lives in src/chat/runtime/ instead,
+                         since it consumes live browser-side runtime state
+                         rather than a Node-side buildXGraph() projection,
+                         but it reuses graphForce.ts for its D3 mechanics
 scaffold/workspace/     Default workspace copied by `wiki init`
 tests/                  Vitest coverage
 docs/                   User-facing references
@@ -136,7 +187,23 @@ surfaces:
 
 - MCP chain: technical call/result trace.
 - Chat observation cards: compact read-only status/list results.
-- Activity panel: uploads and actionable/asynchronous MCP work.
+- Activity panel: uploads and actionable/asynchronous MCP work. Has two
+  views (`Liste`/`Graphe`, `setActivityView`, 0.10.2): list is the original
+  card view; graph shows the Run/Task radial graph
+  (`src/chat/runtime/runtimeGraphScript.ts`) fed by
+  `runtimeState.workflow.nodes/relations` (the same `projectWorkflow`
+  projection everywhere else in this repo — no second graph-building logic
+  on top of raw `runtimeState.plan`/`.activities`). Selecting `Graphe`
+  outside the Execution view opens the Activity panel with the graph
+  centered and a per-node inspector (including recent logs) where the
+  card list used to be.
+- Execution view (`#execution-view`, `showExecutionView`/`showChatView`,
+  0.10.2): a third top-level surface alongside Chat/Wiki (plan directeur
+  §9.1 — no independent page, same chat app). Opens the Run/Task graph at
+  the center with the Activity panel repurposed as inspector/logs on the
+  right — the same graph and inspector markup as the Activity panel's
+  `Graphe` view, just laid out differently (`body.execution-mode` toggles
+  which container the graph/inspector render into).
 
 Trace mutations in `sendMessage` must go through `dispatchChatAgentEvent`.
 Do not add direct `trace.steps.push()` mutations outside event handlers.
