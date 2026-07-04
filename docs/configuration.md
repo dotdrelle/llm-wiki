@@ -203,8 +203,14 @@ Vector retrieval options are documented in [vector-search.md](./vector-search.md
 | Key            | Description                                                | Default |
 | -------------- | ---------------------------------------------------------- | ------- |
 | `accessKey`    | Bearer token required by MCP clients (stdio and HTTP)      | —       |
+| `readToken`    | HTTP MCP bearer token limited to read/search tools         | —       |
+| `writeToken`   | HTTP MCP bearer token for read and write tools             | —       |
 | `tls.certPath` | Path to TLS certificate (enables HTTPS on `wiki mcp-http`) | —       |
 | `tls.keyPath`  | Path to TLS private key                                    | —       |
 | `tls.caPath`   | Path to CA certificate (optional, for mutual TLS)          | —       |
 
-Env var equivalents: `WIKI_MCP_AUTH_TOKEN`, `WIKI_MCP_TLS_CERT_PATH`, `WIKI_MCP_TLS_KEY_PATH`, `WIKI_MCP_TLS_CA_PATH`.
+Env var equivalents: `WIKI_MCP_AUTH_TOKEN`, `WIKI_MCP_READ_TOKEN`, `WIKI_MCP_WRITE_TOKEN`, `WIKI_MCP_TLS_CERT_PATH`, `WIKI_MCP_TLS_KEY_PATH`, `WIKI_MCP_TLS_CA_PATH`.
+
+`WIKI_MCP_AUTH_TOKEN` / `accessKey` is a legacy full-access token. Prefer
+separate read/write tokens for HTTP deployments. Rate limiting is controlled by
+`WIKI_MCP_RATE_LIMIT_REQUESTS` and `WIKI_MCP_RATE_LIMIT_WINDOW_MS`.

@@ -151,6 +151,17 @@ Authorization: Bearer <mcp.accessKey>
 
 If `mcp.accessKey` is not set, the endpoint accepts unauthenticated connections — only do this on a trusted network.
 
+For scoped tokens, keep `mcp.accessKey` unset and provide:
+
+- `WIKI_MCP_READ_TOKEN`: can call read/search/context tools.
+- `WIKI_MCP_WRITE_TOKEN`: can call read tools and write tools such as
+  `wiki_write_page` and `profile_update`.
+
+The legacy `mcp.accessKey` / `WIKI_MCP_AUTH_TOKEN` remains a full-access
+read+write token for compatibility. HTTP rate limiting is enabled by default:
+`WIKI_MCP_RATE_LIMIT_REQUESTS` defaults to `120` requests per window and
+`WIKI_MCP_RATE_LIMIT_WINDOW_MS` defaults to `60000`.
+
 ### Claude Code HTTP client config
 
 For Claude Code project config, add an HTTP MCP server to `.mcp.json`:

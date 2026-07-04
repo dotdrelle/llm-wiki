@@ -1,12 +1,12 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
+import { timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { AppConfig } from '../types.ts';
 import {
   WIKI_MCP_TOOLS,
-  checkMcpAccessKey,
   createWikiMcpServer,
 } from '../services/mcpServer.ts';
 import { resolveInside } from '../utils/path.ts';
@@ -17,11 +17,86 @@ interface McpHttpOptions {
   path?: string;
 }
 
+type McpScope = 'read' | 'write';
+
 function bearerToken(req: IncomingMessage): string | undefined {
   const raw = req.headers.authorization;
   if (!raw) return undefined;
   const match = /^Bearer\s+(.+)$/i.exec(raw);
   return match?.[1];
+}
+
+function constantTimeEqual(left: string | undefined, right: string | undefined): boolean {
+  if (!left || !right) return false;
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  if (leftBuffer.length !== rightBuffer.length) return false;
+  return timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+export function mcpToolScope(toolName: string | undefined): McpScope {
+  return toolName === 'wiki_write_page' || toolName === 'profile_update' ? 'write' : 'read';
+}
+
+export function mcpScopesForToken(config: AppConfig, token: string | undefined): McpScope[] | null {
+  if (!config.mcp.accessKey && !config.mcp.readToken && !config.mcp.writeToken) return ['read', 'write'];
+  if (constantTimeEqual(token, config.mcp.accessKey)) return ['read', 'write'];
+  if (constantTimeEqual(token, config.mcp.writeToken)) return ['read', 'write'];
+  if (constantTimeEqual(token, config.mcp.readToken)) return ['read'];
+  return null;
+}
+
+function requiredScopeForJsonRpc(body: unknown): McpScope {
+  const calls = Array.isArray(body) ? body : [body];
+  return calls.some((call) => {
+    const method = typeof call === 'object' && call !== null && 'method' in call
+      ? String((call as { method?: unknown }).method ?? '')
+      : '';
+    const params = typeof call === 'object' && call !== null && 'params' in call
+      ? (call as { params?: unknown }).params
+      : null;
+    const toolName = typeof params === 'object' && params !== null && 'name' in params
+      ? String((params as { name?: unknown }).name ?? '')
+      : '';
+    return method === 'tools/call' && mcpToolScope(toolName) === 'write';
+  }) ? 'write' : 'read';
+}
+
+async function readRequestBody(req: IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
+export function createMcpRateLimiter({
+  limit = Number(process.env.WIKI_MCP_RATE_LIMIT_REQUESTS ?? 120),
+  windowMs = Number(process.env.WIKI_MCP_RATE_LIMIT_WINDOW_MS ?? 60_000),
+} = {}) {
+  const buckets = new Map<string, number[]>();
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 120;
+  const safeWindowMs = Number.isFinite(windowMs) && windowMs > 0 ? Math.floor(windowMs) : 60_000;
+  return {
+    check(key: string, now = Date.now()) {
+      const threshold = now - safeWindowMs;
+      const bucket = (buckets.get(key) ?? []).filter((item) => item > threshold);
+      if (bucket.length >= safeLimit) {
+        buckets.set(key, bucket);
+        const retryAfterMs = Math.max(1, safeWindowMs - (now - bucket[0]));
+        return { ok: false, retryAfterMs };
+      }
+      bucket.push(now);
+      buckets.set(key, bucket);
+      return { ok: true, retryAfterMs: 0 };
+    },
+  };
+}
+
+function rateLimitKey(req: IncomingMessage, token: string | undefined): string {
+  const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
+  const ip = forwarded || req.socket.remoteAddress || 'unknown';
+  return token ? `token:${token}` : `ip:${ip}`;
 }
 
 function reject(res: ServerResponse, status: number, message: string): void {
@@ -59,9 +134,11 @@ function renderLandingPage(
   scheme: string,
 ): string {
   const authStatus = config.mcp.accessKey
+    || config.mcp.readToken
+    || config.mcp.writeToken
     ? 'Bearer token enabled'
     : 'Warning: mcp.accessKey is not configured; the endpoint accepts unauthenticated clients.';
-  const workspaceStatus = config.mcp.accessKey ? 'Protected workspace' : config.wikiRoot;
+  const workspaceStatus = config.mcp.accessKey || config.mcp.readToken || config.mcp.writeToken ? 'Protected workspace' : config.wikiRoot;
   const tools = WIKI_MCP_TOOLS.map(
     (tool) =>
       `<li><code>${escapeHtml(tool.name)}</code><span>${escapeHtml(tool.description)}</span></li>`,
@@ -150,6 +227,7 @@ export default async function mcpHttpCmd(
   const port = options.port ?? 3333;
   const endpointPath = options.path ?? '/mcp';
   const tls = await tlsOptions(config);
+  const rateLimiter = createMcpRateLimiter();
 
   const listener = async (req: IncomingMessage, res: ServerResponse) => {
     try {
@@ -179,8 +257,30 @@ export default async function mcpHttpCmd(
         return;
       }
 
-      if (!checkMcpAccessKey(config, bearerToken(req))) {
+      const token = bearerToken(req);
+      const scopes = mcpScopesForToken(config, token);
+      if (!scopes) {
         reject(res, 401, 'invalid or missing bearer token');
+        return;
+      }
+      const rate = rateLimiter.check(rateLimitKey(req, token));
+      if (!rate.ok) {
+        res.setHeader('Retry-After', String(Math.ceil(rate.retryAfterMs / 1000)));
+        reject(res, 429, 'rate limit exceeded');
+        return;
+      }
+
+      const body = await readRequestBody(req);
+      let parsed: unknown = null;
+      try {
+        parsed = body.length > 0 ? JSON.parse(body.toString('utf8')) : null;
+      } catch {
+        reject(res, 400, 'invalid JSON-RPC request body');
+        return;
+      }
+      const requiredScope = requiredScopeForJsonRpc(parsed);
+      if (requiredScope === 'write' && !scopes.includes('write')) {
+        reject(res, 403, 'token does not have write scope');
         return;
       }
 
@@ -189,7 +289,11 @@ export default async function mcpHttpCmd(
       });
       const server = await createWikiMcpServer(config);
       await server.connect(transport);
-      await transport.handleRequest(req, res);
+      // Body was already consumed above to check scopes; handleRequest's
+      // parsedBody param (its documented mechanism for exactly this case —
+      // see server/streamableHttp.js) passes it through instead of
+      // re-reading req's stream, which has already ended.
+      await transport.handleRequest(req, res, parsed);
       res.on('close', () => {
         transport.close();
         server.close();
@@ -208,7 +312,7 @@ export default async function mcpHttpCmd(
   httpServer.listen(port, host, () => {
     const scheme = tls ? 'https' : 'http';
     console.log(`wiki mcp-http -> ${scheme}://${host}:${port}${endpointPath}`);
-    if (!config.mcp.accessKey) {
+    if (!config.mcp.accessKey && !config.mcp.readToken && !config.mcp.writeToken) {
       console.log(
         'Warning: mcp.accessKey is not configured; the endpoint accepts unauthenticated clients.',
       );

@@ -7,7 +7,7 @@ By default, vector search is disabled so a fresh workspace works without an embe
 1. `wiki index` chunks each wiki page by headings and embeds each chunk via a `/v1/embeddings` endpoint.
 2. The index is stored locally in `.wiki/vector-index` (LanceDB format) — no external database.
 3. At search time (`wiki query`, `wiki build`, `wiki ingest`, `wiki_search_context`), the query is embedded and the nearest chunks are retrieved, then optionally re-ranked by a `/v1/rerank` endpoint.
-4. If the index is missing or the embedding call fails, the system silently falls back to lexical search.
+4. If the index is missing or the embedding call fails, the system falls back to lexical search and logs a `retrieval:vector-fallback` warning.
 
 ## Requirements
 
@@ -64,7 +64,11 @@ docker compose --profile cli run --rm wiki index
 
 Run this after the initial `wiki ingest` and whenever the wiki changes significantly. Unchanged chunks reuse their stored embeddings — only new or modified chunks are re-embedded.
 
-`wiki doctor` reports the index state and tests the embedding and reranker endpoints when `vector.enabled` is `true`.
+`wiki doctor` reports the index state, batch profile (`16` chunks / `24,000` chars), fallback mode, and tests the embedding and reranker endpoints when `vector.enabled` is `true`.
+
+The embedding build starts with a batch call, then recursively splits failed batches down to single chunks. Oversized single chunks are skipped with a warning and remain covered by lexical search.
+
+Local embedding providers are supported today when they expose an OpenAI-compatible `/v1/embeddings` endpoint. A dedicated local-embeddings profile can be added later without changing the ingest or retrieval APIs.
 
 ## Ollama embeddings
 

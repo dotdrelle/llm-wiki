@@ -9,7 +9,7 @@ import { EmbeddingService } from '../services/embeddingService.ts';
 import { LLMService } from '../services/llmService.ts';
 import { RerankService } from '../services/rerankService.ts';
 import { RetrievalService } from '../services/retrievalService.ts';
-import { VectorIndexService } from '../services/vectorIndexService.ts';
+import { EMBED_BATCH_MAX_CHARS, EMBED_BATCH_SIZE, VectorIndexService } from '../services/vectorIndexService.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import type { AppConfig } from '../types.ts';
 import { pathExists, safeWriteFile } from '../utils/fs.ts';
@@ -826,6 +826,8 @@ export default async function doctorCmd(
   row('enabled:', String(config.retrieval.vector.enabled));
   row('index path:', vectorStats.path ?? workspace.paths.vectorIndexDir);
   row('index:', vectorStats.exists ? `${vectorStats.rows} chunk(s)` : 'missing');
+  row('batch size:', `${EMBED_BATCH_SIZE} chunks / ${EMBED_BATCH_MAX_CHARS.toLocaleString('en-US')} chars`);
+  row('fallback:', 'lexical search remains active on vector errors');
   if (vectorStats.metadata) {
     row('index embedding:', vectorStats.metadata.embeddingModel);
     row('index provider:', vectorStats.metadata.provider);

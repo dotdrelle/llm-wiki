@@ -55,6 +55,8 @@ export interface TlsConfig {
 
 export interface McpConfig {
   accessKey?: string;
+  readToken?: string;
+  writeToken?: string;
   tls?: TlsConfig;
 }
 
@@ -94,6 +96,7 @@ export interface IngestCommandOptions {
   dryRun?: boolean;
   refresh?: boolean;
   force?: boolean;
+  reject?: string[];
   verbose?: boolean;
   debug?: boolean;
   traceFile?: string;
@@ -181,9 +184,35 @@ export interface IngestPlan {
   operations: WikiOperation[];
 }
 
+export interface IngestReviewOperation {
+  type: WikiOperation['type'];
+  path: string;
+  source: string;
+  archivePath: string;
+  status: 'pending' | 'applied' | 'rejected';
+  beforeExists: boolean;
+  afterExists: boolean;
+  beforeHash?: string;
+  afterHash?: string;
+  diff: {
+    changed: boolean;
+    addedLines: number;
+    removedLines: number;
+    preview: string[];
+  };
+}
+
+export interface IngestRetryInfo {
+  attempts: number;
+  retries: number;
+  classification?: 'transient' | 'validation' | 'unknown';
+}
+
 export interface IngestResult {
   source: string;
   plan?: IngestPlan;
+  review?: IngestReviewOperation[];
+  retry?: IngestRetryInfo;
   skipped?: boolean;
   failed?: boolean;
   error?: string;

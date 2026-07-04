@@ -21,6 +21,10 @@ General rules:
   asking the user for information.
 - Ask for confirmation before actions that mutate configuration, add sources,
   launch imports/exports, ingest content, send messages, or start jobs.
+- For non-Markdown files, use the Documents connector to convert first. Treat
+  converted Markdown in `raw/untracked/` as reviewable source material: run or
+  propose `wiki ingest --dry-run`, discuss rejected pages if needed, then apply
+  ingest only after confirmation.
 - Keep credentials in the tool call flow. If a connector needs credentials,
   ask only for the fields required by that connector, then call its setup tool
   when the user confirms.

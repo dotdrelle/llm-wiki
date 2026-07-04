@@ -79,6 +79,7 @@ async function main() {
     .option('--dry-run', 'Show planned wiki operations without writing')
     .option('--refresh', 'Run deliverable rebuild after ingest')
     .option('--force', 'Re-ingest even if the source is unchanged since last ingest')
+    .option('--reject <path...>', 'Reject planned wiki operation path(s) during review')
     .option('-v, --verbose', 'Print ingestion step traces')
     .option('--debug', 'Print detailed ingestion traces')
     .option('--trace-file <path>', 'Write traces to a specific file relative to the workspace root')

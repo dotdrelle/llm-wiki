@@ -87,6 +87,50 @@ class MemoryTraceLogger implements TraceLogger {
 }
 
 describe('retrieval service', () => {
+  it('ranks multilingual lexical matches with BM25 term frequency and accents', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-retrieval-bm25-'));
+    await mkdir(path.join(root, 'wiki', 'concepts'), { recursive: true });
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Index\n', 'utf8');
+    await writeFile(
+      path.join(root, 'wiki', 'concepts', 'paiement-resilience.md'),
+      [
+        '# Résilience paiement',
+        '',
+        'Le paiement échoué déclenche une reprise contrôlée.',
+        'Paiement paiement reprise interface utilisateur.',
+      ].join('\n'),
+      'utf8',
+    );
+    await writeFile(
+      path.join(root, 'wiki', 'concepts', 'payment-gateway.md'),
+      [
+        '# Payment gateway',
+        '',
+        'The gateway retries failed charges and tracks customer checkout state.',
+      ].join('\n'),
+      'utf8',
+    );
+    await writeFile(
+      path.join(root, 'wiki', 'concepts', 'odeme-deneyimi.md'),
+      [
+        '# Odeme deneyimi',
+        '',
+        'Kullanıcı arayüzü ödeme hatası için açıklama gösterir.',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    config.retrieval.vector.enabled = false;
+    const retrieval = new RetrievalService(new WorkspaceService(config), config);
+
+    const french = await retrieval.search('paiement échoué reprise', { limit: 3 });
+    const turkish = await retrieval.search('ödeme kullanıcı arayüzü', { limit: 3 });
+
+    expect(french[0].page.relativePath).toBe('wiki/concepts/paiement-resilience.md');
+    expect(turkish[0].page.relativePath).toBe('wiki/concepts/odeme-deneyimi.md');
+  });
+
   it('includes raw/ingested files only when explicitly requested', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-retrieval-'));
     await mkdir(path.join(root, 'wiki', 'concepts'), { recursive: true });

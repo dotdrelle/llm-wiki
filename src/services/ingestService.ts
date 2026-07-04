@@ -2,13 +2,17 @@ import path from 'node:path';
 import { ingestPlanSchema } from '../config/schema.ts';
 import { buildIngestPrompt } from '../prompts/ingestPrompt.ts';
 import { buildPromptContext } from '../prompts/systemPreamble.ts';
+import { hashText } from '../utils/hash.ts';
 import { normalizeSourceBody, splitSourceSections } from '../utils/markdown.ts';
 import type { TokenUsage } from './llmService.ts';
 import type {
   AppConfig,
   IngestCommandOptions,
   IngestResult,
+  IngestRetryInfo,
+  IngestReviewOperation,
   WikiOperation,
+  WikiPage,
 } from '../types.ts';
 import type { LLMService } from './llmService.ts';
 import type { RefreshService } from './refreshService.ts';
@@ -16,13 +20,67 @@ import type { RetrievalService } from './retrievalService.ts';
 import type { TraceLogger } from './traceLogger.ts';
 import type { WorkspaceService } from './workspaceService.ts';
 
-async function withRetry<T>(fn: () => Promise<T>, delayMs = 3000): Promise<T> {
-  try {
-    return await fn();
-  } catch {
-    await new Promise((r) => setTimeout(r, delayMs));
-    return fn();
+function classifyIngestError(error: unknown): IngestRetryInfo['classification'] {
+  const message = error instanceof Error ? error.message : String(error);
+  if (
+    message.includes('Invalid structured JSON returned by the model') ||
+    message.includes('Ambiguous or invalid wiki path returned by the model')
+  ) {
+    return 'validation';
   }
+  if (
+    /\b(429|rate limit|timeout|timed out|ECONNRESET|ECONNREFUSED|ETIMEDOUT|fetch failed|temporar)/i
+      .test(message) ||
+    message.includes('model returned malformed JSON') ||
+    message.includes('malformed JSON')
+  ) {
+    return 'transient';
+  }
+  return 'unknown';
+}
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  options: {
+    attempts?: number;
+    delayMs?: number;
+    onRetry?: (
+      info: IngestRetryInfo & { message: string; nextDelayMs: number },
+    ) => Promise<void>;
+  } = {},
+): Promise<{ value: T; retry: IngestRetryInfo }> {
+  const maxAttempts = Math.max(1, options.attempts ?? 2);
+  const baseDelayMs = options.delayMs ?? 3000;
+  let lastClassification: IngestRetryInfo['classification'];
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return {
+        value: await fn(),
+        retry: {
+          attempts: attempt,
+          retries: attempt - 1,
+          ...(lastClassification && { classification: lastClassification }),
+        },
+      };
+    } catch (error) {
+      lastClassification = classifyIngestError(error);
+      if (lastClassification === 'validation' || attempt >= maxAttempts) {
+        throw error;
+      }
+      const nextDelayMs = baseDelayMs * attempt;
+      await options.onRetry?.({
+        attempts: attempt,
+        retries: attempt - 1,
+        classification: lastClassification,
+        message: error instanceof Error ? error.message : String(error),
+        nextDelayMs,
+      });
+      await new Promise((r) => setTimeout(r, nextDelayMs));
+    }
+  }
+
+  throw new Error('Retry exhausted without a captured error.');
 }
 
 function enforceSourceCitationPath(
@@ -60,6 +118,86 @@ function enforceSourceCitationPath(
   });
 
   return { operations: operationsWithCitations, rewrittenCitations, unreconciledCitations };
+}
+
+function countLines(value: string): number {
+  if (!value) return 0;
+  return value.split(/\r?\n/).length;
+}
+
+function diffPreview(before: string, after: string): IngestReviewOperation['diff'] {
+  if (before === after) {
+    return {
+      changed: false,
+      addedLines: 0,
+      removedLines: 0,
+      preview: [],
+    };
+  }
+
+  const beforeLines = before.split(/\r?\n/);
+  const afterLines = after.split(/\r?\n/);
+  const preview: string[] = [];
+  const maxPreviewLines = 12;
+
+  for (const line of beforeLines) {
+    if (!afterLines.includes(line)) {
+      preview.push(`- ${line}`);
+    }
+    if (preview.length >= maxPreviewLines) break;
+  }
+  if (preview.length < maxPreviewLines) {
+    for (const line of afterLines) {
+      if (!beforeLines.includes(line)) {
+        preview.push(`+ ${line}`);
+      }
+      if (preview.length >= maxPreviewLines) break;
+    }
+  }
+
+  return {
+    changed: true,
+    addedLines: Math.max(0, countLines(after) - countLines(before)),
+    removedLines: Math.max(0, countLines(before) - countLines(after)),
+    preview,
+  };
+}
+
+function buildReviewOperations({
+  operations,
+  existingPages,
+  source,
+  archivePath,
+  rejectedPaths,
+  applied,
+}: {
+  operations: WikiOperation[];
+  existingPages: Map<string, WikiPage>;
+  source: string;
+  archivePath: string;
+  rejectedPaths: Set<string>;
+  applied: boolean;
+}): IngestReviewOperation[] {
+  return operations.map((operation) => {
+    const before = existingPages.get(operation.path)?.content ?? '';
+    const beforeExists = existingPages.has(operation.path);
+    const after = operation.type === 'delete' ? '' : operation.content ?? '';
+    const afterExists = operation.type !== 'delete';
+    const rejected = rejectedPaths.has(operation.path);
+
+    return {
+      type: operation.type,
+      path: operation.path,
+      source,
+      archivePath,
+      status: rejected ? 'rejected' : applied ? 'applied' : 'pending',
+      beforeExists,
+      afterExists,
+      ...(beforeExists && { beforeHash: hashText(before) }),
+      ...(afterExists && { afterHash: hashText(after) }),
+      diff: diffPreview(before, after),
+    };
+  });
 }
 
 export class IngestService {
@@ -124,10 +262,12 @@ export class IngestService {
     });
 
     const results: IngestResult[] = [];
+    const rejectedPaths = new Set(options?.reject ?? []);
 
     for (let i = 0; i < sourcePaths.length; i++) {
       const sourcePath = sourcePaths[i];
       let sourceLabel = sourcePath;
+      let sourceRetry: IngestRetryInfo | undefined;
       options?.onSourceStart?.(sourcePath, i, sourcePaths.length);
       const sourceStartedAt = Date.now();
       await this.logger.info('ingest:source-start', {
@@ -261,8 +401,8 @@ export class IngestService {
             sectionTotal: sections.length,
           };
           options?.onSourceLlm?.(sourcePath, i, sourcePaths.length, progress);
-          const plan = await withRetry(() =>
-            this.llm.completeJson(
+          const { value: plan, retry } = await withRetry(
+            () => this.llm.completeJson(
               {
                 ...prompt,
                 label: 'ingest_plan',
@@ -274,7 +414,23 @@ export class IngestService {
               },
               ingestPlanSchema,
             ),
+            {
+              onRetry: async (retryInfo) => {
+                await this.logger.warn('ingest:retry', {
+                  source: source.relativePath,
+                  attempts: retryInfo.attempts,
+                  retries: retryInfo.retries,
+                  classification: retryInfo.classification,
+                  nextDelayMs: retryInfo.nextDelayMs,
+                  message: retryInfo.message,
+                  ...(sections.length > 1 && {
+                    section: `${sectionIndex + 1}/${sections.length}`,
+                  }),
+                });
+              },
+            },
           );
+          sourceRetry = retry.retries > 0 ? retry : sourceRetry;
           await this.logger.info('ingest:plan', {
             source: source.relativePath,
             operations: plan.operations.length,
@@ -351,8 +507,47 @@ export class IngestService {
             : plan.summary;
         }
 
-        if (!options?.dryRun) {
-          const operationCounts = allOperations.reduce(
+        const existingPages = new Map(
+          (await this.workspace.listWikiPages()).map((page) => [page.relativePath, page]),
+        );
+        const review = buildReviewOperations({
+          operations: allOperations,
+          existingPages,
+          source: source.relativePath,
+          archivePath: source.archiveCitationPath,
+          rejectedPaths,
+          applied: !options?.dryRun,
+        });
+        const applyOperations = allOperations.filter(
+          (operation) => !rejectedPaths.has(operation.path),
+        );
+        const rejectedCount = allOperations.length - applyOperations.length;
+        if (rejectedCount > 0) {
+          await this.logger.info('ingest:review-reject', {
+            source: source.relativePath,
+            rejected: rejectedCount,
+            paths: allOperations
+              .filter((operation) => rejectedPaths.has(operation.path))
+              .map((operation) => operation.path),
+          });
+        }
+        await this.logger.info('ingest:review', {
+          source: source.relativePath,
+          operations: allOperations.length,
+          rejected: rejectedCount,
+          dryRun: Boolean(options?.dryRun),
+        });
+
+        const allOperationsRejected = allOperations.length > 0 && applyOperations.length === 0;
+        if (!options?.dryRun && allOperationsRejected) {
+          await this.logger.info('ingest:apply-skip', {
+            source: source.relativePath,
+            reason: 'all operations rejected',
+          });
+        }
+
+        if (!options?.dryRun && !allOperationsRejected) {
+          const operationCounts = applyOperations.reduce(
             (counts, operation) => {
               counts[operation.type] += 1;
               return counts;
@@ -360,7 +555,7 @@ export class IngestService {
             { create: 0, update: 0, delete: 0 },
           );
           const applyStartedAt = Date.now();
-          await this.workspace.applyNormalizedWikiOperations(allOperations);
+          await this.workspace.applyNormalizedWikiOperations(applyOperations);
           this.retrieval.invalidateCache();
           await this.logger.info('ingest:apply', {
             source: source.relativePath,
@@ -388,7 +583,9 @@ export class IngestService {
 
         results.push({
           source: source.relativePath,
-          plan: { summary: lastSummary, operations: allOperations },
+          plan: { summary: lastSummary, operations: applyOperations },
+          review,
+          ...(sourceRetry && { retry: sourceRetry }),
         });
 
         await this.logger.info('ingest:source-done', {

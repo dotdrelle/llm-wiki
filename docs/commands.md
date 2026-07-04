@@ -50,6 +50,8 @@ Reads markdown files from `raw/untracked/`, asks the LLM for wiki update operati
 wiki ingest
 wiki ingest raw/untracked/2026/04/16-notes.md
 wiki ingest --dry-run
+wiki ingest --dry-run --reject wiki/sources/noisy-page.md
+wiki ingest --reject wiki/sources/noisy-page.md
 wiki ingest --no-refresh
 wiki ingest --verbose
 wiki ingest --debug
@@ -57,6 +59,8 @@ wiki ingest --trace-file .wiki/logs/ingest-manual.log
 ```
 
 By default, `wiki ingest` also runs `wiki refresh` so stale deliverables get regenerated. If the follow-up build fails, the wiki updates remain applied and the CLI tells you to rerun `wiki refresh` later.
+
+`--dry-run` prints a review for each planned page operation: target path, status, before/after state, and a compact diff preview. Use `--reject <path...>` to reject one or more planned page operations before applying ingest. If every operation for a source is rejected, the source is not archived.
 
 Tracing options:
 

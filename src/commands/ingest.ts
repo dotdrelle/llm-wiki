@@ -114,8 +114,30 @@ export default async function ingestCmd(
       }
       console.log(`\n${result.source}`);
       console.log(`  Summary: ${result.plan?.summary ?? ''}`);
+      if (result.retry && result.retry.retries > 0) {
+        console.log(
+          `  Retry: ${result.retry.retries} (${result.retry.classification ?? 'unknown'})`,
+        );
+      }
+      const review = result.review ?? [];
+      const reviewedPaths = new Set(review.map((operation) => operation.path));
+      for (const operation of review) {
+        console.log(
+          `  - ${operation.type.toUpperCase()} ${operation.path} [${operation.status}]`,
+        );
+        console.log(
+          `    ${operation.beforeExists ? 'existing' : 'new'} -> ${
+            operation.afterExists ? 'present' : 'deleted'
+          }, +${operation.diff.addedLines}/-${operation.diff.removedLines}`,
+        );
+        for (const line of operation.diff.preview.slice(0, 4)) {
+          console.log(`    ${line}`);
+        }
+      }
       for (const operation of result.plan?.operations ?? []) {
-        console.log(`  - ${operation.type.toUpperCase()} ${operation.path}`);
+        if (!reviewedPaths.has(operation.path)) {
+          console.log(`  - ${operation.type.toUpperCase()} ${operation.path}`);
+        }
       }
     }
 

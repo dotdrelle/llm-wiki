@@ -320,6 +320,8 @@ const mcpSchema = z
     (value) => value ?? {},
     z.object({
       accessKey: z.string().min(1).optional(),
+      readToken: z.string().min(1).optional(),
+      writeToken: z.string().min(1).optional(),
     }),
   )
   .default({});
@@ -493,14 +495,19 @@ export function resolveConfig(
           ...(serveCaPath ? { caPath: serveCaPath } : {}),
         }
       : undefined;
+  const mcpAccessKey = parsed.mcp?.accessKey ?? process.env.WIKI_MCP_AUTH_TOKEN;
+  const mcpReadToken = parsed.mcp?.readToken ?? process.env.WIKI_MCP_READ_TOKEN;
+  const mcpWriteToken = parsed.mcp?.writeToken ?? process.env.WIKI_MCP_WRITE_TOKEN;
 
   return {
     wikiRoot,
     configPath,
     language: parsed.language ?? 'fr',
     mcp: {
-      accessKey: parsed.mcp?.accessKey ?? process.env.WIKI_MCP_AUTH_TOKEN,
-      tls: mcpTls,
+      ...(mcpAccessKey ? { accessKey: mcpAccessKey } : {}),
+      ...(mcpReadToken ? { readToken: mcpReadToken } : {}),
+      ...(mcpWriteToken ? { writeToken: mcpWriteToken } : {}),
+      ...(mcpTls ? { tls: mcpTls } : {}),
     },
     serve: {
       tls: serveTls,

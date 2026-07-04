@@ -61,6 +61,8 @@ const STOP_WORDS = new Set([
 ]);
 const RERANK_RESULT_MAX_CHARS = 1200;
 const VECTOR_DISABLE_AFTER_CONSECUTIVE_ERRORS = 3;
+const BM25_K1 = 1.35;
+const BM25_B = 0.72;
 
 function tokenize(text: string): string[] {
   return (
@@ -68,23 +70,109 @@ function tokenize(text: string): string[] {
       .toLowerCase()
       .normalize('NFKD')
       .replace(/\p{M}/gu, '')
+      .replace(/[’']/g, ' ')
       .match(/[\p{L}\p{N}]{2,}/gu) ?? []
   ).filter((token) => !STOP_WORDS.has(token));
 }
 
-function scoreChunk(queryTokens: string[], chunk: MarkdownChunk, page: WikiPage): number {
-  const contentSet = new Set(tokenize(chunk.content));
-  const headingTokens = tokenize(chunk.heading);
-  const nameTokens = tokenize(page.name);
-  const pathTokens = tokenize(page.relativePath);
+interface LexicalDocument {
+  page: WikiPage;
+  chunk: MarkdownChunk;
+  pageChunkCount: number;
+  tokens: string[];
+  tokenCounts: Map<string, number>;
+  headingTokens: string[];
+  nameTokens: string[];
+  pathTokens: string[];
+}
+
+interface Bm25Corpus {
+  documents: LexicalDocument[];
+  documentFrequency: Map<string, number>;
+  averageLength: number;
+}
+
+function uniqueTokens(tokens: string[]): Set<string> {
+  return new Set(tokens);
+}
+
+function countTokens(tokens: string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const token of tokens) counts.set(token, (counts.get(token) ?? 0) + 1);
+  return counts;
+}
+
+function buildBm25Corpus(pages: WikiPage[]): Bm25Corpus {
+  const documents: LexicalDocument[] = [];
+  const documentFrequency = new Map<string, number>();
+  let totalLength = 0;
+
+  for (const page of pages) {
+    const chunks = splitByHeadings(page.content);
+    for (const chunk of chunks) {
+      const tokens = tokenize(chunk.content);
+      const document: LexicalDocument = {
+        page,
+        chunk,
+        pageChunkCount: chunks.length,
+        tokens,
+        tokenCounts: countTokens(tokens),
+        headingTokens: tokenize(chunk.heading),
+        nameTokens: tokenize(page.name),
+        pathTokens: tokenize(page.relativePath),
+      };
+      documents.push(document);
+      totalLength += Math.max(1, tokens.length);
+      for (const token of uniqueTokens(tokens)) {
+        documentFrequency.set(token, (documentFrequency.get(token) ?? 0) + 1);
+      }
+    }
+  }
+
+  return {
+    documents,
+    documentFrequency,
+    averageLength: documents.length > 0 ? totalLength / documents.length : 1,
+  };
+}
+
+function bm25TermScore({
+  termFrequency,
+  documentFrequency,
+  documentLength,
+  averageLength,
+  documentCount,
+}: {
+  termFrequency: number;
+  documentFrequency: number;
+  documentLength: number;
+  averageLength: number;
+  documentCount: number;
+}): number {
+  if (termFrequency <= 0 || documentFrequency <= 0 || documentCount <= 0) return 0;
+  const idf = Math.log(1 + (documentCount - documentFrequency + 0.5) / (documentFrequency + 0.5));
+  const denominator = termFrequency
+    + BM25_K1 * (1 - BM25_B + BM25_B * (documentLength / Math.max(1, averageLength)));
+  return idf * ((termFrequency * (BM25_K1 + 1)) / denominator);
+}
+
+function scoreDocument(queryTokens: string[], document: LexicalDocument, corpus: Bm25Corpus): number {
+  const queryCounts = countTokens(queryTokens);
+  const documentLength = Math.max(1, document.tokens.length);
   let score = 0;
 
-  for (const token of queryTokens) {
-    if (contentSet.has(token)) score += 1;
-    if (headingTokens.includes(token)) score += 3;
-    if (nameTokens.includes(token)) score += 8;
-    if (pathTokens.includes(token)) score += 4;
-    if (canonicalizeName(page.name).includes(canonicalizeName(token))) score += 1;
+  for (const [token, queryFrequency] of queryCounts) {
+    score += queryFrequency * bm25TermScore({
+      termFrequency: document.tokenCounts.get(token) ?? 0,
+      documentFrequency: corpus.documentFrequency.get(token) ?? 0,
+      documentLength,
+      averageLength: corpus.averageLength,
+      documentCount: corpus.documents.length,
+    });
+    if (document.headingTokens.includes(token)) score += 1.8;
+    if (document.nameTokens.includes(token)) score += 3.6;
+    if (document.pathTokens.includes(token)) score += 1.4;
+    if (canonicalizeName(document.page.name).includes(canonicalizeName(token))) score += 0.8;
   }
 
   return score;
@@ -368,25 +456,23 @@ export class RetrievalService {
 
     const results: SearchResult[] = [];
 
-    for (const page of [...wikiPages, ...rawPages]) {
-      const chunks = splitByHeadings(page.content);
+    const corpus = buildBm25Corpus([...wikiPages, ...rawPages]);
 
-      for (const chunk of chunks) {
-        const score = scoreChunk(queryTokens, chunk, page);
-        if (score > 0) {
-          const isWholePageChunk = chunks.length === 1 && !chunk.heading;
-          results.push({
-            page,
-            score,
-            relatedPaths:
-              page.relativePath === 'wiki/index.md'
-                ? extractIndexRelatedPaths(queryTokens, page)
-                : extractRelatedPaths(chunk.content),
-            chunk: isWholePageChunk
-              ? undefined
-              : { headingPath: chunk.headingPath, content: chunk.content },
-          });
-        }
+    for (const document of corpus.documents) {
+      const score = scoreDocument(queryTokens, document, corpus);
+      if (score > 0) {
+        const isWholePageChunk = document.pageChunkCount === 1 && !document.chunk.heading;
+        results.push({
+          page: document.page,
+          score,
+          relatedPaths:
+            document.page.relativePath === 'wiki/index.md'
+              ? extractIndexRelatedPaths(queryTokens, document.page)
+              : extractRelatedPaths(document.chunk.content),
+          chunk: isWholePageChunk
+            ? undefined
+            : { headingPath: document.chunk.headingPath, content: document.chunk.content },
+        });
       }
     }
 

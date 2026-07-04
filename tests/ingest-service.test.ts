@@ -11,6 +11,7 @@ import type {
   SearchResult,
   SourceDocument,
   WikiOperation,
+  WikiPage,
 } from '../src/types.ts';
 import { slugifyPath } from '../src/utils/path.ts';
 
@@ -66,6 +67,7 @@ class FakeWorkspaceService {
   sourceBody = 'Body.';
   detectedEncoding?: SourceDocument['detectedEncoding'];
   readIndexAppliedCounts: number[] = [];
+  wikiPages: WikiPage[] = [];
   failApply = false;
 
   async ensureInitialized(): Promise<void> {}
@@ -105,6 +107,10 @@ class FakeWorkspaceService {
 
   async normalizeWikiOperations(operations: WikiOperation[]): Promise<WikiOperation[]> {
     return operations;
+  }
+
+  async listWikiPages(): Promise<WikiPage[]> {
+    return this.wikiPages;
   }
 
   async isSourceUnchangedSinceIngest(): Promise<boolean> {
@@ -187,6 +193,13 @@ class FailingTwiceThenSuccessLLMService extends FakeLLMService {
         },
       ],
     };
+  }
+}
+
+class ValidationFailingLLMService extends FakeLLMService {
+  async completeJson(): Promise<IngestPlan> {
+    this.calls += 1;
+    throw new Error('Invalid structured JSON returned by the model.');
   }
 }
 
@@ -470,6 +483,67 @@ describe('ingest service', () => {
     ).toMatchObject({ atomic: true, sections: 2 });
   });
 
+  it('returns review diffs for planned wiki operations', async () => {
+    const workspace = new FakeWorkspaceService();
+    workspace.wikiPages = [
+      {
+        absolutePath: '/tmp/wiki/wiki/sources/note.md',
+        relativePath: 'wiki/sources/note.md',
+        name: 'note.md',
+        type: 'source',
+        content: '# Note\n\nOld content.\n',
+      },
+    ];
+    const logger = new MemoryTraceLogger();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new FakeLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+    );
+
+    const results = await service.ingest([], { dryRun: true });
+
+    expect(results[0].review).toHaveLength(1);
+    expect(results[0].review?.[0]).toMatchObject({
+      path: 'wiki/sources/note.md',
+      status: 'pending',
+      beforeExists: true,
+      afterExists: true,
+    });
+    expect(results[0].review?.[0].diff.changed).toBe(true);
+    expect(results[0].review?.[0].diff.preview.join('\n')).toContain('- Old content.');
+    expect(workspace.appliedOperations).toEqual([]);
+    expect(workspace.archivedSources).toEqual([]);
+  });
+
+  it('can reject one planned operation before applying ingest', async () => {
+    const workspace = new FakeWorkspaceService();
+    const logger = new MemoryTraceLogger();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new FakeLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+    );
+
+    const results = await service.ingest([], { reject: ['wiki/sources/note.md'] });
+
+    expect(results[0].review?.[0]).toMatchObject({
+      path: 'wiki/sources/note.md',
+      status: 'rejected',
+    });
+    expect(results[0].plan?.operations).toEqual([]);
+    expect(workspace.appliedOperations).toEqual([]);
+    expect(workspace.archivedSources).toEqual([]);
+    expect(logger.entries.find((entry) => entry.event === 'ingest:apply-skip')?.data)
+      .toMatchObject({ reason: 'all operations rejected' });
+  });
+
   it('retries a transient LLM planning failure once before failing the source', async () => {
     vi.useFakeTimers();
     try {
@@ -493,11 +567,41 @@ describe('ingest service', () => {
       expect(llm.calls).toBe(2);
       expect(results).toHaveLength(1);
       expect(results[0].failed).toBeUndefined();
+      expect(results[0].retry).toMatchObject({
+        attempts: 2,
+        retries: 1,
+        classification: 'transient',
+      });
       expect(workspace.archivedSources).toEqual(['raw/untracked/note.md']);
       expect(logger.entries.some((entry) => entry.event === 'ingest:source-failed')).toBe(false);
+      expect(logger.entries.some((entry) => entry.event === 'ingest:retry')).toBe(true);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('does not retry ingest validation errors', async () => {
+    const workspace = new FakeWorkspaceService();
+    const logger = new MemoryTraceLogger();
+    const llm = new ValidationFailingLLMService();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      llm as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+    );
+
+    const results = await service.ingest([], {});
+
+    expect(llm.calls).toBe(1);
+    expect(results[0]).toMatchObject({
+      source: 'raw/untracked/note.md',
+      failed: true,
+      error: 'Invalid structured JSON returned by the model.',
+    });
+    expect(logger.entries.some((entry) => entry.event === 'ingest:retry')).toBe(false);
   });
 
   it('continues ingesting remaining sources when one source fails', async () => {

@@ -48,9 +48,14 @@ toolbar/search/relation-panel/modal chrome and its DAG/Liste modes stay
 wiki-specific — the Run/Task graph deliberately has none of that (plan
 directeur §9.1: graph + inspector only, no page-content modal, no search). Do
 not reintroduce a second, independent `d3.forceSimulation`/SVG-node-creation
-implementation anywhere in this repo; extend `graphForce.ts` instead. 0.9.5,
-0.9.6, 0.9.7, 0.10.0 (in `llm-wiki-manager` only), and 0.10.2 are all
-implemented in the working tree, not yet released/tagged.
+implementation anywhere in this repo; extend `graphForce.ts` instead. 0.10.3
+adds versioned contracts (`llm-wiki-manager` only) and, in this repo, MCP
+write guards (`mcpServer.ts`, see Safety Rules) and MCP HTTP hardening
+(`mcpHttp.ts`, see Config And Environment). 0.10.4 (knowledge-engine
+quality) replaces naive lexical scoring with BM25 and adds ingestion
+review/dry-run/reject and classified retry (see Important Services). 0.9.5,
+0.9.6, 0.9.7, 0.10.0 (in `llm-wiki-manager` only), 0.10.2, 0.10.3, and 0.10.4
+are all implemented in the working tree, not yet released/tagged.
 
 ## Layout
 
@@ -255,13 +260,35 @@ runner or the CLI.
 ## Important Services
 
 - `workspaceService.ts`: path safety, workspace IO, skill installation.
-- `ingestService.ts`: source-to-wiki LLM pipeline.
+- `ingestService.ts`: source-to-wiki LLM pipeline. `--dry-run` (`wiki
+  ingest`) builds a review per planned operation (`buildReviewOperations`):
+  before/after existence, SHA-256 hashes, and a compact unified-diff preview
+  (`diffPreview`, capped at 12 lines), without writing. `--reject <path...>`
+  drops one or more planned operations before applying; if every operation
+  for a source is rejected, the source is not archived (`ingest:apply-skip`
+  is logged, distinct from a genuinely empty plan, which still archives).
+  `withRetry` classifies LLM planning failures (`classifyIngestError`):
+  `validation` errors (malformed/ambiguous model output) never retry;
+  `transient` errors (rate limit, timeout, connection reset) retry once with
+  backoff and emit `ingest:retry`; anything else is `unknown` and still gets
+  one retry. Do not add a second retry/classification path elsewhere — this
+  is the only ingestion retry mechanism.
 - `buildService.ts`: template slot batching and generation.
 - `refreshService.ts`: stale deliverable detection.
 - `exportService.ts`: citation expansion and polish.
-- `retrievalService.ts`: lexical/vector context assembly.
+- `retrievalService.ts`: lexical/vector context assembly. Lexical scoring is
+  BM25 (`BM25_K1`/`BM25_B`, `buildBm25Corpus`/`scoreDocument`), not naive
+  term-presence counting — `tokenize()` NFKD-normalizes and strips
+  combining marks (accents) and apostrophes before matching, for
+  language-sensitive (not just English) tokenization. Heading/page-name/
+  path matches add a flat bonus on top of the BM25 term score, same as
+  before. `wiki index` failure still falls back to this lexical path
+  (`retrieval:vector-fallback` logged); do not add a second lexical scorer.
 - `vectorIndexService.ts`: LanceDB index management; oversized chunks are
-  skipped for vector indexing only, with warnings.
+  skipped for vector indexing only, with warnings. `EMBED_BATCH_SIZE`/
+  `EMBED_BATCH_MAX_CHARS` (exported) are the single source of truth for the
+  embedding batch profile `wiki doctor` reports — don't hardcode those
+  numbers as a second copy anywhere else.
 - `llmService.ts`: OpenAI-compatible provider abstraction.
 - `mcpServer.ts`: wiki MCP tools.
 
@@ -280,6 +307,20 @@ runner or the CLI.
   optional `WIKI_SERVE_TLS_CA_PATH`.
 - TLS for `mcp-http`: `WIKI_MCP_TLS_CERT_PATH`, `WIKI_MCP_TLS_KEY_PATH`,
   optional `WIKI_MCP_TLS_CA_PATH`.
+- Auth for `mcp-http` (0.10.3): `WIKI_MCP_AUTH_TOKEN` (legacy, full
+  read+write access) or the scoped pair `WIKI_MCP_READ_TOKEN` /
+  `WIKI_MCP_WRITE_TOKEN` (`mcp.accessKey`/`readToken`/`writeToken` in
+  `.wikirc.yaml`). `mcpScopesForToken`/`mcpToolScope`/`requiredScopeForJsonRpc`
+  in `src/commands/mcpHttp.ts` derive the caller's scope with
+  `timingSafeEqual` and gate `tools/call` for `wiki_write_page`/
+  `profile_update` on write scope; unauthenticated access is only allowed
+  when no token of any kind is configured. Requests are also rate-limited
+  (`createMcpRateLimiter`, `WIKI_MCP_RATE_LIMIT_REQUESTS`/
+  `WIKI_MCP_RATE_LIMIT_WINDOW_MS`, default 120/60s) keyed by token or,
+  failing that, by `x-forwarded-for`/remote IP. The request body is read
+  once (for scope classification) and passed to the MCP SDK's
+  `transport.handleRequest(req, res, parsedBody)` — its documented mechanism
+  for a pre-read body — rather than reconstructing a fake request stream.
 
 TLS paths resolve relative to the workspace when not absolute. Cert and key
 must be supplied together. Keep TLS in env/Compose, not `.wikirc.yaml`.
@@ -290,6 +331,14 @@ must be supplied together. Keep TLS in env/Compose, not `.wikirc.yaml`.
 - Treat `raw/untracked/` as the only ingest input area.
 - Treat `deliverables/` as generated and reproducible.
 - Do not invent facts in generated content; cite available context.
+- `wiki_write_page`/`profile_update` (0.10.3, `src/services/mcpServer.ts`)
+  require `confirm=true` to actually write; omitting `confirm` or passing
+  `dryRun=true` returns a JSON preview (`createWritePreviewPayload`: before/
+  after SHA-256, a truncated unified diff) without touching disk.
+  `profile_update` enforces `config.limits.maxProfileChars` before writing.
+  Every attempt — preview, dry-run, rejected, or real write — appends one
+  JSONL record to `.wiki/audit.log` (tool, target, action, confirmation
+  state, content hashes; never full content).
 - Preserve MCP bearer-token behavior: browser clients must not receive
   workspace MCP tokens.
 - Keep skill install constrained to standard paths and reject symlinks.

@@ -5,6 +5,9 @@ This workspace follows a local-first LLM Wiki pattern.
 ## Workflow
 
 - Run `wiki ingest` to turn raw sources into persistent wiki pages.
+- For PDFs, office files, images, or other non-Markdown sources, use the
+  Documents connector first. It converts into `raw/untracked/`; then run
+  `wiki ingest --dry-run` to review page diffs before applying `wiki ingest`.
 - `wiki ingest` continues after per-source failures; check the final summary and trace log for failed sources.
 - Use `wiki query` to ask questions grounded in the wiki.
 - Use `wiki build` or `wiki refresh` to regenerate deliverables from templates.

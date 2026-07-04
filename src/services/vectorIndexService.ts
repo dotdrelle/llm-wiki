@@ -16,8 +16,8 @@ import type { WorkspaceService } from './workspaceService.ts';
 
 const TABLE_NAME = 'wiki_chunks';
 const META_TABLE_NAME = '_meta';
-const EMBED_BATCH_SIZE = 16;
-const EMBED_BATCH_MAX_CHARS = 24_000;
+export const EMBED_BATCH_SIZE = 16;
+export const EMBED_BATCH_MAX_CHARS = 24_000;
 const RERANK_MAX_CHARS = 1200;
 
 interface VectorRow {

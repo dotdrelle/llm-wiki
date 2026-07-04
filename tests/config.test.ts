@@ -8,6 +8,8 @@ import { resolveConfig } from '../src/config/schema.ts';
 describe('config resolution', () => {
   afterEach(() => {
     delete process.env.WIKI_MCP_AUTH_TOKEN;
+    delete process.env.WIKI_MCP_READ_TOKEN;
+    delete process.env.WIKI_MCP_WRITE_TOKEN;
     delete process.env.WIKI_MCP_TLS_CERT_PATH;
     delete process.env.WIKI_MCP_TLS_KEY_PATH;
     delete process.env.WIKI_MCP_TLS_CA_PATH;
@@ -126,6 +128,8 @@ describe('config resolution', () => {
 
   it('reads MCP settings from environment variables', () => {
     process.env.WIKI_MCP_AUTH_TOKEN = 'env-secret';
+    process.env.WIKI_MCP_READ_TOKEN = 'read-secret';
+    process.env.WIKI_MCP_WRITE_TOKEN = 'write-secret';
     process.env.WIKI_MCP_TLS_CERT_PATH = '/certs/fullchain.pem';
     process.env.WIKI_MCP_TLS_KEY_PATH = '/certs/privkey.pem';
     process.env.WIKI_MCP_TLS_CA_PATH = '/certs/ca.pem';
@@ -134,6 +138,8 @@ describe('config resolution', () => {
 
     expect(config.mcp).toEqual({
       accessKey: 'env-secret',
+      readToken: 'read-secret',
+      writeToken: 'write-secret',
       tls: {
         certPath: '/certs/fullchain.pem',
         keyPath: '/certs/privkey.pem',
