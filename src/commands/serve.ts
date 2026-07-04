@@ -32,6 +32,7 @@ import {
 } from '../graph/wiki/projection.ts';
 import { proxyRuntimeJson, type RuntimeProxyDeps } from '../serve/proxy/runtimeProxy.ts';
 import { handleGraphRoutes } from '../serve/routes/graphRoutes.ts';
+import { handleMcpRoutes } from '../serve/routes/mcpRoutes.ts';
 import { handleRuntimeRoutes } from '../serve/routes/runtimeRoutes.ts';
 import { handleUploadRoutes, type ExternalMcpEndpoint } from '../serve/routes/uploadRoutes.ts';
 
@@ -3942,39 +3943,13 @@ export default async function serveCmd(
           }
           return;
         }
-        if (urlPath === '/api/mcp') {
-          const target =
-            new URL(req.url ?? '', 'http://localhost').searchParams.get('url') ?? '';
-          if (!target) {
-            res.writeHead(400);
-            res.end('url param required');
-            return;
-          }
-          const wikiTarget =
-            process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${mcpWikiPort()}/mcp`;
-          const productionTarget =
-            process.env.PRODUCTION_MCP_PROXY_URL ??
-            `http://localhost:${mcpProductionPort()}/mcp/`;
-          const normalizeTarget = (u: string) => u.replace(/\/+$/, '');
-          const proxyHeaders: Record<string, Record<string, string>> = {
-            [normalizeTarget(wikiTarget)]: config.mcp.accessKey
-              ? { authorization: `Bearer ${config.mcp.accessKey}` }
-              : {},
-            [normalizeTarget(productionTarget)]: process.env.PRODUCTION_MCP_AUTH_TOKEN
-              ? { authorization: `Bearer ${process.env.PRODUCTION_MCP_AUTH_TOKEN}` }
-              : {},
-          };
-          for (const endpoint of externalMcpEndpoints) {
-            proxyHeaders[normalizeTarget(endpoint.url)] = endpoint.headers;
-          }
-          const headers = proxyHeaders[normalizeTarget(target)] ?? {};
-          await proxyPost(
-            req,
-            res,
-            target,
-            headers,
-            { retryNetwork: true },
-          );
+        if (await handleMcpRoutes(req, res, urlPath, {
+          mcpAccessKey: () => config.mcp.accessKey,
+          externalMcpEndpoints,
+          mcpWikiPort,
+          mcpProductionPort,
+          proxyPost,
+        })) {
           return;
         }
       }
