@@ -2,33 +2,28 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { pathExists, writeIfChanged } from '../../utils/fs.ts';
-import { resolveInside, toPosix } from '../../utils/path.ts';
+import { normalizeSafeRelativePath, resolveInside, toPosix } from '../../utils/path.ts';
+import {
+  createMarkdownDocument,
+  deleteMarkdownDocument,
+  escapeHref,
+  generateDirectoryPage,
+  generateEditPage,
+  generateIndex,
+  generateNewMarkdownPage,
+  generateNotFoundPage,
+  generateSkillsPage,
+  isRawDownloadRequestPath,
+  isRawUntrackedReference,
+  isServedRelativePath,
+  renameTemplateDocument,
+  resolveEditableMarkdown,
+  serveMd,
+} from '../html/wikiHtml.ts';
 
 export type WikiRoutesDeps = {
   rootDir: string;
-  createMarkdownDocument: (
-    rootDir: string,
-    collection: string,
-    rawBody: string,
-  ) => Promise<string>;
-  deleteMarkdownDocument: (rootDir: string, relativePath: string) => Promise<string>;
-  escapeHref: (href: string) => string;
-  generateDirectoryPage: (rootDir: string, relativePath: string) => Promise<string>;
-  generateEditPage: (rootDir: string, relativePath: string) => Promise<string>;
-  generateIndex: (rootDir: string) => Promise<string>;
-  generateNewMarkdownPage: (rootDir: string, collection: string) => Promise<string>;
-  generateNotFoundPage: (rootDir: string, urlPath: string) => Promise<string>;
-  generateSkillsPage: (rootDir: string) => Promise<string>;
-  isRawDownloadRequestPath: (urlPath: string) => boolean;
-  isRawUntrackedReference: (value: string) => boolean;
-  isServedRelativePath: (relativePath: string) => boolean;
   readRequestBody: (req: IncomingMessage) => Promise<string>;
-  renameTemplateDocument: (
-    rootDir: string,
-    relativePath: string,
-    rawBody: string,
-  ) => Promise<string>;
-  resolveEditableMarkdown: (rootDir: string, relativePath: string) => string;
   sendGzippedHtml: (
     req: IncomingMessage,
     res: ServerResponse,
@@ -41,7 +36,6 @@ export type WikiRoutesDeps = {
     status: number,
     data: unknown,
   ) => void;
-  serveMd: (rootDir: string, filePath: string, urlPath: string) => Promise<string>;
 };
 
 export async function handleWikiRoutes(
@@ -56,7 +50,7 @@ export async function handleWikiRoutes(
     const collection = urlPath.replace(/^\/new\//, '').replace(/\/+$/, '');
     if (req.method === 'GET') {
       try {
-        const html = await deps.generateNewMarkdownPage(rootDir, collection);
+        const html = await generateNewMarkdownPage(rootDir, collection);
         await deps.sendGzippedHtml(req, res, html);
       } catch {
         res.writeHead(403, { 'Content-Type': 'text/plain' });
@@ -66,12 +60,12 @@ export async function handleWikiRoutes(
     }
     if (req.method === 'POST') {
       try {
-        const relativePath = await deps.createMarkdownDocument(
+        const relativePath = await createMarkdownDocument(
           rootDir,
           collection,
           await deps.readRequestBody(req),
         );
-        res.writeHead(303, { Location: deps.escapeHref(`/${relativePath}`) });
+        res.writeHead(303, { Location: escapeHref(`/${relativePath}`) });
         res.end();
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -101,9 +95,9 @@ export async function handleWikiRoutes(
     const relative = urlPath.replace(/^\/delete\//, '').replace(/\/+$/, '');
     if (req.method === 'POST') {
       try {
-        const collection = await deps.deleteMarkdownDocument(rootDir, relative);
+        const collection = await deleteMarkdownDocument(rootDir, relative);
         res.writeHead(303, {
-          Location: deps.escapeHref(`/${collection}`),
+          Location: escapeHref(`/${collection}`),
           'Cache-Control': 'no-store, no-cache, must-revalidate',
         });
         res.end();
@@ -122,7 +116,7 @@ export async function handleWikiRoutes(
     const relative = urlPath.replace(/^\/rename\//, '').replace(/\/+$/, '');
     if (req.method === 'PATCH') {
       try {
-        const renamedPath = await deps.renameTemplateDocument(
+        const renamedPath = await renameTemplateDocument(
           rootDir,
           relative,
           await deps.readRequestBody(req),
@@ -144,7 +138,7 @@ export async function handleWikiRoutes(
     const relative = urlPath.replace(/^\/edit\//, '').replace(/\/+$/, '');
     if (req.method === 'GET') {
       try {
-        const html = await deps.generateEditPage(rootDir, relative);
+        const html = await generateEditPage(rootDir, relative);
         await deps.sendGzippedHtml(req, res, html);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -157,7 +151,7 @@ export async function handleWikiRoutes(
 
     if (req.method === 'POST') {
       try {
-        const absolute = deps.resolveEditableMarkdown(rootDir, relative);
+        const absolute = resolveEditableMarkdown(rootDir, relative);
         const body = await deps.readRequestBody(req);
         const params = new URLSearchParams(body);
         const content = params.get('content');
@@ -169,9 +163,9 @@ export async function handleWikiRoutes(
         // Manual edits must round-trip exactly; generated Markdown is normalized elsewhere.
         await writeIfChanged(absolute, content);
         const savedRelative = toPosix(relative);
-        const redirectAfterSave = deps.isRawUntrackedReference(savedRelative)
-          ? deps.escapeHref(`/edit/${savedRelative}`)
-          : deps.escapeHref(`/${savedRelative}`);
+        const redirectAfterSave = isRawUntrackedReference(savedRelative)
+          ? escapeHref(`/edit/${savedRelative}`)
+          : escapeHref(`/${savedRelative}`);
         res.writeHead(303, { Location: redirectAfterSave });
         res.end();
       } catch (err) {
@@ -188,15 +182,11 @@ export async function handleWikiRoutes(
     return true;
   }
 
-  if (req.method === 'GET' && deps.isRawDownloadRequestPath(urlPath)) {
+  if (req.method === 'GET' && isRawDownloadRequestPath(urlPath)) {
     const rawRelative = toPosix(urlPath.replace(/^\/raw\//, '').replace(/\/+$/, ''));
-    const normalizedRawRelative = toPosix(path.posix.normalize(rawRelative));
-    if (rawRelative.endsWith('.md') && deps.isServedRelativePath(rawRelative)) {
-      if (
-        normalizedRawRelative !== rawRelative ||
-        normalizedRawRelative.startsWith('../') ||
-        normalizedRawRelative === '..'
-      ) {
+    if (rawRelative.endsWith('.md') && isServedRelativePath(rawRelative)) {
+      const normalizedRawRelative = normalizeSafeRelativePath(rawRelative);
+      if (normalizedRawRelative === null) {
         res.writeHead(403, { 'Content-Type': 'text/plain' });
         res.end('Forbidden');
         return true;
@@ -220,30 +210,26 @@ export async function handleWikiRoutes(
   }
 
   if (urlPath === '/') {
-    const html = await deps.generateIndex(rootDir);
+    const html = await generateIndex(rootDir);
     await deps.sendGzippedHtml(req, res, html);
     return true;
   }
 
   if (urlPath === '/skills') {
-    const html = await deps.generateSkillsPage(rootDir);
+    const html = await generateSkillsPage(rootDir);
     await deps.sendGzippedHtml(req, res, html);
     return true;
   }
 
   const relative = toPosix(urlPath.replace(/^\//, '').replace(/\/+$/, ''));
-  const normalizedRelative = toPosix(path.posix.normalize(relative));
-  if (
-    normalizedRelative !== relative ||
-    normalizedRelative.startsWith('../') ||
-    normalizedRelative === '..'
-  ) {
+  const normalizedRelative = normalizeSafeRelativePath(relative);
+  if (normalizedRelative === null) {
     res.writeHead(403, { 'Content-Type': 'text/plain' });
     res.end('Forbidden');
     return true;
   }
-  if (!deps.isServedRelativePath(normalizedRelative)) {
-    const html = await deps.generateNotFoundPage(rootDir, urlPath);
+  if (!isServedRelativePath(normalizedRelative)) {
+    const html = await generateNotFoundPage(rootDir, urlPath);
     await deps.sendGzippedHtml(req, res, html, {}, 404);
     return true;
   }
@@ -251,7 +237,7 @@ export async function handleWikiRoutes(
   const absolute = resolveInside(rootDir, normalizedRelative);
 
   if (!(await pathExists(absolute))) {
-    const html = await deps.generateNotFoundPage(rootDir, urlPath);
+    const html = await generateNotFoundPage(rootDir, urlPath);
     await deps.sendGzippedHtml(req, res, html, {}, 404);
     return true;
   }
@@ -260,8 +246,8 @@ export async function handleWikiRoutes(
   if (absoluteStats.isDirectory()) {
     const html =
       relative === 'wiki'
-        ? await deps.generateIndex(rootDir)
-        : await deps.generateDirectoryPage(rootDir, normalizedRelative);
+        ? await generateIndex(rootDir)
+        : await generateDirectoryPage(rootDir, normalizedRelative);
     await deps.sendGzippedHtml(req, res, html);
     return true;
   }
@@ -272,7 +258,7 @@ export async function handleWikiRoutes(
     return true;
   }
 
-  const html = await deps.serveMd(rootDir, absolute, urlPath);
+  const html = await serveMd(rootDir, absolute, urlPath);
   await deps.sendGzippedHtml(req, res, html);
   return true;
 }

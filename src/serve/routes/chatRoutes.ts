@@ -5,7 +5,8 @@ import path from 'node:path';
 import { CHAT_HTML } from '../../chat/chatHtml.ts';
 import type { AppConfig } from '../../types.ts';
 import { pathExists } from '../../utils/fs.ts';
-import type { ExternalMcpEndpoint } from './uploadRoutes.ts';
+import { escapeScriptJson } from '../html/wikiHtml.ts';
+import { resolveMcpTargets, type ExternalMcpEndpoint } from './uploadRoutes.ts';
 
 type ChatWorkspace = {
   paths: { internalDir: string };
@@ -85,15 +86,6 @@ function chatProxyErrorStatus(err: unknown): number {
   return message === 'INVALID_LLM_BASE_URL' ? 400 : 502;
 }
 
-function escapeScriptJson(s: string): string {
-  return s
-    .replace(/&/g, '\\u0026')
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029');
-}
-
 export async function handleChatRoutes(
   req: IncomingMessage,
   res: ServerResponse,
@@ -139,6 +131,10 @@ export async function handleChatRoutes(
     deps.config.llm.apiKey &&
     deps.config.llm.model,
   );
+  const { wikiTarget, productionTarget } = resolveMcpTargets(
+    deps.mcpWikiPort,
+    deps.mcpProductionPort,
+  );
   const chatConfig = {
     provider: deps.config.llm.provider,
     model: deps.config.llm.model,
@@ -157,17 +153,8 @@ export async function handleChatRoutes(
       enabled: Boolean(deps.runtimeUrl()),
     },
     mcpServers: [
-      {
-        name: 'llm-wiki',
-        url:
-          process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${deps.mcpWikiPort()}/mcp`,
-      },
-      {
-        name: 'wiki-production',
-        url:
-          process.env.PRODUCTION_MCP_PROXY_URL ??
-          `http://localhost:${deps.mcpProductionPort()}/mcp/`,
-      },
+      { name: 'llm-wiki', url: wikiTarget },
+      { name: 'wiki-production', url: productionTarget },
       ...deps.externalMcpEndpoints.map(({ name, url, bearer }) => ({
         name, url, ...(bearer ? { bearer } : {}),
       })),

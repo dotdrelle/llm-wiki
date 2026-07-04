@@ -3,11 +3,13 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 async function serveSource(): Promise<string> {
-  const [serve, html] = await Promise.all([
+  const [serve, html, css, script] = await Promise.all([
     readFile(path.resolve(import.meta.dirname, '../src/commands/serve.ts'), 'utf8'),
     readFile(path.resolve(import.meta.dirname, '../src/serve/html/wikiHtml.ts'), 'utf8'),
+    readFile(path.resolve(import.meta.dirname, '../src/serve/html/wikiLayoutCss.ts'), 'utf8'),
+    readFile(path.resolve(import.meta.dirname, '../src/serve/html/wikiLayoutScript.ts'), 'utf8'),
   ]);
-  return `${serve}\n${html}`;
+  return `${serve}\n${html}\n${css}\n${script}`;
 }
 
 async function runtimeEventsSource(): Promise<string> {
@@ -98,8 +100,8 @@ describe('serve graph ui', () => {
     expect(source).toContain('href="${escapeHref(`/${file}`)}"');
     expect(source).toContain('title="${safePath}"');
     expect(source).toContain("const cancelHref = isRawUntrackedReference(cleanRelativePath) ? '/'");
-    expect(source).toContain('const redirectAfterSave = deps.isRawUntrackedReference(savedRelative)');
-    expect(source).toContain("? deps.escapeHref(`/edit/${savedRelative}`)");
+    expect(source).toContain('const redirectAfterSave = isRawUntrackedReference(savedRelative)');
+    expect(source).toContain("? escapeHref(`/edit/${savedRelative}`)");
   });
 
   it('groups concept tiles from frontmatter or concept subfolders', async () => {
@@ -227,7 +229,7 @@ describe('serve command palette', () => {
     const source = `${await serveSource()}\n${await wikiRoutesSource()}`;
 
     expect(source).toContain("'Cache-Control': 'no-store, no-cache, must-revalidate'");
-    expect(source).toContain('const html = await deps.serveMd(rootDir, absolute, urlPath);');
+    expect(source).toContain('const html = await serveMd(rootDir, absolute, urlPath);');
     expect(source).toContain('await deps.sendGzippedHtml(req, res, html);');
     expect(source).not.toContain('async function navigationEtag(rootDir: string)');
     expect(source).not.toContain('function pageEtag(');

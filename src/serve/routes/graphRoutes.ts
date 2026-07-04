@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { buildGraph, generateGraph, graphEtag, graphEtagForFiles, listGraphFiles } from '../html/wikiHtml.ts';
 
 export type GraphRoutesDeps = {
   rootDir: string;
@@ -17,11 +18,6 @@ export type GraphRoutesDeps = {
     headers?: Record<string, string>,
     status?: number,
   ) => Promise<void>;
-  graphEtag: (rootDir: string) => Promise<string>;
-  listGraphFiles: (rootDir: string) => Promise<string[]>;
-  graphEtagForFiles: (rootDir: string, files: string[]) => Promise<string>;
-  buildGraph: (rootDir: string, files: string[]) => Promise<{ nodes: unknown[]; edges: object[] }>;
-  generateGraph: (rootDir: string) => Promise<string>;
 };
 
 export async function handleGraphRoutes(
@@ -31,14 +27,14 @@ export async function handleGraphRoutes(
   deps: GraphRoutesDeps,
 ): Promise<boolean> {
   if (req.method === 'GET' && urlPath === '/api/graph-etag') {
-    deps.sendJson(res, 200, { etag: await deps.graphEtag(deps.rootDir) });
+    deps.sendJson(res, 200, { etag: await graphEtag(deps.rootDir) });
     return true;
   }
 
   if (req.method === 'GET' && urlPath === '/api/graph-data') {
-    const graphFiles = await deps.listGraphFiles(deps.rootDir);
-    const etag = await deps.graphEtagForFiles(deps.rootDir, graphFiles);
-    const graph = await deps.buildGraph(deps.rootDir, graphFiles);
+    const graphFiles = await listGraphFiles(deps.rootDir);
+    const etag = await graphEtagForFiles(deps.rootDir, graphFiles);
+    const graph = await buildGraph(deps.rootDir, graphFiles);
     deps.sendJson(res, 200, {
       etag,
       nodes: graph.nodes,
@@ -48,7 +44,7 @@ export async function handleGraphRoutes(
   }
 
   if (urlPath === '/graph') {
-    const html = await deps.generateGraph(deps.rootDir);
+    const html = await generateGraph(deps.rootDir);
     await deps.sendGzippedHtml(req, res, html);
     return true;
   }

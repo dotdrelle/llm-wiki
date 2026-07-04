@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { ExternalMcpEndpoint } from './uploadRoutes.ts';
+import { resolveMcpTargets, type ExternalMcpEndpoint } from './uploadRoutes.ts';
 
 type ProxyPost = (
   req: IncomingMessage,
@@ -37,24 +37,25 @@ export async function handleMcpRoutes(
     res.end('url param required');
     return true;
   }
-  const wikiTarget =
-    process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${deps.mcpWikiPort()}/mcp`;
-  const productionTarget =
-    process.env.PRODUCTION_MCP_PROXY_URL ??
-    `http://localhost:${deps.mcpProductionPort()}/mcp/`;
+  const { wikiTarget, productionTarget } = resolveMcpTargets(
+    deps.mcpWikiPort,
+    deps.mcpProductionPort,
+  );
   const normalizeTarget = (u: string) => u.replace(/\/+$/, '');
-  const proxyHeaders: Record<string, Record<string, string>> = {
-    [normalizeTarget(wikiTarget)]: deps.mcpAccessKey()
-      ? { authorization: `Bearer ${deps.mcpAccessKey()}` }
-      : {},
-    [normalizeTarget(productionTarget)]: process.env.PRODUCTION_MCP_AUTH_TOKEN
+  const normalizedTarget = normalizeTarget(target);
+  let headers: Record<string, string> = {};
+  if (normalizedTarget === normalizeTarget(wikiTarget)) {
+    headers = deps.mcpAccessKey() ? { authorization: `Bearer ${deps.mcpAccessKey()}` } : {};
+  } else if (normalizedTarget === normalizeTarget(productionTarget)) {
+    headers = process.env.PRODUCTION_MCP_AUTH_TOKEN
       ? { authorization: `Bearer ${process.env.PRODUCTION_MCP_AUTH_TOKEN}` }
-      : {},
-  };
-  for (const endpoint of deps.externalMcpEndpoints) {
-    proxyHeaders[normalizeTarget(endpoint.url)] = endpoint.headers;
+      : {};
+  } else {
+    const endpoint = deps.externalMcpEndpoints.find(
+      (candidate) => normalizeTarget(candidate.url) === normalizedTarget,
+    );
+    if (endpoint) headers = endpoint.headers;
   }
-  const headers = proxyHeaders[normalizeTarget(target)] ?? {};
   await deps.proxyPost(
     req,
     res,

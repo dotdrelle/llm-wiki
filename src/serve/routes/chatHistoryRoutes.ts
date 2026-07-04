@@ -6,26 +6,6 @@ import { pathExists, safeWriteFile } from '../../utils/fs.ts';
 const CHAT_HISTORY_DIR = path.join('.wiki', 'chat-history');
 const CHAT_HISTORY_INDEX = 'index.json';
 
-async function readRequestBody(req: IncomingMessage): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks).toString('utf8');
-}
-
-function sendJson(
-  res: {
-    writeHead: (s: number, h: Record<string, string>) => void;
-    end: (c?: string) => void;
-  },
-  status: number,
-  data: unknown,
-): void {
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
-  res.end(JSON.stringify(data));
-}
-
 type ChatHistorySummary = {
   id: string;
   title: string;
@@ -165,10 +145,16 @@ export async function handleChatHistoryApi(
   rootDir: string,
   req: IncomingMessage,
   res: {
-    writeHead: (s: number, h?: Record<string, string>) => void;
+    writeHead: (s: number, h: Record<string, string>) => void;
     end: (c?: string) => void;
   },
   urlPath: string,
+  readRequestBody: (req: IncomingMessage) => Promise<string>,
+  sendJson: (
+    res: { writeHead: (s: number, h: Record<string, string>) => void; end: (c?: string) => void },
+    status: number,
+    data: unknown,
+  ) => void,
 ): Promise<boolean> {
   if (!urlPath.startsWith('/api/chat/history')) return false;
   try {

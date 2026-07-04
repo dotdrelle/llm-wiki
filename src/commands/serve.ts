@@ -14,27 +14,10 @@ import { WorkspaceService } from '../services/workspaceService.ts';
 import { pathExists, safeWriteFile } from '../utils/fs.ts';
 import { resolveInside, toPosix } from '../utils/path.ts';
 import {
-  buildGraph,
-  createMarkdownDocument,
-  deleteMarkdownDocument,
-  escapeHref,
   extractIndexTiles,
-  generateDirectoryPage,
-  generateEditPage,
-  generateGraph,
-  generateIndex,
-  generateNewMarkdownPage,
-  generateNotFoundPage,
-  generateSkillsPage,
-  graphEtag,
-  graphEtagForFiles,
   isRawDownloadRequestPath,
   isRawUntrackedReference,
-  isServedRelativePath,
-  listGraphFiles,
   localHref,
-  renameTemplateDocument,
-  resolveEditableMarkdown,
   serveMd,
 } from '../serve/html/wikiHtml.ts';
 import type { RuntimeProxyDeps } from '../serve/proxy/runtimeProxy.ts';
@@ -76,7 +59,7 @@ const MARKED_DIST_PATH = path.resolve(
 );
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
-const LLM_WIKI_VERSION = '0.11.0';
+const LLM_WIKI_VERSION = '0.11.1';
 
 type SkillMeta = {
   name: string;
@@ -432,10 +415,7 @@ async function proxyPost(
   extraHeaders: Record<string, string> = {},
   options: { retry429?: boolean; retryNetwork?: boolean } = {},
 ): Promise<void> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req)
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  const body = Buffer.concat(chunks);
+  const body = await readRequestBuffer(req);
 
   const headers: Record<string, string> = {
     'content-type': (req.headers['content-type'] as string) ?? 'application/json',
@@ -735,7 +715,7 @@ export default async function serveCmd(
         new URL(req.url ?? '/', `http://localhost`).pathname,
       );
 
-      if (await handleChatHistoryApi(rootDir, req, res, urlPath)) {
+      if (await handleChatHistoryApi(rootDir, req, res, urlPath, readRequestBody, sendJson)) {
         return;
       }
 
@@ -828,10 +808,7 @@ export default async function serveCmd(
           }
         }
         const hubPath = urlPath.slice('/api/hub'.length);
-        const chunks: Buffer[] = [];
-        for await (const chunk of req)
-          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-        const hubBody = Buffer.concat(chunks);
+        const hubBody = await readRequestBuffer(req);
         try {
           const upstream = await fetch(
             `http://${hubInternalHost()}:${hubPort()}${hubPath}`,
@@ -906,33 +883,13 @@ export default async function serveCmd(
         rootDir,
         sendJson,
         sendGzippedHtml,
-        graphEtag,
-        listGraphFiles,
-        graphEtagForFiles,
-        buildGraph,
-        generateGraph,
       })) return;
 
       if (await handleWikiRoutes(req, res, urlPath, {
         rootDir,
-        createMarkdownDocument,
-        deleteMarkdownDocument,
-        escapeHref,
-        generateDirectoryPage,
-        generateEditPage,
-        generateIndex,
-        generateNewMarkdownPage,
-        generateNotFoundPage,
-        generateSkillsPage,
-        isRawDownloadRequestPath,
-        isRawUntrackedReference,
-        isServedRelativePath,
         readRequestBody,
-        renameTemplateDocument,
-        resolveEditableMarkdown,
         sendGzippedHtml,
         sendJson,
-        serveMd,
       })) return;
     } catch (err) {
       console.error(err);

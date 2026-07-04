@@ -1,8 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { pathExists } from '../../utils/fs.ts';
+import { pathExists, safeWriteFile } from '../../utils/fs.ts';
 
 export type ExternalMcpEndpoint = {
   name: string;
@@ -10,6 +10,17 @@ export type ExternalMcpEndpoint = {
   headers: Record<string, string>;
   bearer?: string;
 };
+
+export function resolveMcpTargets(
+  mcpWikiPort: () => string,
+  mcpProductionPort: () => string,
+): { wikiTarget: string; productionTarget: string } {
+  return {
+    wikiTarget: process.env.WIKI_MCP_PROXY_URL ?? `http://localhost:${mcpWikiPort()}/mcp`,
+    productionTarget:
+      process.env.PRODUCTION_MCP_PROXY_URL ?? `http://localhost:${mcpProductionPort()}/mcp/`,
+  };
+}
 
 export type DocumentUploadRecord = {
   id: string;
@@ -97,12 +108,9 @@ async function writeDocumentUploads(
   records: DocumentUploadRecord[],
   deps: Pick<UploadRoutesDeps, 'documentUploadsDir'>,
 ): Promise<void> {
-  await mkdir(deps.documentUploadsDir(rootDir), { recursive: true });
   const filePath = documentManifestPath(rootDir, workspaceName, deps.documentUploadsDir);
-  const tmp = `${filePath}.tmp.${process.pid}`;
   const body = records.map((record) => JSON.stringify(record)).join('\n');
-  await writeFile(tmp, body ? `${body}\n` : '', 'utf8');
-  await rename(tmp, filePath);
+  await safeWriteFile(filePath, body ? `${body}\n` : '');
 }
 
 async function upsertDocumentUpload(

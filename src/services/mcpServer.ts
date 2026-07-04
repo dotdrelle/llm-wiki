@@ -12,7 +12,7 @@ import { extractSourceCitations } from '../utils/markdown.ts';
 import { hashText } from '../utils/hash.ts';
 import type { AppConfig } from '../types.ts';
 
-const LLM_WIKI_VERSION = '0.11.0';
+const LLM_WIKI_VERSION = '0.11.1';
 
 export interface WikiMcpServices {
   workspace: WorkspaceService;

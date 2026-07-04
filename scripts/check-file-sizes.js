@@ -10,7 +10,8 @@ const logger = new Console(process.stdout, process.stderr);
 const MAX_LINES = 800;
 const LEGACY_LIMITS = new Map([
   ['src/commands/serve.ts', 1000],
-  ['src/serve/html/wikiHtml.ts', 2860],
+  ['src/serve/html/wikiHtml.ts', 1350],
+  ['src/serve/html/wikiLayoutCss.ts', 1150],
   ['src/chat/chatHtml.ts', 2400],
   ['src/chat/styles/chatStyles.ts', 550],
 ]);

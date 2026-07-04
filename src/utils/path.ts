@@ -51,3 +51,11 @@ export function resolveInside(rootDir: string, candidate: string): string {
 export function relativeFrom(rootDir: string, targetPath: string): string {
   return toPosix(path.relative(rootDir, targetPath));
 }
+
+export function normalizeSafeRelativePath(raw: string): string | null {
+  const normalized = toPosix(path.posix.normalize(raw));
+  if (normalized !== raw || normalized.startsWith('../') || normalized === '..') {
+    return null;
+  }
+  return normalized;
+}
