@@ -5,7 +5,6 @@ import { proxyRuntimeEvents } from '../sse/runtimeEvents.ts';
 export type RuntimeRoutesDeps = {
   proxyDeps: RuntimeProxyDeps;
   runtimePathForWorkspace: (pathname: string) => string;
-  proxyRuntimeConfigUse: (req: IncomingMessage, res: ServerResponse) => Promise<void>;
   workspaceNameFromEnv: () => string | null;
 };
 
@@ -34,14 +33,6 @@ export async function handleRuntimeRoutes(
   }
   if (urlPath === '/api/runtime/control' && (req.method === 'GET' || req.method === 'POST')) {
     await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/control'), deps.proxyDeps);
-    return true;
-  }
-  if (urlPath === '/api/config/profiles' && req.method === 'GET') {
-    await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/config/profiles'), deps.proxyDeps);
-    return true;
-  }
-  if (urlPath === '/api/config/use' && req.method === 'POST') {
-    await deps.proxyRuntimeConfigUse(req, res);
     return true;
   }
   return false;

@@ -30,7 +30,8 @@ import {
   type WikiGraphEdge,
   type WikiGraphNode,
 } from '../graph/wiki/projection.ts';
-import { proxyRuntimeJson, type RuntimeProxyDeps } from '../serve/proxy/runtimeProxy.ts';
+import type { RuntimeProxyDeps } from '../serve/proxy/runtimeProxy.ts';
+import { handleConfigRoutes } from '../serve/routes/configRoutes.ts';
 import { handleGraphRoutes } from '../serve/routes/graphRoutes.ts';
 import { handleMcpRoutes } from '../serve/routes/mcpRoutes.ts';
 import { handleRuntimeRoutes } from '../serve/routes/runtimeRoutes.ts';
@@ -3792,18 +3793,6 @@ export default async function serveCmd(
     return fresh;
   };
 
-  const proxyRuntimeConfigUse = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-    const wsName = workspaceNameFromEnv();
-    await proxyRuntimeJson(
-      req,
-      res,
-      runtimePathForWorkspace('/config/use'),
-      runtimeProxyDeps,
-      wsName ? { workspace: wsName } : undefined,
-      async (parsed) => ({ ...(parsed as Record<string, unknown>), config: await mirrorRuntimeConfig(parsed) }),
-    );
-  };
-
   server.on('request', async (req, res) => {
     try {
       const urlPath = decodeURIComponent(
@@ -3854,8 +3843,19 @@ export default async function serveCmd(
       if (await handleRuntimeRoutes(req, res, urlPath, {
         proxyDeps: runtimeProxyDeps,
         runtimePathForWorkspace,
-        proxyRuntimeConfigUse,
         workspaceNameFromEnv,
+      })) {
+        return;
+      }
+
+      if (await handleConfigRoutes(req, res, urlPath, {
+        config,
+        proxyDeps: runtimeProxyDeps,
+        runtimePathForWorkspace,
+        workspaceNameFromEnv,
+        mirrorRuntimeConfig,
+        readRequestBody,
+        sendJson,
       })) {
         return;
       }
@@ -4203,33 +4203,6 @@ export default async function serveCmd(
         buildGraph,
         generateGraph,
       })) return;
-
-      if (urlPath === '/api/llm-config') {
-        if (req.method === 'GET') {
-          sendJson(res, 200, {
-            model: config.llm.model,
-            temperature: config.llm.temperature,
-            baseUrl: config.llm.baseUrl,
-            apiKey: config.llm.apiKey ?? '',
-          });
-          return;
-        }
-        if (req.method === 'PATCH') {
-          const body = JSON.parse(await readRequestBody(req) || '{}') as Record<string, unknown>;
-          sendJson(res, 200, {
-            ok: true,
-            override: {
-              model: typeof body.model === 'string' ? body.model : undefined,
-              temperature: typeof body.temperature === 'number' ? body.temperature : undefined,
-              baseUrl: typeof body.baseUrl === 'string' ? body.baseUrl : undefined,
-              apiKey: typeof body.apiKey === 'string' ? body.apiKey : undefined,
-            },
-          });
-          return;
-        }
-        sendJson(res, 405, { error: 'Method not allowed' });
-        return;
-      }
 
       if (urlPath === '/') {
         const html = await generateIndex(rootDir);

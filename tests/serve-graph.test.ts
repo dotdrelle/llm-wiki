@@ -22,6 +22,10 @@ async function uploadRoutesSource(): Promise<string> {
   return readFile(path.resolve(import.meta.dirname, '../src/serve/routes/uploadRoutes.ts'), 'utf8');
 }
 
+async function configRoutesSource(): Promise<string> {
+  return readFile(path.resolve(import.meta.dirname, '../src/serve/routes/configRoutes.ts'), 'utf8');
+}
+
 async function graphCoreSource(): Promise<string> {
   return readFile(path.resolve(import.meta.dirname, '../src/graph/core/graphLayoutBase.ts'), 'utf8');
 }
@@ -255,11 +259,12 @@ describe('serve deliverables ui', () => {
 describe('serve missing feature endpoints', () => {
   it('exposes template rename and llm config controls', async () => {
     const source = await serveSource();
+    const configSource = await configRoutesSource();
 
     expect(source).toContain('function renameHref(relativePath: string)');
     expect(source).toContain("urlPath.startsWith('/rename/')");
     expect(source).toContain('async function renameTemplate()');
-    expect(source).toContain("urlPath === '/api/llm-config'");
+    expect(configSource).toContain("urlPath !== '/api/llm-config'");
     expect(source).toContain("req.headers['x-llm-wiki-llm-base-url']");
   });
 
@@ -303,12 +308,12 @@ describe('serve config reload', () => {
 
   it('proxies config profile switching through the manager runtime and mirrors returned config', async () => {
     const source = await serveSource();
-    const routesSource = await runtimeRoutesSource();
+    const configSource = await configRoutesSource();
 
-    expect(routesSource).toContain("urlPath === '/api/config/profiles'");
-    expect(routesSource).toContain("urlPath === '/api/config/use'");
-    expect(routesSource).toContain("deps.runtimePathForWorkspace('/config/profiles')");
-    expect(source).toContain("runtimePathForWorkspace('/config/use')");
+    expect(configSource).toContain("urlPath === '/api/config/profiles'");
+    expect(configSource).toContain("urlPath === '/api/config/use'");
+    expect(configSource).toContain("deps.runtimePathForWorkspace('/config/profiles')");
+    expect(configSource).toContain("deps.runtimePathForWorkspace('/config/use')");
     expect(source).toContain('const resolveProfileConfigPath');
     expect(source).toContain('const mirrorRuntimeConfig = async');
     expect(source).toContain('process.env.WIKI_CONFIG_PATH = fileName;');
