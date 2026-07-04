@@ -51,6 +51,13 @@ describe('config resolution', () => {
     expect(config.build.refreshOnIngest).toBe(false);
   });
 
+  it('defaults build batching to token budget without a slot cap', () => {
+    const config = resolveConfig({}, '/tmp/wiki');
+
+    expect(config.build.slotBatchSize).toBeUndefined();
+    expect(config.build.maxBuildContextChars).toBe(24000);
+  });
+
   it('parses vector retrieval settings with defaults', () => {
     const config = resolveConfig(
       {

@@ -700,7 +700,8 @@ export class BuildService {
       const candidate = [...current, slot];
       const candidateChars = this.promptInputChars(template, buildContext, candidate);
       const wouldExceedTarget = candidateChars > this.budget.targetInputChars();
-      const wouldExceedSlotCap = candidate.length > maxSlotsPerBatch;
+      const wouldExceedSlotCap =
+        maxSlotsPerBatch !== undefined && candidate.length > maxSlotsPerBatch;
       if (current.length > 0 && (wouldExceedTarget || wouldExceedSlotCap)) {
         pushCurrent();
       }
@@ -822,6 +823,38 @@ export class BuildService {
         },
         deliverableResponseSchema,
       );
+      const qualityIssue = this.replacementQualityIssue(batch, response.replacements);
+      if (qualityIssue) {
+        if (batch.length > 1) {
+          if (this.logger) {
+            await this.logger.warn('build:batch-split', {
+              ...traceData,
+              slots: batch.length,
+              reason: qualityIssue,
+            });
+          }
+          return this.renderSplitBatch(template, buildContext, batch, traceData);
+        }
+        if (this.logger) {
+          await this.logger.warn('build:json-fallback', {
+            ...traceData,
+            slot: batch[0].id,
+            reason: qualityIssue,
+          });
+        }
+        return [
+          {
+            id: batch[0].id,
+            content: await this.renderSingleSlotText(
+              template,
+              buildContext,
+              batch[0],
+              traceData,
+              'deliverable_render_text_fallback',
+            ),
+          },
+        ];
+      }
       return response.replacements;
     } catch (error) {
       if (batch.length > 1 && this.isContextLengthExceeded(error)) {
@@ -833,20 +866,7 @@ export class BuildService {
             message: error instanceof Error ? error.message : String(error),
           });
         }
-        const midpoint = Math.ceil(batch.length / 2);
-        const first = await this.renderBatch(
-          template,
-          buildContext,
-          batch.slice(0, midpoint),
-          traceData,
-        );
-        const second = await this.renderBatch(
-          template,
-          buildContext,
-          batch.slice(midpoint),
-          traceData,
-        );
-        return [...first, ...second];
+        return this.renderSplitBatch(template, buildContext, batch, traceData);
       }
 
       if (batch.length !== 1) {
@@ -874,6 +894,52 @@ export class BuildService {
         },
       ];
     }
+  }
+
+  private replacementQualityIssue(
+    batch: Array<{ id: string }>,
+    replacements: Array<{ id: string; content: string }>,
+  ): string | undefined {
+    const expectedIds = new Set(batch.map((slot) => slot.id));
+    const seen = new Set<string>();
+    for (const replacement of replacements) {
+      if (!expectedIds.has(replacement.id)) return 'unexpected_replacement';
+      if (seen.has(replacement.id)) return 'duplicate_replacement';
+      seen.add(replacement.id);
+      if (!replacement.content.trim()) return 'empty_replacement';
+    }
+    for (const id of expectedIds) {
+      if (!seen.has(id)) return 'missing_replacement';
+    }
+    return undefined;
+  }
+
+  private async renderSplitBatch(
+    template: TemplateDocument,
+    buildContext: BuildContext,
+    batch: Array<{
+      id: string;
+      instruction: string;
+      headingPath: string[];
+      surroundingText: string;
+      context: SearchResult[];
+    }>,
+    traceData: Record<string, unknown>,
+  ): Promise<Array<{ id: string; content: string }>> {
+    const midpoint = Math.ceil(batch.length / 2);
+    const first = await this.renderBatch(
+      template,
+      buildContext,
+      batch.slice(0, midpoint),
+      traceData,
+    );
+    const second = await this.renderBatch(
+      template,
+      buildContext,
+      batch.slice(midpoint),
+      traceData,
+    );
+    return [...first, ...second];
   }
 
   private nextState(state: BuildState): BuildState {

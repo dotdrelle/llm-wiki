@@ -719,7 +719,7 @@ export default async function doctorCmd(
       );
       (suggestions.llm ??= {}).numCtx = 8192;
     }
-    if (config.build.slotBatchSize > 1) {
+    if ((config.build.slotBatchSize ?? 1) > 1) {
       warn(
         `slotBatchSize ${config.build.slotBatchSize} → 1 recommended for local MLX JSON reliability and lower memory pressure`,
       );

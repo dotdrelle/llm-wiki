@@ -30,8 +30,8 @@ limits:
 
 build:
   refreshOnIngest: true
-  slotBatchSize: 3
-  maxBuildContextChars: 12000
+  slotBatchSize: 8
+  maxBuildContextChars: 24000
 
 retrieval:
   maxContextFiles: 5
@@ -181,11 +181,11 @@ throttle decides when each request is allowed to start.
 
 ## `build`
 
-| Key                    | Description                                                                                                   | Default |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------- | ------- |
-| `refreshOnIngest`      | Automatically regenerate stale deliverables after each ingest                                                 | `true`  |
-| `slotBatchSize`        | Maximum number of `[[INSTRUCTION:...]]` slots allowed in one build call before prompt-budget planning applies | `3`     |
-| `maxBuildContextChars` | Maximum characters from `build-context/` files included in each build LLM call                                | `12000` |
+| Key                    | Description                                                                                                        | Default |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------ | ------- |
+| `refreshOnIngest`      | Automatically regenerate stale deliverables after each ingest                                                      | `true`  |
+| `slotBatchSize`        | Optional maximum number of `[[INSTRUCTION:...]]` slots allowed in one build call; token budget plans batches first | —       |
+| `maxBuildContextChars` | Maximum characters from `build-context/` files included in each build LLM call                                     | `24000` |
 
 ## `retrieval`
 
@@ -198,7 +198,7 @@ throttle decides when each request is allowed to start.
 
 Vector retrieval options are documented in [vector-search.md](./vector-search.md).
 
-> **Context budget** — `wiki build` now plans batches using the same logic as `wiki build --plan`: it groups slots up to `build.slotBatchSize`, starts a new batch when `limits.targetInputTokensPerCall` would be exceeded, and trims retrieved context if a batch exceeds `limits.maxInputTokensPerCall`. Run `wiki doctor` and `wiki build --plan` after changing these values.
+> **Context budget** — `wiki build` now plans batches using the same logic as `wiki build --plan`: it groups slots up to `limits.targetInputTokensPerCall`, uses `build.slotBatchSize` only as an optional compatibility ceiling, and trims retrieved context if a batch exceeds `limits.maxInputTokensPerCall`. Run `wiki doctor` and `wiki build --plan` after changing these values.
 
 ## `mcp`
 

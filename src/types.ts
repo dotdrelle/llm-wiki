@@ -14,7 +14,7 @@ export interface LlmConfig {
 
 export interface BuildConfig {
   refreshOnIngest: boolean;
-  slotBatchSize: number;
+  slotBatchSize?: number;
   maxBuildContextChars: number;
 }
 

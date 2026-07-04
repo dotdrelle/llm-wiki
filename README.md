@@ -288,8 +288,8 @@ limits:
 
 build:
   refreshOnIngest: true                     # rebuild stale deliverables after ingest
-  slotBatchSize: 3                          # template slots per LLM call
-  maxBuildContextChars: 12000              # max chars of context per build call
+  slotBatchSize: 8                          # optional max slots per build call
+  maxBuildContextChars: 24000               # max chars of context per build call
 
 retrieval:
   maxContextFiles: 5                        # max wiki pages fed to LLM

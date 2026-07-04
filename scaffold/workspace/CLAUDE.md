@@ -77,7 +77,7 @@ llm:
   kvCacheType: q8_0
 
 build:
-  slotBatchSize: 3
+  # slotBatchSize: 8 # optional compatibility ceiling; token budget batches first
 
 limits:
   targetInputTokensPerCall: 40000

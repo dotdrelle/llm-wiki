@@ -234,13 +234,12 @@ const llmSchema = z
 const buildSchema = z
   .object({
     refreshOnIngest: z.boolean().default(true),
-    slotBatchSize: z.number().int().min(1).max(50).default(3),
-    maxBuildContextChars: z.number().int().min(1000).default(12000),
+    slotBatchSize: z.number().int().min(1).max(50).optional(),
+    maxBuildContextChars: z.number().int().min(1000).default(24000),
   })
   .default({
     refreshOnIngest: true,
-    slotBatchSize: 3,
-    maxBuildContextChars: 12000,
+    maxBuildContextChars: 24000,
   });
 
 const limitsSchema = z
@@ -530,8 +529,8 @@ export function resolveConfig(
     },
     build: {
       refreshOnIngest: parsed.build?.refreshOnIngest ?? true,
-      slotBatchSize: parsed.build?.slotBatchSize ?? 3,
-      maxBuildContextChars: parsed.build?.maxBuildContextChars ?? 12000,
+      slotBatchSize: parsed.build?.slotBatchSize,
+      maxBuildContextChars: parsed.build?.maxBuildContextChars ?? 24000,
     },
     retrieval: {
       maxContextFiles: parsed.retrieval?.maxContextFiles ?? 5,

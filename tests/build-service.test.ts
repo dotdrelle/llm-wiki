@@ -295,6 +295,28 @@ class ConcurrentBuildLLMService {
   }
 }
 
+class IncompleteBatchLLMService {
+  completeJsonCalls = 0;
+
+  async completeJson(request: { user: string }) {
+    this.completeJsonCalls += 1;
+    const ids = [...request.user.matchAll(/^## (instruction-\d+)$/gm)].map(
+      (match) => match[1],
+    );
+    const returnedIds = ids.length > 1 ? ids.slice(0, 1) : ids;
+    return {
+      replacements: returnedIds.map((id) => ({
+        id,
+        content: `Rendered ${id}. [src: wiki/index.md]`,
+      })),
+    };
+  }
+
+  async completeText() {
+    return 'Text fallback. [src: wiki/index.md]';
+  }
+}
+
 describe('build service', () => {
   it('renders a template and stores build state', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-'));
@@ -788,6 +810,89 @@ describe('build service', () => {
     expect(output).toContain('Rendered instruction-1.');
     expect(output).toContain('Rendered instruction-2.');
     expect(output).toContain('Rendered instruction-3.');
+  });
+
+  it('plans build batches by token budget when no slot cap is configured', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-plan-budget-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'templates'), { recursive: true });
+    await mkdir(path.join(root, 'deliverables'), { recursive: true });
+
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n', 'utf8');
+    await writeFile(
+      path.join(root, 'templates', 'brief.md'),
+      [
+        '# Brief',
+        '',
+        '[[INSTRUCTION: Fill first.]]',
+        '',
+        '[[INSTRUCTION: Fill second.]]',
+        '',
+        '[[INSTRUCTION: Fill third.]]',
+        '',
+        '[[INSTRUCTION: Fill fourth.]]',
+        '',
+        '[[INSTRUCTION: Fill fifth.]]',
+        '',
+        '[[INSTRUCTION: Fill sixth.]]',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    config.build.slotBatchSize = undefined;
+    config.limits.targetInputTokensPerCall = 50000;
+    const service = new BuildService(
+      config,
+      new WorkspaceService(config),
+      new FakeLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+    );
+
+    const plan = await service.planBuild();
+
+    expect(plan.templates[0].batches).toHaveLength(1);
+    expect(plan.templates[0].batches[0].slotIds).toHaveLength(6);
+  });
+
+  it('splits incomplete JSON batch responses and retries smaller batches', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-incomplete-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'templates'), { recursive: true });
+    await mkdir(path.join(root, 'deliverables'), { recursive: true });
+
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n', 'utf8');
+    await writeFile(
+      path.join(root, 'templates', 'brief.md'),
+      [
+        '# Brief',
+        '',
+        '[[INSTRUCTION: Fill first.]]',
+        '',
+        '[[INSTRUCTION: Fill second.]]',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    config.build.slotBatchSize = 2;
+    const workspace = new WorkspaceService(config);
+    const llm = new IncompleteBatchLLMService();
+    const service = new BuildService(
+      config,
+      workspace,
+      llm as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+    );
+
+    await service.build();
+
+    expect(llm.completeJsonCalls).toBe(3);
+    const output = await workspace.readTextFile(
+      path.join(root, 'deliverables', 'brief.md'),
+    );
+    expect(output).toContain('Rendered instruction-1.');
+    expect(output).toContain('Rendered instruction-2.');
   });
 
   it('limits concurrent build batch LLM calls', async () => {

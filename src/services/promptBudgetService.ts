@@ -1,6 +1,6 @@
 import type { AppConfig, BuildBatchPlan } from '../types.ts';
 
-const CHARS_PER_TOKEN = 4;
+const CHARS_PER_TOKEN = 3.5;
 
 export function estimateInputTokens(text: string): number {
   return Math.ceil(text.length / CHARS_PER_TOKEN);
@@ -29,7 +29,12 @@ export class PromptBudgetService {
     return inputTokenLimitToChars(this.config.limits.maxInputTokensPerCall);
   }
 
-  describeBatch(index: number, slotIds: string[], contextPages: string[], chars: number): BuildBatchPlan {
+  describeBatch(
+    index: number,
+    slotIds: string[],
+    contextPages: string[],
+    chars: number,
+  ): BuildBatchPlan {
     const estimatedInputTokens = estimateInputTokens('x'.repeat(chars));
     return {
       index,
