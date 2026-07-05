@@ -64,6 +64,13 @@ describe('workspace safety', () => {
 
     await workspace.initWorkspace({});
 
+    const rawConfig = await readFile(path.join(root, '.wikirc.yaml'), 'utf8');
+    const effectiveLines = rawConfig
+      .split('\n')
+      .filter((line) => line.trim() && !line.trimStart().startsWith('#'));
+    expect(effectiveLines).toHaveLength(17);
+    expect(rawConfig).not.toMatch(/^\s*apiKey:\s*\S+/m);
+    expect(rawConfig).not.toMatch(/^\s*accessKey:\s*\S+/m);
     const initializedConfig = await loadConfig(root);
     expect(initializedConfig.preset).toBeUndefined();
     expect(initializedConfig.llm.provider).toBe('openai-compatible');

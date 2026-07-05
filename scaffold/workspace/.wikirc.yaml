@@ -6,8 +6,7 @@ llm:
   model: YOUR_MODEL_NAME
   apiKeyEnv: YOUR_PROVIDER_API_KEY
 
-limits:
-  requestsPerMinute: 60
+limits: { requestsPerMinute: 60 }
 
 retrieval:
   vector:

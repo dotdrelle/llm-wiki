@@ -50,6 +50,8 @@ jobs:
         working-directory: llm-wiki
       - run: pnpm run check-file-sizes
         working-directory: llm-wiki
+      - run: pnpm run check-secrets
+        working-directory: llm-wiki
       - run: pnpm test
         working-directory: llm-wiki
       - run: pnpm run build
