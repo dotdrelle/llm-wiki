@@ -4,23 +4,6 @@ The CLI looks for `.wikirc.yaml` or `.wikirc.yml` in the current directory or it
 Set `WIKI_CONFIG_PATH` to load a specific config file inside the workspace, for example
 `WIKI_CONFIG_PATH=.wikirc.yaml.openai`.
 
-## Minimal preset example
-
-Presets are optional shortcuts. A complete `.wikirc.yaml` without `preset` stays
-valid, and any explicit field in the file overrides the preset.
-
-```yaml
-preset: albert
-language: fr
-
-llm:
-  model: mistralai/Ministral-3-8B-Instruct-2512
-  apiKeyEnv: ALBERT_API_KEY
-```
-
-Run `wiki config --effective` to print the merged configuration with provenance
-(`default`, `preset:<name>`, `file`, or `env`).
-
 ## Generic provider example
 
 ```yaml
@@ -45,6 +28,13 @@ retrieval:
     rerankerModel: BAAI/bge-reranker-v2-m3
     requestsPerMinute: 1000
 ```
+
+Run `wiki config --effective` to print the merged configuration with provenance
+(`default`, `preset:<name>`, `file`, or `env`).
+
+Presets (`albert`, `openai`, `ollama`, `nvidia`) are optional shortcuts only.
+The generic declaration above is the first-class form, and any explicit file
+value overrides preset/default values.
 
 ## Full example
 

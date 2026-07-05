@@ -1,34 +1,23 @@
-# Minimal preset form. A preset is only a shortcut; every value below can still
-# be overridden explicitly in this file.
-preset: ollama
 language: en
 
 llm:
+  provider: openai-compatible
+  baseUrl: https://mon-provider.example.com/v1
   model: YOUR_MODEL_NAME
+  # Prefer apiKeyEnv so secrets stay in .env / Docker env, not in this file.
+  apiKeyEnv: YOUR_PROVIDER_API_KEY
+  # Inline apiKey remains supported for local/private workspaces.
+  # apiKey: your-provider-key
+  temperature: 0.1
+  timeoutMs: 600000
 
-# Generic provider form, useful for any OpenAI-compatible endpoint and for
-# separate embedding/rerank services. Uncomment and remove `preset` above.
-# language: en
+# Ollama/local example:
 # llm:
-#   provider: openai-compatible
-#   baseUrl: https://mon-provider.example.com/v1
-#   model: leur-modele-32b
-#   apiKeyEnv: MON_PROVIDER_API_KEY
-# limits:
-#   requestsPerMinute: 60
-# retrieval:
-#   vector:
-#     enabled: true
-#     baseUrl: http://infinity.local:7997/v1
-#     apiKeyEnv: INFINITY_API_KEY
-#     embeddingModel: BAAI/bge-m3
-#     rerankEnabled: true
-#     rerankerModel: BAAI/bge-reranker-v2-m3
-#     requestsPerMinute: 1000
-
-# Ollama-specific options live here only when you need them explicitly.
-# For remote/Docker Ollama, set them here since the server env cannot be auto-detected.
-# llm:
+#   provider: ollama
+#   baseUrl: http://127.0.0.1:11434/v1
+#   model: qwen2.5:14b
+#   apiKey: ollama
+#   numCtx: 32768
 #   flashAttention: true
 #   kvCacheType: q8_0
 
