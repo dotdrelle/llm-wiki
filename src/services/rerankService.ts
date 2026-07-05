@@ -152,10 +152,20 @@ export class RerankService {
     if (documents.length === 0) return [];
     const effectiveTopN = Math.min(topN, documents.length);
     const cached = await this.readCachedRerank(query, documents, effectiveTopN);
-    if (cached) return cached;
+    if (cached) {
+      this.logger?.recordProviderMetric?.({
+        kind: 'rerank',
+        cacheHits: 1,
+      });
+      return cached;
+    }
 
     const results: RerankResult[] = [];
-    for (let offset = 0; offset < documents.length; offset += RERANK_MAX_DOCUMENTS_PER_REQUEST) {
+    for (
+      let offset = 0;
+      offset < documents.length;
+      offset += RERANK_MAX_DOCUMENTS_PER_REQUEST
+    ) {
       const batch = documents.slice(offset, offset + RERANK_MAX_DOCUMENTS_PER_REQUEST);
       const batchTopN = Math.min(effectiveTopN, batch.length);
       const batchResults = await this.rerankRequest(query, batch, batchTopN);
@@ -186,6 +196,7 @@ export class RerankService {
         label: 'rerank',
         workspaceRoot: this.config.wikiRoot,
       });
+      const startedAt = Date.now();
       const res = await fetch(
         `${this.config.retrieval.vector.baseUrl.replace(/\/$/, '')}/rerank`,
         {
@@ -207,6 +218,11 @@ export class RerankService {
       );
 
       raw = await res.text();
+      this.logger?.recordProviderMetric?.({
+        kind: 'rerank',
+        calls: 1,
+        latencyMs: Date.now() - startedAt,
+      });
       if (res.status === 429 && attempt < maxAttempts) {
         const waitMs = providerRateLimitRetryDelayMs({
           key: providerRateLimitKey(this.config.retrieval.vector.baseUrl),

@@ -1,7 +1,7 @@
 import type { AppConfig } from '../types.ts';
 import { LLMService } from '../services/llmService.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
-import { createTraceLogger } from '../services/traceLogger.ts';
+import { createTraceLogger, printTraceSummary } from '../services/traceLogger.ts';
 import { expandDeliverable, exportOutputPath } from '../services/exportService.ts';
 import { safeWriteFile, pathExists } from '../utils/fs.ts';
 import { normalizeGeneratedMarkdown } from '../utils/markdown.ts';
@@ -38,7 +38,8 @@ export default async function exportCmd(
   });
   console.log(`Trace file: ${logger.displayPath}`);
 
-  const spinner = options.verbose || options.debug ? null : new Spinner('Preparing export…');
+  const spinner =
+    options.verbose || options.debug ? null : new Spinner('Preparing export…');
 
   try {
     spinner?.start();
@@ -62,7 +63,8 @@ export default async function exportCmd(
     }
 
     const relativeInput = relativeFrom(workspace.paths.rootDir, absoluteInput);
-    const outputRelative = options.output ?? exportOutputPath(relativeInput, { polish: options.polish });
+    const outputRelative =
+      options.output ?? exportOutputPath(relativeInput, { polish: options.polish });
     const absoluteOutput = resolveInside(workspace.paths.rootDir, outputRelative);
 
     const llm = new LLMService(config);
@@ -119,5 +121,6 @@ export default async function exportCmd(
     throw e;
   } finally {
     await logger.close();
+    printTraceSummary(logger);
   }
 }

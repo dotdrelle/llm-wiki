@@ -10,11 +10,44 @@ export interface TraceLogger {
   readonly displayPath: string;
   readonly debugEnabled: boolean;
   readonly verboseEnabled: boolean;
+  recordProviderMetric?(metric: TraceProviderMetric): void;
+  summary?(): TraceRunSummary;
+  formatSummary?(): string;
   info(event: string, data?: Record<string, unknown>): Promise<void>;
   warn(event: string, data?: Record<string, unknown>): Promise<void>;
   debug(event: string, data?: Record<string, unknown>): Promise<void>;
   error(event: string, data?: Record<string, unknown>): Promise<void>;
   close(): Promise<void>;
+}
+
+export type TraceProviderKind = 'llm' | 'embedding' | 'rerank';
+
+export interface TraceProviderMetric {
+  kind: TraceProviderKind;
+  calls?: number;
+  cacheHits?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  throttleMs?: number;
+  latencyMs?: number;
+}
+
+export interface TraceProviderSummary {
+  calls: number;
+  cacheHits: number;
+  inputTokens: number;
+  outputTokens: number;
+  throttleMs: number;
+  latencyMs: number;
+}
+
+export interface TraceRunSummary {
+  wallMs: number;
+  providerLatencyMs: number;
+  providerLatencyRatio: number;
+  llm: TraceProviderSummary;
+  embedding: TraceProviderSummary;
+  rerank: TraceProviderSummary;
 }
 
 interface CreateTraceLoggerOptions {
@@ -65,7 +98,11 @@ function makeRunId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function makeDefaultTraceFilePath(logsDir: string, command: string, runId: string): string {
+function makeDefaultTraceFilePath(
+  logsDir: string,
+  command: string,
+  runId: string,
+): string {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   return path.join(logsDir, `${command}-${stamp}-${runId}.log`);
 }
@@ -79,6 +116,11 @@ class FileTraceLogger implements TraceLogger {
 
   private readonly startedAt = Date.now();
   private pendingWrite: Promise<void> = Promise.resolve();
+  private readonly metrics: Record<TraceProviderKind, TraceProviderSummary> = {
+    llm: emptyProviderSummary(),
+    embedding: emptyProviderSummary(),
+    rerank: emptyProviderSummary(),
+  };
 
   constructor(args: {
     rootDir: string;
@@ -111,11 +153,60 @@ class FileTraceLogger implements TraceLogger {
   }
 
   async close(): Promise<void> {
+    const summary = this.summary();
+    await this.info('trace:summary', {
+      wallMs: summary.wallMs,
+      providerLatencyMs: summary.providerLatencyMs,
+      providerLatencyRatio: summary.providerLatencyRatio,
+      llmCalls: summary.llm.calls,
+      llmInputTokens: summary.llm.inputTokens,
+      llmOutputTokens: summary.llm.outputTokens,
+      llmThrottleMs: summary.llm.throttleMs,
+      llmLatencyMs: summary.llm.latencyMs,
+      embeddingCalls: summary.embedding.calls,
+      embeddingCacheHits: summary.embedding.cacheHits,
+      embeddingThrottleMs: summary.embedding.throttleMs,
+      embeddingLatencyMs: summary.embedding.latencyMs,
+      rerankCalls: summary.rerank.calls,
+      rerankCacheHits: summary.rerank.cacheHits,
+      rerankThrottleMs: summary.rerank.throttleMs,
+      rerankLatencyMs: summary.rerank.latencyMs,
+    });
     await this.info('trace:close', {
       runId: this.runId,
-      durationMs: Date.now() - this.startedAt,
+      durationMs: summary.wallMs,
     });
     await this.pendingWrite;
+  }
+
+  recordProviderMetric(metric: TraceProviderMetric): void {
+    const current = this.metrics[metric.kind];
+    current.calls += metric.calls ?? 0;
+    current.cacheHits += metric.cacheHits ?? 0;
+    current.inputTokens += metric.inputTokens ?? 0;
+    current.outputTokens += metric.outputTokens ?? 0;
+    current.throttleMs += metric.throttleMs ?? 0;
+    current.latencyMs += metric.latencyMs ?? 0;
+  }
+
+  summary(): TraceRunSummary {
+    const wallMs = Date.now() - this.startedAt;
+    const providerLatencyMs =
+      this.metrics.llm.latencyMs +
+      this.metrics.embedding.latencyMs +
+      this.metrics.rerank.latencyMs;
+    return {
+      wallMs,
+      providerLatencyMs,
+      providerLatencyRatio: wallMs > 0 ? Math.min(1, providerLatencyMs / wallMs) : 0,
+      llm: { ...this.metrics.llm },
+      embedding: { ...this.metrics.embedding },
+      rerank: { ...this.metrics.rerank },
+    };
+  }
+
+  formatSummary(): string {
+    return formatTraceRunSummary(this.summary());
   }
 
   async info(event: string, data?: Record<string, unknown>): Promise<void> {
@@ -153,8 +244,8 @@ class FileTraceLogger implements TraceLogger {
       (level === 'debug' && this.debugEnabled)
     ) {
       const levelColors: Record<TraceLevel, string> = {
-        info:  '\x1b[36mINFO \x1b[0m',
-        warn:  '\x1b[33mWARN \x1b[0m',
+        info: '\x1b[36mINFO \x1b[0m',
+        warn: '\x1b[33mWARN \x1b[0m',
         error: '\x1b[31mERROR\x1b[0m',
         debug: '\x1b[90mDEBUG\x1b[0m',
       };
@@ -171,9 +262,53 @@ class FileTraceLogger implements TraceLogger {
       }
     }
 
-    this.pendingWrite = this.pendingWrite.then(() => appendFile(this.filePath, fileLine, 'utf8'));
+    this.pendingWrite = this.pendingWrite.then(() =>
+      appendFile(this.filePath, fileLine, 'utf8'),
+    );
     await this.pendingWrite;
   }
+}
+
+function emptyProviderSummary(): TraceProviderSummary {
+  return {
+    calls: 0,
+    cacheHits: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    throttleMs: 0,
+    latencyMs: 0,
+  };
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) return `${seconds}s`;
+  return `${minutes}m${String(seconds).padStart(2, '0')}s`;
+}
+
+function formatTokenCount(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
+  if (tokens >= 1_000) return `${Math.round(tokens / 1000)}k`;
+  return String(tokens);
+}
+
+function formatPercent(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
+export function formatTraceRunSummary(summary: TraceRunSummary): string {
+  return [
+    `LLM: ${summary.llm.calls} appel(s) · ${formatTokenCount(summary.llm.inputTokens)} tokens in · ${formatTokenCount(summary.llm.outputTokens)} tokens out · throttle ${formatDuration(summary.llm.throttleMs)} · latence ${formatDuration(summary.llm.latencyMs)}`,
+    `Embeddings: ${summary.embedding.calls} appel(s) (${summary.embedding.cacheHits} cache hit(s)) · Rerank: ${summary.rerank.calls} appel(s) (${summary.rerank.cacheHits} cache hit(s))`,
+    `Temps mur: ${formatDuration(summary.wallMs)} (dont ${formatPercent(summary.providerLatencyRatio)} latence provider)`,
+  ].join('\n');
+}
+
+export function printTraceSummary(logger: TraceLogger): void {
+  const formatted = logger.formatSummary?.();
+  if (formatted) console.log(`\n${formatted}`);
 }
 
 export async function createTraceLogger(

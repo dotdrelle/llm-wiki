@@ -2,7 +2,7 @@ import type { AppConfig, BuildCommandOptions } from '../types.ts';
 import { BuildService } from '../services/buildService.ts';
 import { LLMService } from '../services/llmService.ts';
 import { RetrievalService } from '../services/retrievalService.ts';
-import { createTraceLogger } from '../services/traceLogger.ts';
+import { createTraceLogger, printTraceSummary } from '../services/traceLogger.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import { Spinner } from '../utils/spinner.ts';
 
@@ -31,7 +31,8 @@ export default async function buildCmd(
   const retrieval = new RetrievalService(workspace, config, logger);
   const service = new BuildService(config, workspace, llm, retrieval, logger);
 
-  const spinner = options.verbose || options.debug ? null : new Spinner('Building deliverables…');
+  const spinner =
+    options.verbose || options.debug ? null : new Spinner('Building deliverables…');
   try {
     if (options.plan) {
       spinner?.start();
@@ -43,16 +44,22 @@ export default async function buildCmd(
         },
       });
       spinner?.stop();
-      console.log(`Build plan: ${plan.estimatedRequests} request(s), ~${plan.estimatedInputTokens.toLocaleString()} input token(s)`);
+      console.log(
+        `Build plan: ${plan.estimatedRequests} request(s), ~${plan.estimatedInputTokens.toLocaleString()} input token(s)`,
+      );
       console.log(
         `Limits: ${plan.limits.requestsPerMinute} req/min, target ${plan.limits.targetInputTokensPerCall.toLocaleString()} input tokens/call, max ${plan.limits.maxInputTokensPerCall.toLocaleString()}`,
       );
       if (typeof plan.limits.dailyInputTokens === 'number') {
-        console.log(`Daily input budget: ${plan.limits.dailyInputTokens.toLocaleString()} token(s)`);
+        console.log(
+          `Daily input budget: ${plan.limits.dailyInputTokens.toLocaleString()} token(s)`,
+        );
       }
       for (const templatePlan of plan.templates) {
         console.log(`\n${templatePlan.template} -> ${templatePlan.output}`);
-        console.log(`  ${templatePlan.instructions} slot(s), ${templatePlan.batches.length} batch(es)`);
+        console.log(
+          `  ${templatePlan.instructions} slot(s), ${templatePlan.batches.length} batch(es)`,
+        );
         for (const batch of templatePlan.batches) {
           const flags = [
             batch.exceedsTarget ? 'over target' : undefined,
@@ -125,12 +132,12 @@ export default async function buildCmd(
         `${result.template} -> ${result.output} (${result.changed ? 'updated' : 'unchanged'}${stabilized})`,
       );
     }
-
   } catch (e) {
     spinner?.stop();
     throw e;
   } finally {
     await logger.close();
+    printTraceSummary(logger);
   }
 }
 

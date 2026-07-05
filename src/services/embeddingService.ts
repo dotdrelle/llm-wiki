@@ -108,7 +108,10 @@ export class EmbeddingService {
   private async fetchMissingEmbeddings(
     missingInputs: Array<{ text: string; index: number }>,
   ): Promise<number[][]> {
-    const fetchInputs = async (input: string[]): Promise<{ res: Response; raw: string }> => {
+    const fetchInputs = async (
+      input: string[],
+    ): Promise<{ res: Response; raw: string }> => {
+      const startedAt = Date.now();
       const res = await fetch(
         `${this.config.retrieval.vector.baseUrl.replace(/\/$/, '')}/embeddings`,
         {
@@ -126,7 +129,13 @@ export class EmbeddingService {
           signal: AbortSignal.timeout(this.config.retrieval.vector.timeoutMs),
         },
       );
-      return { res, raw: await res.text() };
+      const raw = await res.text();
+      this.logger?.recordProviderMetric?.({
+        kind: 'embedding',
+        calls: 1,
+        latencyMs: Date.now() - startedAt,
+      });
+      return { res, raw };
     };
 
     let raw = '';
@@ -161,7 +170,9 @@ export class EmbeddingService {
       if (!res.ok) {
         if (missingInputs.length > 1) {
           const midpoint = Math.ceil(missingInputs.length / 2);
-          const left = await this.fetchMissingEmbeddings(missingInputs.slice(0, midpoint));
+          const left = await this.fetchMissingEmbeddings(
+            missingInputs.slice(0, midpoint),
+          );
           const right = await this.fetchMissingEmbeddings(missingInputs.slice(midpoint));
           return [...left, ...right];
         }
@@ -222,6 +233,13 @@ export class EmbeddingService {
   async embed(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) return [];
     const cached = await Promise.all(texts.map((text) => this.readCachedEmbedding(text)));
+    const cacheHits = cached.filter(Boolean).length;
+    if (cacheHits > 0) {
+      this.logger?.recordProviderMetric?.({
+        kind: 'embedding',
+        cacheHits,
+      });
+    }
     const missingInputs = texts
       .map((text, index) => ({ text, index }))
       .filter((item) => !cached[item.index]);

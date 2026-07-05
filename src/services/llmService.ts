@@ -1,5 +1,8 @@
 import OpenAI from 'openai';
-import type { ChatCompletionChunk, ChatCompletionMessageParam } from 'openai/resources/chat/completions';
+import type {
+  ChatCompletionChunk,
+  ChatCompletionMessageParam,
+} from 'openai/resources/chat/completions';
 import { ZodError } from 'zod';
 import type { ZodType } from 'zod';
 import {
@@ -45,7 +48,9 @@ interface ProviderErrorDetails {
 }
 
 function supportsTemperature(config: AppConfig): boolean {
-  return !(config.llm.provider === 'openai' && /^gpt-5(?:[.-]|$)/i.test(config.llm.model));
+  return !(
+    config.llm.provider === 'openai' && /^gpt-5(?:[.-]|$)/i.test(config.llm.model)
+  );
 }
 
 function readNumber(value: unknown): number | undefined {
@@ -89,7 +94,10 @@ export class LLMService {
     });
   }
 
-  private async throttleRequestStart(logger?: TraceLogger, label?: string): Promise<void> {
+  private async throttleRequestStart(
+    logger?: TraceLogger,
+    label?: string,
+  ): Promise<void> {
     await throttleProviderRequestStart({
       key: this.rateLimitKey,
       requestsPerMinute: this.config.limits.requestsPerMinute,
@@ -206,8 +214,10 @@ export class LLMService {
     let capturedUsage: TokenUsage | undefined;
     const maxAttempts = providerRateLimitRetryMaxAttempts();
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      let providerStartedAt = 0;
       try {
         await this.throttleRequestStart(request.logger, label);
+        providerStartedAt = Date.now();
         const createParams: any = {
           model: this.config.llm.model,
           messages,
@@ -229,7 +239,9 @@ export class LLMService {
         if (this.config.llm.provider !== 'anthropic') {
           createParams.stream_options = { include_usage: true };
         }
-        const stream = (await this.client.chat.completions.create(createParams)) as unknown as AsyncIterable<ChatCompletionChunk>;
+        const stream = (await this.client.chat.completions.create(
+          createParams,
+        )) as unknown as AsyncIterable<ChatCompletionChunk>;
         const chunks: string[] = [];
         capturedUsage = undefined;
         for await (const chunk of stream) {
@@ -243,6 +255,13 @@ export class LLMService {
         if (capturedUsage) {
           request.onUsage?.(capturedUsage);
         }
+        request.logger?.recordProviderMetric?.({
+          kind: 'llm',
+          calls: 1,
+          inputTokens: capturedUsage?.inputTokens ?? 0,
+          outputTokens: capturedUsage?.outputTokens ?? 0,
+          latencyMs: Date.now() - providerStartedAt,
+        });
         break;
       } catch (error) {
         const details = this.extractProviderErrorDetails(error);
@@ -368,7 +387,9 @@ export class LLMService {
         repaired: false,
       };
     } catch {
-      const repairedCandidate = repairIncompleteJson(extractFirstJsonCandidate(preprocessed));
+      const repairedCandidate = repairIncompleteJson(
+        extractFirstJsonCandidate(preprocessed),
+      );
       return {
         payload: JSON.parse(repairedCandidate),
         repaired: true,
@@ -402,8 +423,11 @@ export class LLMService {
   async completeJson<T>(request: CompletionRequest, schema: ZodType<T>): Promise<T> {
     const raw = await this.completeText({ ...request, jsonMode: true });
     let payload: unknown;
-    let parseMode: 'direct' | 'local_repair' | 'model_repair' | 'model_repair_local_repair' =
-      'direct';
+    let parseMode:
+      | 'direct'
+      | 'local_repair'
+      | 'model_repair'
+      | 'model_repair_local_repair' = 'direct';
 
     try {
       const parsed = this.parseJsonPayloadWithLocalRepair(raw);

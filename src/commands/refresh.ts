@@ -2,7 +2,7 @@ import type { AppConfig, RefreshCommandOptions } from '../types.ts';
 import { LLMService } from '../services/llmService.ts';
 import { RefreshService } from '../services/refreshService.ts';
 import { RetrievalService } from '../services/retrievalService.ts';
-import { createTraceLogger } from '../services/traceLogger.ts';
+import { createTraceLogger, printTraceSummary } from '../services/traceLogger.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import { Spinner } from '../utils/spinner.ts';
 
@@ -31,7 +31,8 @@ export default async function refreshCmd(
   const retrieval = new RetrievalService(workspace, config, logger);
   const service = new RefreshService(config, workspace, llm, retrieval, logger);
 
-  const spinner = options.verbose || options.debug ? null : new Spinner('Building deliverables…');
+  const spinner =
+    options.verbose || options.debug ? null : new Spinner('Building deliverables…');
   try {
     spinner?.start();
     const results = await service.refresh({
@@ -79,5 +80,6 @@ export default async function refreshCmd(
     throw e;
   } finally {
     await logger.close();
+    printTraceSummary(logger);
   }
 }

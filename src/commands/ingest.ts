@@ -7,7 +7,7 @@ import { RetrievalService } from '../services/retrievalService.ts';
 import { EmbeddingService } from '../services/embeddingService.ts';
 import { RerankService } from '../services/rerankService.ts';
 import { VectorIndexService } from '../services/vectorIndexService.ts';
-import { createTraceLogger } from '../services/traceLogger.ts';
+import { createTraceLogger, printTraceSummary } from '../services/traceLogger.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import { Spinner } from '../utils/spinner.ts';
 
@@ -170,7 +170,9 @@ export default async function ingestCmd(
             console.warn(`- ${warning}`);
           }
           if (indexResult.warnings.length > 5) {
-            console.warn(`- ... ${indexResult.warnings.length - 5} more skipped chunk(s).`);
+            console.warn(
+              `- ... ${indexResult.warnings.length - 5} more skipped chunk(s).`,
+            );
           }
         }
       } catch (error) {
@@ -179,7 +181,9 @@ export default async function ingestCmd(
             error instanceof Error ? error.message : String(error)
           }`,
         );
-        console.warn('Run `wiki index` after fixing the embedding/reranker configuration.');
+        console.warn(
+          'Run `wiki index` after fixing the embedding/reranker configuration.',
+        );
       }
     }
   } catch (e) {
@@ -187,6 +191,7 @@ export default async function ingestCmd(
     throw e;
   } finally {
     await logger.close();
+    printTraceSummary(logger);
   }
 }
 

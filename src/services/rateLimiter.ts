@@ -1,16 +1,9 @@
 import { createHash } from 'node:crypto';
-import {
-  mkdir,
-  open,
-  readFile,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from 'node:fs/promises';
+import { mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { rmSync } from 'node:fs';
 import path from 'node:path';
 import type { TraceLogger } from './traceLogger.ts';
+import type { TraceProviderKind } from './traceLogger.ts';
 
 const rateLimiterQueues = new Map<string, Promise<void>>();
 const rateLimiterStarts = new Map<string, number[]>();
@@ -52,6 +45,12 @@ function effectiveRequestsPerMinute(requestsPerMinute: number): number {
   return Math.max(1, Math.min(configured, Math.floor(share)));
 }
 
+function providerKindFromLabel(label?: string): TraceProviderKind {
+  if (label === 'embedding') return 'embedding';
+  if (label === 'rerank') return 'rerank';
+  return 'llm';
+}
+
 function headerValue(headers: unknown, name: string): string | undefined {
   if (!headers) return undefined;
   if (headers instanceof Headers) {
@@ -70,7 +69,11 @@ export function providerRateLimitRetryMaxAttempts(): number {
   return readPositiveIntegerEnv('LLM_WIKI_RATE_LIMIT_RETRY_MAX_ATTEMPTS', 3);
 }
 
-export function pruneWindowTimestamps(timestamps: number[], now: number, windowMs: number): number[] {
+export function pruneWindowTimestamps(
+  timestamps: number[],
+  now: number,
+  windowMs: number,
+): number[] {
   const threshold = now - windowMs;
   return timestamps.filter((startedAt) => startedAt > threshold);
 }
@@ -82,7 +85,11 @@ function pruneStarts(key: string, now: number, windowMs: number): number[] {
 }
 
 function recordLocalStart(key: string, startedAt: number, windowMs: number): void {
-  const starts = pruneWindowTimestamps(rateLimiterStarts.get(key) ?? [], startedAt, windowMs);
+  const starts = pruneWindowTimestamps(
+    rateLimiterStarts.get(key) ?? [],
+    startedAt,
+    windowMs,
+  );
   starts.push(startedAt);
   rateLimiterStarts.set(key, starts);
 }
@@ -95,7 +102,9 @@ function localWindowRemainingMs(key: string): number | undefined {
   if (oldest === undefined) return undefined;
   const remainingMs = oldest + windowMs - now;
   if (remainingMs <= 0) return undefined;
-  return remainingMs + readPositiveIntegerEnv('LLM_WIKI_RATE_LIMIT_RETRY_SAFETY_MS', 1_000);
+  return (
+    remainingMs + readPositiveIntegerEnv('LLM_WIKI_RATE_LIMIT_RETRY_SAFETY_MS', 1_000)
+  );
 }
 
 function retryFallbackMs(): number {
@@ -140,6 +149,10 @@ export async function waitForProviderRateLimitRetry(options: {
     retryAt,
     ...options.traceData,
   });
+  options.logger?.recordProviderMetric?.({
+    kind: providerKindFromLabel(options.label),
+    throttleMs: options.waitMs,
+  });
   await new Promise((resolve) => setTimeout(resolve, options.waitMs));
 }
 
@@ -181,7 +194,12 @@ async function acquireLock(lockPath: string): Promise<() => Promise<void>> {
   }
 }
 
-async function readSharedStarts(filePath: string, key: string, now: number, windowMs: number): Promise<number[]> {
+async function readSharedStarts(
+  filePath: string,
+  key: string,
+  now: number,
+  windowMs: number,
+): Promise<number[]> {
   try {
     const bucket = JSON.parse(await readFile(filePath, 'utf8')) as SharedRateLimitBucket;
     if (bucket.version !== 1 || bucket.key !== key || !Array.isArray(bucket.starts)) {
@@ -197,7 +215,11 @@ async function readSharedStarts(filePath: string, key: string, now: number, wind
   }
 }
 
-async function writeSharedStarts(filePath: string, key: string, starts: number[]): Promise<void> {
+async function writeSharedStarts(
+  filePath: string,
+  key: string,
+  starts: number[],
+): Promise<void> {
   const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   await writeFile(
     tmpPath,
@@ -263,6 +285,10 @@ async function throttleSharedProviderRequestStart(
       retryAt,
       shared: true,
     });
+    options.logger?.recordProviderMetric?.({
+      kind: providerKindFromLabel(options.label),
+      throttleMs: waitMs,
+    });
     await sleep(waitMs);
   }
 }
@@ -292,6 +318,10 @@ async function throttleLocalProviderRequestStart(
           waitMs,
           retryAt,
         });
+        options.logger?.recordProviderMetric?.({
+          kind: providerKindFromLabel(options.label),
+          throttleMs: waitMs,
+        });
         await new Promise((resolve) => setTimeout(resolve, waitMs));
       }
       recordLocalStart(options.key, Date.now(), windowMs);
@@ -303,7 +333,9 @@ async function throttleLocalProviderRequestStart(
   }
 }
 
-export async function throttleProviderRequestStart(options: ProviderThrottleOptions): Promise<void> {
+export async function throttleProviderRequestStart(
+  options: ProviderThrottleOptions,
+): Promise<void> {
   const requestsPerMinute = effectiveRequestsPerMinute(options.requestsPerMinute);
   const windowMs = requestWindowMs();
   try {
