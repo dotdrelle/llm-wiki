@@ -96,7 +96,20 @@ retrieval:
 | Key        | Description                                                                                                                                                | Default |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `preset`   | Optional shortcut: `albert`, `openai`, `ollama`, or `nvidia`. Explicit file values always win.                                                             | —       |
+| `wikiRoot` | Optional workspace root override. Normally omit it and use the directory containing `.wikirc.yaml` or `--workspace`.                                       | config directory |
 | `language` | Language for all LLM-generated content. Use a natural-language name such as `french`, `english`, or `español`. Overrides the language of source documents. | `fr`    |
+
+### Presets
+
+Presets reduce typing only; they are never required. The merge order is
+`field in file > preset > schema default`.
+
+| Preset   | Applies                                                                                         |
+| -------- | ----------------------------------------------------------------------------------------------- |
+| `albert` | Etalab Albert base URL, BGE-M3 embeddings/reranker, vector enabled, BM25 build strategy, RPM 100 |
+| `openai` | OpenAI base URL, `OPENAI_API_KEY`, vector disabled, BM25 build strategy                         |
+| `ollama` | Local Ollama base URL, `apiKey: ollama`, `numCtx: 32768`, vector disabled, RPM 50               |
+| `nvidia` | NVIDIA OpenAI-compatible base URL, `NVIDIA_API_KEY`, vector disabled, RPM 40                    |
 
 ## `llm`
 
@@ -107,11 +120,14 @@ retrieval:
 | `apiKey`         | API key for this workspace. Recommended for remote providers. Env vars remain available as standalone fallbacks.                                     | —                  |
 | `apiKeyEnv`      | Name of an environment variable containing the API key. Keeps secrets outside `.wikirc.yaml`.                                                        | —                  |
 | `baseUrl`        | Provider base URL                                                                                                                                    | provider-dependent |
-| `temperature`    | Sampling temperature (0–2)                                                                                                                           | `0.1`              |
-| `timeoutMs`      | Request timeout in milliseconds                                                                                                                      | `600000`           |
+| `temperature`    | Sampling temperature. Valid range: `0` to `2`. Some providers/models ignore or reject non-default temperatures.                                      | `0.1`              |
+| `timeoutMs`      | Request timeout in milliseconds. Must be positive.                                                                                                   | `600000`           |
 | `numCtx`         | Active context window of the LLM server, in tokens. Useful for Ollama and local/OpenAI-compatible servers so `wiki doctor` can tune context budgets. | —                  |
 | `flashAttention` | Ollama hint for remote/containerized servers when env vars cannot be detected                                                                        | —                  |
 | `kvCacheType`    | Ollama KV cache quantization: `f16`, `q8_0`, or `q4_0`                                                                                               | —                  |
+
+API key resolution order is `llm.apiKey`, then `llm.apiKeyEnv`, then provider
+fallbacks (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `ollama` for Ollama).
 
 ### Provider snippets
 
@@ -212,8 +228,11 @@ These keys describe operational and prompt budgets used by `wiki build --plan`, 
 | `dailyInputTokens`         | Optional daily input-token budget, printed by `wiki build --plan` when set                  | —       |
 | `targetInputTokensPerCall` | Preferred input-token budget per build call. The builder starts a new batch above this size | `40000` |
 | `maxInputTokensPerCall`    | Hard input-token budget per build call. The builder trims retrieved context above this size | `50000` |
+| `maxProfileChars`          | Maximum workspace profile characters loaded into prompts before summary fallback            | `4000`  |
 
 `targetInputTokensPerCall` must be less than or equal to `maxInputTokensPerCall`.
+`maxInFlightRequests` is capped at `16`; `slotBatchSize` is capped separately
+at `50`.
 
 `requestsPerMinute` limits the start rate of LLM provider calls across `ingest`,
 `build`, and `refresh`. Embeddings and rerank inherit this value unless
@@ -242,6 +261,27 @@ throttle decides when each request is allowed to start.
 
 Vector retrieval options are documented in [vector-search.md](./vector-search.md).
 
+### `retrieval.vector`
+
+| Key                         | Description                                                                                         | Default |
+| --------------------------- | --------------------------------------------------------------------------------------------------- | ------- |
+| `enabled`                   | Enable vector retrieval/index usage. Lexical BM25 fallback remains available.                       | `false` |
+| `baseUrl`                   | OpenAI-compatible base URL for `/embeddings` and `/rerank`. Defaults to `llm.baseUrl`.              | `llm.baseUrl` |
+| `apiKey`                    | Inline API key for vector endpoints.                                                               | — |
+| `apiKeyEnv`                 | Environment variable containing the vector API key.                                                | — |
+| `requestsPerMinute`         | Separate RPM budget for embeddings/rerank. Defaults to `limits.requestsPerMinute`.                  | LLM RPM |
+| `timeoutMs`                 | Vector endpoint timeout in milliseconds. Defaults to `llm.timeoutMs` or `600000`.                  | `600000` |
+| `embeddingModel`            | Model sent to `/embeddings`.                                                                       | `BAAI/bge-m3` |
+| `rerankEnabled`             | Enable `/rerank` after vector search for chat/MCP/search style queries.                            | `true` |
+| `rerankerModel`             | Model sent to `/rerank`; kept explicit in scaffold because quality/cost tradeoff is user-visible.  | `BAAI/bge-reranker-v2-m3` |
+| `topK`                      | Vector candidates retrieved before reranking. Valid range: `1` to `200`.                           | `48` |
+| `rerankTopK`                | Candidates sent to reranker. Valid range: `1` to `100`.                                            | `24` |
+| `maxResults`                | Final results returned to retrieval consumers. Valid range: `1` to `24`.                           | `6` |
+
+Vector API key resolution order is `retrieval.vector.apiKey`, then
+`retrieval.vector.apiKeyEnv`, then `WIKI_VECTOR_API_KEY`, then
+`ALBERT_API_KEY`, then the resolved LLM API key.
+
 > **Context budget** — `wiki build` now plans batches using the same logic as `wiki build --plan`: it groups slots up to `limits.targetInputTokensPerCall`, uses `build.slotBatchSize` only as an optional compatibility ceiling, and trims retrieved context if a batch exceeds `limits.maxInputTokensPerCall`. Build context uses BM25 lexical retrieval by default; set `retrieval.buildStrategy: hybrid` to re-enable vector/rerank for build on a quota-free provider. Run `wiki doctor` and `wiki build --plan` after changing these values.
 
 ## `mcp`
@@ -255,8 +295,21 @@ Vector retrieval options are documented in [vector-search.md](./vector-search.md
 | `tls.keyPath`  | Path to TLS private key                                    | —       |
 | `tls.caPath`   | Path to CA certificate (optional, for mutual TLS)          | —       |
 
-Env var equivalents: `WIKI_MCP_AUTH_TOKEN`, `WIKI_MCP_READ_TOKEN`, `WIKI_MCP_WRITE_TOKEN`, `WIKI_MCP_TLS_CERT_PATH`, `WIKI_MCP_TLS_KEY_PATH`, `WIKI_MCP_TLS_CA_PATH`.
+Env var equivalents: `WIKI_MCP_ACCESS_KEY` or legacy
+`WIKI_MCP_AUTH_TOKEN`, `WIKI_MCP_READ_TOKEN`, `WIKI_MCP_WRITE_TOKEN`,
+`WIKI_MCP_TLS_CERT_PATH`, `WIKI_MCP_TLS_KEY_PATH`, `WIKI_MCP_TLS_CA_PATH`.
 
-`WIKI_MCP_AUTH_TOKEN` / `accessKey` is a legacy full-access token. Prefer
-separate read/write tokens for HTTP deployments. Rate limiting is controlled by
+`WIKI_MCP_ACCESS_KEY` / `mcp.accessKey` is a full-access token. Prefer separate
+read/write tokens for shared HTTP deployments. Rate limiting is controlled by
 `WIKI_MCP_RATE_LIMIT_REQUESTS` and `WIKI_MCP_RATE_LIMIT_WINDOW_MS`.
+
+## `serve`
+
+`serve` currently has no YAML keys. HTTPS for `wiki serve` is configured through
+environment variables only:
+
+| Env var                    | Description                          |
+| -------------------------- | ------------------------------------ |
+| `WIKI_SERVE_TLS_CERT_PATH` | TLS certificate path for `wiki serve` |
+| `WIKI_SERVE_TLS_KEY_PATH`  | TLS private key path                  |
+| `WIKI_SERVE_TLS_CA_PATH`   | Optional CA path                      |
