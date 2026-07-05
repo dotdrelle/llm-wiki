@@ -80,9 +80,25 @@ describe('config resolution', () => {
       rerankEnabled: true,
       rerankerModel: 'BAAI/bge-reranker-v2-m3',
       topK: 40,
-      rerankTopK: 80,
+      rerankTopK: 24,
       maxResults: 6,
     });
+    expect(config.retrieval.buildStrategy).toBe('bm25');
+  });
+
+  it('parses hybrid build retrieval strategy', () => {
+    const config = resolveConfig(
+      {
+        retrieval: {
+          buildStrategy: 'hybrid',
+        },
+      },
+      '/tmp/wiki',
+    );
+
+    expect(config.retrieval.buildStrategy).toBe('hybrid');
+    expect(config.retrieval.vector.topK).toBe(48);
+    expect(config.retrieval.vector.rerankTopK).toBe(24);
   });
 
   it('disables vector retrieval by default', () => {

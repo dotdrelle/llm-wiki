@@ -15,8 +15,8 @@ llm:
 
 build:
   refreshOnIngest: false
-  slotBatchSize: 3
-  maxBuildContextChars: 12000
+  # slotBatchSize: 8 # optional compatibility ceiling; token budget batches first
+  maxBuildContextChars: 24000
 
 limits:
   requestsPerMinute: 50
@@ -31,6 +31,7 @@ retrieval:
   maxChunksPerPage: 2
   maxChunkChars: 3000
   maxSourceChars: 8000
+  buildStrategy: bm25
   vector:
     enabled: false
     # Defaults to llm.baseUrl. Set this when embeddings/reranking use a separate service.
@@ -40,8 +41,8 @@ retrieval:
     embeddingModel: BAAI/bge-m3
     rerankEnabled: false
     rerankerModel: BAAI/bge-reranker-v2-m3
-    topK: 120
-    rerankTopK: 80
+    topK: 48
+    rerankTopK: 24
     maxResults: 6
 
 mcp:

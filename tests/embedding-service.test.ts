@@ -35,6 +35,7 @@ function createConfig(): AppConfig {
       maxChunksPerPage: 2,
       maxChunkChars: 3000,
       maxSourceChars: 8000,
+      buildStrategy: 'bm25',
       vector: {
         enabled: true,
         baseUrl: 'https://example.test/v1',
@@ -145,9 +146,9 @@ describe('embedding service', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(new EmbeddingService(createConfig()).embed(['a', 'b', 'c'])).resolves.toEqual(
-      [[97], [98], [99]],
-    );
+    await expect(
+      new EmbeddingService(createConfig()).embed(['a', 'b', 'c']),
+    ).resolves.toEqual([[97], [98], [99]]);
     expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 

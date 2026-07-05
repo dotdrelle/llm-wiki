@@ -38,6 +38,7 @@ retrieval:
   maxChunksPerPage: 2
   maxChunkChars: 3000
   maxSourceChars: 8000
+  buildStrategy: bm25
   vector:
     enabled: false
     baseUrl: http://127.0.0.1:7997/v1
@@ -46,8 +47,8 @@ retrieval:
     embeddingModel: BAAI/bge-m3
     rerankEnabled: true
     rerankerModel: BAAI/bge-reranker-v2-m3
-    topK: 120
-    rerankTopK: 80
+    topK: 48
+    rerankTopK: 24
     maxResults: 6
 ```
 
@@ -195,10 +196,11 @@ throttle decides when each request is allowed to start.
 | `maxChunksPerPage` | Maximum matching chunks returned from the same wiki page | `2`     |
 | `maxChunkChars`    | Maximum characters kept from a retrieved wiki chunk      | `3000`  |
 | `maxSourceChars`   | Maximum characters read from a raw source during ingest  | `8000`  |
+| `buildStrategy`    | Build-context retrieval strategy: `bm25` or `hybrid`     | `bm25`  |
 
 Vector retrieval options are documented in [vector-search.md](./vector-search.md).
 
-> **Context budget** — `wiki build` now plans batches using the same logic as `wiki build --plan`: it groups slots up to `limits.targetInputTokensPerCall`, uses `build.slotBatchSize` only as an optional compatibility ceiling, and trims retrieved context if a batch exceeds `limits.maxInputTokensPerCall`. Run `wiki doctor` and `wiki build --plan` after changing these values.
+> **Context budget** — `wiki build` now plans batches using the same logic as `wiki build --plan`: it groups slots up to `limits.targetInputTokensPerCall`, uses `build.slotBatchSize` only as an optional compatibility ceiling, and trims retrieved context if a batch exceeds `limits.maxInputTokensPerCall`. Build context uses BM25 lexical retrieval by default; set `retrieval.buildStrategy: hybrid` to re-enable vector/rerank for build on a quota-free provider. Run `wiki doctor` and `wiki build --plan` after changing these values.
 
 ## `mcp`
 

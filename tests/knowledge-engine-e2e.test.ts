@@ -43,6 +43,7 @@ function createConfig(root: string): AppConfig {
       maxChunksPerPage: 2,
       maxChunkChars: 3000,
       maxSourceChars: 8000,
+      buildStrategy: 'bm25',
       vector: {
         enabled: true,
         baseUrl: 'http://127.0.0.1:7997/v1',
@@ -66,7 +67,11 @@ class MemoryTraceLogger implements TraceLogger {
   readonly displayPath = '.wiki/logs/e2e.log';
   readonly debugEnabled = false;
   readonly verboseEnabled = false;
-  readonly entries: Array<{ level: string; event: string; data?: Record<string, unknown> }> = [];
+  readonly entries: Array<{
+    level: string;
+    event: string;
+    data?: Record<string, unknown>;
+  }> = [];
 
   async info(event: string, data?: Record<string, unknown>): Promise<void> {
     this.entries.push({ level: 'info', event, data });
@@ -244,10 +249,13 @@ describe('knowledge engine E2E', () => {
       'applied',
       'applied',
     ]);
-    await expect(readFile(path.join(root, 'raw', 'ingested', 'product-brief.md'), 'utf8'))
-      .resolves.toContain('convertedBy: documents');
+    await expect(
+      readFile(path.join(root, 'raw', 'ingested', 'product-brief.md'), 'utf8'),
+    ).resolves.toContain('convertedBy: documents');
 
-    const lexicalResults = await retrieval.search('Donna connaissance livrable', { limit: 3 });
+    const lexicalResults = await retrieval.search('Donna connaissance livrable', {
+      limit: 3,
+    });
     expect(lexicalResults.map((result) => result.page.relativePath)).toContain(
       'wiki/concepts/donna-workflow.md',
     );
@@ -260,7 +268,9 @@ describe('knowledge engine E2E', () => {
     );
     const indexResult = await vectorIndex.buildIndex();
     expect(indexResult.indexedChunks).toBeGreaterThan(0);
-    const vectorResults = await vectorIndex.search('Donna workflow connaissance', { limit: 3 });
+    const vectorResults = await vectorIndex.search('Donna workflow connaissance', {
+      limit: 3,
+    });
     expect(vectorResults.map((result) => result.page.relativePath)).toContain(
       'wiki/concepts/donna-workflow.md',
     );
@@ -274,7 +284,10 @@ describe('knowledge engine E2E', () => {
     );
     const buildResults = await build.build();
     expect(buildResults[0].output).toBe('deliverables/brief.md');
-    const deliverable = await readFile(path.join(root, 'deliverables', 'brief.md'), 'utf8');
+    const deliverable = await readFile(
+      path.join(root, 'deliverables', 'brief.md'),
+      'utf8',
+    );
     expect(deliverable).toContain('Donna propose un moteur de connaissance');
     expect(deliverable).toContain('[src: wiki/concepts/donna-workflow.md]');
 

@@ -25,7 +25,7 @@ import type {
   WikiPage,
 } from '../types.ts';
 import type { LLMService } from './llmService.ts';
-import type { RetrievalService } from './retrievalService.ts';
+import type { RetrievalSearchOptions, RetrievalService } from './retrievalService.ts';
 import type { TraceLogger } from './traceLogger.ts';
 import type { WorkspaceService } from './workspaceService.ts';
 
@@ -213,6 +213,7 @@ export class BuildService {
         this.retrieval.search(query, {
           limit: this.config.retrieval.maxContextFiles,
           includeRaw: false,
+          intent: 'build',
         }),
       ),
     );
@@ -238,13 +239,14 @@ export class BuildService {
 
   private searchContextCached(
     query: string,
-    options: { limit?: number; includeRaw?: boolean; rerank?: boolean },
+    options: RetrievalSearchOptions,
   ): Promise<SearchResult[]> {
     const key = JSON.stringify({
       query,
       limit: options.limit,
       includeRaw: options.includeRaw ?? false,
       rerank: options.rerank ?? true,
+      intent: options.intent ?? 'search',
     });
     let cached = this.contextSearchCache.get(key);
     if (!cached) {
@@ -400,6 +402,7 @@ export class BuildService {
                 limit: 15,
                 includeRaw: false,
                 rerank: false,
+                intent: 'build',
               }),
             ] as [string, SearchResult[]],
         ),
@@ -415,6 +418,7 @@ export class BuildService {
             limit: Math.max(24, this.config.retrieval.vector.maxResults),
             includeRaw: false,
             rerank: false,
+            intent: 'build',
           },
         );
         const instructionFocusQueries = this.extractFocusQueries(
@@ -426,6 +430,7 @@ export class BuildService {
               limit: 15,
               includeRaw: false,
               rerank: false,
+              intent: 'build',
             }),
           ),
         );
@@ -434,6 +439,7 @@ export class BuildService {
           [primaryContext, ...templateFocusContexts.values(), ...focusContexts].flat(),
         );
         const rankedContext =
+          this.config.retrieval.buildStrategy === 'hybrid' &&
           typeof this.retrieval.rerankResults === 'function'
             ? await this.retrieval.rerankResults(rerankQuery, mergedContext, {
                 limit: Math.max(24, this.config.retrieval.vector.maxResults),

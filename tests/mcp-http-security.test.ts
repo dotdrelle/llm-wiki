@@ -33,6 +33,7 @@ function config(mcp: AppConfig['mcp']): AppConfig {
       maxChunksPerPage: 2,
       maxChunkChars: 3000,
       maxSourceChars: 8000,
+      buildStrategy: 'bm25',
       vector: {
         enabled: false,
         baseUrl: 'https://example.invalid',

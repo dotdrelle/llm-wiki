@@ -92,6 +92,13 @@ interface Bm25Corpus {
   averageLength: number;
 }
 
+export interface RetrievalSearchOptions {
+  limit?: number;
+  includeRaw?: boolean;
+  rerank?: boolean;
+  intent?: 'build' | 'search';
+}
+
 function countTokens(tokens: string[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const token of tokens) counts.set(token, (counts.get(token) ?? 0) + 1);
@@ -142,29 +149,39 @@ function bm25TermScore(
   documentCount: number,
 ): number {
   if (termFrequency <= 0 || documentFrequency <= 0 || documentCount <= 0) return 0;
-  const idf = Math.log(1 + (documentCount - documentFrequency + 0.5) / (documentFrequency + 0.5));
-  const denominator = termFrequency
-    + BM25_K1 * (1 - BM25_B + BM25_B * (documentLength / Math.max(1, averageLength)));
+  const idf = Math.log(
+    1 + (documentCount - documentFrequency + 0.5) / (documentFrequency + 0.5),
+  );
+  const denominator =
+    termFrequency +
+    BM25_K1 * (1 - BM25_B + BM25_B * (documentLength / Math.max(1, averageLength)));
   return idf * ((termFrequency * (BM25_K1 + 1)) / denominator);
 }
 
-function scoreDocument(queryTokens: string[], document: LexicalDocument, corpus: Bm25Corpus): number {
+function scoreDocument(
+  queryTokens: string[],
+  document: LexicalDocument,
+  corpus: Bm25Corpus,
+): number {
   const queryCounts = countTokens(queryTokens);
   const documentLength = Math.max(1, document.tokens.length);
   let score = 0;
 
   for (const [token, queryFrequency] of queryCounts) {
-    score += queryFrequency * bm25TermScore(
-      document.tokenCounts.get(token) ?? 0,
-      corpus.documentFrequency.get(token) ?? 0,
-      documentLength,
-      corpus.averageLength,
-      corpus.documents.length,
-    );
+    score +=
+      queryFrequency *
+      bm25TermScore(
+        document.tokenCounts.get(token) ?? 0,
+        corpus.documentFrequency.get(token) ?? 0,
+        documentLength,
+        corpus.averageLength,
+        corpus.documents.length,
+      );
     if (document.headingTokens.includes(token)) score += 1.8;
     if (document.nameTokens.includes(token)) score += 3.6;
     if (document.pathTokens.includes(token)) score += 1.4;
-    if (canonicalizeName(document.page.name).includes(canonicalizeName(token))) score += 0.8;
+    if (canonicalizeName(document.page.name).includes(canonicalizeName(token)))
+      score += 0.8;
   }
 
   return score;
@@ -316,11 +333,11 @@ export class RetrievalService {
     return this.wikiPagesCache;
   }
 
-  async search(
-    query: string,
-    options?: { limit?: number; includeRaw?: boolean; rerank?: boolean },
-  ): Promise<SearchResult[]> {
+  async search(query: string, options?: RetrievalSearchOptions): Promise<SearchResult[]> {
+    const buildBm25Only =
+      options?.intent === 'build' && this.config.retrieval.buildStrategy === 'bm25';
     if (
+      !buildBm25Only &&
       !options?.includeRaw &&
       this.config.retrieval.vector.enabled &&
       !this.vectorDisabledAfterError
@@ -353,7 +370,9 @@ export class RetrievalService {
         if (error instanceof VectorIndexConfigMismatchError) {
           this.vectorDisabledAfterError = true;
           const message = error.message;
-          await this.logVectorFallback('vector-index-mismatch', query, error, { disabled: true });
+          await this.logVectorFallback('vector-index-mismatch', query, error, {
+            disabled: true,
+          });
           console.warn(`Warning: vector retrieval disabled — ${message}`);
         } else {
           this.consecutiveVectorErrors += 1;
@@ -416,9 +435,10 @@ export class RetrievalService {
     details: Record<string, unknown> = {},
   ): Promise<void> {
     if (!this.logger) return;
-    const key = reason === 'missing-index'
-      ? reason
-      : `${reason}:${String(error)}:${details.disabled ? 'disabled' : 'active'}`;
+    const key =
+      reason === 'missing-index'
+        ? reason
+        : `${reason}:${String(error)}:${details.disabled ? 'disabled' : 'active'}`;
     if (this.loggedVectorFallbacks.has(key)) return;
     this.loggedVectorFallbacks.add(key);
     await this.logger.warn('retrieval:vector-fallback', {
@@ -463,7 +483,10 @@ export class RetrievalService {
               : extractRelatedPaths(document.chunk.content),
           chunk: isWholePageChunk
             ? undefined
-            : { headingPath: document.chunk.headingPath, content: document.chunk.content },
+            : {
+                headingPath: document.chunk.headingPath,
+                content: document.chunk.content,
+              },
         });
       }
     }

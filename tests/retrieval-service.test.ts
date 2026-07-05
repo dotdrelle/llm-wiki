@@ -39,6 +39,7 @@ function createConfig(root: string): AppConfig {
       maxChunksPerPage: 2,
       maxChunkChars: 3000,
       maxSourceChars: 8000,
+      buildStrategy: 'bm25',
       vector: {
         enabled: true,
         baseUrl: 'http://127.0.0.1:11434/v1',
@@ -189,6 +190,32 @@ describe('retrieval service', () => {
     });
   });
 
+  it('uses lexical BM25 directly for build context by default', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-retrieval-build-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await writeFile(
+      path.join(root, 'wiki', 'index.md'),
+      '# Index\n\nArchitecture build context.\n',
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    config.retrieval.vector.enabled = true;
+    config.retrieval.buildStrategy = 'bm25';
+    const logger = new MemoryTraceLogger();
+    const retrieval = new RetrievalService(new WorkspaceService(config), config, logger);
+
+    const results = await retrieval.search('architecture', {
+      includeRaw: false,
+      intent: 'build',
+    });
+
+    expect(results.map((result) => result.page.relativePath)).toContain('wiki/index.md');
+    expect(
+      logger.entries.find((entry) => entry.event === 'retrieval:vector-fallback'),
+    ).toBeUndefined();
+  });
+
   it('disables vector retrieval after repeated consecutive vector errors', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-retrieval-'));
     await mkdir(path.join(root, 'wiki'), { recursive: true });
@@ -204,9 +231,7 @@ describe('retrieval service', () => {
     const retrieval = new RetrievalService(new WorkspaceService(config), config, logger);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     let vectorCalls = 0;
-    (
-      retrieval as unknown as { vectorIndex: VectorIndex }
-    ).vectorIndex = {
+    (retrieval as unknown as { vectorIndex: VectorIndex }).vectorIndex = {
       stats: async () => ({ exists: true, rows: 1 }),
       buildIndex: async () => {
         throw new Error('buildIndex should not be called');
@@ -251,9 +276,7 @@ describe('retrieval service', () => {
     const retrieval = new RetrievalService(new WorkspaceService(config), config, logger);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     let vectorCalls = 0;
-    (
-      retrieval as unknown as { vectorIndex: VectorIndex }
-    ).vectorIndex = {
+    (retrieval as unknown as { vectorIndex: VectorIndex }).vectorIndex = {
       stats: async () => ({ exists: true, rows: 1 }),
       buildIndex: async () => {
         throw new Error('buildIndex should not be called');
@@ -275,7 +298,8 @@ describe('retrieval service', () => {
 
     expect(vectorCalls).toBe(1);
     expect(
-      logger.entries.find((entry) => entry.data?.reason === 'vector-index-mismatch')?.data,
+      logger.entries.find((entry) => entry.data?.reason === 'vector-index-mismatch')
+        ?.data,
     ).toMatchObject({
       reason: 'vector-index-mismatch',
       disabled: true,

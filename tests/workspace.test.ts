@@ -34,6 +34,7 @@ function createConfig(root: string): AppConfig {
       maxChunksPerPage: 2,
       maxChunkChars: 3000,
       maxSourceChars: 8000,
+      buildStrategy: 'bm25',
       vector: {
         enabled: false,
         baseUrl: 'http://127.0.0.1:11434/v1',
@@ -60,9 +61,9 @@ describe('workspace safety', () => {
 
     const initializedConfig = await loadConfig(root);
     expect(initializedConfig.retrieval.vector.rerankEnabled).toBe(false);
-    await expect(readFile(path.join(root, '.wiki', 'profile.md'), 'utf8')).resolves.toContain(
-      '# Workspace Profile',
-    );
+    await expect(
+      readFile(path.join(root, '.wiki', 'profile.md'), 'utf8'),
+    ).resolves.toContain('# Workspace Profile');
   });
 
   it('loads the full workspace profile when it is within the character limit', async () => {
@@ -141,7 +142,11 @@ describe('workspace safety', () => {
       '# Style\n',
       'utf8',
     );
-    await writeFile(path.join(skillRoot, '.wiki', 'skills', 'status.md'), '# Status\n', 'utf8');
+    await writeFile(
+      path.join(skillRoot, '.wiki', 'skills', 'status.md'),
+      '# Status\n',
+      'utf8',
+    );
 
     const result = await workspace.addSkill(skillRoot);
 
@@ -150,7 +155,9 @@ describe('workspace safety', () => {
     await expect(readFile(path.join(root, 'templates', 'note.md'), 'utf8')).resolves.toBe(
       '# Note\n',
     );
-    await expect(readFile(path.join(root, 'templates', 'old.md'), 'utf8')).rejects.toThrow();
+    await expect(
+      readFile(path.join(root, 'templates', 'old.md'), 'utf8'),
+    ).rejects.toThrow();
     await expect(
       readFile(path.join(root, result.backupDir, 'templates', 'old.md'), 'utf8'),
     ).resolves.toBe('# Old\n');
@@ -171,8 +178,16 @@ describe('workspace safety', () => {
     await mkdir(path.join(skillRoot, 'wiki'), { recursive: true });
     await writeFile(path.join(skillRoot, 'skill.yaml'), 'name: bad\n', 'utf8');
     await writeFile(path.join(skillRoot, 'templates', 'note.md'), '# Note\n', 'utf8');
-    await writeFile(path.join(skillRoot, 'build-context', 'rules.md'), '# Rules\n', 'utf8');
-    await writeFile(path.join(skillRoot, '.wiki', 'skills', 'status.md'), '# Status\n', 'utf8');
+    await writeFile(
+      path.join(skillRoot, 'build-context', 'rules.md'),
+      '# Rules\n',
+      'utf8',
+    );
+    await writeFile(
+      path.join(skillRoot, '.wiki', 'skills', 'status.md'),
+      '# Status\n',
+      'utf8',
+    );
     await writeFile(path.join(skillRoot, 'wiki', 'index.md'), '# Bad\n', 'utf8');
 
     await expect(workspace.addSkill(skillRoot)).rejects.toThrow(/unexpected path/i);

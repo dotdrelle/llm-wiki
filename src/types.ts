@@ -32,6 +32,7 @@ export interface RetrievalConfig {
   maxChunksPerPage: number;
   maxChunkChars: number;
   maxSourceChars: number;
+  buildStrategy: 'bm25' | 'hybrid';
   vector: VectorRetrievalConfig;
 }
 

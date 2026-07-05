@@ -89,9 +89,12 @@ retrieval:
   maxChunksPerPage: 2
   maxChunkChars: 3000
   maxSourceChars: 8000
+  buildStrategy: bm25
   vector:
     baseUrl: http://host.docker.internal:7997/v1
     rerankEnabled: false
+    topK: 48
+    rerankTopK: 24
 ```
 
 For remote or Dockerized Ollama, `doctor` cannot inspect the server process environment. Set `flashAttention` and `kvCacheType` explicitly in `.wikirc.yaml`.

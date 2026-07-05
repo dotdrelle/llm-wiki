@@ -122,7 +122,7 @@ deliverable. Unchanged sections are preserved verbatim, a hidden
 sections, and temporary `.tmp.*` candidates are deleted after the run. A normal
 `wiki build` removes any previous stabilization sidecar for the deliverable.
 
-Slots are grouped up to `build.slotBatchSize`, but the build planner can split earlier when `limits.targetInputTokensPerCall` would be exceeded. If a batch is still above `limits.maxInputTokensPerCall`, retrieved context is trimmed before the LLM call.
+Slots are grouped by `limits.targetInputTokensPerCall`; `build.slotBatchSize` is only an optional compatibility ceiling. If a batch is still above `limits.maxInputTokensPerCall`, retrieved context is trimmed before the LLM call. Build context uses BM25 by default; set `retrieval.buildStrategy: hybrid` to use vector/rerank during builds.
 
 ## `wiki refresh [templates...]`
 

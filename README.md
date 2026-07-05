@@ -296,6 +296,7 @@ retrieval:
   maxChunksPerPage: 2                       # max vector chunks per page
   maxChunkChars: 3000                       # max chars per chunk
   maxSourceChars: 8000                      # max chars per source citation
+  buildStrategy: bm25                       # bm25 for build context; hybrid re-enables vector/rerank in build
   vector:
     enabled: false                          # set true to enable vector search
     baseUrl: http://127.0.0.1:7997/v1       # OpenAI-compatible embeddings endpoint
@@ -304,8 +305,8 @@ retrieval:
     embeddingModel: BAAI/bge-m3
     rerankEnabled: true
     rerankerModel: BAAI/bge-reranker-v2-m3
-    topK: 120                               # candidates retrieved before rerank
-    rerankTopK: 80                          # candidates after rerank
+    topK: 48                                # candidates retrieved before rerank
+    rerankTopK: 24                          # candidates after rerank
     maxResults: 6                           # final results passed to LLM
 
 # MCP HTTP server bearer token (optional)

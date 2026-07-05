@@ -6,7 +6,7 @@ By default, vector search is disabled so a fresh workspace works without an embe
 
 1. `wiki index` chunks each wiki page by headings and embeds each chunk via a `/v1/embeddings` endpoint.
 2. The index is stored locally in `.wiki/vector-index` (LanceDB format) — no external database.
-3. At search time (`wiki query`, `wiki build`, `wiki ingest`, `wiki_search_context`), the query is embedded and the nearest chunks are retrieved, then optionally re-ranked by a `/v1/rerank` endpoint.
+3. At search time (`wiki query`, `wiki ingest`, `wiki_search_context`), the query is embedded and the nearest chunks are retrieved, then optionally re-ranked by a `/v1/rerank` endpoint. `wiki build` uses BM25 lexical context by default because its queries are mostly keyword-like; set `retrieval.buildStrategy: hybrid` to opt back into vector/rerank for build context.
 4. If the index is missing or the embedding call fails, the system falls back to lexical search and logs a `retrieval:vector-fallback` warning.
 
 ## Requirements
@@ -36,8 +36,8 @@ retrieval:
     embeddingModel: BAAI/bge-m3 # model served by your /v1/embeddings endpoint
     rerankEnabled: true # set false to skip /v1/rerank and keep vector distance ordering
     rerankerModel: BAAI/bge-reranker-v2-m3 # model served by your /v1/rerank endpoint
-    topK: 120 # vector candidates retrieved before re-ranking
-    rerankTopK: 80 # candidates sent to the reranker
+    topK: 48 # vector candidates retrieved before re-ranking
+    rerankTopK: 24 # candidates sent to the reranker
     maxResults: 6 # final wiki pages returned to the LLM
 ```
 
@@ -50,8 +50,8 @@ retrieval:
 | `vector.embeddingModel` | Model name for `/v1/embeddings`                    | `BAAI/bge-m3`                                              |
 | `vector.rerankEnabled`  | Enable `/v1/rerank` after vector search            | `true`                                                     |
 | `vector.rerankerModel`  | Model name for `/v1/rerank`                        | `BAAI/bge-reranker-v2-m3`                                  |
-| `vector.topK`           | Vector candidates retrieved before re-ranking      | `120`                                                      |
-| `vector.rerankTopK`     | Candidates sent to the reranker                    | `80`                                                       |
+| `vector.topK`           | Vector candidates retrieved before re-ranking      | `48`                                                       |
+| `vector.rerankTopK`     | Candidates sent to the reranker                    | `24`                                                       |
 | `vector.maxResults`     | Maximum wiki pages returned after ranking          | `6`                                                        |
 
 ## Building the index

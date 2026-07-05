@@ -36,6 +36,7 @@ function createConfig(root: string): AppConfig {
       maxChunksPerPage: 2,
       maxChunkChars: 3000,
       maxSourceChars: 8000,
+      buildStrategy: 'bm25',
       vector: {
         enabled: false,
         baseUrl: 'http://127.0.0.1:11434/v1',
@@ -183,9 +184,11 @@ class NamedRetrievalService {
 class CountingRetrievalService {
   readonly queries: string[] = [];
   readonly rerankQueries: string[] = [];
+  readonly intents: Array<string | undefined> = [];
 
-  async search(query: string): Promise<SearchResult[]> {
+  async search(query: string, options?: { intent?: string }): Promise<SearchResult[]> {
     this.queries.push(query);
+    this.intents.push(options?.intent);
     return [
       {
         page: wikiPage(`wiki/concepts/${this.queries.length}.md`, `# ${query}\n\nFacts.`),
@@ -674,6 +677,7 @@ describe('build service', () => {
     );
 
     const config = createConfig(root);
+    config.retrieval.buildStrategy = 'hybrid';
     const retrieval = new CountingRetrievalService();
     const service = new BuildService(
       config,
@@ -689,9 +693,43 @@ describe('build service', () => {
     );
     expect(focusQueries).toHaveLength(2);
     expect(retrieval.rerankQueries).toHaveLength(3);
+    expect(new Set(retrieval.intents)).toEqual(new Set(['build']));
     expect(focusQueries.some((query) => query.startsWith('One '))).toBe(false);
     expect(focusQueries.some((query) => query.startsWith('Two '))).toBe(false);
     expect(focusQueries.some((query) => query.startsWith('Three '))).toBe(false);
+  });
+
+  it('uses BM25-only build context by default without final rerank', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-bm25-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'templates'), { recursive: true });
+    await mkdir(path.join(root, 'deliverables'), { recursive: true });
+
+    await writeFile(
+      path.join(root, 'wiki', 'index.md'),
+      '# Index\n\nAlpha Beta evidence.\n',
+      'utf8',
+    );
+    await writeFile(
+      path.join(root, 'templates', 'brief.md'),
+      ['# Brief', '', '[[INSTRUCTION: Summarize Alpha Beta.]]'].join('\n'),
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    const retrieval = new CountingRetrievalService();
+    const service = new BuildService(
+      config,
+      new WorkspaceService(config),
+      new FakeLLMService() as unknown as LLMService,
+      retrieval as unknown as RetrievalService,
+    );
+
+    await service.build();
+
+    expect(config.retrieval.buildStrategy).toBe('bm25');
+    expect(retrieval.rerankQueries).toHaveLength(0);
+    expect(new Set(retrieval.intents)).toEqual(new Set(['build']));
   });
 
   it('filters index/log pages and prefers newer dated context in final prompts', async () => {

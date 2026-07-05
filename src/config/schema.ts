@@ -274,6 +274,7 @@ const retrievalSchema = z
     maxChunksPerPage: z.number().int().min(1).max(10).default(2),
     maxChunkChars: z.number().int().min(200).default(3000),
     maxSourceChars: z.number().int().min(500).default(8000),
+    buildStrategy: z.enum(['bm25', 'hybrid']).default('bm25'),
     vector: z
       .object({
         enabled: z.boolean().default(false),
@@ -283,8 +284,8 @@ const retrievalSchema = z
         embeddingModel: z.string().min(1).default('BAAI/bge-m3'),
         rerankEnabled: z.boolean().default(true),
         rerankerModel: z.string().min(1).default('BAAI/bge-reranker-v2-m3'),
-        topK: z.number().int().min(1).max(200).default(120),
-        rerankTopK: z.number().int().min(1).max(100).default(80),
+        topK: z.number().int().min(1).max(200).default(48),
+        rerankTopK: z.number().int().min(1).max(100).default(24),
         maxResults: z.number().int().min(1).max(24).default(6),
       })
       .default({
@@ -293,8 +294,8 @@ const retrievalSchema = z
         embeddingModel: 'BAAI/bge-m3',
         rerankEnabled: true,
         rerankerModel: 'BAAI/bge-reranker-v2-m3',
-        topK: 120,
-        rerankTopK: 80,
+        topK: 48,
+        rerankTopK: 24,
         maxResults: 6,
       }),
   })
@@ -303,6 +304,7 @@ const retrievalSchema = z
     maxChunksPerPage: 2,
     maxChunkChars: 3000,
     maxSourceChars: 8000,
+    buildStrategy: 'bm25',
     vector: {
       enabled: false,
       baseUrl: DEFAULT_OPENAI_BASE_URL,
@@ -310,8 +312,8 @@ const retrievalSchema = z
       embeddingModel: 'BAAI/bge-m3',
       rerankEnabled: true,
       rerankerModel: 'BAAI/bge-reranker-v2-m3',
-      topK: 120,
-      rerankTopK: 80,
+      topK: 48,
+      rerankTopK: 24,
       maxResults: 6,
     },
   });
@@ -537,6 +539,7 @@ export function resolveConfig(
       maxChunksPerPage: parsed.retrieval?.maxChunksPerPage ?? 2,
       maxChunkChars: parsed.retrieval?.maxChunkChars ?? 3000,
       maxSourceChars: parsed.retrieval?.maxSourceChars ?? 8000,
+      buildStrategy: parsed.retrieval?.buildStrategy ?? 'bm25',
       vector: {
         enabled: parsed.retrieval?.vector?.enabled ?? false,
         baseUrl: vectorBaseUrl,
@@ -546,8 +549,8 @@ export function resolveConfig(
         rerankEnabled: parsed.retrieval?.vector?.rerankEnabled ?? true,
         rerankerModel:
           parsed.retrieval?.vector?.rerankerModel ?? 'BAAI/bge-reranker-v2-m3',
-        topK: parsed.retrieval?.vector?.topK ?? 120,
-        rerankTopK: parsed.retrieval?.vector?.rerankTopK ?? 80,
+        topK: parsed.retrieval?.vector?.topK ?? 48,
+        rerankTopK: parsed.retrieval?.vector?.rerankTopK ?? 24,
         maxResults: parsed.retrieval?.vector?.maxResults ?? 6,
       },
     },

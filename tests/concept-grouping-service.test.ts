@@ -34,6 +34,7 @@ function createConfig(root: string): AppConfig {
       maxChunksPerPage: 2,
       maxChunkChars: 3000,
       maxSourceChars: 8000,
+      buildStrategy: 'bm25',
       vector: {
         enabled: false,
         baseUrl: 'http://127.0.0.1:11434/v1',
@@ -64,7 +65,11 @@ describe('concept grouping service', () => {
       '---\ngroup: Infrastructure\n---\n# ESX\n',
       'utf8',
     );
-    await writeFile(path.join(root, 'wiki', 'concepts', 'orphan.md'), '# Orphan\n', 'utf8');
+    await writeFile(
+      path.join(root, 'wiki', 'concepts', 'orphan.md'),
+      '# Orphan\n',
+      'utf8',
+    );
 
     const service = new ConceptGroupingService(new WorkspaceService(createConfig(root)));
     const plan = await service.plan();
@@ -86,8 +91,8 @@ describe('concept grouping service', () => {
     await expect(
       readFile(path.join(root, 'wiki', 'concepts', 'infrastructure', 'esx.md'), 'utf8'),
     ).resolves.toContain('# ESX');
-    await expect(readFile(path.join(root, 'wiki', 'index.md'), 'utf8')).resolves.toContain(
-      'concepts/infrastructure/esx.md',
-    );
+    await expect(
+      readFile(path.join(root, 'wiki', 'index.md'), 'utf8'),
+    ).resolves.toContain('concepts/infrastructure/esx.md');
   });
 });
