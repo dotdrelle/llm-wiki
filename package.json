@@ -13,7 +13,6 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "check-file-sizes": "node scripts/check-file-sizes.js",
-    "check-secrets": "node scripts/check-secrets.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },

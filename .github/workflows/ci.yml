@@ -19,9 +19,9 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: "! git grep -nE '(apiKey|accessKey)\\s*:\\s*(sk-|eyJ)'"
       - run: pnpm run typecheck
       - run: pnpm run lint
       - run: pnpm run check-file-sizes
-      - run: pnpm run check-secrets
       - run: pnpm test
       - run: pnpm run build
