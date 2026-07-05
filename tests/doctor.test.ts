@@ -158,7 +158,7 @@ describe('doctor qualitative diagnostics', () => {
     const output = await captureDoctor(config);
 
     expect(output).toContain('✓ Model configured-model listed by provider');
-    expect(output).toContain('✓ embedding test-embedding OK (2 dimensions)');
+    expect(output).toContain('✓ embedding test-embedding OK (2 dimensions,');
     expect(output).toContain('⚠ reranker check failed for test-reranker');
     expect(output).toContain('HTTP 404');
     expect(output).toContain('⚠ 0 error(s)');
@@ -188,5 +188,45 @@ describe('doctor qualitative diagnostics', () => {
     expect(output).toContain('Embedding response is missing an embedding vector');
     expect(output).not.toContain('✓ embedding test-embedding OK');
     expect(output).toContain('⚠ 0 error(s)');
+  });
+
+  it('recommends bm25 build strategy with quantified rerank savings', async () => {
+    const root = await createWorkspace();
+    await writeFile(
+      path.join(root, 'templates', 'brief.md'),
+      ['# Brief', '', '[[INSTRUCTION: Summarize the wiki.]]'].join('\n'),
+      'utf8',
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL) => {
+        const pathname = new URL(String(url)).pathname;
+        if (pathname.endsWith('/models')) {
+          return jsonResponse({ data: [{ id: 'configured-model' }] });
+        }
+        if (pathname.endsWith('/embeddings')) {
+          return jsonResponse({ data: [{ index: 0, embedding: [0.1, 0.2] }] });
+        }
+        if (pathname.endsWith('/rerank')) {
+          return jsonResponse({
+            results: [
+              { index: 0, relevance_score: 0.9 },
+              { index: 1, relevance_score: 0.1 },
+            ],
+          });
+        }
+        return jsonResponse({}, 500);
+      }),
+    );
+    const config = createConfig(root);
+    config.retrieval.vector.enabled = true;
+    config.retrieval.buildStrategy = 'hybrid';
+
+    const output = await captureDoctor(config);
+
+    expect(output).toContain('rerank active on build context: ~1 rerank call(s)');
+    expect(output).toContain('buildStrategy: bm25');
+    expect(output).toContain('estimated gain:');
+    expect(output).toContain('would avoid ~1 rerank call(s)');
   });
 });

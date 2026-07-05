@@ -56,6 +56,17 @@ interface OllamaModelInfo {
   modelfileNumCtx?: number;
 }
 
+interface ProviderProbe {
+  latencyMs?: number;
+  rateLimitHeaders: Record<string, string>;
+}
+
+interface DoctorMeasurements {
+  provider?: ProviderProbe;
+  embeddingLatencyMs?: number;
+  rerankLatencyMs?: number;
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function pct(arr: number[], p: number): number {
@@ -71,6 +82,37 @@ function avg(arr: number[]): number {
 
 function gb(bytes: number): string {
   return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+}
+
+function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '0s';
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return rest > 0 ? `${minutes}m${rest.toString().padStart(2, '0')}s` : `${minutes}m`;
+}
+
+function estimateProviderCallsMs(calls: number, latencyMs: number | undefined): number {
+  return Math.max(0, calls) * Math.max(0, latencyMs ?? 0);
+}
+
+function rateLimitHeaders(headers: Headers): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const key of [
+    'x-ratelimit-limit',
+    'x-ratelimit-remaining',
+    'x-ratelimit-reset',
+    'ratelimit-limit',
+    'ratelimit-remaining',
+    'ratelimit-reset',
+    'retry-after',
+  ]) {
+    const value = headers.get(key);
+    if (value) result[key] = value;
+  }
+  return result;
 }
 
 function parseParamSize(raw: string): number {
@@ -466,19 +508,24 @@ async function checkProvider(
   ollamaInfo?: OllamaModelInfo;
   effectiveNumCtx?: number;
   effectiveNumCtxSource?: string;
+  probe?: ProviderProbe;
 }> {
   const { provider, baseUrl, apiKey, model } = config.llm;
 
   if (provider !== 'ollama') {
+    const probe: ProviderProbe = { rateLimitHeaders: {} };
     try {
       const url = `${baseUrl}/models`;
       const headers: Record<string, string> =
         provider === 'anthropic'
           ? { 'x-api-key': apiKey ?? '', 'anthropic-version': '2023-06-01' }
           : { Authorization: `Bearer ${apiKey ?? ''}` };
+      const startedAt = Date.now();
       const res = await fetch(url, { headers, signal: AbortSignal.timeout(5000) });
+      probe.latencyMs = Date.now() - startedAt;
+      probe.rateLimitHeaders = rateLimitHeaders(res.headers);
       if (res.ok || res.status === 400) {
-        ok(`${provider} reachable at ${baseUrl}`);
+        ok(`${provider} reachable at ${baseUrl} (${formatDuration(probe.latencyMs)})`);
         ok('API key accepted');
         if (res.ok) {
           const models = modelNamesFromModelsResponse(await responseTextOrJson(res));
@@ -493,7 +540,7 @@ async function checkProvider(
           }
         }
       } else if (res.status === 401 || res.status === 403) {
-        ok(`${provider} reachable at ${baseUrl}`);
+        ok(`${provider} reachable at ${baseUrl} (${formatDuration(probe.latencyMs)})`);
         err('API key invalid or missing');
       } else if (res.status === 429) {
         warn(`${provider} quota or rate limit reached while checking /models`);
@@ -505,7 +552,7 @@ async function checkProvider(
         `${provider} not reachable at ${baseUrl}: ${e instanceof Error ? e.message : String(e)}`,
       );
     }
-    return {};
+    return { probe };
   }
 
   // Ollama: connectivity + model check
@@ -765,10 +812,18 @@ export default async function doctorCmd(
   const rawOllamaEnv = readOllamaProcessEnv();
   const resolvedOllamaEnv = resolveOllamaEnv(rawOllamaEnv, config);
   const suggestions: SuggestedConfig = {};
-  const { ollamaInfo, effectiveNumCtx, effectiveNumCtxSource } = await checkProvider(
-    config,
-    resolvedOllamaEnv,
-  );
+  const measurements: DoctorMeasurements = {};
+  const { ollamaInfo, effectiveNumCtx, effectiveNumCtxSource, probe } =
+    await checkProvider(config, resolvedOllamaEnv);
+  measurements.provider = probe;
+  if (probe?.rateLimitHeaders && Object.keys(probe.rateLimitHeaders).length > 0) {
+    row(
+      'rate-limit headers:',
+      Object.entries(probe.rateLimitHeaders)
+        .map(([key, value]) => `${key}=${value}`)
+        .join(', '),
+    );
+  }
 
   if (config.llm.provider === 'ollama' && ollamaInfo) {
     printOllamaHardware(
@@ -926,12 +981,14 @@ export default async function doctorCmd(
       );
     }
     try {
+      const startedAt = Date.now();
       const embeddings = await new EmbeddingService(config).embed([
         'doctor vector check',
       ]);
+      measurements.embeddingLatencyMs = Date.now() - startedAt;
       const embeddingDimension = embeddings[0]?.length ?? 0;
       ok(
-        `embedding ${config.retrieval.vector.embeddingModel} OK (${embeddingDimension} dimensions)`,
+        `embedding ${config.retrieval.vector.embeddingModel} OK (${embeddingDimension} dimensions, ${formatDuration(measurements.embeddingLatencyMs)})`,
       );
       const expectedProvider = config.retrieval.vector.baseUrl.replace(/\/+$/, '');
       if (vectorStats.metadata) {
@@ -957,13 +1014,15 @@ export default async function doctorCmd(
       ok('reranker check skipped; reranking disabled');
     } else {
       try {
+        const startedAt = Date.now();
         const rerank = await new RerankService(config).rerank(
           'doctor vector check',
           ['relevant wiki context', 'unrelated text'],
           2,
         );
+        measurements.rerankLatencyMs = Date.now() - startedAt;
         ok(
-          `reranker ${config.retrieval.vector.rerankerModel} OK (${rerank.length} result(s))`,
+          `reranker ${config.retrieval.vector.rerankerModel} OK (${rerank.length} result(s), ${formatDuration(measurements.rerankLatencyMs)})`,
         );
       } catch (error) {
         warn(
@@ -1001,6 +1060,32 @@ export default async function doctorCmd(
         (buildPlan.estimatedRequests / config.limits.requestsPerMinute) * 60,
       )}s if throttled`,
     );
+    const throttleFloorMs =
+      (buildPlan.estimatedRequests / config.limits.requestsPerMinute) * 60_000;
+    const measuredProviderLatencyMs = estimateProviderCallsMs(
+      buildPlan.estimatedRequests,
+      measurements.provider?.latencyMs,
+    );
+    const totalBuildSlots = buildPlan.templates.reduce(
+      (sum, templatePlan) => sum + templatePlan.instructions,
+      0,
+    );
+    const estimatedBuildMs = Math.max(throttleFloorMs, measuredProviderLatencyMs);
+    row(
+      'estimated build:',
+      `${formatDuration(estimatedBuildMs)} minimum (${buildPlan.estimatedRequests} LLM call(s), measured provider preflight ${measurements.provider?.latencyMs !== undefined ? formatDuration(measurements.provider.latencyMs) : 'unavailable'})`,
+    );
+    if (config.retrieval.buildStrategy === 'hybrid') {
+      const avoidableRerankMs = estimateProviderCallsMs(
+        totalBuildSlots,
+        measurements.rerankLatencyMs,
+      );
+      warn(
+        `rerank active on build context: ~${totalBuildSlots} rerank call(s)${measurements.rerankLatencyMs !== undefined ? `, ~${formatDuration(avoidableRerankMs)} measured latency` : ''} — retrieval.buildStrategy: bm25 would remove them`,
+      );
+    } else {
+      ok('buildStrategy bm25: build context avoids rerank calls');
+    }
     if (config.limits.dailyInputTokens) {
       const percent = Math.round(
         (buildPlan.estimatedInputTokens / config.limits.dailyInputTokens) * 100,
@@ -1042,6 +1127,15 @@ export default async function doctorCmd(
     if (overTarget.length > 0) {
       warn(
         `${overTarget.length} planned batch(es) exceed targetInputTokensPerCall but remain under the hard max`,
+      );
+    }
+    if (
+      config.retrieval.vector.enabled &&
+      config.retrieval.vector.rerankEnabled &&
+      config.retrieval.vector.rerankTopK > config.retrieval.vector.topK
+    ) {
+      warn(
+        `vector.rerankTopK (${config.retrieval.vector.rerankTopK}) exceeds vector.topK (${config.retrieval.vector.topK}) — extra rerank budget cannot be used`,
       );
     }
 
@@ -1095,6 +1189,7 @@ export default async function doctorCmd(
         maxBuildContextChars: recommendedBuildContextChars,
       },
       retrieval: {
+        buildStrategy: 'bm25',
         maxContextFiles: Math.max(config.retrieval.maxContextFiles, 8),
         maxChunkChars: recommendedChunkChars,
         maxSourceChars: recommendedSourceChars,
@@ -1105,6 +1200,7 @@ export default async function doctorCmd(
       limits: config.limits,
       build: config.build,
       retrieval: {
+        buildStrategy: config.retrieval.buildStrategy,
         maxContextFiles: config.retrieval.maxContextFiles,
         maxChunkChars: config.retrieval.maxChunkChars,
         maxSourceChars: config.retrieval.maxSourceChars,
@@ -1130,6 +1226,17 @@ export default async function doctorCmd(
     );
     if (Object.keys(recommendedPatch).length > 0) {
       printYamlBlock(recommendedPatch);
+      if (config.retrieval.buildStrategy === 'hybrid') {
+        const avoidableRerankCalls = totalBuildSlots;
+        const avoidableRerankMs = estimateProviderCallsMs(
+          avoidableRerankCalls,
+          measurements.rerankLatencyMs,
+        );
+        row(
+          'estimated gain:',
+          `retrieval.buildStrategy: bm25 would avoid ~${avoidableRerankCalls} rerank call(s)${measurements.rerankLatencyMs !== undefined ? ` (~${formatDuration(avoidableRerankMs)})` : ''}`,
+        );
+      }
     } else {
       ok('No config changes recommended');
     }
