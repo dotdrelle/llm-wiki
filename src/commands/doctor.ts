@@ -81,11 +81,37 @@ function parseParamSize(raw: string): number {
   return unit === 'B' ? n * 1e9 : unit === 'M' ? n * 1e6 : n;
 }
 
+const doctorStatus = { warnings: 0, errors: 0 };
+
+function resetDoctorStatus(): void {
+  doctorStatus.warnings = 0;
+  doctorStatus.errors = 0;
+}
+
 const ok = (msg: string) => console.log(`  ✓ ${msg}`);
-const warn = (msg: string) => console.log(`  ⚠ ${msg}`);
-const err = (msg: string) => console.log(`  ✗ ${msg}`);
+const warn = (msg: string) => {
+  doctorStatus.warnings += 1;
+  console.log(`  ⚠ ${msg}`);
+};
+const err = (msg: string) => {
+  doctorStatus.errors += 1;
+  console.log(`  ✗ ${msg}`);
+};
 const row = (label: string, value: string) =>
   console.log(`  ${label.padEnd(24)} ${value}`);
+
+function printDoctorStatus(): void {
+  console.log('\n── Doctor status ───────────────────────────────────────────');
+  if (doctorStatus.errors > 0) {
+    console.log(
+      `  ✗ ${doctorStatus.errors} error(s), ${doctorStatus.warnings} warning(s)`,
+    );
+  } else if (doctorStatus.warnings > 0) {
+    console.log(`  ⚠ 0 error(s), ${doctorStatus.warnings} warning(s)`);
+  } else {
+    console.log('  ✓ all checks passed');
+  }
+}
 
 type SuggestedConfig = Record<string, Record<string, boolean | string | number>>;
 
@@ -703,6 +729,7 @@ export default async function doctorCmd(
   config: AppConfig,
   options: { apply?: boolean } = {},
 ): Promise<void> {
+  resetDoctorStatus();
   console.log('\n── Config ──────────────────────────────────────────────────');
   row('provider:', config.llm.provider);
   row('model:', config.llm.model);
@@ -1117,5 +1144,6 @@ export default async function doctorCmd(
     warn(`build plan failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
+  printDoctorStatus();
   console.log('');
 }

@@ -116,6 +116,8 @@ describe('doctor qualitative diagnostics', () => {
 
     expect(output).toContain('✗ API key invalid or missing');
     expect(output).not.toContain('✓ API key accepted');
+    expect(output).toContain('── Doctor status');
+    expect(output).toContain('✗ 1 error(s)');
   });
 
   it('reports a missing non-Ollama model when the provider exposes model IDs', async () => {
@@ -129,6 +131,7 @@ describe('doctor qualitative diagnostics', () => {
 
     expect(output).toContain('✗ Model configured-model not listed by provider');
     expect(output).toContain('other-model');
+    expect(output).toContain('✗ 1 error(s)');
   });
 
   it('classifies a missing rerank endpoint in the vector check output', async () => {
@@ -158,6 +161,7 @@ describe('doctor qualitative diagnostics', () => {
     expect(output).toContain('✓ embedding test-embedding OK (2 dimensions)');
     expect(output).toContain('⚠ reranker check failed for test-reranker');
     expect(output).toContain('HTTP 404');
+    expect(output).toContain('⚠ 0 error(s)');
   });
 
   it('reports malformed embedding responses instead of passing vector checks', async () => {
@@ -183,5 +187,6 @@ describe('doctor qualitative diagnostics', () => {
     expect(output).toContain('⚠ embedding check failed for test-embedding');
     expect(output).toContain('Embedding response is missing an embedding vector');
     expect(output).not.toContain('✓ embedding test-embedding OK');
+    expect(output).toContain('⚠ 0 error(s)');
   });
 });
