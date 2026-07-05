@@ -22,7 +22,7 @@ Compatible servers:
 | OpenAI API                                              | ✓                 | ✗        |
 | Any OpenAI-compatible server                            | ✓                 | depends  |
 
-By default, the embedding and reranker endpoints use `llm.baseUrl` and the same API key as the generation model. If embeddings/reranking run on a separate service, set `retrieval.vector.baseUrl` and `retrieval.vector.apiKey` in the workspace `.wikirc.yaml`.
+By default, the embedding and reranker endpoints use `llm.baseUrl`, the same API key as the generation model, and `limits.requestsPerMinute`. If embeddings/reranking run on a separate service, set `retrieval.vector.baseUrl`, `retrieval.vector.apiKeyEnv` or `apiKey`, and optionally `retrieval.vector.requestsPerMinute` in the workspace `.wikirc.yaml`.
 
 ## Configuration
 
@@ -31,7 +31,8 @@ retrieval:
   vector:
     enabled: true
     baseUrl: http://127.0.0.1:7997/v1 # optional; defaults to llm.baseUrl
-    apiKey: VECTOR_API_KEY # recommended when the vector endpoint differs from llm.baseUrl
+    apiKeyEnv: VECTOR_API_KEY # recommended when the vector endpoint differs from llm.baseUrl
+    requestsPerMinute: 1000 # optional; defaults to limits.requestsPerMinute
     timeoutMs: 600000
     embeddingModel: BAAI/bge-m3 # model served by your /v1/embeddings endpoint
     rerankEnabled: true # set false to skip /v1/rerank and keep vector distance ordering
@@ -46,6 +47,8 @@ retrieval:
 | `vector.enabled`        | Prefer vector retrieval when an index is available | `false`                                                    |
 | `vector.baseUrl`        | Base URL for `/v1/embeddings` and `/v1/rerank`     | `llm.baseUrl`                                              |
 | `vector.apiKey`         | API key for vector endpoints                       | `WIKI_VECTOR_API_KEY`, `ALBERT_API_KEY`, then `llm.apiKey` |
+| `vector.apiKeyEnv`      | Environment variable containing the vector API key | —                                                          |
+| `vector.requestsPerMinute` | Vector/rerank request throttle                  | `limits.requestsPerMinute`                                 |
 | `vector.timeoutMs`      | Timeout for vector endpoint calls                  | `llm.timeoutMs` or `600000`                                |
 | `vector.embeddingModel` | Model name for `/v1/embeddings`                    | `BAAI/bge-m3`                                              |
 | `vector.rerankEnabled`  | Enable `/v1/rerank` after vector search            | `true`                                                     |

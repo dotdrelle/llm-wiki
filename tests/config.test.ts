@@ -8,6 +8,7 @@ import { resolveConfig } from '../src/config/schema.ts';
 describe('config resolution', () => {
   afterEach(() => {
     delete process.env.WIKI_MCP_AUTH_TOKEN;
+    delete process.env.WIKI_MCP_ACCESS_KEY;
     delete process.env.WIKI_MCP_READ_TOKEN;
     delete process.env.WIKI_MCP_WRITE_TOKEN;
     delete process.env.WIKI_MCP_TLS_CERT_PATH;
@@ -16,6 +17,8 @@ describe('config resolution', () => {
     delete process.env.WIKI_SERVE_TLS_CERT_PATH;
     delete process.env.WIKI_SERVE_TLS_KEY_PATH;
     delete process.env.WIKI_SERVE_TLS_CA_PATH;
+    delete process.env.ALBERT_API_KEY;
+    delete process.env.INFINITY_API_KEY;
     delete process.env.WIKI_CONFIG_PATH;
     delete process.env.WIKI_WORKSPACE;
     delete process.env.WIKI_WORKSPACE_PATH;
@@ -75,6 +78,8 @@ describe('config resolution', () => {
       enabled: true,
       baseUrl: 'https://api.openai.com/v1',
       apiKey: undefined,
+      apiKeyEnv: undefined,
+      requestsPerMinute: 10,
       timeoutMs: 600000,
       embeddingModel: 'BAAI/bge-m3',
       rerankEnabled: true,
@@ -122,7 +127,7 @@ describe('config resolution', () => {
     expect(config.retrieval.vector.rerankEnabled).toBe(false);
   });
 
-  it('parses MCP access key and ignores YAML TLS paths', () => {
+  it('parses MCP access key and YAML TLS paths', () => {
     const config = resolveConfig(
       {
         mcp: {
@@ -139,7 +144,11 @@ describe('config resolution', () => {
 
     expect(config.mcp).toEqual({
       accessKey: 'secret',
-      tls: undefined,
+      tls: {
+        certPath: 'certs/fullchain.pem',
+        keyPath: 'certs/privkey.pem',
+        caPath: 'certs/ca.pem',
+      },
     });
   });
 
@@ -150,7 +159,7 @@ describe('config resolution', () => {
   });
 
   it('reads MCP settings from environment variables', () => {
-    process.env.WIKI_MCP_AUTH_TOKEN = 'env-secret';
+    process.env.WIKI_MCP_ACCESS_KEY = 'env-secret';
     process.env.WIKI_MCP_READ_TOKEN = 'read-secret';
     process.env.WIKI_MCP_WRITE_TOKEN = 'write-secret';
     process.env.WIKI_MCP_TLS_CERT_PATH = '/certs/fullchain.pem';
@@ -172,7 +181,7 @@ describe('config resolution', () => {
   });
 
   it('keeps .wikirc MCP access key ahead of environment overrides and reads TLS from env', () => {
-    process.env.WIKI_MCP_AUTH_TOKEN = 'env-secret';
+    process.env.WIKI_MCP_ACCESS_KEY = 'env-secret';
     process.env.WIKI_MCP_TLS_CERT_PATH = '/certs/env-fullchain.pem';
 
     const config = resolveConfig(
@@ -194,6 +203,58 @@ describe('config resolution', () => {
         certPath: '/certs/env-fullchain.pem',
       },
     });
+  });
+
+  it('applies optional presets before explicit file values', () => {
+    process.env.ALBERT_API_KEY = 'albert-secret';
+    const config = resolveConfig(
+      {
+        preset: 'albert',
+        language: 'fr',
+        llm: {
+          model: 'mistralai/Ministral-3-8B-Instruct-2512',
+          baseUrl: 'https://proxy.example.test/v1',
+          apiKeyEnv: 'ALBERT_API_KEY',
+        },
+        retrieval: {
+          vector: {
+            baseUrl: 'http://infinity.local:7997/v1',
+            apiKeyEnv: 'INFINITY_API_KEY',
+            requestsPerMinute: 1000,
+          },
+        },
+      },
+      '/tmp/wiki',
+    );
+    delete process.env.ALBERT_API_KEY;
+
+    expect(config.preset).toBe('albert');
+    expect(config.llm.provider).toBe('openai-compatible');
+    expect(config.llm.baseUrl).toBe('https://proxy.example.test/v1');
+    expect(config.llm.apiKey).toBe('albert-secret');
+    expect(config.limits.requestsPerMinute).toBe(100);
+    expect(config.retrieval.vector.baseUrl).toBe('http://infinity.local:7997/v1');
+    expect(config.retrieval.vector.requestsPerMinute).toBe(1000);
+    expect(config.retrieval.buildStrategy).toBe('bm25');
+  });
+
+  it('keeps complete openai-compatible configs valid without presets', () => {
+    const config = resolveConfig(
+      {
+        language: 'fr',
+        llm: {
+          provider: 'openai-compatible',
+          baseUrl: 'https://provider.example.test/v1',
+          model: 'custom-model',
+          apiKeyEnv: 'CUSTOM_API_KEY',
+        },
+      },
+      '/tmp/wiki',
+    );
+
+    expect(config.preset).toBeUndefined();
+    expect(config.llm.baseUrl).toBe('https://provider.example.test/v1');
+    expect(config.llm.apiKeyEnv).toBe('CUSTOM_API_KEY');
   });
 
   it('requires baseUrl for openai-compatible provider', () => {

@@ -4,6 +4,48 @@ The CLI looks for `.wikirc.yaml` or `.wikirc.yml` in the current directory or it
 Set `WIKI_CONFIG_PATH` to load a specific config file inside the workspace, for example
 `WIKI_CONFIG_PATH=.wikirc.yaml.openai`.
 
+## Minimal preset example
+
+Presets are optional shortcuts. A complete `.wikirc.yaml` without `preset` stays
+valid, and any explicit field in the file overrides the preset.
+
+```yaml
+preset: albert
+language: fr
+
+llm:
+  model: mistralai/Ministral-3-8B-Instruct-2512
+  apiKeyEnv: ALBERT_API_KEY
+```
+
+Run `wiki config --effective` to print the merged configuration with provenance
+(`default`, `preset:<name>`, `file`, or `env`).
+
+## Generic provider example
+
+```yaml
+language: fr
+
+llm:
+  provider: openai-compatible
+  baseUrl: https://mon-provider.example.com/v1
+  model: leur-modele-32b
+  apiKeyEnv: MON_PROVIDER_API_KEY
+
+limits:
+  requestsPerMinute: 60
+
+retrieval:
+  vector:
+    enabled: true
+    baseUrl: http://infinity.local:7997/v1
+    apiKeyEnv: INFINITY_API_KEY
+    embeddingModel: BAAI/bge-m3
+    rerankEnabled: true
+    rerankerModel: BAAI/bge-reranker-v2-m3
+    requestsPerMinute: 1000
+```
+
 ## Full example
 
 ```yaml
@@ -13,6 +55,7 @@ llm:
   provider: ollama
   model: qwen2.5:14b
   apiKey: ollama
+  # apiKeyEnv: OLLAMA_API_KEY
   baseUrl: http://127.0.0.1:11434/v1
   temperature: 0.1
   timeoutMs: 600000
@@ -43,6 +86,8 @@ retrieval:
     enabled: false
     baseUrl: http://127.0.0.1:7997/v1
     apiKey: optional-vector-key
+    # apiKeyEnv: VECTOR_API_KEY
+    requestsPerMinute: 10
     timeoutMs: 600000
     embeddingModel: BAAI/bge-m3
     rerankEnabled: true
@@ -56,6 +101,7 @@ retrieval:
 
 | Key        | Description                                                                                                                                                | Default |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `preset`   | Optional shortcut: `albert`, `openai`, `ollama`, or `nvidia`. Explicit file values always win.                                                             | —       |
 | `language` | Language for all LLM-generated content. Use a natural-language name such as `french`, `english`, or `español`. Overrides the language of source documents. | `fr`    |
 
 ## `llm`
@@ -65,6 +111,7 @@ retrieval:
 | `provider`       | `openai`, `ollama`, `anthropic`, `openai-compatible`                                                                                                 | `openai`           |
 | `model`          | Model name passed to the provider                                                                                                                    | `gpt-5-mini`       |
 | `apiKey`         | API key for this workspace. Recommended for remote providers. Env vars remain available as standalone fallbacks.                                     | —                  |
+| `apiKeyEnv`      | Name of an environment variable containing the API key. Keeps secrets outside `.wikirc.yaml`.                                                        | —                  |
 | `baseUrl`        | Provider base URL                                                                                                                                    | provider-dependent |
 | `temperature`    | Sampling temperature (0–2)                                                                                                                           | `0.1`              |
 | `timeoutMs`      | Request timeout in milliseconds                                                                                                                      | `600000`           |
@@ -174,9 +221,10 @@ These keys describe operational and prompt budgets used by `wiki build --plan`, 
 
 `targetInputTokensPerCall` must be less than or equal to `maxInputTokensPerCall`.
 
-`requestsPerMinute` limits the start rate of provider calls across `ingest`,
-`build`, `refresh`, embeddings, and rerank calls. Processes in the same
-workspace share the budget through `.wiki/rate-limit/`; `maxInFlightRequests`
+`requestsPerMinute` limits the start rate of LLM provider calls across `ingest`,
+`build`, and `refresh`. Embeddings and rerank inherit this value unless
+`retrieval.vector.requestsPerMinute` is set. Processes in the same workspace
+share each provider budget through `.wiki/rate-limit/`; `maxInFlightRequests`
 only controls how many calls a single job may keep in flight while the shared
 throttle decides when each request is allowed to start.
 

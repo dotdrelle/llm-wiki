@@ -18,6 +18,7 @@ import mcpCmd from '../src/commands/mcp.ts';
 import mcpHttpCmd from '../src/commands/mcpHttp.ts';
 import exportCmd from '../src/commands/export.ts';
 import addSkillCmd from '../src/commands/addSkill.ts';
+import configCmd from '../src/commands/config.ts';
 
 const program = new Command();
 const packageVersion = (() => {
@@ -59,6 +60,13 @@ async function main() {
     .description('Local-first LLM wiki CLI')
     .version(packageVersion)
     .option('-w, --workspace <path>', 'Workspace root containing .wikirc.yaml');
+
+  program
+    .command('config')
+    .description('Inspect the effective .wikirc.yaml configuration')
+    .option('--effective', 'Print the merged configuration with defaults, preset values, and file overrides')
+    .option('--json', 'Emit JSON including provenance')
+    .action((options) => configCmd(options));
 
   program
     .command('init')

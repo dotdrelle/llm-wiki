@@ -1,9 +1,11 @@
 export type LlmProvider = 'openai' | 'ollama' | 'openai-compatible' | 'anthropic';
+export type ConfigPresetName = 'albert' | 'openai' | 'ollama' | 'nvidia';
 
 export interface LlmConfig {
   provider: LlmProvider;
   model: string;
   apiKey?: string;
+  apiKeyEnv?: string;
   baseUrl: string;
   temperature: number;
   timeoutMs: number;
@@ -40,6 +42,8 @@ export interface VectorRetrievalConfig {
   enabled: boolean;
   baseUrl: string;
   apiKey?: string;
+  apiKeyEnv?: string;
+  requestsPerMinute?: number;
   timeoutMs: number;
   embeddingModel: string;
   rerankEnabled: boolean;
@@ -69,6 +73,7 @@ export interface ServeConfig {
 export interface AppConfig {
   wikiRoot: string;
   configPath?: string;
+  preset?: ConfigPresetName;
   language: string;
   llm: LlmConfig;
   limits: LimitsConfig;

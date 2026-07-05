@@ -1,17 +1,36 @@
+# Minimal preset form. A preset is only a shortcut; every value below can still
+# be overridden explicitly in this file.
+preset: ollama
 language: en
 
 llm:
-  provider: ollama
   model: YOUR_MODEL_NAME
-  apiKey: ollama
-  baseUrl: http://127.0.0.1:11434/v1
-  temperature: 0.1
-  timeoutMs: 600000
-  numCtx: 32768
-  # Ollama-specific — set these for accurate doctor recommendations.
-  # For remote/Docker Ollama, set them here since the server env cannot be auto-detected.
-  # flashAttention: true
-  # kvCacheType: q8_0
+
+# Generic provider form, useful for any OpenAI-compatible endpoint and for
+# separate embedding/rerank services. Uncomment and remove `preset` above.
+# language: en
+# llm:
+#   provider: openai-compatible
+#   baseUrl: https://mon-provider.example.com/v1
+#   model: leur-modele-32b
+#   apiKeyEnv: MON_PROVIDER_API_KEY
+# limits:
+#   requestsPerMinute: 60
+# retrieval:
+#   vector:
+#     enabled: true
+#     baseUrl: http://infinity.local:7997/v1
+#     apiKeyEnv: INFINITY_API_KEY
+#     embeddingModel: BAAI/bge-m3
+#     rerankEnabled: true
+#     rerankerModel: BAAI/bge-reranker-v2-m3
+#     requestsPerMinute: 1000
+
+# Ollama-specific options live here only when you need them explicitly.
+# For remote/Docker Ollama, set them here since the server env cannot be auto-detected.
+# llm:
+#   flashAttention: true
+#   kvCacheType: q8_0
 
 build:
   refreshOnIngest: false
@@ -36,7 +55,8 @@ retrieval:
     enabled: false
     # Defaults to llm.baseUrl. Set this when embeddings/reranking use a separate service.
     # baseUrl: http://127.0.0.1:7997/v1
-    # apiKey: your-vector-key
+    # apiKeyEnv: YOUR_VECTOR_API_KEY
+    # requestsPerMinute: 1000
     timeoutMs: 600000
     embeddingModel: BAAI/bge-m3
     rerankEnabled: false

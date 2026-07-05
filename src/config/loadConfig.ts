@@ -1,7 +1,7 @@
 import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import YAML from 'yaml';
-import { resolveConfig } from './schema.ts';
+import { resolveConfig, resolveConfigDetails, type EffectiveConfigDetails } from './schema.ts';
 import type { AppConfig } from '../types.ts';
 
 const CONFIG_FILE_NAMES = ['.wikirc.yaml', '.wikirc.yml'];
@@ -34,7 +34,11 @@ async function findConfigPath(startDir: string): Promise<string | undefined> {
   }
 }
 
-export async function loadConfig(startDir: string): Promise<AppConfig> {
+async function loadConfigInput(startDir: string): Promise<{
+  rawConfig: unknown;
+  wikiRoot: string;
+  configPath?: string;
+}> {
   const workspaceEnv = process.env.WIKI_WORKSPACE ?? process.env.WIKI_WORKSPACE_PATH;
   if (workspaceEnv && !path.isAbsolute(workspaceEnv)) {
     process.stderr.write(
@@ -49,12 +53,22 @@ export async function loadConfig(startDir: string): Promise<AppConfig> {
   const configPath = explicitConfigPath ?? (await findConfigPath(searchRoot));
 
   if (!configPath) {
-    return resolveConfig({}, path.resolve(searchRoot));
+    return { rawConfig: {}, wikiRoot: path.resolve(searchRoot) };
   }
 
   const rawText = await readFile(configPath, 'utf8');
   const rawConfig = rawText.trim() ? YAML.parse(rawText) : {};
   const wikiRoot = workspaceRoot ?? path.dirname(configPath);
 
-  return resolveConfig(rawConfig, wikiRoot, configPath);
+  return { rawConfig, wikiRoot, configPath };
+}
+
+export async function loadConfig(startDir: string): Promise<AppConfig> {
+  const input = await loadConfigInput(startDir);
+  return resolveConfig(input.rawConfig, input.wikiRoot, input.configPath);
+}
+
+export async function loadConfigDetails(startDir: string): Promise<EffectiveConfigDetails> {
+  const input = await loadConfigInput(startDir);
+  return resolveConfigDetails(input.rawConfig, input.wikiRoot, input.configPath);
 }

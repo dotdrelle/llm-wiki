@@ -4,7 +4,162 @@ import {
   DEFAULT_OLLAMA_BASE_URL,
   DEFAULT_OPENAI_BASE_URL,
 } from './defaults.ts';
-import type { AppConfig } from '../types.ts';
+import type { AppConfig, ConfigPresetName } from '../types.ts';
+
+const ALBERT_BASE_URL = 'https://albert.api.etalab.gouv.fr/v1';
+const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1';
+
+type PlainObject = Record<string, unknown>;
+
+export type ConfigProvenanceSource =
+  | 'default'
+  | `preset:${ConfigPresetName}`
+  | 'file'
+  | 'env';
+
+export interface EffectiveConfigDetails {
+  config: AppConfig;
+  provenance: Record<string, ConfigProvenanceSource>;
+}
+
+const CONFIG_PRESETS: Record<ConfigPresetName, PlainObject> = {
+  albert: {
+    llm: {
+      provider: 'openai-compatible',
+      baseUrl: ALBERT_BASE_URL,
+    },
+    limits: {
+      requestsPerMinute: 100,
+      maxInFlightRequests: 3,
+      maxInputTokensPerCall: 50000,
+      targetInputTokensPerCall: 40000,
+    },
+    build: {
+      maxBuildContextChars: 24000,
+    },
+    retrieval: {
+      buildStrategy: 'bm25',
+      vector: {
+        enabled: true,
+        baseUrl: ALBERT_BASE_URL,
+        requestsPerMinute: 100,
+        embeddingModel: 'BAAI/bge-m3',
+        rerankEnabled: true,
+        rerankerModel: 'BAAI/bge-reranker-v2-m3',
+        topK: 48,
+        rerankTopK: 24,
+        maxResults: 6,
+      },
+    },
+  },
+  openai: {
+    llm: {
+      provider: 'openai',
+      baseUrl: DEFAULT_OPENAI_BASE_URL,
+      apiKeyEnv: 'OPENAI_API_KEY',
+    },
+    retrieval: {
+      buildStrategy: 'bm25',
+      vector: {
+        enabled: false,
+        baseUrl: DEFAULT_OPENAI_BASE_URL,
+        apiKeyEnv: 'OPENAI_API_KEY',
+      },
+    },
+  },
+  ollama: {
+    llm: {
+      provider: 'ollama',
+      baseUrl: DEFAULT_OLLAMA_BASE_URL,
+      apiKey: 'ollama',
+      numCtx: 32768,
+    },
+    limits: {
+      requestsPerMinute: 50,
+      maxInFlightRequests: 3,
+      maxInputTokensPerCall: 50000,
+      targetInputTokensPerCall: 40000,
+    },
+    retrieval: {
+      buildStrategy: 'bm25',
+      vector: {
+        enabled: false,
+        baseUrl: DEFAULT_OLLAMA_BASE_URL,
+        rerankEnabled: false,
+      },
+    },
+  },
+  nvidia: {
+    llm: {
+      provider: 'openai-compatible',
+      baseUrl: NVIDIA_BASE_URL,
+      apiKeyEnv: 'NVIDIA_API_KEY',
+    },
+    limits: {
+      requestsPerMinute: 40,
+      maxInFlightRequests: 3,
+      maxInputTokensPerCall: 50000,
+      targetInputTokensPerCall: 40000,
+    },
+    retrieval: {
+      buildStrategy: 'bm25',
+      vector: {
+        enabled: false,
+        baseUrl: NVIDIA_BASE_URL,
+        apiKeyEnv: 'NVIDIA_API_KEY',
+      },
+    },
+  },
+};
+
+function isPlainObject(value: unknown): value is PlainObject {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function omitUndefined(value: unknown): unknown {
+  if (!isPlainObject(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, entry]) => entry !== undefined)
+      .map(([key, entry]) => [key, isPlainObject(entry) ? omitUndefined(entry) : entry]),
+  );
+}
+
+function deepMerge(base: unknown, override: unknown): unknown {
+  if (!isPlainObject(base) || !isPlainObject(override)) {
+    return override === undefined ? base : override;
+  }
+
+  const result: PlainObject = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    if (value === undefined) continue;
+    result[key] = deepMerge(result[key], value);
+  }
+  return result;
+}
+
+function pathHasOwnValue(value: unknown, path: string): boolean {
+  const parts = path.split('.');
+  let current: unknown = value;
+  for (const part of parts) {
+    if (!isPlainObject(current) || !Object.prototype.hasOwnProperty.call(current, part)) {
+      return false;
+    }
+    current = current[part];
+  }
+  return current !== undefined;
+}
+
+function sourceForPath(
+  rawInput: unknown,
+  presetInput: unknown,
+  presetName: ConfigPresetName | undefined,
+  path: string,
+): ConfigProvenanceSource {
+  if (pathHasOwnValue(rawInput, path)) return 'file';
+  if (presetName && pathHasOwnValue(presetInput, path)) return `preset:${presetName}`;
+  return 'default';
+}
 
 function normalizeOperationType(value: unknown): unknown {
   if (typeof value !== 'string') {
@@ -217,6 +372,7 @@ const llmSchema = z
       .default('openai'),
     model: z.string().min(1).default('gpt-5-mini'),
     apiKey: z.string().min(1).optional(),
+    apiKeyEnv: z.string().min(1).optional(),
     baseUrl: z.string().url().optional(),
     temperature: z.number().min(0).max(2).default(0.1),
     timeoutMs: z.number().int().positive().default(600000),
@@ -280,6 +436,8 @@ const retrievalSchema = z
         enabled: z.boolean().default(false),
         baseUrl: z.string().url().optional(),
         apiKey: z.string().min(1).optional(),
+        apiKeyEnv: z.string().min(1).optional(),
+        requestsPerMinute: z.number().int().min(1).optional(),
         timeoutMs: z.number().int().min(1000).default(600000).optional(),
         embeddingModel: z.string().min(1).default('BAAI/bge-m3'),
         rerankEnabled: z.boolean().default(true),
@@ -325,6 +483,13 @@ const mcpSchema = z
       accessKey: z.string().min(1).optional(),
       readToken: z.string().min(1).optional(),
       writeToken: z.string().min(1).optional(),
+      tls: z
+        .object({
+          certPath: z.string().min(1).optional(),
+          keyPath: z.string().min(1).optional(),
+          caPath: z.string().min(1).optional(),
+        })
+        .optional(),
     }),
   )
   .default({});
@@ -332,6 +497,7 @@ const mcpSchema = z
 const serveSchema = z.preprocess((value) => value ?? {}, z.object({})).default({});
 
 export const rawConfigSchema = z.object({
+  preset: z.enum(['albert', 'openai', 'ollama', 'nvidia']).optional(),
   wikiRoot: z.string().optional(),
   language: z.string().min(2).max(20).default('fr').optional(),
   llm: llmSchema.optional(),
@@ -442,7 +608,20 @@ export function resolveConfig(
   wikiRoot: string,
   configPath?: string,
 ): AppConfig {
-  const parsed = rawConfigSchema.parse(input ?? {});
+  return resolveConfigDetails(input, wikiRoot, configPath).config;
+}
+
+export function resolveConfigDetails(
+  input: unknown,
+  wikiRoot: string,
+  configPath?: string,
+): EffectiveConfigDetails {
+  const rawInput = isPlainObject(input) ? omitUndefined(input) : {};
+  const rawPreset = isPlainObject(rawInput) ? rawInput.preset : undefined;
+  const presetName = rawPreset ? z.enum(['albert', 'openai', 'ollama', 'nvidia']).parse(rawPreset) : undefined;
+  const presetInput = presetName ? CONFIG_PRESETS[presetName] : {};
+  const mergedInput = deepMerge(presetInput, rawInput);
+  const parsed = rawConfigSchema.parse(mergedInput ?? {});
   const provider = parsed.llm?.provider ?? 'openai';
 
   const baseUrl =
@@ -457,15 +636,23 @@ export function resolveConfig(
     throw new Error('Provider "openai-compatible" requires llm.baseUrl in .wikirc.yaml.');
   }
 
+  const llmApiKeyFromEnv = parsed.llm?.apiKeyEnv
+    ? process.env[parsed.llm.apiKeyEnv]
+    : undefined;
   const apiKey =
     parsed.llm?.apiKey ??
+    llmApiKeyFromEnv ??
     (provider === 'openai' ? process.env.OPENAI_API_KEY : undefined) ??
     (provider === 'anthropic' ? process.env.ANTHROPIC_API_KEY : undefined) ??
     (provider === 'ollama' ? 'ollama' : undefined);
 
   const vectorBaseUrl = parsed.retrieval?.vector?.baseUrl ?? baseUrl;
+  const vectorApiKeyFromEnv = parsed.retrieval?.vector?.apiKeyEnv
+    ? process.env[parsed.retrieval.vector.apiKeyEnv]
+    : undefined;
   const vectorApiKey =
     parsed.retrieval?.vector?.apiKey ??
+    vectorApiKeyFromEnv ??
     process.env.WIKI_VECTOR_API_KEY ??
     process.env.ALBERT_API_KEY ??
     apiKey;
@@ -480,7 +667,7 @@ export function resolveConfig(
           ...(mcpKeyPath ? { keyPath: mcpKeyPath } : {}),
           ...(mcpCaPath ? { caPath: mcpCaPath } : {}),
         }
-      : undefined;
+      : parsed.mcp?.tls;
 
   const serveCertPath = process.env.WIKI_SERVE_TLS_CERT_PATH;
   const serveKeyPath = process.env.WIKI_SERVE_TLS_KEY_PATH;
@@ -493,13 +680,17 @@ export function resolveConfig(
           ...(serveCaPath ? { caPath: serveCaPath } : {}),
         }
       : undefined;
-  const mcpAccessKey = parsed.mcp?.accessKey ?? process.env.WIKI_MCP_AUTH_TOKEN;
+  const mcpAccessKey =
+    parsed.mcp?.accessKey ??
+    process.env.WIKI_MCP_ACCESS_KEY ??
+    process.env.WIKI_MCP_AUTH_TOKEN;
   const mcpReadToken = parsed.mcp?.readToken ?? process.env.WIKI_MCP_READ_TOKEN;
   const mcpWriteToken = parsed.mcp?.writeToken ?? process.env.WIKI_MCP_WRITE_TOKEN;
 
-  return {
+  const config: AppConfig = {
     wikiRoot,
     configPath,
+    preset: parsed.preset,
     language: parsed.language ?? 'fr',
     mcp: {
       ...(mcpAccessKey ? { accessKey: mcpAccessKey } : {}),
@@ -514,6 +705,7 @@ export function resolveConfig(
       provider,
       model: parsed.llm?.model ?? 'gpt-5-mini',
       apiKey,
+      apiKeyEnv: parsed.llm?.apiKeyEnv,
       baseUrl,
       temperature: parsed.llm?.temperature ?? 0.1,
       timeoutMs: parsed.llm?.timeoutMs ?? 600000,
@@ -544,6 +736,11 @@ export function resolveConfig(
         enabled: parsed.retrieval?.vector?.enabled ?? false,
         baseUrl: vectorBaseUrl,
         apiKey: vectorApiKey,
+        apiKeyEnv: parsed.retrieval?.vector?.apiKeyEnv,
+        requestsPerMinute:
+          parsed.retrieval?.vector?.requestsPerMinute ??
+          parsed.limits?.requestsPerMinute ??
+          10,
         timeoutMs: parsed.retrieval?.vector?.timeoutMs ?? parsed.llm?.timeoutMs ?? 600000,
         embeddingModel: parsed.retrieval?.vector?.embeddingModel ?? 'BAAI/bge-m3',
         rerankEnabled: parsed.retrieval?.vector?.rerankEnabled ?? true,
@@ -553,6 +750,73 @@ export function resolveConfig(
         rerankTopK: parsed.retrieval?.vector?.rerankTopK ?? 24,
         maxResults: parsed.retrieval?.vector?.maxResults ?? 6,
       },
+    },
+  };
+
+  return {
+    config,
+    provenance: {
+      preset: parsed.preset ? 'file' : 'default',
+      language: sourceForPath(rawInput, presetInput, presetName, 'language'),
+      'llm.provider': sourceForPath(rawInput, presetInput, presetName, 'llm.provider'),
+      'llm.model': sourceForPath(rawInput, presetInput, presetName, 'llm.model'),
+      'llm.apiKey': parsed.llm?.apiKey
+        ? sourceForPath(rawInput, presetInput, presetName, 'llm.apiKey')
+        : llmApiKeyFromEnv
+          ? 'env'
+          : sourceForPath(rawInput, presetInput, presetName, 'llm.apiKey'),
+      'llm.apiKeyEnv': sourceForPath(rawInput, presetInput, presetName, 'llm.apiKeyEnv'),
+      'llm.baseUrl': sourceForPath(rawInput, presetInput, presetName, 'llm.baseUrl'),
+      'llm.temperature': sourceForPath(rawInput, presetInput, presetName, 'llm.temperature'),
+      'llm.timeoutMs': sourceForPath(rawInput, presetInput, presetName, 'llm.timeoutMs'),
+      'llm.numCtx': sourceForPath(rawInput, presetInput, presetName, 'llm.numCtx'),
+      'llm.flashAttention': sourceForPath(rawInput, presetInput, presetName, 'llm.flashAttention'),
+      'llm.kvCacheType': sourceForPath(rawInput, presetInput, presetName, 'llm.kvCacheType'),
+      'limits.requestsPerMinute': sourceForPath(rawInput, presetInput, presetName, 'limits.requestsPerMinute'),
+      'limits.maxInFlightRequests': sourceForPath(rawInput, presetInput, presetName, 'limits.maxInFlightRequests'),
+      'limits.maxInputTokensPerCall': sourceForPath(rawInput, presetInput, presetName, 'limits.maxInputTokensPerCall'),
+      'limits.targetInputTokensPerCall': sourceForPath(rawInput, presetInput, presetName, 'limits.targetInputTokensPerCall'),
+      'limits.maxProfileChars': sourceForPath(rawInput, presetInput, presetName, 'limits.maxProfileChars'),
+      'build.refreshOnIngest': sourceForPath(rawInput, presetInput, presetName, 'build.refreshOnIngest'),
+      'build.slotBatchSize': sourceForPath(rawInput, presetInput, presetName, 'build.slotBatchSize'),
+      'build.maxBuildContextChars': sourceForPath(rawInput, presetInput, presetName, 'build.maxBuildContextChars'),
+      'retrieval.buildStrategy': sourceForPath(rawInput, presetInput, presetName, 'retrieval.buildStrategy'),
+      'retrieval.maxContextFiles': sourceForPath(rawInput, presetInput, presetName, 'retrieval.maxContextFiles'),
+      'retrieval.maxChunksPerPage': sourceForPath(rawInput, presetInput, presetName, 'retrieval.maxChunksPerPage'),
+      'retrieval.maxChunkChars': sourceForPath(rawInput, presetInput, presetName, 'retrieval.maxChunkChars'),
+      'retrieval.maxSourceChars': sourceForPath(rawInput, presetInput, presetName, 'retrieval.maxSourceChars'),
+      'retrieval.vector.enabled': sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.enabled'),
+      'retrieval.vector.baseUrl': sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.baseUrl'),
+      'retrieval.vector.apiKey': parsed.retrieval?.vector?.apiKey
+        ? sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.apiKey')
+        : vectorApiKeyFromEnv
+          ? 'env'
+          : sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.apiKey'),
+      'retrieval.vector.apiKeyEnv': sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.apiKeyEnv'),
+      'retrieval.vector.requestsPerMinute':
+        pathHasOwnValue(rawInput, 'retrieval.vector.requestsPerMinute') ||
+        pathHasOwnValue(presetInput, 'retrieval.vector.requestsPerMinute')
+          ? sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.requestsPerMinute')
+          : sourceForPath(rawInput, presetInput, presetName, 'limits.requestsPerMinute'),
+      'retrieval.vector.timeoutMs': sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.timeoutMs'),
+      'retrieval.vector.embeddingModel': sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.embeddingModel'),
+      'retrieval.vector.rerankEnabled': sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.rerankEnabled'),
+      'retrieval.vector.rerankerModel': sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.rerankerModel'),
+      'retrieval.vector.topK': sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.topK'),
+      'retrieval.vector.rerankTopK': sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.rerankTopK'),
+      'retrieval.vector.maxResults': sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.maxResults'),
+      'mcp.accessKey': mcpAccessKey && !parsed.mcp?.accessKey
+        ? 'env'
+        : sourceForPath(rawInput, presetInput, presetName, 'mcp.accessKey'),
+      'mcp.tls.certPath': mcpCertPath
+        ? 'env'
+        : sourceForPath(rawInput, presetInput, presetName, 'mcp.tls.certPath'),
+      'mcp.tls.keyPath': mcpKeyPath
+        ? 'env'
+        : sourceForPath(rawInput, presetInput, presetName, 'mcp.tls.keyPath'),
+      'mcp.tls.caPath': mcpCaPath
+        ? 'env'
+        : sourceForPath(rawInput, presetInput, presetName, 'mcp.tls.caPath'),
     },
   };
 }

@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { AppConfig } from '../src/types.ts';
 import { loadConfig } from '../src/config/loadConfig.ts';
 import { WorkspaceService } from '../src/services/workspaceService.ts';
@@ -52,6 +52,11 @@ function createConfig(root: string): AppConfig {
 }
 
 describe('workspace safety', () => {
+  afterEach(() => {
+    delete process.env.WIKI_MCP_AUTH_TOKEN;
+    delete process.env.WIKI_MCP_ACCESS_KEY;
+  });
+
   it('scaffolds reranking disabled by default', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-init-'));
     const config = createConfig(root);
@@ -64,6 +69,20 @@ describe('workspace safety', () => {
     await expect(
       readFile(path.join(root, '.wiki', 'profile.md'), 'utf8'),
     ).resolves.toContain('# Workspace Profile');
+  });
+
+  it('writes generated MCP access key into the default wikirc during init', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-init-token-'));
+    const token = 'generated-token-from-workspace-env';
+    process.env.WIKI_MCP_AUTH_TOKEN = token;
+    const workspace = new WorkspaceService(createConfig(root));
+
+    await workspace.initWorkspace({});
+
+    const raw = await readFile(path.join(root, '.wikirc.yaml'), 'utf8');
+    const initializedConfig = await loadConfig(root);
+    expect(raw).toContain(`accessKey: "${token}"`);
+    expect(initializedConfig.mcp.accessKey).toBe(token);
   });
 
   it('loads the full workspace profile when it is within the character limit', async () => {

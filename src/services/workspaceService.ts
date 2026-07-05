@@ -154,6 +154,23 @@ export class WorkspaceService {
       await mkdir(path.dirname(to), { recursive: true });
       await copyFile(from, to);
     }
+
+    await this.writeInitialMcpAccessKey();
+  }
+
+  private async writeInitialMcpAccessKey(): Promise<void> {
+    const accessKey = process.env.WIKI_MCP_AUTH_TOKEN ?? process.env.WIKI_MCP_ACCESS_KEY;
+    if (!accessKey || !(await pathExists(this.paths.configPath))) return;
+
+    const raw = await readFile(this.paths.configPath, 'utf8');
+    if (/^\s*accessKey:\s*\S+/m.test(raw)) return;
+    const next = raw.replace(
+      /^(\s*)#\s*accessKey:\s*your-secret-key\s*$/m,
+      `$1accessKey: ${JSON.stringify(accessKey)}`,
+    );
+    if (next !== raw) {
+      await writeFile(this.paths.configPath, next, 'utf8');
+    }
   }
 
   private async prepareSkillSource(

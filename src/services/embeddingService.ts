@@ -143,7 +143,9 @@ export class EmbeddingService {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       await throttleProviderRequestStart({
         key: providerRateLimitKey(this.config.retrieval.vector.baseUrl),
-        requestsPerMinute: this.config.limits.requestsPerMinute,
+        requestsPerMinute:
+          this.config.retrieval.vector.requestsPerMinute ??
+          this.config.limits.requestsPerMinute,
         logger: this.logger,
         label: 'embedding',
         workspaceRoot: this.config.wikiRoot,
