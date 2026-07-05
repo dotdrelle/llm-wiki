@@ -89,6 +89,38 @@ const row = (label: string, value: string) =>
 
 type SuggestedConfig = Record<string, Record<string, boolean | string | number>>;
 
+function modelNamesFromModelsResponse(data: unknown): string[] {
+  if (!data || typeof data !== 'object') return [];
+  const record = data as Record<string, unknown>;
+  const rawModels = Array.isArray(record.data)
+    ? record.data
+    : Array.isArray(record.models)
+      ? record.models
+      : [];
+  return rawModels
+    .map((entry) => {
+      if (typeof entry === 'string') return entry;
+      if (!entry || typeof entry !== 'object') return undefined;
+      const model = entry as Record<string, unknown>;
+      return typeof model.id === 'string'
+        ? model.id
+        : typeof model.name === 'string'
+          ? model.name
+          : undefined;
+    })
+    .filter((entry): entry is string => Boolean(entry));
+}
+
+async function responseTextOrJson(res: Response): Promise<unknown> {
+  const raw = await res.text();
+  if (!raw.trim()) return undefined;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
 function roundUp(value: number, step: number): number {
   return Math.ceil(value / step) * step;
 }
@@ -422,9 +454,23 @@ async function checkProvider(
       if (res.ok || res.status === 400) {
         ok(`${provider} reachable at ${baseUrl}`);
         ok('API key accepted');
+        if (res.ok) {
+          const models = modelNamesFromModelsResponse(await responseTextOrJson(res));
+          if (models.length > 0 && !models.includes(model)) {
+            err(
+              `Model ${model} not listed by provider — available: ${models
+                .slice(0, 5)
+                .join(', ')}`,
+            );
+          } else if (models.includes(model)) {
+            ok(`Model ${model} listed by provider`);
+          }
+        }
       } else if (res.status === 401 || res.status === 403) {
         ok(`${provider} reachable at ${baseUrl}`);
         err('API key invalid or missing');
+      } else if (res.status === 429) {
+        warn(`${provider} quota or rate limit reached while checking /models`);
       } else {
         warn(`${provider} responded with HTTP ${res.status}`);
       }
