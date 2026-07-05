@@ -19,6 +19,8 @@ describe('config resolution', () => {
     delete process.env.WIKI_SERVE_TLS_CA_PATH;
     delete process.env.ALBERT_API_KEY;
     delete process.env.INFINITY_API_KEY;
+    delete process.env.WIKI_LLM_API_KEY;
+    delete process.env.WIKI_VECTOR_API_KEY;
     delete process.env.WIKI_CONFIG_PATH;
     delete process.env.WIKI_WORKSPACE;
     delete process.env.WIKI_WORKSPACE_PATH;
@@ -255,6 +257,34 @@ describe('config resolution', () => {
     expect(config.preset).toBeUndefined();
     expect(config.llm.baseUrl).toBe('https://provider.example.test/v1');
     expect(config.llm.apiKeyEnv).toBe('CUSTOM_API_KEY');
+  });
+
+  it('resolves apiKey environment references while keeping apiKey fields in wikirc', () => {
+    process.env.WIKI_LLM_API_KEY = 'workspace-llm-secret';
+    process.env.WIKI_VECTOR_API_KEY = 'workspace-vector-secret';
+
+    const config = resolveConfig(
+      {
+        llm: {
+          provider: 'openai-compatible',
+          baseUrl: 'https://provider.example.test/v1',
+          model: 'custom-model',
+          apiKey: '${WIKI_LLM_API_KEY}',
+        },
+        retrieval: {
+          vector: {
+            enabled: true,
+            apiKey: '${WIKI_VECTOR_API_KEY}',
+          },
+        },
+      },
+      '/tmp/wiki',
+    );
+
+    expect(config.llm.apiKey).toBe('workspace-llm-secret');
+    expect(config.retrieval.vector.apiKey).toBe('workspace-vector-secret');
+    expect(config.llm.apiKeyEnv).toBeUndefined();
+    expect(config.retrieval.vector.apiKeyEnv).toBeUndefined();
   });
 
   it('requires baseUrl for openai-compatible provider', () => {

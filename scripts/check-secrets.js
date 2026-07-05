@@ -26,7 +26,8 @@ const placeholderPattern =
   /^(YOUR_|MON_|INFINITY_|OPENAI_|ANTHROPIC_|NVIDIA_|VECTOR_|ALBERT_|WIKI_|OLLAMA_|test|generated|optional|example|dummy|placeholder|ollama)/i;
 
 function isAllowedPlaceholder(value) {
-  return placeholderPattern.test(value) || /^[A-Z0-9_]+$/.test(value);
+  const normalized = value.replace(/^\$\{/, '').replace(/\}$/, '');
+  return placeholderPattern.test(normalized) || /^[A-Z0-9_]+$/.test(normalized);
 }
 
 function shouldScanAssignments(file) {
@@ -70,7 +71,8 @@ const activeSecretLines = scaffold
   .split('\n')
   .map((line, index) => ({ line, index: index + 1 }))
   .filter(({ line }) => !/^\s*#/.test(line))
-  .filter(({ line }) => /^\s*(apiKey|accessKey):\s*\S+/.test(line));
+  .filter(({ line }) => /^\s*(apiKey|accessKey):\s*\S+/.test(line))
+  .filter(({ line }) => !/^\s*apiKey:\s*\$\{[A-Z0-9_]+\}\s*$/.test(line));
 
 for (const finding of activeSecretLines) {
   findings.push(

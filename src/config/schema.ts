@@ -161,6 +161,25 @@ function sourceForPath(
   return 'default';
 }
 
+function resolveSecretReference(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const match = /^\$\{([A-Z0-9_]+)(?::-(.*))?\}$/.exec(value);
+  if (!match) return value;
+  const envValue = process.env[match[1]];
+  return envValue && envValue.length > 0 ? envValue : match[2];
+}
+
+function secretSourceForPath(
+  rawInput: unknown,
+  presetInput: unknown,
+  presetName: ConfigPresetName | undefined,
+  path: string,
+  value: string | undefined,
+): ConfigProvenanceSource {
+  if (/^\$\{[A-Z0-9_]+(?::-.+)?\}$/.test(value ?? '')) return 'env';
+  return sourceForPath(rawInput, presetInput, presetName, path);
+}
+
 function normalizeOperationType(value: unknown): unknown {
   if (typeof value !== 'string') {
     return value;
@@ -640,8 +659,9 @@ export function resolveConfigDetails(
     ? process.env[parsed.llm.apiKeyEnv]
     : undefined;
   const apiKey =
-    parsed.llm?.apiKey ??
+    resolveSecretReference(parsed.llm?.apiKey) ??
     llmApiKeyFromEnv ??
+    process.env.WIKI_LLM_API_KEY ??
     (provider === 'openai' ? process.env.OPENAI_API_KEY : undefined) ??
     (provider === 'anthropic' ? process.env.ANTHROPIC_API_KEY : undefined) ??
     (provider === 'ollama' ? 'ollama' : undefined);
@@ -651,7 +671,7 @@ export function resolveConfigDetails(
     ? process.env[parsed.retrieval.vector.apiKeyEnv]
     : undefined;
   const vectorApiKey =
-    parsed.retrieval?.vector?.apiKey ??
+    resolveSecretReference(parsed.retrieval?.vector?.apiKey) ??
     vectorApiKeyFromEnv ??
     process.env.WIKI_VECTOR_API_KEY ??
     process.env.ALBERT_API_KEY ??
@@ -761,10 +781,12 @@ export function resolveConfigDetails(
       'llm.provider': sourceForPath(rawInput, presetInput, presetName, 'llm.provider'),
       'llm.model': sourceForPath(rawInput, presetInput, presetName, 'llm.model'),
       'llm.apiKey': parsed.llm?.apiKey
-        ? sourceForPath(rawInput, presetInput, presetName, 'llm.apiKey')
+        ? secretSourceForPath(rawInput, presetInput, presetName, 'llm.apiKey', parsed.llm.apiKey)
         : llmApiKeyFromEnv
           ? 'env'
-          : sourceForPath(rawInput, presetInput, presetName, 'llm.apiKey'),
+          : process.env.WIKI_LLM_API_KEY
+            ? 'env'
+            : sourceForPath(rawInput, presetInput, presetName, 'llm.apiKey'),
       'llm.apiKeyEnv': sourceForPath(rawInput, presetInput, presetName, 'llm.apiKeyEnv'),
       'llm.baseUrl': sourceForPath(rawInput, presetInput, presetName, 'llm.baseUrl'),
       'llm.temperature': sourceForPath(rawInput, presetInput, presetName, 'llm.temperature'),
@@ -788,10 +810,12 @@ export function resolveConfigDetails(
       'retrieval.vector.enabled': sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.enabled'),
       'retrieval.vector.baseUrl': sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.baseUrl'),
       'retrieval.vector.apiKey': parsed.retrieval?.vector?.apiKey
-        ? sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.apiKey')
+        ? secretSourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.apiKey', parsed.retrieval.vector.apiKey)
         : vectorApiKeyFromEnv
           ? 'env'
-          : sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.apiKey'),
+          : process.env.WIKI_VECTOR_API_KEY || process.env.ALBERT_API_KEY
+            ? 'env'
+            : sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.apiKey'),
       'retrieval.vector.apiKeyEnv': sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.apiKeyEnv'),
       'retrieval.vector.requestsPerMinute':
         pathHasOwnValue(rawInput, 'retrieval.vector.requestsPerMinute') ||
