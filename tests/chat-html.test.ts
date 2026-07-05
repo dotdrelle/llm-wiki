@@ -180,7 +180,7 @@ describe('chat html', () => {
     const sendSource = script.match(/async function sendMessage\(\) \{[\s\S]*?\n\}\n\nasync function sendRuntimeAgentMessage/)?.[0] ?? '';
 
     expect(CHAT_HTML).not.toContain('mcpClientScript');
-    expect(script).toContain("clientInfo: {name: 'WikiChatConnector', version: '0.11.1'}");
+    expect(script).toContain("clientInfo: {name: 'WikiChatConnector', version: '0.11.3'}");
     expect(script).toContain('function preferredServerNameForTool(name)');
     expect(script).toContain("const prefix=text.split('_',1)[0];");
     expect(script).toContain('if(prefix && servers.some(s=>s.name===prefix)) return prefix;');
