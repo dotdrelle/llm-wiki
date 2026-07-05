@@ -13,7 +13,7 @@ llm:
   provider: openai-compatible
   baseUrl: https://mon-provider.example.com/v1
   model: leur-modele-32b
-  apiKey: ${WIKI_LLM_API_KEY}
+  apiKey: votre-cle-api
 
 limits:
   requestsPerMinute: 60
@@ -22,7 +22,7 @@ retrieval:
   vector:
     enabled: true
     baseUrl: http://infinity.local:7997/v1
-    apiKey: ${WIKI_VECTOR_API_KEY}
+    apiKey: votre-cle-vector
     embeddingModel: BAAI/bge-m3
     rerankEnabled: true
     rerankerModel: BAAI/bge-reranker-v2-m3
@@ -40,7 +40,7 @@ value overrides preset/default values.
 
 The scaffold intentionally omits most of these keys. They are shown here for
 advanced tuning and for understanding what `wiki config --effective` resolves
-from schema defaults, presets, file values, and environment variables.
+from schema defaults, presets, file values, and MCP/TLS environment variables.
 
 ```yaml
 language: fr
@@ -49,7 +49,6 @@ llm:
   provider: ollama
   model: qwen2.5:14b
   apiKey: ollama
-  # apiKeyEnv: OLLAMA_API_KEY
   baseUrl: http://127.0.0.1:11434/v1
   temperature: 0.1
   timeoutMs: 600000
@@ -80,7 +79,6 @@ retrieval:
     enabled: false
     baseUrl: http://127.0.0.1:7997/v1
     apiKey: optional-vector-key
-    # apiKey: ${WIKI_VECTOR_API_KEY}
     requestsPerMinute: 10
     timeoutMs: 600000
     embeddingModel: BAAI/bge-m3
@@ -107,9 +105,9 @@ Presets reduce typing only; they are never required. The merge order is
 | Preset   | Applies                                                                                         |
 | -------- | ----------------------------------------------------------------------------------------------- |
 | `albert` | Etalab Albert base URL, BGE-M3 embeddings/reranker, vector enabled, BM25 build strategy, RPM 100 |
-| `openai` | OpenAI base URL, `OPENAI_API_KEY`, vector disabled, BM25 build strategy                         |
+| `openai` | OpenAI base URL, vector disabled, BM25 build strategy                                          |
 | `ollama` | Local Ollama base URL, `apiKey: ollama`, `numCtx: 32768`, vector disabled, RPM 50               |
-| `nvidia` | NVIDIA OpenAI-compatible base URL, `NVIDIA_API_KEY`, vector disabled, RPM 40                    |
+| `nvidia` | NVIDIA OpenAI-compatible base URL, vector disabled, RPM 40                                      |
 
 ## `llm`
 
@@ -117,8 +115,7 @@ Presets reduce typing only; they are never required. The merge order is
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
 | `provider`       | `openai`, `ollama`, `anthropic`, `openai-compatible`                                                                                                 | `openai`           |
 | `model`          | Model name passed to the provider                                                                                                                    | `gpt-5-mini`       |
-| `apiKey`         | API key for this workspace. Use `${WIKI_LLM_API_KEY}` to keep the secret in `.env` while preserving the `apiKey` field.                              | —                  |
-| `apiKeyEnv`      | Legacy supported alternative to `apiKey: ${ENV_NAME}`. Prefer `apiKey: ${WIKI_LLM_API_KEY}` for new configs.                                        | —                  |
+| `apiKey`         | API key for this workspace. Keep the provider key here.                                                                                              | —                  |
 | `baseUrl`        | Provider base URL                                                                                                                                    | provider-dependent |
 | `temperature`    | Sampling temperature. Valid range: `0` to `2`. Some providers/models ignore or reject non-default temperatures.                                      | `0.1`              |
 | `timeoutMs`      | Request timeout in milliseconds. Must be positive.                                                                                                   | `600000`           |
@@ -126,9 +123,8 @@ Presets reduce typing only; they are never required. The merge order is
 | `flashAttention` | Ollama hint for remote/containerized servers when env vars cannot be detected                                                                        | —                  |
 | `kvCacheType`    | Ollama KV cache quantization: `f16`, `q8_0`, or `q4_0`                                                                                               | —                  |
 
-API key resolution order is `llm.apiKey` (including `${WIKI_LLM_API_KEY}`),
-then `llm.apiKeyEnv`, then `WIKI_LLM_API_KEY`, then provider fallbacks
-(`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `ollama` for Ollama).
+API key resolution is direct: `llm.apiKey` is used as written. Ollama defaults
+to `ollama` when no key is set.
 
 ### Provider snippets
 
@@ -268,8 +264,7 @@ Vector retrieval options are documented in [vector-search.md](./vector-search.md
 | --------------------------- | --------------------------------------------------------------------------------------------------- | ------- |
 | `enabled`                   | Enable vector retrieval/index usage. Lexical BM25 fallback remains available.                       | `false` |
 | `baseUrl`                   | OpenAI-compatible base URL for `/embeddings` and `/rerank`. Defaults to `llm.baseUrl`.              | `llm.baseUrl` |
-| `apiKey`                    | API key for vector endpoints. Use `${WIKI_VECTOR_API_KEY}` to keep the secret in `.env`.           | — |
-| `apiKeyEnv`                 | Legacy supported alternative to `apiKey: ${ENV_NAME}`. Prefer `apiKey: ${WIKI_VECTOR_API_KEY}` for new configs. | — |
+| `apiKey`                    | API key for vector endpoints. Omit it to reuse `llm.apiKey`.                                      | `llm.apiKey` |
 | `requestsPerMinute`         | Separate RPM budget for embeddings/rerank. Defaults to `limits.requestsPerMinute`.                  | LLM RPM |
 | `timeoutMs`                 | Vector endpoint timeout in milliseconds. Defaults to `llm.timeoutMs` or `600000`.                  | `600000` |
 | `embeddingModel`            | Model sent to `/embeddings`.                                                                       | `BAAI/bge-m3` |
@@ -279,9 +274,8 @@ Vector retrieval options are documented in [vector-search.md](./vector-search.md
 | `rerankTopK`                | Candidates sent to reranker. Valid range: `1` to `100`.                                            | `24` |
 | `maxResults`                | Final results returned to retrieval consumers. Valid range: `1` to `24`.                           | `6` |
 
-Vector API key resolution order is `retrieval.vector.apiKey` (including
-`${WIKI_VECTOR_API_KEY}`), then `retrieval.vector.apiKeyEnv`, then
-`WIKI_VECTOR_API_KEY`, then `ALBERT_API_KEY`, then the resolved LLM API key.
+Vector API key resolution is direct: `retrieval.vector.apiKey` is used when set;
+otherwise vector calls reuse the resolved `llm.apiKey`.
 
 > **Context budget** — `wiki build` now plans batches using the same logic as `wiki build --plan`: it groups slots up to `limits.targetInputTokensPerCall`, uses `build.slotBatchSize` only as an optional compatibility ceiling, and trims retrieved context if a batch exceeds `limits.maxInputTokensPerCall`. Build context uses BM25 lexical retrieval by default; set `retrieval.buildStrategy: hybrid` to re-enable vector/rerank for build on a quota-free provider. Run `wiki doctor` and `wiki build --plan` after changing these values.
 

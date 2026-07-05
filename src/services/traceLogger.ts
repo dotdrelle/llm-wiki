@@ -1,4 +1,4 @@
-import { appendFile, mkdir } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { relativeFrom, resolveInside } from '../utils/path.ts';
 
@@ -42,6 +42,10 @@ export interface TraceProviderSummary {
 }
 
 export interface TraceRunSummary {
+  command: string;
+  runId: string;
+  traceFile: string;
+  finishedAt: string;
   wallMs: number;
   providerLatencyMs: number;
   providerLatencyRatio: number;
@@ -115,6 +119,7 @@ class FileTraceLogger implements TraceLogger {
   readonly verboseEnabled: boolean;
 
   private readonly startedAt = Date.now();
+  private command = 'unknown';
   private pendingWrite: Promise<void> = Promise.resolve();
   private readonly metrics: Record<TraceProviderKind, TraceProviderSummary> = {
     llm: emptyProviderSummary(),
@@ -140,6 +145,7 @@ class FileTraceLogger implements TraceLogger {
     command: string,
     meta?: { configFile?: string; provider?: string; model?: string; caller?: string },
   ): Promise<void> {
+    this.command = command;
     await mkdir(path.dirname(this.filePath), { recursive: true });
     await this.info('trace:init', {
       command,
@@ -177,6 +183,7 @@ class FileTraceLogger implements TraceLogger {
       durationMs: summary.wallMs,
     });
     await this.pendingWrite;
+    await this.writeLastRun(summary);
   }
 
   recordProviderMetric(metric: TraceProviderMetric): void {
@@ -196,6 +203,10 @@ class FileTraceLogger implements TraceLogger {
       this.metrics.embedding.latencyMs +
       this.metrics.rerank.latencyMs;
     return {
+      command: this.command,
+      runId: this.runId,
+      traceFile: this.displayPath,
+      finishedAt: new Date().toISOString(),
       wallMs,
       providerLatencyMs,
       providerLatencyRatio: wallMs > 0 ? Math.min(1, providerLatencyMs / wallMs) : 0,
@@ -267,6 +278,11 @@ class FileTraceLogger implements TraceLogger {
     );
     await this.pendingWrite;
   }
+
+  private async writeLastRun(summary: TraceRunSummary): Promise<void> {
+    const lastRunPath = path.join(path.dirname(path.dirname(this.filePath)), 'last-run.json');
+    await writeFile(lastRunPath, `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
+  }
 }
 
 function emptyProviderSummary(): TraceProviderSummary {
@@ -309,6 +325,19 @@ export function formatTraceRunSummary(summary: TraceRunSummary): string {
 export function printTraceSummary(logger: TraceLogger): void {
   const formatted = logger.formatSummary?.();
   if (formatted) console.log(`\n${formatted}`);
+}
+
+export async function readLastRunSummary(
+  rootDir: string,
+): Promise<TraceRunSummary | null> {
+  try {
+    const raw = await readFile(path.join(rootDir, '.wiki', 'last-run.json'), 'utf8');
+    const parsed = JSON.parse(raw) as Partial<TraceRunSummary>;
+    if (!parsed || typeof parsed.wallMs !== 'number') return null;
+    return parsed as TraceRunSummary;
+  } catch {
+    return null;
+  }
 }
 
 export async function createTraceLogger(

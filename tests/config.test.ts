@@ -19,8 +19,6 @@ describe('config resolution', () => {
     delete process.env.WIKI_SERVE_TLS_CA_PATH;
     delete process.env.ALBERT_API_KEY;
     delete process.env.INFINITY_API_KEY;
-    delete process.env.WIKI_LLM_API_KEY;
-    delete process.env.WIKI_VECTOR_API_KEY;
     delete process.env.WIKI_CONFIG_PATH;
     delete process.env.WIKI_WORKSPACE;
     delete process.env.WIKI_WORKSPACE_PATH;
@@ -80,7 +78,6 @@ describe('config resolution', () => {
       enabled: true,
       baseUrl: 'https://api.openai.com/v1',
       apiKey: undefined,
-      apiKeyEnv: undefined,
       requestsPerMinute: 10,
       timeoutMs: 600000,
       embeddingModel: 'BAAI/bge-m3',
@@ -216,19 +213,18 @@ describe('config resolution', () => {
         llm: {
           model: 'mistralai/Ministral-3-8B-Instruct-2512',
           baseUrl: 'https://proxy.example.test/v1',
-          apiKeyEnv: 'ALBERT_API_KEY',
+          apiKey: 'albert-secret',
         },
         retrieval: {
           vector: {
             baseUrl: 'http://infinity.local:7997/v1',
-            apiKeyEnv: 'INFINITY_API_KEY',
+            apiKey: 'infinity-secret',
             requestsPerMinute: 1000,
           },
         },
       },
       '/tmp/wiki',
     );
-    delete process.env.ALBERT_API_KEY;
 
     expect(config.preset).toBe('albert');
     expect(config.llm.provider).toBe('openai-compatible');
@@ -248,7 +244,7 @@ describe('config resolution', () => {
           provider: 'openai-compatible',
           baseUrl: 'https://provider.example.test/v1',
           model: 'custom-model',
-          apiKeyEnv: 'CUSTOM_API_KEY',
+          apiKey: 'custom-secret',
         },
       },
       '/tmp/wiki',
@@ -256,25 +252,22 @@ describe('config resolution', () => {
 
     expect(config.preset).toBeUndefined();
     expect(config.llm.baseUrl).toBe('https://provider.example.test/v1');
-    expect(config.llm.apiKeyEnv).toBe('CUSTOM_API_KEY');
+    expect(config.llm.apiKey).toBe('custom-secret');
   });
 
-  it('resolves apiKey environment references while keeping apiKey fields in wikirc', () => {
-    process.env.WIKI_LLM_API_KEY = 'workspace-llm-secret';
-    process.env.WIKI_VECTOR_API_KEY = 'workspace-vector-secret';
-
+  it('keeps apiKey values directly from wikirc', () => {
     const config = resolveConfig(
       {
         llm: {
           provider: 'openai-compatible',
           baseUrl: 'https://provider.example.test/v1',
           model: 'custom-model',
-          apiKey: '${WIKI_LLM_API_KEY}',
+          apiKey: 'workspace-llm-secret',
         },
         retrieval: {
           vector: {
             enabled: true,
-            apiKey: '${WIKI_VECTOR_API_KEY}',
+            apiKey: 'workspace-vector-secret',
           },
         },
       },
@@ -283,8 +276,6 @@ describe('config resolution', () => {
 
     expect(config.llm.apiKey).toBe('workspace-llm-secret');
     expect(config.retrieval.vector.apiKey).toBe('workspace-vector-secret');
-    expect(config.llm.apiKeyEnv).toBeUndefined();
-    expect(config.retrieval.vector.apiKeyEnv).toBeUndefined();
   });
 
   it('requires baseUrl for openai-compatible provider', () => {

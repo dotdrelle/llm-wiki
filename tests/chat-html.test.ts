@@ -1,6 +1,7 @@
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { CHAT_HTML } from '../src/chat/chatHtml.ts';
+import packageJson from '../package.json' with { type: 'json' };
 
 function chatScripts(): string[] {
   return [...CHAT_HTML.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
@@ -180,7 +181,9 @@ describe('chat html', () => {
     const sendSource = script.match(/async function sendMessage\(\) \{[\s\S]*?\n\}\n\nasync function sendRuntimeAgentMessage/)?.[0] ?? '';
 
     expect(CHAT_HTML).not.toContain('mcpClientScript');
-    expect(script).toContain("clientInfo: {name: 'WikiChatConnector', version: '0.11.3'}");
+    expect(script).toContain(
+      `clientInfo: {name: 'WikiChatConnector', version: '${packageJson.version}'}`,
+    );
     expect(script).toContain('function preferredServerNameForTool(name)');
     expect(script).toContain("const prefix=text.split('_',1)[0];");
     expect(script).toContain('if(prefix && servers.some(s=>s.name===prefix)) return prefix;');

@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { ingestPlanSchema } from '../config/schema.ts';
 import { buildIngestPrompt } from '../prompts/ingestPrompt.ts';
 import { buildPromptContext } from '../prompts/systemPreamble.ts';
@@ -25,6 +26,19 @@ interface IngestSectionResult {
   operations: WikiOperation[];
   summary: string;
   retry?: IngestRetryInfo;
+}
+
+interface PlannedIngestSource {
+  source: string;
+  summary?: string;
+  operations: WikiOperation[];
+  review?: IngestReviewOperation[];
+  skipped?: boolean;
+}
+
+interface PlannedIngestFile {
+  generatedAt?: string;
+  sources?: PlannedIngestSource[];
 }
 
 function classifyIngestError(error: unknown): IngestRetryInfo['classification'] {
@@ -684,5 +698,186 @@ export class IngestService {
     });
 
     return results;
+  }
+
+  async applyPlannedIngest(
+    planFiles: string[],
+    options?: Pick<IngestCommandOptions, 'reject' | 'refresh'>,
+  ): Promise<IngestResult[]> {
+    const runStartedAt = Date.now();
+    await this.workspace.ensureInitialized();
+    await this.logger.info('ingest:run-start', {
+      inputCount: planFiles.length,
+      apply: true,
+      refreshEnabled: options?.refresh === true,
+    });
+
+    const rejectedPaths = new Set(options?.reject ?? []);
+    const plannedSources: PlannedIngestSource[] = [];
+    for (const planFile of planFiles) {
+      const absolutePath = this.resolveWorkspacePath(planFile, 'ingest plan file');
+      const raw = await readFile(absolutePath, 'utf8');
+      const parsed = JSON.parse(raw) as PlannedIngestFile | PlannedIngestSource[];
+      const sources = Array.isArray(parsed) ? parsed : parsed.sources;
+      if (!Array.isArray(sources)) {
+        throw new Error(`Invalid ingest plan file: ${planFile}`);
+      }
+      plannedSources.push(...sources);
+    }
+
+    await this.logger.info('ingest:source-selection', {
+      resolvedCount: plannedSources.length,
+    });
+
+    const results: IngestResult[] = [];
+    for (let i = 0; i < plannedSources.length; i++) {
+      const planned = plannedSources[i];
+      const sourceStartedAt = Date.now();
+      await this.logger.info('ingest:source-start', {
+        sourcePath: planned.source,
+      });
+      try {
+        if (planned.skipped) {
+          await this.archivePlannedSource(planned);
+          results.push({
+            source: planned.source,
+            plan: { summary: planned.summary ?? 'unchanged since last ingest', operations: [] },
+            skipped: true,
+          });
+          await this.logger.info('ingest:source-done', {
+            source: planned.source,
+            durationMs: Date.now() - sourceStartedAt,
+            status: 'skipped',
+          });
+          continue;
+        }
+
+        const operations = await this.workspace.normalizeWikiOperations(
+          planned.operations ?? [],
+        );
+        const applyOperations = operations.filter(
+          (operation) => !rejectedPaths.has(operation.path),
+        );
+        const rejectedCount = operations.length - applyOperations.length;
+        await this.logger.info('ingest:review', {
+          source: planned.source,
+          operations: operations.length,
+          rejected: rejectedCount,
+          apply: true,
+        });
+
+        if (operations.length > 0 && applyOperations.length === 0) {
+          await this.logger.info('ingest:apply-skip', {
+            source: planned.source,
+            reason: 'all operations rejected',
+          });
+        } else {
+          const operationCounts = applyOperations.reduce(
+            (counts, operation) => {
+              counts[operation.type] += 1;
+              return counts;
+            },
+            { create: 0, update: 0, delete: 0 },
+          );
+          const applyStartedAt = Date.now();
+          await this.workspace.applyNormalizedWikiOperations(applyOperations);
+          this.retrieval.invalidateCache();
+          await this.logger.info('ingest:apply', {
+            source: planned.source,
+            durationMs: Date.now() - applyStartedAt,
+            create: operationCounts.create,
+            update: operationCounts.update,
+            delete: operationCounts.delete,
+            atomic: true,
+          });
+        }
+
+        await this.archivePlannedSource(planned);
+        await this.workspace.appendLog(
+          'ingest',
+          `${planned.source} (${planned.summary ?? 'planned ingest applied'})`,
+        );
+        results.push({
+          source: planned.source,
+          plan: { summary: planned.summary ?? '', operations: applyOperations },
+          review: planned.review,
+        });
+        await this.logger.info('ingest:source-done', {
+          source: planned.source,
+          durationMs: Date.now() - sourceStartedAt,
+          status: 'success',
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await this.logger.error('ingest:source-failed', {
+          sourcePath: planned.source,
+          durationMs: Date.now() - sourceStartedAt,
+          message,
+        });
+        results.push({
+          source: planned.source,
+          failed: true,
+          error: message,
+        });
+      }
+    }
+
+    const successfulResults = results.filter((result) => !result.failed);
+    const failedResults = results.filter((result) => result.failed);
+    const shouldRefresh = options?.refresh === true || this.config.build.refreshOnIngest;
+    if (successfulResults.length > 0 && shouldRefresh) {
+      const refreshStartedAt = Date.now();
+      try {
+        const refreshResults = await this.refresh.refresh();
+        await this.logger.info('ingest:refresh', {
+          durationMs: Date.now() - refreshStartedAt,
+          changed: refreshResults.filter((result) => result.changed).length,
+          skipped: refreshResults.filter((result) => result.skipped).length,
+          unchanged: refreshResults.filter((result) => !result.changed && !result.skipped)
+            .length,
+        });
+      } catch (error) {
+        await this.logger.error('ingest:refresh-failed', {
+          durationMs: Date.now() - refreshStartedAt,
+          message: error instanceof Error ? error.message : String(error),
+          advice: 'Rerun `wiki refresh` later to rebuild stale deliverables.',
+        });
+      }
+    } else {
+      await this.logger.info('ingest:refresh', {
+        skipped: true,
+      });
+    }
+
+    await this.logger.info('ingest:run-done', {
+      sourceCount: results.length,
+      failed: failedResults.length,
+      durationMs: Date.now() - runStartedAt,
+      status: failedResults.length > 0 ? 'partial_failure' : 'success',
+    });
+    return results;
+  }
+
+  private async archivePlannedSource(planned: PlannedIngestSource): Promise<void> {
+    const sourcePath = this.resolveWorkspacePath(planned.source, 'ingest source');
+    const source = await this.workspace.readSourceDocument(sourcePath);
+    const archiveStartedAt = Date.now();
+    await this.workspace.archiveSource(source);
+    await this.logger.info('ingest:archive', {
+      source: source.relativePath,
+      archivePath: source.archiveCitationPath,
+      durationMs: Date.now() - archiveStartedAt,
+    });
+  }
+
+  private resolveWorkspacePath(value: string, label: string): string {
+    const absolutePath = path.isAbsolute(value)
+      ? path.resolve(value)
+      : path.resolve(this.workspace.paths.rootDir, value);
+    const relativePath = path.relative(this.workspace.paths.rootDir, absolutePath);
+    if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+      throw new Error(`Invalid ${label}: path must stay inside the workspace.`);
+    }
+    return absolutePath;
   }
 }

@@ -31,7 +31,7 @@ retrieval:
   vector:
     enabled: true
     baseUrl: http://127.0.0.1:7997/v1 # optional; defaults to llm.baseUrl
-    apiKey: ${WIKI_VECTOR_API_KEY} # keep the secret in the workspace .env
+    apiKey: votre-cle-vector # optional; defaults to llm.apiKey
     requestsPerMinute: 1000 # optional; defaults to limits.requestsPerMinute
     timeoutMs: 600000
     embeddingModel: BAAI/bge-m3 # model served by your /v1/embeddings endpoint
@@ -46,7 +46,7 @@ retrieval:
 | ----------------------- | -------------------------------------------------- | ---------------------------------------------------------- |
 | `vector.enabled`        | Prefer vector retrieval when an index is available | `false`                                                    |
 | `vector.baseUrl`        | Base URL for `/v1/embeddings` and `/v1/rerank`     | `llm.baseUrl`                                              |
-| `vector.apiKey`         | API key for vector endpoints. Use `${WIKI_VECTOR_API_KEY}` to keep the secret in `.env`. | `WIKI_VECTOR_API_KEY`, `ALBERT_API_KEY`, then `llm.apiKey` |
+| `vector.apiKey`         | API key for vector endpoints. Omit it to reuse `llm.apiKey`. | `llm.apiKey` |
 | `vector.requestsPerMinute` | Vector/rerank request throttle                  | `limits.requestsPerMinute`                                 |
 | `vector.timeoutMs`      | Timeout for vector endpoint calls                  | `llm.timeoutMs` or `600000`                                |
 | `vector.embeddingModel` | Model name for `/v1/embeddings`                    | `BAAI/bge-m3`                                              |

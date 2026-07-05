@@ -2,7 +2,11 @@ import type { AppConfig, BuildCommandOptions } from '../types.ts';
 import { BuildService } from '../services/buildService.ts';
 import { LLMService } from '../services/llmService.ts';
 import { RetrievalService } from '../services/retrievalService.ts';
-import { createTraceLogger, printTraceSummary } from '../services/traceLogger.ts';
+import {
+  createTraceLogger,
+  readLastRunSummary,
+  type TraceRunSummary,
+} from '../services/traceLogger.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import { Spinner } from '../utils/spinner.ts';
 
@@ -13,6 +17,7 @@ export default async function buildCmd(
 ) {
   const workspace = new WorkspaceService(config);
   await workspace.ensureInitialized();
+  const previousRun = await readLastRunSummary(workspace.paths.rootDir);
   const logger = await createTraceLogger({
     rootDir: workspace.paths.rootDir,
     logsDir: workspace.paths.logsDir,
@@ -33,6 +38,7 @@ export default async function buildCmd(
 
   const spinner =
     options.verbose || options.debug ? null : new Spinner('Building deliverables…');
+  let completedBuild = false;
   try {
     if (options.plan) {
       spinner?.start();
@@ -117,6 +123,7 @@ export default async function buildCmd(
         });
       },
     });
+    completedBuild = true;
     spinner?.stop();
 
     if (results.length === 0) {
@@ -137,7 +144,9 @@ export default async function buildCmd(
     throw e;
   } finally {
     await logger.close();
-    printTraceSummary(logger);
+    if (completedBuild) {
+      printBuildSummary(logger.summary?.(), previousRun);
+    }
   }
 }
 
@@ -145,4 +154,34 @@ function formatContextSummary(contextPages: string[], fallback: string): string 
   if (contextPages.length === 0) return fallback;
   if (contextPages.length === 1) return contextPages[0];
   return `${contextPages[0]} +${contextPages.length - 1} context page(s)`;
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) return `${seconds}s`;
+  return `${minutes}m${String(seconds).padStart(2, '0')}s`;
+}
+
+function formatTokenCount(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
+  if (tokens >= 1_000) return `${Math.round(tokens / 1000)}k`;
+  return String(tokens);
+}
+
+function printBuildSummary(
+  summary: TraceRunSummary | undefined,
+  previousRun: TraceRunSummary | null,
+): void {
+  if (!summary) return;
+  const previous =
+    previousRun?.command === 'build' ? ` (précédent : ${formatDuration(previousRun.wallMs)})` : '';
+  console.log(`\n✔ Build terminé — ${formatDuration(summary.wallMs)}${previous}`);
+  console.log(
+    `  LLM ${summary.llm.calls} appels · ${formatTokenCount(summary.llm.inputTokens)} tokens in · throttle ${formatDuration(summary.llm.throttleMs)} · latence ${formatDuration(summary.llm.latencyMs)}`,
+  );
+  console.log(
+    `  Embeddings ${summary.embedding.calls} (${summary.embedding.cacheHits} cache) · Rerank ${summary.rerank.calls} (${summary.rerank.cacheHits} cache)`,
+  );
 }

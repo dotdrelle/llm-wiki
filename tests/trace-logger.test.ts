@@ -61,5 +61,14 @@ describe('trace logger', () => {
     expect(content).toContain('trace:summary');
     expect(content).toContain('llmCalls=2');
     expect(content).toContain('embeddingCacheHits=3');
+    const lastRun = JSON.parse(
+      await readFile(path.join(root, '.wiki', 'last-run.json'), 'utf8'),
+    );
+    expect(lastRun).toMatchObject({
+      command: 'build',
+      runId: logger.runId,
+      traceFile: logger.displayPath,
+    });
+    expect(lastRun.llm.calls).toBe(2);
   });
 });

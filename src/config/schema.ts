@@ -56,14 +56,12 @@ const CONFIG_PRESETS: Record<ConfigPresetName, PlainObject> = {
     llm: {
       provider: 'openai',
       baseUrl: DEFAULT_OPENAI_BASE_URL,
-      apiKeyEnv: 'OPENAI_API_KEY',
     },
     retrieval: {
       buildStrategy: 'bm25',
       vector: {
         enabled: false,
         baseUrl: DEFAULT_OPENAI_BASE_URL,
-        apiKeyEnv: 'OPENAI_API_KEY',
       },
     },
   },
@@ -93,7 +91,6 @@ const CONFIG_PRESETS: Record<ConfigPresetName, PlainObject> = {
     llm: {
       provider: 'openai-compatible',
       baseUrl: NVIDIA_BASE_URL,
-      apiKeyEnv: 'NVIDIA_API_KEY',
     },
     limits: {
       requestsPerMinute: 40,
@@ -106,7 +103,6 @@ const CONFIG_PRESETS: Record<ConfigPresetName, PlainObject> = {
       vector: {
         enabled: false,
         baseUrl: NVIDIA_BASE_URL,
-        apiKeyEnv: 'NVIDIA_API_KEY',
       },
     },
   },
@@ -159,25 +155,6 @@ function sourceForPath(
   if (pathHasOwnValue(rawInput, path)) return 'file';
   if (presetName && pathHasOwnValue(presetInput, path)) return `preset:${presetName}`;
   return 'default';
-}
-
-function resolveSecretReference(value: string | undefined): string | undefined {
-  if (!value) return undefined;
-  const match = /^\$\{([A-Z0-9_]+)(?::-(.*))?\}$/.exec(value);
-  if (!match) return value;
-  const envValue = process.env[match[1]];
-  return envValue && envValue.length > 0 ? envValue : match[2];
-}
-
-function secretSourceForPath(
-  rawInput: unknown,
-  presetInput: unknown,
-  presetName: ConfigPresetName | undefined,
-  path: string,
-  value: string | undefined,
-): ConfigProvenanceSource {
-  if (/^\$\{[A-Z0-9_]+(?::-.+)?\}$/.test(value ?? '')) return 'env';
-  return sourceForPath(rawInput, presetInput, presetName, path);
 }
 
 function normalizeOperationType(value: unknown): unknown {
@@ -391,7 +368,6 @@ const llmSchema = z
       .default('openai'),
     model: z.string().min(1).default('gpt-5-mini'),
     apiKey: z.string().min(1).optional(),
-    apiKeyEnv: z.string().min(1).optional(),
     baseUrl: z.string().url().optional(),
     temperature: z.number().min(0).max(2).default(0.1),
     timeoutMs: z.number().int().positive().default(600000),
@@ -455,7 +431,6 @@ const retrievalSchema = z
         enabled: z.boolean().default(false),
         baseUrl: z.string().url().optional(),
         apiKey: z.string().min(1).optional(),
-        apiKeyEnv: z.string().min(1).optional(),
         requestsPerMinute: z.number().int().min(1).optional(),
         timeoutMs: z.number().int().min(1000).default(600000).optional(),
         embeddingModel: z.string().min(1).default('BAAI/bge-m3'),
@@ -655,26 +630,13 @@ export function resolveConfigDetails(
     throw new Error('Provider "openai-compatible" requires llm.baseUrl in .wikirc.yaml.');
   }
 
-  const llmApiKeyFromEnv = parsed.llm?.apiKeyEnv
-    ? process.env[parsed.llm.apiKeyEnv]
-    : undefined;
   const apiKey =
-    resolveSecretReference(parsed.llm?.apiKey) ??
-    llmApiKeyFromEnv ??
-    process.env.WIKI_LLM_API_KEY ??
-    (provider === 'openai' ? process.env.OPENAI_API_KEY : undefined) ??
-    (provider === 'anthropic' ? process.env.ANTHROPIC_API_KEY : undefined) ??
+    parsed.llm?.apiKey ??
     (provider === 'ollama' ? 'ollama' : undefined);
 
   const vectorBaseUrl = parsed.retrieval?.vector?.baseUrl ?? baseUrl;
-  const vectorApiKeyFromEnv = parsed.retrieval?.vector?.apiKeyEnv
-    ? process.env[parsed.retrieval.vector.apiKeyEnv]
-    : undefined;
   const vectorApiKey =
-    resolveSecretReference(parsed.retrieval?.vector?.apiKey) ??
-    vectorApiKeyFromEnv ??
-    process.env.WIKI_VECTOR_API_KEY ??
-    process.env.ALBERT_API_KEY ??
+    parsed.retrieval?.vector?.apiKey ??
     apiKey;
 
   const mcpCertPath = process.env.WIKI_MCP_TLS_CERT_PATH;
@@ -725,7 +687,6 @@ export function resolveConfigDetails(
       provider,
       model: parsed.llm?.model ?? 'gpt-5-mini',
       apiKey,
-      apiKeyEnv: parsed.llm?.apiKeyEnv,
       baseUrl,
       temperature: parsed.llm?.temperature ?? 0.1,
       timeoutMs: parsed.llm?.timeoutMs ?? 600000,
@@ -756,7 +717,6 @@ export function resolveConfigDetails(
         enabled: parsed.retrieval?.vector?.enabled ?? false,
         baseUrl: vectorBaseUrl,
         apiKey: vectorApiKey,
-        apiKeyEnv: parsed.retrieval?.vector?.apiKeyEnv,
         requestsPerMinute:
           parsed.retrieval?.vector?.requestsPerMinute ??
           parsed.limits?.requestsPerMinute ??
@@ -780,14 +740,7 @@ export function resolveConfigDetails(
       language: sourceForPath(rawInput, presetInput, presetName, 'language'),
       'llm.provider': sourceForPath(rawInput, presetInput, presetName, 'llm.provider'),
       'llm.model': sourceForPath(rawInput, presetInput, presetName, 'llm.model'),
-      'llm.apiKey': parsed.llm?.apiKey
-        ? secretSourceForPath(rawInput, presetInput, presetName, 'llm.apiKey', parsed.llm.apiKey)
-        : llmApiKeyFromEnv
-          ? 'env'
-          : process.env.WIKI_LLM_API_KEY
-            ? 'env'
-            : sourceForPath(rawInput, presetInput, presetName, 'llm.apiKey'),
-      'llm.apiKeyEnv': sourceForPath(rawInput, presetInput, presetName, 'llm.apiKeyEnv'),
+      'llm.apiKey': sourceForPath(rawInput, presetInput, presetName, 'llm.apiKey'),
       'llm.baseUrl': sourceForPath(rawInput, presetInput, presetName, 'llm.baseUrl'),
       'llm.temperature': sourceForPath(rawInput, presetInput, presetName, 'llm.temperature'),
       'llm.timeoutMs': sourceForPath(rawInput, presetInput, presetName, 'llm.timeoutMs'),
@@ -809,14 +762,7 @@ export function resolveConfigDetails(
       'retrieval.maxSourceChars': sourceForPath(rawInput, presetInput, presetName, 'retrieval.maxSourceChars'),
       'retrieval.vector.enabled': sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.enabled'),
       'retrieval.vector.baseUrl': sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.baseUrl'),
-      'retrieval.vector.apiKey': parsed.retrieval?.vector?.apiKey
-        ? secretSourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.apiKey', parsed.retrieval.vector.apiKey)
-        : vectorApiKeyFromEnv
-          ? 'env'
-          : process.env.WIKI_VECTOR_API_KEY || process.env.ALBERT_API_KEY
-            ? 'env'
-            : sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.apiKey'),
-      'retrieval.vector.apiKeyEnv': sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.apiKeyEnv'),
+      'retrieval.vector.apiKey': sourceForPath(rawInput, presetInput, presetName, 'retrieval.vector.apiKey'),
       'retrieval.vector.requestsPerMinute':
         pathHasOwnValue(rawInput, 'retrieval.vector.requestsPerMinute') ||
         pathHasOwnValue(presetInput, 'retrieval.vector.requestsPerMinute')

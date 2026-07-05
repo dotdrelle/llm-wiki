@@ -55,8 +55,6 @@ describe('workspace safety', () => {
   afterEach(() => {
     delete process.env.WIKI_MCP_AUTH_TOKEN;
     delete process.env.WIKI_MCP_ACCESS_KEY;
-    delete process.env.WIKI_LLM_API_KEY;
-    delete process.env.WIKI_VECTOR_API_KEY;
   });
 
   it('scaffolds the generic provider config with explicit reranker settings', async () => {
@@ -71,18 +69,16 @@ describe('workspace safety', () => {
       .split('\n')
       .filter((line) => line.trim() && !line.trimStart().startsWith('#'));
     expect(effectiveLines).toHaveLength(17);
-    expect(rawConfig).toContain('apiKey: ${WIKI_LLM_API_KEY}');
-    expect(rawConfig).toContain('apiKey: ${WIKI_VECTOR_API_KEY}');
+    expect(rawConfig).toContain('apiKey: YOUR_LLM_API_KEY');
+    expect(rawConfig).toContain('apiKey: YOUR_VECTOR_API_KEY');
     expect(rawConfig).not.toContain('apiKeyEnv:');
     expect(rawConfig).not.toMatch(/^\s*accessKey:\s*\S+/m);
-    process.env.WIKI_LLM_API_KEY = 'workspace-llm-key';
-    process.env.WIKI_VECTOR_API_KEY = 'workspace-vector-key';
     const initializedConfig = await loadConfig(root);
     expect(initializedConfig.preset).toBeUndefined();
     expect(initializedConfig.llm.provider).toBe('openai-compatible');
     expect(initializedConfig.llm.baseUrl).toBe('https://mon-provider.example.com/v1');
-    expect(initializedConfig.llm.apiKey).toBe('workspace-llm-key');
-    expect(initializedConfig.retrieval.vector.apiKey).toBe('workspace-vector-key');
+    expect(initializedConfig.llm.apiKey).toBe('YOUR_LLM_API_KEY');
+    expect(initializedConfig.retrieval.vector.apiKey).toBe('YOUR_VECTOR_API_KEY');
     expect(initializedConfig.retrieval.vector.rerankEnabled).toBe(true);
     expect(initializedConfig.retrieval.vector.rerankerModel).toBe('BAAI/bge-reranker-v2-m3');
     await expect(

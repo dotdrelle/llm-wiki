@@ -48,9 +48,11 @@ Main capabilities:
 
 - initialize a workspace with `wiki init`;
 - ingest Markdown sources from `raw/untracked/`;
+- expose internal ingest planning/apply phases for orchestrated parallel ingest;
 - maintain durable wiki pages under `wiki/`;
 - query the wiki with lexical and optional vector retrieval;
 - generate deliverables from `templates/` and `build-context/`;
+- show a build runtime/provider summary and compare it with the previous build;
 - export deliverables with inline source detail;
 - serve a local web UI and MCP endpoint;
 - install a complete workspace skill with `wiki add-skill`.
@@ -63,6 +65,10 @@ wiki init
 
 Edit `.wikirc.yaml` with your provider, model, endpoint, key, language, and
 retrieval settings.
+
+The generated `.wikirc.yaml` keeps provider keys directly in `llm.apiKey` and
+`retrieval.vector.apiKey`; `apiKeyEnv` and `WIKI_LLM_API_KEY` /
+`WIKI_VECTOR_API_KEY` are not part of the default config path.
 
 Validate the workspace:
 

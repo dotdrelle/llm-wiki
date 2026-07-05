@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { IngestService } from '../src/services/ingestService.ts';
 import type { LLMService } from '../src/services/llmService.ts';
@@ -64,6 +67,7 @@ class FakeWorkspaceService {
   appliedOperations: WikiOperation[] = [];
   appliedBatches: WikiOperation[][] = [];
   archivedSources: string[] = [];
+  paths = { rootDir: '/tmp/wiki' };
   sourcePaths = ['/tmp/wiki/raw/untracked/note.md'];
   sourceBody = 'Body.';
   detectedEncoding?: SourceDocument['detectedEncoding'];
@@ -726,6 +730,74 @@ describe('ingest service', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('applies a planned ingest file without calling the LLM', async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-plan-'));
+    const workspace = new FakeWorkspaceService();
+    workspace.paths = { rootDir };
+    const planPath = path.join(rootDir, '.wiki', 'ingest-plans', 'plan.json');
+    await mkdir(path.dirname(planPath), { recursive: true });
+    await writeFile(
+      planPath,
+      JSON.stringify({
+        generatedAt: new Date().toISOString(),
+        sources: [
+          {
+            source: 'raw/untracked/note.md',
+            summary: 'Planned note.',
+            operations: [
+              {
+                type: 'create',
+                path: 'wiki/sources/note.md',
+                content: '# Note\n\n[src: raw/ingested/note.md]\n',
+              },
+            ],
+            review: [
+              {
+                type: 'create',
+                path: 'wiki/sources/note.md',
+                source: 'raw/untracked/note.md',
+                archivePath: 'raw/ingested/note.md',
+                status: 'pending',
+                beforeExists: false,
+                afterExists: true,
+                diff: { changed: true, addedLines: 1, removedLines: 0, preview: [] },
+              },
+            ],
+          },
+        ],
+      }),
+      'utf8',
+    );
+    const logger = new MemoryTraceLogger();
+    const llm = new FakeLLMService();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      llm as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+    );
+
+    const results = await service.applyPlannedIngest(['.wiki/ingest-plans/plan.json']);
+
+    expect(llm.calls).toBe(0);
+    expect(results).toHaveLength(1);
+    expect(results[0].source).toBe('raw/untracked/note.md');
+    expect(results[0].failed).toBeUndefined();
+    expect(workspace.appliedBatches).toEqual([
+      [
+        {
+          type: 'create',
+          path: 'wiki/sources/note.md',
+          content: '# Note\n\n[src: raw/ingested/note.md]\n',
+        },
+      ],
+    ]);
+    expect(workspace.archivedSources).toEqual(['raw/untracked/note.md']);
+    expect(logger.entries.some((entry) => entry.event === 'ingest:apply')).toBe(true);
   });
 
   it('does not report a source as successful when applying operations fails', async () => {

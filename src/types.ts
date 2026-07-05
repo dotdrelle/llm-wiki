@@ -5,7 +5,6 @@ export interface LlmConfig {
   provider: LlmProvider;
   model: string;
   apiKey?: string;
-  apiKeyEnv?: string;
   baseUrl: string;
   temperature: number;
   timeoutMs: number;
@@ -42,7 +41,6 @@ export interface VectorRetrievalConfig {
   enabled: boolean;
   baseUrl: string;
   apiKey?: string;
-  apiKeyEnv?: string;
   requestsPerMinute?: number;
   timeoutMs: number;
   embeddingModel: string;
@@ -101,6 +99,8 @@ export interface RefreshCommandOptions {
 
 export interface IngestCommandOptions {
   dryRun?: boolean;
+  planOnly?: boolean;
+  apply?: string[];
   refresh?: boolean;
   force?: boolean;
   reject?: string[];

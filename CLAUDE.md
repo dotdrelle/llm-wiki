@@ -59,7 +59,13 @@ write guards (`mcpServer.ts`, see Safety Rules) and MCP HTTP hardening
 quality) replaces naive lexical scoring with BM25 and adds ingestion
 review/dry-run/reject and classified retry (see Important Services). 0.9.5,
 0.9.6, 0.9.7, 0.10.0 (in `llm-wiki-manager` only), 0.10.2, 0.10.3, and 0.10.4
-are all implemented in the working tree, not yet released/tagged.
+are released. 0.11.4 keeps the workspace config path intentionally direct:
+provider keys live in `.wikirc.yaml` under `llm.apiKey` and
+`retrieval.vector.apiKey` (no `apiKeyEnv`, no `WIKI_LLM_API_KEY` /
+`WIKI_VECTOR_API_KEY` default path), exposes internal `wiki ingest --plan-only`
+/ `--apply` plumbing for orchestrated parallel ingest, and writes
+`.wiki/last-run.json` so `wiki build` can compare the current runtime/provider
+summary with the previous build.
 
 ## Layout
 

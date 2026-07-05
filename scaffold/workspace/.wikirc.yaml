@@ -4,7 +4,7 @@ llm:
   provider: openai-compatible
   baseUrl: https://mon-provider.example.com/v1
   model: YOUR_MODEL_NAME
-  apiKey: ${WIKI_LLM_API_KEY}
+  apiKey: YOUR_LLM_API_KEY
 
 limits: { requestsPerMinute: 60 }
 
@@ -12,7 +12,7 @@ retrieval:
   vector:
     enabled: true
     baseUrl: http://infinity.local:7997/v1
-    apiKey: ${WIKI_VECTOR_API_KEY}
+    apiKey: YOUR_VECTOR_API_KEY
     embeddingModel: BAAI/bge-m3
     rerankEnabled: true
     rerankerModel: BAAI/bge-reranker-v2-m3

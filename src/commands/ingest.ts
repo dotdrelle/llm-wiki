@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { mkdir, writeFile } from 'node:fs/promises';
 import type { AppConfig, IngestCommandOptions } from '../types.ts';
 import { IngestService } from '../services/ingestService.ts';
 import { LLMService } from '../services/llmService.ts';
@@ -65,36 +66,39 @@ export default async function ingestCmd(
     spinner?.start();
     let tokensLabel = '';
     const fmtTok = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
-    const results = await service.ingest(files, {
-      ...options,
-      onSourceStart: (sourcePath, index, total) => {
-        tokensLabel = '';
-        const name = path.basename(sourcePath, '.md');
-        spinner?.update(`Ingesting ${name} (${index + 1}/${total})…`);
-        spinner?.updateSub(undefined);
-      },
-      onSourceLlm: (sourcePath, index, total, progress) => {
-        tokensLabel = '';
-        const llmStart = Date.now();
-        const name = path.basename(sourcePath, '.md');
-        const sectionLabel =
-          progress && progress.sectionTotal > 1
-            ? `, section ${progress.sectionIndex + 1}/${progress.sectionTotal}`
-            : '';
-        spinner?.update(`Ingesting ${name} (${index + 1}/${total}${sectionLabel})…`);
-        spinner?.updateSub(() => {
-          const s = ((Date.now() - llmStart) / 1000).toFixed(1);
-          const subSection =
-            progress && progress.sectionTotal > 1
-              ? `section ${progress.sectionIndex + 1}/${progress.sectionTotal} · `
-              : '';
-          return `${name} · ${subSection}LLM ${s}s${tokensLabel}`;
+    const results = options.apply?.length
+      ? await service.applyPlannedIngest(options.apply, options)
+      : await service.ingest(files, {
+          ...options,
+          dryRun: options.dryRun || options.planOnly,
+          onSourceStart: (sourcePath, index, total) => {
+            tokensLabel = '';
+            const name = path.basename(sourcePath, '.md');
+            spinner?.update(`Ingesting ${name} (${index + 1}/${total})…`);
+            spinner?.updateSub(undefined);
+          },
+          onSourceLlm: (sourcePath, index, total, progress) => {
+            tokensLabel = '';
+            const llmStart = Date.now();
+            const name = path.basename(sourcePath, '.md');
+            const sectionLabel =
+              progress && progress.sectionTotal > 1
+                ? `, section ${progress.sectionIndex + 1}/${progress.sectionTotal}`
+                : '';
+            spinner?.update(`Ingesting ${name} (${index + 1}/${total}${sectionLabel})…`);
+            spinner?.updateSub(() => {
+              const s = ((Date.now() - llmStart) / 1000).toFixed(1);
+              const subSection =
+                progress && progress.sectionTotal > 1
+                  ? `section ${progress.sectionIndex + 1}/${progress.sectionTotal} · `
+                  : '';
+              return `${name} · ${subSection}LLM ${s}s${tokensLabel}`;
+            });
+          },
+          onSourceUsage: (_sourcePath, _index, _total, usage) => {
+            tokensLabel = ` · ${fmtTok(usage.inputTokens)}in ${fmtTok(usage.outputTokens)}out`;
+          },
         });
-      },
-      onSourceUsage: (_sourcePath, _index, _total, usage) => {
-        tokensLabel = ` · ${fmtTok(usage.inputTokens)}in ${fmtTok(usage.outputTokens)}out`;
-      },
-    });
     spinner?.stop();
 
     if (results.length === 0) {
@@ -141,6 +145,11 @@ export default async function ingestCmd(
       }
     }
 
+    if (options.planOnly && !options.apply?.length) {
+      const planFile = await writeIngestPlan(workspace.paths.rootDir, results);
+      console.log(`\nIngest plan written: ${planFile}`);
+    }
+
     const failed = results.filter((result) => result.failed);
     if (failed.length > 0) {
       console.error(
@@ -150,7 +159,7 @@ export default async function ingestCmd(
     }
 
     const hasChangedSources = results.some((result) => !result.failed && !result.skipped);
-    if (!options.dryRun && config.retrieval.vector.enabled && hasChangedSources) {
+    if (!options.dryRun && !options.planOnly && config.retrieval.vector.enabled && hasChangedSources) {
       const vectorIndex = new VectorIndexService(
         config,
         workspace,
@@ -193,6 +202,28 @@ export default async function ingestCmd(
     await logger.close();
     printTraceSummary(logger);
   }
+}
+
+async function writeIngestPlan(rootDir: string, results: Awaited<ReturnType<IngestService['ingest']>>) {
+  const dir = path.join(rootDir, '.wiki', 'ingest-plans');
+  await mkdir(dir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const relative = path.posix.join('.wiki', 'ingest-plans', `ingest-${stamp}.json`);
+  const absolute = path.join(rootDir, relative);
+  const payload = {
+    generatedAt: new Date().toISOString(),
+    sources: results
+      .filter((result) => !result.failed)
+      .map((result) => ({
+        source: result.source,
+        summary: result.plan?.summary,
+        operations: result.plan?.operations ?? [],
+        review: result.review ?? [],
+        skipped: result.skipped === true,
+      })),
+  };
+  await writeFile(absolute, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  return relative;
 }
 
 async function withIndexSpinner<T>(task: () => Promise<T>): Promise<T> {

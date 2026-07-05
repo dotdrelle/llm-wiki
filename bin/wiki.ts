@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 declare const __PKG_VERSION__: string;
 import { readFileSync } from 'node:fs';
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { loadConfig } from '../src/config/loadConfig.ts';
 import { loadWorkspaceEnv } from '../src/config/loadEnv.ts';
 import initCmd from '../src/commands/init.ts';
@@ -85,6 +85,8 @@ async function main() {
     .description('Ingest markdown sources from raw/untracked into the persistent wiki')
     .argument('[files...]', 'Specific files relative to the workspace root or raw/untracked')
     .option('--dry-run', 'Show planned wiki operations without writing')
+    .addOption(new Option('--plan-only', 'Write planned ingest operations without applying them').hideHelp())
+    .addOption(new Option('--apply <file...>', 'Apply planned ingest operation file(s)').hideHelp())
     .option('--refresh', 'Run deliverable rebuild after ingest')
     .option('--force', 'Re-ingest even if the source is unchanged since last ingest')
     .option('--reject <path...>', 'Reject planned wiki operation path(s) during review')
