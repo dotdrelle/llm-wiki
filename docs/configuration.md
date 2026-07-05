@@ -36,7 +36,11 @@ Presets (`albert`, `openai`, `ollama`, `nvidia`) are optional shortcuts only.
 The generic declaration above is the first-class form, and any explicit file
 value overrides preset/default values.
 
-## Full example
+## Full reference
+
+The scaffold intentionally omits most of these keys. They are shown here for
+advanced tuning and for understanding what `wiki config --effective` resolves
+from schema defaults, presets, file values, and environment variables.
 
 ```yaml
 language: fr

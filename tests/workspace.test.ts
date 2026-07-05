@@ -57,7 +57,7 @@ describe('workspace safety', () => {
     delete process.env.WIKI_MCP_ACCESS_KEY;
   });
 
-  it('scaffolds reranking disabled by default', async () => {
+  it('scaffolds the generic provider config with explicit reranker settings', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-init-'));
     const config = createConfig(root);
     const workspace = new WorkspaceService(config);
@@ -65,7 +65,12 @@ describe('workspace safety', () => {
     await workspace.initWorkspace({});
 
     const initializedConfig = await loadConfig(root);
-    expect(initializedConfig.retrieval.vector.rerankEnabled).toBe(false);
+    expect(initializedConfig.preset).toBeUndefined();
+    expect(initializedConfig.llm.provider).toBe('openai-compatible');
+    expect(initializedConfig.llm.baseUrl).toBe('https://mon-provider.example.com/v1');
+    expect(initializedConfig.llm.apiKeyEnv).toBe('YOUR_PROVIDER_API_KEY');
+    expect(initializedConfig.retrieval.vector.rerankEnabled).toBe(true);
+    expect(initializedConfig.retrieval.vector.rerankerModel).toBe('BAAI/bge-reranker-v2-m3');
     await expect(
       readFile(path.join(root, '.wiki', 'profile.md'), 'utf8'),
     ).resolves.toContain('# Workspace Profile');
