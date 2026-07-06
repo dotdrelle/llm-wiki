@@ -980,7 +980,10 @@ function initPageMode() {
   document.body.classList.toggle('execution-mode',isExecution);
   $('connectors-link')?.classList.toggle('active',isConnectors);
   if(isConnectors) { renderCards(); renderSkillsManager(); }
-  if(isExecution) { activityView='graph'; openActivityPanel(); renderActivities(); }
+  if(isExecution) openActivityPanel();
+  // Also handles browser Back/Forward, which re-enters via this popstate handler.
+  activityView=isExecution?'graph':'list';
+  renderActivities();
 }
 
 function showConnectorsView(event) {
@@ -990,6 +993,8 @@ function showConnectorsView(event) {
   $('connectors-link')?.classList.add('active');
   renderCards();
   renderSkillsManager();
+  activityView='list';
+  renderActivities();
   if(location.pathname.replace(/\\/+$/,'')!=='/chat/connectors') {
     history.pushState(null,'','/chat/connectors');
   }

@@ -370,6 +370,7 @@ function setActivityView(view) {
     if(location.pathname.replace(/\\/+$/,'')!=='/chat/execution') history.pushState(null,'','/chat/execution');
   } else if(activityView==='list'&&document.body.classList.contains('execution-mode')) {
     showChatView();
+    return;
   }
   renderActivities();
 }

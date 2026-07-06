@@ -121,7 +121,7 @@ body.execution-mode #execution-view{display:flex}
 body:not(.execution-mode) #execution-view{display:none}
 .connectors-view{flex:1;min-height:0;overflow:auto;padding:28px clamp(18px,4vw,48px)}
 .execution-view{flex:1;min-height:0;overflow:hidden;padding:20px clamp(14px,3vw,34px);flex-direction:column;gap:14px}
-.execution-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-shrink:0}
+.execution-head{display:flex;flex-direction:column;flex-shrink:0}
 .execution-head h1{font-size:20px;line-height:1.2;margin:0;color:var(--text)}
 .execution-head p{font-size:12px;color:var(--muted);line-height:1.45;margin:4px 0 0;max-width:680px}
 #runtime-graph-center{flex:1;min-height:0}

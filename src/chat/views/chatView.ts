@@ -156,10 +156,8 @@ export const CHAT_MARKUP = `<nav id="app-nav" aria-label="Navigation application
   </div>
   <div class="execution-view" id="execution-view">
     <div class="execution-head">
-      <div>
-        <h1>Execution</h1>
-        <p>Run, tasks, agents, MCP calls and outputs from the canonical runtime workflow projection.</p>
-      </div>
+      <h1>Execution</h1>
+      <p>Run, tasks, agents, MCP calls and outputs from the canonical runtime workflow projection.</p>
     </div>
     <div id="runtime-graph-center"></div>
   </div>
