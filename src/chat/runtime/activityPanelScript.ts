@@ -19,6 +19,14 @@ let runtimeConversationRefs=[];
 // would have consumed it) must not silently drop the first entry's pending
 // marker, or it gets appended a second time as an unmatched "new" turn.
 let pendingRuntimeUserRefs=[];
+// Single reset entry point for the pair above — call this at every local
+// conversation boundary (new/load/delete/clear), not just some of them:
+// stale index-aligned refs reused against a fresh messages array is a real
+// bug, not just a style issue, so this must not be re-inlined per call site.
+function resetRuntimeConversationTracking() {
+  runtimeConversationRefs=[];
+  pendingRuntimeUserRefs=[];
+}
 let agentMode=localStorage.getItem(AGENT_MODE_KEY)==='1';
 let activityView=localStorage.getItem(ACT_VIEW_KEY)==='graph'?'graph':'list';
 let selectedWorkflowNodeId=null;

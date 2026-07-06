@@ -183,13 +183,18 @@ describe('chat html', () => {
     // of which profile was selected.
     const wcBranch = loadConfigSource.match(/if \(wc\) \{([\s\S]*?)\} else \{/)?.[1] ?? '';
     expect(wcBranch).not.toContain('saved.');
-    // Guards against the duplicated post-if/else block reappearing: the
-    // function must end right after the if/else, with no unconditional
-    // `saved.X` reads left dangling afterward.
-    const afterElseBlock = loadConfigSource.split('} else {')[1] ?? '';
-    const afterElseClose = afterElseBlock.slice(afterElseBlock.indexOf('\n  }\n') + 5);
-    expect(afterElseClose).not.toContain('saved.baseUrl');
-    expect(afterElseClose).not.toContain('saved.apiKey');
+    // Guards against the duplicated post-if/else block reappearing: each of
+    // these reads must appear exactly once (inside the else/CLI-mode branch),
+    // not a second time unconditionally after the if/else. A count check is
+    // robust to reformatting, unlike slicing on an exact brace/indent pattern.
+    for (const line of [
+      "if (saved.baseUrl) $('base-url').value = saved.baseUrl;",
+      "if (saved.apiKey)  { $('api-key').value = saved.apiKey; flashSaved('llm-saved'); }",
+      "if (saved.model)   $('model-name').value = saved.model;",
+      "if (saved.temp !== undefined) $('temperature').value = saved.temp;",
+    ]) {
+      expect(loadConfigSource.split(line).length - 1).toBe(1);
+    }
   });
 
   it('clears any stale local LLM override when a profile switch succeeds', () => {
@@ -197,6 +202,14 @@ describe('chat html', () => {
     const switchSource = script.match(/async function switchConfigProfile\(profile\) \{[\s\S]*?\n\}\n/)?.[0] ?? '';
 
     expect(switchSource).toContain("localStorage.removeItem(storageKey('mcpchat_config'));");
+  });
+
+  it('handles explicit profile updates before chat or agent runtime routing', () => {
+    expect(CHAT_HTML).toContain('tryProfilePreferenceUpdate(input,text)');
+    expect(CHAT_HTML).toContain('/api/profile/preference');
+    expect(CHAT_HTML.indexOf('tryProfilePreferenceUpdate(input,text)')).toBeLessThan(
+      CHAT_HTML.indexOf('if(agentMode)'),
+    );
   });
 
   it('offers setup discovery from the empty chat and activity panel', () => {

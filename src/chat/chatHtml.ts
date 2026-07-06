@@ -292,9 +292,14 @@ function mergeRuntimeConversation() {
   const conversation=Array.isArray(runtimeState?.conversation)?runtimeState.conversation:[];
   if(!conversation.length) return false;
   let changed=false;
-  for(let i=0;i<conversation.length;i++) {
+  // Only the *last* already-synced entry can still change in place (the
+  // server only ever mutates its conversation array's last entry — finalizing
+  // a streaming placeholder — or appends; everything before that is settled),
+  // so re-scanning from 0 every call would re-compare unchanging history for
+  // nothing on every ~200ms poll during a long streamed reply.
+  for(let i=Math.max(0,runtimeConversationRefs.length-1);i<conversation.length;i++) {
     const raw=conversation[i];
-    const role=raw.role==='assistant'?'assistant':raw.role;
+    const role=raw.role;
     const content=String(raw.content??'');
     if(i<runtimeConversationRefs.length) {
       const ref=runtimeConversationRefs[i];
@@ -843,8 +848,7 @@ async function newConversation() {
   if(messages.length) await saveCurrentConversation({immediate:true});
   currentConversationId=null;
   messages=[];
-  runtimeConversationRefs=[];
-  pendingRuntimeUserRefs=[];
+  resetRuntimeConversationTracking();
   conversationDirty=false;
   resetProductionState();
   setEmptyChat();
@@ -887,8 +891,7 @@ async function loadConversation(id) {
     if(seq!==historyLoadSeq) return;
     currentConversationId=conv.id;
     messages=Array.isArray(conv.messages) ? conv.messages : [];
-    runtimeConversationRefs=[];
-    pendingRuntimeUserRefs=[];
+    resetRuntimeConversationTracking();
     conversationDirty=false;
     if(conv.systemPrompt && $('system-prompt')) {
       $('system-prompt').value=conv.systemPrompt;
@@ -912,8 +915,7 @@ async function deleteConversation(event, id) {
     if(currentConversationId===id) {
       currentConversationId=null;
       messages=[];
-      runtimeConversationRefs=[];
-      pendingRuntimeUserRefs=[];
+      resetRuntimeConversationTracking();
       setEmptyChat();
     }
     await loadHistory();
@@ -1103,6 +1105,7 @@ async function clearChat() {
   }
   const id=currentConversationId;
   messages=[];
+  resetRuntimeConversationTracking();
   conversationDirty=false;
   resetProductionState();
   setEmptyChat();
@@ -2101,11 +2104,53 @@ async function fetchStream(url, headers, body, onDelta, signal) {
   return {content};
 }
 
+function extractProfilePreference(text) {
+  const match=String(text||'').trim().match(/^\\s*(?:ajoute|ajouter|note|noter|retiens|retenir|m[ée]morise|m[ée]moriser|souviens-toi|souviens|enregistre|enregistrer|remember|save|persist)\\b\\s+(.+?)\\s*$/i);
+  if(!match) return null;
+  const preference=String(match[1]||'').replace(/^(?:(?:dans|sur|a|à)\\s+)?(?:mon|ma|le|la|ce|cette)?\\s*(?:profil|profile)\\s+(?:que\\s+)?/i,'').replace(/^que\\s+/i,'').trim().replace(/[.。]\\s*$/,'');
+  return preference.length>=3 ? preference : null;
+}
+
+async function tryProfilePreferenceUpdate(input,text) {
+  if(!window.__WIKI_CONFIG__) return false;
+  const preference=extractProfilePreference(text);
+  if(!preference) return false;
+  input.value=''; input.style.height='auto';
+  if(!currentConversationId) currentConversationId=newConversationId();
+  messages.push({role:'user',content:text});
+  appendMsg('user',text);
+  scheduleConversationSave();
+  try {
+    const res=await fetch('/api/profile/preference',{
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({preference})
+    });
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error||res.statusText||'Profile update failed');
+    const message=data.message||'Profil mis à jour.';
+    messages.push({role:'assistant',content:message});
+    appendMsg('assistant',message);
+    conversationDirty=true;
+    await saveCurrentConversation({immediate:true});
+    notify(data.changed===false?'Profil déjà à jour':'Profil mis à jour');
+  } catch(err) {
+    const message=\`Profil non modifié : \${err?.message||String(err)}\`;
+    messages.push({role:'assistant',content:message});
+    appendMsg('assistant',message);
+    conversationDirty=true;
+    await saveCurrentConversation({immediate:true});
+    notify(message,'e');
+  }
+  return true;
+}
+
 async function sendMessage() {
   if(isStreaming) return;
   const input=$('chat-input');
   const text=input.value.trim();
   if(!text) return;
+  if(await tryProfilePreferenceUpdate(input,text)) return;
   if(agentMode) {
     await sendRuntimeAgentMessage(input,text);
     return;

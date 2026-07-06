@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { CHAT_HTML } from '../../chat/chatHtml.ts';
@@ -86,12 +86,130 @@ function chatProxyErrorStatus(err: unknown): number {
   return message === 'INVALID_LLM_BASE_URL' ? 400 : 502;
 }
 
+const DEFAULT_PROFILE = `# Workspace Profile
+
+## Summary
+
+No profile summary yet.
+
+## User Preferences
+
+## Working Style
+
+## Project Context
+
+## Maintenance Notes
+
+Keep this file concise. Do not store secrets, tokens, passwords, API keys, or temporary information.
+`;
+
+function readRequestBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+
+function normalizeForCompare(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function formatPreference(value: string): string {
+  const clean = value.trim().replace(/[.。]\s*$/, '');
+  return clean.charAt(0).toUpperCase() + clean.slice(1);
+}
+
+function appendProfilePreference(content: string, preference: string): {
+  content: string;
+  changed: boolean;
+  line: string;
+} {
+  const line = `- ${formatPreference(preference)}`;
+  const normalized = normalizeForCompare(line);
+  if (content.split('\n').some((existing) => normalizeForCompare(existing) === normalized)) {
+    return { content, changed: false, line };
+  }
+  const heading = '## User Preferences';
+  const index = content.indexOf(heading);
+  if (index === -1) {
+    const base = content.trimEnd();
+    return {
+      content: `${base}${base ? '\n\n' : ''}${heading}\n\n${line}\n`,
+      changed: true,
+      line,
+    };
+  }
+  const afterHeading = index + heading.length;
+  const nextHeading = content.slice(afterHeading).search(/\n##\s+/);
+  if (nextHeading === -1) {
+    return {
+      content: `${content.trimEnd()}\n${line}\n`,
+      changed: true,
+      line,
+    };
+  }
+  const insertAt = afterHeading + nextHeading;
+  return {
+    content: `${content.slice(0, insertAt).trimEnd()}\n${line}\n${content.slice(insertAt).replace(/^\n+/, '\n')}`,
+    changed: true,
+    line,
+  };
+}
+
 export async function handleChatRoutes(
   req: IncomingMessage,
   res: ServerResponse,
   urlPath: string,
   deps: ChatRoutesDeps,
 ): Promise<boolean> {
+  if (req.method === 'POST' && urlPath === '/api/profile/preference') {
+    try {
+      const body = JSON.parse(await readRequestBody(req) || '{}') as { preference?: unknown };
+      const preference = typeof body.preference === 'string' ? body.preference.trim() : '';
+      if (!preference) {
+        deps.sendJson(res, 400, { error: 'Missing preference.' });
+        return true;
+      }
+      const profilePath = path.join(deps.workspace.paths.internalDir, 'profile.md');
+      await mkdir(deps.workspace.paths.internalDir, { recursive: true });
+      let before = DEFAULT_PROFILE;
+      try {
+        before = await readFile(profilePath, 'utf8');
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') throw err;
+      }
+      const result = appendProfilePreference(before, preference);
+      if (result.changed) {
+        if (result.content.length > deps.config.limits.maxProfileChars) {
+          deps.sendJson(res, 413, {
+            error: 'Profile exceeds maxProfileChars limit.',
+            maxProfileChars: deps.config.limits.maxProfileChars,
+          });
+          return true;
+        }
+        await writeFile(profilePath, result.content, 'utf8');
+      }
+      deps.sendJson(res, 200, {
+        ok: true,
+        changed: result.changed,
+        preference: result.line.replace(/^- /, ''),
+        message: result.changed
+          ? `Profil mis à jour : ${result.line.replace(/^- /, '')}`
+          : `Profil déjà à jour : ${result.line.replace(/^- /, '')}`,
+      });
+    } catch (err) {
+      deps.sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return true;
+  }
+
   if (req.method === 'POST' && urlPath === '/api/chat') {
     try {
       const llmTarget = chatLlmProxyTarget(req, deps.config);
