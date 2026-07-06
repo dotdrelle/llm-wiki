@@ -22,7 +22,7 @@ export const CHAT_MARKUP = `<nav id="app-nav" aria-label="Navigation application
   <button class="app-nav-btn" type="button" onclick="toggleSidebar()" title="Toggle sidebar" aria-label="Toggle sidebar">☰</button>
   <a class="app-nav-link" href="/" title="Back to wiki" aria-label="Back to wiki">Wiki</a>
   <button class="app-nav-link" type="button" onclick="showChatView()" title="Chat">Chat</button>
-  <button class="app-nav-link" type="button" onclick="showExecutionView()" title="Execution">Exécution</button>
+  <button class="app-nav-link" type="button" onclick="showExecutionView()" title="Execution">Execution</button>
   <div class="app-nav-title">MCP Chat</div>
   <div class="app-nav-spacer"></div>
 </nav>
@@ -45,7 +45,7 @@ export const CHAT_MARKUP = `<nav id="app-nav" aria-label="Navigation application
         <div class="history-empty">No history.</div>
       </div>
     </div>
-    <div class="sb-resizer" id="sidebar-resizer" title="Redimensionner les panneaux"></div>
+    <div class="sb-resizer" id="sidebar-resizer" title="Resize panels"></div>
     <div class="sb-pane config-pane" id="config-pane">
       <div class="sec-label">Connectors</div>
       <a class="sb-link" id="connectors-link" href="/chat/connectors" onclick="showConnectorsView(event)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a6 6 0 0 1-12 0V8z"/></svg> Connectors <span>MCP & skills</span></a>
@@ -157,10 +157,9 @@ export const CHAT_MARKUP = `<nav id="app-nav" aria-label="Navigation application
   <div class="execution-view" id="execution-view">
     <div class="execution-head">
       <div>
-        <h1>Exécution</h1>
+        <h1>Execution</h1>
         <p>Run, tasks, agents, MCP calls and outputs from the canonical runtime workflow projection.</p>
       </div>
-      <button type="button" onclick="openActivityPanel();setActivityView('graph')">Inspecteur</button>
     </div>
     <div id="runtime-graph-center"></div>
   </div>
@@ -186,8 +185,8 @@ export const CHAT_MARKUP = `<nav id="app-nav" aria-label="Navigation application
   <div class="act-panel-head">
     <span class="act-panel-title">Activity</span>
     <div class="act-view-tabs" role="tablist" aria-label="Activity view">
-      <button class="act-view-tab active" id="act-view-list" type="button" onclick="setActivityView('list')">Liste</button>
-      <button class="act-view-tab" id="act-view-graph" type="button" onclick="setActivityView('graph')">Graphe</button>
+      <button class="act-view-tab active" id="act-view-list" type="button" onclick="setActivityView('list')">List</button>
+      <button class="act-view-tab" id="act-view-graph" type="button" onclick="setActivityView('graph')">Graph</button>
     </div>
     <button class="act-panel-close" onclick="toggleActivityPanel()" title="Close">×</button>
   </div>

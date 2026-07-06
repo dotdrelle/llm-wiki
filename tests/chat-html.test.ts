@@ -120,13 +120,30 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('id="runtime-graph-center"');
     expect(CHAT_HTML).toContain('body.execution-mode #execution-view{display:flex}');
     expect(CHAT_HTML).toContain('<script src="/assets/d3.min.js"></script>');
-    expect(script).toContain("const ACT_VIEW_KEY=storageKey('llm-wiki-chat:activity-view');");
     expect(script).toContain('function runtimeWorkflowGraphData()');
     expect(script).toContain('runtimeState?.workflow||{}');
     expect(script).toContain('function renderRuntimeWorkflowGraph()');
     expect(script).toContain('function renderRuntimeWorkflowInspector()');
     expect(script).toContain('function showExecutionView(event)');
     expect(script).toContain("if(activityView==='graph')");
+  });
+
+  it('always resets the Activity panel to List when leaving Execution view for Chat', () => {
+    const [script] = chatScripts();
+    const showChatViewSource = script.match(/function showChatView\(\) \{[\s\S]*?\n\}\n/)?.[0] ?? '';
+
+    // Regression: entering Execution view forces activityView='graph' in
+    // memory, but showChatView() never reset it nor re-rendered — the
+    // Activity panel kept showing its execution-mode graph+inspector layout
+    // squeezed into the normal sidebar after clicking back to Chat.
+    expect(showChatViewSource).toContain("activityView='list';");
+    expect(showChatViewSource).toContain('renderActivities();');
+    // The List/Graph choice must never survive a page reload either — it
+    // used to be read back from localStorage on init, which left a 'graph'
+    // pick from a previous session silently reopening as the cramped inline
+    // graph+inspector layout on every subsequent load.
+    expect(script).not.toContain('ACT_VIEW_KEY');
+    expect(script).toContain("let activityView='list';");
   });
 
   it('renders Run/Task graph nodes as gray rounded cards with a status dot, not colored circles', () => {
@@ -497,8 +514,8 @@ describe('chat html', () => {
     expect(script).toContain('data-run-id="${esc(runId)}"');
     expect(script).toContain('data-turn-id="${esc(turnId)}"');
     expect(script).toContain('data-workspace="${esc(workspace)}"');
-    expect(script).toContain('onclick="askRuntimeStatus(${jsArg(runId||title)})">Inspecter</button>');
-    expect(script).toContain('onclick="cancelRuntimeRun()">Annuler</button>');
+    expect(script).toContain('onclick="askRuntimeStatus(${jsArg(runId||title)})">Inspect</button>');
+    expect(script).toContain('onclick="cancelRuntimeRun()">Cancel</button>');
     expect(script).toContain('const runCard=runtimeRunCardHTML(plan,activities);');
   });
 

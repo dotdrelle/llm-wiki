@@ -1,7 +1,6 @@
 export const ACTIVITY_PANEL_SCRIPT = `/* ── Activity Panel ─────────────────────────────────────────────────── */
 const ACT_STORE_KEY=storageKey('llm-wiki-chat:activities');
 const ACT_PANEL_KEY=storageKey('llm-wiki-chat:activity-panel-open');
-const ACT_VIEW_KEY=storageKey('llm-wiki-chat:activity-view');
 const AGENT_MODE_KEY=storageKey('llm-wiki-chat:agent-mode');
 const RUNTIME_SECTION_KEY_PREFIX='llm-wiki-chat:runtime-section:';
 let _activities=[];
@@ -28,7 +27,11 @@ function resetRuntimeConversationTracking() {
   pendingRuntimeUserRefs=[];
 }
 let agentMode=localStorage.getItem(AGENT_MODE_KEY)==='1';
-let activityView=localStorage.getItem(ACT_VIEW_KEY)==='graph'?'graph':'list';
+// Never persisted across page loads: always start on 'list' — a 'graph'
+// choice from a previous session left the Activity panel opening straight
+// into the cramped inline graph+inspector layout on every subsequent load,
+// which read as broken rather than a deliberate default.
+let activityView='list';
 let selectedWorkflowNodeId=null;
 const _activityPollTimers=new Map();
 function isActivityActive(status){return status==='running'||status==='queued';}
@@ -361,7 +364,6 @@ function openActivityPanel() {
 }
 function setActivityView(view) {
   activityView=view==='graph'?'graph':'list';
-  try { localStorage.setItem(ACT_VIEW_KEY,activityView); } catch {}
   if(activityView==='graph'&&!document.body.classList.contains('execution-mode')) {
     document.body.classList.remove('connectors-mode');
     document.body.classList.add('execution-mode');
@@ -379,8 +381,8 @@ function copyText(text) {
   navigator.clipboard?.writeText(text).then(()=>notify('Copied')).catch(()=>notify(text));
 }
 function runtimeStatusMarkdown(target) {
-  const id=String(target||'run courant').trim()||'run courant';
-  if(!runtimeState) return \`Aucun etat runtime disponible pour \${id}.\`;
+  const id=String(target||'current run').trim()||'current run';
+  if(!runtimeState) return \`No runtime state available for \${id}.\`;
   const plan=Array.isArray(runtimeState.plan)?runtimeState.plan:[];
   const activities=Array.isArray(runtimeState.activities)?runtimeState.activities:[];
   const queue=Array.isArray(runtimeState.queue)?runtimeState.queue:[];
@@ -390,22 +392,22 @@ function runtimeStatusMarkdown(target) {
   const activityLines=activities.slice(0,8).map((activity,index)=>line(activity.id||activity.key||\`Activity \${index+1}\`,\`\${activity.status||'-'} - \${activity.label||activity.tool||activity.source||'runtime'}\`));
   const queueLines=queue.slice(0,8).map((item,index)=>line(item.id||item.jobId||\`Queue \${index+1}\`,\`\${item.status||'waiting'} - \${item.label||item.tool||item.type||'task'}\`));
   return [
-    \`Statut runtime pour \${id}\`,
+    \`Runtime status for \${id}\`,
     '',
     line('Runtime',runtimeState.status||'idle'),
-    line('Connexion',runtimeConnected?'connected':'disconnected'),
+    line('Connection',runtimeConnected?'connected':'disconnected'),
     '',
-    planLines.length?['Plan',...planLines].join('\\n'):'Plan\\n- Aucun plan visible.',
+    planLines.length?['Plan',...planLines].join('\\n'):'Plan\\n- No plan visible.',
     '',
-    activityLines.length?['Activites',...activityLines].join('\\n'):'Activites\\n- Aucune activite runtime visible.',
+    activityLines.length?['Activities',...activityLines].join('\\n'):'Activities\\n- No runtime activity visible.',
     '',
-    queueLines.length?['Queue',...queueLines].join('\\n'):'Queue\\n- Aucun element en attente.',
-    logs.length?['','Derniers logs',...logs.map(log=>\`- \${log}\`)].join('\\n'):'',
+    queueLines.length?['Queue',...queueLines].join('\\n'):'Queue\\n- No pending items.',
+    logs.length?['','Recent logs',...logs.map(log=>\`- \${log}\`)].join('\\n'):'',
   ].filter(Boolean).join('\\n');
 }
 function askRuntimeStatus(target) {
-  const id=String(target||'run courant').trim()||'run courant';
-  const prompt=\`Statut de \${id}\`;
+  const id=String(target||'current run').trim()||'current run';
+  const prompt=\`Status of \${id}\`;
   const answer=runtimeStatusMarkdown(id);
   openActivityPanel();
   showChatView();

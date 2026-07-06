@@ -186,13 +186,13 @@ function runtimeRunCardHTML(plan,activities) {
   const turnId=runtimeState?.turnId || activities.find(activity=>activity.turnId)?.turnId || '';
   const workspace=runtimeState?.workspace || window.__WIKI_CONFIG__?.workspaceName || '';
   const meta=[
-    '● En cours',
-    plan.length?\`\${doneCount} tâche\${doneCount>1?'s':''} terminée\${doneCount>1?'s':''}\`:null,
+    '● Running',
+    plan.length?\`\${doneCount} task\${doneCount>1?'s':''} done\`:null,
     runId?\`runId: \${runId}\`:null,
     turnId?\`turnId: \${turnId}\`:null,
     workspace?\`workspace: \${workspace}\`:null,
   ].filter(Boolean).join(' · ');
-  return \`<div class="act-card running" data-run-id="\${esc(runId)}" data-turn-id="\${esc(turnId)}" data-workspace="\${esc(workspace)}"><div class="act-card-head"><span class="act-card-icon">▶</span><div class="act-card-info"><div class="act-card-name">Run — \${esc(title)}</div><div class="act-card-meta">\${esc(meta)}</div></div><span class="act-badge running">En cours</span></div><div class="act-actions"><button class="act-btn" type="button" onclick="askRuntimeStatus(\${jsArg(runId||title)})">Inspecter</button><button class="act-btn del" type="button" onclick="cancelRuntimeRun()">Annuler</button></div></div>\`;
+  return \`<div class="act-card running" data-run-id="\${esc(runId)}" data-turn-id="\${esc(turnId)}" data-workspace="\${esc(workspace)}"><div class="act-card-head"><span class="act-card-icon">▶</span><div class="act-card-info"><div class="act-card-name">Run — \${esc(title)}</div><div class="act-card-meta">\${esc(meta)}</div></div><span class="act-badge running">Running</span></div><div class="act-actions"><button class="act-btn" type="button" onclick="askRuntimeStatus(\${jsArg(runId||title)})">Inspect</button><button class="act-btn del" type="button" onclick="cancelRuntimeRun()">Cancel</button></div></div>\`;
 }
 
 function runtimeActivityToCard(activity,index=0,runStartedAt=Date.now(),runUpdatedAt=runStartedAt) {
@@ -1002,6 +1002,12 @@ function showChatView() {
   if(['/chat/connectors','/chat/execution'].includes(location.pathname.replace(/\\/+$/,''))) {
     history.pushState(null,'','/chat');
   }
+  // Entering Execution view forces activityView to 'graph' in memory for the
+  // current page session, but never reset it on the way out — the Activity
+  // panel was left rendering its execution-mode graph+inspector layout
+  // inside the normal-width sidebar instead of the plain card list.
+  activityView='list';
+  renderActivities();
 }
 
 function showExecutionView(event) {

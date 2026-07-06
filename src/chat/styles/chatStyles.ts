@@ -124,8 +124,6 @@ body:not(.execution-mode) #execution-view{display:none}
 .execution-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-shrink:0}
 .execution-head h1{font-size:20px;line-height:1.2;margin:0;color:var(--text)}
 .execution-head p{font-size:12px;color:var(--muted);line-height:1.45;margin:4px 0 0;max-width:680px}
-.execution-head button{border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);font:800 12px var(--font-sans);padding:7px 10px;cursor:pointer}
-.execution-head button:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 #runtime-graph-center{flex:1;min-height:0}
 #runtime-graph-center .runtime-graph-main{height:100%}
 #runtime-graph-center .runtime-graph-svg{height:calc(100vh - 168px)}
