@@ -129,6 +129,22 @@ describe('chat html', () => {
     expect(script).toContain("if(activityView==='graph')");
   });
 
+  it('renders Run/Task graph nodes as gray rounded cards with a status dot, not colored circles', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain("createElementNS('http://www.w3.org/2000/svg','rect')");
+    expect(script).toContain("rect.setAttribute('rx',");
+    expect(script).toContain('RUNTIME_GRAPH_NODE_FILL');
+    expect(script).toContain("statusDot.setAttribute('class','runtime-graph-node-status')");
+    // The main card is a uniform gray — only the small status dot carries
+    // the per-status color, so runtimeWorkflowColor must feed the dot, not
+    // a fill on the card itself.
+    expect(script).toContain("statusDot.setAttribute('fill',runtimeWorkflowColor(node))");
+    expect(script).not.toContain("circle.setAttribute('fill',runtimeWorkflowColor(node))");
+    expect(CHAT_HTML).toContain('.runtime-graph-node rect{stroke:var(--panel);stroke-width:2.5}');
+    expect(CHAT_HTML).toContain('.runtime-graph-node-status{stroke:var(--panel);stroke-width:2}');
+  });
+
   it('offers runtime-backed config profile switching without page reload', () => {
     const [script] = chatScripts();
 
@@ -139,6 +155,48 @@ describe('chat html', () => {
     expect(script).toContain('function switchConfigProfile(profile)');
     expect(script).toContain('applyServerConfig(data.config)');
     expect(script).not.toContain('window.location.reload()');
+  });
+
+  it('places the profile picker in the sidebar next to Reset, showing only the profile name', () => {
+    const [script] = chatScripts();
+
+    // Lives in the LLM Config section header, alongside Reset — not the topbar.
+    expect(CHAT_HTML).toContain(
+      '<div class="sec-label">LLM Config<div class="sec-label-actions"><select class="tb-profile-select" id="profile-picker"',
+    );
+    expect(CHAT_HTML).not.toContain('id="profile-picker-wrap"');
+    // The backing .wikirc file is a hover title, not part of the visible option label.
+    expect(script).toContain(
+      "select.innerHTML=profiles.map(profile=>`<option value=\"${esc(profile.name)}\"${profile.fileName?` title=\"${esc(profile.fileName)}\"`:''}>${esc(profile.name)}</option>`).join('');",
+    );
+  });
+
+  it('never lets a stale local override win over the active .wikirc profile config', () => {
+    const [script] = chatScripts();
+    const loadConfigSource = script.match(/function loadConfig\(\) \{[\s\S]*?\n\}\n/)?.[0] ?? '';
+
+    // Regression: this used to unconditionally re-apply localStorage's saved
+    // values *after* setting fields from window.__WIKI_CONFIG__ (the active
+    // profile), even in proxy mode — silently reverting to a stale
+    // baseUrl/apiKey/model that buildProxyLLMHeaders() would then send as an
+    // override header, hijacking the actual outbound LLM request regardless
+    // of which profile was selected.
+    const wcBranch = loadConfigSource.match(/if \(wc\) \{([\s\S]*?)\} else \{/)?.[1] ?? '';
+    expect(wcBranch).not.toContain('saved.');
+    // Guards against the duplicated post-if/else block reappearing: the
+    // function must end right after the if/else, with no unconditional
+    // `saved.X` reads left dangling afterward.
+    const afterElseBlock = loadConfigSource.split('} else {')[1] ?? '';
+    const afterElseClose = afterElseBlock.slice(afterElseBlock.indexOf('\n  }\n') + 5);
+    expect(afterElseClose).not.toContain('saved.baseUrl');
+    expect(afterElseClose).not.toContain('saved.apiKey');
+  });
+
+  it('clears any stale local LLM override when a profile switch succeeds', () => {
+    const [script] = chatScripts();
+    const switchSource = script.match(/async function switchConfigProfile\(profile\) \{[\s\S]*?\n\}\n/)?.[0] ?? '';
+
+    expect(switchSource).toContain("localStorage.removeItem(storageKey('mcpchat_config'));");
   });
 
   it('offers setup discovery from the empty chat and activity panel', () => {

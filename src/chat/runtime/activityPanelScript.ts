@@ -9,6 +9,16 @@ let _actTimer=null;
 let runtimeState=null;
 let runtimeConnected=false;
 let runtimeFetchPending=false;
+// Index-aligned with runtimeState.conversation — see mergeRuntimeConversation
+// in chatHtml.ts. Not just a length count: a turn can finalize a streaming
+// placeholder in place (text-before-tool-calls case) without the runtime
+// conversation array growing, and a length-based diff would miss that.
+let runtimeConversationRefs=[];
+// FIFO queue, not a single slot: sending a second message before the first
+// is confirmed by the merge (e.g. a busy/streaming run delays the fetch that
+// would have consumed it) must not silently drop the first entry's pending
+// marker, or it gets appended a second time as an unmatched "new" turn.
+let pendingRuntimeUserRefs=[];
 let agentMode=localStorage.getItem(AGENT_MODE_KEY)==='1';
 let activityView=localStorage.getItem(ACT_VIEW_KEY)==='graph'?'graph':'list';
 let selectedWorkflowNodeId=null;

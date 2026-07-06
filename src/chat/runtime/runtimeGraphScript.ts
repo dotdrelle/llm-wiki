@@ -42,6 +42,8 @@ function runtimeWorkflowRing(node) {
   if(node.type==='output') return 4;
   return 3;
 }
+// Node bodies are a uniform gray card now (see renderRuntimeWorkflowGraph) —
+// this only colors the small status-indicator dot at the card's top-right.
 function runtimeWorkflowColor(node) {
   if(node.status==='failed') return '#f06b6b';
   if(node.status==='cancelled') return '#8a94a6';
@@ -51,6 +53,7 @@ function runtimeWorkflowColor(node) {
   const byType={run:'#8b5cf6',task:'#4f7eff',activity:'#14b8a6',executor:'#64748b',queue:'#f59e0b',approval:'#f97316',replan:'#a855f7',output:'#16a34a'};
   return byType[node.type]||'#94a3b8';
 }
+const RUNTIME_GRAPH_NODE_FILL='#5b6472';
 function renderRuntimeWorkflowGraph() {
   if(activityView!=='graph') return;
   const svg=$('runtime-graph-svg');
@@ -83,14 +86,26 @@ function renderRuntimeWorkflowGraph() {
       className:n=>'runtime-graph-node '+n.type+(n.id===selectedWorkflowNodeId?' selected':''),
       onSelect:selectRuntimeWorkflowNode,
     });
-    const circle=document.createElementNS('http://www.w3.org/2000/svg','circle');
-    circle.setAttribute('r',node.r);
-    circle.setAttribute('fill',runtimeWorkflowColor(node));
+    const rect=document.createElementNS('http://www.w3.org/2000/svg','rect');
+    const side=node.r*1.7;
+    rect.setAttribute('x',-side/2);
+    rect.setAttribute('y',-side/2);
+    rect.setAttribute('width',side);
+    rect.setAttribute('height',side);
+    rect.setAttribute('rx',Math.min(10,side*0.28));
+    rect.setAttribute('ry',Math.min(10,side*0.28));
+    rect.setAttribute('fill',RUNTIME_GRAPH_NODE_FILL);
+    const statusDot=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    statusDot.setAttribute('class','runtime-graph-node-status');
+    statusDot.setAttribute('r',5);
+    statusDot.setAttribute('cx',side/2-2);
+    statusDot.setAttribute('cy',-side/2+2);
+    statusDot.setAttribute('fill',runtimeWorkflowColor(node));
     const label=document.createElementNS('http://www.w3.org/2000/svg','text');
-    label.setAttribute('y',node.r+13);
+    label.setAttribute('y',side/2+13);
     label.setAttribute('text-anchor','middle');
     label.textContent=shortText(node.label,24);
-    group.append(circle,label);
+    group.append(rect,statusDot,label);
   }
   renderRuntimeWorkflowInspector();
 }

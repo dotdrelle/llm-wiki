@@ -103,9 +103,9 @@ input[type=password]{letter-spacing:3px}
 #main{flex:1;height:calc(100vh - 44px);margin-top:44px;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
 #topbar{padding:12px 18px;border-bottom:1px solid var(--border);background:var(--panel);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .tb-model{font-family:var(--font-mono);font-size:11px;color:var(--muted2);background:var(--panel-soft);border:1px solid var(--border);padding:4px 10px;border-radius:99px}
-.tb-profile{display:none;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
-.tb-profile.visible{display:flex}
-.tb-profile-select{max-width:190px;border:1px solid var(--border);border-radius:8px;background:var(--panel-soft);color:var(--text);font:600 11px var(--font-sans);padding:4px 8px}
+.sec-label-actions{display:flex;align-items:center;gap:6px}
+.tb-profile-select{display:none;max-width:130px;border:1px solid var(--border);border-radius:6px;background:var(--panel-soft);color:var(--muted2);font-size:11px;padding:2px 8px;font-family:var(--font-sans);font-weight:600}
+.tb-profile-select.visible{display:inline-block}
 .tb-profile-select:disabled{opacity:.55;cursor:not-allowed}
 .tb-mcps{display:flex;gap:5px;flex-wrap:wrap}
 .tb-mcp-pill{font-size:10px;font-family:var(--font-mono);font-weight:500;padding:3px 8px;border-radius:99px;background:rgba(79,126,255,.12);border:1px solid rgba(79,126,255,.25);color:var(--accent)}
@@ -285,8 +285,9 @@ body:not(.execution-mode) #execution-view{display:none}
 .runtime-graph-link.executed_by{stroke:#14b8a6}
 .runtime-graph-link.produces{stroke:#16a34a}
 .runtime-graph-node{cursor:pointer}
-.runtime-graph-node circle{stroke:var(--panel);stroke-width:2.5}
-.runtime-graph-node.selected circle{stroke:var(--text);stroke-width:4}
+.runtime-graph-node rect{stroke:var(--panel);stroke-width:2.5}
+.runtime-graph-node.selected rect{stroke:var(--text);stroke-width:4}
+.runtime-graph-node-status{stroke:var(--panel);stroke-width:2}
 .runtime-graph-node text{fill:var(--text);font-size:10px;font-weight:800;paint-order:stroke;stroke:var(--panel);stroke-width:4px}
 .runtime-graph-inspector{padding:10px;overflow:auto}
 .runtime-inspector-title{font-size:12px;font-weight:850;color:var(--text);line-height:1.25;overflow-wrap:anywhere}

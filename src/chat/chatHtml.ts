@@ -90,6 +90,9 @@ let nextTraceId = 1;
 const MCP_STALE_SESSION_MS = 5 * 60 * 1000;
 const MCP_REQUEST_TIMEOUT_MS = 60 * 1000;
 
+function chatModeToolsNotice() {
+  return \`Chat mode: no MCP tools or connectors are available in this conversation (this is local, tool-less chat — tool-calling only happens in Agent mode). If the answer requires checking a connector's live config, status, recent jobs, or wiki content, say so plainly and suggest switching to Agent mode instead of guessing or giving a bare label as an answer.\`;
+}
 function languageInstruction() {
   const lang = window.__WIKI_CONFIG__?.language;
   if (!lang || lang === 'en') return '';
@@ -216,15 +219,41 @@ function runtimeActivityToCard(activity,index=0,runStartedAt=Date.now(),runUpdat
   };
 }
 
-async function fetchRuntimeState() {
-  if(!window.__WIKI_CONFIG__?.runtime?.enabled) return;
-  const res=await fetch('/api/runtime/state',{cache:'no-store'});
-  if(!res.ok) throw new Error('runtime unavailable');
-  runtimeState=await res.json();
+function scrollMessagesToBottom() {
+  const wrap=$('messages');
+  if(wrap) wrap.scrollTop=wrap.scrollHeight;
+}
+
+// Bumped on every fetch that starts, and on every direct SSE 'state' push
+// (the authoritative, already-in-order source). A run's final "done" state
+// can arrive over SSE while an older /api/runtime/state fetch — kicked off
+// mid-stream by one of many agent_event bursts a long streamed reply
+// produces — is still in flight; without this guard, that stale fetch
+// resolving afterward silently overwrites the fresh "done" state with a
+// "running" snapshot from a moment before completion, and the run looks
+// stuck in progress forever even though it already finished.
+let runtimeStateSeq=0;
+function applyRuntimeState(state) {
+  runtimeState=state;
   runtimeConnected=true;
+  const conversationChanged=mergeRuntimeConversation();
   renderActivities();
   updateActivityBadge();
   updateAgentModeUI();
+  // Scroll after renderActivities(), not before: opening/resizing the
+  // Activity panel can reflow the chat column's width and change wrapped
+  // text height, which would make an earlier scrollTop assignment stale.
+  if(conversationChanged) scrollMessagesToBottom();
+}
+
+async function fetchRuntimeState() {
+  if(!window.__WIKI_CONFIG__?.runtime?.enabled) return;
+  const seq=++runtimeStateSeq;
+  const res=await fetch('/api/runtime/state',{cache:'no-store'});
+  if(!res.ok) throw new Error('runtime unavailable');
+  const data=await res.json();
+  if(seq!==runtimeStateSeq) return;
+  applyRuntimeState(data);
 }
 
 function connectRuntimePanel() {
@@ -232,7 +261,10 @@ function connectRuntimePanel() {
   fetchRuntimeState().catch(()=>{runtimeConnected=false;renderActivities();});
   const events=new EventSource('/api/runtime/events');
   events.addEventListener('state',(event)=>{
-    try { runtimeState=JSON.parse(event.data); runtimeConnected=true; renderActivities(); updateActivityBadge(); updateAgentModeUI(); } catch {}
+    try {
+      runtimeStateSeq++;
+      applyRuntimeState(JSON.parse(event.data));
+    } catch {}
   });
   events.addEventListener('agent_event',()=>{
     if(runtimeFetchPending) return;
@@ -243,6 +275,51 @@ function connectRuntimePanel() {
     },200);
   });
   events.onerror=()=>{runtimeConnected=false;renderActivities();updateAgentModeUI();};
+}
+
+function updateMsgBubble(el,role,content) {
+  el.dataset.copy=content||'';
+  const bubble=el.querySelector('.bubble');
+  if(bubble) bubble.innerHTML=role==='assistant'?renderMd(content||''):esc(content||'');
+}
+
+// Merges Donna's actual replies (and any user turns not already shown, e.g.
+// history restored after a reload) into the visible chat thread. Without
+// this, Agent mode only ever showed the one-off "Runtime run accepted"
+// acknowledgment — the real conversation lived in runtimeState.conversation
+// but nothing ever read it.
+function mergeRuntimeConversation() {
+  const conversation=Array.isArray(runtimeState?.conversation)?runtimeState.conversation:[];
+  if(!conversation.length) return false;
+  let changed=false;
+  for(let i=0;i<conversation.length;i++) {
+    const raw=conversation[i];
+    const role=raw.role==='assistant'?'assistant':raw.role;
+    const content=String(raw.content??'');
+    if(i<runtimeConversationRefs.length) {
+      const ref=runtimeConversationRefs[i];
+      if(ref.message.content!==content) {
+        ref.message.content=content;
+        updateMsgBubble(ref.el,role,content);
+        changed=true;
+      }
+      continue;
+    }
+    if(role==='user' && pendingRuntimeUserRefs.length) {
+      // FIFO: the server processes user turns in submission order, so the
+      // oldest unconfirmed local push always corresponds to the oldest
+      // unconsumed server-side user entry at this position.
+      runtimeConversationRefs.push(pendingRuntimeUserRefs.shift());
+      continue;
+    }
+    const message={role,content};
+    messages.push(message);
+    const el=appendMsg(role,content);
+    runtimeConversationRefs.push({message,el});
+    changed=true;
+  }
+  if(changed) scheduleConversationSave();
+  return changed;
 }
 
 function openDocumentUpload() {
@@ -766,6 +843,8 @@ async function newConversation() {
   if(messages.length) await saveCurrentConversation({immediate:true});
   currentConversationId=null;
   messages=[];
+  runtimeConversationRefs=[];
+  pendingRuntimeUserRefs=[];
   conversationDirty=false;
   resetProductionState();
   setEmptyChat();
@@ -808,6 +887,8 @@ async function loadConversation(id) {
     if(seq!==historyLoadSeq) return;
     currentConversationId=conv.id;
     messages=Array.isArray(conv.messages) ? conv.messages : [];
+    runtimeConversationRefs=[];
+    pendingRuntimeUserRefs=[];
     conversationDirty=false;
     if(conv.systemPrompt && $('system-prompt')) {
       $('system-prompt').value=conv.systemPrompt;
@@ -831,6 +912,8 @@ async function deleteConversation(event, id) {
     if(currentConversationId===id) {
       currentConversationId=null;
       messages=[];
+      runtimeConversationRefs=[];
+      pendingRuntimeUserRefs=[];
       setEmptyChat();
     }
     await loadHistory();
@@ -2058,7 +2141,8 @@ async function sendMessage() {
   try {
     const systemPrompt=currentSystemPrompt();
     const langLine=languageInstruction();
-    const sysContent=[systemPrompt,langLine].filter(Boolean).join('\\n\\n');
+    const toolsNotice=chatModeToolsNotice();
+    const sysContent=[systemPrompt,toolsNotice,langLine].filter(Boolean).join('\\n\\n');
     const cleanMessages=requestMessagesForLLM(messages);
     const reqMessages=sysContent ? [{role:'system',content:sysContent},...cleanMessages] : cleanMessages;
     const reqBody={model,temperature:temp,messages:reqMessages};
@@ -2133,8 +2217,12 @@ async function sendRuntimeAgentMessage(input,text) {
   input.value='';
   input.style.height='auto';
   if(!currentConversationId) currentConversationId=newConversationId();
-  messages.push({role:'user',content:text});
-  appendMsg('user',text);
+  const userMessage={role:'user',content:text};
+  messages.push(userMessage);
+  const userEl=appendMsg('user',text);
+  // Consumed by mergeRuntimeConversation once this same message comes back
+  // from the runtime's own /state, instead of appending a second copy.
+  pendingRuntimeUserRefs.push({message:userMessage,el:userEl});
   try {
     const controlBody=JSON.stringify({action:'message',input:text});
     // Read runtimeIsRunning() fresh before and after the request (not hoisted

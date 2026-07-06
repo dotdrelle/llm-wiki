@@ -73,25 +73,26 @@ function applyServerConfig(config) {
 }
 
 async function loadConfigProfiles() {
-  const wrap=$('profile-picker-wrap');
   const select=$('profile-picker');
-  if(!wrap||!select||!window.__WIKI_CONFIG__?.runtime?.enabled) return;
+  if(!select||!window.__WIKI_CONFIG__?.runtime?.enabled) return;
   try {
     const res=await fetch('/api/config/profiles',{cache:'no-store'});
     if(!res.ok) throw new Error('profiles unavailable');
     const data=await res.json();
+    // Show only the profile name — the backing .wikirc file is an
+    // implementation detail, kept as a hover title instead of cluttering the option label.
     const profiles=Array.isArray(data.items)&&data.items.length
-      ? data.items.map(item=>({name:item.name,label:item.fileName?item.name+' ('+item.fileName+')':item.name}))
-      : (Array.isArray(data.profiles)?data.profiles.map(name=>({name,label:name})):[]);
+      ? data.items.map(item=>({name:item.name,fileName:item.fileName||''}))
+      : (Array.isArray(data.profiles)?data.profiles.map(name=>({name,fileName:''})):[]);
     if(!profiles.length) return;
-    select.innerHTML=profiles.map(profile=>\`<option value="\${esc(profile.name)}">\${esc(profile.label)}</option>\`).join('');
+    select.innerHTML=profiles.map(profile=>\`<option value="\${esc(profile.name)}"\${profile.fileName?\` title="\${esc(profile.fileName)}"\`:''}>\${esc(profile.name)}</option>\`).join('');
     select.value=data.active||profiles[0].name;
     select.dataset.active=select.value;
     select.disabled=false;
-    wrap.classList.add('visible');
+    select.classList.add('visible');
   } catch {
     select.disabled=true;
-    wrap.classList.remove('visible');
+    select.classList.remove('visible');
   }
 }
 
@@ -110,6 +111,9 @@ async function switchConfigProfile(profile) {
     if(!res.ok||data.ok===false) throw new Error(data.error||data.message||\`HTTP \${res.status}\`);
     select.dataset.active=data.active||profile;
     select.value=data.active||profile;
+    // A profile switch is authoritative — drop any leftover local override so
+    // it can't resurface and silently diverge from the newly active profile.
+    localStorage.removeItem(storageKey('mcpchat_config'));
     applyServerConfig(data.config);
     servers.forEach(server=>{ server.sessionId=null; server.status=server.enabled?'off':server.status; server.tools=[]; });
     servers=[];
@@ -188,22 +192,25 @@ function loadConfig() {
     saved = JSON.parse(localStorage.getItem(storageKey('mcpchat_config'))||'{}');
   } catch {}
   if (wc) {
-    // Proxy mode defaults to .wikirc.yaml but keeps workspace-scoped browser overrides.
+    // Proxy mode: the active .wikirc profile (managed server-side by
+    // wiki-manager runtime) is authoritative. A stale localStorage value here
+    // used to silently win over it on every reload — and since
+    // buildProxyLLMHeaders() sends an override header whenever the displayed
+    // field differs from window.__WIKI_CONFIG__, that stale value would then
+    // hijack the actual outbound LLM request regardless of which profile was
+    // selected. Do not read from localStorage in this mode.
     if (wc.model) $('model-name').value = wc.model;
     if (wc.temperature !== undefined) $('temperature').value = String(wc.temperature);
     if (wc.baseUrl) $('base-url').value = wc.baseUrl;
     if (wc.apiKey)  { $('api-key').value = wc.apiKey; flashSaved('llm-saved'); }
   } else {
-    // CLI mode: load from localStorage
+    // CLI mode: no server-managed profile exists, so localStorage is the
+    // only source of truth for these fields.
     if (saved.baseUrl) $('base-url').value = saved.baseUrl;
     if (saved.apiKey)  { $('api-key').value = saved.apiKey; flashSaved('llm-saved'); }
     if (saved.model)   $('model-name').value = saved.model;
     if (saved.temp !== undefined) $('temperature').value = saved.temp;
   }
-  if (saved.baseUrl) $('base-url').value = saved.baseUrl;
-  if (saved.apiKey)  { $('api-key').value = saved.apiKey; flashSaved('llm-saved'); }
-  if (saved.model)   $('model-name').value = saved.model;
-  if (saved.temp !== undefined) $('temperature').value = saved.temp;
   $('system-prompt').value = localStorage.getItem(storageKey('mcpchat_system_prompt')) ?? window.__WIKI_CONFIG__?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
   syncModel();
   applySetupGuideHighlight();

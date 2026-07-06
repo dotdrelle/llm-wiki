@@ -49,7 +49,7 @@ export const CHAT_MARKUP = `<nav id="app-nav" aria-label="Navigation application
     <div class="sb-pane config-pane" id="config-pane">
       <div class="sec-label">Connectors</div>
       <a class="sb-link" id="connectors-link" href="/chat/connectors" onclick="showConnectorsView(event)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a6 6 0 0 1-12 0V8z"/></svg> Connectors <span>MCP & skills</span></a>
-      <div class="sec-label">LLM Config<button type="button" onclick="resetYamlConfig()">Reset</button></div>
+      <div class="sec-label">LLM Config<div class="sec-label-actions"><select class="tb-profile-select" id="profile-picker" title="Active .wikirc profile managed by wiki-manager runtime" onchange="switchConfigProfile(this.value)"></select><button type="button" onclick="resetYamlConfig()">Reset</button></div></div>
       <div class="api-block">
         <div class="field">
           <label>Base URL</label>
@@ -87,10 +87,6 @@ export const CHAT_MARKUP = `<nav id="app-nav" aria-label="Navigation application
 <div id="main">
   <div id="topbar">
     <span class="tb-model" id="model-badge">gpt-4o</span>
-    <label class="tb-profile" id="profile-picker-wrap" title="Active .wikirc profile managed by wiki-manager runtime">
-      Profile
-      <select class="tb-profile-select" id="profile-picker" onchange="switchConfigProfile(this.value)"></select>
-    </label>
     <div class="tb-mcps" id="tb-mcps"></div>
     <div class="tb-actions">
       <button class="tb-system" id="system-drawer-btn" onclick="toggleSystemPrompt()">System instructions</button>
