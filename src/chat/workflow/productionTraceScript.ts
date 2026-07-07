@@ -30,7 +30,7 @@ function productionStepDetail(step, job, progress) {
   const traceFile=productionState.traceFile || details.traceFile || progress?.traceFile || '';
   const status=String(step?.status||job?.status||'');
   const percent=Number.isFinite(Number(progress?.percent)) ? Math.max(0,Math.min(100,Number(progress.percent))) : null;
-  const logLines=logs.length ? logs.slice(-80).join('\\n') : 'No logs loaded.';
+  const logLines=logs.length ? logs.join('\\n') : 'No logs loaded.';
   return {
     title: progress?.phase || step?.name || job?.type || 'production',
     status,
@@ -206,7 +206,7 @@ async function pollProductionJob({immediate=false}={}) {
   try {
     const statusText=await callMCPTool('production_job_status',{jobId:productionState.jobId});
     updateProductionFromPayload(parseProductionJSON(statusText),{open:false,poll:false});
-    const logsText=await callMCPTool('production_job_logs',{jobId:productionState.jobId,tail:120});
+    const logsText=await callMCPTool('production_job_logs',{jobId:productionState.jobId,tail:1000});
     updateProductionFromPayload(parseProductionJSON(logsText),{open:false,poll:false});
     await refreshProductionTraceProgress();
   } catch(e) {

@@ -18,6 +18,10 @@ export async function handleRuntimeRoutes(
     await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/state'), deps.proxyDeps);
     return true;
   }
+  if (urlPath === '/api/runtime/health' && req.method === 'GET') {
+    await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/health'), deps.proxyDeps);
+    return true;
+  }
   if (urlPath === '/api/runtime/events' && req.method === 'GET') {
     await proxyRuntimeEvents(req, res, deps.runtimePathForWorkspace('/events/stream'), deps.proxyDeps);
     return true;

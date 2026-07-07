@@ -1530,8 +1530,21 @@ function parseToolJSON(result) {
 }
 
 function shortText(value, max=180) {
-  const text=String(value||'').replace(/\\s+/g,' ').trim();
+  const text=shortTextValue(value).replace(/\\s+/g,' ').trim();
   return text.length>max ? text.slice(0,max-1).trimEnd()+'…' : text;
+}
+
+function shortTextValue(value) {
+  if(value===null||value===undefined) return '';
+  if(typeof value==='string'||typeof value==='number'||typeof value==='boolean') return String(value);
+  if(Array.isArray(value)) return value.map(shortTextValue).filter(Boolean).join(', ');
+  if(typeof value==='object') {
+    return Object.entries(value)
+      .map(([key,item])=>key+': '+shortTextValue(item))
+      .filter(Boolean)
+      .join(', ');
+  }
+  return String(value);
 }
 
 function uniqueCount(values) {
