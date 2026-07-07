@@ -181,12 +181,14 @@ describe('serve graph ui', () => {
     expect(source).toContain('-webkit-backdrop-filter: blur(6px);');
   });
 
-  it('offers radial, dag and list modes from the shared D3 base', async () => {
+  it('offers radial and dag modes from the shared D3 base', async () => {
     const source = await graphCoreSource();
 
     expect(source).toContain('data-graph-mode="radial"');
     expect(source).toContain('data-graph-mode="dag"');
-    expect(source).toContain('data-graph-mode="list"');
+    expect(source).not.toContain('data-graph-mode="list"');
+    expect(source).not.toContain('data-graph-list');
+    expect(source).not.toContain('graph-list-view');
     expect(source).toContain("let mode = 'radial';");
     expect(source).toContain('function setMode(nextMode)');
     expect(source).toContain('d3.forceSimulation(nodes)');

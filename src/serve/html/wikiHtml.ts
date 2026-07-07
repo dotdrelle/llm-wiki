@@ -771,7 +771,7 @@ export async function generateGraph(rootDir: string): Promise<string> {
     nodes.length > 0
       ? renderWikiGraphApp(nodes, edges, etag)
       : '<p class="empty">No Markdown documents to display in the graph.</p>';
-  const body = `${sidebar}<main class="content"><div class="hero"><h1>Wiki Graph</h1><p>Pages, sources, templates, build context and deliverables are represented as document relations. Use Radial, DAG or Liste mode to inspect the same wiki projection.</p></div><div class="graph-legend"><span class="legend-item raw-source">${rawSourceCount} raw source(s)</span><span class="legend-item wiki-source">${wikiSourceCount} wiki source(s)</span><span class="legend-item wiki">wiki</span><span class="legend-item template">${templateCount} template(s)</span><span class="legend-item build-context">${contextCount} context file(s)</span><span class="legend-item deliverable">deliverables</span><span>${edges.length} relation(s)</span></div>${graph}</main>`;
+  const body = `${sidebar}<main class="content"><div class="hero"><h1>Wiki Graph</h1><p>Pages, sources, templates, build context and deliverables are represented as document relations. Use Radial or DAG mode to inspect the same wiki projection.</p></div><div class="graph-legend"><span class="legend-item raw-source">${rawSourceCount} raw source(s)</span><span class="legend-item wiki-source">${wikiSourceCount} wiki source(s)</span><span class="legend-item wiki">wiki</span><span class="legend-item template">${templateCount} template(s)</span><span class="legend-item build-context">${contextCount} context file(s)</span><span class="legend-item deliverable">deliverables</span><span>${edges.length} relation(s)</span></div>${graph}</main>`;
   return layout('Source Graph', body);
 }
 

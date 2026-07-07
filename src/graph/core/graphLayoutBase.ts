@@ -11,7 +11,7 @@ export function renderGraphApp(
   etag: string,
   deps: GraphRenderDeps,
 ): string {
-  return `<div class="graph-layout" data-graph-layout data-graph-etag="${deps.escapeAttr(etag)}"><div class="graph-panel"><div class="graph-search-wrapper" data-graph-search-wrapper><div class="graph-toolbar"><div class="graph-search-field"><input class="graph-search-input" type="search" placeholder="Search node..." aria-label="Search graph" data-graph-search autocomplete="off"><ul class="graph-search-dropdown" data-graph-search-dropdown hidden></ul></div><div class="graph-mode-group" role="tablist" aria-label="Graph mode"><button class="graph-mode-btn is-active" type="button" data-graph-mode="radial">Radial</button><button class="graph-mode-btn" type="button" data-graph-mode="dag">DAG</button><button class="graph-mode-btn" type="button" data-graph-mode="list">Liste</button></div><div class="graph-ctrl-group"><button class="graph-ctrl-btn" type="button" data-graph-zoom-in title="Zoom in">+</button><button class="graph-ctrl-btn" type="button" data-graph-zoom-out title="Zoom out">&#x2212;</button><button class="graph-ctrl-btn" type="button" data-graph-center title="Center on selection" style="font-size:0.9rem">&#x25CE;</button><button class="graph-ctrl-btn" type="button" data-graph-reset title="Reset view" style="font-size:0.9rem">&#x21BA;</button><button class="graph-ctrl-btn" type="button" data-graph-expand title="Expand graph" aria-label="Expand graph" aria-pressed="false" style="font-size:0.9rem">&#x2197;</button></div></div></div><div class="graph-stage"><svg class="graph-svg" viewBox="0 0 1100 720" role="img" aria-label="Navigable document and source graph" data-graph-svg><g data-graph-viewport><g data-link-layer></g><g data-node-layer></g></g></svg><div class="graph-list-view" data-graph-list hidden></div></div></div><aside class="relation-panel"><div class="relation-panel-header"><button class="relation-toggle" type="button" title="Show/hide relations" aria-label="Show/hide relations" data-relation-toggle>&#9776;</button><div class="relation-panel-copy"><h2 class="relation-panel-title" data-relation-panel-title>Relations</h2><p class="relation-panel-meta" data-relation-panel-meta>Open a relation to view linked Markdown.</p><dl class="relation-inspector"><dt>Type</dt><dd data-inspector-type>-</dd><dt>Path</dt><dd data-inspector-path>-</dd><dt>Links</dt><dd data-inspector-counts>-</dd></dl><a class="relation-node-open" data-relation-node-open href="#" hidden>Open page</a></div></div><ul class="relation-list" data-relation-list></ul></aside></div>
+  return `<div class="graph-layout" data-graph-layout data-graph-etag="${deps.escapeAttr(etag)}"><div class="graph-panel"><div class="graph-search-wrapper" data-graph-search-wrapper><div class="graph-toolbar"><div class="graph-search-field"><input class="graph-search-input" type="search" placeholder="Search node..." aria-label="Search graph" data-graph-search autocomplete="off"><ul class="graph-search-dropdown" data-graph-search-dropdown hidden></ul></div><div class="graph-mode-group" role="tablist" aria-label="Graph mode"><button class="graph-mode-btn is-active" type="button" data-graph-mode="radial">Radial</button><button class="graph-mode-btn" type="button" data-graph-mode="dag">DAG</button></div><div class="graph-ctrl-group"><button class="graph-ctrl-btn" type="button" data-graph-zoom-in title="Zoom in">+</button><button class="graph-ctrl-btn" type="button" data-graph-zoom-out title="Zoom out">&#x2212;</button><button class="graph-ctrl-btn" type="button" data-graph-center title="Center on selection" style="font-size:0.9rem">&#x25CE;</button><button class="graph-ctrl-btn" type="button" data-graph-reset title="Reset view" style="font-size:0.9rem">&#x21BA;</button><button class="graph-ctrl-btn" type="button" data-graph-expand title="Expand graph" aria-label="Expand graph" aria-pressed="false" style="font-size:0.9rem">&#x2197;</button></div></div></div><div class="graph-stage"><svg class="graph-svg" viewBox="0 0 1100 720" role="img" aria-label="Navigable document and source graph" data-graph-svg><g data-graph-viewport><g data-link-layer></g><g data-node-layer></g></g></svg></div></div><aside class="relation-panel"><div class="relation-panel-header"><button class="relation-toggle" type="button" title="Show/hide relations" aria-label="Show/hide relations" data-relation-toggle>&#9776;</button><div class="relation-panel-copy"><h2 class="relation-panel-title" data-relation-panel-title>Relations</h2><p class="relation-panel-meta" data-relation-panel-meta>Open a relation to view linked Markdown.</p><dl class="relation-inspector"><dt>Type</dt><dd data-inspector-type>-</dd><dt>Path</dt><dd data-inspector-path>-</dd><dt>Links</dt><dd data-inspector-counts>-</dd></dl><a class="relation-node-open" data-relation-node-open href="#" hidden>Open page</a></div></div><ul class="relation-list" data-relation-list></ul></aside></div>
 <div class="modal-backdrop" data-relation-modal><section class="relation-modal" role="dialog" aria-modal="true" aria-labelledby="relation-modal-title"><div class="modal-header"><h2 class="modal-title" id="relation-modal-title" data-modal-title>Relation</h2><button class="modal-close" type="button" aria-label="Close" data-modal-close>x</button></div><div class="modal-body"><article class="modal-doc"><h3 class="modal-doc-title" data-modal-target-title></h3><div class="modal-markdown" data-modal-target-body></div></article></div></section></div>
 ${renderGraphScript(nodes, edges, deps)}`;
 }
@@ -34,7 +34,6 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[], deps: GraphRe
   const graphPanel = graphLayout?.querySelector('.graph-panel');
   const graphPage = graphLayout?.closest('main');
   const svg = document.querySelector('[data-graph-svg]');
-  const listView = document.querySelector('[data-graph-list]');
   const viewport = document.querySelector('[data-graph-viewport]');
   const linkLayer = document.querySelector('[data-link-layer]');
   const nodeLayer = document.querySelector('[data-node-layer]');
@@ -137,7 +136,6 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[], deps: GraphRe
     if (!query) {
       for (const el of nodeElements.values()) el.classList.remove('is-dimmed');
       for (const entry of linkElements) entry.element.classList.remove('is-dimmed');
-      for (const row of listView.querySelectorAll('[data-node-id]')) row.classList.remove('is-dimmed');
       if (selectedId) selectNode(selectedId);
       return;
     }
@@ -145,9 +143,6 @@ function renderGraphScript(nodes: GraphNode[], edges: GraphEdge[], deps: GraphRe
     for (const [nodeId, el] of nodeElements) {
       el.classList.toggle('is-dimmed', !matchingIds.has(nodeId));
       el.classList.toggle('is-selected', false);
-    }
-    for (const row of listView.querySelectorAll('[data-node-id]')) {
-      row.classList.toggle('is-dimmed', !matchingIds.has(row.dataset.nodeId));
     }
     for (const entry of linkElements) entry.element.classList.remove('is-connected');
   }
@@ -183,12 +178,10 @@ ${graphSelectionScript({ relationLabels: deps.relationLabels })}
     simulation?.stop();
     linkLayer.innerHTML = '';
     nodeLayer.innerHTML = '';
-    listView.innerHTML = '';
     linkElements.length = 0;
     nodeElements.clear();
     renderRelations();
     renderNodes();
-    renderList();
     startSimulation();
     if (selectedId) selectNode(selectedId);
   }
@@ -288,31 +281,15 @@ ${graphSelectionScript({ relationLabels: deps.relationLabels })}
     }
   }
 
-  function renderList() {
-    listView.innerHTML = nodes
-      .slice()
-      .sort((a, b) => a.type.localeCompare(b.type) || a.title.localeCompare(b.title))
-      .map((node) => '<button class="graph-list-row" type="button" data-node-id="' + window.WikiUi.escapeHtml(node.id) + '"><span class="graph-search-result-dot ' + node.type + '"></span><span><strong>' + window.WikiUi.escapeHtml(node.title) + '</strong><small>' + window.WikiUi.escapeHtml(node.secondary || node.id) + '</small></span><em>' + window.WikiUi.escapeHtml(node.type) + '</em></button>')
-      .join('');
-    listView.querySelectorAll('[data-node-id]').forEach((row) => row.addEventListener('click', () => {
-      selectNode(row.dataset.nodeId);
-      setMode('radial');
-      panToNode(row.dataset.nodeId);
-    }));
-  }
-
   function setMode(nextMode) {
-    mode = nextMode || 'radial';
+    mode = nextMode === 'dag' ? 'dag' : 'radial';
     graphLayout.dataset.graphMode = mode;
     modeButtons.forEach((button) => button.classList.toggle('is-active', button.dataset.graphMode === mode));
-    listView.hidden = mode !== 'list';
-    svg.hidden = mode === 'list';
     startSimulation();
   }
 
   function startSimulation() {
     simulation?.stop();
-    if (mode === 'list') return;
     const radial = mode === 'radial';
     simulation = d3.forceSimulation(nodes)
       .force('link', d3.forceLink(edges).id((node) => node.id).distance((edge) => {

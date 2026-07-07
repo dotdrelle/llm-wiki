@@ -869,12 +869,6 @@ export const WIKI_LAYOUT_CSS = `
     .legend-item.template::before { background: #7c3aed; }
     .legend-item.build-context::before { background: #2563eb; }
     .legend-item.deliverable::before { background: #6b7f2a; }
-    .graph-list-view { position: absolute; inset: 3.7rem 0 0; overflow: auto; padding: 0.7rem; background: var(--panel); }
-    .graph-list-row { width: 100%; display: grid; grid-template-columns: 0.8rem 1fr auto; gap: 0.55rem; align-items: center; padding: 0.55rem 0.65rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); text-align: left; font: inherit; cursor: pointer; }
-    .graph-list-row + .graph-list-row { margin-top: 0.45rem; }
-    .graph-list-row small { display: block; margin-top: 0.12rem; color: var(--muted); font-size: 0.74rem; overflow-wrap: anywhere; }
-    .graph-list-row em { color: var(--muted); font-size: 0.72rem; font-style: normal; font-weight: 760; }
-    .graph-list-row.is-dimmed { opacity: 0.32; }
     .relation-panel {
       border: 1px solid var(--border);
       border-radius: 8px;
