@@ -38,6 +38,21 @@ let productionState = {
   lastUpdatedAt: null,
   notifiedTerminalJobIds: new Set(),
 };
+let runtimeLogFilter = '';
+function runtimeLogMatchesFilter(line, filter) {
+  const query=String(filter||'').trim().toLowerCase();
+  if(!query) return true;
+  const text=String(line||'').toLowerCase();
+  return query.split(/\\s+/).filter(Boolean).every(token=>text.includes(token));
+}
+function filteredRuntimeLogs(logs) {
+  return (Array.isArray(logs)?logs:[]).map(String).filter(line=>runtimeLogMatchesFilter(line,runtimeLogFilter));
+}
+function setRuntimeLogFilter(value) {
+  runtimeLogFilter=String(value||'');
+  renderActivities?.();
+  renderRuntimeWorkflowInspector?.();
+}
 const DEFAULT_SYSTEM_PROMPT = \`You are an assistant connected to MCP servers.
 
 When MCP tools are available, use them if the answer depends on external, recent, private, local, or tool-verifiable information.
@@ -134,7 +149,7 @@ function runtimeTaskPanelHTML() {
   const queue=workflowQueue
     ? workflowQueue.map(node=>({...(node.raw||{}),id:node.itemId||node.id,label:node.label,status:node.status}))
     : Array.isArray(runtimeState.queue)?runtimeState.queue:[];
-  const logs=Array.isArray(runtimeState.logs)?runtimeState.logs.slice(-6):[];
+  const logs=filteredRuntimeLogs(runtimeState.logs);
   const runStartedAt=runtimeTime(runtimeState.startedAt||runtimeState.createdAt||runtimeState.updatedAt);
   const runUpdatedAt=runtimeTime(runtimeState.finishedAt||runtimeState.completedAt||runtimeState.updatedAt,runStartedAt);
   const status=\`<div class="runtime-status">Runtime \${runtimeConnected?'connected':'disconnected'} · \${esc(runtimeState.status||'idle')}</div>\`;
@@ -168,7 +183,8 @@ function runtimeTaskPanelHTML() {
     startedAt:runtimeTime(item.startedAt||item.createdAt,runStartedAt),
     updatedAt:runtimeTime(item.finishedAt||item.completedAt||item.updatedAt,runUpdatedAt),
   })).join('');
-  const logsHtml=logs.length?\`<div class="act-section-head"><span class="act-section-title">Logs</span></div><div class="runtime-log">\${esc(logs.join('\\n'))}</div>\`:'';
+  const logFilters=\`<div class="runtime-log-filters"><input value="\${esc(runtimeLogFilter)}" oninput="setRuntimeLogFilter(this.value)" placeholder="Filter run group task agent file attempt capability error"></div>\`;
+  const logsHtml=\`<div class="act-section-head"><span class="act-section-title">Logs</span></div>\${logFilters}\${logs.length?\`<div class="runtime-log">\${esc(logs.join('\\n'))}</div>\`:'<div class="runtime-log empty">No matching logs.</div>'}\`;
   return status
     +runCard
     +runtimeSectionHTML('plan','Plan',planCards)

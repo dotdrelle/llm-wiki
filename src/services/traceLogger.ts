@@ -74,17 +74,14 @@ function formatValue(value: unknown): string {
 
   if (typeof value === 'string') {
     const normalized = value.replace(/\s+/g, ' ').trim();
-    const truncated =
-      normalized.length > 180 ? `${normalized.slice(0, 177).trimEnd()}...` : normalized;
-    return /[\s=:"]/u.test(truncated) ? JSON.stringify(truncated) : truncated;
+    return /[\s=:"]/u.test(normalized) ? JSON.stringify(normalized) : normalized;
   }
 
   if (typeof value === 'number' || typeof value === 'boolean') {
     return String(value);
   }
 
-  const serialized = JSON.stringify(value);
-  return serialized.length > 180 ? `${serialized.slice(0, 177)}...` : serialized;
+  return JSON.stringify(value);
 }
 
 function formatData(data?: Record<string, unknown>): string {

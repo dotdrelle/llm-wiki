@@ -120,7 +120,7 @@ function renderRuntimeWorkflowInspector() {
   const node=nodes.find(item=>item.id===selectedWorkflowNodeId)||nodes[0];
   if(!node) { inspector.innerHTML='<div class="runtime-graph-empty">No node selected.</div>'; return; }
   const linked=relations.filter(rel=>rel.from===node.id||rel.to===node.id);
-  const logs=Array.isArray(runtimeState?.logs)?runtimeState.logs.slice(-8):[];
+  const logs=filteredRuntimeLogs(runtimeState?.logs);
   inspector.innerHTML=\`<div class="runtime-inspector-title">\${esc(node.label)}</div><div class="runtime-inspector-meta">\${esc(node.type)} · \${esc(node.status||'-')}</div><dl class="runtime-inspector-dl"><dt>Id</dt><dd>\${esc(node.id)}</dd><dt>Run</dt><dd>\${esc(runtimeState?.runId||runtimeState?.currentRunId||node.runId||'-')}</dd><dt>Turn</dt><dd>\${esc(runtimeState?.turnId||node.turnId||'-')}</dd><dt>Relations</dt><dd>\${linked.length}</dd></dl>\${linked.length?\`<div class="runtime-inspector-section">\${linked.map(rel=>\`<div class="runtime-inspector-rel">\${esc(rel.type)} · \${esc(rel.from)} → \${esc(rel.to)}</div>\`).join('')}</div>\`:''}\${logs.length?\`<div class="runtime-inspector-section"><div class="runtime-inspector-heading">Logs</div><pre>\${esc(logs.join('\\n'))}</pre></div>\`:''}\`;
 }
 /* ── end Runtime Graph ─────────────────────────────────────────────── */`;

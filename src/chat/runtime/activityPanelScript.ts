@@ -387,7 +387,7 @@ function runtimeStatusMarkdown(target) {
   const plan=Array.isArray(runtimeState.plan)?runtimeState.plan:[];
   const activities=Array.isArray(runtimeState.activities)?runtimeState.activities:[];
   const queue=Array.isArray(runtimeState.queue)?runtimeState.queue:[];
-  const logs=Array.isArray(runtimeState.logs)?runtimeState.logs.slice(-5):[];
+  const logs=filteredRuntimeLogs(runtimeState.logs);
   const line=(label,value)=>\`- \${label}: \${value||'-'}\`;
   const planLines=plan.slice(0,8).map((step,index)=>line(\`Plan \${step.step||index+1}\`,\`\${step.status||'pending'} - \${step.description||step.label||step.id||'step'}\`));
   const activityLines=activities.slice(0,8).map((activity,index)=>line(activity.id||activity.key||\`Activity \${index+1}\`,\`\${activity.status||'-'} - \${activity.label||activity.tool||activity.source||'runtime'}\`));

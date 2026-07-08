@@ -30,6 +30,18 @@ describe('chat html', () => {
     expect(script).not.toContain('function renderProductionPanel()');
   });
 
+  it('renders runtime log filters without hard tail slicing', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain('function filteredRuntimeLogs(logs)');
+    expect(script).toContain('placeholder="Filter run group task agent file attempt capability error"');
+    expect(script).toContain('const logs=filteredRuntimeLogs(runtimeState.logs);');
+    expect(script).toContain('const logs=filteredRuntimeLogs(runtimeState?.logs);');
+    expect(script).not.toContain('runtimeState.logs.slice(-5)');
+    expect(script).not.toContain('runtimeState.logs.slice(-6)');
+    expect(script).not.toContain('runtimeState.logs.slice(-8)');
+  });
+
   it('finalizes streaming bubbles on abort or errors', () => {
     const [script] = chatScripts();
 

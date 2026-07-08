@@ -71,4 +71,21 @@ describe('trace logger', () => {
     });
     expect(lastRun.llm.calls).toBe(2);
   });
+
+  it('keeps long structured values in trace log lines', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-trace-long-'));
+    const logger = await createTraceLogger({
+      rootDir: root,
+      logsDir: path.join(root, '.wiki', 'logs'),
+      command: 'doctor',
+    });
+    const detail = 'x'.repeat(260);
+
+    await logger.info('runtime:structured', { detail });
+    await logger.close();
+
+    const content = await readFile(logger.filePath, 'utf8');
+    expect(content).toContain(detail);
+    expect(content).not.toContain(`${detail.slice(0, 177)}...`);
+  });
 });
