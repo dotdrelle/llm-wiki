@@ -20,7 +20,10 @@ function runtimeWorkflowInspectorHTML() {
 }
 function runtimeWorkflowGraphData() {
   const workflow=runtimeState?.workflow||{};
-  const nodes=(Array.isArray(workflow.nodes)?workflow.nodes:[]).map((node,index)=>({
+  const graph=workflow.graph||{};
+  const sourceNodes=Array.isArray(graph.visibleNodes)&&graph.visibleNodes.length?graph.visibleNodes:workflow.nodes;
+  const sourceRelations=Array.isArray(graph.visibleEdges)&&graph.visibleEdges.length?graph.visibleEdges:workflow.relations;
+  const nodes=(Array.isArray(sourceNodes)?sourceNodes:[]).map((node,index)=>({
     ...node,
     id:String(node.id||node.key||node.itemId||'node-'+index),
     label:String(node.label||node.description||node.id||'Node'),
@@ -28,7 +31,7 @@ function runtimeWorkflowGraphData() {
     status:String(node.status||'pending'),
   }));
   const nodeIds=new Set(nodes.map(node=>node.id));
-  const relations=(Array.isArray(workflow.relations)?workflow.relations:[])
+  const relations=(Array.isArray(sourceRelations)?sourceRelations:[])
     .map((rel,index)=>({id:String(rel.id||'runtime-rel-'+index),type:String(rel.type||'related_to'),from:String(rel.from||rel.source||''),to:String(rel.to||rel.target||'')}))
     .filter(rel=>nodeIds.has(rel.from)&&nodeIds.has(rel.to));
   if(!selectedWorkflowNodeId||!nodeIds.has(selectedWorkflowNodeId)) selectedWorkflowNodeId=workflow.current?.id||nodes[0]?.id||null;

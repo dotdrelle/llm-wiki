@@ -518,6 +518,7 @@ describe('chat html', () => {
     expect(script).toContain('const activitySummary=runtimeState.workflow?.activity||null;');
     expect(script).toContain('const activityLines=Array.isArray(activitySummary?.lines)?activitySummary.lines:[];');
     expect(script).toContain('const initialSynthesis=Array.isArray(activitySummary?.initialSynthesis)?activitySummary.initialSynthesis:[];');
+    expect(script).toContain('const sourceNodes=Array.isArray(graph.visibleNodes)&&graph.visibleNodes.length?graph.visibleNodes:workflow.nodes;');
     expect(script).toContain("Runtime activity");
   });
 
