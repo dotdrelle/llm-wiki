@@ -9,12 +9,21 @@ and regenerates deliverables from templates and build context.
 Keep it usable both as a standalone CLI and as the engine called by
 `llm-wiki-manager`.
 
-0.11.0 is an industrialized single-user deployment baseline. Multi-user support
-is specified in `docs/industrialisation.md` and planned for 0.12.0; do not treat
-the runtime/write APIs as a shared multi-user boundary before that lot lands.
+This remains a single-user deployment baseline. Multi-user support is
+specified in `docs/industrialisation.md` and planned next; do not treat the
+runtime/write APIs as a shared multi-user boundary before that lot lands.
 
-The multi-repo roadmap driving current work lives in `plan-directeur-revise.md`
-at the wikiLLM workspace root (one level above this repo, not versioned here).
+The multi-repo master plan is `plan-directeur-orchestration.md` at the wikiLLM
+workspace root (one level above this repo, not versioned here); it supersedes
+`plan-directeur-revise.md`. Its 0.12.0 "agnostic orchestration" lot is
+implemented; in this repo it landed as the serve-side runtime UI updates:
+structured runtime log display (filterable, no hard truncation), aggregated
+and deduplicated runtime activity (weighted progress, no repeated identical
+entries), the projected Run/Task runtime graph, and removal of the graph list
+mode. The serve chat consumes the same runtime store/events as the manager
+Shell UI — when a runtime event or projection changes in `llm-wiki-manager`,
+update the corresponding `src/chat/runtime/` script here in the same release
+window. Earlier per-lot history below is kept for context.
 0.9.4 is the incremental, iso-behavior extraction of `src/commands/serve.ts`
 and `src/chat/chatHtml.ts` into smaller modules (see Layout below); neither
 file has reached its final target size yet, and `scripts/check-file-sizes.js`

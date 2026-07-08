@@ -12,10 +12,10 @@ The core rule is simple: the workspace is the source of truth. Sources, wiki
 pages, templates, build rules, generated deliverables, traces, and skill state
 all live on disk.
 
-Scope note: 0.11.0 is an industrialized single-user deployment baseline. The
-multi-user model is specified in `docs/industrialisation.md` and planned for
-0.12.0; until then, keep runtime write access local/proxied rather than exposing
-it as a shared multi-user surface.
+Scope note: this is a single-user deployment baseline. The multi-user model is
+specified in `docs/industrialisation.md` and planned next; until then, keep
+runtime write access local/proxied rather than exposing it as a shared
+multi-user surface.
 
 ## Toolchain
 
