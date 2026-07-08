@@ -149,11 +149,14 @@ function runtimeTaskPanelHTML() {
   const queue=workflowQueue
     ? workflowQueue.map(node=>({...(node.raw||{}),id:node.itemId||node.id,label:node.label,status:node.status}))
     : Array.isArray(runtimeState.queue)?runtimeState.queue:[];
+  const activitySummary=runtimeState.workflow?.activity||null;
+  const activityLines=Array.isArray(activitySummary?.lines)?activitySummary.lines:[];
+  const initialSynthesis=Array.isArray(activitySummary?.initialSynthesis)?activitySummary.initialSynthesis:[];
   const logs=filteredRuntimeLogs(runtimeState.logs);
   const runStartedAt=runtimeTime(runtimeState.startedAt||runtimeState.createdAt||runtimeState.updatedAt);
   const runUpdatedAt=runtimeTime(runtimeState.finishedAt||runtimeState.completedAt||runtimeState.updatedAt,runStartedAt);
   const status=\`<div class="runtime-status">Runtime \${runtimeConnected?'connected':'disconnected'} · \${esc(runtimeState.status||'idle')}</div>\`;
-  const runCard=runtimeRunCardHTML(plan,activities);
+  const runCard=runtimeRunCardHTML(plan,activities,runtimeState.workflow?.progress);
   const planCards=plan.map((step,index)=>actCardHTML({
     id:'runtime-plan-'+(step.id||step.step||index),
     kind:'runtime-plan',
@@ -169,7 +172,18 @@ function runtimeTaskPanelHTML() {
     startedAt:runtimeTime(step.startedAt||step.createdAt,runStartedAt),
     updatedAt:runtimeTime(step.finishedAt||step.completedAt||step.updatedAt,runUpdatedAt),
   })).join('');
-  const activityCards=activities.map((activity,index)=>actCardHTML(runtimeActivityToCard(activity,index,runStartedAt,runUpdatedAt))).join('');
+  const activityCards=(activityLines.length?activityLines.map((line,index)=>({
+    id:'runtime-agg-'+(line.id||index),
+    kind:'runtime-activity',
+    source:'runtime',
+    statusTarget:line.id||line.label||\`activity \${index+1}\`,
+    label:line.label||'Runtime activity',
+    detail:'',
+    status:normalizeActivityStatus(line.status||'running',false),
+    progress:line.progress||null,
+    startedAt:runStartedAt,
+    updatedAt:runUpdatedAt,
+  })):activities.map((activity,index)=>runtimeActivityToCard(activity,index,runStartedAt,runUpdatedAt))).map(actCardHTML).join('');
   const queueCards=queue.map((item,index)=>actCardHTML({
     id:'runtime-queue-'+(item.id||index),
     kind:'runtime-queue',
@@ -185,15 +199,17 @@ function runtimeTaskPanelHTML() {
   })).join('');
   const logFilters=\`<div class="runtime-log-filters"><input value="\${esc(runtimeLogFilter)}" oninput="setRuntimeLogFilter(this.value)" placeholder="Filter run group task agent file attempt capability error"></div>\`;
   const logsHtml=\`<div class="act-section-head"><span class="act-section-title">Logs</span></div>\${logFilters}\${logs.length?\`<div class="runtime-log">\${esc(logs.join('\\n'))}</div>\`:'<div class="runtime-log empty">No matching logs.</div>'}\`;
+  const synthesisHtml=initialSynthesis.length?\`<div class="act-section-head"><span class="act-section-title">Initial synthesis</span></div><div class="runtime-log">\${esc(initialSynthesis.join('\\n'))}</div>\`:'';
   return status
     +runCard
+    +synthesisHtml
     +runtimeSectionHTML('plan','Plan',planCards)
     +runtimeSectionHTML('queue','Queue',queueCards)
     +(activityCards?\`<div class="act-section-head"><span class="act-section-title">Runtime activity</span></div>\${activityCards}\`:'')
     +logsHtml;
 }
 
-function runtimeRunCardHTML(plan,activities) {
+function runtimeRunCardHTML(plan,activities,progress=null) {
   if(!runtimeIsRunning()) return '';
   const doneCount=plan.filter(step=>String(step.status||'').toLowerCase()==='done').length;
   const runningStep=plan.find(step=>String(step.status||'').toLowerCase()==='running');
@@ -203,6 +219,7 @@ function runtimeRunCardHTML(plan,activities) {
   const workspace=runtimeState?.workspace || window.__WIKI_CONFIG__?.workspaceName || '';
   const meta=[
     '● Running',
+    Number.isFinite(Number(progress?.percent))?\`\${Math.round(Number(progress.percent))}%\`:null,
     plan.length?\`\${doneCount} task\${doneCount>1?'s':''} done\`:null,
     runId?\`runId: \${runId}\`:null,
     turnId?\`turnId: \${turnId}\`:null,

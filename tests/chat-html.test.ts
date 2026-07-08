@@ -515,20 +515,23 @@ describe('chat html', () => {
     expect(script).toContain("const workflowTasks=workflowNodes?.filter(node=>node.type==='task')||null;");
     expect(script).toContain("const workflowActivities=workflowNodes?.filter(node=>node.type==='activity')||null;");
     expect(script).toContain("const workflowQueue=workflowNodes?.filter(node=>node.type==='queue')||null;");
+    expect(script).toContain('const activitySummary=runtimeState.workflow?.activity||null;');
+    expect(script).toContain('const activityLines=Array.isArray(activitySummary?.lines)?activitySummary.lines:[];');
+    expect(script).toContain('const initialSynthesis=Array.isArray(activitySummary?.initialSynthesis)?activitySummary.initialSynthesis:[];');
     expect(script).toContain("Runtime activity");
   });
 
   it('renders the active runtime run card with inspect and cancel controls', () => {
     const [script] = chatScripts();
 
-    expect(script).toContain('function runtimeRunCardHTML(plan,activities)');
+    expect(script).toContain('function runtimeRunCardHTML(plan,activities,progress=null)');
     expect(script).toContain('Run — ${esc(title)}');
     expect(script).toContain('data-run-id="${esc(runId)}"');
     expect(script).toContain('data-turn-id="${esc(turnId)}"');
     expect(script).toContain('data-workspace="${esc(workspace)}"');
     expect(script).toContain('onclick="askRuntimeStatus(${jsArg(runId||title)})">Inspect</button>');
     expect(script).toContain('onclick="cancelRuntimeRun()">Cancel</button>');
-    expect(script).toContain('const runCard=runtimeRunCardHTML(plan,activities);');
+    expect(script).toContain('const runCard=runtimeRunCardHTML(plan,activities,runtimeState.workflow?.progress);');
   });
 
   it('sends agent-mode messages through the runtime control lane while a run is active', () => {
