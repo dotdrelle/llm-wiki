@@ -8,6 +8,14 @@ llm:
 
 limits: { requestsPerMinute: 60 }
 
+build:
+  # Default false: `ingest` only ingests, no deliverable is rebuilt.
+  # Set to true to automatically chain, after every ingestion, a rebuild of
+  # all deliverables whose context changed (equivalent to an ingest → build
+  # pipeline). Convenient for an always-up-to-date wiki, but every ingest
+  # then costs additional LLM calls.
+  refreshOnIngest: false
+
 retrieval:
   vector:
     enabled: true

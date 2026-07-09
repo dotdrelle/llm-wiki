@@ -68,7 +68,8 @@ describe('workspace safety', () => {
     const effectiveLines = rawConfig
       .split('\n')
       .filter((line) => line.trim() && !line.trimStart().startsWith('#'));
-    expect(effectiveLines).toHaveLength(17);
+    // +2 since the scaffold gained an explicit build.refreshOnIngest: false.
+    expect(effectiveLines).toHaveLength(19);
     expect(rawConfig).toContain('apiKey: YOUR_LLM_API_KEY');
     expect(rawConfig).toContain('apiKey: YOUR_VECTOR_API_KEY');
     expect(rawConfig).not.toContain('apiKeyEnv:');

@@ -384,12 +384,16 @@ const llmSchema = z
 
 const buildSchema = z
   .object({
-    refreshOnIngest: z.boolean().default(true),
+    // false by default: `ingest` only ingests. Setting it to true chains an
+    // automatic rebuild of every deliverable whose context changed after each
+    // ingest — convenient, but it multiplies the LLM cost of every ingestion
+    // and was surprising as an implicit default.
+    refreshOnIngest: z.boolean().default(false),
     slotBatchSize: z.number().int().min(1).max(50).optional(),
     maxBuildContextChars: z.number().int().min(1000).default(24000),
   })
   .default({
-    refreshOnIngest: true,
+    refreshOnIngest: false,
     maxBuildContextChars: 24000,
   });
 
@@ -703,7 +707,7 @@ export function resolveConfigDetails(
       maxProfileChars: parsed.limits?.maxProfileChars ?? 4000,
     },
     build: {
-      refreshOnIngest: parsed.build?.refreshOnIngest ?? true,
+      refreshOnIngest: parsed.build?.refreshOnIngest ?? false,
       slotBatchSize: parsed.build?.slotBatchSize,
       maxBuildContextChars: parsed.build?.maxBuildContextChars ?? 24000,
     },

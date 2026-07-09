@@ -65,7 +65,7 @@ limits:
   maxProfileChars: 4000
 
 build:
-  refreshOnIngest: true
+  refreshOnIngest: false
   slotBatchSize: 8
   maxBuildContextChars: 24000
 
@@ -242,7 +242,7 @@ throttle decides when each request is allowed to start.
 
 | Key                    | Description                                                                                                        | Default |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------ | ------- |
-| `refreshOnIngest`      | Automatically regenerate stale deliverables after each ingest                                                      | `true`  |
+| `refreshOnIngest`      | Chain an automatic rebuild of stale deliverables after each ingest (extra LLM cost per ingestion)                  | `false` |
 | `slotBatchSize`        | Optional maximum number of `[[INSTRUCTION:...]]` slots allowed in one build call; token budget plans batches first | —       |
 | `maxBuildContextChars` | Maximum characters from `build-context/` files included in each build LLM call                                     | `24000` |
 

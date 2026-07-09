@@ -38,20 +38,22 @@ describe('config resolution', () => {
     expect(config.llm.baseUrl).toBe('http://127.0.0.1:11434/v1');
     expect(config.llm.apiKey).toBe('ollama');
     expect(config.llm.timeoutMs).toBe(600000);
-    expect(config.build.refreshOnIngest).toBe(true);
+    // Default changed to false: `ingest` must only ingest — chaining the
+    // deliverable rebuild is an explicit opt-in (see scaffold comment).
+    expect(config.build.refreshOnIngest).toBe(false);
   });
 
   it('parses build refreshOnIngest', () => {
     const config = resolveConfig(
       {
         build: {
-          refreshOnIngest: false,
+          refreshOnIngest: true,
         },
       },
       '/tmp/wiki',
     );
 
-    expect(config.build.refreshOnIngest).toBe(false);
+    expect(config.build.refreshOnIngest).toBe(true);
   });
 
   it('defaults build batching to token budget without a slot cap', () => {
