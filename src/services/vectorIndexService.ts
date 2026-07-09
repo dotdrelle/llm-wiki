@@ -195,6 +195,18 @@ function metadataMatchesConfig(
   );
 }
 
+// ~16 000 chars ≈ 4-5k tokens for French prose: comfortable margin under the
+// 8192-token limit of bge-m3-class embedding models, regardless of tokenizer.
+const EMBEDDING_QUERY_MAX_CHARS = 16000;
+
+export function boundEmbeddingQuery(query: string, maxChars = EMBEDDING_QUERY_MAX_CHARS): string {
+  const text = String(query ?? '');
+  if (text.length <= maxChars) return text;
+  const headLength = Math.floor(maxChars * 0.7);
+  const tailLength = maxChars - headLength;
+  return `${text.slice(0, headLength)}\n…\n${text.slice(-tailLength)}`;
+}
+
 function isEmbeddingInputLimitError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /\b(token|tokens|context|maximum|limit|too long|too large|8192|context_length_exceeded)\b/i.test(
@@ -496,7 +508,12 @@ export class VectorIndexService implements VectorIndex {
       throw new Error('Vector index is missing.');
     }
 
-    const [queryVector] = await this.embeddings.embed([query]);
+    // Embedding models cap the input size (bge-m3: 8192 tokens). Ingest
+    // context retrieval passes the whole source section as the query — with
+    // maxSourceChars raised to 36000 that exceeds the cap (HTTP 413) and
+    // silently degrades every large document to lexical fallback. Head+tail
+    // keeps the title/intro and conclusion, which carry most of the signal.
+    const [queryVector] = await this.embeddings.embed([boundEmbeddingQuery(query)]);
     await this.assertCompatibleMetadata(queryVector.length);
     const vectorRows = (await table
       .vectorSearch(queryVector)

@@ -2,7 +2,7 @@ import { access, mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { VectorIndexService } from '../src/services/vectorIndexService.ts';
+import { VectorIndexService, boundEmbeddingQuery } from '../src/services/vectorIndexService.ts';
 import { WorkspaceService } from '../src/services/workspaceService.ts';
 import type { AppConfig } from '../src/types.ts';
 
@@ -341,5 +341,17 @@ describe('vector index service', () => {
 
     const results = await service.search('expertise', { rerank: false });
     expect(results[0]?.page.relativePath).toBe('wiki/fonctionnel.md');
+  });
+});
+
+describe('boundEmbeddingQuery', () => {
+  it('keeps short queries intact and bounds long ones head+tail', () => {
+    expect(boundEmbeddingQuery('courte requête')).toBe('courte requête');
+
+    const long = `DEBUT-${'x'.repeat(40000)}-FIN`;
+    const bounded = boundEmbeddingQuery(long, 1000);
+    expect(bounded.length).toBeLessThanOrEqual(1005);
+    expect(bounded.startsWith('DEBUT-')).toBe(true);
+    expect(bounded.endsWith('-FIN')).toBe(true);
   });
 });
