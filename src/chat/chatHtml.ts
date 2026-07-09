@@ -63,14 +63,16 @@ function runtimeLogLineHTML(line) {
   return esc(line).replace(/^(\\d{2}:\\d{2}:\\d{2})/,'<span class="rt-log-time">$1</span>');
 }
 function runtimeLogListHTML() {
-  const logs=filteredRuntimeLogs(runtimeState.logs);
+  // Newest entry first (descending) — freshest information on top.
+  const logs=filteredRuntimeLogs(runtimeState.logs).slice().reverse();
   return logs.length
     ? \`<div class="runtime-log" id="runtime-log-list">\${logs.map(runtimeLogLineHTML).join('\\n')}</div>\`
     : '<div class="runtime-log empty" id="runtime-log-list">No matching logs.</div>';
 }
 function scrollRuntimeLogToEnd() {
+  // Descending order: the latest entries are at the TOP of the capped list.
   const list=document.getElementById('runtime-log-list');
-  if(list) list.scrollTop=list.scrollHeight;
+  if(list) list.scrollTop=0;
 }
 const DEFAULT_SYSTEM_PROMPT = \`You are an assistant connected to MCP servers.
 
