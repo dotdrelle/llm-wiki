@@ -331,6 +331,9 @@ function renderActivities() {
     +\`<div class="act-section-head"><span class="act-section-title">Local activity</span>\${dismissBtn}</div>\`
     +section('Uploads',uploads)
     +section('MCP',mcp);
+  // Keep the (height-capped, scrollable) runtime log pinned to its latest
+  // lines after each full panel re-render.
+  scrollRuntimeLogToEnd?.();
   const runtimeRunning=Array.isArray(runtimeState?.activities)
     ? runtimeState.activities.some(a=>isActivityActive(normalizeActivityStatus(a.status,a.terminal)))
     : false;

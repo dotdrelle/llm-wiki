@@ -50,8 +50,27 @@ function filteredRuntimeLogs(logs) {
 }
 function setRuntimeLogFilter(value) {
   runtimeLogFilter=String(value||'');
-  renderActivities?.();
+  // Update ONLY the log list in place: a full renderActivities() recreates
+  // the filter input on every keystroke, which threw the focus away after
+  // the first typed letter.
+  const list=document.getElementById('runtime-log-list');
+  if(list){ list.outerHTML=runtimeLogListHTML(); scrollRuntimeLogToEnd(); }
+  else renderActivities?.();
   renderRuntimeWorkflowInspector?.();
+}
+function runtimeLogLineHTML(line) {
+  // Colorize the leading HH:MM:SS so entries are scannable.
+  return esc(line).replace(/^(\\d{2}:\\d{2}:\\d{2})/,'<span class="rt-log-time">$1</span>');
+}
+function runtimeLogListHTML() {
+  const logs=filteredRuntimeLogs(runtimeState.logs);
+  return logs.length
+    ? \`<div class="runtime-log" id="runtime-log-list">\${logs.map(runtimeLogLineHTML).join('\\n')}</div>\`
+    : '<div class="runtime-log empty" id="runtime-log-list">No matching logs.</div>';
+}
+function scrollRuntimeLogToEnd() {
+  const list=document.getElementById('runtime-log-list');
+  if(list) list.scrollTop=list.scrollHeight;
 }
 const DEFAULT_SYSTEM_PROMPT = \`You are an assistant connected to MCP servers.
 
@@ -197,8 +216,8 @@ function runtimeTaskPanelHTML() {
     startedAt:runtimeTime(item.startedAt||item.createdAt,runStartedAt),
     updatedAt:runtimeTime(item.finishedAt||item.completedAt||item.updatedAt,runUpdatedAt),
   })).join('');
-  const logFilters=\`<div class="runtime-log-filters"><input value="\${esc(runtimeLogFilter)}" oninput="setRuntimeLogFilter(this.value)" placeholder="Filter run group task agent file attempt capability error"></div>\`;
-  const logsHtml=\`<div class="act-section-head"><span class="act-section-title">Logs</span></div>\${logFilters}\${logs.length?\`<div class="runtime-log">\${esc(logs.join('\\n'))}</div>\`:'<div class="runtime-log empty">No matching logs.</div>'}\`;
+  const logFilters=\`<div class="runtime-log-filters"><input id="runtime-log-filter" value="\${esc(runtimeLogFilter)}" oninput="setRuntimeLogFilter(this.value)" placeholder="Filter run group task agent file attempt capability error"></div>\`;
+  const logsHtml=runtimeSectionHTML('logs','Logs',logFilters+runtimeLogListHTML());
   const synthesisHtml=initialSynthesis.length?\`<div class="act-section-head"><span class="act-section-title">Initial synthesis</span></div><div class="runtime-log">\${esc(initialSynthesis.join('\\n'))}</div>\`:'';
   return status
     +runCard

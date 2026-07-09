@@ -56,7 +56,11 @@ function runtimeWorkflowColor(node) {
   const byType={run:'#8b5cf6',task:'#4f7eff',activity:'#14b8a6',executor:'#64748b',queue:'#f59e0b',approval:'#f97316',replan:'#a855f7',output:'#16a34a'};
   return byType[node.type]||'#94a3b8';
 }
-const RUNTIME_GRAPH_NODE_FILL='#5b6472';
+// Soft light-grey card (raised-button look) instead of the previous dark
+// slate: the dark squares clashed with the light Execution background. The
+// subtle stroke keeps the card visible on the pale canvas.
+const RUNTIME_GRAPH_NODE_FILL='#e8ebef';
+const RUNTIME_GRAPH_NODE_STROKE='#c9cfd8';
 function renderRuntimeWorkflowGraph() {
   if(activityView!=='graph') return;
   const svg=$('runtime-graph-svg');
@@ -98,6 +102,8 @@ function renderRuntimeWorkflowGraph() {
     rect.setAttribute('rx',Math.min(10,side*0.28));
     rect.setAttribute('ry',Math.min(10,side*0.28));
     rect.setAttribute('fill',RUNTIME_GRAPH_NODE_FILL);
+    rect.setAttribute('stroke',RUNTIME_GRAPH_NODE_STROKE);
+    rect.setAttribute('stroke-width','1');
     const statusDot=document.createElementNS('http://www.w3.org/2000/svg','circle');
     statusDot.setAttribute('class','runtime-graph-node-status');
     statusDot.setAttribute('r',5);
