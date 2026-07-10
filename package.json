@@ -1,6 +1,6 @@
 {
   "name": "llm-wiki",
-  "version": "0.12.9",
+  "version": "0.12.11",
   "description": "Local-first LLM wiki CLI for persistent markdown memory and regenerable deliverables.",
   "type": "module",
   "bin": {
