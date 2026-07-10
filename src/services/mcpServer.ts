@@ -12,7 +12,7 @@ import { extractSourceCitations } from '../utils/markdown.ts';
 import { hashText } from '../utils/hash.ts';
 import type { AppConfig } from '../types.ts';
 
-const LLM_WIKI_VERSION = '0.12.12';
+const LLM_WIKI_VERSION = '0.13.0';
 
 export interface WikiMcpServices {
   workspace: WorkspaceService;
@@ -20,6 +20,11 @@ export interface WikiMcpServices {
 }
 
 export const WIKI_MCP_TOOLS = [
+  {
+    name: 'wiki_workspace_status',
+    description:
+      'Read the canonical local workspace inventory in one call: pending raw sources, ingested sources, wiki pages, templates, build context, and deliverables. Use first for questions about what exists or is waiting in the workspace.',
+  },
   {
     name: 'wiki_list_pages',
     description:
@@ -71,6 +76,48 @@ export const WIKI_MCP_TOOLS = [
       'Write the workspace profile to .wiki/profile.md. Use only when the user explicitly asks to remember, persist, summarize, or update durable profile information.',
   },
 ] as const;
+
+function relativeWorkspacePaths(workspace: WorkspaceService, paths: string[]): string[] {
+  return paths.map((item) => path.relative(workspace.paths.rootDir, item).replaceAll('\\', '/'));
+}
+
+export async function workspaceStatusPayload(workspace: WorkspaceService) {
+  const [pendingSources, ingestedSources, wikiPages, templates, buildContext, deliverables] = await Promise.all([
+    workspace.listUntrackedSourcePaths(),
+    workspace.listIngestedSourcePages(),
+    workspace.listWikiPages(),
+    workspace.listTemplatePaths(),
+    workspace.readBuildContext(),
+    workspace.listDeliverablePaths(),
+  ]);
+  return {
+    workspace: { root: workspace.paths.rootDir },
+    pendingSources: {
+      count: pendingSources.length,
+      files: relativeWorkspacePaths(workspace, pendingSources),
+    },
+    ingestedSources: {
+      count: ingestedSources.length,
+      files: ingestedSources.map((item) => item.relativePath),
+    },
+    wikiPages: {
+      count: wikiPages.length,
+      files: wikiPages.map((item) => item.relativePath),
+    },
+    templates: {
+      count: templates.length,
+      files: relativeWorkspacePaths(workspace, templates),
+    },
+    buildContext: {
+      fileCount: buildContext.fileCount,
+      truncated: buildContext.truncated,
+    },
+    deliverables: {
+      count: deliverables.length,
+      files: relativeWorkspacePaths(workspace, deliverables),
+    },
+  };
+}
 
 const DEFAULT_COLLECT_CONTEXT_RESULTS = 10;
 const MAX_SEARCH_CONTEXT_RESULTS = 50;
@@ -332,6 +379,9 @@ export async function createWikiMcpServer(
     const items = pages.map((p) => `${p.relativePath} [${p.type}]`);
     return textResult(items.join('\n'));
   };
+
+  const readWorkspaceStatus = async () =>
+    textResult(JSON.stringify(await workspaceStatusPayload(workspace), null, 2));
 
   const readWikiPage = async ({ path: pagePath }: { path: string }) => {
     try {
@@ -604,6 +654,13 @@ export async function createWikiMcpServer(
     );
     return textResult(JSON.stringify(payload, null, 2));
   };
+
+  server.tool(
+    'wiki_workspace_status',
+    'Read the canonical local workspace inventory in one call: pending raw sources, ingested sources, wiki pages, templates, build context, and deliverables. Use first for questions about what exists or is waiting in the workspace.',
+    {},
+    (input) => loggedTool('wiki_workspace_status', input, readWorkspaceStatus),
+  );
 
   server.tool(
     'wiki_list_pages',
