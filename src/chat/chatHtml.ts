@@ -15,6 +15,21 @@ let sidebarOpen = true;
 let nextId = 1;
 let streamAbortController = null;
 let currentConversationId = null;
+const THEME_KEY='llm-wiki:theme';
+function applyTheme(theme,persist=true) {
+  const selected=theme==='dark'?'dark':'light';
+  document.documentElement.classList.toggle('theme-dark',selected==='dark');
+  document.documentElement.classList.toggle('theme-light',selected==='light');
+  const button=document.getElementById('theme-toggle');
+  if(button) {
+    button.textContent=selected==='light'?'☾':'☀';
+    button.title=selected==='light'?'Switch to dark theme':'Switch to light theme';
+  }
+  if(persist) localStorage.setItem(THEME_KEY,selected);
+}
+function toggleTheme() { applyTheme(document.documentElement.classList.contains('theme-dark')?'light':'dark'); }
+applyTheme(localStorage.getItem(THEME_KEY)||localStorage.getItem('llm-wiki:graph:theme')||'light');
+window.addEventListener('storage',event=>{if(event.key===THEME_KEY&&event.newValue)applyTheme(event.newValue,false)});
 let historySummaries = [];
 let historySaveTimer = null;
 let conversationDirty = false;
@@ -728,7 +743,6 @@ function toggleAgentMode() {
     return;
   }
   agentMode=!agentMode;
-  localStorage.setItem(AGENT_MODE_KEY,agentMode?'1':'0');
   updateAgentModeUI();
   notify(agentMode?'Agent mode on':'Chat mode on');
 }

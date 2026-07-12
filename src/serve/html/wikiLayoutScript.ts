@@ -1,5 +1,22 @@
 export const WIKI_LAYOUT_SCRIPT = `
 (() => {
+  const THEME_KEY = 'llm-wiki:theme';
+  const themeToggle = document.querySelector('[data-theme-toggle]');
+  function applyTheme(theme, persist = true) {
+    const selected = theme === 'dark' ? 'dark' : 'light';
+    document.documentElement.classList.toggle('theme-dark', selected === 'dark');
+    document.documentElement.classList.toggle('theme-light', selected === 'light');
+    if (themeToggle) {
+      themeToggle.textContent = selected === 'light' ? '☾' : '☀';
+      themeToggle.title = selected === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
+    }
+    if (persist) localStorage.setItem(THEME_KEY, selected);
+  }
+  applyTheme(localStorage.getItem(THEME_KEY) || localStorage.getItem('llm-wiki:graph:theme') || 'light');
+  themeToggle?.addEventListener('click', () => applyTheme(document.documentElement.classList.contains('theme-dark') ? 'light' : 'dark'));
+  window.addEventListener('storage', (event) => {
+    if (event.key === THEME_KEY && event.newValue) applyTheme(event.newValue, false);
+  });
   const storagePrefix = 'llm-wiki:sidebar:';
   const searchKey = storagePrefix + 'search';
   const scrollKey = storagePrefix + 'scrollTop';

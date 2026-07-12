@@ -25,6 +25,7 @@ export const CHAT_MARKUP = `<nav id="app-nav" aria-label="Navigation application
   <button class="app-nav-link" type="button" onclick="showExecutionView()" title="Execution">Execution</button>
   <div class="app-nav-title">MCP Chat</div>
   <div class="app-nav-spacer"></div>
+  <button id="theme-toggle" class="app-nav-btn theme-toggle" type="button" onclick="toggleTheme()" title="Switch to dark theme" aria-label="Switch color theme">☾</button>
 </nav>
 
 <aside id="sidebar">

@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { renderWikiGraphV2 } from '../src/graph/wiki/graphApp.ts';
 
 async function serveSource(): Promise<string> {
   const [serve, html, css, script] = await Promise.all([
@@ -11,6 +12,28 @@ async function serveSource(): Promise<string> {
   ]);
   return `${serve}\n${html}\n${css}\n${script}`;
 }
+
+it('shares the selected color theme with serve chat', () => {
+  const html = renderWikiGraphV2();
+  expect(html).toContain("const THEME_KEY='llm-wiki:theme'");
+  expect(html).toContain("localStorage.getItem('llm-wiki:graph:theme')||'dark'");
+  expect(html).toContain('event.key===THEME_KEY&&event.newValue');
+});
+
+it('centers the inspector toggle and hides all content when collapsed', () => {
+  const html = renderWikiGraphV2();
+  expect(html).toContain('.inspector-collapsed .inspector-toggle{align-self:center;float:none;margin:0}');
+  expect(html).toContain('.inspector-collapsed .inspector>:not(.inspector-toggle){display:none!important}');
+});
+
+it('shares the selected color theme with wiki home', async () => {
+  const source = await serveSource();
+  expect(source).toContain('data-theme-toggle');
+  expect(source).toContain("const THEME_KEY = 'llm-wiki:theme';");
+  expect(source).toContain("localStorage.getItem('llm-wiki:graph:theme') || 'light'");
+  expect(source).toContain('event.key === THEME_KEY && event.newValue');
+  expect(source).toContain(":root.theme-dark .sidebar");
+});
 
 async function runtimeEventsSource(): Promise<string> {
   return readFile(path.resolve(import.meta.dirname, '../src/serve/sse/runtimeEvents.ts'), 'utf8');

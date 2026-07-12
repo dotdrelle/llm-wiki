@@ -10,6 +10,7 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);height:
 .app-nav-link{padding:0 10px;gap:6px}
 .app-nav-title{min-width:0;font-size:13px;font-weight:800;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .app-nav-spacer{flex:1}
+.theme-toggle{width:30px;min-width:30px;padding:0;font-size:16px}
 
 /* SIDEBAR */
 #sidebar{width:var(--sidebar-w,300px);min-width:var(--sidebar-w,300px);height:calc(100vh - 44px);margin-top:44px;background:var(--panel);display:flex;flex-direction:column;overflow:hidden;transition:width .3s,min-width .3s}
@@ -537,5 +538,7 @@ ${WIKI_CSS_VARS}
     --warn: #f5c842;
   }
 }
+:root.theme-light{--panel-deep:#e2e8f0;--ok:#1a8a5a;--err:#c0392b;--warn:#c7a800}
+:root.theme-dark{--panel-deep:#1a2330;--ok:#2dd4a0;--err:#f06b6b;--warn:#f5c842}
 ${CHAT_COMPONENT_CSS}
 </style>`;

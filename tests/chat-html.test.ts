@@ -19,6 +19,16 @@ describe('chat html', () => {
     }
   });
 
+  it('shares the selected color theme with the graph', () => {
+    const [script] = chatScripts();
+
+    expect(CHAT_HTML).toContain('id="theme-toggle"');
+    expect(script).toContain("const THEME_KEY='llm-wiki:theme';");
+    expect(script).toContain("localStorage.getItem('llm-wiki:graph:theme')||'light'");
+    expect(script).toContain('event.key===THEME_KEY&&event.newValue');
+    expect(script).toContain("document.documentElement.classList.toggle('theme-dark'");
+  });
+
   it('keeps production updates inside the trace chain', () => {
     const [script] = chatScripts();
 
@@ -503,6 +513,9 @@ describe('chat html', () => {
   it('connects the activity panel to the manager runtime when configured', () => {
     const [script] = chatScripts();
 
+    expect(script).toContain('let agentMode=false;');
+    expect(script).not.toContain("storageKey('llm-wiki-chat:agent-mode')");
+    expect(script).not.toContain('localStorage.setItem(AGENT_MODE_KEY');
     expect(script).toContain('function connectRuntimePanel()');
     expect(script).toContain("fetch('/api/runtime/state',{cache:'no-store'})");
     expect(script).toContain("new EventSource('/api/runtime/events')");

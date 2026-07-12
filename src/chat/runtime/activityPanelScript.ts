@@ -1,7 +1,6 @@
 export const ACTIVITY_PANEL_SCRIPT = `/* ── Activity Panel ─────────────────────────────────────────────────── */
 const ACT_STORE_KEY=storageKey('llm-wiki-chat:activities');
 const ACT_PANEL_KEY=storageKey('llm-wiki-chat:activity-panel-open');
-const AGENT_MODE_KEY=storageKey('llm-wiki-chat:agent-mode');
 const RUNTIME_SECTION_KEY_PREFIX='llm-wiki-chat:runtime-section:';
 let _activities=[];
 let _actTimer=null;
@@ -26,7 +25,9 @@ function resetRuntimeConversationTracking() {
   runtimeConversationRefs=[];
   pendingRuntimeUserRefs=[];
 }
-let agentMode=localStorage.getItem(AGENT_MODE_KEY)==='1';
+// Agent mode is deliberately session-only: every fresh serve page starts in
+// local chat mode, even if an older release persisted an Agent preference.
+let agentMode=false;
 // Never persisted across page loads: always start on 'list' — a 'graph'
 // choice from a previous session left the Activity panel opening straight
 // into the cramped inline graph+inspector layout on every subsequent load,

@@ -12,6 +12,14 @@ export const WIKI_LAYOUT_CSS = `
       line-height: 1.65;
     }
     a { color: var(--link); text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
+    .wiki-theme-toggle {
+      position: fixed; top: 9px; right: 12px; z-index: 1000;
+      width: 38px; height: 34px; padding: 0;
+      border: 1px solid var(--border); border-radius: 6px;
+      background: var(--panel-soft); color: var(--text);
+      font: inherit; font-size: 17px; cursor: pointer;
+    }
+    .wiki-theme-toggle:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
     .source-citation {
       display: inline-block;
       max-width: 100%;
@@ -1037,6 +1045,10 @@ export const WIKI_LAYOUT_CSS = `
       .sidebar, .wiki-main-resizer { background: #121820; }
       pre { background: #101419; }
     }
+    :root.theme-light .sidebar, :root.theme-light .wiki-main-resizer { background: #fbfcfd; }
+    :root.theme-light pre { background: #f4f6f8; }
+    :root.theme-dark .sidebar, :root.theme-dark .wiki-main-resizer { background: #121820; }
+    :root.theme-dark pre { background: #101419; }
     /* ── Dashboard stats ──────────────────────────────────────── */
     .ws-stats{display:flex;flex-wrap:wrap;gap:.65rem;margin-bottom:1.5rem}
     .ws-stat{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:88px;padding:.75rem 1rem;border:1px solid var(--border);border-radius:8px;background:var(--panel);text-align:center;gap:.2rem}
