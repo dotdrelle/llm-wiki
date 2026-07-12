@@ -4,7 +4,7 @@
 
 `llm-wiki` is a local-first Markdown knowledge engine.
 
-## 0.15.6
+## 0.14.5
 
 The browser now uses the Wiki Graph v2 exclusively. It provides lightweight
 structure snapshots, community map, relation-focused community and provenance
