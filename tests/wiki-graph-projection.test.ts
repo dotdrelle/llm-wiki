@@ -12,6 +12,7 @@ async function fixtureWorkspace(): Promise<string> {
   await mkdir(path.join(root, 'templates'), { recursive: true });
   await mkdir(path.join(root, 'build-context'), { recursive: true });
   await mkdir(path.join(root, 'deliverables'), { recursive: true });
+  await mkdir(path.join(root, '.wiki'), { recursive: true });
   await writeFile(path.join(root, 'wiki/concepts/domain/main.md'), [
     '---',
     'group: Domain',
@@ -30,6 +31,11 @@ async function fixtureWorkspace(): Promise<string> {
   await writeFile(path.join(root, 'templates/report.md'), '# Template\n');
   await writeFile(path.join(root, 'build-context/audience.md'), '# Context\n');
   await writeFile(path.join(root, 'deliverables/report.md'), '# Deliverable\n[Main](../wiki/concepts/domain/main.md)\n');
+  await writeFile(path.join(root, '.wiki/build-state.json'), JSON.stringify({
+    deliverables: {
+      'templates/report.md': { outputRelativePath: 'deliverables/report.md' },
+    },
+  }));
   return root;
 }
 
@@ -60,7 +66,32 @@ describe('wiki graph projection', () => {
       'uses_template',
       'uses_context',
       'related_to',
+      'produces',
     ]));
+    expect(graph.edges).toContainEqual({
+      from: 'templates/report.md',
+      to: 'deliverables/report.md',
+      type: 'produces',
+    });
     expect(graph.nodes.some((node) => node.ring === 0)).toBe(true);
+  });
+
+  it('builds a lightweight projection without rendering content and preserves reciprocal links', async () => {
+    const root = await fixtureWorkspace();
+    await writeFile(path.join(root, 'wiki/concepts/domain/sibling.md'), '# Sibling\n[Main](main.md)\n');
+    let renderCalls = 0;
+    const graph = await buildWikiGraph(root, {
+      decodeHrefPath: (href) => href,
+      hrefToRelativePath: (href, currentDir = '') => path.posix.normalize(path.posix.join(currentDir, href)).replace(/^\.\.\//, ''),
+      humanTitle: (value) => path.basename(value, '.md'),
+      renderMarkdown: async (raw) => { renderCalls += 1; return raw; },
+    }, undefined, { includeContent: false, concurrency: 3 });
+
+    expect(renderCalls).toBe(0);
+    expect(graph.nodes.every((node) => node.raw === '' && node.html === '' && node.preview.includes('No readable'))).toBe(true);
+    expect(graph.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ from: 'wiki/concepts/domain/main.md', to: 'wiki/concepts/domain/sibling.md' }),
+      expect.objectContaining({ from: 'wiki/concepts/domain/sibling.md', to: 'wiki/concepts/domain/main.md' }),
+    ]));
   });
 });

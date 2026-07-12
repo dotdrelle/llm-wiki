@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { buildGraph, generateGraph, graphEtag, graphEtagForFiles, listGraphFiles } from '../html/wikiHtml.ts';
+import { buildGraphOverview, generateGraph, graphEtagForFiles, listGraphFiles, renderGraphDocument } from '../html/wikiHtml.ts';
+import { cachedSnapshot, createSnapshot, storeSnapshot } from '../../graph/wiki/snapshot.ts';
 
 export type GraphRoutesDeps = {
   rootDir: string;
@@ -26,20 +27,61 @@ export async function handleGraphRoutes(
   urlPath: string,
   deps: GraphRoutesDeps,
 ): Promise<boolean> {
-  if (req.method === 'GET' && urlPath === '/api/graph-etag') {
-    deps.sendJson(res, 200, { etag: await graphEtag(deps.rootDir) });
+  const snapshot = async () => {
+    const files = await listGraphFiles(deps.rootDir);
+    const etag = await graphEtagForFiles(deps.rootDir, files);
+    const cached = cachedSnapshot(deps.rootDir, etag);
+    if (cached) return cached;
+    const graph = await buildGraphOverview(deps.rootDir, files);
+    return storeSnapshot(deps.rootDir, createSnapshot(etag, graph));
+  };
+
+  if (req.method === 'GET' && urlPath === '/api/graph/overview') {
+    deps.sendJson(res, 200, await snapshot());
     return true;
   }
 
-  if (req.method === 'GET' && urlPath === '/api/graph-data') {
-    const graphFiles = await listGraphFiles(deps.rootDir);
-    const etag = await graphEtagForFiles(deps.rootDir, graphFiles);
-    const graph = await buildGraph(deps.rootDir, graphFiles);
-    deps.sendJson(res, 200, {
-      etag,
-      nodes: graph.nodes,
-      edges: graph.edges.map((edge, index) => ({ ...edge, id: `rel-${index}` })),
-    });
+  if (req.method === 'GET' && urlPath === '/api/graph/etag') {
+    const current = await snapshot();
+    deps.sendJson(res, 200, { structureEtag: current.structureEtag });
+    return true;
+  }
+
+  if (req.method === 'GET' && urlPath === '/api/graph/community') {
+    const current = await snapshot();
+    const id = new URL(req.url ?? '/', 'http://localhost').searchParams.get('id');
+    const community = current.communities.find((item) => item.id === id);
+    if (!community) deps.sendJson(res, 404, { error: 'COMMUNITY_NOT_FOUND' });
+    else {
+      const members = new Set(community.nodeIds);
+      deps.sendJson(res, 200, {
+        ...community,
+        nodes: current.nodes.filter((node) => members.has(node.id)),
+        edges: current.edges.filter((edge) => members.has(edge.from) || members.has(edge.to)),
+      });
+    }
+    return true;
+  }
+
+  if (req.method === 'GET' && urlPath === '/api/graph/document') {
+    const id = new URL(req.url ?? '/', 'http://localhost').searchParams.get('id');
+    const current = await snapshot();
+    if (!id || !current.nodes.some((node) => node.id === id)) {
+      deps.sendJson(res, 404, { error: 'DOCUMENT_NOT_FOUND' });
+    } else {
+      const document = await renderGraphDocument(deps.rootDir, id);
+      deps.sendJson(res, 200, {
+        ...document,
+        incoming: current.edges.filter((edge) => edge.to === id),
+        outgoing: current.edges.filter((edge) => edge.from === id),
+      });
+    }
+    return true;
+  }
+
+  if (req.method === 'GET' && urlPath === '/api/graph/list') {
+    const current = await snapshot();
+    deps.sendJson(res, 200, current);
     return true;
   }
 

@@ -4,6 +4,14 @@
 
 `llm-wiki` is a local-first Markdown knowledge engine.
 
+## 0.14.5
+
+The browser now uses the Wiki Graph v2 exclusively. It provides lightweight
+structure snapshots, community map, relation-focused community and provenance
+views, searchable document selection, list view, theme switching, and lazy
+document previews. The legacy Wiki graph renderer and endpoints were removed;
+the shared force primitives remain only for the Run/Task graph.
+
 It turns raw project material into a persistent wiki, builds a local retrieval
 index, and regenerates deliverables from templates. It works as a standalone CLI
 or as the workspace engine used by `llm-wiki-manager`.

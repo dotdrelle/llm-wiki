@@ -40,14 +40,6 @@ async function wikiRoutesSource(): Promise<string> {
   return readFile(path.resolve(import.meta.dirname, '../src/serve/routes/wikiRoutes.ts'), 'utf8');
 }
 
-async function graphCoreSource(): Promise<string> {
-  return readFile(path.resolve(import.meta.dirname, '../src/graph/core/graphLayoutBase.ts'), 'utf8');
-}
-
-async function graphInteractionsSource(): Promise<string> {
-  return readFile(path.resolve(import.meta.dirname, '../src/graph/core/graphInteractions.ts'), 'utf8');
-}
-
 async function graphProjectionSource(): Promise<string> {
   return readFile(path.resolve(import.meta.dirname, '../src/graph/wiki/projection.ts'), 'utf8');
 }
@@ -127,71 +119,24 @@ describe('serve graph ui', () => {
     expect(source).toContain('generated_from');
   });
 
-  it('refreshes graph data without reloading the page', async () => {
-    const source = await graphCoreSource();
-
-    expect(source).toContain("await reloadGraphData(payload.etag);");
-    expect(source).toContain("fetch('/api/graph-data', { cache: 'no-store' })");
-    expect(source).toContain('simulation?.stop();');
-    expect(source).not.toContain('window.location.reload();');
-  });
-
-  it('routes graph page and graph data through the extracted graph route module', async () => {
+  it('routes the lightweight graph v2 APIs through the extracted graph route module', async () => {
     const source = await serveSource();
     const routesSource = await graphRoutesSource();
 
     expect(source).toContain('handleGraphRoutes(req, res, urlPath');
     expect(source).toContain('buildWikiGraph(rootDir');
-    expect(source).toContain('renderWikiGraphApp(nodes, edges, etag)');
-    expect(routesSource).toContain("urlPath === '/api/graph-etag'");
-    expect(routesSource).toContain("urlPath === '/api/graph-data'");
+    expect(source).toContain('renderWikiGraphV2()');
+    expect(source).toContain('buildGraphOverview');
+    expect(source).toContain('{ includeContent: false, concurrency: 8 }');
+    expect(routesSource).not.toContain("urlPath === '/api/graph-etag'");
+    expect(routesSource).not.toContain("urlPath === '/api/graph-data'");
+    expect(routesSource).toContain("urlPath === '/api/graph/overview'");
+    expect(routesSource).toContain("urlPath === '/api/graph/community'");
+    expect(routesSource).toContain("urlPath === '/api/graph/document'");
+    expect(routesSource).not.toContain("urlPath === '/api/graph/dag'");
+    expect(routesSource).toContain("urlPath === '/api/graph/list'");
     expect(routesSource).toContain("urlPath === '/graph'");
-    expect(routesSource).toContain("edges: graph.edges.map((edge, index) => ({ ...edge, id: `rel-${index}` }))");
-  });
-
-  it('shows direct node open link and concise relation actions', async () => {
-    const source = await graphCoreSource();
-
-    expect(source).toContain('data-relation-node-open');
-    expect(source).toContain('class="relation-title"');
-    expect(source).toContain('class="relation-subpath"');
-    expect(source).toContain("querySelector('.relation-title').textContent = from.title");
-    expect(source).toContain('<span class="relation-arrow">↓</span>');
-    expect(source).toContain('type="button">Open</button>');
-    expect(source).not.toContain('Afficher les markdown');
-    expect(source).not.toContain('relie a');
-  });
-
-  it('can expand the graph to use most of the page', async () => {
-    const source = `${await serveSource()}\n${await graphCoreSource()}\n${await graphInteractionsSource()}`;
-
-    expect(source).toContain('data-graph-expand');
-    expect(source).toContain('graph-page-expanded');
-    expect(source).toContain('graphLayout.classList.toggle');
-    expect(source).toContain("graphPage?.classList.toggle('graph-page-expanded'");
-    expect(source).toContain('height: calc(100vh - 9.5rem);');
-  });
-
-  it('anchors the expanded graph legend to the actual graph panel', async () => {
-    const source = `${await serveSource()}\n${await graphInteractionsSource()}`;
-
-    expect(source).toContain('left: var(--graph-legend-left, 1rem);');
-    expect(source).toContain('graphPanel.getBoundingClientRect().left + 12');
-    expect(source).toContain("window.addEventListener('resize', syncExpandedLegendPosition);");
-    expect(source).toContain('-webkit-backdrop-filter: blur(6px);');
-  });
-
-  it('offers radial and dag modes from the shared D3 base', async () => {
-    const source = await graphCoreSource();
-
-    expect(source).toContain('data-graph-mode="radial"');
-    expect(source).toContain('data-graph-mode="dag"');
-    expect(source).not.toContain('data-graph-mode="list"');
-    expect(source).not.toContain('data-graph-list');
-    expect(source).not.toContain('graph-list-view');
-    expect(source).toContain("let mode = 'radial';");
-    expect(source).toContain('function setMode(nextMode)');
-    expect(source).toContain('d3.forceSimulation(nodes)');
+    expect(routesSource).toContain('structureEtag: current.structureEtag');
   });
 
   it('runtime workflow graph reuses the shared D3 force socle instead of forking it', async () => {

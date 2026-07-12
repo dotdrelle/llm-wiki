@@ -102,6 +102,14 @@ export async function wikiGraphEtagForFiles(rootDir: string, files: string[]): P
     hash.update(String(fileStat.size));
     hash.update('\0');
   }
+  try {
+    const buildState = await stat(path.join(rootDir, '.wiki', 'build-state.json'));
+    hash.update('.wiki/build-state.json');
+    hash.update(String(buildState.mtimeMs));
+    hash.update(String(buildState.size));
+  } catch {
+    // A workspace without build state has no inferred build relations.
+  }
   return hash.digest('hex');
 }
 
@@ -113,6 +121,7 @@ export async function buildWikiGraph(
   rootDir: string,
   deps: WikiGraphProjectionDeps,
   graphFiles?: string[],
+  options: { includeContent?: boolean; concurrency?: number } = {},
 ): Promise<{ nodes: WikiGraphNode[]; edges: WikiGraphEdge[] }> {
   const files = graphFiles ?? (await listWikiGraphFiles(rootDir));
   const nodeIds = new Set(files);
@@ -126,24 +135,34 @@ export async function buildWikiGraph(
   const htmlContents = new Map<string, string>();
   const groups = new Map<string, string>();
 
+  const includeContent = options.includeContent ?? true;
+  const concurrency = Math.max(1, Math.min(options.concurrency ?? 8, 32));
+  const loaded = new Map<string, string>();
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, files.length) }, async () => {
+    while (cursor < files.length) {
+      const file = files[cursor++];
+      if (file) loaded.set(file, await readFile(path.join(rootDir, file), 'utf8'));
+    }
+  }));
+
   for (const file of files) {
-    const raw = await readFile(path.join(rootDir, file), 'utf8');
+    const raw = loaded.get(file) ?? '';
     const currentDir = toPosix(path.posix.dirname(file));
-    rawContents.set(file, raw);
-    previews.set(file, markdownPreview(raw));
-    htmlContents.set(file, await deps.renderMarkdown(raw, currentDir));
+    if (includeContent) {
+      rawContents.set(file, raw);
+      previews.set(file, markdownPreview(raw));
+      htmlContents.set(file, await deps.renderMarkdown(raw, currentDir));
+    }
     const group = graphConceptGroup(file, raw);
     if (group) groups.set(file, group);
 
     for (const target of extractGraphTargets(raw, currentDir, nodeIds, deps)) {
       if (!nodeIds.has(target.to) || target.to === file) continue;
       const relation = relationForTarget(file, target.to, target.type);
-      // Sort the pair so a mutual link (A links_to B and B links_to A) dedupes
-      // to a single edge like the pre-extraction implementation did, while
-      // still keying on `relation` so distinct relation types between the
-      // same pair (e.g. links_to and cites) remain separate edges.
-      const [pairA, pairB] = [file, target.to].sort();
-      const edgeKey = `${pairA}\0${pairB}\0${relation}`;
+      // Direction belongs to the data contract. A renderer may visually merge
+      // reciprocal links, but the projection must preserve A→B and B→A.
+      const edgeKey = `${file}\0${target.to}\0${relation}`;
       if (edgeKeys.has(edgeKey)) continue;
       edgeKeys.add(edgeKey);
       edges.push({ from: file, to: target.to, type: relation });
@@ -152,6 +171,27 @@ export async function buildWikiGraph(
       outbound.set(file, (outbound.get(file) ?? 0) + 1);
       inbound.set(target.to, (inbound.get(target.to) ?? 0) + 1);
     }
+  }
+
+  try {
+    const state = JSON.parse(await readFile(path.join(rootDir, '.wiki', 'build-state.json'), 'utf8')) as {
+      deliverables?: Record<string, { outputRelativePath?: unknown }>;
+    };
+    for (const [template, record] of Object.entries(state.deliverables ?? {})) {
+      const source = toPosix(template);
+      const output = typeof record.outputRelativePath === 'string' ? toPosix(record.outputRelativePath) : '';
+      if (!nodeIds.has(source) || !nodeIds.has(output)) continue;
+      const edgeKey = `${source}\0${output}\0produces`;
+      if (edgeKeys.has(edgeKey)) continue;
+      edgeKeys.add(edgeKey);
+      edges.push({ from: source, to: output, type: 'produces' });
+      degree.set(source, (degree.get(source) ?? 0) + 1);
+      degree.set(output, (degree.get(output) ?? 0) + 1);
+      outbound.set(source, (outbound.get(source) ?? 0) + 1);
+      inbound.set(output, (inbound.get(output) ?? 0) + 1);
+    }
+  } catch {
+    // Legacy and not-yet-built workspaces remain supported.
   }
 
   const sortedFiles = [...files].sort((a, b) => {

@@ -1,6 +1,6 @@
 // Radial force-layout mechanics shared by every D3 force-directed graph
 // projection (wiki graph radial mode, runtime Run/Task graph). Kept
-// deliberately smaller than graphLayoutBase.ts's toolbar/search/relation-panel
+// deliberately limited to the reusable force primitives required by Run/Task
 // chrome, which is wiki-specific UI, not part of the D3 socle itself.
 export function graphForceScript(): string {
   return `

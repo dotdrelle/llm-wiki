@@ -3,14 +3,11 @@ import path from 'node:path';
 import fg from 'fast-glob';
 import matter from 'gray-matter';
 import { marked } from 'marked';
-import { renderGraphApp } from '../../graph/core/graphLayoutBase.ts';
+import { renderWikiGraphV2 } from '../../graph/wiki/graphApp.ts';
 import {
   buildWikiGraph,
   listWikiGraphFiles as listGraphFiles,
-  wikiGraphEtag as graphEtag,
   wikiGraphEtagForFiles as graphEtagForFiles,
-  WIKI_GRAPH_DAG_COLUMN_ORDER,
-  WIKI_GRAPH_RELATION_LABELS,
   type WikiGraphEdge,
   type WikiGraphNode,
 } from '../../graph/wiki/projection.ts';
@@ -19,7 +16,7 @@ import { resolveInside, toPosix } from '../../utils/path.ts';
 import { WIKI_LAYOUT_CSS } from './wikiLayoutCss.ts';
 import { WIKI_LAYOUT_SCRIPT } from './wikiLayoutScript.ts';
 
-export { graphEtag, graphEtagForFiles, listGraphFiles, escapeScriptJson };
+export { graphEtagForFiles, listGraphFiles, escapeScriptJson };
 
 const serveTitle = () => process.env.WIKI_SERVE_TITLE ?? null;
 const serveLogo = () => process.env.WIKI_SERVE_LOGO ?? '🧠';
@@ -661,28 +658,35 @@ const kbdHint = `<kbd style="font-size:.68rem;font-family:ui-monospace,monospace
   return `<aside class="sidebar"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}<span>Graph</span></a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}<span>Chat</span></a></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Markdown documents">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside><div class="wiki-main-resizer" data-wiki-main-resizer title="Resize sidebar" role="separator" aria-orientation="vertical"></div>`;
 }
 
-type GraphNode = WikiGraphNode;
-type GraphEdge = WikiGraphEdge;
-
-export async function buildGraph(
+export async function buildGraphOverview(
   rootDir: string,
   graphFiles?: string[],
-): Promise<{ nodes: GraphNode[]; edges: GraphEdge[] }> {
+): Promise<{ nodes: WikiGraphNode[]; edges: WikiGraphEdge[] }> {
   return buildWikiGraph(rootDir, {
     decodeHrefPath,
     hrefToRelativePath,
     humanTitle,
     renderMarkdown,
-  }, graphFiles);
+  }, graphFiles, { includeContent: false, concurrency: 8 });
 }
 
-function renderWikiGraphApp(nodes: GraphNode[], edges: GraphEdge[], etag: string): string {
-  return renderGraphApp(nodes, edges, etag, {
-    escapeAttr,
-    escapeScriptJson,
-    dagColumnOrder: WIKI_GRAPH_DAG_COLUMN_ORDER,
-    relationLabels: WIKI_GRAPH_RELATION_LABELS,
-  });
+export async function renderGraphDocument(rootDir: string, relativePath: string) {
+  const absolute = resolveInside(rootDir, relativePath);
+  const [raw, fileStat] = await Promise.all([readFile(absolute, 'utf8'), stat(absolute)]);
+  return {
+    id: relativePath,
+    title: humanTitle(relativePath),
+    href: `/${relativePath}`,
+    raw,
+    preview: markdownPreviewForGraph(raw),
+    html: await renderMarkdown(raw, path.posix.dirname(relativePath)),
+    contentEtag: `${fileStat.size}-${Math.round(fileStat.mtimeMs)}`,
+  };
+}
+
+function markdownPreviewForGraph(raw: string): string {
+  return raw.replace(/^---[\s\S]*?---\s*/m, '').replace(/```[\s\S]*?```/g, ' ')
+    .replace(/[#>*_`|~-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 900);
 }
 
 // ── Stats helpers ──────────────────────────────────────────────────────────
@@ -755,24 +759,8 @@ function renderOnboarding(title: string): string {
 // ──────────────────────────────────────────────────────────────────────────────
 
 export async function generateGraph(rootDir: string): Promise<string> {
-  const [sidebar, graphFiles] = await Promise.all([
-    renderSidebar(rootDir),
-    listGraphFiles(rootDir),
-  ]);
-  const [{ nodes, edges }, etag] = await Promise.all([
-    buildGraph(rootDir, graphFiles),
-    graphEtagForFiles(rootDir, graphFiles),
-  ]);
-  const rawSourceCount = nodes.filter((node) => node.type === 'raw-source').length;
-  const wikiSourceCount = nodes.filter((node) => node.type === 'wiki-source').length;
-  const templateCount = nodes.filter((node) => node.type === 'template').length;
-  const contextCount = nodes.filter((node) => node.type === 'build-context').length;
-  const graph =
-    nodes.length > 0
-      ? renderWikiGraphApp(nodes, edges, etag)
-      : '<p class="empty">No Markdown documents to display in the graph.</p>';
-  const body = `${sidebar}<main class="content"><div class="hero"><h1>Wiki Graph</h1><p>Pages, sources, templates, build context and deliverables are represented as document relations. Use Radial or DAG mode to inspect the same wiki projection.</p></div><div class="graph-legend"><span class="legend-item raw-source">${rawSourceCount} raw source(s)</span><span class="legend-item wiki-source">${wikiSourceCount} wiki source(s)</span><span class="legend-item wiki">wiki</span><span class="legend-item template">${templateCount} template(s)</span><span class="legend-item build-context">${contextCount} context file(s)</span><span class="legend-item deliverable">deliverables</span><span>${edges.length} relation(s)</span></div>${graph}</main>`;
-  return layout('Source Graph', body);
+  void rootDir;
+  return renderWikiGraphV2();
 }
 
 export async function generateIndex(rootDir: string): Promise<string> {
