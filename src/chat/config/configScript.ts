@@ -145,7 +145,9 @@ function saveServers() {
 }
 
 async function restoreEnabledServers() {
-  const toRestore=servers.filter(s=>s.enabled);
+  // Injected connectors represent services managed outside the browser.
+  // Probe them on load so their cards show actual reachability immediately.
+  const toRestore=servers.filter(s=>s.enabled||s.injected);
   if(!toRestore.length) {
     renderCards();
     renderTopPills();
@@ -153,7 +155,7 @@ async function restoreEnabledServers() {
   }
   renderCards();
   for(const server of toRestore) {
-    await connectServer(server.id);
+    await connectServer(server.id,{silent:true});
   }
 }
 

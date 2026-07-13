@@ -83,6 +83,9 @@ describe('serve graph ui', () => {
     expect(source).toContain('min-height: 2.75rem;');
     expect(source).toContain('<span>Chat</span>');
     expect(source).toContain('<span>Graph</span>');
+    expect(source).toContain('class="wiki-help-toggle" href="/help"');
+    expect(source).toContain('aria-label="Help">?</a>');
+    expect(source).not.toContain('<span>Help</span>');
   });
 
   it('renders a persistent draggable main sidebar resizer', async () => {
@@ -328,6 +331,7 @@ describe('serve config reload', () => {
     expect(routesSource).toContain("deps.runtimePathForWorkspace('/events/stream')");
     expect(routesSource).toContain("deps.runtimePathForWorkspace('/cancel')");
     expect(routesSource).toContain("await proxyRuntimeJson(req, res, '/run', deps.proxyDeps, wsName ? { workspace: wsName } : undefined);");
+    expect(routesSource).toContain("await proxyRuntimeJson(req, res, '/turn', deps.proxyDeps, wsName ? { workspace: wsName } : undefined);");
     expect(eventsSource).toContain('export async function proxyRuntimeEvents');
     expect(eventsSource).toContain("accept: 'text/event-stream'");
     expect(eventsSource).toContain("res.writeHead(200, {");

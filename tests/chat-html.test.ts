@@ -344,6 +344,16 @@ describe('chat html', () => {
     expect(script).toContain('if(dirty) saveServers();');
   });
 
+  it('silently probes every server-injected MCP connector on startup', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain('servers.filter(s=>s.enabled||s.injected)');
+    expect(script).toContain('connectServer(server.id,{silent:true})');
+    expect(script).toContain('async function connectServer(id,{silent=false}={})');
+    expect(script).toContain('if(!silent) notify');
+    expect(script).toContain('if(!silent) showErrModal');
+  });
+
   it('uses a generic MCP presentation contract across activity, chain and chat', () => {
     const [script] = chatScripts();
 
@@ -521,7 +531,9 @@ describe('chat html', () => {
     expect(script).toContain("fetch('/api/runtime/state',{cache:'no-store'})");
     expect(script).toContain("new EventSource('/api/runtime/events')");
     expect(script).toContain('if(runtimeFetchPending) return;');
-    expect(script).toContain("runningBeforeFetch?'/api/runtime/control':'/api/runtime/run'");
+    expect(script).toContain("runningBeforeFetch?'/api/runtime/control':'/api/runtime/turn'");
+    expect(script).toContain("if(data?.kind!=='turn')");
+    expect(script).not.toContain('Runtime run accepted. Follow progress in Activity.');
     expect(script).toContain("fetch('/api/runtime/cancel'");
     expect(script).toContain('function toggleAgentMode()');
     expect(script).toContain('function runtimeTaskPanelHTML()');
@@ -553,7 +565,7 @@ describe('chat html', () => {
     const [script] = chatScripts();
 
     expect(script).not.toContain("notify('Runtime is already running.'");
-    expect(script).toContain("runningBeforeFetch?'/api/runtime/control':'/api/runtime/run'");
+    expect(script).toContain("runningBeforeFetch?'/api/runtime/control':'/api/runtime/turn'");
     expect(script).toContain("body:runningBeforeFetch?controlBody:JSON.stringify({input:text})");
     expect(script).toContain("data?.kind==='ambiguous'");
     expect(script).toContain('function handleSendButton()');

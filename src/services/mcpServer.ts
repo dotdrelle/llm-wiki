@@ -13,7 +13,7 @@ import { hashText } from '../utils/hash.ts';
 import { listHelpChapters, readHelpChapter } from '../utils/helpDoc.ts';
 import type { AppConfig } from '../types.ts';
 
-const LLM_WIKI_VERSION = '0.14.6';
+const LLM_WIKI_VERSION = '0.14.7';
 
 export interface WikiMcpServices {
   workspace: WorkspaceService;

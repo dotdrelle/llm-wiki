@@ -2409,7 +2409,7 @@ async function sendRuntimeAgentMessage(input,text) {
     // to one shared value): an SSE update can flip it while the fetch below
     // is in flight, and the 409 fallback exists specifically to catch that.
     const runningBeforeFetch=runtimeIsRunning();
-    let res=await fetch(runningBeforeFetch?'/api/runtime/control':'/api/runtime/run',{
+    let res=await fetch(runningBeforeFetch?'/api/runtime/control':'/api/runtime/turn',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:runningBeforeFetch?controlBody:JSON.stringify({input:text}),
@@ -2432,16 +2432,16 @@ async function sendRuntimeAgentMessage(input,text) {
       || (data?.kind==='mutate'?'Plan change recorded as a proposal. It is not applied automatically yet.'
         : data?.kind==='enqueue'?'Request queued for a future run.'
           : data?.kind==='ambiguous'?'I am not sure whether this is a question, a change to this run, or a future run. Choose explicitly in the runtime controls.'
-            : 'Runtime run accepted. Follow progress in Activity.');
-    // /run responses carry no status field (a run was just started, so
-    // 'running' is correct); /control message responses spread controlStatus()
-    // and already carry the real status ('idle' unless observe/enqueue
-    // actually started or kept a run going) — trust that instead of assuming.
-    runtimeState={...(runtimeState||{}),status:data?.status ?? 'running'};
+            : 'Runtime request accepted. Follow progress in Activity.');
+    // A conversational /turn does not imply that a run started. If Donna
+    // delegates, the runtime SSE stream will publish the actual run state.
+    runtimeState={...(runtimeState||{}),status:data?.status ?? runtimeState?.status ?? 'idle'};
     runtimeConnected=true;
-    messages.push({role:'assistant',content:reply});
-    if(data?.kind==='ambiguous') appendMsg('assistant',runtimeChoiceHTML(text,data.choices),{html:true,plainText:reply});
-    else appendMsg('assistant',reply);
+    if(data?.kind!=='turn') {
+      messages.push({role:'assistant',content:reply});
+      if(data?.kind==='ambiguous') appendMsg('assistant',runtimeChoiceHTML(text,data.choices),{html:true,plainText:reply});
+      else appendMsg('assistant',reply);
+    }
     scheduleConversationSave();
     renderActivities();
     updateActivityBadge();

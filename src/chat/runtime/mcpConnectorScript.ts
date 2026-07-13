@@ -120,16 +120,16 @@ async function mcpNotify(server, method, params) {
   await fetch(mcpProxyUrl(server), {method: 'POST', headers, body: JSON.stringify(body)}).catch(() => {});
 }
 
-async function connectServer(id) {
+async function connectServer(id,{silent=false}={}) {
   const s=servers.find(x=>x.id===id); if(!s) return;
   if(!s.url) { notify('Missing URL','e'); return; }
   s.status='loading'; s.sessionId=null; renderCards();
   try {
     await reconnectMCPServer(s);
-    notify(\`✓ \${s.name}: \${s.tools.length} tool(s)\`);
+    if(!silent) notify(\`✓ \${s.name}: \${s.tools.length} tool(s)\`);
   } catch(err) {
     s.status='err'; s.enabled=false;
-    showErrModal(\`MCP connection — \${s.name}\`, mcpConnectErrorMessage(err));
+    if(!silent) showErrModal(\`MCP connection — \${s.name}\`, mcpConnectErrorMessage(err));
   }
   renderCards(); renderTopPills(); saveServers();
 }
@@ -139,7 +139,7 @@ async function reconnectMCPServer(server) {
   const initResp = await mcpRPC(server, 'initialize', {
     protocolVersion: '2024-11-05',
     capabilities: {},
-    clientInfo: {name: 'WikiChatConnector', version: '0.14.6'}
+    clientInfo: {name: 'WikiChatConnector', version: '0.14.7'}
   });
   if (initResp?.error) throw new Error(initResp.error.message || 'initialize failed');
   await mcpNotify(server, 'notifications/initialized', {});
