@@ -254,21 +254,22 @@ describe('chat html', () => {
   it('offers setup discovery from the empty chat and activity panel', () => {
     const [script] = chatScripts();
 
-    expect(CHAT_HTML).toContain('Start setup guide');
+    expect(CHAT_HTML).toContain('Help &amp; documentation');
     expect(CHAT_HTML).toContain('Fill workspace profile');
     expect(CHAT_HTML).toContain('Get contextual tips');
-    expect(CHAT_HTML).toContain("onclick=\"submitSuggestion('/guide')\"");
+    expect(CHAT_HTML).toContain('onclick="toggleHelpPanel()"');
     expect(CHAT_HTML).toContain('onclick="submitSuggestion(getTipsPrompt())"');
     expect(CHAT_HTML).toContain('empty-tile wide');
+    expect(CHAT_HTML).toContain('id="help-panel"');
     expect(script).not.toContain('function maybeAutoStartGuide');
+    expect(script).not.toContain("submitSuggestion('/guide')");
+    expect(script).not.toContain('function applySetupGuideHighlight');
     expect(script).toContain('function applyWorkspaceTitle');
-    expect(script).toContain('function applySetupGuideHighlight');
+    expect(script).toContain('function toggleHelpPanel');
     expect(script).toContain('function getTipsPrompt');
     expect(script).toContain('available read-only tools');
     expect(script).toContain('active connectors');
     expect(script).toContain('actual state you found');
-    expect(script).toContain("submitSuggestion('/guide')");
-    expect(script).toContain("tile.classList.toggle('needs-setup'");
   });
 
   it('tracks actionable and asynchronous MCP calls in the activity panel', () => {

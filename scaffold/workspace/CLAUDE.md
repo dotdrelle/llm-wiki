@@ -18,13 +18,17 @@ This workspace follows a local-first LLM Wiki pattern.
 - Use `wiki serve` to browse the wiki UI. `/` renders `wiki/index.md`; `/graph` shows source/wiki relations.
 - Use `wiki doctor` after changing `.wikirc.yaml`, model, context size, retrieval limits, or Ollama settings.
 
-## Donna Guide
+## Donna Help
 
-- `/guide` launches Donna's setup and discovery workflow.
-- Donna checks LLM settings, connected MCP capabilities, source connectors,
-  wiki content, and generation actions.
-- First visit in `wiki serve` may auto-start `/guide` once per workspace.
-- The empty chat also offers `Start setup guide` and `Fill workspace profile`.
+- Product help lives in the bundled documentation, exposed by the read-only
+  tools `help_list` (chapters) and `help_read` (one chapter). Use them to answer
+  questions about the application itself — what it is, chat vs agent mode, the
+  interfaces, getting started, troubleshooting — then reply in the user's
+  language.
+- The empty chat offers a `Help & documentation` tile, and the web UI has a Help
+  panel (chat) and a `/help` page (wiki browser) for direct reading.
+- Donna can also check LLM settings, connected MCP capabilities, source
+  connectors, wiki content, and generation actions on request.
 - Keep connector credentials in Donna's flow: ask for the fields required by
   the connected setup tool, then call that setup tool when the user confirms.
 - Use the Activity tab to follow imports, exports, uploads, and jobs.

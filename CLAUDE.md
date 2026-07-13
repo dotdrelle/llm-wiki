@@ -155,7 +155,7 @@ entry. This is intentionally one-skill-per-workspace; do not add multi-skill
 merging without redesigning the model.
 
 The default scaffold includes small UI skills such as `/status`, `/wiki-sync`,
-`/pipeline`, and `/guide`. Keep scaffold skills generic and English by default.
+and `/pipeline`. Keep scaffold skills generic and English by default.
 
 ## Agent Runtime Integration
 
@@ -260,15 +260,13 @@ local UI chrome.
 ## Serve Skills And Donna
 
 Browser slash entries resolve against workspace skills from `.wiki/skills/`.
-When `/guide` exists, the empty chat shows a `Start setup guide` tile, and the
-empty Activity panel suggests the same action. First visit may auto-start
-`/guide` only when:
-
-- history loaded successfully,
-- no conversation/history exists,
-- the `guide` skill exists,
-- localStorage has not recorded `llm-wiki-guide-autostart-done` for this
-  workspace.
+The empty chat's first tile and the empty Activity panel's button both open
+the Help panel (`toggleHelpPanel()`) — a slide-out reader over the bundled,
+global `help-doc/` chapters (`src/utils/helpDoc.ts`), also reachable at
+`/help`/`/help/:id` and through the `help_list`/`help_read` MCP tools. This is
+static, workspace-independent documentation, not a workspace skill: it never
+auto-starts and has no per-workspace customization (unlike `.wiki/skills/`
+entries, which are per-workspace and can be edited via `wiki add-skill`).
 
 The second empty-chat tile, `Fill workspace profile`, should prompt the user to
 populate `.wiki/profile.md`; it must not mutate files without confirmation.

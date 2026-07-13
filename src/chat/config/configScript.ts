@@ -32,7 +32,6 @@ function saveConfig() {
     temperature:Number(cfg.temp),
   })}).catch(()=>{});
   if (cfg.apiKey) flashSaved('llm-saved');
-  applySetupGuideHighlight();
 }
 
 async function resetYamlConfig() {
@@ -49,7 +48,6 @@ async function resetYamlConfig() {
   if(cfg?.temperature!==undefined) $('temperature').value=String(cfg.temperature);
   syncModel();
   flashSaved('llm-saved');
-  applySetupGuideHighlight();
 }
 
 function applyServerConfig(config) {
@@ -61,7 +59,6 @@ function applyServerConfig(config) {
     temperature:llm.temperature??window.__WIKI_CONFIG__?.temperature,
     baseUrl:llm.baseUrl??window.__WIKI_CONFIG__?.baseUrl,
     apiKey:llm.apiKey??window.__WIKI_CONFIG__?.apiKey,
-    llmConfigured:Boolean(llm.provider&&llm.baseUrl&&llm.apiKey&&llm.model),
     language:config.language??window.__WIKI_CONFIG__?.language,
   };
   if(llm.baseUrl) $('base-url').value=llm.baseUrl;
@@ -69,7 +66,6 @@ function applyServerConfig(config) {
   if(llm.model) $('model-name').value=llm.model;
   if(llm.temperature!==undefined) $('temperature').value=String(llm.temperature);
   syncModel();
-  applySetupGuideHighlight();
 }
 
 async function loadConfigProfiles() {
@@ -172,19 +168,6 @@ function applyWorkspaceTitle() {
   if (logoText) logoText.textContent = label;
 }
 
-function applySetupGuideHighlight() {
-  const tile = document.querySelector('.setup-guide-tile');
-  if (!tile) return;
-  const wc = window.__WIKI_CONFIG__ || {};
-  const configured = Boolean(
-    wc.provider &&
-    ($('base-url')?.value || wc.baseUrl) &&
-    ($('api-key')?.value || wc.apiKey) &&
-    ($('model-name')?.value || wc.model),
-  );
-  tile.classList.toggle('needs-setup', wc.llmConfigured === false && !configured);
-}
-
 function loadConfig() {
   const wc = window.__WIKI_CONFIG__;
   let saved = {};
@@ -213,7 +196,6 @@ function loadConfig() {
   }
   $('system-prompt').value = localStorage.getItem(storageKey('mcpchat_system_prompt')) ?? window.__WIKI_CONFIG__?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
   syncModel();
-  applySetupGuideHighlight();
 }
 
 function loadServers() {

@@ -10,9 +10,10 @@ import { pathExists } from '../utils/fs.ts';
 import { resolveInside } from '../utils/path.ts';
 import { extractSourceCitations } from '../utils/markdown.ts';
 import { hashText } from '../utils/hash.ts';
+import { listHelpChapters, readHelpChapter } from '../utils/helpDoc.ts';
 import type { AppConfig } from '../types.ts';
 
-const LLM_WIKI_VERSION = '0.14.5';
+const LLM_WIKI_VERSION = '0.14.6';
 
 export interface WikiMcpServices {
   workspace: WorkspaceService;
@@ -74,6 +75,16 @@ export const WIKI_MCP_TOOLS = [
     name: 'profile_update',
     description:
       'Write the workspace profile to .wiki/profile.md. Use only when the user explicitly asks to remember, persist, summarize, or update durable profile information.',
+  },
+  {
+    name: 'help_list',
+    description:
+      "Product help: list the DONNA documentation chapters (table of contents). Call this for questions about the application itself — what it is, chat vs agent mode, interfaces, getting started, \"I'm lost\", troubleshooting. Product documentation, not the workspace wiki.",
+  },
+  {
+    name: 'help_read',
+    description:
+      'Product help: read one DONNA documentation chapter by id (from help_list). Use to answer a question about the application itself. Not the workspace wiki.',
   },
 ] as const;
 
@@ -773,6 +784,51 @@ export async function createWikiMcpServer(
     'Search llm-wiki, read up to 10 returned wiki pages by default, and report coverage in one call. Prefer this first for synthesis, architecture, audit, functional analysis, or comparison questions.',
     collectWikiContextInput,
     (input) => loggedTool('wiki_collect_context', input, collectWikiContext),
+  );
+
+  // ── Product help (global, workspace-agnostic) ────────────────────────────
+  // These read the bundled `help-doc/` product documentation, NOT the
+  // workspace wiki. Documentation navigation (table of contents + section),
+  // not the wiki page taxonomy. Read-only.
+  const helpList = async () => {
+    const chapters = await listHelpChapters();
+    if (chapters.length === 0) {
+      return textResult('No product documentation is available.', { isError: true });
+    }
+    const lines = chapters.map((c) => `${c.id} — ${c.title}`);
+    return textResult(
+      `DONNA product documentation — chapters. Call help_read with an id to read one.\n\n${lines.join('\n')}`,
+    );
+  };
+  const helpRead = async ({ id }: { id: string }) => {
+    const chapter = await readHelpChapter(id);
+    if (!chapter.found) {
+      const chapters = await listHelpChapters();
+      const ids = chapters.map((c) => c.id).join(', ');
+      return textResult(
+        `${chapter.error ?? 'Chapter not found.'} Available ids: ${ids}`,
+        { isError: true },
+      );
+    }
+    return textResult(chapter.content ?? '');
+  };
+
+  server.tool(
+    'help_list',
+    "Product help: list the DONNA documentation chapters (table of contents). Call this for questions about the application ITSELF — what it is, what it's for, chat vs agent mode, the interfaces, getting started, \"I'm lost\", \"it doesn't work\", troubleshooting. Returns chapter ids and titles; then read the relevant one with help_read. This is product documentation, not the workspace wiki.",
+    {},
+    () => loggedTool('help_list', {}, helpList),
+  );
+  const helpReadInput = {
+    id: z
+      .string()
+      .describe('Chapter id from help_list, e.g. 04-interaction-modes (no path, no extension).'),
+  };
+  server.tool(
+    'help_read',
+    'Product help: read one DONNA documentation chapter by id (from help_list). Use to answer a question about the application itself, then reply in the user\'s language. Not the workspace wiki.',
+    helpReadInput,
+    (input) => loggedTool('help_read', input, helpRead),
   );
 
   const profilePath = path.join(workspace.paths.internalDir, 'profile.md');

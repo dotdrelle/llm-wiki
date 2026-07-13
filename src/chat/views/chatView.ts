@@ -3,9 +3,9 @@ export const EMPTY_CHAT_HTML = `<div id="empty">
   <h2>MCP Chat</h2>
   <p>Enable an MCP server, then start the conversation.</p>
   <div class="empty-actions">
-    <button class="empty-tile setup-guide-tile" type="button" onclick="submitSuggestion('/guide')">
-      <span class="empty-tile-title">Start setup guide</span>
-      <span class="empty-tile-desc">Let Donna check LLM, connectors, sources, wiki content, and deliverables.</span>
+    <button class="empty-tile help-tile" type="button" onclick="toggleHelpPanel()">
+      <span class="empty-tile-title">Help &amp; documentation</span>
+      <span class="empty-tile-desc">What this app does, chat vs agent, getting started, and troubleshooting.</span>
     </button>
     <button class="empty-tile" type="button" onclick="submitSuggestion('Help me fill my workspace profile.')">
       <span class="empty-tile-title">Fill workspace profile</span>
@@ -25,6 +25,7 @@ export const CHAT_MARKUP = `<nav id="app-nav" aria-label="Navigation application
   <button class="app-nav-link" type="button" onclick="showExecutionView()" title="Execution">Execution</button>
   <div class="app-nav-title">MCP Chat</div>
   <div class="app-nav-spacer"></div>
+  <button id="help-toggle" class="app-nav-btn help-toggle" type="button" onclick="toggleHelpPanel()" title="Help &amp; documentation" aria-label="Open help">?</button>
   <button id="theme-toggle" class="app-nav-btn theme-toggle" type="button" onclick="toggleTheme()" title="Switch to dark theme" aria-label="Switch color theme">☾</button>
 </nav>
 
@@ -190,6 +191,17 @@ export const CHAT_MARKUP = `<nav id="app-nav" aria-label="Navigation application
     <button class="act-panel-close" onclick="toggleActivityPanel()" title="Close">×</button>
   </div>
   <div class="act-body" id="activity-body"></div>
+</aside>
+
+<aside id="help-panel" class="closed" aria-label="Help">
+  <div class="act-panel-head">
+    <span class="act-panel-title">Documentation</span>
+    <div class="help-panel-actions">
+      <button class="act-panel-close" id="help-back" type="button" onclick="showHelpToc()" title="All chapters" hidden>←</button>
+      <button class="act-panel-close" type="button" onclick="toggleHelpPanel()" title="Close">×</button>
+    </div>
+  </div>
+  <div class="act-body" id="help-body"></div>
 </aside>
 <div id="notif"></div>
 <div class="prompt-drawer" id="system-prompt-drawer" aria-hidden="true">

@@ -13,6 +13,7 @@ import {
 } from '../../graph/wiki/projection.ts';
 import { pathExists, safeWriteFile } from '../../utils/fs.ts';
 import { resolveInside, toPosix } from '../../utils/path.ts';
+import { listHelpChapters, readHelpChapter } from '../../utils/helpDoc.ts';
 import { WIKI_LAYOUT_CSS } from './wikiLayoutCss.ts';
 import { WIKI_LAYOUT_SCRIPT } from './wikiLayoutScript.ts';
 
@@ -654,8 +655,10 @@ async function renderSidebar(rootDir: string, precomputedNavFiles?: string[]): P
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="M8.6 8.1 10.8 15"/><path d="m15.4 8.1-2.2 6.9"/><path d="M9 6h6"/></svg>';
   const chatIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>';
+  const helpIcon =
+    '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2.5-3 4"/><path d="M12 17h.01"/></svg>';
 const kbdHint = `<kbd style="font-size:.68rem;font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .35rem;border-radius:4px;color:var(--muted);cursor:pointer" title="Open global search (⌘K)" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}))">⌘K</kbd>`;
-  return `<button class="wiki-theme-toggle" type="button" data-theme-toggle title="Switch to dark theme" aria-label="Switch color theme">☾</button><aside class="sidebar"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}<span>Graph</span></a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}<span>Chat</span></a></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Markdown documents">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside><div class="wiki-main-resizer" data-wiki-main-resizer title="Resize sidebar" role="separator" aria-orientation="vertical"></div>`;
+  return `<button class="wiki-theme-toggle" type="button" data-theme-toggle title="Switch to dark theme" aria-label="Switch color theme">☾</button><aside class="sidebar"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}<span>Graph</span></a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}<span>Chat</span></a><a class="side-action" href="/help" title="Help" aria-label="Help">${helpIcon}<span>Help</span></a></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Markdown documents">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside><div class="wiki-main-resizer" data-wiki-main-resizer title="Resize sidebar" role="separator" aria-orientation="vertical"></div>`;
 }
 
 export async function buildGraphOverview(
@@ -1012,6 +1015,52 @@ export async function serveMd(
   );
 }
 
+
+// ── Product help pages (browsable documentation) ──────────────────────────
+// Renders the bundled help-doc/ product documentation as HTML. This is direct
+// consultation, complementary to DONNA's conversational access. The source is
+// authored in English; only DONNA localizes (this page shows it as-is).
+const HELP_PAGE_STYLES = `<style>
+.help-index{list-style:none;padding:0;margin:1rem 0;display:grid;gap:.5rem}
+.help-index li{margin:0}
+.help-chapter-link{display:block;background:var(--panel-soft);border:1px solid var(--border);border-radius:9px;padding:.7rem .9rem;font-weight:650;text-decoration:none;color:var(--text)}
+.help-chapter-link:hover{border-color:var(--accent)}
+.help-empty{color:var(--muted)}
+.help-nav{display:flex;flex-wrap:wrap;gap:.4rem;margin:.25rem 0 1rem}
+.help-nav-item{font-size:.82rem;padding:3px 10px;border:1px solid var(--border);border-radius:99px;text-decoration:none;color:var(--muted);background:var(--panel-soft)}
+.help-nav-item:hover{border-color:var(--accent);color:var(--text)}
+.help-nav-item.is-active{background:var(--accent);border-color:var(--accent);color:#fff}
+</style>`;
+
+export async function generateHelpIndex(rootDir: string): Promise<string> {
+  const [chapters, sidebar] = await Promise.all([listHelpChapters(), renderSidebar(rootDir)]);
+  const items = chapters.length
+    ? chapters
+        .map(
+          (c) =>
+            `<li><a class="help-chapter-link" href="${escapeHref(`/help/${c.id}`)}">${escapeHtml(c.title)}</a></li>`,
+        )
+        .join('')
+    : '<li class="help-empty">No documentation is available.</li>';
+  const body = `${sidebar}<main class="content">${renderTopbar('/help')}${HELP_PAGE_STYLES}<article class="article"><h1>Documentation</h1><p>Product help for DONNA. Browse the chapters below, or ask DONNA directly in chat.</p><ul class="help-index">${items}</ul></article></main>`;
+  return layout('Documentation', body);
+}
+
+export async function generateHelpChapter(rootDir: string, id: string): Promise<string | null> {
+  const chapter = await readHelpChapter(id);
+  if (!chapter.found) return null;
+  const [chapters, sidebar] = await Promise.all([listHelpChapters(), renderSidebar(rootDir)]);
+  const nav = chapters
+    .map(
+      (c) =>
+        `<a class="help-nav-item${c.id === chapter.id ? ' is-active' : ''}" href="${escapeHref(`/help/${c.id}`)}">${escapeHtml(c.title)}</a>`,
+    )
+    .join('');
+  const rendered = await renderMarkdown(chapter.content ?? '', '');
+  const back = `<a class="action-link" href="/help">← All chapters</a>`;
+  const body = `${sidebar}<main class="content">${renderTopbar(`/help/${chapter.id}`, back)}${HELP_PAGE_STYLES}<nav class="help-nav">${nav}</nav><article class="article">${rendered}</article></main>`;
+  return layout(chapter.title ?? 'Documentation', body);
+}
 
 export function isRawDownloadRequestPath(urlPath: string): boolean {
   return urlPath.startsWith('/raw/') && !urlPath.startsWith('/raw/ingested/') && !urlPath.startsWith('/raw/untracked/');

@@ -318,8 +318,7 @@ function renderActivities() {
   const center=$('runtime-graph-center');
   if(center&&!document.body.classList.contains('execution-mode')) center.innerHTML='';
   if(!_activities.length&&!runtimeState){
-    const guideBtn=findSkillByName('guide')?\`<br><button class="act-empty-btn" type="button" onclick="submitSuggestion('/guide')">Start setup guide</button>\`:'';
-    el.innerHTML=\`<div class="act-empty">No activity yet.\${guideBtn}</div>\`;
+    el.innerHTML=\`<div class="act-empty">No activity yet.<br><button class="act-empty-btn" type="button" onclick="toggleHelpPanel()">Open help</button></div>\`;
     return;
   }
   const rev=[..._activities].reverse();

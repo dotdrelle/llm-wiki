@@ -11,6 +11,8 @@ import {
   generateEditPage,
   generateIndex,
   generateNewMarkdownPage,
+  generateHelpChapter,
+  generateHelpIndex,
   generateNotFoundPage,
   generateSkillsPage,
   isRawDownloadRequestPath,
@@ -20,6 +22,7 @@ import {
   resolveEditableMarkdown,
   serveMd,
 } from '../html/wikiHtml.ts';
+import { listHelpChapters, readHelpChapter } from '../../utils/helpDoc.ts';
 
 export type WikiRoutesDeps = {
   rootDir: string;
@@ -45,6 +48,23 @@ export async function handleWikiRoutes(
   deps: WikiRoutesDeps,
 ): Promise<boolean> {
   const { rootDir } = deps;
+
+  // Product help API (JSON) for the in-app help panel.
+  if (urlPath === '/api/help' && req.method === 'GET') {
+    const chapters = await listHelpChapters();
+    deps.sendJson(res, 200, { chapters });
+    return true;
+  }
+  if (urlPath.startsWith('/api/help/') && req.method === 'GET') {
+    const id = decodeURIComponent(urlPath.slice('/api/help/'.length).replace(/\/+$/, ''));
+    const chapter = await readHelpChapter(id);
+    if (!chapter.found) {
+      deps.sendJson(res, 404, { error: chapter.error ?? 'Not found' });
+      return true;
+    }
+    deps.sendJson(res, 200, { id: chapter.id, title: chapter.title, markdown: chapter.content });
+    return true;
+  }
 
   if (urlPath.startsWith('/new/')) {
     const collection = urlPath.replace(/^\/new\//, '').replace(/\/+$/, '');
@@ -217,6 +237,24 @@ export async function handleWikiRoutes(
 
   if (urlPath === '/skills') {
     const html = await generateSkillsPage(rootDir);
+    await deps.sendGzippedHtml(req, res, html);
+    return true;
+  }
+
+  if (urlPath === '/help' || urlPath === '/help/') {
+    const html = await generateHelpIndex(rootDir);
+    await deps.sendGzippedHtml(req, res, html);
+    return true;
+  }
+
+  if (urlPath.startsWith('/help/')) {
+    const id = decodeURIComponent(urlPath.slice('/help/'.length).replace(/\/+$/, ''));
+    const html = await generateHelpChapter(rootDir, id);
+    if (html === null) {
+      const notFound = await generateNotFoundPage(rootDir, urlPath);
+      await deps.sendGzippedHtml(req, res, notFound, {}, 404);
+      return true;
+    }
     await deps.sendGzippedHtml(req, res, html);
     return true;
   }

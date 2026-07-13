@@ -15,6 +15,9 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
 COPY --from=builder --chown=node:node /build/node_modules ./node_modules
 COPY --from=builder --chown=node:node /build/dist ./
 COPY --from=builder --chown=node:node /build/package.json ./
+# Bundled product documentation (global help), served by help_list/help_read and /help.
+COPY --from=builder --chown=node:node /build/help-doc ./help-doc
+ENV HELP_DOC_DIR=/app/help-doc
 COPY --from=builder --chown=node:node /dist-workspace /workspace
 EXPOSE 3000 3333
 VOLUME /workspace
