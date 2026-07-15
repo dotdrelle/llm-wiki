@@ -11,10 +11,6 @@ export const EMPTY_CHAT_HTML = `<div id="empty">
       <span class="empty-tile-title">Fill workspace profile</span>
       <span class="empty-tile-desc">Describe your context so answers and deliverables fit this workspace.</span>
     </button>
-    <button class="empty-tile wide" type="button" onclick="submitSuggestion(getTipsPrompt())">
-      <span class="empty-tile-title">Get contextual tips</span>
-      <span class="empty-tile-desc">Donna checks the workspace state and gives 3 specific next-step suggestions.</span>
-    </button>
   </div>
 </div>`;
 

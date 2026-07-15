@@ -17,6 +17,10 @@ let runtimeConversationRefs=[];
 // would have consumed it) must not silently drop the first entry's pending
 // marker, or it gets appended a second time as an unmatched "new" turn.
 let pendingRuntimeUserRefs=[];
+// Transient acknowledgements for accepted Agent turns. They are DOM-only:
+// the real runtime assistant event replaces them and only that real reply is
+// persisted in conversation history.
+let pendingRuntimeStatusEls=[];
 // Single reset entry point for the pair above — call this at every local
 // conversation boundary (new/load/delete/clear), not just some of them:
 // stale index-aligned refs reused against a fresh messages array is a real
@@ -24,6 +28,8 @@ let pendingRuntimeUserRefs=[];
 function resetRuntimeConversationTracking() {
   runtimeConversationRefs=[];
   pendingRuntimeUserRefs=[];
+  pendingRuntimeStatusEls.forEach(el=>el?.remove());
+  pendingRuntimeStatusEls=[];
 }
 // Agent mode is deliberately session-only: every fresh serve page starts in
 // local chat mode, even if an older release persisted an Agent preference.

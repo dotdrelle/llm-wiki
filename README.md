@@ -233,13 +233,10 @@ workspace. Three ways to reach them:
   questions about the application itself (what it is, chat vs agent mode,
   getting started, troubleshooting) directly in chat, in the user's language.
 
-The empty chat also offers two quick-start tiles:
+The empty chat also offers a quick-start tile:
 
 - **Fill workspace profile** — prompts the user to describe the workspace
   context so that answers and deliverables are better tailored.
-- **Get contextual tips** — Donna inspects the actual workspace state with the
-  available read-only tools and returns 3 specific next-step suggestions in the
-  configured workspace language.
 
 ## Core Commands
 

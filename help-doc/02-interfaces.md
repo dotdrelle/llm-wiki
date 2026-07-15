@@ -27,7 +27,7 @@ wiki browser. The LLM is usually pre-configured there.
 - **For whom**: day-to-day use, without a terminal.
 - **What you find there**:
   - **Chat / Agent** — the dialogue with DONNA (page `/`), with shortcuts on the
-    empty screen (help, fill the workspace profile, contextual tips).
+    empty screen (help, fill the workspace profile).
   - **Activity** — live tracking of imports, ingestions, exports and jobs, with
     two views: *List* and *Graph*.
   - **Wiki browser** — browse the pages produced.

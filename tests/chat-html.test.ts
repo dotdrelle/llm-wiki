@@ -256,20 +256,19 @@ describe('chat html', () => {
 
     expect(CHAT_HTML).toContain('Help &amp; documentation');
     expect(CHAT_HTML).toContain('Fill workspace profile');
-    expect(CHAT_HTML).toContain('Get contextual tips');
+    expect(CHAT_HTML).not.toContain('Get contextual tips');
     expect(CHAT_HTML).toContain('onclick="toggleHelpPanel()"');
-    expect(CHAT_HTML).toContain('onclick="submitSuggestion(getTipsPrompt())"');
-    expect(CHAT_HTML).toContain('empty-tile wide');
+    expect(CHAT_HTML).not.toContain('getTipsPrompt');
+    // Both remaining tiles are regular grid cells so they sit side by side on
+    // one row (no full-width 'wide' tile pushing one to its own line).
+    expect(CHAT_HTML).not.toContain('empty-tile wide');
     expect(CHAT_HTML).toContain('id="help-panel"');
     expect(script).not.toContain('function maybeAutoStartGuide');
     expect(script).not.toContain("submitSuggestion('/guide')");
     expect(script).not.toContain('function applySetupGuideHighlight');
     expect(script).toContain('function applyWorkspaceTitle');
     expect(script).toContain('function toggleHelpPanel');
-    expect(script).toContain('function getTipsPrompt');
-    expect(script).toContain('available read-only tools');
-    expect(script).toContain('active connectors');
-    expect(script).toContain('actual state you found');
+    expect(script).not.toContain('function getTipsPrompt');
   });
 
   it('tracks actionable and asynchronous MCP calls in the activity panel', () => {
@@ -531,7 +530,7 @@ describe('chat html', () => {
     expect(script).toContain("fetch('/api/runtime/state',{cache:'no-store'})");
     expect(script).toContain("new EventSource('/api/runtime/events')");
     expect(script).toContain('if(runtimeFetchPending) return;');
-    expect(script).toContain("runningBeforeFetch?'/api/runtime/control':'/api/runtime/turn'");
+    expect(script).toContain("runningBeforeFetch&&!readOnlyChat?'/api/runtime/control':'/api/runtime/turn'");
     expect(script).toContain("if(data?.kind!=='turn')");
     expect(script).not.toContain('Runtime run accepted. Follow progress in Activity.');
     expect(script).toContain("fetch('/api/runtime/cancel'");
@@ -565,8 +564,14 @@ describe('chat html', () => {
     const [script] = chatScripts();
 
     expect(script).not.toContain("notify('Runtime is already running.'");
-    expect(script).toContain("runningBeforeFetch?'/api/runtime/control':'/api/runtime/turn'");
-    expect(script).toContain("body:runningBeforeFetch?controlBody:JSON.stringify({input:text})");
+    expect(script).toContain("runningBeforeFetch&&!readOnlyChat?'/api/runtime/control':'/api/runtime/turn'");
+    expect(script).toContain("body:runningBeforeFetch&&!readOnlyChat?controlBody:JSON.stringify({input:text,...(mode?{mode}:{})})");
+    expect(script).toContain("const readOnlyChat=mode==='chat'");
+    expect(script).toContain("sendRuntimeAgentMessage(input,text,{mode:'chat'})");
+    expect(script).toContain('function createRuntimeThinkingBubble()');
+    expect(script).toContain('Request received · Donna is preparing the response and plan…');
+    expect(script).toContain("const statusEl=mode==='chat'?null:createRuntimeThinkingBubble()");
+    expect(script).toContain("if(role==='assistant'&&content&&pendingRuntimeStatusEls.length)");
     expect(script).toContain("data?.kind==='ambiguous'");
     expect(script).toContain('function handleSendButton()');
     expect(script).not.toContain('if(agentMode && runtimeIsRunning())');

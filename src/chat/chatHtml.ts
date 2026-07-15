@@ -142,7 +142,7 @@ const MCP_STALE_SESSION_MS = 5 * 60 * 1000;
 const MCP_REQUEST_TIMEOUT_MS = 60 * 1000;
 
 function chatModeToolsNotice() {
-  return \`Chat mode: no MCP tools or connectors are available in this conversation (this is local, tool-less chat — tool-calling only happens in Agent mode). If the answer requires checking a connector's live config, status, recent jobs, or wiki content, say so plainly and suggest switching to Agent mode instead of guessing or giving a bare label as an answer.\`;
+  return \`Chat mode (offline fallback): the wiki-manager runtime is not reachable, so no MCP tools or connectors are available in this conversation and no live state can be checked. If the answer requires a connector's live config, status, recent jobs, or wiki content, say plainly that it cannot be checked while the runtime is offline — do not guess or give a bare label as an answer.\`;
 }
 function languageInstruction() {
   const lang = window.__WIKI_CONFIG__?.language;
@@ -150,9 +150,6 @@ function languageInstruction() {
   let label = lang;
   try { label = new Intl.DisplayNames([lang], { type: 'language' }).of(lang) ?? lang; } catch {}
   return \`IMPORTANT: always answer in the configured language: \${lang} (\${label}). After a tool call, translate and summarize the useful information in that language; keep another language only for proper nouns, paths, commands, code, and exact quotations.\`;
-}
-function getTipsPrompt() {
-  return \`Inspect the current workspace state with the available read-only tools before answering. Check what you can about wiki content, configured source connectors, recent jobs or activities, and available generation actions. Choose the relevant tools from the active connectors; if no useful tool is available, say that clearly. Then give 3 short actionable tips tailored to the actual state you found, not generic advice. Keep each tip to 2 sentences max.\`;
 }
 function notify(msg, type='s') {
   const el=$('notif'); el.textContent=msg; el.className=\`show \${type}\`;
@@ -370,6 +367,10 @@ function mergeRuntimeConversation() {
     const raw=conversation[i];
     const role=raw.role;
     const content=String(raw.content??'');
+    if(role==='assistant'&&content&&pendingRuntimeStatusEls.length) {
+      pendingRuntimeStatusEls.shift()?.remove();
+      changed=true;
+    }
     if(i<runtimeConversationRefs.length) {
       const ref=runtimeConversationRefs[i];
       if(ref.message.content!==content) {
@@ -2151,6 +2152,13 @@ function createStreamBubble() {
   return div;
 }
 
+function createRuntimeThinkingBubble() {
+  const div=createStreamBubble();
+  const bubble=div.querySelector('.bubble');
+  if(bubble) bubble.innerHTML='<div class="runtime-thinking"><div class="typing"><span></span><span></span><span></span></div><span>Request received · Donna is preparing the response and plan…</span></div>';
+  return div;
+}
+
 function removeStreamBubble(div) {
   if(!div) return;
   div.remove();
@@ -2290,6 +2298,14 @@ async function sendMessage() {
     await sendRuntimeAgentMessage(input,text);
     return;
   }
+  // Chat mode: when the runtime is up, delegate to its READ-ONLY turn
+  // (mode:'chat') so Donna gets the chatAccess read tools — no local tool loop
+  // to duplicate. Only when there is no runtime do we fall back to the
+  // tool-less local LLM proxy below.
+  if(runtimeEnabled()) {
+    await sendRuntimeAgentMessage(input,text,{mode:'chat'});
+    return;
+  }
   const resolved=await resolveSkillInvocation(text);
   const model=$('model-name').value.trim()||'gpt-4o';
   const parsedTemp=parseFloat($('temperature').value);
@@ -2389,7 +2405,7 @@ async function sendMessage() {
   }
 }
 
-async function sendRuntimeAgentMessage(input,text) {
+async function sendRuntimeAgentMessage(input,text,{mode}={}) {
   if(!runtimeEnabled()) {
     notify('Runtime is not configured.','e');
     return;
@@ -2400,6 +2416,8 @@ async function sendRuntimeAgentMessage(input,text) {
   const userMessage={role:'user',content:text};
   messages.push(userMessage);
   const userEl=appendMsg('user',text);
+  const statusEl=mode==='chat'?null:createRuntimeThinkingBubble();
+  if(statusEl) pendingRuntimeStatusEls.push(statusEl);
   // Consumed by mergeRuntimeConversation once this same message comes back
   // from the runtime's own /state, instead of appending a second copy.
   pendingRuntimeUserRefs.push({message:userMessage,el:userEl});
@@ -2409,12 +2427,13 @@ async function sendRuntimeAgentMessage(input,text) {
     // to one shared value): an SSE update can flip it while the fetch below
     // is in flight, and the 409 fallback exists specifically to catch that.
     const runningBeforeFetch=runtimeIsRunning();
-    let res=await fetch(runningBeforeFetch?'/api/runtime/control':'/api/runtime/turn',{
+    const readOnlyChat=mode==='chat';
+    let res=await fetch(runningBeforeFetch&&!readOnlyChat?'/api/runtime/control':'/api/runtime/turn',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:runningBeforeFetch?controlBody:JSON.stringify({input:text}),
+      body:runningBeforeFetch&&!readOnlyChat?controlBody:JSON.stringify({input:text,...(mode?{mode}:{})}),
     });
-    if(res.status===409 && !runtimeIsRunning()) {
+    if(!readOnlyChat&&res.status===409&&!runtimeIsRunning()) {
       res=await fetch('/api/runtime/control',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
@@ -2438,6 +2457,10 @@ async function sendRuntimeAgentMessage(input,text) {
     runtimeState={...(runtimeState||{}),status:data?.status ?? runtimeState?.status ?? 'idle'};
     runtimeConnected=true;
     if(data?.kind!=='turn') {
+      if(statusEl) {
+        statusEl.remove();
+        pendingRuntimeStatusEls=pendingRuntimeStatusEls.filter(el=>el!==statusEl);
+      }
       messages.push({role:'assistant',content:reply});
       if(data?.kind==='ambiguous') appendMsg('assistant',runtimeChoiceHTML(text,data.choices),{html:true,plainText:reply});
       else appendMsg('assistant',reply);
@@ -2449,6 +2472,10 @@ async function sendRuntimeAgentMessage(input,text) {
     openActivityPanel();
     fetchRuntimeState().catch(()=>{});
   } catch(e) {
+    if(statusEl) {
+      statusEl.remove();
+      pendingRuntimeStatusEls=pendingRuntimeStatusEls.filter(el=>el!==statusEl);
+    }
     notify(e?.message||String(e),'e');
   }
 }

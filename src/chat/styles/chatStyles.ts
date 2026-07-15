@@ -404,6 +404,8 @@ body:not(.execution-mode) #execution-view{display:none}
 .typing span{width:5px;height:5px;border-radius:50%;background:var(--muted);animation:boing .8s infinite}
 .typing span:nth-child(2){animation-delay:.15s}
 .typing span:nth-child(3){animation-delay:.3s}
+.runtime-thinking{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px}
+.runtime-thinking .typing{flex:none}
 @keyframes boing{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}
 #empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--muted)}
 #empty .em-icon{font-size:36px;opacity:.6}
