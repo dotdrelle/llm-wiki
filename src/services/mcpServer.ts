@@ -1,4 +1,4 @@
-import { appendFile, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -13,7 +13,10 @@ import { hashText } from '../utils/hash.ts';
 import { listHelpChapters, readHelpChapter } from '../utils/helpDoc.ts';
 import type { AppConfig } from '../types.ts';
 
-const LLM_WIKI_VERSION = '0.14.7';
+const LLM_WIKI_VERSION = '0.14.9';
+const MAX_SOURCE_NAME_CHARS = 200;
+const MAX_SOURCE_SUBDIR_CHARS = 300;
+const MAX_SOURCE_CONTENT_CHARS = 1_000_000;
 
 export interface WikiMcpServices {
   workspace: WorkspaceService;
@@ -45,6 +48,11 @@ export const WIKI_MCP_TOOLS = [
     name: 'wiki_write_page',
     description:
       'Create or update one llm-wiki markdown page under wiki/. Use this only for wiki content edits.',
+  },
+  {
+    name: 'wiki_add_source',
+    description:
+      'Stage one Markdown source in the workspace ingestion inbox. Use for content already available as Markdown; use the documents agent for binary conversion or OCR.',
   },
   {
     name: 'wiki_list_ingested_sources',
@@ -79,7 +87,7 @@ export const WIKI_MCP_TOOLS = [
   {
     name: 'help_list',
     description:
-      "Product help: list the DONNA documentation chapters (table of contents). Call this for questions about the application itself — what it is, chat vs agent mode, interfaces, getting started, \"I'm lost\", troubleshooting. Product documentation, not the workspace wiki.",
+      'Product help: list the DONNA documentation chapters (table of contents). Call this for questions about the application itself — what it is, chat vs agent mode, interfaces, getting started, "I\'m lost", troubleshooting. Product documentation, not the workspace wiki.',
   },
   {
     name: 'help_read',
@@ -89,11 +97,20 @@ export const WIKI_MCP_TOOLS = [
 ] as const;
 
 function relativeWorkspacePaths(workspace: WorkspaceService, paths: string[]): string[] {
-  return paths.map((item) => path.relative(workspace.paths.rootDir, item).replaceAll('\\', '/'));
+  return paths.map((item) =>
+    path.relative(workspace.paths.rootDir, item).replaceAll('\\', '/'),
+  );
 }
 
 export async function workspaceStatusPayload(workspace: WorkspaceService) {
-  const [pendingSources, ingestedSources, wikiPages, templates, buildContext, deliverables] = await Promise.all([
+  const [
+    pendingSources,
+    ingestedSources,
+    wikiPages,
+    templates,
+    buildContext,
+    deliverables,
+  ] = await Promise.all([
     workspace.listUntrackedSourcePaths(),
     workspace.listIngestedSourcePages(),
     workspace.listWikiPages(),
@@ -162,18 +179,18 @@ function diffPreview(before: string, after: string): string {
   const afterLines = after.split('\n');
   let firstChange = 0;
   while (
-    firstChange < beforeLines.length
-    && firstChange < afterLines.length
-    && beforeLines[firstChange] === afterLines[firstChange]
+    firstChange < beforeLines.length &&
+    firstChange < afterLines.length &&
+    beforeLines[firstChange] === afterLines[firstChange]
   ) {
     firstChange += 1;
   }
   let beforeTail = beforeLines.length - 1;
   let afterTail = afterLines.length - 1;
   while (
-    beforeTail >= firstChange
-    && afterTail >= firstChange
-    && beforeLines[beforeTail] === afterLines[afterTail]
+    beforeTail >= firstChange &&
+    afterTail >= firstChange &&
+    beforeLines[beforeTail] === afterLines[afterTail]
   ) {
     beforeTail -= 1;
     afterTail -= 1;
@@ -187,7 +204,9 @@ function diffPreview(before: string, after: string): string {
     ...(start > 0 ? ['...'] : []),
     ...beforeLines.slice(start, endBefore + 1).map((line) => `- ${line}`),
     ...afterLines.slice(start, endAfter + 1).map((line) => `+ ${line}`),
-    ...(endBefore < beforeLines.length - 1 || endAfter < afterLines.length - 1 ? ['...'] : []),
+    ...(endBefore < beforeLines.length - 1 || endAfter < afterLines.length - 1
+      ? ['...']
+      : []),
   ];
   return truncateText(lines.join('\n'), 4000);
 }
@@ -222,15 +241,46 @@ export function createWritePreviewPayload({
   };
 }
 
+export function createSourcePreviewPayload({
+  target,
+  before,
+  after,
+  dryRun,
+  written,
+}: {
+  target: string;
+  before: string;
+  after: string;
+  dryRun: boolean;
+  written: boolean;
+}) {
+  return {
+    target,
+    dryRun,
+    written,
+    beforeChars: before.length,
+    afterChars: after.length,
+    beforeSha256: hashText(before),
+    afterSha256: hashText(after),
+    changed: before !== after,
+    preview: diffPreview(before, after),
+  };
+}
+
 async function appendAuditRecord(
   workspace: WorkspaceService,
   record: Record<string, unknown>,
 ): Promise<void> {
-  const auditPath = path.join(workspace.paths.internalDir, 'audit.log');
-  await appendFile(auditPath, `${JSON.stringify({
-    ts: new Date().toISOString(),
-    ...record,
-  })}\n`, 'utf8');
+  await mkdir(workspace.paths.logsDir, { recursive: true });
+  const auditPath = path.join(workspace.paths.logsDir, 'audit.log');
+  await appendFile(
+    auditPath,
+    `${JSON.stringify({
+      ts: new Date().toISOString(),
+      ...record,
+    })}\n`,
+    'utf8',
+  );
 }
 
 function resolveWritableWikiPath(
@@ -379,7 +429,7 @@ export async function createWikiMcpServer(
   config: AppConfig,
   services?: WikiMcpServices,
 ): Promise<McpServer> {
-  const { workspace, retrieval } = services ?? await createWikiMcpServices(config);
+  const { workspace, retrieval } = services ?? (await createWikiMcpServices(config));
   const server = new McpServer({
     name: 'llm-wiki',
     version: LLM_WIKI_VERSION,
@@ -446,7 +496,9 @@ export async function createWikiMcpServer(
     dryRun?: boolean;
   }) => {
     const absolutePath = resolveWritableWikiPath(workspace, pagePath);
-    const before = (await pathExists(absolutePath)) ? await readFile(absolutePath, 'utf8') : '';
+    const before = (await pathExists(absolutePath))
+      ? await readFile(absolutePath, 'utf8')
+      : '';
     const confirmed = confirm === true;
     const previewOnly = dryRun === true || !confirmed;
     const payload = createWritePreviewPayload({
@@ -467,10 +519,16 @@ export async function createWikiMcpServer(
         beforeSha256: payload.beforeSha256,
         afterSha256: payload.afterSha256,
       });
-      return textResult(JSON.stringify({
-        ...payload,
-        message: 'Preview only. Re-run with confirm=true to write.',
-      }, null, 2));
+      return textResult(
+        JSON.stringify(
+          {
+            ...payload,
+            message: 'Preview only. Re-run with confirm=true to write.',
+          },
+          null,
+          2,
+        ),
+      );
     }
     await workspace.applyWikiOperations([{ type: 'update', path: pagePath, content }]);
     retrieval.invalidateCache();
@@ -484,6 +542,114 @@ export async function createWikiMcpServer(
       afterSha256: payload.afterSha256,
     });
     return textResult(`Written: ${pagePath}`);
+  };
+
+  const addWikiSource = async ({
+    name,
+    content,
+    subdir,
+    overwrite,
+    dryRun,
+  }: {
+    name: string;
+    content: string;
+    subdir?: string;
+    overwrite?: boolean;
+    dryRun?: boolean;
+  }) => {
+    const inspected = await workspace.inspectUntrackedSource({ name, subdir });
+    const preview = createSourcePreviewPayload({
+      target: inspected.relativePath,
+      before: inspected.content,
+      after: content,
+      dryRun: dryRun === true,
+      written: dryRun !== true,
+    });
+    if (dryRun === true) {
+      await appendAuditRecord(workspace, {
+        tool: 'wiki_add_source',
+        target: inspected.relativePath,
+        action: 'dry_run',
+        contentChars: content.length,
+        contentBytes: Buffer.byteLength(content, 'utf8'),
+        beforeSha256: preview.beforeSha256,
+        afterSha256: preview.afterSha256,
+      });
+      return textResult(JSON.stringify(preview, null, 2));
+    }
+    if (inspected.existed && overwrite !== true) {
+      await appendAuditRecord(workspace, {
+        tool: 'wiki_add_source',
+        target: inspected.relativePath,
+        action: 'rejected_exists',
+        contentChars: content.length,
+        beforeSha256: preview.beforeSha256,
+        afterSha256: preview.afterSha256,
+      });
+      return textResult(
+        JSON.stringify(
+          {
+            error: 'SOURCE_ALREADY_EXISTS',
+            message: `Source already exists (set overwrite=true): ${inspected.relativePath}`,
+            target: inspected.relativePath,
+            written: false,
+          },
+          null,
+          2,
+        ),
+        { isError: true },
+      );
+    }
+    let result;
+    try {
+      result = await workspace.writeUntrackedSource({ name, content, subdir, overwrite });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'SOURCE_ALREADY_EXISTS') throw error;
+      await appendAuditRecord(workspace, {
+        tool: 'wiki_add_source',
+        target: inspected.relativePath,
+        action: 'rejected_exists',
+        contentChars: content.length,
+        beforeSha256: preview.beforeSha256,
+        afterSha256: preview.afterSha256,
+      });
+      return textResult(
+        JSON.stringify(
+          {
+            error: 'SOURCE_ALREADY_EXISTS',
+            message: error instanceof Error ? error.message : String(error),
+            target: inspected.relativePath,
+            written: false,
+          },
+          null,
+          2,
+        ),
+        { isError: true },
+      );
+    }
+    await appendAuditRecord(workspace, {
+      tool: 'wiki_add_source',
+      target: result.relativePath,
+      action: 'write',
+      contentChars: content.length,
+      contentBytes: result.bytes,
+      beforeSha256: preview.beforeSha256,
+      afterSha256: preview.afterSha256,
+      overwritten: result.overwritten,
+    });
+    return textResult(
+      JSON.stringify(
+        {
+          ...preview,
+          written: true,
+          relativePath: result.relativePath,
+          bytes: result.bytes,
+          overwritten: result.overwritten,
+        },
+        null,
+        2,
+      ),
+    );
   };
 
   const listIngestedSources = async () => {
@@ -723,13 +889,52 @@ export async function createWikiMcpServer(
     dryRun: z
       .boolean()
       .optional()
-      .describe('When true, return the write preview and audit the attempt without writing.'),
+      .describe(
+        'When true, return the write preview and audit the attempt without writing.',
+      ),
   };
   server.tool(
     'wiki_write_page',
     'Create or update one llm-wiki markdown page under wiki/. Returns a diff preview unless confirm=true; dryRun=true never writes.',
     writeWikiPageInput,
     (input) => loggedTool('wiki_write_page', input, writeWikiPage),
+  );
+
+  const addWikiSourceInput = {
+    name: z
+      .string()
+      .trim()
+      .min(1)
+      .max(MAX_SOURCE_NAME_CHARS)
+      .describe(
+        'Logical source name. A safe, stable Markdown filename is derived from it.',
+      ),
+    content: z
+      .string()
+      .max(MAX_SOURCE_CONTENT_CHARS)
+      .describe('Full Markdown content to stage, including front matter when needed.'),
+    subdir: z
+      .string()
+      .trim()
+      .max(MAX_SOURCE_SUBDIR_CHARS)
+      .optional()
+      .describe('Optional relative subdirectory inside the workspace ingestion inbox.'),
+    overwrite: z
+      .boolean()
+      .optional()
+      .describe('Must be true to replace an existing staged source. Default false.'),
+    dryRun: z
+      .boolean()
+      .optional()
+      .describe(
+        'When true, return a diff preview and audit the attempt without writing.',
+      ),
+  };
+  server.tool(
+    'wiki_add_source',
+    'Stage one Markdown source in the workspace ingestion inbox.',
+    addWikiSourceInput,
+    (input) => loggedTool('wiki_add_source', input, addWikiSource),
   );
 
   server.tool(
@@ -815,18 +1020,20 @@ export async function createWikiMcpServer(
 
   server.tool(
     'help_list',
-    "Product help: list the DONNA documentation chapters (table of contents). Call this for questions about the application ITSELF — what it is, what it's for, chat vs agent mode, the interfaces, getting started, \"I'm lost\", \"it doesn't work\", troubleshooting. Returns chapter ids and titles; then read the relevant one with help_read. This is product documentation, not the workspace wiki.",
+    'Product help: list the DONNA documentation chapters (table of contents). Call this for questions about the application ITSELF — what it is, what it\'s for, chat vs agent mode, the interfaces, getting started, "I\'m lost", "it doesn\'t work", troubleshooting. Returns chapter ids and titles; then read the relevant one with help_read. This is product documentation, not the workspace wiki.',
     {},
     () => loggedTool('help_list', {}, helpList),
   );
   const helpReadInput = {
     id: z
       .string()
-      .describe('Chapter id from help_list, e.g. 04-interaction-modes (no path, no extension).'),
+      .describe(
+        'Chapter id from help_list, e.g. 04-interaction-modes (no path, no extension).',
+      ),
   };
   server.tool(
     'help_read',
-    'Product help: read one DONNA documentation chapter by id (from help_list). Use to answer a question about the application itself, then reply in the user\'s language. Not the workspace wiki.',
+    "Product help: read one DONNA documentation chapter by id (from help_list). Use to answer a question about the application itself, then reply in the user's language. Not the workspace wiki.",
     helpReadInput,
     (input) => loggedTool('help_read', input, helpRead),
   );
@@ -870,14 +1077,23 @@ export async function createWikiMcpServer(
         contentChars: content.length,
         maxProfileChars: config.limits.maxProfileChars,
       });
-      return textResult(JSON.stringify({
-        error: 'Profile exceeds maxProfileChars limit.',
-        contentChars: content.length,
-        maxProfileChars: config.limits.maxProfileChars,
-        written: false,
-      }, null, 2), { isError: true });
+      return textResult(
+        JSON.stringify(
+          {
+            error: 'Profile exceeds maxProfileChars limit.',
+            contentChars: content.length,
+            maxProfileChars: config.limits.maxProfileChars,
+            written: false,
+          },
+          null,
+          2,
+        ),
+        { isError: true },
+      );
     }
-    const before = (await pathExists(profilePath)) ? await readFile(profilePath, 'utf8') : '';
+    const before = (await pathExists(profilePath))
+      ? await readFile(profilePath, 'utf8')
+      : '';
     const confirmed = confirm === true;
     const previewOnly = dryRun === true || !confirmed;
     const payload = createWritePreviewPayload({
@@ -898,11 +1114,17 @@ export async function createWikiMcpServer(
         beforeSha256: payload.beforeSha256,
         afterSha256: payload.afterSha256,
       });
-      return textResult(JSON.stringify({
-        ...payload,
-        maxProfileChars: config.limits.maxProfileChars,
-        message: 'Preview only. Re-run with confirm=true to write.',
-      }, null, 2));
+      return textResult(
+        JSON.stringify(
+          {
+            ...payload,
+            maxProfileChars: config.limits.maxProfileChars,
+            message: 'Preview only. Re-run with confirm=true to write.',
+          },
+          null,
+          2,
+        ),
+      );
     }
     await writeFile(profilePath, content, 'utf8');
     await appendAuditRecord(workspace, {
@@ -930,7 +1152,9 @@ export async function createWikiMcpServer(
       dryRun: z
         .boolean()
         .optional()
-        .describe('When true, return the write preview and audit the attempt without writing.'),
+        .describe(
+          'When true, return the write preview and audit the attempt without writing.',
+        ),
     },
     (input) => loggedTool('profile_update', input, updateProfile),
   );

@@ -1,12 +1,22 @@
 import { existsSync } from 'node:fs';
-import { copyFile, cp, lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  copyFile,
+  cp,
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import fg from 'fast-glob';
 import matter from 'gray-matter';
-import YAML from 'yaml';
 import { buildStateSchema } from '../config/schema.ts';
 import {
   removeIfExists,
@@ -22,7 +32,10 @@ import {
   slugify,
   slugifyPath,
 } from '../utils/path.ts';
-import { normalizeGeneratedMarkdown, parseTemplateInstructions } from '../utils/markdown.ts';
+import {
+  normalizeGeneratedMarkdown,
+  parseTemplateInstructions,
+} from '../utils/markdown.ts';
 import type {
   AppConfig,
   BuildState,
@@ -37,9 +50,8 @@ import type {
 } from '../types.ts';
 
 const execFileAsync = promisify(execFile);
-const SKILL_REQUIRED_PATHS = ['skill.yaml', 'templates', 'build-context', '.wiki/skills'];
+const SKILL_REQUIRED_PATHS = ['templates', 'build-context', '.wiki/skills'];
 const SKILL_INSTALL_PATHS = [
-  'skill.yaml',
   'templates',
   'build-context',
   '.wiki/skills',
@@ -47,7 +59,7 @@ const SKILL_INSTALL_PATHS = [
   'CLAUDE.md',
 ];
 const SKILL_ALLOWED_ROOTS = ['templates/', 'build-context/', '.wiki/skills/'];
-const SKILL_ALLOWED_FILES = new Set(['skill.yaml', 'CLAUDE.md', '.wiki/system-prompt.md']);
+const SKILL_ALLOWED_FILES = new Set(['CLAUDE.md', '.wiki/system-prompt.md']);
 
 const UTF8_DECODER = new TextDecoder('utf-8', { fatal: true });
 const LATIN1_DECODER = new TextDecoder('iso-8859-1');
@@ -211,14 +223,18 @@ export class WorkspaceService {
       };
     }
 
-    throw new Error('Skill source must be a directory, a .zip file, or an HTTP(S) .zip URL.');
+    throw new Error(
+      'Skill source must be a directory, a .zip file, or an HTTP(S) .zip URL.',
+    );
   }
 
   private async extractSkillZip(zipPath: string, tmpRoot: string): Promise<string> {
-    const listing = await execFileAsync('unzip', ['-Z1', zipPath]).catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Unable to inspect skill zip with unzip: ${message}`);
-    });
+    const listing = await execFileAsync('unzip', ['-Z1', zipPath]).catch(
+      (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Unable to inspect skill zip with unzip: ${message}`);
+      },
+    );
 
     const entries = listing.stdout
       .split(/\r?\n/)
@@ -233,15 +249,17 @@ export class WorkspaceService {
 
     const extractDir = path.join(tmpRoot, 'extract');
     await mkdir(extractDir, { recursive: true });
-    await execFileAsync('unzip', ['-q', zipPath, '-d', extractDir]).catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Unable to extract skill zip with unzip: ${message}`);
-    });
+    await execFileAsync('unzip', ['-q', zipPath, '-d', extractDir]).catch(
+      (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Unable to extract skill zip with unzip: ${message}`);
+      },
+    );
     return this.findSkillRoot(extractDir);
   }
 
   private async findSkillRoot(extractDir: string): Promise<string> {
-    if (await pathExists(path.join(extractDir, 'skill.yaml'))) {
+    if (await this.hasSkillLayout(extractDir)) {
       return extractDir;
     }
 
@@ -249,15 +267,27 @@ export class WorkspaceService {
     const directories = entries.filter((entry) => entry.isDirectory());
     if (directories.length === 1) {
       const nestedRoot = path.join(extractDir, directories[0].name);
-      if (await pathExists(path.join(nestedRoot, 'skill.yaml'))) {
+      if (await this.hasSkillLayout(nestedRoot)) {
         return nestedRoot;
       }
     }
 
-    throw new Error('Skill package must contain skill.yaml at its root.');
+    throw new Error(
+      'Skill package must contain templates/, build-context/, and .wiki/skills/ at its root.',
+    );
   }
 
-  private async validateSkillSource(sourceDir: string): Promise<Record<string, unknown>> {
+  private async hasSkillLayout(root: string): Promise<boolean> {
+    return (
+      await Promise.all(
+        SKILL_REQUIRED_PATHS.map((relativePath) =>
+          pathExists(path.join(root, relativePath)),
+        ),
+      )
+    ).every(Boolean);
+  }
+
+  private async validateSkillSource(sourceDir: string): Promise<void> {
     const root = await this.findSkillRoot(sourceDir);
     for (const requiredPath of SKILL_REQUIRED_PATHS) {
       if (!(await pathExists(path.join(root, requiredPath)))) {
@@ -269,12 +299,6 @@ export class WorkspaceService {
     for (const relativePath of paths) {
       assertAllowedSkillPath(relativePath);
     }
-
-    const metadata = YAML.parse(await readFile(path.join(root, 'skill.yaml'), 'utf8'));
-    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
-      throw new Error('skill.yaml must contain a YAML object.');
-    }
-    return metadata as Record<string, unknown>;
   }
 
   async addSkill(source: string): Promise<AddSkillResult> {
@@ -286,7 +310,7 @@ export class WorkspaceService {
 
     const prepared = await this.prepareSkillSource(source, tmpRoot);
     const sourceRoot = await this.findSkillRoot(prepared.sourceDir);
-    const metadata = await this.validateSkillSource(sourceRoot);
+    await this.validateSkillSource(sourceRoot);
     const installPaths: string[] = [];
     for (const relativePath of SKILL_INSTALL_PATHS) {
       if (await pathExists(path.join(sourceRoot, relativePath))) {
@@ -316,8 +340,6 @@ export class WorkspaceService {
     }
 
     const installState = {
-      name: typeof metadata.name === 'string' ? metadata.name : undefined,
-      version: typeof metadata.version === 'string' ? metadata.version : undefined,
       source: prepared.sourceLabel,
       installedAt: new Date().toISOString(),
       backupDir: relativeFrom(this.paths.rootDir, backupDir),
@@ -328,14 +350,9 @@ export class WorkspaceService {
       path.join(this.paths.internalDir, 'skill-install.json'),
       `${JSON.stringify(installState, null, 2)}\n`,
     );
-    await this.appendLog(
-      'add-skill',
-      `${installState.name ?? 'unknown'} ${installState.version ?? ''}`.trim(),
-    );
+    await this.appendLog('add-skill', installState.source);
 
     return {
-      name: installState.name,
-      version: installState.version,
       source: prepared.sourceLabel,
       backupDir: installState.backupDir,
       installed,
@@ -357,6 +374,113 @@ export class WorkspaceService {
       absolute: true,
     });
     return files.sort();
+  }
+
+  resolveUntrackedSourceTarget(input: { name: string; subdir?: string }): {
+    absolutePath: string;
+    relativePath: string;
+    fileName: string;
+  } {
+    const normalizedName = input.name.trim().replace(/\.md$/i, '');
+    if (!normalizedName || /[\\/]/.test(normalizedName)) {
+      throw new Error(
+        'Source name must be a non-empty logical name without path separators.',
+      );
+    }
+    const slug = slugify(normalizedName);
+    if (!slug) throw new Error('Source name must contain at least one letter or number.');
+    const nameHash = hashText(normalizedName).slice(0, 16);
+    const fileName = `${slug.slice(0, 55)}-${nameHash}.md`;
+
+    const rawSubdir = input.subdir?.trim() ?? '';
+    let safeSubdir = '';
+    if (rawSubdir) {
+      const normalizedSubdir = rawSubdir.replace(/\\/g, '/');
+      if (
+        path.isAbsolute(normalizedSubdir) ||
+        /^[a-zA-Z]:\//.test(normalizedSubdir) ||
+        normalizedSubdir.split('/').some((part) => !part || part === '.' || part === '..')
+      ) {
+        throw new Error('Source subdirectory must be a safe relative path.');
+      }
+      const safeParts = normalizedSubdir.split('/').map((part) => slugify(part));
+      if (safeParts.some((part) => !part)) {
+        throw new Error('Source subdirectory must contain only non-empty path segments.');
+      }
+      safeSubdir = safeParts.join(path.sep);
+    }
+
+    const absolutePath = resolveInside(
+      this.paths.rawUntrackedDir,
+      safeSubdir ? path.join(safeSubdir, fileName) : fileName,
+    );
+    const relativeToUntracked = path.relative(this.paths.rawUntrackedDir, absolutePath);
+    if (
+      relativeToUntracked.startsWith('..') ||
+      path.isAbsolute(relativeToUntracked) ||
+      path.extname(absolutePath).toLowerCase() !== '.md'
+    ) {
+      throw new Error('Source target must stay inside the workspace ingestion inbox.');
+    }
+    return {
+      absolutePath,
+      relativePath: relativeFrom(this.paths.rootDir, absolutePath),
+      fileName,
+    };
+  }
+
+  async inspectUntrackedSource(input: { name: string; subdir?: string }): Promise<{
+    absolutePath: string;
+    relativePath: string;
+    existed: boolean;
+    content: string;
+  }> {
+    const target = this.resolveUntrackedSourceTarget(input);
+    const existed = await pathExists(target.absolutePath);
+    return {
+      ...target,
+      existed,
+      content: existed ? await readFile(target.absolutePath, 'utf8') : '',
+    };
+  }
+
+  async writeUntrackedSource(input: {
+    name: string;
+    content: string;
+    subdir?: string;
+    overwrite?: boolean;
+  }): Promise<{
+    relativePath: string;
+    absolutePath: string;
+    bytes: number;
+    overwritten: boolean;
+  }> {
+    const target = this.resolveUntrackedSourceTarget(input);
+    await mkdir(path.dirname(target.absolutePath), { recursive: true });
+    const overwritten = await pathExists(target.absolutePath);
+    if (input.overwrite === true) {
+      await safeWriteFile(target.absolutePath, input.content);
+    } else {
+      try {
+        await writeFile(target.absolutePath, input.content, {
+          encoding: 'utf8',
+          flag: 'wx',
+        });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+          const collision = new Error(`Source already exists: ${target.relativePath}`);
+          (collision as NodeJS.ErrnoException).code = 'SOURCE_ALREADY_EXISTS';
+          throw collision;
+        }
+        throw error;
+      }
+    }
+    return {
+      absolutePath: target.absolutePath,
+      relativePath: target.relativePath,
+      bytes: Buffer.byteLength(input.content, 'utf8'),
+      overwritten,
+    };
   }
 
   async resolveSourceInputs(inputs: string[]): Promise<string[]> {
@@ -439,7 +563,8 @@ export class WorkspaceService {
       return false;
     }
     const archivedStats = await stat(archivedPath);
-    const expectedByteLength = source.rawByteLength ?? Buffer.byteLength(source.rawContent, 'utf8');
+    const expectedByteLength =
+      source.rawByteLength ?? Buffer.byteLength(source.rawContent, 'utf8');
     if (archivedStats.size !== expectedByteLength) {
       return false;
     }
@@ -826,10 +951,11 @@ export class WorkspaceService {
       absolute: true,
     });
     return files
-      .filter((file) =>
-        !relativeFrom(this.paths.deliverablesDir, file)
-          .split('/')
-          .some((part) => part.startsWith('.tmp.') || part.startsWith('.changes.')),
+      .filter(
+        (file) =>
+          !relativeFrom(this.paths.deliverablesDir, file)
+            .split('/')
+            .some((part) => part.startsWith('.tmp.') || part.startsWith('.changes.')),
       )
       .sort();
   }
@@ -915,7 +1041,10 @@ function isUrl(value: string): boolean {
 }
 
 function normalizeSkillRelativePath(value: string): string {
-  return value.split(path.sep).join('/').replace(/^\.\/+/, '');
+  return value
+    .split(path.sep)
+    .join('/')
+    .replace(/^\.\/+/, '');
 }
 
 function assertSafeRelativePath(relativePath: string): void {

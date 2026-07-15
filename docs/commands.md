@@ -19,12 +19,11 @@ wiki add-skill /tmp/reas-skill.zip
 wiki add-skill https://example.com/reas-skill.zip
 ```
 
-A skill is a complete installable method that carries its own templates, build context, and agent workflow. The source must contain a `skill.yaml` at its root (or inside a single top-level directory for zip archives).
+A skill is a complete installable method that carries its own templates, build context, and agent workflow. Its root (or the single top-level directory of a zip archive) is recognized by the fixed required structure below.
 
 The following paths are installed from the skill package when present:
 
 ```
-skill.yaml
 templates/
 build-context/
 .wiki/skills/
@@ -38,7 +37,7 @@ Before writing, `add-skill`:
 - backs up every path it will replace under `.wiki/tmp/add-skill-<timestamp>/backup/`;
 - replaces only the paths listed above that are present in the package.
 
-After installation, `.wiki/skill-install.json` records the skill name, version, source, and backup location. A log entry is appended to `.wiki/wiki.log`.
+After installation, `.wiki/skill-install.json` records the source, installed paths, and backup location. A log entry is appended to `.wiki/wiki.log`.
 
 This is one-skill-per-workspace. Running `add-skill` again replaces the current skill.
 

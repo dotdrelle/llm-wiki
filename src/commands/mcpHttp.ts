@@ -21,6 +21,7 @@ interface McpHttpOptions {
 }
 
 type McpScope = 'read' | 'write';
+const WRITE_MCP_TOOLS = new Set(['wiki_write_page', 'wiki_add_source', 'profile_update']);
 
 interface SharedMcpContext {
   key: string;
@@ -46,14 +47,17 @@ function constantTimeEqual(left: string | undefined, right: string | undefined):
 }
 
 export function mcpToolScope(toolName: string | undefined): McpScope {
-  return toolName === 'wiki_write_page' || toolName === 'profile_update' ? 'write' : 'read';
+  return toolName && WRITE_MCP_TOOLS.has(toolName) ? 'write' : 'read';
 }
 
 export function hasAnyMcpToken(config: AppConfig): boolean {
   return Boolean(config.mcp.accessKey || config.mcp.readToken || config.mcp.writeToken);
 }
 
-export function mcpScopesForToken(config: AppConfig, token: string | undefined): McpScope[] | null {
+export function mcpScopesForToken(
+  config: AppConfig,
+  token: string | undefined,
+): McpScope[] | null {
   if (!hasAnyMcpToken(config)) return ['read', 'write'];
   if (constantTimeEqual(token, config.mcp.accessKey)) return ['read', 'write'];
   if (constantTimeEqual(token, config.mcp.writeToken)) return ['read', 'write'];
@@ -64,17 +68,22 @@ export function mcpScopesForToken(config: AppConfig, token: string | undefined):
 function requiredScopeForJsonRpc(body: unknown): McpScope {
   const calls = Array.isArray(body) ? body : [body];
   return calls.some((call) => {
-    const method = typeof call === 'object' && call !== null && 'method' in call
-      ? String((call as { method?: unknown }).method ?? '')
-      : '';
-    const params = typeof call === 'object' && call !== null && 'params' in call
-      ? (call as { params?: unknown }).params
-      : null;
-    const toolName = typeof params === 'object' && params !== null && 'name' in params
-      ? String((params as { name?: unknown }).name ?? '')
-      : '';
+    const method =
+      typeof call === 'object' && call !== null && 'method' in call
+        ? String((call as { method?: unknown }).method ?? '')
+        : '';
+    const params =
+      typeof call === 'object' && call !== null && 'params' in call
+        ? (call as { params?: unknown }).params
+        : null;
+    const toolName =
+      typeof params === 'object' && params !== null && 'name' in params
+        ? String((params as { name?: unknown }).name ?? '')
+        : '';
     return method === 'tools/call' && mcpToolScope(toolName) === 'write';
-  }) ? 'write' : 'read';
+  })
+    ? 'write'
+    : 'read';
 }
 
 async function readRequestBody(req: IncomingMessage): Promise<Buffer> {
@@ -91,7 +100,8 @@ export function createMcpRateLimiter({
 } = {}) {
   const buckets = new Map<string, number[]>();
   const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 120;
-  const safeWindowMs = Number.isFinite(windowMs) && windowMs > 0 ? Math.floor(windowMs) : 60_000;
+  const safeWindowMs =
+    Number.isFinite(windowMs) && windowMs > 0 ? Math.floor(windowMs) : 60_000;
   return {
     check(key: string, now = Date.now()) {
       const bucket = pruneWindowTimestamps(buckets.get(key) ?? [], now, safeWindowMs);
@@ -108,7 +118,9 @@ export function createMcpRateLimiter({
 }
 
 function rateLimitKey(req: IncomingMessage, token: string | undefined): string {
-  const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
+  const forwarded = String(req.headers['x-forwarded-for'] ?? '')
+    .split(',')[0]
+    .trim();
   const ip = forwarded || req.socket.remoteAddress || 'unknown';
   return token ? `token:${token}` : `ip:${ip}`;
 }
@@ -198,7 +210,9 @@ function renderLandingPage(
   const authStatus = hasAnyMcpToken(config)
     ? 'Bearer token enabled'
     : 'Warning: mcp.accessKey is not configured; the endpoint accepts unauthenticated clients.';
-  const workspaceStatus = hasAnyMcpToken(config) ? 'Protected workspace' : config.wikiRoot;
+  const workspaceStatus = hasAnyMcpToken(config)
+    ? 'Protected workspace'
+    : config.wikiRoot;
   const tools = WIKI_MCP_TOOLS.map(
     (tool) =>
       `<li><code>${escapeHtml(tool.name)}</code><span>${escapeHtml(tool.description)}</span></li>`,

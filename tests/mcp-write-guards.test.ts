@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { createWritePreviewPayload } from '../src/services/mcpServer.ts';
+import {
+  createSourcePreviewPayload,
+  createWritePreviewPayload,
+} from '../src/services/mcpServer.ts';
 
 describe('MCP write guards', () => {
   it('returns a confirmation-gated preview without embedding full content', () => {
@@ -36,5 +39,23 @@ describe('MCP write guards', () => {
     expect(payload.written).toBe(true);
     expect(payload.requiresConfirmation).toBe(false);
     expect(payload.confirmed).toBe(true);
+  });
+
+  it('returns a source dry-run preview without confirmation fields', () => {
+    const payload = createSourcePreviewPayload({
+      target: 'configured/inbox/mail.md',
+      before: '',
+      after: '# Mail',
+      dryRun: true,
+      written: false,
+    });
+
+    expect(payload.written).toBe(false);
+    expect(payload.dryRun).toBe(true);
+    expect(payload.afterSha256).toHaveLength(64);
+    expect(payload).not.toHaveProperty('confirmed');
+    expect(payload).not.toHaveProperty('requiresConfirmation');
+    expect(payload).not.toHaveProperty('before');
+    expect(payload).not.toHaveProperty('after');
   });
 });

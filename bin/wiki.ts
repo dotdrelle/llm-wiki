@@ -64,7 +64,10 @@ async function main() {
   program
     .command('config')
     .description('Inspect the effective .wikirc.yaml configuration')
-    .option('--effective', 'Print the merged configuration with defaults, preset values, and file overrides')
+    .option(
+      '--effective',
+      'Print the merged configuration with defaults, preset values, and file overrides',
+    )
     .option('--json', 'Emit JSON including provenance')
     .action((options) => configCmd(options));
 
@@ -76,23 +79,41 @@ async function main() {
 
   program
     .command('add-skill')
-    .description('Install a workspace skill from a directory, .zip file, or HTTP(S) .zip URL')
+    .description(
+      'Install a workspace method from a directory, .zip file, or HTTP(S) .zip URL',
+    )
     .argument('<source>', 'Skill directory, .zip file, or HTTP(S) .zip URL')
     .action((source) => addSkillCmd(config, source));
 
   program
     .command('ingest')
     .description('Ingest markdown sources from raw/untracked into the persistent wiki')
-    .argument('[files...]', 'Specific files relative to the workspace root or raw/untracked')
+    .argument(
+      '[files...]',
+      'Specific files relative to the workspace root or raw/untracked',
+    )
     .option('--dry-run', 'Show planned wiki operations without writing')
-    .addOption(new Option('--plan-only', 'Write planned ingest operations without applying them').hideHelp())
-    .addOption(new Option('--apply <file...>', 'Apply planned ingest operation file(s)').hideHelp())
+    .addOption(
+      new Option(
+        '--plan-only',
+        'Write planned ingest operations without applying them',
+      ).hideHelp(),
+    )
+    .addOption(
+      new Option(
+        '--apply <file...>',
+        'Apply planned ingest operation file(s)',
+      ).hideHelp(),
+    )
     .option('--refresh', 'Run deliverable rebuild after ingest')
     .option('--force', 'Re-ingest even if the source is unchanged since last ingest')
     .option('--reject <path...>', 'Reject planned wiki operation path(s) during review')
     .option('-v, --verbose', 'Print ingestion step traces')
     .option('--debug', 'Print detailed ingestion traces')
-    .option('--trace-file <path>', 'Write traces to a specific file relative to the workspace root')
+    .option(
+      '--trace-file <path>',
+      'Write traces to a specific file relative to the workspace root',
+    )
     .action((files, options) => ingestCmd(config, files, options));
 
   program
@@ -100,7 +121,9 @@ async function main() {
     .description('Query the wiki and its cited source notes')
     .argument('<question...>', 'Question to answer from the wiki')
     .option('--save', 'Save the answer to wiki/answers/')
-    .action((questionParts, options) => queryCmd(config, questionParts.join(' '), options));
+    .action((questionParts, options) =>
+      queryCmd(config, questionParts.join(' '), options),
+    );
 
   program
     .command('index')
@@ -109,7 +132,9 @@ async function main() {
 
   program
     .command('group-concepts')
-    .description('Plan or apply grouping of flat wiki/concepts pages using frontmatter group')
+    .description(
+      'Plan or apply grouping of flat wiki/concepts pages using frontmatter group',
+    )
     .option('--apply', 'Move grouped concept files and update wiki links')
     .action((options) => groupConceptsCmd(config, options));
 
@@ -122,14 +147,25 @@ async function main() {
 
   program
     .command('build')
-    .description('Generate deliverables from markdown templates with [[INSTRUCTION: ...]] slots')
+    .description(
+      'Generate deliverables from markdown templates with [[INSTRUCTION: ...]] slots',
+    )
     .argument('[templates...]', 'Specific template files to build')
     .option('--force', 'Rebuild even if the template is already up to date')
-    .option('--stabilize', 'Preserve unchanged existing deliverable sections while applying changed sections')
-    .option('--plan', 'Plan batches and estimated input tokens without calling the generation LLM')
+    .option(
+      '--stabilize',
+      'Preserve unchanged existing deliverable sections while applying changed sections',
+    )
+    .option(
+      '--plan',
+      'Plan batches and estimated input tokens without calling the generation LLM',
+    )
     .option('-v, --verbose', 'Print build step traces')
     .option('--debug', 'Print detailed build traces')
-    .option('--trace-file <path>', 'Write traces to a specific file relative to the workspace root')
+    .option(
+      '--trace-file <path>',
+      'Write traces to a specific file relative to the workspace root',
+    )
     .action((templates, options) => buildCmd(config, templates, options));
 
   program
@@ -139,19 +175,29 @@ async function main() {
     .option('--force', 'Refresh all selected deliverables')
     .option('-v, --verbose', 'Print build step traces')
     .option('--debug', 'Print detailed build traces')
-    .option('--trace-file <path>', 'Write traces to a specific file relative to the workspace root')
+    .option(
+      '--trace-file <path>',
+      'Write traces to a specific file relative to the workspace root',
+    )
     .action((templates, options) => refreshCmd(config, templates, options));
 
   program
     .command('serve')
     .description('Start a local HTTP server to browse the wiki in a browser')
     .option('-p, --port <number>', 'Port to listen on', '3000')
-    .option('--open', 'Open the wiki in app mode (Chrome/Edge --app flag, or Safari/default browser)')
-    .action((options) => serveCmd(config, { port: parseInt(options.port, 10), open: Boolean(options.open) }));
+    .option(
+      '--open',
+      'Open the wiki in app mode (Chrome/Edge --app flag, or Safari/default browser)',
+    )
+    .action((options) =>
+      serveCmd(config, { port: parseInt(options.port, 10), open: Boolean(options.open) }),
+    );
 
   program
     .command('doctor')
-    .description('Check .wikirc.yaml, test provider connectivity, and recommend optimal settings')
+    .description(
+      'Check .wikirc.yaml, test provider connectivity, and recommend optimal settings',
+    )
     .option('--apply', 'Apply the recommended .wikirc.yaml values')
     .action((options) => doctorCmd(config, options));
 
@@ -176,9 +222,17 @@ async function main() {
 
   program
     .command('export')
-    .description('Expand a deliverable into a self-contained document with inline source details')
-    .argument('<deliverable>', 'Path to the deliverable to expand (relative to workspace root or deliverables/)')
-    .option('--output <path>', 'Output path relative to workspace root (default: <name>.export.md)')
+    .description(
+      'Expand a deliverable into a self-contained document with inline source details',
+    )
+    .argument(
+      '<deliverable>',
+      'Path to the deliverable to expand (relative to workspace root or deliverables/)',
+    )
+    .option(
+      '--output <path>',
+      'Output path relative to workspace root (default: <name>.export.md)',
+    )
     .option('--polish', 'Run an editorial polish pass after expansion')
     .option('-v, --verbose', 'Print export step traces')
     .option('--debug', 'Print detailed traces')

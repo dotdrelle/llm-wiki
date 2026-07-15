@@ -81,7 +81,9 @@ describe('workspace safety', () => {
     expect(initializedConfig.llm.apiKey).toBe('YOUR_LLM_API_KEY');
     expect(initializedConfig.retrieval.vector.apiKey).toBe('YOUR_VECTOR_API_KEY');
     expect(initializedConfig.retrieval.vector.rerankEnabled).toBe(true);
-    expect(initializedConfig.retrieval.vector.rerankerModel).toBe('BAAI/bge-reranker-v2-m3');
+    expect(initializedConfig.retrieval.vector.rerankerModel).toBe(
+      'BAAI/bge-reranker-v2-m3',
+    );
     await expect(
       readFile(path.join(root, '.wiki', 'profile.md'), 'utf8'),
     ).resolves.toContain('# Workspace Profile');
@@ -150,6 +152,81 @@ describe('workspace safety', () => {
     expect(section).not.toContain('Long note.');
   });
 
+  it('stages untracked sources with stable collision-resistant names', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-source-'));
+    const workspace = new WorkspaceService(createConfig(root));
+    await workspace.initWorkspace({});
+
+    const first = workspace.resolveUntrackedSourceTarget({ name: 'Gmail.Message.md' });
+    const repeated = workspace.resolveUntrackedSourceTarget({ name: 'Gmail.Message' });
+    const punctuationCollision = workspace.resolveUntrackedSourceTarget({
+      name: 'Gmail-Message',
+    });
+    const longPrefix = 'gmail-message-'.repeat(10);
+    const longFirst = workspace.resolveUntrackedSourceTarget({
+      name: `${longPrefix}<CAF.one@example.test>`,
+    });
+    const longSecond = workspace.resolveUntrackedSourceTarget({
+      name: `${longPrefix}<CAF.two@example.test>`,
+    });
+    expect(first.absolutePath).toBe(repeated.absolutePath);
+    expect(first.absolutePath).not.toBe(punctuationCollision.absolutePath);
+    expect(longFirst.absolutePath).not.toBe(longSecond.absolutePath);
+    expect(path.dirname(first.absolutePath)).toBe(workspace.paths.rawUntrackedDir);
+    expect(first.relativePath).toBe(path.relative(root, first.absolutePath));
+
+    const written = await workspace.writeUntrackedSource({
+      name: 'gmail-x',
+      subdir: 'gmail/inbox',
+      content: '# Héllo',
+    });
+    expect(written.absolutePath.startsWith(workspace.paths.rawUntrackedDir)).toBe(true);
+    expect(written.bytes).toBe(Buffer.byteLength('# Héllo', 'utf8'));
+    expect(written.overwritten).toBe(false);
+    await expect(readFile(written.absolutePath, 'utf8')).resolves.toBe('# Héllo');
+
+    await expect(
+      workspace.writeUntrackedSource({
+        name: 'gmail-x',
+        subdir: 'gmail/inbox',
+        content: 'duplicate',
+      }),
+    ).rejects.toMatchObject({ code: 'SOURCE_ALREADY_EXISTS' });
+
+    const overwritten = await workspace.writeUntrackedSource({
+      name: 'gmail-x',
+      subdir: 'gmail/inbox',
+      content: 'replacement',
+      overwrite: true,
+    });
+    expect(overwritten.overwritten).toBe(true);
+    await expect(readFile(written.absolutePath, 'utf8')).resolves.toBe('replacement');
+  });
+
+  it('rejects unsafe source targets and permits only one concurrent creation', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-source-'));
+    const workspace = new WorkspaceService(createConfig(root));
+    await workspace.initWorkspace({});
+
+    for (const input of [
+      { name: '' },
+      { name: '../../etc/passwd' },
+      { name: 'mail', subdir: '../outside' },
+      { name: 'mail', subdir: '/tmp/outside' },
+      { name: 'mail', subdir: 'safe//outside' },
+      { name: 'mail', subdir: '..\\outside' },
+    ]) {
+      expect(() => workspace.resolveUntrackedSourceTarget(input)).toThrow();
+    }
+
+    const attempts = await Promise.allSettled([
+      workspace.writeUntrackedSource({ name: 'same', content: 'one' }),
+      workspace.writeUntrackedSource({ name: 'same', content: 'two' }),
+    ]);
+    expect(attempts.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(attempts.filter((result) => result.status === 'rejected')).toHaveLength(1);
+  });
+
   it('installs a workspace skill by backing up and replacing skill-owned paths', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-skill-'));
     const skillRoot = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-skill-'));
@@ -160,11 +237,6 @@ describe('workspace safety', () => {
     await mkdir(path.join(skillRoot, 'templates'), { recursive: true });
     await mkdir(path.join(skillRoot, 'build-context', 'rules'), { recursive: true });
     await mkdir(path.join(skillRoot, '.wiki', 'skills'), { recursive: true });
-    await writeFile(
-      path.join(skillRoot, 'skill.yaml'),
-      'name: test-skill\nversion: 1.2.3\n',
-      'utf8',
-    );
     await writeFile(path.join(skillRoot, 'CLAUDE.md'), '# Test Skill\n', 'utf8');
     await writeFile(
       path.join(skillRoot, '.wiki', 'system-prompt.md'),
@@ -185,8 +257,7 @@ describe('workspace safety', () => {
 
     const result = await workspace.addSkill(skillRoot);
 
-    expect(result.name).toBe('test-skill');
-    expect(result.version).toBe('1.2.3');
+    expect(result.source).toBe(skillRoot);
     await expect(readFile(path.join(root, 'templates', 'note.md'), 'utf8')).resolves.toBe(
       '# Note\n',
     );
@@ -198,7 +269,7 @@ describe('workspace safety', () => {
     ).resolves.toBe('# Old\n');
     await expect(
       readFile(path.join(root, '.wiki', 'skill-install.json'), 'utf8'),
-    ).resolves.toContain('"name": "test-skill"');
+    ).resolves.toContain(`"source": "${skillRoot}"`);
   });
 
   it('rejects skill packages with paths outside the supported workspace layout', async () => {
@@ -211,7 +282,6 @@ describe('workspace safety', () => {
     await mkdir(path.join(skillRoot, 'build-context'), { recursive: true });
     await mkdir(path.join(skillRoot, '.wiki', 'skills'), { recursive: true });
     await mkdir(path.join(skillRoot, 'wiki'), { recursive: true });
-    await writeFile(path.join(skillRoot, 'skill.yaml'), 'name: bad\n', 'utf8');
     await writeFile(path.join(skillRoot, 'templates', 'note.md'), '# Note\n', 'utf8');
     await writeFile(
       path.join(skillRoot, 'build-context', 'rules.md'),

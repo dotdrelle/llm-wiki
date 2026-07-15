@@ -17,12 +17,13 @@ Two transports are available:
 | `wiki_read_page`             | Read a page by relative path (e.g. `wiki/concepts/foo.md`)                                                                            |
 | `wiki_read_pages`            | Read multiple wiki pages by relative path in one call                                                                                 |
 | `wiki_write_page`            | Write or update a page — restricted to `wiki/*` paths                                                                                 |
+| `wiki_add_source`            | Stage Markdown content in the workspace ingestion inbox; writes directly unless `dryRun=true`                                         |
 | `wiki_list_ingested_sources` | List ingested source documents in `raw/ingested/`                                                                                     |
 | `wiki_read_ingested_source`  | Read an ingested source by relative path when raw source inspection is needed                                                         |
 | `wiki_search_context`        | Search wiki pages (excluding `wiki/answers/`) and return ranked paths, excerpts, and `relatedPaths`. Uses vector search when enabled. |
 | `wiki_collect_context`       | Search wiki pages, read up to 10 returned pages by default, and report coverage in one call                                           |
 
-Write operations go through the same path guards as `wiki ingest`: `resolveInside` rejects `../../` traversal and `applyWikiOperations` refuses paths outside `wiki/`.
+Write operations use workspace-owned path guards. `wiki_add_source` resolves its target from the configured `workspace.paths.rawUntrackedDir`, rejects traversal, and refuses replacement unless `overwrite=true`.
 
 **Recommended search flow for simple lookup:**
 

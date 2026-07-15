@@ -110,8 +110,6 @@ export interface IngestCommandOptions {
 }
 
 export interface AddSkillResult {
-  name?: string;
-  version?: string;
   source: string;
   backupDir: string;
   installed: string[];

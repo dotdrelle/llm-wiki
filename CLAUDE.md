@@ -57,7 +57,7 @@ projection ended up living in `src/chat/runtime/runtimeGraphScript.ts`
 instead (it consumes live `runtimeState.workflow` data via the same in-browser
 script pipeline as the rest of the chat runtime UI, not a static-file
 `buildXGraph()` projection like `graph/wiki/projection.ts` — there was nothing
-Node/build-time to put in `graph/runtime/`). What *is* shared is
+Node/build-time to put in `graph/runtime/`). What _is_ shared is
 `graphForce.ts`'s D3 layer: `computeRadialForceLayout`/`renderForceLinks`/
 `createForceNode` are called by both `runtimeGraphScript.ts` and (available
 for) `graphLayoutBase.ts`'s radial mode. `graphLayoutBase.ts`'s own
@@ -140,7 +140,6 @@ docs/                   User-facing references
 A workspace skill package uses this layout:
 
 ```text
-skill.yaml
 templates/
 build-context/
 .wiki/skills/
@@ -148,7 +147,8 @@ build-context/
 CLAUDE.md
 ```
 
-`wiki add-skill` validates before writing, rejects traversal and symlinks,
+The fixed required directories are the package entry point; there is no root
+manifest. `wiki add-skill` validates before writing, rejects traversal and symlinks,
 backs up replaced files under `.wiki/tmp/add-skill-*/backup`, replaces only
 standard package paths, writes `.wiki/skill-install.json`, and appends a log
 entry. This is intentionally one-skill-per-workspace; do not add multi-skill
@@ -282,7 +282,7 @@ runner or the CLI.
 
 - `workspaceService.ts`: path safety, workspace IO, skill installation.
 - `ingestService.ts`: source-to-wiki LLM pipeline. `--dry-run` (`wiki
-  ingest`) builds a review per planned operation (`buildReviewOperations`):
+ingest`) builds a review per planned operation (`buildReviewOperations`):
   before/after existence, SHA-256 hashes, and a compact unified-diff preview
   (`diffPreview`, capped at 12 lines), without writing. `--reject <path...>`
   drops one or more planned operations before applying; if every operation
@@ -342,8 +342,8 @@ runner or the CLI.
   `WIKI_MCP_WRITE_TOKEN` (`mcp.accessKey`/`readToken`/`writeToken` in
   `.wikirc.yaml`). `mcpScopesForToken`/`mcpToolScope`/`requiredScopeForJsonRpc`
   in `src/commands/mcpHttp.ts` derive the caller's scope with
-  `timingSafeEqual` and gate `tools/call` for `wiki_write_page`/
-  `profile_update` on write scope; unauthenticated access is only allowed
+  `timingSafeEqual` and gate `tools/call` for `wiki_write_page`,
+  `wiki_add_source`, and `profile_update` on write scope; unauthenticated access is only allowed
   when no token of any kind is configured. Requests are also rate-limited
   (`createMcpRateLimiter`, `WIKI_MCP_RATE_LIMIT_REQUESTS`/
   `WIKI_MCP_RATE_LIMIT_WINDOW_MS`, default 120/60s) keyed by token or,
@@ -377,8 +377,12 @@ must be supplied together. Keep TLS in env/Compose, not `.wikirc.yaml`.
   `dryRun=true` returns a JSON preview (`createWritePreviewPayload`: before/
   after SHA-256, a truncated unified diff) without touching disk.
   `profile_update` enforces `config.limits.maxProfileChars` before writing.
+  `wiki_add_source` writes Markdown directly to the workspace-configured
+  ingestion inbox, uses `dryRun=true` for preview, and requires
+  `overwrite=true` to replace an existing staged source. It has no `confirm`
+  argument: authorization comes from MCP write scope and runtime approval.
   Every attempt — preview, dry-run, rejected, or real write — appends one
-  JSONL record to `.wiki/audit.log` (tool, target, action, confirmation
+  JSONL record to `.wiki/logs/audit.log` (tool, target, action, confirmation
   state, content hashes; never full content).
 - Preserve MCP bearer-token behavior: browser clients must not receive
   workspace MCP tokens.

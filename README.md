@@ -27,13 +27,13 @@ multi-user surface.
 
 ## Toolchain
 
-| Repository | Role |
-| --- | --- |
-| [`llm-wiki`](https://github.com/dotdrelle/llm-wiki) | Workspace engine: CLI, web UI, MCP server, retrieval, deliverables, skills |
-| [`llm-wiki-manager`](https://github.com/dotdrelle/llm-wiki-manager) | Multi-workspace cockpit, Docker orchestration, `dot` shell |
-| [`agent-cme`](https://github.com/dotdrelle/agent-cme) | Workspace-scoped Confluence to Markdown exporter |
-| [`agent-wiki-production`](https://github.com/dotdrelle/agent-wiki-production) | Workspace-scoped production jobs |
-| [`agent-mailer-api`](https://github.com/dotdrelle/agent-mailer-api) | Optional external mailer MCP endpoint |
+| Repository                                                                    | Role                                                                       |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| [`llm-wiki`](https://github.com/dotdrelle/llm-wiki)                           | Workspace engine: CLI, web UI, MCP server, retrieval, deliverables, skills |
+| [`llm-wiki-manager`](https://github.com/dotdrelle/llm-wiki-manager)           | Multi-workspace cockpit, Docker orchestration, `dot` shell                 |
+| [`agent-cme`](https://github.com/dotdrelle/agent-cme)                         | Workspace-scoped Confluence to Markdown exporter                           |
+| [`agent-wiki-production`](https://github.com/dotdrelle/agent-wiki-production) | Workspace-scoped production jobs                                           |
+| [`agent-mailer-api`](https://github.com/dotdrelle/agent-mailer-api)           | Optional external mailer MCP endpoint                                      |
 
 ## What It Does
 
@@ -124,7 +124,6 @@ wiki export deliverables/basic-note.md --polish
 ```text
 .
 ├── .wikirc.yaml              # provider/model/retrieval config
-├── skill.yaml                # installed workspace skill metadata
 ├── CLAUDE.md                 # optional operator/agent instructions
 ├── .wiki/
 │   ├── build-state.json
@@ -162,10 +161,9 @@ wiki add-skill ./my-skill.zip
 wiki add-skill https://example.test/my-skill.zip
 ```
 
-Required package layout:
+Required package layout (this fixed structure is also the package entry point):
 
 ```text
-skill.yaml
 templates/
 build-context/
 .wiki/skills/
@@ -190,7 +188,7 @@ Install behavior:
 This is intentionally one-skill-per-workspace. Installing a skill changes the
 workspace method.
 
-The default scaffold is the `basic` skill: English, small, and suitable for a
+The default scaffold is a basic workspace method: English, small, and suitable for a
 demo ingest/build cycle. It includes one demo source in `raw/untracked/`.
 
 ### Chat skills in `wiki serve`
@@ -262,50 +260,50 @@ wiki mcp-http --port 3333
 Complete `.wikirc.yaml` reference (all fields; only set what you need):
 
 ```yaml
-language: fr   # or en, de, … (2-20 chars)
+language: fr # or en, de, … (2-20 chars)
 
 llm:
-  provider: ollama                          # ollama | openai | openai-compatible | anthropic
+  provider: ollama # ollama | openai | openai-compatible | anthropic
   model: YOUR_MODEL_NAME
-  apiKey: ollama                            # optional — leave empty for Ollama
+  apiKey: ollama # optional — leave empty for Ollama
   baseUrl: http://127.0.0.1:11434/v1
-  temperature: 0.1                          # 0–2, default 0.1
-  timeoutMs: 600000                         # per-request timeout in ms
+  temperature: 0.1 # 0–2, default 0.1
+  timeoutMs: 600000 # per-request timeout in ms
   # Ollama-specific (ignored for other providers)
-  numCtx: 32768                             # context window size
-  flashAttention: true                      # enable flash attention
-  kvCacheType: q8_0                         # f16 | q8_0 | q4_0
+  numCtx: 32768 # context window size
+  flashAttention: true # enable flash attention
+  kvCacheType: q8_0 # f16 | q8_0 | q4_0
 
 limits:
-  requestsPerMinute: 10                     # rate cap (default 10)
-  maxInFlightRequests: 3                    # concurrent in-job provider calls
-  dailyInputTokens: 1000000                 # optional daily budget
-  maxInputTokensPerCall: 50000              # hard cap per LLM call
-  targetInputTokensPerCall: 40000           # soft target for batch planning
-  maxProfileChars: 4000                     # max chars for source profiles
+  requestsPerMinute: 10 # rate cap (default 10)
+  maxInFlightRequests: 3 # concurrent in-job provider calls
+  dailyInputTokens: 1000000 # optional daily budget
+  maxInputTokensPerCall: 50000 # hard cap per LLM call
+  targetInputTokensPerCall: 40000 # soft target for batch planning
+  maxProfileChars: 4000 # max chars for source profiles
 
 build:
-  refreshOnIngest: true                     # rebuild stale deliverables after ingest
-  slotBatchSize: 8                          # optional max slots per build call
-  maxBuildContextChars: 24000               # max chars of context per build call
+  refreshOnIngest: true # rebuild stale deliverables after ingest
+  slotBatchSize: 8 # optional max slots per build call
+  maxBuildContextChars: 24000 # max chars of context per build call
 
 retrieval:
-  maxContextFiles: 5                        # max wiki pages fed to LLM
-  maxChunksPerPage: 2                       # max vector chunks per page
-  maxChunkChars: 3000                       # max chars per chunk
-  maxSourceChars: 8000                      # max chars per source citation
-  buildStrategy: bm25                       # bm25 for build context; hybrid re-enables vector/rerank in build
+  maxContextFiles: 5 # max wiki pages fed to LLM
+  maxChunksPerPage: 2 # max vector chunks per page
+  maxChunkChars: 3000 # max chars per chunk
+  maxSourceChars: 8000 # max chars per source citation
+  buildStrategy: bm25 # bm25 for build context; hybrid re-enables vector/rerank in build
   vector:
-    enabled: false                          # set true to enable vector search
-    baseUrl: http://127.0.0.1:7997/v1       # OpenAI-compatible embeddings endpoint
+    enabled: false # set true to enable vector search
+    baseUrl: http://127.0.0.1:7997/v1 # OpenAI-compatible embeddings endpoint
     apiKey: optional-key
     timeoutMs: 600000
     embeddingModel: BAAI/bge-m3
     rerankEnabled: true
     rerankerModel: BAAI/bge-reranker-v2-m3
-    topK: 48                                # candidates retrieved before rerank
-    rerankTopK: 24                          # candidates after rerank
-    maxResults: 6                           # final results passed to LLM
+    topK: 48 # candidates retrieved before rerank
+    rerankTopK: 24 # candidates after rerank
+    maxResults: 6 # final results passed to LLM
 
 # MCP HTTP server bearer token (optional)
 mcp:
@@ -372,15 +370,15 @@ pnpm test
 
 ## Documentation
 
-| Topic | File |
-| --- | --- |
-| Commands | `docs/commands.md` |
-| Configuration | `docs/configuration.md` |
-| Docker | `docs/docker.md` |
+| Topic                          | File                        |
+| ------------------------------ | --------------------------- |
+| Commands                       | `docs/commands.md`          |
+| Configuration                  | `docs/configuration.md`     |
+| Docker                         | `docs/docker.md`            |
 | Industrialisation / multi-user | `docs/industrialisation.md` |
-| MCP | `docs/mcp.md` |
-| Templates | `docs/templates.md` |
-| Vector search | `docs/vector-search.md` |
+| MCP                            | `docs/mcp.md`               |
+| Templates                      | `docs/templates.md`         |
+| Vector search                  | `docs/vector-search.md`     |
 
 ## License
 
