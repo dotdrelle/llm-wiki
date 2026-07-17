@@ -357,14 +357,34 @@ function updateMsgBubble(el,role,content) {
 function mergeRuntimeConversation() {
   const conversation=Array.isArray(runtimeState?.conversation)?runtimeState.conversation:[];
   if(!conversation.length) return false;
+  if(runtimeConversationOffset===null) {
+    // First runtime state after page load normally contains the complete
+    // persisted workspace log. Treat it as the baseline. If the user managed
+    // to submit before that first state arrived, anchor on the newest matching
+    // pending user turn so that turn (and its reply) still appears.
+    if(pendingRuntimeUserRefs.length) {
+      const wanted=String(pendingRuntimeUserRefs[0]?.message?.content??'');
+      let match=-1;
+      for(let i=conversation.length-1;i>=0;i--) {
+        if(conversation[i]?.role==='user'&&String(conversation[i]?.content??'')===wanted) { match=i; break; }
+      }
+      runtimeConversationOffset=match>=0?match:conversation.length;
+    } else {
+      runtimeConversationOffset=conversation.length;
+      return false;
+    }
+  }
   let changed=false;
   // Only the *last* already-synced entry can still change in place (the
   // server only ever mutates its conversation array's last entry — finalizing
   // a streaming placeholder — or appends; everything before that is settled),
   // so re-scanning from 0 every call would re-compare unchanging history for
-  // nothing on every ~200ms poll during a long streamed reply.
-  for(let i=Math.max(0,runtimeConversationRefs.length-1);i<conversation.length;i++) {
-    const raw=conversation[i];
+  // nothing on every ~200ms poll during a long streamed reply. Indexed off
+  // runtimeConversationOffset directly (no .slice()) so this doesn't copy the
+  // whole unconsumed tail on every poll.
+  const visibleLength=conversation.length-runtimeConversationOffset;
+  for(let i=Math.max(0,runtimeConversationRefs.length-1);i<visibleLength;i++) {
+    const raw=conversation[runtimeConversationOffset+i];
     const role=raw.role;
     const content=String(raw.content??'');
     if(role==='assistant'&&content&&pendingRuntimeStatusEls.length) {
@@ -2476,7 +2496,18 @@ async function sendRuntimeAgentMessage(input,text,{mode}={}) {
       statusEl.remove();
       pendingRuntimeStatusEls=pendingRuntimeStatusEls.filter(el=>el!==statusEl);
     }
-    notify(e?.message||String(e),'e');
+    const errorText=\`No LLM response: \${e?.message||String(e)}\`;
+    // A failed runtime turn previously left only a transient notification and
+    // a pending user reference. The next state merge could then replay old
+    // history around it. Make the failure a real assistant message and retire
+    // the pending marker immediately.
+    const pendingIndex=pendingRuntimeUserRefs.findIndex(ref=>ref.message===userMessage);
+    if(pendingIndex>=0) pendingRuntimeUserRefs.splice(pendingIndex,1);
+    messages.push({role:'assistant',content:errorText});
+    appendMsg('assistant',errorText);
+    conversationDirty=true;
+    await saveCurrentConversation({immediate:true});
+    notify(errorText,'e');
   }
 }
 

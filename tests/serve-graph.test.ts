@@ -76,6 +76,15 @@ async function runtimeGraphSource(): Promise<string> {
 }
 
 describe('serve graph ui', () => {
+  it('fits the graph content to the page on the initial map render', () => {
+    const html = renderWikiGraphV2();
+
+    expect(html).toContain('function fitCurrentSvg()');
+    expect(html).toContain('bounds=root.getBBox()');
+    expect(html).toContain('mapViewBox=fitCurrentSvg()');
+    expect(html).not.toContain("[-w*.75,-h*.75,w*2.5,h*2.5].join(' ')");
+  });
+
   it('renders sidebar chat and graph actions as two wide buttons', async () => {
     const source = await serveSource();
 

@@ -12,6 +12,11 @@ let runtimeFetchPending=false;
 // placeholder in place (text-before-tool-calls case) without the runtime
 // conversation array growing, and a length-based diff would miss that.
 let runtimeConversationRefs=[];
+// Index in the runtime's workspace-wide event conversation at which the
+// current browser conversation starts. The runtime log intentionally survives
+// browser clears; this cursor prevents that older log from being replayed into
+// a new/cleared/local history entry.
+let runtimeConversationOffset=null;
 // FIFO queue, not a single slot: sending a second message before the first
 // is confirmed by the merge (e.g. a busy/streaming run delays the fetch that
 // would have consumed it) must not silently drop the first entry's pending
@@ -27,6 +32,9 @@ let pendingRuntimeStatusEls=[];
 // bug, not just a style issue, so this must not be re-inlined per call site.
 function resetRuntimeConversationTracking() {
   runtimeConversationRefs=[];
+  runtimeConversationOffset=Array.isArray(runtimeState?.conversation)
+    ? runtimeState.conversation.length
+    : null;
   pendingRuntimeUserRefs=[];
   pendingRuntimeStatusEls.forEach(el=>el?.remove());
   pendingRuntimeStatusEls=[];

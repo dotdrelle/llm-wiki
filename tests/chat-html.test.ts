@@ -74,6 +74,18 @@ describe('chat html', () => {
     expect(script).toContain("messages:[],");
     expect(script).toContain("messageHtml:'',");
     expect(script).toContain('await persistConversationPayload({');
+    expect(script).toContain('let runtimeConversationOffset=null;');
+    expect(script).toContain('runtimeConversationOffset=Array.isArray(runtimeState?.conversation)');
+    expect(script).toContain('const visibleLength=conversation.length-runtimeConversationOffset;');
+  });
+
+  it('renders a durable assistant error when a runtime LLM turn fails', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain('No LLM response:');
+    expect(script).toContain('pendingRuntimeUserRefs.splice(pendingIndex,1)');
+    expect(script).toContain("messages.push({role:'assistant',content:errorText})");
+    expect(script).toContain('await saveCurrentConversation({immediate:true})');
   });
 
   it('confirms before deleting a connector', () => {
@@ -148,6 +160,13 @@ describe('chat html', () => {
     expect(script).toContain('function renderRuntimeWorkflowInspector()');
     expect(script).toContain('function showExecutionView(event)');
     expect(script).toContain("if(activityView==='graph')");
+  });
+
+  it('overlays Help above Activity instead of consuming horizontal layout space', () => {
+    expect(CHAT_HTML).toContain('id="activity-panel"');
+    expect(CHAT_HTML).toContain('id="help-panel"');
+    expect(CHAT_HTML).toContain('#help-panel{position:fixed;top:44px;right:0;z-index:1000');
+    expect(CHAT_HTML).toContain('#help-panel.closed{transform:translateX(100%)}');
   });
 
   it('always resets the Activity panel to List when leaving Execution view for Chat', () => {
@@ -343,10 +362,10 @@ describe('chat html', () => {
     expect(script).toContain('if(dirty) saveServers();');
   });
 
-  it('silently probes every server-injected MCP connector on startup', () => {
+  it('only restores explicitly enabled MCP connectors on startup', () => {
     const [script] = chatScripts();
 
-    expect(script).toContain('servers.filter(s=>s.enabled||s.injected)');
+    expect(script).toContain('servers.filter(s=>s.enabled)');
     expect(script).toContain('connectServer(server.id,{silent:true})');
     expect(script).toContain('async function connectServer(id,{silent=false}={})');
     expect(script).toContain('if(!silent) notify');

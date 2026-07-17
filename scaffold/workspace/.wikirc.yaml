@@ -6,7 +6,9 @@ llm:
   model: YOUR_MODEL_NAME
   apiKey: YOUR_LLM_API_KEY
 
-limits: { requestsPerMinute: 60 }
+limits:
+  # Maximum generation/chat requests started per minute for the LLM provider.
+  requestsPerMinute: 60
 
 build:
   # Default false: `ingest` only ingests, no deliverable is rebuilt.

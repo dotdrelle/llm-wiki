@@ -145,9 +145,11 @@ function saveServers() {
 }
 
 async function restoreEnabledServers() {
-  // Injected connectors represent services managed outside the browser.
-  // Probe them on load so their cards show actual reachability immediately.
-  const toRestore=servers.filter(s=>s.enabled||s.injected);
+  // Server-injected connectors are configuration candidates, not proof that
+  // their Docker service is running. Only reconnect connectors the user had
+  // actually enabled; probing every configured endpoint on every page load
+  // produces noisy connection-refused logs for intentionally stopped agents.
+  const toRestore=servers.filter(s=>s.enabled);
   if(!toRestore.length) {
     renderCards();
     renderTopPills();
