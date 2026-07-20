@@ -117,6 +117,35 @@ body.center-wiki:not(.connectors-mode):not(.execution-mode) #wiki-view{display:b
 body.center-wiki:not(.connectors-mode):not(.execution-mode) #topbar,
 body.center-wiki:not(.connectors-mode):not(.execution-mode) #messages,
 body.center-wiki:not(.connectors-mode):not(.execution-mode) #input-wrap{display:none}
+#wiki-split-resizer{display:none}
+#cmdk-backdrop{position:fixed;inset:0;z-index:220;background:rgba(0,0,0,.35);display:flex;align-items:flex-start;justify-content:center;padding-top:12vh}
+#cmdk-backdrop[hidden]{display:none}
+#cmdk{width:min(560px,92vw);background:var(--panel);border:1px solid var(--border);border-radius:14px;box-shadow:0 18px 48px rgba(0,0,0,.28);overflow:hidden;display:flex;flex-direction:column}
+.cmdk-input-row{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border)}
+.cmdk-input-row svg{width:16px;height:16px;flex:none;fill:none;stroke:var(--muted);stroke-width:2;stroke-linecap:round}
+#cmdk-input{flex:1;border:0;background:none;color:var(--text);font:500 .95rem var(--font-sans);outline:none}
+#cmdk-results{max-height:46vh;overflow-y:auto;padding:6px}
+.cmdk-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;background:none;color:var(--text);font-family:var(--font-sans);padding:8px 10px;border-radius:8px;cursor:pointer}
+.cmdk-item.is-sel{background:var(--accent-soft);color:var(--accent)}
+.cmdk-item-title{font-size:.88rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmdk-item-sub{font-size:.72rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmdk-item-body{flex:1;min-width:0}
+.cmdk-tag{flex:none;font-size:.66rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);border:1px solid var(--border);border-radius:5px;padding:2px 6px}
+.cmdk-empty{padding:18px;text-align:center;font-size:.85rem;color:var(--muted)}
+.cmdk-hint{display:flex;gap:14px;padding:8px 14px;border-top:1px solid var(--border);font-size:.7rem;color:var(--muted)}
+.cmdk-hint kbd{font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);border-radius:4px;padding:0 4px}
+body.iframe-drag iframe{pointer-events:none}
+#split-toggle.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+@media (min-width:900px){
+body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #main{display:grid;grid-template-columns:minmax(280px,var(--split-wiki-w,50%)) 6px minmax(340px,1fr);grid-template-rows:auto minmax(0,1fr) auto}
+body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #wiki-view{display:block;grid-column:1;grid-row:1/4;min-width:0;border-right:1px solid var(--border)}
+body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #wiki-split-resizer{display:block;grid-column:2;grid-row:1/4;cursor:col-resize;background:transparent;transition:background .15s}
+body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #wiki-split-resizer:hover,
+body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #wiki-split-resizer.dragging{background:var(--accent)}
+body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #topbar{display:flex;grid-column:3;grid-row:1;min-width:0}
+body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #messages{display:flex;grid-column:3;grid-row:2;min-width:0;padding:28px clamp(12px,2vw,28px) 22px}
+body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #input-wrap{display:flex;grid-column:3;grid-row:3;min-width:0}
+}
 #topbar{min-height:54px;padding:6px 18px;border-bottom:1px solid var(--border);background:var(--panel);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .tb-model{font-family:var(--font-mono);font-size:11px;color:var(--muted2);background:var(--panel-soft);border:1px solid var(--border);padding:4px 10px;border-radius:99px}
 .sec-label-actions{display:flex;align-items:center;gap:6px}
@@ -268,7 +297,7 @@ body:not(.execution-mode) #execution-view{display:none}
 .act-section-title{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .act-dismiss-all{font-size:10px;color:var(--muted);background:none;border:none;cursor:pointer;padding:2px 4px;border-radius:4px}
 .act-dismiss-all:hover{color:var(--text);background:var(--panel-soft)}
-.activity-subtab-toolbar{display:flex;align-items:center;justify-content:space-between;padding:0 4px 7px}.activity-subtab-toolbar-title{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.activity-subtab-actions{display:flex;align-items:center;gap:4px}.activity-subtab-clear,.activity-subtab-reset{border:0;background:none;color:var(--muted);font:700 10px var(--font-sans);cursor:pointer;padding:2px 4px;border-radius:4px}.activity-subtab-clear:hover{color:var(--err);background:color-mix(in srgb,var(--err) 8%,transparent)}.activity-subtab-reset{border:1px solid color-mix(in srgb,var(--err) 35%,var(--border));color:var(--err);padding:3px 6px}.activity-subtab-reset:hover{background:color-mix(in srgb,var(--err) 10%,transparent);border-color:var(--err)}
+.activity-subtab-toolbar{display:flex;align-items:center;justify-content:space-between;padding:0 4px 7px}.activity-subtab-toolbar-title{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.activity-subtab-actions{display:flex;align-items:center;gap:4px}.activity-subtab-clear,.activity-subtab-reset{border:0;background:none;color:var(--muted);font:700 10px var(--font-sans);cursor:pointer;padding:2px 4px;border-radius:4px}.activity-subtab-clear:hover{color:var(--err);background:color-mix(in srgb,var(--err) 8%,transparent)}.activity-subtab-reset{border:1px solid var(--border);color:var(--muted);padding:3px 6px}.activity-subtab-reset:hover{background:var(--panel-soft);border-color:var(--muted);color:var(--text)}
 .act-empty{font-size:12px;color:var(--muted2);text-align:center;padding:22px 10px;line-height:1.5}
 .act-empty-btn{margin-top:10px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);font-size:12px;font-weight:700;font-family:var(--font-sans);padding:8px 10px;cursor:pointer}
 .act-empty-btn:hover{border-color:var(--accent);color:var(--accent)}

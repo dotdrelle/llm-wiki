@@ -11,6 +11,7 @@ import {
   generateEditPage,
   generateIndex,
   generateNewMarkdownPage,
+  buildPagesIndex,
   generateHelpChapter,
   generateHelpIndex,
   generateNotFoundPage,
@@ -54,6 +55,12 @@ export async function handleWikiRoutes(
   if (urlPath === '/api/help' && req.method === 'GET') {
     const chapters = await listHelpChapters();
     deps.sendJson(res, 200, { chapters });
+    return true;
+  }
+
+  // Served-documents index (JSON) for the chat shell's command palette.
+  if (urlPath === '/api/pages' && req.method === 'GET') {
+    deps.sendJson(res, 200, { pages: await buildPagesIndex(rootDir) });
     return true;
   }
   if (urlPath.startsWith('/api/help/') && req.method === 'GET') {

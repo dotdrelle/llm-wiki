@@ -386,11 +386,19 @@ async function loggedTool<T>(
   }
 }
 
-function resolveReadableWorkspacePath(
+// Exported for tests: the decode step must never weaken the boundary checks.
+export function resolveReadableWorkspacePath(
   workspace: WorkspaceService,
   requestedPath: string,
 ): string {
-  const normalizedPath = requestedPath.trim().replace(/\\/g, '/').replace(/^\.\//, '');
+  let decodedPath = requestedPath.trim();
+  try {
+    decodedPath = decodeURIComponent(decodedPath);
+  } catch {
+    // Keep malformed percent sequences literal; the allow-list and workspace
+    // boundary checks below remain authoritative.
+  }
+  const normalizedPath = decodedPath.replace(/\\/g, '/').replace(/^\.\//, '');
   const absolutePath = resolveInside(workspace.paths.rootDir, normalizedPath);
   const relativeToRoot = path.relative(workspace.paths.rootDir, absolutePath);
   const relativeToWiki = path.relative(workspace.paths.wikiDir, absolutePath);

@@ -696,6 +696,24 @@ export async function generateSidebarPanelPage(rootDir: string): Promise<string>
   return layout('Explorer', sidebar, { htmlClass: 'sidebar-panel', baseTarget: 'wiki-frame' });
 }
 
+// JSON index of the served markdown documents, consumed by the chat shell's
+// command palette. Same sources as the sidebar tree (NAV_PATTERNS) plus the
+// pending raw/untracked documents, so palette and tree never disagree.
+export async function buildPagesIndex(
+  rootDir: string,
+): Promise<Array<{ path: string; title: string; kind: string }>> {
+  const [navFiles, untrackedFiles] = await Promise.all([
+    fg(NAV_PATTERNS, { cwd: rootDir, dot: false }),
+    fg('raw/untracked/**/*.md', { cwd: rootDir, dot: false, onlyFiles: true }),
+  ]);
+  const entries = [...navFiles.map(toPosix), ...untrackedFiles.map(toPosix)].sort();
+  return entries.map((file) => ({
+    path: file,
+    title: humanTitle(file),
+    kind: file.startsWith('raw/untracked/') ? 'pending' : file.split('/')[0],
+  }));
+}
+
 export async function buildGraphOverview(
   rootDir: string,
   graphFiles?: string[],
@@ -995,10 +1013,17 @@ export async function serveMd(
       : await renderMarkdown(raw, currentDir);
   const printBtn = `<button class="action-button" onclick="window.print()" title="Print / Export to PDF">↑ PDF</button>`;
   const dlBtn = `<a class="action-link" href="${escapeHref(`/raw/${relativePath}`)}" download title="Download source Markdown file">↓ .md</a>`;
+  // Hidden by default: only revealed by WIKI_LAYOUT_SCRIPT when the page is
+  // embedded in the chat shell's central iframe, where "chat context" exists.
+  const chatContextBtn =
+    relativePath.endsWith('.md') && (relativePath.startsWith('wiki/') || relativePath.startsWith('raw/untracked/'))
+      ? `<button class="action-button" type="button" data-chat-context="${escapeAttr(`/${relativePath}`)}" hidden title="Add this page to Donna's chat context">+ Context</button>`
+      : '';
   const renameBtn = relativePath.startsWith('templates/')
     ? `<button class="action-button" type="button" onclick="renameTemplate()">Rename</button>`
     : '';
   const actions = [
+    chatContextBtn,
     printBtn,
     dlBtn,
     renameBtn,

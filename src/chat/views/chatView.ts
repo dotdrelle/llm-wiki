@@ -44,7 +44,7 @@ export const CHAT_MARKUP = `<aside id="sidebar">
       <div class="sec-label">Connectors</div>
       <a class="sb-link" id="connectors-link" href="/chat/connectors" onclick="showConnectorsView(event)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a6 6 0 0 1-12 0V8z"/></svg> Connectors <span>MCP & skills</span></a>
       <a class="sb-link" id="execution-link" href="/chat/execution" onclick="showExecutionView(event)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg> Execution <span>runtime runs</span></a>
-      <div class="sec-label">LLM Config<div class="sec-label-actions"><select class="tb-profile-select" id="profile-picker" title="Active .wikirc profile managed by wiki-manager runtime" onchange="switchConfigProfile(this.value)"></select><button type="button" onclick="resetYamlConfig()">Reset</button></div></div>
+      <div class="sec-label">LLM<div class="sec-label-actions"><select class="tb-profile-select" id="profile-picker" title="Active .wikirc profile managed by wiki-manager runtime" onchange="switchConfigProfile(this.value)"></select><button type="button" onclick="resetYamlConfig()">Reset</button></div></div>
       <div class="api-block">
         <div class="field">
           <label>Base URL</label>
@@ -149,6 +149,7 @@ export const CHAT_MARKUP = `<aside id="sidebar">
   <div id="wiki-view">
     <iframe id="wiki-frame" name="wiki-frame" title="Wiki"></iframe>
   </div>
+  <div id="wiki-split-resizer" role="separator" aria-orientation="vertical" title="Resize"></div>
   <div id="messages">
     ${EMPTY_CHAT_HTML}
   </div>
@@ -160,7 +161,7 @@ export const CHAT_MARKUP = `<aside id="sidebar">
     <div id="runtime-graph-center"></div>
   </div>
   <div id="input-wrap">
-    <div id="page-context-chips" hidden aria-label="Documents transmis comme contexte a Donna"></div>
+    <div id="page-context-chips" hidden aria-label="Documents shared with Donna as context"></div>
     <div class="input-box" id="input-box">
       <div class="skill-ac" id="skill-ac"></div>
       <input id="doc-upload-input" type="file" hidden accept=".txt,.md,.pdf,.xls,.xlsx,.doc,.docx,.ppt,.pptx,.odt,.odp" onchange="uploadSelectedDocument(this)">
@@ -209,10 +210,23 @@ export const CHAT_MARKUP = `<aside id="sidebar">
     <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
     <span class="rail-badge" id="rail-act-badge"></span>
   </button>
+  <button id="split-toggle" class="rail-btn" type="button" onclick="toggleSplitWiki()" title="Split document + chat" aria-label="Split document + chat">
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
+  </button>
   <button id="help-toggle" class="rail-btn" type="button" onclick="toggleHelpPanel()" title="Help &amp; documentation" aria-label="Open help">?</button>
   <button id="theme-toggle" class="rail-btn" type="button" onclick="toggleTheme()" title="Switch to dark theme" aria-label="Switch color theme">☾</button>
 </aside>
 <div id="notif"></div>
+<div id="cmdk-backdrop" hidden>
+  <div id="cmdk" role="dialog" aria-modal="true" aria-label="Command palette">
+    <div class="cmdk-input-row">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="cmdk-input" type="text" placeholder="Search pages, conversations, actions…" autocomplete="off" spellcheck="false">
+    </div>
+    <div id="cmdk-results" role="listbox"></div>
+    <div class="cmdk-hint"><span><kbd>↑↓</kbd> navigate</span><span><kbd>Enter</kbd> open</span><span><kbd>Ctrl+Enter</kbd> add page to context</span><span><kbd>Esc</kbd> close</span></div>
+  </div>
+</div>
 <div class="prompt-drawer" id="system-prompt-drawer" aria-hidden="true">
   <div class="prompt-backdrop" onclick="closeSystemPrompt()"></div>
   <aside class="prompt-panel" aria-label="System instructions">

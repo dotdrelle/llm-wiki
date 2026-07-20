@@ -467,7 +467,16 @@ export const WIKI_LAYOUT_SCRIPT = `
   });
   backdrop.addEventListener('click', function(e) { if (e.target === backdrop) close(); });
   document.addEventListener('keydown', function(e) {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); backdrop.classList.contains('is-open') ? close() : open(); }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      // Embedded in the chat shell: one palette for the whole app — defer to
+      // the shell's Ctrl+K instead of opening the page-local one.
+      if (window.self !== window.top) {
+        window.parent.postMessage({ type: 'llmwiki:palette' }, window.location.origin);
+        return;
+      }
+      backdrop.classList.contains('is-open') ? close() : open();
+    }
     if (e.key === 'Escape' && backdrop.classList.contains('is-open')) { close(); }
   });
 })();
@@ -484,6 +493,19 @@ export const WIKI_LAYOUT_SCRIPT = `
       { type: 'llmwiki:nav', path: window.location.pathname },
       window.location.origin,
     );
+    // "+ Context": only meaningful inside the chat shell, so the button
+    // ships hidden and is revealed here. Clicking hands the page path to the
+    // shell, which validates it and renders the context chip.
+    const chatContextBtn = document.querySelector('[data-chat-context]');
+    if (chatContextBtn) {
+      chatContextBtn.hidden = false;
+      chatContextBtn.addEventListener('click', () => {
+        window.parent.postMessage(
+          { type: 'llmwiki:addContext', path: chatContextBtn.getAttribute('data-chat-context') },
+          window.location.origin,
+        );
+      });
+    }
   }
 
   // Sidebar panel: reflect the active file when the shell reports navigation.
@@ -498,6 +520,56 @@ export const WIKI_LAYOUT_SCRIPT = `
       event.preventDefault();
       window.WikiUi.navigate(href);
     });
+
+    // Right-click menu on tree files: Open / + Context. Only in the embedded
+    // sidebar — the standalone wiki browser has no chat context.
+    (function initTreeContextMenu() {
+      const style = document.createElement('style');
+      style.textContent = '.tree-menu{position:fixed;z-index:400;min-width:180px;background:var(--panel,#fff);border:1px solid var(--border,#ccc);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:4px;display:flex;flex-direction:column}'
+        + '.tree-menu button{display:block;width:100%;text-align:left;border:0;background:none;color:var(--text,#222);font:500 .82rem var(--font-sans,sans-serif);padding:7px 10px;border-radius:6px;cursor:pointer}'
+        + '.tree-menu button:hover{background:var(--panel-soft,#eee)}'
+        + '.tree-menu .tree-menu-path{font-size:.68rem;color:var(--muted,#888);padding:4px 10px 6px;border-bottom:1px solid var(--border,#ccc);margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px}';
+      document.head.appendChild(style);
+      let menu = null;
+      function closeMenu() { if (menu) { menu.remove(); menu = null; } }
+      function addItem(label, onPick) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = label;
+        btn.addEventListener('click', function() { closeMenu(); onPick(); });
+        menu.appendChild(btn);
+      }
+      document.addEventListener('contextmenu', function(event) {
+        const link = event.target instanceof Element ? event.target.closest('[data-side-path]') : null;
+        if (!link) return;
+        const sidePath = link.getAttribute('data-side-path') || '';
+        if (!sidePath.endsWith('.md')) return;
+        event.preventDefault();
+        closeMenu();
+        const eligible = sidePath.indexOf('wiki/') === 0 || sidePath.indexOf('raw/untracked/') === 0;
+        menu = document.createElement('div');
+        menu.className = 'tree-menu';
+        const pathLabel = document.createElement('div');
+        pathLabel.className = 'tree-menu-path';
+        pathLabel.textContent = sidePath;
+        menu.appendChild(pathLabel);
+        addItem('Open', function() { window.WikiUi.navigate('/' + sidePath); });
+        if (eligible) {
+          addItem('+ Context', function() {
+            window.parent.postMessage({ type: 'llmwiki:addContext', path: '/' + sidePath }, window.location.origin);
+          });
+        }
+        document.body.appendChild(menu);
+        const maxX = window.innerWidth - menu.offsetWidth - 6;
+        const maxY = window.innerHeight - menu.offsetHeight - 6;
+        menu.style.left = Math.max(4, Math.min(event.clientX, maxX)) + 'px';
+        menu.style.top = Math.max(4, Math.min(event.clientY, maxY)) + 'px';
+      });
+      document.addEventListener('click', closeMenu);
+      window.addEventListener('blur', closeMenu);
+      document.addEventListener('keydown', function(event) { if (event.key === 'Escape') closeMenu(); });
+      document.addEventListener('scroll', closeMenu, true);
+    })();
 
     window.addEventListener('message', function(event) {
       if (event.origin !== window.location.origin) return;

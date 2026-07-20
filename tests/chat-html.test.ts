@@ -248,6 +248,24 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('body.center-wiki #right-rail{padding-top:10px}');
   });
 
+  it('ships one shell-level command palette fed by /api/pages', () => {
+    expect(CHAT_HTML).toContain('id="cmdk-backdrop"');
+    const [script] = chatScripts();
+    expect(script).toContain("fetch('/api/pages')");
+    expect(script).toContain("if (item.type === 'conv') { loadConversation(item.id); return; }");
+    expect(script).toContain("data.type === 'llmwiki:palette'");
+  });
+
+  it('lays out the split view as a wiki|resizer|chat grid gated on center-wiki', () => {
+    expect(CHAT_HTML).toContain('body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #main{display:grid');
+    expect(CHAT_HTML).toContain('id="wiki-split-resizer"');
+    expect(CHAT_HTML).toContain('onclick="toggleSplitWiki()"');
+    expect(CHAT_HTML).toContain('body.iframe-drag iframe{pointer-events:none}');
+    const [script] = chatScripts();
+    expect(script).toContain("shellStore(SHELL_SPLIT_KEY, splitWikiEnabled() ? '0' : '1');");
+    expect(script).toContain('if (splitWikiEnabled() && window.innerWidth >= 900');
+  });
+
   it('applies the saved or system theme before iframe and shell paint', () => {
     expect(CHAT_HTML).toContain("matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'");
     expect(CHAT_HTML).toContain('#wiki-view iframe{display:block;width:100%;height:100%;border:0;background:var(--bg)}');
@@ -294,9 +312,9 @@ describe('chat html', () => {
   it('places the profile picker in the sidebar next to Reset, showing only the profile name', () => {
     const [script] = chatScripts();
 
-    // Lives in the LLM Config section header, alongside Reset — not the topbar.
+    // Lives in the LLM section header, alongside Reset — not the topbar.
     expect(CHAT_HTML).toContain(
-      '<div class="sec-label">LLM Config<div class="sec-label-actions"><select class="tb-profile-select" id="profile-picker"',
+      '<div class="sec-label">LLM<div class="sec-label-actions"><select class="tb-profile-select" id="profile-picker"',
     );
     expect(CHAT_HTML).not.toContain('id="profile-picker-wrap"');
     // The backing .wikirc file is a hover title, not part of the visible option label.
