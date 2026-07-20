@@ -376,6 +376,9 @@ describe('serve config reload', () => {
     expect(routesSource).toContain("deps.runtimePathForWorkspace('/state')");
     expect(routesSource).toContain("deps.runtimePathForWorkspace('/events/stream')");
     expect(routesSource).toContain("deps.runtimePathForWorkspace('/cancel')");
+    expect(routesSource).toContain("urlPath === '/api/runtime/reset'");
+    expect(routesSource).toContain("deps.runtimePathForWorkspace('/kill')");
+    expect(routesSource).toContain("'&' : '?'}purge=true");
     expect(routesSource).toContain("await proxyRuntimeJson(req, res, '/run', deps.proxyDeps, wsName ? { workspace: wsName } : undefined);");
     expect(routesSource).toContain("await proxyRuntimeJson(req, res, '/turn', deps.proxyDeps, wsName ? { workspace: wsName } : undefined);");
     expect(eventsSource).toContain('export async function proxyRuntimeEvents');

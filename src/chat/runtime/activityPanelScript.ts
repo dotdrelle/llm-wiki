@@ -47,6 +47,7 @@ let agentMode=false;
 // which read as broken rather than a deliberate default.
 let activityView='list';
 let activityListTab='plan';
+const activityClearedFingerprints={plan:null,runtime:null,logs:null};
 let selectedWorkflowNodeId=null;
 const _activityPollTimers=new Map();
 function isActivityActive(status){return status==='running'||status==='queued';}
@@ -220,10 +221,46 @@ function dismissActivity(id) {
   _activities=_activities.filter(a=>a.id!==id);
   saveActivities(); renderActivities(); updateActivityBadge();
 }
-function dismissAllDone() {
-  for(const item of _activities.filter(a=>!isActivityActive(a.status))) clearPollTimer(item.id);
-  _activities=_activities.filter(a=>isActivityActive(a.status));
-  saveActivities(); renderActivities(); updateActivityBadge();
+function activityTabFingerprint(tab) {
+  if(!runtimeState) return 'empty';
+  if(tab==='plan') return JSON.stringify([runtimeState.runId,runtimeState.currentRunId,runtimeState.plan,runtimeState.queue,runtimeState.workflow?.nodes?.filter(node=>node.type==='task'||node.type==='queue')]);
+  if(tab==='runtime') return JSON.stringify([runtimeState.runId,runtimeState.currentRunId,runtimeState.activities,runtimeState.workflow?.activity,runtimeState.workflow?.nodes?.filter(node=>node.type==='activity')]);
+  if(tab==='logs') return JSON.stringify(runtimeState.logs||[]);
+  return '';
+}
+function activityTabWasCleared(tab) {
+  const fingerprint=activityClearedFingerprints[tab];
+  return fingerprint!==null&&fingerprint===activityTabFingerprint(tab);
+}
+function clearActivityTab(tab,{render=true}={}) {
+  if(tab==='local') {
+    _activities.forEach(item=>clearPollTimer(item.id));
+    _activities=[];
+    saveActivities();
+  } else if(['plan','runtime','logs'].includes(tab)) {
+    activityClearedFingerprints[tab]=activityTabFingerprint(tab);
+  }
+  if(render) { renderActivities(); updateActivityBadge(); }
+}
+function clearAllActivityTabs() {
+  ['plan','local','runtime','logs'].forEach(tab=>clearActivityTab(tab,{render:false}));
+  renderActivities(); updateActivityBadge();
+}
+async function resetRuntimePlan() {
+  if(!runtimeEnabled()) { notify('Runtime is not configured.','e'); return; }
+  if(!confirm('Reset the current plan? This stops active work and clears the runtime plan, activities, logs and queue for this workspace.')) return;
+  try {
+    const res=await fetch('/api/runtime/reset',{method:'POST'});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error||'Runtime plan reset failed');
+    activityClearedFingerprints.plan=null;
+    activityClearedFingerprints.runtime=null;
+    activityClearedFingerprints.logs=null;
+    await fetchRuntimeState();
+    notify('Runtime plan reset');
+  } catch(err) {
+    notify(err?.message||String(err),'e');
+  }
 }
 function actElapsed(item) {
   const started=Number(item.startedAt)||Date.now();
@@ -265,7 +302,7 @@ function actCardHTML(item) {
   const size=formatBytes(item.bytes);
   const meta=[size,elapsed>0?elapsed+'s':null].filter(Boolean).join(' · ');
   const done=item.status==='done';
-  const badge=running?'running':(converted||done)?'done':stored?'stored':item.status==='cancelled'?'cancelled':'failed';
+  const badge=item.error?'failed':running?'running':(converted||done)?'done':stored?'stored':item.status==='cancelled'?'cancelled':'failed';
   const badgeLabel=ACT_CARD_BADGES[badge];
   const steps=item.kind==='upload'?actUploadSteps(item):activityPlanSteps(item);
   const stepsHtml=steps.map(s=>\`<div class="act-step \${s.state}"><span class="act-step-dot"></span><span class="act-step-label">\${esc(s.label)}</span><span class="act-step-val">\${esc(s.val)}</span></div>\`).join('');
@@ -335,15 +372,21 @@ function renderActivities() {
   const rev=[..._activities].reverse();
   const uploads=rev.filter(a=>a.kind==='upload');
   const mcp=rev.filter(a=>a.kind!=='upload');
-  const hasDone=_activities.some(a=>!isActivityActive(a.status));
-  const dismissBtn=hasDone?\`<button class="act-dismiss-all" onclick="dismissAllDone()">Clear all</button>\`:'';
   const section=(title,items)=>items.length?\`<div class="act-section-head"><span class="act-section-title">\${title}</span></div>\${items.map(actCardHTML).join('')}\`:'';
-  const localHTML=\`<div class="act-section-head"><span class="act-section-title">Local activity</span>\${dismissBtn}</div>\`+section('Uploads',uploads)+section('MCP',mcp);
-  const panes={plan:runtimeTaskPanelHTML('plan'),runtime:runtimeTaskPanelHTML('runtime'),logs:runtimeTaskPanelHTML('logs'),local:localHTML};
-  const labels={plan:'Plan',runtime:'Runtime activity',logs:'Logs',local:'Local activity'};
-  const tabs=Object.entries(labels).map(([key,label])=>\`<button class="activity-subtab \${activityListTab===key?'active':''}" type="button" onclick="setActivityListTab('\${key}')">\${label}</button>\`).join('');
+  const localHTML=section('Uploads',uploads)+section('MCP',mcp);
+  const panes={
+    plan:activityTabWasCleared('plan')?'':runtimeTaskPanelHTML('plan'),
+    runtime:activityTabWasCleared('runtime')?'':runtimeTaskPanelHTML('runtime'),
+    logs:activityTabWasCleared('logs')?'':runtimeTaskPanelHTML('logs'),
+    local:localHTML,
+  };
+  const labels={plan:'Plan',local:'Local activity',runtime:'Runtime activity',logs:'Logs'};
+  const localTabState=uploads.some(item=>item.error||item.status==='failed')?'has-error':uploads.some(item=>isActivityActive(item.status))?'has-running':'';
+  const tabs=Object.entries(labels).map(([key,label])=>\`<button class="activity-subtab \${activityListTab===key?'active':''} \${key==='local'?localTabState:''}" type="button" onclick="setActivityListTab('\${key}')">\${label}</button>\`).join('');
   const empty=\`<div class="act-empty">No \${labels[activityListTab].toLowerCase()} yet.</div>\`;
-  el.innerHTML=\`<div class="activity-subtabs" role="tablist" aria-label="Activity list sections">\${tabs}</div><div class="activity-subtab-content activity-subtab-\${activityListTab}">\${panes[activityListTab]||empty}</div>\`;
+  const resetPlan=activityListTab==='plan'?'<button class="activity-subtab-reset" type="button" onclick="resetRuntimePlan()">Reset plan</button>':'';
+  const toolbar=\`<div class="activity-subtab-toolbar"><span class="activity-subtab-toolbar-title">\${labels[activityListTab]}</span><span class="activity-subtab-actions">\${resetPlan}<button class="activity-subtab-clear" type="button" onclick="clearActivityTab('\${activityListTab}')">Clear</button></span></div>\`;
+  el.innerHTML=\`<div class="activity-subtabs" role="tablist" aria-label="Activity list sections">\${tabs}</div><div class="activity-subtab-content activity-subtab-\${activityListTab}">\${toolbar}\${panes[activityListTab]||empty}</div>\`;
   // Keep the (height-capped, scrollable) runtime log pinned to its latest
   // lines after each full panel re-render.
   scrollRuntimeLogToEnd?.();
@@ -459,6 +502,7 @@ async function retryConvert(uploadId, actId) {
     if(!res.ok||data.ok===false) throw new Error(data.error||\`HTTP \${res.status}\`);
     const u=data.upload||{};
     upsertActivity({id:actId,status:u.status,outputPath:u.outputPath,method:u.method,error:u.error||null});
+    if(u.status==='converted'&&u.outputPath) addPageContext(uploadOutputLabel(u.outputPath));
     notify(u.status==='converted'?'Converted':'Stored');
   } catch(err) {
     upsertActivity({id:actId,status:'failed',error:err?.message||String(err)});

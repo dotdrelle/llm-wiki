@@ -35,6 +35,40 @@ function currentWikiPath() {
   return sanitizeWikiPath(wikiHashPath()) || sanitizeWikiPath(shellStore(SHELL_WIKI_PATH_KEY)) || '/';
 }
 
+// References only: Donna receives at most five paths and chooses which
+// generic wiki read tool to call. Contents are never read or injected here.
+const PAGE_CONTEXT_LIMIT=5;
+let pageContexts=[];
+function validPageContext(path) {
+  const value=String(path||'').replace(/^\\//,'');
+  if(value.includes('..')||!value.endsWith('.md')) return null;
+  return value.startsWith('wiki/')||value.startsWith('raw/untracked/')?value:null;
+}
+function openWikiPageForChat() { return validPageContext(currentWikiPath()); }
+function addPageContext(path) {
+  const value=validPageContext(path);
+  if(!value) return;
+  pageContexts=[...pageContexts.filter(item=>item!==value),value].slice(-PAGE_CONTEXT_LIMIT);
+  refreshPageContextChip();
+}
+function removePageContext(path) {
+  pageContexts=pageContexts.filter(item=>item!==path);
+  refreshPageContextChip();
+}
+function activePageContexts() { return agentMode?[]:pageContexts.slice(0,PAGE_CONTEXT_LIMIT); }
+function refreshPageContextChip() {
+  const host=$('page-context-chips');
+  if(!host) return;
+  const paths=activePageContexts();
+  host.hidden=!paths.length;
+  host.innerHTML=paths.map(path=>\`<span class="page-context-chip" title="Donna utilisera ses outils de lecture pour ce document"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><span class="page-context-label">\${esc(path)}</span><button class="page-context-clear" type="button" title="Retirer ce document du contexte" aria-label="Retirer \${esc(path)} du contexte" onclick="removePageContext(\${esc(JSON.stringify(path))})">&times;</button></span>\`).join('');
+}
+window.addEventListener('llmwiki:wikiPathChanged',(e)=>{
+  if(typeof e.detail==='string') addPageContext(e.detail);
+});
+window.addEventListener('hashchange',()=>{ const path=openWikiPageForChat(); if(path) addPageContext(path); });
+setTimeout(()=>{ const path=openWikiPageForChat(); if(path) addPageContext(path); },0);
+
 function alignWikiRail() {
   const frame = document.getElementById('wiki-frame');
   const rail = document.getElementById('right-rail');
@@ -97,6 +131,7 @@ function setCenterWiki(path) {
   history.replaceState(null, '', '#wiki=' + encodeURIComponent(target));
   shellStore(SHELL_CENTER_KEY, 'wiki');
   shellStore(SHELL_WIKI_PATH_KEY, target);
+  window.dispatchEvent(new CustomEvent('llmwiki:wikiPathChanged', { detail: target }));
 }
 
 function setCenterChat() {
@@ -105,6 +140,7 @@ function setCenterChat() {
   if (location.hash.startsWith('#wiki=')) {
     history.replaceState(null, '', location.pathname + location.search);
   }
+  window.dispatchEvent(new CustomEvent('llmwiki:wikiPathChanged', { detail: null }));
 }
 
 // ── Center view switching (chat family) ─────────────────────────────────────

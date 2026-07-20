@@ -160,6 +160,7 @@ export const CHAT_MARKUP = `<aside id="sidebar">
     <div id="runtime-graph-center"></div>
   </div>
   <div id="input-wrap">
+    <div id="page-context-chips" hidden aria-label="Documents transmis comme contexte a Donna"></div>
     <div class="input-box" id="input-box">
       <div class="skill-ac" id="skill-ac"></div>
       <input id="doc-upload-input" type="file" hidden accept=".txt,.md,.pdf,.xls,.xlsx,.doc,.docx,.ppt,.pptx,.odt,.odp" onchange="uploadSelectedDocument(this)">
@@ -187,6 +188,7 @@ export const CHAT_MARKUP = `<aside id="sidebar">
       <button class="act-view-tab active" id="act-view-list" type="button" onclick="setActivityView('list')">List</button>
       <button class="act-view-tab" id="act-view-graph" type="button" onclick="setActivityView('graph')">Graph</button>
     </div>
+    <button class="act-clear-all" type="button" onclick="clearAllActivityTabs()" title="Clear all Activity sections">Clear all</button>
     <button class="act-panel-close" onclick="toggleActivityPanel()" title="Close">×</button>
   </div>
   <div class="act-body" id="activity-body"></div>

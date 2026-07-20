@@ -1,6 +1,6 @@
 # Repository Guide
 
-Current coordinated release: **0.14.5**. The Wiki browser graph is v2-only:
+Current coordinated release: **0.14.11**. The Wiki browser graph is v2-only:
 keep Wiki UI code under `src/graph/wiki`, preserve `src/graph/core/graphForce.ts`
 for Run/Task, and do not restore the removed legacy graph endpoints.
 
@@ -167,6 +167,8 @@ and `/pipeline`. Keep scaffold skills generic and English by default.
 - `GET /api/runtime/events` → runtime `/events/stream` (SSE pass-through)
 - `POST /api/runtime/run` → runtime `/run` (injects `workspace: WORKSPACE_NAME`)
 - `POST /api/runtime/cancel` → runtime `/cancel`
+- `POST /api/runtime/reset` → workspace-scoped runtime `/kill?purge=true`
+  (confirmed destructive reset of the current plan/runtime projection)
 - `GET`/`POST /api/runtime/control` → runtime `/control` (status/explain/enqueue
   while a run is active — see `llm-wiki-manager/CLAUDE.md`'s control lane
   section)
@@ -208,6 +210,15 @@ ShellTUI uses; do not add a second one here.
 `window.__WIKI_CONFIG__.runtime.enabled` is `true` when `WIKI_MANAGER_RUNTIME_URL`
 is set; chatHtml uses this to show/hide the Agent mode toggle.
 
+Direct Chat can send `context.openWikiPages` through `/api/runtime/turn`. The
+browser keeps at most five distinct Markdown paths selected from `wiki/` or
+`raw/untracked/`; opening a wiki page or successfully converting an upload adds
+its path. These are references only: never read or inline document content in
+the browser or proxy. Donna receives the sanitized paths in its prompt and must
+use its allow-listed read tools. The MCP `wiki_read_page`/`wiki_read_pages`
+tools therefore allow `wiki/`, `raw/ingested/`, and `raw/untracked/`, while the
+shared workspace-root/path-traversal guard remains authoritative.
+
 ## Serve Chat
 
 `src/chat/chatHtml.ts` is a self-contained browser app. It has three separate
@@ -232,6 +243,16 @@ surfaces:
   right — the same graph and inspector markup as the Activity panel's
   `Graphe` view, just laid out differently (`body.execution-mode` toggles
   which container the graph/inspector render into).
+
+The Activity list is split into `Plan`, `Local activity`, `Runtime activity`,
+and `Logs`, in that order. Each tab owns a `Clear` action; `Clear all` beside
+the List/Graph switch applies all four. Local clearing removes browser-owned
+upload/MCP cards, while clearing the other tabs hides the current runtime
+snapshot until new state changes its fingerprint. This is deliberately not a
+runtime deletion. `Reset plan`, shown only in the Plan tab, requires browser
+confirmation and calls `/api/runtime/reset`; it stops active work and purges
+the workspace runtime plan, activities, logs, queue, and persisted projection.
+Upload cards with an `error` always render as failed even if storage succeeded.
 
 Trace mutations in `sendMessage` must go through `dispatchChatAgentEvent`.
 Do not add direct `trace.steps.push()` mutations outside event handlers.

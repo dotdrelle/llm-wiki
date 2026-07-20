@@ -13,7 +13,7 @@ import { hashText } from '../utils/hash.ts';
 import { listHelpChapters, readHelpChapter } from '../utils/helpDoc.ts';
 import type { AppConfig } from '../types.ts';
 
-const LLM_WIKI_VERSION = '0.14.10';
+const LLM_WIKI_VERSION = '0.14.11';
 const MAX_SOURCE_NAME_CHARS = 200;
 const MAX_SOURCE_SUBDIR_CHARS = 300;
 const MAX_SOURCE_CONTENT_CHARS = 1_000_000;
@@ -324,17 +324,6 @@ async function readWorkspaceWikiPage(
 ): Promise<ReadWikiPagePayload> {
   try {
     const absolutePath = resolveReadableWorkspacePath(workspace, pagePath);
-    const relativeToWiki = path.relative(workspace.paths.wikiDir, absolutePath);
-    if (relativeToWiki.startsWith('..') || path.isAbsolute(relativeToWiki)) {
-      return {
-        path: pagePath,
-        found: false,
-        allowed: false,
-        truncated: false,
-        content: '',
-        error: 'Access denied: path must be under wiki/.',
-      };
-    }
     if (!(await pathExists(absolutePath))) {
       return {
         path: pagePath,
@@ -406,13 +395,16 @@ function resolveReadableWorkspacePath(
   const relativeToRoot = path.relative(workspace.paths.rootDir, absolutePath);
   const relativeToWiki = path.relative(workspace.paths.wikiDir, absolutePath);
   const relativeToIngested = path.relative(workspace.paths.rawIngestedDir, absolutePath);
+  const relativeToUntracked = path.relative(workspace.paths.rawUntrackedDir, absolutePath);
   const underRoot = !relativeToRoot.startsWith('..') && !path.isAbsolute(relativeToRoot);
   const underWiki = !relativeToWiki.startsWith('..') && !path.isAbsolute(relativeToWiki);
   const underIngested =
     !relativeToIngested.startsWith('..') && !path.isAbsolute(relativeToIngested);
+  const underUntracked =
+    !relativeToUntracked.startsWith('..') && !path.isAbsolute(relativeToUntracked);
 
-  if (!underRoot || (!underWiki && !underIngested)) {
-    throw new Error('Access denied: path must be under wiki/ or raw/ingested/.');
+  if (!underRoot || (!underWiki && !underIngested && !underUntracked)) {
+    throw new Error('Access denied: path must be under wiki/, raw/ingested/, or raw/untracked/.');
   }
 
   return absolutePath;
@@ -448,7 +440,7 @@ export async function createWikiMcpServer(
     try {
       const page = await readWorkspaceWikiPage(workspace, pagePath);
       if (!page.allowed) {
-        return textResult('Access denied: path must be under wiki/.', { isError: true });
+        return textResult('Access denied: path must be under wiki/, raw/ingested/, or raw/untracked/.', { isError: true });
       }
       if (!page.found) {
         return textResult(`Page not found: ${pagePath}`, { isError: true });
@@ -832,10 +824,17 @@ export async function createWikiMcpServer(
     return textResult(JSON.stringify(payload, null, 2));
   };
 
+  // MCP readOnlyHint annotation: declares non-mutating tools per the MCP spec.
+  // The manager reads it (annotations.readOnlyHint) so these tools qualify as
+  // read tools for /chat regardless of naming conventions. Never put it on a
+  // mutating tool (wiki_write_page, wiki_add_source, profile_update).
+  const READ_ONLY = { readOnlyHint: true };
+
   server.tool(
     'wiki_workspace_status',
     'Read the canonical local workspace inventory in one call: pending raw sources, ingested sources, wiki pages, templates, build context, and deliverables. Use first for questions about what exists or is waiting in the workspace.',
     {},
+    READ_ONLY,
     (input) => loggedTool('wiki_workspace_status', input, readWorkspaceStatus),
   );
 
@@ -843,18 +842,20 @@ export async function createWikiMcpServer(
     'wiki_list_pages',
     'List llm-wiki markdown pages under wiki/. Use this only for the llm-wiki knowledge base, not CME runtime configuration.',
     {},
+    READ_ONLY,
     (input) => loggedTool('wiki_list_pages', input, listWikiPages),
   );
 
   const readWikiPageInput = {
     path: z
       .string()
-      .describe('Relative path from workspace root, e.g. wiki/concepts/foo.md'),
+      .describe('Relative path from workspace root under wiki/, raw/ingested/, or raw/untracked/'),
   };
   server.tool(
     'wiki_read_page',
-    'Read one llm-wiki markdown page under wiki/ by relative path. Use for targeted inspection when a page needs full content.',
+    'Read one markdown document under wiki/, raw/ingested/, or raw/untracked/ by relative path. Use for targeted inspection, including converted documents awaiting ingestion.',
     readWikiPageInput,
+    READ_ONLY,
     (input) => loggedTool('wiki_read_page', input, readWikiPage),
   );
 
@@ -863,7 +864,7 @@ export async function createWikiMcpServer(
       .array(z.string())
       .min(1)
       .max(MAX_READ_PAGES)
-      .describe('Relative paths from workspace root, e.g. wiki/concepts/foo.md'),
+      .describe('Relative paths from workspace root under wiki/, raw/ingested/, or raw/untracked/'),
     maxPageChars: z
       .number()
       .int()
@@ -874,8 +875,9 @@ export async function createWikiMcpServer(
   };
   server.tool(
     'wiki_read_pages',
-    'Read multiple llm-wiki markdown pages under wiki/ by relative path in one call. Returns a JSON object with a `pages` array; each entry has `path`, `content`, `found`, `allowed`, `truncated`, and optionally `error`. Use after wiki_search_context, or after wiki_collect_context when additional pages are needed.',
+    'Read multiple markdown documents under wiki/, raw/ingested/, or raw/untracked/ in one call. Returns a JSON object with a `pages` array; each entry has `path`, `content`, `found`, `allowed`, `truncated`, and optionally `error`. Use for selected documents or after context search.',
     readWikiPagesInput,
+    READ_ONLY,
     (input) => loggedTool('wiki_read_pages', input, readWikiPages),
   );
 
@@ -941,6 +943,7 @@ export async function createWikiMcpServer(
     'wiki_list_ingested_sources',
     'List source documents already ingested into llm-wiki under raw/ingested/. Do not use this for CME configured export sources.',
     {},
+    READ_ONLY,
     (input) => loggedTool('wiki_list_ingested_sources', input, listIngestedSources),
   );
 
@@ -953,6 +956,7 @@ export async function createWikiMcpServer(
     'wiki_read_ingested_source',
     'Read one llm-wiki ingested source document under raw/ingested/. Use when archived raw source content is needed to verify or deepen the wiki synthesis.',
     readSourceInput,
+    READ_ONLY,
     (input) => loggedTool('wiki_read_ingested_source', input, readIngestedSource),
   );
 
@@ -960,6 +964,7 @@ export async function createWikiMcpServer(
     'wiki_search_context',
     'Search llm-wiki for a question. Returns ranked candidate paths with excerpts, citations, and relatedPaths only; excerpts are for triage, not full evidence. Prefer wiki_collect_context for synthesis, architecture, audit, functional analysis, or comparison questions, but call this again if coverage is insufficient.',
     searchWikiContextInput,
+    READ_ONLY,
     (input) => loggedTool('wiki_search_context', input, searchWikiContext),
   );
 
@@ -988,6 +993,7 @@ export async function createWikiMcpServer(
     'wiki_collect_context',
     'Search llm-wiki, read up to 10 returned wiki pages by default, and report coverage in one call. Prefer this first for synthesis, architecture, audit, functional analysis, or comparison questions.',
     collectWikiContextInput,
+    READ_ONLY,
     (input) => loggedTool('wiki_collect_context', input, collectWikiContext),
   );
 
@@ -1022,6 +1028,7 @@ export async function createWikiMcpServer(
     'help_list',
     'Product help: list the DONNA documentation chapters (table of contents). Call this for questions about the application ITSELF — what it is, what it\'s for, chat vs agent mode, the interfaces, getting started, "I\'m lost", "it doesn\'t work", troubleshooting. Returns chapter ids and titles; then read the relevant one with help_read. This is product documentation, not the workspace wiki.',
     {},
+    READ_ONLY,
     () => loggedTool('help_list', {}, helpList),
   );
   const helpReadInput = {
@@ -1035,6 +1042,7 @@ export async function createWikiMcpServer(
     'help_read',
     "Product help: read one DONNA documentation chapter by id (from help_list). Use to answer a question about the application itself, then reply in the user's language. Not the workspace wiki.",
     helpReadInput,
+    READ_ONLY,
     (input) => loggedTool('help_read', input, helpRead),
   );
 
@@ -1057,6 +1065,7 @@ export async function createWikiMcpServer(
     'profile_read',
     'Read the workspace profile from .wiki/profile.md. Returns the full content, character count, and maxProfileChars limit.',
     {},
+    READ_ONLY,
     () => loggedTool('profile_read', {}, readProfile),
   );
 

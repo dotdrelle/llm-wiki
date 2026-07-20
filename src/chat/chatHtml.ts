@@ -493,6 +493,7 @@ async function uploadSelectedDocument(input) {
     });
     const upload=data.upload||{};
     upsertActivity({id:actId,status:upload.status||'stored',outputPath:upload.outputPath||null,method:upload.method||null,uploadId:upload.id||null,error:upload.error||null});
+    if(upload.status==='converted'&&upload.outputPath) addPageContext(uploadOutputLabel(upload.outputPath));
     notify(upload.status==='converted'?'Document converted':'Document stored');
   } catch(err) {
     upsertActivity({id:actId,status:'failed',error:err?.message||String(err)});
@@ -809,6 +810,7 @@ function updateAgentModeUI() {
       : 'Runtime not configured';
   }
   $('input-box')?.classList.toggle('agent-on',agentMode);
+  refreshPageContextChip();
   if(!isStreaming) {
     setSendButtonStreaming(false);
   }
@@ -2404,8 +2406,7 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
   if(hideQuestion) userEl.classList.add('msg-hidden');
   const statusEl=createRuntimeThinkingBubble(mode==='chat'?'Thinking...':undefined);
   pendingRuntimeStatusEls.push(statusEl);
-  // Consumed by mergeRuntimeConversation once this same message comes back
-  // from the runtime's own /state, instead of appending a second copy.
+  // The /state merge consumes this reference instead of appending a duplicate.
   pendingRuntimeUserRefs.push({message:userMessage,el:userEl});
   try {
     const controlBody=JSON.stringify({action:'message',input:text});
@@ -2414,10 +2415,11 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
     // is in flight, and the 409 fallback exists specifically to catch that.
     const runningBeforeFetch=runtimeIsRunning();
     const readOnlyChat=mode==='chat';
+    const openWikiPages=readOnlyChat?activePageContexts():[];
     let res=await fetch(runningBeforeFetch&&!readOnlyChat?'/api/runtime/control':'/api/runtime/turn',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:runningBeforeFetch&&!readOnlyChat?controlBody:JSON.stringify({input:text,...(mode?{mode}:{})}),
+      body:runningBeforeFetch&&!readOnlyChat?controlBody:JSON.stringify({input:text,...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})}),
     });
     if(!readOnlyChat&&res.status===409&&!runtimeIsRunning()) {
       res=await fetch('/api/runtime/control',{

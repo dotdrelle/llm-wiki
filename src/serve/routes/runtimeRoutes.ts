@@ -40,6 +40,11 @@ export async function handleRuntimeRoutes(
     await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/cancel'), deps.proxyDeps);
     return true;
   }
+  if (urlPath === '/api/runtime/reset' && req.method === 'POST') {
+    const killPath = deps.runtimePathForWorkspace('/kill');
+    await proxyRuntimeJson(req, res, `${killPath}${killPath.includes('?') ? '&' : '?'}purge=true`, deps.proxyDeps);
+    return true;
+  }
   if (urlPath === '/api/runtime/control' && (req.method === 'GET' || req.method === 'POST')) {
     await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/control'), deps.proxyDeps);
     return true;

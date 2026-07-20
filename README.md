@@ -236,6 +236,26 @@ The empty chat also offers a quick-start tile:
 - **Fill workspace profile** — prompts the user to describe the workspace
   context so that answers and deliverables are better tailored.
 
+### Document context and Activity
+
+In Chat mode, opening a Markdown wiki page adds a compact document badge above
+the input. Up to five pages can be selected, and each badge can be removed
+independently. A document converted from an upload is added automatically even
+before ingestion, from `raw/untracked/`. The interface sends only these paths:
+Donna reads the relevant files with the wiki read tools when the question
+refers to the selected documents; their contents are not injected into every
+prompt.
+
+The Activity list has four scrollable tabs: **Plan**, **Local activity**,
+**Runtime activity**, and **Logs**. `Clear` cleans only the visible tab;
+`Clear all`, beside the List/Graph switch, cleans all four views. These actions
+do not delete the runtime plan. To abandon a failed or unsuitable plan, use
+**Reset plan** in the Plan tab and confirm: active work is stopped and the
+workspace runtime plan, activities, logs, queue, and persisted runtime state
+are purged. The same reset remains available conversationally by explicitly
+asking Donna to delete, reset, abandon, or replace the current plan; asking
+only to stop work performs a non-purging stop.
+
 ## Core Commands
 
 ```bash

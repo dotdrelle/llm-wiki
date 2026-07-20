@@ -182,11 +182,16 @@ describe('chat html', () => {
   });
 
   it('splits Activity List into four internally scrollable sub-tabs', () => {
-    expect(CHAT_HTML).toContain("const labels={plan:'Plan',runtime:'Runtime activity',logs:'Logs',local:'Local activity'}");
+    expect(CHAT_HTML).toContain("const labels={plan:'Plan',local:'Local activity',runtime:'Runtime activity',logs:'Logs'}");
     expect(CHAT_HTML).toContain('.activity-subtab-content{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain');
     expect(CHAT_HTML).toContain("function setActivityListTab(tab)");
     expect(CHAT_HTML).toContain('.activity-subtab-logs .runtime-log{flex:1;min-height:0;max-height:none}');
     expect(CHAT_HTML).not.toContain('runtime-section-toggle');
+    expect(CHAT_HTML).toContain('onclick="clearActivityTab(\'${activityListTab}\')">Clear</button>');
+    expect(CHAT_HTML).toContain('onclick="clearAllActivityTabs()"');
+    expect(CHAT_HTML).toContain("['plan','local','runtime','logs'].forEach(tab=>clearActivityTab(tab,{render:false}))");
+    expect(CHAT_HTML).toContain('onclick="resetRuntimePlan()">Reset plan</button>');
+    expect(CHAT_HTML).toContain("fetch('/api/runtime/reset',{method:'POST'})");
   });
 
   it('sends Activity status through Donna while displaying a concise chat prompt', () => {
@@ -655,7 +660,7 @@ describe('chat html', () => {
 
     expect(script).not.toContain("notify('Runtime is already running.'");
     expect(script).toContain("runningBeforeFetch&&!readOnlyChat?'/api/runtime/control':'/api/runtime/turn'");
-    expect(script).toContain("body:runningBeforeFetch&&!readOnlyChat?controlBody:JSON.stringify({input:text,...(mode?{mode}:{})})");
+    expect(script).toContain("body:runningBeforeFetch&&!readOnlyChat?controlBody:JSON.stringify({input:text,...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})})");
     expect(script).toContain("const readOnlyChat=mode==='chat'");
     expect(script).toContain("sendRuntimeAgentMessage(input,text,{mode:'chat',displayText:displayOverride||text,hideQuestion})");
     expect(script).toContain("function createRuntimeThinkingBubble(text='Request received · Donna is preparing the response and plan…')");
