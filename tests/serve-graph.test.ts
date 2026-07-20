@@ -3,6 +3,12 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { renderWikiGraphV2 } from '../src/graph/wiki/graphApp.ts';
 
+it('keeps the graph document preview viewport-sized and scrolls its content', () => {
+  const source = renderWikiGraphV2();
+  expect(source).toContain('max-height:calc(100vh - 64px)');
+  expect(source).toContain('.document-preview-content{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain');
+});
+
 async function serveSource(): Promise<string> {
   const [serve, html, css, script] = await Promise.all([
     readFile(path.resolve(import.meta.dirname, '../src/commands/serve.ts'), 'utf8'),
@@ -30,7 +36,7 @@ it('shares the selected color theme with wiki home', async () => {
   const source = await serveSource();
   expect(source).toContain('data-theme-toggle');
   expect(source).toContain("const THEME_KEY = 'llm-wiki:theme';");
-  expect(source).toContain("localStorage.getItem('llm-wiki:graph:theme') || 'light'");
+  expect(source).toContain("localStorage.getItem('llm-wiki:graph:theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')");
   expect(source).toContain('event.key === THEME_KEY && event.newValue');
   expect(source).toContain(":root.theme-dark .sidebar");
 });
@@ -95,6 +101,10 @@ describe('serve graph ui', () => {
     expect(source).toContain('class="wiki-help-toggle" href="/help"');
     expect(source).toContain('aria-label="Help">?</a>');
     expect(source).not.toContain('<span>Help</span>');
+    expect(source).toContain("event.target instanceof Element ? event.target.closest('a[href]') : null");
+    expect(source).toContain('window.WikiUi.navigate(href);');
+    expect(source).toContain('html.sidebar-panel .side-head .side-actions{width:calc(50% - .25rem)}');
+    expect(source).toContain('html.sidebar-panel .side-head .side-action{width:100%}');
   });
 
   it('renders a persistent draggable main sidebar resizer', async () => {
@@ -108,6 +118,24 @@ describe('serve graph ui', () => {
     expect(source).toContain('return Math.max(220, Math.min(px, window.innerWidth - 420));');
     expect(source).toContain("shell.style.setProperty('--wiki-sidebar-w', v + 'px');");
     expect(source).toContain("document.body.style.cursor = 'col-resize';");
+  });
+
+  it('keeps the embedded document TOC visible beside shell panels', async () => {
+    const source = await serveSource();
+
+    expect(source).toContain('html.is-embedded:not(.sidebar-panel) .content:has(.doc-toc)');
+    expect(source).toContain('padding-right:clamp(145px,26vw,240px)');
+    expect(source).toContain('html.is-embedded:not(.sidebar-panel) .doc-toc{display:flex;right:.75rem;width:clamp(120px,22vw,200px)}');
+    expect(source).toContain('const top = Math.max(16, article.getBoundingClientRect().top);');
+    expect(source).toContain("toc.style.top = top + 'px';");
+  });
+
+  it('keeps long breadcrumbs and document actions on one line in the shell', async () => {
+    const source = await serveSource();
+
+    expect(source).toContain('flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;');
+    expect(source).toContain('flex-shrink: 0; flex-wrap: nowrap;');
+    expect(source).toContain('html.is-embedded:not(.sidebar-panel) .topbar{display:flex;flex-wrap:nowrap}');
   });
 
   it('renders a persistent draggable Pending panel resizer', async () => {
@@ -180,7 +208,8 @@ describe('serve graph ui', () => {
 
     expect(runtimeSource).toContain("import { graphForceScript } from '../../graph/core/graphForce.ts';");
     expect(runtimeSource).toContain('${graphForceScript()}');
-    expect(runtimeSource).toContain('computeRadialForceLayout(nodes,relations,');
+    expect(runtimeSource).toContain('computeRuntimeWorkflowLayeredLayout(nodes,relations)');
+    expect(runtimeSource).not.toContain('computeRadialForceLayout(');
     expect(runtimeSource).toContain('renderForceLinks(linkLayer,relations,nodes,');
     expect(runtimeSource).toContain('createForceNode(nodeLayer,node,');
     expect(runtimeSource).not.toContain('d3.forceSimulation');
@@ -274,6 +303,14 @@ describe('serve missing feature endpoints', () => {
 });
 
 describe('serve chat proxy', () => {
+  it('serves the shell for a top-level root navigation and leaves iframe root to wiki routes', async () => {
+    const source = await chatRoutesSource();
+
+    expect(source).toContain("req.headers['sec-fetch-dest']");
+    expect(source).toContain("headerString(req.headers['sec-fetch-dest']) === 'document'");
+    expect(source).toContain("urlPath !== '/chat' && urlPath !== '/chat/connectors' && !isRootShell");
+  });
+
   it('reports unreachable LLM upstreams as a gateway error with Docker guidance', async () => {
     const source = `${await serveSource()}\n${await chatRoutesSource()}`;
 

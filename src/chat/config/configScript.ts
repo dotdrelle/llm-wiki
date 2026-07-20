@@ -164,7 +164,7 @@ async function restoreEnabledServers() {
 function applyWorkspaceTitle() {
   const wsName = window.__WIKI_CONFIG__?.workspaceName;
   if (!wsName) return;
-  const label = \`CHAT (\${wsName})\`;
+  const label = \`Donna (\${wsName})\`;
   document.title = label;
   const navTitle = document.querySelector('.app-nav-title');
   if (navTitle) navTitle.textContent = label;

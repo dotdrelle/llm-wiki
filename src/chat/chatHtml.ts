@@ -7,7 +7,7 @@ import { CONFIG_SCRIPT } from './config/configScript.ts';
 import { ACTIVITY_PANEL_SCRIPT } from './runtime/activityPanelScript.ts';
 import { RUNTIME_GRAPH_SCRIPT } from './runtime/runtimeGraphScript.ts';
 import { CHAT_MARKUP, EMPTY_CHAT_HTML } from './views/chatView.ts';
-
+import { WIKI_PANEL_SCRIPT } from './views/wikiPanelScript.ts';
 const CHAT_BODY = `${CHAT_MARKUP}\n\n<script>\nlet servers = [];
 let messages = [];
 let isStreaming = false;
@@ -28,7 +28,7 @@ function applyTheme(theme,persist=true) {
   if(persist) localStorage.setItem(THEME_KEY,selected);
 }
 function toggleTheme() { applyTheme(document.documentElement.classList.contains('theme-dark')?'light':'dark'); }
-applyTheme(localStorage.getItem(THEME_KEY)||localStorage.getItem('llm-wiki:graph:theme')||'light');
+applyTheme(localStorage.getItem(THEME_KEY)||localStorage.getItem('llm-wiki:graph:theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'));
 window.addEventListener('storage',event=>{if(event.key===THEME_KEY&&event.newValue)applyTheme(event.newValue,false)});
 let historySummaries = [];
 let historySaveTimer = null;
@@ -140,7 +140,6 @@ const traceRegistry = new Map();
 let nextTraceId = 1;
 const MCP_STALE_SESSION_MS = 5 * 60 * 1000;
 const MCP_REQUEST_TIMEOUT_MS = 60 * 1000;
-
 function chatModeToolsNotice() {
   return \`Chat mode (offline fallback): the wiki-manager runtime is not reachable, so no MCP tools or connectors are available in this conversation and no live state can be checked. If the answer requires a connector's live config, status, recent jobs, or wiki content, say plainly that it cannot be checked while the runtime is offline — do not guess or give a bare label as an answer.\`;
 }
@@ -155,7 +154,6 @@ function notify(msg, type='s') {
   const el=$('notif'); el.textContent=msg; el.className=\`show \${type}\`;
   clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3200);
 }
-
 ${ACTIVITY_PANEL_SCRIPT}
 ${RUNTIME_GRAPH_SCRIPT}
 
@@ -164,7 +162,7 @@ function runtimeTime(value,fallback=Date.now()) {
   const parsed=typeof value==='number'?value:Date.parse(String(value));
   return Number.isFinite(parsed)&&parsed>0?parsed:fallback;
 }
-function runtimeTaskPanelHTML() {
+function runtimeTaskPanelHTML(view='plan') {
   if(!runtimeState) {
     if(window.__WIKI_CONFIG__?.runtime?.enabled) return '<div class="runtime-status">Runtime connecting...</div>';
     return '';
@@ -190,7 +188,7 @@ function runtimeTaskPanelHTML() {
   const runUpdatedAt=runtimeTime(runtimeState.finishedAt||runtimeState.completedAt||runtimeState.updatedAt,runStartedAt);
   const status=\`<div class="runtime-status">Runtime \${runtimeConnected?'connected':'disconnected'} · \${esc(runtimeState.status||'idle')}</div>\`;
   const runCard=runtimeRunCardHTML(plan,activities,runtimeState.workflow?.progress);
-  const planCards=plan.map((step,index)=>actCardHTML({
+  const planCards=[...plan].reverse().map((step,index)=>actCardHTML({
     id:'runtime-plan-'+(step.id||step.step||index),
     kind:'runtime-plan',
     source:'runtime',
@@ -205,7 +203,7 @@ function runtimeTaskPanelHTML() {
     startedAt:runtimeTime(step.startedAt||step.createdAt,runStartedAt),
     updatedAt:runtimeTime(step.finishedAt||step.completedAt||step.updatedAt,runUpdatedAt),
   })).join('');
-  const activityCards=(activityLines.length?activityLines.map((line,index)=>({
+  const activityCards=(activityLines.length?[...activityLines].reverse().map((line,index)=>({
     id:'runtime-agg-'+(line.id||index),
     kind:'runtime-activity',
     source:'runtime',
@@ -216,8 +214,8 @@ function runtimeTaskPanelHTML() {
     progress:line.progress||null,
     startedAt:runStartedAt,
     updatedAt:runUpdatedAt,
-  })):activities.map((activity,index)=>runtimeActivityToCard(activity,index,runStartedAt,runUpdatedAt))).map(actCardHTML).join('');
-  const queueCards=queue.map((item,index)=>actCardHTML({
+  })):[...activities].reverse().map((activity,index)=>runtimeActivityToCard(activity,index,runStartedAt,runUpdatedAt))).map(actCardHTML).join('');
+  const queueCards=[...queue].reverse().map((item,index)=>actCardHTML({
     id:'runtime-queue-'+(item.id||index),
     kind:'runtime-queue',
     source:'runtime',
@@ -231,15 +229,13 @@ function runtimeTaskPanelHTML() {
     updatedAt:runtimeTime(item.finishedAt||item.completedAt||item.updatedAt,runUpdatedAt),
   })).join('');
   const logFilters=\`<div class="runtime-log-filters"><input id="runtime-log-filter" value="\${esc(runtimeLogFilter)}" oninput="setRuntimeLogFilter(this.value)" placeholder="Filter run group task agent file attempt capability error"></div>\`;
-  const logsHtml=runtimeSectionHTML('logs','Logs',logFilters+runtimeLogListHTML());
+  const logsHtml=logFilters+runtimeLogListHTML();
   const synthesisHtml=initialSynthesis.length?\`<div class="act-section-head"><span class="act-section-title">Initial synthesis</span></div><div class="runtime-log">\${esc(initialSynthesis.join('\\n'))}</div>\`:'';
-  return status
-    +runCard
-    +synthesisHtml
-    +runtimeSectionHTML('plan','Plan',planCards)
-    +runtimeSectionHTML('queue','Queue',queueCards)
-    +(activityCards?\`<div class="act-section-head"><span class="act-section-title">Runtime activity</span></div>\${activityCards}\`:'')
-    +logsHtml;
+  if(view==='runtime') return activityCards?\`<div class="act-section-head"><span class="act-section-title">Runtime activity</span></div>\${activityCards}\`:'';
+  if(view==='logs') return logsHtml;
+  const planHTML=planCards?\`<div class="act-section-head"><span class="act-section-title">Plan</span></div>\${planCards}\`:'';
+  const queueHTML=queueCards?\`<div class="act-section-head"><span class="act-section-title">Queue</span></div>\${queueCards}\`:'';
+  return status+runCard+synthesisHtml+planHTML+queueHTML;
 }
 
 function runtimeRunCardHTML(plan,activities,progress=null) {
@@ -387,18 +383,27 @@ function mergeRuntimeConversation() {
     const raw=conversation[runtimeConversationOffset+i];
     const role=raw.role;
     const content=String(raw.content??'');
-    if(role==='assistant'&&content&&pendingRuntimeStatusEls.length) {
-      pendingRuntimeStatusEls.shift()?.remove();
-      changed=true;
-    }
     if(i<runtimeConversationRefs.length) {
       const ref=runtimeConversationRefs[i];
       if(ref.message.content!==content) {
+        // Only the first transition from empty to non-empty content marks a
+        // streaming reply actually materializing. Without the wasEmpty guard,
+        // every later poll that revisits this same (already-answered) last
+        // entry would re-satisfy this check and shift/remove a *different*
+        // pending status bubble queued by a later, still-unanswered request.
+        const wasEmpty=!ref.message.content;
         ref.message.content=content;
         updateMsgBubble(ref.el,role,content);
         changed=true;
+        if(role==='assistant'&&content&&wasEmpty&&pendingRuntimeStatusEls.length) {
+          pendingRuntimeStatusEls.shift()?.remove();
+        }
       }
       continue;
+    }
+    if(role==='assistant'&&content&&pendingRuntimeStatusEls.length) {
+      pendingRuntimeStatusEls.shift()?.remove();
+      changed=true;
     }
     if(role==='user' && pendingRuntimeUserRefs.length) {
       // FIFO: the server processes user turns in submission order, so the
@@ -467,10 +472,16 @@ function uploadDocumentRequest(form,onUploaded) {
     xhr.send(form);
   });
 }
+const UPLOAD_ALLOWED_EXTENSIONS=['txt','md','pdf','xls','xlsx','doc','docx','ppt','pptx','odt','odp'];
 async function uploadSelectedDocument(input) {
   const file=input?.files?.[0];
   if(!file) return;
   input.value='';
+  const ext=(file.name.split('.').pop()||'').toLowerCase();
+  if(!UPLOAD_ALLOWED_EXTENSIONS.includes(ext)) {
+    notify('Unsupported file type: .'+ext+' — allowed: '+UPLOAD_ALLOWED_EXTENSIONS.join(', '),'e');
+    return;
+  }
   const actId='upload-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
   upsertActivity({id:actId,kind:'upload',label:file.name,filename:file.name,bytes:file.size,status:'running',startedAt:Date.now()});
   openActivityPanel();
@@ -494,7 +505,7 @@ function appBack() {
 }
 
 function autoResize(ta) {
-  ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px';
+  ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,180)+'px';
   const val=ta.value;
   if(val.startsWith('/')&&!/\\s/.test(val)){
     fetchSkillsAc().then(()=>showSkillAc(val.slice(1)));
@@ -557,6 +568,7 @@ function toggleHelpPanel() {
   const panel=$('help-panel');
   if(!panel) return;
   const wasClosed=panel.classList.contains('closed');
+  if(wasClosed) $('activity-panel')?.classList.add('closed');
   panel.classList.toggle('closed');
   if(wasClosed) showHelpToc();
 }
@@ -796,6 +808,7 @@ function updateAgentModeUI() {
       ? (agentMode?'Agent mode: prompts run through wiki-manager runtime':'Chat mode: prompts run locally in serve')
       : 'Runtime not configured';
   }
+  $('input-box')?.classList.toggle('agent-on',agentMode);
   if(!isStreaming) {
     setSendButtonStreaming(false);
   }
@@ -1104,61 +1117,8 @@ function renderCards() {
   el.innerHTML=servers.map(s=>cardHTML(s)).join('');
 }
 
-function initPageMode() {
-  const path=location.pathname.replace(/\\/+$/,'') || '/chat';
-  const isConnectors=path==='/chat/connectors';
-  const isExecution=path==='/chat/execution';
-  document.body.classList.toggle('connectors-mode',isConnectors);
-  document.body.classList.toggle('execution-mode',isExecution);
-  $('connectors-link')?.classList.toggle('active',isConnectors);
-  if(isConnectors) { renderCards(); renderSkillsManager(); }
-  if(isExecution) openActivityPanel();
-  // Also handles browser Back/Forward, which re-enters via this popstate handler.
-  activityView=isExecution?'graph':'list';
-  renderActivities();
-}
-
-function showConnectorsView(event) {
-  event?.preventDefault();
-  document.body.classList.add('connectors-mode');
-  document.body.classList.remove('execution-mode');
-  $('connectors-link')?.classList.add('active');
-  renderCards();
-  renderSkillsManager();
-  activityView='list';
-  renderActivities();
-  if(location.pathname.replace(/\\/+$/,'')!=='/chat/connectors') {
-    history.pushState(null,'','/chat/connectors');
-  }
-}
-
-function showChatView() {
-  document.body.classList.remove('connectors-mode');
-  document.body.classList.remove('execution-mode');
-  $('connectors-link')?.classList.remove('active');
-  if(['/chat/connectors','/chat/execution'].includes(location.pathname.replace(/\\/+$/,''))) {
-    history.pushState(null,'','/chat');
-  }
-  // Entering Execution view forces activityView to 'graph' in memory for the
-  // current page session, but never reset it on the way out — the Activity
-  // panel was left rendering its execution-mode graph+inspector layout
-  // inside the normal-width sidebar instead of the plain card list.
-  activityView='list';
-  renderActivities();
-}
-
-function showExecutionView(event) {
-  event?.preventDefault();
-  document.body.classList.remove('connectors-mode');
-  document.body.classList.add('execution-mode');
-  $('connectors-link')?.classList.remove('active');
-  activityView='graph';
-  openActivityPanel();
-  renderActivities();
-  if(location.pathname.replace(/\\/+$/,'')!=='/chat/execution') {
-    history.pushState(null,'','/chat/execution');
-  }
-}
+// initPageMode / showChatView / showConnectorsView / showExecutionView live in
+// wikiPanelScript.ts with the shell tab logic (single owner of view switching).
 
 function cardHTML(s) {
   const badgeClass={ok:'ok',err:'err',loading:'loading',off:'off'}[s.status]||'off';
@@ -2172,10 +2132,10 @@ function createStreamBubble() {
   return div;
 }
 
-function createRuntimeThinkingBubble() {
+function createRuntimeThinkingBubble(text='Request received · Donna is preparing the response and plan…') {
   const div=createStreamBubble();
   const bubble=div.querySelector('.bubble');
-  if(bubble) bubble.innerHTML='<div class="runtime-thinking"><div class="typing"><span></span><span></span><span></span></div><span>Request received · Donna is preparing the response and plan…</span></div>';
+  if(bubble) bubble.innerHTML=\`<div class="runtime-thinking"><div class="typing"><span></span><span></span><span></span></div><span>\${esc(text)}</span></div>\`;
   return div;
 }
 
@@ -2312,10 +2272,14 @@ async function sendMessage() {
   if(isStreaming) return;
   const input=$('chat-input');
   const text=input.value.trim();
+  const displayOverride=input.dataset.displayText||'';
+  const forceChat=input.dataset.forceChat==='1';
+  const hideQuestion=input.dataset.hideQuestion==='1';
+  delete input.dataset.displayText; delete input.dataset.forceChat; delete input.dataset.hideQuestion;
   if(!text) return;
   if(await tryProfilePreferenceUpdate(input,text)) return;
-  if(agentMode) {
-    await sendRuntimeAgentMessage(input,text);
+  if(agentMode&&!forceChat) {
+    await sendRuntimeAgentMessage(input,text,{displayText:displayOverride||text,hideQuestion});
     return;
   }
   // Chat mode: when the runtime is up, delegate to its READ-ONLY turn
@@ -2323,10 +2287,11 @@ async function sendMessage() {
   // to duplicate. Only when there is no runtime do we fall back to the
   // tool-less local LLM proxy below.
   if(runtimeEnabled()) {
-    await sendRuntimeAgentMessage(input,text,{mode:'chat'});
+    await sendRuntimeAgentMessage(input,text,{mode:'chat',displayText:displayOverride||text,hideQuestion});
     return;
   }
   const resolved=await resolveSkillInvocation(text);
+  if(displayOverride) resolved.displayText=displayOverride;
   const model=$('model-name').value.trim()||'gpt-4o';
   const parsedTemp=parseFloat($('temperature').value);
   const temp=Number.isFinite(parsedTemp) ? parsedTemp : 0.7;
@@ -2425,7 +2390,7 @@ async function sendMessage() {
   }
 }
 
-async function sendRuntimeAgentMessage(input,text,{mode}={}) {
+async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQuestion=false}={}) {
   if(!runtimeEnabled()) {
     notify('Runtime is not configured.','e');
     return;
@@ -2433,11 +2398,12 @@ async function sendRuntimeAgentMessage(input,text,{mode}={}) {
   input.value='';
   input.style.height='auto';
   if(!currentConversationId) currentConversationId=newConversationId();
-  const userMessage={role:'user',content:text};
+  const userMessage={role:'user',content:text,...(displayText!==text?{displayContent:displayText}:{})};
   messages.push(userMessage);
-  const userEl=appendMsg('user',text);
-  const statusEl=mode==='chat'?null:createRuntimeThinkingBubble();
-  if(statusEl) pendingRuntimeStatusEls.push(statusEl);
+  const userEl=appendMsg('user',displayText);
+  if(hideQuestion) userEl.classList.add('msg-hidden');
+  const statusEl=createRuntimeThinkingBubble(mode==='chat'?'Thinking...':undefined);
+  pendingRuntimeStatusEls.push(statusEl);
   // Consumed by mergeRuntimeConversation once this same message comes back
   // from the runtime's own /state, instead of appending a second copy.
   pendingRuntimeUserRefs.push({message:userMessage,el:userEl});
@@ -2489,7 +2455,6 @@ async function sendRuntimeAgentMessage(input,text,{mode}={}) {
     renderActivities();
     updateActivityBadge();
     updateAgentModeUI();
-    openActivityPanel();
     fetchRuntimeState().catch(()=>{});
   } catch(e) {
     if(statusEl) {
@@ -2535,7 +2500,6 @@ async function sendRuntimeControlChoice(intent,text) {
     fetchRuntimeState().catch(()=>{});
     renderActivities();
     updateActivityBadge();
-    openActivityPanel();
   } catch(e) {
     notify(e?.message||String(e),'e');
   }
@@ -2545,6 +2509,8 @@ async function sendRuntimeControlChoice(intent,text) {
 
 ${CONFIG_SCRIPT}
 
+${WIKI_PANEL_SCRIPT}
+
 // ── Init ────────────────────────────────────────────────────────────────────
 async function initChat() {
   applyWorkspaceTitle();
@@ -2552,6 +2518,7 @@ async function initChat() {
   await loadConfigProfiles();
   loadServers();
   initPageMode();
+  initShellTabs();
   await loadHistory();
   initSidebarSplitter();
   initMainSplitter();
@@ -2568,7 +2535,8 @@ export const CHAT_HTML = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MCP Chat</title>
+<title>Donna</title>
+<script>try{const t=localStorage.getItem('llm-wiki:theme')||localStorage.getItem('llm-wiki:graph:theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.classList.add('theme-'+(t==='dark'?'dark':'light'))}catch{}</script>
 ${CHAT_STYLE}
 <script src="/assets/marked.min.js"></script>
 <script src="/assets/d3.min.js"></script>

@@ -14,6 +14,7 @@ import {
   generateHelpChapter,
   generateHelpIndex,
   generateNotFoundPage,
+  generateSidebarPanelPage,
   generateSkillsPage,
   isRawDownloadRequestPath,
   isRawUntrackedReference,
@@ -237,6 +238,13 @@ export async function handleWikiRoutes(
 
   if (urlPath === '/skills') {
     const html = await generateSkillsPage(rootDir);
+    await deps.sendGzippedHtml(req, res, html);
+    return true;
+  }
+
+  // Sidebar-only page used by the app shell (/chat) as its left "Wiki" tab.
+  if (urlPath === '/embed/sidebar' && req.method === 'GET') {
+    const html = await generateSidebarPanelPage(rootDir);
     await deps.sendGzippedHtml(req, res, html);
     return true;
   }

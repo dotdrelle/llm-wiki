@@ -12,7 +12,7 @@ export const WIKI_LAYOUT_SCRIPT = `
     }
     if (persist) localStorage.setItem(THEME_KEY, selected);
   }
-  applyTheme(localStorage.getItem(THEME_KEY) || localStorage.getItem('llm-wiki:graph:theme') || 'light');
+  applyTheme(localStorage.getItem(THEME_KEY) || localStorage.getItem('llm-wiki:graph:theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
   themeToggle?.addEventListener('click', () => applyTheme(document.documentElement.classList.contains('theme-dark') ? 'light' : 'dark'));
   window.addEventListener('storage', (event) => {
     if (event.key === THEME_KEY && event.newValue) applyTheme(event.newValue, false);
@@ -25,7 +25,7 @@ export const WIKI_LAYOUT_SCRIPT = `
   const sideTree = document.querySelector('.side-tree');
   const searchInput = document.querySelector('[data-side-search]');
   const searchStatus = document.querySelector('[data-side-search-status]');
-  const sideFiles = [...document.querySelectorAll('[data-side-path]')];
+  const sideFiles = [...document.querySelectorAll('.side-tree [data-side-path]')];
   const sideFolders = [...document.querySelectorAll('[data-tree-id]')];
   function saveSidebarState() {
     if (searchInput) localStorage.setItem(searchKey, searchInput.value);
@@ -365,7 +365,7 @@ export const WIKI_LAYOUT_SCRIPT = `
     // G → graph
     if (e.key === 'g' && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault();
-      window.location.href = '/graph';
+      window.WikiUi.navigate('/graph');
     }
     // Escape → fermer modal d'aide
     if (e.key === 'Escape') {
@@ -452,7 +452,7 @@ export const WIKI_LAYOUT_SCRIPT = `
 
   function openSelected() {
     if (!cur[selIdx]) return;
-    window.location.href = cur[selIdx].href;
+    window.WikiUi.navigate(cur[selIdx].href);
     close();
   }
 
@@ -470,5 +470,52 @@ export const WIKI_LAYOUT_SCRIPT = `
     if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); backdrop.classList.contains('is-open') ? close() : open(); }
     if (e.key === 'Escape' && backdrop.classList.contains('is-open')) { close(); }
   });
+})();
+
+// ── App-shell messaging (no-op on standalone pages) ─────────────────────────
+(function initShellMessaging() {
+  const embedded = window.self !== window.top;
+  const isSidebarPanel = document.documentElement.classList.contains('sidebar-panel');
+
+  // Content page inside the shell's central iframe: report navigations so the
+  // shell can sync its URL hash and the sidebar's active file.
+  if (embedded && !isSidebarPanel) {
+    window.parent.postMessage(
+      { type: 'llmwiki:nav', path: window.location.pathname },
+      window.location.origin,
+    );
+  }
+
+  // Sidebar panel: reflect the active file when the shell reports navigation.
+  if (embedded && isSidebarPanel) {
+    // All local links must go through the shell, including pages such as
+    // /graph that do not load WIKI_LAYOUT_SCRIPT and therefore cannot report
+    // their own navigation after the iframe has loaded.
+    document.addEventListener('click', function(event) {
+      const target = event.target instanceof Element ? event.target.closest('a[href]') : null;
+      const href = target ? target.getAttribute('href') : null;
+      if (!href || !href.startsWith('/') || href.startsWith('//')) return;
+      event.preventDefault();
+      window.WikiUi.navigate(href);
+    });
+
+    window.addEventListener('message', function(event) {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data;
+      if (!data || data.type !== 'llmwiki:active') return;
+      const currentPath = decodeURIComponent(String(data.path || '')).replace(/^\\//, '');
+      document.querySelectorAll('[data-side-path]').forEach(function(link) {
+        const isActive = link.getAttribute('data-side-path') === currentPath;
+        link.classList.toggle('is-active', isActive);
+        if (isActive) {
+          let folder = link.closest('[data-tree-id]');
+          while (folder) {
+            folder.open = true;
+            folder = folder.parentElement ? folder.parentElement.closest('[data-tree-id]') : null;
+          }
+        }
+      });
+    });
+  }
 })();
 `;

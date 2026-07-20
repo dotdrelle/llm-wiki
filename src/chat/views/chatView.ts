@@ -1,6 +1,6 @@
 export const EMPTY_CHAT_HTML = `<div id="empty">
   <div class="em-icon">⬡</div>
-  <h2>MCP Chat</h2>
+  <h2>Donna</h2>
   <p>Enable an MCP server, then start the conversation.</p>
   <div class="empty-actions">
     <button class="empty-tile help-tile" type="button" onclick="toggleHelpPanel()">
@@ -14,22 +14,18 @@ export const EMPTY_CHAT_HTML = `<div id="empty">
   </div>
 </div>`;
 
-export const CHAT_MARKUP = `<nav id="app-nav" aria-label="Navigation application">
-  <button class="app-nav-btn" type="button" onclick="toggleSidebar()" title="Toggle sidebar" aria-label="Toggle sidebar">☰</button>
-  <a class="app-nav-link" href="/" title="Back to wiki" aria-label="Back to wiki">Wiki</a>
-  <button class="app-nav-link" type="button" onclick="showChatView()" title="Chat">Chat</button>
-  <button class="app-nav-link" type="button" onclick="showExecutionView()" title="Execution">Execution</button>
-  <div class="app-nav-title">MCP Chat</div>
-  <div class="app-nav-spacer"></div>
-  <button id="help-toggle" class="app-nav-btn help-toggle" type="button" onclick="toggleHelpPanel()" title="Help &amp; documentation" aria-label="Open help">?</button>
-  <button id="theme-toggle" class="app-nav-btn theme-toggle" type="button" onclick="toggleTheme()" title="Switch to dark theme" aria-label="Switch color theme">☾</button>
-</nav>
-
-<aside id="sidebar">
+export const CHAT_MARKUP = `<aside id="sidebar">
+  <div class="shell-tabs" role="tablist" aria-label="Left panel">
+    <button id="shell-tab-wiki" class="shell-tab" type="button" role="tab" onclick="setLeftTab('wiki')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Wiki</button>
+    <button id="shell-tab-chat" class="shell-tab active" type="button" role="tab" onclick="setLeftTab('chat')"><span class="shell-tab-glyph" aria-hidden="true">⬡</span>Donna</button>
+  </div>
+  <div id="wiki-side-host">
+    <iframe id="wiki-side-frame" title="Wiki explorer"></iframe>
+  </div>
   <div class="sb-logo">
-    <div class="sb-logo-mark">M</div>
+    <div class="sb-logo-mark">⬡</div>
     <div class="sb-logo-main">
-      <div class="sb-logo-text">MCP Chat</div>
+      <div class="sb-logo-text">Donna</div>
       <div class="sb-logo-sub">workspace chat</div>
     </div>
   </div>
@@ -47,6 +43,7 @@ export const CHAT_MARKUP = `<nav id="app-nav" aria-label="Navigation application
     <div class="sb-pane config-pane" id="config-pane">
       <div class="sec-label">Connectors</div>
       <a class="sb-link" id="connectors-link" href="/chat/connectors" onclick="showConnectorsView(event)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a6 6 0 0 1-12 0V8z"/></svg> Connectors <span>MCP & skills</span></a>
+      <a class="sb-link" id="execution-link" href="/chat/execution" onclick="showExecutionView(event)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg> Execution <span>runtime runs</span></a>
       <div class="sec-label">LLM Config<div class="sec-label-actions"><select class="tb-profile-select" id="profile-picker" title="Active .wikirc profile managed by wiki-manager runtime" onchange="switchConfigProfile(this.value)"></select><button type="button" onclick="resetYamlConfig()">Reset</button></div></div>
       <div class="api-block">
         <div class="field">
@@ -149,6 +146,9 @@ export const CHAT_MARKUP = `<nav id="app-nav" aria-label="Navigation application
       </div>
     </section>
   </div>
+  <div id="wiki-view">
+    <iframe id="wiki-frame" name="wiki-frame" title="Wiki"></iframe>
+  </div>
   <div id="messages">
     ${EMPTY_CHAT_HTML}
   </div>
@@ -160,18 +160,21 @@ export const CHAT_MARKUP = `<nav id="app-nav" aria-label="Navigation application
     <div id="runtime-graph-center"></div>
   </div>
   <div id="input-wrap">
-    <div class="input-box">
+    <div class="input-box" id="input-box">
       <div class="skill-ac" id="skill-ac"></div>
-      <input id="doc-upload-input" type="file" hidden onchange="uploadSelectedDocument(this)">
+      <input id="doc-upload-input" type="file" hidden accept=".txt,.md,.pdf,.xls,.xlsx,.doc,.docx,.ppt,.pptx,.odt,.odp" onchange="uploadSelectedDocument(this)">
       <textarea id="chat-input" rows="1" placeholder="Your message… (/ for skills)"
         oninput="autoResize(this)" onkeydown="handleKey(event)"></textarea>
-      <button id="agent-mode-btn" class="agent-mode-btn" type="button" onclick="toggleAgentMode()" title="Send prompts to the agent runtime">Agent</button>
-      <button class="attach-btn" type="button" onclick="openDocumentUpload()" title="Upload document" aria-label="Upload document">
-        <svg viewBox="0 0 24 24"><path d="M21.4 11.6 12 21a6 6 0 0 1-8.5-8.5l9.9-9.9a4 4 0 0 1 5.7 5.7L9.2 18.2a2 2 0 0 1-2.8-2.8l9.2-9.2"/></svg>
-      </button>
-      <button id="send-btn" onclick="handleSendButton()" title="Send">
-        <svg viewBox="0 0 24 24"><path d="M12 5l7 7-1.4 1.4L13 8.8V20h-2V8.8l-4.6 4.6L5 12z"/></svg>
-      </button>
+      <div class="input-actions">
+        <button class="attach-btn" type="button" onclick="openDocumentUpload()" title="Upload document" aria-label="Upload document">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        </button>
+        <button id="agent-mode-btn" class="agent-mode-btn" type="button" onclick="toggleAgentMode()" title="Send prompts to the agent runtime">Agent</button>
+        <div class="input-actions-spacer"></div>
+        <button id="send-btn" onclick="handleSendButton()" title="Send">
+          <svg viewBox="0 0 24 24"><path d="M12 5l7 7-1.4 1.4L13 8.8V20h-2V8.8l-4.6 4.6L5 12z"/></svg>
+        </button>
+      </div>
     </div>
     <div class="input-hint">Enter to send · Shift+Enter for new line</div>
   </div>
@@ -198,6 +201,14 @@ export const CHAT_MARKUP = `<nav id="app-nav" aria-label="Navigation application
     </div>
   </div>
   <div class="act-body" id="help-body"></div>
+</aside>
+<aside id="right-rail" aria-label="Monitoring">
+  <button class="rail-btn" type="button" onclick="toggleActivityPanel()" title="Activity" aria-label="Activity">
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+    <span class="rail-badge" id="rail-act-badge"></span>
+  </button>
+  <button id="help-toggle" class="rail-btn" type="button" onclick="toggleHelpPanel()" title="Help &amp; documentation" aria-label="Open help">?</button>
+  <button id="theme-toggle" class="rail-btn" type="button" onclick="toggleTheme()" title="Switch to dark theme" aria-label="Switch color theme">☾</button>
 </aside>
 <div id="notif"></div>
 <div class="prompt-drawer" id="system-prompt-drawer" aria-hidden="true">

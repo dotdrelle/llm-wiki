@@ -235,7 +235,13 @@ export async function handleChatRoutes(
     return true;
   }
 
-  if (urlPath !== '/chat' && urlPath !== '/chat/connectors') return false;
+  // The shell is the app: '/' serves it for top-level navigations, while the
+  // same URL keeps serving the wiki index when loaded inside the shell's
+  // central iframe (Sec-Fetch-Dest: 'document' vs 'iframe'). Requests without
+  // the header (curl, tests, old browsers) keep the wiki index — safe default.
+  const isRootShell =
+    urlPath === '/' && headerString(req.headers['sec-fetch-dest']) === 'document';
+  if (urlPath !== '/chat' && urlPath !== '/chat/connectors' && !isRootShell) return false;
 
   const systemPromptPath = path.join(deps.workspace.paths.internalDir, 'system-prompt.md');
   const systemPromptBase = (await pathExists(systemPromptPath))

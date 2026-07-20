@@ -59,6 +59,8 @@ export function graphForceScript(): string {
       if (!from || !to) continue;
       const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
       line.setAttribute('class', edgeClassName ? edgeClassName(edge) : 'graph-force-link');
+      line.dataset.from = from.id;
+      line.dataset.to = to.id;
       line.setAttribute('x1', from.x);
       line.setAttribute('y1', from.y);
       line.setAttribute('x2', to.x);
@@ -72,6 +74,7 @@ export function graphForceScript(): string {
   function createForceNode(nodeLayer, node, { className, onSelect } = {}) {
     const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     group.setAttribute('class', className ? className(node) : 'graph-force-node');
+    group.dataset.nodeId = node.id;
     group.setAttribute('tabindex', '0');
     group.setAttribute('transform', 'translate(' + node.x + ',' + node.y + ')');
     if (onSelect) group.addEventListener('click', () => onSelect(node.id));

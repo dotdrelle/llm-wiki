@@ -7,8 +7,10 @@ part of the chat runtime UI's script pipeline, not from a Node-side
 works — there was no build-time projection to place in this directory.
 
 It still shares the actual D3 socle: `../core/graphForce.ts`
-(`computeRadialForceLayout`/`renderForceLinks`/`createForceNode`) holds the
-radial force-simulation layout and node/link SVG creation mechanics used by
-both this graph and the wiki graph's radial mode. Do not reimplement
+(`renderForceLinks`/`createForceNode`) holds the node/link SVG creation
+mechanics used by both this graph and the wiki graph. The runtime graph's
+layout is its own layered left-to-right DAG (topological depth over
+`depends_on` edges, in `runtimeGraphScript.ts`); `computeRadialForceLayout`
+remains the wiki graph's radial force mode. Do not reimplement
 `d3.forceSimulation`/SVG node creation in `src/chat/runtime/` again — extend
 `graphForce.ts`.

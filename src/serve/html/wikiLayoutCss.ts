@@ -97,6 +97,10 @@ export const WIKI_LAYOUT_CSS = `
     }
     .wiki-main-resizer:hover::before,
     .wiki-main-resizer.dragging::before { background: var(--muted); }
+    .side-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.8rem; }
+    .side-head .brand { margin-bottom: 0; min-width: 0; flex: 1; text-align: center; }
+    .side-head .side-actions { display: flex; margin-bottom: 0; flex-shrink: 0; }
+    .side-head .side-action { min-height: 2rem; padding: 0 0.55rem; }
     .brand { display: block; margin-bottom: 0.8rem; color: var(--text); text-decoration: none; }
     .brand-title {
       display: block;
@@ -351,10 +355,12 @@ export const WIKI_LAYOUT_CSS = `
       background: #b7791f;
       opacity: 0.85;
     }
-    .side-untracked-link:hover {
+    .side-untracked-link:hover, .side-untracked-link.is-active {
       background: var(--panel-soft);
       color: var(--accent);
     }
+    .side-untracked-link.is-active { font-weight: 720; }
+    .side-untracked-link.is-active::before { background: var(--accent); opacity: 1; }
     .side-untracked-link:hover::after {
       content: "✏";
       position: absolute;
@@ -419,10 +425,10 @@ export const WIKI_LAYOUT_CSS = `
       color: var(--muted);
       font-size: 0.9rem;
     }
-    .topbar nav { min-width: 0; }
+    .topbar nav { min-width: 0; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
     .topbar nav a { color: inherit; }
     .topbar nav a + a::before { content: " / "; color: var(--muted); }
-    .page-actions { display: flex; gap: 0.5rem; align-items: center; }
+    .page-actions { display: flex; gap: 0.5rem; align-items: center; flex-shrink: 0; flex-wrap: nowrap; }
     .page-actions form { margin: 0; }
     .action-link, .action-button {
       display: inline-flex;
@@ -438,6 +444,8 @@ export const WIKI_LAYOUT_CSS = `
       font-weight: 680;
       text-decoration: none;
       cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
     .action-link:hover, .action-button:hover {
       border-color: var(--accent);
@@ -1105,6 +1113,11 @@ export const WIKI_LAYOUT_CSS = `
     .doc-toc-item:hover,.doc-toc-item.is-active{color:var(--accent);background:var(--accent-soft)}
     .doc-toc-h3{padding-left:1rem;font-size:.76rem}
     @media(max-width:1280px){.doc-toc{display:none}}
+    /* Inside the unified shell, the document viewport already excludes the
+       Activity/Help panel. Keep the TOC attached to that viewport and reserve
+       its column instead of hiding it as soon as a side panel opens. */
+    html.is-embedded:not(.sidebar-panel) .content:has(.doc-toc){padding-right:clamp(145px,26vw,240px)}
+    html.is-embedded:not(.sidebar-panel) .doc-toc{display:flex;right:.75rem;width:clamp(120px,22vw,200px)}
     /* ── Stabilize tags ───────────────────────────────────────── */
     .section-tag{display:inline-flex;align-items:center;margin-left:.5rem;padding:.08rem .42rem;border:1px solid var(--border);border-radius:999px;background:var(--panel-soft);color:var(--muted);font-size:.58rem;font-weight:760;letter-spacing:.05em;text-transform:uppercase;vertical-align:middle;font-family:ui-sans-serif,system-ui,sans-serif;line-height:1.5}
     .section-tag-modified{border-color:color-mix(in srgb,var(--accent) 35%,var(--border));color:var(--accent);background:var(--accent-soft)}
@@ -1112,4 +1125,24 @@ export const WIKI_LAYOUT_CSS = `
     .stabilize-badge{display:inline-flex;align-items:center;gap:.4rem;padding:.28rem .65rem;margin-bottom:1rem;border:1px solid var(--border);border-radius:6px;background:var(--panel-soft);color:var(--muted);font-size:.78rem}
     /* ── Print ─────────────────────────────────────────────────── */
     @media print{.sidebar,.page-actions,.palette-backdrop,.doc-toc{display:none!important}.app-shell{display:block}.content{padding:0}.article{border:none;border-radius:0;max-width:100%;box-shadow:none}body{font-size:11pt;line-height:1.5}.topbar{display:none}}
+    /* ── App-shell embed modes (CSS only, no behavior change) ──── */
+    /* Content page hosted in the shell's central iframe: hide the
+       duplicated chrome (sidebar, resizer, theme/help toggles). */
+    html.is-embedded:not(.sidebar-panel) .sidebar,
+    html.is-embedded:not(.sidebar-panel) .wiki-main-resizer{display:none!important}
+    html.is-embedded .wiki-theme-toggle,
+    html.is-embedded .wiki-help-toggle{display:none!important}
+    html.is-embedded:not(.sidebar-panel) .app-shell{display:block}
+    html.is-embedded:not(.sidebar-panel) .topbar{display:flex;flex-wrap:nowrap}
+    /* Sidebar-only page hosted in the shell's left panel: blend into the
+       shell (same panel background, tighter padding, no duplicated links). */
+    html.sidebar-panel .app-shell{display:block;min-height:100vh}
+    html.sidebar-panel body{background:var(--panel)}
+    html.sidebar-panel .sidebar{position:static;width:auto;height:100vh;background:var(--panel);padding:.8rem .85rem 1rem}
+    html.sidebar-panel .wiki-main-resizer{display:none!important}
+    html.sidebar-panel .side-action[href="/chat"]{display:none}
+    html.sidebar-panel .side-head .brand{flex:1}
+    html.sidebar-panel .side-head .side-actions{width:calc(50% - .25rem)}
+    html.sidebar-panel .side-head .side-action{width:100%}
+    html.sidebar-panel .brand{margin-bottom:.55rem}
 `;

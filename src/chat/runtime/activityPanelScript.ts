@@ -1,7 +1,6 @@
 export const ACTIVITY_PANEL_SCRIPT = `/* ── Activity Panel ─────────────────────────────────────────────────── */
 const ACT_STORE_KEY=storageKey('llm-wiki-chat:activities');
 const ACT_PANEL_KEY=storageKey('llm-wiki-chat:activity-panel-open');
-const RUNTIME_SECTION_KEY_PREFIX='llm-wiki-chat:runtime-section:';
 let _activities=[];
 let _actTimer=null;
 let runtimeState=null;
@@ -47,6 +46,7 @@ let agentMode=false;
 // into the cramped inline graph+inspector layout on every subsequent load,
 // which read as broken rather than a deliberate default.
 let activityView='list';
+let activityListTab='plan';
 let selectedWorkflowNodeId=null;
 const _activityPollTimers=new Map();
 function isActivityActive(status){return status==='running'||status==='queued';}
@@ -317,6 +317,7 @@ function renderActivities() {
   const el=$('activity-body');
   if(!el) return;
   syncActivityViewTabs();
+  el.classList.toggle('activity-list-mode',activityView==='list');
   if(activityView==='graph') {
     const center=$('runtime-graph-center');
     if(document.body.classList.contains('execution-mode')&&center) {
@@ -331,20 +332,18 @@ function renderActivities() {
   }
   const center=$('runtime-graph-center');
   if(center&&!document.body.classList.contains('execution-mode')) center.innerHTML='';
-  if(!_activities.length&&!runtimeState){
-    el.innerHTML=\`<div class="act-empty">No activity yet.<br><button class="act-empty-btn" type="button" onclick="toggleHelpPanel()">Open help</button></div>\`;
-    return;
-  }
   const rev=[..._activities].reverse();
   const uploads=rev.filter(a=>a.kind==='upload');
   const mcp=rev.filter(a=>a.kind!=='upload');
   const hasDone=_activities.some(a=>!isActivityActive(a.status));
   const dismissBtn=hasDone?\`<button class="act-dismiss-all" onclick="dismissAllDone()">Clear all</button>\`:'';
   const section=(title,items)=>items.length?\`<div class="act-section-head"><span class="act-section-title">\${title}</span></div>\${items.map(actCardHTML).join('')}\`:'';
-  el.innerHTML=runtimeTaskPanelHTML()
-    +\`<div class="act-section-head"><span class="act-section-title">Local activity</span>\${dismissBtn}</div>\`
-    +section('Uploads',uploads)
-    +section('MCP',mcp);
+  const localHTML=\`<div class="act-section-head"><span class="act-section-title">Local activity</span>\${dismissBtn}</div>\`+section('Uploads',uploads)+section('MCP',mcp);
+  const panes={plan:runtimeTaskPanelHTML('plan'),runtime:runtimeTaskPanelHTML('runtime'),logs:runtimeTaskPanelHTML('logs'),local:localHTML};
+  const labels={plan:'Plan',runtime:'Runtime activity',logs:'Logs',local:'Local activity'};
+  const tabs=Object.entries(labels).map(([key,label])=>\`<button class="activity-subtab \${activityListTab===key?'active':''}" type="button" onclick="setActivityListTab('\${key}')">\${label}</button>\`).join('');
+  const empty=\`<div class="act-empty">No \${labels[activityListTab].toLowerCase()} yet.</div>\`;
+  el.innerHTML=\`<div class="activity-subtabs" role="tablist" aria-label="Activity list sections">\${tabs}</div><div class="activity-subtab-content activity-subtab-\${activityListTab}">\${panes[activityListTab]||empty}</div>\`;
   // Keep the (height-capped, scrollable) runtime log pinned to its latest
   // lines after each full panel re-render.
   scrollRuntimeLogToEnd?.();
@@ -354,6 +353,11 @@ function renderActivities() {
   const anyRunning=_activities.some(a=>isActivityActive(a.status))||runtimeRunning;
   if(anyRunning&&!_actTimer) _actTimer=setInterval(renderActivities,1000);
   if(!anyRunning&&_actTimer){clearInterval(_actTimer);_actTimer=null;}
+}
+function setActivityListTab(tab) {
+  if(!['plan','runtime','logs','local'].includes(tab)) return;
+  activityListTab=tab;
+  renderActivities();
 }
 function updateActivityBadge() {
   const runtimeCount=Array.isArray(runtimeState?.activities)?runtimeState.activities.filter(a=>isActivityActive(normalizeActivityStatus(a.status,a.terminal))).length:0;
@@ -368,6 +372,7 @@ function updateActivityBadge() {
 function toggleActivityPanel() {
   const panel=$('activity-panel');
   if(!panel) return;
+  if(panel.classList.contains('closed')) $('help-panel')?.classList.add('closed');
   const opening=panel.classList.toggle('closed');
   try { localStorage.setItem(ACT_PANEL_KEY,opening?'0':'1'); } catch {}
   updateActivityBadge();
@@ -406,6 +411,13 @@ function runtimeStatusMarkdown(target) {
   const queue=Array.isArray(runtimeState.queue)?runtimeState.queue:[];
   const logs=filteredRuntimeLogs(runtimeState.logs);
   const line=(label,value)=>\`- \${label}: \${value||'-'}\`;
+  const matches=(item,fields)=>fields.some(field=>String(item?.[field]||'')===id);
+  const focusedPlan=plan.find(item=>matches(item,['id','step','description','label']));
+  const focusedActivity=activities.find(item=>matches(item,['id','key','label','tool']));
+  const focusedQueue=queue.find(item=>matches(item,['id','jobId','label','tool']));
+  const focused=focusedPlan||focusedActivity||focusedQueue||null;
+  const focusedKind=focusedPlan?'Plan task':focusedActivity?'Runtime activity':focusedQueue?'Queue item':null;
+  const focusLines=focused?[focusedKind,line('Target',id),line('Status',focused.status),line('Label',focused.description||focused.label||focused.tool||focused.id),line('Progress',focused.progress?.detail||focused.progress?.step||focused.progress?.percent),line('Error',focused.error)].join('\\n'):line('Requested target',id+' (no exact structured match)');
   const planLines=plan.slice(0,8).map((step,index)=>line(\`Plan \${step.step||index+1}\`,\`\${step.status||'pending'} - \${step.description||step.label||step.id||'step'}\`));
   const activityLines=activities.slice(0,8).map((activity,index)=>line(activity.id||activity.key||\`Activity \${index+1}\`,\`\${activity.status||'-'} - \${activity.label||activity.tool||activity.source||'runtime'}\`));
   const queueLines=queue.slice(0,8).map((item,index)=>line(item.id||item.jobId||\`Queue \${index+1}\`,\`\${item.status||'waiting'} - \${item.label||item.tool||item.type||'task'}\`));
@@ -414,6 +426,8 @@ function runtimeStatusMarkdown(target) {
     '',
     line('Runtime',runtimeState.status||'idle'),
     line('Connection',runtimeConnected?'connected':'disconnected'),
+    '',
+    focusLines,
     '',
     planLines.length?['Plan',...planLines].join('\\n'):'Plan\\n- No plan visible.',
     '',
@@ -425,29 +439,17 @@ function runtimeStatusMarkdown(target) {
 }
 function askRuntimeStatus(target) {
   const id=String(target||'current run').trim()||'current run';
-  const prompt=\`Status of \${id}\`;
-  const answer=runtimeStatusMarkdown(id);
-  openActivityPanel();
+  const display=\`Status of \${id}\`;
+  const raw=runtimeStatusMarkdown(id);
+  const prompt=\`Présente clairement le statut de la cible « \${id} » pour l'utilisateur. Commence par cette tâche ou activité précise, puis donne seulement le contexte global utile : progression, dépendances, blocages, éléments en attente et prochaine action recommandée. Ne confonds pas la cible avec les autres tâches et ne reproduis pas les logs bruts sauf s'ils expliquent un problème.\n\n\${raw}\`;
   showChatView();
-  if(!currentConversationId) currentConversationId=newConversationId();
-  messages.push({role:'user',content:prompt});
-  appendMsg('user',prompt);
-  messages.push({role:'assistant',content:answer});
-  appendMsg('assistant',answer);
-  scheduleConversationSave();
-}
-function runtimeSectionCollapsed(name) {
-  try { return localStorage.getItem(storageKey(RUNTIME_SECTION_KEY_PREFIX+name))==='1'; } catch { return false; }
-}
-function toggleRuntimeSection(name) {
-  const collapsed=!runtimeSectionCollapsed(name);
-  try { localStorage.setItem(storageKey(RUNTIME_SECTION_KEY_PREFIX+name),collapsed?'1':'0'); } catch {}
-  renderActivities();
-}
-function runtimeSectionHTML(name,title,html) {
-  if(!html) return '';
-  const collapsed=runtimeSectionCollapsed(name);
-  return \`<div class="act-section-head"><span class="act-section-title">\${esc(title)}</span><button class="runtime-section-toggle" type="button" onclick="toggleRuntimeSection('\${esc(name)}')">\${collapsed?'Expand':'Collapse'}</button></div><div class="\${collapsed?'runtime-section-collapsed':''}">\${html}</div>\`;
+  const input=$('chat-input');
+  if(!input||isStreaming) return;
+  input.value=prompt;
+  input.dataset.displayText=display;
+  input.dataset.forceChat='1';
+  input.dataset.hideQuestion='1';
+  sendMessage();
 }
 async function retryConvert(uploadId, actId) {
   upsertActivity({id:actId,status:'running',phase:'conversion',error:null,outputPath:null,startedAt:Date.now()});

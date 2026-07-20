@@ -4,9 +4,12 @@ import { CHAT_HTML } from '../src/chat/chatHtml.ts';
 import packageJson from '../package.json' with { type: 'json' };
 
 function chatScripts(): string[] {
-  return [...CHAT_HTML.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
+  const scripts = [...CHAT_HTML.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
     (match) => match[1] ?? '',
   );
+  const mainIndex = scripts.findIndex((script) => script.includes('let servers = [];'));
+  if (mainIndex > 0) scripts.unshift(...scripts.splice(mainIndex, 1));
+  return scripts;
 }
 
 describe('chat html', () => {
@@ -24,7 +27,7 @@ describe('chat html', () => {
 
     expect(CHAT_HTML).toContain('id="theme-toggle"');
     expect(script).toContain("const THEME_KEY='llm-wiki:theme';");
-    expect(script).toContain("localStorage.getItem('llm-wiki:graph:theme')||'light'");
+    expect(script).toContain("localStorage.getItem('llm-wiki:graph:theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')");
     expect(script).toContain('event.key===THEME_KEY&&event.newValue');
     expect(script).toContain("document.documentElement.classList.toggle('theme-dark'");
   });
@@ -139,7 +142,7 @@ describe('chat html', () => {
     expect(script).toContain("upsertActivity({id:actId,phase:'conversion'});");
     expect(script).toContain("function isActivityActive(status){return status==='running'||status==='queued';}");
     expect(script).toContain("if(!isActivityActive(item.status)) return item;");
-    expect(CHAT_HTML).toContain('height:calc(100vh - 44px);margin-top:44px;');
+    expect(CHAT_HTML).toContain('#activity-panel{order:2;width:360px;min-width:360px;height:100vh;');
     expect(script).not.toContain('function buildUploadCardHTML');
     expect(script).not.toContain('function buildUploadResultCardHTML');
     expect(script).not.toContain("actElapsed(item)<2");
@@ -162,11 +165,47 @@ describe('chat html', () => {
     expect(script).toContain("if(activityView==='graph')");
   });
 
-  it('overlays Help above Activity instead of consuming horizontal layout space', () => {
+  it('keeps the right rail on the document edge and opens one side panel after it', () => {
     expect(CHAT_HTML).toContain('id="activity-panel"');
     expect(CHAT_HTML).toContain('id="help-panel"');
-    expect(CHAT_HTML).toContain('#help-panel{position:fixed;top:44px;right:0;z-index:1000');
-    expect(CHAT_HTML).toContain('#help-panel.closed{transform:translateX(100%)}');
+    expect(CHAT_HTML).toContain('#right-rail{order:3;');
+    expect(CHAT_HTML).toContain('#help-panel{order:2;');
+    expect(CHAT_HTML).toContain('#help-panel{order:2;width:360px;min-width:360px;height:100vh;');
+    expect(CHAT_HTML).toContain('#help-panel.closed{width:0;min-width:0}');
+    expect(CHAT_HTML).toContain("if(wasClosed) $('activity-panel')?.classList.add('closed');");
+    expect(CHAT_HTML).toContain("if(panel.classList.contains('closed')) $('help-panel')?.classList.add('closed');");
+  });
+
+  it('scrolls a long expanded plan without compressing initial synthesis', () => {
+    expect(CHAT_HTML).toContain('.act-body>*{flex-shrink:0}');
+    expect(CHAT_HTML).toContain('.act-body{flex:1;overflow-y:auto;');
+  });
+
+  it('splits Activity List into four internally scrollable sub-tabs', () => {
+    expect(CHAT_HTML).toContain("const labels={plan:'Plan',runtime:'Runtime activity',logs:'Logs',local:'Local activity'}");
+    expect(CHAT_HTML).toContain('.activity-subtab-content{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain');
+    expect(CHAT_HTML).toContain("function setActivityListTab(tab)");
+    expect(CHAT_HTML).toContain('.activity-subtab-logs .runtime-log{flex:1;min-height:0;max-height:none}');
+    expect(CHAT_HTML).not.toContain('runtime-section-toggle');
+  });
+
+  it('sends Activity status through Donna while displaying a concise chat prompt', () => {
+    const script = chatScripts().join('\n');
+    expect(script).toContain("input.dataset.displayText=display;");
+    expect(script).toContain("input.dataset.forceChat='1';");
+    expect(script).toContain("input.dataset.hideQuestion='1';");
+    expect(script).toContain('Présente clairement le statut de la cible');
+    expect(script).toContain("sendRuntimeAgentMessage(input,text,{mode:'chat',displayText:displayOverride||text,hideQuestion})");
+    expect(script).toContain("if(hideQuestion) userEl.classList.add('msg-hidden')");
+    expect(script).not.toContain("messages.push({role:'assistant',content:answer})");
+  });
+
+  it('focuses PLAN and runtime activity status requests on their selected item', () => {
+    const script = chatScripts().join('\n');
+    expect(script).toContain("focusedPlan=plan.find(item=>matches(item,['id','step','description','label']))");
+    expect(script).toContain("focusedActivity=activities.find(item=>matches(item,['id','key','label','tool']))");
+    expect(script).toContain("focusedKind=focusedPlan?'Plan task':focusedActivity?'Runtime activity'");
+    expect(script).toContain('Commence par cette tâche ou activité précise');
   });
 
   it('always resets the Activity panel to List when leaving Execution view for Chat', () => {
@@ -187,20 +226,52 @@ describe('chat html', () => {
     expect(script).toContain("let activityView='list';");
   });
 
-  it('renders Run/Task graph nodes as gray rounded cards with a status dot, not colored circles', () => {
+  it('boots the root shell with the wiki index in the central frame', () => {
+    const script = chatScripts().join('\n');
+    expect(script).toContain("(path === '/' || location.hash.startsWith('#wiki='))");
+    expect(script).toContain("setCenterWiki(wikiHashPath() || '/')");
+    expect(script).toContain("if (loadedPath !== target) frame.setAttribute('src', target)");
+  });
+
+  it('shows the central wiki frame for sidebar-driven graph navigation', () => {
+    const script = chatScripts().join('\n');
+    expect(script).toContain("data.type === 'llmwiki:navigate'");
+    expect(script).toContain('setCenterWiki(href);');
+  });
+
+  it('keeps the three right rail controls aligned at the top in wiki mode', () => {
+    expect(CHAT_HTML).toContain('body.center-wiki #right-rail{padding-top:10px}');
+  });
+
+  it('applies the saved or system theme before iframe and shell paint', () => {
+    expect(CHAT_HTML).toContain("matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'");
+    expect(CHAT_HTML).toContain('#wiki-view iframe{display:block;width:100%;height:100%;border:0;background:var(--bg)}');
+    expect(CHAT_HTML).toContain('#wiki-side-host iframe{display:block;width:100%;height:100%;border:0;background:var(--bg)}');
+  });
+
+  it('renders draggable colored workflow bubbles with fit zoom and a relation legend', () => {
     const [script] = chatScripts();
 
-    expect(script).toContain("createElementNS('http://www.w3.org/2000/svg','rect')");
-    expect(script).toContain("rect.setAttribute('rx',");
-    expect(script).toContain('RUNTIME_GRAPH_NODE_FILL');
-    expect(script).toContain("statusDot.setAttribute('class','runtime-graph-node-status')");
-    // The main card is a uniform gray — only the small status dot carries
-    // the per-status color, so runtimeWorkflowColor must feed the dot, not
-    // a fill on the card itself.
-    expect(script).toContain("statusDot.setAttribute('fill',runtimeWorkflowColor(node))");
-    expect(script).not.toContain("circle.setAttribute('fill',runtimeWorkflowColor(node))");
-    expect(CHAT_HTML).toContain('.runtime-graph-node rect{stroke:var(--panel);stroke-width:2.5}');
-    expect(CHAT_HTML).toContain('.runtime-graph-node-status{stroke:var(--panel);stroke-width:2}');
+    expect(script).toContain('bubble.style.fill=runtimeWorkflowColor(node)');
+    expect(script).not.toContain("setAttribute('fill',runtimeWorkflowColor");
+    expect(script).toContain('window.d3.drag()');
+    expect(script).toContain(".on('drag',event=>");
+    expect(script).toContain('window.d3.zoom().scaleExtent([.25,3])');
+    expect(script).toContain('runtimeWorkflowZoomTransform=event.transform');
+    expect(script).toContain('runtimeWorkflowZoomTransform||(nodes.length?runtimeWorkflowFitTransform(nodes):null)');
+    expect(script).toContain('function computeRuntimeWorkflowLayeredLayout(nodes,relations)');
+    expect(script).toContain('function aggregateRuntimeWorkflowNodes(nodes,relations)');
+    expect(script).toContain('runtimeWorkflowUserSelected?selectedWorkflowNodeId:null');
+    expect(script).toContain('runtimeWorkflowLabelPrefix(nodes)');
+    expect(script).toContain("setAttribute('class','runtime-graph-lane')");
+    expect(CHAT_HTML).toContain('.runtime-graph-lane{');
+    expect(CHAT_HTML).toContain('class="runtime-graph-legend"');
+    expect(CHAT_HTML).toContain('Other / cancelled');
+    expect(CHAT_HTML).toContain('Running / task');
+    expect(CHAT_HTML).toContain('.runtime-graph-node circle{stroke:var(--panel);stroke-width:3;');
+    expect(CHAT_HTML).toContain('onclick="resetRuntimeWorkflowGraph()"');
+    expect(CHAT_HTML).toContain('onclick="fitRuntimeWorkflowGraph()"');
+    expect(CHAT_HTML).toContain('runtimeWorkflowNodePositions.set(node.id');
   });
 
   it('offers runtime-backed config profile switching without page reload', () => {
@@ -266,7 +337,7 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('tryProfilePreferenceUpdate(input,text)');
     expect(CHAT_HTML).toContain('/api/profile/preference');
     expect(CHAT_HTML.indexOf('tryProfilePreferenceUpdate(input,text)')).toBeLessThan(
-      CHAT_HTML.indexOf('if(agentMode)'),
+      CHAT_HTML.indexOf('if(agentMode&&!forceChat)'),
     );
   });
 
@@ -554,7 +625,7 @@ describe('chat html', () => {
     expect(script).not.toContain('Runtime run accepted. Follow progress in Activity.');
     expect(script).toContain("fetch('/api/runtime/cancel'");
     expect(script).toContain('function toggleAgentMode()');
-    expect(script).toContain('function runtimeTaskPanelHTML()');
+    expect(script).toContain("function runtimeTaskPanelHTML(view='plan')");
     expect(script).toContain('const workflowNodes=Array.isArray(runtimeState.workflow?.nodes)?runtimeState.workflow.nodes:null;');
     expect(script).toContain("const workflowTasks=workflowNodes?.filter(node=>node.type==='task')||null;");
     expect(script).toContain("const workflowActivities=workflowNodes?.filter(node=>node.type==='activity')||null;");
@@ -586,10 +657,9 @@ describe('chat html', () => {
     expect(script).toContain("runningBeforeFetch&&!readOnlyChat?'/api/runtime/control':'/api/runtime/turn'");
     expect(script).toContain("body:runningBeforeFetch&&!readOnlyChat?controlBody:JSON.stringify({input:text,...(mode?{mode}:{})})");
     expect(script).toContain("const readOnlyChat=mode==='chat'");
-    expect(script).toContain("sendRuntimeAgentMessage(input,text,{mode:'chat'})");
-    expect(script).toContain('function createRuntimeThinkingBubble()');
-    expect(script).toContain('Request received · Donna is preparing the response and plan…');
-    expect(script).toContain("const statusEl=mode==='chat'?null:createRuntimeThinkingBubble()");
+    expect(script).toContain("sendRuntimeAgentMessage(input,text,{mode:'chat',displayText:displayOverride||text,hideQuestion})");
+    expect(script).toContain("function createRuntimeThinkingBubble(text='Request received · Donna is preparing the response and plan…')");
+    expect(script).toContain("const statusEl=createRuntimeThinkingBubble(mode==='chat'?'Thinking...':undefined)");
     expect(script).toContain("if(role==='assistant'&&content&&pendingRuntimeStatusEls.length)");
     expect(script).toContain("data?.kind==='ambiguous'");
     expect(script).toContain('function handleSendButton()');

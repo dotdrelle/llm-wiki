@@ -279,23 +279,39 @@ function renderLogMarkdown(raw: string): string {
   return `<section class="log-article"><h1>${escapeHtml(heading)}</h1><ol class="log-list">${items.join('\n')}</ol></section>`;
 }
 
-function layout(title: string, body: string): string {
+type LayoutOptions = {
+  /** Extra class applied on <html> (e.g. "sidebar-panel" for the shell's left panel page). */
+  htmlClass?: string;
+  /** Default browsing-context target for every link on the page (e.g. "wiki-frame"). */
+  baseTarget?: string;
+};
+
+function layout(title: string, body: string, options: LayoutOptions = {}): string {
   const displayName = serveTitle() ?? workspaceNameFromEnv() ?? null;
   const pageTitle = displayName ? `${displayName} · ${title}` : title;
   const faviconLabel = (serveLogo().trim() || (serveTitle() ?? workspaceNameFromEnv() ?? 'W'))
     .slice(0, 2)
     .toUpperCase();
   const faviconHref = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23176b87'/><text x='16' y='22.5' font-size='17' font-family='system-ui,sans-serif' font-weight='900' text-anchor='middle' fill='white'>${encodeURIComponent(faviconLabel)}</text></svg>`;
+  const htmlClassAttr = options.htmlClass ? ` class="${escapeAttr(options.htmlClass)}"` : '';
+  const baseTag = options.baseTarget ? `\n  <base target="${escapeAttr(options.baseTarget)}">` : '';
   return `<!DOCTYPE html>
-<html lang="fr">
+<html lang="fr"${htmlClassAttr}>
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1">${baseTag}
   <title>${escapeHtml(pageTitle)}</title>
   <link rel="icon" type="image/svg+xml" href="${faviconHref}">
   <meta property="og:title" content="${escapeAttr(pageTitle)}">
   <meta property="og:type" content="website">
+  <script>try{const t=localStorage.getItem('llm-wiki:theme')||localStorage.getItem('llm-wiki:graph:theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.classList.add('theme-'+(t==='dark'?'dark':'light'))}catch{}</script>
   <style>${WIKI_LAYOUT_CSS}</style>
+  <script>
+  // Shell embed detection: when a wiki page is hosted inside the app shell
+  // (an iframe of the /chat page), hide the duplicated chrome via CSS only.
+  // Applied before first paint; standalone pages are strictly unchanged.
+  if (window.self !== window.top) document.documentElement.classList.add('is-embedded');
+  </script>
 </head>
 <body>
 <script>
@@ -307,6 +323,16 @@ window.WikiUi = window.WikiUi || {
   },
   normalizeSearch: function(value) {
     return String(value).toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
+  },
+  // JS-driven navigation. In the shell's sidebar panel the target is the
+  // central wiki frame (via the parent shell); everywhere else, same page.
+  navigate: function(href) {
+    const isSidebarPanel = document.documentElement.classList.contains('sidebar-panel');
+    if (isSidebarPanel && window.self !== window.top) {
+      window.parent.postMessage({ type: 'llmwiki:navigate', href: String(href) }, window.location.origin);
+    } else {
+      window.location.href = href;
+    }
   },
 };
 </script>
@@ -622,7 +648,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
       .map((file) => {
         const title = humanTitle(file);
         const safePath = escapeAttr(file);
-        return `<li class="side-untracked-item"><a class="side-untracked-link" href="${escapeHref(`/${file}`)}" title="${safePath}" aria-label="${safePath}">${escapeHtml(title)}</a><button class="side-untracked-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-untracked-delete="${safePath}">×</button></li>`;
+        return `<li class="side-untracked-item"><a class="side-untracked-link" href="${escapeHref(`/${file}`)}" title="${safePath}" aria-label="${safePath}" data-side-path="${safePath}">${escapeHtml(title)}</a><button class="side-untracked-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-untracked-delete="${safePath}">×</button></li>`;
       })
       .join('\n')
     : '<li class="side-untracked-empty">No pending sources.</li>';
@@ -656,7 +682,18 @@ async function renderSidebar(rootDir: string, precomputedNavFiles?: string[]): P
   const chatIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>';
 const kbdHint = `<kbd style="font-size:.68rem;font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .35rem;border-radius:4px;color:var(--muted);cursor:pointer" title="Open global search (⌘K)" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}))">⌘K</kbd>`;
-  return `<a class="wiki-help-toggle" href="/help" title="Help" aria-label="Help">?</a><button class="wiki-theme-toggle" type="button" data-theme-toggle title="Switch to dark theme" aria-label="Switch color theme">☾</button><aside class="sidebar"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}<span>Graph</span></a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}<span>Chat</span></a></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Markdown documents">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside><div class="wiki-main-resizer" data-wiki-main-resizer title="Resize sidebar" role="separator" aria-orientation="vertical"></div>`;
+  return `<a class="wiki-help-toggle" href="/help" title="Help" aria-label="Help">?</a><button class="wiki-theme-toggle" type="button" data-theme-toggle title="Switch to dark theme" aria-label="Switch color theme">☾</button><aside class="sidebar"><div class="side-head"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}<span>Graph</span></a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}<span>Chat</span></a></div></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Markdown documents">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside><div class="wiki-main-resizer" data-wiki-main-resizer title="Resize sidebar" role="separator" aria-orientation="vertical"></div>`;
+}
+
+/**
+ * Standalone page containing only the wiki sidebar, used by the app shell
+ * (/chat) as its left "Wiki" tab. Links target the central "wiki-frame"
+ * browsing context via <base target>. Reuses renderSidebar + layout script
+ * unchanged, so filter, Pending panel and persistence behave identically.
+ */
+export async function generateSidebarPanelPage(rootDir: string): Promise<string> {
+  const sidebar = await renderSidebar(rootDir);
+  return layout('Explorer', sidebar, { htmlClass: 'sidebar-panel', baseTarget: 'wiki-frame' });
 }
 
 export async function buildGraphOverview(
@@ -997,6 +1034,15 @@ export async function serveMd(
   });
   const content = document.querySelector('.content');
   if (content) content.appendChild(toc);
+  function alignEmbeddedToc() {
+    if (window.self === window.top) return;
+    const top = Math.max(16, article.getBoundingClientRect().top);
+    toc.style.top = top + 'px';
+    toc.style.maxHeight = 'calc(100vh - ' + (top + 16) + 'px)';
+  }
+  alignEmbeddedToc();
+  window.addEventListener('resize', alignEmbeddedToc);
+  window.addEventListener('scroll', alignEmbeddedToc, { passive: true });
   // Scrollspy
   const obs = new IntersectionObserver(function(entries) {
     entries.forEach(function(e) {
