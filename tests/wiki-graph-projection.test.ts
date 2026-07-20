@@ -28,7 +28,13 @@ async function fixtureWorkspace(): Promise<string> {
   await writeFile(path.join(root, 'wiki/concepts/domain/sibling.md'), '# Sibling\n');
   await writeFile(path.join(root, 'wiki/sources/source.md'), '# Source\n');
   await writeFile(path.join(root, 'raw/ingested/source-a.md'), '# Raw\n');
-  await writeFile(path.join(root, 'templates/report.md'), '# Template\n');
+  await writeFile(path.join(root, 'templates/report.md'), [
+    '---',
+    'community: Publishing',
+    'group: Legacy template group',
+    '---',
+    '# Template',
+  ].join('\n'));
   await writeFile(path.join(root, 'build-context/audience.md'), '# Context\n');
   await writeFile(path.join(root, 'deliverables/report.md'), '# Deliverable\n[Main](../wiki/concepts/domain/main.md)\n');
   await writeFile(path.join(root, '.wiki/build-state.json'), JSON.stringify({
@@ -40,6 +46,31 @@ async function fixtureWorkspace(): Promise<string> {
 }
 
 describe('wiki graph projection', () => {
+  it('reads community frontmatter on every document type with community ahead of group', async () => {
+    const root = await fixtureWorkspace();
+    const files = await listWikiGraphFiles(root);
+    await Promise.all(files.map((file) => writeFile(path.join(root, file), [
+      '---',
+      `community: Community for ${path.basename(file, '.md')}`,
+      'group: Raw group value',
+      '---',
+      `# ${file}`,
+    ].join('\n'))));
+    const graph = await buildWikiGraph(root, {
+      decodeHrefPath: (href) => href,
+      hrefToRelativePath: (href, currentDir = '') => path.posix.normalize(path.posix.join(currentDir, href)).replace(/^\.\.\//, ''),
+      humanTitle: (value) => path.basename(value, '.md'),
+      renderMarkdown: async (raw) => raw,
+    }, files);
+
+    expect(new Set(graph.nodes.map((item) => item.type))).toEqual(new Set([
+      'wiki', 'wiki-source', 'raw-source', 'template', 'build-context', 'deliverable',
+    ]));
+    expect(graph.nodes.every((item) => item.community.assignment === 'explicit')).toBe(true);
+    expect(graph.nodes.every((item) => item.community.communityLabel.startsWith('Community for '))).toBe(true);
+    expect(graph.nodes.every((item) => item.group === 'Raw group value')).toBe(true);
+  });
+
   it('projects wiki pages, sources, templates, context and deliverables with document relation types', async () => {
     const root = await fixtureWorkspace();
     const files = await listWikiGraphFiles(root);
@@ -59,6 +90,13 @@ describe('wiki graph projection', () => {
       'deliverable',
     ]));
     expect(graph.nodes.find((node) => node.id === 'wiki/concepts/domain/main.md')?.secondary).toContain('Domain');
+    expect(graph.nodes.find((node) => node.id === 'raw/ingested/source-a.md')?.community).toMatchObject({ communityId: 'domain', assignment: 'inherited' });
+    expect(graph.nodes.find((node) => node.id === 'templates/report.md')).toMatchObject({
+      group: 'Legacy template group',
+      community: { communityId: 'publishing', communityLabel: 'Publishing', assignment: 'explicit' },
+    });
+    expect(graph.nodes.find((node) => node.id === 'build-context/audience.md')?.community).toMatchObject({ communityId: 'domain', assignment: 'inherited' });
+    expect(graph.nodes.find((node) => node.id === 'deliverables/report.md')?.community).toMatchObject({ communityId: 'publishing', assignment: 'inherited' });
     expect(graph.edges.map((edge) => edge.type)).toEqual(expect.arrayContaining([
       'links_to',
       'cites',

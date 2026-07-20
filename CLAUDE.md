@@ -1,6 +1,6 @@
 # Repository Guide
 
-Current coordinated release: **0.14.11**. The Wiki browser graph is v2-only:
+Current coordinated release: **0.14.12**. The Wiki browser graph is v2-only:
 keep Wiki UI code under `src/graph/wiki`, preserve `src/graph/core/graphForce.ts`
 for Run/Task, and do not restore the removed legacy graph endpoints.
 

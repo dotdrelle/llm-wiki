@@ -5,6 +5,10 @@ import fg from 'fast-glob';
 import matter from 'gray-matter';
 import { extractWikiLinks } from '../../utils/markdown.ts';
 import { canonicalizeName, toPosix } from '../../utils/path.ts';
+import {
+  assignGraphCommunities,
+  type CommunityAssignment,
+} from './communityProjection.ts';
 
 export type WikiGraphNodeType =
   | 'raw-source'
@@ -32,6 +36,7 @@ export interface WikiGraphNode {
   raw: string;
   html: string;
   group?: string;
+  community: CommunityAssignment;
   degree: number;
   x: number;
   y: number;
@@ -121,7 +126,11 @@ export async function buildWikiGraph(
   rootDir: string,
   deps: WikiGraphProjectionDeps,
   graphFiles?: string[],
-  options: { includeContent?: boolean; concurrency?: number } = {},
+  options: {
+    includeContent?: boolean;
+    concurrency?: number;
+    fallbackCommunityLabel?: string;
+  } = {},
 ): Promise<{ nodes: WikiGraphNode[]; edges: WikiGraphEdge[] }> {
   const files = graphFiles ?? (await listWikiGraphFiles(rootDir));
   const nodeIds = new Set(files);
@@ -134,6 +143,7 @@ export async function buildWikiGraph(
   const rawContents = new Map<string, string>();
   const htmlContents = new Map<string, string>();
   const groups = new Map<string, string>();
+  const explicitCommunities = new Map<string, { label: string }>();
 
   const includeContent = options.includeContent ?? true;
   const concurrency = Math.max(1, Math.min(options.concurrency ?? 8, 32));
@@ -154,8 +164,10 @@ export async function buildWikiGraph(
       previews.set(file, markdownPreview(raw));
       htmlContents.set(file, await deps.renderMarkdown(raw, currentDir));
     }
-    const group = graphConceptGroup(file, raw);
+    const metadata = graphCommunityMetadata(raw);
+    const group = metadata.group;
     if (group) groups.set(file, group);
+    if (metadata.community) explicitCommunities.set(file, { label: metadata.community });
 
     for (const target of extractGraphTargets(raw, currentDir, nodeIds, deps)) {
       if (!nodeIds.has(target.to) || target.to === file) continue;
@@ -214,6 +226,11 @@ export async function buildWikiGraph(
       raw: rawContents.get(file) ?? '',
       html: htmlContents.get(file) ?? '',
       group: groups.get(file),
+      community: {
+        communityId: 'ungrouped',
+        communityLabel: options.fallbackCommunityLabel ?? 'Ungrouped',
+        assignment: 'fallback',
+      },
       degree: nodeDegree,
       x,
       y,
@@ -225,7 +242,15 @@ export async function buildWikiGraph(
     };
   });
 
-  return { nodes, edges };
+  return {
+    nodes: assignGraphCommunities(
+      nodes,
+      edges,
+      explicitCommunities,
+      options.fallbackCommunityLabel ?? 'Ungrouped',
+    ),
+    edges,
+  };
 }
 
 export function graphNodeType(relativePath: string): WikiGraphNodeType {
@@ -337,18 +362,15 @@ function relationForTarget(
   return 'links_to';
 }
 
-function graphConceptGroup(relativePath: string, markdown: string): string | undefined {
-  if (!relativePath.startsWith('wiki/concepts/')) return undefined;
+function graphCommunityMetadata(markdown: string): { group?: string; community?: string } {
   const parsed = matter(markdown);
-  const group = parsed.data.group;
-  if (typeof group === 'string' && group.trim()) return group.trim();
-  return conceptGroupFromPath(relativePath);
-}
-
-function conceptGroupFromPath(relativePath: string): string | undefined {
-  const parts = toPosix(relativePath).split('/');
-  if (parts.length >= 4 && parts[0] === 'wiki' && parts[1] === 'concepts') return parts[2];
-  return undefined;
+  const rawGroup = parsed.data.group;
+  const rawCommunity = parsed.data.community;
+  const group = typeof rawGroup === 'string' && rawGroup.trim() ? rawGroup.trim() : undefined;
+  const community = typeof rawCommunity === 'string' && rawCommunity.trim()
+    ? rawCommunity.trim()
+    : group;
+  return { group, community };
 }
 
 function markdownPreview(markdown: string): string {

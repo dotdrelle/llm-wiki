@@ -494,6 +494,15 @@ const mcpSchema = z
 
 const serveSchema = z.preprocess((value) => value ?? {}, z.object({})).default({});
 
+const graphSchema = z
+  .preprocess(
+    (value) => value ?? {},
+    z.object({
+      fallbackCommunityLabel: z.string().trim().min(1).default('Ungrouped'),
+    }),
+  )
+  .default({ fallbackCommunityLabel: 'Ungrouped' });
+
 export const rawConfigSchema = z.object({
   preset: z.enum(['albert', 'openai', 'ollama', 'nvidia']).optional(),
   wikiRoot: z.string().optional(),
@@ -504,6 +513,7 @@ export const rawConfigSchema = z.object({
   retrieval: retrievalSchema.optional(),
   mcp: mcpSchema.optional(),
   serve: serveSchema.optional(),
+  graph: graphSchema.optional(),
 });
 
 export const wikiOperationSchema = z.preprocess(
@@ -687,6 +697,9 @@ export function resolveConfigDetails(
     serve: {
       tls: serveTls,
     },
+    graph: {
+      fallbackCommunityLabel: parsed.graph?.fallbackCommunityLabel ?? 'Ungrouped',
+    },
     llm: {
       provider,
       model: parsed.llm?.model ?? 'gpt-5-mini',
@@ -760,6 +773,7 @@ export function resolveConfigDetails(
       'build.slotBatchSize': sourceForPath(rawInput, presetInput, presetName, 'build.slotBatchSize'),
       'build.maxBuildContextChars': sourceForPath(rawInput, presetInput, presetName, 'build.maxBuildContextChars'),
       'retrieval.buildStrategy': sourceForPath(rawInput, presetInput, presetName, 'retrieval.buildStrategy'),
+      'graph.fallbackCommunityLabel': sourceForPath(rawInput, presetInput, presetName, 'graph.fallbackCommunityLabel'),
       'retrieval.maxContextFiles': sourceForPath(rawInput, presetInput, presetName, 'retrieval.maxContextFiles'),
       'retrieval.maxChunksPerPage': sourceForPath(rawInput, presetInput, presetName, 'retrieval.maxChunksPerPage'),
       'retrieval.maxChunkChars': sourceForPath(rawInput, presetInput, presetName, 'retrieval.maxChunkChars'),

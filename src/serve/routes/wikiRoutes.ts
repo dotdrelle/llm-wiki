@@ -16,7 +16,6 @@ import {
   generateHelpIndex,
   generateNotFoundPage,
   generateSidebarPanelPage,
-  generateSkillsPage,
   isRawDownloadRequestPath,
   isRawUntrackedReference,
   isServedRelativePath,
@@ -24,6 +23,7 @@ import {
   resolveEditableMarkdown,
   serveMd,
 } from '../html/wikiHtml.ts';
+import { generateSkillsPage } from '../html/wikiSkillsPage.ts';
 import { listHelpChapters, readHelpChapter } from '../../utils/helpDoc.ts';
 
 export type WikiRoutesDeps = {

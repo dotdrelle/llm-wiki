@@ -68,6 +68,10 @@ export interface ServeConfig {
   tls?: TlsConfig;
 }
 
+export interface GraphConfig {
+  fallbackCommunityLabel: string;
+}
+
 export interface AppConfig {
   wikiRoot: string;
   configPath?: string;
@@ -79,6 +83,7 @@ export interface AppConfig {
   retrieval: RetrievalConfig;
   mcp: McpConfig;
   serve?: ServeConfig;
+  graph?: GraphConfig;
 }
 
 export interface BuildCommandOptions {

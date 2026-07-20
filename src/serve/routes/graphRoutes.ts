@@ -1,9 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import path from 'node:path';
 import { buildGraphOverview, generateGraph, graphEtagForFiles, listGraphFiles, renderGraphDocument } from '../html/wikiHtml.ts';
 import { cachedSnapshot, createSnapshot, storeSnapshot } from '../../graph/wiki/snapshot.ts';
 
 export type GraphRoutesDeps = {
   rootDir: string;
+  fallbackCommunityLabel: () => string;
+  workspaceNameFromEnv: () => string | null;
   sendJson: (
     res: {
       writeHead: (s: number, h: Record<string, string>) => void;
@@ -30,10 +33,17 @@ export async function handleGraphRoutes(
   const snapshot = async () => {
     const files = await listGraphFiles(deps.rootDir);
     const etag = await graphEtagForFiles(deps.rootDir, files);
-    const cached = cachedSnapshot(deps.rootDir, etag);
+    const workspace = deps.workspaceNameFromEnv() ?? path.basename(deps.rootDir);
+    const fallbackCommunityLabel = deps.fallbackCommunityLabel();
+    const cacheEtag = JSON.stringify([etag, workspace, fallbackCommunityLabel]);
+    const cached = cachedSnapshot(deps.rootDir, cacheEtag);
     if (cached) return cached;
-    const graph = await buildGraphOverview(deps.rootDir, files);
-    return storeSnapshot(deps.rootDir, createSnapshot(etag, graph));
+    const graph = await buildGraphOverview(deps.rootDir, files, fallbackCommunityLabel);
+    return storeSnapshot(
+      deps.rootDir,
+      createSnapshot(etag, graph, { workspace }),
+      cacheEtag,
+    );
   };
 
   if (req.method === 'GET' && urlPath === '/api/graph/overview') {
@@ -43,7 +53,10 @@ export async function handleGraphRoutes(
 
   if (req.method === 'GET' && urlPath === '/api/graph/etag') {
     const current = await snapshot();
-    deps.sendJson(res, 200, { structureEtag: current.structureEtag });
+    deps.sendJson(res, 200, {
+      structureEtag: current.structureEtag,
+      topologyEtag: current.topologyEtag,
+    });
     return true;
   }
 

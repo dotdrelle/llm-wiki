@@ -13,7 +13,7 @@ import { hashText } from '../utils/hash.ts';
 import { listHelpChapters, readHelpChapter } from '../utils/helpDoc.ts';
 import type { AppConfig } from '../types.ts';
 
-const LLM_WIKI_VERSION = '0.14.11';
+const LLM_WIKI_VERSION = '0.14.12';
 const MAX_SOURCE_NAME_CHARS = 200;
 const MAX_SOURCE_SUBDIR_CHARS = 300;
 const MAX_SOURCE_CONTENT_CHARS = 1_000_000;

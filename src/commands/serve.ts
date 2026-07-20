@@ -59,7 +59,7 @@ const MARKED_DIST_PATH = path.resolve(
 );
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
-const LLM_WIKI_VERSION = '0.14.11';
+const LLM_WIKI_VERSION = '0.14.12';
 
 type SkillMeta = {
   name: string;
@@ -881,6 +881,8 @@ export default async function serveCmd(
 
       if (await handleGraphRoutes(req, res, urlPath, {
         rootDir,
+        fallbackCommunityLabel: () => config.graph?.fallbackCommunityLabel ?? 'Ungrouped',
+        workspaceNameFromEnv,
         sendJson,
         sendGzippedHtml,
       })) return;

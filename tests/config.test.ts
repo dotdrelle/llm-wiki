@@ -63,6 +63,12 @@ describe('config resolution', () => {
     expect(config.build.maxBuildContextChars).toBe(24000);
   });
 
+  it('defaults and overrides the graph fallback community label', () => {
+    expect(resolveConfig({}, '/tmp/wiki').graph?.fallbackCommunityLabel).toBe('Ungrouped');
+    expect(resolveConfig({ graph: { fallbackCommunityLabel: 'Non classé' } }, '/tmp/wiki').graph)
+      .toEqual({ fallbackCommunityLabel: 'Non classé' });
+  });
+
   it('parses vector retrieval settings with defaults', () => {
     const config = resolveConfig(
       {
