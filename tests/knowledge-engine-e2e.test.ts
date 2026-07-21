@@ -137,15 +137,13 @@ class PipelineLLMService {
   }
 
   async completeText(request?: { label?: string }): Promise<string> {
-    if (request?.label === 'export') {
+    if (request?.label === 'export:section') {
       return [
-        '# Export publication',
-        '',
-        'Donna publie un livrable enrichi avec ses sources archivées.',
-        '[src: raw/ingested/product-brief.md]',
+        'Donna propose un moteur de connaissance avec conversion, review, indexation et export.',
+        'Export publication : Donna publie un livrable enrichi avec ses sources archivées.',
       ].join('\n');
     }
-    return 'Donna publie un livrable poli. [src: raw/ingested/product-brief.md]';
+    return 'Donna publie un livrable poli.';
   }
 }
 
@@ -291,13 +289,15 @@ describe('knowledge engine E2E', () => {
     expect(deliverable).toContain('Donna propose un moteur de connaissance');
     expect(deliverable).toContain('[src: wiki/concepts/donna-workflow.md]');
 
-    const exported = await expandDeliverable(
+    const { content: exported, warnings: exportWarnings } = await expandDeliverable(
       'deliverables/brief.md',
       config,
       workspace,
+      retrieval,
       llm as unknown as LLMService,
       logger,
     );
+    expect(exportWarnings).toEqual([]);
     const exportRelative = exportOutputPath('deliverables/brief.md');
     await safeWriteFile(
       path.join(root, exportRelative),
@@ -305,10 +305,15 @@ describe('knowledge engine E2E', () => {
     );
     const exportContent = await readFile(path.join(root, exportRelative), 'utf8');
     expect(exportContent).toContain('Export publication');
-    expect(exportContent).toContain('[src: raw/ingested/product-brief.md]');
+    // Regenerated sections must no longer carry citation markers.
+    expect(exportContent).not.toContain('[src:');
+    // The original deliverable stays untouched.
+    expect(await readFile(path.join(root, 'deliverables', 'brief.md'), 'utf8')).toContain(
+      '[src: wiki/concepts/donna-workflow.md]',
+    );
 
     expect(logger.entries.some((entry) => entry.event === 'ingest:review')).toBe(true);
     expect(logger.entries.some((entry) => entry.event === 'ingest:apply')).toBe(true);
-    expect(logger.entries.some((entry) => entry.event === 'export:source')).toBe(true);
+    expect(logger.entries.some((entry) => entry.event === 'export:done')).toBe(true);
   });
 });

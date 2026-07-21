@@ -97,6 +97,12 @@ export interface RetrievalSearchOptions {
   includeRaw?: boolean;
   rerank?: boolean;
   intent?: 'build' | 'search';
+  /**
+   * Restrict results to these wiki page relative paths. Used by export to
+   * turn a [src: ...] citation into a retrieval scope instead of injecting
+   * the whole file into the prompt.
+   */
+  allowedSources?: string[];
 }
 
 function countTokens(tokens: string[]): Map<string, number> {
@@ -334,6 +340,30 @@ export class RetrievalService {
   }
 
   async search(query: string, options?: RetrievalSearchOptions): Promise<SearchResult[]> {
+    const allowedSources = options?.allowedSources?.filter(Boolean);
+    if (allowedSources && allowedSources.length > 0) {
+      const limit = options?.limit ?? this.config.retrieval.vector.maxResults;
+      const rest: RetrievalSearchOptions = { ...options };
+      delete rest.allowedSources;
+      // Over-fetch, then keep only chunks from the allowed pages: the scoped
+      // pages may rank far below the global top results, so fetch deep.
+      const results = await this.searchUnscoped(query, {
+        ...rest,
+        limit: Math.max(limit * 12, 96),
+      });
+      const allowed = new Set(allowedSources.map((path) => path.replace(/^\.\//, '')));
+      return results
+        .filter((result) => allowed.has(result.page.relativePath))
+        .slice(0, limit);
+    }
+
+    return this.searchUnscoped(query, options);
+  }
+
+  private async searchUnscoped(
+    query: string,
+    options?: RetrievalSearchOptions,
+  ): Promise<SearchResult[]> {
     const buildBm25Only =
       options?.intent === 'build' && this.config.retrieval.buildStrategy === 'bm25';
     if (

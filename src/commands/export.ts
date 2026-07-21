@@ -1,5 +1,6 @@
 import type { AppConfig } from '../types.ts';
 import { LLMService } from '../services/llmService.ts';
+import { RetrievalService } from '../services/retrievalService.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import { createTraceLogger, printTraceSummary } from '../services/traceLogger.ts';
 import { expandDeliverable, exportOutputPath } from '../services/exportService.ts';
@@ -68,11 +69,13 @@ export default async function exportCmd(
     const absoluteOutput = resolveInside(workspace.paths.rootDir, outputRelative);
 
     const llm = new LLMService(config);
+    const retrieval = new RetrievalService(workspace, config, logger);
     const llmStart = { value: 0 };
-    const expanded = await expandDeliverable(
+    const { content: expanded, warnings } = await expandDeliverable(
       relativeInput,
       config,
       workspace,
+      retrieval,
       llm,
       logger,
       (progress) => {
@@ -83,27 +86,31 @@ export default async function exportCmd(
         }
 
         if (progress.phase === 'source') {
-          spinner?.update(`Loading sources (${progress.index}/${progress.total})…`);
-          spinner?.updateSub(progress.path);
+          spinner?.update(`Resolving sources (${progress.index}/${progress.total})…`);
+          spinner?.updateSub(progress.section ?? progress.path);
           return;
         }
 
         if (progress.phase === 'llm') {
           llmStart.value = Date.now();
-          spinner?.update('Expanding deliverable with LLM…');
+          spinner?.update(`Expanding section ${progress.index}/${progress.total}…`);
           spinner?.updateSub(() => {
             const seconds = ((Date.now() - llmStart.value) / 1000).toFixed(1);
-            return `${progress.citations ?? 0} source(s) · LLM ${seconds}s`;
+            return `${progress.section ?? ''} · ${progress.citations ?? 0} fragment(s) · LLM ${seconds}s`;
           });
           return;
         }
 
         if (progress.phase === 'polish') {
           llmStart.value = Date.now();
-          spinner?.update('Polishing export…');
+          spinner?.update(
+            progress.total
+              ? `Polishing section ${progress.index}/${progress.total}…`
+              : 'Polishing export…',
+          );
           spinner?.updateSub(() => {
             const seconds = ((Date.now() - llmStart.value) / 1000).toFixed(1);
-            return `editorial pass · LLM ${seconds}s`;
+            return `${progress.section ?? 'editorial pass'} · LLM ${seconds}s`;
           });
         }
       },
@@ -115,6 +122,9 @@ export default async function exportCmd(
 
     await safeWriteFile(absoluteOutput, normalizeGeneratedMarkdown(expanded));
     spinner?.stop();
+    for (const warning of warnings) {
+      console.warn(`  ⚠ ${warning}`);
+    }
     console.log(`Exported → ${outputRelative}`);
   } catch (e) {
     spinner?.stop();

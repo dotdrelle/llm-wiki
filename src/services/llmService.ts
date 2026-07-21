@@ -37,6 +37,10 @@ interface CompletionRequest {
   logger?: TraceLogger;
   traceData?: Record<string, unknown>;
   onUsage?: (usage: TokenUsage) => void;
+  /** Hard cap on generated tokens for this call (provider max_tokens). */
+  maxOutputTokens?: number;
+  /** Per-request timeout override; falls back to llm.timeoutMs. */
+  timeoutMs?: number;
 }
 
 interface ProviderErrorDetails {
@@ -87,6 +91,12 @@ export class LLMService {
       apiKey: config.llm.apiKey,
       baseURL: config.llm.baseUrl,
       timeout: config.llm.timeoutMs,
+      // The SDK default (2 retries) stacks with llm.timeoutMs: a hanging
+      // provider then blocks a single call for 3 x timeoutMs (30 min observed
+      // with the 600s default). Rate-limit retries are already handled by our
+      // own loop in completeText, so keep at most one SDK-level retry for
+      // transient network errors.
+      maxRetries: 1,
       defaultHeaders:
         config.llm.provider === 'anthropic'
           ? { 'anthropic-version': '2023-06-01' }
@@ -199,12 +209,15 @@ export class LLMService {
     const startedAt = Date.now();
     const label = request.label ?? 'completion';
 
+    const effectiveTimeoutMs = request.timeoutMs ?? this.config.llm.timeoutMs;
+
     if (request.logger) {
       await request.logger.info('llm:start', {
         label,
         provider: this.config.llm.provider,
         model: this.config.llm.model,
-        timeoutMs: this.config.llm.timeoutMs,
+        timeoutMs: effectiveTimeoutMs,
+        maxOutputTokens: request.maxOutputTokens,
         promptChars: request.system.length + request.user.length,
         ...request.traceData,
       });
@@ -230,6 +243,11 @@ export class LLMService {
           this.config.llm.provider !== 'openai-compatible'
             ? { response_format: { type: 'json_object' } }
             : {}),
+          ...(request.maxOutputTokens
+            ? this.config.llm.provider === 'openai'
+              ? { max_completion_tokens: request.maxOutputTokens }
+              : { max_tokens: request.maxOutputTokens }
+            : {}),
         };
         if (supportsTemperature(this.config)) {
           createParams.temperature = request.temperature ?? this.config.llm.temperature;
@@ -241,6 +259,7 @@ export class LLMService {
         }
         const stream = (await this.client.chat.completions.create(
           createParams,
+          request.timeoutMs ? { timeout: request.timeoutMs } : undefined,
         )) as unknown as AsyncIterable<ChatCompletionChunk>;
         const chunks: string[] = [];
         capturedUsage = undefined;
@@ -293,7 +312,7 @@ export class LLMService {
             });
           }
           throw new Error(
-            `LLM request timed out after ${this.config.llm.timeoutMs} ms. Increase llm.timeoutMs in .wikirc.yaml or reduce the prompt size.`,
+            `LLM request timed out after ${effectiveTimeoutMs} ms. Increase llm.timeoutMs in .wikirc.yaml or reduce the prompt size.`,
           );
         }
 

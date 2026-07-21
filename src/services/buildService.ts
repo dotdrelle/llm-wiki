@@ -1,4 +1,5 @@
 import { rm } from 'node:fs/promises';
+import path from 'node:path';
 import matter from 'gray-matter';
 import { deliverableResponseSchema } from '../config/schema.ts';
 import {
@@ -6,8 +7,13 @@ import {
   buildSingleSlotDeliverablePrompt,
 } from '../prompts/buildPrompt.ts';
 import { buildPromptContext } from '../prompts/systemPreamble.ts';
-import { sanitizeFrontmatter } from '../utils/markdown.ts';
+import {
+  canonicalizeSourceCitations,
+  extractSourceCitations,
+  sanitizeFrontmatter,
+} from '../utils/markdown.ts';
 import { hashText } from '../utils/hash.ts';
+import { pathExists } from '../utils/fs.ts';
 import { mapWithConcurrency } from '../utils/concurrency.ts';
 import { PromptBudgetService } from './promptBudgetService.ts';
 import { StabilizeService } from './stabilizeService.ts';
@@ -43,12 +49,18 @@ const PLAN_WORDS_EXCLUDED = new Set([
 ]);
 
 function normalizeReplacementContent(content: string): string {
-  return content
-    .replace(/\\r\\n/g, '\n')
-    .replace(/\\n/g, '\n')
-    .replace(/\\r/g, '\n')
-    .replace(/\\`/g, '`')
-    .trim();
+  // canonicalizeSourceCitations enforces the single authorized citation
+  // format ([src: path]) as soon as model output enters the document: models
+  // frequently emit variants ("[ src: ... ]", chained "; src:") that would
+  // otherwise escape citation-based tooling downstream.
+  return canonicalizeSourceCitations(
+    content
+      .replace(/\\r\\n/g, '\n')
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\n')
+      .replace(/\\`/g, '`')
+      .trim(),
+  );
 }
 
 function normalizeHeadingTextForCompare(text: string): string {
@@ -323,6 +335,7 @@ export class BuildService {
     const batches = this.planSlotBatches(template, buildContext, slots);
     const batchCount = batches.length;
     const replacements = new Map<string, string>();
+    const batchErrors: Error[] = [];
 
     const renderedBatches = await mapWithConcurrency(
       batches,
@@ -340,9 +353,29 @@ export class BuildService {
           batchIndex,
           batchCount,
         };
-        return this.renderBatch(template, buildContext, batch, traceData);
+        try {
+          return await this.renderBatch(template, buildContext, batch, traceData);
+        } catch (error) {
+          // A single failed batch (timeout, malformed JSON, provider error)
+          // must not discard the work of every other batch: its slots fall
+          // back to the "Missing evidence" placeholder and the deliverable is
+          // still produced. The template only fails when every batch fails.
+          batchErrors.push(error instanceof Error ? error : new Error(String(error)));
+          if (this.logger) {
+            await this.logger.warn('build:batch-failed', {
+              ...traceData,
+              slots: batch.map((slot) => slot.id),
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+          return [];
+        }
       },
     );
+
+    if (batchCount > 0 && batchErrors.length === batchCount) {
+      throw batchErrors[0];
+    }
     for (const response of renderedBatches) {
       for (const item of response) {
         const instruction = template.instructions.find(({ id }) => id === item.id);
@@ -445,7 +478,21 @@ export class BuildService {
                 limit: Math.max(24, this.config.retrieval.vector.maxResults),
               })
             : mergedContext;
-        const finalContext = this.prepareFinalContext(rankedContext);
+        // Cap the per-slot context to the configured budget. Reranking may
+        // consider up to 24 candidates for quality, but only the top chunks
+        // are sent to the model: without this cap a 40-instruction template
+        // produces 100K+ char prompts per batch. Multi-query slots (named
+        // comparisons, focused lists) keep a proportionally larger, still
+        // bounded, allowance via contextLimitForQueryCount.
+        const queryCount =
+          1 +
+          Math.min(templateFocusQueries.length, 6) +
+          Math.min(instructionFocusQueries.length, 6);
+        const contextLimit = this.contextLimitForQueryCount(queryCount);
+        const finalContext = this.prepareFinalContext(rankedContext).slice(
+          0,
+          contextLimit,
+        );
         return {
           id: instruction.id,
           instruction: instruction.instruction,
@@ -948,6 +995,34 @@ export class BuildService {
     return [...first, ...second];
   }
 
+  // The build guarantees the citation contract of its deliverables: every
+  // [src: ...] marker must point to an existing workspace file. Models
+  // sometimes cite plausible but nonexistent paths; exports would silently
+  // fail to resolve them later, so surface the issue at build time.
+  private async reportMissingCitations(
+    templateRelativePath: string,
+    rendered: string,
+  ): Promise<void> {
+    const missing: string[] = [];
+    for (const citation of [...new Set(extractSourceCitations(rendered))]) {
+      const absolute = path.resolve(this.workspace.paths.rootDir, citation);
+      const relative = path.relative(this.workspace.paths.rootDir, absolute);
+      if (
+        relative.startsWith('..') ||
+        path.isAbsolute(relative) ||
+        !(await pathExists(absolute))
+      ) {
+        missing.push(citation);
+      }
+    }
+    if (missing.length > 0 && this.logger) {
+      await this.logger.warn('build:missing-citation', {
+        template: templateRelativePath,
+        citations: missing,
+      });
+    }
+  }
+
   private nextState(state: BuildState): BuildState {
     return {
       deliverables: { ...state.deliverables },
@@ -1120,6 +1195,8 @@ export class BuildService {
           );
           await this.workspace.deleteChangesSidecarIfExists(template.outputAbsolutePath);
         }
+
+        await this.reportMissingCitations(template.relativePath, rendered);
 
         nextState.deliverables[template.relativePath] = {
           templateHash,

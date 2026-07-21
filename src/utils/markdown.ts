@@ -148,8 +148,29 @@ export function extractWikiLinks(content: string): string[] {
   );
 }
 
+// Tolerant matcher: LLM-generated documents sometimes carry space-padded
+// ("[ src: ... ]") or chained ("[src: a.md ; src: b.md]") citation markers.
+const SOURCE_CITATION_PATTERN = /\[\s*src\s*:\s*([^\]]+?)\s*\]/gi;
+
 export function extractSourceCitations(content: string): string[] {
-  return [...content.matchAll(/\[src:\s*([^\]]+)\]/gi)].map((match) => match[1].trim());
+  return [...content.matchAll(SOURCE_CITATION_PATTERN)].flatMap((match) =>
+    (match[1] ?? '')
+      .split(';')
+      .map((part) => part.trim().replace(/^src\s*:\s*/i, ''))
+      .filter(Boolean),
+  );
+}
+
+/** Rewrite citation markers to the canonical `[src: path]` form. */
+export function canonicalizeSourceCitations(content: string): string {
+  return content.replace(SOURCE_CITATION_PATTERN, (_match, inner: string) =>
+    inner
+      .split(';')
+      .map((part) => part.trim().replace(/^src\s*:\s*/i, ''))
+      .filter(Boolean)
+      .map((path) => `[src: ${path}]`)
+      .join(' '),
+  );
 }
 
 export function splitSourceSections(content: string, maxChars: number): string[] {
@@ -385,7 +406,12 @@ export function normalizeGeneratedMarkdown(markdown: string, fallbackTitle?: str
       continue;
     }
 
-    let line = inFence ? rawLine : normalizeGeneratedLine(rawLine).replace(/[ \t]+$/g, '');
+    let line = inFence
+      ? rawLine
+      : canonicalizeSourceCitations(normalizeGeneratedLine(rawLine)).replace(
+          /[ \t]+$/g,
+          '',
+        );
     const heading = !inFence ? /^(#{1,6})\s+(.+?)\s*$/.exec(line) : null;
     if (heading) {
       let marks = heading[1];

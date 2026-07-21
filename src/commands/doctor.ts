@@ -204,11 +204,20 @@ function recommendedMaxInputTokens(config: AppConfig): number {
 }
 
 function recommendedTargetInputTokens(maxInputTokensPerCall: number): number {
+  // The hard limit protects against provider rejections; the target drives
+  // batch packing. Even when the provider accepts 100K+ token calls, large
+  // batches concentrate many slots in a single request: one slow or failed
+  // call then costs minutes and many sections at once. Keep the packing
+  // target moderate regardless of the provider ceiling.
   if (maxInputTokensPerCall >= 50000) {
-    return 40000;
+    return 24000;
   }
   return Math.max(1000, Math.floor((maxInputTokensPerCall * 0.8) / 1000) * 1000);
 }
+
+// Above this many slots in one planned request, a single provider failure
+// discards too much work at once; doctor recommends smaller batches.
+const MAX_HEALTHY_SLOTS_PER_BATCH = 12;
 
 function printYamlBlock(value: unknown): void {
   const yaml = YAML.stringify(value).trimEnd();
@@ -1127,6 +1136,23 @@ export default async function doctorCmd(
     if (overTarget.length > 0) {
       warn(
         `${overTarget.length} planned batch(es) exceed targetInputTokensPerCall but remain under the hard max`,
+      );
+    }
+    const crowdedBatches = buildPlan.templates.flatMap((templatePlan) =>
+      templatePlan.batches
+        .filter((batch) => batch.slotIds.length > MAX_HEALTHY_SLOTS_PER_BATCH)
+        .map(
+          (batch) =>
+            `${templatePlan.template} batch ${batch.index + 1} (${batch.slotIds.length} slots, ~${batch.estimatedInputTokens.toLocaleString()} tokens)`,
+        ),
+    );
+    if (crowdedBatches.length > 0) {
+      warn(
+        `${crowdedBatches.length} planned batch(es) pack more than ${MAX_HEALTHY_SLOTS_PER_BATCH} slots into a single LLM call: ${crowdedBatches
+          .slice(0, 3)
+          .join(
+            ', ',
+          )} — one timeout or malformed response then degrades many sections at once; lower limits.targetInputTokensPerCall or build.slotBatchSize`,
       );
     }
     if (

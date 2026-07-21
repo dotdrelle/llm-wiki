@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canonicalizeSourceCitations,
+  extractSourceCitations,
   extractWikiLinks,
   normalizeGeneratedMarkdown,
   normalizeHeadingPathKey,
@@ -8,6 +10,40 @@ import {
   splitMarkdownSections,
   splitSourceSections,
 } from '../src/utils/markdown.ts';
+
+describe('source citations', () => {
+  it('extracts canonical, space-padded, and chained markers', () => {
+    const content = [
+      'A [src: wiki/a.md] et B [ src: wiki/b.md ].',
+      'C [ SRC:  wiki/c.md ] et D [src: wiki/d.md ; src: wiki/e.md].',
+    ].join('\n');
+    expect(extractSourceCitations(content)).toEqual([
+      'wiki/a.md',
+      'wiki/b.md',
+      'wiki/c.md',
+      'wiki/d.md',
+      'wiki/e.md',
+    ]);
+  });
+
+  it('canonicalizes marker variants without touching other brackets', () => {
+    expect(
+      canonicalizeSourceCitations(
+        'Voir [ src: wiki/a.md ] et [src: wiki/b.md ; src: wiki/c.md] et [RFC 6902].',
+      ),
+    ).toBe('Voir [src: wiki/a.md] et [src: wiki/b.md] [src: wiki/c.md] et [RFC 6902].');
+  });
+
+  it('normalizeGeneratedMarkdown canonicalizes citation markers outside fences', () => {
+    const normalized = normalizeGeneratedMarkdown(
+      ['# Titre', '', 'Texte [ src: wiki/a.md ].', '', '```', '[ src: keep.md ]', '```'].join(
+        '\n',
+      ),
+    );
+    expect(normalized).toContain('Texte [src: wiki/a.md].');
+    expect(normalized).toContain('[ src: keep.md ]');
+  });
+});
 
 describe('markdown helpers', () => {
   it('parses instruction placeholders with heading context', () => {
