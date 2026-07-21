@@ -322,8 +322,23 @@ export async function expandDeliverable(
     let accepted: string | undefined;
     let lastIssue: string | undefined;
     for (let attempt = 1; attempt <= 2 && !accepted; attempt += 1) {
+      // Retrying with an identical prompt tends to reproduce the same
+      // mistake: feed the rejection reason back into the second attempt.
+      const retryFeedback =
+        attempt > 1 && lastIssue
+          ? [
+              '',
+              '# Previous attempt rejected',
+              lastIssue.startsWith('numbers_lost:')
+                ? `Your previous answer dropped these values from the current section content: ${lastIssue.slice('numbers_lost:'.length)}. Every number, percentage, date, and identifier present in the section MUST appear verbatim in your answer.`
+                : lastIssue === 'content_loss'
+                  ? 'Your previous answer was shorter than the current section content. Keep everything already stated and only add or clarify; do not summarize.'
+                  : `Your previous answer was rejected (${lastIssue}). Follow the rules strictly.`,
+            ].join('\n')
+          : '';
       const response = await llm.completeText({
         ...prompt,
+        user: `${prompt.user}${retryFeedback}`,
         label: 'export:section',
         logger,
         maxOutputTokens: SECTION_MAX_OUTPUT_TOKENS,
