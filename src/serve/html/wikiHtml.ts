@@ -630,11 +630,14 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
 
   const open = depth === 0 ? ' open' : '';
   const label = node.name === 'build-context' ? 'build context' : node.name;
-  const action =
+  const createAction =
     depth === 0 && isCreatableCollection(node.name)
       ? `<a class="side-folder-action" href="${escapeHref(newMarkdownHref(node.name))}" title="Create Markdown" aria-label="Create in ${escapeAttr(node.name)}" onclick="event.stopPropagation()">+</a>`
       : '';
-  return `<details class="side-folder"${open} data-tree-id="${escapeAttr(node.path)}"><summary><span class="side-folder-label">${escapeHtml(label)}</span>${action}</summary><div class="side-folder-children">${children}</div></details>`;
+  const refreshAction = depth === 0 && node.name === 'wiki'
+    ? '<button class="side-folder-action side-refresh-action" type="button" title="Refresh Wiki" aria-label="Refresh Wiki" data-sidebar-refresh onclick="event.stopPropagation()">↻</button>'
+    : '';
+  return `<details class="side-folder"${open} data-tree-id="${escapeAttr(node.path)}"><summary><span class="side-folder-label">${escapeHtml(label)}</span>${refreshAction}${createAction}</summary><div class="side-folder-children">${children}</div></details>`;
 }
 
 async function renderUntrackedSidebar(rootDir: string): Promise<string> {
@@ -652,7 +655,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
       })
       .join('\n')
     : '<li class="side-untracked-empty">No pending sources.</li>';
-  return `<div class="side-pending-resizer" data-pending-resizer title="Resize Pending panel" role="separator" aria-orientation="horizontal"></div><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span><span class="side-untracked-count" data-untracked-count>${count}</span></summary><ul class="side-untracked-list" data-untracked-list>${items}</ul></details>`;
+  return `<div class="side-pending-resizer" data-pending-resizer title="Resize Pending panel" role="separator" aria-orientation="horizontal"></div><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh onclick="event.stopPropagation()">↻</button><span class="side-untracked-count" data-untracked-count>${count}</span></summary><ul class="side-untracked-list" data-untracked-list>${items}</ul></details>`;
 }
 
 export async function renderSidebar(rootDir: string, precomputedNavFiles?: string[]): Promise<string> {

@@ -210,6 +210,7 @@ export const WIKI_LAYOUT_CSS = `
       line-height: 1;
     }
     .side-folder-action:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+    .side-refresh-action { font-size: 0.82rem; font-weight: 800; }
     .side-folder-children {
       margin-left: 0.85rem;
       padding-left: 0.35rem;
@@ -304,7 +305,6 @@ export const WIKI_LAYOUT_CSS = `
     .side-untracked[open] > summary::before { transform: rotate(90deg); }
     .side-untracked summary:hover { background: var(--panel-soft); color: var(--accent); }
     .side-untracked-count {
-      margin-left: auto;
       min-width: 1.45rem;
       height: 1.45rem;
       display: inline-flex;
@@ -316,6 +316,7 @@ export const WIKI_LAYOUT_CSS = `
       font-size: 0.76rem;
       font-weight: 820;
     }
+    .side-untracked summary > span:first-child { margin-right: auto; }
     .side-untracked-list {
       overflow-y: auto;
       scrollbar-width: thin;

@@ -78,7 +78,11 @@ export const CHAT_MARKUP = `<aside id="sidebar">
     </div>
   </div>
 </aside>
-<div class="main-resizer" id="main-resizer"></div>
+<div class="main-resizer" id="main-resizer">
+  <button class="sidebar-toggle" id="sidebar-toggle" type="button" onclick="event.stopPropagation();toggleSidebar()" title="Collapse left panel" aria-label="Collapse left panel" aria-expanded="true">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+  </button>
+</div>
 <div id="main">
   <div id="topbar">
     <span class="tb-model" id="model-badge">gpt-4o</span>

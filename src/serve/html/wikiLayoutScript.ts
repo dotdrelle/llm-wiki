@@ -120,6 +120,14 @@ export const WIKI_LAYOUT_SCRIPT = `
     localStorage.setItem(scrollKey, String(sideTree.scrollTop));
   }, { passive: true });
   window.addEventListener('beforeunload', saveSidebarState);
+  document.querySelectorAll('[data-sidebar-refresh]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      saveSidebarState();
+      window.location.reload();
+    });
+  });
   applySidebarSearch();
   requestAnimationFrame(() => {
     const savedScroll = Number(localStorage.getItem(scrollKey) || '0');

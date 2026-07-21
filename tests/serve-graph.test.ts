@@ -19,11 +19,13 @@ async function serveSource(): Promise<string> {
   return `${serve}\n${html}\n${css}\n${script}`;
 }
 
-it('shares the selected color theme with serve chat', () => {
+it('follows the shared serve theme without rendering a redundant graph toggle', () => {
   const html = renderWikiGraphV2();
   expect(html).toContain("const THEME_KEY='llm-wiki:theme'");
-  expect(html).toContain("localStorage.getItem('llm-wiki:graph:theme')||'dark'");
+  expect(html).toContain("localStorage.getItem(THEME_KEY)||'dark'");
   expect(html).toContain('event.key===THEME_KEY&&event.newValue');
+  expect(html).not.toContain('id="theme-toggle"');
+  expect(html).not.toContain("localStorage.setItem(THEME_KEY,theme)");
 });
 
 it('centers the inspector toggle and hides all content when collapsed', () => {
@@ -147,6 +149,14 @@ describe('serve graph ui', () => {
     expect(source).toContain("const PKEY = 'llm-wiki:sidebar:pendingHeight';");
     expect(source).toContain('startH + (startY - e.clientY)');
     expect(source).toContain("panel.addEventListener('toggle', syncResizer);");
+  });
+
+  it('offers explicit refresh actions for Wiki and Pending', async () => {
+    const source = await serveSource();
+    expect(source).toContain('title="Refresh Wiki"');
+    expect(source).toContain('title="Refresh Pending"');
+    expect(source).toContain("document.querySelectorAll('[data-sidebar-refresh]')");
+    expect(source).toContain('window.location.reload();');
   });
 
   it('opens Pending markdown in the editor and keeps save/cancel on valid routes', async () => {

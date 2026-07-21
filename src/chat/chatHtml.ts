@@ -136,6 +136,7 @@ function renderMd(t) {
 }
 const SIDEBAR_SPLIT_KEY = 'mcpchat_sidebar_history_height';
 const MAIN_SPLIT_KEY = 'mcpchat_sidebar_width';
+const SIDEBAR_OPEN_KEY = 'mcpchat_sidebar_open';
 const traceRegistry = new Map();
 let nextTraceId = 1;
 const MCP_STALE_SESSION_MS = 5 * 60 * 1000;
@@ -260,6 +261,13 @@ function runtimeRunCardHTML(plan,activities,progress=null) {
 function runtimeActivityToCard(activity,index=0,runStartedAt=Date.now(),runUpdatedAt=runStartedAt) {
   const started=runtimeTime(activity.startedAt||activity.createdAt||activity.updatedAt,runStartedAt);
   const updated=runtimeTime(activity.finishedAt||activity.completedAt||activity.endedAt||activity.updatedAt,runUpdatedAt);
+  const progress=activity.progress||{};
+  const structuredDetail=[
+    progress.detail,
+    progress.batch?.total&&!/batch/i.test(String(progress.detail||''))?\`Batch \${progress.batch.index}/\${progress.batch.total}\`:null,
+    progress.throttling?.active?(progress.throttling.retryAt?\`Throttled · retry \${progress.throttling.retryAt}\`:progress.throttling.waitMs?\`Throttled · wait \${progress.throttling.waitMs}ms\`:'Throttled'):null,
+    progress.processing?.instructionCount!=null?\`\${progress.processing.instructionCount} instructions\`:null,
+  ].filter(Boolean).join(' · ');
   return {
     id:'runtime-act-'+(activity.key||activity.id||index),
     remoteId:activity.id||activity.key||'',
@@ -269,7 +277,7 @@ function runtimeActivityToCard(activity,index=0,runStartedAt=Date.now(),runUpdat
     sourceLabel:activity.source||'Runtime',
     tool:activity.tool||activity.poll?.tool||'runtime',
     label:activity.label||activity.id||'Runtime activity',
-    detail:activity.progress?.detail||activity.status||'',
+    detail:structuredDetail||activity.status||'',
     status:normalizeActivityStatus(activity.status,activity.terminal),
     progress:activity.progress||null,
     plan:activity.plan||null,
@@ -693,7 +701,19 @@ async function deleteSkillFromManager(idx) {
     notify(e.message||String(e),'e');
   }
 }
-function toggleSidebar() { sidebarOpen=!sidebarOpen; $('sidebar').classList.toggle('collapsed',!sidebarOpen); }
+function applySidebarOpen(open, persist=false) {
+  sidebarOpen=Boolean(open);
+  $('sidebar')?.classList.toggle('collapsed',!sidebarOpen);
+  const button=$('sidebar-toggle');
+  if(button) {
+    const label=sidebarOpen?'Collapse left panel':'Expand left panel';
+    button.title=label;
+    button.setAttribute('aria-label',label);
+    button.setAttribute('aria-expanded',String(sidebarOpen));
+  }
+  if(persist) localStorage.setItem(SIDEBAR_OPEN_KEY,sidebarOpen?'1':'0');
+}
+function toggleSidebar() { applySidebarOpen(!sidebarOpen,true); }
 function syncModel() { $('model-badge').textContent=$('model-name').value||'model'; }
 
 function clampSidebarSplit(height) {
@@ -753,6 +773,8 @@ function initSidebarSplitter() {
 function initMainSplitter() {
   const sidebar=$('sidebar'), handle=$('main-resizer');
   if(!sidebar || !handle) return;
+
+  applySidebarOpen(localStorage.getItem(SIDEBAR_OPEN_KEY)!=='0');
 
   const setSidebarW=(width, persist=false)=>{
     const clamped=Math.max(180, Math.min(width, window.innerWidth-320));

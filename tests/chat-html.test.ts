@@ -182,7 +182,7 @@ describe('chat html', () => {
   });
 
   it('splits Activity List into four internally scrollable sub-tabs', () => {
-    expect(CHAT_HTML).toContain("const labels={plan:'Plan',local:'Local activity',runtime:'Runtime activity',logs:'Logs'}");
+    expect(CHAT_HTML).toContain("const labels={plan:'Plan',local:'Direct agents',runtime:'Runtime activity',logs:'Logs'}");
     expect(CHAT_HTML).toContain('.activity-subtab-content{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain');
     expect(CHAT_HTML).toContain("function setActivityListTab(tab)");
     expect(CHAT_HTML).toContain('.activity-subtab-logs .runtime-log{flex:1;min-height:0;max-height:none}');
@@ -380,6 +380,8 @@ describe('chat html', () => {
     expect(script).not.toContain("submitSuggestion('/guide')");
     expect(script).not.toContain('function applySetupGuideHighlight');
     expect(script).toContain('function applyWorkspaceTitle');
+    expect(script).toContain('const label = String(wsName).toUpperCase();');
+    expect(script).not.toContain('Donna (\\${wsName})');
     expect(script).toContain('function toggleHelpPanel');
     expect(script).not.toContain('function getTipsPrompt');
   });
@@ -397,6 +399,10 @@ describe('chat html', () => {
     expect(script).toContain("cme_export_run:'Confluence export'");
     expect(script).toContain("production_start_job:'Production job'");
     expect(script).toContain('async function callMCPTool(name, args, {trackActivity=true}={})');
+    expect(script).toContain('const seenMeta=new Set([cardTitle.trim().toLowerCase()]);');
+    expect(script).toContain('if(!normalized||seenMeta.has(normalized)) return false;');
+    expect(script).toContain("progress.throttling?.active?");
+    expect(script).toContain("progress.processing?.instructionCount!=null");
   });
 
   it('keeps local chat conversational without sending MCP tools to the browser LLM loop', () => {
@@ -456,9 +462,11 @@ describe('chat html', () => {
     expect(script).toContain('if(dirty) saveServers();');
   });
 
-  it('only restores explicitly enabled MCP connectors on startup', () => {
+  it('probes server-injected MCP connectors on startup', () => {
     const [script] = chatScripts();
 
+    expect(script).toContain("injected:true, enabled:true, status:'off'");
+    expect(script).toContain('enabled:override ? true : !!s.enabled');
     expect(script).toContain('servers.filter(s=>s.enabled)');
     expect(script).toContain('connectServer(server.id,{silent:true})');
     expect(script).toContain('async function connectServer(id,{silent=false}={})');
@@ -699,8 +707,8 @@ describe('chat html', () => {
       '#sidebar{width:var(--sidebar-w,300px);min-width:var(--sidebar-w,300px);',
     );
     expect(CHAT_HTML).toContain('#sidebar.collapsed{width:0;min-width:0}');
-    expect(CHAT_HTML).toContain('.main-resizer{width:6px;cursor:col-resize;');
-    expect(CHAT_HTML).toContain('<div class="main-resizer" id="main-resizer"></div>');
+    expect(CHAT_HTML).toContain('.main-resizer{position:relative;width:6px;cursor:col-resize;');
+    expect(CHAT_HTML).toContain('<div class="main-resizer" id="main-resizer">');
     expect(script).toContain("const MAIN_SPLIT_KEY = 'mcpchat_sidebar_width';");
     expect(script).toContain('function initMainSplitter()');
     expect(script).toContain('const setSidebarW=(width, persist=false)=>');
@@ -709,5 +717,17 @@ describe('chat html', () => {
     expect(script).toContain('const move=e=>setSidebarW(e.clientX, true);');
     expect(script).toContain("localStorage.setItem(MAIN_SPLIT_KEY, String(Math.round(clamped)));");
     expect(script).toContain('initMainSplitter();');
+  });
+
+  it('can collapse and expand the Wiki/Donna sidebar', () => {
+    const [script] = chatScripts();
+
+    expect(CHAT_HTML).toContain('id="sidebar-toggle"');
+    expect(CHAT_HTML).toContain('aria-label="Collapse left panel"');
+    expect(CHAT_HTML).toContain('.sidebar-toggle{');
+    expect(script).toContain("const SIDEBAR_OPEN_KEY = 'mcpchat_sidebar_open';");
+    expect(script).toContain('function applySidebarOpen(open, persist=false)');
+    expect(script).toContain("localStorage.getItem(SIDEBAR_OPEN_KEY)!=='0'");
+    expect(script).toContain('function toggleSidebar() { applySidebarOpen(!sidebarOpen,true); }');
   });
 });

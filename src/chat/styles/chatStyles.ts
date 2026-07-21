@@ -25,10 +25,14 @@ body.center-wiki #right-rail{padding-top:10px}
 /* SIDEBAR */
 #sidebar{width:var(--sidebar-w,300px);min-width:var(--sidebar-w,300px);height:100vh;background:var(--panel);display:flex;flex-direction:column;overflow:hidden;transition:width .3s,min-width .3s}
 #sidebar.collapsed{width:0;min-width:0}
-.main-resizer{width:6px;cursor:col-resize;display:flex;align-items:center;justify-content:center;border-left:1px solid var(--border);border-right:1px solid var(--border);background:var(--panel);touch-action:none;flex-shrink:0;height:100vh}
+.main-resizer{position:relative;width:6px;cursor:col-resize;display:flex;align-items:center;justify-content:center;border-left:1px solid var(--border);border-right:1px solid var(--border);background:var(--panel);touch-action:none;flex-shrink:0;height:100vh;overflow:visible;z-index:5}
 .main-resizer:hover,.main-resizer.dragging{background:var(--panel-soft)}
 .main-resizer::before{content:'';width:3px;height:34px;border-radius:99px;background:var(--border)}
 .main-resizer:hover::before,.main-resizer.dragging::before{background:var(--muted)}
+.sidebar-toggle{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:24px;height:28px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:7px;background:var(--panel);color:var(--muted);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.12);z-index:2}
+.sidebar-toggle:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.sidebar-toggle svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;transition:transform .2s}
+#sidebar.collapsed + .main-resizer .sidebar-toggle svg{transform:rotate(180deg)}
 .sb-logo{padding:18px 16px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:9px}
 .sb-logo-mark{width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--muted);font-weight:400;flex-shrink:0}
 .sb-logo-main{min-width:0;flex:1}

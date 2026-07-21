@@ -145,10 +145,9 @@ function saveServers() {
 }
 
 async function restoreEnabledServers() {
-  // Server-injected connectors are configuration candidates, not proof that
-  // their Docker service is running. Only reconnect connectors the user had
-  // actually enabled; probing every configured endpoint on every page load
-  // produces noisy connection-refused logs for intentionally stopped agents.
+  // Server-injected connectors are enabled optimistically, then verified by
+  // the MCP initialize + tools/list handshake. Failed probes are silent here
+  // and leave the connector in its explicit error/disabled state.
   const toRestore=servers.filter(s=>s.enabled);
   if(!toRestore.length) {
     renderCards();
@@ -164,7 +163,7 @@ async function restoreEnabledServers() {
 function applyWorkspaceTitle() {
   const wsName = window.__WIKI_CONFIG__?.workspaceName;
   if (!wsName) return;
-  const label = \`Donna (\${wsName})\`;
+  const label = String(wsName).toUpperCase();
   document.title = label;
   const navTitle = document.querySelector('.app-nav-title');
   if (navTitle) navTitle.textContent = label;
@@ -224,14 +223,14 @@ function loadServers() {
         const url = override ? override.url : s.url;
         const bearer = override ? (override.bearer || s.bearer || '') : (s.bearer || '');
         const injected = override ? true : (s.injected === true);
-        servers.push({...s, name, url, bearer, injected, enabled:!!s.enabled, sessionId:null, status:'off', tools:[]});
+        servers.push({...s, name, url, bearer, injected, enabled:override ? true : !!s.enabled, sessionId:null, status:'off', tools:[]});
         if(s.id >= nextId) nextId = s.id + 1;
       }
       for (const s of defaults) {
         if(seen.has(s.name)) continue;
         dirty=true;
         const id=nextId++;
-        servers.push({id, name:s.name, url:s.url, bearer:s.bearer||'', injected:true, enabled:false, status:'off', tools:[]});
+        servers.push({id, name:s.name, url:s.url, bearer:s.bearer||'', injected:true, enabled:true, status:'off', tools:[]});
       }
       renderCards();
       if(dirty) saveServers();
@@ -241,7 +240,7 @@ function loadServers() {
   // No saved state (or stale) — seed from server config
   for (const s of defaults) {
     const id=nextId++;
-    servers.push({id, name:s.name, url:s.url, bearer:s.bearer||'', injected:true, sessionId:null, enabled:false, status:'off', tools:[]});
+    servers.push({id, name:s.name, url:s.url, bearer:s.bearer||'', injected:true, sessionId:null, enabled:true, status:'off', tools:[]});
   }
   renderCards(); saveServers();
 }`;
