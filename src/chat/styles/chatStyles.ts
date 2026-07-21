@@ -386,6 +386,7 @@ ${CHAT_ACTIVITY_CSS}
 #notif.show{opacity:1;transform:translateY(0)}
 #notif.s{background:var(--panel);border:1px solid var(--ok);color:var(--ok)}
 #notif.e{background:var(--panel);border:1px solid var(--err);color:var(--err)}
+#notif.i{background:var(--panel);border:1px solid var(--accent);color:var(--accent)}
 .doc-modal{position:fixed;inset:0;z-index:998;display:none}
 .doc-modal.open{display:block}
 .doc-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.45);backdrop-filter:blur(2px)}

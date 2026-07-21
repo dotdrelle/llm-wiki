@@ -47,15 +47,35 @@ export async function proxyRuntimeJson(
       body = Buffer.from(JSON.stringify({ ...JSON.parse(body.toString()), ...extra }));
     } catch { /* malformed body - pass through as-is */ }
   }
-  try {
-    const upstream = await fetch(target, {
-      method: req.method ?? 'GET',
-      headers: {
-        ...runtimeHeaders(deps),
-        ...(body ? { 'content-type': 'application/json' } : {}),
-      },
-      body: body && body.length > 0 ? body : undefined,
+  // A connection failure means the runtime process is not listening (host
+  // runtime still booting, or the manager shell is not running). Nothing was
+  // processed upstream, so retrying is safe — and absorbs the first-boot race
+  // where the serve container is up before the host runtime accepts requests.
+  let upstream: Response | undefined;
+  for (let attempt = 0; attempt < 3 && !upstream; attempt += 1) {
+    try {
+      upstream = await fetch(target, {
+        method: req.method ?? 'GET',
+        headers: {
+          ...runtimeHeaders(deps),
+          ...(body ? { 'content-type': 'application/json' } : {}),
+        },
+        body: body && body.length > 0 ? body : undefined,
+      });
+    } catch {
+      if (attempt < 2) {
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, 400 * (attempt + 1)));
+      }
+    }
+  }
+  if (!upstream) {
+    deps.sendJson(res, 503, {
+      ok: false,
+      error: 'runtime unavailable — is wiki-manager running on the host?',
     });
+    return;
+  }
+  try {
     let text = await upstream.text();
     if (onSuccess && upstream.ok && text) {
       const parsed = (() => { try { return JSON.parse(text); } catch { return undefined; } })();

@@ -2392,6 +2392,22 @@ async function sendMessage() {
   }
 }
 
+// The runtime is a host process that can lag behind the serve container
+// (first boot, manager restart). A 503 on a turn is almost always transient:
+// wait for the runtime to answer /state again, then replay the turn once,
+// instead of surfacing a dead-end "No LLM response" error.
+async function waitForRuntimeReady(timeoutMs){
+  const deadline=Date.now()+timeoutMs;
+  while(Date.now()<deadline) {
+    try {
+      const res=await fetch('/api/runtime/state',{cache:'no-store'});
+      if(res.ok) return true;
+    } catch {}
+    await new Promise(r=>setTimeout(r,2000));
+  }
+  return false;
+}
+
 async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQuestion=false}={}) {
   if(!runtimeEnabled()) {
     notify('Runtime is not configured.','e');
@@ -2416,11 +2432,18 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
     const runningBeforeFetch=runtimeIsRunning();
     const readOnlyChat=mode==='chat';
     const openWikiPages=readOnlyChat?activePageContexts():[];
-    let res=await fetch(runningBeforeFetch&&!readOnlyChat?'/api/runtime/control':'/api/runtime/turn',{
+    const doTurnFetch=()=>fetch(runningBeforeFetch&&!readOnlyChat?'/api/runtime/control':'/api/runtime/turn',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:runningBeforeFetch&&!readOnlyChat?controlBody:JSON.stringify({input:text,...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})}),
     });
+    let res=await doTurnFetch();
+    if(res.status===503) {
+      notify('Runtime unavailable — waiting for it to come back…','i');
+      if(await waitForRuntimeReady(30000)) {
+        res=await doTurnFetch();
+      }
+    }
     if(!readOnlyChat&&res.status===409&&!runtimeIsRunning()) {
       res=await fetch('/api/runtime/control',{
         method:'POST',
