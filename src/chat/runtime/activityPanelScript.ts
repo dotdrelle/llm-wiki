@@ -521,4 +521,19 @@ async function retryConvert(uploadId, actId) {
   _activities.forEach(scheduleActivityPoll);
   connectRuntimePanel();
 })();
+// The runtime is a host process that can lag behind the serve container
+// (first boot, manager restart). A 503 on a turn is almost always transient:
+// callers wait for /state to answer again, then replay the turn once,
+// instead of surfacing a dead-end "No LLM response" error.
+async function waitForRuntimeReady(timeoutMs){
+  const deadline=Date.now()+timeoutMs;
+  while(Date.now()<deadline) {
+    try {
+      const res=await fetch('/api/runtime/state',{cache:'no-store'});
+      if(res.ok) return true;
+    } catch {}
+    await new Promise(r=>setTimeout(r,2000));
+  }
+  return false;
+}
 /* ── end Activity Panel ─────────────────────────────────────────────── */`;
