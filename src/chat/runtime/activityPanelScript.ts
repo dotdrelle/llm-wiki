@@ -319,10 +319,17 @@ function actCardHTML(item) {
     :stored?\`<div class="act-card-meta">Stored, no conversion agent.</div>\`
     :'';
   const icon={production:'⚙',cme:'⇄',documents:'📄',mailer:'✉'}[item.source]||(item.kind==='upload'?'📄':'⌁');
+  const cardTitle=String(item.label||item.filename||'-');
   const sourceMeta=item.source&&item.kind!=='upload'?(item.sourceLabel||activitySourceLabel(item.source)):null;
-  const fullMeta=[sourceMeta,item.detail,meta].filter(Boolean).join(' · ');
+  const seenMeta=new Set([cardTitle.trim().toLowerCase()]);
+  const fullMeta=[sourceMeta,item.detail,meta].filter(value=>{
+    const normalized=String(value||'').trim().toLowerCase();
+    if(!normalized||seenMeta.has(normalized)) return false;
+    seenMeta.add(normalized);
+    return true;
+  }).join(' · ');
   return \`<div class="act-card \${running?'running':''}" data-act-id="\${esc(item.id)}">
-<div class="act-card-head"><span class="act-card-icon">\${icon}</span><div class="act-card-info"><div class="act-card-name">\${esc(item.label||item.filename||'-')}</div>\${fullMeta?\`<div class="act-card-meta">\${esc(fullMeta)}</div>\`:''}</div><span class="act-badge \${badge}">\${badgeLabel}</span></div>
+<div class="act-card-head"><span class="act-card-icon">\${icon}</span><div class="act-card-info"><div class="act-card-name">\${esc(cardTitle)}</div>\${fullMeta?\`<div class="act-card-meta">\${esc(fullMeta)}</div>\`:''}</div><span class="act-badge \${badge}">\${badgeLabel}</span></div>
 \${stepsHtml?\`<div class="act-steps">\${stepsHtml}</div>\`:''}
 \${outputHtml}\${errorHtml}\${hint}
 \${retryHtml||statusHtml||dismissHtml?\`<div class="act-actions">\${retryHtml}\${statusHtml}\${dismissHtml}</div>\`:''}
@@ -356,6 +363,9 @@ function renderActivities() {
   syncActivityViewTabs();
   el.classList.toggle('activity-list-mode',activityView==='list');
   if(activityView==='graph') {
+    // The graph view owns the DOM now: drop the list-render fingerprint so
+    // switching back to list mode always redraws instead of being skipped.
+    el.__renderedHTML=null;
     const center=$('runtime-graph-center');
     if(document.body.classList.contains('execution-mode')&&center) {
       center.innerHTML=runtimeWorkflowGraphCenterHTML();
@@ -380,16 +390,36 @@ function renderActivities() {
     logs:activityTabWasCleared('logs')?'':runtimeTaskPanelHTML('logs'),
     local:localHTML,
   };
-  const labels={plan:'Plan',local:'Local activity',runtime:'Runtime activity',logs:'Logs'};
+  const labels={plan:'Plan',local:'Direct agents',runtime:'Runtime activity',logs:'Logs'};
   const localTabState=uploads.some(item=>item.error||item.status==='failed')?'has-error':uploads.some(item=>isActivityActive(item.status))?'has-running':'';
   const tabs=Object.entries(labels).map(([key,label])=>\`<button class="activity-subtab \${activityListTab===key?'active':''} \${key==='local'?localTabState:''}" type="button" onclick="setActivityListTab('\${key}')">\${label}</button>\`).join('');
   const empty=\`<div class="act-empty">No \${labels[activityListTab].toLowerCase()} yet.</div>\`;
   const resetPlan=activityListTab==='plan'?'<button class="activity-subtab-reset" type="button" onclick="resetRuntimePlan()">Reset plan</button>':'';
   const toolbar=\`<div class="activity-subtab-toolbar"><span class="activity-subtab-toolbar-title">\${labels[activityListTab]}</span><span class="activity-subtab-actions">\${resetPlan}<button class="activity-subtab-clear" type="button" onclick="clearActivityTab('\${activityListTab}')">Clear</button></span></div>\`;
-  el.innerHTML=\`<div class="activity-subtabs" role="tablist" aria-label="Activity list sections">\${tabs}</div><div class="activity-subtab-content activity-subtab-\${activityListTab}">\${toolbar}\${panes[activityListTab]||empty}</div>\`;
-  // Keep the (height-capped, scrollable) runtime log pinned to its latest
-  // lines after each full panel re-render.
-  scrollRuntimeLogToEnd?.();
+  const html=\`<div class="activity-subtabs" role="tablist" aria-label="Activity list sections">\${tabs}</div><div class="activity-subtab-content activity-subtab-\${activityListTab}">\${toolbar}\${panes[activityListTab]||empty}</div>\`;
+  // The panel re-renders every second while a run is active; replacing
+  // innerHTML unconditionally reset the scroll position each tick, making it
+  // impossible to scroll through past plan items or events during a run.
+  // Skip the DOM write when nothing changed, and otherwise restore the
+  // reader's position — pinning to the newest entries only when the reader
+  // was already there. Tab switches render fresh (no cross-tab restore).
+  const sameTab=el.__renderedTab===activityListTab;
+  el.__renderedTab=activityListTab;
+  if(el.__renderedHTML===html&&sameTab) return finishActivityRender();
+  const scroller=el.querySelector('.activity-subtab-content');
+  const scrollerTop=sameTab&&scroller?scroller.scrollTop:0;
+  const log=document.getElementById('runtime-log-list');
+  const logTop=sameTab&&log?log.scrollTop:0;
+  el.innerHTML=html;
+  el.__renderedHTML=html;
+  const nextScroller=el.querySelector('.activity-subtab-content');
+  if(nextScroller&&scrollerTop>0) nextScroller.scrollTop=scrollerTop;
+  const nextLog=document.getElementById('runtime-log-list');
+  // Newest-first log: stay pinned to the top only if the reader was there.
+  if(nextLog) nextLog.scrollTop=logTop<40?0:logTop;
+  return finishActivityRender();
+}
+function finishActivityRender() {
   const runtimeRunning=Array.isArray(runtimeState?.activities)
     ? runtimeState.activities.some(a=>isActivityActive(normalizeActivityStatus(a.status,a.terminal)))
     : false;
