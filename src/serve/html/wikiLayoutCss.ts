@@ -185,7 +185,7 @@ export const WIKI_LAYOUT_CSS = `
       transition: transform 120ms ease;
     }
     .side-folder[open] > summary::before { transform: rotate(90deg); }
-    .side-folder summary:hover { background: var(--panel-soft); color: var(--accent); }
+    .side-folder summary:hover { background: var(--panel-soft); color: var(--accent); } .side-folder-primary { margin: 0.25rem 0 0.55rem; padding: 0.18rem; border: 1px solid color-mix(in srgb, var(--accent) 62%, var(--border)); border-radius: 8px; background: var(--accent-soft); } .side-folder-primary > summary { color: var(--accent); } .side-folder-primary > summary .side-folder-label { font-weight: 800; }
     .side-folder-label {
       min-width: 0;
       overflow: hidden;

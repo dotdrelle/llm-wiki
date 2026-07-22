@@ -16,6 +16,7 @@ import { resolveInside, toPosix } from '../../utils/path.ts';
 import { listHelpChapters, readHelpChapter } from '../../utils/helpDoc.ts';
 import { WIKI_LAYOUT_CSS } from './wikiLayoutCss.ts';
 import { WIKI_LAYOUT_SCRIPT } from './wikiLayoutScript.ts';
+import { removeBrokenWikiLinks } from './wikiLinkValidation.ts';
 
 export { graphEtagForFiles, listGraphFiles, escapeScriptJson };
 
@@ -102,7 +103,7 @@ export function isServedRelativePath(relativePath: string): boolean {
   return (
     SERVED_DIRS.some(
       (dir) => relativePath === dir || relativePath.startsWith(`${dir}/`),
-    ) || relativePath.startsWith('raw/ingested/')
+    ) || relativePath.startsWith('raw/')
   );
 }
 
@@ -196,7 +197,7 @@ function linkWikiLinks(raw: string): string {
   );
 }
 
-async function renderMarkdown(raw: string, currentDir = ''): Promise<string> {
+async function renderMarkdown(raw: string, currentDir = '', rootDir?: string): Promise<string> {
   const renderer = new marked.Renderer();
   renderer.link = ({ href, title, text }) => {
     const resolvedHref = localHref(href, currentDir);
@@ -210,7 +211,8 @@ async function renderMarkdown(raw: string, currentDir = ''): Promise<string> {
     const safeTitle = title ? ` title="${escapeAttr(title)}"` : '';
     return `<a href="${safeHref}"${safeTitle}>${text}</a>`;
   };
-  return marked(linkSourceCitations(linkWikiLinks(raw), currentDir), {
+  const validated = rootDir ? await removeBrokenWikiLinks(raw, currentDir, rootDir) : raw;
+  return marked(linkSourceCitations(linkWikiLinks(validated), currentDir), {
     gfm: true,
     renderer,
   });
@@ -637,7 +639,8 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
   const refreshAction = depth === 0 && node.name === 'wiki'
     ? '<button class="side-folder-action side-refresh-action" type="button" title="Refresh Wiki" aria-label="Refresh Wiki" data-sidebar-refresh onclick="event.stopPropagation()">↻</button>'
     : '';
-  return `<details class="side-folder"${open} data-tree-id="${escapeAttr(node.path)}"><summary><span class="side-folder-label">${escapeHtml(label)}</span>${refreshAction}${createAction}</summary><div class="side-folder-children">${children}</div></details>`;
+  const rootClass = depth === 0 && node.name === 'wiki' ? ' side-folder-primary' : '';
+  return `<details class="side-folder${rootClass}"${open} data-tree-id="${escapeAttr(node.path)}"><summary><span class="side-folder-label">${escapeHtml(label)}</span>${refreshAction}${createAction}</summary><div class="side-folder-children">${children}</div></details>`;
 }
 
 async function renderUntrackedSidebar(rootDir: string): Promise<string> {
@@ -726,7 +729,7 @@ export async function buildGraphOverview(
     decodeHrefPath,
     hrefToRelativePath,
     humanTitle,
-    renderMarkdown,
+    renderMarkdown: (raw, currentDir) => renderMarkdown(raw, currentDir, rootDir),
   }, graphFiles, { includeContent: false, concurrency: 8, fallbackCommunityLabel });
 }
 
@@ -739,7 +742,7 @@ export async function renderGraphDocument(rootDir: string, relativePath: string)
     href: `/${relativePath}`,
     raw,
     preview: markdownPreviewForGraph(raw),
-    html: await renderMarkdown(raw, path.posix.dirname(relativePath)),
+    html: await renderMarkdown(raw, path.posix.dirname(relativePath), rootDir),
     contentEtag: `${fileStat.size}-${Math.round(fileStat.mtimeMs)}`,
   };
 }
@@ -854,7 +857,7 @@ export async function generateIndex(rootDir: string): Promise<string> {
   const raw = (await pathExists(indexPath))
     ? await readFile(indexPath, 'utf8')
     : '# Wiki Index\n\n- wiki/index.md not found.';
-  const html = await renderMarkdown(raw, 'wiki');
+  const html = await renderMarkdown(raw, 'wiki', rootDir);
 
   const indexTiles = extractIndexTiles(raw);
   const wikiTypeDirs: Array<{ heading: string; glob: string }> = [
@@ -1014,7 +1017,7 @@ export async function serveMd(
   const html =
     relativePath === 'wiki/log.md'
       ? renderLogMarkdown(raw)
-      : await renderMarkdown(raw, currentDir);
+      : await renderMarkdown(raw, currentDir, rootDir);
   const printBtn = `<button class="action-button" onclick="window.print()" title="Print / Export to PDF">↑ PDF</button>`;
   const dlBtn = `<a class="action-link" href="${escapeHref(`/raw/${relativePath}`)}" download title="Download source Markdown file">↓ .md</a>`;
   // Hidden by default: only revealed by WIKI_LAYOUT_SCRIPT when the page is

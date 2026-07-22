@@ -435,12 +435,17 @@ function setActivityListTab(tab) {
 function updateActivityBadge() {
   const runtimeCount=Array.isArray(runtimeState?.activities)?runtimeState.activities.filter(a=>isActivityActive(normalizeActivityStatus(a.status,a.terminal))).length:0;
   const count=_activities.filter(a=>isActivityActive(a.status)).length+runtimeCount;
-  const badge=$('tb-act-badge');
-  if(!badge) return;
-  badge.textContent=count>0?String(count):'';
-  badge.classList.toggle('visible',count>0);
-  const btn=$('tb-act-btn');
-  if(btn) btn.classList.toggle('active',count>0||!$('activity-panel')?.classList.contains('closed'));
+  const railBadge=$('rail-act-badge');
+  if(railBadge) {
+    railBadge.textContent=count>0?String(count):'';
+    railBadge.classList.toggle('show',count>0);
+  }
+  const panelOpen=!$('activity-panel')?.classList.contains('closed');
+  const railBtn=$('activity-toggle');
+  if(railBtn) {
+    railBtn.classList.toggle('active',panelOpen);
+    railBtn.setAttribute('aria-expanded',panelOpen?'true':'false');
+  }
 }
 function toggleActivityPanel() {
   const panel=$('activity-panel');

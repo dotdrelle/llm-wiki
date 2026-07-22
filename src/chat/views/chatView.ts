@@ -90,9 +90,6 @@ export const CHAT_MARKUP = `<aside id="sidebar">
     <div class="tb-actions">
       <button class="tb-system" id="system-drawer-btn" onclick="toggleSystemPrompt()">System instructions</button>
       <button class="tb-clear" onclick="clearChat()">Clear</button>
-      <button class="tb-act-btn" id="tb-act-btn" onclick="toggleActivityPanel()" title="Activity">
-        Activity<span class="tb-act-badge" id="tb-act-badge"></span>
-      </button>
     </div>
   </div>
   <div class="connectors-view" id="connectors-view">
@@ -194,7 +191,6 @@ export const CHAT_MARKUP = `<aside id="sidebar">
       <button class="act-view-tab" id="act-view-graph" type="button" onclick="setActivityView('graph')">Graph</button>
     </div>
     <button class="act-clear-all" type="button" onclick="clearAllActivityTabs()" title="Clear all Activity sections">Clear all</button>
-    <button class="act-panel-close" onclick="toggleActivityPanel()" title="Close">×</button>
   </div>
   <div class="act-body" id="activity-body"></div>
 </aside>
@@ -210,7 +206,7 @@ export const CHAT_MARKUP = `<aside id="sidebar">
   <div class="act-body" id="help-body"></div>
 </aside>
 <aside id="right-rail" aria-label="Monitoring">
-  <button class="rail-btn" type="button" onclick="toggleActivityPanel()" title="Activity" aria-label="Activity">
+  <button class="rail-btn" id="activity-toggle" type="button" onclick="toggleActivityPanel()" title="Activity" aria-label="Activity" aria-expanded="false">
     <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
     <span class="rail-badge" id="rail-act-badge"></span>
   </button>

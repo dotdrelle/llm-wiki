@@ -192,6 +192,36 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain("['plan','local','runtime','logs'].forEach(tab=>clearActivityTab(tab,{render:false}))");
     expect(CHAT_HTML).toContain('onclick="resetRuntimePlan()">Reset plan</button>');
     expect(CHAT_HTML).toContain("fetch('/api/runtime/reset',{method:'POST'})");
+    expect(CHAT_HTML).toContain('.activity-subtabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;flex:none;margin-bottom:8px}');
+  });
+
+  it('keeps the Activity rail button highlighted exactly while its panel is open', () => {
+    const [script] = chatScripts();
+
+    expect(CHAT_HTML).toContain('id="activity-toggle"');
+    expect(CHAT_HTML).toContain('.rail-btn:hover,.rail-btn.active{');
+    expect(script).toContain("railBtn.classList.toggle('active',panelOpen)");
+    expect(script).toContain("railBtn.setAttribute('aria-expanded',panelOpen?'true':'false')");
+    expect(script).toContain("if(wasClosed) $('activity-panel')?.classList.add('closed');");
+    expect(script).toContain('updateActivityBadge();');
+  });
+
+  it('uses the right rail as the only Activity control and badge', () => {
+    const [script] = chatScripts();
+
+    expect(CHAT_HTML).not.toContain('id="tb-act-btn"');
+    expect(CHAT_HTML).not.toContain('id="tb-act-badge"');
+    expect(CHAT_HTML).toContain('id="activity-toggle"');
+    expect(CHAT_HTML).toContain('id="rail-act-badge"');
+    expect(script).toContain("railBadge.classList.toggle('show',count>0)");
+    expect(script).not.toContain('new MutationObserver(sync)');
+  });
+
+  it('uses the Activity rail icon as the panel close control', () => {
+    const panelHeader = CHAT_HTML.match(/<aside id="activity-panel"[\s\S]*?<div class="act-body"/)?.[0] ?? '';
+
+    expect(panelHeader).toContain('Clear all');
+    expect(panelHeader).not.toContain('act-panel-close');
   });
 
   it('sends Activity status through Donna while displaying a concise chat prompt', () => {
@@ -729,5 +759,6 @@ describe('chat html', () => {
     expect(script).toContain('function applySidebarOpen(open, persist=false)');
     expect(script).toContain("localStorage.getItem(SIDEBAR_OPEN_KEY)!=='0'");
     expect(script).toContain('function toggleSidebar() { applySidebarOpen(!sidebarOpen,true); }');
+    expect(script).toContain("if(e.target.closest?.('#sidebar-toggle')) return;");
   });
 });

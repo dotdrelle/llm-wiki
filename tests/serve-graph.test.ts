@@ -159,6 +159,12 @@ describe('serve graph ui', () => {
     expect(source).toContain('window.location.reload();');
   });
 
+  it('visually distinguishes the primary Wiki tree from output collections', async () => {
+    const source = await serveSource();
+    expect(source).toContain("node.name === 'wiki' ? ' side-folder-primary' : ''");
+    expect(source).toContain('.side-folder-primary {');
+  });
+
   it('opens Pending markdown in the editor and keeps save/cancel on valid routes', async () => {
     const source = `${await serveSource()}\n${await wikiRoutesSource()}`;
 

@@ -423,17 +423,6 @@ function initShellTabs() {
       shellStore(SHELL_CENTER_KEY) !== 'chat') {
     setCenterWiki(currentWikiPath());
   }
-  // Mirror the Activity badge (rendered in the chat topbar) onto the rail.
-  const source = document.getElementById('tb-act-badge');
-  const mirror = document.getElementById('rail-act-badge');
-  if (source && mirror) {
-    const sync = () => {
-      mirror.textContent = source.textContent;
-      mirror.classList.toggle('show', Boolean(source.textContent));
-    };
-    new MutationObserver(sync).observe(source, { childList: true, characterData: true, subtree: true });
-    sync();
-  }
 }
 
 // ── Shell <-> wiki iframes messaging ────────────────────────────────────────

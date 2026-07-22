@@ -37,6 +37,36 @@ describe('serve link handling', () => {
     expect(isRawDownloadRequestPath('/raw/wiki/concepts/customer-journey.md')).toBe(true);
   });
 
+  it('removes broken local links but preserves labels and source citations', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-broken-links-'));
+    await mkdir(path.join(root, 'wiki', 'concepts'), { recursive: true });
+    await mkdir(path.join(root, 'raw', 'ingested'), { recursive: true });
+    await mkdir(path.join(root, 'raw', 'archive'), { recursive: true });
+    const page = path.join(root, 'wiki', 'concepts', 'page.md');
+    await writeFile(path.join(root, 'wiki', 'concepts', 'valid.md'), '# Valid\n', 'utf8');
+    await writeFile(path.join(root, 'raw', 'ingested', 'source.md'), '# Source\n', 'utf8');
+    await writeFile(path.join(root, 'raw', 'archive', 'legacy.md'), '# Legacy\n', 'utf8');
+    await writeFile(page, [
+      '# Page',
+      '[Valid](valid.md)',
+      '[Missing](missing.md)',
+      '[[absent.md|Absent reference]]',
+      '[External](https://example.com)',
+      '[Archived](raw/archive/legacy.md)',
+      '[src: raw/ingested/source.md]',
+    ].join('\n'), 'utf8');
+
+    const html = await serveMd(root, page, '/wiki/concepts/page.md');
+    expect(html).toContain('href="/wiki/concepts/valid.md"');
+    expect(html).toContain('Missing');
+    expect(html).toContain('Absent reference');
+    expect(html).not.toContain('missing.md');
+    expect(html).not.toContain('absent.md');
+    expect(html).toContain('href="https://example.com"');
+    expect(html).toContain('href="/raw/archive/legacy.md"');
+    expect(html).toContain('class="source-citation"');
+  });
+
   it('renders stabilization tags from deliverable sidecars', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-serve-sidecar-'));
     await mkdir(path.join(root, 'wiki'), { recursive: true });
