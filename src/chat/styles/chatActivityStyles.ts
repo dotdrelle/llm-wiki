@@ -73,6 +73,7 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .act-btn.del:hover{border-color:var(--err);color:var(--err);background:color-mix(in srgb,var(--err) 8%,transparent)}
 .runtime-status{font-size:10px;color:var(--muted);font-family:var(--font-mono);padding:0 4px 6px}
 .runtime-log-filters{margin:0 0 7px}.runtime-log-filters input{width:100%;border:1px solid var(--border);border-radius:8px;background:var(--panel-deep);color:var(--text);font:11px var(--font-mono);padding:6px 8px}.runtime-log{font-family:var(--font-mono);font-size:10px;line-height:1.4;color:var(--muted2);background:var(--panel-deep);border:1px solid var(--border);border-radius:8px;padding:7px 8px;white-space:pre-wrap;word-break:break-word;max-height:240px;overflow-y:auto;overscroll-behavior:contain}.runtime-log .rt-log-time{color:var(--accent)}.runtime-log.empty{color:var(--muted)}.runtime-choice-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.runtime-journal{display:flex;flex-direction:column;gap:3px;max-height:360px;overflow:auto;overscroll-behavior:contain}.runtime-journal.empty{padding:8px;color:var(--muted);font-size:10px}.runtime-journal-entry{display:grid;grid-template-columns:52px minmax(0,1fr);gap:7px;padding:5px 7px;border-left:3px solid var(--border);border-radius:5px;background:var(--panel-deep);font-size:10px;line-height:1.4}.runtime-journal-entry time{color:var(--muted);font-family:var(--font-mono)}.runtime-journal-entry span{min-width:0;overflow-wrap:anywhere;color:var(--text)}.runtime-journal-entry.running{border-left-color:var(--accent)}.runtime-journal-entry.success{border-left-color:#22c55e}.runtime-journal-entry.warning{border-left-color:#f59e0b}.runtime-journal-entry.error{border-left-color:var(--err)}
 .runtime-graph-shell{min-height:100%;display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:8px}
 .runtime-graph-main,.runtime-graph-inspector{min-width:0;border:1px solid var(--border);border-radius:10px;background:var(--panel-soft);overflow:hidden}
 .runtime-graph-main{display:flex;flex-direction:column}
@@ -80,22 +81,41 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .runtime-graph-toolbar button{border:1px solid var(--border);border-radius:6px;background:var(--panel);color:var(--muted);font:800 10px var(--font-sans);padding:3px 7px;cursor:pointer}
 .runtime-graph-toolbar>span:last-child{display:flex;gap:5px}
 .runtime-graph-toolbar button:hover{border-color:var(--accent);color:var(--accent)}
+.runtime-run-summary{display:flex;align-items:center;gap:7px 14px;flex-wrap:wrap;padding:8px 10px;border-bottom:1px solid var(--border);font-size:10px;color:var(--muted)}
+.runtime-run-summary strong{color:var(--text);font-size:11px;margin-right:auto}
+.runtime-run-summary span{white-space:nowrap}
+.runtime-run-summary .run-summary-ceiling{color:#f59e0b;font-weight:600}
+.runtime-live-indicator{color:#2563eb;font-weight:800}
 .runtime-graph-legend{display:flex;flex-wrap:wrap;gap:5px 10px;padding:6px 9px;border-bottom:1px solid var(--border);font-size:9px;color:var(--muted)}
 .runtime-graph-legend span{display:inline-flex;align-items:center;gap:4px}.runtime-graph-legend b{font-size:8px;text-transform:uppercase;letter-spacing:.06em}.runtime-graph-legend i{width:18px;border-top:2px solid var(--border)}.runtime-graph-legend i.depends_on{border-color:var(--accent);border-top-style:dashed}.runtime-graph-legend i.executed_by{border-color:#14b8a6}.runtime-graph-legend i.produces{border-color:#16a34a}.runtime-graph-legend i.bubble{width:8px;height:8px;border:0;border-radius:50%}.runtime-graph-legend i.running{background:#4f7eff}.runtime-graph-legend i.done{background:#22c55e}.runtime-graph-legend i.failed{background:#f06b6b}.runtime-graph-legend i.approval{background:#f59e0b}.runtime-graph-legend i.run{background:#8b5cf6}.runtime-graph-legend i.activity{background:#14b8a6}.runtime-graph-legend i.neutral{background:color-mix(in srgb,var(--muted) 42%,var(--panel))}
 .runtime-graph-svg{display:block;width:100%;height:520px;background:radial-gradient(circle at 50% 50%,var(--panel),transparent 66%)}
 .runtime-graph-link{stroke:var(--border);stroke-width:1.2;opacity:.72}
 .runtime-graph-link.depends_on{stroke-dasharray:4 4;stroke:var(--accent)}
+.runtime-graph-link.contains{stroke:color-mix(in srgb,var(--accent) 55%,var(--border))}
 .runtime-graph-link.executed_by{stroke:#14b8a6}
 .runtime-graph-link.produces{stroke:#16a34a}
 .runtime-graph-link.is-highlighted{opacity:1;stroke:var(--text);stroke-width:2.2}
 .runtime-graph-link.is-dimmed{opacity:.18}
+.runtime-graph-link.is-active-flow{stroke-dasharray:7 5;animation:runtime-flow 1s linear infinite}
 .runtime-graph-lane{fill:var(--muted);font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.75}
 .runtime-graph-node{cursor:pointer}
 .runtime-graph-node circle{stroke:var(--panel);stroke-width:3;filter:drop-shadow(0 2px 3px rgba(0,0,0,.18))}
-.runtime-graph-node.selected circle{stroke:var(--text);stroke-width:5}
-.runtime-graph-node.is-related circle{stroke:var(--text);stroke-width:4}
+.runtime-graph-node rect{stroke:var(--panel);stroke-width:3;filter:drop-shadow(0 2px 3px rgba(0,0,0,.16))}
+.runtime-graph-node.selected circle,.runtime-graph-node.selected rect{stroke:var(--text);stroke-width:5}
+.runtime-graph-node.is-related circle,.runtime-graph-node.is-related rect{stroke:var(--text);stroke-width:4}
 .runtime-graph-node.is-dimmed{opacity:.32}
+.runtime-graph-node.status-running circle,.runtime-graph-node.status-running rect{animation:runtime-node-pulse 1.35s ease-in-out infinite}
+.runtime-graph-node.status-changed{animation:runtime-node-change .55s ease-out}
 .runtime-graph-node text{fill:var(--text);font-size:10px;font-weight:800;paint-order:stroke;stroke:var(--panel);stroke-width:4px}
+.runtime-graph-node .runtime-graph-node-meta{font-size:9px;font-weight:700;fill:var(--text)}
+.runtime-graph-node .runtime-graph-node-agent{font-size:8px;font-weight:650;fill:var(--muted)}
+/* Filled (green) group rectangles: white text, no white halo stroke — the
+   stroke outline is only needed for text sitting over the light circle nodes. */
+.runtime-graph-node.task_group text{fill:#fff;stroke:none}
+.runtime-graph-node.task_group .runtime-graph-node-meta{fill:rgba(255,255,255,.92)}
+.runtime-graph-node.task_group .runtime-graph-node-agent{fill:rgba(255,255,255,.82)}
+.runtime-graph-node.task_detail text{fill:#fff;stroke:none;font-size:8px}
+.runtime-graph-node.task_detail .runtime-graph-node-meta{fill:rgba(255,255,255,.85);font-size:7px;text-transform:uppercase}
 .runtime-graph-inspector{padding:10px;overflow:hidden;display:flex;flex-direction:column}
 .runtime-inspector-title{font-size:12px;font-weight:850;color:var(--text);line-height:1.25;overflow-wrap:anywhere}
 .runtime-inspector-meta{margin-top:3px;font:700 10px var(--font-mono);color:var(--muted)}
@@ -106,6 +126,21 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .runtime-inspector-section:last-child{flex:1;display:flex;flex-direction:column;min-height:0}
 .runtime-inspector-heading{font-size:10px;font-weight:850;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;flex-shrink:0}
 .runtime-inspector-rel{font-size:10px;line-height:1.35;color:var(--muted2);overflow-wrap:anywhere}
+.runtime-inspector-task{display:flex;width:100%;flex-direction:column;gap:2px;padding:5px 3px;border:0;border-bottom:1px solid color-mix(in srgb,var(--border) 60%,transparent);border-radius:4px;background:transparent;color:var(--text);font:inherit;font-size:10px;text-align:left;cursor:pointer}
+.runtime-inspector-task:hover{background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.runtime-inspector-task.selected{background:color-mix(in srgb,var(--accent) 14%,var(--panel));box-shadow:inset 3px 0 var(--accent)}
+.runtime-inspector-task .rit-top{display:flex;align-items:flex-start;gap:7px}
+.runtime-inspector-task .rit-seq{flex:0 0 auto;min-width:15px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+.runtime-inspector-task .rit-label{flex:1;min-width:0;overflow-wrap:anywhere}
+.runtime-inspector-task b{flex:0 0 auto;font-size:8px;text-transform:uppercase;color:var(--muted)}.runtime-inspector-task b.done{color:#16a34a}.runtime-inspector-task b.running{color:var(--accent)}.runtime-inspector-task b.failed{color:var(--err)}
+.runtime-inspector-task .rit-meta{padding-left:22px;color:var(--muted);font-size:9px;font-variant-numeric:tabular-nums}
+.runtime-task-flow{background:color-mix(in srgb,var(--accent) 5%,transparent);border-radius:6px;padding:8px;margin-top:8px}
+.rit-flow-line{display:grid;grid-template-columns:52px minmax(0,1fr);gap:6px;padding:3px 0;font-size:9px;color:var(--muted)}
+.rit-flow-line b{color:var(--muted2);font-weight:650;overflow-wrap:anywhere}.rit-flow-line.current b{color:var(--text);font-weight:800}.rit-flow-line.current{border-left:3px solid var(--accent);padding-left:6px}
+@keyframes runtime-node-pulse{0%,100%{filter:drop-shadow(0 2px 3px rgba(0,0,0,.18))}50%{filter:drop-shadow(0 0 8px color-mix(in srgb,#4f7eff 68%,transparent))}}
+@keyframes runtime-node-change{0%{opacity:.45;filter:brightness(1.6)}100%{opacity:1;filter:brightness(1)}}
+@keyframes runtime-flow{to{stroke-dashoffset:-12}}
+@media (prefers-reduced-motion:reduce){.runtime-graph-node.status-running circle,.runtime-graph-node.status-running rect,.runtime-graph-node.status-changed,.runtime-graph-link.is-active-flow{animation:none}}
 .runtime-inspector-section pre{overflow:auto;white-space:pre-wrap;font:10px/1.45 var(--font-mono);color:var(--muted2);background:var(--panel-deep);border:1px solid var(--border);border-radius:7px;padding:7px}
 .runtime-inspector-section:last-child pre{flex:1;min-height:100px}
 .runtime-inspector-section pre .rt-log-time{color:var(--accent)}

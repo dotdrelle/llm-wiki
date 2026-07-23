@@ -181,7 +181,6 @@ export const CHAT_MARKUP = `<aside id="sidebar">
           <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
         </button>
         <button id="agent-mode-btn" class="agent-mode-btn" type="button" onclick="toggleAgentMode()" title="Send prompts to the agent runtime">Agent</button>
-        <button id="composer-approve-btn" class="composer-approve-btn" type="button" onclick="approveRuntimeRun()" hidden title="Approve the pending runtime plan">Approuver</button>
         <div class="input-actions-spacer"></div>
         <button id="send-btn" onclick="handleSendButton()" title="Send">
           <svg viewBox="0 0 24 24"><path d="M12 5l7 7-1.4 1.4L13 8.8V20h-2V8.8l-4.6 4.6L5 12z"/></svg>

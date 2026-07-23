@@ -167,6 +167,8 @@ and `/pipeline`. Keep scaffold skills generic and English by default.
 - `GET /api/runtime/events` → runtime `/events/stream` (SSE pass-through)
 - `POST /api/runtime/run` → runtime `/run` (injects `workspace: WORKSPACE_NAME`)
 - `POST /api/runtime/cancel` → runtime `/cancel`
+- `POST /api/runtime/approve` → runtime `/approve` (grants the pending run-scope
+  approval; used by the serve approval banner's Approve button)
 - `POST /api/runtime/reset` → workspace-scoped runtime `/kill?purge=true`
   (confirmed destructive reset of the current plan/runtime projection)
 - `GET`/`POST /api/runtime/control` → runtime `/control` (status/explain/enqueue
@@ -243,6 +245,27 @@ surfaces:
   right — the same graph and inspector markup as the Activity panel's
   `Graphe` view, just laid out differently (`body.execution-mode` toggles
   which container the graph/inspector render into).
+
+Runtime UI surfaces added alongside the graph (keep in lock-step with the
+manager's `state.concurrency` / `workflow.timingByTask` — see
+`llm-wiki-manager/CLAUDE.md`):
+
+- **Approval banner** (`#approval-banner`, `chatView.ts`/`chatHtml.ts`): amber
+  strip above the composer with Approve/Reject, shown whenever
+  `runtimeState.approvals` or a plan task is `pending_approval`. Approve →
+  `POST /api/runtime/approve {scope:'run'}`; Reject cancels the run.
+- **Run summary** (`runtimeWorkflowSummaryHTML`, also reused in the Plan tab):
+  `agents · Parallel active/max ×N · done/total · tokens`. The `×N` is the
+  authoritative resolved concurrency from `runtimeState.concurrency.limit`
+  (fallback: plan-derived), with an amber `(ceiling)` marker when the manager
+  ceiling binds.
+- **Execution graph** (`runtimeGraphScript.ts`): the `run` node carries a
+  `parallel ×N` sub-label + inspector `Parallelism` row from the same
+  `state.concurrency`; clicking a phase lists its tasks ordered by start time
+  with per-task duration (`workflow.timingByTask`) and tokens in/out
+  (`workflow.usage.byTask`). Filled `task_group` rectangles render white text
+  without the halo stroke (`.runtime-graph-node.task_group text`). Aggregator
+  status glyphs are `[✓]`/`[✗]`/`[⏸]`, aligned with the Shell PlanPanel.
 
 The Activity list is split into `Plan`, `Local activity`, `Runtime activity`,
 and `Logs`, in that order. Each tab owns a `Clear` action; `Clear all` beside

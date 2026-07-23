@@ -78,12 +78,48 @@ function runtimeLogLineHTML(line) {
   // Colorize the leading HH:MM:SS so entries are scannable.
   return esc(line).replace(/^(\\d{2}:\\d{2}:\\d{2})/,'<span class="rt-log-time">$1</span>');
 }
+function essentialRuntimeLogEntries(logs) {
+  const entries=[];
+  const seen=new Set();
+  for(const raw of Array.isArray(logs)?logs:[]) {
+    const line=String(raw||'').trim();
+    if(!line||/\\btrace:|AGENT_STATUS|source-path=|idempotency|attempt[-_:]/i.test(line)) continue;
+    const time=line.match(/^(\\d{2}:\\d{2}:\\d{2})/)?.[1]||'';
+    let text=line.replace(/^\\d{2}:\\d{2}:\\d{2}\\s*/,'').trim();
+    if(/^Task started:\\s*[a-f0-9-]{16,}/i.test(text)) continue;
+    if(/^activity:/i.test(text)) {
+      text=text.replace(/^activity:\\s*/i,'').replace(/^Production:\\s*/i,'');
+      text=text.replace(/\\s*·\\s*(?:last stage|trace):.*$/i,'');
+      text=text.replace(/\\s*\\([^)]*(?:step|run|ingest)[^)]*\\)/gi,'');
+      text=text.replace(/ingest_apply/gi,'Ingestion').replace(/ingest[-_ ]complete/gi,'Ingestion complete');
+    }
+    text=text
+      .replace(/[a-f0-9]{8}-[a-f0-9-]{20,}/gi,'')
+      .replace(/\\b(?:runId|turnId|taskId|attemptId)[:=]\\S+/gi,'')
+      .replace(/\\s+·\\s+·/g,' ·')
+      .replace(/\\s{2,}/g,' ')
+      .trim();
+    if(!text||text.length<3) continue;
+    const important=/run\\b|approval|approb|plan\\b|activity|ingest|build|export|polish|done|complete|failed|error|cancel|running|queued|started/i.test(text);
+    if(!important) continue;
+    const key=text.toLowerCase().replace(/\\d+%/g,'%');
+    if(seen.has(key)) continue;
+    seen.add(key);
+    const tone=/failed|error|cancel/i.test(text)?'error':/done|complete|success/i.test(text)?'success':/approval|approb|waiting/i.test(text)?'warning':/running|started/i.test(text)?'running':'info';
+    entries.push({time,text,tone});
+  }
+  return entries;
+}
+function essentialRuntimeLogHTML() {
+  const entries=essentialRuntimeLogEntries(runtimeState?.logs).slice(-60).reverse();
+  if(!entries.length) return '<div class="runtime-journal empty">No essential run event yet.</div>';
+  return \`<div class="runtime-journal">\${entries.map(entry=>\`<div class="runtime-journal-entry \${entry.tone}"><time>\${esc(entry.time||'—')}</time><span>\${esc(entry.text)}</span></div>\`).join('')}</div>\`;
+}
 function runtimeLogListHTML() {
-  // Newest entry first (descending) — freshest information on top.
-  const logs=filteredRuntimeLogs(runtimeState.logs).slice().reverse();
-  return logs.length
-    ? \`<div class="runtime-log" id="runtime-log-list">\${logs.map(runtimeLogLineHTML).join('\\n')}</div>\`
-    : '<div class="runtime-log empty" id="runtime-log-list">No matching logs.</div>';
+  const entries=essentialRuntimeLogEntries(filteredRuntimeLogs(runtimeState.logs)).slice(-100).reverse();
+  return entries.length
+    ? \`<div class="runtime-journal" id="runtime-log-list">\${entries.map(entry=>\`<div class="runtime-journal-entry \${entry.tone}"><time>\${esc(entry.time||'—')}</time><span>\${esc(entry.text)}</span></div>\`).join('')}</div>\`
+    : '<div class="runtime-journal empty" id="runtime-log-list">No matching essential run events.</div>';
 }
 function scrollRuntimeLogToEnd() {
   // Descending order: the latest entries are at the TOP of the capped list.
@@ -231,14 +267,15 @@ function runtimeTaskPanelHTML(view='plan') {
     startedAt:runtimeTime(item.startedAt||item.createdAt,runStartedAt),
     updatedAt:runtimeTime(item.finishedAt||item.completedAt||item.updatedAt,runUpdatedAt),
   })).join('');
-  const logFilters=\`<div class="runtime-log-filters"><input id="runtime-log-filter" value="\${esc(runtimeLogFilter)}" oninput="setRuntimeLogFilter(this.value)" placeholder="Filter run group task agent file attempt capability error"></div>\`;
+  const logFilters=\`<div class="runtime-log-filters"><input id="runtime-log-filter" value="\${esc(runtimeLogFilter)}" oninput="setRuntimeLogFilter(this.value)" placeholder="Filter essential run events…"></div>\`;
   const logsHtml=logFilters+runtimeLogListHTML();
   const synthesisHtml=initialSynthesis.length?\`<div class="act-section-head"><span class="act-section-title">Initial synthesis</span></div><div class="runtime-log">\${esc(initialSynthesis.join('\\n'))}</div>\`:'';
   if(view==='runtime') return activityCards;
   if(view==='logs') return logsHtml;
+  const runSummary=runtimeWorkflowSummaryHTML();
   const planHTML=planCards?\`<div class="act-section-head"><span class="act-section-title">Plan</span></div>\${planCards}\`:'';
   const queueHTML=queueCards?\`<div class="act-section-head"><span class="act-section-title">Queue</span></div>\${queueCards}\`:'';
-  return status+runCard+synthesisHtml+planHTML+queueHTML;
+  return status+runSummary+runCard+synthesisHtml+planHTML+queueHTML;
 }
 
 function runtimeRunCardHTML(plan,activities,progress=null) {
@@ -828,28 +865,23 @@ async function cancelRuntimeRun() {
     notify(e?.message||String(e),'e');
   }
 }
-// Pending approvals surface from two sources kept in sync by the runtime: the
-// approval grants (runtimeState.approvals) and the per-task plan status set to
-// pending_approval while the scheduler waits. Reading both means the banner
-// shows even if one projection lags the other.
+// Approval grants are authoritative. Task statuses can legitimately lag just
+// after a run-scoped grant, so combining both sources kept the banner visible
+// even though approval had succeeded. Plan statuses are only a legacy fallback
+// for runtime snapshots that do not expose an approvals array.
 function pendingApprovalCount() {
   if(!runtimeState) return 0;
-  const grants=Array.isArray(runtimeState.approvals)
-    ? runtimeState.approvals.filter(a=>String(a.status||'').toLowerCase()==='pending_approval').length
-    : 0;
+  if(Array.isArray(runtimeState.approvals)) {
+    return runtimeState.approvals.filter(a=>String(a.status||'').toLowerCase()==='pending_approval').length;
+  }
   const tasks=Array.isArray(runtimeState.plan)
     ? runtimeState.plan.filter(t=>['pending_approval','waiting_approval'].includes(String(t.status||'').toLowerCase())).length
     : 0;
-  return Math.max(grants,tasks);
+  return tasks;
 }
 function updateApprovalBanner() {
   const banner=$('approval-banner');
   const count=pendingApprovalCount();
-  const composerButton=$('composer-approve-btn');
-  if(composerButton) {
-    composerButton.hidden=count===0;
-    composerButton.textContent=count>1?\`Approuver (\${count})\`:'Approuver';
-  }
   if(!banner) return;
   if(count>0) {
     const label=$('approval-banner-text');
@@ -861,12 +893,22 @@ function updateApprovalBanner() {
 }
 async function approveRuntimeRun() {
   if(!runtimeEnabled()) return;
-  const buttons=[...document.querySelectorAll('#approval-banner .approval-btn.approve,#composer-approve-btn')];
+  const buttons=[...document.querySelectorAll('#approval-banner .approval-btn.approve')];
   buttons.forEach(button=>{ button.disabled=true; });
   try {
     const runId=runtimeState?.runId||runtimeState?.currentRunId||null;
     const res=await fetch('/api/runtime/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scope:'run',...(runId?{runId}:{})})});
     if(!res.ok&&res.status!==202) throw new Error('approval failed ('+res.status+')');
+    const result=await res.json().catch(()=>({approved:true}));
+    if(result?.approved===false) throw new Error(result?.reason||'approval not granted');
+    if(Array.isArray(runtimeState?.approvals)) {
+      runtimeState.approvals=runtimeState.approvals.map(approval=>
+        (!runId||!approval.runId||approval.runId===runId)&&String(approval.status||'').toLowerCase()==='pending_approval'
+          ? {...approval,status:'approved'}
+          : approval,
+      );
+    }
+    updateApprovalBanner();
     notify('Approbation accordée');
     await fetchRuntimeState().catch(()=>{});
   } catch(e) {

@@ -47,9 +47,10 @@ describe('chat html', () => {
     const [script] = chatScripts();
 
     expect(script).toContain('function filteredRuntimeLogs(logs)');
-    expect(script).toContain('placeholder="Filter run group task agent file attempt capability error"');
-    expect(script).toContain('const logs=filteredRuntimeLogs(runtimeState.logs);');
-    expect(script).toContain('const logs=filteredRuntimeLogs(runtimeState?.logs);');
+    expect(script).toContain('placeholder="Filter essential run events…"');
+    expect(script).toContain('function essentialRuntimeLogEntries(logs)');
+    expect(script).toContain('essentialRuntimeLogEntries(filteredRuntimeLogs(runtimeState.logs))');
+    expect(script).toContain('essentialRuntimeLogEntries(runtimeState?.logs)');
     expect(script).not.toContain('runtimeState.logs.slice(-5)');
     expect(script).not.toContain('runtimeState.logs.slice(-6)');
     expect(script).not.toContain('runtimeState.logs.slice(-8)');
@@ -323,14 +324,36 @@ describe('chat html', () => {
     expect(script).toContain('runtimeWorkflowZoomTransform=event.transform');
     expect(script).toContain('runtimeWorkflowZoomTransform||(nodes.length?runtimeWorkflowFitTransform(nodes):null)');
     expect(script).toContain('function computeRuntimeWorkflowLayeredLayout(nodes,relations)');
-    expect(script).toContain('function aggregateRuntimeWorkflowNodes(nodes,relations)');
-    expect(script).toContain('runtimeWorkflowUserSelected?selectedWorkflowNodeId:null');
+    expect(script).toContain("const taskNodes=workflowNodes.filter(node=>node.type==='task');");
+    expect(script).toContain("const phases=[...buckets].map");
+    expect(script).toContain("type:'task_group'");
+    expect(script).toContain('function runtimeWorkflowSummaryHTML()');
+    expect(script).toContain('formatRuntimeTokens(run?.usage)');
+    expect(script).toContain('const runSummary=runtimeWorkflowSummaryHTML()');
+    expect(script).toContain('return status+runSummary+runCard+synthesisHtml+planHTML+queueHTML');
+    expect(script).toContain('function selectRuntimeWorkflowTask(taskId)');
+    expect(script).toContain('onclick="selectRuntimeWorkflowTask(this.dataset.taskId)"');
+    expect(script).toContain('Execution sequence · task ${selectedTaskIndex+1}/${taskRows.length}');
+    expect(script).toContain("type:'task_detail'");
+    expect(script).toContain("id:'detail:'+expandedPhase.id+':'+taskId");
+    expect(script).toContain("relations.push({id:'detail-dep:'");
+    expect(script).toContain("lanes.push({label:'Selected phase · task DAG'");
+    expect(script).toContain("node.type==='task_detail'?()=>selectRuntimeWorkflowTask(node.taskId)");
+    expect(script).toContain('const runtimeWorkflowStatusByNode=new Map()');
+    expect(script).toContain("statusChanged?' status-changed':''");
+    expect(script).toContain("active?' is-active-flow':''");
+    expect(script).toContain('<span class="runtime-live-indicator">● Live</span>');
+    expect(script).toContain('const savedPositions=new Map(nodes.flatMap');
+    expect(script).toContain('const saved=savedPositions.get(node.id)');
+    expect(script).toContain('savedAnchor?.x??anchor?.x??left');
+    expect(script).toContain("Math.max(.1,minutes).toFixed(1):Math.round(minutes))+' min'");
+    expect(script).toContain('runtimeWorkflowUserSelected?phases.find(phase=>phase.id===selectedWorkflowNodeId):null');
     expect(script).toContain('runtimeWorkflowLabelPrefix(nodes)');
     expect(script).toContain("setAttribute('class','runtime-graph-lane')");
     expect(CHAT_HTML).toContain('.runtime-graph-lane{');
     expect(CHAT_HTML).toContain('class="runtime-graph-legend"');
-    expect(CHAT_HTML).toContain('Other / cancelled');
-    expect(CHAT_HTML).toContain('Running / task');
+    expect(CHAT_HTML).toContain('Sequence / dependency');
+    expect(CHAT_HTML).toContain('Parallel ${currentParallel} / max ×${maxParallel}');
     expect(CHAT_HTML).toContain('.runtime-graph-node circle{stroke:var(--panel);stroke-width:3;');
     expect(CHAT_HTML).toContain('onclick="resetRuntimeWorkflowGraph()"');
     expect(CHAT_HTML).toContain('onclick="fitRuntimeWorkflowGraph()"');
@@ -708,7 +731,8 @@ describe('chat html', () => {
     expect(script).toContain('const activitySummary=runtimeState.workflow?.activity||null;');
     expect(script).toContain('const activityLines=Array.isArray(activitySummary?.lines)?activitySummary.lines:[];');
     expect(script).toContain('const initialSynthesis=Array.isArray(activitySummary?.initialSynthesis)?activitySummary.initialSynthesis:[];');
-    expect(script).toContain('const sourceNodes=Array.isArray(graph.visibleNodes)&&graph.visibleNodes.length?graph.visibleNodes:workflow.nodes;');
+    expect(script).toContain("const taskNodes=workflowNodes.filter(node=>node.type==='task');");
+    expect(script).toContain("const graphNodes=Array.isArray(graph.nodes)?graph.nodes:[];");
     expect(script).toContain("Runtime activity");
   });
 
@@ -727,14 +751,14 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('.act-card-meta .run-progress{');
   });
 
-  it('shows a composer approval button only while approval is pending', () => {
+  it('keeps a single approval control in the pending-approval banner', () => {
     const [script] = chatScripts();
-    expect(CHAT_HTML).toContain('id="composer-approve-btn"');
-    expect(CHAT_HTML).toContain('onclick="approveRuntimeRun()" hidden');
-    expect(CHAT_HTML).toContain('.composer-approve-btn[hidden]{display:none}');
-    expect(script).toContain("const composerButton=$('composer-approve-btn');");
-    expect(script).toContain('composerButton.hidden=count===0;');
-    expect(script).toContain("composerButton.textContent=count>1?`Approuver (${count})`:'Approuver';");
+    expect(CHAT_HTML).not.toContain('id="composer-approve-btn"');
+    expect(CHAT_HTML).not.toContain('.composer-approve-btn');
+    expect(CHAT_HTML.match(/onclick="approveRuntimeRun\(\)"/g)).toHaveLength(1);
+    expect(script).toContain('if(Array.isArray(runtimeState.approvals))');
+    expect(script).toContain('runtimeState.approvals=runtimeState.approvals.map');
+    expect(script).not.toContain("const composerButton=$('composer-approve-btn');");
   });
 
   it('sends agent-mode messages through the runtime control lane while a run is active', () => {

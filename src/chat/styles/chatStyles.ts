@@ -390,10 +390,6 @@ ${CHAT_ACTIVITY_CSS}
 .agent-mode-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--panel)}
 .agent-mode-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .agent-mode-btn.disabled{opacity:.45;cursor:not-allowed}
-.composer-approve-btn{border:1px solid #f59e0b;border-radius:999px;background:#f59e0b;color:#0b1020;font:800 10px var(--font-sans);letter-spacing:.03em;text-transform:uppercase;padding:7px 10px;cursor:pointer;box-shadow:0 0 0 2px color-mix(in srgb,#f59e0b 16%,transparent)}
-.composer-approve-btn[hidden]{display:none}
-.composer-approve-btn:hover{background:#fbbf24;border-color:#fbbf24}
-.composer-approve-btn:disabled{opacity:.55;cursor:wait}
 #send-btn{background:var(--text);border:none;border-radius:50%;width:34px;height:34px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .2s,transform .2s,background .2s;color:var(--bg)}
 #send-btn:hover{opacity:.82;transform:scale(1.04)}
 #send-btn.is-stop{background:var(--text)}
