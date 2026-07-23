@@ -630,14 +630,15 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
     }),
   ].join('\n');
 
-  const open = depth === 0 ? ' open' : '';
+  const collapsedByDefault = new Set(['deliverables', 'templates', 'build-context']);
+  const open = depth === 0 && !collapsedByDefault.has(node.name) ? ' open' : '';
   const label = node.name === 'build-context' ? 'build context' : node.name;
   const createAction =
     depth === 0 && isCreatableCollection(node.name)
       ? `<a class="side-folder-action" href="${escapeHref(newMarkdownHref(node.name))}" title="Create Markdown" aria-label="Create in ${escapeAttr(node.name)}" onclick="event.stopPropagation()">+</a>`
       : '';
   const refreshAction = depth === 0 && node.name === 'wiki'
-    ? '<button class="side-folder-action side-refresh-action" type="button" title="Refresh Wiki" aria-label="Refresh Wiki" data-sidebar-refresh onclick="event.stopPropagation()">↻</button>'
+    ? '<button class="side-folder-action side-refresh-action" type="button" title="Refresh Wiki" aria-label="Refresh Wiki" data-sidebar-refresh="wiki" onclick="event.stopPropagation()">↻</button>'
     : '';
   const rootClass = depth === 0 && node.name === 'wiki' ? ' side-folder-primary' : '';
   return `<details class="side-folder${rootClass}"${open} data-tree-id="${escapeAttr(node.path)}"><summary><span class="side-folder-label">${escapeHtml(label)}</span>${refreshAction}${createAction}</summary><div class="side-folder-children">${children}</div></details>`;
@@ -658,7 +659,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
       })
       .join('\n')
     : '<li class="side-untracked-empty">No pending sources.</li>';
-  return `<div class="side-pending-resizer" data-pending-resizer title="Resize Pending panel" role="separator" aria-orientation="horizontal"></div><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh onclick="event.stopPropagation()">↻</button><span class="side-untracked-count" data-untracked-count>${count}</span></summary><ul class="side-untracked-list" data-untracked-list>${items}</ul></details>`;
+  return `<div class="side-pending-resizer" data-pending-resizer title="Resize Pending panel" role="separator" aria-orientation="horizontal"></div><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending" onclick="event.stopPropagation()">↻</button><span class="side-untracked-count" data-untracked-count>${count}</span></summary><ul class="side-untracked-list" data-untracked-list>${items}</ul></details>`;
 }
 
 export async function renderSidebar(rootDir: string, precomputedNavFiles?: string[]): Promise<string> {

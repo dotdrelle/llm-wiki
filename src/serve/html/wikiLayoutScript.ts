@@ -25,13 +25,15 @@ export const WIKI_LAYOUT_SCRIPT = `
   const sideTree = document.querySelector('.side-tree');
   const searchInput = document.querySelector('[data-side-search]');
   const searchStatus = document.querySelector('[data-side-search-status]');
-  const sideFiles = [...document.querySelectorAll('.side-tree [data-side-path]')];
-  const sideFolders = [...document.querySelectorAll('[data-tree-id]')];
+  const sideFiles = () => [...document.querySelectorAll('.side-tree [data-side-path]')];
+  const sideFolders = () => [...document.querySelectorAll('[data-tree-id]')];
   function saveSidebarState() {
     if (searchInput) localStorage.setItem(searchKey, searchInput.value);
     if (sideTree) localStorage.setItem(scrollKey, String(sideTree.scrollTop));
   }
-  document.querySelectorAll('[data-tree-id]').forEach((details) => {
+  function initializeFolder(details) {
+    if (details.dataset.sidebarInitialized === '1') return;
+    details.dataset.sidebarInitialized = '1';
     const id = details.getAttribute('data-tree-id');
     const key = storagePrefix + id;
     const saved = localStorage.getItem(key);
@@ -43,12 +45,17 @@ export const WIKI_LAYOUT_SCRIPT = `
     details.addEventListener('toggle', () => {
       localStorage.setItem(key, details.open ? 'open' : 'closed');
     });
-  });
-  document.querySelectorAll('[data-side-path]').forEach((link) => {
-    if (link.getAttribute('data-side-path') === currentPath) {
-      link.classList.add('is-active');
-    }
-    link.addEventListener('click', saveSidebarState);
+  }
+  document.querySelectorAll('[data-tree-id]').forEach(initializeFolder);
+  function markActiveSidebarLinks() {
+    document.querySelectorAll('[data-side-path]').forEach((link) => {
+      link.classList.toggle('is-active', link.getAttribute('data-side-path') === currentPath);
+    });
+  }
+  markActiveSidebarLinks();
+  document.addEventListener('click', (event) => {
+    const link = event.target.closest?.('[data-side-path]');
+    if (link) saveSidebarState();
   });
   function syncUntrackedCount() {
     const countEl = document.querySelector('[data-untracked-count]');
@@ -58,8 +65,9 @@ export const WIKI_LAYOUT_SCRIPT = `
     countEl.textContent = String(next);
     if (next === 0) list.innerHTML = '<li class="side-untracked-empty">No pending sources.</li>';
   }
-  document.querySelectorAll('[data-untracked-delete]').forEach((button) => {
-    button.addEventListener('click', async (event) => {
+  document.addEventListener('click', async (event) => {
+      const button = event.target.closest?.('[data-untracked-delete]');
+      if (!button) return;
       event.preventDefault();
       event.stopPropagation();
       const relativePath = button.getAttribute('data-untracked-delete') || '';
@@ -76,7 +84,6 @@ export const WIKI_LAYOUT_SCRIPT = `
         alert(err instanceof Error ? err.message : String(err));
         button.disabled = false;
       }
-    });
   });
   function folderHasVisibleFile(folder) {
     return Boolean(folder.querySelector('[data-side-path]:not(.is-search-hidden)'));
@@ -85,12 +92,12 @@ export const WIKI_LAYOUT_SCRIPT = `
     const query = window.WikiUi.normalizeSearch(searchInput?.value.trim() || '');
     let matchCount = 0;
     if (!query) {
-      sideFiles.forEach((link) => link.classList.remove('is-search-hidden'));
-      sideFolders.forEach((folder) => folder.classList.remove('is-search-hidden'));
+      sideFiles().forEach((link) => link.classList.remove('is-search-hidden'));
+      sideFolders().forEach((folder) => folder.classList.remove('is-search-hidden'));
       searchStatus?.classList.remove('is-visible');
       return;
     }
-    for (const link of sideFiles) {
+    for (const link of sideFiles()) {
       const haystack = window.WikiUi.normalizeSearch((link.getAttribute('data-side-path') || '') + ' ' + link.textContent);
       const matches = haystack.includes(query);
       link.classList.toggle('is-search-hidden', !matches);
@@ -99,7 +106,7 @@ export const WIKI_LAYOUT_SCRIPT = `
         link.closest('[data-tree-id]')?.setAttribute('open', '');
       }
     }
-    for (const folder of [...sideFolders].reverse()) {
+    for (const folder of [...sideFolders()].reverse()) {
       const visible = folderHasVisibleFile(folder);
       folder.classList.toggle('is-search-hidden', !visible);
       if (visible) folder.open = true;
@@ -120,13 +127,41 @@ export const WIKI_LAYOUT_SCRIPT = `
     localStorage.setItem(scrollKey, String(sideTree.scrollTop));
   }, { passive: true });
   window.addEventListener('beforeunload', saveSidebarState);
-  document.querySelectorAll('[data-sidebar-refresh]').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      saveSidebarState();
-      window.location.reload();
-    });
+  document.addEventListener('click', async (event) => {
+    const button = event.target.closest?.('[data-sidebar-refresh]');
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const target = button.getAttribute('data-sidebar-refresh');
+    button.disabled = true;
+    try {
+      const response = await fetch('/embed/sidebar', { cache: 'no-store' });
+      if (!response.ok) throw new Error('Refresh failed');
+      const nextDocument = new DOMParser().parseFromString(await response.text(), 'text/html');
+      if (target === 'pending') {
+        const currentList = document.querySelector('[data-untracked-list]');
+        const nextList = nextDocument.querySelector('[data-untracked-list]');
+        const currentCount = document.querySelector('[data-untracked-count]');
+        const nextCount = nextDocument.querySelector('[data-untracked-count]');
+        if (!currentList || !nextList || !currentCount || !nextCount) throw new Error('Pending panel unavailable');
+        currentList.innerHTML = nextList.innerHTML;
+        currentCount.textContent = nextCount.textContent;
+      } else if (target === 'wiki') {
+        const currentWiki = document.querySelector('[data-tree-id="wiki"]');
+        const nextWiki = nextDocument.querySelector('[data-tree-id="wiki"]');
+        const currentChildren = currentWiki?.querySelector(':scope > .side-folder-children');
+        const nextChildren = nextWiki?.querySelector(':scope > .side-folder-children');
+        if (!currentChildren || !nextChildren) throw new Error('Wiki tree unavailable');
+        currentChildren.innerHTML = nextChildren.innerHTML;
+        currentWiki.querySelectorAll('[data-tree-id]').forEach(initializeFolder);
+        markActiveSidebarLinks();
+        applySidebarSearch();
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      button.disabled = false;
+    }
   });
   applySidebarSearch();
   requestAnimationFrame(() => {

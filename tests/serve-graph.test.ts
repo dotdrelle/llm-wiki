@@ -155,14 +155,31 @@ describe('serve graph ui', () => {
     const source = await serveSource();
     expect(source).toContain('title="Refresh Wiki"');
     expect(source).toContain('title="Refresh Pending"');
-    expect(source).toContain("document.querySelectorAll('[data-sidebar-refresh]')");
-    expect(source).toContain('window.location.reload();');
+    expect(source).toContain('data-sidebar-refresh="wiki"');
+    expect(source).toContain('data-sidebar-refresh="pending"');
+    expect(source).toContain("fetch('/embed/sidebar', { cache: 'no-store' })");
+    expect(source).toContain("if (target === 'pending')");
+    expect(source).toContain("else if (target === 'wiki')");
+    expect(source).not.toContain('window.location.reload();');
   });
 
   it('visually distinguishes the primary Wiki tree from output collections', async () => {
     const source = await serveSource();
     expect(source).toContain("node.name === 'wiki' ? ' side-folder-primary' : ''");
     expect(source).toContain('.side-folder-primary {');
+  });
+
+  it('collapses deliverables, templates, and build context by default', async () => {
+    const source = await serveSource();
+    expect(source).toContain("new Set(['deliverables', 'templates', 'build-context'])");
+    expect(source).toContain("depth === 0 && !collapsedByDefault.has(node.name) ? ' open' : ''");
+  });
+
+  it('wraps long document lines and gives the first table column a bounded width', async () => {
+    const source = await serveSource();
+    expect(source).toContain('white-space: pre-wrap; overflow-wrap: anywhere;');
+    expect(source).toContain('table-layout: fixed;');
+    expect(source).toContain('th:first-child, td:first-child { width: clamp(8rem, 24%, 14rem); }');
   });
 
   it('opens Pending markdown in the editor and keeps save/cancel on valid routes', async () => {
@@ -318,6 +335,8 @@ describe('serve graph ui', () => {
     expect(html).toContain('community-document-index-list');
     expect(html).toContain('.community-document-index-list{min-height:0;overflow:auto');
     expect(html).toContain('.community-document-index-stack{position:absolute');
+    expect(html).toContain('background:color-mix(in srgb,var(--community-color,var(--line)) 20%,var(--panel))');
+    expect(html).toContain('background:color-mix(in srgb,var(--community-color,var(--line)) 24%,var(--panel))');
     expect(html).toContain("communities.filter(community=>communityExpanded.has(community.id))");
     expect(html).toContain("nodeGroups.call(d3.drag()");
     expect(html).toContain("subject((_,node)=>({...local.get(node.id)}))");
@@ -325,6 +344,17 @@ describe('serve graph ui', () => {
     expect(html).toContain("scale=Math.min(1,limit/distance)");
     expect(html).toContain("local.set(node.id,point)");
     expect(html).toContain('renderCommunityDocumentIndexes(shown,nodeById)');
+  });
+
+  it('shows complete truncated brick names in a clickable Focus index', () => {
+    const html = renderWikiGraphV2();
+
+    expect(html).toContain('function renderFocusNameIndex()');
+    expect(html).toContain('node.title.length>24');
+    expect(html).toContain("panel.className='focus-name-index'");
+    expect(html).toContain('renderFocusNameIndex()');
+    expect(html).toContain('.focus-name-index{position:absolute');
+    expect(html).toContain("data-doc=\"'+esc(node.id)");
   });
 
   it('reflects Foundation and other active filters in all graph counters', () => {

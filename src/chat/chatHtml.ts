@@ -234,7 +234,7 @@ function runtimeTaskPanelHTML(view='plan') {
   const logFilters=\`<div class="runtime-log-filters"><input id="runtime-log-filter" value="\${esc(runtimeLogFilter)}" oninput="setRuntimeLogFilter(this.value)" placeholder="Filter run group task agent file attempt capability error"></div>\`;
   const logsHtml=logFilters+runtimeLogListHTML();
   const synthesisHtml=initialSynthesis.length?\`<div class="act-section-head"><span class="act-section-title">Initial synthesis</span></div><div class="runtime-log">\${esc(initialSynthesis.join('\\n'))}</div>\`:'';
-  if(view==='runtime') return activityCards?\`<div class="act-section-head"><span class="act-section-title">Runtime activity</span></div>\${activityCards}\`:'';
+  if(view==='runtime') return activityCards;
   if(view==='logs') return logsHtml;
   const planHTML=planCards?\`<div class="act-section-head"><span class="act-section-title">Plan</span></div>\${planCards}\`:'';
   const queueHTML=queueCards?\`<div class="act-section-head"><span class="act-section-title">Queue</span></div>\${queueCards}\`:'';
@@ -249,15 +249,15 @@ function runtimeRunCardHTML(plan,activities,progress=null) {
   const runId=runtimeState?.runId || runtimeState?.currentRunId || activities.find(activity=>activity.runId)?.runId || '';
   const turnId=runtimeState?.turnId || activities.find(activity=>activity.turnId)?.turnId || '';
   const workspace=runtimeState?.workspace || window.__WIKI_CONFIG__?.workspaceName || '';
+  const percent=Number.isFinite(Number(progress?.percent))?\`\${Math.round(Number(progress.percent))}%\`:null;
   const meta=[
-    '● Running',
-    Number.isFinite(Number(progress?.percent))?\`\${Math.round(Number(progress.percent))}%\`:null,
     plan.length?\`\${doneCount} task\${doneCount>1?'s':''} done\`:null,
     runId?\`runId: \${runId}\`:null,
     turnId?\`turnId: \${turnId}\`:null,
     workspace?\`workspace: \${workspace}\`:null,
   ].filter(Boolean).join(' · ');
-  return \`<div class="act-card running" data-run-id="\${esc(runId)}" data-turn-id="\${esc(turnId)}" data-workspace="\${esc(workspace)}"><div class="act-card-head"><span class="act-card-icon">▶</span><div class="act-card-info"><div class="act-card-name">Run — \${esc(title)}</div><div class="act-card-meta">\${esc(meta)}</div></div><span class="act-badge running">Running</span></div><div class="act-actions"><button class="act-btn" type="button" onclick="askRuntimeStatus(\${jsArg(runId||title)})">Inspect</button><button class="act-btn del" type="button" onclick="cancelRuntimeRun()">Cancel</button></div></div>\`;
+  const progressLabel=\`Running\${percent?' · '+percent:''}\`;
+  return \`<div class="act-card running" data-run-id="\${esc(runId)}" data-turn-id="\${esc(turnId)}" data-workspace="\${esc(workspace)}"><div class="act-card-head"><span class="act-card-icon">▶</span><div class="act-card-info"><div class="act-card-name">Run — \${esc(title)}</div><div class="act-card-meta"><span class="run-progress">\${esc(progressLabel)}</span>\${meta?' · '+esc(meta):''}</div></div><span class="act-badge running">Running</span></div><div class="act-actions"><button class="act-btn" type="button" onclick="askRuntimeStatus(\${jsArg(runId||title)})">Inspect</button><button class="act-btn del" type="button" onclick="cancelRuntimeRun()">Cancel</button></div></div>\`;
 }
 
 function runtimeActivityToCard(activity,index=0,runStartedAt=Date.now(),runUpdatedAt=runStartedAt) {
@@ -311,6 +311,7 @@ function applyRuntimeState(state) {
   const conversationChanged=mergeRuntimeConversation();
   renderActivities();
   updateActivityBadge();
+  updateApprovalBanner();
   updateAgentModeUI();
   // Scroll after renderActivities(), not before: opening/resizing the
   // Activity panel can reflow the chat column's width and change wrapped
@@ -826,6 +827,58 @@ async function cancelRuntimeRun() {
   } catch(e) {
     notify(e?.message||String(e),'e');
   }
+}
+// Pending approvals surface from two sources kept in sync by the runtime: the
+// approval grants (runtimeState.approvals) and the per-task plan status set to
+// pending_approval while the scheduler waits. Reading both means the banner
+// shows even if one projection lags the other.
+function pendingApprovalCount() {
+  if(!runtimeState) return 0;
+  const grants=Array.isArray(runtimeState.approvals)
+    ? runtimeState.approvals.filter(a=>String(a.status||'').toLowerCase()==='pending_approval').length
+    : 0;
+  const tasks=Array.isArray(runtimeState.plan)
+    ? runtimeState.plan.filter(t=>['pending_approval','waiting_approval'].includes(String(t.status||'').toLowerCase())).length
+    : 0;
+  return Math.max(grants,tasks);
+}
+function updateApprovalBanner() {
+  const banner=$('approval-banner');
+  const count=pendingApprovalCount();
+  const composerButton=$('composer-approve-btn');
+  if(composerButton) {
+    composerButton.hidden=count===0;
+    composerButton.textContent=count>1?\`Approuver (\${count})\`:'Approuver';
+  }
+  if(!banner) return;
+  if(count>0) {
+    const label=$('approval-banner-text');
+    if(label) label.textContent=count+' tâche(s) mutante(s) en attente d\\'approbation avant exécution.';
+    banner.hidden=false;
+  } else {
+    banner.hidden=true;
+  }
+}
+async function approveRuntimeRun() {
+  if(!runtimeEnabled()) return;
+  const buttons=[...document.querySelectorAll('#approval-banner .approval-btn.approve,#composer-approve-btn')];
+  buttons.forEach(button=>{ button.disabled=true; });
+  try {
+    const runId=runtimeState?.runId||runtimeState?.currentRunId||null;
+    const res=await fetch('/api/runtime/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scope:'run',...(runId?{runId}:{})})});
+    if(!res.ok&&res.status!==202) throw new Error('approval failed ('+res.status+')');
+    notify('Approbation accordée');
+    await fetchRuntimeState().catch(()=>{});
+  } catch(e) {
+    notify(e?.message||String(e),'e');
+  } finally {
+    buttons.forEach(button=>{ button.disabled=false; });
+  }
+}
+function rejectRuntimeRun() {
+  if(!runtimeEnabled()) return;
+  if(!confirm('Rejeter l\\'approbation ? Cela annule le run en cours.')) return;
+  cancelRuntimeRun();
 }
 
 function toggleSystemPrompt() {

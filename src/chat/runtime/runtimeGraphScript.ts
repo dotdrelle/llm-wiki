@@ -12,6 +12,7 @@ export const RUNTIME_GRAPH_SCRIPT = `/* ── Runtime Graph ──────�
 ${graphForceScript()}
 const runtimeWorkflowNodePositions=new Map();
 let runtimeWorkflowZoomTransform=null;
+let runtimeWorkflowZoomBehavior=null;
 let runtimeWorkflowUserSelected=false;
 let runtimeWorkflowLanes=[];
 function runtimeWorkflowGraphHTML() {
@@ -20,7 +21,7 @@ function runtimeWorkflowGraphHTML() {
 }
 function runtimeWorkflowGraphCenterHTML() {
   if(!runtimeState?.workflow?.nodes?.length) return '<div class="act-empty">No runtime workflow graph yet.</div>';
-  return \`<div class="runtime-graph-main"><div class="runtime-graph-toolbar"><span>Run/Task graph</span><span><button type="button" onclick="fitRuntimeWorkflowGraph()">Fit</button><button type="button" onclick="resetRuntimeWorkflowGraph()">Reset</button></span></div><div class="runtime-graph-legend"><b>Lines</b><span><i class="depends_on"></i>Depends on</span><span><i class="executed_by"></i>Executed by</span><span><i class="produces"></i>Produces</span><span><i class="related_to"></i>Related</span><b>Bubbles</b><span><i class="bubble running"></i>Running / task</span><span><i class="bubble done"></i>Done</span><span><i class="bubble failed"></i>Failed</span><span><i class="bubble approval"></i>Approval / queue</span><span><i class="bubble run"></i>Run</span><span><i class="bubble activity"></i>Activity</span><span><i class="bubble neutral"></i>Other / cancelled</span></div><svg class="runtime-graph-svg" id="runtime-graph-svg" viewBox="0 0 760 620" aria-label="Runtime workflow graph"></svg></div>\`;
+  return \`<div class="runtime-graph-main"><div class="runtime-graph-toolbar"><span>Run/Task graph</span><span><button type="button" onclick="zoomRuntimeWorkflowGraph(.8)" title="Zoom out" aria-label="Zoom out">−</button><button type="button" onclick="zoomRuntimeWorkflowGraph(1.25)" title="Zoom in" aria-label="Zoom in">+</button><button type="button" onclick="fitRuntimeWorkflowGraph()">Fit</button><button type="button" onclick="resetRuntimeWorkflowGraph()">Reset</button></span></div><div class="runtime-graph-legend"><b>Lines</b><span><i class="depends_on"></i>Depends on</span><span><i class="executed_by"></i>Executed by</span><span><i class="produces"></i>Produces</span><span><i class="related_to"></i>Related</span><b>Bubbles</b><span><i class="bubble running"></i>Running / task</span><span><i class="bubble done"></i>Done</span><span><i class="bubble failed"></i>Failed</span><span><i class="bubble approval"></i>Approval / queue</span><span><i class="bubble run"></i>Run</span><span><i class="bubble activity"></i>Activity</span><span><i class="bubble neutral"></i>Other / cancelled</span></div><svg class="runtime-graph-svg" id="runtime-graph-svg" viewBox="0 0 760 620" aria-label="Runtime workflow graph"></svg></div>\`;
 }
 function runtimeWorkflowInspectorHTML() {
   return '<aside class="runtime-graph-inspector" id="runtime-graph-inspector"></aside>';
@@ -197,6 +198,11 @@ function fitRuntimeWorkflowGraph() {
   runtimeWorkflowZoomTransform=null;
   renderRuntimeWorkflowGraph();
 }
+function zoomRuntimeWorkflowGraph(factor) {
+  const svg=$('runtime-graph-svg');
+  if(!svg||!runtimeWorkflowZoomBehavior||!window.d3) return;
+  window.d3.select(svg).call(runtimeWorkflowZoomBehavior.scaleBy,factor);
+}
 function resetRuntimeWorkflowGraph() {
   runtimeWorkflowNodePositions.clear();
   runtimeWorkflowZoomTransform=null;
@@ -246,6 +252,7 @@ function renderRuntimeWorkflowGraph() {
     element.setAttribute('x2',to.x); element.setAttribute('y2',to.y);
   });
   const zoom=window.d3.zoom().scaleExtent([.25,3]).on('zoom',event=>{runtimeWorkflowZoomTransform=event.transform;viewport.setAttribute('transform',event.transform);});
+  runtimeWorkflowZoomBehavior=zoom;
   window.d3.select(svg).call(zoom);
   const labelPrefix=runtimeWorkflowLabelPrefix(nodes);
   for(const node of nodes) {

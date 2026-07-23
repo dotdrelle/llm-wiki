@@ -598,6 +598,11 @@ export const WIKI_LAYOUT_CSS = `
     .article h1, .article h2, .article h3 { line-height: 1.2; letter-spacing: 0; }
     .article h1 { margin-top: 0; }
     .article img { max-width: 100%; }
+    .article, .article p, .article li, .article a, .article code {
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      word-break: normal;
+    }
     .index-layout .article ul { columns: 2; column-gap: 2rem; }
     .index-layout .article ul li { break-inside: avoid; }
     .log-article {
@@ -772,10 +777,11 @@ export const WIKI_LAYOUT_CSS = `
       outline: none;
     }
     .field-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-    pre { background: #edf1f5; padding: 1rem; border-radius: 6px; overflow-x: auto; }
+    pre { background: #edf1f5; padding: 1rem; border-radius: 6px; max-width: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
     code { font-size: 0.9em; }
-    table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; }
-    th, td { border: 1px solid var(--border); padding: 0.45rem 0.75rem; text-align: left; }
+    table { border-collapse: collapse; width: 100%; max-width: 100%; table-layout: fixed; }
+    th, td { border: 1px solid var(--border); padding: 0.45rem 0.75rem; text-align: left; vertical-align: top; white-space: normal; overflow-wrap: anywhere; word-break: normal; }
+    th:first-child, td:first-child { width: clamp(8rem, 24%, 14rem); }
     blockquote { border-left: 3px solid var(--accent); margin: 1rem 0; padding-left: 1rem; color: var(--muted); }
     .empty { color: var(--muted); }
     .not-found-panel {

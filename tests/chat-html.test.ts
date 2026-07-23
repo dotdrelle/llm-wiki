@@ -129,6 +129,14 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('.tc-summary{display:flex;flex-direction:column;gap:8px;min-width:0}');
   });
 
+  it('wraps long chat content and sizes the first table column', () => {
+    expect(CHAT_HTML).toContain('.bubble,.bubble p,.bubble li,.bubble a,.bubble code{max-width:100%;overflow-wrap:anywhere;word-break:normal}');
+    expect(CHAT_HTML).toContain('.bubble table{border-collapse:collapse;font-size:.9em;width:100%;max-width:100%;table-layout:fixed}');
+    expect(CHAT_HTML).toContain('.bubble th:first-child,.bubble td:first-child{width:clamp(7rem,24%,13rem)}');
+    expect(CHAT_HTML).toContain('.bubble .instruction-ref{');
+    expect(CHAT_HTML).toContain('white-space:normal;overflow-wrap:anywhere');
+  });
+
   it('routes document uploads to the activity panel', () => {
     const [script] = chatScripts();
 
@@ -163,6 +171,8 @@ describe('chat html', () => {
     expect(script).toContain('function renderRuntimeWorkflowInspector()');
     expect(script).toContain('function showExecutionView(event)');
     expect(script).toContain("if(activityView==='graph')");
+    expect(script).toContain("if(view==='runtime') return activityCards;");
+    expect(script).not.toContain("if(view==='runtime') return activityCards?`<div class=\"act-section-head\"");
   });
 
   it('keeps the right rail on the document edge and opens one side panel after it', () => {
@@ -324,6 +334,10 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('.runtime-graph-node circle{stroke:var(--panel);stroke-width:3;');
     expect(CHAT_HTML).toContain('onclick="resetRuntimeWorkflowGraph()"');
     expect(CHAT_HTML).toContain('onclick="fitRuntimeWorkflowGraph()"');
+    expect(CHAT_HTML).toContain('onclick="zoomRuntimeWorkflowGraph(.8)"');
+    expect(CHAT_HTML).toContain('onclick="zoomRuntimeWorkflowGraph(1.25)"');
+    expect(script).toContain('function zoomRuntimeWorkflowGraph(factor)');
+    expect(script).toContain('runtimeWorkflowZoomBehavior.scaleBy,factor');
     expect(CHAT_HTML).toContain('runtimeWorkflowNodePositions.set(node.id');
   });
 
@@ -709,6 +723,18 @@ describe('chat html', () => {
     expect(script).toContain('onclick="askRuntimeStatus(${jsArg(runId||title)})">Inspect</button>');
     expect(script).toContain('onclick="cancelRuntimeRun()">Cancel</button>');
     expect(script).toContain('const runCard=runtimeRunCardHTML(plan,activities,runtimeState.workflow?.progress);');
+    expect(script).toContain('class="run-progress"');
+    expect(CHAT_HTML).toContain('.act-card-meta .run-progress{');
+  });
+
+  it('shows a composer approval button only while approval is pending', () => {
+    const [script] = chatScripts();
+    expect(CHAT_HTML).toContain('id="composer-approve-btn"');
+    expect(CHAT_HTML).toContain('onclick="approveRuntimeRun()" hidden');
+    expect(CHAT_HTML).toContain('.composer-approve-btn[hidden]{display:none}');
+    expect(script).toContain("const composerButton=$('composer-approve-btn');");
+    expect(script).toContain('composerButton.hidden=count===0;');
+    expect(script).toContain("composerButton.textContent=count>1?`Approuver (${count})`:'Approuver';");
   });
 
   it('sends agent-mode messages through the runtime control lane while a run is active', () => {

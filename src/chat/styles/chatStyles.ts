@@ -352,6 +352,15 @@ ${CHAT_ACTIVITY_CSS}
 #input-wrap{padding:12px 18px 14px;background:linear-gradient(to top,var(--panel) 82%,rgba(255,255,255,0));display:flex;flex-direction:column;align-items:center}
 #page-context-chips{width:min(900px,100%);display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:5px;margin:0 0 6px;align-self:center;box-sizing:border-box}
 #page-context-chips[hidden]{display:none}
+#approval-banner{width:min(900px,100%);align-self:center;box-sizing:border-box;display:flex;align-items:center;gap:10px;margin:0 0 8px;padding:9px 12px;border:1px solid #f59e0b;border-left-width:3px;border-radius:9px;background:rgba(245,158,11,.12);color:var(--text,#e8edf4)}
+#approval-banner[hidden]{display:none}
+.approval-banner-icon{font-size:15px;line-height:1;color:#f59e0b}
+.approval-banner-text{flex:1;font-size:13px;line-height:1.35}
+.approval-banner-actions{display:flex;gap:6px;flex-shrink:0}
+.approval-btn{border:1px solid var(--border);border-radius:7px;padding:4px 12px;font-size:12px;font-weight:600;cursor:pointer;background:var(--panel);color:var(--text,#e8edf4)}
+.approval-btn.approve{background:#f59e0b;border-color:#f59e0b;color:#0b1020}
+.approval-btn.approve:hover{background:#fbbf24;border-color:#fbbf24}
+.approval-btn.reject:hover{border-color:#f38ba8;color:#f38ba8}
 .page-context-chip{min-width:0;max-width:min(360px,100%);display:inline-flex;align-items:center;gap:5px;padding:4px 7px 4px 9px;border:1px solid var(--border);border-radius:14px;background:var(--panel-soft);font-size:.75rem;color:var(--muted)}
 .page-context-chip svg{width:12px;height:12px;flex:none;fill:none;stroke:currentColor;stroke-width:2}
 .page-context-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -381,6 +390,10 @@ ${CHAT_ACTIVITY_CSS}
 .agent-mode-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--panel)}
 .agent-mode-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .agent-mode-btn.disabled{opacity:.45;cursor:not-allowed}
+.composer-approve-btn{border:1px solid #f59e0b;border-radius:999px;background:#f59e0b;color:#0b1020;font:800 10px var(--font-sans);letter-spacing:.03em;text-transform:uppercase;padding:7px 10px;cursor:pointer;box-shadow:0 0 0 2px color-mix(in srgb,#f59e0b 16%,transparent)}
+.composer-approve-btn[hidden]{display:none}
+.composer-approve-btn:hover{background:#fbbf24;border-color:#fbbf24}
+.composer-approve-btn:disabled{opacity:.55;cursor:wait}
 #send-btn{background:var(--text);border:none;border-radius:50%;width:34px;height:34px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .2s,transform .2s,background .2s;color:var(--bg)}
 #send-btn:hover{opacity:.82;transform:scale(1.04)}
 #send-btn.is-stop{background:var(--text)}
@@ -406,8 +419,12 @@ ${CHAT_ACTIVITY_CSS}
 .doc-content h1:first-child,.doc-content h2:first-child,.doc-content h3:first-child{margin-top:0}
 .doc-content p{line-height:1.7;margin:.55em 0}
 .doc-content ul,.doc-content ol{padding-left:1.4em;margin:.55em 0}
+.doc-content,.doc-content p,.doc-content li,.doc-content a,.doc-content code{max-width:100%;overflow-wrap:anywhere;word-break:normal}
 .doc-content code{font-family:var(--font-mono);background:var(--panel-soft);border:1px solid var(--border);border-radius:5px;padding:1px 5px}
-.doc-content pre{overflow:auto;background:var(--panel-soft);border:1px solid var(--border);border-radius:9px;padding:12px}
+.doc-content pre{max-width:100%;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--panel-soft);border:1px solid var(--border);border-radius:9px;padding:12px}
+.doc-content table{width:100%;max-width:100%;table-layout:fixed;border-collapse:collapse}
+.doc-content th,.doc-content td{vertical-align:top;white-space:normal;overflow-wrap:anywhere;word-break:normal}
+.doc-content th:first-child,.doc-content td:first-child{width:clamp(8rem,24%,14rem)}
 .prompt-drawer{position:fixed;top:0;left:0;right:0;bottom:0;z-index:997;pointer-events:none}
 .prompt-drawer.open{pointer-events:auto}
 .prompt-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.22);opacity:0;transition:opacity .2s}

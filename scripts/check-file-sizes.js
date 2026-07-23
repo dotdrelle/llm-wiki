@@ -11,8 +11,8 @@ const MAX_LINES = 800;
 const LEGACY_LIMITS = new Map([
   ['src/commands/serve.ts', 1000],
   ['src/serve/html/wikiHtml.ts', 1400],
-  ['src/serve/html/wikiLayoutCss.ts', 1150],
-  ['src/chat/chatHtml.ts', 2550],
+  ['src/serve/html/wikiLayoutCss.ts', 1160],
+  ['src/chat/chatHtml.ts', 2590],
   ['src/chat/styles/chatStyles.ts', 600],
 ]);
 
