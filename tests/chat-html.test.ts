@@ -462,7 +462,6 @@ describe('chat html', () => {
     expect(script).toContain('const contract=data?._activity;');
     expect(script).toContain('function scheduleActivityPoll(item)');
     expect(script).toContain("callMCPTool(item.poll.tool,item.poll.args||{},{trackActivity:false})");
-    expect(script).toContain("mailer_send_email:args.dryRun?");
     expect(script).toContain("cme_export_run:'Confluence export'");
     expect(script).toContain("production_start_job:'Production job'");
     expect(script).toContain('async function callMCPTool(name, args, {trackActivity=true}={})');

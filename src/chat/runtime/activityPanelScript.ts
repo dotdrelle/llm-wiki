@@ -67,7 +67,7 @@ function normalizeActivityStatus(status, terminal=false) {
   return value||'done';
 }
 function activitySourceLabel(source) {
-  const labels={production:'Production',cme:'CME',documents:'Documents',mailer:'Mailer'};
+  const labels={production:'Production',cme:'CME',documents:'Documents'};
   return labels[source]||source||'MCP';
 }
 function activityToolLabel(tool,args={}) {
@@ -80,13 +80,12 @@ function activityToolLabel(tool,args={}) {
     cme_source_add:'Add Confluence source',
     cme_source_remove:'Remove Confluence source',
     documents_convert_to_markdown:'Document conversion',
-    mailer_send_email:args.dryRun?'Email preview':'Send email',
   };
   return labels[tool]||String(tool||'MCP action').replace(/_/g,' ');
 }
 function activitySourceForTool(tool,server) {
   const prefix=String(tool||'').split('_')[0];
-  if(['production','cme','documents','mailer'].includes(prefix)) return prefix;
+  if(['production','cme','documents'].includes(prefix)) return prefix;
   return String(server?.name||prefix||'mcp').toLowerCase();
 }
 function shouldTrackMcpTool(tool,server=null) {
@@ -96,7 +95,6 @@ function shouldTrackMcpTool(tool,server=null) {
   return /(?:^|_)(?:start|run|send|create|add|remove|delete|update|setup|configure|convert|cancel|import|export|ingest|build|polish)(?:_|$)/i.test(String(tool||''));
 }
 function activityArgsSummary(tool,args={}) {
-  if(String(tool).startsWith('mailer_')) return [args.to,args.subject].filter(Boolean).join(' · ');
   if(String(tool).startsWith('cme_')) return [args.source_name||args.name,args.workspace].filter(Boolean).join(' · ');
   if(String(tool).startsWith('production_')) return [args.type,...(args.steps||[])].filter(Boolean).join(' · ');
   if(String(tool).startsWith('documents_')) return args.filename||args.filePath||'';
@@ -318,7 +316,7 @@ function actCardHTML(item) {
   const hint=converted?\`<div class="act-card-meta">Ready · run ingest to integrate.</div>\`
     :stored?\`<div class="act-card-meta">Stored, no conversion agent.</div>\`
     :'';
-  const icon={production:'⚙',cme:'⇄',documents:'📄',mailer:'✉'}[item.source]||(item.kind==='upload'?'📄':'⌁');
+  const icon={production:'⚙',cme:'⇄',documents:'📄'}[item.source]||(item.kind==='upload'?'📄':'⌁');
   const cardTitle=String(item.label||item.filename||'-');
   const sourceMeta=item.source&&item.kind!=='upload'?(item.sourceLabel||activitySourceLabel(item.source)):null;
   const seenMeta=new Set([cardTitle.trim().toLowerCase()]);

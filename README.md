@@ -33,7 +33,6 @@ multi-user surface.
 | [`llm-wiki-manager`](https://github.com/dotdrelle/llm-wiki-manager)           | Multi-workspace cockpit, Docker orchestration, `dot` shell                 |
 | [`agent-cme`](https://github.com/dotdrelle/agent-cme)                         | Workspace-scoped Confluence to Markdown exporter                           |
 | [`agent-wiki-production`](https://github.com/dotdrelle/agent-wiki-production) | Workspace-scoped production jobs                                           |
-| [`agent-mailer-api`](https://github.com/dotdrelle/agent-mailer-api)           | Optional external mailer MCP endpoint                                      |
 
 ## What It Does
 

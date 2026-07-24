@@ -23,8 +23,7 @@ specialized agents, each an expert in one area:
 
 - a **production** agent for wiki processing (diagnose, ingest, build, export…);
 - an **external sources** agent for exporting from Confluence;
-- a **documents** agent to convert files to Markdown before ingestion;
-- an optional **mailer** agent for delivery by email.
+- a **documents** agent to convert files to Markdown before ingestion.
 
 Agents never talk to each other directly: everything flows back through DONNA,
 which decides, sequences and controls. You do not need to know or name them — you

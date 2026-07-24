@@ -57,7 +57,7 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
 ## Orchestration
 
 - **Agent** — a specialized service DONNA hands a task to (production, document
-  conversion, Confluence export, mailer…).
+  conversion, Confluence export…).
 - **Capability** — what an agent can do. You state a goal, DONNA resolves the
   required capability and routes the task — without you naming the agent.
 - **Orchestration** — DONNA's coordination of tasks across agents. Agents never
@@ -74,7 +74,7 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
 - **LLM** — the language model that powers DONNA's reasoning; an OpenAI-compatible
   endpoint you configure (Base URL, model, optional key).
 - **Embeddings** — vectors that power the wiki's semantic search.
-- **Connector (MCP)** — an external integration (Confluence, documents, mailer…)
+- **Connector (MCP)** — an external integration (Confluence, documents…)
   exposed to DONNA. `/mcp status` gives its state.
 - **/status** — the command that sums things up: LLM, connectors, sources,
   content, deliverables.
