@@ -63,7 +63,7 @@ export const WIKI_LAYOUT_SCRIPT = `
     if (!countEl || !list) return;
     const next = list.querySelectorAll('.side-untracked-item').length;
     countEl.textContent = String(next);
-    if (next === 0) list.innerHTML = '<li class="side-untracked-empty">No pending sources.</li>';
+    if (next === 0) list.innerHTML = '<div class="side-untracked-empty">No pending sources.</div>';
   }
   document.addEventListener('click', async (event) => {
       const button = event.target.closest?.('[data-untracked-delete]');
@@ -71,14 +71,20 @@ export const WIKI_LAYOUT_SCRIPT = `
       event.preventDefault();
       event.stopPropagation();
       const relativePath = button.getAttribute('data-untracked-delete') || '';
+      const kind = button.getAttribute('data-untracked-kind') || 'file';
       if (!relativePath) return;
-      if (!confirm('Delete this pending source?\\n' + relativePath)) return;
+      const prompt = kind === 'folder'
+        ? 'Delete this pending folder and all its files?'
+        : 'Delete this pending source?';
+      if (!confirm(prompt + '\\n' + relativePath)) return;
       button.disabled = true;
       try {
         const response = await fetch('/api/untracked/' + encodeURIComponent(relativePath), { method: 'DELETE' });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload.ok === false) throw new Error(payload.error || 'Delete failed');
-        button.closest('.side-untracked-item')?.remove();
+        (kind === 'folder'
+          ? button.closest('.side-untracked-folder')
+          : button.closest('.side-untracked-item'))?.remove();
         syncUntrackedCount();
       } catch (err) {
         alert(err instanceof Error ? err.message : String(err));

@@ -2358,6 +2358,17 @@ async function tryConnectorCommand(input,text) {
   appendMsg('user',text);
   scheduleConversationSave();
   const reply=async(message,isError=false)=>{
+    if(runtimeEnabled()) {
+      const prompt=[
+        'The user ran a deterministic connector command in the interface.',
+        'Answer from the facts below in the configured user language and natural tone.',
+        'Do not run the command or any tool again. Do not mention internal tool names, environment variables, or implementation details.',
+        'When an authorization URL is present, preserve it exactly.',
+        \`Facts: \${message}\`,
+      ].join('\\n');
+      await sendRuntimeAgentMessage(input,prompt,{mode:'chat',displayText:'',hideQuestion:true});
+      return;
+    }
     messages.push({role:'assistant',content:message});
     appendMsg('assistant',message);
     conversationDirty=true;

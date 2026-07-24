@@ -332,6 +332,23 @@ export const WIKI_LAYOUT_CSS = `
       min-height: 1.55rem;
       border-radius: 5px;
     }
+    .side-untracked-folder > summary {
+      min-height: 1.7rem;
+      padding: 0.1rem 0.2rem 0.1rem 0.55rem;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      cursor: pointer;
+      color: var(--text);
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+    .side-untracked-folder > summary .side-folder-label { margin-right: auto; }
+    .side-untracked-children {
+      margin-left: 0.65rem;
+      padding-left: 0.35rem;
+      border-left: 1px solid var(--border);
+    }
     .side-untracked-link {
       flex: 1;
       min-width: 0;

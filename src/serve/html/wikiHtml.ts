@@ -638,7 +638,7 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
       ? `<a class="side-folder-action" href="${escapeHref(newMarkdownHref(node.name))}" title="Create Markdown" aria-label="Create in ${escapeAttr(node.name)}" onclick="event.stopPropagation()">+</a>`
       : '';
   const refreshAction = depth === 0 && node.name === 'wiki'
-    ? '<button class="side-folder-action side-refresh-action" type="button" title="Refresh Wiki" aria-label="Refresh Wiki" data-sidebar-refresh="wiki" onclick="event.stopPropagation()">↻</button>'
+    ? '<button class="side-folder-action side-refresh-action" type="button" title="Refresh Wiki" aria-label="Refresh Wiki" data-sidebar-refresh="wiki">↻</button>'
     : '';
   const rootClass = depth === 0 && node.name === 'wiki' ? ' side-folder-primary' : '';
   return `<details class="side-folder${rootClass}"${open} data-tree-id="${escapeAttr(node.path)}"><summary><span class="side-folder-label">${escapeHtml(label)}</span>${refreshAction}${createAction}</summary><div class="side-folder-children">${children}</div></details>`;
@@ -651,15 +651,47 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
   const count = files.length;
   const open = count > 0 ? ' open' : '';
   const items = count > 0
-    ? files
-      .map((file) => {
-        const title = humanTitle(file);
-        const safePath = escapeAttr(file);
-        return `<li class="side-untracked-item"><a class="side-untracked-link" href="${escapeHref(`/${file}`)}" title="${safePath}" aria-label="${safePath}" data-side-path="${safePath}">${escapeHtml(title)}</a><button class="side-untracked-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-untracked-delete="${safePath}">×</button></li>`;
-      })
-      .join('\n')
+    ? (() => {
+        const titles = new Map<string, string>();
+        const tree = createNavNode('', '');
+        for (const file of files) addNavPath(tree, file);
+        return Promise.all(files.map(async (file) => {
+        let title = humanTitle(file);
+        try {
+          const parsed = matter(await readFile(resolveInside(rootDir, file), 'utf8'));
+          if (typeof parsed.data.title === 'string' && parsed.data.title.trim()) {
+            title = parsed.data.title.trim();
+          }
+        } catch {
+          // Keep the filename fallback for an unreadable or malformed source.
+        }
+        titles.set(file, title);
+      })).then(() => {
+        const untracked = tree.dirs.get('raw')?.dirs.get('untracked');
+        return untracked ? renderUntrackedNode(untracked, titles, true) : '';
+      });
+      })()
     : '<li class="side-untracked-empty">No pending sources.</li>';
-  return `<div class="side-pending-resizer" data-pending-resizer title="Resize Pending panel" role="separator" aria-orientation="horizontal"></div><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending" onclick="event.stopPropagation()">↻</button><span class="side-untracked-count" data-untracked-count>${count}</span></summary><ul class="side-untracked-list" data-untracked-list>${items}</ul></details>`;
+  return `<div class="side-pending-resizer" data-pending-resizer title="Resize Pending panel" role="separator" aria-orientation="horizontal"></div><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending">↻</button><span class="side-untracked-count" data-untracked-count>${count}</span></summary><div class="side-untracked-list" data-untracked-list>${await items}</div></details>`;
+}
+
+function renderUntrackedNode(
+  node: NavTreeNode,
+  titles: Map<string, string>,
+  root = false,
+): string {
+  const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const files = [...node.files].sort((a, b) => a.localeCompare(b));
+  const children = [
+    ...dirs.map((dir) => renderUntrackedNode(dir, titles)),
+    ...files.map((file) => {
+      const safePath = escapeAttr(file);
+      return `<div class="side-untracked-item"><a class="side-untracked-link" href="${escapeHref(`/${file}`)}" title="${safePath}" aria-label="${safePath}" data-side-path="${safePath}">${escapeHtml(titles.get(file) ?? humanTitle(file))}</a><button class="side-untracked-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-untracked-delete="${safePath}" data-untracked-kind="file">×</button></div>`;
+    }),
+  ].join('\n');
+  if (root) return children;
+  const safePath = escapeAttr(node.path);
+  return `<details class="side-untracked-folder" open data-tree-id="${safePath}"><summary><span class="side-folder-label">${escapeHtml(node.name)}</span><button class="side-untracked-delete" type="button" title="Delete folder ${safePath}" aria-label="Delete folder ${safePath}" data-untracked-delete="${safePath}" data-untracked-kind="folder" onclick="event.stopPropagation()">×</button></summary><div class="side-untracked-children">${children}</div></details>`;
 }
 
 export async function renderSidebar(rootDir: string, precomputedNavFiles?: string[]): Promise<string> {
@@ -1013,12 +1045,16 @@ export async function serveMd(
     }
   }
   const currentDir = toPosix(path.dirname(urlPath.replace(/^\//, '')));
-  const title = path.basename(filePath, '.md');
+  const parsedForDisplay = isRawUntrackedReference(relativePath) ? matter(raw) : null;
+  const displayRaw = parsedForDisplay ? parsedForDisplay.content : raw;
+  const title = typeof parsedForDisplay?.data.title === 'string' && parsedForDisplay.data.title.trim()
+    ? parsedForDisplay.data.title.trim()
+    : path.basename(filePath, '.md');
   const sidebar = await renderSidebar(rootDir);
   const html =
     relativePath === 'wiki/log.md'
       ? renderLogMarkdown(raw)
-      : await renderMarkdown(raw, currentDir, rootDir);
+      : await renderMarkdown(displayRaw, currentDir, rootDir);
   const printBtn = `<button class="action-button" onclick="window.print()" title="Print / Export to PDF">↑ PDF</button>`;
   const dlBtn = `<a class="action-link" href="${escapeHref(`/raw/${relativePath}`)}" download title="Download source Markdown file">↓ .md</a>`;
   // Hidden by default: only revealed by WIKI_LAYOUT_SCRIPT when the page is

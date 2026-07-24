@@ -1,12 +1,61 @@
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { renderWikiGraphV2 } from '../src/graph/wiki/graphApp.ts';
+import { renderSidebar, serveMd } from '../src/serve/html/wikiHtml.ts';
 
 it('keeps the graph document preview viewport-sized and scrolls its content', () => {
   const source = renderWikiGraphV2();
   expect(source).toContain('max-height:calc(100vh - 64px)');
   expect(source).toContain('.document-preview-content{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain');
+});
+
+it('renders pending connector sources by frontmatter title without displaying frontmatter as prose', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-pending-'));
+  const relative = 'raw/untracked/connectors/google-1/message-id-deadbeef.md';
+  const absolute = path.join(root, relative);
+  await mkdir(path.dirname(absolute), { recursive: true });
+  await writeFile(absolute, [
+    '---',
+    'type: "Email"',
+    'title: "Human readable subject"',
+    'source-id: "message-id"',
+    '---',
+    '',
+    '# Metadata',
+    '',
+    'Visible body.',
+    '',
+  ].join('\n'));
+
+  try {
+    const sidebar = await renderSidebar(root);
+    expect(sidebar).toContain('>Human readable subject</a>');
+    expect(sidebar).not.toContain('>message id deadbeef</a>');
+    expect(sidebar).toContain('class="side-untracked-folder"');
+    expect(sidebar).toContain('data-untracked-delete="raw/untracked/connectors"');
+    expect(sidebar).toContain('data-untracked-delete="raw/untracked/connectors/google-1"');
+    expect(sidebar).toContain('data-untracked-kind="folder"');
+
+    const page = await serveMd(root, absolute, `/${relative}`);
+    expect(page).toContain('<title>Human readable subject');
+    expect(page).toContain('<h1>Metadata</h1>');
+    expect(page).toContain('Visible body.');
+    expect(page).not.toContain('type: &quot;Email&quot;');
+    expect(page).not.toContain('source-id:');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it('keeps pending sources hierarchical and deletes folders only inside raw/untracked', async () => {
+  const source = await serveSource();
+  expect(source).toContain("!relativePath.startsWith('raw/untracked/')");
+  expect(source).toContain("relativePath === 'raw/untracked'");
+  expect(source).toContain("await rm(absolute, { recursive: true });");
+  expect(source).toContain("kind: 'folder'");
+  expect(source).toContain('Delete this pending folder and all its files?');
 });
 
 async function serveSource(): Promise<string> {
@@ -157,6 +206,8 @@ describe('serve graph ui', () => {
     expect(source).toContain('title="Refresh Pending"');
     expect(source).toContain('data-sidebar-refresh="wiki"');
     expect(source).toContain('data-sidebar-refresh="pending"');
+    expect(source).not.toContain('data-sidebar-refresh="wiki" onclick=');
+    expect(source).not.toContain('data-sidebar-refresh="pending" onclick=');
     expect(source).toContain("fetch('/embed/sidebar', { cache: 'no-store' })");
     expect(source).toContain("if (target === 'pending')");
     expect(source).toContain("else if (target === 'wiki')");
@@ -627,5 +678,7 @@ describe('serve config reload', () => {
     expect(source).toContain("callMCPTool('connectors_google_status'");
     expect(source).toContain("fetch('/api/connectors/google/oauth/start'");
     expect(source).toContain("window.open('about:blank','connector-google-oauth'");
+    expect(source).toContain("sendRuntimeAgentMessage(input,prompt,{mode:'chat',displayText:'',hideQuestion:true})");
+    expect(source).toContain('Answer from the facts below in the configured user language and natural tone.');
   });
 });

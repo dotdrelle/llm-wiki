@@ -63,7 +63,7 @@ const MARKED_DIST_PATH = path.resolve(
 );
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
-const LLM_WIKI_VERSION = '0.14.21';
+const LLM_WIKI_VERSION = '0.14.23';
 
 type SkillMeta = {
   name: string;
@@ -239,15 +239,29 @@ async function handleUntrackedApi(
   const match = urlPath.match(/^\/api\/untracked\/(.+)$/);
   if (!match || req.method !== 'DELETE') return false;
   const relativePath = toPosix(match[1] ?? '').replace(/^\/+|\/+$/g, '');
-  if (!relativePath.endsWith('.md') || !relativePath.startsWith('raw/untracked/')) {
-    sendJson(res, 400, { ok: false, error: 'invalid untracked markdown path' });
+  if (
+    !relativePath.startsWith('raw/untracked/')
+    || relativePath === 'raw/untracked'
+  ) {
+    sendJson(res, 400, { ok: false, error: 'invalid untracked path' });
     return true;
   }
   try {
     const absolute = resolveInside(rootDir, relativePath);
-    await rm(absolute, { force: true });
+    const info = await stat(absolute);
+    if (info.isDirectory()) {
+      await rm(absolute, { recursive: true });
+      await removeEmptyUntrackedParents(rootDir, path.dirname(relativePath));
+      sendJson(res, 200, { ok: true, path: relativePath, kind: 'folder' });
+      return true;
+    }
+    if (!info.isFile() || !relativePath.endsWith('.md')) {
+      sendJson(res, 400, { ok: false, error: 'invalid untracked markdown path' });
+      return true;
+    }
+    await rm(absolute);
     await removeEmptyUntrackedParents(rootDir, path.dirname(relativePath));
-    sendJson(res, 200, { ok: true, path: relativePath });
+    sendJson(res, 200, { ok: true, path: relativePath, kind: 'file' });
   } catch (err) {
     sendJson(res, 400, { ok: false, error: err instanceof Error ? err.message : String(err) });
   }
