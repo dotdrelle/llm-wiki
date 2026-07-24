@@ -24,6 +24,7 @@ import type { RuntimeProxyDeps } from '../serve/proxy/runtimeProxy.ts';
 import { handleChatHistoryApi } from '../serve/routes/chatHistoryRoutes.ts';
 import { handleChatRoutes } from '../serve/routes/chatRoutes.ts';
 import { handleConfigRoutes } from '../serve/routes/configRoutes.ts';
+import { handleConnectorsOAuthRoutes } from '../serve/routes/connectorsOAuthRoutes.ts';
 import { handleGraphRoutes } from '../serve/routes/graphRoutes.ts';
 import { handleMcpRoutes } from '../serve/routes/mcpRoutes.ts';
 import { handleRuntimeRoutes } from '../serve/routes/runtimeRoutes.ts';
@@ -40,6 +41,9 @@ const hubInternalHost = () => process.env.HUB_INTERNAL_HOST ?? '127.0.0.1';
 const runtimeUrl = () => process.env.WIKI_MANAGER_RUNTIME_URL ?? process.env.RUNTIME_URL ?? null;
 const runtimeToken = () => process.env.WIKI_MANAGER_RUNTIME_TOKEN ?? process.env.RUNTIME_AUTH_TOKEN ?? null;
 const workspaceNameFromEnv = () => process.env.WORKSPACE_NAME ?? null;
+const connectorsAgentUrl = () => process.env.CONNECTORS_AGENT_URL ?? null;
+const connectorsOAuthStartToken = () =>
+  process.env.CONNECTORS_OAUTH_START_TOKEN ?? null;
 function resolveDocumentInputDir(rootDir: string): string {
   return process.env.DOCUMENT_INPUT_DIR ?? path.join(rootDir, '.wiki', 'documents', 'input');
 }
@@ -59,7 +63,7 @@ const MARKED_DIST_PATH = path.resolve(
 );
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
-const LLM_WIKI_VERSION = '0.14.20';
+const LLM_WIKI_VERSION = '0.14.21';
 
 type SkillMeta = {
   name: string;
@@ -738,6 +742,18 @@ export default async function serveCmd(
       }
 
       if (await handleUntrackedApi(rootDir, req, res, urlPath)) {
+        return;
+      }
+
+      if (
+        await handleConnectorsOAuthRoutes(req, res, urlPath, {
+          connectorUrl: connectorsAgentUrl,
+          oauthStartToken: connectorsOAuthStartToken,
+          workspaceName: workspaceNameFromEnv,
+          readRequestBuffer,
+          sendJson,
+        })
+      ) {
         return;
       }
 

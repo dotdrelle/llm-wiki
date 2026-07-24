@@ -615,4 +615,17 @@ describe('serve config reload', () => {
     expect(source).toContain('version: LLM_WIKI_VERSION');
     expect(uploadSource).toContain("clientInfo: { name: 'llm-wiki-serve', version }");
   });
+
+  it('handles connector list and auth slash commands in serve without sending them to the LLM', async () => {
+    const source = await readFile(
+      path.resolve(import.meta.dirname, '../src/chat/chatHtml.ts'),
+      'utf8',
+    );
+
+    expect(source).toContain('async function tryConnectorCommand(input,text)');
+    expect(source).toContain('if(await tryConnectorCommand(input,text)) return;');
+    expect(source).toContain("callMCPTool('connectors_google_status'");
+    expect(source).toContain("fetch('/api/connectors/google/oauth/start'");
+    expect(source).toContain("window.open('about:blank','connector-google-oauth'");
+  });
 });

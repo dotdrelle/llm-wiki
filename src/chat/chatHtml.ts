@@ -579,7 +579,8 @@ async function fetchSkillsAc(force=false){
 function showSkillAc(filter){
   const el=$('skill-ac');
   const normalized=String(filter||'').toLowerCase();
-  const filtered=(skillsCache||[])
+  const builtins=[{name:'connector',description:'List connectors or authorize one: /connector auth google',params:['list | auth google']}];
+  const filtered=[...builtins,...(skillsCache||[]).filter(s=>s.name!=='connector')]
     .filter(s=>String(s.name||'').toLowerCase().startsWith(normalized))
     .slice(0,SKILL_AC_LIMIT);
   skillAcItems=filtered;
@@ -2346,6 +2347,67 @@ async function tryProfilePreferenceUpdate(input,text) {
   return true;
 }
 
+async function tryConnectorCommand(input,text) {
+  const match=String(text||'').trim().match(/^\\/connectors?(?:\\s+(.*))?$/i);
+  if(!match) return false;
+  const args=String(match[1]||'list').trim().split(/\\s+/).filter(Boolean);
+  const action=String(args[0]||'list').toLowerCase();
+  input.value=''; input.style.height='auto'; hideSkillAc();
+  if(!currentConversationId) currentConversationId=newConversationId();
+  messages.push({role:'user',content:text});
+  appendMsg('user',text);
+  scheduleConversationSave();
+  const reply=async(message,isError=false)=>{
+    messages.push({role:'assistant',content:message});
+    appendMsg('assistant',message);
+    conversationDirty=true;
+    await saveCurrentConversation({immediate:true});
+    if(isError) notify(message,'e');
+  };
+  if(action==='list'&&args.length===1) {
+    try {
+      const workspace=window.__WIKI_CONFIG__?.workspaceName;
+      if(!workspace) throw new Error('No active workspace');
+      const response=await callMCPTool('connectors_google_status',{workspace},{trackActivity:false});
+      const payload=JSON.parse(response);
+      const status=payload?.status==='configured'?'authorized':'not authorized';
+      await reply(\`google (Gmail read-only): \${status}\`);
+    } catch(err) {
+      await reply(\`google (Gmail read-only): unavailable (\${err?.message||String(err)})\`,true);
+    }
+    return true;
+  }
+  if(action==='auth'&&args.length===2&&['google','gmail'].includes(String(args[1]).toLowerCase())) {
+    // Open synchronously so browser popup blockers do not reject the window
+    // after the OAuth-start network round trip.
+    const popup=window.open('about:blank','connector-google-oauth','width=980,height=780');
+    try {
+      const response=await fetch('/api/connectors/google/oauth/start',{
+        method:'POST',
+        headers:{'content-type':'application/json','x-llm-wiki-oauth':'1'},
+        body:JSON.stringify({instanceId:'google-1'}),
+      });
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok||payload?.ok!==true||typeof payload.authorizationUrl!=='string') {
+        throw new Error(payload?.error||response.statusText||'Google authorization could not start');
+      }
+      if(popup) {
+        popup.location.replace(payload.authorizationUrl);
+        try { popup.opener=null; } catch {}
+        await reply('Google authorization opened in a new window. Return here after approval, then run /connector list.');
+      } else {
+        await reply(\`Popup blocked. Open this URL to authorize Google:\\n\${payload.authorizationUrl}\`);
+      }
+    } catch(err) {
+      if(popup) popup.close();
+      await reply(\`Google authorization could not start (\${err?.message||String(err)}).\`,true);
+    }
+    return true;
+  }
+  await reply('Usage: /connector list or /connector auth google',true);
+  return true;
+}
+
 async function sendMessage() {
   if(isStreaming) return;
   const input=$('chat-input');
@@ -2355,6 +2417,7 @@ async function sendMessage() {
   const hideQuestion=input.dataset.hideQuestion==='1';
   delete input.dataset.displayText; delete input.dataset.forceChat; delete input.dataset.hideQuestion;
   if(!text) return;
+  if(await tryConnectorCommand(input,text)) return;
   if(await tryProfilePreferenceUpdate(input,text)) return;
   if(agentMode&&!forceChat) {
     await sendRuntimeAgentMessage(input,text,{displayText:displayOverride||text,hideQuestion});
