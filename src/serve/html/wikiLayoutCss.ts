@@ -405,6 +405,19 @@ export const WIKI_LAYOUT_CSS = `
       line-height: 1;
     }
     .side-untracked-delete:hover { border-color: var(--err); background: color-mix(in srgb, var(--err) 10%, var(--panel)); color: var(--err); }
+    .side-untracked-item[draggable="true"],
+    .side-untracked-folder[draggable="true"] > summary { cursor: grab; }
+    .side-untracked-item.is-dragging,
+    .side-untracked-folder.is-dragging { opacity: 0.45; }
+    /* Outline rather than a background tint: the drop target is often a folder
+       whose children are visible, and a tint would read as "the whole subtree
+       is selected". */
+    .side-untracked-list.is-drop-target,
+    .side-untracked-folder.is-drop-target {
+      outline: 1px dashed var(--accent, var(--fg));
+      outline-offset: -2px;
+      border-radius: 5px;
+    }
     .side-untracked-empty {
       margin: 0.45rem 0.45rem 0;
       color: var(--muted);

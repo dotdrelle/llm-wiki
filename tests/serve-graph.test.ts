@@ -210,7 +210,7 @@ describe('serve graph ui', () => {
     expect(source).not.toContain('data-sidebar-refresh="pending" onclick=');
     expect(source).toContain("fetch('/embed/sidebar', { cache: 'no-store' })");
     expect(source).toContain("if (target === 'pending')");
-    expect(source).toContain("else if (target === 'wiki')");
+    expect(source).toContain("if (target === 'wiki')");
     expect(source).not.toContain('window.location.reload();');
   });
 

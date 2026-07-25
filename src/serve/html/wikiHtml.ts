@@ -672,7 +672,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
       });
       })()
     : '<li class="side-untracked-empty">No pending sources.</li>';
-  return `<div class="side-pending-resizer" data-pending-resizer title="Resize Pending panel" role="separator" aria-orientation="horizontal"></div><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending">↻</button><span class="side-untracked-count" data-untracked-count>${count}</span></summary><div class="side-untracked-list" data-untracked-list>${await items}</div></details>`;
+  return `<div class="side-pending-resizer" data-pending-resizer title="Resize Pending panel" role="separator" aria-orientation="horizontal"></div><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending">↻</button><span class="side-untracked-count" data-untracked-count>${count}</span></summary><div class="side-untracked-list" data-untracked-list data-untracked-drop="">${await items}</div></details>`;
 }
 
 function renderUntrackedNode(
@@ -686,12 +686,14 @@ function renderUntrackedNode(
     ...dirs.map((dir) => renderUntrackedNode(dir, titles)),
     ...files.map((file) => {
       const safePath = escapeAttr(file);
-      return `<div class="side-untracked-item"><a class="side-untracked-link" href="${escapeHref(`/${file}`)}" title="${safePath}" aria-label="${safePath}" data-side-path="${safePath}">${escapeHtml(titles.get(file) ?? humanTitle(file))}</a><button class="side-untracked-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-untracked-delete="${safePath}" data-untracked-kind="file">×</button></div>`;
+      return `<div class="side-untracked-item" draggable="true" data-untracked-drag="${safePath}" data-untracked-kind="file"><a class="side-untracked-link" href="${escapeHref(`/${file}`)}" title="${safePath}" aria-label="${safePath}" data-side-path="${safePath}">${escapeHtml(titles.get(file) ?? humanTitle(file))}</a><button class="side-untracked-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-untracked-delete="${safePath}" data-untracked-kind="file">×</button></div>`;
     }),
   ].join('\n');
+  // The root children live directly in [data-untracked-list], which carries the
+  // drop target for raw/untracked itself (see wikiLayoutScript).
   if (root) return children;
   const safePath = escapeAttr(node.path);
-  return `<details class="side-untracked-folder" open data-tree-id="${safePath}"><summary><span class="side-folder-label">${escapeHtml(node.name)}</span><button class="side-untracked-delete" type="button" title="Delete folder ${safePath}" aria-label="Delete folder ${safePath}" data-untracked-delete="${safePath}" data-untracked-kind="folder" onclick="event.stopPropagation()">×</button></summary><div class="side-untracked-children">${children}</div></details>`;
+  return `<details class="side-untracked-folder" open data-tree-id="${safePath}" draggable="true" data-untracked-drag="${safePath}" data-untracked-kind="folder" data-untracked-drop="${safePath}"><summary><span class="side-folder-label">${escapeHtml(node.name)}</span><button class="side-untracked-delete" type="button" title="Delete folder ${safePath}" aria-label="Delete folder ${safePath}" data-untracked-delete="${safePath}" data-untracked-kind="folder" onclick="event.stopPropagation()">×</button></summary><div class="side-untracked-children">${children}</div></details>`;
 }
 
 export async function renderSidebar(rootDir: string, precomputedNavFiles?: string[]): Promise<string> {

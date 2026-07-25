@@ -3,7 +3,7 @@ import { createServer as createHttpsServer } from 'node:https';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { watch } from 'node:fs';
 import type { FSWatcher } from 'node:fs';
-import { mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, rmdir, stat } from 'node:fs/promises';
 import { createGzip } from 'node:zlib';
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
@@ -63,7 +63,7 @@ const MARKED_DIST_PATH = path.resolve(
 );
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
-const LLM_WIKI_VERSION = '0.14.23';
+const LLM_WIKI_VERSION = '0.15.25';
 
 type SkillMeta = {
   name: string;
@@ -230,12 +230,15 @@ const runtimeProxyDeps: RuntimeProxyDeps = {
   sendJson,
 };
 
-async function handleUntrackedApi(
+export async function handleUntrackedApi(
   rootDir: string,
   req: IncomingMessage,
   res: ServerResponse,
   urlPath: string,
 ): Promise<boolean> {
+  if (urlPath === '/api/untracked/move' && req.method === 'POST') {
+    return handleUntrackedMove(rootDir, req, res);
+  }
   const match = urlPath.match(/^\/api\/untracked\/(.+)$/);
   if (!match || req.method !== 'DELETE') return false;
   const relativePath = toPosix(match[1] ?? '').replace(/^\/+|\/+$/g, '');
@@ -268,9 +271,107 @@ async function handleUntrackedApi(
   return true;
 }
 
+// Normalize a client-supplied pending path and assert it stays inside
+// raw/untracked. The panel only ever deals in that subtree; anything else is a
+// bug or an attempt, and both deserve the same flat refusal.
+function untrackedRelativePath(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const relative = toPosix(value).replace(/^\/+|\/+$/g, '');
+  if (!relative.startsWith('raw/untracked/')) return null;
+  if (relative.split('/').includes('..')) return null;
+  return relative;
+}
+
+// Move a pending document or folder inside raw/untracked (drag & drop in the
+// Pending panel). `to` is the destination DIRECTORY; the entry keeps its name.
+async function handleUntrackedMove(
+  rootDir: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<boolean> {
+  let body: Record<string, unknown>;
+  try {
+    const raw = await readRequestBuffer(req, 16_384);
+    body = raw.length > 0 ? JSON.parse(raw.toString('utf8')) : {};
+  } catch {
+    sendJson(res, 400, { ok: false, error: 'invalid request' });
+    return true;
+  }
+  const from = untrackedRelativePath(body.from);
+  // An empty/omitted destination means the panel root, which is the only
+  // directory not spelled out as a raw/untracked/<something> path.
+  const toDir = body.to === '' || body.to === undefined || body.to === null
+    ? 'raw/untracked'
+    : untrackedRelativePath(body.to);
+  if (!from || !toDir) {
+    sendJson(res, 400, { ok: false, error: 'invalid untracked path' });
+    return true;
+  }
+  const name = from.slice(from.lastIndexOf('/') + 1);
+  const target = `${toDir}/${name}`;
+  if (target === from) {
+    sendJson(res, 200, { ok: true, from, to: target, unchanged: true });
+    return true;
+  }
+  // Moving a folder into itself or into one of its own descendants would
+  // detach the subtree from the tree; rename() reports EINVAL for the first
+  // case and silently misbehaves across platforms for the second.
+  if (`${toDir}/`.startsWith(`${from}/`)) {
+    sendJson(res, 400, { ok: false, error: 'cannot move a folder into itself' });
+    return true;
+  }
+  try {
+    const source = resolveInside(rootDir, from);
+    const destination = resolveInside(rootDir, target);
+    const sourceInfo = await stat(source);
+    if (sourceInfo.isFile() && !from.endsWith('.md')) {
+      sendJson(res, 400, { ok: false, error: 'invalid untracked markdown path' });
+      return true;
+    }
+    const destinationDir = resolveInside(rootDir, toDir);
+    const destinationDirInfo = await stat(destinationDir).catch(() => null);
+    if (!destinationDirInfo?.isDirectory()) {
+      sendJson(res, 400, { ok: false, error: 'destination folder does not exist' });
+      return true;
+    }
+    // Never overwrite: rename() would clobber a file silently. The user gets
+    // to resolve the collision themselves.
+    if (await stat(destination).then(() => true, () => false)) {
+      sendJson(res, 409, { ok: false, error: `already exists: ${target}` });
+      return true;
+    }
+    await rename(source, destination);
+    await removeEmptyUntrackedParents(rootDir, path.dirname(from));
+    sendJson(res, 200, {
+      ok: true,
+      from,
+      to: target,
+      kind: sourceInfo.isDirectory() ? 'folder' : 'file',
+    });
+  } catch (err) {
+    sendJson(res, 400, { ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
+  return true;
+}
+
+// Housekeeping after a delete or a move: prune the directories the operation
+// just emptied, up to (never including) raw/untracked itself.
+//
+// This is best-effort by design. It used to call rm() without `recursive`,
+// which throws EISDIR on a directory even when the directory is empty — so
+// deleting the last file of a folder reported a failure for work that had
+// already succeeded, and the panel refused to update. Two fixes: rmdir is the
+// call that removes an empty directory, and the whole cleanup never propagates
+// an error, because failing to tidy up must not turn a completed deletion into
+// a 400.
 async function removeEmptyUntrackedParents(rootDir: string, relativeDir: string): Promise<void> {
   const untrackedRoot = resolveInside(rootDir, 'raw/untracked');
-  let current = resolveInside(rootDir, relativeDir);
+  let current: string;
+  try {
+    current = resolveInside(rootDir, relativeDir);
+  } catch {
+    return;
+  }
   while (current !== untrackedRoot && current.startsWith(`${untrackedRoot}${path.sep}`)) {
     let entries: string[];
     try {
@@ -279,7 +380,11 @@ async function removeEmptyUntrackedParents(rootDir: string, relativeDir: string)
       return;
     }
     if (entries.length > 0) return;
-    await rm(current, { recursive: false });
+    try {
+      await rmdir(current);
+    } catch {
+      return;
+    }
     current = path.dirname(current);
   }
 }

@@ -57,13 +57,23 @@ export const WIKI_LAYOUT_SCRIPT = `
     const link = event.target.closest?.('[data-side-path]');
     if (link) saveSidebarState();
   });
-  function syncUntrackedCount() {
-    const countEl = document.querySelector('[data-untracked-count]');
-    const list = document.querySelector('[data-untracked-list]');
-    if (!countEl || !list) return;
-    const next = list.querySelectorAll('.side-untracked-item').length;
-    countEl.textContent = String(next);
-    if (next === 0) list.innerHTML = '<div class="side-untracked-empty">No pending sources.</div>';
+  // Re-read the panel from the server instead of pruning the clicked node from
+  // the DOM. A delete or a move also prunes the parent folders it empties, and
+  // those disappearances are invisible to the client — patching locally left
+  // the tree showing folders that no longer exist.
+  async function refreshPendingPanel() {
+    const response = await fetch('/embed/sidebar', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Refresh failed');
+    const nextDocument = new DOMParser().parseFromString(await response.text(), 'text/html');
+    const currentList = document.querySelector('[data-untracked-list]');
+    const nextList = nextDocument.querySelector('[data-untracked-list]');
+    const currentCount = document.querySelector('[data-untracked-count]');
+    const nextCount = nextDocument.querySelector('[data-untracked-count]');
+    if (!currentList || !nextList || !currentCount || !nextCount) throw new Error('Pending panel unavailable');
+    currentList.innerHTML = nextList.innerHTML;
+    currentCount.textContent = nextCount.textContent;
+    markActiveSidebarLinks();
+    applySidebarSearch();
   }
   document.addEventListener('click', async (event) => {
       const button = event.target.closest?.('[data-untracked-delete]');
@@ -73,23 +83,95 @@ export const WIKI_LAYOUT_SCRIPT = `
       const relativePath = button.getAttribute('data-untracked-delete') || '';
       const kind = button.getAttribute('data-untracked-kind') || 'file';
       if (!relativePath) return;
-      const prompt = kind === 'folder'
-        ? 'Delete this pending folder and all its files?'
-        : 'Delete this pending source?';
-      if (!confirm(prompt + '\\n' + relativePath)) return;
+      // A folder takes its whole subtree with it, so it keeps the prompt. A
+      // single pending source is cheap to re-ingest — confirming every one of
+      // them was noise.
+      if (kind === 'folder'
+        && !confirm('Delete this pending folder and all its files?\\n' + relativePath)) return;
       button.disabled = true;
       try {
         const response = await fetch('/api/untracked/' + encodeURIComponent(relativePath), { method: 'DELETE' });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload.ok === false) throw new Error(payload.error || 'Delete failed');
-        (kind === 'folder'
-          ? button.closest('.side-untracked-folder')
-          : button.closest('.side-untracked-item'))?.remove();
-        syncUntrackedCount();
+        await refreshPendingPanel();
       } catch (err) {
         alert(err instanceof Error ? err.message : String(err));
         button.disabled = false;
       }
+  });
+
+  // ── Pending drag & drop ──────────────────────────────────────────────────
+  // Drag a document or a folder onto another folder to move it there; drop on
+  // the panel background to move it back to the raw/untracked root.
+  let untrackedDragPath = null;
+  document.addEventListener('dragstart', (event) => {
+    const source = event.target.closest?.('[data-untracked-drag]');
+    if (!source) return;
+    untrackedDragPath = source.getAttribute('data-untracked-drag');
+    source.classList.add('is-dragging');
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      // Some browsers cancel a drag with no payload attached.
+      event.dataTransfer.setData('text/plain', untrackedDragPath || '');
+    }
+  });
+  document.addEventListener('dragend', () => {
+    untrackedDragPath = null;
+    document.querySelectorAll('.side-untracked-item.is-dragging, .side-untracked-folder.is-dragging')
+      .forEach((node) => node.classList.remove('is-dragging'));
+    clearDropTargets();
+  });
+  function clearDropTargets() {
+    document.querySelectorAll('.is-drop-target').forEach((node) => node.classList.remove('is-drop-target'));
+  }
+  // The deepest [data-untracked-drop] under the cursor wins, so dropping on a
+  // nested folder does not land in its parent.
+  function dropTargetFor(event) {
+    if (!untrackedDragPath) return null;
+    const target = event.target.closest?.('[data-untracked-drop]');
+    if (!target) return null;
+    const destination = target.getAttribute('data-untracked-drop') || '';
+    const name = untrackedDragPath.slice(untrackedDragPath.lastIndexOf('/') + 1);
+    const currentParent = untrackedDragPath.slice(0, untrackedDragPath.lastIndexOf('/'));
+    // No-op drops and folder-into-itself are refused before any round trip.
+    if (destination === currentParent) return null;
+    if (destination === untrackedDragPath) return null;
+    if ((destination + '/').startsWith(untrackedDragPath + '/')) return null;
+    return { target, destination, name };
+  }
+  document.addEventListener('dragover', (event) => {
+    const drop = dropTargetFor(event);
+    if (!drop) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    if (!drop.target.classList.contains('is-drop-target')) {
+      clearDropTargets();
+      drop.target.classList.add('is-drop-target');
+    }
+  });
+  document.addEventListener('dragleave', (event) => {
+    const target = event.target.closest?.('[data-untracked-drop]');
+    target?.classList.remove('is-drop-target');
+  });
+  document.addEventListener('drop', async (event) => {
+    const drop = dropTargetFor(event);
+    if (!drop) return;
+    event.preventDefault();
+    const from = untrackedDragPath;
+    untrackedDragPath = null;
+    clearDropTargets();
+    try {
+      const response = await fetch('/api/untracked/move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from, to: drop.destination }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) throw new Error(payload.error || 'Move failed');
+      await refreshPendingPanel();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+    }
   });
   function folderHasVisibleFile(folder) {
     return Boolean(folder.querySelector('[data-side-path]:not(.is-search-hidden)'));
@@ -141,18 +223,14 @@ export const WIKI_LAYOUT_SCRIPT = `
     const target = button.getAttribute('data-sidebar-refresh');
     button.disabled = true;
     try {
+      if (target === 'pending') {
+        await refreshPendingPanel();
+        return;
+      }
       const response = await fetch('/embed/sidebar', { cache: 'no-store' });
       if (!response.ok) throw new Error('Refresh failed');
       const nextDocument = new DOMParser().parseFromString(await response.text(), 'text/html');
-      if (target === 'pending') {
-        const currentList = document.querySelector('[data-untracked-list]');
-        const nextList = nextDocument.querySelector('[data-untracked-list]');
-        const currentCount = document.querySelector('[data-untracked-count]');
-        const nextCount = nextDocument.querySelector('[data-untracked-count]');
-        if (!currentList || !nextList || !currentCount || !nextCount) throw new Error('Pending panel unavailable');
-        currentList.innerHTML = nextList.innerHTML;
-        currentCount.textContent = nextCount.textContent;
-      } else if (target === 'wiki') {
+      if (target === 'wiki') {
         const currentWiki = document.querySelector('[data-tree-id="wiki"]');
         const nextWiki = nextDocument.querySelector('[data-tree-id="wiki"]');
         const currentChildren = currentWiki?.querySelector(':scope > .side-folder-children');
