@@ -171,6 +171,12 @@ and `/pipeline`. Keep scaffold skills generic and English by default.
   approval; used by the serve approval banner's Approve button)
 - `POST /api/runtime/reset` → workspace-scoped runtime `/kill?purge=true`
   (confirmed destructive reset of the current plan/runtime projection)
+- `POST /api/runtime/conversation/truncate` → workspace-scoped runtime
+  `/conversation/truncate` (redo: keeps the conversation entry at `index` and
+  drops everything recorded after it). Backs the `Redo` button on user
+  messages. The runtime derives its conversation from the event log, so a
+  DOM-only deletion would be merged straight back in by the next poll; the
+  runtime answers `409 run_active` while a run is in progress.
 - `GET`/`POST /api/runtime/control` → runtime `/control` (status/explain/enqueue
   while a run is active — see `llm-wiki-manager/CLAUDE.md`'s control lane
   section)

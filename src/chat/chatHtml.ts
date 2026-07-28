@@ -5,6 +5,7 @@ import { OBSERVER_TOOLS_SCRIPT } from './views/observerToolsScript.ts';
 import { MCP_CONNECTOR_SCRIPT } from './runtime/mcpConnectorScript.ts';
 import { CONFIG_SCRIPT } from './config/configScript.ts';
 import { ACTIVITY_PANEL_SCRIPT } from './runtime/activityPanelScript.ts';
+import { REDO_SCRIPT } from './runtime/redoScript.ts';
 import { RUNTIME_GRAPH_SCRIPT } from './runtime/runtimeGraphScript.ts';
 import { CHAT_MARKUP, EMPTY_CHAT_HTML } from './views/chatView.ts';
 import { HELP_PANEL_SCRIPT } from './views/helpPanelScript.ts';
@@ -193,6 +194,7 @@ function notify(msg, type='s') {
   clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3200);
 }
 ${ACTIVITY_PANEL_SCRIPT}
+${REDO_SCRIPT}
 ${RUNTIME_GRAPH_SCRIPT}
 ${HELP_PANEL_SCRIPT}
 
@@ -1373,7 +1375,8 @@ function appendMsg(role, content, {html=false,plainText=null}={}) {
   div.dataset.copy=plainText??content??'';
   const av=role==='user'?'<div class="av u">You</div>':'';
   const bodyHtml=html ? (content||'') : (role==='assistant' ? renderMd(content||'') : esc(content||''));
-  div.innerHTML=\`\${av}<div class="msg-content"><div class="bubble">\${bodyHtml}</div><div class="msg-actions"><button class="msg-action" onclick="copyMessage(this)">Copy</button></div></div>\`;
+  const redoBtn=role==='user' ? '<button class="msg-action" onclick="redoMessage(this)">Redo</button>' : '';
+  div.innerHTML=\`\${av}<div class="msg-content"><div class="bubble">\${bodyHtml}</div><div class="msg-actions"><button class="msg-action" onclick="copyMessage(this)">Copy</button>\${redoBtn}</div></div>\`;
   wrap.appendChild(div);
   wrap.scrollTop=wrap.scrollHeight;
   return div;

@@ -49,6 +49,13 @@ export async function handleRuntimeRoutes(
     await proxyRuntimeJson(req, res, `${killPath}${killPath.includes('?') ? '&' : '?'}purge=true`, deps.proxyDeps);
     return true;
   }
+  // Redo: drop everything the runtime recorded after one conversation entry.
+  // Workspace-scoped like /cancel and /approve — the runtime rejects the call
+  // outright while a run is active.
+  if (urlPath === '/api/runtime/conversation/truncate' && req.method === 'POST') {
+    await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/conversation/truncate'), deps.proxyDeps);
+    return true;
+  }
   if (urlPath === '/api/runtime/control' && (req.method === 'GET' || req.method === 'POST')) {
     await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/control'), deps.proxyDeps);
     return true;

@@ -69,4 +69,55 @@ describe('runtime routes', () => {
     expect(response.status).toBe(200);
     expect(JSON.parse(response.body)).toEqual({ approved: true });
   });
+
+  it('proxies a redo truncation to the workspace-scoped runtime endpoint', async () => {
+    const fetchMock = vi.fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>(async () => new Response(
+      JSON.stringify({ truncated: true, index: 4, removedEvents: 7 }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const req = Readable.from([JSON.stringify({ index: 4 })]);
+    Object.assign(req, { method: 'POST' });
+    const response = {
+      status: 0,
+      body: '',
+      writeHead(status: number) { this.status = status; },
+      end(body = '') { this.body = body; },
+    };
+
+    const handled = await handleRuntimeRoutes(
+      req as never,
+      response as never,
+      '/api/runtime/conversation/truncate',
+      {
+        runtimePathForWorkspace: (pathname) => `${pathname}?workspace=docs`,
+        workspaceNameFromEnv: () => 'docs',
+        proxyDeps: {
+          runtimeUrl: () => 'http://runtime.test',
+          runtimeToken: () => 'secret',
+          readRequestBuffer: async (stream) => {
+            const chunks: Buffer[] = [];
+            for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+            return Buffer.concat(chunks);
+          },
+          sendJson(res, status, data) {
+            res.writeHead(status, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(data));
+          },
+        },
+      },
+    );
+
+    expect(handled).toBe(true);
+    // Workspace-scoped like /cancel and /approve: a redo must never truncate
+    // another workspace's conversation.
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://runtime.test/conversation/truncate?workspace=docs',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(init.body))).toEqual({ index: 4 });
+    expect(JSON.parse(response.body)).toEqual({ truncated: true, index: 4, removedEvents: 7 });
+  });
 });
