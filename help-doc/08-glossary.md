@@ -68,6 +68,10 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
   duplicate work already done.
 - **Runtime** — the component that executes and tracks agent-mode actions. If it
   is unavailable, chat stays usable.
+- **Parallelism** — the number of independent tasks that may run at the same
+  time, subject to agent limits, plan limits and resource locks.
+- **Collection concurrency** — the parallelism used when connectors collect
+  data from external services.
 
 ## Configuration
 
@@ -76,5 +80,6 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
 - **Embeddings** — vectors that power the wiki's semantic search.
 - **Connector (MCP)** — an external integration (Confluence, documents…)
   exposed to DONNA. `/mcp status` gives its state.
-- **/status** — the command that sums things up: LLM, connectors, sources,
-  content, deliverables.
+- **/status** — the deterministic command that sums up the active workspace,
+  configuration, MCP connectors, sources, content, deliverables and agent
+  concurrency.

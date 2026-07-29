@@ -13,8 +13,10 @@ explanation, checking a status ("is the connector configured?", "how many pages
 in the wiki?"), understanding where you stand.
 
 What chat **does not do**: import, ingest, build, export, send, configure. If you
-ask for one of these actions, DONNA will invite you to switch to agent mode — it
-will not pretend to run it and will never invent a result.
+ask for one of these actions, DONNA will invite you to switch to agent mode. A
+question about DONNA, wikiLLM, its commands, configuration or interfaces remains
+a read-only question and must be answered directly in chat from this product
+documentation.
 
 Good to know: chat stays **always available**, including while a job runs in
 agent mode, and even if the orchestration infrastructure is momentarily

@@ -42,10 +42,11 @@ act on.
 
 - **Capability-driven.** You describe *what* to do; DONNA determines *who* does
   it. No need to know the internal organization of agents.
-- **Confirmation before any change.** Import, ingest, build, export, send: each
-  of these asks for your approval. DONNA does not act behind your back.
-- **No duplicates.** Actions that modify are *idempotent*: re-running an
-  operation does not recreate what already exists.
+- **Confirmation before changes.** Mutating orchestration tasks require
+  approval by default. Explicitly configured unattended flows may opt into
+  automatic approval.
+- **Protected retries.** Orchestrated mutations carry an idempotency key so a
+  retry of the same task does not start duplicate work.
 - **Chat stays available during processing.** You can keep asking questions while
   a job runs.
 - **Recovery after interruption.** A job interrupted (restart, outage) is
@@ -53,8 +54,9 @@ act on.
 
 ## Local-first and privacy
 
-Everything happens on your infrastructure. The LLM is an OpenAI-compatible
-endpoint you choose (hosted by you or by a provider). Your sources, wiki and
-deliverables do not leave your environment because of the application.
+The workspace and orchestration state stay on the infrastructure you operate.
+The LLM is an OpenAI-compatible endpoint you choose, either self-hosted or
+provided by a third party. Data sent to that endpoint follows the provider and
+connector configuration you selected.
 
 To understand how this content flows day to day, see `03-content-lifecycle.md`.

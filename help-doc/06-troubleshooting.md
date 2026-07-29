@@ -13,9 +13,9 @@ then, if needed, `/services` (container state). Each case below gives the
   DONNA and its agents run in containers.
 - **Fix**:
   1. Start **Docker Desktop** (or the Docker daemon) and wait until it is ready.
-  2. In the Shell, `/services` to see the state, then `/start all` to start the
-     workspace services.
-  3. Need the connectors (Confluence, documents)? `/start agents`.
+  2. In the Shell, `/services` to see the state.
+  3. Use `/start all` for agents and workspace services, `/start agents` for the
+     agents only, or `/start services` for workspace services only.
   4. Re-check with `/status`.
 
 ## Agent mode is disabled
@@ -62,9 +62,9 @@ then, if needed, `/services` (container state). Each case below gives the
 ## Did I create duplicates?
 
 - **Symptom**: fear of duplicating by re-running an operation.
-- **Cause**: none — actions that modify are **idempotent**.
-- **Fix**: re-running does not recreate what already exists; only what is needed
-  is updated.
+- **Cause**: an orchestrated task may have been retried after an interruption.
+- **Fix**: retries of the same mutating task reuse its idempotency key. Check the
+  current run before intentionally starting a distinct new operation.
 
 ## Getting back to a clean state
 

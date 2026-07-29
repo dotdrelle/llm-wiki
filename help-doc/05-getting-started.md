@@ -9,8 +9,9 @@ panel shows what is running.
 DONNA and its agents run in Docker containers. First of all:
 
 - make sure **Docker is started**;
-- in the Shell, `/services` lists the state, `/start all` starts the workspace
-  services, `/start agents` starts the global agents (connectors).
+- in the Shell, `/services` lists the state, `/start all` starts agents first
+  and then workspace services, `/start agents` starts only the agent stack, and
+  `/start services` starts only workspace services.
 
 If the Serve interface does not respond, or if agent mode is unavailable, always
 start by checking this (see `06-troubleshooting.md`).
@@ -65,5 +66,6 @@ diagnosis.
 
 ## First run, in short
 
-`/start all` → check the LLM → add a source → dry-run ingestion then apply →
-build → `/status`. If something goes wrong, `06-troubleshooting.md`.
+Start the required services, check the LLM, add a source, prepare and approve an
+ingestion, then build and verify with `/status`. If something goes wrong, see
+`06-troubleshooting.md`.

@@ -34,9 +34,10 @@ to be replaced; those in square brackets `[…]` are optional.
 ## Services and infrastructure
 
 - `/services` — list services and their state.
-- `/start [all|service|agents]` — start one or all services (or the global
-  agents).
-- `/stop [all|service|agents]` — stop one or all services.
+- `/start all` — start the agent stack first, then workspace services.
+- `/start agents` (or `/start agent`) — start only the agent stack.
+- `/start services` — start only workspace services.
+- `/stop [all|service|agents]` — stop the requested services.
 - `/logs <service>` — show a service's logs.
 - `/mcp status` — state of the MCP connectors.
 - `/mcp endpoints` — declared MCP endpoints.
@@ -78,7 +79,8 @@ to be replaced; those in square brackets `[…]` are optional.
 
 ## Notes
 
-- An **action** command (ingest, build, export, configure) assumes agent mode and
-  an available runtime. In chat mode, DONNA will point you to `/agent`.
+- A product or status question remains answerable in chat. A mutating action
+  (ingest, build, export, configure) requires agent mode and an available
+  runtime.
 - When blocked, `/status` then `/services` are the two diagnostic reflexes (see
   `06-troubleshooting.md`).

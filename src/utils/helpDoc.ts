@@ -29,7 +29,17 @@ export interface HelpChapterContent {
   error?: string;
 }
 
+export interface HelpSearchResult {
+  query: string;
+  chapters: Array<HelpChapterContent & { score: number }>;
+}
+
 const CHAPTER_ID = /^[a-z0-9][a-z0-9-]*$/;
+const SEARCH_STOP_WORDS = new Set([
+  'a', 'an', 'and', 'au', 'aux', 'avec', 'ce', 'ces', 'comment', 'dans', 'de',
+  'des', 'du', 'en', 'est', 'et', 'for', 'how', 'is', 'la', 'le', 'les', 'of',
+  'on', 'ou', 'pour', 'que', 'qui', 'the', 'to', 'un', 'une', 'what',
+]);
 
 // Resolve the bundled help-doc directory. Order: explicit env, then a path
 // relative to this module (package root), then the current working directory.
@@ -121,4 +131,49 @@ export async function readHelpChapter(
   } catch {
     return { found: false, id: clean, error: 'Chapter could not be read.' };
   }
+}
+
+function searchTokens(value: string): string[] {
+  return [...new Set(String(value ?? '')
+    .normalize('NFKD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .match(/[\p{Letter}\p{Number}][\p{Letter}\p{Number}_/-]*/gu) ?? [])]
+    .filter((token) => token.length > 1 && !SEARCH_STOP_WORDS.has(token));
+}
+
+// Rank the authored product documentation itself. This keeps chapter selection
+// in the help service: callers only decide whether the question concerns the
+// product and never hard-code chapter ids.
+export async function searchHelpChapters(
+  query: string,
+  { dir = resolveHelpDir(), limit = 2 }: { dir?: string; limit?: number } = {},
+): Promise<HelpSearchResult> {
+  const tokens = searchTokens(query);
+  if (tokens.length === 0) return { query, chapters: [] };
+  const chapters = await listHelpChapters(dir);
+  const ranked = await Promise.all(chapters.map(async ({ id, title }) => {
+    const chapter = await readHelpChapter(id, dir);
+    if (!chapter.found || !chapter.content) return null;
+    const normalizedTitle = searchTokens(`${id} ${title}`).join(' ');
+    const headings = chapter.content
+      .split(/\r?\n/)
+      .filter((line) => /^#{1,3}\s/.test(line))
+      .join(' ');
+    const normalizedHeadings = searchTokens(headings).join(' ');
+    const normalizedBody = searchTokens(chapter.content).join(' ');
+    const score = tokens.reduce((total, token) => total
+      + (normalizedTitle.includes(token) ? 8 : 0)
+      + (normalizedHeadings.includes(token) ? 4 : 0)
+      + (normalizedBody.includes(token) ? 1 : 0), 0);
+    return score > 0 ? { ...chapter, score } : null;
+  }));
+  const safeLimit = Math.max(1, Math.min(3, Math.floor(Number(limit) || 2)));
+  return {
+    query,
+    chapters: ranked
+      .filter((item): item is HelpChapterContent & { score: number } => item !== null)
+      .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+      .slice(0, safeLimit),
+  };
 }

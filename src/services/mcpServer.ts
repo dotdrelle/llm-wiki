@@ -10,7 +10,7 @@ import { pathExists } from '../utils/fs.ts';
 import { resolveInside } from '../utils/path.ts';
 import { extractSourceCitations } from '../utils/markdown.ts';
 import { hashText } from '../utils/hash.ts';
-import { listHelpChapters, readHelpChapter } from '../utils/helpDoc.ts';
+import { listHelpChapters, readHelpChapter, searchHelpChapters } from '../utils/helpDoc.ts';
 import type { AppConfig } from '../types.ts';
 
 const LLM_WIKI_VERSION = '0.15.28';
@@ -93,6 +93,11 @@ export const WIKI_MCP_TOOLS = [
     name: 'help_read',
     description:
       'Product help: read one DONNA documentation chapter by id (from help_list). Use to answer a question about the application itself. Not the workspace wiki.',
+  },
+  {
+    name: 'help_search',
+    description:
+      'Product help: search the bundled DONNA/wikiLLM documentation and return the most relevant chapters. Product documentation, not workspace content.',
   },
 ] as const;
 
@@ -1052,6 +1057,24 @@ export async function createWikiMcpServer(
     helpReadInput,
     READ_ONLY,
     (input) => loggedTool('help_read', input, helpRead),
+  );
+  const helpSearchInput = {
+    query: z.string().min(2).describe('Natural-language question about DONNA or wikiLLM.'),
+  };
+  server.tool(
+    'help_search',
+    'Search the bundled DONNA/wikiLLM product documentation and return the most relevant chapters. Use for questions about the application itself, its interfaces, commands, configuration, agents, concurrency, or troubleshooting. Not the workspace wiki.',
+    helpSearchInput,
+    READ_ONLY,
+    (input) => loggedTool('help_search', input, async ({ query }: { query: string }) => {
+      const result = await searchHelpChapters(query);
+      if (result.chapters.length === 0) {
+        return textResult('No relevant product documentation chapter was found.');
+      }
+      return textResult(result.chapters
+        .map((chapter) => `--- ${chapter.id} — ${chapter.title} ---\n${chapter.content}`)
+        .join('\n\n'));
+    }),
   );
 
   const profilePath = path.join(workspace.paths.internalDir, 'profile.md');

@@ -8,7 +8,8 @@ isolated spaces called *workspaces*, and never performs an action that changes
 your data without your confirmation.
 
 This documentation covers the application, its concepts, its two interaction
-modes, how to get started, the full command reference, and a glossary.
+modes, configuration and performance, how to get started, the command
+reference, and a glossary.
 
 ## Three things to remember
 
@@ -35,6 +36,8 @@ Read it in order for a full tour, or chapter by chapter as needed.
 6. **Troubleshooting** — `06-troubleshooting.md` — diagnose and unblock.
 7. **Command reference** — `07-commands.md` — every command, grouped by purpose.
 8. **Glossary** — `08-glossary.md` — the reference vocabulary.
+9. **Configuration and performance** — `09-configuration-performance.md` —
+   agents, parallelism, collection concurrency, and the `/status` indicators.
 
 ## Conventions
 
