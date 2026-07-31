@@ -22,4 +22,16 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'off',
     },
   },
+  {
+    // Scripts d'outillage exécutés directement par node (sondes, garde-fous).
+    // Ils ne passent pas par tsup, d'où l'extension .mjs et les globals node.
+    files: ['**/*.mjs', 'scripts/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: 'module',
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
 );

@@ -40,6 +40,7 @@ function createConfig(root: string): AppConfig {
     },
     llm: {
       provider: 'openai-compatible',
+      engine: 'generic',
       baseUrl: 'https://example.invalid',
       apiKey: 'test',
       model: 'model',

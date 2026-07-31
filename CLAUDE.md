@@ -17,10 +17,10 @@ This remains a single-user deployment baseline. Multi-user support is
 specified in `docs/industrialisation.md` and planned next; do not treat the
 runtime/write APIs as a shared multi-user boundary before that lot lands.
 
-The multi-repo master plan is `plan-directeur-orchestration.md` at the wikiLLM
-workspace root (one level above this repo, not versioned here); it supersedes
-`plan-directeur-revise.md`. Its 0.12.0 "agnostic orchestration" lot is
-implemented; in this repo it landed as the serve-side runtime UI updates:
+Multi-repo context lives in `CLAUDE.md` at the wikiLLM workspace root (one
+level above this repo, not versioned here). The "agnostic orchestration" lot
+it describes is implemented; in this repo it landed as the serve-side runtime
+UI updates:
 structured runtime log display (filterable, no hard truncation), aggregated
 and deduplicated runtime activity (weighted progress, no repeated identical
 entries), the projected Run/Task runtime graph, and removal of the graph list

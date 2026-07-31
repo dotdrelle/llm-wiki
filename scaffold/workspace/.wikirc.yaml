@@ -1,10 +1,36 @@
 language: en
 
 llm:
+  # provider = where requests go. Two values only:
+  #   openai-compatible  a single server, reached directly
+  #   ai-gateway         an external AI gateway (LiteLLM, Bifrost, Portkey…)
+  #                      routing to several providers on your behalf
   provider: openai-compatible
+
+  # engine = how the server behaves. Carries the workarounds and the `doctor`
+  # calibration. Ignored when provider is `ai-gateway`, where every model may
+  # have a different engine.
+  #   ollama | vllm | mlx | albert | openai | anthropic | generic
+  engine: generic
+
   baseUrl: https://mon-provider.example.com/v1
   model: YOUR_MODEL_NAME
   apiKey: YOUR_LLM_API_KEY
+
+# ── Behind an AI gateway ─────────────────────────────────────────────────────
+# The gateway is not shipped nor configured by llm-wiki: deploy it yourself and
+# point `baseUrl` at it. The model name carries the routing.
+#
+# Requirement: enable parameter dropping on the gateway (`drop_params: true` in
+# LiteLLM). Behind a gateway there is no single engine but one per model — the
+# same endpoint routes to gpt-5, which refuses `temperature`, and to claude,
+# which accepts it. Normalization is the gateway's job.
+#
+# llm:
+#   provider: ai-gateway
+#   baseUrl: http://gateway:4000/v1
+#   model: anthropic/claude-sonnet-4-5
+#   apiKey: YOUR_GATEWAY_VIRTUAL_KEY
 
 limits:
   # Maximum generation/chat requests started per minute for the LLM provider.
@@ -21,6 +47,13 @@ build:
 retrieval:
   vector:
     enabled: true
+    # This block stays independent from `llm`. Leave `provider`, `engine`,
+    # `baseUrl` and `apiKey` out to inherit them from the LLM block — the
+    # common case when a single endpoint serves everything.
+    #
+    # Set `baseUrl` to point embeddings and rerank somewhere else, as below.
+    # Doing so ALSO requires setting `apiKey`: without it the LLM key would be
+    # sent to a different host.
     baseUrl: http://infinity.local:7997/v1
     apiKey: YOUR_VECTOR_API_KEY
     embeddingModel: BAAI/bge-m3

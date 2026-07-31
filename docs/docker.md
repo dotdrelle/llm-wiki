@@ -111,7 +111,8 @@ provider API key environment variables by default.
 
 ```yaml
 llm:
-  provider: ollama
+  provider: openai-compatible
+  engine: ollama
   baseUrl: http://host.docker.internal:11434/v1
 ```
 
@@ -123,7 +124,8 @@ docker compose --profile gpu up ollama
 
 ```yaml
 llm:
-  provider: ollama
+  provider: openai-compatible
+  engine: ollama
   baseUrl: http://ollama:11434/v1
 ```
 

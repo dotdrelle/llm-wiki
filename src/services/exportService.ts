@@ -4,6 +4,7 @@ import {
   buildSectionPolishPrompt,
 } from '../prompts/exportPrompt.ts';
 import { buildPromptContext } from '../prompts/systemPreamble.ts';
+import { reasoningAwareOutputCap } from '../config/engineCapabilities.ts';
 import { pathExists } from '../utils/fs.ts';
 import { extractSourceCitations, splitMarkdownSections } from '../utils/markdown.ts';
 import { resolveInside } from '../utils/path.ts';
@@ -32,8 +33,13 @@ export interface ExportResult {
   warnings: string[];
 }
 
-// Hard bound per section call: a section is a bounded unit of work, never a
-// full-document generation.
+// Content budget per section call: a section is a bounded unit of work, never
+// a full-document generation.
+//
+// This is the budget for the ANSWER. On a reasoning engine the provider cap
+// covers reasoning and answer together, so the value actually sent is widened
+// by reasoningAwareOutputCap() — otherwise the reasoning phase can consume the
+// whole budget and the section comes back empty, with no error at all.
 const SECTION_MAX_OUTPUT_TOKENS = 3000;
 // A regenerated section must not shrink below this share of the original
 // body: export expands content, it never summarizes it.
@@ -341,7 +347,7 @@ export async function expandDeliverable(
         user: `${prompt.user}${retryFeedback}`,
         label: 'export:section',
         logger,
-        maxOutputTokens: SECTION_MAX_OUTPUT_TOKENS,
+        maxOutputTokens: reasoningAwareOutputCap(config.llm, SECTION_MAX_OUTPUT_TOKENS),
         traceData: { section: sectionLabel, attempt },
       });
       let candidate = stripCitationMarkers(
@@ -406,7 +412,7 @@ export async function expandDeliverable(
           ...prompt,
           label: 'export:polish-section',
           logger,
-          maxOutputTokens: SECTION_MAX_OUTPUT_TOKENS,
+          maxOutputTokens: reasoningAwareOutputCap(config.llm, SECTION_MAX_OUTPUT_TOKENS),
           traceData: { section: sectionLabel },
         });
         const candidate = stripCitationMarkers(

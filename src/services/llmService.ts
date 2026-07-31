@@ -14,6 +14,18 @@ import {
   stripThinkingBlocks,
 } from '../utils/json.ts';
 import type { AppConfig } from '../types.ts';
+import {
+  describeTarget,
+  engineHeaders,
+  foldsSystemIntoUser,
+  hasOllamaDiagnostics,
+  supportsJsonResponseFormat,
+  supportsModelJsonRepair,
+  supportsNumCtx,
+  supportsStreamOptions,
+  supportsTemperature,
+  usesMaxCompletionTokens,
+} from '../config/engineCapabilities.ts';
 import type { TraceLogger } from './traceLogger.ts';
 import {
   providerRateLimitKey,
@@ -51,14 +63,101 @@ interface ProviderErrorDetails {
   message: string;
 }
 
-function supportsTemperature(config: AppConfig): boolean {
-  return !(
-    config.llm.provider === 'openai' && /^gpt-5(?:[.-]|$)/i.test(config.llm.model)
-  );
-}
+// Les contournements par moteur vivent dans config/engineCapabilities.ts —
+// source unique de vérité, cf. plan-implementation-engine-gateway.md.
 
 function readNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+/**
+ * Noms sous lesquels les serveurs exposent le raisonnement, hors du `content`.
+ *
+ * Trois noms, deux formes — relevés sur les endpoints réels avec
+ * `scripts/probe-engine.mjs` :
+ *   `reasoning`         chaîne · Albert / OpenGateLLM
+ *   `reasoning_content` chaîne · LiteLLM, DeepSeek, Ollama
+ *   `thinking_blocks`   tableau d'objets · LiteLLM ↔ Anthropic
+ *
+ * On ne présume donc ni le nom ni le type : présumer l'un des deux a déjà
+ * produit une analyse fausse.
+ */
+const REASONING_DELTA_KEYS = [
+  'reasoning',
+  'reasoning_content',
+  'thinking_blocks',
+  'thinking',
+] as const;
+
+/**
+ * Volume de raisonnement d'un delta, en caractères.
+ *
+ * Sert uniquement à distinguer « le modèle a réfléchi puis s'est fait couper »
+ * de « le modèle n'a rien produit ». Le drain complet du raisonnement est le
+ * lot A du plan ; ici on ne mesure que ce qu'il faut pour lever la bonne
+ * erreur.
+ */
+function reasoningDeltaLength(delta: unknown): number {
+  if (!delta || typeof delta !== 'object') return 0;
+  const record = delta as Record<string, unknown>;
+  let total = 0;
+  for (const key of REASONING_DELTA_KEYS) {
+    const value = record[key];
+    if (typeof value === 'string') {
+      total += value.length;
+    } else if (Array.isArray(value)) {
+      for (const item of value) {
+        if (typeof item === 'string') {
+          total += item.length;
+        } else if (item && typeof item === 'object') {
+          const block = item as Record<string, unknown>;
+          const text = block.thinking ?? block.text;
+          total += typeof text === 'string' ? text.length : 0;
+        }
+      }
+    }
+  }
+  return total;
+}
+
+/**
+ * Coupure par le plafond de sortie pendant la phase de raisonnement.
+ *
+ * Sur un moteur à raisonnement, `max_tokens` couvre le raisonnement **et** le
+ * contenu. Le modèle peut donc épuiser le plafond avant d'écrire un seul
+ * caractère utile : le serveur répond alors HTTP 200, `finish_reason: length`,
+ * et un contenu vide. Sans ce garde-fou, une section vide est écrite dans le
+ * livrable sans le moindre signal.
+ *
+ * Observé sur Albert / gpt-oss-120b, où le contenu n'apparaît qu'au chunk 221
+ * sur 222 : `exportService` plafonne à 3000 tokens, ce qui laisse de la marge
+ * mais ne supprime pas le mécanisme.
+ */
+function assertNotTruncatedDuringReasoning(input: {
+  finishReason?: string;
+  content: string;
+  reasoningChars: number;
+  maxOutputTokens?: number;
+  label: string;
+  model: string;
+}): void {
+  if (input.finishReason !== 'length') return;
+  // Contenu partiel : on ne lève pas — la validation de section (export) et le
+  // parseur JSON (ingest, build) rejettent déjà une sortie incomplète, et
+  // couper ici priverait ces chemins de leur retry. Mais l'événement est tracé
+  // pour qu'une troncature répétée soit visible et non déduite.
+  if (input.content.trim().length > 0) return;
+
+  const cap = input.maxOutputTokens
+    ? `maxOutputTokens=${input.maxOutputTokens}`
+    : 'the provider output cap';
+  const reasoned = input.reasoningChars > 0
+    ? ` The model emitted ${input.reasoningChars} characters of reasoning before being cut off.`
+    : '';
+
+  throw new Error(
+    `LLM call "${input.label}" for ${input.model} was truncated with an empty answer: the output cap was reached before any content was produced (${cap}).${reasoned} On a reasoning engine the cap covers reasoning and content together — raise it, or lower the reasoning effort.`,
+  );
 }
 
 function extractTokenUsage(chunk: unknown): TokenUsage | undefined {
@@ -97,10 +196,7 @@ export class LLMService {
       // own loop in completeText, so keep at most one SDK-level retry for
       // transient network errors.
       maxRetries: 1,
-      defaultHeaders:
-        config.llm.provider === 'anthropic'
-          ? { 'anthropic-version': '2023-06-01' }
-          : undefined,
+      defaultHeaders: engineHeaders(config.llm),
     });
   }
 
@@ -149,7 +245,7 @@ export class LLMService {
   private normalizeProviderError(error: unknown): Error {
     const details = this.extractProviderErrorDetails(error);
     const lowerMessage = details.message.toLowerCase();
-    const providerTarget = `${this.config.llm.provider}/${this.config.llm.model}`;
+    const providerTarget = `${describeTarget(this.config.llm)}/${this.config.llm.model}`;
     const requestSuffix = details.requestId ? ` Request ID: ${details.requestId}.` : '';
 
     if (
@@ -174,7 +270,7 @@ export class LLMService {
       );
     }
 
-    if (details.status === 500 && this.config.llm.provider === 'ollama') {
+    if (details.status === 500 && hasOllamaDiagnostics(this.config.llm)) {
       return new Error(
         `Ollama returned HTTP 500 for ${providerTarget}: ${details.message}. This usually means the prompt exceeded the active context window or Ollama ran out of memory. Run \`wiki doctor\` to see the effective numCtx and RAM estimate. Then reduce build.slotBatchSize, retrieval.maxContextFiles, or retrieval.maxChunkChars in .wikirc.yaml; if the model supports it and RAM allows it, increase llm.numCtx.${requestSuffix}`,
         { cause: error instanceof Error ? error : undefined },
@@ -196,16 +292,14 @@ export class LLMService {
   }
 
   async completeText(request: CompletionRequest): Promise<string> {
-    // Some openai-compatible servers (e.g. mlx_lm) reject a leading system role
+    // Some local inference servers (e.g. mlx_lm) reject a leading system role
     // or treat it as a user turn, producing two consecutive user messages.
-    // Fold system into user for these providers.
-    const messages: ChatCompletionMessageParam[] =
-      this.config.llm.provider === 'openai-compatible'
-        ? [{ role: 'user', content: `${request.system}\n\n${request.user}` }]
-        : [
-            { role: 'system', content: request.system },
-            { role: 'user', content: request.user },
-          ];
+    const messages: ChatCompletionMessageParam[] = foldsSystemIntoUser(this.config.llm)
+      ? [{ role: 'user', content: `${request.system}\n\n${request.user}` }]
+      : [
+          { role: 'system', content: request.system },
+          { role: 'user', content: request.user },
+        ];
     const startedAt = Date.now();
     const label = request.label ?? 'completion';
 
@@ -214,7 +308,7 @@ export class LLMService {
     if (request.logger) {
       await request.logger.info('llm:start', {
         label,
-        provider: this.config.llm.provider,
+        provider: describeTarget(this.config.llm),
         model: this.config.llm.model,
         timeoutMs: effectiveTimeoutMs,
         maxOutputTokens: request.maxOutputTokens,
@@ -225,6 +319,12 @@ export class LLMService {
 
     let content: string;
     let capturedUsage: TokenUsage | undefined;
+    // Hors du try : une coupure n'est pas une erreur de transport. Levée à
+    // l'intérieur, elle traversait le catch de la boucle de retry, était
+    // journalisée en `llm:error` et repassait par `normalizeProviderError`,
+    // qui la présentait comme un incident provider.
+    let finishReason: string | undefined;
+    let reasoningChars = 0;
     const maxAttempts = providerRateLimitRetryMaxAttempts();
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       let providerStartedAt = 0;
@@ -235,26 +335,24 @@ export class LLMService {
           model: this.config.llm.model,
           messages,
           stream: true,
-          ...(this.config.llm.provider === 'ollama' && this.config.llm.numCtx
+          ...(supportsNumCtx(this.config.llm) && this.config.llm.numCtx
             ? { options: { num_ctx: this.config.llm.numCtx } }
             : {}),
-          ...(request.jsonMode &&
-          this.config.llm.provider !== 'anthropic' &&
-          this.config.llm.provider !== 'openai-compatible'
+          ...(request.jsonMode && supportsJsonResponseFormat(this.config.llm)
             ? { response_format: { type: 'json_object' } }
             : {}),
           ...(request.maxOutputTokens
-            ? this.config.llm.provider === 'openai'
+            ? usesMaxCompletionTokens(this.config.llm)
               ? { max_completion_tokens: request.maxOutputTokens }
               : { max_tokens: request.maxOutputTokens }
             : {}),
         };
-        if (supportsTemperature(this.config)) {
+        if (supportsTemperature(this.config.llm)) {
           createParams.temperature = request.temperature ?? this.config.llm.temperature;
         }
         // Stream tokens so the HTTP connection stays alive during long generations.
         // Without streaming, Ollama's write timeout (~5 min) closes the connection mid-response.
-        if (this.config.llm.provider !== 'anthropic') {
+        if (supportsStreamOptions(this.config.llm)) {
           createParams.stream_options = { include_usage: true };
         }
         const stream = (await this.client.chat.completions.create(
@@ -263,8 +361,13 @@ export class LLMService {
         )) as unknown as AsyncIterable<ChatCompletionChunk>;
         const chunks: string[] = [];
         capturedUsage = undefined;
+        finishReason = undefined;
+        reasoningChars = 0;
         for await (const chunk of stream) {
-          chunks.push(chunk.choices[0]?.delta?.content ?? '');
+          const choice = chunk.choices[0];
+          chunks.push(choice?.delta?.content ?? '');
+          if (choice?.finish_reason) finishReason = choice.finish_reason;
+          reasoningChars += reasoningDeltaLength(choice?.delta);
           const usage = extractTokenUsage(chunk);
           if (usage) {
             capturedUsage = usage;
@@ -331,6 +434,28 @@ export class LLMService {
 
         throw this.normalizeProviderError(error);
       }
+    }
+
+    // Avant le garde-fou générique : une coupure pendant le raisonnement est
+    // un cas particulier de réponse vide, et le message générique ne dirait ni
+    // la cause ni le remède.
+    assertNotTruncatedDuringReasoning({
+      finishReason,
+      content: content!,
+      reasoningChars,
+      maxOutputTokens: request.maxOutputTokens,
+      label,
+      model: this.config.llm.model,
+    });
+
+    if (finishReason === 'length' && request.logger) {
+      await request.logger.info('llm:truncated', {
+        label,
+        contentChars: content!.length,
+        reasoningChars,
+        maxOutputTokens: request.maxOutputTokens,
+        ...request.traceData,
+      });
     }
 
     if (!content! || typeof content !== 'string') {
@@ -453,9 +578,9 @@ export class LLMService {
       payload = parsed.payload;
       parseMode = parsed.repaired ? 'local_repair' : 'direct';
     } catch (localRepairError) {
-      // Skip model repair for openai-compatible: thinking models (e.g. Qwen3) return
+      // Skip model repair on local servers: thinking models (e.g. Qwen3) return
       // empty content for the repair call, making it unreliable and expensive.
-      if (this.config.llm.provider !== 'openai-compatible') {
+      if (supportsModelJsonRepair(this.config.llm)) {
         if (request.logger) {
           await request.logger.info('llm:json-local-repair-failed', {
             label: request.label ?? 'completion',

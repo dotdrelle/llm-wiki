@@ -7,7 +7,9 @@ function createConfig(): AppConfig {
     wikiRoot: '/tmp/wiki',
     language: 'fr',
     llm: {
-      provider: 'ollama',
+      provider: 'openai-compatible',
+
+      engine: 'ollama',
       model: 'qwen2.5:14b',
       apiKey: 'ollama',
       baseUrl: 'http://127.0.0.1:11434/v1',

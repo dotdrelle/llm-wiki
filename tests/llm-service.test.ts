@@ -11,7 +11,9 @@ function createConfig(): AppConfig {
     wikiRoot: '/tmp/wiki',
     language: 'fr',
     llm: {
-      provider: 'anthropic',
+      provider: 'openai-compatible',
+
+      engine: 'anthropic',
       model: 'claude-sonnet-4-20250514',
       apiKey: 'test-key',
       baseUrl: 'https://api.anthropic.com/v1',
@@ -55,7 +57,9 @@ function createOpenAIConfig(): AppConfig {
   return {
     ...createConfig(),
     llm: {
-      provider: 'openai',
+      provider: 'openai-compatible',
+
+      engine: 'openai',
       model: 'gpt-5-mini',
       apiKey: 'test-key',
       baseUrl: 'https://api.openai.com/v1',

@@ -82,7 +82,8 @@ ollama pull nomic-embed-text
 
 ```yaml
 llm:
-  provider: ollama
+  provider: openai-compatible
+  engine: ollama
   baseUrl: http://127.0.0.1:11434/v1
 
 retrieval:

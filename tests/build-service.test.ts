@@ -13,7 +13,9 @@ function createConfig(root: string): AppConfig {
     wikiRoot: root,
     language: 'fr',
     llm: {
-      provider: 'ollama',
+      provider: 'openai-compatible',
+
+      engine: 'ollama',
       model: 'qwen2.5:14b',
       apiKey: 'ollama',
       baseUrl: 'http://127.0.0.1:11434/v1',
@@ -542,7 +544,7 @@ describe('build service', () => {
     await expect(readFile(sidecarPath, 'utf8')).rejects.toThrow();
   });
 
-  it('renders single-slot openai-compatible templates without JSON first', async () => {
+  it('renders single-slot templates without JSON first on a local engine', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-'));
     await mkdir(path.join(root, 'wiki', 'concepts'), { recursive: true });
     await mkdir(path.join(root, 'templates'), { recursive: true });
@@ -557,6 +559,7 @@ describe('build service', () => {
 
     const config = createConfig(root);
     config.llm.provider = 'openai-compatible';
+    config.llm.engine = 'vllm';
     config.build.slotBatchSize = 1;
     const workspace = new WorkspaceService(config);
     const llm = new FakeLLMService();
@@ -827,7 +830,8 @@ describe('build service', () => {
     );
 
     const config = createConfig(root);
-    config.llm.provider = 'openai';
+    config.llm.provider = 'openai-compatible';
+    config.llm.engine = 'openai';
     config.llm.model = 'gpt-5-mini';
     config.build.slotBatchSize = 3;
     const workspace = new WorkspaceService(config);

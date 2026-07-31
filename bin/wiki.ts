@@ -2,8 +2,12 @@
 declare const __PKG_VERSION__: string;
 import { readFileSync } from 'node:fs';
 import { Command, Option } from 'commander';
-import { loadConfig } from '../src/config/loadConfig.ts';
+import { loadConfig, findWikircPath } from '../src/config/loadConfig.ts';
 import { loadWorkspaceEnv } from '../src/config/loadEnv.ts';
+import {
+  isLegacyProviderError,
+  migrateLegacyConfigFile,
+} from '../src/config/migrateLegacyConfig.ts';
 import initCmd from '../src/commands/init.ts';
 import ingestCmd from '../src/commands/ingest.ts';
 import queryCmd from '../src/commands/query.ts';
@@ -47,13 +51,75 @@ function workspaceFromArgv(argv: string[]): string | undefined {
   return undefined;
 }
 
+/** Options globales qui consomment la valeur suivante dans argv. */
+const VALUE_TAKING_FLAGS = new Set(['-w', '--workspace']);
+
+/** Première sous-commande réelle, options et valeurs d'options écartées. */
+function subcommandOf(argv: string[]): string | undefined {
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i]!;
+    if (VALUE_TAKING_FLAGS.has(token)) {
+      i += 1;
+      continue;
+    }
+    if (token.startsWith('-')) continue;
+    return token;
+  }
+  return undefined;
+}
+
+/**
+ * `llm.provider` a été scindé en `provider` + `engine` en 0.16, et
+ * `resolveConfig` rejette désormais l'ancien format. Le rejet survient avant
+ * que la moindre commande soit construite : `wiki doctor --apply` ne peut donc
+ * pas migrer un fichier qu'il n'arrive pas à charger.
+ *
+ * On intercepte ici, et uniquement pour `doctor --apply` — la commande que le
+ * message d'erreur désigne, et la seule qui a mandat pour réécrire le wikirc.
+ * Toute autre commande relaie l'erreur telle quelle : la migration reste un
+ * geste explicite de l'utilisateur.
+ */
+async function loadConfigWithMigration(cwd: string) {
+  try {
+    return await loadConfig(cwd);
+  } catch (error) {
+    if (!isLegacyProviderError(error)) throw error;
+
+    // `argv.includes('doctor')` ne suffit pas : `--apply` existe aussi sur
+    // `group-concepts`, et « doctor » peut apparaître comme valeur d'option
+    // (un workspace nommé ainsi, par exemple). On identifie donc la
+    // sous-commande réelle en écartant les options et leurs valeurs.
+    const argv = process.argv.slice(2);
+    if (subcommandOf(argv) !== 'doctor' || !argv.includes('--apply')) throw error;
+
+    const configPath = await findWikircPath(cwd);
+    if (!configPath) throw error;
+
+    const migration = await migrateLegacyConfigFile(
+      configPath,
+      readFileSync(configPath, 'utf8'),
+    );
+    if (!migration) throw error;
+
+    console.log(
+      `Migrated ${configPath}: llm.provider "${migration.from}" → provider: ${migration.to.provider} / engine: ${migration.to.engine}.`,
+    );
+    if (migration.materializedBaseUrl) {
+      console.log(
+        `  llm.baseUrl was implicit and is now written explicitly: ${migration.materializedBaseUrl}`,
+      );
+    }
+    return await loadConfig(cwd);
+  }
+}
+
 async function main() {
   const workspaceArg = workspaceFromArgv(process.argv.slice(2));
   if (workspaceArg) {
     process.env.WIKI_WORKSPACE = workspaceArg;
   }
   await loadWorkspaceEnv(process.cwd());
-  const config = await loadConfig(process.cwd());
+  const config = await loadConfigWithMigration(process.cwd());
 
   program
     .name('wiki')

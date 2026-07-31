@@ -25,6 +25,7 @@ function createConfig(root: string, overrides: Partial<AppConfig> = {}): AppConf
     language: 'fr',
     llm: {
       provider: 'openai-compatible',
+      engine: 'generic',
       model: 'configured-model',
       apiKey: 'test-key',
       baseUrl: 'https://provider.test/v1',

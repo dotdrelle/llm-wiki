@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import {
-  DEFAULT_ANTHROPIC_BASE_URL,
   DEFAULT_OLLAMA_BASE_URL,
   DEFAULT_OPENAI_BASE_URL,
+  ENGINE_DEFAULT_BASE_URL,
 } from './defaults.ts';
-import type { AppConfig, ConfigPresetName } from '../types.ts';
+import type { AppConfig, ConfigPresetName, LlmEngine } from '../types.ts';
 
 const ALBERT_BASE_URL = 'https://albert.api.etalab.gouv.fr/v1';
 const NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1';
@@ -26,6 +26,7 @@ const CONFIG_PRESETS: Record<ConfigPresetName, PlainObject> = {
   albert: {
     llm: {
       provider: 'openai-compatible',
+      engine: 'albert',
       baseUrl: ALBERT_BASE_URL,
     },
     limits: {
@@ -54,7 +55,8 @@ const CONFIG_PRESETS: Record<ConfigPresetName, PlainObject> = {
   },
   openai: {
     llm: {
-      provider: 'openai',
+      provider: 'openai-compatible',
+      engine: 'openai',
       baseUrl: DEFAULT_OPENAI_BASE_URL,
     },
     retrieval: {
@@ -67,7 +69,8 @@ const CONFIG_PRESETS: Record<ConfigPresetName, PlainObject> = {
   },
   ollama: {
     llm: {
-      provider: 'ollama',
+      provider: 'openai-compatible',
+      engine: 'ollama',
       baseUrl: DEFAULT_OLLAMA_BASE_URL,
       apiKey: 'ollama',
       numCtx: 32768,
@@ -90,6 +93,7 @@ const CONFIG_PRESETS: Record<ConfigPresetName, PlainObject> = {
   nvidia: {
     llm: {
       provider: 'openai-compatible',
+      engine: 'generic',
       baseUrl: NVIDIA_BASE_URL,
     },
     limits: {
@@ -363,20 +367,23 @@ function normalizeDeliverableResponse(value: unknown): unknown {
 
 const llmSchema = z
   .object({
-    provider: z
-      .enum(['openai', 'ollama', 'openai-compatible', 'anthropic'])
-      .default('openai'),
+    provider: z.enum(['openai-compatible', 'ai-gateway']).default('openai-compatible'),
+    engine: z
+      .enum(['ollama', 'vllm', 'mlx', 'albert', 'openai', 'anthropic', 'generic'])
+      .optional(),
     model: z.string().min(1).default('gpt-5-mini'),
     apiKey: z.string().min(1).optional(),
     baseUrl: z.string().url().optional(),
     temperature: z.number().min(0).max(2).default(0.1),
     timeoutMs: z.number().int().positive().default(600000),
     numCtx: z.number().int().positive().optional(),
+    reasoningOutputMultiplier: z.number().min(1).max(10).optional(),
     flashAttention: z.boolean().optional(),
     kvCacheType: z.enum(['f16', 'q8_0', 'q4_0']).optional(),
   })
   .default({
-    provider: 'openai',
+    provider: 'openai-compatible',
+    engine: 'openai',
     model: 'gpt-5-mini',
     temperature: 0.1,
     timeoutMs: 600000,
@@ -433,6 +440,12 @@ const retrievalSchema = z
     vector: z
       .object({
         enabled: z.boolean().default(false),
+        // Absents du fichier = hérités du bloc `llm`. Le bloc reste
+        // indépendant : renseigner l'un d'eux le fait diverger.
+        provider: z.enum(['openai-compatible', 'ai-gateway']).optional(),
+        engine: z
+          .enum(['ollama', 'vllm', 'mlx', 'albert', 'openai', 'anthropic', 'generic'])
+          .optional(),
         baseUrl: z.string().url().optional(),
         apiKey: z.string().min(1).optional(),
         requestsPerMinute: z.number().int().min(1).optional(),
@@ -611,6 +624,33 @@ export const buildStateSchema = z.object({
   ),
 });
 
+/**
+ * Valeurs de `llm.provider` acceptées jusqu'à 0.15. Elles portaient à la fois
+ * le routage et le moteur ; les deux axes sont désormais séparés. Le rejet est
+ * franc, avec un message actionnable : la table de correspondance vit dans
+ * `doctor` (`wiki doctor --apply`), pas ici, pour ne pas grever le chemin de
+ * lecture d'une normalisation permanente.
+ */
+const LEGACY_PROVIDER_MIGRATION: Record<string, string> = {
+  openai: 'provider: openai-compatible / engine: openai',
+  ollama: 'provider: openai-compatible / engine: ollama',
+  anthropic: 'provider: openai-compatible / engine: anthropic',
+};
+
+function assertNoLegacyProvider(input: unknown): void {
+  if (!isPlainObject(input)) return;
+  const llm = input.llm;
+  if (!isPlainObject(llm)) return;
+  const provider = llm.provider;
+  if (typeof provider !== 'string') return;
+  const replacement = LEGACY_PROVIDER_MIGRATION[provider];
+  if (!replacement) return;
+
+  throw new Error(
+    `llm.provider: "${provider}" is no longer recognized. Replace it with ${replacement} in .wikirc.yaml — or run \`wiki doctor --apply\` to migrate the file automatically.`,
+  );
+}
+
 export function resolveConfig(
   input: unknown,
   wikiRoot: string,
@@ -629,29 +669,39 @@ export function resolveConfigDetails(
   const presetName = rawPreset ? z.enum(['albert', 'openai', 'ollama', 'nvidia']).parse(rawPreset) : undefined;
   const presetInput = presetName ? CONFIG_PRESETS[presetName] : {};
   const mergedInput = deepMerge(presetInput, rawInput);
+  assertNoLegacyProvider(mergedInput);
   const parsed = rawConfigSchema.parse(mergedInput ?? {});
-  const provider = parsed.llm?.provider ?? 'openai';
+  const provider = parsed.llm?.provider ?? 'openai-compatible';
+  // `engine` est ignoré derrière une gateway : l'endpoint est opaque et chaque
+  // modèle peut avoir un moteur différent. On y suppose une sémantique OpenAI
+  // propre et on délègue la normalisation des paramètres à la gateway.
+  const engine: LlmEngine =
+    provider === 'ai-gateway' ? 'generic' : (parsed.llm?.engine ?? 'generic');
 
-  const baseUrl =
-    parsed.llm?.baseUrl ??
-    (provider === 'ollama'
-      ? DEFAULT_OLLAMA_BASE_URL
-      : provider === 'anthropic'
-        ? DEFAULT_ANTHROPIC_BASE_URL
-        : DEFAULT_OPENAI_BASE_URL);
-
-  if (provider === 'openai-compatible' && !parsed.llm?.baseUrl) {
-    throw new Error('Provider "openai-compatible" requires llm.baseUrl in .wikirc.yaml.');
+  // Aucun `else` par défaut ici : un moteur sans endpoint connu doit être
+  // refusé, pas rabattu sur OpenAI. Sans cette règle, un `engine: vllm` sans
+  // baseUrl expédiait la clé d'un serveur local vers api.openai.com.
+  const engineDefaultBaseUrl = ENGINE_DEFAULT_BASE_URL[engine];
+  if (!parsed.llm?.baseUrl && (provider === 'ai-gateway' || !engineDefaultBaseUrl)) {
+    throw new Error(
+      provider === 'ai-gateway'
+        ? 'Provider "ai-gateway" requires llm.baseUrl in .wikirc.yaml.'
+        : `Engine "${engine}" requires an explicit llm.baseUrl in .wikirc.yaml — it is a self-hosted server with no default endpoint. Engines with a known default: ${Object.keys(ENGINE_DEFAULT_BASE_URL).join(', ')}.`,
+    );
   }
+  const baseUrl = parsed.llm?.baseUrl ?? engineDefaultBaseUrl!;
 
-  const apiKey =
-    parsed.llm?.apiKey ??
-    (provider === 'ollama' ? 'ollama' : undefined);
+  const apiKey = parsed.llm?.apiKey ?? (engine === 'ollama' ? 'ollama' : undefined);
 
+  // Le bloc vecteur reste indépendant : il n'hérite du bloc llm que pour les
+  // clés absentes du fichier. Le wizard écrit les valeurs héritées en
+  // commentaire, pour que le fichier reste auto-documenté.
   const vectorBaseUrl = parsed.retrieval?.vector?.baseUrl ?? baseUrl;
-  const vectorApiKey =
-    parsed.retrieval?.vector?.apiKey ??
-    apiKey;
+  const vectorProvider = parsed.retrieval?.vector?.provider ?? provider;
+  const vectorEngine: LlmEngine =
+    parsed.retrieval?.vector?.engine ??
+    (vectorProvider === 'ai-gateway' ? 'generic' : engine);
+  const vectorApiKey = parsed.retrieval?.vector?.apiKey ?? apiKey;
 
   const mcpCertPath = process.env.WIKI_MCP_TLS_CERT_PATH;
   const mcpKeyPath = process.env.WIKI_MCP_TLS_KEY_PATH;
@@ -702,12 +752,14 @@ export function resolveConfigDetails(
     },
     llm: {
       provider,
+      engine,
       model: parsed.llm?.model ?? 'gpt-5-mini',
       apiKey,
       baseUrl,
       temperature: parsed.llm?.temperature ?? 0.1,
       timeoutMs: parsed.llm?.timeoutMs ?? 600000,
       numCtx: parsed.llm?.numCtx,
+      reasoningOutputMultiplier: parsed.llm?.reasoningOutputMultiplier,
       flashAttention: parsed.llm?.flashAttention,
       kvCacheType: parsed.llm?.kvCacheType,
     },
@@ -732,6 +784,8 @@ export function resolveConfigDetails(
       buildStrategy: parsed.retrieval?.buildStrategy ?? 'bm25',
       vector: {
         enabled: parsed.retrieval?.vector?.enabled ?? false,
+        provider: vectorProvider,
+        engine: vectorEngine,
         baseUrl: vectorBaseUrl,
         apiKey: vectorApiKey,
         requestsPerMinute:
@@ -756,12 +810,14 @@ export function resolveConfigDetails(
       preset: parsed.preset ? 'file' : 'default',
       language: sourceForPath(rawInput, presetInput, presetName, 'language'),
       'llm.provider': sourceForPath(rawInput, presetInput, presetName, 'llm.provider'),
+      'llm.engine': sourceForPath(rawInput, presetInput, presetName, 'llm.engine'),
       'llm.model': sourceForPath(rawInput, presetInput, presetName, 'llm.model'),
       'llm.apiKey': sourceForPath(rawInput, presetInput, presetName, 'llm.apiKey'),
       'llm.baseUrl': sourceForPath(rawInput, presetInput, presetName, 'llm.baseUrl'),
       'llm.temperature': sourceForPath(rawInput, presetInput, presetName, 'llm.temperature'),
       'llm.timeoutMs': sourceForPath(rawInput, presetInput, presetName, 'llm.timeoutMs'),
       'llm.numCtx': sourceForPath(rawInput, presetInput, presetName, 'llm.numCtx'),
+      'llm.reasoningOutputMultiplier': sourceForPath(rawInput, presetInput, presetName, 'llm.reasoningOutputMultiplier'),
       'llm.flashAttention': sourceForPath(rawInput, presetInput, presetName, 'llm.flashAttention'),
       'llm.kvCacheType': sourceForPath(rawInput, presetInput, presetName, 'llm.kvCacheType'),
       'limits.requestsPerMinute': sourceForPath(rawInput, presetInput, presetName, 'limits.requestsPerMinute'),

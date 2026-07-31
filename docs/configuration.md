@@ -46,7 +46,8 @@ from schema defaults, presets, file values, and MCP/TLS environment variables.
 language: fr
 
 llm:
-  provider: ollama
+  provider: openai-compatible
+  engine: ollama
   model: qwen2.5:14b
   apiKey: ollama
   baseUrl: http://127.0.0.1:11434/v1
@@ -113,8 +114,9 @@ Presets reduce typing only; they are never required. The merge order is
 
 | Key              | Description                                                                                                                                          | Default            |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| `provider`       | `openai`, `ollama`, `anthropic`, `openai-compatible`                                                                                                 | `openai`           |
-| `model`          | Model name passed to the provider                                                                                                                    | `gpt-5-mini`       |
+| `provider`       | Where requests go: `openai-compatible` (a single server, reached directly) or `ai-gateway` (an external gateway routing to several providers)         | `openai-compatible` |
+| `engine`         | How that server behaves: `ollama`, `vllm`, `mlx`, `albert`, `openai`, `anthropic`, `generic`. Ignored when `provider: ai-gateway`.                    | `generic`          |
+| `model`          | Model name passed to the provider. Behind a gateway it carries the routing, e.g. `anthropic/claude-sonnet-4-5`.                                       | `gpt-5-mini`       |
 | `apiKey`         | API key for this workspace. Keep the provider key here.                                                                                              | —                  |
 | `baseUrl`        | Provider base URL                                                                                                                                    | provider-dependent |
 | `temperature`    | Sampling temperature. Valid range: `0` to `2`. Some providers/models ignore or reject non-default temperatures.                                      | `0.1`              |
@@ -126,13 +128,30 @@ Presets reduce typing only; they are never required. The merge order is
 API key resolution is direct: `llm.apiKey` is used as written. Ollama defaults
 to `ollama` when no key is set.
 
+### `provider` and `engine`
+
+These are two independent axes, and conflating them was the reason the previous
+single `provider` field could not describe a gateway.
+
+- **`provider` — routing.** Where the HTTP request goes. Either a single server
+  you reach directly (`openai-compatible`), or an external AI gateway
+  (`ai-gateway`) that fans out to several providers on your behalf.
+- **`engine` — behaviour.** How the server in front of you responds. It drives
+  request-shaping workarounds (system-role folding, `options.num_ctx`,
+  `response_format`, `max_tokens` vs `max_completion_tokens`, JSON repair) and
+  the `wiki doctor` calibration.
+
+`engine` is **ignored** when `provider: ai-gateway`: behind a gateway there is
+no single engine but one per model, so no static decision is possible.
+
 ### Provider snippets
 
 **OpenAI**
 
 ```yaml
 llm:
-  provider: openai
+  provider: openai-compatible
+  engine: openai
   model: gpt-5-mini
   apiKey: YOUR_API_KEY_HERE
 ```
@@ -141,7 +160,8 @@ llm:
 
 ```yaml
 llm:
-  provider: anthropic
+  provider: openai-compatible
+  engine: anthropic
   model: claude-sonnet-4-6
   apiKey: YOUR_API_KEY_HERE
 ```
@@ -150,7 +170,8 @@ llm:
 
 ```yaml
 llm:
-  provider: ollama
+  provider: openai-compatible
+  engine: ollama
   model: qwen2.5:14b
   baseUrl: http://127.0.0.1:11434/v1
   numCtx: 32768
@@ -158,15 +179,58 @@ llm:
   kvCacheType: q8_0
 ```
 
-**MLX / OpenAI-compatible**
+**MLX / local OpenAI-compatible server**
 
 ```yaml
 llm:
   provider: openai-compatible
+  engine: mlx
   model: mlx-community/Qwen2.5-7B-Instruct-4bit
   baseUrl: http://127.0.0.1:8080/v1
   numCtx: 16384
 ```
+
+**Behind an AI gateway**
+
+```yaml
+llm:
+  provider: ai-gateway
+  baseUrl: http://gateway:4000/v1
+  model: anthropic/claude-sonnet-4-5
+  apiKey: YOUR_GATEWAY_VIRTUAL_KEY
+```
+
+The gateway (LiteLLM, Bifrost, Portkey…) is **not shipped, deployed or
+configured by llm-wiki**. It is third-party infrastructure: you deploy it, you
+declare the providers and models in it, and you point `baseUrl` at it. In
+return, changing provider becomes a one-string edit in `model`.
+
+**Requirement — enable parameter dropping.** Set `drop_params: true` (LiteLLM,
+or the equivalent on your gateway). Behind a gateway the same endpoint routes
+to gpt-5, which rejects `temperature`, and to claude, which accepts it: no
+static decision is possible on our side, so normalizing unsupported parameters
+is the gateway's job.
+
+**Security note.** The gateway's virtual key is written in clear text in
+`.wikirc.yaml`, which does not interpolate environment variables. Unlike a
+single provider key, that one key opens access to *every* provider behind the
+gateway. Treat the file accordingly, and keep it out of version control.
+
+### Migrating from `provider: openai | ollama | anthropic`
+
+Those values carried both axes at once and are no longer accepted. `llm-wiki`
+rejects them at load time with the exact replacement in the message, and
+`wiki doctor --apply` rewrites the file for you:
+
+| Before                          | After                                                |
+| ------------------------------- | ---------------------------------------------------- |
+| `provider: openai`              | `provider: openai-compatible` + `engine: openai`      |
+| `provider: ollama`              | `provider: openai-compatible` + `engine: ollama`      |
+| `provider: anthropic`           | `provider: openai-compatible` + `engine: anthropic`   |
+| `provider: openai-compatible`   | unchanged, plus an explicit `engine`                  |
+
+The migration also materializes `baseUrl` when it was implicit, so the migrated
+file targets exactly the same endpoint as before.
 
 ### `numCtx`
 
@@ -175,9 +239,9 @@ server, not the theoretical maximum supported by the model.
 
 Set it for:
 
-- `provider: ollama`
-- `provider: openai-compatible` when backed by MLX, vLLM, LM Studio, llama.cpp,
-  or an internal local server
+- `engine: ollama`
+- `engine: mlx`, `engine: vllm` or `engine: generic` when backed by MLX, vLLM,
+  LM Studio, llama.cpp, or an internal local server
 - remote or Docker-hosted local servers where `wiki doctor` cannot inspect the
   server runtime configuration
 
@@ -185,8 +249,9 @@ It lets `wiki doctor` estimate whether prompts for `ingest`, `build`, `query`,
 and MCP-driven retrieval fit into the available context, then recommend
 `slotBatchSize`, `maxContextFiles`, `maxChunkChars`, and `maxBuildContextChars`.
 
-For cloud `provider: openai` or `provider: anthropic`, `numCtx` is usually not
-needed unless you want to override the budget used by `wiki doctor`.
+For cloud `engine: openai` or `engine: anthropic`, and behind an
+`ai-gateway`, `numCtx` is usually not needed unless you want to override the
+budget used by `wiki doctor`.
 
 If `numCtx` is set too high, `wiki doctor` may recommend prompts that are too
 large for the actual server and later requests can fail or be truncated. If it

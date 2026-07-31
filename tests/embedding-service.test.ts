@@ -13,6 +13,7 @@ function createConfig(): AppConfig {
     language: 'fr',
     llm: {
       provider: 'openai-compatible',
+      engine: 'generic',
       model: 'openai/gpt-oss-120b',
       apiKey: 'test-key',
       baseUrl: 'https://example.test/v1',

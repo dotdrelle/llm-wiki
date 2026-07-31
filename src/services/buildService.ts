@@ -17,6 +17,7 @@ import { pathExists } from '../utils/fs.ts';
 import { mapWithConcurrency } from '../utils/concurrency.ts';
 import { PromptBudgetService } from './promptBudgetService.ts';
 import { StabilizeService } from './stabilizeService.ts';
+import { prefersSingleSlotTextRendering } from '../config/engineCapabilities.ts';
 import type {
   AppConfig,
   BuildBatchPlan,
@@ -671,7 +672,7 @@ export class BuildService {
     }>,
   ): number {
     const prompt =
-      this.config.llm.provider === 'openai-compatible' && batch.length === 1
+      prefersSingleSlotTextRendering(this.config.llm) && batch.length === 1
         ? buildSingleSlotDeliverablePrompt({
             template,
             slot: batch[0],
@@ -836,12 +837,12 @@ export class BuildService {
     const profileSection = await this.workspace.loadProfileSection(
       this.config.limits.maxProfileChars,
     );
-    if (this.config.llm.provider === 'openai-compatible' && batch.length === 1) {
+    if (prefersSingleSlotTextRendering(this.config.llm) && batch.length === 1) {
       if (this.logger) {
         await this.logger.info('build:text-render', {
           ...traceData,
           slot: batch[0].id,
-          reason: 'openai-compatible-single-slot',
+          reason: 'local-server-single-slot',
         });
       }
       return [

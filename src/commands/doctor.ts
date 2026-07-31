@@ -16,6 +16,16 @@ import {
 } from '../services/vectorIndexService.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import type { AppConfig } from '../types.ts';
+import {
+  describeTarget,
+  engineFetchHeaders,
+  isOllamaEngine,
+} from '../config/engineCapabilities.ts';
+import {
+  fetchGatewayCatalog,
+  probeRerank,
+  type GatewayCatalog,
+} from '../services/gatewayProbe.ts';
 import { pathExists, safeWriteFile } from '../utils/fs.ts';
 
 // Bits per weight for common GGUF quantizations (including block overhead)
@@ -193,12 +203,22 @@ function roundUp(value: number, step: number): number {
   return Math.ceil(value / step) * step;
 }
 
-function recommendedMaxInputTokens(config: AppConfig): number {
+function recommendedMaxInputTokens(
+  config: AppConfig,
+  gateway?: GatewayCatalog,
+): number {
   if (/albert\.api\.etalab\.gouv\.fr/i.test(config.llm.baseUrl)) {
     return 120000;
   }
-  if (config.llm.provider === 'ollama' && config.llm.numCtx) {
+  if (isOllamaEngine(config.llm) && config.llm.numCtx) {
     return Math.max(1000, Math.floor(config.llm.numCtx * 0.9));
+  }
+  // Derrière une gateway il n'y a pas d'Ollama local à interroger : le budget
+  // vient du catalogue, qui déclare la fenêtre de contexte par modèle. Même
+  // marge de 10 % que pour numCtx.
+  const gatewayWindow = gateway?.byName.get(config.llm.model)?.maxInputTokens;
+  if (gatewayWindow) {
+    return Math.max(1000, Math.floor(gatewayWindow * 0.9));
   }
   return config.limits.maxInputTokensPerCall;
 }
@@ -417,23 +437,10 @@ function isRemoteOllama(baseUrl: string | undefined): boolean {
   }
 }
 
-function isLocalHostUrl(baseUrl: string | undefined): boolean {
-  if (!baseUrl) return false;
-  try {
-    const hostname = new URL(baseUrl).hostname;
-    return ['localhost', '127.0.0.1', '::1'].includes(hostname);
-  } catch {
-    return false;
-  }
-}
-
+// Auparavant une heuristique (nom du modèle, port :8080, URL locale). Le
+// moteur est désormais déclaré dans .wikirc.yaml — plus rien à deviner.
 function looksLikeMlx(config: AppConfig): boolean {
-  return (
-    config.llm.provider === 'openai-compatible' &&
-    (config.llm.model.toLowerCase().includes('mlx') ||
-      config.llm.baseUrl?.includes(':8080') ||
-      isLocalHostUrl(config.llm.baseUrl))
-  );
+  return config.llm.provider !== 'ai-gateway' && config.llm.engine === 'mlx';
 }
 
 function resolveOllamaEnv(
@@ -521,14 +528,11 @@ async function checkProvider(
 }> {
   const { provider, baseUrl, apiKey, model } = config.llm;
 
-  if (provider !== 'ollama') {
+  if (!isOllamaEngine(config.llm)) {
     const probe: ProviderProbe = { rateLimitHeaders: {} };
     try {
       const url = `${baseUrl}/models`;
-      const headers: Record<string, string> =
-        provider === 'anthropic'
-          ? { 'x-api-key': apiKey ?? '', 'anthropic-version': '2023-06-01' }
-          : { Authorization: `Bearer ${apiKey ?? ''}` };
+      const headers = engineFetchHeaders(config.llm, apiKey);
       const startedAt = Date.now();
       const res = await fetch(url, { headers, signal: AbortSignal.timeout(5000) });
       probe.latencyMs = Date.now() - startedAt;
@@ -624,6 +628,103 @@ async function checkProvider(
 }
 
 // ── hardware section (Ollama only) ────────────────────────────────────────────
+
+/**
+ * Diagnostic propre au mode `ai-gateway`.
+ *
+ * Le sous-système matériel d'Ollama (environnement du process, `/api/show`,
+ * cache KV, RAM) n'a aucun sens ici et se désactive tout seul — mais on le
+ * **dit**, plutôt que de le laisser disparaître sans un mot. Une section qui
+ * s'évapore silencieusement est le genre de chose qu'on met une soirée à
+ * comprendre.
+ */
+async function printGatewayDiagnostics(
+  config: AppConfig,
+  catalog: GatewayCatalog | undefined,
+): Promise<void> {
+  console.log('\n── AI gateway ──────────────────────────────────────────────');
+  row('gateway:', config.llm.baseUrl);
+  console.log(
+    '  · Local RAM / numCtx sizing is skipped: the models run behind the gateway, not here.',
+  );
+
+  if (!catalog) {
+    // checkProvider a déjà tranché la joignabilité de /v1/models : si on est
+    // ici sans catalogue, c'est le catalogue qui manque, pas forcément la
+    // gateway. Distinguer les deux évite de diagnostiquer la mauvaise couche.
+    warn(
+      'Gateway model catalog unavailable (neither /model/info nor /v1/models returned a usable list). Model names cannot be verified.',
+    );
+    return;
+  }
+
+  row('catalog source:', catalog.source);
+  row('models listed:', String(catalog.models.length));
+  if (!catalog.typed) {
+    warn(
+      'Gateway has no /model/info: model modes and context windows are unknown, so context budgets fall back to limits.maxInputTokensPerCall.',
+    );
+  }
+
+  const checks: Array<{ label: string; model: string; expectedMode?: string }> = [
+    { label: 'llm.model', model: config.llm.model, expectedMode: 'chat' },
+  ];
+  if (config.retrieval.vector.enabled) {
+    checks.push({
+      label: 'vector.embeddingModel',
+      model: config.retrieval.vector.embeddingModel,
+      expectedMode: 'embedding',
+    });
+    if (config.retrieval.vector.rerankEnabled) {
+      checks.push({
+        label: 'vector.rerankerModel',
+        model: config.retrieval.vector.rerankerModel,
+        expectedMode: 'rerank',
+      });
+    }
+  }
+
+  for (const check of checks) {
+    const found = catalog.byName.get(check.model);
+    if (!found) {
+      // Un modèle peut disparaître du config.yaml de la gateway entre deux
+      // setups. Le dire ici coûte un appel ; le découvrir au premier ingest
+      // coûte un run.
+      err(`${check.label} "${check.model}" is not in the gateway catalog`);
+      continue;
+    }
+    if (catalog.typed && found.mode && check.expectedMode && found.mode !== check.expectedMode) {
+      warn(
+        `${check.label} "${check.model}" is declared as mode "${found.mode}", expected "${check.expectedMode}"`,
+      );
+    } else {
+      ok(`${check.label} "${check.model}" found in catalog`);
+    }
+    if (found.maxInputTokens) {
+      row(`  ${check.label} ctx:`, found.maxInputTokens.toLocaleString());
+    }
+  }
+
+  if (
+    config.retrieval.vector.enabled &&
+    config.retrieval.vector.rerankEnabled &&
+    config.retrieval.vector.baseUrl.replace(/\/+$/, '') ===
+      config.llm.baseUrl.replace(/\/+$/, '')
+  ) {
+    // Une gateway peut servir /chat/completions et /embeddings sans /rerank.
+    // Sans ce sondage, l'absence n'apparaît qu'au premier build.
+    const rerank = await probeRerank(config);
+    if (rerank.status === 'ok') {
+      ok('Gateway exposes POST /rerank');
+    } else if (rerank.status === 'unsupported') {
+      err(
+        `Gateway does not expose /rerank (${rerank.detail}) — set retrieval.vector.rerankEnabled: false, or point retrieval.vector.baseUrl at a reranking server.`,
+      );
+    } else {
+      warn(`Could not confirm /rerank support (${rerank.detail})`);
+    }
+  }
+}
 
 function printOllamaHardware(
   config: AppConfig,
@@ -788,6 +889,7 @@ export default async function doctorCmd(
   resetDoctorStatus();
   console.log('\n── Config ──────────────────────────────────────────────────');
   row('provider:', config.llm.provider);
+  row('engine:', describeTarget(config.llm));
   row('model:', config.llm.model);
   row('language:', config.language);
   if (config.llm.numCtx) row('numCtx:', config.llm.numCtx.toLocaleString());
@@ -824,6 +926,10 @@ export default async function doctorCmd(
   const measurements: DoctorMeasurements = {};
   const { ollamaInfo, effectiveNumCtx, effectiveNumCtxSource, probe } =
     await checkProvider(config, resolvedOllamaEnv);
+  // Récupéré une seule fois : il alimente le diagnostic gateway ET le calcul
+  // de recommendedMaxInputTokens plus bas.
+  const gatewayCatalog =
+    config.llm.provider === 'ai-gateway' ? await fetchGatewayCatalog(config) : undefined;
   measurements.provider = probe;
   if (probe?.rateLimitHeaders && Object.keys(probe.rateLimitHeaders).length > 0) {
     row(
@@ -834,7 +940,7 @@ export default async function doctorCmd(
     );
   }
 
-  if (config.llm.provider === 'ollama' && ollamaInfo) {
+  if (isOllamaEngine(config.llm) && ollamaInfo) {
     printOllamaHardware(
       config,
       ollamaInfo,
@@ -843,6 +949,10 @@ export default async function doctorCmd(
       suggestions,
       resolvedOllamaEnv,
     );
+  }
+
+  if (config.llm.provider === 'ai-gateway') {
+    await printGatewayDiagnostics(config, gatewayCatalog);
   }
 
   if (looksLikeMlx(config)) {
@@ -1173,7 +1283,7 @@ export default async function doctorCmd(
         templatePlan.batches.map((batch) => batch.estimatedInputTokens),
       ),
     );
-    const recommendedHardLimit = recommendedMaxInputTokens(config);
+    const recommendedHardLimit = recommendedMaxInputTokens(config, gatewayCatalog);
     const recommendedTarget = recommendedTargetInputTokens(recommendedHardLimit);
     const recommendedBuildContextChars = Math.max(
       1000,
@@ -1235,7 +1345,7 @@ export default async function doctorCmd(
     };
     const recommendedPatch =
       diffConfigPatch(currentComparableConfig, recommendedConfig) ?? {};
-    if (config.llm.provider !== 'ollama' && config.llm.numCtx) {
+    if (!isOllamaEngine(config.llm) && config.llm.numCtx) {
       warn(
         'llm.numCtx is only used for Ollama; for remote providers use limits.maxInputTokensPerCall',
       );

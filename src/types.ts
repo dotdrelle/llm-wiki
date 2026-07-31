@@ -1,14 +1,44 @@
-export type LlmProvider = 'openai' | 'ollama' | 'openai-compatible' | 'anthropic';
+/**
+ * Routage : où l'on tape. Deux valeurs seulement.
+ * - `openai-compatible` : un serveur unique, joint en direct.
+ * - `ai-gateway` : une AI gateway externe (LiteLLM, Bifrost, Portkey…) qui
+ *   route elle-même vers plusieurs providers. Endpoint opaque : aucun
+ *   contournement de serveur local n'est appliqué, la normalisation des
+ *   paramètres est déléguée à la gateway (cf. `drop_params`).
+ */
+export type LlmProvider = 'openai-compatible' | 'ai-gateway';
+
+/**
+ * Moteur : comment se comporte le serveur en face. Porte les contournements
+ * et les calibrations de `doctor`. Non pertinent — et ignoré — lorsque
+ * `provider` vaut `ai-gateway`, où chaque modèle peut avoir un moteur
+ * différent.
+ */
+export type LlmEngine =
+  | 'ollama'
+  | 'vllm'
+  | 'mlx'
+  | 'albert'
+  | 'openai'
+  | 'anthropic'
+  | 'generic';
+
 export type ConfigPresetName = 'albert' | 'openai' | 'ollama' | 'nvidia';
 
 export interface LlmConfig {
   provider: LlmProvider;
+  engine: LlmEngine;
   model: string;
   apiKey?: string;
   baseUrl: string;
   temperature: number;
   timeoutMs: number;
   numCtx?: number;
+  /**
+   * Marge appliquée au plafond de sortie pour absorber le raisonnement, qui
+   * est décompté du même budget que le contenu. Défaut 3, provisoire.
+   */
+  reasoningOutputMultiplier?: number;
   flashAttention?: boolean;
   kvCacheType?: 'f16' | 'q8_0' | 'q4_0';
 }
@@ -39,6 +69,14 @@ export interface RetrievalConfig {
 
 export interface VectorRetrievalConfig {
   enabled: boolean;
+  /**
+   * Hérités du bloc `llm` quand absents du fichier — `resolveConfig` les
+   * renseigne toujours. Optionnels dans le type parce qu'aucun consommateur
+   * n'y branche de comportement aujourd'hui : ils servent à `doctor` et au
+   * wizard, qui savent retomber sur le bloc `llm`.
+   */
+  provider?: LlmProvider;
+  engine?: LlmEngine;
   baseUrl: string;
   apiKey?: string;
   requestsPerMinute?: number;

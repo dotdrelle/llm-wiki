@@ -11,7 +11,9 @@ function createConfig(root: string): AppConfig {
     wikiRoot: root,
     language: 'fr',
     llm: {
-      provider: 'ollama',
+      provider: 'openai-compatible',
+
+      engine: 'ollama',
       model: 'qwen2.5:14b',
       apiKey: 'ollama',
       baseUrl: 'http://127.0.0.1:11434/v1',
@@ -69,8 +71,9 @@ describe('workspace safety', () => {
       .split('\n')
       .filter((line) => line.trim() && !line.trimStart().startsWith('#'));
     // +2 for build.refreshOnIngest, then +1 because limits now uses the
-    // readable multi-line YAML form instead of an inline object.
-    expect(effectiveLines).toHaveLength(20);
+    // readable multi-line YAML form instead of an inline object, then +1 for
+    // llm.engine (provider/engine split).
+    expect(effectiveLines).toHaveLength(21);
     expect(rawConfig).toContain('apiKey: YOUR_LLM_API_KEY');
     expect(rawConfig).toContain('apiKey: YOUR_VECTOR_API_KEY');
     expect(rawConfig).not.toContain('apiKeyEnv:');
@@ -78,6 +81,7 @@ describe('workspace safety', () => {
     const initializedConfig = await loadConfig(root);
     expect(initializedConfig.preset).toBeUndefined();
     expect(initializedConfig.llm.provider).toBe('openai-compatible');
+    expect(initializedConfig.llm.engine).toBe('generic');
     expect(initializedConfig.llm.baseUrl).toBe('https://mon-provider.example.com/v1');
     expect(initializedConfig.llm.apiKey).toBe('YOUR_LLM_API_KEY');
     expect(initializedConfig.retrieval.vector.apiKey).toBe('YOUR_VECTOR_API_KEY');

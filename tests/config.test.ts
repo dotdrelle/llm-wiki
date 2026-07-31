@@ -28,7 +28,9 @@ describe('config resolution', () => {
     const config = resolveConfig(
       {
         llm: {
-          provider: 'ollama',
+          provider: 'openai-compatible',
+
+          engine: 'ollama',
           model: 'qwen2.5:14b',
         },
       },
@@ -84,6 +86,9 @@ describe('config resolution', () => {
 
     expect(config.retrieval.vector).toEqual({
       enabled: true,
+      // Hérités du bloc llm en l'absence de valeurs propres.
+      provider: 'openai-compatible',
+      engine: 'openai',
       baseUrl: 'https://api.openai.com/v1',
       apiKey: undefined,
       requestsPerMinute: 10,
@@ -250,6 +255,7 @@ describe('config resolution', () => {
         language: 'fr',
         llm: {
           provider: 'openai-compatible',
+          engine: 'generic',
           baseUrl: 'https://provider.example.test/v1',
           model: 'custom-model',
           apiKey: 'custom-secret',
@@ -268,6 +274,7 @@ describe('config resolution', () => {
       {
         llm: {
           provider: 'openai-compatible',
+          engine: 'generic',
           baseUrl: 'https://provider.example.test/v1',
           model: 'custom-model',
           apiKey: 'workspace-llm-secret',
@@ -292,12 +299,13 @@ describe('config resolution', () => {
         {
           llm: {
             provider: 'openai-compatible',
+            engine: 'generic',
             model: 'custom-model',
           },
         },
         '/tmp/wiki',
       ),
-    ).toThrow(/requires llm\.baseUrl/i);
+    ).toThrow(/requires an explicit llm\.baseUrl/i);
   });
 
   it('loads config from parent directories', async () => {
@@ -306,13 +314,14 @@ describe('config resolution', () => {
     await mkdir(nested, { recursive: true });
     await writeFile(
       path.join(root, '.wikirc.yaml'),
-      ['llm:', '  provider: ollama', '  model: llama3.1'].join('\n'),
+      ['llm:', '  provider: openai-compatible', '  engine: ollama', '  model: llama3.1'].join('\n'),
       'utf8',
     );
 
     const config = await loadConfig(nested);
     expect(config.wikiRoot).toBe(root);
-    expect(config.llm.provider).toBe('ollama');
+    expect(config.llm.provider).toBe('openai-compatible');
+    expect(config.llm.engine).toBe('ollama');
   });
 
   it('prefers WIKI_WORKSPACE_PATH when loading config', async () => {
@@ -320,12 +329,12 @@ describe('config resolution', () => {
     const other = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-config-other-'));
     await writeFile(
       path.join(root, '.wikirc.yaml'),
-      ['llm:', '  provider: ollama', '  model: llama3.1'].join('\n'),
+      ['llm:', '  provider: openai-compatible', '  engine: ollama', '  model: llama3.1'].join('\n'),
       'utf8',
     );
     await writeFile(
       path.join(other, '.wikirc.yaml'),
-      ['llm:', '  provider: openai', '  model: gpt-4o'].join('\n'),
+      ['llm:', '  provider: openai-compatible', '  engine: openai', '  model: gpt-4o'].join('\n'),
       'utf8',
     );
     process.env.WIKI_WORKSPACE_PATH = root;
@@ -333,7 +342,8 @@ describe('config resolution', () => {
     const config = await loadConfig(other);
 
     expect(config.wikiRoot).toBe(root);
-    expect(config.llm.provider).toBe('ollama');
+    expect(config.llm.provider).toBe('openai-compatible');
+    expect(config.llm.engine).toBe('ollama');
     expect(config.llm.model).toBe('llama3.1');
   });
 
@@ -341,12 +351,12 @@ describe('config resolution', () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-config-explicit-'));
     await writeFile(
       path.join(root, '.wikirc.yaml'),
-      ['llm:', '  provider: ollama', '  model: default-model'].join('\n'),
+      ['llm:', '  provider: openai-compatible', '  engine: ollama', '  model: default-model'].join('\n'),
       'utf8',
     );
     await writeFile(
       path.join(root, '.wikirc.yaml.openai'),
-      ['llm:', '  provider: openai', '  model: gpt-4o'].join('\n'),
+      ['llm:', '  provider: openai-compatible', '  engine: openai', '  model: gpt-4o'].join('\n'),
       'utf8',
     );
     process.env.WIKI_WORKSPACE_PATH = root;
@@ -356,7 +366,43 @@ describe('config resolution', () => {
 
     expect(config.configPath).toBe(path.join(root, '.wikirc.yaml.openai'));
     expect(config.wikiRoot).toBe(root);
-    expect(config.llm.provider).toBe('openai');
+    expect(config.llm.provider).toBe('openai-compatible');
+    expect(config.llm.engine).toBe('openai');
     expect(config.llm.model).toBe('gpt-4o');
+  });
+});
+
+describe('baseUrl : aucun repli implicite vers OpenAI', () => {
+  // Revue #1 : un `else` par défaut faisait retomber tout moteur sans baseUrl
+  // sur api.openai.com — la clé d'un serveur local partait donc chez OpenAI.
+  it.each(['vllm', 'mlx', 'generic'])(
+    'refuse le moteur auto-hébergé %s sans baseUrl explicite',
+    (engine) => {
+      expect(() =>
+        resolveConfig(
+          { llm: { provider: 'openai-compatible', engine, model: 'm', apiKey: 'local' } },
+          '/tmp/wiki',
+        ),
+      ).toThrow(/requires an explicit llm.baseUrl/);
+    },
+  );
+
+  it.each([
+    ['ollama', 'http://127.0.0.1:11434/v1'],
+    ['openai', 'https://api.openai.com/v1'],
+    ['anthropic', 'https://api.anthropic.com/v1'],
+    ['albert', 'https://albert.api.etalab.gouv.fr/v1'],
+  ])('accepte %s sans baseUrl et vise %s', (engine, expected) => {
+    const config = resolveConfig(
+      { llm: { provider: 'openai-compatible', engine, model: 'm', apiKey: 'k' } },
+      '/tmp/wiki',
+    );
+    expect(config.llm.baseUrl).toBe(expected);
+  });
+
+  it('exige une baseUrl derrière une gateway', () => {
+    expect(() =>
+      resolveConfig({ llm: { provider: 'ai-gateway', model: 'm', apiKey: 'k' } }, '/tmp/wiki'),
+    ).toThrow(/requires llm.baseUrl/);
   });
 });
