@@ -86,9 +86,13 @@ describe('workspace safety', () => {
     expect(initializedConfig.llm.apiKey).toBe('YOUR_LLM_API_KEY');
     expect(initializedConfig.retrieval.vector.apiKey).toBe('YOUR_VECTOR_API_KEY');
     expect(initializedConfig.retrieval.vector.rerankEnabled).toBe(true);
-    expect(initializedConfig.retrieval.vector.rerankerModel).toBe(
-      'BAAI/bge-reranker-v2-m3',
-    );
+    // Les noms de modèles sont des marqueurs, pas des valeurs plausibles : le
+    // même modèle est publié sous des identifiants différents selon le serveur
+    // qui l'expose (`BAAI/bge-m3` sur vLLM ou Infinity, `bge-m3` sur Albert).
+    // En livrer une orthographe donnait à un champ jamais rempli l'apparence
+    // d'un choix, et le wizard la reprenait comme telle.
+    expect(initializedConfig.retrieval.vector.embeddingModel).toBe('YOUR_EMBEDDING_MODEL');
+    expect(initializedConfig.retrieval.vector.rerankerModel).toBe('YOUR_RERANKER_MODEL');
     await expect(
       readFile(path.join(root, '.wiki', 'profile.md'), 'utf8'),
     ).resolves.toContain('# Workspace Profile');

@@ -152,6 +152,42 @@ const err = (msg: string) => {
 const row = (label: string, value: string) =>
   console.log(`  ${label.padEnd(24)} ${value}`);
 
+/**
+ * Valeurs que le scaffold écrit pour documenter la forme du fichier.
+ *
+ * Elles partent telles quelles vers l'API si une étape du setup est sautée, et
+ * la panne se manifeste alors très loin de sa cause : un 404 au premier
+ * `ingest` plutôt qu'une ligne de configuration jamais remplie.
+ */
+const SCAFFOLD_PLACEHOLDER_RE = /^(YOUR_|<your)/i;
+
+function reportScaffoldPlaceholders(config: AppConfig): void {
+  const candidates: Array<[string, string | undefined]> = [
+    ['llm.model', config.llm.model],
+    ['llm.apiKey', config.llm.apiKey],
+  ];
+  if (config.retrieval.vector.enabled) {
+    candidates.push(
+      ['retrieval.vector.apiKey', config.retrieval.vector.apiKey],
+      ['retrieval.vector.embeddingModel', config.retrieval.vector.embeddingModel],
+    );
+    if (config.retrieval.vector.rerankEnabled !== false) {
+      candidates.push(['retrieval.vector.rerankerModel', config.retrieval.vector.rerankerModel]);
+    }
+  }
+  for (const [path, value] of candidates) {
+    if (typeof value === 'string' && SCAFFOLD_PLACEHOLDER_RE.test(value.trim())) {
+      err(
+        `${path} still holds the scaffold placeholder "${value}" — run \`wiki-manager setup\`, or set it to an id returned by GET ${
+          path.startsWith('retrieval')
+            ? config.retrieval.vector.baseUrl
+            : config.llm.baseUrl
+        }/models`,
+      );
+    }
+  }
+}
+
 function printDoctorStatus(): void {
   console.log('\n── Doctor status ───────────────────────────────────────────');
   if (doctorStatus.errors > 0) {
@@ -918,6 +954,8 @@ export default async function doctorCmd(
   row('vector.topK:', String(config.retrieval.vector.topK));
   row('vector.rerankTopK:', String(config.retrieval.vector.rerankTopK));
   row('vector.maxResults:', String(config.retrieval.vector.maxResults));
+
+  reportScaffoldPlaceholders(config);
 
   console.log('\n── Provider ────────────────────────────────────────────────');
   const rawOllamaEnv = readOllamaProcessEnv();

@@ -44,6 +44,27 @@ then, if needed, `/services` (container state). Each case below gives the
   running; in chat, ask for the connector's status. If it needs configuration,
   DONNA will ask only for the required fields, then set it up after confirmation.
 
+## A service is "unavailable or disabled"
+
+- **Symptom**: DONNA answers that a service — the connectors service, for
+  example — is unavailable or disabled, and its container is nowhere to be seen,
+  not even stopped, in the service list.
+- **Cause**: some optional services sit behind a Docker Compose *profile*. While
+  the profile is off, the container does not exist at all: it is invisible to
+  every Compose command, `ps` included. This looks exactly like a service that
+  crashed, but nothing ever started.
+- **Fix**: the switch is a flag in the **manager's `.env`** file, next to
+  `docker-compose.yml` — not in the workspace `.wikirc.yaml`, and not in any
+  per-connector file. For the connectors service the flag is
+  `CONNECTORS_ENABLED`:
+
+  1. set `CONNECTORS_ENABLED=true` in the manager `.env`
+  2. run `/start agents` (or `wiki-workspace agents up`) to start the container
+  3. run `/connector list` to check it answers
+
+  Once the flag is on, a missing container is reported as a real failure rather
+  than as an opt-out. `/connector list` states which of the two cases you are in.
+
 ## Ingestion rejects pages
 
 - **Symptom**: at the dry-run, some pages are marked rejected.

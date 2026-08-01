@@ -56,9 +56,16 @@ retrieval:
     # sent to a different host.
     baseUrl: http://infinity.local:7997/v1
     apiKey: YOUR_VECTOR_API_KEY
-    embeddingModel: BAAI/bge-m3
+
+    # Model names must match an id returned by `GET <baseUrl>/models` on YOUR
+    # server, exactly. The same weights are published under different ids
+    # depending on who serves them: `BAAI/bge-m3` on vLLM or Infinity, which
+    # serve under the Hugging Face repo id, but `bge-m3` on Albert. Shipping
+    # one of those spellings as a default made the wrong one look configured.
+    # `wiki doctor` lists what your endpoint actually exposes.
+    embeddingModel: YOUR_EMBEDDING_MODEL
     rerankEnabled: true
-    rerankerModel: BAAI/bge-reranker-v2-m3
+    rerankerModel: YOUR_RERANKER_MODEL
     requestsPerMinute: 1000
 
 mcp:
