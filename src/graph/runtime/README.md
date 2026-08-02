@@ -1,16 +1,17 @@
-Intentionally still empty after 0.10.2.
+# Runtime graph
 
-The Run/Task graph landed in `src/chat/runtime/runtimeGraphScript.ts` instead
-of here: it renders from live browser-side `runtimeState.workflow` data as
-part of the chat runtime UI's script pipeline, not from a Node-side
-`buildXGraph()` projection over files the way `graph/wiki/projection.ts`
-works — there was no build-time projection to place in this directory.
+The live Run/Task projection is assembled in
+`src/chat/runtime/runtimeGraphScript.ts` from `runtimeState.workflow`.
 
-It still shares the actual D3 socle: `../core/graphForce.ts`
-(`renderForceLinks`/`createForceNode`) holds the node/link SVG creation
-mechanics used by both this graph and the wiki graph. The runtime graph's
-layout is its own layered left-to-right DAG (topological depth over
-`depends_on` edges, in `runtimeGraphScript.ts`); `computeRadialForceLayout`
-remains the wiki graph's radial force mode. Do not reimplement
-`d3.forceSimulation`/SVG node creation in `src/chat/runtime/` again — extend
-`graphForce.ts`.
+Rendering is Canvas 2.5D through `runtimeCanvasScript.ts`. It shares the
+projection-agnostic camera and invalidation scheduler in `graph/core/canvas/`
+with the wiki explorer. Activity and Execution reuse the same renderer and
+inspector; only their surrounding layout changes.
+
+Runtime SSE updates replace scene data without resetting the camera or saved
+node positions. A topology change triggers a fit, while status/progress-only
+updates repaint in place. Running nodes animate on demand; idle and hidden
+graphs do not keep a permanent animation loop.
+
+Keep runtime vocabulary and hierarchy here. The shared Canvas core must not
+contain run, task, agent, wiki, document, or community concepts.

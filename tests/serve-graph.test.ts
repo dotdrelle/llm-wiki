@@ -124,10 +124,6 @@ async function graphProjectionSource(): Promise<string> {
   return readFile(path.resolve(import.meta.dirname, '../src/graph/wiki/projection.ts'), 'utf8');
 }
 
-async function graphForceSource(): Promise<string> {
-  return readFile(path.resolve(import.meta.dirname, '../src/graph/core/graphForce.ts'), 'utf8');
-}
-
 async function runtimeGraphSource(): Promise<string> {
   return readFile(path.resolve(import.meta.dirname, '../src/chat/runtime/runtimeGraphScript.ts'), 'utf8');
 }
@@ -135,11 +131,22 @@ async function runtimeGraphSource(): Promise<string> {
 describe('serve graph ui', () => {
   it('fits the graph content to the page on the initial map render', () => {
     const html = renderWikiGraphV2();
-
-    expect(html).toContain('function fitCurrentSvg(maxZoom=Infinity)');
-    expect(html).toContain('bounds=visibleRootBounds(svg,root)');
-    expect(html).toContain('mapViewBox=fitCurrentSvg()');
-    expect(html).not.toContain("[-w*.75,-h*.75,w*2.5,h*2.5].join(' ')");
+    // Le cadrage résout l'échelle à partir des débords réels de chaque
+    // constellation. Le facteur 1.35 qui figurait ici compensait une formule
+    // qui traitait un halo — proportionnel au zoom — comme une marge fixe ;
+    // il masquait le défaut sur un format, et débordait sur les autres.
+    expect(html).not.toContain('target.scale*1.35');
+    expect(html).toContain('function communityRadius');
+    /*
+     La division est devenue un point fixe. Elle supposait que le nœud le plus
+     large occupait les deux extrémités du cadre à la fois : une majoration qui
+     n'arrive jamais et qui laissait, mesurée sur une vue de domaine réelle,
+     25 % du cadre inutilisé en largeur et 33 % en hauteur.
+    */
+    expect(html).not.toContain('const scale=Math.min((inner-fixedX*2)');
+    expect(html).toContain('const envelope=scale=>{');
+    expect(html).toContain('function overflow(node,scale)');
+    expect(html).toContain("document.querySelector('#fit').addEventListener('click',()=>canvasExplorer?.fit())");
   });
 
   it('renders sidebar chat and graph actions as two wide buttons', async () => {
@@ -288,202 +295,49 @@ describe('serve graph ui', () => {
     expect(routesSource).toContain('structureEtag: current.structureEtag');
     expect(routesSource).toContain('topologyEtag: current.topologyEtag');
     expect(routesSource).toContain('workspaceNameFromEnv');
-    expect(graphHtml).toContain("n.community?.communityLabel||'—'");
+    expect(graphHtml).toContain("node.community?.communityLabel||'—'");
     expect(graphHtml).toContain("function nodePositionKey(id){return 'llm-wiki:graph:node:'+encodeURIComponent(data?.workspace||'wiki')+':'+id}");
     expect(graphHtml).not.toContain("localStorage.setItem('llm-wiki:graph:node:'+n.id");
   });
 
-  it('renders Community through its dedicated deterministic renderer', () => {
-    const html = renderWikiGraphV2();
-
-    expect(html).toContain('function renderCommunityView()');
-    expect(html).toContain("if(view==='focus'){renderFocus()");
-    expect(html).toContain('renderCommunityView()}');
-    expect(html).toContain('data.communityEdges||[]');
-    expect(html).toContain("communityExpanded.has(c.id)?' is-expanded':'");
-    expect(html).not.toContain('function renderCommunityView(){const simulation=d3.forceSimulation');
+  it('renders Document Focus in the selection panel without embedding document content', () => {
+    const graphHtml = renderWikiGraphV2();
+    // Le focus document ouvrait une fenêtre distincte, superposée à
+    // l'inspecteur qui listait déjà les mêmes documents. Un seul panneau
+    // désormais, dont l'en-tête change avec le niveau.
+    expect(graphHtml).not.toContain('document-focus-window');
+    expect(graphHtml).toContain('<small>DOCUMENT</small>');
+    expect(graphHtml).toContain("data-preview-doc");
+    expect(graphHtml).toContain("data-send-doc");
+    expect(graphHtml).not.toContain('function graphImpactFor');
+    expect(graphHtml).not.toContain('Analyze impact');
+    expect(graphHtml).not.toContain("'<div class=\"card doc-html\">'+documentData.html");
   });
 
-  it('supports Community expansion, isolation, semantic shapes and zoom tiers', () => {
-    const html = renderWikiGraphV2();
-
-    expect(html).toContain('if(!event.shiftKey)communityExpanded.clear()');
-    expect(html).toContain(".on('dblclick',(event,c)=>");
-    expect(html).toContain('isolatedCommunity=c.id');
-    expect(html).toContain("isolatedCommunity?'near':'far'");
-    expect(html).toContain("isolatedCommunity?'near':event.transform.k<.8");
-    expect(html).toContain("node.type==='raw-source'?'none':color");
-    expect(html).toContain("node.type==='wiki-source'");
-    expect(html).toContain("node.type==='template'||node.type==='build-context'");
-    expect(html).toContain("node.type==='deliverable'?'rect':'path'");
-    expect(html).toContain("node.type==='wiki'?'circle'");
-    expect(html).toContain(".attr('stroke',color)");
-    expect(html).not.toContain('.community-v3-node-shape{stroke:var(--bg)');
-    expect(html).toContain("event.transform.k<.8?'far':event.transform.k<1.65?'medium':'near'");
+  it('returns Focus to Community and Community to the initial Map', () => {
+    const graphHtml = renderWikiGraphV2();
+    expect(graphHtml).toContain("if(view==='focus'&&selectedCommunity)navigateGraphLevel('community');else navigateGraphLevel('map')");
+    expect(graphHtml).toContain("if(level==='map'){view='map';selected=null;selectedCommunity=null;focusHistory.length=0}");
+    expect(graphHtml).toContain("document.querySelector('#focus-back').hidden=view==='map'||view==='list'");
   });
 
-  it('persists dragged Community positions per workspace and topology', () => {
-    const html = renderWikiGraphV2();
-
-    expect(html).toContain("'llm-wiki:graph:community:'+encodeURIComponent(data?.workspace||'wiki')+':'+id");
-    expect(html).toContain('saved?.topologyEtag===data?.topologyEtag');
-    expect(html).toContain('topologyEtag:data.topologyEtag');
-    expect(html).toContain(".on('end',(_,c)=>saveCommunityPosition(c.id,positions.get(c.id)))");
+  it('opens previews from file icons and sends the selected file to Donna', () => {
+    const graphHtml = renderWikiGraphV2();
+    expect(graphHtml).toContain('function previewGraphDocument(id)');
+    expect(graphHtml).toContain("type:'llmwiki:addContext'");
+    expect(graphHtml).toContain("class=\"community-doc-action\" data-preview-doc");
+    expect(graphHtml).toContain("class=\"community-doc-action\" data-send-doc");
   });
 
-  it('restores the Community overview cleanly after isolation', () => {
-    const html = renderWikiGraphV2();
 
-    expect(html).toContain('communityExpandedBeforeIsolation.forEach(id=>communityExpanded.add(id))');
-    expect(html).toContain('isolatedCommunity=null;selected=null;selectedCommunity=null;communityZoom=d3.zoomIdentity');
-    expect(html).toContain('focusHistory.length=0');
-  });
 
-  it('refits the visible Community subset after filters and resets its zoom state', () => {
-    const html = renderWikiGraphV2();
-
-    expect(html).toContain("if(view==='community')communityZoom=d3.zoomIdentity");
-    expect(html).toContain("if(view==='community')requestAnimationFrame(()=>fitCurrentSvg(1.4))");
-    expect(html).toContain("property('__zoom',d3.zoomIdentity).select('g').attr('transform',null)");
-  });
-
-  it('opens linked communities and supports single-document relation navigation', () => {
-    const html = renderWikiGraphV2();
-
-    expect(html).toContain('neighborCommunity=data.communities.find');
-    expect(html).toContain('communityExpanded.add(neighborCommunity.id)');
-    expect(html).toContain("selectAll('.focus-link,.link,.community-v3-detail-edge')");
-    expect(html).toContain("selectAll('.focus-card,.node,.map-community,.community-v3-node')");
-    expect(html).toContain('if(target)selectDocument(target)');
-    expect(html).toContain('<span>Active relations</span>');
-    expect(html).toContain('<span>Hidden by filters</span>');
-    expect(html).toContain('addCommunityLegend()');
-  });
-
-  it('refits Provenance Focus instead of accumulating zoom on document navigation', () => {
-    const html = renderWikiGraphV2();
-
-    expect(html).toContain("if(view==='focus'){centerFocusContent();fitCurrentSvg()}");
-    expect(html).not.toContain("if(view==='focus')zoomCurrentSvg(1.35)");
-  });
-
-  it('does not zoom Community Fit beyond normal scale and hides unrelated links', () => {
-    const html = renderWikiGraphV2();
-
-    expect(html).toContain('function fitCurrentSvg(maxZoom=Infinity)');
-    expect(html).toContain("fitCurrentSvg(view==='community'?1.4:Infinity)");
-    expect(html).toContain('requestAnimationFrame(()=>fitCurrentSvg(1.4))');
-    expect(html).toContain("selected?e.from===selected.id||e.to===selected.id");
-    expect(html).toContain("aggregateGroups.style('display','none')");
-  });
-
-  it('numbers Community nodes, exposes a scrollable document index and allows local dragging', () => {
-    const html = renderWikiGraphV2();
-
-    expect(html).toContain("attr('class','community-v3-node-number').text((_,index)=>index+1)");
-    expect(html).toContain("stack.className='community-document-index-stack'");
-    expect(html).toContain("panel.className='community-document-index'");
-    expect(html).toContain('community-document-index-list');
-    expect(html).toContain('.community-document-index-list{min-height:0;overflow:auto');
-    expect(html).toContain('.community-document-index-stack{position:absolute');
-    expect(html).toContain('background:color-mix(in srgb,var(--community-color,var(--line)) 20%,var(--panel))');
-    expect(html).toContain('background:color-mix(in srgb,var(--community-color,var(--line)) 24%,var(--panel))');
-    expect(html).toContain("communities.filter(community=>communityExpanded.has(community.id))");
-    expect(html).toContain("nodeGroups.call(d3.drag()");
-    expect(html).toContain("subject((_,node)=>({...local.get(node.id)}))");
-    expect(html).toContain("limit=Math.max(12,radius-18)");
-    expect(html).toContain("scale=Math.min(1,limit/distance)");
-    expect(html).toContain("local.set(node.id,point)");
-    expect(html).toContain('renderCommunityDocumentIndexes(shown,nodeById)');
-  });
-
-  it('shows complete truncated brick names in a clickable Focus index', () => {
-    const html = renderWikiGraphV2();
-
-    expect(html).toContain('function renderFocusNameIndex()');
-    expect(html).toContain('node.title.length>24');
-    expect(html).toContain("panel.className='focus-name-index'");
-    expect(html).toContain('renderFocusNameIndex()');
-    expect(html).toContain('.focus-name-index{position:absolute');
-    expect(html).toContain("data-doc=\"'+esc(node.id)");
-  });
-
-  it('reflects Foundation and other active filters in all graph counters', () => {
-    const html = renderWikiGraphV2();
-
-    expect(html).toContain('function updateCommunityFilterCounts(nodes)');
-    expect(html).toContain("counter.textContent=String(count)");
-    expect(html).toContain("summary.textContent=visibleCommunities.length+' communities · '+current.nodes.length+' documents · '+current.edges.length+' relations'");
-    expect(html).toContain("text(members.length+' docs')");
-    expect(html).toContain("text(c=>visibleCounts.get(c.id)+' pages')");
-  });
-
-  it('uses aggregate Map links without drawing invalid document-level overlays', () => {
-    const html = renderWikiGraphV2();
-
-    expect(html).toContain("selectAll('.map-community-link').classed('is-highlighted'");
-    expect(html).not.toContain("attr('class','selection-chain')");
-    expect(html).not.toContain("attr('class','selection-chain-link')");
-  });
-
-  it('keeps the selected Map document visible and labels it by name', () => {
-    const html = renderWikiGraphV2();
-
-    expect(html).toContain("selectedMember=members.find(n=>n.id===selected?.id)");
-    expect(html).toContain("displayed[23]=selectedMember");
-    expect(html).toContain("attr('class','map-selected-document-label')");
-    expect(html).toContain("text(n.title)");
-    expect(html).toContain("if(['community','list','map'].includes(view))render()");
-  });
-
-  it('automatically fits Community when switching views with a bounded zoom', () => {
-    const html = renderWikiGraphV2();
-
-    expect(html).toContain("if(view==='community')communityZoom=d3.zoomIdentity");
-    expect(html).toContain("render();if(view==='community')requestAnimationFrame(()=>fitCurrentSvg(1.4))");
-    expect(html).toContain('Number.isFinite(maxZoom)');
-  });
-
-  it('preserves the selected document from Map to Community and refits each scope', () => {
-    const html = renderWikiGraphV2();
-
-    expect(html).toContain("if(nextView!==view){selectedCommunity=null;lockedRelation=null;focusHistory.length=0;resetCommunityViewState();if(nextView==='community'&&selected)openCommunityForDocument(selected.id)");
-    expect(html).toContain("if(view==='map')mapViewBox=fitHighlightedMap()||mapViewBox");
-    expect(html).toContain("if(view==='community')fitCurrentSvgIfNeeded(1.4)");
-    expect(html).toContain("function fitHighlightedMap()");
-    expect(html).toContain("function fitCurrentSvgIfNeeded(maxZoom=1.4)");
-    expect(html).toContain("content=root.getBoundingClientRect()");
-    expect(html).toContain("if(!outside)return null");
-    expect(html).toContain("function visibleRootBounds(svg,root)");
-    expect(html).toContain("svg.getScreenCTM()?.inverse()");
-    expect(html).not.toContain("root.removeAttribute('transform')");
-    expect(html).toContain("communityPositions.set(community.id,position);return position");
-    expect(html).not.toContain("communityExpanded.add(id);communityZoom=d3.zoomIdentity");
-    expect(html).toContain("selected=null;selectedCommunity=id;if(view==='community')");
-    expect(html).toContain("applyCommunityHighlight();if(view==='community')fitCurrentSvgIfNeeded(1.4)");
-    expect(html).toContain("view=nextView;document.querySelectorAll('[data-view]')");
-  });
-
-  it('keeps user bubble positions while checking Fit after every document navigation', () => {
-    const html = renderWikiGraphV2();
-
-    expect(html).toContain("if(view==='community')fitCurrentSvgIfNeeded(1.4)");
-    expect(html).not.toContain('previousCommunityIds=');
-    expect(html).not.toContain('if(addedCommunity)');
-  });
-
-  it('runtime workflow graph reuses the shared D3 force socle instead of forking it', async () => {
+  it('runtime workflow graph reuses the shared Canvas camera and scheduler', async () => {
     const runtimeSource = await runtimeGraphSource();
-    const forceSource = await graphForceSource();
-
-    expect(runtimeSource).toContain("import { graphForceScript } from '../../graph/core/graphForce.ts';");
-    expect(runtimeSource).toContain('${graphForceScript()}');
-    expect(runtimeSource).toContain('computeRuntimeWorkflowLayeredLayout(nodes,relations)');
-    expect(runtimeSource).not.toContain('computeRadialForceLayout(');
-    expect(runtimeSource).toContain('renderForceLinks(linkLayer,relations,nodes,');
-    expect(runtimeSource).toContain('createForceNode(nodeLayer,node,');
+    expect(runtimeSource).toContain("import { graphCanvasScript } from '../../graph/core/canvas/graphCanvasScript.ts';");
+    expect(runtimeSource).toContain('${graphCanvasScript()}');
+    expect(runtimeSource).toContain('${RUNTIME_CANVAS_SCRIPT}');
+    expect(runtimeSource).toContain('renderRuntimeWorkflowCanvas()');
     expect(runtimeSource).not.toContain('d3.forceSimulation');
-    expect(forceSource).toContain('d3.forceSimulation(nodes)');
   });
 });
 

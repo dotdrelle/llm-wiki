@@ -165,7 +165,7 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('id="execution-view"');
     expect(CHAT_HTML).toContain('id="runtime-graph-center"');
     expect(CHAT_HTML).toContain('body.execution-mode #execution-view{display:flex}');
-    expect(CHAT_HTML).toContain('<script src="/assets/d3.min.js"></script>');
+    expect(CHAT_HTML).not.toContain('<script src="/assets/d3.min.js"></script>');
     expect(script).toContain('function runtimeWorkflowGraphData()');
     expect(script).toContain('runtimeState?.workflow||{}');
     expect(script).toContain('function renderRuntimeWorkflowGraph()');
@@ -313,55 +313,32 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('#wiki-side-host iframe{display:block;width:100%;height:100%;border:0;background:var(--bg)}');
   });
 
-  it('renders draggable colored workflow bubbles with fit zoom and a relation legend', () => {
+  it('renders a draggable Canvas workflow with live status, fit zoom and a relation legend', () => {
     const [script] = chatScripts();
 
-    expect(script).toContain('bubble.style.fill=runtimeWorkflowColor(node)');
-    expect(script).not.toContain("setAttribute('fill',runtimeWorkflowColor");
-    expect(script).toContain('window.d3.drag()');
-    expect(script).toContain(".on('drag',event=>");
-    expect(script).toContain('window.d3.zoom().scaleExtent([.25,3])');
-    expect(script).toContain('runtimeWorkflowZoomTransform=event.transform');
-    expect(script).toContain('runtimeWorkflowZoomTransform||(nodes.length?runtimeWorkflowFitTransform(nodes):null)');
-    expect(script).toContain('function computeRuntimeWorkflowLayeredLayout(nodes,relations)');
-    expect(script).toContain("const taskNodes=workflowNodes.filter(node=>node.type==='task');");
-    expect(script).toContain("const phases=[...buckets].map");
-    expect(script).toContain("type:'task_group'");
+    expect(script).toContain('id="runtime-graph-canvas"');
+    expect(script).toContain('function runtimeStatusColor(status)');
+    expect(script).toContain('runtimeCanvasPositions.set');
+    expect(script).toContain('createGraphCamera(scheduler)');
+    expect(script).toContain('camera.zoomAt');
+    // Plus de mini-carte : sur un graphe d'exécution qui tient dans son cadre,
+    // elle n'orientait personne et occupait un coin. Le bouton « Fit » et le
+    // panneau de droite remplissent son rôle.
+    expect(script).not.toContain('runtime-graph-minimap');
+    expect(script).not.toContain('drawMini');
+    // Le halo est pré-rendu : shadowBlur, un flou gaussien par nœud et par
+    // image, tournait en continu dès qu'une tâche était en cours.
+    expect(script).not.toContain('context.shadowBlur');
+    expect(script).toContain('function glowSprite(');
+    // Le geste se termine partout où il peut se terminer, capture comprise.
+    expect(script).toContain("canvas.addEventListener('pointercancel'");
+    expect(script).toContain('canvas.releasePointerCapture(captured)');
+    expect(script).toContain("node.status==='running'");
+    expect(script).toContain('if(changed)fit();scheduler.invalidate()');
     expect(script).toContain('function runtimeWorkflowSummaryHTML()');
-    expect(script).toContain('formatRuntimeTokens(run?.usage)');
-    expect(script).toContain('const runSummary=runtimeWorkflowSummaryHTML()');
-    expect(script).toContain('return status+runSummary+runCard+synthesisHtml+planHTML+queueHTML');
     expect(script).toContain('function selectRuntimeWorkflowTask(taskId)');
-    expect(script).toContain('onclick="selectRuntimeWorkflowTask(this.dataset.taskId)"');
-    expect(script).toContain('Execution sequence · task ${selectedTaskIndex+1}/${taskRows.length}');
-    expect(script).toContain("type:'task_detail'");
-    expect(script).toContain("id:'detail:'+expandedPhase.id+':'+taskId");
-    expect(script).toContain("relations.push({id:'detail-dep:'");
-    expect(script).toContain("lanes.push({label:'Selected phase · task DAG'");
-    expect(script).toContain("node.type==='task_detail'?()=>selectRuntimeWorkflowTask(node.taskId)");
-    expect(script).toContain('const runtimeWorkflowStatusByNode=new Map()');
-    expect(script).toContain("statusChanged?' status-changed':''");
-    expect(script).toContain("active?' is-active-flow':''");
-    expect(script).toContain('<span class="runtime-live-indicator">● Live</span>');
-    expect(script).toContain('const savedPositions=new Map(nodes.flatMap');
-    expect(script).toContain('const saved=savedPositions.get(node.id)');
-    expect(script).toContain('savedAnchor?.x??anchor?.x??left');
-    expect(script).toContain("Math.max(.1,minutes).toFixed(1):Math.round(minutes))+' min'");
-    expect(script).toContain('runtimeWorkflowUserSelected?phases.find(phase=>phase.id===selectedWorkflowNodeId):null');
-    expect(script).toContain('runtimeWorkflowLabelPrefix(nodes)');
-    expect(script).toContain("setAttribute('class','runtime-graph-lane')");
-    expect(CHAT_HTML).toContain('.runtime-graph-lane{');
     expect(CHAT_HTML).toContain('class="runtime-graph-legend"');
     expect(CHAT_HTML).toContain('Sequence / dependency');
-    expect(CHAT_HTML).toContain('Parallel ${currentParallel} / max ×${maxParallel}');
-    expect(CHAT_HTML).toContain('.runtime-graph-node circle{stroke:var(--panel);stroke-width:3;');
-    expect(CHAT_HTML).toContain('onclick="resetRuntimeWorkflowGraph()"');
-    expect(CHAT_HTML).toContain('onclick="fitRuntimeWorkflowGraph()"');
-    expect(CHAT_HTML).toContain('onclick="zoomRuntimeWorkflowGraph(.8)"');
-    expect(CHAT_HTML).toContain('onclick="zoomRuntimeWorkflowGraph(1.25)"');
-    expect(script).toContain('function zoomRuntimeWorkflowGraph(factor)');
-    expect(script).toContain('runtimeWorkflowZoomBehavior.scaleBy,factor');
-    expect(CHAT_HTML).toContain('runtimeWorkflowNodePositions.set(node.id');
   });
 
   it('offers runtime-backed config profile switching without page reload', () => {

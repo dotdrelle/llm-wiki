@@ -1,6 +1,6 @@
 # Docker
 
-A `Dockerfile` and `docker-compose.yml` are included. The image builds the TypeScript CLI into `dist/` and installs production dependencies in the runtime layer (required by runtime-loaded packages such as the local D3 bundle used by `wiki serve`).
+A `Dockerfile` and `docker-compose.yml` are included. The image builds the TypeScript CLI into `dist/` and installs production dependencies in the runtime layer. The graph renderer uses the browser Canvas API and needs no external visualization runtime.
 
 The image entrypoint is `node /app/bin/wiki.js`. Compose commands append wiki
 subcommands to that entrypoint: `serve --port 3000`, `mcp-http --host 0.0.0.0`,

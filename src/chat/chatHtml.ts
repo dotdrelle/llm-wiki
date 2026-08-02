@@ -2693,7 +2693,6 @@ export const CHAT_HTML = `<!DOCTYPE html>
 <script>try{const t=localStorage.getItem('llm-wiki:theme')||localStorage.getItem('llm-wiki:graph:theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.classList.add('theme-'+(t==='dark'?'dark':'light'))}catch{}</script>
 ${CHAT_STYLE}
 <script src="/assets/marked.min.js"></script>
-<script src="/assets/d3.min.js"></script>
 </head>
 <body>
 ${CHAT_BODY}

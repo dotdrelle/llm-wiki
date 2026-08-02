@@ -1,8 +1,9 @@
 # Repository Guide
 
-Current coordinated release: **0.14.12**. The Wiki browser graph is v2-only:
-keep Wiki UI code under `src/graph/wiki`, preserve `src/graph/core/graphForce.ts`
-for Run/Task, and do not restore the removed legacy graph endpoints.
+The Wiki browser graph is Canvas-only: keep Wiki UI code under
+`src/graph/wiki`, share the camera/frame scheduler from `src/graph/core/canvas/`
+with Run/Task, and do not restore the removed D3/SVG renderers or legacy graph
+endpoints.
 
 ## Purpose
 
@@ -37,8 +38,7 @@ control-lane work described under Agent Runtime Integration. 0.9.6 is the
 repo consumes it as `runtimeState.workflow.nodes` in `runtimeTaskPanelHTML`
 (`chatHtml.ts`), falling back to the legacy `runtimeState.plan`/`.activities`
 shape when a runtime predates 0.9.6. 0.9.7 extracted the `/graph` page out of
-`serve.ts` into `src/graph/` — a reusable D3 core (`src/graph/core/`: viewport,
-selection, interactions, layout/render) plus a first, wiki-only projection
+`serve.ts` into `src/graph/` — a reusable graph core plus a wiki-only projection
 (`src/graph/wiki/projection.ts`: `buildWikiGraph`). `src/graph/core/graphTypes.ts`
 defines `GraphNode`/`GraphEdge`/`GraphRenderDeps` with **plain-string** `type`
 fields and no projection-specific concepts (no "page", "citation", etc.) —
@@ -50,22 +50,17 @@ fields and no projection-specific concepts (no "page", "citation", etc.) —
 hardcoded inside `core/` itself (this was fixed after initially leaking wiki
 type names into `graphLayoutBase.ts`/`graphSelection.ts`; don't reintroduce
 that). 0.10.2 adds the Run/Task graph (see Serve Chat's Execution view below),
-built on `src/graph/core/graphForce.ts` — the actual shared D3 mechanics
-(radial force-simulation layout, node/link SVG creation) factored out for both
-consumers. `src/graph/runtime/` stays an empty placeholder: the Run/Task
+built on the shared Canvas camera and invalidation scheduler in
+`src/graph/core/canvas/`. `src/graph/runtime/` documents the browser-owned
+Run/Task projection; the Run/Task
 projection ended up living in `src/chat/runtime/runtimeGraphScript.ts`
 instead (it consumes live `runtimeState.workflow` data via the same in-browser
 script pipeline as the rest of the chat runtime UI, not a static-file
 `buildXGraph()` projection like `graph/wiki/projection.ts` — there was nothing
-Node/build-time to put in `graph/runtime/`). What _is_ shared is
-`graphForce.ts`'s D3 layer: `computeRadialForceLayout`/`renderForceLinks`/
-`createForceNode` are called by both `runtimeGraphScript.ts` and (available
-for) `graphLayoutBase.ts`'s radial mode. `graphLayoutBase.ts`'s own
-toolbar/search/relation-panel/modal chrome and its DAG/Liste modes stay
-wiki-specific — the Run/Task graph deliberately has none of that (plan
-directeur §9.1: graph + inspector only, no page-content modal, no search). Do
-not reintroduce a second, independent `d3.forceSimulation`/SVG-node-creation
-implementation anywhere in this repo; extend `graphForce.ts` instead. 0.10.3
+Node/build-time to put in `graph/runtime/`). Both surfaces render through
+Canvas, retain positions, use mini-maps and stop scheduling frames when idle.
+Do not reintroduce D3, SVG node creation, or an independent camera/frame loop.
+0.10.3
 adds versioned contracts (`llm-wiki-manager` only) and, in this repo, MCP
 write guards (`mcpServer.ts`, see Safety Rules) and MCP HTTP hardening
 (`mcpHttp.ts`, see Config And Environment). 0.10.4 (knowledge-engine
@@ -100,16 +95,10 @@ src/serve/              Extracted from serve.ts (0.9.4, ongoing):
                          (graphRoutes.ts calls into src/graph/, see below —
                          no graph-building logic duplicated here)
 src/graph/              /graph page, extracted out of serve.ts (0.9.7):
-                         core/ is the reusable D3 socle (graphTypes.ts —
-                         GraphNode/GraphEdge/GraphRenderDeps, projection-
-                         agnostic; graphForce.ts — radial force-simulation
-                         layout + node/link SVG creation, shared by both
-                         graph consumers, added 0.10.2; graphViewport.ts,
-                         graphSelection.ts, graphInteractions.ts,
-                         graphLayoutBase.ts — zoom/pan, selection, focus,
-                         search, relation panel/modal, the Radial/DAG/Liste
-                         modes, all wiki-specific chrome built on top of
-                         graphForce.ts/graphViewport.ts); wiki/projection.ts
+                         core/canvas contains projection-agnostic scene types,
+                         bounded camera transitions and an idle-aware frame
+                         scheduler shared by both graph consumers;
+                         wiki/projection.ts
                          is the first projection consuming it, over wiki
                          pages/sources/citations/templates/build-context/
                          deliverables; runtime/ stays an empty placeholder
@@ -117,7 +106,7 @@ src/graph/              /graph page, extracted out of serve.ts (0.9.7):
                          projection lives in src/chat/runtime/ instead,
                          since it consumes live browser-side runtime state
                          rather than a Node-side buildXGraph() projection,
-                         but it reuses graphForce.ts for its D3 mechanics
+                         and reuses the shared Canvas camera/scheduler
 scaffold/workspace/     Default workspace copied by `wiki init`
 tests/                  Vitest coverage
 docs/                   User-facing references
