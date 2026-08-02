@@ -178,14 +178,17 @@ describe('serve graph ui', () => {
     expect(source).toContain("document.body.style.cursor = 'col-resize';");
   });
 
-  it('keeps the embedded document TOC visible beside shell panels', async () => {
+  it('overlays the scrolling document TOC without narrowing the article', async () => {
     const source = await serveSource();
 
-    expect(source).toContain('html.is-embedded:not(.sidebar-panel) .content:has(.doc-toc)');
-    expect(source).toContain('padding-right:clamp(145px,26vw,240px)');
-    expect(source).toContain('html.is-embedded:not(.sidebar-panel) .doc-toc{display:flex;right:.75rem;width:clamp(120px,22vw,200px)}');
+    expect(source).toContain("tocTitle.textContent = 'On this page';");
+    expect(source).toContain('if (content) content.appendChild(toc);');
+    expect(source).toContain('.doc-toc{position:fixed;z-index:20;');
     expect(source).toContain('const top = Math.max(16, article.getBoundingClientRect().top);');
     expect(source).toContain("toc.style.top = top + 'px';");
+    expect(source).toContain("window.addEventListener('scroll', alignEmbeddedToc, { passive: true });");
+    expect(source).not.toContain('.content:has(.doc-toc)');
+    expect(source).not.toContain('padding-right:clamp(145px,26vw,240px)');
   });
 
   it('keeps long breadcrumbs and document actions on one line in the shell', async () => {

@@ -1094,7 +1094,7 @@ export async function serveMd(
   toc.className = 'doc-toc';
   const tocTitle = document.createElement('p');
   tocTitle.className = 'doc-toc-title';
-  tocTitle.textContent = 'Sur cette page';
+  tocTitle.textContent = 'On this page';
   toc.appendChild(tocTitle);
   headings.forEach(function(h) {
     const link = document.createElement('a');

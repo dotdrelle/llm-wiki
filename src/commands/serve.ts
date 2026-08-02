@@ -63,7 +63,7 @@ const MARKED_DIST_PATH = path.resolve(
 );
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
-const LLM_WIKI_VERSION = '0.15.35';
+const LLM_WIKI_VERSION = '0.15.38';
 
 type SkillMeta = {
   name: string;
@@ -115,6 +115,7 @@ async function loadExternalMcpEndpoints(rootDir: string): Promise<ExternalMcpEnd
             url: interpolateEnv(String((endpoint as { url?: unknown }).url)),
             headers,
             bearer,
+            managedBy: String((endpoint as { managedBy?: unknown }).managedBy ?? ''),
           };
         })
         .filter((endpoint) => endpoint.url);
@@ -967,7 +968,7 @@ export default async function serveCmd(
 
       if (await handleChatRoutes(req, res, urlPath, {
         config,
-        externalMcpEndpoints,
+        externalMcpEndpoints: () => loadExternalMcpEndpoints(rootDir),
         mcpWikiPort,
         mcpProductionPort,
         proxyPost,

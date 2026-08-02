@@ -189,6 +189,10 @@ body:not(.execution-mode) #execution-view{display:none}
 .connectors-grid{max-width:1120px;margin:0 auto}
 .connectors-grid .mcp-cards{padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
 .connectors-grid .mcp-card{min-width:0}
+.mcp-origin{font-family:var(--font-mono);font-size:9px;line-height:1;border:1px solid var(--border);border-radius:99px;padding:3px 6px;color:var(--muted);white-space:nowrap}
+.mcp-origin-builtin{color:var(--accent)}
+.mcp-origin-global{color:var(--warn)}
+.mcp-sync-warning{font-size:10px;line-height:1.4;color:var(--warn);background:rgba(210,150,40,.08);border-radius:6px;padding:5px 7px}
 .skills-manager-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
 .skill-manager-card{border:1px solid var(--border);border-radius:10px;background:var(--panel-soft);padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0}
 .skill-manager-name{font-family:var(--font-mono);font-size:13px;font-weight:800;color:var(--accent)}

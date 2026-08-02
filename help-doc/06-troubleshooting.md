@@ -44,6 +44,19 @@ then, if needed, `/services` (container state). Each case below gives the
   running; in chat, ask for the connector's status. If it needs configuration,
   DONNA will ask only for the required fields, then set it up after confirmation.
 
+## A connector I added says "local only"
+
+- **Symptom**: the card is connected and its tools work in this browser, but it
+  is badged `local only` with "runtime synchronization pending".
+- **Cause**: the server itself is fine. What failed is recording it in the
+  shared configuration — most often because **a plan is running**: connectors
+  cannot be rewired under a run that has already resolved its agents. A name
+  that breaks the naming rules, or a runtime that is down, gives the same badge.
+- **Fix**: nothing, usually. Wait for the run to end and reconnect the card with
+  the circular arrow; the badge clears. Until then the connector stays usable
+  here, but the other interfaces and future plans do not see it yet. If it
+  persists outside a run, hover the message: it carries the exact reason.
+
 ## A service is "unavailable or disabled"
 
 - **Symptom**: DONNA answers that a service — the connectors service, for

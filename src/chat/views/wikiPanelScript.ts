@@ -94,18 +94,22 @@ function alignWikiRail() {
 // ── Left panel tabs (do NOT touch the central zone) ─────────────────────────
 function setLeftTab(tab) {
   const wiki = tab === 'wiki';
+  const wasWiki = document.body.classList.contains('left-wiki');
   document.body.classList.toggle('left-wiki', wiki);
   document.getElementById('shell-tab-wiki')?.classList.toggle('active', wiki);
   document.getElementById('shell-tab-chat')?.classList.toggle('active', !wiki);
   shellStore(SHELL_LEFT_KEY, wiki ? 'wiki' : 'chat');
   if (wiki) {
     const sideFrame = document.getElementById('wiki-side-frame');
-    if (sideFrame && !sideFrame.getAttribute('src')) {
+    if (sideFrame && (!wasWiki || !sideFrame.getAttribute('src'))) {
       sideFrame.addEventListener('load', () => {
         sideFrame.contentWindow?.postMessage(
           { type: 'llmwiki:active', path: currentWikiPath() }, location.origin);
-      });
-      sideFrame.setAttribute('src', '/embed/sidebar');
+      }, { once: true });
+      // The wiki tree can change while Donna is open (agent runs, uploads,
+      // renames). Fetch a fresh server-rendered sidebar on every Donna → Wiki
+      // transition instead of revealing the iframe's stale DOM.
+      sideFrame.setAttribute('src', '/embed/sidebar?refresh=' + Date.now());
     }
   }
 }

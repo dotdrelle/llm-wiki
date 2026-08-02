@@ -1178,12 +1178,31 @@ function renderTopPills() {
 
 function addServer(name='', url='', bearer='') {
   const id=nextId++;
-  servers.push({id, name:name||\`MCP \${id}\`, url, bearer, sessionId:null, enabled:false, status:'off', tools:[]});
+  servers.push({id, name:name||\`mcp-\${id}\`, url, bearer, sessionId:null, enabled:false, status:'off', tools:[],origin:'ui',persistedName:null,needsSync:true,syncError:''});
   renderCards(); saveServers();
 }
 
-function removeServer(id) {
-  if(!confirm('Delete this connector?')) return;
+function updateServerField(id,field,value) {
+  const server=servers.find(x=>x.id===id); if(!server||server.origin==='builtin') return;
+  server[field]=field==='name'?String(value||'').trim():value;
+  server.needsSync=true;
+  server.syncError=field==='name'&&!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(server.name)
+    ? 'Name must use 1–80 letters, numbers, dots, underscores or hyphens.'
+    : '';
+  if(server.syncError) renderCards();
+  renderTopPills();
+  saveServers();
+}
+
+async function removeServer(id) {
+  const server=servers.find(s=>s.id===id); if(!server) return;
+  if(server.origin==='builtin') { notify('Built-in workspace connectors cannot be removed.','e'); return; }
+  const scope=server.origin==='global'
+    ? 'This removes the connector from every chat, agent and future plan. Its container and data are kept.'
+    : 'This removes the connector from chat, agent mode and future plans. Its remote data is not deleted.';
+  if(!confirm(\`Remove \${server.name}?\n\n\${scope}\`)) return;
+  try { await deleteRuntimeMcpServer(server); }
+  catch(err) { notify(err?.message||String(err),'e'); return; }
   servers=servers.filter(s=>s.id!==id);
   renderCards(); renderTopPills(); saveServers();
 }
@@ -1203,7 +1222,8 @@ function renderCards() {
 
 function cardHTML(s) {
   const badgeClass={ok:'ok',err:'err',loading:'loading',off:'off'}[s.status]||'off';
-  const badgeLabel={ok:\`\${s.tools.length} tools\`,err:'error',loading:'…',off:'off'}[s.status]||'off';
+  const badgeLabel=s.syncError?'local only':({ok:\`\${s.tools.length} tools\`,err:'error',loading:'…',off:'off'}[s.status]||'off');
+  const originLabel={builtin:'internal',global:'global config',ui:'added here'}[s.origin]||'added here';
 
   const toolsHTML = (s.status==='ok'&&s.tools.length)
     ? \`<div class="mcp-tools">
@@ -1231,20 +1251,22 @@ function cardHTML(s) {
         <div class="mcp-toggle-track"><div class="mcp-toggle-thumb"></div></div>
       </label>
       <input class="mcp-name-input" type="text" value="\${esc(s.name)}" placeholder="Name"
-        onchange="servers.find(x=>x.id==\${s.id}).name=this.value;renderTopPills();saveServers()">
+        maxlength="80" pattern="[A-Za-z0-9][A-Za-z0-9_.-]{0,79}" title="1–80 letters, numbers, dots, underscores or hyphens"
+        \${s.origin==='builtin'?'readonly':''} onchange="updateServerField(\${s.id},'name',this.value)">
+      <span class="mcp-origin mcp-origin-\${esc(s.origin||'ui')}" title="Connector source">\${esc(originLabel)}</span>
       <span class="mcp-badge \${badgeClass}">\${badgeLabel}</span>
     </div>
     <div class="mcp-url-row">
       <input type="text" value="\${esc(s.url)}" placeholder="http://localhost:3000/mcp/"
-        onchange="servers.find(x=>x.id==\${s.id}).url=this.value;saveServers()" style="flex:1">
+        \${s.origin==='builtin'?'readonly':''} onchange="updateServerField(\${s.id},'url',this.value)" style="flex:1">
       <button class="btn-icon" onclick="connectServer(\${s.id})" title="Connect">&#x21BB;</button>
-      <button class="btn-icon btn-del" onclick="removeServer(\${s.id})" title="Remove">&#x2715;</button>
+      \${s.origin==='builtin'?'':\`<button class="btn-icon btn-del" onclick="removeServer(\${s.id})" title="Remove">&#x2715;</button>\`}
     </div>
     <div class="mcp-bearer-row">
       <div class="secret-wrap" style="flex:1">
         <input type="password" value="\${esc(s.bearer||'')}" placeholder="Bearer token (optional)"
           autocomplete="off" style="padding-right:34px;font-size:11px"
-          onchange="(function(el,id){const sv=servers.find(x=>x.id==id);if(!sv)return;sv.bearer=el.value;saveServers();if(sv.url)connectServer(id);})(this,\${s.id})">
+          \${s.origin==='builtin'?'readonly':''} onchange="(function(el,id){updateServerField(id,'bearer',el.value);const sv=servers.find(x=>x.id==id);if(sv?.url)connectServer(id);})(this,\${s.id})">
         <div class="secret-actions">
           <button class="secret-btn" onclick="toggleReveal(this.closest('.secret-wrap').querySelector('input'),this)" title="Show/hide">
             <svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -1259,6 +1281,7 @@ function cardHTML(s) {
           ? '<span class="key-saved show" style="flex-shrink:0">server token &#x2713;</span>'
           : '<span style="font-size:10px;color:var(--muted);flex-shrink:0;font-family:var(--font-mono)">no auth</span>'}
     </div>
+    \${s.syncError?\`<div class="mcp-sync-warning" title="\${esc(s.syncError)}">Connected in this browser; runtime synchronization pending.</div>\`:''}
     \${toolsHTML}
   </div>\`;
 }

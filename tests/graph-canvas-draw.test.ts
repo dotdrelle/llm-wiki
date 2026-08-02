@@ -19,8 +19,6 @@ import { graphFrameScript } from '../src/graph/core/canvas/graphFrameScript.ts';
  vérifie que la boucle va jusqu'au bout et pose bien toutes ses cibles.
 */
 
-type Fake = Record<string, unknown> & { calls: string[] };
-
 function fakeContext(calls: string[]) {
   const methods = [
     'createRadialGradient', 'createLinearGradient', 'fillRect', 'clearRect', 'beginPath', 'moveTo', 'lineTo',

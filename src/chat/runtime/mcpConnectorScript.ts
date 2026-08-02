@@ -126,7 +126,20 @@ async function connectServer(id,{silent=false}={}) {
   s.status='loading'; s.sessionId=null; renderCards();
   try {
     await reconnectMCPServer(s);
-    if(!silent) notify(\`✓ \${s.name}: \${s.tools.length} tool(s)\`);
+    if(runtimeEnabled() && s.origin!=='builtin' && s.needsSync) {
+      try {
+        await persistRuntimeMcpServer(s);
+        s.syncError='';
+        s.needsSync=false;
+      } catch(syncErr) {
+        // The MCP itself is healthy. A busy runtime (409), invalid name, or
+        // persistence failure must not be mislabeled as a connection failure.
+        s.syncError=syncErr?.message||String(syncErr);
+        s.needsSync=true;
+        if(!silent) notify(\`\${s.name}: connected locally, runtime sync pending — \${s.syncError}\`,'e');
+      }
+    }
+    if(!silent && !s.syncError) notify(\`✓ \${s.name}: \${s.tools.length} tool(s)\`);
   } catch(err) {
     s.status='err'; s.enabled=false;
     if(!silent) showErrModal(\`MCP connection — \${s.name}\`, mcpConnectErrorMessage(err));
@@ -134,12 +147,34 @@ async function connectServer(id,{silent=false}={}) {
   renderCards(); renderTopPills(); saveServers();
 }
 
+async function persistRuntimeMcpServer(server) {
+  const res=await fetch('/api/runtime/mcp/endpoints',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'upsert',name:server.name,previousName:server.persistedName||undefined,url:server.url,bearer:server.bearer||''}),
+  });
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok) throw new Error(data.error||\`Runtime MCP update failed (HTTP \${res.status})\`);
+  server.injected=true;
+  server.persistedName=server.name;
+  server.origin=data?.endpoint?.origin||server.origin||'ui';
+}
+
+async function deleteRuntimeMcpServer(server) {
+  if(!runtimeEnabled() || !server.persistedName) return;
+  const res=await fetch('/api/runtime/mcp/endpoints',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'delete',name:server.persistedName}),
+  });
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok) throw new Error(data.error||\`Runtime MCP deletion failed (HTTP \${res.status})\`);
+}
+
 async function reconnectMCPServer(server) {
   server.sessionId=null;
   const initResp = await mcpRPC(server, 'initialize', {
     protocolVersion: '2024-11-05',
     capabilities: {},
-    clientInfo: {name: 'WikiChatConnector', version: '0.15.35'}
+    clientInfo: {name: 'WikiChatConnector', version: '0.15.38'}
   });
   if (initResp?.error) throw new Error(initResp.error.message || 'initialize failed');
   await mcpNotify(server, 'notifications/initialized', {});

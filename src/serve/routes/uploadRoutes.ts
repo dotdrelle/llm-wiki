@@ -9,6 +9,7 @@ export type ExternalMcpEndpoint = {
   url: string;
   headers: Record<string, string>;
   bearer?: string;
+  managedBy?: string;
 };
 
 export function resolveMcpTargets(

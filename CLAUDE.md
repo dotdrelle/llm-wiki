@@ -272,6 +272,33 @@ confirmation and calls `/api/runtime/reset`; it stops active work and purges
 the workspace runtime plan, activities, logs, queue, and persisted projection.
 Upload cards with an `error` always render as failed even if storage succeeded.
 
+**Connector cards** (`src/chat/runtime/mcpConnectorScript.ts`,
+`config/configScript.ts`, `chatHtml.ts`). A card now has an identity in the
+runtime, not only in the browser. Four fields carry it, all persisted in
+`localStorage` by `saveServers`:
+
+- `origin` — `builtin` (`llm-wiki`, `wiki-production`: read-only fields, no
+  delete button, `removeServer` refuses), `global` (declared in the manager's
+  `mcp.endpoints.json`), `ui` (added here). Computed server-side in
+  `chatRoutes` from `managedBy === 'serve-ui'`, so it survives a reload —
+  never infer it in the browser.
+- `persistedName` — the name the runtime actually knows. Renaming only changes
+  `name`; the next connect sends both as `previousName`/`name` so the manager
+  performs an atomic rename. Deletion always targets `persistedName`.
+- `needsSync` / `syncError` — the MCP handshake and the runtime write are two
+  independent concerns and must not share a `catch`. A successful handshake
+  followed by a failed write (409 while a plan runs, name refused, runtime
+  down) leaves the card **connected and enabled**, badged `local only`; the
+  write is retried on the next reconnect. Marking it `err` would remove a
+  working server's tools from chat because the runtime happened to be busy.
+
+`chatRoutes` re-reads the endpoints file per request
+(`externalMcpEndpoints` is a thunk, not a boot-time array) — a connector added
+from the UI must appear in `__WIKI_CONFIG__.mcpServers` on the next page load
+without restarting serve. `mcpRoutes`/`uploadRoutes` still hold the boot
+snapshot; they only need it to resolve outbound headers for file-declared
+endpoints.
+
 Trace mutations in `sendMessage` must go through `dispatchChatAgentEvent`.
 Do not add direct `trace.steps.push()` mutations outside event handlers.
 `parseToolJSON` accepts direct JSON, fenced JSON, and JSON embedded in textual

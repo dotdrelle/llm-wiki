@@ -95,7 +95,9 @@ describe('chat html', () => {
   it('confirms before deleting a connector', () => {
     const [script] = chatScripts();
 
-    expect(script).toContain("if(!confirm('Delete this connector?')) return;");
+    expect(script).toContain('if(!confirm(`Remove ${server.name}?');
+    expect(script).toContain('${scope}`)) return;');
+    expect(script).toContain("server.origin==='global'");
   });
 
   it('keeps production tool result cards compact', () => {
@@ -283,6 +285,13 @@ describe('chat html', () => {
     const script = chatScripts().join('\n');
     expect(script).toContain("data.type === 'llmwiki:navigate'");
     expect(script).toContain('setCenterWiki(href);');
+  });
+
+  it('refreshes the left wiki tree when returning from Donna', () => {
+    const script = chatScripts().join('\n');
+    expect(script).toContain("const wasWiki = document.body.classList.contains('left-wiki');");
+    expect(script).toContain("sideFrame.setAttribute('src', '/embed/sidebar?refresh=' + Date.now());");
+    expect(script).toContain("}, { once: true });");
   });
 
   it('keeps the three right rail controls aligned at the top in wiki mode', () => {
@@ -508,7 +517,7 @@ describe('chat html', () => {
   it('probes server-injected MCP connectors on startup', () => {
     const [script] = chatScripts();
 
-    expect(script).toContain("injected:true, enabled:true, status:'off'");
+    expect(script).toContain("injected:true, origin:s.origin||'global', persistedName:s.name");
     expect(script).toContain('enabled:override ? true : !!s.enabled');
     expect(script).toContain('servers.filter(s=>s.enabled)');
     expect(script).toContain('connectServer(server.id,{silent:true})');
@@ -786,5 +795,31 @@ describe('chat html', () => {
     expect(script).toContain("localStorage.getItem(SIDEBAR_OPEN_KEY)!=='0'");
     expect(script).toContain('function toggleSidebar() { applySidebarOpen(!sidebarOpen,true); }');
     expect(script).toContain("if(e.target.closest?.('#sidebar-toggle')) return;");
+  });
+
+  it('keeps MCP connection health separate from runtime synchronization failures', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain("s.syncError=syncErr?.message||String(syncErr)");
+    expect(script).toContain("s.needsSync=true");
+    expect(script).not.toContain("await reconnectMCPServer(s);\n    if(runtimeEnabled() && !s.injected) await persistRuntimeMcpServer(s);");
+    expect(script).toContain("Connected in this browser; runtime synchronization pending.");
+  });
+
+  it('renames and deletes MCPs through their persisted runtime identity', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain("previousName:server.persistedName||undefined");
+    expect(script).toContain("server.persistedName=server.name");
+    expect(script).toContain("name:server.persistedName");
+    expect(script).toContain("function updateServerField(id,field,value)");
+  });
+
+  it('distinguishes connector origins and explains global deletion scope', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain("{builtin:'internal',global:'global config',ui:'added here'}");
+    expect(script).toContain("This removes the connector from every chat, agent and future plan.");
+    expect(script).toContain("Built-in workspace connectors cannot be removed.");
   });
 });

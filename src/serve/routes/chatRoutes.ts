@@ -15,7 +15,7 @@ type ChatWorkspace = {
 
 type ChatRoutesDeps = {
   config: AppConfig;
-  externalMcpEndpoints: ExternalMcpEndpoint[];
+  externalMcpEndpoints: () => Promise<ExternalMcpEndpoint[]>;
   mcpWikiPort: () => string;
   mcpProductionPort: () => string;
   proxyPost: (
@@ -259,6 +259,7 @@ export async function handleChatRoutes(
     deps.mcpWikiPort,
     deps.mcpProductionPort,
   );
+  const externalMcpEndpoints = await deps.externalMcpEndpoints();
   const chatConfig = {
     provider: deps.config.llm.provider,
     model: deps.config.llm.model,
@@ -277,10 +278,10 @@ export async function handleChatRoutes(
       enabled: Boolean(deps.runtimeUrl()),
     },
     mcpServers: [
-      { name: 'llm-wiki', url: wikiTarget },
-      { name: 'wiki-production', url: productionTarget },
-      ...deps.externalMcpEndpoints.map(({ name, url, bearer }) => ({
-        name, url, ...(bearer ? { bearer } : {}),
+      { name: 'llm-wiki', url: wikiTarget, origin: 'builtin' },
+      { name: 'wiki-production', url: productionTarget, origin: 'builtin' },
+      ...externalMcpEndpoints.map(({ name, url, bearer, managedBy }) => ({
+        name, url, origin: managedBy === 'serve-ui' ? 'ui' : 'global', ...(bearer ? { bearer } : {}),
       })),
     ],
   };

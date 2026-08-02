@@ -31,6 +31,33 @@ wiki browser. The LLM is usually pre-configured there.
   - **Activity** — live tracking of imports, ingestions, exports and jobs, with
     two views: *List* and *Graph*.
   - **Wiki browser** — browse the pages produced.
+  - **Connectors** — the MCP servers DONNA can call.
+
+### Adding a connector from Serve
+
+The Connectors panel lists every MCP server available to this workspace. You can
+add one there: give it a name, its URL, an optional Bearer token, and connect.
+Once connected, its tools are usable straight away — in chat, in agent mode, and
+in the plans DONNA builds afterwards. Nothing to restart.
+
+Each card says where it comes from:
+
+- **internal** — the workspace's own servers. They cannot be edited or removed.
+- **global config** — set up for the whole installation (Confluence export,
+  document conversion, mail, and so on). Removing one takes it away from *every*
+  chat, agent and future plan. Its container and its data are kept; only the
+  wiring goes.
+- **added here** — added from this panel.
+
+A name may use letters, digits, dots, underscores and hyphens, and must start
+with a letter or a digit.
+
+Two cases are worth knowing. A card badged **`local only`** means the server
+answered correctly and you can use it in this browser, but the shared
+configuration has not recorded it yet — usually because a plan is running, since
+connectors cannot be rewired under a run in progress. It syncs by itself the
+next time you reconnect. And renaming a connector only takes effect once you
+reconnect it, using the circular arrow on the card.
 
 ## The Graph (knowledge map)
 

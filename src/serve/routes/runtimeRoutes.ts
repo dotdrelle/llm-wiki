@@ -60,5 +60,9 @@ export async function handleRuntimeRoutes(
     await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/control'), deps.proxyDeps);
     return true;
   }
+  if (urlPath === '/api/runtime/mcp/endpoints' && (req.method === 'GET' || req.method === 'POST')) {
+    await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/mcp/endpoints'), deps.proxyDeps);
+    return true;
+  }
   return false;
 }

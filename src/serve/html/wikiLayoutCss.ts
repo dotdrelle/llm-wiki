@@ -1144,16 +1144,12 @@ export const WIKI_LAYOUT_CSS = `
     .palette-hint kbd{font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .38rem;border-radius:4px;font-size:.7rem}
     @media(prefers-color-scheme:dark){.palette-tag.wiki{color:#d4a800}.palette-tag.deliverables{color:#9abc40}}
     /* ── TOC ──────────────────────────────────────────────────── */
-    .doc-toc{position:fixed;top:5rem;right:1.5rem;width:200px;max-height:calc(100vh - 8rem);overflow-y:auto;display:flex;flex-direction:column;gap:.15rem;padding:.75rem;background:var(--panel);border:1px solid var(--border);border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+    .doc-toc{position:fixed;z-index:20;top:5rem;right:1.5rem;width:200px;max-height:calc(100vh - 8rem);overflow-y:auto;display:flex;flex-direction:column;gap:.15rem;padding:.75rem;background:var(--panel);border:1px solid var(--border);border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
     .doc-toc-title{font-size:.7rem;font-weight:780;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 .5rem;padding-bottom:.4rem;border-bottom:1px solid var(--border)}
     .doc-toc-item{font-size:.8rem;color:var(--muted);text-decoration:none;line-height:1.35;padding:.18rem .3rem;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .doc-toc-item:hover,.doc-toc-item.is-active{color:var(--accent);background:var(--accent-soft)}
     .doc-toc-h3{padding-left:1rem;font-size:.76rem}
     @media(max-width:1280px){.doc-toc{display:none}}
-    /* Inside the unified shell, the document viewport already excludes the
-       Activity/Help panel. Keep the TOC attached to that viewport and reserve
-       its column instead of hiding it as soon as a side panel opens. */
-    html.is-embedded:not(.sidebar-panel) .content:has(.doc-toc){padding-right:clamp(145px,26vw,240px)}
     html.is-embedded:not(.sidebar-panel) .doc-toc{display:flex;right:.75rem;width:clamp(120px,22vw,200px)}
     /* ── Stabilize tags ───────────────────────────────────────── */
     .section-tag{display:inline-flex;align-items:center;margin-left:.5rem;padding:.08rem .42rem;border:1px solid var(--border);border-radius:999px;background:var(--panel-soft);color:var(--muted);font-size:.58rem;font-weight:760;letter-spacing:.05em;text-transform:uppercase;vertical-align:middle;font-family:ui-sans-serif,system-ui,sans-serif;line-height:1.5}
