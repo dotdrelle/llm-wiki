@@ -11,6 +11,7 @@ import { VectorIndexService } from '../services/vectorIndexService.ts';
 import { createTraceLogger, printTraceSummary } from '../services/traceLogger.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import { Spinner } from '../utils/spinner.ts';
+import { HistoryService, commitHistorySafely, prepareHistorySafely } from '../services/historyService.ts';
 
 const SUBCOMMANDS = new Set([
   'init',
@@ -63,6 +64,8 @@ export default async function ingestCmd(
 
   const spinner = options.verbose || options.debug ? null : new Spinner('Ingesting…');
   try {
+    const history = new HistoryService(workspace.paths.rootDir, config.history);
+    if (!options.dryRun && !options.planOnly) await prepareHistorySafely(history, options.apply?.length ? 'ingest_apply' : 'ingest', logger);
     spinner?.start();
     let tokensLabel = '';
     const fmtTok = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
@@ -193,6 +196,22 @@ export default async function ingestCmd(
         console.warn(
           'Run `wiki index` after fixing the embedding/reranker configuration.',
         );
+      }
+    }
+    if (!options.dryRun && !options.planOnly && hasChangedSources) {
+      // No `scope` here on purpose: ingest holds the `workspace-write` lock,
+      // so it is the only writer for its duration and the full versioned
+      // scope is exactly what this run produced.
+      const historyResult = await commitHistorySafely(history, {
+        command: options.apply?.length ? 'ingest_apply' : 'ingest',
+        message: `ingest: ${hasChangedSources ? 'workspace updated' : 'no changes'}`,
+      }, logger);
+      if (historyResult.sha) {
+        await logger.info('history:commit', {
+          command: options.apply?.length ? 'ingest_apply' : 'ingest',
+          sha: historyResult.sha,
+          files: historyResult.files,
+        });
       }
     }
   } catch (e) {

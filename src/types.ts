@@ -110,6 +110,12 @@ export interface GraphConfig {
   fallbackCommunityLabel: string;
 }
 
+export interface HistoryConfig {
+  enabled: boolean;
+  authorName: string;
+  authorEmail: string;
+}
+
 export interface AppConfig {
   wikiRoot: string;
   configPath?: string;
@@ -120,6 +126,7 @@ export interface AppConfig {
   build: BuildConfig;
   retrieval: RetrievalConfig;
   mcp: McpConfig;
+  history?: HistoryConfig;
   serve?: ServeConfig;
   graph?: GraphConfig;
 }

@@ -516,6 +516,17 @@ const graphSchema = z
   )
   .default({ fallbackCommunityLabel: 'Ungrouped' });
 
+const historySchema = z
+  .preprocess(
+    (value) => value ?? {},
+    z.object({
+      enabled: z.boolean().default(true),
+      authorName: z.string().trim().min(1).default('llm-wiki'),
+      authorEmail: z.string().trim().min(1).default('llm-wiki@localhost'),
+    }),
+  )
+  .default({ enabled: true, authorName: 'llm-wiki', authorEmail: 'llm-wiki@localhost' });
+
 export const rawConfigSchema = z.object({
   preset: z.enum(['albert', 'openai', 'ollama', 'nvidia']).optional(),
   wikiRoot: z.string().optional(),
@@ -527,6 +538,7 @@ export const rawConfigSchema = z.object({
   mcp: mcpSchema.optional(),
   serve: serveSchema.optional(),
   graph: graphSchema.optional(),
+  history: historySchema.optional(),
 });
 
 export const wikiOperationSchema = z.preprocess(
@@ -775,6 +787,11 @@ export function resolveConfigDetails(
       refreshOnIngest: parsed.build?.refreshOnIngest ?? false,
       slotBatchSize: parsed.build?.slotBatchSize,
       maxBuildContextChars: parsed.build?.maxBuildContextChars ?? 24000,
+    },
+    history: {
+      enabled: parsed.history?.enabled ?? true,
+      authorName: parsed.history?.authorName ?? 'llm-wiki',
+      authorEmail: parsed.history?.authorEmail ?? 'llm-wiki@localhost',
     },
     retrieval: {
       maxContextFiles: parsed.retrieval?.maxContextFiles ?? 5,

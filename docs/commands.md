@@ -149,6 +149,33 @@ wiki export project-brief.md --polish
 
 The LLM expands each section from the cited sources without inventing facts. If sources lack detail for a section, it keeps the original text and appends an insufficient-source note.
 
+## `wiki history` and `wiki restore`
+
+Workspace history is stored in the workspace-local Git repository. List recent
+commits, optionally for one file:
+
+```bash
+wiki history --file wiki/concepts/example.md
+wiki history --json
+```
+
+Restore one file to a revision, or revert a complete run. Both operations create
+a new commit; `--dry-run` previews the change:
+
+```bash
+wiki restore --file wiki/concepts/example.md --to <commit-sha>
+wiki restore --run <run-commit-sha>
+wiki restore --run <run-commit-sha> --dry-run
+```
+
+Sources removed from `raw/ingested/` are copied to `raw/untracked/` before a
+run rollback. Git history is initialized by `wiki init` for new workspaces or
+by `wiki doctor --apply` for existing ones.
+
+The history page in `wiki serve` submits restores to the manager runtime, so
+the normal approval and workspace-lock checks still apply; it never mutates
+the workspace directly from the HTTP route.
+
 `--polish` runs a second editorial pass that improves clarity, flow, and readability while preserving facts, headings, and structure. It can also be run on an already-exported document (`.export.md`).
 
 ## `wiki lint`

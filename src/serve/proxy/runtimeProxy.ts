@@ -94,3 +94,59 @@ export async function proxyRuntimeJson(
     deps.sendJson(res, 503, { ok: false, error: 'runtime unavailable' });
   }
 }
+
+/** Submit a server-created JSON payload to the runtime without forwarding a client request body. */
+export async function proxyRuntimePayload(
+  res: ServerResponse,
+  pathname: string,
+  deps: RuntimeProxyDeps,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const target = runtimeTarget(deps, pathname);
+  if (!target) {
+    deps.sendJson(res, 503, { ok: false, error: 'runtime not configured' });
+    return;
+  }
+  let upstream: Response | undefined;
+  for (let attempt = 0; attempt < 3 && !upstream; attempt += 1) {
+    try {
+      upstream = await fetch(target, {
+        method: 'POST',
+        headers: { ...runtimeHeaders(deps), 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      if (attempt < 2) await new Promise((resolveDelay) => setTimeout(resolveDelay, 400 * (attempt + 1)));
+    }
+  }
+  if (!upstream) {
+    deps.sendJson(res, 503, { ok: false, error: 'runtime unavailable — is wiki-manager running on the host?' });
+    return;
+  }
+  res.writeHead(upstream.status, { 'Content-Type': upstream.headers.get('content-type') ?? 'application/json' });
+  res.end(await upstream.text());
+}
+
+export async function submitHistoryRestoreToRuntime(
+  res: ServerResponse,
+  deps: RuntimeProxyDeps,
+  payload: { file?: string; run?: string; to?: string; dryRun?: boolean; intent?: string },
+  workspace: string | null,
+): Promise<void> {
+  const target = payload.run
+    ? `Execute the supplied workspace.restore capability plan for run ${payload.run}. Do not infer or alter its arguments.`
+    : `Execute the supplied workspace.restore capability plan for file ${payload.file} at revision ${payload.to}. Do not infer or alter its arguments.`;
+  await proxyRuntimePayload(res, '/run', deps, {
+    input: target,
+    ...(workspace ? { workspace } : {}),
+    ...(payload.intent === 'enqueue' ? { intent: 'enqueue' } : {}),
+    capabilityPlan: {
+      capability: 'workspace.restore',
+      operation: 'restore',
+      arguments: payload.run
+        ? { run: payload.run, ...(payload.dryRun ? { dryRun: true } : {}) }
+        : { file: payload.file, to: payload.to, ...(payload.dryRun ? { dryRun: true } : {}) },
+      requireApproval: true,
+    },
+  });
+}

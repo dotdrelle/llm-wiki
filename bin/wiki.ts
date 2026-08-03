@@ -23,6 +23,8 @@ import mcpHttpCmd from '../src/commands/mcpHttp.ts';
 import exportCmd from '../src/commands/export.ts';
 import addSkillCmd from '../src/commands/addSkill.ts';
 import configCmd from '../src/commands/config.ts';
+import historyCmd from '../src/commands/history.ts';
+import restoreCmd from '../src/commands/restore.ts';
 
 const program = new Command();
 const packageVersion = (() => {
@@ -136,6 +138,29 @@ async function main() {
     )
     .option('--json', 'Emit JSON including provenance')
     .action((options) => configCmd(options));
+
+  program
+    .command('history')
+    .description('List workspace history commits')
+    .option('--file <path>', 'Filter history by a versioned workspace path')
+    .option('--limit <number>', 'Maximum number of commits', '20')
+    .option('--json', 'Emit stable JSON')
+    .action((options) =>
+      historyCmd(config, {
+        file: options.file,
+        limit: Number.parseInt(options.limit, 10),
+        json: Boolean(options.json),
+      }),
+    );
+
+  program
+    .command('restore')
+    .description('Restore one versioned workspace file from a Git revision')
+    .option('--file <path>', 'Workspace-relative file to restore')
+    .option('--run <sha>', 'Restore all files changed by a run commit')
+    .option('--to <sha>', 'Target Git revision for --file')
+    .option('--dry-run', 'Show the action without writing files')
+    .action((options) => restoreCmd(config, options));
 
   program
     .command('init')

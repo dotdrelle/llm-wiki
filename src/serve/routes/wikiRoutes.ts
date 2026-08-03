@@ -25,9 +25,22 @@ import {
 } from '../html/wikiHtml.ts';
 import { generateSkillsPage } from '../html/wikiSkillsPage.ts';
 import { listHelpChapters, readHelpChapter } from '../../utils/helpDoc.ts';
+import { HistoryService } from '../../services/historyService.ts';
+import type { HistoryConfig } from '../../types.ts';
+
+function escapeHistoryHtml(value: unknown): string {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
 
 export type WikiRoutesDeps = {
   rootDir: string;
+  historyConfig?: HistoryConfig;
+  submitHistoryRestore?: (res: ServerResponse, payload: { file?: string; run?: string; to?: string; dryRun?: boolean; intent?: string }) => Promise<void>;
   readRequestBody: (req: IncomingMessage) => Promise<string>;
   sendGzippedHtml: (
     req: IncomingMessage,
@@ -50,6 +63,86 @@ export async function handleWikiRoutes(
   deps: WikiRoutesDeps,
 ): Promise<boolean> {
   const { rootDir } = deps;
+
+  if (urlPath === '/history' && req.method === 'GET') {
+    const history = new HistoryService(rootDir, deps.historyConfig);
+    const status = await history.status();
+    const commits = status.initialized ? await history.log({ limit: 50 }) : [];
+    const rows = commits.length
+      ? commits.map((commit) => `<tr><td><code>${escapeHistoryHtml(commit.shortSha)}</code></td><td>${escapeHistoryHtml(commit.date)}</td><td>${escapeHistoryHtml(commit.subject)}</td><td>${escapeHistoryHtml(commit.runId ?? '')}</td><td><button type="button" data-sha="${escapeHistoryHtml(commit.sha)}">Restore run</button></td></tr>`).join('')
+      : '<tr><td colspan="5">No workspace history available.</td></tr>';
+    const html = `<!doctype html><meta charset="utf-8"><title>Workspace history</title><style>body{font:14px system-ui;margin:2rem;color:#222}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #ddd;padding:.6rem;text-align:left}button{cursor:pointer}#status{margin:.8rem 0;color:#555}</style><h1>Workspace history</h1><p><a href="/">Back to wiki</a></p><p id="status">${escapeHistoryHtml(status.reason ? `History: ${status.reason}` : `${commits.length} commit(s)`)}</p><table><thead><tr><th>Commit</th><th>Date</th><th>Subject</th><th>Run</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table><script>
+const post=(body)=>fetch('/api/history/restore',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+const say=(t)=>{document.querySelector('#status').textContent=t;};
+document.querySelectorAll('button[data-sha]').forEach(b=>b.addEventListener('click',async()=>{
+  const run=b.dataset.sha;
+  if(!confirm('Restore this run? A new commit will be created.'))return;
+  b.disabled=true;
+  try{
+    let r=await post({run});
+    // A run is already active: the restore cannot start now, but it can be
+    // queued as a future run with its capability plan carried through.
+    if(r.status===409){
+      if(!confirm('A run is currently active. Queue this restore to start when it finishes?')){say('Restore cancelled.');return;}
+      r=await post({run,intent:'enqueue'});
+      say(r.ok?'Restore queued — it will start after the current run.':((await r.json()).error||'Could not queue the restore.'));
+      return;
+    }
+    say(r.ok?'Restore submitted for approval':((await r.json()).error||'Restore submission failed'));
+  }finally{b.disabled=false;}
+}));
+</script>`;
+    await deps.sendGzippedHtml(req, res, html);
+    return true;
+  }
+
+  if (urlPath === '/api/history' && req.method === 'GET') {
+    const requestUrl = new URL(req.url ?? '/api/history', 'http://localhost');
+    const file = requestUrl.searchParams.get('file') ?? undefined;
+    const rawLimit = Number.parseInt(requestUrl.searchParams.get('limit') ?? '20', 10);
+    const history = new HistoryService(rootDir, deps.historyConfig);
+    const status = await history.status();
+    deps.sendJson(res, 200, {
+      status,
+      commits: status.initialized ? await history.log({ file, limit: rawLimit }) : [],
+    });
+    return true;
+  }
+
+  if (urlPath === '/api/history/show' && req.method === 'GET') {
+    const requestUrl = new URL(req.url ?? '/api/history/show', 'http://localhost');
+    const sha = requestUrl.searchParams.get('sha');
+    const file = requestUrl.searchParams.get('file') ?? undefined;
+    if (!sha) {
+      deps.sendJson(res, 400, { error: 'Missing sha' });
+      return true;
+    }
+    try {
+      const content = await new HistoryService(rootDir, deps.historyConfig).show(sha, file);
+      deps.sendJson(res, 200, { sha, file: file ?? null, content });
+    } catch (error) {
+      deps.sendJson(res, 404, { error: error instanceof Error ? error.message : String(error) });
+    }
+    return true;
+  }
+
+  if (urlPath === '/api/history/restore' && req.method === 'POST') {
+    try {
+      const payload = JSON.parse(await deps.readRequestBody(req)) as { file?: string; run?: string; to?: string; dryRun?: boolean; intent?: string };
+      if ((!payload.run && !(payload.file && payload.to)) || (payload.run && payload.file)) {
+        deps.sendJson(res, 400, { error: 'Provide run, or file and to.' });
+        return true;
+      }
+      if (!deps.submitHistoryRestore) {
+        deps.sendJson(res, 503, { ok: false, error: 'History restore requires the runtime approval service.' });
+        return true;
+      }
+      await deps.submitHistoryRestore(res, payload);
+    } catch (error) {
+      deps.sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return true;
+  }
 
   // Product help API (JSON) for the in-app help panel.
   if (urlPath === '/api/help' && req.method === 'GET') {

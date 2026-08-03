@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BuildService } from '../src/services/buildService.ts';
+import { HistoryService } from '../src/services/historyService.ts';
 import type { LLMService } from '../src/services/llmService.ts';
 import type { RetrievalService } from '../src/services/retrievalService.ts';
 import { WorkspaceService } from '../src/services/workspaceService.ts';
@@ -1024,5 +1025,61 @@ describe('build service', () => {
     expect(llm.completeJsonCalls).toBe(4);
     expect(llm.maxActive).toBeLessThanOrEqual(2);
     expect(llm.maxActive).toBeGreaterThan(1);
+  });
+
+  it('merges and commits parallel template build states without cross-capture', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-state-concurrency-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'templates'), { recursive: true });
+    await mkdir(path.join(root, 'deliverables'), { recursive: true });
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n', 'utf8');
+    for (const name of ['alpha', 'beta']) {
+      await writeFile(
+        path.join(root, 'templates', `${name}.md`),
+        `---\noutput: ${name}.md\n---\n\n# ${name}\n\n[[INSTRUCTION: Summarize.]]\n`,
+        'utf8',
+      );
+    }
+
+    const config = createConfig(root);
+    const history = new HistoryService(root);
+    await history.initialize({ baseline: true });
+    let activeFinalizers = 0;
+    let maxActiveFinalizers = 0;
+
+    const run = async (name: string) => {
+      const workspace = new WorkspaceService(config);
+      const service = new BuildService(
+        config,
+        workspace,
+        new FakeLLMService() as unknown as LLMService,
+        new FakeRetrievalService() as unknown as RetrievalService,
+      );
+      return service.build({
+        templates: [`templates/${name}.md`],
+        onFinalize: async (results) => {
+          activeFinalizers += 1;
+          maxActiveFinalizers = Math.max(maxActiveFinalizers, activeFinalizers);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          await history.commit({
+            command: 'build',
+            message: `build: ${name}`,
+            scope: [...results.map((result) => result.output), '.wiki/build-state.json'],
+          });
+          activeFinalizers -= 1;
+        },
+      });
+    };
+
+    await Promise.all([run('alpha'), run('beta')]);
+
+    const state = await new WorkspaceService(config).readBuildState();
+    expect(Object.keys(state.deliverables).sort()).toEqual([
+      'templates/alpha.md',
+      'templates/beta.md',
+    ]);
+    expect(maxActiveFinalizers).toBe(1);
+    const commits = await history.log({ limit: 10 });
+    expect(commits.filter((commit) => commit.subject.startsWith('build: '))).toHaveLength(2);
   });
 });

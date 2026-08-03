@@ -21,6 +21,7 @@ import { buildStateSchema } from '../config/schema.ts';
 import {
   removeIfExists,
   safeWriteFile,
+  withFileLock,
   writeIfChanged,
   pathExists,
 } from '../utils/fs.ts';
@@ -1048,6 +1049,27 @@ export class WorkspaceService {
   async writeBuildState(state: BuildState): Promise<void> {
     await mkdir(this.paths.internalDir, { recursive: true });
     await safeWriteFile(this.paths.buildStatePath, `${JSON.stringify(state, null, 2)}\n`);
+  }
+
+  /**
+   * Merge build results under a cross-process lock. The optional finalizer is
+   * deliberately executed before releasing the lock so the CLI can commit the
+   * exact state written by this task without capturing a sibling build.
+   */
+  async mergeBuildState(
+    updates: BuildState['deliverables'],
+    finalize?: (state: BuildState) => Promise<void>,
+  ): Promise<BuildState> {
+    const lockPath = path.join(this.paths.internalDir, 'build-state.lock');
+    return withFileLock(lockPath, async () => {
+      const current = await this.readBuildState();
+      const merged: BuildState = {
+        deliverables: { ...current.deliverables, ...updates },
+      };
+      await this.writeBuildState(merged);
+      await finalize?.(merged);
+      return merged;
+    });
   }
 
   async computeWikiHash(pages?: WikiPage[]): Promise<string> {

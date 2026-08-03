@@ -3,6 +3,10 @@
 .wiki/logs/
 .wiki/tmp/
 .wiki/vector-index/
+.wiki/production-jobs/
+.wiki/history.lock
+.wiki/build-state.lock
+raw/untracked/
 node_modules/
 dist/
 coverage/

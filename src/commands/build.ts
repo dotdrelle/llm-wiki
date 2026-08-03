@@ -8,6 +8,8 @@ import {
   type TraceRunSummary,
 } from '../services/traceLogger.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
+import { HistoryService, commitHistorySafely, prepareHistorySafely } from '../services/historyService.ts';
+import type { HistoryResult } from '../services/historyService.ts';
 import { Spinner } from '../utils/spinner.ts';
 
 export default async function buildCmd(
@@ -87,12 +89,27 @@ export default async function buildCmd(
       return;
     }
 
+    const history = new HistoryService(workspace.paths.rootDir, config.history);
+    await prepareHistorySafely(history, 'build', logger);
     spinner?.start();
+    let historyResult: HistoryResult | undefined;
     const results = await service.build({
       templates,
       force: options.force,
       changedOnly: false,
       stabilize: options.stabilize,
+      onFinalize: async (finalizedResults) => {
+        historyResult = await commitHistorySafely(history, {
+          command: 'build',
+          message: `build: ${finalizedResults.filter((result) => result.changed).length} deliverable(s) changed`,
+          // This callback runs while the cross-process build-state lock is
+          // held, so the commit cannot capture a sibling's state update.
+          scope: [
+            ...finalizedResults.map((result) => result.output),
+            '.wiki/build-state.json',
+          ],
+        }, logger);
+      },
       onPageLoad: (relativePath, index, total) => {
         spinner?.update(`Reading wiki (${index + 1}/${total})…`);
         spinner?.updateSub(relativePath);
@@ -138,6 +155,13 @@ export default async function buildCmd(
       console.log(
         `${result.template} -> ${result.output} (${result.changed ? 'updated' : 'unchanged'}${stabilized})`,
       );
+    }
+    if (historyResult?.sha) {
+      await logger.info('history:commit', {
+        command: 'build',
+        sha: historyResult.sha,
+        files: historyResult.files,
+      });
     }
   } catch (e) {
     spinner?.stop();

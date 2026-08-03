@@ -55,6 +55,7 @@ function effectiveConfigObject(details: EffectiveConfigDetails): Record<string, 
       writeToken: config.mcp.writeToken ? redact(config.mcp.writeToken) : null,
       tls: config.mcp.tls ?? null,
     },
+    history: config.history ?? null,
     serve: config.serve ?? null,
   };
 }

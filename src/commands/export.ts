@@ -8,6 +8,7 @@ import { safeWriteFile, pathExists } from '../utils/fs.ts';
 import { normalizeGeneratedMarkdown } from '../utils/markdown.ts';
 import { resolveInside, relativeFrom } from '../utils/path.ts';
 import { Spinner } from '../utils/spinner.ts';
+import { HistoryService, commitHistorySafely, prepareHistorySafely } from '../services/historyService.ts';
 
 interface ExportOptions {
   output?: string;
@@ -43,6 +44,8 @@ export default async function exportCmd(
     options.verbose || options.debug ? null : new Spinner('Preparing export…');
 
   try {
+    const history = new HistoryService(workspace.paths.rootDir, config.history);
+    await prepareHistorySafely(history, options.polish ? 'polish' : 'export', logger);
     spinner?.start();
     spinner?.updateSub(input);
 
@@ -122,6 +125,20 @@ export default async function exportCmd(
 
     await safeWriteFile(absoluteOutput, normalizeGeneratedMarkdown(expanded));
     spinner?.stop();
+    const historyResult = await commitHistorySafely(history, {
+      command: options.polish ? 'polish' : 'export',
+      message: `${options.polish ? 'polish' : 'export'}: ${outputRelative}`,
+      // Export/polish lock scopes are per-deliverable: siblings run in
+      // parallel on the same workspace, so stage this deliverable only.
+      scope: [outputRelative],
+    }, logger);
+    if (historyResult.sha) {
+      await logger.info('history:commit', {
+        command: options.polish ? 'polish' : 'export',
+        sha: historyResult.sha,
+        files: historyResult.files,
+      });
+    }
     for (const warning of warnings) {
       console.warn(`  ⚠ ${warning}`);
     }

@@ -1,12 +1,53 @@
 import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { handleRuntimeRoutes } from '../src/serve/routes/runtimeRoutes.ts';
+import { submitHistoryRestoreToRuntime } from '../src/serve/proxy/runtimeProxy.ts';
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe('runtime routes', () => {
+  it('submits queued restores as an unchanged structured capability plan', async () => {
+    const fetchMock = vi.fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>(async () => new Response(
+      JSON.stringify({ queued: true }),
+      { status: 202, headers: { 'content-type': 'application/json' } },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+    const response = {
+      status: 0,
+      body: '',
+      writeHead(status: number) { this.status = status; },
+      end(body = '') { this.body = body; },
+    };
+
+    await submitHistoryRestoreToRuntime(
+      response as never,
+      {
+        runtimeUrl: () => 'http://runtime.test',
+        runtimeToken: () => 'secret',
+        readRequestBuffer: async () => Buffer.alloc(0),
+        sendJson: () => undefined,
+      },
+      { run: 'abc123', intent: 'enqueue' },
+      'docs',
+    );
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(init.body))).toEqual({
+      input: 'Execute the supplied workspace.restore capability plan for run abc123. Do not infer or alter its arguments.',
+      workspace: 'docs',
+      intent: 'enqueue',
+      capabilityPlan: {
+        capability: 'workspace.restore',
+        operation: 'restore',
+        arguments: { run: 'abc123' },
+        requireApproval: true,
+      },
+    });
+    expect(response.status).toBe(202);
+  });
+
   it('proxies run approval to the workspace-scoped runtime endpoint', async () => {
     const fetchMock = vi.fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>(async () => new Response(
       JSON.stringify({ approved: true }),

@@ -27,6 +27,7 @@ import {
   type GatewayCatalog,
 } from '../services/gatewayProbe.ts';
 import { pathExists, safeWriteFile } from '../utils/fs.ts';
+import { HistoryService } from '../services/historyService.ts';
 
 // Bits per weight for common GGUF quantizations (including block overhead)
 const QUANT_BITS: Record<string, number> = {
@@ -954,6 +955,21 @@ export default async function doctorCmd(
   row('vector.topK:', String(config.retrieval.vector.topK));
   row('vector.rerankTopK:', String(config.retrieval.vector.rerankTopK));
   row('vector.maxResults:', String(config.retrieval.vector.maxResults));
+
+  const history = new HistoryService(config.wikiRoot, config.history);
+  const historyStatus = await history.status();
+  row('history.enabled:', String(historyStatus.enabled));
+  row('history.git:', historyStatus.available ? 'available' : historyStatus.reason ?? 'unavailable');
+  if (historyStatus.enabled && !historyStatus.available) {
+    warn(`history unavailable (${historyStatus.reason ?? 'unknown'})`);
+  } else if (options.apply && historyStatus.enabled && !historyStatus.initialized) {
+    const initialized = await history.initialize({ baseline: true });
+    if (initialized.warnings.length > 0) {
+      warn(`history initialization skipped: ${initialized.warnings.join(', ')}`);
+    } else {
+      ok('workspace history initialized');
+    }
+  }
 
   reportScaffoldPlaceholders(config);
 

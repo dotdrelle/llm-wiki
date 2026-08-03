@@ -1042,12 +1042,6 @@ export class BuildService {
     }
   }
 
-  private nextState(state: BuildState): BuildState {
-    return {
-      deliverables: { ...state.deliverables },
-    };
-  }
-
   private async logBuildContextResolution(
     template: TemplateDocument,
     resolution: TemplateBuildContextResolution,
@@ -1101,6 +1095,7 @@ export class BuildService {
     onPageLoad?: (relativePath: string, index: number, total: number) => void;
     stabilize?: boolean;
     onStabilize?: (template: string, output: string) => void;
+    onFinalize?: (results: DeliverableBuildResult[]) => Promise<void>;
   }): Promise<DeliverableBuildResult[]> {
     await this.workspace.ensureInitialized();
     const templatePaths = await this.workspace.resolveTemplateInputs(
@@ -1111,7 +1106,7 @@ export class BuildService {
     const wikiPages = await this.retrieval.warmCache(options?.onPageLoad);
     const wikiHash = await this.workspace.computeWikiHash(wikiPages);
     const previousState = await this.workspace.readBuildState();
-    const nextState = this.nextState(previousState);
+    const stateUpdates: BuildState['deliverables'] = {};
     const results: DeliverableBuildResult[] = [];
 
     if (this.logger) {
@@ -1261,7 +1256,7 @@ export class BuildService {
 
         await this.reportMissingCitations(template.relativePath, rendered);
 
-        nextState.deliverables[template.relativePath] = {
+        stateUpdates[template.relativePath] = {
           templateHash,
           wikiHash,
           buildContextHash: buildContext.hash,
@@ -1299,7 +1294,14 @@ export class BuildService {
       }
     }
 
-    await this.workspace.writeBuildState(nextState);
+    if (results.length > 0) {
+      await this.workspace.mergeBuildState(
+        stateUpdates,
+        options?.onFinalize
+          ? async () => { await options.onFinalize!(results); }
+          : undefined,
+      );
+    }
 
     if (this.logger) {
       await this.logger.info('build:run-done', {

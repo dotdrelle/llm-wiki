@@ -20,7 +20,7 @@ import {
   localHref,
   serveMd,
 } from '../serve/html/wikiHtml.ts';
-import type { RuntimeProxyDeps } from '../serve/proxy/runtimeProxy.ts';
+import { submitHistoryRestoreToRuntime, type RuntimeProxyDeps } from '../serve/proxy/runtimeProxy.ts';
 import { handleChatHistoryApi } from '../serve/routes/chatHistoryRoutes.ts';
 import { handleChatRoutes } from '../serve/routes/chatRoutes.ts';
 import { handleConfigRoutes } from '../serve/routes/configRoutes.ts';
@@ -63,7 +63,7 @@ const MARKED_DIST_PATH = path.resolve(
 );
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
-const LLM_WIKI_VERSION = '0.15.38';
+const LLM_WIKI_VERSION = '0.15.40';
 
 type SkillMeta = {
   name: string;
@@ -1025,6 +1025,9 @@ export default async function serveCmd(
 
       if (await handleWikiRoutes(req, res, urlPath, {
         rootDir,
+        historyConfig: config.history,
+        submitHistoryRestore: (response, payload) =>
+          submitHistoryRestoreToRuntime(response, runtimeProxyDeps, payload, workspaceNameFromEnv()),
         readRequestBody,
         sendGzippedHtml,
         sendJson,
