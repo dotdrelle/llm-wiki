@@ -230,4 +230,30 @@ describe('doctor qualitative diagnostics', () => {
     expect(output).toContain('estimated gain:');
     expect(output).toContain('would avoid ~1 rerank call(s)');
   });
+
+  it('reports unresolved template build-context entries without failing', async () => {
+    const root = await createWorkspace();
+    await writeFile(
+      path.join(root, 'templates', 'brief.md'),
+      [
+        '---',
+        'build_context:',
+        '  - missing.md',
+        '---',
+        '# Brief',
+        '[[INSTRUCTION: Summarize.]]',
+      ].join('\n'),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ data: [{ id: 'configured-model' }] })),
+    );
+
+    const output = await captureDoctor(createConfig(root));
+
+    expect(output).toContain(
+      'templates/brief.md: unresolved build_context entry ["missing.md"] (0 resolved)',
+    );
+    expect(output).toContain('⚠ 0 error(s)');
+  });
 });

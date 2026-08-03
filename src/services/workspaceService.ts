@@ -27,6 +27,7 @@ import {
 import { hashParts, hashText } from '../utils/hash.ts';
 import {
   canonicalizeName,
+  normalizeSafeRelativePath,
   relativeFrom,
   resolveInside,
   slugify,
@@ -40,8 +41,10 @@ import type {
   AppConfig,
   BuildState,
   BuildContext,
+  BuildContextSection,
   SourceDocument,
   TemplateDocument,
+  TemplateBuildContextResolution,
   WikiOperation,
   WikiPage,
   WorkspacePaths,
@@ -830,15 +833,9 @@ export class WorkspaceService {
     };
   }
 
-  async readBuildContext(): Promise<BuildContext> {
+  async readBuildContextSections(): Promise<BuildContextSection[]> {
     if (!(await pathExists(this.paths.buildContextDir))) {
-      return {
-        content: '',
-        hash: hashText(''),
-        fileCount: 0,
-        truncated: false,
-        rawTotalChars: 0,
-      };
+      return [];
     }
 
     const files = (
@@ -849,42 +846,117 @@ export class WorkspaceService {
       })
     ).sort();
 
+    return Promise.all(
+      files.map(async (absolutePath) => {
+        const relativePath = relativeFrom(this.paths.rootDir, absolutePath);
+        const rawContent = await readFile(absolutePath, 'utf8');
+        return {
+          relativePath,
+          content: `## ${relativePath}\n\n${rawContent.trim()}\n`,
+        };
+      }),
+    );
+  }
+
+  composeBuildContext(sections: BuildContextSection[]): BuildContext {
     const maxChars = this.config.build.maxBuildContextChars;
-    const sections: string[] = [];
+    const composedSections: string[] = [];
     let totalChars = 0;
     let rawTotalChars = 0;
     let truncated = false;
 
-    for (const absolutePath of files) {
-      const relativePath = relativeFrom(this.paths.rootDir, absolutePath);
-      const rawContent = await readFile(absolutePath, 'utf8');
-      const sectionPrefix = `## ${relativePath}\n\n`;
-      const section = `${sectionPrefix}${rawContent.trim()}\n`;
-      rawTotalChars += section.length;
+    for (const section of sections) {
+      rawTotalChars += section.content.length;
 
       if (!truncated) {
         const remainingChars = maxChars - totalChars;
         if (remainingChars <= 0) {
           truncated = true;
-        } else if (section.length > remainingChars) {
-          sections.push(section.slice(0, remainingChars).trimEnd());
+        } else if (section.content.length > remainingChars) {
+          composedSections.push(section.content.slice(0, remainingChars).trimEnd());
           totalChars = maxChars;
           truncated = true;
         } else {
-          sections.push(section);
-          totalChars += section.length;
+          composedSections.push(section.content);
+          totalChars += section.content.length;
         }
       }
     }
 
-    const content = sections.join('\n').trim();
+    const content = composedSections.join('\n').trim();
     return {
       content,
       hash: hashText(content),
-      fileCount: files.length,
+      fileCount: sections.length,
       truncated,
       rawTotalChars,
     };
+  }
+
+  resolveTemplateBuildContext(
+    sections: BuildContextSection[],
+    frontmatter: Record<string, unknown>,
+    globalContext?: BuildContext,
+  ): TemplateBuildContextResolution {
+    if (!Object.prototype.hasOwnProperty.call(frontmatter, 'build_context')) {
+      return {
+        context: globalContext ?? this.composeBuildContext(sections),
+        requested: [],
+        resolved: sections.map((section) => section.relativePath),
+        missing: [],
+      };
+    }
+
+    const rawSelection = frontmatter.build_context;
+    const requested = Array.isArray(rawSelection) ? rawSelection : [rawSelection];
+    const byPath = new Map(sections.map((section) => [section.relativePath, section]));
+    const selected: BuildContextSection[] = [];
+    const resolved: string[] = [];
+    const missing: unknown[] = [];
+    const seen = new Set<string>();
+
+    for (const entry of requested) {
+      if (typeof entry !== 'string' || !entry.trim()) {
+        missing.push(entry);
+        continue;
+      }
+      const rawPath = entry.trim();
+      if (path.isAbsolute(rawPath) || path.win32.isAbsolute(rawPath)) {
+        missing.push(entry);
+        continue;
+      }
+      const normalized = normalizeSafeRelativePath(rawPath);
+      if (!normalized) {
+        missing.push(entry);
+        continue;
+      }
+      const relativePath = normalized.startsWith('build-context/')
+        ? normalized
+        : `build-context/${normalized}`;
+      const section = byPath.get(relativePath);
+      if (!section) {
+        missing.push(entry);
+        continue;
+      }
+      if (!seen.has(relativePath)) {
+        seen.add(relativePath);
+        selected.push(section);
+        resolved.push(relativePath);
+      }
+    }
+
+    selected.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+    resolved.sort((a, b) => a.localeCompare(b));
+    return {
+      context: this.composeBuildContext(selected),
+      requested,
+      resolved,
+      missing,
+    };
+  }
+
+  async readBuildContext(): Promise<BuildContext> {
+    return this.composeBuildContext(await this.readBuildContextSections());
   }
 
   async writeDeliverable(outputAbsolutePath: string, content: string): Promise<boolean> {

@@ -6,11 +6,12 @@ Templates are standard markdown files with optional YAML frontmatter.
 
 Recognized frontmatter keys:
 
-| Key           | Description                                                     |
-| ------------- | --------------------------------------------------------------- |
-| `title`       | Kept in the generated markdown frontmatter                      |
-| `output`      | Output path relative to `deliverables/`                         |
-| `description` | Template-only metadata, stripped from output                    |
+| Key             | Description                                                            |
+| --------------- | ---------------------------------------------------------------------- |
+| `title`         | Kept in the generated markdown frontmatter                             |
+| `output`        | Output path relative to `deliverables/`                                |
+| `description`   | Template-only metadata, stripped from output                           |
+| `build_context` | Optional list of context files; template-only and stripped from output |
 
 Example:
 
@@ -45,7 +46,19 @@ The build prompt enforces these constraints:
 
 ## Build context
 
-Fixed context files in `build-context/` are included verbatim in every build LLM call, up to `build.maxBuildContextChars`. Use them for style guides, formatting rules, or domain-level constraints that apply to all deliverables.
+Fixed context files in `build-context/` are included verbatim, up to
+`build.maxBuildContextChars`. A template without `build_context` inherits every
+context file, preserving the default global behavior. When the key is present,
+only the listed files are included; paths may be relative to the workspace root
+or to `build-context/`. An empty list explicitly disables fixed context for that
+template. A single string is also accepted as shorthand for a one-item list.
+Missing or invalid entries are reported but do not stop the build.
+
+```yaml
+build_context:
+  - build-context/note/rules/citations.md
+  - note/rules/writing-style.md
+```
 
 ## Importing sources
 

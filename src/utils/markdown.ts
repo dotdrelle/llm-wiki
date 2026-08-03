@@ -330,6 +330,7 @@ export function sanitizeFrontmatter(
   const sanitized = { ...frontmatter };
   delete sanitized.output;
   delete sanitized.description;
+  delete sanitized.build_context;
   return sanitized;
 }
 

@@ -138,11 +138,11 @@ wiki refresh templates/project-brief.md
 Expands a generated deliverable into a self-contained markdown document by replacing `[src: ...]` citation markers with inline detail from the cited files.
 
 ```bash
-wiki export deliverables/project-brief.md
+wiki export project-brief.md
 # → deliverables/project-brief.export.md
 
-wiki export deliverables/project-brief.md --output deliverables/project-brief-full.md
-wiki export deliverables/project-brief.md --polish
+wiki export project-brief.md --output deliverables/project-brief-full.md
+wiki export project-brief.md --polish
 # → deliverables/project-brief.export.md  (then)
 # → deliverables/project-brief.export.polished.md  (with --polish on the .export)
 ```

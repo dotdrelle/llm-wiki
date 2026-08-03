@@ -2,9 +2,9 @@
 title: "Basic Note"
 description: "A short sourced note generated from the wiki context."
 build_context:
-  - build-context/rules/citations.md
-  - build-context/rules/writing-style.md
-  - build-context/quality/gaps-and-review.md
+  - build-context/note/rules/citations.md
+  - build-context/note/rules/writing-style.md
+  - build-context/note/quality/gaps-and-review.md
 ---
 
 # Basic Note

@@ -808,6 +808,53 @@ describe('build service', () => {
     expect(rebuiltResults[0].skipped).toBe(false);
   });
 
+  it('uses only selected context and ignores unrelated context changes', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'templates'), { recursive: true });
+    await mkdir(path.join(root, 'deliverables'), { recursive: true });
+    await mkdir(path.join(root, 'build-context'), { recursive: true });
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n');
+    await writeFile(path.join(root, 'build-context', 'selected.md'), 'Selected rule.');
+    await writeFile(path.join(root, 'build-context', 'unrelated.md'), 'Unrelated rule.');
+    await writeFile(
+      path.join(root, 'templates', 'brief.md'),
+      [
+        '---',
+        'title: Brief',
+        'build_context:',
+        '  - selected.md',
+        '---',
+        '',
+        '# Brief',
+        '',
+        '[[INSTRUCTION: Summarize.]]',
+      ].join('\n'),
+    );
+
+    const config = createConfig(root);
+    const workspace = new WorkspaceService(config);
+    const llm = new FakeLLMService();
+    const service = new BuildService(
+      config,
+      workspace,
+      llm as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+    );
+
+    await service.build();
+    expect(llm.lastJsonRequest?.system).toContain('Selected rule.');
+    expect(llm.lastJsonRequest?.system).not.toContain('Unrelated rule.');
+    const output = await readFile(path.join(root, 'deliverables', 'brief.md'), 'utf8');
+    expect(output).not.toContain('build_context');
+
+    await writeFile(path.join(root, 'build-context', 'unrelated.md'), 'Changed.');
+    expect((await service.build({ changedOnly: true }))[0].skipped).toBe(true);
+
+    await writeFile(path.join(root, 'build-context', 'selected.md'), 'Changed selected.');
+    expect((await service.build({ changedOnly: true }))[0].skipped).toBe(false);
+  });
+
   it('splits an oversized build batch and retries smaller batches', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-'));
     await mkdir(path.join(root, 'wiki'), { recursive: true });

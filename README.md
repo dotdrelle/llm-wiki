@@ -115,7 +115,7 @@ wiki build --plan
 Export a generated deliverable:
 
 ```bash
-wiki export deliverables/basic-note.md --polish
+wiki export note/basic-note.md --polish
 ```
 
 ## Workspace Layout

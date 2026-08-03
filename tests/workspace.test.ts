@@ -403,6 +403,49 @@ describe('workspace safety', () => {
     expect(buildContext.content).toContain('## build-context/rules.md');
   });
 
+  it('resolves template build-context strictly and truncates after selection', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-'));
+    await mkdir(path.join(root, 'build-context'), { recursive: true });
+    await writeFile(path.join(root, 'build-context', 'large.md'), 'L'.repeat(2000));
+    await writeFile(path.join(root, 'build-context', 'small.md'), 'Selected rule.');
+
+    const config = createConfig(root);
+    config.build.maxBuildContextChars = 1000;
+    const workspace = new WorkspaceService(config);
+    const sections = await workspace.readBuildContextSections();
+
+    expect(await workspace.readBuildContext()).toEqual(
+      workspace.composeBuildContext(sections),
+    );
+    const selected = workspace.resolveTemplateBuildContext(sections, {
+      build_context: ['small.md', 'build-context/missing.md', '../outside.md', 42],
+    });
+    expect(selected.resolved).toEqual(['build-context/small.md']);
+    expect(selected.missing).toEqual(['build-context/missing.md', '../outside.md', 42]);
+    expect(selected.context.content).toContain('Selected rule.');
+    expect(selected.context.content).not.toContain('large.md');
+    expect(selected.context.truncated).toBe(false);
+
+    const empty = workspace.resolveTemplateBuildContext(sections, {
+      build_context: [],
+    });
+    expect(empty.context).toEqual({
+      content: '',
+      hash: workspace.composeBuildContext([]).hash,
+      fileCount: 0,
+      truncated: false,
+      rawTotalChars: 0,
+    });
+
+    const invalidNull = workspace.resolveTemplateBuildContext(sections, {
+      build_context: null,
+    });
+    expect(invalidNull.requested).toEqual([null]);
+    expect(invalidNull.resolved).toEqual([]);
+    expect(invalidNull.missing).toEqual([null]);
+    expect(invalidNull.context.fileCount).toBe(0);
+  });
+
   it('detects unchanged ingested sources by matching path, byte size, and content', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-'));
     await mkdir(path.join(root, 'raw', 'untracked'), { recursive: true });

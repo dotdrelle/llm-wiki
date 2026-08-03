@@ -1044,12 +1044,13 @@ export default async function doctorCmd(
     );
   }
 
-  const [pages, indexContent, untrackedPaths, buildContext] = await Promise.all([
+  const [pages, indexContent, untrackedPaths, buildContextSections] = await Promise.all([
     workspace.listWikiPages(),
     workspace.readIndex(),
     workspace.listUntrackedSourcePaths(),
-    workspace.readBuildContext(),
+    workspace.readBuildContextSections(),
   ]);
+  const buildContext = workspace.composeBuildContext(buildContextSections);
 
   const untrackedContents = await Promise.all(
     untrackedPaths.map(async (p) => {
@@ -1204,7 +1205,16 @@ export default async function doctorCmd(
       workspace,
       new LLMService(config),
       new RetrievalService(workspace, config),
-    ).planBuild({ fastContext: true });
+    ).planBuild({ fastContext: true, buildContextSections });
+    for (const resolution of buildPlan.buildContextResolutions) {
+      if (resolution.missing.length > 0) {
+        warn(
+          `${resolution.template}: unresolved build_context entr${
+            resolution.missing.length === 1 ? 'y' : 'ies'
+          } ${JSON.stringify(resolution.missing)} (${resolution.resolved.length} resolved)`,
+        );
+      }
+    }
     row('templates:', String(buildPlan.templates.length));
     row('planned requests:', String(buildPlan.estimatedRequests));
     row(

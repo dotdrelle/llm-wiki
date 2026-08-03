@@ -293,6 +293,27 @@ export interface BuildContext {
   rawTotalChars: number;
 }
 
+export interface BuildContextSection {
+  relativePath: string;
+  content: string;
+}
+
+export interface TemplateBuildContextResolution {
+  context: BuildContext;
+  requested: unknown[];
+  resolved: string[];
+  missing: unknown[];
+}
+
+export interface TemplateBuildContextReport {
+  template: string;
+  requested: unknown[];
+  resolved: string[];
+  missing: unknown[];
+  fileCount: number;
+  truncated: boolean;
+}
+
 export interface BuildState {
   deliverables: Record<
     string,
@@ -357,6 +378,7 @@ export interface TemplateBuildPlan {
 
 export interface BuildRunPlan {
   templates: TemplateBuildPlan[];
+  buildContextResolutions: TemplateBuildContextReport[];
   estimatedRequests: number;
   estimatedInputTokens: number;
   limits: LimitsConfig;

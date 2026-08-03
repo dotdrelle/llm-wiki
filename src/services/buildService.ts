@@ -22,6 +22,7 @@ import type {
   AppConfig,
   BuildBatchPlan,
   BuildContext,
+  BuildContextSection,
   BuildRunPlan,
   BuildState,
   BuildSlotPlan,
@@ -29,6 +30,8 @@ import type {
   SearchResult,
   StabilizeDiff,
   TemplateDocument,
+  TemplateBuildContextResolution,
+  TemplateBuildContextReport,
   WikiPage,
 } from '../types.ts';
 import type { LLMService } from './llmService.ts';
@@ -770,17 +773,31 @@ export class BuildService {
     templates?: string[];
     onPageLoad?: (relativePath: string, index: number, total: number) => void;
     fastContext?: boolean;
+    buildContextSections?: BuildContextSection[];
   }): Promise<BuildRunPlan> {
     await this.workspace.ensureInitialized();
     const templatePaths = await this.workspace.resolveTemplateInputs(
       options?.templates ?? [],
     );
-    const buildContext = await this.workspace.readBuildContext();
+    const buildContextSections =
+      options?.buildContextSections ?? (await this.workspace.readBuildContextSections());
+    const globalBuildContext = this.workspace.composeBuildContext(buildContextSections);
     const wikiPages = await this.retrieval.warmCache(options?.onPageLoad);
     const templatePlans = [];
+    const buildContextResolutions: TemplateBuildContextReport[] = [];
 
     for (const templatePath of templatePaths) {
       const template = await this.workspace.readTemplateDocument(templatePath);
+      const contextResolution = this.workspace.resolveTemplateBuildContext(
+        buildContextSections,
+        template.frontmatter,
+        globalBuildContext,
+      );
+      await this.logBuildContextResolution(template, contextResolution);
+      buildContextResolutions.push(
+        this.buildContextReport(template, contextResolution),
+      );
+      const buildContext = contextResolution.context;
       const slots = options?.fastContext
         ? this.prepareSlotsForPlan(template, wikiPages)
         : await this.prepareSlots(template, wikiPages);
@@ -805,6 +822,7 @@ export class BuildService {
 
     return {
       templates: templatePlans,
+      buildContextResolutions,
       estimatedRequests: templatePlans.reduce(
         (sum, plan) => sum + plan.batches.length,
         0,
@@ -1030,6 +1048,42 @@ export class BuildService {
     };
   }
 
+  private async logBuildContextResolution(
+    template: TemplateDocument,
+    resolution: TemplateBuildContextResolution,
+  ): Promise<void> {
+    if (!this.logger) return;
+    const data = {
+      template: template.relativePath,
+      requested: resolution.requested,
+      resolved: resolution.resolved,
+      missing: resolution.missing,
+      fileCount: resolution.context.fileCount,
+      truncated: resolution.context.truncated,
+    };
+    if (resolution.requested.length > 0 && resolution.resolved.length === 0) {
+      await this.logger.error('build:context-resolution', data);
+    } else if (resolution.missing.length > 0) {
+      await this.logger.warn('build:context-resolution', data);
+    } else {
+      await this.logger.info('build:context-resolution', data);
+    }
+  }
+
+  private buildContextReport(
+    template: TemplateDocument,
+    resolution: TemplateBuildContextResolution,
+  ): TemplateBuildContextReport {
+    return {
+      template: template.relativePath,
+      requested: resolution.requested,
+      resolved: resolution.resolved,
+      missing: resolution.missing,
+      fileCount: resolution.context.fileCount,
+      truncated: resolution.context.truncated,
+    };
+  }
+
   async build(options?: {
     templates?: string[];
     force?: boolean;
@@ -1052,7 +1106,8 @@ export class BuildService {
     const templatePaths = await this.workspace.resolveTemplateInputs(
       options?.templates ?? [],
     );
-    const buildContext = await this.workspace.readBuildContext();
+    const buildContextSections = await this.workspace.readBuildContextSections();
+    const globalBuildContext = this.workspace.composeBuildContext(buildContextSections);
     const wikiPages = await this.retrieval.warmCache(options?.onPageLoad);
     const wikiHash = await this.workspace.computeWikiHash(wikiPages);
     const previousState = await this.workspace.readBuildState();
@@ -1062,8 +1117,8 @@ export class BuildService {
     if (this.logger) {
       await this.logger.info('build:run-start', {
         templateCount: templatePaths.length,
-        buildContextFiles: buildContext.fileCount,
-        buildContextTruncated: buildContext.truncated,
+        buildContextFiles: globalBuildContext.fileCount,
+        buildContextTruncated: globalBuildContext.truncated,
         force: Boolean(options?.force),
         changedOnly: Boolean(options?.changedOnly),
         stabilize: Boolean(options?.stabilize),
@@ -1073,6 +1128,13 @@ export class BuildService {
     for (const templatePath of templatePaths) {
       const templateStartedAt = Date.now();
       const template = await this.workspace.readTemplateDocument(templatePath);
+      const contextResolution = this.workspace.resolveTemplateBuildContext(
+        buildContextSections,
+        template.frontmatter,
+        globalBuildContext,
+      );
+      await this.logBuildContextResolution(template, contextResolution);
+      const buildContext = contextResolution.context;
       const templateHash = await this.workspace.computeTemplateHash(template);
       const prior = previousState.deliverables[template.relativePath];
       const isFresh =

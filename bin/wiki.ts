@@ -293,7 +293,7 @@ async function main() {
     )
     .argument(
       '<deliverable>',
-      'Path to the deliverable to expand (relative to workspace root or deliverables/)',
+      'Path relative to deliverables/ (the deliverables/ prefix is also accepted)',
     )
     .option(
       '--output <path>',
