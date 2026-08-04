@@ -20,11 +20,37 @@ function runtimeWorkflowGraphHTML() {
 }
 function runtimeWorkflowGraphCenterHTML() {
   if(!runtimeState?.workflow?.nodes?.length) return '<div class="act-empty">No runtime workflow graph yet.</div>';
-  return \`<div class="runtime-graph-main"><div class="runtime-graph-toolbar"><span>Run execution</span><span><button type="button" onclick="zoomRuntimeWorkflowGraph(.8)" title="Zoom out" aria-label="Zoom out">−</button><button type="button" onclick="zoomRuntimeWorkflowGraph(1.25)" title="Zoom in" aria-label="Zoom in">+</button><button type="button" onclick="fitRuntimeWorkflowGraph()">Fit</button><button type="button" onclick="resetRuntimeWorkflowGraph()">Reset</button></span></div>\${runtimeWorkflowSummaryHTML()}<div class="runtime-graph-legend"><b>Relation</b><span><i class="depends_on"></i>Sequence / dependency</span><b>Status</b><span><i class="bubble running"></i>Running</span><span><i class="bubble done"></i>Done</span><span><i class="bubble failed"></i>Failed</span><span><i class="bubble approval"></i>Approval</span><span><i class="bubble neutral"></i>Waiting</span></div><div class="runtime-canvas-stage"><canvas class="runtime-graph-canvas" id="runtime-graph-canvas" tabindex="0" role="application" aria-label="Interactive run execution graph"></canvas><div class="runtime-graph-a11y" role="tree" aria-label="Visible execution nodes"></div></div></div>\`;
+  return \`<div class="runtime-graph-main"><div class="runtime-graph-toolbar"><span>Run execution</span><span><button type="button" onclick="zoomRuntimeWorkflowGraph(.8)" title="Zoom out" aria-label="Zoom out">−</button><button type="button" onclick="zoomRuntimeWorkflowGraph(1.25)" title="Zoom in" aria-label="Zoom in">+</button><button type="button" onclick="fitRuntimeWorkflowGraph()">Fit</button><button type="button" onclick="resetRuntimeWorkflowGraph()">Reset</button></span></div>\${runtimeWorkflowSummarySlotHTML()}<div class="runtime-graph-legend"><b>Relation</b><span><i class="depends_on"></i>Sequence / dependency</span><b>Status</b><span><i class="bubble running"></i>Running</span><span><i class="bubble done"></i>Done</span><span><i class="bubble failed"></i>Failed</span><span><i class="bubble approval"></i>Approval</span><span><i class="bubble neutral"></i>Waiting</span></div><div class="runtime-canvas-stage"><canvas class="runtime-graph-canvas" id="runtime-graph-canvas" tabindex="0" role="application" aria-label="Interactive run execution graph"></canvas><div class="runtime-graph-a11y" role="tree" aria-label="Visible execution nodes"></div></div></div>\`;
 }
+// Le résumé est le seul fragment du cadre qui change à chaque tick. Il vit
+// donc dans un emplacement stable, mis à jour en place : réécrire tout le
+// cadre pour lui détruisait le canevas voisin à chaque seconde (voir
+// renderActivities), d'où le clignotement et les déplacements impossibles.
+function runtimeWorkflowSummarySlotHTML() {
+  const summary=runtimeWorkflowSummaryParts();
+  return \`<div class="runtime-run-summary\${summary.live?' live':''}" id="runtime-run-summary">\${summary.html}</div>\`;
+}
+// L'onglet Plan réutilise le même résumé, mais sans l'emplacement : il n'est
+// pas rafraîchi en place — la liste a son propre garde-fou d'empreinte — et
+// deux éléments portant le même identifiant dans une page, c'est une source de
+// bogue qu'on n'a aucune raison d'introduire.
 function runtimeWorkflowSummaryHTML() {
+  const summary=runtimeWorkflowSummaryParts();
+  if(!summary.html) return '';
+  return \`<div class="runtime-run-summary\${summary.live?' live':''}">\${summary.html}</div>\`;
+}
+function refreshRuntimeWorkflowSummary() {
+  const host=$('runtime-run-summary');
+  if(!host) return;
+  const summary=runtimeWorkflowSummaryParts();
+  host.classList.toggle('live',summary.live);
+  if(host.__summaryHTML===summary.html) return;
+  host.__summaryHTML=summary.html;
+  host.innerHTML=summary.html;
+}
+function runtimeWorkflowSummaryParts() {
   const {nodes}=runtimeWorkflowGraphData();
-  if(!nodes.length) return '';
+  if(!nodes.length) return {html:'',live:false};
   const run=nodes.find(node=>node.type==='run');
   const phases=nodes.filter(node=>node.type==='task_group');
   const agents=new Set(phases.flatMap(phase=>phase.agents||[]));
@@ -37,7 +63,7 @@ function runtimeWorkflowSummaryHTML() {
   const done=phases.reduce((sum,phase)=>sum+(phase.done||0),0);
   const total=phases.reduce((sum,phase)=>sum+(phase.total||0),0);
   const live=String(run?.status||runtimeState?.status)==='running';
-  return \`<div class="runtime-run-summary\${live?' live':''}"><strong>\${esc(run?.label||'Runtime run')}</strong>\${live?'<span class="runtime-live-indicator">● Live</span>':''}<span>\${agents.size} agent\${agents.size===1?'':'s'}</span><span>Parallel \${currentParallel} / max ×\${maxParallel}\${ceilingTag}</span><span>\${done}/\${total} tasks</span><span>Tokens \${esc(formatRuntimeTokens(run?.usage))}</span></div>\`;
+  return {live,html:\`<strong>\${esc(run?.label||'Runtime run')}</strong>\${live?'<span class="runtime-live-indicator">● Live</span>':''}<span>\${agents.size} agent\${agents.size===1?'':'s'}</span><span>Parallel \${currentParallel} / max ×\${maxParallel}\${ceilingTag}</span><span>\${done}/\${total} tasks</span><span>Tokens \${esc(formatRuntimeTokens(run?.usage))}</span>\`};
 }
 function runtimeWorkflowInspectorHTML() {
   return '<aside class="runtime-graph-inspector" id="runtime-graph-inspector"></aside>';
@@ -196,7 +222,10 @@ function formatRuntimeDuration(ms) {
 }
 function fitRuntimeWorkflowGraph(){runtimeCanvasRenderer?.fit()}
 function zoomRuntimeWorkflowGraph(factor){runtimeCanvasRenderer?.zoom(factor)}
-function resetRuntimeWorkflowGraph(){runtimeCanvasPositions.clear();runtimeWorkflowUserSelected=false;selectedRuntimeWorkflowTaskId=null;renderRuntimeWorkflowCanvas();runtimeCanvasRenderer?.fit()}
+// « Reset » rend aussi la main au cadrage automatique : sans cela, un
+// déplacement manuel figeait la vue pour le reste de la session et le bouton
+// ne remettait que les positions des nœuds.
+function resetRuntimeWorkflowGraph(){runtimeCanvasPositions.clear();runtimeCanvasCamera=null;runtimeWorkflowUserSelected=false;selectedRuntimeWorkflowTaskId=null;runtimeCanvasRenderer?.releaseCamera();renderRuntimeWorkflowCanvas();runtimeCanvasRenderer?.fit()}
 function renderRuntimeWorkflowGraph(){renderRuntimeWorkflowCanvas()}
 function selectRuntimeWorkflowNode(id) {
   if(selectedWorkflowNodeId!==id) selectedRuntimeWorkflowTaskId=null;
@@ -261,6 +290,15 @@ function renderRuntimeWorkflowInspector() {
     const agent=selectedTask.task.executor||selectedTask.task.raw?.executor||'—';
     return \`<div class="runtime-inspector-section runtime-task-flow"><div class="runtime-inspector-heading">Execution sequence · task \${selectedTaskIndex+1}/\${taskRows.length}</div><div class="rit-flow-line previous"><span>Previous</span><b>\${esc(previous?.task.label||'Start')}</b></div><div class="rit-flow-line current"><span>Selected</span><b>\${esc(selectedTask.task.label)}</b></div><div class="rit-flow-line next"><span>Next</span><b>\${esc(next?.task.label||'End')}</b></div><dl class="runtime-inspector-dl"><dt>Status</dt><dd>\${esc(selectedTask.task.status||'—')}</dd><dt>Started</dt><dd>\${esc(started)}</dd><dt>Duration</dt><dd>\${esc(duration)}</dd><dt>Agent</dt><dd>\${esc(agent)}</dd><dt>Tokens</dt><dd>\${esc(tokens)}</dd></dl></div>\`;
   })():'';
-  inspector.innerHTML=\`<div class="runtime-inspector-title">\${esc(node.label)}</div><div class="runtime-inspector-meta">\${phase?'phase':run?'run':esc(node.type)} · \${esc(node.status||'-')}</div><dl class="runtime-inspector-dl">\${details.map(([key,value])=>\`<dt>\${esc(key)}</dt><dd>\${esc(value)}</dd>\`).join('')}</dl>\${linked.length?\`<div class="runtime-inspector-section"><div class="runtime-inspector-heading">Sequence</div>\${linked.map(relationLine).join('')}</div>\`:''}\${taskList}\${taskFlow}<div class="runtime-inspector-section"><div class="runtime-inspector-heading">Run journal</div>\${essentialRuntimeLogHTML()}</div>\`;
+  const html=\`<div class="runtime-inspector-title">\${esc(node.label)}</div><div class="runtime-inspector-meta">\${phase?'phase':run?'run':esc(node.type)} · \${esc(node.status||'-')}</div><dl class="runtime-inspector-dl">\${details.map(([key,value])=>\`<dt>\${esc(key)}</dt><dd>\${esc(value)}</dd>\`).join('')}</dl>\${linked.length?\`<div class="runtime-inspector-section"><div class="runtime-inspector-heading">Sequence</div>\${linked.map(relationLine).join('')}</div>\`:''}\${taskList}\${taskFlow}<div class="runtime-inspector-section"><div class="runtime-inspector-heading">Run journal</div>\${essentialRuntimeLogHTML()}</div>\`;
+  // Même raison que pour le cadre : l'inspecteur est reconstruit à chaque
+  // image, ce qui remettait à zéro le défilement du journal pendant un run.
+  if(inspector.__inspectorHTML===html) return;
+  inspector.__inspectorHTML=html;
+  const journal=inspector.querySelector('.runtime-inspector-section:last-child pre');
+  const journalTop=journal?journal.scrollTop:0;
+  inspector.innerHTML=html;
+  const nextJournal=inspector.querySelector('.runtime-inspector-section:last-child pre');
+  if(nextJournal&&journalTop>0) nextJournal.scrollTop=journalTop;
 }
 /* ── end Runtime Graph ─────────────────────────────────────────────── */`;

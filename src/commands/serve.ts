@@ -25,6 +25,7 @@ import { handleChatHistoryApi } from '../serve/routes/chatHistoryRoutes.ts';
 import { handleChatRoutes } from '../serve/routes/chatRoutes.ts';
 import { handleConfigRoutes } from '../serve/routes/configRoutes.ts';
 import { handleConnectorsOAuthRoutes } from '../serve/routes/connectorsOAuthRoutes.ts';
+import { graphSummaryCompletion } from '../serve/graphSummaryCompletion.ts';
 import { handleGraphRoutes } from '../serve/routes/graphRoutes.ts';
 import { handleMcpRoutes } from '../serve/routes/mcpRoutes.ts';
 import { handleRuntimeRoutes } from '../serve/routes/runtimeRoutes.ts';
@@ -63,7 +64,7 @@ const MARKED_DIST_PATH = path.resolve(
 );
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
-const LLM_WIKI_VERSION = '0.15.40';
+const LLM_WIKI_VERSION = '0.15.41';
 
 type SkillMeta = {
   name: string;
@@ -1021,6 +1022,7 @@ export default async function serveCmd(
         workspaceNameFromEnv,
         sendJson,
         sendGzippedHtml,
+        completeText: graphSummaryCompletion(config),
       })) return;
 
       if (await handleWikiRoutes(req, res, urlPath, {

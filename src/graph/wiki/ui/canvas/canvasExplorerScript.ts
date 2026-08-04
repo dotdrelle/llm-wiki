@@ -1,10 +1,36 @@
 export function canvasExplorerScript(): string {
   return String.raw`
 let canvasExplorer=null;
-function canvasExplorerPositionKey(id){return'llm-wiki:graph:canvas:'+encodeURIComponent(data?.workspace||'wiki')+':'+data?.topologyEtag+':'+encodeURIComponent(id)}
+/*
+ Emplacement stable d'un domaine sur la carte.
+
+ La position venait du rang dans la liste filtrée : ajouter un domaine — ce
+ que fait chaque ingest — redistribuait TOUS les autres sur le cercle. Suivre
+ l'arrivée des bulles était impossible, puisque la carte entière changeait à
+ chaque passe.
+
+ Chaque domaine reçoit donc un emplacement à sa première apparition et le
+ garde. La spirale d'angle d'or place les nouveaux venus vers l'extérieur sans
+ jamais aligner deux points ni déplacer les précédents ; on abandonne au
+ passage le cercle autour d'un centre, qui n'apportait rien de plus.
+*/
+const canvasExplorerSlots=new Map();
+function canvasExplorerSlot(id){
+  if(!canvasExplorerSlots.has(id))canvasExplorerSlots.set(id,canvasExplorerSlots.size);
+  return canvasExplorerSlots.get(id)}
+function seedCanvasExplorerSlots(){(data?.communities||[]).forEach(item=>canvasExplorerSlot(item.id))}
+function canvasExplorerSlotPosition(id){
+  const slot=canvasExplorerSlot(id),angle=slot*2.399963-Math.PI/2,radius=slot?.135+Math.sqrt(slot)*.112:0;
+  return{x:Math.cos(angle)*radius,y:Math.sin(angle)*radius*.72}}
+// La position mémorisée d'une fiche ne dépend plus de la topologie : elle
+// changeait à chaque ingest, donc tout placement manuel était perdu au moment
+// précis où le graphe évoluait — c'est-à-dire quand il servait le plus.
+function canvasExplorerPositionKey(id){return'llm-wiki:graph:canvas:'+encodeURIComponent(data?.workspace||'wiki')+':'+encodeURIComponent(id)}
 function readCanvasExplorerPosition(id){try{const value=JSON.parse(localStorage.getItem(canvasExplorerPositionKey(id))||'null');return Number.isFinite(value?.x)&&Number.isFinite(value?.y)?value:null}catch{return null}}
 function saveCanvasExplorerPosition(node){try{localStorage.setItem(canvasExplorerPositionKey(node.id),JSON.stringify({x:node.x,y:node.y}))}catch{}}
-function destroyCanvasExplorer(){canvasExplorer?.destroy();canvasExplorer=null}
+// La vue liste n'a pas de bulle à laquelle s'ancrer : la fiche partirait avec
+// l'explorateur et resterait posée au milieu d'un tableau.
+function destroyCanvasExplorer(){closeGraphContextCard();canvasExplorer?.destroy();canvasExplorer=null}
 function separateCanvasExplorerNodes(nodes){const detailed=nodes.slice(0,50);for(let pass=0;pass<90;pass++){let moved=false;for(let i=0;i<detailed.length;i++)for(let j=i+1;j<detailed.length;j++){const a=detailed[i],b=detailed[j],dx=b.x-a.x,dy=b.y-a.y,minX=.142,minY=.078;if(Math.abs(dx)>=minX||Math.abs(dy)>=minY)continue;moved=true;if(minX-Math.abs(dx)<minY-Math.abs(dy)){const push=(dx<0?-1:1)*(minX-Math.abs(dx))*.51;a.x-=push;b.x+=push}else{const push=(dy<0?-1:1)*(minY-Math.abs(dy))*.51;a.y-=push;b.y+=push}}if(!moved)break}return nodes}
 function createCanvasExplorer(host){
   // Plus de mini-carte : sur une vue qui tient déjà entière dans le cadre, elle
@@ -13,7 +39,7 @@ function createCanvasExplorer(host){
   host.innerHTML='<canvas class="graph-explorer-canvas" tabindex="0" role="application" aria-label="Interactive knowledge graph. Use arrow keys to pan, plus or minus to zoom."></canvas><div class="graph-explorer-a11y" role="tree" aria-label="Visible graph nodes"></div>';
   const surface=host.querySelector('.graph-explorer-canvas'),a11y=host.querySelector('.graph-explorer-a11y');
   const context=surface.getContext('2d');
-  const state={scene:null,signature:'',width:0,height:0,ratio:1,hits:[],pointer:null,dragged:false,hover:null,viewports:new Map,clock:0};
+  const state={scene:null,signature:'',nodeIds:null,width:0,height:0,ratio:1,hits:[],labels:[],anchor:null,pointer:null,dragged:false,hover:null,viewports:new Map,clock:0};
   let scheduler,camera;
   const nodeById=new Map(data.nodes.map(node=>[node.id,node]));
   const color=index=>colors[index%colors.length];
@@ -81,11 +107,11 @@ function createCanvasExplorer(host){
   function communityRadius(node){return 28+Math.min(34,Math.sqrt(node.community.nodeIds.length)*7)}
   // Débord d'un nœud, en pixels et par côté, à une échelle donnée. Un halo de
   // constellation grandit avec le zoom, une fiche non : les deux ne se
-  // calculent pas pareil. Le libellé s'écrit sous le nœud, donc le débord
-  // vertical est dissymétrique — réserver la même hauteur en haut gaspille le
-  // cadre.
+  // calculent pas pareil. Depuis que le libellé peut se poser de n'importe quel
+  // côté, la réserve n'est plus dissymétrique vers le bas — elle l'était quand
+  // le texte s'écrivait forcément sous le nœud.
   function overflow(node,scale){
-    if(node.type==='community'){const r=communityRadius(node)*scale+8;return{left:r,right:r,top:r,bottom:r+32}}
+    if(node.type==='community'){const r=communityRadius(node)*scale+8;return{left:r+22,right:r+22,top:r+18,bottom:r+30}}
     const half=cardWidth(node)/2+8;return{left:half,right:half,top:24,bottom:26}}
   /*
    Cadrage par point fixe.
@@ -210,16 +236,15 @@ function createCanvasExplorer(host){
       context.beginPath();context.arc(qx,qy,core,0,Math.PI*2);context.fill()});
     context.strokeStyle=rgba(paint,hot?.9:.4);context.lineWidth=hot?1.6:.9;context.setLineDash([2,5]);
     context.beginPath();context.arc(point.x,point.y,radius,0,Math.PI*2);context.stroke();context.setLineDash([]);
-    context.textAlign='center';
-    // Le libellé était en gras 700 sur une couleur claire fixe : trop appuyé, et
-    // illisible sur le thème clair, qui n'était tout simplement pas traité ici.
-    context.fillStyle=hot?(pale?'#0d1826':'#f4f7fc'):(pale?'#2a3a4d':'#c9d3e2');
-    context.font='500 13px ui-sans-serif,system-ui';
-    context.fillText(node.label.toUpperCase(),point.x,point.y+radius+19);
-    context.fillStyle=rgba(paint,pale?.95:.8);context.font='11px ui-sans-serif,system-ui';
+    // Le libellé n'est plus écrit ici : il part dans la file de placement, qui
+    // le posera à l'extérieur de l'amas en évitant ses voisins. L'écrire sur
+    // place, sous le nœud, tassait les textes les uns sur les autres dès que
+    // la carte se remplissait — c'est-à-dire dès qu'elle devenait utile.
     // Le compte affiché est celui du domaine, pas celui des étoiles dessinées :
     // la constellation est plafonnée à 48 points, le domaine ne l'est pas.
-    context.fillText(node.community.nodeIds.length+' pages',point.x,point.y+radius+34);
+    state.labels.push({x:point.x,y:point.y,radius,weight:1e6+node.community.nodeIds.length,always:true,lines:[
+      {text:node.label.toUpperCase(),font:'500 13px ui-sans-serif,system-ui',height:15,color:hot?(pale?'#0d1826':'#f4f7fc'):(pale?'#2a3a4d':'#c9d3e2')},
+      {text:node.community.nodeIds.length+' pages',font:'11px ui-sans-serif,system-ui',height:13,color:rgba(paint,pale?.95:.8)}]});
     state.hits.push({node,x:point.x,y:point.y,r:Math.max(28,radius*1.1)})}
   function cardWidth(node){return Math.min(210,82+String(node.label).length*5.8)}
   function drawDocument(node,index){const point=project(node),paint=color(communityIndex(node.communityId)),selectedNode=selected?.id===node.id,detail=point.scale>1.55,w=cardWidth(node),h=38;if(detail){
@@ -228,7 +253,60 @@ function createCanvasExplorer(host){
       // gaussien par fiche et par image.
       if(!selectedNode)paintGlow(paint,.20,.07,point.x,point.y,Math.max(w,h)*.78);
       else{context.shadowBlur=24;context.shadowColor=rgba(paint,.8)}
-      context.fillStyle='rgba(16,23,34,.96)';context.beginPath();context.roundRect(point.x-w/2,point.y-h/2,w,h,9);context.fill();context.shadowBlur=0;context.strokeStyle=rgba(paint,selectedNode?1:.55);context.lineWidth=selectedNode?2:1;context.stroke();context.fillStyle=paint;context.fillRect(point.x-w/2+3,point.y-h/2+7,3,h-14);context.textAlign='left';context.font='600 11.5px ui-sans-serif,system-ui';context.fillStyle='#edf3fb';let label=node.label;while(context.measureText(label).width>w-28&&label.length>5)label=label.slice(0,-2);context.fillText(label+(label!==node.label?'…':''),point.x-w/2+13,point.y-2);context.font='10px ui-sans-serif,system-ui';context.fillStyle=rgba(paint,.9);context.fillText((node.degree||0)+' relations',point.x-w/2+13,point.y+12);state.hits.push({node,x:point.x,y:point.y,w,h})}else{const core=3+Math.sqrt(node.degree||0);paintGlow(paint,.5,.16,point.x,point.y,core*3.6);context.fillStyle='#f4f8ff';context.beginPath();context.arc(point.x,point.y,core,0,Math.PI*2);context.fill();if(point.scale>1.02){context.textAlign='center';context.font='10px ui-sans-serif,system-ui';context.fillStyle='rgba(220,229,242,.75)';context.fillText(node.label.length>22?node.label.slice(0,21)+'…':node.label,point.x,point.y+17)}state.hits.push({node,x:point.x,y:point.y,r:15})}}
+      context.fillStyle='rgba(16,23,34,.96)';context.beginPath();context.roundRect(point.x-w/2,point.y-h/2,w,h,9);context.fill();context.shadowBlur=0;context.strokeStyle=rgba(paint,selectedNode?1:.55);context.lineWidth=selectedNode?2:1;context.stroke();context.fillStyle=paint;context.fillRect(point.x-w/2+3,point.y-h/2+7,3,h-14);context.textAlign='left';context.font='600 11.5px ui-sans-serif,system-ui';context.fillStyle='#edf3fb';let label=node.label;while(context.measureText(label).width>w-28&&label.length>5)label=label.slice(0,-2);context.fillText(label+(label!==node.label?'…':''),point.x-w/2+13,point.y-2);context.font='10px ui-sans-serif,system-ui';context.fillStyle=rgba(paint,.9);context.fillText((node.degree||0)+' relations',point.x-w/2+13,point.y+12);state.hits.push({node,x:point.x,y:point.y,w,h})}else{const core=3+Math.sqrt(node.degree||0);paintGlow(paint,.5,.16,point.x,point.y,core*3.6);context.fillStyle='#f4f8ff';context.beginPath();context.arc(point.x,point.y,core,0,Math.PI*2);context.fill();if(point.scale>1.02)state.labels.push({x:point.x,y:point.y,radius:core+3,weight:(node.degree||0)+(selectedNode||state.hover===node.id?1e5:0),always:selectedNode||state.hover===node.id,lines:[{text:node.label.length>22?node.label.slice(0,21)+'…':node.label,font:'10px ui-sans-serif,system-ui',height:12,color:light()?'rgba(44,60,80,.88)':'rgba(220,229,242,.78)'}]});state.hits.push({node,x:point.x,y:point.y,r:15})}}
+  /*
+   Placement des libellés, en une passe après les nœuds.
+
+   Un libellé écrit au moment où l'on dessine son nœud ne peut rien savoir de
+   ceux qui suivent : c'est ce qui les empilait. On les collecte donc tous,
+   puis on les pose du plus important au moins important, en réservant à chacun
+   son rectangle. La direction préférée est celle qui éloigne du barycentre du
+   nuage — un libellé posé vers l'extérieur ne rencontre rien —, les huit
+   directions cardinales servant de recours, puis un éloignement progressif.
+
+   Ce qui ne trouve pas de place n'est pas superposé : il disparaît. Un nœud
+   important garde toujours son libellé, un point isolé le retrouve au survol
+   ou à la sélection, et la colonne de gauche reste l'index exhaustif. Un texte
+   illisible n'informe personne, deux textes superposés informent moins que un.
+  */
+  function drawLabels(){
+    const queue=state.labels;
+    if(!queue.length)return;
+    let cx=0,cy=0;
+    queue.forEach(item=>{cx+=item.x/queue.length;cy+=item.y/queue.length});
+    const placed=[];
+    const collides=box=>placed.some(other=>Math.abs(box.x-other.x)<(box.w+other.w)/2+5&&Math.abs(box.y-other.y)<(box.h+other.h)/2+4);
+    const outside=box=>box.x-box.w/2<-40||box.x+box.w/2>state.width+40||box.y-box.h/2<-20||box.y+box.h/2>state.height+20;
+    queue.sort((a,b)=>b.weight-a.weight).forEach(item=>{
+      let width=0,height=0;
+      item.lines.forEach(line=>{context.font=line.font;width=Math.max(width,context.measureText(line.text).width);height+=line.height});
+      const dx=item.x-cx,dy=item.y-cy,length=Math.hypot(dx,dy)||1;
+      const headings=[{x:dx/length,y:dy/length},{x:0,y:1},{x:0,y:-1},{x:1,y:0},{x:-1,y:0},{x:.71,y:.71},{x:-.71,y:.71},{x:.71,y:-.71},{x:-.71,y:-.71}];
+      let box=null;
+      for(const heading of headings){
+        for(let step=0;step<3;step++){
+          const reach=item.radius+7+step*(height*.75+7);
+          const candidate={x:item.x+heading.x*(reach+width/2*Math.abs(heading.x)),y:item.y+heading.y*(reach+height/2*Math.abs(heading.y)),w:width,h:height};
+          if(collides(candidate)||outside(candidate))continue;
+          box=candidate;break}
+        if(box)break}
+      if(!box){
+        if(!item.always)return;
+        box={x:item.x,y:item.y+item.radius+7+height/2,w:width,h:height}}
+      placed.push(box);
+      let top=box.y-height/2;
+      context.textAlign='center';
+      item.lines.forEach(line=>{context.font=line.font;context.fillStyle=line.color;context.fillText(line.text,box.x,top+line.height*.78);top+=line.height})})}
+  // Position écran d'un nœud, rayon compris. Un appelant extérieur — la fiche
+  // de contexte — n'a pas à connaître la caméra ni le cadre pour se poser à
+  // côté d'une bulle.
+  function locateNode(id){
+    const node=state.scene?.nodes.find(item=>item.id===id);
+    if(!node)return null;
+    const point=project(node);
+    const radius=node.type==='community'?communityRadius(node)*point.scale:point.scale>1.55?cardWidth(node)/2:3+Math.sqrt(node.degree||0);
+    if(point.x<-radius||point.y<-radius||point.x>state.width+radius||point.y>state.height+radius)return null;
+    return{x:point.x,y:point.y,r:radius}}
   function renderA11y(){a11y.innerHTML=state.scene.nodes.map(node=>'<button type="button" role="treeitem" data-canvas-node="'+esc(node.id)+'">'+esc(node.label)+'</button>').join('')}
   function draw(now){
     // Le planificateur demande une image dès sa construction, avant que la
@@ -236,7 +314,7 @@ function createCanvasExplorer(host){
     // casse parce que requestAnimationFrame est asynchrone et que setScene
     // suit immédiatement — c'est une chance de calendrier, pas une garantie.
     if(!camera||!state.scene)return;
-    camera.tick(now);state.clock=now/1000;state.hits=[];
+    camera.tick(now);state.clock=now/1000;state.hits=[];state.labels=[];
     context.clearRect(0,0,state.width,state.height);drawBackground();
     const byId=new Map(state.scene.nodes.map(node=>[node.id,node]));
     // L'index de couleur d'un domaine doit venir de sa place dans la liste, pas
@@ -254,7 +332,22 @@ function createCanvasExplorer(host){
       node.links.forEach(link=>{const from=byId.get(link.from);
         if(from)communityEdge(from,node,{weight:link.count},rank.get(node.id)??index,rank.get(node.id)??index)})});
     state.scene.nodes.slice().sort((a,b)=>(a.depth||1)-(b.depth||1))
-      .forEach((node,index)=>node.type==='community'?drawCommunity(node,rank.get(node.id)??index):drawDocument(node,index));
+      .forEach((node,index)=>{
+        node.type==='community'?drawCommunity(node,rank.get(node.id)??index):drawDocument(node,index);
+        // Ce qui vient d'apparaître pendant un ingest se signale sur place : le
+        // lecteur voit la page arriver dans son domaine sans que rien d'autre
+        // ne bouge. Le halo s'éteint tout seul.
+        const fresh=graphNodeFreshness(node.id);
+        if(!fresh)return;
+        const spot=project(node),ring=(node.type==='community'?communityRadius(node)*spot.scale:9)+7+(1-fresh)*10;
+        context.strokeStyle='rgba(116,195,101,'+(fresh*.85).toFixed(3)+')';context.lineWidth=2;
+        context.beginPath();context.arc(spot.x,spot.y,ring,0,Math.PI*2);context.stroke()});
+    drawLabels();
+    // L'ancre est relevée à l'image, pas à l'événement : le zoom, le
+    // déplacement et le recadrage animé passent tous par le dessin, et un seul
+    // point de mesure évite qu'une fiche flottante se désolidarise de sa bulle
+    // pendant une transition.
+    if(state.anchor)state.anchor.notify(locateNode(state.anchor.id));
     /*
      Ce qui s'anime, c'est une constellation — pas un niveau de vue.
 
@@ -264,7 +357,7 @@ function createCanvasExplorer(host){
      dessinés une fois puis figés en pleine oscillation, ce qui se voit comme
      une animation qui s'arrête.
     */
-    if(state.animated)scheduler.animate(260)}
+    if(state.animated||hasFreshGraphNodes())scheduler.animate(260)}
   scheduler=createGraphFrameScheduler(draw);camera=createGraphCamera(scheduler);resize();
   function hit(x,y){return [...state.hits].reverse().find(item=>item.w?Math.abs(x-item.x)<=item.w/2&&Math.abs(y-item.y)<=item.h/2:Math.hypot(x-item.x,y-item.y)<=item.r)}
   function coordinates(event){const rect=surface.getBoundingClientRect();return{x:event.clientX-rect.left,y:event.clientY-rect.top}}
@@ -285,7 +378,10 @@ function createCanvasExplorer(host){
     if(!state.pointer)return;
     const dragging=state.pointer.target&&state.pointer.target.node.type!=='community';
     if(state.dragged&&dragging)saveCanvasExplorerPosition(state.pointer.target.node);
-    else if(!state.dragged&&point){const target=hit(point.x,point.y);if(target)activate(target.node)}
+    // Un clic dans le vide ferme la fiche de contexte : c'est le geste par
+    // lequel on referme n'importe quel calque, et la croix reste pour ceux qui
+    // ne l'essaient pas.
+    else if(!state.dragged&&point){const target=hit(point.x,point.y);if(target)activate(target.node);else closeGraphContextCard()}
     // L'identifiant est mémorisé à la prise, pas relu sur l'événement : un
     // relâchement hors du canevas n'en fournit aucun, et la capture resterait
     // pendante — le canevas continuerait d'intercepter les événements destinés
@@ -335,21 +431,36 @@ function createCanvasExplorer(host){
    donné, et un simple redessin ne bouge pas la caméra — sans quoi le
    déplacement manuel d'une fiche relancerait un recadrage à chaque image.
   */
+  /*
+   Une scène qui s'enrichit n'est pas une nouvelle scène.
+
+   Le repère est la liste des nœuds : l'arrivée d'un document pendant un ingest
+   la change, et la caméra se recadrait donc à chaque nouvelle page — au milieu
+   de la lecture, en annulant zoom et déplacement. Or ajouter n'est pas
+   naviguer. Tant que tout ce qui était affiché l'est encore, on garde le
+   cadrage ; le nouveau venu se signale par son halo, pas en déplaçant le
+   reste.
+  */
   return{host,setScene(scene){
     const signature=scene.level+'#'+scene.nodes.map(node=>node.id).join('|');
     if(state.signature)state.viewports.set(state.signature,{...camera.state});
-    const previous=state.signature;
-    state.scene=scene;state.signature=signature;
-    state.animated=scene.nodes.some(node=>node.type==='community');
+    const previous=state.signature,previousIds=state.nodeIds;
+    const nodeIds=new Set(scene.nodes.map(node=>node.id));
+    const grew=!!previousIds&&scene.level===state.scene?.level&&[...previousIds].every(id=>nodeIds.has(id));
+    state.scene=scene;state.signature=signature;state.nodeIds=nodeIds;
+    state.animated=scene.nodes.some(node=>node.type==='community')||hasFreshGraphNodes();
     renderA11y();measureFrame();
-    if(signature!==previous){const saved=state.viewports.get(signature);camera.moveTo(saved||bounds(scene.nodes),saved?260:320)}
-    scheduler.invalidate()},fit(){measureFrame();camera.moveTo(bounds(state.scene.nodes),280)},zoom(factor){camera.zoomAt(factor,camera.state.x,camera.state.y)},destroy(){observer.disconnect();themeObserver.disconnect();window.removeEventListener('pointerup',releaseOutside);window.removeEventListener('blur',releaseOutside);scheduler.destroy()},invalidate:scheduler.invalidate}
+    if(signature!==previous&&!grew){const saved=state.viewports.get(signature);camera.moveTo(saved||bounds(scene.nodes),saved?260:320)}
+    scheduler.invalidate()},
+  anchor(id,notify){state.anchor=id?{id,notify}:null;if(id)scheduler.invalidate()},
+  locate:locateNode,
+  fit(){measureFrame();camera.moveTo(bounds(state.scene.nodes),280)},zoom(factor){camera.zoomAt(factor,camera.state.x,camera.state.y)},destroy(){observer.disconnect();themeObserver.disconnect();window.removeEventListener('pointerup',releaseOutside);window.removeEventListener('blur',releaseOutside);scheduler.destroy()},invalidate:scheduler.invalidate}
 }
 function renderCanvasExplorer(){
   if(!canvasExplorer||canvasExplorer.host!==canvas||!canvasExplorer.host.isConnected){destroyCanvasExplorer();canvasExplorer=createCanvasExplorer(canvas)}
   canvasExplorer.setScene(view==='map'?canvasExplorerSceneMap():canvasExplorerSceneDocuments())
 }
-function canvasExplorerSceneMap(){const graph=visible(),ids=new Set(graph.nodes.map(node=>node.id)),communities=data.communities.filter(item=>item.nodeIds.some(id=>ids.has(id))),nodes=communities.map((item,index)=>{const angle=Math.PI*2*index/Math.max(1,communities.length)-Math.PI/2,radius=communities.length>5&&index===0?0:.34;return{id:item.id,label:item.label,type:'community',community:item,x:Math.cos(angle)*radius,y:Math.sin(angle)*radius*.62,depth:.92+(index%4)*.04}}),visibleIds=new Set(nodes.map(node=>node.id));return{level:'map',nodes,edges:(data.communityEdges||[]).filter(edge=>visibleIds.has(edge.from)&&visibleIds.has(edge.to)).map(edge=>({...edge,weight:edge.count}))}}
+function canvasExplorerSceneMap(){const graph=visible(),ids=new Set(graph.nodes.map(node=>node.id)),communities=data.communities.filter(item=>item.nodeIds.some(id=>ids.has(id))),nodes=communities.map((item,index)=>{const spot=canvasExplorerSlotPosition(item.id);return{id:item.id,label:item.label,type:'community',community:item,x:spot.x,y:spot.y,depth:.92+(index%4)*.04}}),visibleIds=new Set(nodes.map(node=>node.id));return{level:'map',nodes,edges:(data.communityEdges||[]).filter(edge=>visibleIds.has(edge.from)&&visibleIds.has(edge.to)).map(edge=>({...edge,weight:edge.count}))}}
 function canvasExplorerSceneDocuments(){const graph=visible(),community=data.communities.find(item=>item.id===selectedCommunity)||(selected?data.communities.find(item=>item.nodeIds.includes(selected.id)):null);if(!community)return{level:view,nodes:[],edges:[]};let ids=new Set(community.nodeIds);if(view==='focus'&&selected){ids=new Set([selected.id]);data.edges.forEach(edge=>{if(edge.from===selected.id)ids.add(edge.to);if(edge.to===selected.id)ids.add(edge.from)})}const source=graph.nodes.filter(node=>ids.has(node.id)).sort((a,b)=>Number(b.id===selected?.id)-Number(a.id===selected?.id)||(b.degree||0)-(a.degree||0)||a.id.localeCompare(b.id)).slice(0,50),count=Math.max(1,source.length),typeColumns={'raw-source':-.36,'wiki-source':-.3,template:-.12,'build-context':-.08,wiki:.15,deliverable:.36},nodes=source.map((node,index)=>{let x,y;if(view==='focus'&&selected){if(node.id===selected.id){x=0;y=0}else{const angle=Math.PI*2*index/count-Math.PI/2;x=typeColumns[node.type]??Math.cos(angle)*.34;y=Math.sin(angle)*.28}}else{const angle=index*2.399963,r=.04+Math.sqrt(index)*.048;x=Math.cos(angle)*r;y=Math.sin(angle)*r*.8}const saved=readCanvasExplorerPosition(node.id);if(saved){x=saved.x;y=saved.y}return{...node,label:node.title,x,y,depth:.9+(index%5)*.04,communityId:node.community?.communityId}});separateCanvasExplorerNodes(nodes);const visibleIds=new Set(nodes.map(node=>node.id));
   const edges=data.edges.filter(edge=>visibleIds.has(edge.from)&&visibleIds.has(edge.to));
   return{level:view,nodes:[...nodes,...collapsedNeighbourGroups(nodes,visibleIds,edges)],edges}}

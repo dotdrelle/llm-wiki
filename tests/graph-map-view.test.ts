@@ -111,7 +111,9 @@ describe('vue des domaines', () => {
      oscillation, ce que l'œil lit comme une animation qui s'arrête.
     */
     expect(source).not.toContain("state.scene.level==='map')scheduler.animate");
-    expect(source).toContain('if(state.animated)scheduler.animate');
+    // Un nœud fraîchement ingéré porte un halo qui s'éteint : la boucle doit
+    // aussi tourner pour lui, même sur une scène par ailleurs immobile.
+    expect(source).toContain('if(state.animated||hasFreshGraphNodes())scheduler.animate');
     expect(source).toContain("state.animated=scene.nodes.some(node=>node.type==='community')");
   });
 
@@ -419,10 +421,51 @@ describe('cadrage automatique', () => {
      recentrer puis rezoomer à la main à chaque entité.
     */
     expect(source).toContain("const signature=scene.level+'#'+scene.nodes.map(node=>node.id).join('|')");
-    expect(source).toContain('if(signature!==previous){');
+    expect(source).toContain('if(signature!==previous&&!grew){');
     // Un simple redessin ne bouge pas la caméra : sinon déplacer une fiche
     // relancerait un recadrage à chaque image.
     expect(source).not.toContain("state.viewports.get(scene.level)");
+  });
+
+  it('ne recadre pas une scène qui ne fait que s’enrichir', () => {
+    /*
+     Pendant un ingest, chaque page qui arrive change la liste des nœuds. Si ce
+     seul fait déclenchait un recadrage, la vue sauterait toutes les quelques
+     secondes en pleine lecture et annulerait zoom et déplacement. Ajouter
+     n'est pas naviguer : tant que tout ce qui était affiché l'est encore, le
+     cadrage appartient au lecteur.
+    */
+    expect(source).toContain(
+      "const grew=!!previousIds&&scene.level===state.scene?.level&&[...previousIds].every(id=>nodeIds.has(id))",
+    );
+  });
+
+  it('donne à chaque domaine un emplacement qu’il garde', () => {
+    /*
+     La position venait du rang dans la liste filtrée : l'arrivée d'un domaine
+     redistribuait tous les autres, et suivre l'ajout des bulles pendant un
+     ingest était impossible.
+    */
+    expect(source).toContain('function canvasExplorerSlot(id)');
+    expect(source).toContain('canvasExplorerSlots.set(id,canvasExplorerSlots.size)');
+    expect(source).toContain('const spot=canvasExplorerSlotPosition(item.id)');
+    // La clé de position d'une fiche ne dépend plus de la topologie : elle
+    // changeait précisément au moment où le graphe évoluait.
+    expect(source).not.toContain("':'+data?.topologyEtag+':'");
+  });
+
+  it('pose les libellés à l’extérieur, sans les superposer', () => {
+    /*
+     Ils étaient écrits sous le nœud au moment de le dessiner : un libellé ne
+     pouvait donc rien savoir de ceux qui suivaient, et ils se tassaient les uns
+     sur les autres dès que la carte se remplissait.
+    */
+    expect(source).toContain('function drawLabels()');
+    expect(source).toContain('state.labels.push(');
+    expect(source).not.toContain("context.fillText(node.label.toUpperCase()");
+    // Ce qui ne trouve pas sa place disparaît plutôt que de se superposer,
+    // sauf pour les nœuds qui doivent rester nommés.
+    expect(source).toContain('if(!item.always)return;');
   });
 
   it('résout l’échelle par point fixe et centre sur l’enveloppe', () => {

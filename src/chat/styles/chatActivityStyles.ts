@@ -82,6 +82,8 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .runtime-graph-toolbar>span:last-child{display:flex;gap:5px}
 .runtime-graph-toolbar button:hover{border-color:var(--accent);color:var(--accent)}
 .runtime-run-summary{display:flex;align-items:center;gap:7px 14px;flex-wrap:wrap;padding:8px 10px;border-bottom:1px solid var(--border);font-size:10px;color:var(--muted)}
+/* Emplacement stable, mis à jour en place : vide tant qu'aucun run n'existe. */
+.runtime-run-summary:empty{display:none}
 .runtime-run-summary strong{color:var(--text);font-size:11px;margin-right:auto}
 .runtime-run-summary span{white-space:nowrap}
 .runtime-run-summary .run-summary-ceiling{color:#f59e0b;font-weight:600}
@@ -89,7 +91,11 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .runtime-graph-legend{display:flex;flex-wrap:wrap;gap:5px 10px;padding:6px 9px;border-bottom:1px solid var(--border);font-size:9px;color:var(--muted)}
 .runtime-graph-legend span{display:inline-flex;align-items:center;gap:4px}.runtime-graph-legend b{font-size:8px;text-transform:uppercase;letter-spacing:.06em}.runtime-graph-legend i{width:18px;border-top:2px solid var(--border)}.runtime-graph-legend i.depends_on{border-color:var(--accent);border-top-style:dashed}.runtime-graph-legend i.executed_by{border-color:#14b8a6}.runtime-graph-legend i.produces{border-color:#16a34a}.runtime-graph-legend i.bubble{width:8px;height:8px;border:0;border-radius:50%}.runtime-graph-legend i.running{background:#4f7eff}.runtime-graph-legend i.done{background:#22c55e}.runtime-graph-legend i.failed{background:#f06b6b}.runtime-graph-legend i.approval{background:#f59e0b}.runtime-graph-legend i.run{background:#8b5cf6}.runtime-graph-legend i.activity{background:#14b8a6}.runtime-graph-legend i.neutral{background:color-mix(in srgb,var(--muted) 42%,var(--panel))}
 .runtime-graph-svg{display:block;width:100%;height:520px;background:radial-gradient(circle at 50% 50%,var(--panel),transparent 66%)}
-.runtime-canvas-stage{position:relative;min-height:0}.runtime-graph-canvas{touch-action:none;cursor:move}.runtime-graph-a11y{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+/* Un <canvas> sans règle de taille prend sa taille intrinsèque 300×150, et la
+   scène, simple élément flex sans flex:1, se contentait de cette taille : le
+   graphe tenait dans un carré collé en haut à gauche du cadre. Le graphe du
+   wiki avait déjà les bonnes règles (.graph-explorer-canvas), pas celui-ci. */
+.runtime-canvas-stage{position:relative;flex:1;min-height:260px}.runtime-graph-canvas{position:absolute;inset:0;display:block;width:100%;height:100%;touch-action:none;cursor:move}.runtime-graph-a11y{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .runtime-graph-link{stroke:var(--border);stroke-width:1.2;opacity:.72}
 .runtime-graph-link.depends_on{stroke-dasharray:4 4;stroke:var(--accent)}
 .runtime-graph-link.contains{stroke:color-mix(in srgb,var(--accent) 55%,var(--border))}

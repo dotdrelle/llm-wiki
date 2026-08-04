@@ -27,26 +27,40 @@ function renderDocumentFocusWindow(node){
   const related=data.nodes.filter(item=>relatedIds.has(item.id)).sort((left,right)=>Number(right.id===node.id)-Number(left.id===node.id)||right.degree-left.degree);
   inspector.innerHTML='<div class="panel-head"><div><small>DOCUMENT</small><strong>'+esc(node.title)+'</strong><span>'+esc(node.id)+'</span></div><button type="button" data-close-focus title="Back to community" aria-label="Close document focus">×</button></div><div class="document-focus-list">'+related.slice(0,50).map(documentActionRow).join('')+'</div>'
 }
-// Une page sans relation n'a pas de voisinage à explorer.
-function documentHasRelations(id){return data.edges.some(edge=>edge.from===id||edge.to===id)}
 /*
- Sélectionner n'est pas descendre.
+ Descendre doit apporter quelque chose.
 
- Toute page ouvrait la vue focus, y compris celles qui n'ont aucune relation :
- on tombait alors sur un graphe d'un seul nœud, sans rien autour et sans rien
- à en apprendre — un cul-de-sac dont il fallait ressortir par « Back ».
+ Le seuil était « au moins une relation », parce qu'une page isolée ouvrait une
+ vue focus d'un seul nœud. Mais à une relation la vue en contient deux : on
+ quitte le domaine et tout son voisinage pour un segment que le panneau de
+ droite énonçait déjà en une ligne. Le prix — perdre le niveau où l'on était —
+ ne se paie qu'à partir d'un vrai voisinage, donc de deux liens.
 
- Le zoom descendant est donc réservé aux pages qui ont au moins un lien. Les
- autres se sélectionnent sur place : le panneau de droite montre leur contenu,
- la vue courante est conservée, et le contexte de lecture avec elle. Depuis la
- carte, où aucune page n'est cliquable individuellement, on descend d'un cran
- jusqu'à son domaine pour que la sélection soit visible.
+ En dessous, la page se sélectionne sur place et ouvre sa fiche de contexte
+ juste à côté : ce que le lecteur cherchait en cliquant, c'est de quoi elle
+ parle, pas un graphe à un segment.
 */
+const GRAPH_FOCUS_MIN_RELATIONS=2;
+function documentRelationCount(id){
+  const seen=new Set();
+  data.edges.forEach(edge=>{
+    if(edge.from===id)seen.add(edge.to);
+    else if(edge.to===id)seen.add(edge.from)});
+  // Deux pages reliées par trois relations de types différents restent un seul
+  // voisin : c'est le voisinage qui rend la descente utile, pas le nombre
+  // d'arêtes.
+  return seen.size}
+function documentHasRelations(id){return documentRelationCount(id)>=GRAPH_FOCUS_MIN_RELATIONS}
 async function selectDocument(node){
   if(selected&&selected.id!==node.id)focusHistory.push(selected.id);
   selected=node;selectedCommunity=data.communities.find(community=>community.nodeIds.includes(node.id))?.id||null;
-  if(documentHasRelations(node.id))view='focus';else if(view==='map')view='community';
+  const descends=documentHasRelations(node.id);
+  if(descends)view='focus';else if(view==='map')view='community';
   render();renderDocumentFocusWindow(node);
+  // La fiche est le seul retour visible quand on ne descend pas : sans elle,
+  // le clic ne ferait qu'écrire une ligne dans un panneau à l'autre bout de
+  // l'écran.
+  if(descends)closeGraphContextCard();else openGraphContextCard(node);
 }
 function selectCommunity(id){
   const community=data.communities.find(item=>item.id===id);if(!community)return;

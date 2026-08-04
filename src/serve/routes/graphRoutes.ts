@@ -2,11 +2,18 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import { buildGraphOverview, generateGraph, graphEtagForFiles, listGraphFiles, renderGraphDocument } from '../html/wikiHtml.ts';
 import { cachedSnapshot, createSnapshot, storeSnapshot } from '../../graph/wiki/snapshot.ts';
+import { graphDocumentSummary } from '../../graph/wiki/summary.ts';
 
 export type GraphRoutesDeps = {
   rootDir: string;
   fallbackCommunityLabel: () => string;
   workspaceNameFromEnv: () => string | null;
+  /**
+   * Complétion LLM, injectée par `serve` qui seul détient la configuration.
+   * Absente quand aucun LLM n'est configuré : la fiche de contexte rend alors
+   * un extrait plutôt que rien.
+   */
+  completeText?: (request: { system: string; user: string }) => Promise<string>;
   sendJson: (
     res: {
       writeHead: (s: number, h: Record<string, string>) => void;
@@ -89,6 +96,29 @@ export async function handleGraphRoutes(
         outgoing: current.edges.filter((edge) => edge.from === id),
       });
     }
+    return true;
+  }
+
+  if (req.method === 'GET' && urlPath === '/api/graph/summary') {
+    const id = new URL(req.url ?? '/', 'http://localhost').searchParams.get('id');
+    const current = await snapshot();
+    if (!id || !current.nodes.some((node) => node.id === id)) {
+      deps.sendJson(res, 404, { error: 'DOCUMENT_NOT_FOUND' });
+      return true;
+    }
+    const document = await renderGraphDocument(deps.rootDir, id);
+    deps.sendJson(
+      res,
+      200,
+      await graphDocumentSummary({
+        rootDir: deps.rootDir,
+        id,
+        title: document.title,
+        preview: document.preview,
+        contentEtag: document.contentEtag,
+        complete: deps.completeText,
+      }),
+    );
     return true;
   }
 

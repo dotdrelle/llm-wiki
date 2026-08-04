@@ -22,6 +22,35 @@ describe('chat html', () => {
     }
   });
 
+  /*
+   Le script du chat est assemblé à partir d'une quinzaine de modules, chacun
+   n'étant qu'un littéral de gabarit : ni TypeScript ni ESLint ne voient les
+   appels qui le traversent. Renommer une fonction dans un module et oublier
+   son appelant dans un autre passe donc les trois vérifications et n'échoue
+   que dans le navigateur — sur un « Can't find variable », au milieu d'un run.
+
+   On relève ici les appels aux fonctions de la famille runtime* et on vérifie
+   que chacune est bien déclarée quelque part dans le même script. C'est
+   grossier, mais c'est exactement la classe d'erreur que rien d'autre
+   n'attrape.
+  */
+  it('ne laisse aucun appel runtime* sans définition', () => {
+    const script = chatScripts().join('\n');
+    const defined = new Set(
+      [...script.matchAll(/function\s+(runtime\w+|refreshRuntime\w+|render\w*Runtime\w*)\s*\(/g)].map(
+        (match) => match[1] as string,
+      ),
+    );
+    const called = new Set(
+      [...script.matchAll(/\b(runtimeWorkflow\w+|refreshRuntime\w+)\s*\(/g)].map(
+        (match) => match[1] as string,
+      ),
+    );
+    const missing = [...called].filter((name) => !defined.has(name));
+
+    expect(missing).toEqual([]);
+  });
+
   it('shares the selected color theme with the graph', () => {
     const [script] = chatScripts();
 
@@ -343,8 +372,12 @@ describe('chat html', () => {
     expect(script).toContain("canvas.addEventListener('pointercancel'");
     expect(script).toContain('canvas.releasePointerCapture(captured)');
     expect(script).toContain("node.status==='running'");
-    expect(script).toContain('if(changed)fit();scheduler.invalidate()');
-    expect(script).toContain('function runtimeWorkflowSummaryHTML()');
+    // Le cadre du graphe n'est reconstruit que si sa structure change : il
+    // l'était à chaque tick, ce qui détruisait le canevas sous le curseur —
+    // clignotement une fois par seconde et déplacement impossible.
+    expect(script).toContain("if(el.__graphMode!==mode||!$('runtime-graph-canvas'))");
+    expect(script).toContain('function refreshRuntimeWorkflowSummary()');
+    expect(script).toContain('function runtimeWorkflowSummaryParts()');
     expect(script).toContain('function selectRuntimeWorkflowTask(taskId)');
     expect(CHAT_HTML).toContain('class="runtime-graph-legend"');
     expect(CHAT_HTML).toContain('Sequence / dependency');

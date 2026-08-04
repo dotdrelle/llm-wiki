@@ -365,16 +365,33 @@ function renderActivities() {
     // switching back to list mode always redraws instead of being skipped.
     el.__renderedHTML=null;
     const center=$('runtime-graph-center');
-    if(document.body.classList.contains('execution-mode')&&center) {
-      center.innerHTML=runtimeWorkflowGraphCenterHTML();
-      el.innerHTML=runtimeWorkflowInspectorHTML();
+    const split=document.body.classList.contains('execution-mode')&&!!center;
+    // Le vidage du plan fait disparaître le graphe au profit d'un message : ce
+    // basculement fait partie de la structure du cadre, pas de ses données.
+    const mode=(split?'split':'inline')+(runtimeState?.workflow?.nodes?.length?':graph':':empty');
+    // Le cadre du graphe n'est reconstruit que si sa STRUCTURE change (passage
+    // panneau ↔ vue Execution, ou canevas disparu). Il l'était jusqu'ici à
+    // chaque appel — c'est-à-dire toutes les secondes pendant un run, plus à
+    // chaque événement SSE. Le <canvas> était alors détruit et recréé sous le
+    // curseur : le moteur de rendu repartait de zéro, la caméra se recadrait
+    // (d'où le clignotement) et tout glissement en cours était interrompu.
+    if(el.__graphMode!==mode||!$('runtime-graph-canvas')) {
+      if(split) {
+        center.innerHTML=runtimeWorkflowGraphCenterHTML();
+        el.innerHTML=runtimeWorkflowInspectorHTML();
+      } else {
+        if(center) center.innerHTML='';
+        el.innerHTML=runtimeWorkflowGraphHTML();
+      }
+      el.__graphMode=mode;
     } else {
-      if(center) center.innerHTML='';
-      el.innerHTML=runtimeWorkflowGraphHTML();
+      // Seul fragment réellement variable du cadre.
+      refreshRuntimeWorkflowSummary();
     }
     requestAnimationFrame(renderRuntimeWorkflowGraph);
     return;
   }
+  el.__graphMode=null;
   const center=$('runtime-graph-center');
   if(center&&!document.body.classList.contains('execution-mode')) center.innerHTML='';
   const rev=[..._activities].reverse();

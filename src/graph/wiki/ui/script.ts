@@ -3,6 +3,8 @@ import { canvasExplorerScript } from './canvas/canvasExplorerScript.ts';
 import { graphUiHelpersScript } from './core/helpersScript.ts';
 import { graphUiNavigationScript } from './core/navigationScript.ts';
 import { graphUiFiltersScript } from './core/filtersScript.ts';
+import { graphUiContextCardScript } from './core/contextCardScript.ts';
+import { graphUiLiveScript } from './core/liveScript.ts';
 import { graphUiSearchScript } from './core/searchScript.ts';
 import { graphUiSelectionScript } from './core/selectionScript.ts';
 import { graphUiStateScript } from './core/stateScript.ts';
@@ -18,10 +20,12 @@ ${graphUiFiltersScript()}
 ${graphUiSelectionScript()}
 ${graphUiNavigationScript()}
 ${canvasExplorerScript()}
+${graphUiContextCardScript()}
+${graphUiLiveScript()}
 ${graphUiThemeScript()}
 
 async function load(){
-  try{data=await json('/api/graph/overview');renderFilters();renderSearchOptions();render()}
+  try{data=await json('/api/graph/overview');seedCanvasExplorerSlots();renderFilters();renderSearchOptions();render();startGraphLiveWatch()}
   catch(error){canvas.innerHTML='<div class="loading">Unable to load graph: '+esc(error.message)+'</div>'}
 }
 function render(){

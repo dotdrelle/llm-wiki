@@ -3,6 +3,7 @@ import { canvasExplorerScript } from '../src/graph/wiki/ui/canvas/canvasExplorer
 import { graphUiSelectionScript } from '../src/graph/wiki/ui/core/selectionScript.ts';
 import { graphCameraScript } from '../src/graph/core/canvas/graphCameraScript.ts';
 import { graphFrameScript } from '../src/graph/core/canvas/graphFrameScript.ts';
+import { graphUiLiveScript } from '../src/graph/wiki/ui/core/liveScript.ts';
 
 /*
  Ces tests dessinent pour de vrai.
@@ -102,8 +103,24 @@ function corpus() {
   };
 }
 
-const source = [graphFrameScript(), graphCameraScript(), canvasExplorerScript()].join('\n');
+// Le suivi en direct fait partie du même script dans l'application : la boucle
+// de dessin l'interroge pour marquer les nœuds qui viennent d'apparaître. Le
+// module ne déclare que des fonctions — rien ne part au réseau tant que
+// startGraphLiveWatch n'est pas appelé.
+const source = [graphFrameScript(), graphCameraScript(), canvasExplorerScript(), graphUiLiveScript()].join('\n');
 const palette = ['#4d9cff', '#22d3ee', '#a78bfa', '#f472b6', '#fbbf24', '#34d399'];
+
+describe('halo des nouveaux nœuds', () => {
+  it('expire même lorsqu’un nouveau nœud est masqué', () => {
+    /*
+     Un nœud filtré n'est pas dessiné, donc graphNodeFreshness() ne peut pas
+     supprimer son horodatage. La vérification globale doit purger elle-même
+     les entrées expirées afin de ne pas entretenir la boucle d'animation.
+    */
+    expect(source).toContain('const cutoff=performance.now()-GRAPH_FRESH_MS');
+    expect(source).toContain('graphFreshNodes.forEach((at,id)=>{if(at<=cutoff)graphFreshNodes.delete(id)});');
+  });
+});
 
 function mount(view: 'map' | 'community', selectedCommunity: string | null) {
   const calls: string[] = [];
@@ -227,19 +244,24 @@ describe('boucle de dessin du canevas', () => {
     expect(view.frame(1016)).toBe(true);
   });
 
-  it('ne descend que dans les pages qui ont au moins une relation', async () => {
+  it('ne descend que dans les pages qui ont un vrai voisinage', async () => {
     /*
-     La vue focus d'une page isolée est un graphe d'un seul nœud : un
-     cul-de-sac dont il faut ressortir par « Back ». Ces pages se sélectionnent
-     donc sur place, pour être lues dans le panneau de droite.
+     Le seuil était « au moins une relation ». À une relation, la vue focus
+     contient deux nœuds : on quitte le domaine et tout son voisinage pour un
+     segment que le panneau de droite énonçait déjà. Le prix de la descente ne
+     se paie qu'à partir de deux voisins ; en dessous, la fiche de contexte
+     s'ouvre à côté de la bulle et la vue courante est conservée.
     */
     const data = corpus();
+    const cards: Array<string | null> = [];
     const build = new Function(
       'data', 'esc', 'inspector', 'render', 'document', 'window', 'colors',
+      'openGraphContextCard', 'closeGraphContextCard',
       `let selected=null,selectedCommunity=null,view='community',focusHistory=[];
        ${graphUiSelectionScript()}
        return {select:selectDocument,state:()=>({view,selected:selected&&selected.id}),
-               setView:next=>{view=next},hasRelations:documentHasRelations};`,
+               setView:next=>{view=next},hasRelations:documentHasRelations,
+               relations:documentRelationCount};`,
     );
     const api = build(
       data,
@@ -254,26 +276,36 @@ describe('boucle de dessin du canevas', () => {
       },
       { addEventListener() {} },
       palette,
+      (node: { id: string }) => cards.push(node.id),
+      () => cards.push(null),
     );
 
-    const linked = data.nodes.find((node) => node.id === 'c0/n0')!;
+    const hub = data.nodes.find((node) => node.id === 'c0/n2')!;
+    const single = data.nodes.find((node) => node.id === 'c0/n0')!;
     const isolated = data.nodes.find((node) => node.id === 'c5/n8')!;
-    expect(api.hasRelations(linked.id)).toBe(true);
+    expect(api.relations(hub.id)).toBe(2);
+    expect(api.relations(single.id)).toBe(1);
+    expect(api.hasRelations(hub.id)).toBe(true);
+    expect(api.hasRelations(single.id)).toBe(false);
     expect(api.hasRelations(isolated.id)).toBe(false);
 
-    await api.select(linked);
-    expect(api.state()).toEqual({ view: 'focus', selected: 'c0/n0' });
+    await api.select(hub);
+    expect(api.state()).toEqual({ view: 'focus', selected: 'c0/n2' });
+    // Une descente n'ouvre pas de fiche : le graphe montre déjà le voisinage.
+    expect(cards).toEqual([null]);
 
     api.setView('community');
-    await api.select(isolated);
-    // Sélectionnée, mais on reste dans son domaine.
-    expect(api.state()).toEqual({ view: 'community', selected: 'c5/n8' });
+    await api.select(single);
+    // Sélectionnée, mais on reste dans son domaine — et la fiche répond.
+    expect(api.state()).toEqual({ view: 'community', selected: 'c0/n0' });
+    expect(cards).toEqual([null, 'c0/n0']);
 
     // Depuis la carte, aucune page n'est cliquable individuellement : on
     // descend d'un cran jusqu'à son domaine pour que la sélection se voie.
     api.setView('map');
     await api.select(isolated);
     expect(api.state().view).toBe('community');
+    expect(cards).toEqual([null, 'c0/n0', 'c5/n8']);
   });
 
   it('ne laisse pas une image en échec emporter la boucle', () => {

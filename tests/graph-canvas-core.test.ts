@@ -35,7 +35,17 @@ describe('shared graph canvas foundation', () => {
   it('patches Activity/Execution Canvas state without refitting unchanged topology', () => {
     expect(RUNTIME_GRAPH_SCRIPT).toContain('function createRuntimeCanvasRenderer');
     expect(RUNTIME_GRAPH_SCRIPT).toContain('changed=topology!==state.topology');
-    expect(RUNTIME_GRAPH_SCRIPT).toContain('if(changed)fit();scheduler.invalidate()');
+    /*
+     Le cadrage automatique n'a lieu qu'au premier remplissage. Pendant un
+     ingest la topologie change en continu — des tâches naissent et se
+     terminent —, et chaque changement relançait un fit() animé : la vue
+     sautait toutes les quelques secondes et annulait le placement manuel des
+     bulles.
+    */
+    expect(RUNTIME_GRAPH_SCRIPT).toContain(
+      'if(changed&&!state.userAdjusted&&!state.fitted&&state.width>=8&&state.height>=8){state.fitted=true;fit()}',
+    );
+    expect(RUNTIME_GRAPH_SCRIPT).toContain('const claimCamera=()=>{state.userAdjusted=true;state.fitted=true}');
     expect(RUNTIME_GRAPH_SCRIPT).toContain('runtimeCanvasPositions.set');
   });
 });

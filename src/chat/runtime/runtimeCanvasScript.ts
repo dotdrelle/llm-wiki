@@ -1,6 +1,11 @@
 export const RUNTIME_CANVAS_SCRIPT = String.raw`
 let runtimeCanvasRenderer=null;
 const runtimeCanvasPositions=new Map;
+// Cadrage courant, conservé hors du moteur de rendu. Un remontage du cadre
+// (bascule panneau ↔ vue Execution, retour depuis la vue liste) recrée le
+// canevas et donc le moteur : sans cela la vue repartait au cadrage par
+// défaut et perdait le zoom choisi par le lecteur.
+let runtimeCanvasCamera=null;
 function runtimeStatusColor(status){return{running:'#4f7eff',done:'#22c55e',completed:'#22c55e',failed:'#f06b6b',pending_approval:'#f59e0b',blocked:'#f59e0b',cancelled:'#64748b'}[status]||'#718096'}
 function runtimeCanvasScene(){
   const projection=runtimeWorkflowGraphData(),nodes=projection.nodes.map((node,index)=>{const lane=node.type==='run'?0:node.type==='task_group'?1:node.type==='task_detail'?2:3,peers=projection.nodes.filter(item=>(item.type==='run'?0:item.type==='task_group'?1:item.type==='task_detail'?2:3)===lane),slot=peers.findIndex(item=>item.id===node.id),saved=runtimeCanvasPositions.get(node.id),x=saved?.x??(lane===0?0:(slot-(peers.length-1)/2)*Math.min(.22,.72/Math.max(1,peers.length-1))),y=saved?.y??(-.3+lane*.2);return{...node,x,y,depth:1+(index%4)*.025}});return{nodes,edges:projection.relations}}
@@ -9,7 +14,7 @@ function createRuntimeCanvasRenderer(host){
   // n'orientait personne, mangeait un coin de la scène et dupliquait le rôle du
   // bouton « Fit » — les mêmes raisons qui l'ont fait disparaître du graphe du
   // wiki.
-  const canvas=host,context=canvas.getContext('2d'),a11y=canvas.parentElement.querySelector('.runtime-graph-a11y'),state={width:0,height:0,ratio:1,scene:{nodes:[],edges:[]},hits:[],pointer:null,dragged:false,hover:null,topology:'',animated:false};let scheduler,camera;
+  const canvas=host,context=canvas.getContext('2d'),a11y=canvas.parentElement.querySelector('.runtime-graph-a11y'),state={width:0,height:0,ratio:1,scene:{nodes:[],edges:[]},hits:[],pointer:null,dragged:false,hover:null,topology:'',animated:false,userAdjusted:!!runtimeCanvasCamera,fitted:false};let scheduler,camera;
   const rgba=(hex,alpha)=>{const value=parseInt(hex.slice(1),16);return'rgba('+((value>>16)&255)+','+((value>>8)&255)+','+(value&255)+','+alpha+')'};
   /*
    Halos pré-rendus, comme sur le graphe du wiki.
@@ -27,7 +32,19 @@ function createRuntimeCanvasRenderer(host){
     gradient.addColorStop(0,rgba(hex,inner));gradient.addColorStop(.45,rgba(hex,mid));gradient.addColorStop(1,rgba(hex,0));
     paint.fillStyle=gradient;paint.fillRect(0,0,size,size);sprites.set(key,off);return off}
   function paintGlow(hex,inner,mid,x,y,radius){if(radius>0)context.drawImage(glowSprite(hex,inner,mid),x-radius,y-radius,radius*2,radius*2)}
-  function resize(){const rect=canvas.getBoundingClientRect(),ratio=Math.min(2,devicePixelRatio||1);state.width=rect.width;state.height=rect.height;state.ratio=ratio;canvas.width=Math.max(1,Math.round(rect.width*ratio));canvas.height=Math.max(1,Math.round(rect.height*ratio));context.setTransform(ratio,0,0,ratio,0,0);scheduler.invalidate()}
+  /*
+   Le premier cadrage attend une taille réelle.
+
+   resize() est appelé à la construction, avant que la mise en page ait donné
+   sa hauteur au cadre : la scène mesurait alors 0 × 0 et fit() calculait une
+   échelle absurde, rabotée à .4. Le graphe s'affichait minuscule et le rester
+   jusqu'au prochain « Fit » manuel. On garde donc la trace du premier cadrage
+   et on le rejoue dès que le ResizeObserver annonce une surface utilisable.
+  */
+  function resize(){const rect=canvas.getBoundingClientRect(),ratio=Math.min(2,devicePixelRatio||1),wasEmpty=state.width<8||state.height<8;state.width=rect.width;state.height=rect.height;state.ratio=ratio;canvas.width=Math.max(1,Math.round(rect.width*ratio));canvas.height=Math.max(1,Math.round(rect.height*ratio));context.setTransform(ratio,0,0,ratio,0,0);
+    if(wasEmpty&&rect.width>=8&&rect.height>=8&&!state.userAdjusted)state.fitted=false;
+    if(!state.fitted&&state.scene.nodes.length&&rect.width>=8&&rect.height>=8&&!state.userAdjusted){state.fitted=true;fit()}
+    scheduler.invalidate()}
   function project(node){const size=Math.min(state.width,state.height)*camera.state.scale;return{x:state.width/2+(node.x-camera.state.x)*size,y:state.height/2+(node.y-camera.state.y)*size}}
   // Encombrement d'un nœud en pixels, libellé compris. Une fiche et une bulle
   // n'ont ni la même forme ni le même débord sous le texte.
@@ -64,7 +81,8 @@ function createRuntimeCanvasRenderer(host){
       backdropKey=key}
     context.fillStyle=backdrop;context.fillRect(0,0,state.width,state.height)}
   function draw(now){
-    camera.tick(now);state.hits=[];context.clearRect(0,0,state.width,state.height);drawBackground();
+    camera.tick(now);runtimeCanvasCamera=state.userAdjusted?{...camera.state}:runtimeCanvasCamera;
+    state.hits=[];context.clearRect(0,0,state.width,state.height);drawBackground();
     const byId=new Map(state.scene.nodes.map(node=>[node.id,node]));
     state.scene.edges.forEach(edge=>{const from=byId.get(edge.from),to=byId.get(edge.to);if(!from||!to)return;
       const a=project(from),b=project(to),active=from.status==='running'||to.status==='running';
@@ -95,7 +113,12 @@ function createRuntimeCanvasRenderer(host){
     // La relance est décidée une fois, après la boucle : la placer dans le
     // corps la liait à l'ordre de dessin des nœuds.
     if(running)scheduler.animate(220)}
-  scheduler=createGraphFrameScheduler(draw);camera=createGraphCamera(scheduler);resize();
+  scheduler=createGraphFrameScheduler(draw);camera=createGraphCamera(scheduler);
+  if(runtimeCanvasCamera)camera.jump({...runtimeCanvasCamera});
+  // Tout geste de cadrage rend la vue à son lecteur : plus aucun recadrage
+  // automatique ne s'imposera ensuite, jusqu'à « Reset ».
+  const claimCamera=()=>{state.userAdjusted=true;state.fitted=true};
+  resize();
   function coords(event){const rect=canvas.getBoundingClientRect();return{x:event.clientX-rect.left,y:event.clientY-rect.top}}
   function hit(point){return[...state.hits].reverse().find(item=>Math.abs(point.x-item.x)<=item.w/2&&Math.abs(point.y-item.y)<=item.h/2)}
   /*
@@ -123,6 +146,7 @@ function createRuntimeCanvasRenderer(host){
     const dx=point.x-state.pointer.lastX,dy=point.y-state.pointer.lastY;
     if(Math.abs(point.x-state.pointer.x)+Math.abs(point.y-state.pointer.y)>4)state.dragged=true;
     const size=Math.min(state.width,state.height)*camera.state.scale;
+    claimCamera();
     if(state.pointer.target){state.pointer.target.node.x+=dx/size;state.pointer.target.node.y+=dy/size;runtimeCanvasPositions.set(state.pointer.target.node.id,{x:state.pointer.target.node.x,y:state.pointer.target.node.y})}
     else camera.pan(-dx/size,-dy/size);
     state.pointer.lastX=point.x;state.pointer.lastY=point.y;scheduler.invalidate()});
@@ -131,11 +155,24 @@ function createRuntimeCanvasRenderer(host){
   const releaseOutside=()=>{if(state.pointer)endPointerGesture(null)};
   window.addEventListener('pointerup',releaseOutside);
   window.addEventListener('blur',releaseOutside);
-  canvas.addEventListener('wheel',event=>{event.preventDefault();const point=coords(event),size=Math.min(state.width,state.height),worldX=camera.state.x+(point.x-state.width/2)/(size*camera.state.scale),worldY=camera.state.y+(point.y-state.height/2)/(size*camera.state.scale);camera.zoomAt(event.deltaY<0?1.14:1/1.14,worldX,worldY)},{passive:false});
-  canvas.addEventListener('keydown',event=>{const step=.06/camera.state.scale;if(event.key==='ArrowLeft')camera.pan(-step,0);else if(event.key==='ArrowRight')camera.pan(step,0);else if(event.key==='ArrowUp')camera.pan(0,-step);else if(event.key==='ArrowDown')camera.pan(0,step);else if(event.key==='+'||event.key==='=')camera.zoomAt(1.2,camera.state.x,camera.state.y);else if(event.key==='-')camera.zoomAt(1/1.2,camera.state.x,camera.state.y);else if(event.key==='Home')fit();else return;event.preventDefault()});
+  canvas.addEventListener('wheel',event=>{event.preventDefault();claimCamera();const point=coords(event),size=Math.min(state.width,state.height),worldX=camera.state.x+(point.x-state.width/2)/(size*camera.state.scale),worldY=camera.state.y+(point.y-state.height/2)/(size*camera.state.scale);camera.zoomAt(event.deltaY<0?1.14:1/1.14,worldX,worldY)},{passive:false});
+  canvas.addEventListener('keydown',event=>{const step=.06/camera.state.scale;if(event.key!=='Home')claimCamera();if(event.key==='ArrowLeft')camera.pan(-step,0);else if(event.key==='ArrowRight')camera.pan(step,0);else if(event.key==='ArrowUp')camera.pan(0,-step);else if(event.key==='ArrowDown')camera.pan(0,step);else if(event.key==='+'||event.key==='=')camera.zoomAt(1.2,camera.state.x,camera.state.y);else if(event.key==='-')camera.zoomAt(1/1.2,camera.state.x,camera.state.y);else if(event.key==='Home')fit();else return;event.preventDefault()});
   a11y.addEventListener('click',event=>{const button=event.target.closest('[data-runtime-node]'),node=state.scene.nodes.find(item=>item.id===button?.dataset.runtimeNode);if(node){if(node.type==='task_detail')selectRuntimeWorkflowTask(node.taskId);else selectRuntimeWorkflowNode(node.id)}});
   const observer=new ResizeObserver(resize);observer.observe(canvas);
-  return{canvas,setScene(scene){const topology=scene.nodes.map(node=>node.id).join('|')+'#'+scene.edges.map(edge=>edge.from+'>'+edge.to+':'+edge.type).join('|'),changed=topology!==state.topology;state.scene=scene;state.topology=topology;a11y.innerHTML=scene.nodes.map(node=>'<button type="button" role="treeitem" data-runtime-node="'+esc(node.id)+'">'+esc(node.label)+' · '+esc(node.status||'pending')+'</button>').join('');if(changed)fit();scheduler.invalidate()},fit,zoom(factor){camera.zoomAt(factor,camera.state.x,camera.state.y)},destroy(){observer.disconnect();window.removeEventListener('pointerup',releaseOutside);window.removeEventListener('blur',releaseOutside);scheduler.destroy()}}
+  /*
+   Une topologie qui bouge ne recadre plus la vue de force.
+
+   Pendant un ingest, des tâches apparaissent et se terminent en continu : la
+   topologie changeait donc en permanence et chaque changement relançait un
+   fit() animé de 280 ms. La vue sautait toutes les quelques secondes et
+   annulait le placement manuel des bulles. Le cadrage automatique n'a de sens
+   qu'au premier remplissage — ensuite, la vue appartient à son lecteur.
+  */
+  return{canvas,setScene(scene){const topology=scene.nodes.map(node=>node.id).join('|')+'#'+scene.edges.map(edge=>edge.from+'>'+edge.to+':'+edge.type).join('|'),changed=topology!==state.topology;state.scene=scene;state.topology=topology;
+    const a11yHTML=scene.nodes.map(node=>'<button type="button" role="treeitem" data-runtime-node="'+esc(node.id)+'">'+esc(node.label)+' · '+esc(node.status||'pending')+'</button>').join('');
+    if(a11y.innerHTML!==a11yHTML)a11y.innerHTML=a11yHTML;
+    if(changed&&!state.userAdjusted&&!state.fitted&&state.width>=8&&state.height>=8){state.fitted=true;fit()}
+    scheduler.invalidate()},fit(){state.fitted=true;fit()},releaseCamera(){state.userAdjusted=false;state.fitted=false},zoom(factor){claimCamera();camera.zoomAt(factor,camera.state.x,camera.state.y)},destroy(){observer.disconnect();window.removeEventListener('pointerup',releaseOutside);window.removeEventListener('blur',releaseOutside);scheduler.destroy()}}
 }
 function renderRuntimeWorkflowCanvas(){
   if(activityView!=='graph')return;const canvas=$('runtime-graph-canvas'),inspector=$('runtime-graph-inspector');if(!canvas){if(inspector)inspector.innerHTML='<div class="runtime-graph-empty">Graph Agentic unavailable.</div>';return}
