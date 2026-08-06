@@ -1,25 +1,25 @@
 ---
-name: wiki-sync
-description: Export Confluence sources (all or one) and ingest them into the wiki
+name: deliver
+description: Export built deliverables, optionally with polish (usage: /deliver [template] [polish])
 params:
-  - source
+  - template
+  - polish
 ---
-Refresh the wiki from its Confluence sources, then ingest the result (tool calls always use the `server__tool` form).
+Export — that is, publish — existing llm-wiki deliverables from `deliverables/`, optionally in polish mode (tool calls always use the `server__tool` form).
 
-Requested source: `{source}` — when this placeholder is empty, all sources are refreshed.
+Requested template: `{template}` — requested mode: `{polish}`.
 
-1. Call cme__cme_status. If the result is "not_configured", stop and tell the user to run cme__cme_setup first with their Confluence base URL, username, and personal access token.
-2. Call cme__cme_sources_list to display which sources exist. If the list is empty, stop and tell the user to add sources with cme__cme_source_add.
-3. If a source was requested, match it against the returned names. If it does not match exactly one source, stop and show the available names instead of guessing.
-4. Call cme__cme_export_run with `source_name` set to the matched source, or with no source name to export all of them.
-5. Poll cme__cme_export_status every 30 seconds until the status is "success" or "failed". Report progress at each poll.
-6. If the export failed, stop here and explain the failure. Do not ingest a partial export.
-7. If the export succeeded but reported no exported page or no new file under `raw/untracked/`, stop and tell the user that the sources are already up to date. Do not start an ingest job for nothing.
-8. Otherwise call production__production_start_job with {"type":"ingest"} to ingest the exported markdown, setting `confirm:true` only after the user explicitly approves this mutating run. Follow it with production__production_job_status until it is done or failed, and use production__production_job_logs with {"jobId":"...","tail":120} to explain any failure.
-9. Report the final outcome: which sources were refreshed, how many pages were exported, whether the ingest completed, and which wiki pages changed.
-10. Send the optional email notification described below, with the action named "Source refresh + ingest".
+1. Read the two placeholders above. If the first one is one of `polish`, `--polish`, `true` or `yes`, treat it as the mode and consider that no template was requested. Otherwise the first is the template and the second selects polish mode when it is `polish`, `--polish`, `true` or `yes`.
+2. Call production__production_list_templates. Resolve the requested template against the returned entries, accepting the name with or without its `.md` extension and matching either the `template` value or the `deliverable` value. If it resolves to zero or several entries, stop and show the available names instead of guessing.
+3. If no template was requested, target every deliverable that exists, and confirm that scope with the user before starting.
+4. If a targeted deliverable does not exist yet (`deliverableExists:false`, or absent from the deliverables list), stop and tell the user to run the `wiki-build` skill first. This job publishes existing deliverables; it never generates them.
+5. Call production__production_start_job with {"type":"polish"} in polish mode, or {"type":"export"} otherwise, passing `deliverables` with the resolved deliverable paths. Set `confirm:true` only after the user explicitly approves this mutating run.
+6. Note the `jobId`, then poll production__production_job_status every 30 seconds and report the current status.
+7. Use production__production_job_logs with {"jobId":"...","tail":120} to explain failures or long-running phases.
+8. Continue until the status is `done`, `failed` or `cancelled`, then report the outcome: duration, errors, and the exact paths of the published files.
+9. Send the optional email notification described below, with the action named "Export" or "Polish" depending on the mode used.
 
-This skill stops at the ingested wiki. To (re)generate deliverables afterwards, use the `wiki-build` skill, then `deliver`. Use `pipeline` when the user wants the whole chain in one job.
+This is not a source export: to pull content out of Confluence, use the `wiki-sync` skill and the CME tools instead.
 
 ## Optional email notification
 

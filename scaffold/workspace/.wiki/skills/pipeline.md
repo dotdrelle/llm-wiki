@@ -7,7 +7,9 @@ Launch the full production pipeline via the wiki-production agent:
 
 This skill is for wiki production steps only. If the user asks to export from
 Confluence, refresh Confluence data, or sync sources, use the `wiki-sync` skill
-and CME tools instead.
+and CME tools instead. If they only want one step of the chain, prefer the
+narrower skills: `wiki-sync` (export + ingest), `wiki-build` (build), `deliver`
+(export or polish).
 
 1. Identify the target deliverables from the user request, or call `production__production_list_templates` and use the matching `deliverable` values.
 2. If the user asks to ingest multiple known source files, decompose it as normal plan tasks: one or more parallel `production__production_start_job` calls with `{"type":"ingest_plan","inputs":["..."],"confirm":true}`, then one convergence task calling `{"type":"ingest_apply","inputs":[".wiki/ingest-plans/..."],"confirm":true}` with the plan files produced by the plan jobs. Do not ask the user to run these internal phases manually.

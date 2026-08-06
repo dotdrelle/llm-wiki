@@ -143,8 +143,13 @@ standard package paths, writes `.wiki/skill-install.json`, and appends a log
 entry. This is intentionally one-skill-per-workspace; do not add multi-skill
 merging without redesigning the model.
 
-The default scaffold includes small UI skills such as `/status`, `/wiki-sync`,
-and `/pipeline`. Keep scaffold skills generic and English by default.
+The default scaffold includes small UI skills: `/status`, `/diagnose`, and the
+production chain `/wiki-sync` (source export + ingest, optional source name) →
+`/wiki-build` (build, optional template) → `/deliver` (export or polish, optional
+template + `polish` flag), with `/pipeline` as the one-shot shortcut. Skill
+params are positional and whitespace-separated, substituted as `{param}` in the
+body, so a skill must tolerate an empty placeholder. Keep scaffold skills generic
+and English by default.
 
 ## Agent Runtime Integration
 

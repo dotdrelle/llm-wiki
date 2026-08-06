@@ -4,11 +4,14 @@ import { performance } from 'node:perf_hooks';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
+import matter from 'gray-matter';
 import { WorkspaceService } from './workspaceService.ts';
 import { RetrievalService } from './retrievalService.ts';
+import { checkProductionIdle } from './productionLocks.ts';
+import { loadWikiGraphSnapshot, summarizeWikiGraph } from '../graph/wiki/overview.ts';
 import { pathExists } from '../utils/fs.ts';
 import { resolveInside } from '../utils/path.ts';
-import { extractSourceCitations } from '../utils/markdown.ts';
+import { extractSourceCitations, parseTemplateInstructions } from '../utils/markdown.ts';
 import { hashText } from '../utils/hash.ts';
 import { listHelpChapters, readHelpChapter, searchHelpChapters } from '../utils/helpDoc.ts';
 import type { AppConfig } from '../types.ts';
@@ -48,6 +51,26 @@ export const WIKI_MCP_TOOLS = [
     name: 'wiki_write_page',
     description:
       'Create or update one llm-wiki markdown page under wiki/. Use this only for wiki content edits.',
+  },
+  {
+    name: 'wiki_outline',
+    description:
+      'Structural map of the wiki: communities, their size and their most connected pages, without page content. Use first when designing a template, to anchor sections on parts of the wiki that hold material.',
+  },
+  {
+    name: 'template_read',
+    description:
+      'Read one template under templates/ with its output path and build_context report, or list every template when no path is given.',
+  },
+  {
+    name: 'template_write',
+    description:
+      'Create or update one template under templates/. Preview unless confirm=true; reports build_context resolution; refused while a production job is running.',
+  },
+  {
+    name: 'build_context_write',
+    description:
+      'Create or update one shared rule under build-context/. Preview unless confirm=true; reports how many templates it would invalidate; refused while a production job is running.',
   },
   {
     name: 'wiki_add_source',
@@ -292,13 +315,54 @@ function resolveWritableWikiPath(
   workspace: WorkspaceService,
   requestedPath: string,
 ): string {
-  const normalizedPath = requestedPath.trim().replace(/\\/g, '/').replace(/^\.\//, '');
-  const absolutePath = resolveInside(workspace.paths.rootDir, normalizedPath);
-  const relativeToWiki = path.relative(workspace.paths.wikiDir, absolutePath);
-  if (relativeToWiki.startsWith('..') || path.isAbsolute(relativeToWiki)) {
-    throw new Error('Access denied: path must be under wiki/.');
+  return resolveWritablePath(workspace, requestedPath, workspace.paths.wikiDir, 'wiki/');
+}
+
+/**
+ * Generalized form of the wiki write guard: confine a caller-supplied relative
+ * path under one specific workspace directory.
+ *
+ * Exported for tests — the decode step must never weaken the boundary check.
+ * A path is accepted either relative to the workspace root (`templates/x.md`)
+ * or relative to the target directory itself (`x.md`), which is the same
+ * leniency `resolveTemplateBuildContext` already grants to `build_context`
+ * entries. Everything else — `..`, absolute paths, percent-encoded traversal,
+ * Windows separators — is refused.
+ */
+export function resolveWritablePath(
+  workspace: WorkspaceService,
+  requestedPath: string,
+  targetDir: string,
+  label: string,
+): string {
+  let decodedPath = requestedPath.trim();
+  try {
+    decodedPath = decodeURIComponent(decodedPath);
+  } catch {
+    // Malformed percent sequences stay literal; the boundary check below
+    // remains authoritative either way.
   }
-  return absolutePath;
+  const normalizedPath = decodedPath.replace(/\\/g, '/').replace(/^\.\//, '');
+  if (!normalizedPath) {
+    throw new Error(`Access denied: path must be under ${label}`);
+  }
+  const relativeTargetDir = path
+    .relative(workspace.paths.rootDir, targetDir)
+    .replaceAll('\\', '/');
+  const candidate = normalizedPath.startsWith(`${relativeTargetDir}/`)
+    ? resolveInside(workspace.paths.rootDir, normalizedPath)
+    : resolveInside(targetDir, normalizedPath);
+  const relativeToTarget = path.relative(targetDir, candidate);
+  if (relativeToTarget.startsWith('..') || path.isAbsolute(relativeToTarget)) {
+    throw new Error(`Access denied: path must be under ${label}`);
+  }
+  return candidate;
+}
+
+function requireMarkdownPath(relativePath: string): void {
+  if (!relativePath.toLowerCase().endsWith('.md')) {
+    throw new Error(`Only .md files can be written here: ${relativePath}`);
+  }
 }
 
 function uniqueValues(values: string[]): string[] {
@@ -547,6 +611,305 @@ export async function createWikiMcpServer(
       afterSha256: payload.afterSha256,
     });
     return textResult(`Written: ${pagePath}`);
+  };
+
+  /**
+   * Shared write path for templates/ and build-context/.
+   *
+   * Same contract as wiki_write_page (preview → confirm → audit), plus one
+   * guard it does not need: a refusal while a production job holds the
+   * workspace. See services/productionLocks.ts for why writing to these two
+   * directories mid-run can make a job build content it never locked.
+   */
+  const writeWorkspaceAsset = async (options: {
+    tool: string;
+    targetDir: string;
+    label: string;
+    requestedPath: string;
+    content: string;
+    confirm?: boolean;
+    dryRun?: boolean;
+    decorate?: (relativePath: string, content: string) => Promise<Record<string, unknown>>;
+  }): Promise<CallToolResult> => {
+    let absolutePath: string;
+    let relativePath: string;
+    try {
+      absolutePath = resolveWritablePath(
+        workspace,
+        options.requestedPath,
+        options.targetDir,
+        options.label,
+      );
+      relativePath = path.relative(workspace.paths.rootDir, absolutePath).replaceAll('\\', '/');
+      requireMarkdownPath(relativePath);
+    } catch (error) {
+      return textResult(error instanceof Error ? error.message : String(error), {
+        isError: true,
+      });
+    }
+
+    const confirmed = options.confirm === true;
+    const previewOnly = options.dryRun === true || !confirmed;
+    const before = (await pathExists(absolutePath)) ? await readFile(absolutePath, 'utf8') : '';
+    const payload = createWritePreviewPayload({
+      target: relativePath,
+      before,
+      after: options.content,
+      confirmed,
+      dryRun: options.dryRun === true,
+      written: false,
+    });
+    const decoration = options.decorate
+      ? await options.decorate(relativePath, options.content)
+      : {};
+
+    if (previewOnly) {
+      await appendAuditRecord(workspace, {
+        tool: options.tool,
+        target: relativePath,
+        action: options.dryRun === true ? 'dry_run' : 'preview_required',
+        confirmed,
+        contentChars: options.content.length,
+        beforeSha256: payload.beforeSha256,
+        afterSha256: payload.afterSha256,
+      });
+      return textResult(
+        JSON.stringify(
+          {
+            ...payload,
+            ...decoration,
+            message: 'Preview only. Re-run with confirm=true to write.',
+          },
+          null,
+          2,
+        ),
+      );
+    }
+
+    // Checked as late as possible, and never on the preview path: a preview is
+    // read-only and stays useful while a job runs.
+    const busy = await checkProductionIdle(workspace.paths.rootDir);
+    if (busy.busy) {
+      await appendAuditRecord(workspace, {
+        tool: options.tool,
+        target: relativePath,
+        action: 'rejected_production_busy',
+        confirmed,
+        contentChars: options.content.length,
+        jobs: [...new Set(busy.locks.map((lock) => lock.jobId))],
+      });
+      return textResult(
+        JSON.stringify(
+          {
+            error: 'PRODUCTION_JOB_ACTIVE',
+            message: busy.message,
+            target: relativePath,
+            written: false,
+            activeJobs: busy.locks.map((lock) => ({
+              jobId: lock.jobId,
+              scopes: lock.scopes,
+            })),
+          },
+          null,
+          2,
+        ),
+        { isError: true },
+      );
+    }
+
+    await mkdir(path.dirname(absolutePath), { recursive: true });
+    await writeFile(absolutePath, options.content, 'utf8');
+    await appendAuditRecord(workspace, {
+      tool: options.tool,
+      target: relativePath,
+      action: 'write',
+      confirmed,
+      contentChars: options.content.length,
+      beforeSha256: payload.beforeSha256,
+      afterSha256: payload.afterSha256,
+    });
+    return textResult(
+      JSON.stringify(
+        { ...payload, ...decoration, written: true, requiresConfirmation: false },
+        null,
+        2,
+      ),
+    );
+  };
+
+  /**
+   * Resolve the build_context selection of a template *before* it is written.
+   *
+   * This is the whole quality gate of template authoring, and it costs two
+   * directory reads: it reports which referenced files exist, which do not,
+   * how many characters the selection weighs against maxBuildContextChars,
+   * and how many existing deliverables an inherited (key-absent) context would
+   * put out of date.
+   */
+  const describeTemplateBuildContext = async (relativePath: string, content: string) => {
+    const parsed = matter(content);
+    const sections = await workspace.readBuildContextSections();
+    const resolution = workspace.resolveTemplateBuildContext(sections, parsed.data);
+    const declared = Object.prototype.hasOwnProperty.call(parsed.data, 'build_context');
+    return {
+      template: relativePath,
+      instructionSlots: parseTemplateInstructions(parsed.content).length,
+      buildContext: {
+        declared,
+        resolved: resolution.resolved,
+        missing: resolution.missing,
+        fileCount: resolution.context.fileCount,
+        chars: resolution.context.rawTotalChars,
+        maxChars: config.build.maxBuildContextChars,
+        truncated: resolution.context.truncated,
+        ...(declared
+          ? {}
+          : {
+              warning:
+                'No build_context key: this template inherits every file in build-context/, ' +
+                'including rules written for other deliverables. Declare an explicit list ' +
+                '(or [] for none).',
+            }),
+      },
+    };
+  };
+
+  const readTemplate = async ({ path: requestedPath }: { path?: string }) => {
+    if (!requestedPath) {
+      const templates = await workspace.listTemplatePaths();
+      return textResult(
+        JSON.stringify(
+          { templates: relativeWorkspacePaths(workspace, templates) },
+          null,
+          2,
+        ),
+      );
+    }
+    try {
+      const absolutePath = resolveWritablePath(
+        workspace,
+        requestedPath,
+        workspace.paths.templatesDir,
+        'templates/',
+      );
+      const relativePath = path
+        .relative(workspace.paths.rootDir, absolutePath)
+        .replaceAll('\\', '/');
+      if (!(await pathExists(absolutePath))) {
+        return textResult(`Template not found: ${relativePath}`, { isError: true });
+      }
+      const content = await readFile(absolutePath, 'utf8');
+      const document = await workspace.readTemplateDocument(absolutePath);
+      const described = await describeTemplateBuildContext(relativePath, content);
+      return textResult(
+        JSON.stringify(
+          {
+            template: relativePath,
+            output: document.outputRelativePath,
+            instructionSlots: described.instructionSlots,
+            buildContext: described.buildContext,
+            content,
+          },
+          null,
+          2,
+        ),
+      );
+    } catch (error) {
+      return textResult(error instanceof Error ? error.message : String(error), {
+        isError: true,
+      });
+    }
+  };
+
+  const writeTemplate = async (input: {
+    path: string;
+    content: string;
+    confirm?: boolean;
+    dryRun?: boolean;
+  }) =>
+    writeWorkspaceAsset({
+      tool: 'template_write',
+      targetDir: workspace.paths.templatesDir,
+      label: 'templates/',
+      requestedPath: input.path,
+      content: input.content,
+      confirm: input.confirm,
+      dryRun: input.dryRun,
+      decorate: describeTemplateBuildContext,
+    });
+
+  const writeBuildContext = async (input: {
+    path: string;
+    content: string;
+    confirm?: boolean;
+    dryRun?: boolean;
+  }) =>
+    writeWorkspaceAsset({
+      tool: 'build_context_write',
+      targetDir: workspace.paths.buildContextDir,
+      label: 'build-context/',
+      requestedPath: input.path,
+      content: input.content,
+      confirm: input.confirm,
+      dryRun: input.dryRun,
+      // Adding a context file changes the global context hash, so every
+      // template that did NOT declare a build_context list is no longer fresh
+      // and will be rebuilt. Say how many before the write, not after.
+      decorate: async () => {
+        const templates = await workspace.listTemplatePaths();
+        const inheriting: string[] = [];
+        for (const templatePath of templates) {
+          const document = await workspace.readTemplateDocument(templatePath);
+          if (!Object.prototype.hasOwnProperty.call(document.frontmatter, 'build_context')) {
+            inheriting.push(document.relativePath);
+          }
+        }
+        return {
+          invalidatesOnNextBuild: {
+            count: inheriting.length,
+            templates: inheriting,
+            note:
+              'These templates declare no build_context list, so they inherit the global ' +
+              'context; changing it makes their deliverables stale on the next build.',
+          },
+        };
+      },
+    });
+
+  const readWikiOutline = async ({
+    maxCommunities,
+    maxPagesPerCommunity,
+  }: {
+    maxCommunities?: number;
+    maxPagesPerCommunity?: number;
+  }) => {
+    const fallbackCommunityLabel = config.graph?.fallbackCommunityLabel ?? 'Ungrouped';
+    const snapshot = await loadWikiGraphSnapshot({
+      rootDir: workspace.paths.rootDir,
+      fallbackCommunityLabel,
+    });
+    const outline = summarizeWikiGraph(snapshot, {
+      fallbackCommunityLabel,
+      maxCommunities,
+      maxPagesPerCommunity,
+    });
+    return textResult(
+      JSON.stringify(
+        {
+          ...outline,
+          ...(outline.degenerate
+            ? {
+                warning:
+                  'No explicit communities: every page fell back to the default label. ' +
+                  'This is not a topology — ingest content before deriving template ' +
+                  'sections from it.',
+              }
+            : {}),
+        },
+        null,
+        2,
+      ),
+    );
   };
 
   const addWikiSource = async ({
@@ -913,6 +1276,78 @@ export async function createWikiMcpServer(
     'Create or update one llm-wiki markdown page under wiki/. Returns a diff preview unless confirm=true; dryRun=true never writes.',
     writeWikiPageInput,
     (input) => loggedTool('wiki_write_page', input, writeWikiPage),
+  );
+
+  server.tool(
+    'wiki_outline',
+    'Structural map of the wiki: communities (clusters), their size and their most connected pages. No page content. Use this FIRST when designing a template, to anchor each section on a part of the wiki that actually holds material; then read the pages with wiki_collect_context.',
+    {
+      maxCommunities: z
+        .number()
+        .int()
+        .min(1)
+        .max(200)
+        .optional()
+        .describe('Maximum communities returned, largest first. Default 40.'),
+      maxPagesPerCommunity: z
+        .number()
+        .int()
+        .min(1)
+        .max(50)
+        .optional()
+        .describe('Maximum most-connected pages listed per community. Default 8.'),
+    },
+    READ_ONLY,
+    (input) => loggedTool('wiki_outline', input, readWikiOutline),
+  );
+
+  server.tool(
+    'template_read',
+    'Read one template under templates/, with its resolved output path and build_context report. Omit path to list every template. Use before amending an existing template.',
+    {
+      path: z
+        .string()
+        .optional()
+        .describe('Relative path, e.g. templates/notes/basic-note.md or notes/basic-note.md'),
+    },
+    READ_ONLY,
+    (input) => loggedTool('template_read', input, readTemplate),
+  );
+
+  const writeAssetInput = {
+    content: z.string().describe('Full Markdown content to write.'),
+    confirm: z
+      .boolean()
+      .optional()
+      .describe('Must be true to write. Omit or false returns a diff preview only.'),
+    dryRun: z
+      .boolean()
+      .optional()
+      .describe('When true, return the preview and audit the attempt without writing.'),
+  };
+
+  server.tool(
+    'template_write',
+    'Create or update one template under templates/. Returns a diff preview unless confirm=true, including which build_context files resolve and which are missing. Always declare an explicit build_context list (use [] for none): without the key the template inherits every file in build-context/. Refused while a production job is running.',
+    {
+      path: z
+        .string()
+        .describe('Relative path under templates/, e.g. templates/notes/basic-note.md'),
+      ...writeAssetInput,
+    },
+    (input) => loggedTool('template_write', input, writeTemplate),
+  );
+
+  server.tool(
+    'build_context_write',
+    'Create or update one shared build-context rule under build-context/. Returns a diff preview unless confirm=true, including how many templates would be rebuilt because they inherit the global context. Refused while a production job is running.',
+    {
+      path: z
+        .string()
+        .describe('Relative path under build-context/, e.g. build-context/rules/citations.md'),
+      ...writeAssetInput,
+    },
+    (input) => loggedTool('build_context_write', input, writeBuildContext),
   );
 
   const addWikiSourceInput = {

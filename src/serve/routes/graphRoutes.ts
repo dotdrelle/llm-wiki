@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
-import { buildGraphOverview, generateGraph, graphEtagForFiles, listGraphFiles, renderGraphDocument } from '../html/wikiHtml.ts';
-import { cachedSnapshot, createSnapshot, storeSnapshot } from '../../graph/wiki/snapshot.ts';
+import { generateGraph, renderGraphDocument } from '../html/wikiHtml.ts';
+import { loadWikiGraphSnapshot } from '../../graph/wiki/overview.ts';
 import { graphDocumentSummary } from '../../graph/wiki/summary.ts';
 
 export type GraphRoutesDeps = {
@@ -37,21 +37,14 @@ export async function handleGraphRoutes(
   urlPath: string,
   deps: GraphRoutesDeps,
 ): Promise<boolean> {
-  const snapshot = async () => {
-    const files = await listGraphFiles(deps.rootDir);
-    const etag = await graphEtagForFiles(deps.rootDir, files);
-    const workspace = deps.workspaceNameFromEnv() ?? path.basename(deps.rootDir);
-    const fallbackCommunityLabel = deps.fallbackCommunityLabel();
-    const cacheEtag = JSON.stringify([etag, workspace, fallbackCommunityLabel]);
-    const cached = cachedSnapshot(deps.rootDir, cacheEtag);
-    if (cached) return cached;
-    const graph = await buildGraphOverview(deps.rootDir, files, fallbackCommunityLabel);
-    return storeSnapshot(
-      deps.rootDir,
-      createSnapshot(etag, graph, { workspace }),
-      cacheEtag,
-    );
-  };
+  // Shared with the wiki_outline MCP tool: see graph/wiki/overview.ts for why
+  // the etag/cache sequence must not be duplicated per caller.
+  const snapshot = async () =>
+    loadWikiGraphSnapshot({
+      rootDir: deps.rootDir,
+      workspace: deps.workspaceNameFromEnv() ?? path.basename(deps.rootDir),
+      fallbackCommunityLabel: deps.fallbackCommunityLabel(),
+    });
 
   if (req.method === 'GET' && urlPath === '/api/graph/overview') {
     deps.sendJson(res, 200, await snapshot());

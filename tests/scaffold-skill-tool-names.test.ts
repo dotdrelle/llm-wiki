@@ -18,6 +18,8 @@ const KNOWN_BARE_TOOL_NAMES = [
   'production_job_status', 'production_job_logs', 'production_cancel_job',
   'production_list_jobs',
   'documents_status', 'documents_convert_to_markdown',
+  'wiki_outline', 'wiki_collect_context', 'wiki_workspace_status',
+  'template_read', 'template_write', 'build_context_write',
   'agent_describe', 'agent_plan', 'agent_execute', 'agent_status', 'agent_cancel',
 ];
 

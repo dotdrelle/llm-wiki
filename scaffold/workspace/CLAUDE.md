@@ -18,6 +18,34 @@ This workspace follows a local-first LLM Wiki pattern.
 - Use `wiki serve` to browse the wiki UI. `/` renders `wiki/index.md`; `/graph` shows source/wiki relations.
 - Use `wiki doctor` after changing `.wikirc.yaml`, model, context size, retrieval limits, or Ollama settings.
 
+## Workspace Skills
+
+`.wiki/skills/` holds this workspace's slash commands, offered by the shell and
+by the served chat. The production chain is split so each step can be replayed
+on its own, and each takes optional positional arguments:
+
+- `/wiki-sync [source]` — export the Confluence sources (all, or the named one)
+  into `raw/untracked/`, then ingest them. Stops before the ingest when the
+  export produced nothing new.
+- `/wiki-build [template]` — build the deliverables from the wiki as it
+  currently stands, for one template or all of them. Never ingests.
+- `/deliver [template] [polish]` — export, or polish, deliverables that already
+  exist under `deliverables/`. Template names are accepted with or without the
+  `.md` extension.
+- `/pipeline` — the whole chain in one job; `/status` and `/diagnose` are
+  read-only checks.
+
+All three production skills start a **mutating** job and therefore belong to
+agent mode: chat mode is read-only and must hand off (`/agent`) rather than
+pretend to run them.
+
+Each one ends with an optional email notification, sent only when a mail tool
+happens to be connected. It is best effort by design: no connector, no
+recipient, or a failed send all leave the job's own result untouched. The
+recipient comes from the `## Notifications` section of `.wiki/profile.md`, which
+is already injected into the prompt — the skills never read a config file, and
+write the mail in the reply language configured for this workspace.
+
 ## Donna Help
 
 - Product help lives in the bundled documentation, exposed by the read-only

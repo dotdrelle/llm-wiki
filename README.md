@@ -212,6 +212,31 @@ cme_status
 -> production_job_status
 ```
 
+It accepts an optional source name (`/wiki-sync my-source`) and stops before the
+ingest when the export produced nothing new. The rest of the chain is split into
+two further scaffold skills so each step can be replayed on its own:
+
+- `/wiki-build [template]` — build deliverables from the current wiki content
+  (`production_start_job {"type":"build"}`), optionally for a single template,
+  in `stabilize` mode when the deliverable already exists.
+- `/deliver [template] [polish]` — export, or polish, deliverables that already
+  exist under `deliverables/` (`production_start_job {"type":"export"}` or
+  `{"type":"polish"}`). Template names are accepted with or without their `.md`
+  extension.
+
+`/pipeline` remains the one-shot shortcut for the whole chain.
+
+All three end with an **optional email notification**: if any connected MCP
+server exposes a mail-sending tool — the skills discover it from the available
+tools rather than naming a server, so any mail connector works — the skill
+reads `.wiki/profile.md` through `profile_read`, takes the recipient from its
+`## Notifications` section, and sends a short summary of what was run and how it
+ended. The mail is written in the session reply language, which the chat and
+agent prompts already carry from `.wikirc` — the skill never reads a config file
+for it, and never fails when the profile is missing. With no connector or no
+recipient, the step is skipped silently, and a failed notification never changes
+the reported result of the job.
+
 The final ingest step intentionally uses the `wiki-production` MCP server. The
 llm-wiki MCP server is read/search/write oriented and does not expose a
 `wiki_ingest` tool.
