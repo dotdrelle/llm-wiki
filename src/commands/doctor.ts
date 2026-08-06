@@ -28,6 +28,11 @@ import {
 } from '../services/gatewayProbe.ts';
 import { pathExists, safeWriteFile } from '../utils/fs.ts';
 import { HistoryService } from '../services/historyService.ts';
+import {
+  isReportClean,
+  readSourceRegistry,
+  reconcileRegistry,
+} from '../services/sourceRegistry.ts';
 
 // Bits per weight for common GGUF quantizations (including block overhead)
 const QUANT_BITS: Record<string, number> = {
@@ -152,6 +157,65 @@ const err = (msg: string) => {
 };
 const row = (label: string, value: string) =>
   console.log(`  ${label.padEnd(24)} ${value}`);
+
+/** Nombre d'éléments listés avant de renvoyer au registre. */
+const RECONCILIATION_SAMPLE = 5;
+
+function listSample(items: string[]): string {
+  const shown = items.slice(0, RECONCILIATION_SAMPLE).join(', ');
+  const rest = items.length - RECONCILIATION_SAMPLE;
+  return rest > 0 ? `${shown} (+${rest})` : shown;
+}
+
+/**
+ * Écarts entre le registre de provenance et ce qui existe réellement.
+ *
+ * Rapport seul : rien n'est recréé, rien n'est supprimé. Une page effacée à la
+ * main est une décision — la faire réapparaître la contredirait, et propager la
+ * suppression sans le dire serait pire. Tant que le retrait n'est pas spécifié
+ * bout en bout (T32.4 dans `docs/content-lifecycle.md`), nommer l'écart est le
+ * seul comportement défendable.
+ *
+ * Un registre vide — installation d'avant sa création — ne produit rien : il
+ * n'y a pas d'écart à signaler entre rien et quelque chose.
+ */
+async function reportSourceReconciliation(
+  workspace: WorkspaceService,
+  wikiPages: Array<{ relativePath: string }>,
+  ingestedPages: Array<{ relativePath: string }>,
+): Promise<void> {
+  const registryPath = path.join(workspace.paths.internalDir, 'source-registry.json');
+  const registry = await readSourceRegistry(registryPath);
+  if (registry.sources.length === 0) {
+    row('source registry:', 'empty — it fills up on the next ingest');
+    return;
+  }
+
+  const report = reconcileRegistry(registry, {
+    archives: ingestedPages.map((page) => page.relativePath),
+    wikiPages: wikiPages.map((page) => page.relativePath),
+  });
+  row('sources tracked:', String(registry.sources.length));
+
+  if (isReportClean(report)) {
+    ok('source registry matches the workspace');
+    return;
+  }
+  if (report.vanishedArchives.length > 0) {
+    warn(`archive missing for ${report.vanishedArchives.length} tracked source(s): ${listSample(report.vanishedArchives)}`);
+  }
+  if (report.vanishedPages.length > 0) {
+    const pages = report.vanishedPages.flatMap((entry) => entry.pages);
+    warn(`${pages.length} page(s) produced by a source no longer exist: ${listSample(pages)}`);
+  }
+  if (report.unregisteredArchives.length > 0) {
+    warn(`${report.unregisteredArchives.length} archive(s) predate the registry: ${listSample(report.unregisteredArchives)}`);
+  }
+  if (report.orphans.length > 0) {
+    warn(`${report.orphans.length} wiki page(s) have no live source: ${listSample(report.orphans)}`);
+  }
+  console.log('  Nothing was changed. See docs/content-lifecycle.md for what each case means.');
+}
 
 /**
  * Valeurs que le scaffold écrit pour documenter la forme du fichier.
@@ -1060,12 +1124,16 @@ export default async function doctorCmd(
     );
   }
 
-  const [pages, indexContent, untrackedPaths, buildContextSections] = await Promise.all([
-    workspace.listWikiPages(),
-    workspace.readIndex(),
-    workspace.listUntrackedSourcePaths(),
-    workspace.readBuildContextSections(),
-  ]);
+  const [pages, indexContent, untrackedPaths, buildContextSections, ingestedPages] =
+    await Promise.all([
+      workspace.listWikiPages(),
+      workspace.readIndex(),
+      workspace.listUntrackedSourcePaths(),
+      workspace.readBuildContextSections(),
+      workspace.listIngestedSourcePages(),
+    ]);
+
+  await reportSourceReconciliation(workspace, pages, ingestedPages);
   const buildContext = workspace.composeBuildContext(buildContextSections);
 
   const untrackedContents = await Promise.all(

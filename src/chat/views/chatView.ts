@@ -69,10 +69,6 @@ export const CHAT_MARKUP = `<aside id="sidebar">
             <label>Model</label>
             <input id="model-name" type="text" placeholder="gpt-4o" oninput="syncModel()" onchange="saveConfig()">
           </div>
-          <div class="field">
-            <label>Temp.</label>
-            <input id="temperature" type="number" value="0.7" min="0" max="2" step="0.1" onchange="saveConfig()">
-          </div>
         </div>
       </div>
     </div>

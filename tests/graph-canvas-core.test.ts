@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { graphCanvasScript } from '../src/graph/core/canvas/graphCanvasScript.ts';
+import { canvasExplorerScript } from '../src/graph/wiki/ui/canvas/canvasExplorerScript.ts';
 import { renderWikiGraphV2 } from '../src/graph/wiki/graphApp.ts';
 import { RUNTIME_GRAPH_SCRIPT } from '../src/chat/runtime/runtimeGraphScript.ts';
 
@@ -47,5 +48,37 @@ describe('shared graph canvas foundation', () => {
     );
     expect(RUNTIME_GRAPH_SCRIPT).toContain('const claimCamera=()=>{state.userAdjusted=true;state.fitted=true}');
     expect(RUNTIME_GRAPH_SCRIPT).toContain('runtimeCanvasPositions.set');
+  });
+});
+
+describe('fiche de contexte et tuiles', () => {
+  const source = canvasExplorerScript();
+
+  it('écarte les tuiles à la projection, jamais dans le modèle', () => {
+    /*
+     La tuile cliquée changeait de place pour laisser tenir la fiche. Ce sont
+     les tuiles GÊNÉES qui doivent s'écarter, et seulement le temps de la
+     lecture : le décalage s'applique donc à la projection. Les positions
+     normalisées et celles mémorisées dans localStorage restent intactes, les
+     arêtes suivent puisqu'elles projettent les mêmes centres, et fermer la
+     fiche suffit à tout remettre en place.
+    */
+    expect(source).toContain('function shiftOutOfObstacle(projected,point)');
+    expect(source).toContain('state.obstacle?shiftOutOfObstacle(projected,point):projected');
+    // Aucune écriture dans le modèle depuis la fonction de décalage.
+    const shift = source.slice(source.indexOf('function shiftOutOfObstacle'));
+    const body = shift.slice(0, shift.indexOf('\n  function '));
+    expect(body).not.toMatch(/point\.(x|y)\s*[-+]?=/);
+    expect(body).not.toContain('saveCanvasExplorerPosition');
+  });
+
+  it('laisse en place la tuile que la fiche décrit', () => {
+    // Écarter le nœud ancré reproduirait exactement le défaut d'origine.
+    expect(source).toContain("point.id&&point.id===state.anchor?.id");
+  });
+
+  it('libère les tuiles dès que la fiche se ferme', () => {
+    expect(source).toContain('anchor(id,notify){state.anchor=id?{id,notify}:null;if(!id)state.obstacle=null;');
+    expect(source).toContain('avoid(zone){');
   });
 });

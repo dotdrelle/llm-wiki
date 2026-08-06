@@ -22,19 +22,41 @@ function saveConfig() {
     baseUrl: $('base-url').value,
     apiKey:  $('api-key').value,
     model:   $('model-name').value,
-    temp:    $('temperature').value,
   };
   localStorage.setItem(storageKey('mcpchat_config'), JSON.stringify(cfg));
   fetch('/api/llm-config',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({
     baseUrl:cfg.baseUrl,
     apiKey:cfg.apiKey,
     model:cfg.model,
-    temperature:Number(cfg.temp),
   })}).catch(()=>{});
   if (cfg.apiKey) flashSaved('llm-saved');
 }
 
+/*
+ Reset — revenir à la config du profil actif, connexions comprises.
+
+ Reset ne faisait que réécrire les champs depuis GET /api/llm-config. Sur un
+ workspace dont l'endpoint était injoignable, l'écran redevenait donc identique
+ à celui d'un workspace sain pendant que tout continuait d'échouer, et les
+ connecteurs MCP restaient tels quels. Le seul contournement connu était de
+ créer un second profil .wikirc et de basculer dessus — ce qui marchait parce
+ que la bascule, elle, passe par le chemin autoritaire côté serveur.
+
+ Reset emprunte maintenant ce même chemin quand il existe, puis dit si
+ l'endpoint répond.
+*/
 async function resetYamlConfig() {
+  const select=$('profile-picker');
+  const activeProfile=select?.dataset.active||select?.value||null;
+  if(activeProfile&&window.__WIKI_CONFIG__?.runtime?.enabled) {
+    // Réappliquer le profil actif : le serveur relit le .wikirc, et
+    // switchConfigProfile reconnecte les MCP.
+    await switchConfigProfile(activeProfile);
+    await probeLlmEndpoint();
+    return;
+  }
+  // Pas de runtime : le profil ne se rejoue pas côté serveur, on retombe sur
+  // la relecture des champs — mais on reconnecte et on sonde quand même.
   const wc = window.__WIKI_CONFIG__;
   let cfg = wc;
   try {
@@ -45,9 +67,23 @@ async function resetYamlConfig() {
   if(cfg?.baseUrl) $('base-url').value=cfg.baseUrl;
   if(cfg?.apiKey!==undefined) $('api-key').value=cfg.apiKey||'';
   if(cfg?.model) $('model-name').value=cfg.model;
-  if(cfg?.temperature!==undefined) $('temperature').value=String(cfg.temperature);
   syncModel();
   flashSaved('llm-saved');
+  await restoreEnabledServers();
+  await probeLlmEndpoint();
+}
+
+/** Dit si l'endpoint LLM configuré répond. Silencieux uniquement en cas de succès net. */
+async function probeLlmEndpoint() {
+  try {
+    const res=await fetch('/api/llm/probe',{method:'POST'});
+    const data=await res.json().catch(()=>({}));
+    if(data?.ok===false) return notify(data.message||'LLM endpoint unreachable','e');
+    if(data?.warning) return notify(data.warning,'e');
+    notify('LLM endpoint reachable ('+(data?.models??0)+' models)');
+  } catch(err) {
+    notify('LLM probe failed: '+(err?.message||String(err)),'e');
+  }
 }
 
 function applyServerConfig(config) {
@@ -64,7 +100,6 @@ function applyServerConfig(config) {
   if(llm.baseUrl) $('base-url').value=llm.baseUrl;
   if(llm.apiKey!==undefined) $('api-key').value=llm.apiKey||'';
   if(llm.model) $('model-name').value=llm.model;
-  if(llm.temperature!==undefined) $('temperature').value=String(llm.temperature);
   syncModel();
 }
 
@@ -116,6 +151,12 @@ async function switchConfigProfile(profile) {
     nextId=1;
     loadServers();
     renderTopPills();
+    // loadServers() rebuilds the cards with status 'off' and no session: it
+    // DESCRIBES the connectors, it does not connect them. Without this line a
+    // profile switch left every MCP server disconnected and toolless — the
+    // pills said "llm-wiki (15)" from the previous handshake while /chat had
+    // nothing to call, and the only way back was reloading the page.
+    await restoreEnabledServers();
     fetchRuntimeState().catch(()=>{});
     notify('Config profile: '+(data.active||profile));
   } catch(err) {
@@ -186,7 +227,6 @@ function loadConfig() {
     // hijack the actual outbound LLM request regardless of which profile was
     // selected. Do not read from localStorage in this mode.
     if (wc.model) $('model-name').value = wc.model;
-    if (wc.temperature !== undefined) $('temperature').value = String(wc.temperature);
     if (wc.baseUrl) $('base-url').value = wc.baseUrl;
     if (wc.apiKey)  { $('api-key').value = wc.apiKey; flashSaved('llm-saved'); }
   } else {
@@ -195,7 +235,6 @@ function loadConfig() {
     if (saved.baseUrl) $('base-url').value = saved.baseUrl;
     if (saved.apiKey)  { $('api-key').value = saved.apiKey; flashSaved('llm-saved'); }
     if (saved.model)   $('model-name').value = saved.model;
-    if (saved.temp !== undefined) $('temperature').value = saved.temp;
   }
   $('system-prompt').value = localStorage.getItem(storageKey('mcpchat_system_prompt')) ?? window.__WIKI_CONFIG__?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
   syncModel();

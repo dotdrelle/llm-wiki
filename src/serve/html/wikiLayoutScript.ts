@@ -61,53 +61,109 @@ export const WIKI_LAYOUT_SCRIPT = `
   // the DOM. A delete or a move also prunes the parent folders it empties, and
   // those disappearances are invisible to the client — patching locally left
   // the tree showing folders that no longer exist.
-  async function refreshPendingPanel() {
+  //
+  // It used to replace ONLY [data-untracked-list], so refreshing showed the new
+  // Pending state above an unchanged wiki/deliverables/templates/build-context
+  // tree — the sections an ingest is precisely most likely to have changed.
+  // /embed/sidebar already returns the whole thing.
+  async function refreshSidebar() {
     const response = await fetch('/embed/sidebar', { cache: 'no-store' });
     if (!response.ok) throw new Error('Refresh failed');
     const nextDocument = new DOMParser().parseFromString(await response.text(), 'text/html');
-    const currentList = document.querySelector('[data-untracked-list]');
-    const nextList = nextDocument.querySelector('[data-untracked-list]');
-    const currentCount = document.querySelector('[data-untracked-count]');
-    const nextCount = nextDocument.querySelector('[data-untracked-count]');
-    if (!currentList || !nextList || !currentCount || !nextCount) throw new Error('Pending panel unavailable');
-    currentList.innerHTML = nextList.innerHTML;
-    currentCount.textContent = nextCount.textContent;
+    // Which folders are open is the reader's place in the tree, not server
+    // state: rebuilding the markup must not send them back to the top.
+    const openBefore = new Set(
+      [...document.querySelectorAll('.side-tree [data-tree-id]')]
+        .filter((node) => node.open)
+        .map((node) => node.getAttribute('data-tree-id')),
+    );
+    const pairs = [
+      ['nav.side-tree', 'innerHTML'],
+      ['[data-untracked-list]', 'innerHTML'],
+      ['[data-untracked-count]', 'textContent'],
+    ];
+    let replaced = 0;
+    for (const [selector, property] of pairs) {
+      const current = document.querySelector(selector);
+      const next = nextDocument.querySelector(selector);
+      if (!current || !next) continue;
+      current[property] = next[property];
+      replaced += 1;
+    }
+    if (!replaced) throw new Error('Sidebar unavailable');
+    document.querySelectorAll('.side-tree [data-tree-id]').forEach((node) => {
+      const id = node.getAttribute('data-tree-id');
+      if (id && openBefore.size) node.open = openBefore.has(id);
+    });
     markActiveSidebarLinks();
     applySidebarSearch();
   }
+  // Ancien nom, conservé le temps que tous les appelants soient migrés.
+  const refreshPendingPanel = refreshSidebar;
   document.addEventListener('click', async (event) => {
-      const button = event.target.closest?.('[data-untracked-delete]');
+      const button = event.target.closest?.('[data-tree-delete]');
       if (!button) return;
+      // preventDefault suffit à empêcher le <summary> de replier son <details> :
+      // l'action par défaut n'a lieu qu'une fois la propagation terminée. Le
+      // stopPropagation qui traînait sur ce bouton empêchait au contraire ce
+      // gestionnaire, délégué au document, de jamais voir le clic.
       event.preventDefault();
       event.stopPropagation();
-      const relativePath = button.getAttribute('data-untracked-delete') || '';
-      const kind = button.getAttribute('data-untracked-kind') || 'file';
+      const relativePath = button.getAttribute('data-tree-delete') || '';
+      const kind = button.getAttribute('data-tree-kind') || 'file';
       if (!relativePath) return;
       // A folder takes its whole subtree with it, so it keeps the prompt. A
-      // single pending source is cheap to re-ingest — confirming every one of
-      // them was noise.
+      // single file is cheap to recreate — confirming every one of them was
+      // noise.
       if (kind === 'folder'
-        && !confirm('Delete this pending folder and all its files?\\n' + relativePath)) return;
+        && !confirm('Delete this folder and everything in it?\\n' + relativePath)) return;
       button.disabled = true;
       try {
-        const response = await fetch('/api/untracked/' + encodeURIComponent(relativePath), { method: 'DELETE' });
+        const response = await fetch('/api/tree/' + encodeURIComponent(relativePath), { method: 'DELETE' });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload.ok === false) throw new Error(payload.error || 'Delete failed');
-        await refreshPendingPanel();
+        await refreshSidebar();
       } catch (err) {
         alert(err instanceof Error ? err.message : String(err));
         button.disabled = false;
       }
   });
 
-  // ── Pending drag & drop ──────────────────────────────────────────────────
+  // Création d'un dossier. Un prompt() plutôt qu'un champ en ligne : c'est une
+  // action rare, et un champ permanent dans l'arbre coûterait une ligne à
+  // chaque dossier pour un usage occasionnel.
+  document.addEventListener('click', async (event) => {
+    const button = event.target.closest?.('[data-tree-new-folder]');
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const parent = button.getAttribute('data-tree-new-folder') || '';
+    const name = prompt('New folder in ' + parent);
+    if (!name || !name.trim()) return;
+    try {
+      const response = await fetch('/api/tree/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parent, name: name.trim(), kind: 'folder' }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) throw new Error(payload.error || 'Create failed');
+      await refreshSidebar();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+    }
+  });
+
+  // ── Sidebar drag & drop ──────────────────────────────────────────────────
   // Drag a document or a folder onto another folder to move it there; drop on
-  // the panel background to move it back to the raw/untracked root.
+  // a section root to move it back to that section's top level. Identical for
+  // Pending and for wiki/templates/build-context/deliverables — the server
+  // refuses a move between two sections, so the same handler serves all five.
   let untrackedDragPath = null;
   document.addEventListener('dragstart', (event) => {
-    const source = event.target.closest?.('[data-untracked-drag]');
+    const source = event.target.closest?.('[data-tree-drag]');
     if (!source) return;
-    untrackedDragPath = source.getAttribute('data-untracked-drag');
+    untrackedDragPath = source.getAttribute('data-tree-drag');
     source.classList.add('is-dragging');
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = 'move';
@@ -117,20 +173,20 @@ export const WIKI_LAYOUT_SCRIPT = `
   });
   document.addEventListener('dragend', () => {
     untrackedDragPath = null;
-    document.querySelectorAll('.side-untracked-item.is-dragging, .side-untracked-folder.is-dragging')
+    document.querySelectorAll('.is-dragging')
       .forEach((node) => node.classList.remove('is-dragging'));
     clearDropTargets();
   });
   function clearDropTargets() {
     document.querySelectorAll('.is-drop-target').forEach((node) => node.classList.remove('is-drop-target'));
   }
-  // The deepest [data-untracked-drop] under the cursor wins, so dropping on a
+  // The deepest [data-tree-drop] under the cursor wins, so dropping on a
   // nested folder does not land in its parent.
   function dropTargetFor(event) {
     if (!untrackedDragPath) return null;
-    const target = event.target.closest?.('[data-untracked-drop]');
+    const target = event.target.closest?.('[data-tree-drop]');
     if (!target) return null;
-    const destination = target.getAttribute('data-untracked-drop') || '';
+    const destination = target.getAttribute('data-tree-drop') || '';
     const name = untrackedDragPath.slice(untrackedDragPath.lastIndexOf('/') + 1);
     const currentParent = untrackedDragPath.slice(0, untrackedDragPath.lastIndexOf('/'));
     // No-op drops and folder-into-itself are refused before any round trip.
@@ -150,7 +206,7 @@ export const WIKI_LAYOUT_SCRIPT = `
     }
   });
   document.addEventListener('dragleave', (event) => {
-    const target = event.target.closest?.('[data-untracked-drop]');
+    const target = event.target.closest?.('[data-tree-drop]');
     target?.classList.remove('is-drop-target');
   });
   document.addEventListener('drop', async (event) => {
@@ -161,14 +217,14 @@ export const WIKI_LAYOUT_SCRIPT = `
     untrackedDragPath = null;
     clearDropTargets();
     try {
-      const response = await fetch('/api/untracked/move', {
+      const response = await fetch('/api/tree/move', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ from, to: drop.destination }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload.ok === false) throw new Error(payload.error || 'Move failed');
-      await refreshPendingPanel();
+      await refreshSidebar();
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err));
     }

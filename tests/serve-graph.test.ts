@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { renderWikiGraphV2 } from '../src/graph/wiki/graphApp.ts';
+import { graphUiContextCardScript } from '../src/graph/wiki/ui/core/contextCardScript.ts';
 import { renderSidebar, serveMd } from '../src/serve/html/wikiHtml.ts';
 
 it('keeps the graph document preview viewport-sized and scrolls its content', () => {
@@ -34,9 +35,12 @@ it('renders pending connector sources by frontmatter title without displaying fr
     expect(sidebar).toContain('>Human readable subject</a>');
     expect(sidebar).not.toContain('>message id deadbeef</a>');
     expect(sidebar).toContain('class="side-untracked-folder"');
-    expect(sidebar).toContain('data-untracked-delete="raw/untracked/connectors"');
-    expect(sidebar).toContain('data-untracked-delete="raw/untracked/connectors/google-1"');
-    expect(sidebar).toContain('data-untracked-kind="folder"');
+    // Attributs renommés en data-tree-* : Pending partage désormais ses
+    // gestionnaires avec les autres sections du panneau (voir
+    // tests/sidebar-tree-ui.test.ts).
+    expect(sidebar).toContain('data-tree-delete="raw/untracked/connectors"');
+    expect(sidebar).toContain('data-tree-delete="raw/untracked/connectors/google-1"');
+    expect(sidebar).toContain('data-tree-kind="folder"');
 
     const page = await serveMd(root, absolute, `/${relative}`);
     expect(page).toContain('<title>Human readable subject');
@@ -49,13 +53,15 @@ it('renders pending connector sources by frontmatter title without displaying fr
   }
 });
 
-it('keeps pending sources hierarchical and deletes folders only inside raw/untracked', async () => {
+it('keeps pending deletion bounded, now through the shared tree module', async () => {
+  // La logique a quitté serve.ts pour serve/tree/treeMutations.ts, partagée
+  // avec les autres sections. Les garanties sont les mêmes et sont testées
+  // sur leur comportement dans tests/tree-mutations.test.ts ; ce qui compte
+  // ici est qu'il n'en reste pas une seconde copie derrière.
   const source = await serveSource();
-  expect(source).toContain("!relativePath.startsWith('raw/untracked/')");
-  expect(source).toContain("relativePath === 'raw/untracked'");
-  expect(source).toContain("await rm(absolute, { recursive: true });");
-  expect(source).toContain("kind: 'folder'");
-  expect(source).toContain('Delete this pending folder and all its files?');
+  expect(source).toContain('handleTreeApi(req, res, urlPath');
+  expect(source).not.toContain("!relativePath.startsWith('raw/untracked/')");
+  expect(source).not.toContain('removeEmptyUntrackedParents');
 });
 
 async function serveSource(): Promise<string> {
@@ -537,5 +543,35 @@ describe('serve config reload', () => {
     expect(source).toContain("window.open('about:blank','connector-google-oauth'");
     expect(source).toContain("sendRuntimeAgentMessage(input,prompt,{mode:'chat',displayText:'',hideQuestion:true})");
     expect(source).toContain('Answer from the facts below in the configured user language and natural tone.');
+  });
+});
+
+describe('manual repositioning of the context card', () => {
+  const source = graphUiContextCardScript();
+
+  it('pins the card from the first pixel moved', () => {
+    // Without this, automatic repositioning would cancel the gesture under
+    // the fingers of whoever just performed it.
+    expect(source).toContain('if(graphContextPinned){');
+    expect(source).toContain('moved=true;graphContextPinned=true;');
+  });
+
+  it('hides a pinned card once its anchor node is gone', () => {
+    // A pinned card used to skip the "point is gone" branch entirely, so it
+    // stayed visible over nothing once its node scrolled off-canvas.
+    expect(source).toContain(
+      "if(graphContextPinned){\n    if(!point){card.style.visibility='hidden';canvasExplorer?.avoid(null);return}",
+    );
+  });
+
+  it('only starts dragging from the header, not the buttons', () => {
+    // The body carries the summary, which must stay selectable; the action
+    // buttons must remain clickable.
+    expect(source).toContain("const head=event.target.closest('.gcc-head');");
+    expect(source).toContain("if(!head||event.target.closest('button'))return;");
+  });
+
+  it('resets to automatic placement on every open', () => {
+    expect(source).toContain('graphContextPinned=false;\n  card.hidden=false;');
   });
 });

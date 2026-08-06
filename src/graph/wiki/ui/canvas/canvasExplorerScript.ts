@@ -39,7 +39,7 @@ function createCanvasExplorer(host){
   host.innerHTML='<canvas class="graph-explorer-canvas" tabindex="0" role="application" aria-label="Interactive knowledge graph. Use arrow keys to pan, plus or minus to zoom."></canvas><div class="graph-explorer-a11y" role="tree" aria-label="Visible graph nodes"></div>';
   const surface=host.querySelector('.graph-explorer-canvas'),a11y=host.querySelector('.graph-explorer-a11y');
   const context=surface.getContext('2d');
-  const state={scene:null,signature:'',nodeIds:null,width:0,height:0,ratio:1,hits:[],labels:[],anchor:null,pointer:null,dragged:false,hover:null,viewports:new Map,clock:0};
+  const state={scene:null,signature:'',nodeIds:null,width:0,height:0,ratio:1,hits:[],labels:[],anchor:null,obstacle:null,pointer:null,dragged:false,hover:null,viewports:new Map,clock:0};
   let scheduler,camera;
   const nodeById=new Map(data.nodes.map(node=>[node.id,node]));
   const color=index=>colors[index%colors.length];
@@ -103,7 +103,31 @@ function createCanvasExplorer(host){
       ?{x:state.width/2,y:state.height/2,width:Math.max(240,state.width-24),height:Math.max(200,state.height-52)}
       :{x:(left+right)/2,y:(top+bottom)/2,width,height}}
   const frame=()=>state.frame||{x:state.width/2,y:state.height/2,width:Math.max(240,state.width-24),height:Math.max(200,state.height-52)};
-  function project(point){const scale=Math.min(state.width,state.height)*camera.state.scale,box=frame();return{x:box.x+(point.x-camera.state.x)*scale,y:box.y+(point.y-camera.state.y)*scale,scale:camera.state.scale*(point.depth||1)}}
+  function project(point){const scale=Math.min(state.width,state.height)*camera.state.scale,box=frame();const projected={x:box.x+(point.x-camera.state.x)*scale,y:box.y+(point.y-camera.state.y)*scale,scale:camera.state.scale*(point.depth||1)};return state.obstacle?shiftOutOfObstacle(projected,point):projected}
+  /*
+   Écarter une tuile que la fiche de contexte recouvre.
+
+   Le décalage s'applique À LA PROJECTION, jamais au modèle : les positions
+   normalisées et celles mémorisées dans localStorage restent intactes, les
+   arêtes suivent puisqu'elles projettent les mêmes centres, et tout revient en
+   place à la fermeture de la fiche sans qu'on ait à défaire quoi que ce soit.
+
+   Le sens du décalage est celui qui coûte le moins : on sort du côté le plus
+   proche du bord de l'obstacle. Le nœud ancré à la fiche est exempté — c'est
+   celui qu'on lit, il doit rester sous la fiche qui le décrit.
+  */
+  function shiftOutOfObstacle(projected,point){
+    const zone=state.obstacle;
+    if(!zone||point.id&&point.id===state.anchor?.id)return projected;
+    const pad=zone.pad||0;
+    const left=zone.x-pad,right=zone.x+zone.width+pad,top=zone.y-pad,bottom=zone.y+zone.height+pad;
+    if(projected.x<left||projected.x>right||projected.y<top||projected.y>bottom)return projected;
+    const outLeft=projected.x-left,outRight=right-projected.x,outTop=projected.y-top,outBottom=bottom-projected.y;
+    const min=Math.min(outLeft,outRight,outTop,outBottom);
+    if(min===outLeft)return{...projected,x:left};
+    if(min===outRight)return{...projected,x:right};
+    if(min===outTop)return{...projected,y:top};
+    return{...projected,y:bottom}}
   function communityRadius(node){return 28+Math.min(34,Math.sqrt(node.community.nodeIds.length)*7)}
   // Débord d'un nœud, en pixels et par côté, à une échelle donnée. Un halo de
   // constellation grandit avec le zoom, une fiche non : les deux ne se
@@ -452,7 +476,13 @@ function createCanvasExplorer(host){
     renderA11y();measureFrame();
     if(signature!==previous&&!grew){const saved=state.viewports.get(signature);camera.moveTo(saved||bounds(scene.nodes),saved?260:320)}
     scheduler.invalidate()},
-  anchor(id,notify){state.anchor=id?{id,notify}:null;if(id)scheduler.invalidate()},
+  anchor(id,notify){state.anchor=id?{id,notify}:null;if(!id)state.obstacle=null;scheduler.invalidate()},
+  // Rectangle en pixels écran que les tuiles doivent contourner, ou null.
+  avoid(zone){
+    const next=zone?{x:zone.x,y:zone.y,width:zone.width,height:zone.height,pad:zone.pad??14}:null;
+    const same=JSON.stringify(next)===JSON.stringify(state.obstacle);
+    state.obstacle=next;
+    if(!same)scheduler.invalidate()},
   locate:locateNode,
   fit(){measureFrame();camera.moveTo(bounds(state.scene.nodes),280)},zoom(factor){camera.zoomAt(factor,camera.state.x,camera.state.y)},destroy(){observer.disconnect();themeObserver.disconnect();window.removeEventListener('pointerup',releaseOutside);window.removeEventListener('blur',releaseOutside);scheduler.destroy()},invalidate:scheduler.invalidate}
 }

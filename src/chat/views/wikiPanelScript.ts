@@ -219,23 +219,52 @@ function cmdkActions() {
     { type: 'action', title: 'Connectors', sub: 'View', run: () => showConnectorsView() },
     { type: 'action', title: 'Execution', sub: 'View', run: () => showExecutionView() },
     { type: 'action', title: 'Help & documentation', sub: 'View', run: () => toggleHelpPanel() },
+    { type: 'action', title: 'History', sub: 'View', run: () => setCenterWiki('/history') },
     { type: 'action', title: 'Switch theme', sub: 'View', run: () => toggleTheme() },
   ];
 }
+// Nombre maximum de pages listées. L'ancien plafond de 9, muet, tronquait
+// silencieusement : les pages de wiki/concepts et wiki/sources tombaient
+// derrière les deliverables et templates que le tri alphabétique global place
+// devant, et rien à l'écran ne disait qu'il y en avait d'autres.
+const CMDK_PAGE_LIMIT = 25;
+
+/*
+ Pertinence d'une page pour la requête. Trois rangs, du plus au moins explicite :
+ le titre commence par la requête, le titre la contient, le chemin la contient.
+ Un tri alphabétique global n'est une réponse que quand on ne cherche rien.
+*/
+function cmdkPageRank(page, nq) {
+  if (!nq) return 3;
+  const title = cmdkNorm(page.title || '');
+  const path = cmdkNorm(page.path || '');
+  if (title.startsWith(nq)) return 0;
+  if (title.includes(nq)) return 1;
+  if (path.includes(nq)) return 2;
+  return 3;
+}
+
 function cmdkCollect(query) {
   const nq = cmdkNorm(query).trim();
   const match = (text) => !nq || cmdkNorm(text).includes(nq);
-  const pages = cmdkPages
-    .filter((p) => match(p.path + ' ' + p.title))
-    .slice(0, nq ? 9 : 5)
-    .map((p) => ({ type: 'page', title: p.title || p.path, sub: p.path, tag: p.kind || 'page', path: p.path }));
+  const matching = cmdkPages.filter((p) => match(p.path + ' ' + p.title));
+  const pages = matching
+    .map((p, index) => ({ page: p, rank: cmdkPageRank(p, nq), index }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .slice(0, nq ? CMDK_PAGE_LIMIT : 5)
+    .map(({ page: p }) => ({ type: 'page', title: p.title || p.path, sub: p.path, tag: p.kind || 'page', path: p.path }));
+  // Dire ce qui est caché. Une liste tronquée en silence fait conclure que la
+  // page cherchée n'existe pas.
+  const hidden = nq && matching.length > pages.length
+    ? [{ type: 'note', title: (matching.length - pages.length) + ' more page(s) match — refine the search', sub: '', tag: 'info' }]
+    : [];
   const summaries = typeof historySummaries !== 'undefined' && Array.isArray(historySummaries) ? historySummaries : [];
   const convs = summaries
     .filter((c) => match(c.title || ''))
     .slice(0, nq ? 5 : 3)
     .map((c) => ({ type: 'conv', title: c.title || 'New conversation', sub: 'Conversation', tag: 'chat', id: c.id }));
   const actions = cmdkActions().filter((a) => match(a.title));
-  return [...pages, ...convs, ...(nq ? actions.slice(0, 5) : actions.slice(0, 4))];
+  return [...pages, ...hidden, ...convs, ...(nq ? actions.slice(0, 5) : actions.slice(0, 4))];
 }
 function cmdkRender(query) {
   const host = document.getElementById('cmdk-results');
@@ -268,6 +297,9 @@ function cmdkMove(delta) {
 function cmdkRun(index, addToContext) {
   const item = cmdkItems[index];
   if (!item) return;
+  // La ligne « n autres résultats » informe, elle n'ouvre rien : la fermer
+  // ferait perdre la recherche en cours pour rien.
+  if (item.type === 'note') return;
   cmdkClose();
   if (item.type === 'page') {
     if (addToContext) {

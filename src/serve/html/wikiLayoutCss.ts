@@ -388,7 +388,7 @@ export const WIKI_LAYOUT_CSS = `
       font-size: 0.7rem;
       opacity: 0.55;
     }
-    .side-untracked-delete {
+    .side-tree-delete {
       flex: 0 0 auto;
       width: 1.55rem;
       height: 1.55rem;
@@ -404,19 +404,35 @@ export const WIKI_LAYOUT_CSS = `
       font-size: 1rem;
       line-height: 1;
     }
-    .side-untracked-delete:hover { border-color: var(--err); background: color-mix(in srgb, var(--err) 10%, var(--panel)); color: var(--err); }
-    .side-untracked-item[draggable="true"],
-    .side-untracked-folder[draggable="true"] > summary { cursor: grab; }
-    .side-untracked-item.is-dragging,
-    .side-untracked-folder.is-dragging { opacity: 0.45; }
-    /* Outline rather than a background tint: the drop target is often a folder
-       whose children are visible, and a tint would read as "the whole subtree
-       is selected". */
-    .side-untracked-list.is-drop-target,
-    .side-untracked-folder.is-drop-target {
-      outline: 1px dashed var(--accent, var(--fg));
+    .side-tree-delete:hover { border-color: var(--err); background: color-mix(in srgb, var(--err) 10%, var(--panel)); color: var(--err); }
+    /* Le bouton de suppression ne s'affiche qu'au survol de sa ligne : une
+       croix sur chaque entrée transformerait l'arbre en champ de mines. */
+    .side-tree-delete { opacity: 0; }
+    :hover > .side-tree-delete, .side-tree-delete:focus-visible { opacity: 1; }
+    .side-file-row { display: flex; align-items: center; gap: 0.15rem; }
+    .side-file-row .side-file { flex: 1 1 auto; min-width: 0; }
+    [draggable="true"], [draggable="true"] > summary { cursor: grab; }
+    /* Glisser-déposer : l'ancien style ne posait qu'une opacité sur la source
+       et un liseré pointillé sur la cible. Sur fond sombre les deux passaient
+       inaperçus — on croyait le déplacement inopérant alors qu'il marchait.
+       La source est maintenant estompée ET barrée d'un liseré, la cible reçoit
+       un fond franc en plus de son contour. */
+    .is-dragging {
+      opacity: 0.4;
+      outline: 1px dashed var(--muted);
       outline-offset: -2px;
       border-radius: 5px;
+    }
+    /* Contour plutôt qu'un simple aplat : la cible est souvent un dossier dont
+       les enfants sont visibles, et un aplat seul se lirait « tout le
+       sous-arbre est sélectionné ». Les deux ensemble se voient sur les deux
+       thèmes, ce qui est le point. */
+    .is-drop-target > summary { background: color-mix(in srgb, var(--accent, var(--fg)) 22%, transparent); border-radius: 4px; }
+    .is-drop-target {
+      outline: 2px solid var(--accent, var(--fg));
+      outline-offset: -2px;
+      border-radius: 5px;
+      background: color-mix(in srgb, var(--accent, var(--fg)) 14%, transparent);
     }
     .side-untracked-empty {
       margin: 0.45rem 0.45rem 0;

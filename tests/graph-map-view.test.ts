@@ -140,8 +140,12 @@ describe('vue des domaines', () => {
     expect(source).toContain('function measureFrame()');
     expect(source).toContain('fit(){measureFrame();');
     // La projection et le zoom à la molette doivent partager ce centre, sinon
-    // le point sous le curseur se déplacerait pendant le zoom.
-    expect(source).toContain('return{x:box.x+(point.x-camera.state.x)*scale');
+    // le point sous le curseur se déplacerait pendant le zoom. La projection
+    // passe désormais par une variable intermédiaire, pour pouvoir écarter les
+    // tuiles que la fiche de contexte recouvre : c'est le calcul du centre qui
+    // est l'invariant, pas la forme de l'expression.
+    expect(source).toContain('x:box.x+(point.x-camera.state.x)*scale');
+    expect(source).toContain('y:box.y+(point.y-camera.state.y)*scale');
     expect(source).toContain('worldX=camera.state.x+(point.x-box.x)/');
   });
 

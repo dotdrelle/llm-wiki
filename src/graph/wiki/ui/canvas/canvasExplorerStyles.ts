@@ -14,7 +14,8 @@ export const canvasExplorerStyles = String.raw`
    l'ordre de calque — c'est un coup d'œil, pas un panneau qui prend la main. */
 .graph-context-card{position:absolute;z-index:4;width:290px;display:flex;flex-direction:column;gap:8px;padding:11px 12px;border:1px solid #ffffff20;border-radius:11px;background:#0b0d13e8;backdrop-filter:blur(12px);box-shadow:0 16px 40px #000b}
 .graph-context-card[hidden]{display:none}
-.graph-context-card .gcc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:9px}
+.graph-context-card .gcc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:9px;cursor:grab;touch-action:none}
+.graph-context-card .gcc-head:active{cursor:grabbing}
 .graph-context-card .gcc-head>div{display:flex;min-width:0;flex-direction:column;gap:2px}
 .graph-context-card small{font-size:9px;font-weight:600;letter-spacing:.13em;color:#75aff5}
 .graph-context-card strong{font-size:12.5px;font-weight:500;color:#e9eef7;overflow-wrap:anywhere;line-height:1.3}

@@ -25,6 +25,86 @@ let pendingRuntimeUserRefs=[];
 // the real runtime assistant event replaces them and only that real reply is
 // persisted in conversation history.
 let pendingRuntimeStatusEls=[];
+/* ── Bulles de réponse ────────────────────────────────────────────────── */
+// La bulle d'attente du runtime en est une variante : les deux vivent ici
+// plutôt que d'être séparées entre deux fichiers par le seul hasard de leur
+// date d'écriture.
+function createStreamBubble() {
+  removeEmpty();
+  const wrap=$('messages');
+  const div=document.createElement('div');
+  div.className='msg assistant';
+  div.innerHTML='<div class="msg-content"><div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div><div class="msg-actions"><button class="msg-action" onclick="copyMessage(this)">Copy</button></div></div>';
+  wrap.appendChild(div);
+  wrap.scrollTop=wrap.scrollHeight;
+  return div;
+}
+
+function removeStreamBubble(div) {
+  if(!div) return;
+  div.remove();
+}
+
+function keepOrReplaceStatusBubble(currentDiv, text, statusDiv) {
+  const value=String(text||'').trim();
+  if(!value) {
+    removeStreamBubble(currentDiv);
+    return statusDiv || null;
+  }
+  if(statusDiv && statusDiv!==currentDiv && statusDiv.isConnected) {
+    setStreamContent(statusDiv,value);
+    removeStreamBubble(currentDiv);
+    return statusDiv;
+  }
+  setStreamContent(currentDiv,value);
+  return currentDiv;
+}
+
+function publishAssistantOutput(content, statusDiv, opts={}) {
+  if(statusDiv && statusDiv.isConnected) {
+    setStreamContent(statusDiv,content,'',opts);
+    return statusDiv;
+  }
+  return appendMsg('assistant',content,opts);
+}
+
+function setStreamContent(div, text, extra='', {html=false,plainText=null}={}) {
+  const bubble=div.querySelector('.bubble');
+  if(!bubble) return;
+  div.dataset.copy=plainText??text??'';
+  const main=html ? (text||'') : (text ? renderMd(text) : (extra ? '' : '<div class="typing"><span></span><span></span><span></span></div>'));
+  bubble.innerHTML=main+extra;
+  $('messages').scrollTop=$('messages').scrollHeight;
+}
+
+// Au-delà de ce délai sans le moindre signe de vie du runtime, le point
+// d'attente devient un message. Il n'est pas censé être atteint : le tour
+// publie toujours un assistant_message et le streaming retire la bulle dès le
+// premier fragment. C'est un filet, pour qu'un événement perdu coûte une
+// explication et non un sablier qui tourne jusqu'au rechargement de la page.
+const RUNTIME_THINKING_TIMEOUT_MS=120000;
+
+function createRuntimeThinkingBubble(text='Request received · Donna is preparing the response and plan…') {
+  const div=createStreamBubble();
+  const bubble=div.querySelector('.bubble');
+  if(bubble) bubble.innerHTML=\`<div class="runtime-thinking"><div class="typing"><span></span><span></span><span></span></div><span>\${esc(text)}</span></div>\`;
+  div._runtimeTimeout=setTimeout(()=>{
+    if(!div.isConnected) return;
+    pendingRuntimeStatusEls=pendingRuntimeStatusEls.filter(el=>el!==div);
+    div.remove();
+    appendMsg('assistant','No response received from the runtime after '+Math.round(RUNTIME_THINKING_TIMEOUT_MS/1000)+'s. Check the Execution panel, or resend.');
+  },RUNTIME_THINKING_TIMEOUT_MS);
+  return div;
+}
+
+// Toute disparition de la bulle passe par ici, pour que le filet ne survive
+// jamais à ce qu'il surveille.
+function clearRuntimeThinkingBubble(div) {
+  if(!div) return;
+  if(div._runtimeTimeout) { clearTimeout(div._runtimeTimeout); div._runtimeTimeout=null; }
+  div.remove();
+}
+
 // Single reset entry point for the pair above — call this at every local
 // conversation boundary (new/load/delete/clear), not just some of them:
 // stale index-aligned refs reused against a fresh messages array is a real
@@ -35,7 +115,7 @@ function resetRuntimeConversationTracking() {
     ? runtimeState.conversation.length
     : null;
   pendingRuntimeUserRefs=[];
-  pendingRuntimeStatusEls.forEach(el=>el?.remove());
+  pendingRuntimeStatusEls.forEach(el=>clearRuntimeThinkingBubble(el));
   pendingRuntimeStatusEls=[];
 }
 // Agent mode is deliberately session-only: every fresh serve page starts in

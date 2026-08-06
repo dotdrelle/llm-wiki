@@ -429,7 +429,8 @@ describe('chat html', () => {
       "if (saved.baseUrl) $('base-url').value = saved.baseUrl;",
       "if (saved.apiKey)  { $('api-key').value = saved.apiKey; flashSaved('llm-saved'); }",
       "if (saved.model)   $('model-name').value = saved.model;",
-      "if (saved.temp !== undefined) $('temperature').value = saved.temp;",
+      // `saved.temp` a disparu avec le champ Temp. : la température appartient
+      // au profil .wikirc actif et n'a plus de forme locale à restaurer.
     ]) {
       expect(loadConfigSource.split(line).length - 1).toBe(1);
     }
@@ -502,7 +503,13 @@ describe('chat html', () => {
     expect(script).toContain("const prefix=text.split('_',1)[0];");
     expect(script).toContain('if(prefix && servers.some(s=>s.name===prefix)) return prefix;');
     expect(script).toContain("const owner=servers.find(s=>s.name===preferred&&s.enabled&&s.status==='ok'&&s.tools.some(t=>t.name===name));");
-    expect(sendSource).toContain('const reqBody={model,temperature:temp,messages:reqMessages};');
+    // La température vient du profil .wikirc actif, plus d'un champ du panneau,
+    // et disparaît du corps si le profil n'en fixe pas : derrière une gateway,
+    // certains modèles refusent le paramètre.
+    expect(sendSource).toContain(
+      'const reqBody={model,...(Number.isFinite(temp)?{temperature:temp}:{}),messages:reqMessages};',
+    );
+    expect(sendSource).toContain('const temp=window.__WIKI_CONFIG__?.temperature;');
     expect(sendSource).not.toContain('tool_choice');
     expect(sendSource).not.toContain('toolsPayload');
     expect(sendSource).not.toContain('callMCPTool(fn,args)');

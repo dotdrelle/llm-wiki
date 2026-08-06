@@ -6,6 +6,7 @@ import { buildPromptContext } from '../prompts/systemPreamble.ts';
 import { hashText } from '../utils/hash.ts';
 import { normalizeSourceBody, splitSourceSections } from '../utils/markdown.ts';
 import { mapWithConcurrency } from '../utils/concurrency.ts';
+import { withFileLock } from '../utils/fs.ts';
 import type { TokenUsage } from './llmService.ts';
 import type {
   AppConfig,
@@ -13,6 +14,7 @@ import type {
   IngestResult,
   IngestRetryInfo,
   IngestReviewOperation,
+  SourceDocument,
   WikiOperation,
   WikiPage,
 } from '../types.ts';
@@ -21,6 +23,13 @@ import type { RefreshService } from './refreshService.ts';
 import type { RetrievalService } from './retrievalService.ts';
 import type { TraceLogger } from './traceLogger.ts';
 import type { WorkspaceService } from './workspaceService.ts';
+import {
+  hashContent,
+  readSourceRegistry,
+  recordSourceObservation,
+  sourceIdFromArchivePath,
+  writeSourceRegistry,
+} from './sourceRegistry.ts';
 
 interface IngestSectionResult {
   operations: WikiOperation[];
@@ -336,6 +345,10 @@ export class IngestService {
                 archivePath: source.archiveCitationPath,
                 durationMs: Date.now() - sourceStartedAt,
               });
+              // Une source inchangée reste une source VUE : sans cette ligne,
+              // elle basculerait `missing` au premier inventaire alors qu'elle
+              // vient d'être présentée.
+              await this.observeSource(source, null);
             }
             await this.logger.info('ingest:source-done', {
               source: source.relativePath,
@@ -629,6 +642,7 @@ export class IngestService {
             'ingest',
             `${source.relativePath} -> ${source.archiveCitationPath} (${lastSummary})`,
           );
+          await this.observeSource(source, applyOperations);
         }
 
         results.push({
@@ -856,6 +870,53 @@ export class IngestService {
       status: failedResults.length > 0 ? 'partial_failure' : 'success',
     });
     return results;
+  }
+
+  /**
+   * Consigne une source dans le registre de provenance
+   * (`docs/content-lifecycle.md` § 5).
+   *
+   * **Ne peut pas faire échouer une ingestion.** Le registre est une
+   * observation : il rend le cycle de vie visible, il n'en fait pas partie.
+   * Une erreur d'écriture est journalisée et l'ingestion continue — l'inverse
+   * ferait perdre un travail LLM déjà payé pour un fichier annexe.
+   *
+   * @param operations opérations appliquées, ou `null` pour une source vue
+   *   sans être réingérée (`unchanged since last ingest`).
+   */
+  private async observeSource(
+    source: SourceDocument,
+    operations: WikiOperation[] | null,
+  ): Promise<void> {
+    try {
+      const registryPath = path.join(this.workspace.paths.internalDir, 'source-registry.json');
+      const lockPath = `${registryPath}.lock`;
+      // Ingest processes can run concurrently against the same workspace
+      // (`wiki ingest --plan-only`/`--apply` orchestration): the lock makes
+      // the read-modify-write cycle across processes atomic, not just each
+      // write.
+      await withFileLock(lockPath, async () => {
+        const registry = await readSourceRegistry(registryPath);
+        const next = recordSourceObservation(registry, {
+          sourceId: sourceIdFromArchivePath(source.archiveCitationPath),
+          archivePath: source.archiveCitationPath,
+          contentHash: hashContent(source.rawContent),
+          // Ce qui a été APPLIQUÉ, pas ce que le modèle a proposé. Une
+          // suppression ne produit pas de page.
+          producedPages: operations
+            ?.filter((operation) => operation.type !== 'delete')
+            .map((operation) => operation.path),
+          ingested: operations !== null,
+          observedAt: new Date().toISOString(),
+        });
+        await writeSourceRegistry(registryPath, next);
+      });
+    } catch (error) {
+      await this.logger.warn('ingest:registry-write-failed', {
+        source: source.relativePath,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private async archivePlannedSource(planned: PlannedIngestSource): Promise<void> {

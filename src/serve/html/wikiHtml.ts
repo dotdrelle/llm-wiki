@@ -626,7 +626,10 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
       const kindAttr = file.startsWith('deliverables/')
         ? ` data-deliverable-kind="${deliverableKind(file)}"`
         : '';
-      return `<a class="side-file" href="/${safePath}" title="${safePath}" data-side-path="${safePath}"${kindAttr}>${escapeHtml(title)}</a>`;
+      // `data-tree-*` : mêmes attributs que Pending, donc mêmes gestionnaires.
+      // Sans cela chaque section aurait son jeu, et cinq copies du même code de
+      // glisser-déposer à garder d'accord.
+      return `<div class="side-file-row" draggable="true" data-tree-drag="${safePath}" data-tree-kind="file"><a class="side-file" href="/${safePath}" title="${safePath}" data-side-path="${safePath}"${kindAttr}>${escapeHtml(title)}</a><button class="side-tree-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-tree-delete="${safePath}" data-tree-kind="file">×</button></div>`;
     }),
   ].join('\n');
 
@@ -641,7 +644,27 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
     ? '<button class="side-folder-action side-refresh-action" type="button" title="Refresh Wiki" aria-label="Refresh Wiki" data-sidebar-refresh="wiki">↻</button>'
     : '';
   const rootClass = depth === 0 && node.name === 'wiki' ? ' side-folder-primary' : '';
-  return `<details class="side-folder${rootClass}"${open} data-tree-id="${escapeAttr(node.path)}"><summary><span class="side-folder-label">${escapeHtml(label)}</span>${refreshAction}${createAction}</summary><div class="side-folder-children">${children}</div></details>`;
+  const safeNodePath = escapeAttr(node.path);
+  // Une section entière ne se déplace ni ne se supprime : seuls ses
+  // sous-dossiers le peuvent. Elle reste en revanche une cible de dépôt, sinon
+  // rien ne permettrait de ramener un fichier à la racine de sa section.
+  const folderActions = depth === 0
+    ? ''
+    : `<button class="side-tree-delete" type="button" title="Delete folder ${safeNodePath}" aria-label="Delete folder ${safeNodePath}" data-tree-delete="${safeNodePath}" data-tree-kind="folder">×</button>`;
+  const newFolderAction = isEditableTreePath(node.path)
+    ? `<button class="side-folder-action" type="button" title="New folder" aria-label="New folder in ${safeNodePath}" data-tree-new-folder="${safeNodePath}">+□</button>`
+    : '';
+  const dragAttrs = depth === 0 ? '' : ` draggable="true" data-tree-drag="${safeNodePath}" data-tree-kind="folder"`;
+  const dropAttr = isEditableTreePath(node.path) ? ` data-tree-drop="${safeNodePath}"` : '';
+  return `<details class="side-folder${rootClass}"${open} data-tree-id="${safeNodePath}"${dragAttrs}${dropAttr}><summary><span class="side-folder-label">${escapeHtml(label)}</span>${refreshAction}${newFolderAction}${createAction}${folderActions}</summary><div class="side-folder-children">${children}</div></details>`;
+}
+
+// Sections dont l'arborescence est modifiable depuis le panneau. Miroir de
+// `TREE_ROOTS` (serve/tree/treeMutations.ts) : le serveur refuse de toute
+// façon le reste, ceci évite d'afficher des actions qui seraient rejetées.
+function isEditableTreePath(nodePath: string): boolean {
+  const section = toPosix(nodePath).split('/')[0] ?? '';
+  return ['wiki', 'deliverables', 'templates', 'build-context'].includes(section);
 }
 
 async function renderUntrackedSidebar(rootDir: string): Promise<string> {
@@ -672,7 +695,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
       });
       })()
     : '<li class="side-untracked-empty">No pending sources.</li>';
-  return `<div class="side-pending-resizer" data-pending-resizer title="Resize Pending panel" role="separator" aria-orientation="horizontal"></div><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending">↻</button><span class="side-untracked-count" data-untracked-count>${count}</span></summary><div class="side-untracked-list" data-untracked-list data-untracked-drop="">${await items}</div></details>`;
+  return `<div class="side-pending-resizer" data-pending-resizer title="Resize Pending panel" role="separator" aria-orientation="horizontal"></div><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending">↻</button><span class="side-untracked-count" data-untracked-count>${count}</span></summary><div class="side-untracked-list" data-untracked-list data-tree-drop="">${await items}</div></details>`;
 }
 
 function renderUntrackedNode(
@@ -686,14 +709,20 @@ function renderUntrackedNode(
     ...dirs.map((dir) => renderUntrackedNode(dir, titles)),
     ...files.map((file) => {
       const safePath = escapeAttr(file);
-      return `<div class="side-untracked-item" draggable="true" data-untracked-drag="${safePath}" data-untracked-kind="file"><a class="side-untracked-link" href="${escapeHref(`/${file}`)}" title="${safePath}" aria-label="${safePath}" data-side-path="${safePath}">${escapeHtml(titles.get(file) ?? humanTitle(file))}</a><button class="side-untracked-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-untracked-delete="${safePath}" data-untracked-kind="file">×</button></div>`;
+      return `<div class="side-untracked-item" draggable="true" data-tree-drag="${safePath}" data-tree-kind="file"><a class="side-untracked-link" href="${escapeHref(`/${file}`)}" title="${safePath}" aria-label="${safePath}" data-side-path="${safePath}">${escapeHtml(titles.get(file) ?? humanTitle(file))}</a><button class="side-tree-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-tree-delete="${safePath}" data-tree-kind="file">×</button></div>`;
     }),
   ].join('\n');
   // The root children live directly in [data-untracked-list], which carries the
   // drop target for raw/untracked itself (see wikiLayoutScript).
   if (root) return children;
+  // Le bouton de suppression d'un dossier portait `onclick="event.
+  // stopPropagation()"`, pour empêcher le <summary> de replier le <details>.
+  // Or le gestionnaire de suppression est délégué au `document` : l'événement
+  // ne l'atteignait donc jamais et le clic ne faisait rien du tout. C'est ce
+  // gestionnaire qui appelle `preventDefault()`, ce qui suffit à annuler le
+  // repli — l'action par défaut n'a lieu qu'une fois la propagation terminée.
   const safePath = escapeAttr(node.path);
-  return `<details class="side-untracked-folder" open data-tree-id="${safePath}" draggable="true" data-untracked-drag="${safePath}" data-untracked-kind="folder" data-untracked-drop="${safePath}"><summary><span class="side-folder-label">${escapeHtml(node.name)}</span><button class="side-untracked-delete" type="button" title="Delete folder ${safePath}" aria-label="Delete folder ${safePath}" data-untracked-delete="${safePath}" data-untracked-kind="folder" onclick="event.stopPropagation()">×</button></summary><div class="side-untracked-children">${children}</div></details>`;
+  return `<details class="side-untracked-folder" open data-tree-id="${safePath}" draggable="true" data-tree-drag="${safePath}" data-tree-kind="folder" data-tree-drop="${safePath}"><summary><span class="side-folder-label">${escapeHtml(node.name)}</span><button class="side-tree-delete" type="button" title="Delete folder ${safePath}" aria-label="Delete folder ${safePath}" data-tree-delete="${safePath}" data-tree-kind="folder">×</button></summary><div class="side-untracked-children">${children}</div></details>`;
 }
 
 export async function renderSidebar(rootDir: string, precomputedNavFiles?: string[]): Promise<string> {
@@ -722,8 +751,13 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="M8.6 8.1 10.8 15"/><path d="m15.4 8.1-2.2 6.9"/><path d="M9 6h6"/></svg>';
   const chatIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>';
+  // La route /history existe depuis longtemps (wikiRoutes.ts) et rend les 50
+  // derniers commits du workspace — mais rien ne pointait dessus. Une page
+  // qu'aucun lien n'atteint n'existe pas pour celui qui la cherche.
+  const historyIcon =
+    '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg>';
 const kbdHint = `<kbd style="font-size:.68rem;font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .35rem;border-radius:4px;color:var(--muted);cursor:pointer" title="Open global search (⌘K)" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}))">⌘K</kbd>`;
-  return `<a class="wiki-help-toggle" href="/help" title="Help" aria-label="Help">?</a><button class="wiki-theme-toggle" type="button" data-theme-toggle title="Switch to dark theme" aria-label="Switch color theme">☾</button><aside class="sidebar"><div class="side-head"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}<span>Graph</span></a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}<span>Chat</span></a></div></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Markdown documents">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside><div class="wiki-main-resizer" data-wiki-main-resizer title="Resize sidebar" role="separator" aria-orientation="vertical"></div>`;
+  return `<a class="wiki-help-toggle" href="/help" title="Help" aria-label="Help">?</a><button class="wiki-theme-toggle" type="button" data-theme-toggle title="Switch to dark theme" aria-label="Switch color theme">☾</button><aside class="sidebar"><div class="side-head"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}<span>Graph</span></a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}<span>Chat</span></a><a class="side-action" href="/history" title="History" aria-label="History">${historyIcon}<span>History</span></a></div></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Markdown documents">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside><div class="wiki-main-resizer" data-wiki-main-resizer title="Resize sidebar" role="separator" aria-orientation="vertical"></div>`;
 }
 
 /**

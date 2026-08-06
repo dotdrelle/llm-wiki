@@ -446,13 +446,13 @@ function mergeRuntimeConversation() {
         updateMsgBubble(ref.el,role,content);
         changed=true;
         if(role==='assistant'&&content&&wasEmpty&&pendingRuntimeStatusEls.length) {
-          pendingRuntimeStatusEls.shift()?.remove();
+          clearRuntimeThinkingBubble(pendingRuntimeStatusEls.shift());
         }
       }
       continue;
     }
     if(role==='assistant'&&content&&pendingRuntimeStatusEls.length) {
-      pendingRuntimeStatusEls.shift()?.remove();
+      clearRuntimeThinkingBubble(pendingRuntimeStatusEls.shift());
       changed=true;
     }
     if(role==='user' && pendingRuntimeUserRefs.length) {
@@ -2226,61 +2226,6 @@ function toggleTools(id) {
   if(chevron) chevron.textContent=collapsed?'▸':'▾';
 }
 
-function createStreamBubble() {
-  removeEmpty();
-  const wrap=$('messages');
-  const div=document.createElement('div');
-  div.className='msg assistant';
-  div.innerHTML='<div class="msg-content"><div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div><div class="msg-actions"><button class="msg-action" onclick="copyMessage(this)">Copy</button></div></div>';
-  wrap.appendChild(div);
-  wrap.scrollTop=wrap.scrollHeight;
-  return div;
-}
-
-function createRuntimeThinkingBubble(text='Request received · Donna is preparing the response and plan…') {
-  const div=createStreamBubble();
-  const bubble=div.querySelector('.bubble');
-  if(bubble) bubble.innerHTML=\`<div class="runtime-thinking"><div class="typing"><span></span><span></span><span></span></div><span>\${esc(text)}</span></div>\`;
-  return div;
-}
-
-function removeStreamBubble(div) {
-  if(!div) return;
-  div.remove();
-}
-
-function keepOrReplaceStatusBubble(currentDiv, text, statusDiv) {
-  const value=String(text||'').trim();
-  if(!value) {
-    removeStreamBubble(currentDiv);
-    return statusDiv || null;
-  }
-  if(statusDiv && statusDiv!==currentDiv && statusDiv.isConnected) {
-    setStreamContent(statusDiv,value);
-    removeStreamBubble(currentDiv);
-    return statusDiv;
-  }
-  setStreamContent(currentDiv,value);
-  return currentDiv;
-}
-
-function publishAssistantOutput(content, statusDiv, opts={}) {
-  if(statusDiv && statusDiv.isConnected) {
-    setStreamContent(statusDiv,content,'',opts);
-    return statusDiv;
-  }
-  return appendMsg('assistant',content,opts);
-}
-
-function setStreamContent(div, text, extra='', {html=false,plainText=null}={}) {
-  const bubble=div.querySelector('.bubble');
-  if(!bubble) return;
-  div.dataset.copy=plainText??text??'';
-  const main=html ? (text||'') : (text ? renderMd(text) : (extra ? '' : '<div class="typing"><span></span><span></span><span></span></div>'));
-  bubble.innerHTML=main+extra;
-  $('messages').scrollTop=$('messages').scrollHeight;
-}
-
 async function fetchStream(url, headers, body, onDelta, signal) {
   let res;
   try {
@@ -2471,8 +2416,14 @@ async function sendMessage() {
   const resolved=await resolveSkillInvocation(text);
   if(displayOverride) resolved.displayText=displayOverride;
   const model=$('model-name').value.trim()||'gpt-4o';
-  const parsedTemp=parseFloat($('temperature').value);
-  const temp=Number.isFinite(parsedTemp) ? parsedTemp : 0.7;
+  // Temperature comes from the active .wikirc profile, never from the UI.
+  // The panel used to carry a field for it, prefilled from the same config and
+  // defaulting to 0.7 against a schema default of 0.1 — two sources for one
+  // setting, of which only this fallback path ever read the second. It also
+  // had no effect at all on Donna, which is what the field looked like it
+  // controlled. Undefined here means "let the server decide", which behind a
+  // gateway is the only correct answer: some models refuse the parameter.
+  const temp=window.__WIKI_CONFIG__?.temperature;
   const useProxy=!!(window.__WIKI_CONFIG__);
   if(!useProxy && !$('base-url').value.trim()){notify('Enter a Base URL','e');return;}
 
@@ -2504,7 +2455,7 @@ async function sendMessage() {
     const sysContent=[systemPrompt,toolsNotice,langLine].filter(Boolean).join('\\n\\n');
     const cleanMessages=requestMessagesForLLM(messages);
     const reqMessages=sysContent ? [{role:'system',content:sysContent},...cleanMessages] : cleanMessages;
-    const reqBody={model,temperature:temp,messages:reqMessages};
+    const reqBody={model,...(Number.isFinite(temp)?{temperature:temp}:{}),messages:reqMessages};
     streamDiv=createStreamBubble();
     const {content}=await fetchStream(llmUrl,llmHeaders,reqBody,t=>{
       streamText=t;
@@ -2621,7 +2572,7 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
     runtimeConnected=true;
     if(data?.kind!=='turn') {
       if(statusEl) {
-        statusEl.remove();
+        clearRuntimeThinkingBubble(statusEl);
         pendingRuntimeStatusEls=pendingRuntimeStatusEls.filter(el=>el!==statusEl);
       }
       messages.push({role:'assistant',content:reply});
@@ -2635,7 +2586,7 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
     fetchRuntimeState().catch(()=>{});
   } catch(e) {
     if(statusEl) {
-      statusEl.remove();
+      clearRuntimeThinkingBubble(statusEl);
       pendingRuntimeStatusEls=pendingRuntimeStatusEls.filter(el=>el!==statusEl);
     }
     const errorText=\`No LLM response: \${e?.message||String(e)}\`;

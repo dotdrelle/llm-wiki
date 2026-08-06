@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AppConfig } from '../../types.ts';
 import { proxyRuntimeJson, type RuntimeProxyDeps } from '../proxy/runtimeProxy.ts';
+import { fetchGatewayCatalog } from '../../services/gatewayProbe.ts';
 
 type ConfigRoutesDeps = {
   config: AppConfig;
@@ -43,6 +44,52 @@ export async function handleConfigRoutes(
     return true;
   }
 
+  // Is the configured LLM endpoint actually reachable, right now?
+  //
+  // Reset used to rewrite the fields and stop there. A workspace whose endpoint
+  // was unreachable therefore looked repaired — same values on screen as a
+  // working one — while every request kept failing, and the only way to tell
+  // was to send a message and read the error. This answers the question
+  // directly, with a catalog read: no tokens spent, and the same call the
+  // wizard and `doctor` already use to enumerate models.
+  if (urlPath === '/api/llm/probe' && req.method === 'POST') {
+    const started = Date.now();
+    if (!deps.config.llm.baseUrl) {
+      deps.sendJson(res, 200, { ok: false, reason: 'no-base-url', message: 'No LLM base URL configured.' });
+      return true;
+    }
+    try {
+      const catalog = await fetchGatewayCatalog(deps.config, 5000);
+      if (!catalog) {
+        deps.sendJson(res, 200, {
+          ok: false,
+          reason: 'unreachable',
+          message: `No answer from ${deps.config.llm.baseUrl} — check the endpoint, the proxy and the CA bundle.`,
+        });
+        return true;
+      }
+      // A reachable endpoint that does not serve the configured model is a
+      // different failure, and the one an operator is least likely to guess.
+      const model = deps.config.llm.model;
+      const known = model ? catalog.byName.has(model) : false;
+      deps.sendJson(res, 200, {
+        ok: true,
+        models: catalog.models.length,
+        elapsedMs: Date.now() - started,
+        ...(model && !known
+          ? { warning: `Reachable, but "${model}" is not in the ${catalog.models.length} models it serves.` }
+          : {}),
+      });
+    } catch (err) {
+      deps.sendJson(res, 200, {
+        ok: false,
+        reason: 'error',
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return true;
+  }
+
   if (urlPath !== '/api/llm-config') return false;
 
   if (req.method === 'GET') {
@@ -58,9 +105,12 @@ export async function handleConfigRoutes(
     const body = JSON.parse(await deps.readRequestBody(req) || '{}') as Record<string, unknown>;
     deps.sendJson(res, 200, {
       ok: true,
+      // Temperature is deliberately absent: it belongs to the active .wikirc
+      // profile and has no session-scoped form. It used to be echoed here and
+      // carried a UI field, which suggested it could be overridden per session
+      // — it could not, and nothing ever persisted it.
       override: {
         model: typeof body.model === 'string' ? body.model : undefined,
-        temperature: typeof body.temperature === 'number' ? body.temperature : undefined,
         baseUrl: typeof body.baseUrl === 'string' ? body.baseUrl : undefined,
         apiKey: typeof body.apiKey === 'string' ? body.apiKey : undefined,
       },
