@@ -1377,14 +1377,36 @@ function requestMessagesForLLM(sourceMessages) {
   });
 }
 
+/* ── Actions de message ──────────────────────────────────────────────────
+   Icônes plutôt que « Copy » / « Redo » : deux mots posés sous chaque bulle
+   se lisent comme du contenu, et la barre les répétait à chaque tour.
+   Déclarations de fonctions, pas des const : activityPanelScript s'en sert et
+   est interpolé plus haut dans le même <script> — seule la remontée des
+   déclarations garantit qu'elles existent à l'appel. */
+function msgIcon(name) {
+  if(name==='copied') return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>';
+  if(name==='redo') return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg>';
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>';
+}
+function msgCopyButton() {
+  return '<button class="msg-action" onclick="copyMessage(this)" title="Copy" aria-label="Copy message">'+msgIcon('copy')+'</button>';
+}
+function msgRedoButton() {
+  return '<button class="msg-action" onclick="redoMessage(this)" title="Redo" aria-label="Ask this question again">'+msgIcon('redo')+'</button>';
+}
 async function copyMessage(btn) {
   const msg=btn.closest('.msg');
   const text=msg?.dataset.copy || msg?.querySelector('.bubble')?.innerText || '';
   if(!text.trim()) return;
   try {
     await navigator.clipboard.writeText(text);
-    btn.textContent='Copied';
-    setTimeout(()=>btn.textContent='Copy',1200);
+    // Le retour visuel passe par l'icône et le title : sans libellé, remplacer
+    // le texte ne dirait plus rien, et l'infobulle est le seul endroit où
+    // « Copied » reste lisible.
+    btn.innerHTML=msgIcon('copied');
+    btn.classList.add('done');
+    btn.title='Copied';
+    setTimeout(()=>{btn.innerHTML=msgIcon('copy');btn.classList.remove('done');btn.title='Copy';},1200);
   } catch {
     notify('Copy failed','e');
   }
@@ -1398,8 +1420,8 @@ function appendMsg(role, content, {html=false,plainText=null}={}) {
   div.dataset.copy=plainText??content??'';
   const av=role==='user'?'<div class="av u">You</div>':'';
   const bodyHtml=html ? (content||'') : (role==='assistant' ? renderMd(content||'') : esc(content||''));
-  const redoBtn=role==='user' ? '<button class="msg-action" onclick="redoMessage(this)">Redo</button>' : '';
-  div.innerHTML=\`\${av}<div class="msg-content"><div class="bubble">\${bodyHtml}</div><div class="msg-actions"><button class="msg-action" onclick="copyMessage(this)">Copy</button>\${redoBtn}</div></div>\`;
+  const redoBtn=role==='user' ? msgRedoButton() : '';
+  div.innerHTML=\`\${av}<div class="msg-content"><div class="bubble">\${bodyHtml}</div><div class="msg-actions">\${msgCopyButton()}\${redoBtn}</div></div>\`;
   wrap.appendChild(div);
   wrap.scrollTop=wrap.scrollHeight;
   return div;

@@ -8,7 +8,6 @@ export const canvasExplorerStyles = String.raw`
 .panel-head small{font-size:9.5px;font-weight:500;letter-spacing:.12em;color:#75aff5}
 .panel-head strong{font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .panel-head span{font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.panel-head button{flex:none;padding:0 6px;font-size:16px;background:transparent;border-color:transparent}
 .document-focus-list{min-height:0;overflow:auto;padding:8px}.focus-document-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px;border-bottom:1px solid color-mix(in srgb,var(--line) 60%,transparent)}.focus-document-name{display:flex;min-width:0;flex-direction:column;align-items:flex-start;border:0;background:transparent;text-align:left}.focus-document-name span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.focus-document-name small{color:var(--muted)}.focus-document-actions{display:flex;gap:4px}.focus-document-actions button{display:grid;width:30px;height:30px;padding:6px;place-items:center}.focus-document-actions svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8}.focus-document-actions button.done{color:#54d28b;border-color:#54d28b}
 /* Fiche de contexte : posée au-dessus du canevas, sous l'inspecteur dans
    l'ordre de calque — c'est un coup d'œil, pas un panneau qui prend la main. */

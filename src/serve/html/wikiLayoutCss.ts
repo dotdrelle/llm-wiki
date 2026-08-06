@@ -192,9 +192,11 @@ export const WIKI_LAYOUT_CSS = `
       text-overflow: ellipsis;
       white-space: nowrap;
       font-weight: 680;
+      /* Le label prend la place restante, pas chaque action : un
+         margin-left:auto porté par toutes les espaçait sur la ligne. */
+      margin-right: auto;
     }
     .side-folder-action {
-      margin-left: auto;
       min-width: 1.45rem;
       height: 1.45rem;
       display: inline-flex;
@@ -210,6 +212,7 @@ export const WIKI_LAYOUT_CSS = `
       line-height: 1;
     }
     .side-folder-action:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+    .side-folder-action-icon svg { width: 0.95rem; height: 0.95rem; display: block; }
     .side-refresh-action { font-size: 0.82rem; font-weight: 800; }
     .side-folder-children {
       margin-left: 0.85rem;
@@ -343,7 +346,6 @@ export const WIKI_LAYOUT_CSS = `
       font-size: 0.8rem;
       font-weight: 700;
     }
-    .side-untracked-folder > summary .side-folder-label { margin-right: auto; }
     .side-untracked-children {
       margin-left: 0.65rem;
       padding-left: 0.35rem;

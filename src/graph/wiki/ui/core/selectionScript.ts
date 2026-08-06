@@ -25,7 +25,11 @@ function documentActionRow(node){
 function renderDocumentFocusWindow(node){
   const relatedIds=new Set([node.id]);data.edges.forEach(edge=>{if(edge.from===node.id)relatedIds.add(edge.to);if(edge.to===node.id)relatedIds.add(edge.from)});
   const related=data.nodes.filter(item=>relatedIds.has(item.id)).sort((left,right)=>Number(right.id===node.id)-Number(left.id===node.id)||right.degree-left.degree);
-  inspector.innerHTML='<div class="panel-head"><div><small>DOCUMENT</small><strong>'+esc(node.title)+'</strong><span>'+esc(node.id)+'</span></div><button type="button" data-close-focus title="Back to community" aria-label="Close document focus">×</button></div><div class="document-focus-list">'+related.slice(0,50).map(documentActionRow).join('')+'</div>'
+  // Pas de croix dans l'en-tête : elle promettait une fermeture et remontait
+  // en réalité d'un niveau, exactement comme le « ← Back » de la barre d'outils
+  // (#focus-back, script.ts) — même cible, même condition. Deux commandes pour
+  // un seul geste, dont l'une ment sur ce qu'elle fait.
+  inspector.innerHTML='<div class="panel-head"><div><small>DOCUMENT</small><strong>'+esc(node.title)+'</strong><span>'+esc(node.id)+'</span></div></div><div class="document-focus-list">'+related.slice(0,50).map(documentActionRow).join('')+'</div>'
 }
 /*
  Descendre doit apporter quelque chose.
@@ -73,7 +77,6 @@ function selectCommunity(id){
 document.addEventListener('click',event=>{
   const preview=event.target.closest('[data-preview-doc]');if(preview){event.stopImmediatePropagation();previewGraphDocument(preview.dataset.previewDoc);return}
   const send=event.target.closest('[data-send-doc]');if(send){event.stopImmediatePropagation();sendDocumentToDonna(send.dataset.sendDoc,send);return}
-  if(event.target.closest('[data-close-focus]')){event.stopImmediatePropagation();navigateGraphLevel(selectedCommunity?'community':'map')}
 });
 document.querySelector('#close-document-preview').addEventListener('click',()=>{document.querySelector('#document-preview-overlay').hidden=true;document.querySelector('#document-preview-content').innerHTML=''});
 `;

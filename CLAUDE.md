@@ -146,7 +146,9 @@ merging without redesigning the model.
 The default scaffold includes small UI skills: `/status`, `/diagnose`, and the
 production chain `/wiki-sync` (source export + ingest, optional source name) →
 `/wiki-build` (build, optional template) → `/deliver` (export or polish, optional
-template + `polish` flag), with `/pipeline` as the one-shot shortcut. Skill
+template + `polish` flag), with `/pipeline` as the one-shot shortcut.
+`/wiki-ingest` (optional file list) is `/wiki-sync` without the export: it
+ingests what already waits in `raw/untracked/`, whatever staged it. Skill
 params are positional and whitespace-separated, substituted as `{param}` in the
 body, so a skill must tolerate an empty placeholder. Keep scaffold skills generic
 and English by default.

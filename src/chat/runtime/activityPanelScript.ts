@@ -34,7 +34,7 @@ function createStreamBubble() {
   const wrap=$('messages');
   const div=document.createElement('div');
   div.className='msg assistant';
-  div.innerHTML='<div class="msg-content"><div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div><div class="msg-actions"><button class="msg-action" onclick="copyMessage(this)">Copy</button></div></div>';
+  div.innerHTML='<div class="msg-content"><div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div><div class="msg-actions">'+msgCopyButton()+'</div></div>';
   wrap.appendChild(div);
   wrap.scrollTop=wrap.scrollHeight;
   return div;
@@ -542,10 +542,17 @@ function updateActivityBadge() {
     railBtn.setAttribute('aria-expanded',panelOpen?'true':'false');
   }
 }
+// Activity, Help et le mode split se disputent la même colonne de droite.
+// Ouvrir l'un ferme les autres : côte à côte, la conversation au centre devient
+// illisible. La réciproque du split vit dans toggleSplitWiki (views/wikiPanelScript.ts).
+function closePanelsBesideActivity() {
+  $('help-panel')?.classList.add('closed');
+  if(typeof disableSplitWiki==='function') disableSplitWiki();
+}
 function toggleActivityPanel() {
   const panel=$('activity-panel');
   if(!panel) return;
-  if(panel.classList.contains('closed')) $('help-panel')?.classList.add('closed');
+  if(panel.classList.contains('closed')) closePanelsBesideActivity();
   const opening=panel.classList.toggle('closed');
   try { localStorage.setItem(ACT_PANEL_KEY,opening?'0':'1'); } catch {}
   updateActivityBadge();
@@ -553,8 +560,16 @@ function toggleActivityPanel() {
 function openActivityPanel() {
   const panel=$('activity-panel');
   if(!panel) return;
+  if(panel.classList.contains('closed')) closePanelsBesideActivity();
   panel.classList.remove('closed');
   try { localStorage.setItem(ACT_PANEL_KEY,'1'); } catch {}
+  updateActivityBadge();
+}
+function closeActivityPanel() {
+  const panel=$('activity-panel');
+  if(!panel||panel.classList.contains('closed')) return;
+  panel.classList.add('closed');
+  try { localStorage.setItem(ACT_PANEL_KEY,'0'); } catch {}
   updateActivityBadge();
 }
 function setActivityView(view) {
@@ -646,6 +661,9 @@ async function retryConvert(uploadId, actId) {
   try {
     const open=localStorage.getItem(ACT_PANEL_KEY)==='1';
     if(open) $('activity-panel')?.classList.remove('closed');
+    // Pas de réconciliation avec le split ici : ses const (SHELL_SPLIT_KEY…)
+    // sont déclarées plus bas dans le même script et seraient encore en zone
+    // morte temporelle. C'est applySplitWiki, au tick suivant, qui tranche.
   } catch {}
   if(_activities.some(a=>isActivityActive(a.status))&&!_actTimer) _actTimer=setInterval(renderActivities,1000);
   _activities.forEach(scheduleActivityPoll);

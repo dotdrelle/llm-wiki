@@ -215,7 +215,11 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('#help-panel{order:2;width:360px;min-width:360px;height:100vh;');
     expect(CHAT_HTML).toContain('#help-panel.closed{width:0;min-width:0}');
     expect(CHAT_HTML).toContain("if(wasClosed) $('activity-panel')?.classList.add('closed');");
-    expect(CHAT_HTML).toContain("if(panel.classList.contains('closed')) $('help-panel')?.classList.add('closed');");
+    // Activity, Help et le mode split partagent la colonne de droite : ouvrir
+    // l'un ferme les autres, sinon la conversation au centre se réduit à rien.
+    expect(CHAT_HTML).toContain("if(panel.classList.contains('closed')) closePanelsBesideActivity();");
+    expect(CHAT_HTML).toContain("$('help-panel')?.classList.add('closed');\n  if(typeof disableSplitWiki==='function') disableSplitWiki();");
+    expect(CHAT_HTML).toContain("if (splitWikiEnabled() && typeof closeActivityPanel === 'function') closeActivityPanel();");
   });
 
   it('scrolls a long expanded plan without compressing initial synthesis', () => {
@@ -861,5 +865,32 @@ describe('chat html', () => {
     expect(script).toContain("{builtin:'internal',global:'global config',ui:'added here'}");
     expect(script).toContain("This removes the connector from every chat, agent and future plan.");
     expect(script).toContain("Built-in workspace connectors cannot be removed.");
+  });
+});
+
+// Deux mots posés sous chaque bulle se lisaient comme du contenu et se
+// répétaient à chaque tour. Le libellé vit désormais dans title/aria-label.
+describe('message actions', () => {
+  it('renders copy and redo as icon buttons with accessible names', () => {
+    expect(CHAT_HTML).toContain('title="Copy" aria-label="Copy message"');
+    expect(CHAT_HTML).toContain('title="Redo" aria-label="Ask this question again"');
+    expect(CHAT_HTML).not.toContain('onclick="copyMessage(this)">Copy</button>');
+    expect(CHAT_HTML).not.toContain('onclick="redoMessage(this)">Redo</button>');
+    expect(CHAT_HTML).toContain('.msg-action svg{width:14px;height:14px;');
+  });
+
+  it('confirms a copy through the icon rather than a text swap', () => {
+    // btn.textContent='Copied' n'afficherait plus rien de lisible une fois le
+    // libellé retiré : le retour passe par l'icône, la classe et l'infobulle.
+    expect(CHAT_HTML).toContain("btn.innerHTML=msgIcon('copied');");
+    expect(CHAT_HTML).toContain("btn.classList.add('done');");
+    expect(CHAT_HTML).toContain(".msg-action.done{color:#54d28b}");
+    expect(CHAT_HTML).not.toContain("btn.textContent='Copied'");
+  });
+
+  it('shares the copy button markup with the typing placeholder', () => {
+    // Une seconde copie du markup dans activityPanelScript aurait divergé au
+    // premier changement d'icône.
+    expect(CHAT_HTML).toContain("<div class=\"msg-actions\">'+msgCopyButton()+'</div>");
   });
 });

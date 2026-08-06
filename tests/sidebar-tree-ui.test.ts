@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -144,5 +144,34 @@ describe('Ctrl/K palette', () => {
 
   it('exposes History as an action', () => {
     expect(WIKI_PANEL_SCRIPT).toContain("title: 'History'");
+  });
+});
+
+// Une section affichait ses deux actions écartées l'une de l'autre : chaque
+// .side-folder-action portait margin-left:auto, et le flex répartissait donc
+// l'espace entre elles — le bouton « nouveau dossier » se retrouvait au milieu
+// de la ligne. C'est au label de pousser le groupe, une seule fois.
+describe('sidebar folder actions', () => {
+  it('groups the folder actions on the right through the label, not each button', async () => {
+    const source = WIKI_LAYOUT_CSS;
+
+    // `.side-folder-primary > summary .side-folder-label` apparaît avant : on
+    // vise la règle autonome, en début de ligne.
+    const labelBlock = source.slice(source.indexOf('\n    .side-folder-label {'));
+    expect(labelBlock.slice(0, labelBlock.indexOf('}'))).toContain('margin-right: auto;');
+
+    const actionBlock = source.slice(source.indexOf('\n    .side-folder-action {'));
+    expect(actionBlock.slice(0, actionBlock.indexOf('}'))).not.toContain('margin-left: auto;');
+  });
+
+  it('uses a folder pictogram for the new-folder action instead of the +square glyph', async () => {
+    const html = await readFile(
+      new URL('../src/serve/html/wikiHtml.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(html).toContain('side-folder-action side-folder-action-icon');
+    expect(html).toContain('title="New folder"');
+    expect(html).not.toContain('>+□</button>');
   });
 });

@@ -124,9 +124,21 @@ function applySplitWiki() {
   document.body.classList.toggle('split-wiki', on);
   document.getElementById('split-toggle')?.classList.toggle('active', on);
 }
+// Split et Activity se partagent la largeur restante à droite du chat : les
+// deux ouverts, il ne reste plus rien de lisible au milieu. Ils s'excluent
+// donc, dans les deux sens — la réciproque vit dans toggleActivityPanel /
+// openActivityPanel (runtime/activityPanelScript.ts).
+function disableSplitWiki() {
+  if (!splitWikiEnabled()) return;
+  shellStore(SHELL_SPLIT_KEY, '0');
+  applySplitWiki();
+}
 function toggleSplitWiki() {
   shellStore(SHELL_SPLIT_KEY, splitWikiEnabled() ? '0' : '1');
   applySplitWiki();
+  // Les scripts sont concaténés dans une même page : la fonction existe, mais
+  // le garde protège les vues où le panneau d'activité n'est pas monté.
+  if (splitWikiEnabled() && typeof closeActivityPanel === 'function') closeActivityPanel();
   // Turning split on while the chat fills the center: bring the last wiki
   // page alongside so the toggle has a visible effect immediately.
   if (splitWikiEnabled() && !document.body.classList.contains('center-wiki')) {
@@ -167,7 +179,14 @@ function initWikiSplitResizer() {
     window.addEventListener('pointerup', up);
   });
 }
-setTimeout(() => { applySplitWiki(); initWikiSplitResizer(); }, 0);
+setTimeout(() => {
+  // Les deux préférences sont persistées séparément et pouvaient donc revenir
+  // ouvertes ensemble au chargement — un état qu'aucune action de
+  // l'utilisateur ne produit plus. Activity, déjà restauré à ce stade, gagne.
+  if (!document.getElementById('activity-panel')?.classList.contains('closed')) disableSplitWiki();
+  applySplitWiki();
+  initWikiSplitResizer();
+}, 0);
 
 // ── Command palette (Ctrl/Cmd+K) ────────────────────────────────────────────
 // Shell-level palette over pages (via /api/pages), conversations and actions.

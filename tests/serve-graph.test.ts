@@ -155,13 +155,19 @@ describe('serve graph ui', () => {
     expect(html).toContain("document.querySelector('#fit').addEventListener('click',()=>canvasExplorer?.fit())");
   });
 
-  it('renders sidebar chat and graph actions as two wide buttons', async () => {
+  it('renders sidebar chat and graph actions as icon-only buttons', async () => {
     const source = await serveSource();
 
     expect(source).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
     expect(source).toContain('min-height: 2.75rem;');
-    expect(source).toContain('<span>Chat</span>');
-    expect(source).toContain('<span>Graph</span>');
+    // Le libellé vit dans le title/aria-label, pas sur le bouton : dans le
+    // panneau latéral du chat il était tronqué en « G… » / « Hi… », ce qui
+    // informe moins qu'une icône seule.
+    expect(source).not.toContain('<span>Chat</span>');
+    expect(source).not.toContain('<span>Graph</span>');
+    expect(source).not.toContain('<span>History</span>');
+    expect(source).toContain('href="/graph" title="Graph" aria-label="Graph"');
+    expect(source).toContain('href="/history" title="History" aria-label="History"');
     expect(source).toContain('class="wiki-help-toggle" href="/help"');
     expect(source).toContain('aria-label="Help">?</a>');
     expect(source).not.toContain('<span>Help</span>');

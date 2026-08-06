@@ -216,6 +216,11 @@ It accepts an optional source name (`/wiki-sync my-source`) and stops before the
 ingest when the export produced nothing new. The rest of the chain is split into
 two further scaffold skills so each step can be replayed on its own:
 
+- `/wiki-ingest [files]` — ingest what is already staged in `raw/untracked/`,
+  without exporting anything first (`production_start_job {"type":"ingest"}`,
+  optionally with an explicit `inputs` list). Use it when the files came from
+  the documents agent or a manual copy rather than Confluence. It stops before
+  starting a job when nothing is pending.
 - `/wiki-build [template]` — build deliverables from the current wiki content
   (`production_start_job {"type":"build"}`), optionally for a single template,
   in `stabilize` mode when the deliverable already exists.

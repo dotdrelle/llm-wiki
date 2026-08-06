@@ -233,8 +233,10 @@ body:not(.execution-mode) #execution-view{display:none}
 .msg.assistant .bubble{flex:1;min-width:0;padding:2px 0;white-space:normal}
 .msg-actions{display:flex;gap:6px;opacity:.45;transition:opacity .2s}
 .msg:hover .msg-actions{opacity:1}
-.msg-action{background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;font-family:var(--font-sans);font-weight:600;padding:2px 0}
+.msg-action{display:inline-grid;place-items:center;width:22px;height:22px;background:none;border:none;color:var(--muted);cursor:pointer;padding:0}
+.msg-action svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .msg-action:hover{color:var(--accent)}
+.msg-action.done{color:#54d28b}
 .trace-card{width:min(820px,100%);background:var(--panel-soft);border:1px solid var(--border);border-radius:14px;padding:10px 12px;animation:fadeUp .25s ease}
 .trace-card.empty{display:none}
 .trace-head{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;user-select:none}
