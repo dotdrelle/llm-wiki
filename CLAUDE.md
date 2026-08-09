@@ -148,10 +148,24 @@ production chain `/wiki-sync` (source export + ingest, optional source name) →
 `/wiki-build` (build, optional template) → `/deliver` (export or polish, optional
 template + `polish` flag), with `/pipeline` as the one-shot shortcut.
 `/wiki-ingest` (optional file list) is `/wiki-sync` without the export: it
-ingests what already waits in `raw/untracked/`, whatever staged it. Skill
-params are positional and whitespace-separated, substituted as `{param}` in the
-body, so a skill must tolerate an empty placeholder. Keep scaffold skills generic
-and English by default.
+ingests what already waits in `raw/untracked/`, whatever staged it.
+
+Scaffold skill bodies are **business intentions**, not procedures: they state
+the outcome, the guardrails and the reporting, and never name an MCP server, a
+tool or a job type. The manager's compiler turns a body into one delegable
+intention per strong boundary, so the markdown shape is load-bearing — a body
+written as a numbered list of phases becomes that many runs. Keep each shipped
+skill on one intention, except `wiki-sync`, whose second paragraph opens with
+`Then` precisely so the export and the ingest become two sequential runs.
+`pipeline` must stay a single intention: splitting it would take the production
+capability's own DAG and concurrency away from it.
+
+Params are positional and whitespace-separated. The manager appends them as a
+`User parameters:` block to every objective of a chain; the legacy `{param}`
+substitution still works when a body contains the placeholder, and such a body
+must tolerate an empty one. Each skill ends with an optional, best-effort email
+notification written without naming any server or tool — phrased inline so it
+never becomes an extra run. Keep scaffold skills generic and English by default.
 
 ## Agent Runtime Integration
 
@@ -333,6 +347,20 @@ local UI chrome.
 ## Serve Skills And Donna
 
 Browser slash entries resolve against workspace skills from `.wiki/skills/`.
+An entry that matches an executable skill switches the composer to agent mode
+and posts to `/api/runtime/run`, so the browser never compiles or executes a
+skill itself. `matchBrowserSkillInvocation` holds a copy of the manager's
+`RESERVED_SLASH_COMMANDS` list — `/status` and friends stay built-ins on both
+sides, and the two lists must be changed together. An explicit `forceChat` wins
+over the switch.
+
+The Activity panel renders a **Chain** section from `runtimeState.skillChains`,
+the projection the runtime publishes over the control queue, with one line per
+step (`✓ ● × –`), its status and its `skipReason`. A chain disappears once it
+is fully `done`; it stays visible when it was cancelled or left incomplete,
+which is exactly when the user needs to see which steps were skipped. Styles
+live in `styles/chatActivityStyles.ts` under `.chain-*`.
+
 The empty chat's first tile and the empty Activity panel's button both open
 the Help panel (`toggleHelpPanel()`) — a slide-out reader over the bundled,
 global `help-doc/` chapters (`src/utils/helpDoc.ts`), also reachable at
