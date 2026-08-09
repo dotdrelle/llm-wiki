@@ -1,33 +1,9 @@
 ---
 name: wiki-sync
-description: Export Confluence sources (all or one) and ingest them into the wiki
+description: Export Confluence sources and then ingest the exported Markdown
 params:
   - source
 ---
-Refresh the wiki from its Confluence sources, then ingest the result (tool calls always use the `server__tool` form).
+Export the requested Confluence source, or all configured sources when none is specified. Check configuration and source availability first, wait for the export to finish, and stop without producing partial input if it fails or exports nothing.
 
-Requested source: `{source}` — when this placeholder is empty, all sources are refreshed.
-
-1. Call cme__cme_status. If the result is "not_configured", stop and tell the user to run cme__cme_setup first with their Confluence base URL, username, and personal access token.
-2. Call cme__cme_sources_list to display which sources exist. If the list is empty, stop and tell the user to add sources with cme__cme_source_add.
-3. If a source was requested, match it against the returned names. If it does not match exactly one source, stop and show the available names instead of guessing.
-4. Call cme__cme_export_run with `source_name` set to the matched source, or with no source name to export all of them.
-5. Poll cme__cme_export_status every 30 seconds until the status is "success" or "failed". Report progress at each poll.
-6. If the export failed, stop here and explain the failure. Do not ingest a partial export.
-7. If the export succeeded but reported no exported page or no new file under `raw/untracked/`, stop and tell the user that the sources are already up to date. Do not start an ingest job for nothing.
-8. Otherwise call production__production_start_job with {"type":"ingest"} to ingest the exported markdown, setting `confirm:true` only after the user explicitly approves this mutating run. Follow it with production__production_job_status until it is done or failed, and use production__production_job_logs with {"jobId":"...","tail":120} to explain any failure.
-9. Report the final outcome: which sources were refreshed, how many pages were exported, whether the ingest completed, and which wiki pages changed.
-10. Send the optional email notification described below, with the action named "Source refresh + ingest".
-
-This skill stops at the ingested wiki. To (re)generate deliverables afterwards, use the `wiki-build` skill, then `deliver`. Use `pipeline` when the user wants the whole chain in one job.
-
-## Optional email notification
-
-Once the job has reached a terminal state, notify by email — best effort only. Every step below may turn out to be unavailable in the current session; whenever that happens, skip the notification, mention it in one short line, and consider the skill successful. This section must never block, retry or downgrade the result of the job itself.
-
-- Inspect the tools actually available in this session and look for one whose purpose is sending an email or a message. Do not assume any particular server or tool name: whichever mail connector is wired up, use the send tool it exposes, with the parameter names that tool declares. If no such tool is available, skip this section silently — the notification is optional and must never block, retry or change the outcome of the skill.
-- Find the recipient in the workspace profile, under its `## Notifications` section. The profile is often already part of your instructions — use it from there. Only if it is absent, and only if a profile-reading tool is available to you, read `.wiki/profile.md` with it; never treat a missing or unreadable profile as an error. If no recipient can be determined either way, ask the user once for an address, and skip the notification if they do not give one.
-- Write the email in the reply language already set in your instructions for this workspace — the same language you answer the user in, not the English of the UI. Do not try to read a configuration file to find it. If the profile names a different preferred language for the recipient, that one wins.
-- Send a short plain-text summary, at most ten lines: subject `[<workspace>] <action> — <final status>`, body covering what was run, the parameters used, the outcome and duration, the files changed or produced, and the error message if it failed. Link or name files, never paste their content.
-- Never include tokens, credentials, API keys or raw log dumps. If the send tool declares a confirmation flag, set it only once the message is ready to go out.
-- Then state in the chat whether the notification was sent, skipped (no connector, no recipient) or failed. A failed notification does not change the reported result of the job itself.
+Then ingest the newly exported Markdown into the wiki, with the normal mutation approval, progress tracking and final report. Do not build or publish deliverables as part of this workflow. If a messaging connector and a notification recipient from the workspace profile are available, send a short best-effort terminal summary in the reply language; otherwise skip notification silently, and never let notification failure change the synchronization outcome.

@@ -1,13 +1,6 @@
 ---
 name: diagnose
-description: Run wiki doctor and report configuration issues with recommendations
+description: Diagnose workspace configuration and prioritize concrete remedies
 params: []
 ---
-Run a full diagnostic of this wiki workspace:
-
-1. Call wiki_doctor (if available via the llm-wiki MCP server). List every warning and error it returns.
-2. For each issue found, explain what it means in plain language and propose a concrete fix.
-3. If no MCP tools are available, ask the user to run `wiki doctor` in the terminal and share the output.
-4. Pay particular attention to: context window size vs. batch size consistency, missing or misconfigured vector index, provider connectivity, and fill ratio warnings above 90%.
-
-End with a prioritized list: critical issues first, then warnings, then suggestions.
+Run a complete read-only diagnostic of the wiki workspace, explain every error and warning in plain language, and finish with prioritized concrete remedies. Pay particular attention to provider connectivity, context and batch sizing, vector indexing, and unsafe fill ratios. If a messaging connector and a notification recipient from the workspace profile are available, send a short best-effort summary in the reply language; otherwise skip notification silently, and never let notification failure change the diagnostic outcome.

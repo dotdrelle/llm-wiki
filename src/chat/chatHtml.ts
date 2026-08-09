@@ -277,7 +277,26 @@ function runtimeTaskPanelHTML(view='plan') {
   const runSummary=runtimeWorkflowSummaryHTML();
   const planHTML=planCards?\`<div class="act-section-head"><span class="act-section-title">Plan</span></div>\${planCards}\`:'';
   const queueHTML=queueCards?\`<div class="act-section-head"><span class="act-section-title">Queue</span></div>\${queueCards}\`:'';
-  return status+runSummary+runCard+synthesisHtml+planHTML+queueHTML;
+  return status+runSummary+runCard+synthesisHtml+skillChainsHTML()+planHTML+queueHTML;
+}
+
+// A skill may execute as several sequential runs. The plan panel only ever
+// shows the run in progress, so without this the second half of a wiki-sync is
+// invisible, and after a cancel there is nothing saying the remaining steps
+// were skipped rather than forgotten. The runtime already projects the chain
+// (skillChains); this only renders it.
+function skillChainsHTML() {
+  const chains=Array.isArray(runtimeState?.skillChains)?runtimeState.skillChains:[];
+  const visible=chains.filter(chain=>chain.status!=='done');
+  if(!visible.length) return '';
+  const blocks=visible.map(chain=>{
+    const steps=(chain.steps||[]).map(step=>{
+      const reason=step.skipReason?\` · \${esc(step.skipReason)}\`:'';
+      return \`<div class="chain-step chain-\${esc(step.status)}"><span class="chain-symbol">\${esc(step.symbol||'○')}</span><span class="chain-label">\${esc(step.label||'')}</span><span class="chain-status">\${esc(step.status)}\${reason}</span></div>\`;
+    }).join('');
+    return \`<div class="chain-block"><div class="chain-head">\${esc(chain.skillName||'skill')} · \${chain.steps.length} step\${chain.steps.length>1?'s':''}</div>\${steps}</div>\`;
+  }).join('');
+  return \`<div class="act-section-head"><span class="act-section-title">Chain</span></div>\${blocks}\`;
 }
 
 function runtimeRunCardHTML(plan,activities,progress=null) {
@@ -1346,9 +1365,10 @@ function findSkillByName(name) {
   return (skillsCache||[]).find(s=>String(s.name||'').toLowerCase()===wanted) || null;
 }
 
-async function resolveSkillInvocation(text) {
+async function matchBrowserSkillInvocation(text) {
   const match=/^\\/([A-Za-z0-9_-]+)(?:\\s+([\\s\\S]*))?$/.exec(String(text||'').trim());
   if(!match) return {displayText:text,sendText:text,skill:null};
+  if(['status','stop','run','queue','skills','help','exit','quit','chat','agent'].includes(String(match[1]).toLowerCase())) return {displayText:text,sendText:text,skill:null};
   await fetchSkillsAc();
   const skill=findSkillByName(match[1]);
   if(!skill) return {displayText:text,sendText:text,skill:null};
@@ -2423,6 +2443,12 @@ async function sendMessage() {
   if(!text) return;
   if(await tryConnectorCommand(input,text)) return;
   if(await tryProfilePreferenceUpdate(input,text)) return;
+  const skillInvocation=await matchBrowserSkillInvocation(text);
+  if(skillInvocation.skill&&runtimeEnabled()&&!forceChat) {
+    if(!agentMode) { agentMode=true; updateAgentModeUI(); }
+    await sendRuntimeAgentMessage(input,text,{mode:'skill',displayText:displayOverride||text,hideQuestion});
+    return;
+  }
   if(agentMode&&!forceChat) {
     await sendRuntimeAgentMessage(input,text,{displayText:displayOverride||text,hideQuestion});
     return;
@@ -2435,7 +2461,7 @@ async function sendMessage() {
     await sendRuntimeAgentMessage(input,text,{mode:'chat',displayText:displayOverride||text,hideQuestion});
     return;
   }
-  const resolved=await resolveSkillInvocation(text);
+  const resolved=skillInvocation;
   if(displayOverride) resolved.displayText=displayOverride;
   const model=$('model-name').value.trim()||'gpt-4o';
   // Temperature comes from the active .wikirc profile, never from the UI.
@@ -2564,8 +2590,11 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
     // is in flight, and the 409 fallback exists specifically to catch that.
     const runningBeforeFetch=runtimeIsRunning();
     const readOnlyChat=mode==='chat';
+    const skillRun=mode==='skill';
     const openWikiPages=readOnlyChat?activePageContexts():[];
-    const doTurnFetch=()=>fetch(runningBeforeFetch&&!readOnlyChat?'/api/runtime/control':'/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:runningBeforeFetch&&!readOnlyChat?controlBody:JSON.stringify({input:text,...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})})});
+    const doTurnFetch=()=>skillRun
+      ? fetch('/api/runtime/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:text})})
+      : fetch(runningBeforeFetch&&!readOnlyChat?'/api/runtime/control':'/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:runningBeforeFetch&&!readOnlyChat?controlBody:JSON.stringify({input:text,...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})})});
     let res=await doTurnFetch();
     // Transient 503 (host runtime booting/restarting): wait, then replay once.
     if(res.status===503&&(notify('Runtime unavailable — waiting for it to come back…','i'),await waitForRuntimeReady(30000))) res=await doTurnFetch();

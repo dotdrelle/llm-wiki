@@ -1,12 +1,6 @@
 ---
 name: status
-description: Check all MCP services and running jobs in one shot
+description: Summarize connector health and current or recent jobs
 params: []
 ---
-Check the status of all available services in this order:
-
-1. If the CME connector (cme__cme_status) is available, call it. Report whether it is configured or not.
-2. If the production connector is available, call `production__production_list_jobs` to list recent jobs. Report running jobs, pending jobs, and any recent failures.
-3. Summarize what is up and operational, what is missing or misconfigured, and whether any action is needed.
-
-Keep the summary concise: one line per service, then a short conclusion.
+Inspect the available services and recent jobs without mutating anything, then give a concise status summary identifying what is operational, missing, misconfigured, running or recently failed. If a messaging connector and a notification recipient from the workspace profile are available, send that short summary in the reply language as a best-effort notification; otherwise skip notification silently, and never let notification failure change the status outcome.

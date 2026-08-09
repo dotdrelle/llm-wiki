@@ -31,6 +31,15 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .act-body.activity-list-mode{overflow:hidden}.activity-subtabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;flex:none;margin-bottom:8px}.activity-subtab{min-width:0;border:1px solid var(--border);border-radius:6px;background:var(--panel-soft);color:var(--muted);font:800 9px var(--font-sans);padding:5px 3px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase}.activity-subtab:hover,.activity-subtab.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}.activity-subtab.has-error{border-color:color-mix(in srgb,var(--err) 55%,var(--border));color:var(--err)}.activity-subtab.has-running{border-color:color-mix(in srgb,var(--accent) 55%,var(--border))}.activity-subtab-content{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-right:2px}.activity-subtab-content>.act-card+.act-card{margin-top:6px}.activity-subtab-logs{display:flex;flex-direction:column;overflow:hidden}.activity-subtab-logs .runtime-log-filters{flex:none}.activity-subtab-logs .runtime-log{flex:1;min-height:0;max-height:none}
 .act-section-head{display:flex;align-items:center;justify-content:space-between;padding:2px 4px 6px}
 .act-section-title{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.chain-block{background:var(--panel-soft);border:1px solid var(--border);border-radius:10px;padding:9px 11px;margin-bottom:6px}
+.chain-head{font-size:11px;font-weight:800;color:var(--text);margin-bottom:6px}
+.chain-step{display:grid;grid-template-columns:14px 1fr auto;align-items:baseline;gap:6px;padding:2px 0;font-size:11px;color:var(--muted)}
+.chain-symbol{font-weight:800;text-align:center}
+.chain-label{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chain-status{font-size:10px;color:var(--muted2);white-space:nowrap}
+.chain-step.chain-running .chain-symbol,.chain-step.chain-running .chain-label{color:var(--accent)}
+.chain-step.chain-failed .chain-symbol,.chain-step.chain-cancelled .chain-symbol{color:var(--err)}
+.chain-step.chain-skipped{opacity:.6}
 .act-dismiss-all{font-size:10px;color:var(--muted);background:none;border:none;cursor:pointer;padding:2px 4px;border-radius:4px}
 .act-dismiss-all:hover{color:var(--text);background:var(--panel-soft)}
 .activity-subtab-toolbar{display:flex;align-items:center;justify-content:space-between;padding:0 4px 7px}.activity-subtab-toolbar-title{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.activity-subtab-actions{display:flex;align-items:center;gap:4px}.activity-subtab-clear,.activity-subtab-reset{border:0;background:none;color:var(--muted);font:700 10px var(--font-sans);cursor:pointer;padding:2px 4px;border-radius:4px}.activity-subtab-clear:hover{color:var(--err);background:color-mix(in srgb,var(--err) 8%,transparent)}.activity-subtab-reset{border:1px solid var(--border);color:var(--muted);padding:3px 6px}.activity-subtab-reset:hover{background:var(--panel-soft);border-color:var(--muted);color:var(--text)}

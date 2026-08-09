@@ -193,13 +193,18 @@ demo ingest/build cycle. It includes one demo source in `raw/untracked/`.
 ### Chat skills in `wiki serve`
 
 The served chat exposes workspace skills as slash commands. Typing a matching
-skill such as `/wiki-sync` sends the skill body to the LLM while keeping the
-displayed command readable in the conversation.
+skill such as `/wiki-sync team-space` switches from read-only chat to agent mode
+and sends the literal invocation to the manager runtime. Serve does not expand
+the skill body or execute mutations through its local chat path.
 
-Skill runs keep going across status/list/log tool calls. Observation summaries
-are not allowed to end a skill early; the run continues until the skill's actual
-action has started or completed. Intermediate assistant status text remains
-visible and is updated by later status or final output instead of disappearing.
+The runtime parses quoted arguments, compiles the body into delegable business
+objectives, and resolves each objective only when its run starts. Paragraphs do
+not split a complex capability by themselves. The scaffolded `pipeline` remains
+one run and preserves the production capability's internal DAG; `wiki-sync` is
+the deliberate multi-capability case and becomes two sequential runs. The
+Activity panel displays the derived Chain projection (`done`, `running`,
+`cancelled`, `skipped` and its reason) from the shared event-sourced control
+queue.
 
 The scaffolded `/wiki-sync` skill runs the Confluence-to-wiki path:
 
@@ -231,16 +236,11 @@ two further scaffold skills so each step can be replayed on its own:
 
 `/pipeline` remains the one-shot shortcut for the whole chain.
 
-All three end with an **optional email notification**: if any connected MCP
-server exposes a mail-sending tool — the skills discover it from the available
-tools rather than naming a server, so any mail connector works — the skill
-reads `.wiki/profile.md` through `profile_read`, takes the recipient from its
-`## Notifications` section, and sends a short summary of what was run and how it
-ended. The mail is written in the session reply language, which the chat and
-agent prompts already carry from `.wikirc` — the skill never reads a config file
-for it, and never fails when the profile is missing. With no connector or no
-recipient, the step is skipped silently, and a failed notification never changes
-the reported result of the job.
+Every scaffolded skill includes an **optional best-effort notification**. It
+uses a messaging connector only when one is actually available and takes the
+recipient from the workspace profile's `## Notifications` section. The message
+uses the reply language. With no connector or recipient the notification is
+skipped silently, and a notification failure never changes the skill outcome.
 
 The final ingest step intentionally uses the `wiki-production` MCP server. The
 llm-wiki MCP server is read/search/write oriented and does not expose a
