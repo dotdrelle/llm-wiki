@@ -12,11 +12,11 @@ This mode is right for: asking a question about your domain, getting an
 explanation, checking a status ("is the connector configured?", "how many pages
 in the wiki?"), understanding where you stand.
 
-What chat **does not do**: import, ingest, build, export, send, configure. If you
-ask for one of these actions, DONNA will invite you to switch to agent mode. A
-question about DONNA, wikiLLM, its commands, configuration or interfaces remains
-a read-only question and must be answered directly in chat from this product
-documentation.
+What chat **does not do**: run workspace skills or orchestrated jobs. Chat can
+recognize a relevant skill, show its name and declared parameters, and invite
+you to switch to agent mode, but it states clearly that nothing was launched.
+A question about DONNA, wikiLLM, its commands, configuration or interfaces
+remains a product question and is answered directly from this documentation.
 
 Good to know: chat stays **always available**, including while a job runs in
 agent mode, and even if the orchestration infrastructure is momentarily
@@ -30,6 +30,18 @@ their execution. You see everything unfold in the **Activity** panel.
 
 This mode is right for: running an ingestion, rebuilding a deliverable, exporting
 a space, configuring a connector.
+
+Workspace skills can also be started from ordinary language. For example,
+"run the deliver skill with the quarterly template" selects `deliver` and
+passes only the parameter value you actually supplied. DONNA never receives
+the skill body: the runtime reads, compiles and queues it. The usual approval,
+queueing, cancellation and recovery rules still apply.
+
+DONNA chooses the execution path in a fixed order: an explicitly named skill;
+then a clearly matching direct tool for a unitary action; then one strong and
+unique skill match by name and description; then an agent capability. If two
+skills are close, it asks instead of guessing. Informational questions such as
+"how does deliver work?" do not execute anything.
 
 A few guarantees specific to agent mode:
 

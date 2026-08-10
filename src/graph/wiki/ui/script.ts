@@ -25,7 +25,7 @@ ${graphUiLiveScript()}
 ${graphUiThemeScript()}
 
 async function load(){
-  try{data=await json('/api/graph/overview');seedCanvasExplorerSlots();renderFilters();renderSearchOptions();render();startGraphLiveWatch()}
+  try{data=await json('/api/graph/overview');seedCanvasExplorerSlots();renderFilters();renderSearchOptions();render()}
   catch(error){canvas.innerHTML='<div class="loading">Unable to load graph: '+esc(error.message)+'</div>'}
 }
 function render(){

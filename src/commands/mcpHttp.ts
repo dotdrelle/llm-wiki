@@ -21,7 +21,13 @@ interface McpHttpOptions {
 }
 
 type McpScope = 'read' | 'write';
-const WRITE_MCP_TOOLS = new Set(['wiki_write_page', 'wiki_add_source', 'profile_update']);
+const WRITE_MCP_TOOLS = new Set([
+  'wiki_write_page',
+  'template_write',
+  'build_context_write',
+  'wiki_add_source',
+  'profile_update',
+]);
 
 interface SharedMcpContext {
   key: string;

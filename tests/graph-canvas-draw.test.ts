@@ -103,14 +103,21 @@ function corpus() {
   };
 }
 
-// Le suivi en direct fait partie du même script dans l'application : la boucle
-// de dessin l'interroge pour marquer les nœuds qui viennent d'apparaître. Le
-// module ne déclare que des fonctions — rien ne part au réseau tant que
-// startGraphLiveWatch n'est pas appelé.
+// Le petit état de fraîcheur fait partie du même script dans l'application :
+// la boucle de dessin peut l'interroger sans démarrer de polling ni de trafic
+// réseau en arrière-plan.
 const source = [graphFrameScript(), graphCameraScript(), canvasExplorerScript(), graphUiLiveScript()].join('\n');
 const palette = ['#4d9cff', '#22d3ee', '#a78bfa', '#f472b6', '#fbbf24', '#34d399'];
 
 describe('halo des nouveaux nœuds', () => {
+  it('ne maintient aucun rafraîchissement automatique du graphe', () => {
+    const liveSource = graphUiLiveScript();
+    expect(liveSource).not.toContain('setInterval');
+    expect(liveSource).not.toContain('/api/graph/etag');
+    expect(liveSource).not.toContain('visibilitychange');
+    expect(liveSource).not.toContain('startGraphLiveWatch');
+  });
+
   it('expire même lorsqu’un nouveau nœud est masqué', () => {
     /*
      Un nœud filtré n'est pas dessiné, donc graphNodeFreshness() ne peut pas

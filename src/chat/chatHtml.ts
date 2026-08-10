@@ -7,6 +7,7 @@ import { CONFIG_SCRIPT } from './config/configScript.ts';
 import { ACTIVITY_PANEL_SCRIPT } from './runtime/activityPanelScript.ts';
 import { REDO_SCRIPT } from './runtime/redoScript.ts';
 import { RUNTIME_GRAPH_SCRIPT } from './runtime/runtimeGraphScript.ts';
+import { SKILL_CHAINS_SCRIPT } from './runtime/skillChainsScript.ts';
 import { CHAT_MARKUP, EMPTY_CHAT_HTML } from './views/chatView.ts';
 import { HELP_PANEL_SCRIPT } from './views/helpPanelScript.ts';
 import { WIKI_PANEL_SCRIPT } from './views/wikiPanelScript.ts';
@@ -280,24 +281,7 @@ function runtimeTaskPanelHTML(view='plan') {
   return status+runSummary+runCard+synthesisHtml+skillChainsHTML()+planHTML+queueHTML;
 }
 
-// A skill may execute as several sequential runs. The plan panel only ever
-// shows the run in progress, so without this the second half of a wiki-sync is
-// invisible, and after a cancel there is nothing saying the remaining steps
-// were skipped rather than forgotten. The runtime already projects the chain
-// (skillChains); this only renders it.
-function skillChainsHTML() {
-  const chains=Array.isArray(runtimeState?.skillChains)?runtimeState.skillChains:[];
-  const visible=chains.filter(chain=>chain.status!=='done');
-  if(!visible.length) return '';
-  const blocks=visible.map(chain=>{
-    const steps=(chain.steps||[]).map(step=>{
-      const reason=step.skipReason?\` · \${esc(step.skipReason)}\`:'';
-      return \`<div class="chain-step chain-\${esc(step.status)}"><span class="chain-symbol">\${esc(step.symbol||'○')}</span><span class="chain-label">\${esc(step.label||'')}</span><span class="chain-status">\${esc(step.status)}\${reason}</span></div>\`;
-    }).join('');
-    return \`<div class="chain-block"><div class="chain-head">\${esc(chain.skillName||'skill')} · \${chain.steps.length} step\${chain.steps.length>1?'s':''}</div>\${steps}</div>\`;
-  }).join('');
-  return \`<div class="act-section-head"><span class="act-section-title">Chain</span></div>\${blocks}\`;
-}
+${SKILL_CHAINS_SCRIPT}
 
 function runtimeRunCardHTML(plan,activities,progress=null) {
   if(!runtimeIsRunning()) return '';

@@ -65,7 +65,7 @@ const MARKED_DIST_PATH = path.resolve(
 );
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
-const LLM_WIKI_VERSION = '0.15.45';
+const LLM_WIKI_VERSION = '0.15.46';
 
 type SkillMeta = {
   name: string;

@@ -55,10 +55,18 @@ to be replaced; those in square brackets `[…]` are optional.
 
 ## Skills
 
-- `/skills` — list available skills.
+- `/skills` — list available skills and any rejected definitions or warnings.
 - `/skills show <name>` — show a skill.
-- `/skills run <name>` — run a skill's guide.
+- `/skills run <name> [arguments]` — run a skill explicitly. Arguments follow
+  the declared parameter order on this deterministic command path.
 - `/skills edit <name>` — edit a skill.
+
+In Agent mode you can also name a skill naturally, for example "run the
+`wiki-build` skill with template architecture". Natural-language execution
+uses named parameters: DONNA fills only values literally present in the
+request, while the runtime reads the private body and queues the resulting
+chain. Reserved names such as `status` remain commands unless you explicitly
+say "the status skill" or use `/skills run status`.
 
 ## Execution and orchestration (agent mode)
 
