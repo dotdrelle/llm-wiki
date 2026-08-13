@@ -6,10 +6,36 @@ import type {
   WikiGraphRelationType,
 } from './projection.ts';
 
+/**
+ * Provenance d'une affectation, par ordre de priorité décroissante.
+ *
+ * - `explicit` — `community:` en frontmatter. Une décision d'auteur, immuable.
+ * - `synthesized` — le registre de taxonomie. Une décision, elle aussi : les
+ *   passes de réparation n'y touchent pas.
+ * - `seed` — une déduction : `group:`, ou le nom d'un dossier de concepts.
+ *   Réparable, et c'est le but.
+ * - `inherited` — déduit du voisinage.
+ * - `fallback` — rien n'a permis de conclure.
+ *
+ * Réutiliser `inherited` pour une graine masquerait une information nécessaire
+ * aux diagnostics et à l'interface. Cette valeur voyage dans le snapshot :
+ * tout consommateur qui commute dessus doit avoir une branche par défaut.
+ */
 export type CommunityAssignment = {
   communityId: string;
   communityLabel: string;
-  assignment: 'explicit' | 'inherited' | 'fallback';
+  assignment: 'explicit' | 'synthesized' | 'seed' | 'inherited' | 'fallback';
+};
+
+/**
+ * Vue minimale du registre de taxonomie.
+ *
+ * Volontairement réduite à ce dont l'affectation a besoin : ce module reste
+ * ignorant du format du registre, de SKOS et des révisions, et se teste sans
+ * en fabriquer un.
+ */
+export type RegistryLookup = {
+  assign: (pageId: string) => { communityId: string; communityLabel: string } | null;
 };
 
 export type WikiGraphCommunity = {
@@ -112,16 +138,20 @@ export function assignGraphCommunities(
   edges: WikiGraphEdge[],
   explicitCommunities: Map<string, ExplicitCommunity>,
   fallbackCommunityLabel = 'Ungrouped',
+  options: { registry?: RegistryLookup } = {},
 ): WikiGraphNode[] {
   const assignments = new Map<string, CommunityAssignment>();
 
-  // Pass 1: explicit frontmatter. `community` precedence is resolved by the
-  // projection before this pure assignment function receives the label.
-  //
-  // On retient QUI a été déclaré par un auteur. Les passes de réparation ne
-  // doivent jamais y toucher : le nom d'un dossier est une déduction, une
-  // ligne de frontmatter est une décision. La passe 2 marque pourtant les deux
-  // « explicit », d'où ce jeu séparé.
+  /*
+   Hiérarchie d'affectation, par priorité décroissante :
+     1. `community:` explicite  2. registre synthétisé  3. graine (`group:`,
+     dossier de concepts)  4. héritage par voisinage  5. repli.
+
+   `declared` retient ce que les passes de réparation n'ont pas le droit de
+   défaire : une décision d'auteur, et une taxonomie synthétisée. Une déduction
+   — nom de dossier, `group:` — reste réparable, et c'est précisément ce qui
+   distingue une graine d'une décision.
+  */
   const declared = new Set<string>();
   for (const node of nodes) {
     const explicit = explicitCommunities.get(node.id);
@@ -131,11 +161,31 @@ export function assignGraphCommunities(
     }
   }
 
-  // Pass 2: concept folder.
+  // Pass 1b: registre de taxonomie. Il ne prend jamais le pas sur un auteur.
+  if (options.registry) {
+    for (const node of nodes) {
+      if (assignments.has(node.id)) continue;
+      const entry = options.registry.assign(node.id);
+      if (!entry) continue;
+      assignments.set(node.id, {
+        communityId: entry.communityId,
+        communityLabel: entry.communityLabel,
+        assignment: 'synthesized',
+      });
+      declared.add(node.id);
+    }
+  }
+
+  // Pass 2: graines — `group:` déclaré à l'ingestion, puis dossier de concepts.
+  for (const node of nodes) {
+    if (assignments.has(node.id)) continue;
+    const group = node.group?.trim();
+    if (group) assignments.set(node.id, assigned(group, 'seed'));
+  }
   for (const node of nodes) {
     if (assignments.has(node.id)) continue;
     const folder = conceptFolder(node.id);
-    if (folder) assignments.set(node.id, assigned(title(folder), 'explicit'));
+    if (folder) assignments.set(node.id, assigned(title(folder), 'seed'));
   }
 
   // Pass 3: sources inherit the plurality of already-assigned concepts.

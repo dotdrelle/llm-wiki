@@ -7,6 +7,7 @@ import { hashText } from '../utils/hash.ts';
 import { normalizeSourceBody, splitSourceSections } from '../utils/markdown.ts';
 import { mapWithConcurrency } from '../utils/concurrency.ts';
 import { withFileLock } from '../utils/fs.ts';
+import { publishCorpusRevision } from '../graph/wiki/taxonomy/publish.ts';
 import type { TokenUsage } from './llmService.ts';
 import type {
   AppConfig,
@@ -643,6 +644,16 @@ export class IngestService {
             `${source.relativePath} -> ${source.archiveCitationPath} (${lastSummary})`,
           );
           await this.observeSource(source, applyOperations);
+          /*
+           L'unité de commit visible est une source appliquée avec succès.
+
+           Publier une fois en fin de commande laisserait un long ingest
+           multi-source muet du début à la fin ; publier à chaque fichier écrit
+           ferait un rendu par page. La source cohérente est le grain qui
+           correspond à ce qu'un lecteur perçoit comme « quelque chose est
+           arrivé », et Serve coalesce les marqueurs rapprochés.
+          */
+          await this.publishGraphRevision(source.relativePath);
         }
 
         results.push({
@@ -884,6 +895,27 @@ export class IngestService {
    * @param operations opérations appliquées, ou `null` pour une source vue
    *   sans être réingérée (`unchanged since last ingest`).
    */
+  /**
+   * Rend visible au graphe ce qui vient d'être écrit.
+   *
+   * Même discipline qu'`observeSource` : c'est une observation du cycle de vie,
+   * pas une étape de celui-ci. Une révision non allouée est un problème
+   * d'affichage, et la faire échouer emporterait un travail d'ingestion déjà
+   * payé. `publishCorpusRevision` ne lève jamais et bascule sur `dirty.json`,
+   * que Serve reprendra.
+   */
+  private async publishGraphRevision(sourceLabel: string): Promise<void> {
+    const outcome = await publishCorpusRevision(this.workspace.paths.rootDir);
+    if (outcome.status === 'published') {
+      await this.logger.info('ingest:graph-revision', {
+        source: sourceLabel,
+        revision: outcome.revision,
+      });
+      return;
+    }
+    await this.logger.warn('ingest:graph-revision-deferred', { source: sourceLabel });
+  }
+
   private async observeSource(
     source: SourceDocument,
     operations: WikiOperation[] | null,

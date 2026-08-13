@@ -129,7 +129,11 @@ describe('halo des nouveaux nœuds', () => {
   });
 });
 
-function mount(view: 'map' | 'community', selectedCommunity: string | null) {
+function mount(
+  view: 'map' | 'community',
+  selectedCommunity: string | null,
+  options: { fresh?: string } = {},
+) {
   const calls: string[] = [];
   const data = corpus();
   const surface = fakeElement('graph-explorer-canvas', calls);
@@ -149,6 +153,7 @@ function mount(view: 'map' | 'community', selectedCommunity: string | null) {
 
   let pending: ((now: number) => void) | null = null;
   let requested = 0;
+  const timers: Array<{ callback: () => void; delay: number }> = [];
   const environment = {
     document: {
       body: { classList: { contains: () => false } },
@@ -179,6 +184,16 @@ function mount(view: 'map' | 'community', selectedCommunity: string | null) {
     cancelAnimationFrame: () => {
       pending = null;
     },
+    // Le régime réduit ne redemande pas une image tout de suite : il DORT, par
+    // un timer. Sans stub, ce sommeil serait invisible au harnais et la boucle
+    // paraîtrait arrêtée.
+    setTimeout: (callback: () => void, delay: number) => {
+      timers.push({ callback, delay });
+      return timers.length;
+    },
+    clearTimeout: () => {
+      timers.length = 0;
+    },
   };
 
   const visible = () => ({ nodes: data.nodes.map((node) => ({ ...node })), edges: data.edges.map((edge) => ({ ...edge })) });
@@ -187,19 +202,42 @@ function mount(view: 'map' | 'community', selectedCommunity: string | null) {
     visible, () => '', { getItem: () => null, setItem() {} },
     environment.document, environment.window, environment.matchMedia, 2, environment.ResizeObserver,
     environment.MutationObserver, environment.requestAnimationFrame, environment.cancelAnimationFrame,
+    environment.setTimeout, environment.clearTimeout,
+    // Même contrat que le helper réel : rien à afficher pour une relation
+    // unique, qui est déjà dessinée.
+    (count: number) => (count === 1 ? '' : `${count || 0} relations`),
   ];
   const names = [
     'data', 'colors', 'selected', 'selectedCommunity', 'view', 'esc', 'render', 'selectDocument', 'selectCommunity',
     'visible', 'graphIcon', 'localStorage', 'document', 'window', 'matchMedia', 'devicePixelRatio', 'ResizeObserver',
-    'MutationObserver', 'requestAnimationFrame', 'cancelAnimationFrame',
+    'MutationObserver', 'requestAnimationFrame', 'cancelAnimationFrame', 'setTimeout', 'clearTimeout',
+    'graphRelationsLabel',
   ];
   const build = new Function(
     ...names,
-    `${source}\nreturn {create:createCanvasExplorer,map:canvasExplorerSceneMap,documents:canvasExplorerSceneDocuments};`,
+    `${source}\nreturn {create:createCanvasExplorer,map:canvasExplorerSceneMap,documents:canvasExplorerSceneDocuments,
+       markFresh:id=>graphFreshNodes.set(id,performance.now())};`,
   );
   const api = build(...args);
+  // Avant setScene : state.animated relève hasFreshGraphNodes() à ce moment-là.
+  if (options.fresh) api.markFresh(options.fresh);
   const explorer = api.create(host);
   const scene = view === 'map' ? api.map() : api.documents();
+  /*
+   Le harnais doit dater ses images sur la MÊME ligne de temps que le code.
+
+   `setScene` lance une transition de caméra, et `camera.moveTo` est appelé hors
+   dessin : son échéance est donc posée avec `performance.now()`. Des estampilles
+   arbitraires — 1000, 1080 — tombaient très loin derrière cette échéance, si
+   bien que la transition paraissait éternellement en cours : la boucle restait
+   à pleine cadence et n'atteignait jamais le régime réduit que ces tests
+   vérifient. Le défaut était dans le harnais, pas dans l'ordonnanceur, mais il
+   rendait deux tests rouges en permanence — donc muets sur ce qu'ils gardent.
+
+   L'origine est prise ici : `frame(1000)` veut dire « 1000 ms après le montage »,
+   ce qui est bien après les 320 ms de transition.
+  */
+  const origin = performance.now();
   explorer.setScene(scene);
 
   return {
@@ -208,10 +246,19 @@ function mount(view: 'map' | 'community', selectedCommunity: string | null) {
     frame(now: number) {
       const callback = pending;
       pending = null;
-      callback?.(now);
+      callback?.(origin + now);
       return pending !== null;
     },
     get pendingFrame() {
+      return pending !== null;
+    },
+    get pendingTimers() {
+      return timers.map((entry) => entry.delay);
+    },
+    // Fait expirer les sommeils en attente : chacun redemande alors une image.
+    fireTimers() {
+      const due = timers.splice(0, timers.length);
+      due.forEach((entry) => entry.callback());
       return pending !== null;
     },
   };
@@ -231,24 +278,36 @@ describe('boucle de dessin du canevas', () => {
     expect(labels).toBeGreaterThanOrEqual(12);
   });
 
-  it('redemande une image tant que des constellations sont à l’écran', () => {
+  it('anime les constellations stables à cadence réduite', () => {
     /*
-     C'est la boucle d'animation. Quand elle s'arrête, le scintillement ne
-     reprend qu'au passage de la souris, chaque invalidation redemandant une
-     image isolée — ce qui se lit comme « l'animation suit le curseur ».
+     Sans interaction, transition ou halo, aucun rAF continu ne doit tourner.
+     Un timer réveille la scène toutes les 80 ms pour l'ambiance seulement.
     */
     const view = mount('map', null);
-    expect(view.frame(1000)).toBe(true);
-    expect(view.frame(1016)).toBe(true);
+    expect(view.frame(1000)).toBe(false);
+    expect(view.pendingTimers).toEqual([80]);
+    expect(view.fireTimers()).toBe(true);
+    expect(view.frame(1080)).toBe(false);
+    expect(view.pendingTimers).toEqual([80]);
   });
 
   it('dessine aussi la vue d’un domaine et ses voisins repliés', () => {
     const view = mount('community', 'c0');
     expect(view.scene.nodes.some((node: any) => node.type === 'community')).toBe(true);
     expect(() => view.frame(1000)).not.toThrow();
-    // La vue « community » contient des amas repliés : elle doit s'animer elle
-    // aussi, la condition ne portant plus sur le niveau de vue.
-    expect(view.frame(1016)).toBe(true);
+    // Les voisins repliés suivent la même cadence réduite, jamais un rAF libre.
+    expect(view.pendingTimers).toEqual([80]);
+    expect(view.fireTimers()).toBe(true);
+  });
+
+  it('garde la pleine cadence pour un nœud fraîchement arrivé', () => {
+    /*
+     Le halo « nouveau » est bref et se regarde : il passe par animate(), donc
+     par une image immédiate, pas par le sommeil du scintillement.
+    */
+    const view = mount('map', null, { fresh: 'c0' });
+    expect(view.frame(1000)).toBe(true);
+    expect(view.pendingTimers).toEqual([]);
   });
 
   it('ne descend que dans les pages qui ont un vrai voisinage', async () => {
@@ -263,7 +322,7 @@ describe('boucle de dessin du canevas', () => {
     const cards: Array<string | null> = [];
     const build = new Function(
       'data', 'esc', 'inspector', 'render', 'document', 'window', 'colors',
-      'openGraphContextCard', 'closeGraphContextCard',
+      'openGraphContextCard', 'closeGraphContextCard', 'graphRelationsLabel',
       `let selected=null,selectedCommunity=null,view='community',focusHistory=[];
        ${graphUiSelectionScript()}
        return {select:selectDocument,state:()=>({view,selected:selected&&selected.id}),
@@ -285,6 +344,7 @@ describe('boucle de dessin du canevas', () => {
       palette,
       (node: { id: string }) => cards.push(node.id),
       () => cards.push(null),
+      (count: number) => (count === 1 ? '' : `${count || 0} relations`),
     );
 
     const hub = data.nodes.find((node) => node.id === 'c0/n2')!;

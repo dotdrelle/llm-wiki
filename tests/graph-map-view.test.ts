@@ -103,18 +103,42 @@ describe('vue des domaines', () => {
     expect(source).toContain('if(!camera||!state.scene)return');
   });
 
-  it('anime tant qu’une constellation est à l’écran, quel que soit le niveau', () => {
-    /*
-     La boucle était conditionnée au niveau de vue (map). Depuis qu'un domaine
-     ouvert affiche ses voisins repliés, la vue « community » contient elle
-     aussi des amas scintillants et des particules : ils se figeaient en pleine
-     oscillation, ce que l'œil lit comme une animation qui s'arrête.
-    */
+  /*
+   L'ambiance reste vivante, mais pas à pleine cadence.
+
+   Le premier correctif avait supprimé la boucle permanente à 60 FPS puis était
+   allé trop loin : le régime réduit du scheduler n'était jamais branché, et le
+   fond figé ne semblait reprendre vie qu'au passage de la souris. L'invariant
+   n'est donc pas « aucune animation » mais « aucune animation à pleine cadence
+   sans raison ».
+  */
+  it('anime la constellation à cadence réduite, jamais à pleine cadence', () => {
     expect(source).not.toContain("state.scene.level==='map')scheduler.animate");
-    // Un nœud fraîchement ingéré porte un halo qui s'éteint : la boucle doit
-    // aussi tourner pour lui, même sur une scène par ailleurs immobile.
-    expect(source).toContain('if(state.animated||hasFreshGraphNodes())scheduler.animate');
-    expect(source).toContain("state.animated=scene.nodes.some(node=>node.type==='community')");
+    // 80 ms ≈ 12,5 images/s : le scheduler DORT entre deux images au lieu de se
+    // réveiller à chaque rafraîchissement pour ne rien dessiner.
+    expect(source).toContain('scheduler.idle(Number.POSITIVE_INFINITY,80)');
+    // Le régime réduit reste soumis aux deux garde-fous du scheduler : onglet
+    // masqué et prefers-reduced-motion.
+    expect(source).not.toContain('setInterval');
+  });
+
+  it('n’anime que le halo temporaire, pas le scintillement de fond', () => {
+    /*
+     `state.animated` est vrai dès qu'une scène contient un domaine, donc en
+     permanence en vue map. Passé par animate(), qui repousse son échéance à
+     chaque image, il tenait le processus de rendu à 60 im/s tant que le graphe
+     restait ouvert — chaque image redessinant la scène entière. C'est la charge
+     d'une session laissée de côté, pas celle d'une interaction, et c'est le
+     profil compatible avec la mort du processus de rendu observée.
+
+     Le halo « nouveau » garde la pleine cadence : il est bref, il se regarde,
+     et il s'éteint tout seul.
+    */
+    // Une convergence de fusion rejoint le halo au même régime : brève,
+    // regardée, et rendant la scène au repos en s'achevant.
+    expect(source).toContain('if(hasFreshGraphNodes()||hasGraphMerges())scheduler.animate(260)');
+    expect(source).not.toContain('if(state.animated||hasFreshGraphNodes())scheduler.animate');
+    expect(source).not.toContain('GRAPH_IDLE_FRAME_MS');
   });
 
   it('ne pose aucun flou d’ombre dans la boucle des étoiles', () => {
@@ -425,7 +449,9 @@ describe('cadrage automatique', () => {
      recentrer puis rezoomer à la main à chaque entité.
     */
     expect(source).toContain("const signature=scene.level+'#'+scene.nodes.map(node=>node.id).join('|')");
-    expect(source).toContain('if(signature!==previous&&!grew){');
+    // Troisième condition depuis : une révision de données n'est pas une
+    // navigation et ne recadre pas non plus (cf. graph-camera-revision).
+    expect(source).toContain('if(signature!==previous&&!grew&&!fromRevision){');
     // Un simple redessin ne bouge pas la caméra : sinon déplacer une fiche
     // relancerait un recadrage à chaque image.
     expect(source).not.toContain("state.viewports.get(scene.level)");

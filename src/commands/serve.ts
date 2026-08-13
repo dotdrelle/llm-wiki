@@ -26,7 +26,7 @@ import { handleChatRoutes } from '../serve/routes/chatRoutes.ts';
 import { handleConfigRoutes } from '../serve/routes/configRoutes.ts';
 import { handleConnectorsOAuthRoutes } from '../serve/routes/connectorsOAuthRoutes.ts';
 import { graphSummaryCompletion } from '../serve/graphSummaryCompletion.ts';
-import { handleGraphRoutes } from '../serve/routes/graphRoutes.ts';
+import { handleGraphRoutes, stopGraphEventHub } from '../serve/routes/graphRoutes.ts';
 import { handleTreeApi } from '../serve/routes/treeRoutes.ts';
 import { handleMcpRoutes } from '../serve/routes/mcpRoutes.ts';
 import { handleRuntimeRoutes } from '../serve/routes/runtimeRoutes.ts';
@@ -906,6 +906,7 @@ export default async function serveCmd(
       if (await handleGraphRoutes(req, res, urlPath, {
         rootDir,
         fallbackCommunityLabel: () => config.graph?.fallbackCommunityLabel ?? 'Ungrouped',
+        language: () => config.language,
         workspaceNameFromEnv,
         sendJson,
         sendGzippedHtml,
@@ -943,6 +944,7 @@ export default async function serveCmd(
     shuttingDown = true;
     console.log(`wiki serve stopping (${signal})...`);
     configWatcher?.close();
+    stopGraphEventHub();
     server.close(() => process.exit(0));
     server.closeIdleConnections?.();
     setTimeout(() => {

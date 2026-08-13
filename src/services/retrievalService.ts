@@ -471,12 +471,33 @@ export class RetrievalService {
         : `${reason}:${String(error)}:${details.disabled ? 'disabled' : 'active'}`;
     if (this.loggedVectorFallbacks.has(key)) return;
     this.loggedVectorFallbacks.add(key);
+    /*
+     Un avertissement dit ce qui ne va pas, pas tout ce qu'on sait.
+
+     Ce qui noyait la ligne au milieu d'une ingestion, c'était le VOLUME : un
+     extrait de requête de 160 caractères, plus un chemin d'index absolu. La
+     cause — « Vector index is missing. » — se lisait en dernier, après le
+     débordement.
+
+     La correction précédente est allée trop loin en retirant aussi `fallback`,
+     `disabled` et `consecutiveErrors`. Ce sont trois mots, pas du volume, et
+     ils portent l'état de la dégradation : sur quoi on est retombé, si le
+     vecteur est désormais coupé, et depuis combien d'échecs. Sans eux, un
+     lecteur voit une suite d'avertissements identiques sans jamais savoir que
+     la recherche vectorielle s'est arrêtée — et trois tests le vérifiaient.
+
+     `queryPreview` et `indexPath` restent hors de la console : ils appartiennent
+     à la trace.
+    */
+    const state = Object.fromEntries(
+      Object.entries(details).filter(([key]) => key !== 'queryPreview' && key !== 'indexPath'),
+    );
     await this.logger.warn('retrieval:vector-fallback', {
       reason,
-      indexPath: this.workspace.paths.vectorIndexDir,
-      queryPreview: query.slice(0, 160),
-      fallback: 'lexical',
-      ...details,
+      // `rerank-error` rend quand même les résultats vectoriels : il n'y a pas
+      // de repli, et l'annoncer serait faux.
+      ...(reason === 'rerank-error' ? {} : { fallback: 'lexical' as const }),
+      ...state,
       ...(error
         ? { message: error instanceof Error ? error.message : String(error) }
         : {}),

@@ -11,6 +11,7 @@ import {
   type WikiGraphEdge,
   type WikiGraphNode,
 } from '../../graph/wiki/projection.ts';
+import type { RegistryLookup } from '../../graph/wiki/communityProjection.ts';
 import { pathExists, safeWriteFile } from '../../utils/fs.ts';
 import { resolveInside, toPosix } from '../../utils/path.ts';
 import { listHelpChapters, readHelpChapter } from '../../utils/helpDoc.ts';
@@ -798,13 +799,19 @@ export async function buildGraphOverview(
   rootDir: string,
   graphFiles?: string[],
   fallbackCommunityLabel = 'Ungrouped',
+  options: { registry?: RegistryLookup } = {},
 ): Promise<{ nodes: WikiGraphNode[]; edges: WikiGraphEdge[] }> {
   return buildWikiGraph(rootDir, {
     decodeHrefPath,
     hrefToRelativePath,
     humanTitle,
     renderMarkdown: (raw, currentDir) => renderMarkdown(raw, currentDir, rootDir),
-  }, graphFiles, { includeContent: false, concurrency: 8, fallbackCommunityLabel });
+  }, graphFiles, {
+    includeContent: false,
+    concurrency: 8,
+    fallbackCommunityLabel,
+    registry: options.registry,
+  });
 }
 
 export async function renderGraphDocument(rootDir: string, relativePath: string) {

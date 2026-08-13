@@ -14,6 +14,9 @@
 export function graphUiContextCardScript(): string {
   return String.raw`
 let graphContextCard=null,graphContextNodeId=null,graphContextToken=0,graphContextPinned=false;
+// Position choisie à la main, conservée d'une fiche à l'autre tant qu'on n'a
+// pas fermé celle qu'on avait déplacée.
+let graphContextPlacement={left:'',top:''};
 function graphContextCardElement(){
   if(graphContextCard?.isConnected)return graphContextCard;
   const stage=document.querySelector('.stage');
@@ -32,7 +35,9 @@ function closeGraphContextCard(){
   graphContextToken+=1;
   canvasExplorer?.anchor(null);
   canvasExplorer?.avoid(null);
-  graphContextPinned=false;
+  // Fermer est le seul geste qui révoque le placement manuel : on repart d'une
+  // fiche ancrée à son nœud, comme à la première ouverture.
+  graphContextPinned=false;graphContextPlacement={left:'',top:''};
   if(graphContextCard)  {graphContextCard.hidden=true;graphContextCard.innerHTML=''}}
 
 /*
@@ -105,6 +110,7 @@ function enableGraphContextCardDrag(card){
       moved=true;graphContextPinned=true;
       card.style.left=Math.max(0,Math.min(originLeft+dx,frame.width-card.offsetWidth))+'px';
       card.style.top=Math.max(0,Math.min(originTop+dy,frame.height-card.offsetHeight))+'px';
+      graphContextPlacement={left:card.style.left,top:card.style.top};
       updateGraphContextObstacle()};
     const onUp=()=>{
       window.removeEventListener('pointermove',onMove);
@@ -114,7 +120,7 @@ function enableGraphContextCardDrag(card){
 function graphContextCardHTML(node,body,pending){
   const relations=documentRelationCount(node.id);
   return '<div class="gcc-head"><div><small>CONTEXTE</small><strong>'+esc(node.title||node.label||node.id)+'</strong>'
-    +'<span>'+esc(node.type||'document')+' · '+relations+' relation'+(relations===1?'':'s')+'</span></div>'
+    +'<span>'+esc(node.type||'document')+(graphRelationsLabel(relations)?' · '+graphRelationsLabel(relations):'')+'</span></div>'
     +'<button type="button" data-close-context title="Close" aria-label="Close context card">×</button></div>'
     +'<p class="gcc-body'+(pending?' pending':'')+'">'+esc(body)+'</p>'
     +'<div class="gcc-actions"><button type="button" data-preview-doc="'+esc(node.id)+'">Open page</button>'
@@ -124,9 +130,18 @@ async function openGraphContextCard(node){
   if(!card)return;
   const token=++graphContextToken;
   graphContextNodeId=node.id;
-  // Chaque ouverture repart d'un placement automatique : l'épinglage vaut pour
-  // la fiche qu'on a déplacée, pas pour la suivante.
-  graphContextPinned=false;
+  /*
+   Une fiche déplacée reste où on l'a mise, y compris pour la sélection
+   suivante.
+
+   L'épinglage était remis à zéro à chaque ouverture : on choisissait un coin
+   d'écran, on cliquait la feuille d'à côté, et la fiche repartait se coller au
+   nœud. Le geste devait être refait à chaque clic, donc il ne servait à rien —
+   or c'est précisément en enchaînant les sélections qu'on a besoin qu'elle
+   cesse de bouger. Déplacer une fiche est une décision sur la mise en page,
+   pas sur le document affiché ; seule sa fermeture explicite la révoque.
+  */
+  if(graphContextPinned){card.style.left=graphContextPlacement.left;card.style.top=graphContextPlacement.top}
   card.hidden=false;
   card.innerHTML=graphContextCardHTML(node,'Summarizing…',true);
   // L'ancre est posée avant la réponse : la fiche doit suivre le graphe même

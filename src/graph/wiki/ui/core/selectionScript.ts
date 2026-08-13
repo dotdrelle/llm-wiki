@@ -9,7 +9,7 @@ async function previewGraphDocument(id){
   catch(error){content.innerHTML='<p>'+esc(error.message)+'</p>'}
 }
 function documentActionRow(node){
-  return '<div class="focus-document-row" data-doc-row="'+esc(node.id)+'"><button type="button" class="focus-document-name" data-doc="'+esc(node.id)+'"><span>'+esc(node.title)+'</span><small>'+esc(node.type)+' · '+(node.degree||0)+' relations</small></button><span class="focus-document-actions"><button type="button" data-preview-doc="'+esc(node.id)+'" title="Preview document" aria-label="Preview '+esc(node.title)+'">'+graphIcon('preview')+'</button><button type="button" data-send-doc="'+esc(node.id)+'" title="Send to Donna" aria-label="Send '+esc(node.title)+' to Donna">'+graphIcon('donna')+'</button></span></div>'
+  return '<div class="focus-document-row" data-doc-row="'+esc(node.id)+'"><button type="button" class="focus-document-name" data-doc="'+esc(node.id)+'"><span>'+esc(node.title)+'</span><small>'+esc(node.type)+(graphRelationsLabel(node.degree)?' · '+graphRelationsLabel(node.degree):'')+'</small></button><span class="focus-document-actions"><button type="button" data-preview-doc="'+esc(node.id)+'" title="Preview document" aria-label="Preview '+esc(node.title)+'">'+graphIcon('preview')+'</button><button type="button" data-send-doc="'+esc(node.id)+'" title="Send to Donna" aria-label="Send '+esc(node.title)+' to Donna">'+graphIcon('donna')+'</button></span></div>'
 }
 /*
  Un seul panneau, dont le contenu suit le niveau.
@@ -59,14 +59,30 @@ async function selectDocument(node){
   if(selected&&selected.id!==node.id)focusHistory.push(selected.id);
   selected=node;selectedCommunity=data.communities.find(community=>community.nodeIds.includes(node.id))?.id||null;
   const descends=documentHasRelations(node.id);
-  if(descends)view='focus';else if(view==='map')view='community';
+  // Depuis la vue d'un domaine, la sélection passe d'un domaine à une feuille :
+  // rester au niveau « domaine » ferait chercher les filles d'une feuille, donc
+  // rendrait une scène vide.
+  if(descends)view='focus';else if(view==='map'||view==='domain')view='community';
   render();renderDocumentFocusWindow(node);
   // La fiche est le seul retour visible quand on ne descend pas : sans elle,
   // le clic ne ferait qu'écrire une ligne dans un panneau à l'autre bout de
   // l'écran.
   if(descends)closeGraphContextCard();else openGraphContextCard(node);
 }
+/*
+ Un clic sur un DOMAINE ouvre ses communautés, jamais ses documents.
+
+ C'est le niveau de navigation qui manquait : sans lui, ouvrir « Logiciel »
+ déversait ses 142 pages d'un coup. Un domaine se déplie en quelques sujets ;
+ c'est un sujet qui déplie enfin ses documents.
+*/
 function selectCommunity(id){
+  const children=graphCommunityChildren(id);
+  if(children.length){
+    const domain=(data.domains||[]).find(item=>item.id===id);
+    selected=null;selectedCommunity=id;view='domain';render();
+    inspector.innerHTML='<div class="panel-head"><div><small>DOMAINE</small><strong>'+esc(domain?domain.label:id)+'</strong><span>'+children.length+' communautés · '+children.reduce((sum,item)=>sum+item.documentCount,0)+' documents</span></div></div><div class="document-focus-list">'+children.map(item=>'<div class="focus-document-row"><button type="button" class="focus-document-name" data-community="'+esc(item.id)+'"><span>'+esc(item.label)+'</span><small>'+item.documentCount+' documents</small></button></div>').join('')+'</div>';
+    return}
   const community=data.communities.find(item=>item.id===id);if(!community)return;
   selected=null;selectedCommunity=id;view='community';render();
   // Même gabarit qu'au niveau document : en-tête, puis liste défilante. Deux

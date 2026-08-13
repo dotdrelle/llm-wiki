@@ -1,6 +1,20 @@
 import path from 'node:path';
 import { buildGraphOverview, graphEtagForFiles, listGraphFiles } from '../../serve/html/wikiHtml.ts';
 import { cachedSnapshot, createSnapshot, storeSnapshot, type WikiGraphSnapshot } from './snapshot.ts';
+import { readActiveRegistry, readMarker } from './taxonomy/store.ts';
+import { communityHierarchy, communityRedirects, registryLookup } from './taxonomy/lookup.ts';
+import { validateRegistry } from './taxonomy/schema.ts';
+
+/**
+ * Version de la projection, à incrémenter dès que la façon de dériver
+ * communautés ou affectations change.
+ *
+ * Elle entre dans la clé de cache pour la même raison que la révision de
+ * taxonomie : sans elle, un déploiement qui change la projection continuerait
+ * de servir des snapshots calculés par l'ancienne, jusqu'à ce qu'un fichier
+ * Markdown bouge.
+ */
+export const GRAPH_PROJECTION_VERSION = 1;
 
 /**
  * Single entry point for "give me the current wiki graph snapshot".
@@ -15,20 +29,83 @@ export async function loadWikiGraphSnapshot(options: {
   rootDir: string;
   workspace?: string;
   fallbackCommunityLabel?: string;
+  /** Langue d'affichage des libellés du registre (`config.language`). */
+  language?: string;
 }): Promise<WikiGraphSnapshot> {
   const { rootDir } = options;
   const fallbackCommunityLabel = options.fallbackCommunityLabel ?? 'Ungrouped';
   const workspace = options.workspace ?? path.basename(rootDir);
+  const language = options.language ?? 'en';
 
   const files = await listGraphFiles(rootDir);
   const etag = await graphEtagForFiles(rootDir, files);
-  const cacheEtag = JSON.stringify([etag, workspace, fallbackCommunityLabel]);
+  /*
+   La révision de taxonomie entre dans la clé de cache.
+
+   Sans elle, une réécriture du SEUL registre — c'est-à-dire toute
+   consolidation qui renomme ou fusionne sans que le corpus bouge — resterait
+   invisible jusqu'à la prochaine modification d'un fichier Markdown. Le
+   `structureEtag` ne décrit que les fichiers ; il ne peut rien savoir d'une
+   taxonomie publiée à côté d'eux.
+  */
+  const marker = await readMarker(rootDir);
+  const taxonomyRevision = marker?.revision ?? 0;
+  const synthesized = Boolean(marker?.registryRef);
+  const cacheEtag = JSON.stringify([
+    etag,
+    workspace,
+    fallbackCommunityLabel,
+    taxonomyRevision,
+    // La langue change les libellés rendus sans changer ni les fichiers ni la
+    // révision : sans elle dans la clé, un basculement resterait invisible.
+    language,
+    GRAPH_PROJECTION_VERSION,
+  ]);
 
   const cached = cachedSnapshot(rootDir, cacheEtag);
   if (cached) return cached;
 
-  const graph = await buildGraphOverview(rootDir, files, fallbackCommunityLabel);
-  return storeSnapshot(rootDir, createSnapshot(etag, graph, { workspace }), cacheEtag);
+  /*
+   Lecture du registre — jamais un appel LLM.
+
+   `loadWikiGraphSnapshot` a deux appelants, dont l'outil MCP `wiki_outline` que
+   Donna appelle elle-même. Faire dépendre ce chemin d'un modèle donnerait une
+   requête HTTP qui attend une inférence, et un cycle
+   `wiki_outline → snapshot → LLM → Donna`. Le registre est un artefact déjà
+   écrit : on le lit, on ne le calcule pas.
+
+   Un registre absent, périmé, d'une autre version ou invalide fait retomber
+   sur la projection déterministe. `synthesized` dit lequel des deux a servi,
+   pour qu'un repli ne se lise pas comme un bug.
+  */
+  const active = synthesized ? await readActiveRegistry(rootDir) : null;
+  const validation = active?.registry ? validateRegistry(active.registry) : null;
+  const registry = validation?.ok ? registryLookup(validation.registry, language) : undefined;
+  const hierarchy = validation?.ok ? communityHierarchy(validation.registry, language) : null;
+
+  const graph = await buildGraphOverview(rootDir, files, fallbackCommunityLabel, { registry });
+  return storeSnapshot(
+    rootDir,
+    createSnapshot(etag, graph, {
+      workspace,
+      taxonomyRevision,
+      synthesized: Boolean(registry),
+      communityRedirects: validation?.ok ? communityRedirects(validation.registry) : {},
+      /*
+       Correspondance explicite, jamais un spread.
+
+       `communityHierarchy` renvoie `{ domains, parents }` ; le snapshot attend
+       `communityParents`. Étalé, l'objet passait `parents` — une clé que
+       personne ne lit — et `communityParents` restait vide : toutes les
+       feuilles paraissaient sans parent, donc la carte ET l'index restaient
+       plats alors que le registre était bien hiérarchique. TypeScript ne
+       contrôle pas les propriétés excédentaires d'un spread, d'où un bug
+       invisible au typage comme aux tests qui n'inspectaient que du texte.
+      */
+      ...(hierarchy ? { domains: hierarchy.domains, communityParents: hierarchy.parents } : {}),
+    }),
+    cacheEtag,
+  );
 }
 
 const KNOWLEDGE_NODE_TYPES = new Set(['wiki', 'wiki-source', 'raw-source']);

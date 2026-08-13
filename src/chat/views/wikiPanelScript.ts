@@ -510,6 +510,42 @@ window.addEventListener('message', (event) => {
   } else if (data.type === 'llmwiki:palette') {
     // Ctrl/Cmd+K pressed inside an embedded wiki iframe.
     cmdkToggle();
+  } else if (data.type === 'llmwiki:graph-subscribe') {
+    // An embedded graph asks to be fed. The shell holds the single connection.
+    startGraphRevisionRelay();
   }
 });
+
+/*
+ Single graph event stream for the whole shell.
+
+ The graph lives in an iframe, and several panels may host one over a session.
+ One EventSource per iframe would multiply connections and reconnection storms
+ for one and the same stream, so the shell owns the connection and fans out
+ revisions by postMessage. Opened lazily: a shell whose graph is never shown
+ should not watch anything.
+*/
+let graphRevisionStream = null;
+function startGraphRevisionRelay() {
+  if (graphRevisionStream || typeof EventSource !== 'function') return;
+  graphRevisionStream = new EventSource('/api/graph/events');
+  graphRevisionStream.addEventListener('graph.revision', (event) => {
+    let revision = 0;
+    try {
+      revision = Number(JSON.parse(event.data).revision);
+    } catch (error) {
+      return;
+    }
+    // Broadcast to every frame that may hold a graph: the relay does not track
+    // which one asked, and a stale frame simply ignores an older revision.
+    for (const id of ['wiki-frame', 'wiki-side-frame']) {
+      document.getElementById(id)?.contentWindow?.postMessage(
+        { type: 'llmwiki:graph-revision', revision }, location.origin);
+    }
+  });
+  window.addEventListener('pagehide', () => {
+    graphRevisionStream?.close();
+    graphRevisionStream = null;
+  });
+}
 `;

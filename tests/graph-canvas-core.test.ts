@@ -8,10 +8,47 @@ describe('shared graph canvas foundation', () => {
   it('renders only while dirty or animating and pauses in hidden tabs', () => {
     const source = graphCanvasScript();
 
-    expect(source).toContain('if(dirty||animating)request()');
+    // Les échéances sont relues après le dessin : c'est lui qui les pose.
+    expect(source).toContain('else if(dirty||(!reduced.matches&&now<animateUntil))request()');
     expect(source).toContain('document.hidden');
     expect(source).toContain("prefers-reduced-motion: reduce");
     expect(source).not.toContain('setInterval');
+  });
+
+  /*
+   Le scintillement de fond ne s'arrête jamais : passé par animate(), il tenait
+   le processus de rendu à 60 im/s tant que le graphe restait ouvert, chaque
+   image redessinant la scène entière. C'est la charge d'une session laissée de
+   côté, pas celle d'une interaction. Il a donc son propre régime.
+  */
+  it('sépare la pleine cadence du scintillement de fond', () => {
+    const source = graphCanvasScript();
+
+    // Le régime réduit dort entre deux images au lieu de se réveiller à chaque
+    // rafraîchissement de l'écran pour ne rien dessiner.
+    expect(source).toContain('function requestLater(delay)');
+    expect(source).toContain('else if(!reduced.matches&&now<idleUntil)requestLater(idleIntervalMs-(now-lastIdle))');
+    expect(source).toContain('const idleDue=idling&&now-lastIdle>=idleIntervalMs');
+    // Les échéances se posent sur l'estampille du dessin, pas sur une autre
+    // horloge : c'est ce que run() relit ensuite.
+    expect(source).toContain('function stamp(){return drawing?clock:performance.now()}');
+    // Toujours pas de boucle libre : ni setInterval, ni rAF inconditionnel.
+    expect(source).not.toContain('setInterval');
+    // Le mouvement réduit reste prioritaire sur les deux régimes.
+    expect(source).toContain('function idle(duration=260,intervalMs){\n    if(reduced.matches)return;');
+    // Le timer doit mourir avec le planificateur, sinon il ressuscite une image
+    // après la destruction de l'explorateur.
+    expect(source).toContain('if(timer)clearTimeout(timer)');
+  });
+
+  it('réserve la pleine cadence au halo et garde l’ambiance à cadence réduite', () => {
+    const source = canvasExplorerScript();
+
+    // Une convergence de fusion rejoint le halo au même régime : brève,
+    // regardée, et rendant la scène au repos en s'achevant.
+    expect(source).toContain('if(hasFreshGraphNodes()||hasGraphMerges())scheduler.animate(260)');
+    expect(source).toContain('scheduler.idle(Number.POSITIVE_INFINITY,80)');
+    expect(source).not.toContain('GRAPH_IDLE_FRAME_MS');
   });
 
   it('provides interruptible camera transitions and bounded cursor zoom', () => {

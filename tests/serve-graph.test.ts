@@ -298,7 +298,11 @@ describe('serve graph ui', () => {
     expect(source).toContain('buildWikiGraph(rootDir');
     expect(source).toContain('renderWikiGraphV2()');
     expect(source).toContain('buildGraphOverview');
-    expect(source).toContain('{ includeContent: false, concurrency: 8, fallbackCommunityLabel }');
+    // Le snapshot ne transporte jamais le contenu des pages : c'est ce qui le
+    // garde transférable à chaque révision.
+    expect(source).toContain('includeContent: false');
+    expect(source).toContain('concurrency: 8');
+    expect(source).toContain('registry: options.registry');
     expect(routesSource).not.toContain("urlPath === '/api/graph-etag'");
     expect(routesSource).not.toContain("urlPath === '/api/graph-data'");
     expect(routesSource).toContain("urlPath === '/api/graph/overview'");
@@ -310,6 +314,8 @@ describe('serve graph ui', () => {
     expect(routesSource).toContain('structureEtag: current.structureEtag');
     expect(routesSource).toContain('topologyEtag: current.topologyEtag');
     expect(routesSource).toContain('workspaceNameFromEnv');
+    expect(source).toContain('language: () => config.language');
+    expect(routesSource).toContain('language: deps.language()');
     expect(graphHtml).toContain("node.community?.communityLabel||'—'");
     expect(graphHtml).toContain("function nodePositionKey(id){return 'llm-wiki:graph:node:'+encodeURIComponent(data?.workspace||'wiki')+':'+id}");
     expect(graphHtml).not.toContain("localStorage.setItem('llm-wiki:graph:node:'+n.id");
@@ -329,9 +335,16 @@ describe('serve graph ui', () => {
     expect(graphHtml).not.toContain("'<div class=\"card doc-html\">'+documentData.html");
   });
 
-  it('returns Focus to Community and Community to the initial Map', () => {
+  /*
+   Back climbs ONE level. It jumped straight from focus to the map as soon as
+   the level in between was a domain rather than a leaf community, undoing the
+   whole descent for a single click.
+  */
+  it('returns Focus to Community, Community to its Domain, Domain to the Map', () => {
     const graphHtml = renderWikiGraphV2();
-    expect(graphHtml).toContain("if(view==='focus'&&selectedCommunity)navigateGraphLevel('community');else navigateGraphLevel('map')");
+    expect(graphHtml).toContain("if(view==='focus'&&selectedCommunity&&!graphIsDomain(selectedCommunity))navigateGraphLevel('community')");
+    expect(graphHtml).toContain("else if(view==='focus'||view==='community')navigateGraphLevel('domain')");
+    expect(graphHtml).toContain("else if(level==='domain'){");
     expect(graphHtml).toContain("if(level==='map'){view='map';selected=null;selectedCommunity=null;focusHistory.length=0}");
     expect(graphHtml).toContain("document.querySelector('#focus-back').hidden=view==='map'||view==='list'");
   });
@@ -577,7 +590,20 @@ describe('manual repositioning of the context card', () => {
     expect(source).toContain("if(!head||event.target.closest('button'))return;");
   });
 
-  it('resets to automatic placement on every open', () => {
-    expect(source).toContain('graphContextPinned=false;\n  card.hidden=false;');
+  /*
+   A card the reader moved stays where it was put, across selections.
+
+   Resetting the pin on every open meant the gesture had to be redone at every
+   click — so it bought nothing, precisely when chaining selections is when one
+   needs the card to hold still. Only closing it goes back to automatic
+   placement.
+  */
+  it('keeps a hand-placed card where the reader put it', () => {
+    expect(source).toContain('if(graphContextPinned){card.style.left=graphContextPlacement.left');
+    expect(source).toContain('graphContextPlacement={left:card.style.left,top:card.style.top}');
+  });
+
+  it('forgets the manual placement when the card is closed', () => {
+    expect(source).toContain("graphContextPinned=false;graphContextPlacement={left:'',top:''};");
   });
 });

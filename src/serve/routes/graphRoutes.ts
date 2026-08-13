@@ -3,10 +3,13 @@ import path from 'node:path';
 import { generateGraph, renderGraphDocument } from '../html/wikiHtml.ts';
 import { loadWikiGraphSnapshot } from '../../graph/wiki/overview.ts';
 import { graphDocumentSummary } from '../../graph/wiki/summary.ts';
+import { createGraphEventHub, type GraphEventHub } from '../sse/graphEvents.ts';
+import { sendJsonPayload } from '../http/sendJsonPayload.ts';
 
 export type GraphRoutesDeps = {
   rootDir: string;
   fallbackCommunityLabel: () => string;
+  language: () => string;
   workspaceNameFromEnv: () => string | null;
   /**
    * Complétion LLM, injectée par `serve` qui seul détient la configuration.
@@ -31,6 +34,27 @@ export type GraphRoutesDeps = {
   ) => Promise<void>;
 };
 
+/*
+ Un seul diffuseur par processus Serve.
+
+ `/api/graph/events` est une route DIRECTE, pas un proxy vers un service amont
+ comme `/api/runtime/events` : Serve est l'origine du flux. Le shell l'ouvre sur
+ la même origine puis relaie les révisions à son iframe par postMessage, et
+ `/graph` autonome l'ouvre directement — une connexion par document, jamais une
+ par panneau.
+*/
+let hub: GraphEventHub | null = null;
+
+export function graphEventHub(rootDir: () => string): GraphEventHub {
+  if (!hub) hub = createGraphEventHub(rootDir);
+  return hub;
+}
+
+export function stopGraphEventHub(): void {
+  hub?.stop();
+  hub = null;
+}
+
 export async function handleGraphRoutes(
   req: IncomingMessage,
   res: ServerResponse,
@@ -44,10 +68,18 @@ export async function handleGraphRoutes(
       rootDir: deps.rootDir,
       workspace: deps.workspaceNameFromEnv() ?? path.basename(deps.rootDir),
       fallbackCommunityLabel: deps.fallbackCommunityLabel(),
+      language: deps.language(),
     });
 
+  if (req.method === 'GET' && urlPath === '/api/graph/events') {
+    graphEventHub(() => deps.rootDir).subscribe(req, res);
+    return true;
+  }
+
   if (req.method === 'GET' && urlPath === '/api/graph/overview') {
-    deps.sendJson(res, 200, await snapshot());
+    // La seule route dont la charge repart en entier à chaque révision : c'est
+    // celle qui justifie la compression, et la seule à en avoir besoin.
+    await sendJsonPayload(req, res, 200, await snapshot());
     return true;
   }
 

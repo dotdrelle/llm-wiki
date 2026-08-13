@@ -25,7 +25,11 @@ ${graphUiLiveScript()}
 ${graphUiThemeScript()}
 
 async function load(){
-  try{data=await json('/api/graph/overview');seedCanvasExplorerSlots();renderFilters();renderSearchOptions();render()}
+  try{
+    data=await json('/api/graph/overview');
+    graphRevision=data.taxonomyRevision||0;
+    seedCanvasExplorerSlots();renderFilters();renderSearchOptions();render();
+    startGraphRevisionFeed()}
   catch(error){canvas.innerHTML='<div class="loading">Unable to load graph: '+esc(error.message)+'</div>'}
 }
 function render(){
@@ -35,9 +39,21 @@ function render(){
   document.querySelector('#graph-breadcrumb').hidden=view==='list';
   document.querySelector('#spacing-control').hidden=true;
   document.querySelector('#focus-back').hidden=view==='map'||view==='list';
-  const suffix=selectedCommunity?' · selection: '+(data.communities.find(community=>community.id===selectedCommunity)?.label||selectedCommunity):'';
-  summary.textContent=visibleCommunities.length+' communities · '+current.nodes.length+' documents · '+current.edges.length+' relations'+suffix;
-  title.textContent={map:'Global map view',community:'Community view',focus:'Provenance focus',list:'List view'}[view];
+  const suffix=selectedCommunity?' · selection: '+graphCommunityLabel(selectedCommunity):'';
+  /*
+   Le compteur annonce le niveau AFFICHÉ, pas le contenu du registre.
+
+   Il disait « 33 communities » sur une carte qui en replie 3 : le lecteur
+   croyait voir 33 bulles et cherchait celles qui manquaient. Un compteur qui
+   décrit autre chose que ce qui est à l'écran est pire qu'aucun compteur.
+  */
+  const domains=data.domains||[],parents=data.communityParents||{};
+  const shown=domains.length&&view==='map'
+    ? new Set(visibleCommunities.map(community=>parents[community.id]||community.id)).size
+    : visibleCommunities.length;
+  const unit=domains.length&&view==='map'?' domains · ':' communities · ';
+  summary.textContent=shown+unit+current.nodes.length+' documents · '+current.edges.length+' relations'+suffix;
+  title.textContent={map:'Global map view',domain:'Domain view',community:'Community view',focus:'Provenance focus',list:'List view'}[view];
   if(view==='list'){destroyCanvasExplorer();renderList();return}
   renderCanvasExplorer()
 }
@@ -52,7 +68,7 @@ document.querySelector('#graph-search-results').addEventListener('click',event=>
 document.querySelector('#reset-search').addEventListener('click',()=>{selected=null;selectedCommunity=null;view='map';focusHistory.length=0;document.querySelector('#search').value='';document.querySelector('#graph-search-results').hidden=true;inspector.innerHTML='<h3>Selection</h3><p>Select a community or document to explore its relations.</p>';renderFilters();render()});
 document.addEventListener('click',event=>{
   const viewButton=event.target.closest('[data-view]');
-  if(viewButton){view=viewButton.dataset.view==='list'?'list':selected?'focus':selectedCommunity?'community':'map';document.querySelectorAll('[data-view]').forEach(button=>button.classList.toggle('active',button===viewButton));render();return}
+  if(viewButton){view=viewButton.dataset.view==='list'?'list':selected?'focus':selectedCommunity?(graphIsDomain(selectedCommunity)?'domain':'community'):'map';document.querySelectorAll('[data-view]').forEach(button=>button.classList.toggle('active',button===viewButton));render();return}
   const community=event.target.closest('[data-community]');if(community){selectCommunity(community.dataset.community);return}
   const documentButton=event.target.closest('[data-doc]');if(documentButton){const node=data.nodes.find(item=>item.id===documentButton.dataset.doc);if(node)selectDocument(node)}
 });
@@ -60,7 +76,13 @@ document.querySelector('#filters').addEventListener('change',render);
 document.querySelector('#zoom-in').addEventListener('click',()=>canvasExplorer?.zoom(1.25));
 document.querySelector('#zoom-out').addEventListener('click',()=>canvasExplorer?.zoom(.8));
 document.querySelector('#fit').addEventListener('click',()=>canvasExplorer?.fit());
-document.querySelector('#focus-back').addEventListener('click',()=>{if(view==='focus'&&selectedCommunity)navigateGraphLevel('community');else navigateGraphLevel('map')});
+// « ← Back » remonte d'UN cran. Il sautait de la vue focus à la carte dès que
+// le niveau intermédiaire n'était pas une communauté au sens strict, ce qui
+// annulait toute la descente pour un seul clic de retour.
+document.querySelector('#focus-back').addEventListener('click',()=>{
+  if(view==='focus'&&selectedCommunity&&!graphIsDomain(selectedCommunity))navigateGraphLevel('community');
+  else if(view==='focus'||view==='community')navigateGraphLevel('domain');
+  else navigateGraphLevel('map')});
 document.querySelector('#inspector-toggle').addEventListener('click',event=>{const main=document.querySelector('main'),collapsed=main.classList.toggle('inspector-collapsed');event.currentTarget.title=collapsed?'Open panel':'Collapse panel';localStorage.setItem('llm-wiki:graph:inspectorCollapsed',collapsed?'1':'0');requestAnimationFrame(()=>canvasExplorer?.invalidate())});
 if(localStorage.getItem('llm-wiki:graph:inspectorCollapsed')==='1')document.querySelector('main').classList.add('inspector-collapsed');
 document.querySelector('#fullscreen').addEventListener('click',async()=>{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen()});
@@ -71,6 +93,7 @@ const savedWidth=Number(localStorage.getItem('llm-wiki:graph:leftWidth'));if(sav
 resizer.addEventListener('pointerdown',event=>{resizing=true;resizer.classList.add('dragging');resizer.setPointerCapture?.(event.pointerId)});
 window.addEventListener('pointermove',event=>{if(resizing)applyLeft(event.clientX)});
 window.addEventListener('pointerup',()=>{resizing=false;resizer.classList.remove('dragging')});
+window.addEventListener('pagehide',()=>destroyCanvasExplorer());
 load()
 })();
 `;

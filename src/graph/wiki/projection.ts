@@ -8,6 +8,7 @@ import { canonicalizeName, toPosix } from '../../utils/path.ts';
 import {
   assignGraphCommunities,
   type CommunityAssignment,
+  type RegistryLookup,
 } from './communityProjection.ts';
 
 export type WikiGraphNodeType =
@@ -130,6 +131,8 @@ export async function buildWikiGraph(
     includeContent?: boolean;
     concurrency?: number;
     fallbackCommunityLabel?: string;
+    /** Registre de taxonomie déjà résolu, quand il y en a un d'actif. */
+    registry?: RegistryLookup;
   } = {},
 ): Promise<{ nodes: WikiGraphNode[]; edges: WikiGraphEdge[] }> {
   const files = graphFiles ?? (await listWikiGraphFiles(rootDir));
@@ -248,6 +251,7 @@ export async function buildWikiGraph(
       edges,
       explicitCommunities,
       options.fallbackCommunityLabel ?? 'Ungrouped',
+      { registry: options.registry },
     ),
     edges,
   };
@@ -362,6 +366,15 @@ function relationForTarget(
   return 'links_to';
 }
 
+/**
+ * Seul `community:` est une décision d'auteur.
+ *
+ * `community = rawCommunity ?? group` promouvait silencieusement une graine en
+ * décision : une page ne portant que `group:` devenait intouchable par les
+ * passes de réparation, alors que `group:` n'est qu'un indice produit à
+ * l'ingestion. `group` reste exposé sur le nœud et sert de graine à
+ * l'affectation, un cran en dessous du registre.
+ */
 function graphCommunityMetadata(markdown: string): { group?: string; community?: string } {
   const parsed = matter(markdown);
   const rawGroup = parsed.data.group;
@@ -369,7 +382,7 @@ function graphCommunityMetadata(markdown: string): { group?: string; community?:
   const group = typeof rawGroup === 'string' && rawGroup.trim() ? rawGroup.trim() : undefined;
   const community = typeof rawCommunity === 'string' && rawCommunity.trim()
     ? rawCommunity.trim()
-    : group;
+    : undefined;
   return { group, community };
 }
 

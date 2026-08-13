@@ -27,6 +27,27 @@ function canvasExplorerSlotPosition(id){
 // précis où le graphe évoluait — c'est-à-dire quand il servait le plus.
 function canvasExplorerPositionKey(id){return'llm-wiki:graph:canvas:'+encodeURIComponent(data?.workspace||'wiki')+':'+encodeURIComponent(id)}
 function readCanvasExplorerPosition(id){try{const value=JSON.parse(localStorage.getItem(canvasExplorerPositionKey(id))||'null');return Number.isFinite(value?.x)&&Number.isFinite(value?.y)?value:null}catch{return null}}
+/*
+ Migration des positions après une fusion.
+
+ Les positions sont clefées par identifiant de communauté. Quand un concept est
+ absorbé, sa bulle disparaît et la disposition manuelle que l'utilisateur lui
+ avait donnée serait perdue en silence — alors que la communauté cible est
+ précisément celle qu'il regardait. On reporte donc la position de l'absorbé
+ sur la cible, une seule fois, et seulement si la cible n'en a pas déjà une :
+ une position choisie explicitement prime sur une position héritée.
+*/
+function migrateCanvasExplorerPositions(redirects){
+  if(!redirects)return;
+  Object.keys(redirects).forEach(from=>{
+    const to=redirects[from];
+    if(!to||from===to)return;
+    const key=canvasExplorerPositionKey(from);
+    const saved=readCanvasExplorerPosition(from);
+    if(!saved){localStorage.removeItem(key);return}
+    if(!readCanvasExplorerPosition(to)){
+      try{localStorage.setItem(canvasExplorerPositionKey(to),JSON.stringify(saved))}catch(error){}}
+    localStorage.removeItem(key)})}
 function saveCanvasExplorerPosition(node){try{localStorage.setItem(canvasExplorerPositionKey(node.id),JSON.stringify({x:node.x,y:node.y}))}catch{}}
 // La vue liste n'a pas de bulle à laquelle s'ancrer : la fiche partirait avec
 // l'explorateur et resterait posée au milieu d'un tableau.
@@ -39,7 +60,7 @@ function createCanvasExplorer(host){
   host.innerHTML='<canvas class="graph-explorer-canvas" tabindex="0" role="application" aria-label="Interactive knowledge graph. Use arrow keys to pan, plus or minus to zoom."></canvas><div class="graph-explorer-a11y" role="tree" aria-label="Visible graph nodes"></div>';
   const surface=host.querySelector('.graph-explorer-canvas'),a11y=host.querySelector('.graph-explorer-a11y');
   const context=surface.getContext('2d');
-  const state={scene:null,signature:'',nodeIds:null,width:0,height:0,ratio:1,hits:[],labels:[],anchor:null,obstacle:null,pointer:null,dragged:false,hover:null,viewports:new Map,clock:0};
+  const state={scene:null,signature:'',nodeIds:null,width:0,height:0,ratio:1,hits:[],labels:[],anchor:null,obstacle:null,pointer:null,dragged:false,hover:null,viewports:new Map,clock:0,dataRevision:false};
   let scheduler,camera;
   const nodeById=new Map(data.nodes.map(node=>[node.id,node]));
   const color=index=>colors[index%colors.length];
@@ -245,6 +266,19 @@ function createCanvasExplorer(host){
   function drawCommunity(node,index){
     const point=project(node),shown=membersOf(node);
     const radius=communityRadius(node)*point.scale,paint=color(index),hot=state.hover===node.id,pale=light();
+    /*
+     Une bulle en cours d'absorption glisse vers sa cible en s'effaçant.
+
+     Elle n'a plus de membres à montrer — le registre l'a dépréciée — donc on
+     ne dessine que son halo, de plus en plus pâle. Le geste dit « ceci part
+     là-bas », ce qu'une disparition sèche ne dit pas.
+    */
+    if(node.merging){
+      context.save();context.globalAlpha=node.merging*.7;
+      paintGlow(paint,.3,.08,point.x,point.y,radius*2.1*node.merging);
+      context.strokeStyle=rgba(paint,.45);context.lineWidth=1;context.setLineDash([2,5]);
+      context.beginPath();context.arc(point.x,point.y,radius*node.merging,0,Math.PI*2);context.stroke();
+      context.setLineDash([]);context.restore();return}
     const beat=state.clock;
     // Trois arrêts : un cœur dense, une décroissance à mi-course, une extinction
     // complète. Deux arrêts donnaient une chute linéaire, qui se lit comme un
@@ -277,7 +311,7 @@ function createCanvasExplorer(host){
       // gaussien par fiche et par image.
       if(!selectedNode)paintGlow(paint,.20,.07,point.x,point.y,Math.max(w,h)*.78);
       else{context.shadowBlur=24;context.shadowColor=rgba(paint,.8)}
-      context.fillStyle='rgba(16,23,34,.96)';context.beginPath();context.roundRect(point.x-w/2,point.y-h/2,w,h,9);context.fill();context.shadowBlur=0;context.strokeStyle=rgba(paint,selectedNode?1:.55);context.lineWidth=selectedNode?2:1;context.stroke();context.fillStyle=paint;context.fillRect(point.x-w/2+3,point.y-h/2+7,3,h-14);context.textAlign='left';context.font='600 11.5px ui-sans-serif,system-ui';context.fillStyle='#edf3fb';let label=node.label;while(context.measureText(label).width>w-28&&label.length>5)label=label.slice(0,-2);context.fillText(label+(label!==node.label?'…':''),point.x-w/2+13,point.y-2);context.font='10px ui-sans-serif,system-ui';context.fillStyle=rgba(paint,.9);context.fillText((node.degree||0)+' relations',point.x-w/2+13,point.y+12);state.hits.push({node,x:point.x,y:point.y,w,h})}else{const core=3+Math.sqrt(node.degree||0);paintGlow(paint,.5,.16,point.x,point.y,core*3.6);context.fillStyle='#f4f8ff';context.beginPath();context.arc(point.x,point.y,core,0,Math.PI*2);context.fill();if(point.scale>1.02)state.labels.push({x:point.x,y:point.y,radius:core+3,weight:(node.degree||0)+(selectedNode||state.hover===node.id?1e5:0),always:selectedNode||state.hover===node.id,lines:[{text:node.label.length>22?node.label.slice(0,21)+'…':node.label,font:'10px ui-sans-serif,system-ui',height:12,color:light()?'rgba(44,60,80,.88)':'rgba(220,229,242,.78)'}]});state.hits.push({node,x:point.x,y:point.y,r:15})}}
+      context.fillStyle='rgba(16,23,34,.96)';context.beginPath();context.roundRect(point.x-w/2,point.y-h/2,w,h,9);context.fill();context.shadowBlur=0;context.strokeStyle=rgba(paint,selectedNode?1:.55);context.lineWidth=selectedNode?2:1;context.stroke();context.fillStyle=paint;context.fillRect(point.x-w/2+3,point.y-h/2+7,3,h-14);context.textAlign='left';context.font='600 11.5px ui-sans-serif,system-ui';context.fillStyle='#edf3fb';let label=node.label;while(context.measureText(label).width>w-28&&label.length>5)label=label.slice(0,-2);context.fillText(label+(label!==node.label?'…':''),point.x-w/2+13,point.y-2);context.font='10px ui-sans-serif,system-ui';context.fillStyle=rgba(paint,.9);const relationsLabel=graphRelationsLabel(node.degree);if(relationsLabel)context.fillText(relationsLabel,point.x-w/2+13,point.y+12);state.hits.push({node,x:point.x,y:point.y,w,h})}else{const core=3+Math.sqrt(node.degree||0);paintGlow(paint,.5,.16,point.x,point.y,core*3.6);context.fillStyle='#f4f8ff';context.beginPath();context.arc(point.x,point.y,core,0,Math.PI*2);context.fill();if(point.scale>1.02)state.labels.push({x:point.x,y:point.y,radius:core+3,weight:(node.degree||0)+(selectedNode||state.hover===node.id?1e5:0),always:selectedNode||state.hover===node.id,lines:[{text:node.label.length>22?node.label.slice(0,21)+'…':node.label,font:'10px ui-sans-serif,system-ui',height:12,color:light()?'rgba(44,60,80,.88)':'rgba(220,229,242,.78)'}]});state.hits.push({node,x:point.x,y:point.y,r:15})}}
   /*
    Placement des libellés, en une passe après les nœuds.
 
@@ -373,16 +407,26 @@ function createCanvasExplorer(host){
     // pendant une transition.
     if(state.anchor)state.anchor.notify(locateNode(state.anchor.id));
     /*
-     Ce qui s'anime, c'est une constellation — pas un niveau de vue.
-
-     La condition portait sur level==='map'. Depuis qu'un domaine ouvert
-     affiche ses voisins restés repliés, la vue « community » contient elle
-     aussi des amas scintillants et des particules sur les liens : ils étaient
-     dessinés une fois puis figés en pleine oscillation, ce qui se voit comme
-     une animation qui s'arrête.
+     Le halo « nouveau » est bref et se regarde : pleine cadence. Le
+     scintillement de fond ne justifie pas une boucle permanente : même réduit
+     à 12 images/s, il redessinait indéfiniment toute la scène. Hors transition,
+     halo ou interaction, le Canvas reste désormais réellement au repos.
     */
-    if(state.animated||hasFreshGraphNodes())scheduler.animate(260)}
+    // Une convergence de fusion est brève et se regarde, comme le halo : elle
+    // demande la pleine cadence, et rend la scène au repos en s'achevant.
+    if(hasFreshGraphNodes()||hasGraphMerges())scheduler.animate(260)}
   scheduler=createGraphFrameScheduler(draw);camera=createGraphCamera(scheduler);resize();
+  /*
+   L'ambiance de la carte reste vivante, mais à cadence réduite.
+
+   Le lot 1 avait correctement supprimé la boucle permanente à 60 FPS, puis
+   avait été trop loin en ne branchant jamais le régime basse cadence prévu par
+   le scheduler. Le résultat visible était un fond totalement figé qui ne
+   semblait reprendre vie qu'au passage de la souris. Une échéance infinie est
+   volontaire ici : le scheduler dort entre deux images (≈ 12,5 FPS), s'interrompt
+   lorsque le document est masqué et ne démarre pas sous reduced-motion.
+  */
+  scheduler.idle(Number.POSITIVE_INFINITY,80);
   function hit(x,y){return [...state.hits].reverse().find(item=>item.w?Math.abs(x-item.x)<=item.w/2&&Math.abs(y-item.y)<=item.h/2:Math.hypot(x-item.x,y-item.y)<=item.r)}
   function coordinates(event){const rect=surface.getBoundingClientRect();return{x:event.clientX-rect.left,y:event.clientY-rect.top}}
   // Le double-clic descend aussi loin qu'il peut, mais pas dans une page sans
@@ -465,16 +509,34 @@ function createCanvasExplorer(host){
    cadrage ; le nouveau venu se signale par son halo, pas en déplaçant le
    reste.
   */
-  return{host,setScene(scene){
+  /*
+   Une révision de données n'est pas une navigation.
+
+   Le repère « la scène s'enrichit » ci-dessus couvre l'ajout : tous les anciens
+   nœuds toujours présents. Une fusion en SUPPRIME : la scène repassait donc en
+   « nouvelle scène » et se recadrait, au milieu de la lecture, en annulant
+   zoom et déplacement. Or l'utilisateur n'a rien demandé ; c'est le corpus qui
+   a bougé sous ses yeux.
+
+   Plutôt qu'un troisième test sur les ensembles de nœuds — fragile, et qui
+   devrait deviner ce qui a changé —, on distingue la CAUSE : un recadrage
+   n'appartient qu'à une navigation volontaire. Le drapeau est à usage unique,
+   posé par l'application d'une révision, et consommé par le prochain rendu.
+  */
+  return{host,
+  markDataRevision(){state.dataRevision=true},
+  setScene(scene){
     const signature=scene.level+'#'+scene.nodes.map(node=>node.id).join('|');
     if(state.signature)state.viewports.set(state.signature,{...camera.state});
     const previous=state.signature,previousIds=state.nodeIds;
     const nodeIds=new Set(scene.nodes.map(node=>node.id));
     const grew=!!previousIds&&scene.level===state.scene?.level&&[...previousIds].every(id=>nodeIds.has(id));
+    // Consommé quoi qu'il arrive : un drapeau qui survit à son rendu figerait
+    // la caméra sur la navigation suivante, qui elle a le droit de recadrer.
+    const fromRevision=state.dataRevision;state.dataRevision=false;
     state.scene=scene;state.signature=signature;state.nodeIds=nodeIds;
-    state.animated=scene.nodes.some(node=>node.type==='community')||hasFreshGraphNodes();
     renderA11y();measureFrame();
-    if(signature!==previous&&!grew){const saved=state.viewports.get(signature);camera.moveTo(saved||bounds(scene.nodes),saved?260:320)}
+    if(signature!==previous&&!grew&&!fromRevision){const saved=state.viewports.get(signature);camera.moveTo(saved||bounds(scene.nodes),saved?260:320)}
     scheduler.invalidate()},
   anchor(id,notify){state.anchor=id?{id,notify}:null;if(!id)state.obstacle=null;scheduler.invalidate()},
   // Rectangle en pixels écran que les tuiles doivent contourner, ou null.
@@ -488,9 +550,90 @@ function createCanvasExplorer(host){
 }
 function renderCanvasExplorer(){
   if(!canvasExplorer||canvasExplorer.host!==canvas||!canvasExplorer.host.isConnected){destroyCanvasExplorer();canvasExplorer=createCanvasExplorer(canvas)}
-  canvasExplorer.setScene(view==='map'?canvasExplorerSceneMap():canvasExplorerSceneDocuments())
+  // Le niveau « domaine » affiche des communautés, pas des documents : c'est
+  // une carte restreinte à une branche, pas une liste de pages.
+  canvasExplorer.setScene(view==='map'||view==='domain'?canvasExplorerSceneMap():canvasExplorerSceneDocuments())
 }
-function canvasExplorerSceneMap(){const graph=visible(),ids=new Set(graph.nodes.map(node=>node.id)),communities=data.communities.filter(item=>item.nodeIds.some(id=>ids.has(id))),nodes=communities.map((item,index)=>{const spot=canvasExplorerSlotPosition(item.id);return{id:item.id,label:item.label,type:'community',community:item,x:spot.x,y:spot.y,depth:.92+(index%4)*.04}}),visibleIds=new Set(nodes.map(node=>node.id));return{level:'map',nodes,edges:(data.communityEdges||[]).filter(edge=>visibleIds.has(edge.from)&&visibleIds.has(edge.to)).map(edge=>({...edge,weight:edge.count}))}}
+/*
+ Bulles en cours d'absorption, réinjectées dans la scène.
+
+ Elles ne sont plus dans la liste des communautés — le registre les a
+ dépréciées — mais elles étaient à l'écran l'instant d'avant. Les retirer sèchement ferait
+ disparaître trois domaines sans que rien n'explique où sont passées leurs
+ pages. On les garde le temps de la convergence, à leur dernier emplacement
+ connu, en les faisant glisser vers leur cible.
+*/
+function canvasExplorerMergingNodes(visibleIds){
+  const merging=[];
+  graphMerging.forEach((entry,id)=>{
+    const progress=graphMergeProgress(id);
+    if(!progress||!visibleIds.has(entry.to))return;
+    const from=canvasExplorerSlotPosition(id),to=canvasExplorerSlotPosition(entry.to);
+    // progress va de 1 (départ) à 0 (arrivée) : la bulle part de sa place et
+    // finit exactement sur sa cible, où elle s'efface.
+    merging.push({id,label:'',type:'community',merging:progress,
+      community:{id,label:'',nodeIds:[],documentCount:0,conceptCount:0,sourceCount:0,internalRelations:0,externalRelations:0},
+      x:to.x+(from.x-to.x)*progress,y:to.y+(from.y-to.y)*progress,depth:.9})});
+  return merging}
+/*
+ Regroupe les communautés feuilles sous leur domaine.
+
+ Le registre est un arbre, un nœud du graphe ne connaît que sa feuille. Sans ce
+ repli, la carte afficherait autant de bulles qu'il y a de sujets — c'est-à-dire
+ l'inverse de ce qu'un premier écran doit montrer. Une taxonomie encore plate
+ n'a pas de domaine : la carte garde alors son rendu d'origine.
+*/
+function canvasExplorerRollUp(communities){
+  const parents=data.communityParents||{},domains=data.domains||[];
+  if(!domains.length)return communities;
+  // Descendu dans un domaine : on montre SES communautés, sans les replier.
+  if(view==='domain'&&selectedCommunity)return communities.filter(item=>parents[item.id]===selectedCommunity);
+  const byId=new Map(domains.map(item=>[item.id,item]));
+  const merged=new Map();
+  communities.forEach(item=>{
+    const domainId=parents[item.id];
+    const domain=domainId?byId.get(domainId):null;
+    if(!domain){merged.set(item.id,item);return}
+    const current=merged.get(domain.id);
+    if(!current){
+      // Le domaine porte l'union de ses feuilles : ses comptes sont la somme
+      // des leurs, jamais des pages qui lui seraient accrochées en propre.
+      merged.set(domain.id,{...item,id:domain.id,label:domain.label,nodeIds:[...item.nodeIds],
+        documentCount:item.documentCount,conceptCount:item.conceptCount,sourceCount:item.sourceCount,
+        internalRelations:item.internalRelations,externalRelations:item.externalRelations});
+      return}
+    current.nodeIds=[...current.nodeIds,...item.nodeIds];
+    current.documentCount+=item.documentCount;current.conceptCount+=item.conceptCount;
+    current.sourceCount+=item.sourceCount;
+    current.internalRelations+=item.internalRelations;current.externalRelations+=item.externalRelations});
+  return [...merged.values()]}
+function canvasExplorerSceneMap(){const graph=visible(),ids=new Set(graph.nodes.map(node=>node.id)),communities=canvasExplorerRollUp(data.communities.filter(item=>item.nodeIds.some(id=>ids.has(id)))),nodes=communities.map((item,index)=>{const spot=canvasExplorerSlotPosition(item.id);return{id:item.id,label:item.label,type:'community',community:item,x:spot.x,y:spot.y,depth:.92+(index%4)*.04}}),visibleIds=new Set(nodes.map(node=>node.id));return{level:'map',nodes:[...nodes,...canvasExplorerMergingNodes(visibleIds)],edges:canvasExplorerRollUpEdges(visibleIds)}}
+/*
+ Les liens suivent le repli, sinon la carte des domaines n'a aucune arête.
+
+ Les arêtes de communautés relient des FEUILLES. Une fois les bulles repliées, aucun
+ identifiant d'arête ne correspond plus à un nœud affiché : la carte se
+ retrouvait constellée de bulles sans une seule relation, ce qui est le
+ contraire de ce qu'un premier écran doit montrer. On réécrit donc chaque arête
+ vers le niveau visible et on agrège les doublons.
+*/
+function canvasExplorerRollUpEdges(visibleIds){
+  const parents=data.communityParents||{},domains=data.domains||[];
+  const lift=id=>{
+    if(visibleIds.has(id))return id;
+    const parent=parents[id];
+    return parent&&visibleIds.has(parent)?parent:null};
+  const merged=new Map();
+  (data.communityEdges||[]).forEach(edge=>{
+    const from=domains.length?lift(edge.from):(visibleIds.has(edge.from)?edge.from:null);
+    const to=domains.length?lift(edge.to):(visibleIds.has(edge.to)?edge.to:null);
+    // Une relation interne à un domaine ne dit rien AU niveau du domaine :
+    // elle apparaîtra quand on l'ouvrira.
+    if(!from||!to||from===to)return;
+    const key=from+'\u0000'+to,current=merged.get(key);
+    if(current)current.weight+=edge.count;
+    else merged.set(key,{...edge,from,to,weight:edge.count})});
+  return [...merged.values()]}
 function canvasExplorerSceneDocuments(){const graph=visible(),community=data.communities.find(item=>item.id===selectedCommunity)||(selected?data.communities.find(item=>item.nodeIds.includes(selected.id)):null);if(!community)return{level:view,nodes:[],edges:[]};let ids=new Set(community.nodeIds);if(view==='focus'&&selected){ids=new Set([selected.id]);data.edges.forEach(edge=>{if(edge.from===selected.id)ids.add(edge.to);if(edge.to===selected.id)ids.add(edge.from)})}const source=graph.nodes.filter(node=>ids.has(node.id)).sort((a,b)=>Number(b.id===selected?.id)-Number(a.id===selected?.id)||(b.degree||0)-(a.degree||0)||a.id.localeCompare(b.id)).slice(0,50),count=Math.max(1,source.length),typeColumns={'raw-source':-.36,'wiki-source':-.3,template:-.12,'build-context':-.08,wiki:.15,deliverable:.36},nodes=source.map((node,index)=>{let x,y;if(view==='focus'&&selected){if(node.id===selected.id){x=0;y=0}else{const angle=Math.PI*2*index/count-Math.PI/2;x=typeColumns[node.type]??Math.cos(angle)*.34;y=Math.sin(angle)*.28}}else{const angle=index*2.399963,r=.04+Math.sqrt(index)*.048;x=Math.cos(angle)*r;y=Math.sin(angle)*r*.8}const saved=readCanvasExplorerPosition(node.id);if(saved){x=saved.x;y=saved.y}return{...node,label:node.title,x,y,depth:.9+(index%5)*.04,communityId:node.community?.communityId}});separateCanvasExplorerNodes(nodes);const visibleIds=new Set(nodes.map(node=>node.id));
   const edges=data.edges.filter(edge=>visibleIds.has(edge.from)&&visibleIds.has(edge.to));
   return{level:view,nodes:[...nodes,...collapsedNeighbourGroups(nodes,visibleIds,edges)],edges}}

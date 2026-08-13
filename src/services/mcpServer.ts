@@ -887,6 +887,7 @@ export async function createWikiMcpServer(
     const snapshot = await loadWikiGraphSnapshot({
       rootDir: workspace.paths.rootDir,
       fallbackCommunityLabel,
+      language: config.language,
     });
     const outline = summarizeWikiGraph(snapshot, {
       fallbackCommunityLabel,
