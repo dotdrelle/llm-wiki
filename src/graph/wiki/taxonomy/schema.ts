@@ -266,7 +266,13 @@ export function validateRegistry(value: unknown): ValidationResult {
     }
   }
 
-  // Arborescence : parent connu, aucun cycle, profondeur bornée.
+  // Arborescence : parent connu ET vivant, aucun cycle, profondeur bornée.
+  const deprecatedIds = new Set(
+    value.communities
+      .filter((community): community is Record<string, unknown> => isPlainObject(community))
+      .filter((community) => community.deprecated === true && typeof community.id === 'string')
+      .map((community) => String(community.id)),
+  );
   const childCount = new Map<string, number>();
   for (const [index, community] of value.communities.entries()) {
     if (!isPlainObject(community)) continue;
@@ -280,6 +286,20 @@ export function validateRegistry(value: unknown): ValidationResult {
     }
     if (parent === id) {
       issues.push({ path: `${at}.parentCommunity`, reason: 'une communauté ne peut pas être son propre parent' });
+      continue;
+    }
+    /*
+     Une communauté active ne pend pas à un parent mort.
+
+     Le parent existait bien dans le registre — la règle ci-dessus était donc
+     satisfaite — mais il pouvait être déprécié. Or `communityHierarchy` ne
+     construit l'arbre qu'à partir des communautés ACTIVES : l'enfant sortait
+     alors de la hiérarchie et remontait comme bulle racine sur la carte, en
+     contredisant ce que le registre déclarait. Un registre valide ne doit pas
+     pouvoir décrire deux arbres différents selon qui le lit.
+    */
+    if (community.deprecated !== true && deprecatedIds.has(parent)) {
+      issues.push({ path: `${at}.parentCommunity`, reason: `domaine parent déprécié : ${parent}` });
       continue;
     }
     childCount.set(parent, (childCount.get(parent) ?? 0) + 1);

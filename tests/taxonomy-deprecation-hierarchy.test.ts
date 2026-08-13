@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { deprecateMissing, membersByCommunity } from '../src/graph/wiki/taxonomy/identity.ts';
-import { validateRegistry, REGISTRY_SCHEMA_VERSION, type TaxonomyRegistry } from '../src/graph/wiki/taxonomy/schema.ts';
+import { reattachOrphanedChildren } from '../src/graph/wiki/taxonomy/run.ts';
+import {
+  validateRegistry,
+  REGISTRY_SCHEMA_VERSION,
+  type RegistryCommunity,
+  type TaxonomyRegistry,
+} from '../src/graph/wiki/taxonomy/schema.ts';
 
 /*
  La dépréciation date du registre plat.
@@ -103,6 +109,72 @@ describe('redirection d’une communauté disparue', () => {
 
     expect(leaf.replacedBy).toBe('dom_solution');
     expect(leaf.changeNote!.at(-1)!.kind).toBe('reparented');
+  });
+});
+
+/*
+ Une feuille préservée ne doit pas pendre à un parent mort.
+
+ Une communauté entièrement hors échantillon traverse la révision intacte — y
+ compris son `parentCommunity`. Mais une AUTRE feuille du même domaine, elle
+ échantillonnée, peut avoir fait remplacer ou déprécier ce domaine. La feuille
+ restait active en pointant vers un mort : le registre passait la validation, et
+ pourtant `communityHierarchy` ne bâtit l'arbre qu'avec les communautés actives.
+ Le parent était introuvable, la feuille quittait la hiérarchie et remontait en
+ bulle racine — un registre qui décrit deux arbres différents selon qui le lit.
+*/
+describe('feuille dont le domaine a disparu', () => {
+  const orphan = (): RegistryCommunity[] => [
+    { id: 'dom_mort', prefLabel: { fr: 'Ancien' }, firstSeenRevision: 1, parentCommunity: null, deprecated: true, replacedBy: 'dom_vivant' },
+    { id: 'dom_vivant', prefLabel: { fr: 'Nouveau' }, firstSeenRevision: 2, parentCommunity: null },
+    { id: 'cmty_preservee', prefLabel: { fr: 'Preservee' }, firstSeenRevision: 1, parentCommunity: 'dom_mort' },
+  ];
+
+  it('suit la redirection du domaine jusqu’à une racine vivante', () => {
+    const communities = orphan();
+    reattachOrphanedChildren(communities);
+
+    expect(communities.find((item) => item.id === 'cmty_preservee')!.parentCommunity).toBe('dom_vivant');
+  });
+
+  it('promeut la feuille en racine quand plus rien ne survit', () => {
+    const communities = orphan();
+    communities[0]!.replacedBy = null;
+    reattachOrphanedChildren(communities);
+
+    // Racine plutôt que suspendue : le schéma l'autorise, et la carte
+    // l'affiche comme une bulle ordinaire au lieu de la perdre.
+    expect(communities.find((item) => item.id === 'cmty_preservee')!.parentCommunity).toBeNull();
+  });
+
+  it('ne raccroche jamais une feuille sous une autre feuille', () => {
+    const communities = orphan();
+    // La cible de remplacement est elle-même une feuille : s'y accrocher
+    // creuserait un troisième niveau que le schéma interdit.
+    communities[1]!.parentCommunity = 'dom_autre';
+    communities.push({ id: 'dom_autre', prefLabel: { fr: 'Autre' }, firstSeenRevision: 2, parentCommunity: null });
+    reattachOrphanedChildren(communities);
+
+    expect(communities.find((item) => item.id === 'cmty_preservee')!.parentCommunity).toBeNull();
+  });
+
+  it('laisse intacte une feuille dont le domaine est vivant', () => {
+    const communities = orphan();
+    communities[2]!.parentCommunity = 'dom_vivant';
+    reattachOrphanedChildren(communities);
+
+    expect(communities.find((item) => item.id === 'cmty_preservee')!.parentCommunity).toBe('dom_vivant');
+  });
+
+  it('refuse désormais à la validation un enfant actif sous un parent déprécié', () => {
+    const data = registry();
+    data.communities = orphan();
+    data.assignments = { 'wiki/a.md': { primaryCommunity: 'cmty_preservee' } };
+
+    const result = validateRegistry(data);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.some((issue) => issue.reason.includes('parent déprécié'))).toBe(true);
   });
 });
 

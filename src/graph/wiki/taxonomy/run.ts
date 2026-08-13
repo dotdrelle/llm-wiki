@@ -382,6 +382,8 @@ async function runSynthesis(
       ),
   ];
 
+  reattachOrphanedChildren(communities);
+
   /*
    L'échantillon décide ; le corpus entier reçoit la décision.
 
@@ -522,6 +524,42 @@ async function runSynthesis(
  * revendiquer l'identifiant d'une de ses feuilles, ou l'inverse. On compare
  * donc des pairs à des pairs — et pour les feuilles, une fratrie à sa fratrie.
  */
+/**
+ * Rend une racine à toute communauté active dont le parent ne l'est plus.
+ *
+ * Une feuille préservée parce qu'elle n'a pas été soumise garde son
+ * `parentCommunity` — mais rien ne garantit que ce domaine ait survécu à la même
+ * révision : une AUTRE feuille du même domaine, elle échantillonnée, peut
+ * l'avoir fait remplacer ou déprécier. La feuille restait alors active en
+ * pointant vers un parent mort.
+ *
+ * Le registre passait la validation, et pourtant `communityHierarchy` ne
+ * construit l'arbre qu'à partir des communautés actives : le parent était
+ * introuvable, la feuille sortait de la hiérarchie et réapparaissait comme
+ * bulle racine sur la carte, en contradiction avec ce que le registre déclarait.
+ *
+ * On suit donc la redirection du parent tant qu'elle mène à une racine vivante,
+ * et à défaut on promeut l'enfant en racine — ce que le schéma autorise, et qui
+ * le laisse navigable au lieu de le suspendre dans le vide.
+ */
+export function reattachOrphanedChildren(communities: RegistryCommunity[]): void {
+  const byId = new Map(communities.map((community) => [community.id, community]));
+  const isLiveRoot = (community: RegistryCommunity | undefined): boolean =>
+    Boolean(community && !community.deprecated && !community.parentCommunity);
+
+  for (const community of communities) {
+    if (community.deprecated || !community.parentCommunity) continue;
+    let parent = byId.get(community.parentCommunity);
+    if (isLiveRoot(parent)) continue;
+    // La cible de remplacement doit être une RACINE vivante : s'accrocher à une
+    // feuille creuserait un troisième niveau que le schéma interdit.
+    for (let hops = 0; parent?.deprecated && parent.replacedBy && hops < 16; hops += 1) {
+      parent = byId.get(parent.replacedBy);
+    }
+    community.parentCommunity = isLiveRoot(parent) ? parent!.id : null;
+  }
+}
+
 function registryAtLevel(
   previous: TaxonomyRegistry | null,
   level: 'root' | 'leaf',
