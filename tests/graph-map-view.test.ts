@@ -283,13 +283,13 @@ describe('domaines voisins restés repliés', () => {
       ],
     };
     const build = new Function(
-      'data', 'selected', 'selectedCommunity', 'view', 'visible', 'localStorage',
+      'data', 'selected', 'selectedCommunity', 'view', 'visible', 'localStorage', 'graphLeafDisplay',
       `${source}\nreturn canvasExplorerSceneDocuments;`,
     );
     return build(data, null, 'alpha', 'community', () => ({ nodes }), {
       getItem: () => null,
       setItem: () => {},
-    })();
+    }, (label: string) => (label ? label.charAt(0).toUpperCase() + label.slice(1) : label))();
   };
 
   it('représente chaque domaine voisin par une constellation repliée', () => {
@@ -344,13 +344,13 @@ describe('domaines voisins restés repliés', () => {
       ],
     };
     const build = new Function(
-      'data', 'selected', 'selectedCommunity', 'view', 'visible', 'localStorage',
+      'data', 'selected', 'selectedCommunity', 'view', 'visible', 'localStorage', 'graphLeafDisplay',
       `${source}\nreturn canvasExplorerSceneDocuments;`,
     );
     const scene = build(data, null, 'open', 'community', () => ({ nodes }), {
       getItem: () => null,
       setItem: () => {},
-    })();
+    }, (label: string) => (label ? label.charAt(0).toUpperCase() + label.slice(1) : label))();
     const by = (id: string) => scene.nodes.find((node: { id: string }) => node.id === id);
     return { scene, by };
   };
@@ -413,13 +413,13 @@ describe('domaines voisins restés repliés', () => {
       ],
     };
     const build = new Function(
-      'data', 'selected', 'selectedCommunity', 'view', 'visible', 'localStorage',
+      'data', 'selected', 'selectedCommunity', 'view', 'visible', 'localStorage', 'graphLeafDisplay',
       `${source}\nreturn canvasExplorerSceneDocuments;`,
     );
     const scene = build(data, null, 'open', 'community', () => ({ nodes }), {
       getItem: () => null,
       setItem: () => {},
-    })();
+    }, (label: string) => (label ? label.charAt(0).toUpperCase() + label.slice(1) : label))();
     const x = scene.nodes.find((node: { id: string }) => node.id === 'x');
     const y = scene.nodes.find((node: { id: string }) => node.id === 'y');
     expect(Math.hypot(x.x - y.x, x.y - y.y)).toBeGreaterThan(0.05);
@@ -557,5 +557,81 @@ describe('mise en page de la scène', () => {
     // Et il reste lisible sur le thème clair, qui n'était pas traité.
     expect(html).toContain('body.theme-light .inspector');
     expect(html).toContain('body.theme-light .stage-title');
+  });
+});
+
+/*
+ Une bulle ne compte que ce qu'elle montre.
+
+ Sur ACPI : sept domaines totalisant 101 pages sur une carte dont l'en-tête
+ annonçait 88 documents. L'écart valait exactement le nombre de sources brutes,
+ décochées dans les filtres — on ne gardait que les communautés ayant au moins
+ une page visible, puis on réutilisait leur liste de membres ENTIÈRE. Le domaine
+ héritant de la somme de ses feuilles, l'erreur se cumulait.
+
+ L'index de gauche, lui, appliquait bien le filtre : deux compteurs
+ contradictoires pour le même corpus dans la même fenêtre.
+*/
+describe('compte des pages sur la carte', () => {
+  const build = (data: unknown, visibleIds: string[]) => {
+    const factory = new Function(
+      'data', 'selected', 'selectedCommunity', 'view', 'visible', 'localStorage',
+      'graphDomainDisplay', 'graphLeafDisplay', 'graphMerging', 'graphMergeProgress',
+      `${source}\nreturn { scene: canvasExplorerSceneMap, scoped: canvasExplorerVisibleCommunities };`,
+    );
+    return factory(
+      data,
+      null,
+      null,
+      'map',
+      () => ({ nodes: visibleIds.map((id) => ({ id })), edges: [] }),
+      { getItem: () => null, setItem: () => {} },
+      (label: string) => String(label ?? '').toUpperCase(),
+      (label: string) => (label ? label.charAt(0).toUpperCase() + label.slice(1) : label),
+      // Aucune fusion en cours : ces deux-là appartiennent au script « live »,
+      // qui n'est pas chargé ici.
+      new Map(),
+      () => 0,
+    );
+  };
+
+  const corpus = () => ({
+    workspace: 'w',
+    domains: [{ id: 'dom', label: 'logiciel' }],
+    communityParents: { a: 'dom', b: 'dom' },
+    communities: [
+      // Trois pages chacune, dont une seule source brute masquée par le filtre.
+      { id: 'a', label: 'anaplan', nodeIds: ['a1', 'a2', 'raw-a'], documentCount: 3, conceptCount: 2, sourceCount: 1, internalRelations: 0, externalRelations: 0 },
+      { id: 'b', label: 'board', nodeIds: ['b1', 'raw-b'], documentCount: 2, conceptCount: 1, sourceCount: 1, internalRelations: 0, externalRelations: 0 },
+    ],
+    communityEdges: [],
+    nodes: [],
+    edges: [],
+  });
+
+  it('ne compte pas les pages écartées par les filtres de type', () => {
+    const api = build(corpus(), ['a1', 'a2', 'b1']);
+    const scoped = api.scoped(new Set(['a1', 'a2', 'b1']));
+
+    expect(scoped.map((item: { id: string; documentCount: number }) => [item.id, item.documentCount]))
+      .toEqual([['a', 2], ['b', 1]]);
+  });
+
+  it('additionne sur le domaine ce que ses feuilles montrent réellement', () => {
+    const api = build(corpus(), ['a1', 'a2', 'b1']);
+    const bubble = api.scene().nodes.find((node: { id: string }) => node.id === 'dom');
+
+    // 3 et non 5 : c'est le total affiché, pas celui du registre.
+    expect(bubble.community.nodeIds).toHaveLength(3);
+    expect(bubble.community.documentCount).toBe(3);
+  });
+
+  it('met le domaine en capitales et la feuille en initiale majuscule', () => {
+    // Taxonomie plate : plus de domaine, les feuilles remontent à la racine.
+    const flat = { ...corpus(), domains: [] as Array<{ id: string; label: string }>, communityParents: {} as Record<string, string> };
+
+    expect(build(corpus(), ['a1', 'b1']).scene().nodes[0].label).toBe('LOGICIEL');
+    const leaves = build(flat, ['a1', 'b1']).scene().nodes.map((node: { label: string }) => node.label);
+    expect(leaves).toEqual(['Anaplan', 'Board']);
   });
 });

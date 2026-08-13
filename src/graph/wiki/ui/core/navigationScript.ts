@@ -17,9 +17,9 @@ function updateGraphBreadcrumb(){
   const trail=document.querySelector('#graph-breadcrumb');if(!trail)return;
   const parts=[{level:'map',label:'Map'}];
   const domainId=graphDomainOf(selectedCommunity);
-  if(domainId&&view!=='map')parts.push({level:'domain',label:graphCommunityLabel(domainId)});
+  if(domainId&&view!=='map')parts.push({level:'domain',label:graphDomainDisplay(graphCommunityLabel(domainId))});
   if((view==='community'||view==='focus')&&selectedCommunity&&selectedCommunity!==domainId){
-    parts.push({level:'community',label:graphCommunityLabel(selectedCommunity)})}
+    parts.push({level:'community',label:graphLeafDisplay(graphCommunityLabel(selectedCommunity))})}
   if(view==='focus'&&selected)parts.push({level:'focus',label:selected.title});
   trail.innerHTML=parts.map((part,index)=>'<button type="button" data-graph-level="'+part.level+'"'+(index===parts.length-1?' aria-current="page"':'')+'>'+esc(part.label)+'</button>').join('<span>›</span>')
 }

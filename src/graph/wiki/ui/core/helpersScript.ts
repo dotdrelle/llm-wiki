@@ -45,6 +45,18 @@ function graphRelationsLabel(count){
   const value=count||0;
   if(value===1)return'';
   return value+' relation'+(value===1?'':'s')}
+/*
+ Deux niveaux, deux traitements typographiques.
+
+ Un domaine est une rubrique : capitales, comme sur la carte. Une feuille est un
+ sujet nommé — souvent un nom propre que le registre stocke en minuscules parce
+ que le modèle écrit en minuscules. La capitale initiale lui rend son statut de
+ nom sans altérer le registre, qui reste la source.
+*/
+function graphDomainDisplay(label){return String(label??'').toUpperCase()}
+function graphLeafDisplay(label){
+  const text=String(label??'');
+  return text ? text.charAt(0).toUpperCase()+text.slice(1) : text}
 /** Le libellé affichable d'une feuille ou d'un domaine. */
 function graphCommunityLabel(id){
   const leaf=(data?.communities||[]).find(item=>item.id===id);

@@ -19,8 +19,20 @@ function canvasExplorerSlot(id){
   if(!canvasExplorerSlots.has(id))canvasExplorerSlots.set(id,canvasExplorerSlots.size);
   return canvasExplorerSlots.get(id)}
 function seedCanvasExplorerSlots(){(data?.communities||[]).forEach(item=>canvasExplorerSlot(item.id))}
+/*
+ Disposition en spirale de Vogel : le pas angulaire est l'angle d'or, le rayon
+ croît en racine du rang. C'est ce qui donne une répartition régulière sans
+ alignement visible, quel que soit le nombre de bulles.
+
+ Le rayon était trop large : avec sept ou huit domaines, la carte s'étalait
+ jusqu'aux bords et le cadrage devait dézoomer pour tout contenir, si bien que
+ chaque amas devenait minuscule au milieu de vide. Les amas eux-mêmes occupent
+ déjà une surface — c'est cette surface qui doit remplir la carte, pas
+ l'écartement entre leurs centres. On resserre donc la spirale ; la séparation
+ des halos reste assurée par le rayon propre de chaque amas.
+*/
 function canvasExplorerSlotPosition(id){
-  const slot=canvasExplorerSlot(id),angle=slot*2.399963-Math.PI/2,radius=slot?.135+Math.sqrt(slot)*.112:0;
+  const slot=canvasExplorerSlot(id),angle=slot*2.399963-Math.PI/2,radius=slot?.092+Math.sqrt(slot)*.076:0;
   return{x:Math.cos(angle)*radius,y:Math.sin(angle)*radius*.72}}
 // La position mémorisée d'une fiche ne dépend plus de la topologie : elle
 // changeait à chaque ingest, donc tout placement manuel était perdu au moment
@@ -301,7 +313,9 @@ function createCanvasExplorer(host){
     // Le compte affiché est celui du domaine, pas celui des étoiles dessinées :
     // la constellation est plafonnée à 48 points, le domaine ne l'est pas.
     state.labels.push({x:point.x,y:point.y,radius,weight:1e6+node.community.nodeIds.length,always:true,lines:[
-      {text:node.label.toUpperCase(),font:'500 13px ui-sans-serif,system-ui',height:15,color:hot?(pale?'#0d1826':'#f4f7fc'):(pale?'#2a3a4d':'#c9d3e2')},
+      // Le libellé arrive déjà mis en forme par la scène, qui seule sait s'il
+      // s'agit d'un domaine ou d'une feuille.
+      {text:node.label,font:'500 13px ui-sans-serif,system-ui',height:15,color:hot?(pale?'#0d1826':'#f4f7fc'):(pale?'#2a3a4d':'#c9d3e2')},
       {text:node.community.nodeIds.length+' pages',font:'11px ui-sans-serif,system-ui',height:13,color:rgba(paint,pale?.95:.8)}]});
     state.hits.push({node,x:point.x,y:point.y,r:Math.max(28,radius*1.1)})}
   function cardWidth(node){return Math.min(210,82+String(node.label).length*5.8)}
@@ -607,7 +621,29 @@ function canvasExplorerRollUp(communities){
     current.sourceCount+=item.sourceCount;
     current.internalRelations+=item.internalRelations;current.externalRelations+=item.externalRelations});
   return [...merged.values()]}
-function canvasExplorerSceneMap(){const graph=visible(),ids=new Set(graph.nodes.map(node=>node.id)),communities=canvasExplorerRollUp(data.communities.filter(item=>item.nodeIds.some(id=>ids.has(id)))),nodes=communities.map((item,index)=>{const spot=canvasExplorerSlotPosition(item.id);return{id:item.id,label:item.label,type:'community',community:item,x:spot.x,y:spot.y,depth:.92+(index%4)*.04}}),visibleIds=new Set(nodes.map(node=>node.id));return{level:'map',nodes:[...nodes,...canvasExplorerMergingNodes(visibleIds)],edges:canvasExplorerRollUpEdges(visibleIds)}}
+/*
+ Une bulle compte les pages AFFICHÉES, pas celles du registre.
+
+ On ne gardait que les communautés ayant au moins une page visible, puis on
+ réutilisait leur liste de membres entière : les pages écartées par les filtres
+ de type — les sources brutes décochées, par exemple — restaient comptées. La bulle
+ annonçait donc systématiquement plus que ce qu'elle contenait, et son compte
+ contredisait celui de l'index de gauche, qui lui applique bien le filtre.
+
+ Le domaine héritant de la somme de ses feuilles, l'écart se cumulait d'autant.
+*/
+function canvasExplorerVisibleCommunities(ids){
+  const scoped=[];
+  data.communities.forEach(item=>{
+    const nodeIds=item.nodeIds.filter(id=>ids.has(id));
+    if(!nodeIds.length)return;
+    scoped.push({...item,nodeIds,documentCount:nodeIds.length})});
+  return scoped}
+function canvasExplorerSceneMap(){const graph=visible(),ids=new Set(graph.nodes.map(node=>node.id)),communities=canvasExplorerRollUp(canvasExplorerVisibleCommunities(ids)),nodes=communities.map((item,index)=>{const spot=canvasExplorerSlotPosition(item.id);
+  // Le niveau décide de la typographie : un domaine est une rubrique, une
+  // feuille est un sujet nommé.
+  const isDomain=(data.domains||[]).some(domain=>domain.id===item.id);
+  return{id:item.id,label:isDomain?graphDomainDisplay(item.label):graphLeafDisplay(item.label),type:'community',community:item,x:spot.x,y:spot.y,depth:.92+(index%4)*.04}}),visibleIds=new Set(nodes.map(node=>node.id));return{level:'map',nodes:[...nodes,...canvasExplorerMergingNodes(visibleIds)],edges:canvasExplorerRollUpEdges(visibleIds)}}
 /*
  Les liens suivent le repli, sinon la carte des domaines n'a aucune arête.
 
@@ -702,7 +738,7 @@ function collapsedNeighbourGroups(inner,visibleIds,edges){
     let silhouette=0;
     inner.forEach(node=>{silhouette=Math.max(silhouette,(node.x-centre.x)*dx+(node.y-centre.y)*dy)});
     const base=Math.max(innerRadius*.5,silhouette)+margin;
-    return{id:groupId,label:item.label,type:'community',community:item,collapsed:true,depth:.86,
+    return{id:groupId,label:graphLeafDisplay(item.label),type:'community',community:item,collapsed:true,depth:.86,
       x:centre.x+dx*base,y:centre.y+dy*base,base,
       links:[...entry.from].map(([from,count])=>({from,count}))}}).filter(Boolean);
   // Deux voisins accrochés au même endroit se superposeraient : on les écarte,

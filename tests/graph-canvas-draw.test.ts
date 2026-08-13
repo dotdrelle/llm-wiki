@@ -206,12 +206,14 @@ function mount(
     // Même contrat que le helper réel : rien à afficher pour une relation
     // unique, qui est déjà dessinée.
     (count: number) => (count === 1 ? '' : `${count || 0} relations`),
+    (label: string) => String(label ?? '').toUpperCase(),
+    (label: string) => (label ? label.charAt(0).toUpperCase() + label.slice(1) : label),
   ];
   const names = [
     'data', 'colors', 'selected', 'selectedCommunity', 'view', 'esc', 'render', 'selectDocument', 'selectCommunity',
     'visible', 'graphIcon', 'localStorage', 'document', 'window', 'matchMedia', 'devicePixelRatio', 'ResizeObserver',
     'MutationObserver', 'requestAnimationFrame', 'cancelAnimationFrame', 'setTimeout', 'clearTimeout',
-    'graphRelationsLabel',
+    'graphRelationsLabel', 'graphDomainDisplay', 'graphLeafDisplay',
   ];
   const build = new Function(
     ...names,
@@ -322,7 +324,7 @@ describe('boucle de dessin du canevas', () => {
     const cards: Array<string | null> = [];
     const build = new Function(
       'data', 'esc', 'inspector', 'render', 'document', 'window', 'colors',
-      'openGraphContextCard', 'closeGraphContextCard', 'graphRelationsLabel',
+      'openGraphContextCard', 'closeGraphContextCard', 'graphRelationsLabel', 'graphLeafDisplay',
       `let selected=null,selectedCommunity=null,view='community',focusHistory=[];
        ${graphUiSelectionScript()}
        return {select:selectDocument,state:()=>({view,selected:selected&&selected.id}),
@@ -345,6 +347,7 @@ describe('boucle de dessin du canevas', () => {
       (node: { id: string }) => cards.push(node.id),
       () => cards.push(null),
       (count: number) => (count === 1 ? '' : `${count || 0} relations`),
+      (label: string) => (label ? label.charAt(0).toUpperCase() + label.slice(1) : label),
     );
 
     const hub = data.nodes.find((node) => node.id === 'c0/n2')!;

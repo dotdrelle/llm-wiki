@@ -72,7 +72,11 @@ describe('navigation carte → domaine → communauté → document', () => {
     // Les comptes d'un domaine sont la somme de ses feuilles, jamais des pages
     // qui lui seraient accrochées en propre — il n'en a aucune.
     expect(canvas).toContain('current.documentCount+=item.documentCount');
-    expect(canvas).toContain('canvasExplorerRollUp(data.communities.filter');
+    // Le repli reçoit désormais les communautés RESTREINTES aux pages visibles :
+    // une bulle qui compte des pages masquées par les filtres ment sur ce
+    // qu'elle contient.
+    expect(canvas).toContain('canvasExplorerRollUp(canvasExplorerVisibleCommunities(ids))');
+    expect(canvas).toContain('item.nodeIds.filter(id=>ids.has(id))');
   });
 
   it('n’altère rien quand aucun domaine n’existe', () => {
