@@ -70,6 +70,7 @@ const LLM_WIKI_VERSION = '0.15.47';
 type SkillMeta = {
   name: string;
   description: string;
+  execution: 'orchestrated' | 'direct';
   params: string[];
   body: string;
   scope: 'workspace';
@@ -141,12 +142,16 @@ function parseSkillFile(name: string, raw: string): SkillMeta {
   const fm = fmMatch ? fmMatch[1] : '';
   const body = (fmMatch ? fmMatch[2] : raw).trim();
   let description = '';
+  let execution: 'orchestrated' | 'direct' = 'orchestrated';
   const params: string[] = [];
   let inParams = false;
   for (const line of fm.split('\n')) {
     const t = line.trim();
     if (t.startsWith('description:')) {
       description = t.slice(12).trim();
+      inParams = false;
+    } else if (t.startsWith('execution:')) {
+      execution = t.slice(10).trim().toLowerCase() === 'direct' ? 'direct' : 'orchestrated';
       inParams = false;
     } else if (t === 'params:') {
       inParams = true;
@@ -156,19 +161,21 @@ function parseSkillFile(name: string, raw: string): SkillMeta {
       inParams = false;
     }
   }
-  return { name, description, params, body, scope: 'workspace' };
+  return { name, description, execution, params, body, scope: 'workspace' };
 }
 
 function formatSkillFile(skill: {
   name: string;
   description: string;
+  execution: 'orchestrated' | 'direct';
   params: string[];
   body: string;
 }): string {
   const paramsYaml = skill.params.length
     ? `\nparams:\n${skill.params.map((p) => `  - ${p}`).join('\n')}`
     : '';
-  return `---\nname: ${skill.name}\ndescription: ${skill.description}${paramsYaml}\n---\n${skill.body}\n`;
+  const executionYaml = skill.execution === 'direct' ? '\nexecution: direct' : '';
+  return `---\nname: ${skill.name}\ndescription: ${skill.description}${executionYaml}${paramsYaml}\n---\n${skill.body}\n`;
 }
 
 async function listSkills(rootDir: string): Promise<SkillMeta[]> {
@@ -366,12 +373,14 @@ async function handleSkillsApi(
       const raw = await readRequestBody(req);
       const data = JSON.parse(raw) as {
         description?: string;
+        execution?: string;
         params?: unknown;
         body?: string;
       };
       const skill = {
         name,
         description: String(data.description ?? ''),
+        execution: String(data.execution ?? 'orchestrated').toLowerCase() === 'direct' ? 'direct' as const : 'orchestrated' as const,
         params: Array.isArray(data.params) ? data.params.map(String) : [],
         body: String(data.body ?? ''),
       };

@@ -22,6 +22,24 @@ describe('chat html', () => {
     }
   });
 
+  it('routes skill invocations without compiling or displaying the private body', () => {
+    const script = chatScripts().join('\n');
+    const matcher = script.match(/async function matchBrowserSkillInvocation\(text\) \{[\s\S]*?\n\}/)?.[0] ?? '';
+
+    expect(matcher).toContain('sendText:text');
+    expect(matcher).not.toContain('skill.body');
+    expect(matcher).not.toContain('replaceAll');
+    expect(script).toContain("fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:text,mode:'agent'})})");
+  });
+
+  it('edits and preserves skill execution mode with an expandable body', () => {
+    expect(CHAT_HTML).toContain('id="skill-execution"');
+    expect(CHAT_HTML).toContain("$('skill-execution').value=skill?.execution||'orchestrated'");
+    expect(CHAT_HTML).toContain('JSON.stringify({description,execution,params,body})');
+    expect(CHAT_HTML).toContain('onclick="toggleSkillBodySize()"');
+    expect(CHAT_HTML).toContain('.skill-editor textarea.expanded{min-height:55vh}');
+  });
+
   /*
    Le script du chat est assemblé à partir d'une quinzaine de modules, chacun
    n'étant qu'un littéral de gabarit : ni TypeScript ni ESLint ne voient les
@@ -748,8 +766,9 @@ describe('chat html', () => {
     expect(script).toContain("new EventSource('/api/runtime/events')");
     expect(script).toContain('if(runtimeFetchPending) return;');
     expect(script).toContain("runningBeforeFetch&&!readOnlyChat?'/api/runtime/control':'/api/runtime/turn'");
-    expect(script).toContain("if(data?.kind!=='turn')");
+    expect(script).toContain("if(data?.kind!=='turn'&&reply)");
     expect(script).not.toContain('Runtime run accepted. Follow progress in Activity.');
+    expect(script).not.toContain('Runtime request accepted. Follow progress in Activity.');
     expect(script).toContain("fetch('/api/runtime/cancel'");
     expect(script).toContain('function toggleAgentMode()');
     expect(script).toContain("function runtimeTaskPanelHTML(view='plan')");
@@ -763,6 +782,28 @@ describe('chat html', () => {
     expect(script).toContain("const taskNodes=workflowNodes.filter(node=>node.type==='task');");
     expect(script).toContain("const graphNodes=Array.isArray(graph.nodes)?graph.nodes:[];");
     expect(script).toContain("Runtime activity");
+  });
+
+  /*
+   Régression : un run accepté affichait « Runtime request accepted. Follow
+   progress in Activity. » — une phrase écrite par l'UI, en anglais quelle que
+   soit la langue de la session, et affirmant une acceptation même quand rien
+   n'avait été exécuté. La réponse utilisateur vient de Donna ; l'UI n'invente
+   plus de tour à sa place.
+  */
+  it('never invents an acceptance reply for a runtime turn', () => {
+    const [script] = chatScripts();
+
+    expect(script).not.toContain('Runtime request accepted. Follow progress in Activity.');
+    expect(script).not.toContain('Runtime run accepted. Follow progress in Activity.');
+    // Sans réponse du runtime, aucune bulle : un tour vide vaut mieux qu'un
+    // tour faux.
+    expect(script).toContain("if(data?.kind!=='turn'&&reply)");
+    // Le correctif porte sur le fourre-tout : les états qui ont un sens précis
+    // gardent leur libellé, sinon l'utilisateur perdrait l'information.
+    expect(script).toContain("data?.kind==='mutate'?'Plan change recorded as a proposal.");
+    expect(script).toContain("data?.kind==='enqueue'?'Request queued for a future run.'");
+    expect(script).toContain("data?.kind==='ambiguous'?");
   });
 
   it('renders the active runtime run card with inspect and cancel controls', () => {
@@ -786,6 +827,7 @@ describe('chat html', () => {
     expect(CHAT_HTML).not.toContain('.composer-approve-btn');
     expect(CHAT_HTML.match(/onclick="approveRuntimeRun\(\)"/g)).toHaveLength(1);
     expect(script).toContain('if(Array.isArray(runtimeState.approvals))');
+    expect(script).toContain("if(['cancelled','done','completed','failed','error'].includes(String(runtimeState.status||'').toLowerCase())) return 0;");
     expect(script).toContain('runtimeState.approvals=runtimeState.approvals.map');
     expect(script).not.toContain("const composerButton=$('composer-approve-btn');");
   });

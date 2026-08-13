@@ -217,7 +217,8 @@ fetched via `/api/runtime/state` and kept fresh by the SSE stream with a 200ms
 leading-edge debounce on `agent_event` messages.
 
 `sendRuntimeAgentMessage` (0.9.5) no longer blocks with an error when a run is
-already active: it posts to `/api/runtime/run` when idle, or
+already active: ordinary Agent messages post to `/api/runtime/turn` when idle,
+or
 `/api/runtime/control {action:"message", input}` when busy (with a 409 fallback
 from `/run` to `/control` for the idle→busy race), and shows the runtime's
 `explanation` for the resulting `observe`/`converse`/`mutate`/`enqueue`/
@@ -346,10 +347,21 @@ local UI chrome.
 
 ## Serve Skills And Donna
 
+The workspace-level **general conversational-action rule** applies here: every
+action originating in chat UI — natural language, slash command, suggestion
+tile or shortcut — enters through a Donna `/turn`. Browser code may recognize a
+public command to switch modes, but it must not invoke `/run` directly, compile
+or execute private instructions, expose them as messages, or synthesize an
+acknowledgement. Donna owns selection, launch and all user-facing responses.
+Only explicitly non-conversational headless/CI callers may bypass the turn.
+
 Browser slash entries resolve against workspace skills from `.wiki/skills/`.
 An entry that matches an executable skill switches the composer to agent mode
-and posts to `/api/runtime/run`, so the browser never compiles or executes a
-skill itself. `matchBrowserSkillInvocation` holds a copy of the manager's
+and posts to `/api/runtime/turn`. The runtime deterministically recognizes an
+explicit `/skill` invocation, then reads and compiles its private body for Donna
+to execute; the browser never compiles or executes a skill itself. Ordinary
+prose and informational questions still reach Donna without this interception.
+`matchBrowserSkillInvocation` holds a copy of the manager's
 `RESERVED_SLASH_COMMANDS` list — `/status` and friends stay built-ins on both
 sides, and the two lists must be changed together. An explicit `forceChat` wins
 over the switch.

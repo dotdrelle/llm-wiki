@@ -210,9 +210,11 @@ body:not(.execution-mode) #execution-view{display:none}
 .skill-editor-title{font-size:13px;font-weight:800;color:var(--text)}
 .skill-editor-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .skill-editor label{display:block;font-size:10px;font-weight:700;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
-.skill-editor input,.skill-editor textarea{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;background:var(--panel-soft);color:var(--text);font-family:var(--font-sans);font-size:12px;padding:8px;outline:none}
+.skill-editor input,.skill-editor textarea,.skill-editor select{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;background:var(--panel-soft);color:var(--text);font-family:var(--font-sans);font-size:12px;padding:8px;outline:none}
 .skill-editor textarea{min-height:130px;resize:vertical;font-family:var(--font-mono);line-height:1.5}
-.skill-editor input:focus,.skill-editor textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.skill-editor textarea.expanded{min-height:55vh}
+.skill-editor input:focus,.skill-editor textarea:focus,.skill-editor select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.skill-body-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px}.skill-body-head label{margin-bottom:0}
 .skill-editor-actions{display:flex;justify-content:flex-end;gap:8px}
 @media (max-width: 720px){.skill-editor-row{grid-template-columns:1fr}.connectors-section-head{flex-direction:column}}
 

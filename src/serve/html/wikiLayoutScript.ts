@@ -98,8 +98,6 @@ export const WIKI_LAYOUT_SCRIPT = `
     markActiveSidebarLinks();
     applySidebarSearch();
   }
-  // Ancien nom, conservé le temps que tous les appelants soient migrés.
-  const refreshPendingPanel = refreshSidebar;
   document.addEventListener('click', async (event) => {
       const button = event.target.closest?.('[data-tree-delete]');
       if (!button) return;
@@ -271,32 +269,23 @@ export const WIKI_LAYOUT_SCRIPT = `
     localStorage.setItem(scrollKey, String(sideTree.scrollTop));
   }, { passive: true });
   window.addEventListener('beforeunload', saveSidebarState);
+  // Les deux ↻ rechargent le MÊME arbre complet.
+  //
+  // Celui du Wiki ne remplaçait que les enfants de [data-tree-id="wiki"] : un
+  // fichier créé dans templates/, deliverables/ ou build-context/ — ce que fait
+  // précisément une compétence de production — n'apparaissait jamais, et le
+  // bouton semblait mort. Or /embed/sidebar renvoie déjà tout, et
+  // refreshSidebar() préserve les dossiers ouverts, le filtre et le lien actif :
+  // rafraîchir une seule section coûtait du code pour un résultat incomplet.
   document.addEventListener('click', async (event) => {
     const button = event.target.closest?.('[data-sidebar-refresh]');
     if (!button) return;
     event.preventDefault();
     event.stopPropagation();
-    const target = button.getAttribute('data-sidebar-refresh');
     button.disabled = true;
     try {
-      if (target === 'pending') {
-        await refreshPendingPanel();
-        return;
-      }
-      const response = await fetch('/embed/sidebar', { cache: 'no-store' });
-      if (!response.ok) throw new Error('Refresh failed');
-      const nextDocument = new DOMParser().parseFromString(await response.text(), 'text/html');
-      if (target === 'wiki') {
-        const currentWiki = document.querySelector('[data-tree-id="wiki"]');
-        const nextWiki = nextDocument.querySelector('[data-tree-id="wiki"]');
-        const currentChildren = currentWiki?.querySelector(':scope > .side-folder-children');
-        const nextChildren = nextWiki?.querySelector(':scope > .side-folder-children');
-        if (!currentChildren || !nextChildren) throw new Error('Wiki tree unavailable');
-        currentChildren.innerHTML = nextChildren.innerHTML;
-        currentWiki.querySelectorAll('[data-tree-id]').forEach(initializeFolder);
-        markActiveSidebarLinks();
-        applySidebarSearch();
-      }
+      await refreshSidebar();
+      document.querySelectorAll('[data-tree-id]').forEach(initializeFolder);
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err));
     } finally {

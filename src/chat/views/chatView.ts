@@ -133,7 +133,14 @@ export const CHAT_MARKUP = `<aside id="sidebar">
           <input id="skill-desc" type="text" placeholder="Run the full pipeline via the production agent">
         </div>
         <div>
-          <label for="skill-body">Skill body</label>
+          <label for="skill-execution">Execution</label>
+          <select id="skill-execution">
+            <option value="orchestrated">Orchestrated — delegation allowed</option>
+            <option value="direct">Direct — no delegation or nested skill</option>
+          </select>
+        </div>
+        <div>
+          <div class="skill-body-head"><label for="skill-body">Skill body</label><button class="skill-manager-btn" id="skill-body-size" type="button" onclick="toggleSkillBodySize()">Expand downward</button></div>
           <textarea id="skill-body" placeholder="Check status, then run the requested job..."></textarea>
         </div>
         <div class="skill-editor-actions">

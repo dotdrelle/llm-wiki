@@ -18,8 +18,12 @@ export async function generateSkillsPage(rootDir: string): Promise<string> {
 .field-label{font-size:.82rem;font-weight:700;color:var(--muted);margin-bottom:.25rem;display:block}
 .field-sub{font-size:.78rem;color:var(--muted);margin-top:.2rem}
 .field-input,.field-textarea{width:100%;padding:.45rem .65rem;border:1px solid var(--border);border-radius:7px;background:var(--panel-soft);color:var(--text);font:inherit;font-size:.9rem;outline:none;box-sizing:border-box}
+.field-select{width:100%;padding:.45rem .65rem;border:1px solid var(--border);border-radius:7px;background:var(--panel-soft);color:var(--text);font:inherit;font-size:.9rem;outline:none;box-sizing:border-box}
 .field-input:focus,.field-textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .field-textarea{font-family:monospace;font-size:.86rem;min-height:200px;resize:vertical;line-height:1.5}
+.field-textarea.expanded{min-height:60vh}
+.field-label-row{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.25rem}
+.field-label-row .field-label{margin-bottom:0}
 .editor-actions{display:flex;gap:.5rem;justify-content:flex-end}
 .empty-state{padding:2.5rem;text-align:center;color:var(--muted);border:1px dashed var(--border);border-radius:10px}
 .del-btn{color:var(--err) !important;border-color:var(--err) !important}
@@ -47,12 +51,19 @@ export async function generateSkillsPage(rootDir: string): Promise<string> {
       <input class="field-input" id="f-desc" type="text" placeholder="Run the full pipeline through the production agent">
     </div>
     <div>
+      <label class="field-label" for="f-execution">Execution</label>
+      <select class="field-select" id="f-execution">
+        <option value="orchestrated">Orchestrated — delegation allowed</option>
+        <option value="direct">Direct — no delegation or nested skill</option>
+      </select>
+    </div>
+    <div>
       <label class="field-label" for="f-params">Parameters <span style="font-weight:400;color:var(--muted)">(comma-separated)</span></label>
       <input class="field-input" id="f-params" type="text" placeholder="space, template">
       <div class="field-sub">Example: <code style="font-size:.85em">space</code> is referenced in the body as <code style="font-size:.85em">{space}</code>.</div>
     </div>
     <div>
-      <label class="field-label" for="f-body">Skill body <span style="color:var(--err)">*</span></label>
+      <div class="field-label-row"><label class="field-label" for="f-body">Skill body <span style="color:var(--err)">*</span></label><button class="action-button" id="body-size-button" type="button" onclick="toggleBodySize()">Expand downward</button></div>
       <textarea class="field-textarea" id="f-body" placeholder="Check CME status with cme_status, then run cme_export_run(source_name=&quot;{space}&quot;)..."></textarea>
       <div class="field-sub">Natural-language instructions the LLM will follow. Parameters are inserted as placeholders to replace before sending.</div>
     </div>
@@ -79,10 +90,11 @@ function renderList(){
     el.innerHTML='<div class="empty-state"><p>No skills. Create your first skill with the button above.</p></div>';
     return;
   }
-  el.innerHTML='<div class="skills-grid">'+skills.map(s=>\`
+  el.innerHTML='<div class="skills-grid">'+skills.map((s,i)=>\`
     <div class="skill-card">
       <div class="skill-card-name">/\${window.WikiUi.escapeHtml(s.name)}</div>
       \${s.description?'<div class="skill-card-desc">'+window.WikiUi.escapeHtml(s.description)+'</div>':''}
+      <div class="skill-card-desc">Execution: \${window.WikiUi.escapeHtml(s.execution||'orchestrated')}</div>
       \${s.params&&s.params.length?'<div class="skill-card-params">'+s.params.map(p=>'<span class="skill-param">{'+window.WikiUi.escapeHtml(p)+'}</span>').join('')+'</div>':''}
       \${s.body?'<div class="skill-card-body-preview">'+window.WikiUi.escapeHtml(s.body.slice(0,120))+(s.body.length>120?'…':'')+'</div>':''}
       <div class="skill-card-actions">
@@ -101,18 +113,23 @@ function openEditor(skill){
   nameEl.value=skill?.name??'';
   nameEl.disabled=!!skill;
   document.getElementById('f-desc').value=skill?.description??'';
+  document.getElementById('f-execution').value=skill?.execution??'orchestrated';
   document.getElementById('f-params').value=(skill?.params??[]).join(', ');
   document.getElementById('f-body').value=skill?.body??'';
+  document.getElementById('f-body').classList.remove('expanded');
+  document.getElementById('body-size-button').textContent='Expand downward';
   document.getElementById('editor-overlay').classList.add('open');
   (skill?document.getElementById('f-body'):nameEl).focus();
 }
 
 function closeEditor(){document.getElementById('editor-overlay').classList.remove('open');}
+function toggleBodySize(){const body=document.getElementById('f-body');const expanded=body.classList.toggle('expanded');document.getElementById('body-size-button').textContent=expanded?'Reduce':'Expand downward';if(expanded)body.scrollIntoView({block:'center'});body.focus();}
 function handleOverlayClick(e){if(e.target===document.getElementById('editor-overlay'))closeEditor();}
 
 async function saveSkill(){
   const name=document.getElementById('f-name').value.trim();
   const description=document.getElementById('f-desc').value.trim();
+  const execution=document.getElementById('f-execution').value;
   const params=document.getElementById('f-params').value.split(',').map(p=>p.trim()).filter(Boolean);
   const body=document.getElementById('f-body').value;
   if(!name){alert('Name is required.');return;}
@@ -120,7 +137,7 @@ async function saveSkill(){
   const r=await fetch('/api/skills/'+encodeURIComponent(name),{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({description,params,body}),
+    body:JSON.stringify({description,execution,params,body}),
   });
   if(!r.ok){const e=await r.json();alert(e.error||'Error');return;}
   closeEditor();

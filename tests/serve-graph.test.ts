@@ -5,6 +5,21 @@ import { describe, expect, it } from 'vitest';
 import { renderWikiGraphV2 } from '../src/graph/wiki/graphApp.ts';
 import { graphUiContextCardScript } from '../src/graph/wiki/ui/core/contextCardScript.ts';
 import { renderSidebar, serveMd } from '../src/serve/html/wikiHtml.ts';
+import { generateSkillsPage } from '../src/serve/html/wikiSkillsPage.ts';
+
+it('renders skill execution mode and an expandable body editor', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-skills-page-'));
+  try {
+    const html = await generateSkillsPage(root);
+    expect(html).toContain('id="f-execution"');
+    expect(html).toContain("document.getElementById('f-execution').value=skill?.execution??'orchestrated'");
+    expect(html).toContain('JSON.stringify({description,execution,params,body})');
+    expect(html).toContain('onclick="toggleBodySize()"');
+    expect(html).toContain('.field-textarea.expanded{min-height:60vh}');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 it('keeps the graph document preview viewport-sized and scrolls its content', () => {
   const source = renderWikiGraphV2();
@@ -231,9 +246,21 @@ describe('serve graph ui', () => {
     expect(source).not.toContain('data-sidebar-refresh="wiki" onclick=');
     expect(source).not.toContain('data-sidebar-refresh="pending" onclick=');
     expect(source).toContain("fetch('/embed/sidebar', { cache: 'no-store' })");
-    expect(source).toContain("if (target === 'pending')");
-    expect(source).toContain("if (target === 'wiki')");
     expect(source).not.toContain('window.location.reload();');
+    /*
+     Les deux boutons rechargent l'arbre ENTIER. Le ↻ du Wiki ne remplaçait que
+     les enfants de [data-tree-id="wiki"], donc un fichier créé dans templates/,
+     deliverables/ ou build-context/ n'apparaissait jamais et le bouton passait
+     pour mort. Aucune branche par section ne doit revenir.
+    */
+    expect(source).not.toContain("if (target === 'pending')");
+    expect(source).not.toContain("if (target === 'wiki')");
+    expect(source).not.toContain("querySelector('[data-tree-id=\"wiki\"]')");
+    expect(source).toContain('await refreshSidebar();\n      document.querySelectorAll');
+    // Le remplacement par innerHTML détruit les écouteurs `toggle` : sans
+    // ré-initialisation, l'ouverture des dossiers cessait d'être mémorisée
+    // après le premier rafraîchissement.
+    expect(source).toContain("document.querySelectorAll('[data-tree-id]').forEach(initializeFolder);");
   });
 
   it('visually distinguishes the primary Wiki tree from output collections', async () => {

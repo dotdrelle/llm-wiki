@@ -635,6 +635,7 @@ function renderSkillsManager() {
     <div class="skill-manager-card">
       <div class="skill-manager-name">/\${esc(s.name||'')}</div>
       \${s.description?\`<div class="skill-manager-desc">\${esc(s.description)}</div>\`:''}
+      <div class="skill-manager-desc">Execution: \${esc(s.execution||'orchestrated')}</div>
       \${Array.isArray(s.params)&&s.params.length?\`<div class="skill-manager-params">\${s.params.map(p=>\`<span class="skill-manager-param">{\${esc(p)}}</span>\`).join('')}</div>\`:''}
       \${s.body?\`<div class="skill-manager-preview">\${esc(String(s.body).slice(0,180))}\${String(s.body).length>180?'...':''}</div>\`:''}
       <div class="skill-manager-actions">
@@ -651,8 +652,11 @@ function openSkillEditor(idx=null) {
   $('skill-name').value=skill?.name||'';
   $('skill-name').disabled=!!skill;
   $('skill-desc').value=skill?.description||'';
+  $('skill-execution').value=skill?.execution||'orchestrated';
   $('skill-params').value=Array.isArray(skill?.params) ? skill.params.join(', ') : '';
   $('skill-body').value=skill?.body||'';
+  $('skill-body').classList.remove('expanded');
+  $('skill-body-size').textContent='Expand downward';
   $('skill-editor').classList.add('open');
   (skill ? $('skill-body') : $('skill-name')).focus();
 }
@@ -662,9 +666,19 @@ function closeSkillEditor() {
   $('skill-editor')?.classList.remove('open');
 }
 
+function toggleSkillBodySize() {
+  const body=$('skill-body');
+  if(!body) return;
+  const expanded=body.classList.toggle('expanded');
+  $('skill-body-size').textContent=expanded?'Reduce':'Expand downward';
+  if(expanded) body.scrollIntoView({block:'center'});
+  body.focus();
+}
+
 async function saveSkillFromEditor() {
   const name=(skillEditingName||$('skill-name').value).trim();
   const description=$('skill-desc').value.trim();
+  const execution=$('skill-execution').value;
   const params=$('skill-params').value.split(',').map(p=>p.trim()).filter(Boolean);
   const body=$('skill-body').value;
   if(!name){notify('Skill name is required.','e');return;}
@@ -673,7 +687,7 @@ async function saveSkillFromEditor() {
     const r=await fetch('/api/skills/'+encodeURIComponent(name),{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({description,params,body}),
+      body:JSON.stringify({description,execution,params,body}),
     });
     if(!r.ok) {
       let msg='Save failed';
@@ -877,6 +891,7 @@ async function cancelRuntimeRun() {
 // for runtime snapshots that do not expose an approvals array.
 function pendingApprovalCount() {
   if(!runtimeState) return 0;
+  if(['cancelled','done','completed','failed','error'].includes(String(runtimeState.status||'').toLowerCase())) return 0;
   if(Array.isArray(runtimeState.approvals)) {
     return runtimeState.approvals.filter(a=>String(a.status||'').toLowerCase()==='pending_approval').length;
   }
@@ -1357,18 +1372,11 @@ async function matchBrowserSkillInvocation(text) {
   const skill=findSkillByName(match[1]);
   if(!skill) return {displayText:text,sendText:text,skill:null};
 
-  const args=String(match[2]||'').trim().split(/\\s+/).filter(Boolean);
-  let body=String(skill.body||'').trim();
-  if(Array.isArray(skill.params)) {
-    for(const [i,param] of skill.params.entries()) {
-      const value=args[i] || '';
-      body=body.replaceAll(\`{\${param}}\`, value);
-    }
-  }
-  if(!body) return {displayText:text,sendText:text,skill:null};
+  // The browser recognizes only the public catalogue entry. The runtime is
+  // the sole reader/compiler of the private body and its arguments.
   return {
     displayText:text,
-    sendText:body,
+    sendText:text,
     skill:{name:skill.name,params:Array.isArray(skill.params)?skill.params:[]},
   };
 }
@@ -2577,7 +2585,7 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
     const skillRun=mode==='skill';
     const openWikiPages=readOnlyChat?activePageContexts():[];
     const doTurnFetch=()=>skillRun
-      ? fetch('/api/runtime/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:text})})
+      ? fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:text,mode:'agent'})})
       : fetch(runningBeforeFetch&&!readOnlyChat?'/api/runtime/control':'/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:runningBeforeFetch&&!readOnlyChat?controlBody:JSON.stringify({input:text,...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})})});
     let res=await doTurnFetch();
     // Transient 503 (host runtime booting/restarting): wait, then replay once.
@@ -2600,12 +2608,12 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
       || (data?.kind==='mutate'?'Plan change recorded as a proposal. It is not applied automatically yet.'
         : data?.kind==='enqueue'?'Request queued for a future run.'
           : data?.kind==='ambiguous'?'I am not sure whether this is a question, a change to this run, or a future run. Choose explicitly in the runtime controls.'
-            : 'Runtime request accepted. Follow progress in Activity.');
+            : '');
     // A conversational /turn does not imply that a run started. If Donna
     // delegates, the runtime SSE stream will publish the actual run state.
     runtimeState={...(runtimeState||{}),status:data?.status ?? runtimeState?.status ?? 'idle'};
     runtimeConnected=true;
-    if(data?.kind!=='turn') {
+    if(data?.kind!=='turn'&&reply) {
       if(statusEl) {
         clearRuntimeThinkingBubble(statusEl);
         pendingRuntimeStatusEls=pendingRuntimeStatusEls.filter(el=>el!==statusEl);
