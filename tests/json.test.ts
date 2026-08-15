@@ -81,4 +81,28 @@ describe('json utilities', () => {
       ],
     });
   });
+
+  it('keeps literal JSON values (null) without corrupting the following key', () => {
+    // Une page concept "product" n'a pas de collection : `"collection": null`.
+    // La valeur littérale `null` ne passe jamais par une chaîne, l'état du
+    // parseur restait 'value' et la clé suivante héritait d'un stringRole
+    // erroné → le guillemet de sa valeur était échappé en '\\"' → JSON invalide.
+    // (Régression observée sur la consolidation Pigment, lot 3 §6.1.)
+    const raw =
+      '[ { "subject": "pigment", "collection": null, "scope": "product" }, { "subject": "index", "collection": null, "scope": "workspace" } ]';
+    const repaired = fixUnescapedQuotes(raw);
+
+    expect(JSON.parse(repaired)).toEqual([
+      { subject: 'pigment', collection: null, scope: 'product' },
+      { subject: 'index', collection: null, scope: 'workspace' },
+    ]);
+  });
+
+  it('keeps literal number values without corrupting the following key', () => {
+    const raw = '{"pages":[{"count": 2}, {"count": 4}]}';
+    const repaired = fixUnescapedQuotes(raw);
+
+    expect(JSON.parse(repaired)).toEqual({ pages: [{ count: 2 }, { count: 4 }] });
+  });
 });
+

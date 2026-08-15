@@ -65,7 +65,17 @@ export function fixUnescapedQuotes(text: string): string {
         }
       } else if (char === ',') {
         const current = top();
-        if (current?.type === 'object' && current.state === 'afterValue') {
+        if (!current) {
+          // Virgule hors de toute structure : on laisse passer (texte du modèle).
+        } else if (current.state === 'value') {
+          // Valeur littérale (null, true, false, nombre) : elle n'est jamais
+          // passée par une chaîne, l'état est donc resté 'value'. On la marque
+          // terminée avant la virgule, sinon la clé suivante hérite d'un
+          // stringRole 'value' et son guillemet est altéré en '\\"' → JSON invalide.
+          markValueDone();
+          if (current.type === 'object') current.state = 'key';
+          else current.state = 'value';
+        } else if (current?.type === 'object' && current.state === 'afterValue') {
           current.state = 'key';
         } else if (current?.type === 'array' && current.state === 'afterValue') {
           current.state = 'value';
