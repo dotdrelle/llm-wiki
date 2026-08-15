@@ -64,6 +64,29 @@ Main capabilities:
 - serve a local web UI and MCP endpoint;
 - install a complete workspace skill with `wiki add-skill`.
 
+## Extraction contract
+
+Ingest reads a source in packs and extracts structured facts, candidate
+subjects and relations with a single consolidation step per source. The
+contract (`src/ingest/extractionSchema.ts`) is deliberately strict on
+structure and deliberately forgiving on references:
+
+- structural fields never bend: a subject id must be a local id (`s1`, ...),
+  `scope` must be one of `source | product | transverse | workspace`,
+  `importance` one of `core | supporting | incidental`, `rationale` is
+  required. A declared subject that violates these rejects the source —
+  surfaced and retried, never silently relaxed.
+- dangling references degrade instead of rejecting the source: a
+  `relations[].from/to`, `facts[].subject` or `mainSubject` that is not a
+  declared subject id is dropped (the fact keeps its statement, `mainSubject`
+  falls back to `null`) and counted in `_dangling` on the parse result, then
+  logged as an `ingest:extract-dangling` warning. A source is never thrown
+  away for a reference no one can resolve.
+- the extraction prompt (`src/prompts/extractionPrompt.ts`, version 3) states
+  these constraints normatively so the model meets the contract rather than
+  the engine loosening it.
+
+
 ## Quick Start
 
 ```bash
