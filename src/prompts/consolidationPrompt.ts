@@ -3,7 +3,7 @@ import type { SourceExtraction } from '../ingest/extractionSchema.ts';
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
 /** Version du prompt, portée par la clé de cache de consolidation. */
-export const CONSOLIDATION_PROMPT_VERSION = 1;
+export const CONSOLIDATION_PROMPT_VERSION = 2;
 
 export type ConsolidationInventoryPage = {
   path: string;
@@ -42,10 +42,13 @@ export function buildConsolidationPrompt(args: {
       '',
       'Granularity policy:',
       '- exactly one source note per document, at the given source note path',
-      '- zero to three NEW concept pages of the document’s own subject, by default',
-      '- reuse or update an existing concept page before creating a near-duplicate',
+      '- by default ZERO new concept pages: creating is the exception, not the rule',
+      '- create a NEW concept page only for knowledge that is durable, product-specific and genuinely distinct from any existing page',
+      '- reuse or update an existing concept page before creating a near-duplicate: if a candidate subject matches an existing page, UPDATE it, do not create a twin',
+      '- the NUMBER of new pages must be justified by the content, not uniform: unrelated documents should yield different counts; a similar count across unrelated documents is a sign of over-creation and should be folded back into existing subjects',
       '- a characteristic that only makes sense for this one document stays in the source note',
-      '- more than three new concept pages requires an explicit rationale per extra page',
+      '- zero new pages is a correct and common answer',
+      '- at most three new concept pages, each beyond the necessary minimum requiring an explicit rationale',
       '- never create a page for a one-off datum or for a documentary rubric of the source',
       '- never create one page per heading of the source document',
       '',
