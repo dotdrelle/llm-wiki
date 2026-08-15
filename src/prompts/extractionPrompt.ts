@@ -3,7 +3,7 @@ import { EXTRACTION_IMPORTANCE, EXTRACTION_SCOPES } from '../ingest/extractionSc
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
 /** Version du prompt, portée par le cache d'extraction. */
-export const EXTRACTION_PROMPT_VERSION = 1;
+export const EXTRACTION_PROMPT_VERSION = 2;
 
 /*
  Prompt d'extraction : lire, pas écrire.
@@ -41,6 +41,10 @@ export function buildExtractionPrompt(args: {
       '- any subject, fact or relation that is not present in the fragment you were given',
       '',
       'Subject ids are local to this fragment ("s1", "s2", ...). They are not paths and never become paths here.',
+      'relations[].from and relations[].to are subject ids, taken verbatim from subjects[]. Never reuse a fact id (E01, ...), an inline label, or a path.',
+      'facts[].subject and mainSubject must also be subject ids declared in subjects[], never a fact id, a label, or a path.',
+      'If a relation cannot point at a declared subject id, omit that relation instead of inventing a target.',
+      'Declare every subject you will reference in subjects[], even where its page will live later.',
       `Every subject declares a scope (${scopes}) and an importance (${importance}) with a short rationale.`,
       'Scope guidance:',
       '- source: only meaningful inside a note about this specific document',

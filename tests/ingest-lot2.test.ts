@@ -36,12 +36,50 @@ function extraction(label: string): SourceExtraction {
 }
 
 describe('contrat d’extraction du Lot 2', () => {
-  it('refuse chemins locaux implicites et références à des sujets inconnus', () => {
+  it('refuse un identifiant de sujet qui est un chemin', () => {
+    // Structurel : un `subjects[].id` doit être un identifiant local (`s1`, ...),
+    // jamais un chemin. La dégradation n'intervient que sur les RÉFÉRENCES, pas
+    // sur la déclaration elle-même.
     expect(sourceExtractionSchema.safeParse({
-      facts: [{ statement: 'Fait', subject: 'absent', citation: 'raw/ingested/a.md' }],
+      facts: [],
       subjects: [{ id: 'wiki/concepts/a.md', label: 'A', scope: 'product', rationale: 'x' }],
       relations: [],
+      mainSubject: null,
+    }).success).toBe(false);
+  });
+
+  it('dégrade les références à des sujets inconnus sans rejeter la source', () => {
+    // Un modèle peut référencer un id de fait, un libellé ou une cible absente de
+    // `subjects[]`. Ces références sont écartées et journalisées ; la source ne
+    // doit pas être perdue pour un repère que personne ne peut résoudre.
+    const parsed = sourceExtractionSchema.parse({
+      facts: [
+        { statement: 'Fait rattaché', subject: 's1', citation: 'raw/ingested/a.md' },
+        { statement: 'Fait orphelin', subject: 'E01', citation: 'raw/ingested/a.md' },
+      ],
+      subjects: [{
+        id: 's1', label: 'Anaplan', scope: 'product', importance: 'core', rationale: 'Sujet explicite.',
+      }],
+      relations: [{ from: 's1', to: 's1', kind: 'mentions' }, { from: 's1', to: 'E01', kind: 'mentions' }],
       mainSubject: 'absent',
+    });
+    expect(parsed.facts.map((fact) => fact.subject)).toEqual(['s1', null]);
+    expect(parsed.relations).toHaveLength(1);
+    expect(parsed.relations[0]?.to).toBe('s1');
+    expect(parsed.mainSubject).toBeNull();
+    expect(parsed._dangling).toEqual({ orphanedRelations: 1, orphanedFacts: 1 });
+  });
+
+  it('traite un id de sujet malformé comme une erreur structurelle, pas une référence orpheline', () => {
+    // La dégradation ne couvre que les RÉFÉRENCES (relations, `mainSubject`,
+    // `facts[].subject`). Un sujet DÉCLARÉ à l'id mal formé reste une erreur de
+    // structure : on ne peut pas accepter un identifiant que le contrat de sujet
+    // lui-même refuse.
+    expect(sourceExtractionSchema.safeParse({
+      facts: [],
+      subjects: [{ id: 'ma forme', label: 'A', scope: 'product', importance: 'core', rationale: 'x' }],
+      relations: [],
+      mainSubject: null,
     }).success).toBe(false);
   });
 

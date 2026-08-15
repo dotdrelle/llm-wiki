@@ -62,8 +62,15 @@ export const extractedFactSchema = z.preprocess((value) => {
   };
 }, z.object({
   statement: nonEmpty,
-  /** Sujet local auquel le fait se rattache, quand il y en a un. */
-  subject: localId.nullish().transform((value) => value ?? null),
+  /*
+   Sujet local auquel le fait se rattache, quand il y en a un.
+
+   Contraint volontairement à une simple chaîne et pas à `localId` : un modèle
+   peut attacher le fait à un identifiant de forme imparfaite. La purge
+   référentielle ci-dessous résout l'éligibilité (cible inconnue → sujet
+   écarté) sans perdre la source pour une forme douteuse.
+  */
+  subject: z.string().trim().min(1).nullish().transform((value) => value ?? null),
   /** Chemin de citation canonique, tel que fourni dans le message utilisateur. */
   citation: nonEmpty,
 }));
@@ -110,8 +117,8 @@ export const extractedRelationSchema = z.preprocess((value) => {
     kind: relation.kind ?? relation.type ?? relation.relation ?? relation.predicate,
   };
 }, z.object({
-  from: localId,
-  to: localId,
+  from: z.string().trim().min(1).nullish().transform((value) => value ?? null),
+  to: z.string().trim().min(1).nullish().transform((value) => value ?? null),
   kind: nonEmpty,
 }));
 
@@ -122,12 +129,32 @@ export const extractedRelationSchema = z.preprocess((value) => {
  qui est manifestement le même champ évite un rejet — et donc un appel de plus —
  pour une différence de vocabulaire qui ne change aucun sens.
 */
+/*
+ Purge référentielle : dégrader, jamais rejeter.
+
+ Les relations et le sujet principal ne référencent un sujet que s'ils en
+ reprennent l'identifiant déclaré. Un modèle peut émettre une cible qui n'est
+ pas un identifiant déclaré — id de fait, libellé, chemin. Rejeter la source
+ ferait payer un appel en vain et perdrait un document entier pour un repère
+ que personne ne peut résoudre. La purge écarte les références orphelines et
+ les journalise ; les faits, sujets et relations valides survivent.
+
+ Renvoyer une référence orpheline au lieu de rejeter suit la même discipline
+ que `validateConsolidation` : une erreur de STRUCTURE bloque, une réserve
+ sémantique est visible sans empêcher de publier.
+*/
 export const sourceExtractionSchema = z.preprocess(
   (value) => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
     const candidate = value as Record<string, unknown>;
+    const rawFacts = Array.isArray(candidate.facts ?? candidate.statements ?? candidate.findings)
+      ? (candidate.facts ?? candidate.statements ?? candidate.findings) as unknown[]
+      : [];
     const rawSubjects = Array.isArray(candidate.subjects ?? candidate.candidates ?? candidate.topics)
       ? (candidate.subjects ?? candidate.candidates ?? candidate.topics) as unknown[]
+      : [];
+    const rawRelations = Array.isArray(candidate.relations ?? candidate.links)
+      ? (candidate.relations ?? candidate.links) as unknown[]
       : [];
     const declaredMain = candidate.mainSubject ?? candidate.main_subject ?? candidate.primarySubject ?? null;
     const resolvedMain = typeof declaredMain === 'string'
@@ -139,14 +166,77 @@ export const sourceExtractionSchema = z.preprocess(
             && label.trim().localeCompare(declaredMain.trim(), undefined, { sensitivity: 'base' }) === 0;
         })
       : null;
+
+    const idOf = (raw: unknown): string | null => {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+      const subject = raw as Record<string, unknown>;
+      const id = subject.id ?? subject.subjectId ?? subject.subject_id ?? subject.key;
+      if (typeof id !== 'string') return null;
+      const trimmed = id.trim();
+      // Seuls les identifiants de forme `localId` survivront la validation du
+      // sujet (`extractedSubjectSchema.id`). Un sujet à l'id mal formé sera
+      // rejeté par le contrat un peu plus bas ; il ne doit donc pas rendre une
+      // relation ou un `mainSubject` « résolu » alors que son sujet n'existera
+      // jamais.
+      if (!trimmed || !localId.safeParse(trimmed).success) return null;
+      return trimmed;
+    };
+    const subjectIds = new Set<string>();
+    for (const raw of rawSubjects) {
+      const id = idOf(raw);
+      if (id) subjectIds.add(id);
+    }
+    const isKnown = (ref: unknown): ref is string =>
+      typeof ref === 'string' && ref.trim().length > 0 && subjectIds.has(ref.trim());
+
+    let orphanedRelations = 0;
+    let orphanedFacts = 0;
+    const relations: unknown[] = [];
+    for (const raw of rawRelations) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+      const relation = raw as Record<string, unknown>;
+      const from = relation.from ?? relation.source ?? relation.sourceId
+        ?? relation.fromSubject ?? relation.sourceSubject ?? relation.subject1 ?? relation.subject;
+      const to = relation.to ?? relation.target ?? relation.targetId
+        ?? relation.toSubject ?? relation.targetSubject ?? relation.subject2 ?? relation.object;
+      if (isKnown(from) && isKnown(to)) {
+        relations.push(raw);
+      } else {
+        orphanedRelations += 1;
+      }
+    }
+    const facts: unknown[] = [];
+    for (const raw of rawFacts) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+      const fact = raw as Record<string, unknown>;
+      const subject = fact.subject ?? fact.subjectId ?? fact.subject_id;
+      if (subject === undefined || subject === null || isKnown(subject)) {
+        // Le fait lui-même est conservé tel quel ; son rattachement est déjà
+        // valide ou absent.
+        facts.push(raw);
+      } else {
+        // Fait exploitable, rattachement brisé : on garde le fait, on écarte
+        // seulement l'identifiant orphelin. La consolidation perd le lien, pas
+        // le contenu.
+        orphanedFacts += 1;
+        facts.push({ ...fact, subject: null });
+      }
+    }
+
+    const mainSubject = resolvedMain && typeof resolvedMain === 'object'
+      ? ((resolvedMain as Record<string, unknown>).id as string | undefined) ?? null
+      : typeof declaredMain === 'string' && isKnown(declaredMain) ? declaredMain : null;
+
     return {
       ...candidate,
-      facts: candidate.facts ?? candidate.statements ?? candidate.findings ?? [],
-      subjects: candidate.subjects ?? candidate.candidates ?? candidate.topics ?? [],
-      relations: candidate.relations ?? candidate.links ?? [],
-      mainSubject: resolvedMain && typeof resolvedMain === 'object'
-        ? (resolvedMain as Record<string, unknown>).id
-        : declaredMain,
+      facts,
+      subjects: rawSubjects,
+      relations,
+      mainSubject,
+      // Visible, jamais bloquant : la trace explique ce qui a été écarté.
+      ...(orphanedRelations > 0 || orphanedFacts > 0
+        ? { _dangling: { orphanedRelations, orphanedFacts } }
+        : {}),
     };
   },
   z.object({
@@ -155,33 +245,20 @@ export const sourceExtractionSchema = z.preprocess(
     relations: z.array(extractedRelationSchema).default([]),
     /** Identité du sujet principal quand elle est explicite dans le fragment. */
     mainSubject: localId.nullish().transform((value) => value ?? null),
+    /** Compteurs de référence ignorées : à usage de journal, jamais bloquant. */
+    _dangling: z.object({
+      orphanedRelations: z.number().int().min(0).default(0),
+      orphanedFacts: z.number().int().min(0).default(0),
+    }).optional(),
   }).superRefine((extraction, context) => {
-    const ids = new Set(extraction.subjects.map((subject) => subject.id));
     const duplicateIds = extraction.subjects
       .map((subject) => subject.id)
       .filter((id, index, all) => all.indexOf(id) !== index);
     for (const id of new Set(duplicateIds)) {
       context.addIssue({ code: 'custom', path: ['subjects'], message: `identifiant local en double : ${id}` });
     }
-    extraction.facts.forEach((fact, index) => {
-      if (fact.subject && !ids.has(fact.subject)) {
-        context.addIssue({ code: 'custom', path: ['facts', index, 'subject'], message: `sujet local inconnu : ${fact.subject}` });
-      }
-    });
-    extraction.relations.forEach((relation, index) => {
-      if (!ids.has(relation.from)) {
-        context.addIssue({ code: 'custom', path: ['relations', index, 'from'], message: `sujet local inconnu : ${relation.from}` });
-      }
-      if (!ids.has(relation.to)) {
-        context.addIssue({ code: 'custom', path: ['relations', index, 'to'], message: `sujet local inconnu : ${relation.to}` });
-      }
-    });
-    if (extraction.mainSubject && !ids.has(extraction.mainSubject)) {
-      context.addIssue({ code: 'custom', path: ['mainSubject'], message: `sujet principal inconnu : ${extraction.mainSubject}` });
-    }
   }),
 );
-
 export type ExtractedFact = z.infer<typeof extractedFactSchema>;
 export type ExtractedSubject = z.infer<typeof extractedSubjectSchema>;
 export type ExtractedRelation = z.infer<typeof extractedRelationSchema>;
@@ -213,6 +290,9 @@ export function mergeExtractions(extractions: SourceExtraction[]): SourceExtract
       subjects.push({ ...subject, id: qualify(subject.id) });
     }
     for (const relation of extraction.relations) {
+      // Une relation sans extrémités résolues n'apporte rien à la fusion :
+      // la purger ici, comme à l'extraction, garde chaque lot libre d'idées.
+      if (!relation.from || !relation.to) continue;
       relations.push({ ...relation, from: qualify(relation.from), to: qualify(relation.to) });
     }
     if (extraction.mainSubject) mainSubjects.push(qualify(extraction.mainSubject));

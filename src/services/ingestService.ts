@@ -475,6 +475,14 @@ export class IngestService {
                   subjects: extraction.subjects.length,
                   facts: extraction.facts.length,
                 });
+                if (extraction._dangling && (extraction._dangling.orphanedRelations > 0 || extraction._dangling.orphanedFacts > 0)) {
+                  await this.logger.warn('ingest:extract-dangling', {
+                    source: source.relativePath,
+                    cached: true,
+                    ...extraction._dangling,
+                    advice: 'Des références (relations, sujets de faits) vers des identifiants non déclarés ont été écartées sans rejeter la source.',
+                  });
+                }
                 return { extraction };
               }
             }
@@ -548,6 +556,14 @@ export class IngestService {
               subjects: canonicalExtraction.subjects.length,
               facts: canonicalExtraction.facts.length,
             });
+            if (canonicalExtraction._dangling && (canonicalExtraction._dangling.orphanedRelations > 0 || canonicalExtraction._dangling.orphanedFacts > 0)) {
+              await this.logger.warn('ingest:extract-dangling', {
+                source: source.relativePath,
+                pack: `${sectionIndex + 1}/${plan.packs.length}`,
+                ...canonicalExtraction._dangling,
+                advice: 'Des références (relations, sujets de faits) vers des identifiants non déclarés ont été écartées sans rejeter la source.',
+              });
+            }
             return { extraction: canonicalExtraction, ...(retry.retries > 0 && { retry }) };
           },
         );
