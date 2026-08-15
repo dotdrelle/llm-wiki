@@ -1,7 +1,8 @@
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import type { AppConfig, IngestCommandOptions } from '../types.ts';
-import { IngestService } from '../services/ingestService.ts';
+import { INGEST_PLAN_FILE_VERSION, IngestService } from '../services/ingestService.ts';
 import { LLMService } from '../services/llmService.ts';
 import { RefreshService } from '../services/refreshService.ts';
 import { RetrievalService } from '../services/retrievalService.ts';
@@ -226,10 +227,20 @@ export default async function ingestCmd(
 async function writeIngestPlan(rootDir: string, results: Awaited<ReturnType<IngestService['ingest']>>) {
   const dir = path.join(rootDir, '.wiki', 'ingest-plans');
   await mkdir(dir, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const relative = path.posix.join('.wiki', 'ingest-plans', `ingest-${stamp}.json`);
+  // Deterministic plan filename: hashing the *sorted* source paths makes a
+  // given input set always name its plan file the same way. This is the
+  // contract `agent-wiki-production`'s `_ingest_plan_ref` predicts exactly
+  // (`ingest-{sha256(sorted paths \n-joined)[:16]}.json`), so a replan of the
+  // same files overwrites the previous plan instead of accumulating one
+  // timestamped file per run (D1/D2), and a retried `ingest_plan` lands on a
+  // stable, reusable artifact rather than a fresh name each time (B1).
+  const sources = results.filter((result) => !result.failed).map((result) => result.source);
+  const sorted = [...sources].sort();
+  const digest = createHash('sha256').update(sorted.join('\n'), 'utf8').digest('hex').slice(0, 16);
+  const relative = path.posix.join('.wiki', 'ingest-plans', `ingest-${digest}.json`);
   const absolute = path.join(rootDir, relative);
   const payload = {
+    schemaVersion: INGEST_PLAN_FILE_VERSION,
     generatedAt: new Date().toISOString(),
     sources: results
       .filter((result) => !result.failed)

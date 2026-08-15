@@ -1,10 +1,29 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { ingestPlanSchema } from '../config/schema.ts';
-import { buildIngestPrompt } from '../prompts/ingestPrompt.ts';
+import { buildConsolidationPrompt, CONSOLIDATION_PROMPT_VERSION } from '../prompts/consolidationPrompt.ts';
+import { buildExtractionPrompt, EXTRACTION_PROMPT_VERSION } from '../prompts/extractionPrompt.ts';
 import { buildPromptContext } from '../prompts/systemPreamble.ts';
+import {
+  consolidationPlanSchema,
+  CONSOLIDATION_SCHEMA_VERSION,
+  type ConsolidationPlan,
+} from '../ingest/consolidationSchema.ts';
+import {
+  consolidationCacheName,
+  extractionCacheName,
+  IngestCache,
+} from '../ingest/extractionCache.ts';
+import {
+  EXTRACTION_SCHEMA_VERSION,
+  mergeExtractions,
+  sourceExtractionSchema,
+  type SourceExtraction,
+} from '../ingest/extractionSchema.ts';
+import { collectionFromSourcePath, readProvenance } from '../ingest/provenance.ts';
+import { validateConsolidation } from '../ingest/validateConsolidation.ts';
 import { hashText } from '../utils/hash.ts';
-import { normalizeSourceBody, splitSourceSections } from '../utils/markdown.ts';
+import { normalizeSourceBody } from '../utils/markdown.ts';
+import { planSourcePacks } from '../utils/sourcePacking.ts';
 import { mapWithConcurrency } from '../utils/concurrency.ts';
 import { withFileLock } from '../utils/fs.ts';
 import { publishCorpusRevision } from '../graph/wiki/taxonomy/publish.ts';
@@ -33,8 +52,7 @@ import {
 } from './sourceRegistry.ts';
 
 interface IngestSectionResult {
-  operations: WikiOperation[];
-  summary: string;
+  extraction: SourceExtraction;
   retry?: IngestRetryInfo;
 }
 
@@ -47,9 +65,12 @@ interface PlannedIngestSource {
 }
 
 interface PlannedIngestFile {
+  schemaVersion?: number;
   generatedAt?: string;
   sources?: PlannedIngestSource[];
 }
+
+export const INGEST_PLAN_FILE_VERSION = 2;
 
 function classifyIngestError(error: unknown): IngestRetryInfo['classification'] {
   const message = error instanceof Error ? error.message : String(error);
@@ -241,6 +262,8 @@ export class IngestService {
   private readonly refresh: RefreshService;
   private readonly logger: TraceLogger;
 
+  private readonly injectedCache?: IngestCache;
+
   constructor(
     config: AppConfig,
     workspace: WorkspaceService,
@@ -248,7 +271,16 @@ export class IngestService {
     retrieval: RetrievalService,
     refresh: RefreshService,
     logger: TraceLogger,
+    /*
+     Cache de reprise, injectable.
+
+     Injecté plutôt que construit en dur pour qu'un appelant sans disque — un
+     test unitaire, un dry-run éphémère — puisse le désactiver. Le défaut reste
+     le comportement du produit : reprendre sans repayer.
+    */
+    cache?: IngestCache,
   ) {
+    this.injectedCache = cache;
     this.config = config;
     this.workspace = workspace;
     this.llm = llm;
@@ -296,6 +328,16 @@ export class IngestService {
 
     const results: IngestResult[] = [];
     const rejectedPaths = new Set(options?.reject ?? []);
+    /*
+     Cache de reprise, partagé par toutes les sources du lot.
+
+     Il n'est jamais présenté comme un plan approuvable : seul le plan consolidé
+     final passe en revue. Son rôle est qu'une coupure ne repaie pas des appels
+     dont la réponse était valide.
+    */
+    const cache = this.injectedCache
+      ?? new IngestCache(this.workspace.paths.rootDir, options?.dryRun !== true);
+    if (!options?.dryRun) await cache.collect().catch(() => 0);
 
     for (let i = 0; i < sourcePaths.length; i++) {
       const sourcePath = sourcePaths[i];
@@ -362,213 +404,360 @@ export class IngestService {
 
         const { maxChunkChars, maxSourceChars } = this.config.retrieval;
         const rawBody = normalizeSourceBody(source.body ?? '');
-        const sections =
-          rawBody.length > maxSourceChars
-            ? splitSourceSections(rawBody, maxSourceChars)
-            : [rawBody];
+        /*
+         Un seul planificateur, pour l'ingestion comme pour `wiki doctor`.
 
-        if (sections.length > 1) {
-          await this.logger.info('ingest:split', {
-            source: source.relativePath,
-            sections: sections.length,
-            originalChars: rawBody.length,
-            maxSourceChars,
-          });
-        }
+         Le découpage précédent coupait à chaque titre sans jamais
+         ré-empaqueter : le nombre d'appels LLM dépendait de la mise en forme du
+         document, pas de son volume. Deux documents frères recevaient un nombre
+         très différent de décisions, et l'écart de concepts qui en résultait se
+         lisait ensuite comme une différence de richesse.
+        */
+        const plan = planSourcePacks(rawBody, { maxChars: maxSourceChars });
+        const sections = plan.packs.map((pack) => pack.text);
+
+        // Journalisé pour TOUTE source, même non découpée : c'est la mesure qui
+        // permet d'expliquer après coup pourquoi une source a coûté N appels.
+        await this.logger.info('ingest:pack', {
+          source: source.relativePath,
+          ...plan.diagnostics,
+        });
 
         const sourcePagePath = path.posix.join('wiki', 'sources', `${source.slug}.md`);
+        /*
+         L'identité de la source entre dans la clé de cache, pas seulement son
+         contenu.
+
+         Deux documents distincts peuvent avoir un corps identique — un modèle de
+         fiche rempli deux fois, un export dupliqué. Sans le chemin de citation
+         dans la clé, le plan consolidé de l'un serait resservi à l'autre, avec
+         ses citations et sa note de source : une page attribuée au mauvais
+         document, et rien pour le signaler.
+        */
+        const sourceHash = hashText(`${source.archiveCitationPath}\u0000${rawBody}`);
+        const modelId = this.config.llm.model;
+
+        /*
+         Phase 1 — N extractions concurrentes, aucune écriture.
+
+         Chaque lot rapporte des faits et des sujets candidats avec des
+         identifiants locaux. Aucun ne peut créer, mettre à jour ni supprimer
+         quoi que ce soit : c'est ce qui rend impossible le défaut d'origine, où
+         deux fragments écrivaient deux pages du même concept sans se voir.
+        */
         const sectionResults = await mapWithConcurrency(
-          sections,
+          plan.packs,
           this.config.limits.maxInFlightRequests ?? 3,
-          async (body, sectionIndex): Promise<IngestSectionResult> => {
-            const sectionLabel =
-              sections.length > 1
-                ? ` (section ${sectionIndex + 1}/${sections.length})`
-                : '';
-
-            const contextStartedAt = Date.now();
-            const relevantPages = await this.retrieval.search(body || source.title, {
-              limit: this.config.retrieval.maxContextFiles,
-              includeRaw: false,
+          async (pack, sectionIndex): Promise<IngestSectionResult> => {
+            const cacheName = extractionCacheName({
+              sourceHash,
+              packIndex: sectionIndex,
+              packHash: hashText(pack.text),
+              model: modelId,
+              promptVersion: EXTRACTION_PROMPT_VERSION,
+              schemaVersion: EXTRACTION_SCHEMA_VERSION,
             });
-            await this.logger.info('ingest:context', {
-              source: source.relativePath,
-              pagesFound: relevantPages.length,
-              durationMs: Date.now() - contextStartedAt,
-              ...(sections.length > 1 && {
-                section: `${sectionIndex + 1}/${sections.length}`,
-              }),
-            });
-            if (this.logger.debugEnabled) {
-              await this.logger.debug('ingest:context-pages', {
-                source: source.relativePath,
-                pages: relevantPages.map((page) => ({
-                  path: page.page.relativePath,
-                  score: page.score,
-                })),
-              });
+            const cached = await cache.read<unknown>(cacheName);
+            if (cached) {
+              const parsed = sourceExtractionSchema.safeParse(cached);
+              if (parsed.success) {
+                const extraction = {
+                  ...parsed.data,
+                  facts: parsed.data.facts.map((fact) => ({
+                    ...fact,
+                    citation: source.archiveCitationPath,
+                  })),
+                };
+                await this.logger.info('ingest:extract', {
+                  source: source.relativePath,
+                  pack: `${sectionIndex + 1}/${plan.packs.length}`,
+                  cached: true,
+                  subjects: extraction.subjects.length,
+                  facts: extraction.facts.length,
+                });
+                return { extraction };
+              }
             }
 
-            const relevantPagesTruncated = relevantPages.filter(
-              (r) => (r.chunk?.content ?? r.page.content).length > maxChunkChars,
-            ).length;
-            if (relevantPagesTruncated > 0) {
-              await this.logger.info('ingest:truncation', {
-                source: source.relativePath,
-                field: 'relevantPages',
-                truncatedPageCount: relevantPagesTruncated,
-                truncatedToCharsPerPage: maxChunkChars,
-              });
-            }
-
-            const prompt = buildIngestPrompt({
+            const prompt = buildExtractionPrompt({
               source,
-              body,
-              indexContent: await this.workspace.readIndex(),
-              relevantPages,
-              sourcePagePath,
-              maxChunkChars,
+              body: pack.text,
+              headingPath: pack.headingPath,
+              packIndex: sectionIndex,
+              packTotal: plan.packs.length,
               ctx: buildPromptContext(this.config, { profileSection }),
             });
             await this.logger.info('ingest:prompt', {
               source: source.relativePath,
+              phase: 'extract',
               promptChars: prompt.system.length + prompt.user.length,
-              relevantPages: relevantPages.length,
-              sourcePagePath,
-              ...(sections.length > 1 && {
-                section: `${sectionIndex + 1}/${sections.length}`,
-              }),
+              pack: `${sectionIndex + 1}/${plan.packs.length}`,
             });
 
-            const progress = {
-              sectionIndex,
-              sectionTotal: sections.length,
-            };
+            const progress = { sectionIndex, sectionTotal: plan.packs.length };
             options?.onSourceLlm?.(sourcePath, i, sourcePaths.length, progress);
-            const { value: plan, retry } = await withRetry(
+            /*
+             Un lot qui échoue est retenté seul.
+
+             `mapWithConcurrency` isole les lots, et le cache conserve ceux qui
+             ont abouti : une reprise ne repaie jamais un appel déjà valide.
+            */
+            const { value: extraction, retry } = await withRetry(
               () =>
                 this.llm.completeJson(
                   {
                     ...prompt,
-                    label: 'ingest_plan',
+                    label: 'ingest_extract',
                     logger: this.logger,
                     traceData: { source: source.relativePath },
                     onUsage: (usage) => {
-                      options?.onSourceUsage?.(
-                        sourcePath,
-                        i,
-                        sourcePaths.length,
-                        usage,
-                        progress,
-                      );
+                      options?.onSourceUsage?.(sourcePath, i, sourcePaths.length, usage, progress);
                     },
                   },
-                  ingestPlanSchema,
+                  sourceExtractionSchema,
                 ),
               {
                 onRetry: async (retryInfo) => {
                   await this.logger.warn('ingest:retry', {
                     source: source.relativePath,
+                    phase: 'extract',
                     attempts: retryInfo.attempts,
                     retries: retryInfo.retries,
                     classification: retryInfo.classification,
                     nextDelayMs: retryInfo.nextDelayMs,
                     message: retryInfo.message,
-                    ...(sections.length > 1 && {
-                      section: `${sectionIndex + 1}/${sections.length}`,
-                    }),
+                    pack: `${sectionIndex + 1}/${plan.packs.length}`,
                   });
                 },
               },
             );
-            await this.logger.info('ingest:plan', {
-              source: source.relativePath,
-              operations: plan.operations.length,
-              summary: plan.summary,
-              ...(sections.length > 1 && {
-                section: `${sectionIndex + 1}/${sections.length}`,
-              }),
-            });
 
-            const normalizedOperations = await this.workspace.normalizeWikiOperations(
-              plan.operations,
-            );
-            const {
-              operations: citationSafeOperations,
-              rewrittenCitations,
-              unreconciledCitations,
-            } = enforceSourceCitationPath(
-              normalizedOperations,
-              source.archiveCitationPath,
-            );
-            const rewrittenPaths = normalizedOperations
-              .map((operation, index) => ({
-                from: plan.operations[index]?.path,
-                to: operation.path,
-              }))
-              .filter((rewrite) => rewrite.from !== rewrite.to);
-            await this.logger.info('ingest:normalize', {
-              source: source.relativePath,
-              operations: citationSafeOperations.length,
-              rewrittenPaths: rewrittenPaths.length,
-              rewrittenCitations,
-              unreconciledCitations,
-            });
-            if (this.logger.debugEnabled && rewrittenPaths.length > 0) {
-              await this.logger.debug('ingest:normalize-paths', {
-                source: source.relativePath,
-                rewrites: rewrittenPaths,
-              });
-            }
-            if (rewrittenCitations > 0) {
-              await this.logger.info('ingest:citation-path-rewrite', {
-                source: source.relativePath,
-                archivePath: source.archiveCitationPath,
-                rewrittenCitations,
-              });
-            }
-            if (unreconciledCitations > 0) {
-              await this.logger.warn('ingest:citation-unreconciled', {
-                source: source.relativePath,
-                archivePath: source.archiveCitationPath,
-                unreconciledCitations,
-              });
-            }
-
-            const operationCounts = citationSafeOperations.reduce(
-              (counts, operation) => {
-                counts[operation.type] += 1;
-                return counts;
-              },
-              { create: 0, update: 0, delete: 0 },
-            );
-            await this.logger.info('ingest:operations', {
-              source: source.relativePath,
-              create: operationCounts.create,
-              update: operationCounts.update,
-              delete: operationCounts.delete,
-            });
-
-            if (options?.dryRun) {
-              await this.logger.info('ingest:dry-run', {
-                source: source.relativePath,
-                ...(sections.length > 1 && {
-                  section: `${sectionIndex + 1}/${sections.length}`,
-                }),
-              });
-            }
-
-            return {
-              operations: citationSafeOperations,
-              summary:
-                sections.length > 1 ? `${plan.summary}${sectionLabel}` : plan.summary,
-              ...(retry.retries > 0 && { retry }),
+            const canonicalExtraction: SourceExtraction = {
+              ...extraction,
+              facts: extraction.facts.map((fact) => ({
+                ...fact,
+                citation: source.archiveCitationPath,
+              })),
             };
+
+            await cache.write(cacheName, canonicalExtraction);
+            await this.logger.info('ingest:extract', {
+              source: source.relativePath,
+              pack: `${sectionIndex + 1}/${plan.packs.length}`,
+              cached: false,
+              subjects: canonicalExtraction.subjects.length,
+              facts: canonicalExtraction.facts.length,
+            });
+            return { extraction: canonicalExtraction, ...(retry.retries > 0 && { retry }) };
           },
         );
-        const allOperations = sectionResults.flatMap((result) => result.operations);
-        const lastSummary = sectionResults.at(-1)?.summary ?? '';
-        sourceRetry = sectionResults.findLast((result) => result.retry)?.retry;
+
+        /*
+         Phase 2 — une consolidation, qui voit toute la source.
+
+         L'ordre de terminaison des extractions ne doit pas changer le résultat :
+         `mapWithConcurrency` rend les résultats dans l'ordre des lots, et la
+         fusion préfixe les identifiants par leur index. Deux exécutions
+         concurrentes différentes produisent donc le même prompt.
+        */
+        const merged = mergeExtractions(sectionResults.map((result) => result.extraction));
+        const collection = collectionFromSourcePath(source.relativePath);
+        const warmPages = await this.retrieval.warmCache();
+        const existingSourceNote = warmPages.find(
+          (page) => page.relativePath === sourcePagePath,
+        )?.content ?? null;
+
+        const contextStartedAt = Date.now();
+        const relevantPages = await this.retrieval.search(
+          [source.title, ...merged.subjects.map((subject) => subject.label)].join(' '),
+          { limit: this.config.retrieval.maxContextFiles, includeRaw: false },
+        );
+        await this.logger.info('ingest:context', {
+          source: source.relativePath,
+          pagesFound: relevantPages.length,
+          durationMs: Date.now() - contextStartedAt,
+        });
+
+        const inventory = relevantPages.map((result) => {
+          const provenance = readProvenance(result.page.content);
+          return {
+            path: result.page.relativePath,
+            title: result.page.name,
+            subject: provenance.subject,
+            scope: provenance.scope,
+            excerpt: (result.chunk?.content ?? result.page.content)
+              .replace(/\s+/g, ' ')
+              .slice(0, maxChunkChars),
+          };
+        });
+
+        const indexContent = await this.workspace.readIndex();
+        const consolidationPrompt = buildConsolidationPrompt({
+          source,
+          extraction: merged,
+          sourcePagePath,
+          existingSourceNote,
+          inventory,
+          indexContent,
+          collection,
+          ctx: buildPromptContext(this.config, { profileSection }),
+        });
+        const consolidationCacheKey = consolidationCacheName({
+          sourceHash,
+          extractionsHash: hashText(JSON.stringify(merged)),
+          inventoryHash: hashText(JSON.stringify([inventory, indexContent, existingSourceNote])),
+          model: modelId,
+          promptVersion: CONSOLIDATION_PROMPT_VERSION,
+          schemaVersion: CONSOLIDATION_SCHEMA_VERSION,
+        });
+        await this.logger.info('ingest:prompt', {
+          source: source.relativePath,
+          phase: 'consolidate',
+          promptChars: consolidationPrompt.system.length + consolidationPrompt.user.length,
+          subjects: merged.subjects.length,
+          facts: merged.facts.length,
+          inventory: inventory.length,
+        });
+
+        let consolidated: ConsolidationPlan | null = null;
+        const cachedPlan = await cache.read<unknown>(consolidationCacheKey);
+        if (cachedPlan) {
+          const parsed = consolidationPlanSchema.safeParse(cachedPlan);
+          if (parsed.success) consolidated = parsed.data;
+        }
+        if (!consolidated) {
+          const { value, retry } = await withRetry(
+            () =>
+              this.llm.completeJson(
+                {
+                  ...consolidationPrompt,
+                  label: 'ingest_consolidate',
+                  logger: this.logger,
+                  traceData: { source: source.relativePath },
+                  onUsage: (usage) => {
+                    options?.onSourceUsage?.(sourcePath, i, sourcePaths.length, usage);
+                  },
+                },
+                consolidationPlanSchema,
+              ),
+            {
+              onRetry: async (retryInfo) => {
+                await this.logger.warn('ingest:retry', {
+                  source: source.relativePath,
+                  phase: 'consolidate',
+                  attempts: retryInfo.attempts,
+                  retries: retryInfo.retries,
+                  classification: retryInfo.classification,
+                  nextDelayMs: retryInfo.nextDelayMs,
+                  message: retryInfo.message,
+                });
+              },
+            },
+          );
+          consolidated = value;
+          if (retry.retries > 0) sourceRetry = retry;
+          await cache.write(consolidationCacheKey, value);
+        }
+
+        /*
+         Normaliser d'ABORD, valider ensuite.
+
+         `normalizeWikiOperations` canonise les chemins que le modèle a écrits —
+         accents, espaces, casse. Valider avant elle reviendrait à comparer la
+         note de source attendue à un chemin que le moteur s'apprête justement à
+         corriger, et à rejeter un plan parfaitement applicable.
+        */
+        const normalizedOperations = await this.workspace.normalizeWikiOperations(
+          consolidated.operations,
+        );
+        // `pages[].path` désigne les mêmes opérations, mais vivait jusque-là
+        // avant la canonisation des chemins. Un modèle proposant un accent ou
+        // une espace recevait donc une opération normalisée et perdait sa
+        // provenance au moment de la jointure. La correspondance par position
+        // est stable : normalizeWikiOperations conserve ordre et cardinalité.
+        const normalizedPathByOriginal = new Map<string, string>();
+        consolidated.operations.forEach((operation, index) => {
+          const normalized = normalizedOperations[index];
+          if (normalized) normalizedPathByOriginal.set(operation.path, normalized.path);
+        });
+        const normalizedPages = (consolidated.pages ?? []).map((page) => ({
+          ...page,
+          path: normalizedPathByOriginal.get(page.path) ?? page.path,
+        }));
+        const {
+          operations: citationSafeOperations,
+          rewrittenCitations,
+          unreconciledCitations,
+        } = enforceSourceCitationPath(normalizedOperations, source.archiveCitationPath);
+        await this.logger.info('ingest:normalize', {
+          source: source.relativePath,
+          operations: citationSafeOperations.length,
+          rewrittenCitations,
+          unreconciledCitations,
+        });
+        if (rewrittenCitations > 0) {
+          await this.logger.info('ingest:citation-path-rewrite', {
+            source: source.relativePath,
+            archivePath: source.archiveCitationPath,
+            rewrittenCitations,
+          });
+        }
+        if (unreconciledCitations > 0) {
+          await this.logger.warn('ingest:citation-unreconciled', {
+            source: source.relativePath,
+            archivePath: source.archiveCitationPath,
+            unreconciledCitations,
+          });
+        }
+
+        const knownPaths = new Set(warmPages.map((page) => page.relativePath));
+        const validation = validateConsolidation(
+          { ...consolidated, operations: citationSafeOperations, pages: normalizedPages },
+          {
+            sourcePagePath,
+            citationPath: source.archiveCitationPath,
+            existingPaths: knownPaths,
+            collection,
+          },
+        );
+        await this.logger.info('ingest:consolidate', {
+          source: source.relativePath,
+          operations: validation.operations.length,
+          errors: validation.errors.length,
+          warnings: validation.warnings.length,
+          summary: consolidated.summary,
+        });
+        for (const warning of validation.warnings) {
+          await this.logger.warn('ingest:consolidate-warning', {
+            source: source.relativePath,
+            path: warning.path,
+            reason: warning.reason,
+          });
+        }
+        if (validation.errors.length) {
+          /*
+           Un plan structurellement invalide n'est pas appliqué à moitié.
+
+           Le rejeter entier laisse la source en attente et le cache
+           d'extraction intact : la reprise ne repaiera que la consolidation.
+          */
+          throw new Error(
+            `Consolidated plan rejected: ${validation.errors
+              .map((issue) => `${issue.path}: ${issue.reason}`)
+              .join('; ')}`,
+          );
+        }
+
+        if (options?.dryRun) {
+          await this.logger.info('ingest:dry-run', { source: source.relativePath });
+        }
+
+
+        // Un seul plan, celui de la consolidation. Le `flatMap` d'avant
+        // concaténait les décisions de chaque fragment sans les confronter.
+        const allOperations = validation.operations;
+        const lastSummary = consolidated.summary;
+        sourceRetry = sourceRetry ?? sectionResults.findLast((result) => result.retry)?.retry;
 
         const existingPages = new Map(
           (await this.retrieval.warmCache()).map((page) => [page.relativePath, page]),
@@ -743,6 +932,13 @@ export class IngestService {
       const absolutePath = this.resolveWorkspacePath(planFile, 'ingest plan file');
       const raw = await readFile(absolutePath, 'utf8');
       const parsed = JSON.parse(raw) as PlannedIngestFile | PlannedIngestSource[];
+      if (!Array.isArray(parsed)
+        && parsed.schemaVersion !== undefined
+        && parsed.schemaVersion !== INGEST_PLAN_FILE_VERSION) {
+        throw new Error(
+          `Unsupported ingest plan version ${parsed.schemaVersion}; expected ${INGEST_PLAN_FILE_VERSION}.`,
+        );
+      }
       const sources = Array.isArray(parsed) ? parsed : parsed.sources;
       if (!Array.isArray(sources)) {
         throw new Error(`Invalid ingest plan file: ${planFile}`);

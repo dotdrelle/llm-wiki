@@ -96,7 +96,22 @@ class MemoryTraceLogger implements TraceLogger {
 
 class PipelineLLMService {
   async completeJson(request: { label?: string; user?: string }): Promise<unknown> {
-    if (request.label === 'ingest_plan') {
+    if (request.label === 'ingest_extract') {
+      return {
+        facts: [{
+          statement: 'Donna centralise les notes et couvre conversion, ingestion, index, build et export.',
+          subject: 's1',
+          citation: 'raw/ingested/product-brief.md',
+        }],
+        subjects: [{
+          id: 's1', label: 'Donna', scope: 'product', importance: 'core',
+          rationale: 'Le produit est le sujet explicite du document.',
+        }],
+        relations: [],
+        mainSubject: 's1',
+      };
+    }
+    if (request.label === 'ingest_consolidate') {
       return {
         summary: 'Ingest converted product brief.',
         operations: [
@@ -123,7 +138,14 @@ class PipelineLLMService {
             ].join('\n'),
           },
         ],
-      } satisfies IngestPlan;
+        pages: [
+          { path: 'wiki/sources/product-brief.md', subject: 'donna', scope: 'source' },
+          {
+            path: 'wiki/concepts/donna-workflow.md', subject: 'donna',
+            scope: 'product', rationale: 'Workflow durable du sujet principal.',
+          },
+        ],
+      } satisfies IngestPlan & { pages: unknown[] };
     }
 
     const ids = [...(request.user ?? '').matchAll(/^## (instruction-\d+)$/gm)].map(

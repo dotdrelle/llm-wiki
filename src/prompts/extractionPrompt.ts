@@ -1,0 +1,73 @@
+import type { SourceDocument } from '../types.ts';
+import { EXTRACTION_IMPORTANCE, EXTRACTION_SCOPES } from '../ingest/extractionSchema.ts';
+import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
+
+/** Version du prompt, portée par le cache d'extraction. */
+export const EXTRACTION_PROMPT_VERSION = 1;
+
+/*
+ Prompt d'extraction : lire, pas écrire.
+
+ Les interdictions ci-dessous ne sont pas des précautions de style. Chacune
+ correspond à un comportement observé du chemin précédent, où le même prompt
+ servait à lire et à décider : une page créée par rubrique du document, un
+ `wiki/index.md` réécrit par chaque lot en parallèle, un concept inventé pour
+ combler ce que le fragment ne disait pas. Retirer la capacité d'écrire retire
+ la tentation de décider.
+*/
+export function buildExtractionPrompt(args: {
+  source: SourceDocument;
+  body: string;
+  /** Titres couverts par ce lot : le contexte, pas une consigne de découpage. */
+  headingPath: string[];
+  packIndex: number;
+  packTotal: number;
+  ctx: PromptContext;
+}): { system: string; user: string } {
+  const scopes = EXTRACTION_SCOPES.join(' | ');
+  const importance = EXTRACTION_IMPORTANCE.join(' | ');
+
+  return {
+    system: [
+      buildSystemPreamble(args.ctx),
+      'You read one fragment of one source document and report what it says.',
+      'You do not decide what the wiki looks like. Another step does that, once, for the whole document.',
+      '',
+      'You MUST NOT output any of the following:',
+      '- file paths, output paths, or page names of any kind',
+      '- create, update or delete operations',
+      '- any change to wiki/index.md',
+      '- one subject per heading or section of the document',
+      '- any subject, fact or relation that is not present in the fragment you were given',
+      '',
+      'Subject ids are local to this fragment ("s1", "s2", ...). They are not paths and never become paths here.',
+      `Every subject declares a scope (${scopes}) and an importance (${importance}) with a short rationale.`,
+      'Scope guidance:',
+      '- source: only meaningful inside a note about this specific document',
+      '- product: belongs to the specific subject this document is about',
+      '- transverse: a dimension shared across several subjects (security, pricing, hosting, ...)',
+      '- workspace: applies to the whole workspace regardless of subject',
+      'Prefer few, well-justified subjects over many thin ones. A heading is not a subject.',
+      'Every fact carries the exact citation path given in the user message, copied verbatim.',
+      'If a fragment states no durable knowledge, return empty arrays. That is a valid answer.',
+      'Return a strict JSON object with { "facts": [], "subjects": [], "relations": [], "mainSubject": string|null } and no extra text.',
+    ].join('\n'),
+    user: [
+      '# Fragment to read',
+      `Citation path (exact — copy this verbatim into every fact): ${args.source.archiveCitationPath}`,
+      `Document title: ${args.source.title}`,
+      args.packTotal > 1
+        ? `Fragment ${args.packIndex + 1} of ${args.packTotal}. Other fragments are read separately; do not try to summarize the whole document.`
+        : 'This fragment is the whole document.',
+      args.headingPath.length ? `Heading path: ${args.headingPath.join(' > ')}` : '',
+      '',
+      '## Frontmatter',
+      JSON.stringify(args.source.frontmatter, null, 2),
+      '',
+      '## Body',
+      args.body || '(Empty body)',
+    ]
+      .filter((line) => line !== '')
+      .join('\n'),
+  };
+}

@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { IngestService } from '../src/services/ingestService.ts';
+import { IngestCache } from '../src/ingest/extractionCache.ts';
 import type { LLMService } from '../src/services/llmService.ts';
 import type { RefreshService } from '../src/services/refreshService.ts';
 import type { RetrievalService } from '../src/services/retrievalService.ts';
@@ -17,6 +18,17 @@ import type {
   WikiPage,
 } from '../src/types.ts';
 import { slugifyPath } from '../src/utils/path.ts';
+
+/**
+ * Cache désactivé pour les tests unitaires.
+ *
+ * Le cache d'ingestion écrit de vrais fichiers ; sous horloge simulée, ces
+ * entrées/sorties ne se résolvent pas et le test se fige. Ces tests portent sur
+ * le contrat d'ingestion, pas sur la reprise, qui a ses propres tests.
+ */
+function disabledCache(): IngestCache {
+  return new IngestCache('/tmp/wiki-unused', false);
+}
 
 function createConfig(): AppConfig {
   return {
@@ -69,7 +81,10 @@ class FakeWorkspaceService {
   appliedOperations: WikiOperation[] = [];
   appliedBatches: WikiOperation[][] = [];
   archivedSources: string[] = [];
-  paths = { rootDir: '/tmp/wiki' };
+  // Racine unique par instance : le cache d'ingestion écrit réellement sur
+  // disque, et un répertoire partagé ferait fuiter le plan d'un test dans un
+  // autre — exactement le faux positif qui a masqué la clé de cache incomplète.
+  paths = { rootDir: path.join(os.tmpdir(), `wiki-ingest-${Math.random().toString(36).slice(2)}`) };
   sourcePaths = ['/tmp/wiki/raw/untracked/note.md'];
   sourceBody = 'Body.';
   detectedEncoding?: SourceDocument['detectedEncoding'];
@@ -91,7 +106,10 @@ class FakeWorkspaceService {
     sourcePath = '/tmp/wiki/raw/untracked/note.md',
   ): Promise<SourceDocument> {
     const fileName = sourcePath.split('/').at(-1) ?? 'note.md';
-    const slug = fileName.replace(/\.md$/, '');
+    // Le vrai workspace slugifie le titre (`slugify(title || fileName)`) ; le
+    // double doit en faire autant, sinon le chemin de note de source qu'il
+    // annonce n'est pas celui que l'ingestion attend.
+    const slug = slugifyPath(fileName).replace(/\.md$/, '');
     return {
       absolutePath: sourcePath,
       relativePath: `raw/untracked/${fileName}`,
@@ -147,28 +165,69 @@ class FakeWorkspaceService {
   async appendLog(): Promise<void> {}
 }
 
+/*
+ Double de LLM à DEUX phases, comme le contrat du Lot 2.
+
+ Une source coûte désormais N extractions — une par lot d'empaquetage — puis
+ exactement une consolidation. Les doubles distinguent les deux : compter les
+ appels sans les distinguer masquerait précisément ce que le lot corrige, à
+ savoir qu'un fragment ne décide plus des fichiers.
+*/
 class FakeLLMService {
   calls = 0;
+  extractionCalls = 0;
+  planCalls = 0;
 
-  async completeJson(): Promise<IngestPlan> {
+  /**
+   * Chemin de note de source annoncé par le prompt de consolidation.
+   *
+   * Un vrai modèle le lit dans son message ; le double doit en faire autant,
+   * sinon il renvoie un plan pour un autre document et la validation le rejette
+   * — à juste titre.
+   */
+  sourceNotePath = 'wiki/sources/note.md';
+
+  async completeJson(request: { label?: string; user?: string }): Promise<unknown> {
     this.calls += 1;
+    if (request?.label === 'ingest_extract') {
+      this.extractionCalls += 1;
+      return this.extract();
+    }
+    const declared = /^Source note path: (.+)$/m.exec(request?.user ?? '')?.[1];
+    if (declared) this.sourceNotePath = declared.trim();
+    this.planCalls += 1;
+    return this.plan();
+  }
+
+  protected async extract(): Promise<unknown> {
+    return {
+      facts: [{ statement: 'Fait documenté.', citation: 'raw/ingested/note.md' }],
+      subjects: [
+        { id: 's1', label: 'Sujet', scope: 'source', importance: 'core', rationale: 'Cœur du document.' },
+      ],
+      relations: [],
+      mainSubject: 's1',
+    };
+  }
+
+  protected async plan(): Promise<IngestPlan & { pages?: unknown[] }> {
     return {
       summary: 'Updated wiki from note.',
       operations: [
         {
           type: 'create',
-          path: 'wiki/sources/note.md',
+          path: this.sourceNotePath,
           content: '# Note\n\n[src: raw/ingested/note.md]\n',
         },
       ],
+      pages: [{ path: this.sourceNotePath, subject: 'note', scope: 'source' }],
     };
   }
 }
 
 class FailingOnceLLMService extends FakeLLMService {
-  async completeJson(): Promise<IngestPlan> {
-    this.calls += 1;
-    if (this.calls === 1) {
+  protected async plan(): Promise<IngestPlan> {
+    if (this.planCalls === 1) {
       throw new Error('model returned malformed JSON');
     }
     return {
@@ -176,7 +235,7 @@ class FailingOnceLLMService extends FakeLLMService {
       operations: [
         {
           type: 'create',
-          path: 'wiki/sources/second.md',
+          path: this.sourceNotePath,
           content: '# Second\n\n[src: raw/ingested/second.md]\n',
         },
       ],
@@ -185,9 +244,8 @@ class FailingOnceLLMService extends FakeLLMService {
 }
 
 class FailingTwiceThenSuccessLLMService extends FakeLLMService {
-  async completeJson(): Promise<IngestPlan> {
-    this.calls += 1;
-    if (this.calls <= 2) {
+  protected async plan(): Promise<IngestPlan> {
+    if (this.planCalls <= 2) {
       throw new Error('model returned malformed JSON');
     }
     return {
@@ -195,7 +253,7 @@ class FailingTwiceThenSuccessLLMService extends FakeLLMService {
       operations: [
         {
           type: 'create',
-          path: 'wiki/sources/second.md',
+          path: this.sourceNotePath,
           content: '# Second\n\n[src: raw/ingested/second.md]\n',
         },
       ],
@@ -204,15 +262,13 @@ class FailingTwiceThenSuccessLLMService extends FakeLLMService {
 }
 
 class ValidationFailingLLMService extends FakeLLMService {
-  async completeJson(): Promise<IngestPlan> {
-    this.calls += 1;
+  protected async plan(): Promise<IngestPlan> {
     throw new Error('Invalid structured JSON returned by the model.');
   }
 }
 
 class BadCitationLLMService extends FakeLLMService {
-  async completeJson(): Promise<IngestPlan> {
-    this.calls += 1;
+  protected async plan(): Promise<IngestPlan> {
     return {
       summary: 'Updated wiki from source with malformed citation.',
       operations: [
@@ -228,8 +284,7 @@ class BadCitationLLMService extends FakeLLMService {
 }
 
 class UnreconciledCitationLLMService extends FakeLLMService {
-  async completeJson(): Promise<IngestPlan> {
-    this.calls += 1;
+  protected async plan(): Promise<IngestPlan> {
     return {
       summary: 'Updated wiki from source with malformed citation marker.',
       operations: [
@@ -260,15 +315,14 @@ class FakeRetrievalService {
 }
 
 class SectionedLLMService extends FakeLLMService {
-  async completeJson(): Promise<IngestPlan> {
-    this.calls += 1;
+  protected async plan(): Promise<IngestPlan> {
     return {
-      summary: `Updated section ${this.calls}.`,
+      summary: `Updated section ${this.planCalls}.`,
       operations: [
         {
           type: 'update',
-          path: 'wiki/sources/note.md',
-          content: `# Note\n\nSection ${this.calls}. [src: raw/ingested/note.md]\n`,
+          path: this.sourceNotePath,
+          content: `# Note\n\nSection ${this.planCalls}. [src: raw/ingested/note.md]\n`,
         },
       ],
     };
@@ -279,9 +333,22 @@ class ConcurrentIngestLLMService extends FakeLLMService {
   active = 0;
   maxActive = 0;
 
-  async completeJson(): Promise<IngestPlan> {
-    this.calls += 1;
-    const call = this.calls;
+  protected async extract(): Promise<unknown> {
+    const call = this.extractionCalls;
+    this.active += 1;
+    this.maxActive = Math.max(this.maxActive, this.active);
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    this.active -= 1;
+    return {
+      facts: [{ statement: `Fait ${call}.`, citation: 'raw/ingested/note.md' }],
+      subjects: [],
+      relations: [],
+      mainSubject: null,
+    };
+  }
+
+  protected async plan(): Promise<IngestPlan> {
+    const call = this.planCalls;
     this.active += 1;
     this.maxActive = Math.max(this.maxActive, this.active);
     await new Promise((resolve) => setTimeout(resolve, 15));
@@ -291,7 +358,7 @@ class ConcurrentIngestLLMService extends FakeLLMService {
       operations: [
         {
           type: 'update',
-          path: 'wiki/sources/note.md',
+          path: this.sourceNotePath,
           content: `# Note\n\nSection ${call}. [src: raw/ingested/note.md]\n`,
         },
       ],
@@ -376,6 +443,7 @@ describe('ingest service', () => {
       new FakeRetrievalService() as unknown as RetrievalService,
       new FailingRefreshService() as unknown as RefreshService,
       logger,
+      disabledCache(),
     );
 
     const results = await service.ingest([], { refresh: true });
@@ -402,6 +470,7 @@ describe('ingest service', () => {
       new FakeRetrievalService() as unknown as RetrievalService,
       { refresh: async () => [] } as unknown as RefreshService,
       logger,
+      disabledCache(),
     );
 
     const results = await service.ingest([], {});
@@ -438,6 +507,7 @@ describe('ingest service', () => {
       new FakeRetrievalService() as unknown as RetrievalService,
       { refresh: async () => [] } as unknown as RefreshService,
       logger,
+      disabledCache(),
     );
 
     await service.ingest([], {});
@@ -463,6 +533,7 @@ describe('ingest service', () => {
       new FakeRetrievalService() as unknown as RetrievalService,
       { refresh: async () => [] } as unknown as RefreshService,
       logger,
+      disabledCache(),
     );
 
     await service.ingest([], {});
@@ -504,21 +575,42 @@ describe('ingest service', () => {
       retrieval as unknown as RetrievalService,
       { refresh: async () => [] } as unknown as RefreshService,
       logger,
+      disabledCache(),
     );
 
     const results = await service.ingest([], {});
 
-    expect(llm.calls).toBe(2);
+    /*
+     Deux lots d'empaquetage, deux extractions — puis UNE consolidation.
+
+     C'est l'invariant du Lot 2 : un fragment ne décide plus des fichiers. Avant,
+     chaque section produisait ses propres opérations, concaténées sans être
+     confrontées ; deux sections d'un même document pouvaient donc écrire deux
+     notes de source, ou deux pages du même concept.
+    */
+    expect(llm.extractionCalls).toBe(2);
+    expect(llm.planCalls).toBe(1);
     expect(workspace.appliedBatches).toHaveLength(1);
-    expect(workspace.appliedBatches[0]).toHaveLength(2);
+    // Une seule note de source, quel que soit le nombre de lots.
+    expect(workspace.appliedBatches[0]).toHaveLength(1);
     expect(retrieval.invalidateCalls).toBe(1);
     expect(workspace.archivedSources).toEqual(['raw/untracked/note.md']);
-    expect(results[0].plan?.operations).toHaveLength(2);
-    expect(workspace.readIndexAppliedCounts).toEqual([0, 0]);
-    expect(logger.entries.some((entry) => entry.event === 'ingest:split')).toBe(true);
+    expect(results[0].plan?.operations).toHaveLength(1);
+    expect(workspace.readIndexAppliedCounts).toEqual([0]);
+    /*
+     Le plan d'empaquetage est journalisé pour toute source, découpée ou non :
+     c'est ce qui permet d'expliquer après coup pourquoi une source a coûté N
+     appels, au lieu de constater le nombre sans pouvoir le justifier.
+    */
+    const pack = logger.entries.find((entry) => entry.event === 'ingest:pack');
+    expect(pack?.data).toMatchObject({ packs: 2, maxChars: 120, truncatedBlocks: 0 });
+    expect((pack?.data as { packChars: number[] }).packChars).toHaveLength(2);
+    expect(
+      logger.entries.find((entry) => entry.event === 'ingest:consolidate')?.data,
+    ).toMatchObject({ operations: 1, errors: 0 });
     expect(
       logger.entries.find((entry) => entry.event === 'ingest:apply')?.data,
-    ).toMatchObject({ atomic: true, sections: 2 });
+    ).toMatchObject({ atomic: true });
   });
 
   it('limits concurrent ingest section LLM calls', async () => {
@@ -551,15 +643,17 @@ describe('ingest service', () => {
       retrieval as unknown as RetrievalService,
       { refresh: async () => [] } as unknown as RefreshService,
       logger,
+      disabledCache(),
     );
 
     const results = await service.ingest([], {});
 
-    expect(llm.calls).toBe(4);
+    expect(llm.extractionCalls).toBe(4);
+    expect(llm.planCalls).toBe(1);
     expect(llm.maxActive).toBeLessThanOrEqual(2);
     expect(llm.maxActive).toBeGreaterThan(1);
     expect(workspace.appliedBatches).toHaveLength(1);
-    expect(results[0].plan?.operations).toHaveLength(4);
+    expect(results[0].plan?.operations).toHaveLength(1);
   });
 
   it('returns review diffs for planned wiki operations', async () => {
@@ -581,6 +675,7 @@ describe('ingest service', () => {
       new FakeRetrievalService(workspace.wikiPages) as unknown as RetrievalService,
       { refresh: async () => [] } as unknown as RefreshService,
       logger,
+      disabledCache(),
     );
 
     const results = await service.ingest([], { dryRun: true });
@@ -608,6 +703,7 @@ describe('ingest service', () => {
       new FakeRetrievalService() as unknown as RetrievalService,
       { refresh: async () => [] } as unknown as RefreshService,
       logger,
+      disabledCache(),
     );
 
     const results = await service.ingest([], { reject: ['wiki/sources/note.md'] });
@@ -637,14 +733,15 @@ describe('ingest service', () => {
         new FakeRetrievalService() as unknown as RetrievalService,
         { refresh: async () => [] } as unknown as RefreshService,
         logger,
+        disabledCache(),
       );
 
       const ingest = service.ingest([], {});
-      await vi.waitFor(() => expect(llm.calls).toBe(1));
+      await vi.waitFor(() => expect(llm.planCalls).toBe(1));
       await vi.advanceTimersByTimeAsync(3000);
       const results = await ingest;
 
-      expect(llm.calls).toBe(2);
+      expect(llm.planCalls).toBe(2);
       expect(results).toHaveLength(1);
       expect(results[0].failed).toBeUndefined();
       expect(results[0].retry).toMatchObject({
@@ -673,11 +770,12 @@ describe('ingest service', () => {
       new FakeRetrievalService() as unknown as RetrievalService,
       { refresh: async () => [] } as unknown as RefreshService,
       logger,
+      disabledCache(),
     );
 
     const results = await service.ingest([], {});
 
-    expect(llm.calls).toBe(1);
+    expect(llm.planCalls).toBe(1);
     expect(results[0]).toMatchObject({
       source: 'raw/untracked/note.md',
       failed: true,
@@ -702,15 +800,16 @@ describe('ingest service', () => {
       new FakeRetrievalService() as unknown as RetrievalService,
       { refresh: async () => [] } as unknown as RefreshService,
       logger,
+      disabledCache(),
     );
 
     try {
       const ingest = service.ingest([], {});
-      await vi.waitFor(() => expect(llm.calls).toBe(1));
+      await vi.waitFor(() => expect(llm.planCalls).toBe(1));
       await vi.advanceTimersByTimeAsync(3000);
       const results = await ingest;
 
-      expect(llm.calls).toBe(3);
+      expect(llm.planCalls).toBe(3);
       expect(results).toHaveLength(2);
       expect(results[0]).toMatchObject({
         source: 'raw/untracked/first.md',
@@ -781,6 +880,7 @@ describe('ingest service', () => {
       new FakeRetrievalService() as unknown as RetrievalService,
       { refresh: async () => [] } as unknown as RefreshService,
       logger,
+      disabledCache(),
     );
 
     const results = await service.applyPlannedIngest(['.wiki/ingest-plans/plan.json']);
@@ -813,6 +913,7 @@ describe('ingest service', () => {
       new FakeRetrievalService() as unknown as RetrievalService,
       { refresh: async () => [] } as unknown as RefreshService,
       logger,
+      disabledCache(),
     );
 
     const results = await service.ingest([], {});
@@ -826,3 +927,5 @@ describe('ingest service', () => {
     expect(workspace.archivedSources).toEqual([]);
   });
 });
+
+
