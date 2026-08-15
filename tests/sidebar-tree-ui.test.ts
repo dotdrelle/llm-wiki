@@ -61,6 +61,31 @@ describe('a single set of attributes for the whole panel', () => {
     expect(html).not.toContain('data-tree-new-folder="raw/untracked"');
   });
 
+  it('keeps empty folders visible and deletable in every tree', async () => {
+    for (const directory of [
+      'wiki/empty-wiki',
+      'templates/empty-template',
+      'build-context/empty-context',
+      'deliverables/empty-build',
+      'raw/untracked/empty-pending',
+    ]) {
+      await mkdir(path.join(root, directory), { recursive: true });
+    }
+
+    const html = await renderSidebar(root);
+
+    for (const directory of [
+      'wiki/empty-wiki',
+      'templates/empty-template',
+      'build-context/empty-context',
+      'deliverables/empty-build',
+      'raw/untracked/empty-pending',
+    ]) {
+      expect(html, directory).toContain(`data-tree-id="${directory}"`);
+      expect(html, directory).toContain(`data-tree-delete="${directory}"`);
+    }
+  });
+
   it('makes a section root neither draggable nor deletable', async () => {
     const html = await renderSidebar(root);
 

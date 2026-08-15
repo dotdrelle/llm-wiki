@@ -32,6 +32,7 @@ const NAV_PATTERNS = [
   'templates/**/*.md',
   'build-context/**/*.md',
 ];
+const NAV_DIRECTORY_PATTERNS = ['wiki/**', 'deliverables/**', 'templates/**', 'build-context/**'];
 const EDITABLE_DIRS = ['wiki', 'deliverables', 'templates', 'build-context', 'raw/untracked'];
 
 function escapeHtml(s: string): string {
@@ -616,6 +617,21 @@ function addNavPath(root: NavTreeNode, relativePath: string): void {
   current.files.push(relativePath);
 }
 
+function addNavDirectory(root: NavTreeNode, relativePath: string): void {
+  let current = root;
+  const nodeParts: string[] = [];
+  for (const part of toPosix(relativePath).split('/').filter(Boolean)) {
+    nodeParts.push(part);
+    const nodePath = nodeParts.join('/');
+    let next = current.dirs.get(part);
+    if (!next) {
+      next = createNavNode(part, nodePath);
+      current.dirs.set(part, next);
+    }
+    current = next;
+  }
+}
+
 function renderNavNode(node: NavTreeNode, depth = 0): string {
   const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name));
   const files = [...node.files].sort((a, b) => a.localeCompare(b));
@@ -674,15 +690,19 @@ function isEditableTreePath(nodePath: string): boolean {
 }
 
 async function renderUntrackedSidebar(rootDir: string): Promise<string> {
-  const files = (await fg('raw/untracked/**/*.md', { cwd: rootDir, dot: false, onlyFiles: true }))
-    .map(toPosix)
-    .sort((a, b) => a.localeCompare(b));
+  const [foundFiles, foundDirectories] = await Promise.all([
+    fg('raw/untracked/**/*.md', { cwd: rootDir, dot: false, onlyFiles: true }),
+    fg('raw/untracked/**', { cwd: rootDir, dot: false, onlyDirectories: true }),
+  ]);
+  const files = foundFiles.map(toPosix).sort((a, b) => a.localeCompare(b));
+  const directories = foundDirectories.map(toPosix).sort((a, b) => a.localeCompare(b));
   const count = files.length;
   const open = count > 0 ? ' open' : '';
-  const items = count > 0
+  const items = count > 0 || directories.some((dir) => dir !== 'raw' && dir !== 'raw/untracked')
     ? (() => {
         const titles = new Map<string, string>();
         const tree = createNavNode('', '');
+        for (const directory of directories) addNavDirectory(tree, directory);
         for (const file of files) addNavPath(tree, file);
         return Promise.all(files.map(async (file) => {
         let title = humanTitle(file);
@@ -732,11 +752,15 @@ function renderUntrackedNode(
 }
 
 export async function renderSidebar(rootDir: string, precomputedNavFiles?: string[]): Promise<string> {
-  const [navFiles, untrackedPanel] = await Promise.all([
+  const [navFiles, navDirectories, untrackedPanel] = await Promise.all([
     precomputedNavFiles ?? fg(NAV_PATTERNS, { cwd: rootDir, dot: false }),
+    fg(NAV_DIRECTORY_PATTERNS, { cwd: rootDir, dot: false, onlyDirectories: true }),
     renderUntrackedSidebar(rootDir),
   ]);
   const root = createNavNode('workspace', '');
+  for (const directory of navDirectories.map(toPosix).sort()) {
+    addNavDirectory(root, directory);
+  }
   for (const file of navFiles.map(toPosix).sort()) {
     addNavPath(root, file);
   }
