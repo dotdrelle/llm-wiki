@@ -49,6 +49,35 @@ as multi-tenant application boundaries. The manager runtime binds to
 `127.0.0.1` by default; exposed-host mode (`--host 0.0.0.0`) is an explicit
 deployment choice, not the default.
 
+### Lock model already in production
+
+The production agent (`agent-wiki-production`) already implements the per-run
+lock model that the multi-user boundary above names as a requirement. It is
+deliberately asymmetric in *severity* but symmetric in *detection*, and this
+design is what multi-user ownership must preserve, not reinvent:
+
+- **`workspace-write` is exclusive and excludes *everything*** — another write
+  *and* any concurrent read. This serializes `ingest_apply` by design: two
+  applies can never hold the workspace write lock at once, so no write starts
+  while a parallel plan's read locks are still held.
+- **`read` is shared but per-holder**: each read-only job (e.g. a per-file
+  `ingest_plan`) gets its own lock file, so several reads coexist instead of
+  colliding on a single per-scope file. The detection is still symmetric — a
+  write candidate always sees an active read as a conflict.
+- **Exclusive scopes are single-file mutexes** created atomically
+  (`open(..., "x")`); the second acquirer fails with `target_busy` rather than
+  blocking. `deliverable:*`, `template:*` and `ingest-plan:<file>` are a finer
+  grain below `workspace-write` for the build/export jobs.
+- **Isolation is structural and per-workspace**: locks are scoped by
+  `_WORKSPACE_NAME` under the agent's state directory, so the agent of one
+  workspace never sees, and is never blocked by, the lock of another workspace.
+  Two parallel runs across different workspaces do not contend.
+
+This is the foundation the multi-user model must keep: one workspace at a time
+gets a write claim, reads are safe to run in parallel, and no cross-workspace
+coupling is introduced by the lock namespace. The multi-user work adds identity,
+run ownership and audit on top; it must not weaken this exclusivity.
+
 ## Packaging contract
 
 Supported local runtime:
