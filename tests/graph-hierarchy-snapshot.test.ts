@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadWikiGraphSnapshot } from '../src/graph/wiki/overview.ts';
 import { publishGeneration, writeGeneration } from '../src/graph/wiki/taxonomy/store.ts';
 import { REGISTRY_SCHEMA_VERSION, type TaxonomyRegistry } from '../src/graph/wiki/taxonomy/schema.ts';
+import { withCoverage } from './support/registryCoverage.ts';
 
 /*
  La hiérarchie doit arriver JUSQU'AUX DONNÉES servies, pas seulement exister
@@ -30,7 +31,7 @@ async function page(name: string, group: string) {
 }
 
 function registry(): TaxonomyRegistry {
-  return {
+  return withCoverage({
     schemaVersion: REGISTRY_SCHEMA_VERSION,
     revision: 1,
     corpus: 'sha1:abc',
@@ -44,7 +45,7 @@ function registry(): TaxonomyRegistry {
       'wiki/concepts/alpha.md': { primaryCommunity: 'cmty_alpha' },
       'wiki/concepts/beta.md': { primaryCommunity: 'cmty_beta' },
     },
-  };
+  });
 }
 
 beforeEach(async () => {

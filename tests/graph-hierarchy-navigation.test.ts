@@ -5,12 +5,13 @@ import { graphUiFiltersScript } from '../src/graph/wiki/ui/core/filtersScript.ts
 import { graphAppScript } from '../src/graph/wiki/ui/script.ts';
 import { communityHierarchy } from '../src/graph/wiki/taxonomy/lookup.ts';
 import { REGISTRY_SCHEMA_VERSION, type TaxonomyRegistry } from '../src/graph/wiki/taxonomy/schema.ts';
+import { withCoverage } from './support/registryCoverage.ts';
 
 const canvas = canvasExplorerScript();
 const selection = graphUiSelectionScript();
 
 function registry(): TaxonomyRegistry {
-  return {
+  return withCoverage({
     schemaVersion: REGISTRY_SCHEMA_VERSION,
     revision: 3,
     corpus: 'sha1:abc',
@@ -26,7 +27,7 @@ function registry(): TaxonomyRegistry {
       'wiki/b.md': { primaryCommunity: 'cmty_board' },
       'wiki/c.md': { primaryCommunity: 'cmty_seul' },
     },
-  };
+  });
 }
 
 describe('arbre exposé au client', () => {

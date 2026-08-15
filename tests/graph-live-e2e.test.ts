@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { KNOWLEDGE_ETAG_ALGORITHM, knowledgeEtag } from '../src/graph/wiki/taxonomy/knowledge.ts';
 import { publishCorpusRevision } from '../src/graph/wiki/taxonomy/publish.ts';
 import { createGraphEventHub } from '../src/serve/sse/graphEvents.ts';
 import { loadWikiGraphSnapshot } from '../src/graph/wiki/overview.ts';
@@ -170,14 +171,21 @@ describe('circuit complet, taxonomie déterministe', () => {
     }
   });
 
-  it('conserve la même empreinte de corpus que le snapshot', async () => {
+  it('publie l’empreinte de connaissance, pas celle du graphe complet', async () => {
     await publishCorpusRevision(root);
 
     const marker = await readMarker(root);
-    const snapshot = await loadWikiGraphSnapshot({ rootDir: root, workspace: 'demo' });
 
-    // Deux empreintes calculées autrement rendraient la comparaison de
-    // péremption sous verrou sans valeur.
-    expect(marker?.corpus).toBe(snapshot.structureEtag);
+    /*
+     Le marqueur porte l'empreinte de CONNAISSANCE.
+
+     Elle est calculée par la même fonction que celle sur laquelle la synthèse
+     publie — sans quoi le compare-and-swap comparerait deux grandeurs
+     différentes. Le `structureEtag` du snapshot, lui, décrit le rendu du graphe
+     entier : il a raison de bouger quand un template change, et c'est
+     précisément pour cela qu'il ne peut pas décider d'une péremption.
+    */
+    expect(marker?.corpus).toBe(await knowledgeEtag(root));
+    expect(marker?.corpusAlgorithm).toBe(KNOWLEDGE_ETAG_ALGORITHM);
   });
 });

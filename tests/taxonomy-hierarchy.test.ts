@@ -7,6 +7,7 @@ import {
   type RegistryCommunity,
   type TaxonomyRegistry,
 } from '../src/graph/wiki/taxonomy/schema.ts';
+import { withCoverage } from './support/registryCoverage.ts';
 
 const community = (
   id: string,
@@ -18,14 +19,14 @@ function registry(
   communities: RegistryCommunity[],
   assignments: TaxonomyRegistry['assignments'],
 ): TaxonomyRegistry {
-  return {
+  return withCoverage({
     schemaVersion: REGISTRY_SCHEMA_VERSION,
     revision: 1,
     corpus: 'sha1:abc',
     languages: ['fr'],
     communities,
     assignments,
-  };
+  });
 }
 
 /** L'arborescence attendue : domaine → solutions → pages. */

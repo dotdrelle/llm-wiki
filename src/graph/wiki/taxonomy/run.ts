@@ -1,6 +1,14 @@
 import { consolidate } from './consolidation.ts';
+import { computeCoverage, mergeSampledPages } from './coverage.ts';
 import { checkDistribution } from './distribution.ts';
-import { anchorCommunities, deprecateMissing, membersByCommunity, type AnchoredCommunity } from './identity.ts';
+import { KNOWLEDGE_ETAG_ALGORITHM, knowledgeEtag } from './knowledge.ts';
+import {
+  adoptByLabel,
+  anchorCommunities,
+  deprecateMissing,
+  membersByCommunity,
+  type AnchoredCommunity,
+} from './identity.ts';
 import { buildTaxonomyInventory, type TaxonomyInventory } from './inventory.ts';
 import {
   clearDirtyFlag,
@@ -11,6 +19,7 @@ import {
   writeGeneration,
 } from './store.ts';
 import {
+  communityLabel,
   REGISTRY_SCHEMA_VERSION,
   validateRegistry,
   type RegistryCommunity,
@@ -31,11 +40,26 @@ import { loadWikiGraphSnapshot } from '../overview.ts';
 /** Tentatives de re-synthèse avant abandon. D7 exige que le rejet soit borné. */
 export const MAX_SYNTHESIS_ATTEMPTS = 3;
 
+/**
+ * Familles soumises au modèle en une passe.
+ *
+ * Une borne explicite, parce que les deux issues silencieuses sont pires : un
+ * prompt qui gonfle jusqu'à saturer la fenêtre, ou un échantillonnage de
+ * familles que rien n'annonce. Au-delà, la synthèse rend `deferred` avec le
+ * diagnostic `family-limit` et le registre précédent reste actif.
+ *
+ * La valeur dépasse le nombre de familles mesuré sur le corpus de référence
+ * après union transitoire, avec une marge : un `deferred/family-limit` sur ce
+ * corpus est un échec de calibrage à corriger, pas un résultat acceptable.
+ */
+export const MAX_SYNTHESIS_FAMILIES = 320;
+
 export type SynthesizeDeps = {
   /** Complétion structurée du LLM configuré. Absente ⇒ rien n'est tenté. */
   propose?: (request: { system: string; user: string }) => Promise<unknown>;
   excerpts?: Map<string, string>;
   maxPages?: number;
+  maxFamilies?: number;
   now?: number;
 };
 
@@ -49,14 +73,30 @@ export type SynthesizeOutcome =
       leaves: number;
       /** Réserves de qualité : publiées, jamais bloquantes. */
       warnings: string[];
+      /**
+       * Pages du corpus encore jamais soumises après cette passe.
+       *
+       * Non nul ⇒ une passe supplémentaire sur la MÊME empreinte de corpus a
+       * quelque chose à classer. C'est le pilote de la vidange, que la capacité
+       * de production consomme ; le moteur, lui, ne boucle jamais seul.
+       */
+      outsideSample: number;
       inventory: TaxonomyInventory;
     }
   | { status: 'unchanged'; revision: number }
   | { status: 'skipped'; reason: 'no_llm' | 'empty_corpus' }
   | { status: 'rejected'; issues: string[] }
   | { status: 'stale' }
-  /** `reason` n'est renseigné que pour un échec inattendu, jamais pour un verrou. */
-  | { status: 'deferred'; reason?: string };
+  /**
+   * `reason` n'est renseigné que pour un échec inattendu, jamais pour un verrou.
+   * `code` nomme les reports prévus — `family-limit` aujourd'hui.
+   *
+   * `deferred` est un résultat de SYNTHÈSE ; `pending-classification` est un
+   * état de PAGE. Les deux vocabulaires ne sont jamais employés l'un pour
+   * l'autre : confondre un report avec une couverture est précisément ce qui a
+   * rendu le § 0.3 illisible.
+   */
+  | { status: 'deferred'; reason?: string; code?: 'family-limit' };
 
 /**
  * Synthèse complète : inventaire → proposition → validation → registre publié.
@@ -121,12 +161,69 @@ async function runSynthesis(
   const validated = active?.registry ? validateRegistry(active.registry) : null;
   const previous: TaxonomyRegistry | null = validated?.ok ? validated.registry : null;
 
+  /*
+   L'empreinte de connaissance, jamais celle du graphe complet.
+
+   `snapshot.structureEtag` réagit aux templates, contextes et deliverables : une
+   synthèse calculée sur elle se serait déclarée périmée au premier build, et le
+   compare-and-swap aurait rejeté une proposition parfaitement valide.
+  */
+  const corpus = await knowledgeEtag(rootDir);
+
+  /*
+   Ce que la passe précédente a déjà jugé oriente celle-ci.
+
+   Les pages déjà couvertes passent en fin d'échantillon — leur affectation se
+   reconduit sans nouvel appel — et celles restées hors échantillon passent
+   devant. C'est ce qui vide `outside-sample` au lieu de l'entretenir.
+
+   Mais tout cela n'a de sens que sur la MÊME empreinte de corpus. Un registre
+   périmé ne prouve aucune couverture : une page qu'il déclarait classée a pu
+   être réécrite depuis, et la reléguer en fin d'échantillon à ce titre
+   reviendrait à la repousser dehors précisément parce qu'elle a changé. Une
+   empreinte nouvelle repart donc sans aucune page réputée couverte.
+  */
+  const continues = previous?.corpus === corpus
+    && previous?.corpusAlgorithm === KNOWLEDGE_ETAG_ALGORITHM;
+  const covered = continues
+    ? new Set(Object.keys(previous?.assignments ?? {}))
+    : new Set<string>();
+  const previouslyOutsideSample = continues
+    ? new Set((previous?.corpusPageIds ?? []).filter(
+        (page) => !(previous?.sampledPageIds ?? []).includes(page),
+      ))
+    : new Set<string>();
+
   const inventory = buildTaxonomyInventory(snapshot, {
     language: options.language,
     registry: previous,
     excerpts: deps.excerpts,
     maxPages: deps.maxPages,
+    corpus,
+    covered,
+    previouslyOutsideSample,
   });
+
+  /*
+   Borne de familles : un report explicite plutôt qu'un prompt qui déborde.
+
+   Tant que `subject`/`collection` n'existent pas, l'inventaire peut se
+   fragmenter au point de rendre la proposition ingérable. Dépasser la borne
+   n'est pas une erreur du corpus : c'est un budget insuffisant pour décider
+   honnêtement. On le dit, on garde le registre précédent, et personne ne paie
+   un appel surdimensionné.
+  */
+  const maxFamilies = deps.maxFamilies ?? MAX_SYNTHESIS_FAMILIES;
+  if (inventory.families.length > maxFamilies) {
+    await noteFailure(rootDir, corpus, [
+      `family-limit: ${inventory.families.length} familles pour une borne de ${maxFamilies}`,
+    ]);
+    return {
+      status: 'deferred',
+      code: 'family-limit',
+      reason: `${inventory.families.length} familles au-delà de la borne ${maxFamilies}`,
+    };
+  }
 
   let proposal: TaxonomyProposal | null = null;
   let warnings: Array<{ path: string; reason: string }> = [];
@@ -209,6 +306,33 @@ async function runSynthesis(
   const revision = (marker?.revision ?? 0) + 1;
 
   /*
+   Communautés préservées : vivantes, mais jamais soumises à ce tour.
+
+   Calculées AVANT l'ancrage, parce que l'ancrage en a besoin. Une passe de
+   vidange soumet un échantillon disjoint du précédent : le modèle ne voit pas
+   ces communautés et peut proposer leur homonyme. Sans les connaître ici, on
+   publiait deux sœurs de même nom — registre invalide, synthèse rejetée, vidange
+   impossible à terminer.
+  */
+  const corpusPages = new Set(inventory.corpusPageIds);
+  const untouched: RegistryCommunity[] = [];
+  if (sampledPages && previous) {
+    const previousMembers = membersByCommunity(previous);
+    for (const community of previous.communities) {
+      if (community.deprecated) continue;
+      const members = previousMembers.get(community.id) ?? [];
+      const stillLive = members.filter((page) => corpusPages.has(page));
+      if (!stillLive.length) continue;
+      if (stillLive.some((page) => sampledPages.has(page))) continue;
+      untouched.push(community);
+    }
+  }
+  const preservedAt = (parentId: string | null) => untouched
+    .filter((community) => (community.parentCommunity ?? null) === parentId)
+    .map((community) => ({ id: community.id, label: communityLabel(community, options.language) }));
+  const adoptedIds = new Set<string>();
+
+  /*
    Ancrage et consolidation PAR NIVEAU.
 
    Les deux fonctions supposent une liste plate de pairs. Les appeler sur
@@ -218,11 +342,16 @@ async function runSynthesis(
    ses enfants. On isole donc chaque niveau, et pour les feuilles chaque
    fratrie, ce qui donne au passage la bonne portée d'unicité.
   */
-  const anchoredDomains = anchorCommunities(
-    proposal.domains.map((domain) => ({ members: membersByDomain.get(domain.id) ?? [], label: domain.label })),
-    registryAtLevel(previous, 'root', undefined, sampledPages),
-    { now: deps.now },
+  const domainAdoption = adoptByLabel(
+    anchorCommunities(
+      proposal.domains.map((domain) => ({ members: membersByDomain.get(domain.id) ?? [], label: domain.label })),
+      registryAtLevel(previous, 'root', undefined, sampledPages),
+      { now: deps.now },
+    ),
+    preservedAt(null),
   );
+  const anchoredDomains = domainAdoption.communities;
+  for (const id of domainAdoption.adopted) adoptedIds.add(id);
   const domainIdByProposal = new Map(
     proposal.domains.map((domain, index) => [domain.id, anchoredDomains[index]!.id]),
   );
@@ -246,11 +375,16 @@ async function runSynthesis(
     const siblings = proposal.communities.filter((community) => community.domain === domain.id);
     const parentId = domainIdByProposal.get(domain.id)!;
     const scope = registryAtLevel(previous, 'leaf', parentId, sampledPages);
-    const anchored = anchorCommunities(
-      siblings.map((community) => ({ members: membersByLeaf.get(community.id) ?? [], label: community.label })),
-      scope,
-      { now: deps.now },
+    const leafAdoption = adoptByLabel(
+      anchorCommunities(
+        siblings.map((community) => ({ members: membersByLeaf.get(community.id) ?? [], label: community.label })),
+        scope,
+        { now: deps.now },
+      ),
+      preservedAt(parentId),
     );
+    const anchored = leafAdoption.communities;
+    for (const id of leafAdoption.adopted) adoptedIds.add(id);
     const consolidated = consolidate(anchored, scope, {
       language: options.language,
       revision,
@@ -325,20 +459,14 @@ async function runSynthesis(
    était visible, en revanche, ont bien été jugées : si le modèle les a
    écartées, c'est une décision, et la dépréciation ordinaire s'applique.
   */
-  const corpusPages = new Set(inventory.corpusPageIds);
-  const untouched: RegistryCommunity[] = [];
-  if (sampledPages && previous) {
-    const previousMembers = membersByCommunity(previous);
-    for (const community of previous.communities) {
-      if (community.deprecated) continue;
-      const members = previousMembers.get(community.id) ?? [];
-      const stillLive = members.filter((page) => corpusPages.has(page));
-      if (!stillLive.length) continue;
-      if (stillLive.some((page) => sampledPages.has(page))) continue;
-      untouched.push(community);
-    }
-  }
-  const untouchedSurvivors: AnchoredCommunity[] = untouched.map((community) => ({
+  /*
+   Une communauté adoptée par son libellé n'est plus « préservée » : elle est
+   redevenue le brouillon courant, avec ses membres et son libellé du tour. La
+   laisser aussi dans la liste des préservées la ferait figurer deux fois dans
+   le registre publié, sous le même identifiant.
+  */
+  const preserved = untouched.filter((community) => !adoptedIds.has(community.id));
+  const untouchedSurvivors: AnchoredCommunity[] = preserved.map((community) => ({
     id: community.id,
     members: [],
     label: '',
@@ -349,7 +477,7 @@ async function runSynthesis(
   // et pointent leur remplaçante, sans quoi une fusion serait indistinguable
   // d'une destruction pour un client qui revient.
   const communities: RegistryCommunity[] = [
-    ...untouched,
+    ...preserved,
       // Un domaine aplati disparaît : son enfant unique le remplace en racine.
       ...consolidatedDomains.communities
         .filter((community) => !collapsedDomains.has(community.id))
@@ -436,23 +564,47 @@ async function runSynthesis(
    corpus. C'est une réserve, pas une erreur : la carte reste juste sur ce
    qu'elle montre, et refuser de publier priverait de tout.
   */
-  const uncovered = inventory.corpusPageIds.filter((page) => !assignments[page]).length;
-  if (uncovered > 0) {
+  const submitted = new Set(inventory.sampledPageIds);
+  const unassigned = inventory.corpusPageIds.filter((page) => !assignments[page]);
+  const neverSubmitted = unassigned.filter((page) => !submitted.has(page)).length;
+  const judged = unassigned.length - neverSubmitted;
+  if (unassigned.length > 0) {
+    // Deux causes, deux phrases : « jamais soumise » est un budget
+    // d'échantillonnage, « soumise et non retenue » est une décision du modèle.
+    // Les additionner sous un seul nombre rendrait le diagnostic inexploitable.
     warnings = [...warnings, {
       path: 'assignments',
-      reason: `${uncovered} page(s) sans affectation sur ${inventory.pageCount}`
-        + ` : corpus soumis tronqué à ${inventory.pages.length} page(s)`
+      reason: `${unassigned.length} page(s) sans affectation sur ${inventory.pageCount}`
+        + ` : ${neverSubmitted} hors échantillon, ${judged} soumise(s) et non retenue(s)`
         + `${carriedOver ? `, ${carriedOver} affectation(s) reconduite(s) de la révision précédente` : ''}`,
     }];
   }
+
+  /*
+   Échantillon CUMULÉ sur une même empreinte de corpus.
+
+   Sans ce cumul, la passe 2 classerait ce que la passe 1 a laissé tout en
+   faisant retomber l'échantillon de la passe 1 dans `outside-sample` : la
+   vidange oscillerait sans jamais converger. Une empreinte nouvelle, elle,
+   repart du corpus qu'elle décrit.
+  */
+  const sampledPageIds = mergeSampledPages({
+    previous,
+    corpus: inventory.corpus,
+    current: inventory.sampledPageIds,
+    corpusPageIds: inventory.corpusPageIds,
+  });
 
   const registry: TaxonomyRegistry = {
     schemaVersion: REGISTRY_SCHEMA_VERSION,
     revision,
     corpus: inventory.corpus,
+    corpusAlgorithm: KNOWLEDGE_ETAG_ALGORITHM,
     languages: [...new Set([...(previous?.languages ?? []), options.language])],
     communities,
     assignments,
+    corpusPageIds: inventory.corpusPageIds,
+    sampledPageIds,
   };
 
   /*
@@ -483,6 +635,7 @@ async function runSynthesis(
   const generation = await writeGeneration(rootDir, registry);
   const outcome = await publishGeneration(rootDir, {
     corpus: inventory.corpus,
+    corpusAlgorithm: KNOWLEDGE_ETAG_ALGORITHM,
     registryRef: generation.ref,
     registryHash: generation.hash,
     expectedCorpus: inventory.corpus,
@@ -512,6 +665,14 @@ async function runSynthesis(
     ).length,
     leaves: leafCommunities.length,
     warnings: warnings.map((issue) => `${issue.path}: ${issue.reason}`),
+    // Ce qui reste à soumettre sur cette même empreinte : le pilote de la
+    // vidange, jamais une accusation de non-classement.
+    outsideSample: computeCoverage({
+      corpus: inventory.corpus,
+      corpusPageIds: inventory.corpusPageIds,
+      marker: outcome.marker,
+      registry,
+    }).counts['outside-sample'],
     inventory,
   };
 }

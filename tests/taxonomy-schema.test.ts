@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { KNOWLEDGE_ETAG_ALGORITHM } from '../src/graph/wiki/taxonomy/knowledge.ts';
 import {
   communityLabel,
   isValidLabel,
@@ -14,12 +15,15 @@ function registry(overrides: Partial<TaxonomyRegistry> = {}): TaxonomyRegistry {
     schemaVersion: REGISTRY_SCHEMA_VERSION,
     revision: 4,
     corpus: 'sha1:abc',
+    corpusAlgorithm: KNOWLEDGE_ETAG_ALGORITHM,
     languages: ['fr'],
     communities: [
       { id: 'cmty_1', prefLabel: { fr: 'Solution' }, firstSeenRevision: 1 },
       { id: 'cmty_2', prefLabel: { fr: 'Intégration' }, firstSeenRevision: 2 },
     ],
     assignments: { 'wiki/a.md': { primaryCommunity: 'cmty_1' } },
+    corpusPageIds: ['wiki/a.md'],
+    sampledPageIds: ['wiki/a.md'],
     ...overrides,
   };
 }

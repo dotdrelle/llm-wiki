@@ -1,4 +1,6 @@
 import type { WikiGraphSnapshot } from '../snapshot.ts';
+import { orderPagesForSampling } from './coverage.ts';
+import { KNOWLEDGE_NODE_TYPES } from './knowledge.ts';
 import type { TaxonomyRegistry } from './schema.ts';
 import { communityLabel } from './schema.ts';
 
@@ -72,13 +74,21 @@ export type TaxonomyInventory = {
    * s'appliquer, pas seulement sur quoi elle a été prise.
    */
   corpusPageIds: string[];
+  /**
+   * Pages réellement soumises au modèle dans cette passe.
+   *
+   * Miroir de `pages`, sous la forme que le registre publie. Une page du corpus
+   * qui n'y figure pas n'a été jugée par personne : c'est ce qui distingue
+   * `outside-sample` d'un échec de classement.
+   */
+  sampledPageIds: string[];
   families: InventoryFamily[];
   communities: InventoryCommunity[];
   /** Vrai quand le corpus a dû être tronqué pour tenir dans le budget. */
   truncated: boolean;
 };
 
-const KNOWLEDGE_TYPES = new Set(['wiki', 'wiki-source', 'raw-source']);
+const KNOWLEDGE_TYPES = KNOWLEDGE_NODE_TYPES;
 
 function shorten(value: string, max: number): string {
   const trimmed = value.replace(/\s+/g, ' ').trim();
@@ -118,6 +128,19 @@ export function buildTaxonomyInventory(
     registry?: TaxonomyRegistry | null;
     excerpts?: Map<string, string>;
     maxPages?: number;
+    /**
+     * Empreinte du corpus de connaissance.
+     *
+     * Le `structureEtag` du snapshot décrit le graphe complet — templates et
+     * deliverables compris — et sert de repli tant qu'un appelant ne fournit
+     * rien. La synthèse, elle, publie toujours l'empreinte de connaissance :
+     * c'est elle qui décide de la péremption.
+     */
+    corpus?: string;
+    /** Pages déjà affectées par le registre frais. */
+    covered?: Set<string>;
+    /** Pages restées hors échantillon aux passes précédentes. */
+    previouslyOutsideSample?: Set<string>;
   },
 ): TaxonomyInventory {
   const maxPages = options.maxPages ?? 400;
@@ -135,9 +158,20 @@ export function buildTaxonomyInventory(
     neighbours.get(edge.to)!.push(edge.from);
   }
 
-  const ranked = [...knowledge].sort(
-    (a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0) || a.id.localeCompare(b.id),
-  );
+  /*
+   Ordre de soumission : ce qui n'a jamais été jugé passe devant.
+
+   Le tri par degré seul écartait toujours les mêmes pages — les plus récentes
+   sont les moins connectées — et les laissait indéfiniment hors échantillon.
+   `orderPagesForSampling` porte la règle ; le degré ne sert plus qu'à départager
+   à priorité égale.
+  */
+  const nodeIndex = new Map(knowledge.map((node) => [node.id, node]));
+  const ranked = orderPagesForSampling(knowledge.map((node) => node.id), {
+    covered: options.covered ?? new Set<string>(),
+    previouslyOutsideSample: options.previouslyOutsideSample,
+    degree,
+  }).map((id) => nodeIndex.get(id)!);
   const kept = ranked.slice(0, maxPages);
   const keptIds = new Set(kept.map((node) => node.id));
 
@@ -209,14 +243,44 @@ export function buildTaxonomyInventory(
       || (from === 'wiki-source' && to === 'raw-source')) unite(edge.from, edge.to);
   }
 
-  // Un groupe explicite peut condenser les pages qui déclarent exactement la
-  // même identité. Un dossier reste seulement un signal : `concepts/outils`
-  // peut contenir plusieurs produits et ne prouve jamais qu'ils sont un sujet.
+  /*
+   `group:` ne prouve plus une identité — il ne fait que la suggérer.
+
+   Le commentaire d'origine disait déjà qu'un groupe est un signal ; le code, lui,
+   unissait toutes les pages partageant exactement la même valeur. Sur ACPI cela
+   fusionnait cinq produits différents sous `security` ou `integration`, tout en
+   dispersant les pages d'un même produit dont les groupes divergeaient. C'est la
+   perte de provenance du § 0.4.
+
+   Retirer l'union globale sans rien mettre à la place atomiserait l'inventaire
+   jusqu'à l'arrivée de `subject`/`collection` : une union TRANSITOIRE subsiste
+   donc, mais elle ne franchit jamais une frontière de provenance.
+
+   Et elle refuse l'ambiguïté au lieu de l'arbitrer. L'union-find est transitive :
+   une seule page rattachée à deux sources suffirait à rechaîner leurs deux
+   collections, de proche en proche, jusqu'à reconstituer la fusion massive qu'on
+   vient de supprimer. Une page à provenance multiple — ou sans provenance — reste
+   donc seule. Il n'y a ni provenance dominante, ni premier lien gagnant.
+  */
+  const provenanceOf = new Map<string, string | null>();
+  for (const page of pages) {
+    const sources = [...new Set((neighbours.get(page.id) ?? []).filter((id) => {
+      const type = nodeById.get(id)?.type;
+      return type === 'wiki-source' || type === 'raw-source';
+    }))];
+    if (nodeById.get(page.id)?.type === 'raw-source'
+      || nodeById.get(page.id)?.type === 'wiki-source') {
+      provenanceOf.set(page.id, page.id);
+      continue;
+    }
+    provenanceOf.set(page.id, sources.length === 1 ? sources[0]! : null);
+  }
   const seeded = new Map<string, string[]>();
   for (const page of pages) {
     const signal = page.group;
-    if (!signal) continue;
-    const key = familyKey(signal);
+    const provenance = provenanceOf.get(page.id);
+    if (!signal || !provenance) continue;
+    const key = `${provenance}${familyKey(signal)}`;
     if (!seeded.has(key)) seeded.set(key, []);
     seeded.get(key)!.push(page.id);
   }
@@ -349,10 +413,11 @@ export function buildTaxonomyInventory(
 
   return {
     language: options.language,
-    corpus: snapshot.structureEtag,
+    corpus: options.corpus ?? snapshot.structureEtag,
     pageCount: knowledge.length,
     pages,
-    corpusPageIds: knowledge.map((node) => node.id),
+    corpusPageIds: knowledge.map((node) => node.id).sort(),
+    sampledPageIds: pages.map((page) => page.id).sort(),
     families,
     communities,
     truncated: ranked.length > kept.length,

@@ -11,8 +11,21 @@
  chaîne, dérivé au moment de la lecture.
 */
 
-/** Version du schéma. Un registre d'une autre version est ignoré, jamais réinterprété. */
-export const REGISTRY_SCHEMA_VERSION = 2;
+/**
+ * Version du schéma. Un registre d'une autre version est ignoré, jamais
+ * réinterprété.
+ *
+ * v3 ajoute la **preuve de couverture** : `corpusPageIds`, `sampledPageIds` et
+ * l'algorithme d'empreinte. Sans eux, une page absente de `assignments` est
+ * indistinguable entre trois causes — jamais soumise au modèle, soumise et non
+ * classée, ou apparue après la synthèse. C'est exactement l'ambiguïté qui avait
+ * fait passer un écart de révision pour 130 pages « non classées ».
+ *
+ * Un registre v2 reste lisible comme artefact historique mais ne prouve aucune
+ * couverture : ses pages sont présentées en attente jusqu'à la première
+ * publication v3.
+ */
+export const REGISTRY_SCHEMA_VERSION = 3;
 
 /**
  * Profondeur maximale de l'arborescence : domaine → communauté → pages.
@@ -76,10 +89,34 @@ export type TaxonomyRegistry = {
   schemaVersion: number;
   revision: number;
   corpus: string;
+  /**
+   * Algorithme ayant produit `corpus`. Deux empreintes d'algorithmes différents
+   * ne se comparent pas — le dire évite de traduire une incomparabilité en
+   * péremption.
+   */
+  corpusAlgorithm: string;
   languages: string[];
   communities: RegistryCommunity[];
   /** Chemin de page relatif au workspace → affectation. */
   assignments: Record<string, RegistryAssignment>;
+  /**
+   * Toutes les pages de connaissance du corpus au moment de la synthèse.
+   *
+   * C'est le dénominateur de la couverture. Il vit dans le registre publié, et
+   * non seulement dans l'inventaire transitoire, parce qu'un lecteur qui charge
+   * marqueur + registre doit pouvoir calculer les états sans rejouer la
+   * synthèse — c'est-à-dire sans appeler de modèle.
+   */
+  corpusPageIds: string[];
+  /**
+   * Pages effectivement soumises au modèle, cumulées sur les passes d'une même
+   * empreinte de corpus.
+   *
+   * Une page du corpus absente d'ici n'a jamais été jugée : la compter comme
+   * « non classée » accuserait la synthèse d'une décision d'échantillonnage
+   * prise en amont.
+   */
+  sampledPageIds: string[];
 };
 
 export type ValidationIssue = { path: string; reason: string };
@@ -169,6 +206,33 @@ export function validateRegistry(value: unknown): ValidationResult {
   }
   if (typeof value.corpus !== 'string' || !value.corpus) {
     issues.push({ path: 'corpus', reason: 'empreinte de corpus manquante' });
+  }
+  if (typeof value.corpusAlgorithm !== 'string' || !value.corpusAlgorithm) {
+    issues.push({ path: 'corpusAlgorithm', reason: 'algorithme d’empreinte manquant' });
+  }
+  for (const field of ['corpusPageIds', 'sampledPageIds'] as const) {
+    const list = value[field];
+    if (!Array.isArray(list) || list.some((item) => typeof item !== 'string' || !item)) {
+      issues.push({ path: field, reason: 'liste de chemins de pages attendue' });
+    }
+  }
+  /*
+   L'échantillon est un sous-ensemble du corpus, jamais l'inverse.
+
+   Une page soumise mais absente du corpus rendrait la couverture incalculable :
+   elle ne serait ni classée, ni en attente, ni hors échantillon. Mieux vaut
+   rejeter le registre que publier une carte dont les compteurs ne s'additionnent
+   pas.
+  */
+  if (Array.isArray(value.corpusPageIds) && Array.isArray(value.sampledPageIds)) {
+    const corpus = new Set(value.corpusPageIds.map(String));
+    const stray = value.sampledPageIds.map(String).filter((page) => !corpus.has(page));
+    if (stray.length) {
+      issues.push({
+        path: 'sampledPageIds',
+        reason: `${stray.length} page(s) échantillonnée(s) hors du corpus déclaré`,
+      });
+    }
   }
   if (!Array.isArray(value.languages) || value.languages.some((item) => typeof item !== 'string')) {
     issues.push({ path: 'languages', reason: 'liste de langues attendue' });
@@ -357,7 +421,23 @@ export function validateRegistry(value: unknown): ValidationResult {
         .filter((community) => isPlainObject(community) && community.deprecated !== true)
         .map((community) => String((community as Record<string, unknown>).id)),
     );
+    const declaredCorpus = Array.isArray(value.corpusPageIds)
+      ? new Set(value.corpusPageIds.map(String))
+      : null;
     for (const [page, assignment] of Object.entries(value.assignments)) {
+      /*
+       Une page affectée appartient au corpus déclaré.
+
+       Sans cette règle, `classified + pending + outside-sample + unclassified`
+       ne redonnerait pas le corpus, et les compteurs affichés sur la carte
+       cesseraient d'être vérifiables.
+      */
+      if (declaredCorpus && !declaredCorpus.has(page)) {
+        issues.push({
+          path: `assignments["${page}"]`,
+          reason: 'page affectée absente de corpusPageIds',
+        });
+      }
       /*
        Une page se rattache à une FEUILLE, jamais à un domaine.
 

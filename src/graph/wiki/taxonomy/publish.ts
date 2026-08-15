@@ -1,7 +1,4 @@
-import {
-  listWikiGraphFiles,
-  wikiGraphEtagForFiles,
-} from '../projection.ts';
+import { KNOWLEDGE_ETAG_ALGORITHM, knowledgeEtag } from './knowledge.ts';
 import { publishGeneration, readMarker, writeDirtyFlag } from './store.ts';
 
 export type CorpusPublishOutcome =
@@ -11,9 +8,11 @@ export type CorpusPublishOutcome =
 /**
  * Publie une révision déterministe après une écriture cohérente du wiki.
  *
- * L'empreinte est calculée par la **même** fonction que celle du snapshot
- * (`wikiGraphEtagForFiles`) : deux empreintes calculées autrement rendraient la
- * comparaison de péremption sous verrou sans valeur.
+ * L'empreinte est celle du **corpus de connaissance** (`knowledgeEtag`), la
+ * même que celle sur laquelle la synthèse calcule et publie : deux empreintes
+ * calculées autrement rendraient la comparaison de péremption sous verrou sans
+ * valeur. Elle ignore délibérément templates, contextes et deliverables — un
+ * build ne périme pas un classement.
  *
  * La génération de registre active, s'il y en a une, est reconduite telle
  * quelle : une ingestion ne connaît rien à la taxonomie synthétisée et n'a
@@ -30,14 +29,17 @@ export async function publishCorpusRevision(
 ): Promise<CorpusPublishOutcome> {
   let corpus: string | null = null;
   try {
-    const files = await listWikiGraphFiles(rootDir);
-    corpus = await wikiGraphEtagForFiles(rootDir, files);
+    corpus = await knowledgeEtag(rootDir);
     const current = await readMarker(rootDir);
 
     // Une révision décrit un changement observable. Republier le même corpus
     // ferait clignoter tous les clients et gonflerait le compteur sans état
     // nouveau, notamment lorsqu'une source inchangée traverse le pipeline.
-    if (current?.corpus === corpus) {
+    //
+    // L'égalité n'a de sens qu'entre empreintes du même algorithme : un
+    // marqueur historique doit être republié pour migrer, même si sa chaîne
+    // ressemble à la nôtre.
+    if (current?.corpus === corpus && current.corpusAlgorithm === KNOWLEDGE_ETAG_ALGORITHM) {
       return { status: 'published', revision: current.revision, corpus };
     }
 
@@ -45,6 +47,7 @@ export async function publishCorpusRevision(
       rootDir,
       {
         corpus,
+        corpusAlgorithm: KNOWLEDGE_ETAG_ALGORITHM,
         registryRef: current?.registryRef ?? null,
         registryHash: current?.registryHash ?? null,
       },

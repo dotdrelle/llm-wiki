@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { buildGraphOverview, graphEtagForFiles, listGraphFiles } from '../../serve/html/wikiHtml.ts';
 import { cachedSnapshot, createSnapshot, storeSnapshot, type WikiGraphSnapshot } from './snapshot.ts';
+import { computeCoverage } from './taxonomy/coverage.ts';
+import { knowledgeEtag } from './taxonomy/knowledge.ts';
 import { readActiveRegistry, readMarker } from './taxonomy/store.ts';
 import { communityHierarchy, communityRedirects, registryLookup } from './taxonomy/lookup.ts';
 import { validateRegistry } from './taxonomy/schema.ts';
@@ -84,12 +86,39 @@ export async function loadWikiGraphSnapshot(options: {
   const hierarchy = validation?.ok ? communityHierarchy(validation.registry, language) : null;
 
   const graph = await buildGraphOverview(rootDir, files, fallbackCommunityLabel, { registry });
+
+  /*
+   Couverture : quatre états, calculés une fois, jamais redéduits à l'écran.
+
+   L'empreinte de connaissance est la seule qui décide de la fraîcheur ; le
+   `structureEtag` ci-dessus continue de piloter le cache d'affichage, où il a
+   raison de réagir aux templates et aux deliverables. Les confondre était le
+   défaut d'origine : un `build` suffisait à annoncer une taxonomie périmée.
+  */
+  const knowledgePages = graph.nodes
+    .filter((node) => KNOWLEDGE_NODE_TYPES.has(node.type))
+    .map((node) => node.id)
+    .sort();
+  const report = computeCoverage({
+    corpus: await knowledgeEtag(rootDir),
+    corpusPageIds: knowledgePages,
+    marker,
+    registry: validation?.ok ? validation.registry : null,
+  });
+
   return storeSnapshot(
     rootDir,
     createSnapshot(etag, graph, {
       workspace,
       taxonomyRevision,
       synthesized: Boolean(registry),
+      coverage: {
+        corpus: report.corpus,
+        taxonomizedCorpus: report.taxonomizedCorpus,
+        fresh: report.fresh,
+        counts: report.counts,
+        states: Object.fromEntries(report.states),
+      },
       communityRedirects: validation?.ok ? communityRedirects(validation.registry) : {},
       /*
        Correspondance explicite, jamais un spread.
@@ -108,7 +137,10 @@ export async function loadWikiGraphSnapshot(options: {
   );
 }
 
-const KNOWLEDGE_NODE_TYPES = new Set(['wiki', 'wiki-source', 'raw-source']);
+// Source de vérité partagée avec l'empreinte de connaissance et l'inventaire :
+// un fichier ne doit pas pouvoir être classé sans participer à l'empreinte.
+export { KNOWLEDGE_NODE_TYPES } from './taxonomy/knowledge.ts';
+import { KNOWLEDGE_NODE_TYPES } from './taxonomy/knowledge.ts';
 
 export interface WikiOutlineCommunity {
   id: string;

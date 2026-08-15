@@ -37,6 +37,16 @@ export type TaxonomyMarker = {
   revision: number;
   /** Empreinte du corpus sur laquelle la génération a été calculée. */
   corpus: string;
+  /**
+   * Algorithme ayant produit `corpus`.
+   *
+   * Absent sur les marqueurs historiques, qui portaient l'empreinte large du
+   * graphe complet. Deux empreintes d'algorithmes différents ne se comparent
+   * pas : `isComparableCorpus` répond « non » plutôt que de laisser une égalité
+   * de chaînes trancher au hasard, et l'appelant traite cela comme une absence
+   * d'information — jamais comme une péremption du corpus.
+   */
+  corpusAlgorithm?: string;
   /** Nom de fichier de la génération active, ou null pour une révision déterministe pure. */
   registryRef: string | null;
   /** Empreinte du contenu de cette génération. */
@@ -109,6 +119,19 @@ export async function writeGeneration(
   return { ref, hash, canonical };
 }
 
+/**
+ * Deux empreintes de corpus sont-elles comparables ?
+ *
+ * Un marqueur historique porte l'empreinte large du graphe complet, sans nom
+ * d'algorithme. La comparer à l'empreinte de connaissance donnerait une
+ * inégalité systématique — vraie par accident, et interprétée comme « le corpus
+ * a changé » alors que personne n'a rien écrit. La bonne réponse est « je ne
+ * sais pas », et c'est ce que ce prédicat permet de dire.
+ */
+export function isComparableCorpus(marker: TaxonomyMarker | null, algorithm: string): boolean {
+  return Boolean(marker) && marker!.corpusAlgorithm === algorithm;
+}
+
 export async function readMarker(rootDir: string): Promise<TaxonomyMarker | null> {
   try {
     const raw = await readFile(taxonomyPaths(rootDir).marker, 'utf8');
@@ -171,7 +194,14 @@ export type PublishOutcome =
  */
 export async function publishGeneration(
   rootDir: string,
-  input: { corpus: string; registryRef: string | null; registryHash: string | null; expectedCorpus?: string },
+  input: {
+    corpus: string;
+    registryRef: string | null;
+    registryHash: string | null;
+    expectedCorpus?: string;
+    /** Algorithme de `corpus`. Absent ⇒ marqueur historique, non comparable. */
+    corpusAlgorithm?: string;
+  },
   // Les défauts sont ceux du produit ; un appelant à contrainte différente — un
   // CLI ponctuel, un test — resserre le budget sans redéfinir la politique.
   lock: { ttlMs?: number; attempts?: number; maxBackoffMs?: number } = {},
@@ -182,9 +212,22 @@ export async function publishGeneration(
       paths.lock,
       async (): Promise<PublishOutcome> => {
         const current = await readMarker(rootDir);
+        /*
+         L'attente ne se vérifie qu'entre empreintes comparables.
+
+         Un marqueur historique porte l'empreinte large du graphe complet. La
+         confronter à une empreinte de connaissance donnerait une inégalité
+         permanente : la toute première publication après migration serait
+         rejetée comme « périmée », et la suivante aussi, indéfiniment. Le
+         compare-and-swap n'a de sens qu'entre deux valeurs produites par le même
+         algorithme ; sinon il n'y a rien à comparer, et la publication passe.
+        */
+        const comparable = !current
+          || current.corpusAlgorithm === input.corpusAlgorithm;
         if (
           input.expectedCorpus !== undefined &&
           current &&
+          comparable &&
           current.corpus !== input.expectedCorpus
         ) {
           return { status: 'stale', marker: current };
@@ -192,6 +235,7 @@ export async function publishGeneration(
         const marker: TaxonomyMarker = {
           revision: (current?.revision ?? 0) + 1,
           corpus: input.corpus,
+          ...(input.corpusAlgorithm ? { corpusAlgorithm: input.corpusAlgorithm } : {}),
           registryRef: input.registryRef,
           registryHash: input.registryHash,
           retainedRegistryRefs: [

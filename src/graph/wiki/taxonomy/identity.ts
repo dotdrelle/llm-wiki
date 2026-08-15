@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { normalizeLabel } from './schema.ts';
 import type { RegistryCommunity, TaxonomyRegistry } from './schema.ts';
 
 /*
@@ -126,6 +127,46 @@ export function anchorCommunities(
       reanchored: Boolean(id),
     };
   });
+}
+
+/**
+ * Rend son identifiant à une communauté préservée que le modèle a redécrite.
+ *
+ * Le cas apparaît dès qu'une passe de vidange soumet un échantillon DISJOINT du
+ * précédent : la communauté d'avant n'a aucune page dans le nouvel échantillon,
+ * son recouvrement tombe à zéro, et le modèle — qui ne la voit pas — propose un
+ * concept portant exactement le même nom. On obtenait alors deux communautés
+ * homonymes dans la même fratrie, ce que le registre refuse à juste titre : la
+ * synthèse entière était rejetée, et la vidange ne pouvait jamais se terminer.
+ *
+ * Le recouvrement de membres ne peut pas trancher ici — il n'y a rien à
+ * recouvrir. Mais la contrainte d'unicité du libellé par fratrie dit déjà
+ * l'essentiel : deux sœurs de même nom sont la même chose. On reconnaît donc la
+ * communauté à son nom, dans sa fratrie, et seulement pour un brouillon qui n'a
+ * été ré-ancré par aucun membre.
+ */
+export function adoptByLabel(
+  drafts: AnchoredCommunity[],
+  preserved: Array<{ id: string; label: string }>,
+): { communities: AnchoredCommunity[]; adopted: Set<string> } {
+  // `normalizeLabel` porte déjà la règle d'égalité visible du registre. En
+  // dupliquer une variante ici, c'est se condamner à ce que les deux divergent :
+  // l'adoption cesserait alors de reconnaître exactement les homonymes que la
+  // validation refuse.
+  const available = new Map<string, string>();
+  for (const community of preserved) {
+    const key = normalizeLabel(community.label);
+    if (!available.has(key)) available.set(key, community.id);
+  }
+  const adopted = new Set<string>();
+  const communities = drafts.map((draft) => {
+    if (draft.reanchored) return draft;
+    const id = available.get(normalizeLabel(draft.label));
+    if (!id || adopted.has(id)) return draft;
+    adopted.add(id);
+    return { ...draft, id, reanchored: true };
+  });
+  return { communities, adopted };
 }
 
 /**

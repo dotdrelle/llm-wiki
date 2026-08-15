@@ -5,6 +5,7 @@ import { REGISTRY_SCHEMA_VERSION, type TaxonomyRegistry } from '../src/graph/wik
 import { graphUiLiveScript } from '../src/graph/wiki/ui/core/liveScript.ts';
 import { canvasExplorerScript } from '../src/graph/wiki/ui/canvas/canvasExplorerScript.ts';
 import type { WikiGraphEdge, WikiGraphNode } from '../src/graph/wiki/projection.ts';
+import { withCoverage } from './support/registryCoverage.ts';
 
 function node(id: string, group?: string): WikiGraphNode {
   return {
@@ -28,7 +29,7 @@ function node(id: string, group?: string): WikiGraphNode {
   };
 }
 
-const registry: TaxonomyRegistry = {
+const registry: TaxonomyRegistry = withCoverage({
   schemaVersion: REGISTRY_SCHEMA_VERSION,
   revision: 7,
   corpus: 'sha1:abc',
@@ -49,7 +50,7 @@ const registry: TaxonomyRegistry = {
     // communauté ACTIVE, pas une bulle disparue.
     'wiki/concepts/b.md': { primaryCommunity: 'cmty_saas' },
   },
-};
+});
 
 const assign = (nodes: WikiGraphNode[], edges: WikiGraphEdge[] = [], language = 'fr') =>
   assignGraphCommunities(nodes, edges, new Map(), 'Ungrouped', {

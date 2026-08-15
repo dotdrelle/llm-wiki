@@ -6,6 +6,7 @@ import {
 } from '../src/graph/wiki/taxonomy/consolidation.ts';
 import type { AnchoredCommunity } from '../src/graph/wiki/taxonomy/identity.ts';
 import { REGISTRY_SCHEMA_VERSION, type TaxonomyRegistry } from '../src/graph/wiki/taxonomy/schema.ts';
+import { withCoverage } from './support/registryCoverage.ts';
 
 function previous(
   communities: Array<{
@@ -21,7 +22,7 @@ function previous(
   for (const community of communities) {
     for (const page of community.members) assignments[page] = { primaryCommunity: community.id };
   }
-  return {
+  return withCoverage({
     schemaVersion: REGISTRY_SCHEMA_VERSION,
     revision: 10,
     corpus: 'sha1:abc',
@@ -35,7 +36,7 @@ function previous(
         : {}),
     })),
     assignments,
-  };
+  });
 }
 
 const draft = (id: string, label: string, members: string[]): AnchoredCommunity => ({

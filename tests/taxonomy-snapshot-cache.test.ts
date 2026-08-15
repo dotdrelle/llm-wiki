@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadWikiGraphSnapshot } from '../src/graph/wiki/overview.ts';
+import { KNOWLEDGE_ETAG_ALGORITHM } from '../src/graph/wiki/taxonomy/knowledge.ts';
 import { publishGeneration, writeGeneration } from '../src/graph/wiki/taxonomy/store.ts';
 import { REGISTRY_SCHEMA_VERSION } from '../src/graph/wiki/taxonomy/schema.ts';
 
@@ -53,11 +54,14 @@ describe('révision de taxonomie et cache du snapshot', () => {
       schemaVersion: REGISTRY_SCHEMA_VERSION,
       revision: 1,
       corpus: 'sha1:abc',
+      corpusAlgorithm: KNOWLEDGE_ETAG_ALGORITHM,
       languages: ['fr'],
       communities: [{ id: 'cmty_1', prefLabel: { fr: 'Sécurité' }, firstSeenRevision: 1 }],
       assignments: {
         'wiki/concepts/securite/chiffrement.md': { primaryCommunity: 'cmty_1' },
       },
+      corpusPageIds: ['wiki/concepts/securite/chiffrement.md'],
+      sampledPageIds: ['wiki/concepts/securite/chiffrement.md'],
     });
     const published = await publishGeneration(root, {
       corpus: 'corpus-1',

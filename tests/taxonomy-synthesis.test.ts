@@ -119,10 +119,28 @@ describe('inventaire soumis à la synthèse', () => {
 
     expect(prompt).toContain('Language for every label: fr.');
     expect(prompt).toMatch(/signals=/);
-    // Le regroupement local est déjà matérialisé : Donna classe une famille,
-    // elle ne doit plus reconstruire ses membres depuis des chemins répétés.
-    expect(prompt).toMatch(/pages=2/);
-    expect(inventory.families.length).toBeLessThan(inventory.pages.length);
+    // Le groupe reste un SIGNAL transmis au modèle — c'est tout ce qu'il est.
+    expect(prompt).toMatch(/signals=Securite/);
+  });
+
+  it('ne fusionne plus deux pages sur la seule égalité de group:', async () => {
+    const inventory = await inventoryOf();
+
+    /*
+     `chiffrement` et `authentification` partagent `group: Securite` et ne
+     citent aucune source : rien ne prouve qu'elles sont un même sujet.
+
+     L'union globale par groupe faisait exactement l'inverse de ce qu'on attend
+     d'elle sur un corpus comparatif — elle rassemblait cinq produits sous
+     `security` tout en dispersant les pages d'un même produit dont les groupes
+     divergeaient. Le modèle voit le signal et décide ; le moteur ne décide plus
+     à sa place.
+    */
+    const familyOf = (page: string) =>
+      inventory.families.find((family) => family.members.some((member) => member.endsWith(page)))?.id;
+
+    expect(familyOf('chiffrement.md')).not.toBe(familyOf('authentification.md'));
+    expect(inventory.families.length).toBe(inventory.pages.length);
   });
 
   /*

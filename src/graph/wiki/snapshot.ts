@@ -29,6 +29,32 @@ import {
 } from './communityProjection.ts';
 
 export type { WikiGraphCommunity } from './communityProjection.ts';
+import type { CoverageCounts, PageCoverageState } from './taxonomy/coverage.ts';
+
+export type SnapshotCoverage = {
+  /** Empreinte de connaissance du corpus courant. */
+  corpus: string;
+  /** Empreinte sur laquelle le registre actif a été calculé, si comparable. */
+  taxonomizedCorpus: string | null;
+  /** Vrai quand les deux empreintes sont comparables ET égales. */
+  fresh: boolean;
+  counts: CoverageCounts;
+  /** Page de connaissance → état. Absente des nœuds qui n'en sont pas. */
+  states: Record<string, PageCoverageState>;
+};
+
+const EMPTY_COVERAGE: SnapshotCoverage = {
+  corpus: '',
+  taxonomizedCorpus: null,
+  fresh: false,
+  counts: {
+    'classified': 0,
+    'pending-classification': 0,
+    'outside-sample': 0,
+    'unclassified': 0,
+  },
+  states: {},
+};
 
 export interface WikiGraphSnapshot {
   workspace: string;
@@ -68,6 +94,16 @@ export interface WikiGraphSnapshot {
    * qu'elle ne porte pas.
    */
   synthesized: boolean;
+  /**
+   * Couverture taxonomique du corpus de connaissance.
+   *
+   * Quatre compteurs plutôt qu'un seul bloc `Ungrouped`, parce qu'une page sans
+   * affectation peut l'être pour trois raisons qui n'appellent pas la même
+   * réaction : jamais soumise au modèle, soumise et non classée, ou apparue
+   * après la synthèse. Le premier écran ne peut pas rester juste s'il les
+   * confond.
+   */
+  coverage: SnapshotCoverage;
   nodes: Array<Omit<WikiGraphNode, 'raw' | 'html' | 'preview'>>;
   edges: Array<WikiGraphEdge & { id: string }>;
   communities: WikiGraphCommunity[];
@@ -103,6 +139,7 @@ export function createSnapshot(
     communityRedirects?: Record<string, string>;
     domains?: Array<{ id: string; label: string }>;
     communityParents?: Record<string, string>;
+    coverage?: SnapshotCoverage;
   } = {},
 ): WikiGraphSnapshot {
   const nodes = graph.nodes.map(({ raw, html, preview, ...node }) => {
@@ -120,6 +157,7 @@ export function createSnapshot(
     communityRedirects: options.communityRedirects ?? {},
     domains: options.domains ?? [],
     communityParents: options.communityParents ?? {},
+    coverage: options.coverage ?? EMPTY_COVERAGE,
     nodes,
     edges,
     communities: communityProjection.communities,

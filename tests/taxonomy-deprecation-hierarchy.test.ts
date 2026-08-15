@@ -7,6 +7,7 @@ import {
   type RegistryCommunity,
   type TaxonomyRegistry,
 } from '../src/graph/wiki/taxonomy/schema.ts';
+import { withCoverage } from './support/registryCoverage.ts';
 
 /*
  La dépréciation date du registre plat.
@@ -20,7 +21,7 @@ import {
  identifiant de communauté est une feuille ». Troisième fois.
 */
 function registry(): TaxonomyRegistry {
-  return {
+  return withCoverage({
     schemaVersion: REGISTRY_SCHEMA_VERSION,
     revision: 4,
     corpus: 'sha1:base',
@@ -38,7 +39,7 @@ function registry(): TaxonomyRegistry {
       'wiki/b1.md': { primaryCommunity: 'cmty_b' },
       'wiki/t1.md': { primaryCommunity: 'cmty_topo' },
     },
-  };
+  });
 }
 
 describe('membres d’une communauté', () => {
