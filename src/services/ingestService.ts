@@ -20,7 +20,7 @@ import {
   type SourceExtraction,
 } from '../ingest/extractionSchema.ts';
 import { collectionFromSourcePath, readProvenance } from '../ingest/provenance.ts';
-import { validateConsolidation } from '../ingest/consolidationValidate.ts';
+import { CONCEPT_PREFIX, reanchorToPreviousConcepts, validateConsolidation } from '../ingest/consolidationValidate.ts';
 import { hashText } from '../utils/hash.ts';
 import { normalizeSourceBody } from '../utils/markdown.ts';
 import { planSourcePacks } from '../utils/sourcePacking.ts';
@@ -47,6 +47,7 @@ import {
   hashContent,
   readSourceRegistry,
   recordSourceObservation,
+  SOURCE_REGISTRY_FILENAME,
   sourceIdFromArchivePath,
   writeSourceRegistry,
 } from './sourceRegistry.ts';
@@ -339,6 +340,20 @@ export class IngestService {
       ?? new IngestCache(this.workspace.paths.rootDir, options?.dryRun !== true);
     if (!options?.dryRun) await cache.collect().catch(() => 0);
 
+    /*
+     Previous run's produced pages, read once for the whole batch.
+
+     §12.2: on an unchanged body the consolidation renamed the same products
+     from run to run. The stable reference against which a re-ingest must
+     re-anchor is the source registry — what this source ACTUALLY produced last
+     time — not the model's memory. Read it before the first source is observed,
+     so every source sees the state of the PREVIOUS run.
+     */
+    const registryPath = this.workspace.paths?.internalDir
+      ? path.join(this.workspace.paths.internalDir, SOURCE_REGISTRY_FILENAME)
+      : null;
+    const previousRegistry = registryPath ? await readSourceRegistry(registryPath) : null;
+
     for (let i = 0; i < sourcePaths.length; i++) {
       const sourcePath = sourcePaths[i];
       let sourceLabel = sourcePath;
@@ -582,6 +597,18 @@ export class IngestService {
           (page) => page.relativePath === sourcePagePath,
         )?.content ?? null;
 
+        // Concept pages this source produced in a previous ingest, with their
+        // current provenance. They are the stable reference for re-anchoring.
+        const sourceId = sourceIdFromArchivePath(source.archiveCitationPath);
+        const previousRecord = (previousRegistry?.sources ?? []).find((record) => record.sourceId === sourceId);
+        const previousConcepts = (previousRecord?.producedPages ?? [])
+          .filter((page) => page.startsWith(CONCEPT_PREFIX))
+          .map((page) => {
+            const content = warmPages.find((entry) => entry.relativePath === page)?.content ?? null;
+            const provenance = content ? readProvenance(content) : null;
+            return { path: page, subject: provenance?.subject ?? null, content };
+          });
+
         const contextStartedAt = Date.now();
         const relevantPages = await this.retrieval.search(
           [source.title, ...merged.subjects.map((subject) => subject.label)].join(' '),
@@ -606,13 +633,32 @@ export class IngestService {
           };
         });
 
+        // Surface the previous concepts to the model as pages to REUSE, not
+        // just as retrieval hits — the retrieval top-N does not reliably bring
+        // them back, which is exactly why the model re-created them.
+        const previousInventory = previousConcepts
+          .filter((concept) => !inventory.some((page) => page.path === concept.path))
+          .map((concept) => {
+            const page = warmPages.find((entry) => entry.relativePath === concept.path);
+            const provenance = page ? readProvenance(page.content) : null;
+            return {
+              path: concept.path,
+              title: page?.name ?? concept.path.split('/').pop() ?? concept.path,
+              subject: provenance?.subject ?? concept.subject ?? null,
+              scope: provenance?.scope ?? null,
+              excerpt: (page?.content ?? '').replace(/\s+/g, ' ').slice(0, maxChunkChars),
+              previousForSource: true,
+            };
+          });
+        const fullInventory = [...inventory, ...previousInventory];
+
         const indexContent = await this.workspace.readIndex();
         const consolidationPrompt = buildConsolidationPrompt({
           source,
           extraction: merged,
           sourcePagePath,
           existingSourceNote,
-          inventory,
+          inventory: fullInventory,
           indexContent,
           collection,
           ctx: buildPromptContext(this.config, { profileSection }),
@@ -620,7 +666,7 @@ export class IngestService {
         const consolidationCacheKey = consolidationCacheName({
           sourceHash,
           extractionsHash: hashText(JSON.stringify(merged)),
-          inventoryHash: hashText(JSON.stringify([inventory, indexContent, existingSourceNote])),
+          inventoryHash: hashText(JSON.stringify([fullInventory, indexContent, existingSourceNote])),
           model: modelId,
           promptVersion: CONSOLIDATION_PROMPT_VERSION,
           schemaVersion: CONSOLIDATION_SCHEMA_VERSION,
@@ -631,7 +677,7 @@ export class IngestService {
           promptChars: consolidationPrompt.system.length + consolidationPrompt.user.length,
           subjects: merged.subjects.length,
           facts: merged.facts.length,
-          inventory: inventory.length,
+          inventory: fullInventory.length,
         });
 
         let consolidated: ConsolidationPlan | null = null;
@@ -673,6 +719,10 @@ export class IngestService {
           if (retry.retries > 0) sourceRetry = retry;
           await cache.write(consolidationCacheKey, value);
         }
+
+        // Deterministic re-anchor against the previous run's concept pages:
+        // a create whose normalized subject already exists is an update.
+        consolidated = reanchorToPreviousConcepts(consolidated, previousConcepts);
 
         /*
          Normalize FIRST, validate second.
@@ -1131,7 +1181,7 @@ export class IngestService {
     operations: WikiOperation[] | null,
   ): Promise<void> {
     try {
-      const registryPath = path.join(this.workspace.paths.internalDir, 'source-registry.json');
+      const registryPath = path.join(this.workspace.paths.internalDir, SOURCE_REGISTRY_FILENAME);
       const lockPath = `${registryPath}.lock`;
       // Ingest processes can run concurrently against the same workspace
       // (`wiki ingest --plan-only`/`--apply` orchestration): the lock makes

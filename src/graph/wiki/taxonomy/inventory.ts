@@ -3,6 +3,7 @@ import { orderPagesForSampling } from './coverage.ts';
 import { KNOWLEDGE_NODE_TYPES } from './knowledge.ts';
 import type { TaxonomyRegistry } from './schema.ts';
 import { communityLabel } from './schema.ts';
+import { normalizeProvenanceValue } from '../../../ingest/provenance.ts';
 
 /*
  Inventory submitted to synthesis.
@@ -226,12 +227,18 @@ export function buildTaxonomyInventory(
     rawByParent.get(key)!.push(node.id);
   }
   const collectionByRaw = new Map<string, string>();
+  // The collection id of a raw-source's parent folder, keyed by the normalized
+  // folder name. Concept pages carry the same value in their `collection`
+  // frontmatter (Lot 2), which is how they join their comparative collection.
+  const collectionIdByFolder = new Map<string, string>();
   [...rawByParent.entries()]
     .filter(([, ids]) => ids.length >= 2)
     .sort(([left], [right]) => left.localeCompare(right))
-    .forEach(([, ids], index) => {
+    .forEach(([folder, ids], index) => {
       const collection = `c${String(index + 1).padStart(4, '0')}`;
       ids.forEach((id) => collectionByRaw.set(id, collection));
+      const folderName = normalizeProvenanceValue(folder.split('/').pop() ?? '');
+      if (folderName) collectionIdByFolder.set(folderName, collection);
     });
 
   // The wiki/sources mirror is not a second subject.
@@ -313,8 +320,12 @@ export function buildTaxonomyInventory(
       titles: [...new Set(members.map((page) => page.title))].slice(0, 8),
       signals: [...new Set(members.flatMap((page) => [page.group, page.folder].filter((value): value is string => Boolean(value))))].slice(0, 6),
       collections: [...new Set(members.flatMap((page) => {
-        const collection = collectionByRaw.get(page.id);
-        return collection ? [collection] : [];
+        const fromRaw = collectionByRaw.get(page.id);
+        const node = nodeById.get(page.id);
+        const fromProvenance = node?.collection
+          ? collectionIdByFolder.get(normalizeProvenanceValue(node.collection))
+          : undefined;
+        return [fromRaw, fromProvenance].filter((value): value is string => Boolean(value));
       }))].sort(),
       neighbours: [...(familyLinks.get(id) ?? [])].sort().slice(0, MAX_NEIGHBOURS),
       distinctiveTerms: [],
@@ -376,14 +387,27 @@ export function buildTaxonomyInventory(
         if (sibling.id === family.id) continue;
         for (const token of allTerms.get(sibling.id)!) if (own.has(token)) shared.add(token);
       }
-      familyById.get(family.id)!.distinctiveTerms = [...own]
+      const derived = [...own]
         .filter((token) => !shared.has(token))
         // The term must exist ONLY at this family in the whole corpus.
         // Otherwise it describes a shared state, format or activity, and
         // imposing it as a community name would be worse than letting the choice open.
         .filter((token) => (familyFrequency.get(token) ?? 0) === 1)
-        .sort()
-        .slice(0, 4);
+        .sort();
+      /*
+       A `scope: product` page carries its canonical subject, injected by the
+       engine (Lot 2). That subject IS the compared identity, even when the
+       sibling source note's descriptive title also mentions it — the rarity
+       filters above would otherwise erase `prophix` because both the source
+       note and the concept carry it. The engine-declared subject wins.
+       */
+      const productSubjects = [...new Set(family.members.flatMap((member) => {
+        const node = nodeById.get(member);
+        return node?.scope === 'product' && node?.subject
+          ? familyKey(node.subject).split(/[^a-z0-9]+/)
+          : [];
+      }).filter((token) => token.length >= 3 && !/^\d+$/.test(token)))];
+      familyById.get(family.id)!.distinctiveTerms = [...new Set([...productSubjects, ...derived])].sort().slice(0, 4);
     }
   }
 

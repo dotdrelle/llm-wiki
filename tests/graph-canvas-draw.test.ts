@@ -312,14 +312,14 @@ describe('boucle de dessin du canevas', () => {
     expect(view.pendingTimers).toEqual([]);
   });
 
-  it('ne descend que dans les pages qui ont un vrai voisinage', async () => {
+  it('ne descend qu’au double-clic, jamais au simple clic', async () => {
     /*
-     Le seuil était « au moins une relation ». À une relation, la vue focus
-     contient deux nœuds : on quitte le domaine et tout son voisinage pour un
-     segment que le panneau de droite énonçait déjà. Le prix de la descente ne
-     se paie qu'à partir de deux voisins ; en dessous, la fiche de contexte
-     s'ouvre à côté de la bulle et la vue courante est conservée.
-    */
+     Le simple clic sélectionnait et descendait d'un cran dès deux relations :
+     un clic sur une page bien connectée recadrait tout le graphe autour de son
+     voisinage, masquant ce qu'on lisait. Le simple clic sélectionne et ouvre la
+     fiche ; la descente reste au double-clic, où l'intention est explicite. Le
+     seuil de deux voisins demeure pour ce double-clic.
+     */
     const data = corpus();
     const cards: Array<string | null> = [];
     const build = new Function(
@@ -360,22 +360,20 @@ describe('boucle de dessin du canevas', () => {
     expect(api.hasRelations(isolated.id)).toBe(false);
 
     await api.select(hub);
-    expect(api.state()).toEqual({ view: 'focus', selected: 'c0/n2' });
-    // Une descente n'ouvre pas de fiche : le graphe montre déjà le voisinage.
-    expect(cards).toEqual([null]);
+    // Le simple clic ne descend pas : il sélectionne et ouvre la fiche.
+    expect(api.state()).toEqual({ view: 'community', selected: 'c0/n2' });
+    expect(cards).toEqual(['c0/n2']);
 
     api.setView('community');
     await api.select(single);
-    // Sélectionnée, mais on reste dans son domaine — et la fiche répond.
     expect(api.state()).toEqual({ view: 'community', selected: 'c0/n0' });
-    expect(cards).toEqual([null, 'c0/n0']);
+    expect(cards).toEqual(['c0/n2', 'c0/n0']);
 
-    // Depuis la carte, aucune page n'est cliquable individuellement : on
-    // descend d'un cran jusqu'à son domaine pour que la sélection se voie.
+    // Depuis la carte, on descend d'un cran jusqu'à la communauté de la page.
     api.setView('map');
     await api.select(isolated);
     expect(api.state().view).toBe('community');
-    expect(cards).toEqual([null, 'c0/n0', 'c5/n8']);
+    expect(cards).toEqual(['c0/n2', 'c0/n0', 'c5/n8']);
   });
 
   it('ne laisse pas une image en échec emporter la boucle', () => {

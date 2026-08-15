@@ -225,6 +225,11 @@ describe('index des domaines, colonne de gauche', () => {
     const { graphAppScript } = await import('../src/graph/wiki/ui/script.ts');
     expect(graphAppScript).toContain('selectCommunity(community.dataset.community)');
     expect(graphAppScript).toContain('updateCommunityFilterCounts();');
+    // Le clic sur le summary doit re-déplier/replier le <details> : l'auto-open
+    // du domaine sélectionné (updateCommunityFilterCounts) se déclenchait AVANT
+    // le toggle natif, qui l'annulait ensuite — l'expand ne marchait plus.
+    expect(graphAppScript).toContain('event.preventDefault()');
+    expect(graphAppScript).toContain('willOpen');
   });
 });
 

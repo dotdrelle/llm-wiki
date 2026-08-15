@@ -3,7 +3,7 @@ import { EXTRACTION_IMPORTANCE, EXTRACTION_SCOPES } from '../ingest/extractionSc
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
 /** Prompt version, carried by the extraction cache. */
-export const EXTRACTION_PROMPT_VERSION = 4;
+export const EXTRACTION_PROMPT_VERSION = 5;
 
 /*
  Extraction prompt: read, do not write.
@@ -52,7 +52,7 @@ export function buildExtractionPrompt(args: {
       'Scope guidance:',
       '- source: only meaningful inside a note about this specific document',
       '- product: belongs to the specific subject this document is about',
-      '- transverse: a dimension shared across several subjects (security, pricing, hosting, ...)',
+      '- transverse: a dimension shared across several subjects (security, pricing, hosting, integration, compliance, ...). Declare it whenever the fragment discusses such a shared dimension, even briefly — the consolidation step decides how to merge them',
       '- workspace: applies to the whole workspace regardless of subject',
       'Prefer few, well-justified subjects over many thin ones. A heading is not a subject.',
       'Every fact carries the exact citation path given in the user message, copied verbatim.',

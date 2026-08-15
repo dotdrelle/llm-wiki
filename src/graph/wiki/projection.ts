@@ -5,6 +5,7 @@ import fg from 'fast-glob';
 import matter from 'gray-matter';
 import { extractWikiLinks } from '../../utils/markdown.ts';
 import { canonicalizeName, toPosix } from '../../utils/path.ts';
+import { readProvenance } from '../../ingest/provenance.ts';
 import {
   assignGraphCommunities,
   type CommunityAssignment,
@@ -37,6 +38,10 @@ export interface WikiGraphNode {
   raw: string;
   html: string;
   group?: string;
+  /** Structured provenance injected by the engine (Lot 2), when present. */
+  subject?: string | null;
+  collection?: string | null;
+  scope?: string | null;
   community: CommunityAssignment;
   degree: number;
   x: number;
@@ -146,6 +151,9 @@ export async function buildWikiGraph(
   const rawContents = new Map<string, string>();
   const htmlContents = new Map<string, string>();
   const groups = new Map<string, string>();
+  const subjects = new Map<string, string>();
+  const collections = new Map<string, string>();
+  const scopes = new Map<string, string>();
   const explicitCommunities = new Map<string, { label: string }>();
 
   const includeContent = options.includeContent ?? true;
@@ -171,6 +179,10 @@ export async function buildWikiGraph(
     const group = metadata.group;
     if (group) groups.set(file, group);
     if (metadata.community) explicitCommunities.set(file, { label: metadata.community });
+    const provenance = readProvenance(raw);
+    if (provenance.subject) subjects.set(file, provenance.subject);
+    if (provenance.collection) collections.set(file, provenance.collection);
+    if (provenance.scope) scopes.set(file, provenance.scope);
 
     for (const target of extractGraphTargets(raw, currentDir, nodeIds, deps)) {
       if (!nodeIds.has(target.to) || target.to === file) continue;
@@ -229,6 +241,9 @@ export async function buildWikiGraph(
       raw: rawContents.get(file) ?? '',
       html: htmlContents.get(file) ?? '',
       group: groups.get(file),
+      subject: subjects.get(file) ?? null,
+      collection: collections.get(file) ?? null,
+      scope: scopes.get(file) ?? null,
       community: {
         communityId: 'ungrouped',
         communityLabel: options.fallbackCommunityLabel ?? 'Ungrouped',

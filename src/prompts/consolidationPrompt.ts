@@ -3,7 +3,7 @@ import type { SourceExtraction } from '../ingest/extractionSchema.ts';
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
 /** Prompt version, carried by the consolidation cache key. */
-export const CONSOLIDATION_PROMPT_VERSION = 2;
+export const CONSOLIDATION_PROMPT_VERSION = 3;
 
 export type ConsolidationInventoryPage = {
   path: string;
@@ -11,6 +11,8 @@ export type ConsolidationInventoryPage = {
   subject: string | null;
   scope: string | null;
   excerpt: string;
+  /** True when this page was produced by THIS source in a previous ingest. */
+  previousForSource?: boolean;
 };
 
 /*
@@ -42,13 +44,13 @@ export function buildConsolidationPrompt(args: {
       '',
       'Granularity policy:',
       '- exactly one source note per document, at the given source note path',
-      '- by default ZERO new concept pages: creating is the exception, not the rule',
-      '- create a NEW concept page only for knowledge that is durable, product-specific and genuinely distinct from any existing page',
-      '- reuse or update an existing concept page before creating a near-duplicate: if a candidate subject matches an existing page, UPDATE it, do not create a twin',
-      '- the NUMBER of new pages must be justified by the content, not uniform: unrelated documents should yield different counts; a similar count across unrelated documents is a sign of over-creation and should be folded back into existing subjects',
+      '- product concepts: at most three NEW ones per source, each justified by content; zero is common',
+      '- create a NEW product concept only for knowledge that is durable, specific to this product, and genuinely distinct from any existing page',
+      '- transverse dimensions (security, integration, pricing, hosting, compliance, sovereignty, deployment, ...) are SHARED concepts: create or UPDATE one shared concept per dimension with scope=transverse — never one per product',
+      '- reuse or update an existing concept page (product or transverse) before creating a near-duplicate',
+      '- when a candidate subject matches a page this source PREVIOUSLY produced, UPDATE that page and KEEP its existing subject: never create a new page with a different name for the same product',
+      '- the NUMBER of new pages must be justified by the content, not uniform: unrelated documents should yield different counts',
       '- a characteristic that only makes sense for this one document stays in the source note',
-      '- zero new pages is a correct and common answer',
-      '- at most three new concept pages, each beyond the necessary minimum requiring an explicit rationale',
       '- never create a page for a one-off datum or for a documentary rubric of the source',
       '- never create one page per heading of the source document',
       '',
@@ -113,6 +115,7 @@ export function buildConsolidationPrompt(args: {
               `- ${page.path} :: ${page.title}`
               + `${page.subject ? ` [subject=${page.subject}]` : ''}`
               + `${page.scope ? ` [scope=${page.scope}]` : ''}`
+              + `${page.previousForSource ? ' [previously produced by THIS source]' : ''}`
               + `\n  ${page.excerpt}`)
             .join('\n')
         : '(none)',

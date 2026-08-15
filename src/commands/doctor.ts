@@ -34,6 +34,7 @@ import {
   isReportClean,
   readSourceRegistry,
   reconcileRegistry,
+  SOURCE_REGISTRY_FILENAME,
 } from '../services/sourceRegistry.ts';
 
 // Bits per weight for common GGUF quantizations (including block overhead)
@@ -186,7 +187,7 @@ async function reportSourceReconciliation(
   wikiPages: Array<{ relativePath: string }>,
   ingestedPages: Array<{ relativePath: string }>,
 ): Promise<void> {
-  const registryPath = path.join(workspace.paths.internalDir, 'source-registry.json');
+  const registryPath = path.join(workspace.paths.internalDir, SOURCE_REGISTRY_FILENAME);
   const registry = await readSourceRegistry(registryPath);
   if (registry.sources.length === 0) {
     row('source registry:', 'empty — it fills up on the next ingest');

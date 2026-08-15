@@ -31,7 +31,7 @@ export type ValidatedConsolidation = {
   provenanceByPath: Map<string, PageProvenance>;
 };
 
-const CONCEPT_PREFIX = 'wiki/concepts/';
+export const CONCEPT_PREFIX = 'wiki/concepts/';
 
 function isSourceNote(path: string, sourcePagePath: string): boolean {
   return path === sourcePagePath;
@@ -187,4 +187,116 @@ export function validateConsolidation(
   }
 
   return { operations, errors, warnings, provenanceByPath };
+}
+
+/**
+ * Re-anchors a freshly consolidated plan onto the concept pages this source
+ * produced in a previous ingest (§6.3, §12.2).
+ *
+ * The consolidation model names products in an unstable way: on an unchanged
+ * body it produced `prophix-one` on one run and `prophix` on the next, so the
+ * concept page identities drifted even though the content was stable. This pass
+ * is the deterministic part of the fix: when the model CREATES a concept that
+ * matches a page this source previously produced, the create is rewritten as an
+ * UPDATE of the previous page — same path, same subject — so the identity
+ * survives a re-ingest.
+ *
+ * Matching is two-tiered:
+ * - an EXACT normalized subject match is always trusted;
+ * - otherwise, a CONTENT match (Jaccard overlap of the tokenized body, citations
+ *   excluded) reconciles a renamed subject (`prophix` vs `prophix-one`).
+ *
+ * A previous page is never used when the plan already targets it, and a
+ * previous page is claimed at most once.
+ */
+export function reanchorToPreviousConcepts(
+  plan: ConsolidationPlan,
+  previousConcepts: Array<{ path: string; subject: string | null; content: string | null }>,
+): ConsolidationPlan {
+  const previousBySubject = new Map<string, { path: string; subject: string | null; content: string | null }>();
+  for (const concept of previousConcepts) {
+    if (!concept.subject || previousBySubject.has(concept.subject)) continue;
+    previousBySubject.set(concept.subject, concept);
+  }
+
+  const planPaths = new Set(plan.operations.map((operation) => operation.path));
+  const rewrite = new Map<string, { path: string; subject: string | null; content: string | null }>();
+  const claimed = new Set<string>();
+
+  for (const operation of plan.operations) {
+    if (operation.type !== 'create' || !operation.path.startsWith(CONCEPT_PREFIX)) continue;
+    const declared = (plan.pages ?? []).find((page) => page.path === operation.path);
+    const subject = declared?.subject ? normalizeProvenanceValue(declared.subject) : null;
+    const content = operation.content ?? '';
+
+    const available = (candidate: { path: string; subject: string | null; content: string | null } | undefined): candidate is { path: string; subject: string | null; content: string | null } =>
+      candidate !== undefined
+      && candidate.path !== operation.path
+      && !planPaths.has(candidate.path)
+      && !claimed.has(candidate.path);
+
+    // 1. Exact normalized subject match — always trusted.
+    let previous: { path: string; subject: string | null; content: string | null } | undefined;
+    if (subject) {
+      const exact = previousBySubject.get(subject);
+      if (available(exact)) previous = exact;
+    }
+
+    // 2. Content match (Jaccard) — reconciles a renamed subject.
+    if (!previous && content) {
+      const newTokens = contentTokens(content);
+      if (newTokens.size > 0) {
+        let bestScore = REANCHOR_MIN_OVERLAP;
+        for (const candidate of previousConcepts) {
+          if (!candidate.content || !available(candidate)) continue;
+          const score = tokenOverlap(newTokens, contentTokens(candidate.content));
+          if (score >= bestScore) {
+            previous = candidate;
+            bestScore = score;
+          }
+        }
+      }
+    }
+
+    if (!previous) continue;
+    rewrite.set(operation.path, previous);
+    claimed.add(previous.path);
+  }
+
+  if (rewrite.size === 0) return plan;
+
+  const operations = plan.operations.map((operation) => {
+    const previous = rewrite.get(operation.path);
+    if (!previous) return operation;
+    return { ...operation, type: 'update' as const, path: previous.path };
+  });
+
+  const pages = (plan.pages ?? []).map((page) => {
+    const previous = rewrite.get(page.path);
+    if (!previous) return page;
+    return { ...page, path: previous.path, subject: previous.subject ?? page.subject };
+  });
+
+  return { ...plan, operations, pages };
+}
+
+/** Jaccard threshold for the content fallback: same as §6.3 taxonomy re-anchoring. */
+export const REANCHOR_MIN_OVERLAP = 0.5;
+
+/** Tokenized content signature: citations are excluded, they are common to a source. */
+function contentTokens(content: string): Set<string> {
+  const normalized = content
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\[src: [^\]]+\]/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ');
+  return new Set(normalized.split(' ').filter((token) => token.length >= 3));
+}
+
+function tokenOverlap(left: Set<string>, right: Set<string>): number {
+  if (left.size === 0 || right.size === 0) return 0;
+  let intersection = 0;
+  for (const token of left) if (right.has(token)) intersection += 1;
+  return intersection / (left.size + right.size - intersection);
 }

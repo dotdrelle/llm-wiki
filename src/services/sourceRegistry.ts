@@ -19,6 +19,9 @@ import path from 'node:path';
 
 export const SOURCE_REGISTRY_VERSION = 1;
 
+/** Registry file name, shared by the writer and the re-anchoring reader. */
+export const SOURCE_REGISTRY_FILENAME = 'source-registry.json';
+
 export type SourceStatus = 'active' | 'missing' | 'retracted';
 
 export type SourceRecord = {

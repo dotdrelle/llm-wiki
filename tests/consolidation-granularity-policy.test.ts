@@ -46,8 +46,8 @@ const args = {
 describe('politique de granularité §6.1', () => {
   it('exige un défaut à zéro, pas trois', () => {
     const { system } = buildConsolidationPrompt(args as never);
-    expect(system).toContain('by default ZERO new concept pages');
-    expect(system).toContain('zero new pages is a correct and common answer');
+    expect(system).toContain('at most three NEW ones per source');
+    expect(system).toContain('zero is common');
     // L'ancienne lecture de la borne comme cible ne doit plus apparaître.
     expect(system).not.toContain('zero to three NEW concept pages');
   });
@@ -55,19 +55,26 @@ describe('politique de granularité §6.1', () => {
   it('exige une granularité justifiée par le contenu, non uniforme', () => {
     const { system } = buildConsolidationPrompt(args as never);
     expect(system.toLowerCase()).toContain('justified by the content, not uniform');
-    expect(system.toLowerCase()).toContain('similar count across unrelated documents');
+    expect(system.toLowerCase()).toContain('unrelated documents should yield different counts');
   });
 
   it('interdit de créer une page quand une existante couvre déjà le sujet', () => {
     const { system } = buildConsolidationPrompt(args as never);
-    expect(system.toLowerCase()).toContain('update it, do not create a twin');
-    expect(system.toLowerCase()).toContain('creating is the exception');
+    expect(system.toLowerCase()).toContain('reuse or update an existing concept page');
+    expect(system.toLowerCase()).toContain('before creating a near-duplicate');
   });
 
-  it('borne la création à trois avec une justification par page', () => {
+  it('borne la création de produit à trois avec une justification par contenu', () => {
     const { system } = buildConsolidationPrompt(args as never);
-    expect(system.toLowerCase()).toContain('at most three new concept pages');
-    expect(system.toLowerCase()).toContain('explicit rationale');
+    expect(system.toLowerCase()).toContain('at most three new ones per source');
+    expect(system.toLowerCase()).toContain('justified by content');
+  });
+
+  it('exige les dimensions transverses comme concepts partagés', () => {
+    const { system } = buildConsolidationPrompt(args as never);
+    expect(system.toLowerCase()).toContain('transverse dimensions');
+    expect(system.toLowerCase()).toContain('scope=transverse');
+    expect(system.toLowerCase()).toContain('never one per product');
   });
 
   it('porte une version de prompt distincte pour invalider le cache', () => {

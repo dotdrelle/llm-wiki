@@ -58,16 +58,18 @@ function documentHasRelations(id){return documentRelationCount(id)>=GRAPH_FOCUS_
 async function selectDocument(node){
   if(selected&&selected.id!==node.id)focusHistory.push(selected.id);
   selected=node;selectedCommunity=data.communities.find(community=>community.nodeIds.includes(node.id))?.id||null;
-  const descends=documentHasRelations(node.id);
-  // From a domain's view, the selection goes from a domain to a leaf: staying
-  // at the "domain" level would make us look for a leaf's children, hence
-  // render an empty scene.
-  if(descends)view='focus';else if(view==='map'||view==='domain')view='community';
+  // A single click selects and opens the summary card; it does NOT descend.
+  // Descending stays on the double-click (activate(node, true)), where the
+  // intent is explicit. Descending here made a click on a well-connected page
+  // reframe the whole graph around its neighborhood, hiding what one was
+  // reading.
+  if(view==='map'||view==='domain')view='community';
   render();renderDocumentFocusWindow(node);
-  // The card is the only visible feedback when one does not descend: without
-  // it, the click would only write a line in a panel at the other end of the
-  // screen.
-  if(descends)closeGraphContextCard();else openGraphContextCard(node);
+  // The summary card opens for every document, connected or not: the focus
+  // view shows the neighborhood, the card shows what the page is about. Gating
+  // the summary behind a relation threshold made a well-connected page's
+  // content unreachable without descending.
+  openGraphContextCard(node);
 }
 /*
  A click on a DOMAIN opens its communities, never its documents.

@@ -69,7 +69,7 @@ document.querySelector('#reset-search').addEventListener('click',()=>{selected=n
 document.addEventListener('click',event=>{
   const viewButton=event.target.closest('[data-view]');
   if(viewButton){view=viewButton.dataset.view==='list'?'list':selected?'focus':selectedCommunity?(graphIsDomain(selectedCommunity)?'domain':'community'):'map';document.querySelectorAll('[data-view]').forEach(button=>button.classList.toggle('active',button===viewButton));render();return}
-  const community=event.target.closest('[data-community]');if(community){selectCommunity(community.dataset.community);return}
+  const community=event.target.closest('[data-community]');if(community){const group=community.closest('details'),willOpen=group?!group.open:undefined;event.preventDefault();selectCommunity(community.dataset.community);if(group&&willOpen!==undefined)group.open=willOpen;return}
   const documentButton=event.target.closest('[data-doc]');if(documentButton){const node=data.nodes.find(item=>item.id===documentButton.dataset.doc);if(node)selectDocument(node)}
 });
 document.querySelector('#filters').addEventListener('change',render);
