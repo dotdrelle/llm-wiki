@@ -3,7 +3,7 @@ import { EXTRACTION_IMPORTANCE, EXTRACTION_SCOPES } from '../ingest/extractionSc
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
 /** Version du prompt, portée par le cache d'extraction. */
-export const EXTRACTION_PROMPT_VERSION = 2;
+export const EXTRACTION_PROMPT_VERSION = 3;
 
 /*
  Prompt d'extraction : lire, pas écrire.
@@ -45,6 +45,8 @@ export function buildExtractionPrompt(args: {
       'facts[].subject and mainSubject must also be subject ids declared in subjects[], never a fact id, a label, or a path.',
       'If a relation cannot point at a declared subject id, omit that relation instead of inventing a target.',
       'Declare every subject you will reference in subjects[], even where its page will live later.',
+      `The "scope" of every subject is exactly one of: ${scopes}. Write the value verbatim, lowercase, no variant — not a paraphrase, not a category name, not a sentence.`,
+      `The "importance" of every subject is exactly one of: ${importance}. Write the value verbatim, lowercase, no variant.`,
       `Every subject declares a scope (${scopes}) and an importance (${importance}) with a short rationale.`,
       'Scope guidance:',
       '- source: only meaningful inside a note about this specific document',
