@@ -351,7 +351,7 @@ export async function handleChatRoutes(
     baseUrl: deps.config.llm.baseUrl,
     apiKey: deps.config.llm.apiKey ?? '',
     llmConfigured,
-    language: deps.config.language ?? 'fr',
+    language: deps.config.language ?? 'en',
     workspaceName: deps.workspaceNameFromEnv() ?? path.basename(deps.rootDir),
     ...(systemPrompt ? { systemPrompt } : {}),
     storageScope: createHash('sha256')

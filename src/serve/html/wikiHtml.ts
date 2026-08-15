@@ -300,7 +300,7 @@ export function layout(title: string, body: string, options: LayoutOptions = {})
   const htmlClassAttr = options.htmlClass ? ` class="${escapeAttr(options.htmlClass)}"` : '';
   const baseTag = options.baseTarget ? `\n  <base target="${escapeAttr(options.baseTarget)}">` : '';
   return `<!DOCTYPE html>
-<html lang="fr"${htmlClassAttr}>
+<html lang="en"${htmlClassAttr}>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">${baseTag}

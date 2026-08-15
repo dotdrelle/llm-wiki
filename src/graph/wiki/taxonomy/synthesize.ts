@@ -271,7 +271,7 @@ export function checkProposal(
     if (!(family.id in proposal.assignments)) issues.push({ path: 'assignments', reason: `unassigned family: ${family.id}` });
   }
   for (const community of communityIds) {
-    if (!communityUsage.has(community)) issues.push({ path: 'assignments', reason: `communauté sans famille : ${community}` });
+    if (!communityUsage.has(community)) issues.push({ path: 'assignments', reason: `community without a family: ${community}` });
   }
   /*
    Preservation of the identity of compared subjects.
@@ -345,7 +345,7 @@ export function checkProposal(
 /** Reminder of the conflict for a new attempt, without leaking an answer. */
 export function retryHint(issues: ProposalIssue[]): string {
   const emptyCommunities = issues
-    .map((issue) => issue.reason.match(/^communauté sans famille : (.+)$/)?.[1])
+    .map((issue) => issue.reason.match(/^community without a family: (.+)$/)?.[1])
     .filter((id): id is string => Boolean(id));
   return [
     'The previous answer was rejected. Fix exactly these problems and answer again:',

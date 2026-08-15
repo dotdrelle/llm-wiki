@@ -200,10 +200,10 @@ describe('inventaire soumis à la synthèse', () => {
 });
 
 describe('validation d’une proposition', () => {
-  it('explique explicitement comment corriger les feuilles sans famille', () => {
+  it('explains how to fix leaves without a family', () => {
     const hint = retryHint([
-      { path: 'assignments', reason: 'communauté sans famille : c8' },
-      { path: 'assignments', reason: 'communauté sans famille : c24' },
+      { path: 'assignments', reason: 'community without a family: c8' },
+      { path: 'assignments', reason: 'community without a family: c24' },
     ]);
 
     expect(hint).toContain('Unused communities: c8, c24');

@@ -144,12 +144,11 @@ export function buildPolishPrompt(markdown: string, ctx: PromptContext) {
       '- Vary sentence openings and reduce repetitive phrasing or keyword repetition unless technically necessary.',
       '- Replace generic connective phrases and boilerplate wording with precise transitions that fit the surrounding content.',
       '- When the document type allows it, use light first- or second-person framing ("we" or "you") to make the prose more direct; avoid this in formal or compliance-style documents.',
-      '- Add warmth where appropriate, without clichés or exaggerated emotion.',
+      '- Add warmth where appropriate, without cliches or exaggerated emotion.',
       '- Replace semicolons with periods or coordinating words when that improves readability.',
       '- Avoid overusing em dashes; prefer commas, periods, parentheses, or clearer sentence breaks.',
       '- Do not add personal opinions; the document must remain factual and source-grounded.',
       '- For English text only, use common contractions when they sound natural in context.',
-      '- For French text only, use natural contractions and everyday phrasing ("c\'est", "j\'ai", "on est"); favor short sentences. Avoid stiff connectors such as "En outre" or "Par conséquent" when the relationship is already clear.',
     ].join('\n'),
     user: [
       '# Markdown document to polish',

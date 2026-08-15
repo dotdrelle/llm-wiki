@@ -2304,9 +2304,9 @@ async function fetchStream(url, headers, body, onDelta, signal) {
 }
 
 function extractProfilePreference(text) {
-  const match=String(text||'').trim().match(/^\\s*(?:ajoute|ajouter|note|noter|retiens|retenir|m[ée]morise|m[ée]moriser|souviens-toi|souviens|enregistre|enregistrer|remember|save|persist)\\b\\s+(.+?)\\s*$/i);
+  const match=String(text||'').trim().match(/^\\s*(?:remember|save|note|record|persist|store|add)\\b\\s+(.+?)\\s*$/i);
   if(!match) return null;
-  const preference=String(match[1]||'').replace(/^(?:(?:dans|sur|a|à)\\s+)?(?:mon|ma|le|la|ce|cette)?\\s*(?:profil|profile)\\s+(?:que\\s+)?/i,'').replace(/^que\\s+/i,'').trim().replace(/[.。]\\s*$/,'');
+  const preference=String(match[1]||'').replace(/^(?:(?:in|on|to|at)\\s+)?(?:my|the|this)?\\s*(?:profile)\\s+(?:that\\s+)?/i,'').replace(/^that\\s+/i,'').trim().replace(/[.。]\\s*$/,'');
   return preference.length>=3 ? preference : null;
 }
 
@@ -2694,7 +2694,7 @@ initChat();
 </script>`;
 
 export const CHAT_HTML = `<!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">

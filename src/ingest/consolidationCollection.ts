@@ -171,7 +171,7 @@ export function consolidateCollection(
     revision,
     corpus: 'fp:collection',
     corpusAlgorithm: 'sha256',
-    languages: ['fr'],
+    languages: ['en'],
     communities: communitiesFromConcepts(concepts, firstSeenRevision),
     assignments: {},
     corpusPageIds: [],

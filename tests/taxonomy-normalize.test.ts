@@ -2,15 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { normalizeProposal, type TaxonomyProposal } from '../src/graph/wiki/taxonomy/synthesize.ts';
 
 /*
- Trois synthèses ACPI de suite ont été rejetées pour « communauté sans famille ».
+ Three ACPI syntheses in a row were rejected for "community without a family".
 
- Une feuille à laquelle aucune famille n'est affectée ne porte aucune page : la
- retirer ne déplace rien, ne perd rien, ne tranche aucune question de sens.
- Rejeter la proposition entière — et payer trois appels — pour une ligne en trop
- était disproportionné.
+ A leaf with no family assigned carries no page: removing it moves nothing, loses
+ nothing, decides no question of meaning. Rejecting the whole proposal — and
+ paying three calls — for one extra line was disproportionate.
 
- La frontière retenue : le moteur peut RETIRER ce qui ne porte rien ; il ne doit
- jamais inventer ni déplacer ce qui porte quelque chose.
+ The line kept: the engine may REMOVE what carries nothing; it must never invent
+ nor move what carries something.
 */
 
 const proposal = (over: Partial<TaxonomyProposal> = {}): TaxonomyProposal => ({

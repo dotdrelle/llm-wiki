@@ -530,7 +530,7 @@ const historySchema = z
 export const rawConfigSchema = z.object({
   preset: z.enum(['albert', 'openai', 'ollama', 'nvidia']).optional(),
   wikiRoot: z.string().optional(),
-  language: z.string().min(2).max(20).default('fr').optional(),
+  language: z.string().min(2).max(20).default('en').optional(),
   llm: llmSchema.optional(),
   limits: limitsSchema.optional(),
   build: buildSchema.optional(),
@@ -750,7 +750,7 @@ export function resolveConfigDetails(
     wikiRoot,
     configPath,
     preset: parsed.preset,
-    language: parsed.language ?? 'fr',
+    language: parsed.language ?? 'en',
     mcp: {
       ...(mcpAccessKey ? { accessKey: mcpAccessKey } : {}),
       ...(mcpReadToken ? { readToken: mcpReadToken } : {}),

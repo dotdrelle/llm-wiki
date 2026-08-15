@@ -107,10 +107,9 @@ export function readProvenance(content: string): PageProvenance {
 export function collectionFromSourcePath(relativePath: string): string | null {
   const parts = relativePath.split('/').filter(Boolean);
   // The collection is the IMMEDIATE parent of the document, not the first
-  // export root. On ACPI, `Outils de gestion` contains several unrelated sets;
-  // the five products are siblings under `Synthèse Solutions externes`. Taking
-  // the first segment after `untracked` would have classified them all in a
-  // collection far too broad.
+  // export root: taking the first segment after `untracked`/`ingested` would
+  // group unrelated documents into a collection far too broad. The parent
+  // folder that gathers sibling documents is the right granularity.
   const index = parts.findIndex((part) => part === 'untracked' || part === 'ingested');
   if (index < 0 || parts.length - index < 3) return null;
   const parentIndex = parts.length - 2;
