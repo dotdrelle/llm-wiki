@@ -1,6 +1,7 @@
 import { consolidate } from './consolidation.ts';
 import { computeCoverage, mergeSampledPages } from './coverage.ts';
 import { checkDistribution } from './distribution.ts';
+import { guardAgainstMassDisruption } from './filiation.ts';
 import { KNOWLEDGE_ETAG_ALGORITHM, knowledgeEtag } from './knowledge.ts';
 import {
   adoptByLabel,
@@ -606,6 +607,14 @@ async function runSynthesis(
     corpusPageIds: inventory.corpusPageIds,
     sampledPageIds,
   };
+
+  // Garde-fou (Lot 3, 6.3) : une part trop grande de communautés actives
+  // évanouies sans successeur est un trou ; force ne lève pas cette promesse.
+  const filiationGuard = guardAgainstMassDisruption(previous, communities);
+  if (!filiationGuard.ok) {
+    await noteFailure(rootDir, inventory.corpus, filiationGuard.issues);
+    return { status: 'rejected', issues: filiationGuard.issues };
+  }
 
   /*
    Contrôle de distribution avant publication.
