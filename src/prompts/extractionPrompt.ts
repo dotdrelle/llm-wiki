@@ -3,7 +3,7 @@ import { EXTRACTION_IMPORTANCE, EXTRACTION_SCOPES } from '../ingest/extractionSc
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
 /** Version du prompt, portée par le cache d'extraction. */
-export const EXTRACTION_PROMPT_VERSION = 3;
+export const EXTRACTION_PROMPT_VERSION = 4;
 
 /*
  Prompt d'extraction : lire, pas écrire.
@@ -42,6 +42,8 @@ export function buildExtractionPrompt(args: {
       '',
       'Subject ids are local to this fragment ("s1", "s2", ...). They are not paths and never become paths here.',
       'relations[].from and relations[].to are subject ids, taken verbatim from subjects[]. Never reuse a fact id (E01, ...), an inline label, or a path.',
+      'Every relation also declares kind: a short predicate (snake_case, e.g. integrates, depends_on, supports, replaces). The schema requires it; omit the whole relation only if it cannot be expressed cleanly.',
+      'Each fact has exactly this shape: {"statement": "the claim as prose", "subject": "s1", "citation": "<the exact citation path>"}. Use statement, not predicate/object/claim. If a fact cannot produce a prose statement, drop the fact.',
       'facts[].subject and mainSubject must also be subject ids declared in subjects[], never a fact id, a label, or a path.',
       'If a relation cannot point at a declared subject id, omit that relation instead of inventing a target.',
       'Declare every subject you will reference in subjects[], even where its page will live later.',

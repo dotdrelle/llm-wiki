@@ -338,14 +338,8 @@ function scrollMessagesToBottom() {
   if(wrap) wrap.scrollTop=wrap.scrollHeight;
 }
 
-// Bumped on every fetch that starts, and on every direct SSE 'state' push
-// (the authoritative, already-in-order source). A run's final "done" state
-// can arrive over SSE while an older /api/runtime/state fetch — kicked off
-// mid-stream by one of many agent_event bursts a long streamed reply
-// produces — is still in flight; without this guard, that stale fetch
-// resolving afterward silently overwrites the fresh "done" state with a
-// "running" snapshot from a moment before completion, and the run looks
-// stuck in progress forever even though it already finished.
+// Bumped on every fetch start and on every SSE 'state' push; a stale in-flight
+// /api/runtime/state fetch must not overwrite a fresh "done" with "running".
 let runtimeStateSeq=0;
 function applyRuntimeState(state) {
   runtimeState=state;
@@ -355,9 +349,7 @@ function applyRuntimeState(state) {
   updateActivityBadge();
   updateApprovalBanner();
   updateAgentModeUI();
-  // Scroll after renderActivities(), not before: opening/resizing the
-  // Activity panel can reflow the chat column's width and change wrapped
-  // text height, which would make an earlier scrollTop assignment stale.
+  // Scroll after renderActivities (panel resize reflows width/height).
   if(conversationChanged) scrollMessagesToBottom();
 }
 
