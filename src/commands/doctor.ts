@@ -3,7 +3,9 @@ import { execSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import YAML from 'yaml';
-import { splitByHeadings, splitSourceSections } from '../utils/markdown.ts';
+import matter from 'gray-matter';
+import { normalizeSourceBody, splitByHeadings } from '../utils/markdown.ts';
+import { planSourcePacks } from '../utils/sourcePacking.ts';
 import { BuildService } from '../services/buildService.ts';
 import { EmbeddingService } from '../services/embeddingService.ts';
 import { LLMService } from '../services/llmService.ts';
@@ -1136,11 +1138,21 @@ export default async function doctorCmd(
   await reportSourceReconciliation(workspace, pages, ingestedPages);
   const buildContext = workspace.composeBuildContext(buildContextSections);
 
+  /*
+   Le diagnostic doit voir ce que l'ingestion verra, pas le fichier brut.
+
+   L'ingestion retire le frontmatter puis passe par `normalizeSourceBody` —
+   qui déplie le HTML exporté en Markdown et écrase les blancs. L'écart n'est
+   pas marginal : un export Confluence de 56 817 caractères retombe à 19 838.
+   Planifier sur le brut annonçait donc neuf appels pour une source qui en coûte
+   quatre, et gonflait du même coup la valeur recommandée de `maxSourceChars`.
+  */
   const untrackedContents = await Promise.all(
     untrackedPaths.map(async (p) => {
       const { readFile } = await import('node:fs/promises');
       const content = await readFile(p, 'utf8');
-      return { path: p, size: content.length, content };
+      const body = normalizeSourceBody(matter(content).content.trim());
+      return { path: p, size: content.length, normalizedSize: body.length, content, body };
     }),
   );
 
@@ -1148,7 +1160,18 @@ export default async function doctorCmd(
   const allChunks = pages.flatMap((p) => splitByHeadings(p.content));
   const chunkSizes = allChunks.map((c) => c.content.length);
   const untrackedSizes = untrackedContents.map((u) => u.size);
-  const maxUntracked = untrackedSizes.length > 0 ? Math.max(...untrackedSizes) : 0;
+  /*
+   La recommandation de `maxSourceChars` se lit sur la taille NORMALISÉE.
+
+   `maxSourceChars` borne le corps envoyé au modèle, jamais l'octet brut du
+   fichier. Recommander une limite calculée sur le brut proposait des valeurs
+   deux à trois fois trop hautes sur des exports HTML, c'est-à-dire un prompt
+   que le serveur n'accepterait pas.
+  */
+  const untrackedNormalizedSizes = untrackedContents.map((u) => u.normalizedSize);
+  const maxUntracked = untrackedNormalizedSizes.length > 0
+    ? Math.max(...untrackedNormalizedSizes)
+    : 0;
 
   row(
     'wiki pages:',
@@ -1167,18 +1190,36 @@ export default async function doctorCmd(
   );
   row(
     'pending ingest:',
-    `${untrackedPaths.length} file(s) in raw/untracked${untrackedSizes.length > 0 ? ` (avg ${avg(untrackedSizes)} chars, max ${maxUntracked} chars)` : ''}`,
+    `${untrackedPaths.length} file(s) in raw/untracked${untrackedSizes.length > 0 ? ` (avg ${avg(untrackedSizes)} chars, max ${Math.max(...untrackedSizes)} chars; normalized max ${maxUntracked} chars)` : ''}`,
   );
 
-  const largeUntracked = untrackedContents.filter(
-    (u) => u.size > config.retrieval.maxSourceChars,
+  /*
+   L'estimation passe par le MÊME planificateur que l'ingestion.
+
+   Une approximation distincte annoncerait un nombre d'appels que l'exécution ne
+   tiendrait pas — et c'est précisément sur cette estimation qu'on décide de
+   lancer, ou non, un lot payant.
+  */
+  const untrackedPlans = untrackedContents.map((source) => ({
+    source,
+    plan: planSourcePacks(source.body, { maxChars: config.retrieval.maxSourceChars }),
+  }));
+  const splitUntracked = untrackedPlans.filter((entry) => entry.plan.packs.length > 1);
+  const plannedCalls = untrackedPlans.reduce((total, entry) => total + entry.plan.packs.length, 0);
+  const truncatedBlocks = untrackedPlans.reduce(
+    (total, entry) => total + entry.plan.diagnostics.truncatedBlocks,
+    0,
   );
-  const largeUntrackedSections = largeUntracked.flatMap((source) =>
-    splitSourceSections(source.content, config.retrieval.maxSourceChars),
-  );
-  if (largeUntracked.length > 0) {
+  if (untrackedPlans.length > 0) {
+    row(
+      'planned ingest calls:',
+      `${plannedCalls} for ${untrackedPlans.length} pending file(s)`
+        + `${splitUntracked.length > 0 ? ` (${splitUntracked.length} split)` : ''}`,
+    );
+  }
+  if (truncatedBlocks > 0) {
     warn(
-      `${largeUntracked.length} pending file(s) in raw/untracked exceed maxSourceChars (${config.retrieval.maxSourceChars}) — ingest will split them into ~${largeUntrackedSections.length} LLM section call(s); only oversized unsplittable sections are truncated`,
+      `${truncatedBlocks} indivisible block(s) exceed maxSourceChars (${config.retrieval.maxSourceChars}) and will be truncated`,
     );
   }
   const truncatedChunks = allChunks.filter(
