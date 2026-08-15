@@ -1,51 +1,51 @@
 import { z } from 'zod';
 
 /*
- Contrat d'extraction : un lot rapporte des FAITS, jamais des fichiers.
+ Extraction contract: a batch reports FACTS, never files.
 
- Avant, chaque lot d'une source recevait le prompt d'ingestion complet et
- décidait seul de créer des pages, d'en mettre à jour et de toucher l'index.
- Les opérations étaient ensuite concaténées sans consolidation sémantique : deux
- lots pouvaient écrire le même chemin, ou deux chemins différents pour le même
- concept, et rien ne les départageait. Le nombre de pages produites suivait donc
- le nombre de lots — c'est-à-dire le découpage des titres.
+ Before, each batch of a source received the full ingestion prompt and decided
+ on its own to create pages, update some and touch the index. The operations
+ were then concatenated without semantic consolidation: two batches could write
+ the same path, or two different paths for the same concept, and nothing
+ arbitrated between them. The number of produced pages therefore followed the
+ number of batches — that is, the way the titles were split.
 
- Ici, un lot ne peut rien écrire. Il rapporte ce qu'il a lu, avec des
- identifiants LOCAUX au document ; la consolidation seule transforme cela en
- chemins. C'est ce qui rend la décision unique par source au lieu d'être répétée
- par fragment.
+ Here, a batch cannot write anything. It reports what it has read, with
+ identifiers LOCAL to the document; only the consolidation turns this into
+ paths. That is what makes the decision unique per source instead of being
+ repeated per fragment.
 */
 
-/** Version du contrat, portée par le cache : un changement invalide les entrées. */
+/** Version of the contract, carried by the cache: a change invalidates the entries. */
 export const EXTRACTION_SCHEMA_VERSION = 1;
 
 /**
- * Portée d'un sujet candidat.
+ * Scope of a candidate subject.
  *
- * `source` reste dans la note de source ; `product` appartient à un sujet
- * comparé ; `transverse` traverse plusieurs sujets ; `workspace` vaut pour tout
- * l'espace de travail. C'est cette portée, et non le volume de texte, qui décide
- * plus tard si un candidat mérite sa page.
+ * `source` stays within the source note; `product` belongs to a compared
+ * subject; `transverse` spans several subjects; `workspace` applies to the
+ * whole workspace. It is this scope, and not the volume of text, that decides
+ * later whether a candidate deserves its own page.
  */
 export const EXTRACTION_SCOPES = ['source', 'product', 'transverse', 'workspace'] as const;
 export type ExtractionScope = (typeof EXTRACTION_SCOPES)[number];
 
 /**
- * Importance déclarée, avec sa justification.
+ * Declared importance, with its justification.
  *
- * Demander la justification n'est pas décoratif : c'est ce qui permet à la
- * consolidation de refuser un candidat sans avoir à relire le fragment, et au
- * journal d'expliquer après coup pourquoi un concept a été gardé.
+ * Asking for the justification is not decorative: it is what lets the
+ * consolidation refuse a candidate without having to reread the fragment, and
+ * lets the log explain afterwards why a concept was kept.
  */
 export const EXTRACTION_IMPORTANCE = ['core', 'supporting', 'incidental'] as const;
 
 const nonEmpty = z.string().trim().min(1);
 
-/** Identifiant local au document : `s1`, `s2`… Jamais un chemin. */
+/** Local identifier within the document: `s1`, `s2`… Never a path. */
 const localId = z
   .string()
   .trim()
-  .regex(/^[a-z][a-z0-9_-]{0,31}$/i, 'identifiant local attendu, jamais un chemin');
+  .regex(/^[a-z][a-z0-9_-]{0,31}$/i, 'expected local identifier, never a path');
 
 export const extractedFactSchema = z.preprocess((value) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
@@ -63,15 +63,15 @@ export const extractedFactSchema = z.preprocess((value) => {
 }, z.object({
   statement: nonEmpty,
   /*
-   Sujet local auquel le fait se rattache, quand il y en a un.
+   Local subject the fact attaches to, when there is one.
 
-   Contraint volontairement à une simple chaîne et pas à `localId` : un modèle
-   peut attacher le fait à un identifiant de forme imparfaite. La purge
-   référentielle ci-dessous résout l'éligibilité (cible inconnue → sujet
-   écarté) sans perdre la source pour une forme douteuse.
+   Deliberately constrained to a plain string and not `localId`: a model may
+   attach the fact to an identifier of imperfect form. The referential purge
+   below resolves eligibility (unknown target → subject discarded) without
+   losing the source for a dubious form.
   */
   subject: z.string().trim().min(1).nullish().transform((value) => value ?? null),
-  /** Chemin de citation canonique, tel que fourni dans le message utilisateur. */
+  /** Canonical citation path, as provided in the user message. */
   citation: nonEmpty,
 }));
 
@@ -80,9 +80,9 @@ export const extractedSubjectSchema = z.preprocess((value) => {
   const subject = value as Record<string, unknown>;
   return {
     ...subject,
-    // Certains moteurs omettent le libellé mais fournissent id + portée +
-    // justification. L'id reste alors un repère PRIVÉ pour la consolidation,
-    // jamais un nom de page ni une identité publiée.
+    // Some engines omit the label but provide id + scope +
+    // justification. The id then stays a PRIVATE marker for the consolidation,
+    // never a page name nor a published identity.
     label: subject.label ?? subject.name ?? subject.title ?? subject.id,
     rationale: subject.rationale ?? subject.justification ?? subject.reason ?? subject.why,
     relatedExistingPages:
@@ -95,12 +95,12 @@ export const extractedSubjectSchema = z.preprocess((value) => {
   importance: z.enum(EXTRACTION_IMPORTANCE).default('supporting'),
   rationale: nonEmpty,
   /**
-   * Pages existantes que ce candidat pourrait prolonger.
+   * Existing pages this candidate could extend.
    *
-   * Un SIGNAL de rapprochement, pas une décision : la consolidation vérifie que
-   * la page existe et tranche. Sans ce signal, chaque lot redécouvrait un
-   * concept déjà écrit et la consolidation n'avait aucune raison de les
-   * rapprocher.
+   * A proximity SIGNAL, not a decision: the consolidation verifies that the
+   * page exists and decides. Without this signal, each batch would rediscover
+   * an already-written concept and the consolidation would have no reason to
+   * bring them together.
    */
   relatedExistingPages: z.array(nonEmpty).default([]),
 }));
@@ -123,25 +123,25 @@ export const extractedRelationSchema = z.preprocess((value) => {
 }));
 
 /*
- Tolérance d'entrée, même discipline que `ingestPlanSchema`.
+ Input tolerance, same discipline as `ingestPlanSchema`.
 
- Les modèles renomment volontiers les clés d'un tour à l'autre. Réparer ici ce
- qui est manifestement le même champ évite un rejet — et donc un appel de plus —
- pour une différence de vocabulaire qui ne change aucun sens.
+ Models happily rename keys from one turn to the next. Repairing here what is
+ manifestly the same field avoids a rejection — and therefore one more call —
+ for a vocabulary difference that changes no meaning.
 */
 /*
- Purge référentielle : dégrader, jamais rejeter.
+ Referential purge: degrade, never reject.
 
- Les relations et le sujet principal ne référencent un sujet que s'ils en
- reprennent l'identifiant déclaré. Un modèle peut émettre une cible qui n'est
- pas un identifiant déclaré — id de fait, libellé, chemin. Rejeter la source
- ferait payer un appel en vain et perdrait un document entier pour un repère
- que personne ne peut résoudre. La purge écarte les références orphelines et
- les journalise ; les faits, sujets et relations valides survivent.
+ Relations and the main subject reference a subject only if they reuse its
+ declared identifier. A model may emit a target that is not a declared
+ identifier — fact id, label, path. Rejecting the source would pay a call in
+ vain and lose an entire document for a marker that nobody can resolve. The
+ purge discards orphan references and logs them; valid facts, subjects and
+ relations survive.
 
- Renvoyer une référence orpheline au lieu de rejeter suit la même discipline
- que `validateConsolidation` : une erreur de STRUCTURE bloque, une réserve
- sémantique est visible sans empêcher de publier.
+ Returning an orphan reference instead of rejecting follows the same discipline
+ as `validateConsolidation`: a STRUCTURE error blocks, a semantic reservation
+ is visible without preventing publication.
 */
 export const sourceExtractionSchema = z.preprocess(
   (value) => {
@@ -173,11 +173,11 @@ export const sourceExtractionSchema = z.preprocess(
       const id = subject.id ?? subject.subjectId ?? subject.subject_id ?? subject.key;
       if (typeof id !== 'string') return null;
       const trimmed = id.trim();
-      // Seuls les identifiants de forme `localId` survivront la validation du
-      // sujet (`extractedSubjectSchema.id`). Un sujet à l'id mal formé sera
-      // rejeté par le contrat un peu plus bas ; il ne doit donc pas rendre une
-      // relation ou un `mainSubject` « résolu » alors que son sujet n'existera
-      // jamais.
+      // Only identifiers of `localId` form will survive the subject validation
+      // (`extractedSubjectSchema.id`). A subject with a malformed id will be
+      // rejected by the contract a little further down; it must therefore not
+      // make a relation or a `mainSubject` "resolved" when its subject will
+      // never exist.
       if (!trimmed || !localId.safeParse(trimmed).success) return null;
       return trimmed;
     };
@@ -211,13 +211,13 @@ export const sourceExtractionSchema = z.preprocess(
       const fact = raw as Record<string, unknown>;
       const subject = fact.subject ?? fact.subjectId ?? fact.subject_id;
       if (subject === undefined || subject === null || isKnown(subject)) {
-        // Le fait lui-même est conservé tel quel ; son rattachement est déjà
-        // valide ou absent.
+        // The fact itself is kept as-is; its attachment is already valid or
+        // absent.
         facts.push(raw);
       } else {
-        // Fait exploitable, rattachement brisé : on garde le fait, on écarte
-        // seulement l'identifiant orphelin. La consolidation perd le lien, pas
-        // le contenu.
+        // Usable fact, broken attachment: keep the fact, discard only the
+        // orphan identifier. The consolidation loses the link, not the
+        // content.
         orphanedFacts += 1;
         facts.push({ ...fact, subject: null });
       }
@@ -233,7 +233,7 @@ export const sourceExtractionSchema = z.preprocess(
       subjects: rawSubjects,
       relations,
       mainSubject,
-      // Visible, jamais bloquant : la trace explique ce qui a été écarté.
+      // Visible, never blocking: the trace explains what was discarded.
       ...(orphanedRelations > 0 || orphanedFacts > 0
         ? { _dangling: { orphanedRelations, orphanedFacts } }
         : {}),
@@ -243,9 +243,9 @@ export const sourceExtractionSchema = z.preprocess(
     facts: z.array(extractedFactSchema).default([]),
     subjects: z.array(extractedSubjectSchema).default([]),
     relations: z.array(extractedRelationSchema).default([]),
-    /** Identité du sujet principal quand elle est explicite dans le fragment. */
+    /** Identity of the main subject when it is explicit in the fragment. */
     mainSubject: localId.nullish().transform((value) => value ?? null),
-    /** Compteurs de référence ignorées : à usage de journal, jamais bloquant. */
+    /** Counters of ignored references: for logging only, never blocking. */
     _dangling: z.object({
       orphanedRelations: z.number().int().min(0).default(0),
       orphanedFacts: z.number().int().min(0).default(0),
@@ -255,7 +255,7 @@ export const sourceExtractionSchema = z.preprocess(
       .map((subject) => subject.id)
       .filter((id, index, all) => all.indexOf(id) !== index);
     for (const id of new Set(duplicateIds)) {
-      context.addIssue({ code: 'custom', path: ['subjects'], message: `identifiant local en double : ${id}` });
+      context.addIssue({ code: 'custom', path: ['subjects'], message: `duplicate local identifier: ${id}` });
     }
   }),
 );
@@ -265,15 +265,15 @@ export type ExtractedRelation = z.infer<typeof extractedRelationSchema>;
 export type SourceExtraction = z.infer<typeof sourceExtractionSchema>;
 
 /**
- * Fusionne les extractions d'une même source, sans rien décider.
+ * Merges the extractions of a single source, without deciding anything.
  *
- * Les identifiants sont locaux au LOT, pas au document : deux lots peuvent tous
- * deux nommer `s1`. On les préfixe donc par leur index de lot avant de les
- * réunir, sinon la consolidation verrait un seul sujet là où il y en a deux — ou
- * pire, relierait des faits appartenant à des sujets différents.
+ * Identifiers are local to the BATCH, not to the document: two batches can
+ * both name `s1`. They are therefore prefixed by their batch index before
+ * being merged, otherwise the consolidation would see a single subject where
+ * there are two — or worse, link facts belonging to different subjects.
  *
- * Aucun rapprochement sémantique ici : c'est le travail de la consolidation, et
- * le faire en deux endroits reviendrait à le faire deux fois différemment.
+ * No semantic reconciliation here: that is the consolidation's job, and doing
+ * it in two places would mean doing it twice, differently.
  */
 export function mergeExtractions(extractions: SourceExtraction[]): SourceExtraction {
   const facts: ExtractedFact[] = [];
@@ -290,8 +290,8 @@ export function mergeExtractions(extractions: SourceExtraction[]): SourceExtract
       subjects.push({ ...subject, id: qualify(subject.id) });
     }
     for (const relation of extraction.relations) {
-      // Une relation sans extrémités résolues n'apporte rien à la fusion :
-      // la purger ici, comme à l'extraction, garde chaque lot libre d'idées.
+      // A relation without resolved endpoints brings nothing to the merge:
+      // purging it here, as at extraction, keeps each batch free of ideas.
       if (!relation.from || !relation.to) continue;
       relations.push({ ...relation, from: qualify(relation.from), to: qualify(relation.to) });
     }
@@ -302,8 +302,8 @@ export function mergeExtractions(extractions: SourceExtraction[]): SourceExtract
     facts,
     subjects,
     relations,
-    // Plusieurs lots peuvent désigner un sujet principal ; le premier déclaré
-    // fait foi, et la consolidation voit de toute façon la liste complète.
+    // Several batches may designate a main subject; the first declared wins,
+    // and the consolidation sees the full list anyway.
     mainSubject: mainSubjects[0] ?? null,
   };
 }

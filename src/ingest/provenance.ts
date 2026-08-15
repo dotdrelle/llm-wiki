@@ -2,21 +2,20 @@ import matter from 'gray-matter';
 import { EXTRACTION_SCOPES, type ExtractionScope } from './extractionSchema.ts';
 
 /*
- Provenance canonique d'une page : sujet, collection, portée.
+ Canonical provenance of a page: subject, collection, scope.
 
- Le classement s'appuyait jusqu'ici sur `group:`, une chaîne libre écrite par le
- modèle. Sur un corpus comparatif, cela produisait l'inverse de ce qu'on
- cherche : cinq produits différents rassemblés sous `security`, et les pages d'un
- même produit dispersées entre `software`, `feature` et `integration`. La
- provenance ne peut pas être déduite d'une étiquette dont personne ne contrôle le
- vocabulaire.
+ Classification used to rely on `group:`, a free-form string written by the
+ model. On a comparative corpus, this produced the opposite of what we want:
+ five different products gathered under `security`, and the pages of a single
+ product scattered between `software`, `feature` and `integration`. Provenance
+ cannot be inferred from a label whose vocabulary nobody controls.
 
- Ces trois champs sont donc structurés, normalisés et validés. Ils ne remplacent
- pas `group:` — qui reste un signal de classement libre — ils lui retirent la
- charge de prouver une identité.
+ These three fields are therefore structured, normalized and validated. They do
+ not replace `group:` — which remains a free classification signal — they
+ remove from it the burden of proving an identity.
 
- Aucune liste de produits, de fournisseurs ou de domaines n'est codée ici : la
- normalisation ne fait que canoniser la forme de ce que la source a dit.
+ No list of products, providers or domains is hardcoded here: normalization
+ only canonicalizes the form of what the source said.
 */
 
 export type PageProvenance = {
@@ -26,11 +25,11 @@ export type PageProvenance = {
 };
 
 /**
- * Forme canonique d'une valeur de provenance.
+ * Canonical form of a provenance value.
  *
- * Minuscules, accents retirés, séparateurs unifiés : `Anaplan`, `anaplan` et
- * `Anaplan ` doivent désigner le même sujet, sinon l'identité qu'on vient
- * d'introduire souffrirait exactement du défaut de `group:`.
+ * Lowercased, accents removed, separators unified: `Anaplan`, `anaplan` and
+ * `Anaplan ` must designate the same subject, otherwise the identity we have
+ * just introduced would suffer exactly the same flaw as `group:`.
  */
 export function normalizeProvenanceValue(value: string): string {
   return value
@@ -52,16 +51,16 @@ export function isExtractionScope(value: unknown): value is ExtractionScope {
 }
 
 /**
- * Injecte la provenance dans le frontmatter d'un contenu de page.
+ * Injects provenance into the frontmatter of a page content.
  *
- * L'injection est faite par le MOTEUR, pas confiée au modèle. Demander à un LLM
- * d'écrire trois champs exacts dans chaque page qu'il produit, c'est accepter
- * qu'ils manquent sur une page sur dix — et une provenance présente neuf fois
- * sur dix ne vaut pas mieux qu'une provenance absente : elle rend le classement
- * incohérent au lieu de le rendre incomplet.
+ * The injection is done by the ENGINE, not entrusted to the model. Asking an
+ * LLM to write three exact fields in every page it produces is accepting that
+ * they will be missing on one page in ten — and a provenance present nine times
+ * out of ten is no better than an absent one: it makes the classification
+ * inconsistent instead of making it incomplete.
  *
- * Une valeur déjà présente dans le fichier et non fournie ici est conservée :
- * une modification manuelle explicite prime sur la projection automatique.
+ * A value already present in the file and not provided here is kept: an
+ * explicit manual edit takes precedence over the automatic projection.
  */
 export function applyProvenance(content: string, provenance: PageProvenance): string {
   const parsed = matter(content);
@@ -77,11 +76,10 @@ export function applyProvenance(content: string, provenance: PageProvenance): st
 }
 
 /**
- * Lit la provenance d'une page existante.
+ * Reads the provenance of an existing page.
  *
- * Une valeur mal formée est traitée comme absente plutôt que réparée : la
- * réparer en silence ferait entrer dans le classement une identité que personne
- * n'a validée.
+ * A malformed value is treated as absent rather than repaired: repairing it
+ * silently would let an identity that nobody validated enter the classification.
  */
 export function readProvenance(content: string): PageProvenance {
   const { data } = matter(content);
@@ -97,22 +95,22 @@ export function readProvenance(content: string): PageProvenance {
 }
 
 /**
- * Provenance d'une source, telle que le moteur la déduit sans rien inventer.
+ * Provenance of a source, as the engine infers it without inventing anything.
  *
- * La collection vient de la STRUCTURE de la source — le répertoire qui réunit
- * des documents frères — parce que c'est le seul signal disponible avant toute
- * décision du modèle. Le sujet, lui, n'est pas déduit du chemin : un nom de
- * fichier est un accident d'export, et le promouvoir en identité rouvrirait la
- * porte que `group:` laissait ouverte. Il est proposé par la consolidation, qui
- * a lu le document.
+ * The collection comes from the STRUCTURE of the source — the directory that
+ * gathers sibling documents — because it is the only signal available before
+ * any model decision. The subject, on the other hand, is not inferred from the
+ * path: a file name is an export accident, and promoting it to an identity
+ * would reopen the door that `group:` left open. It is proposed by the
+ * consolidation, which has read the document.
  */
 export function collectionFromSourcePath(relativePath: string): string | null {
   const parts = relativePath.split('/').filter(Boolean);
-  // La collection est le parent IMMÉDIAT du document, pas la première racine
-  // d'export. Sur ACPI, `Outils de gestion` contient plusieurs ensembles sans
-  // rapport ; les cinq produits sont frères sous `Synthèse Solutions externes`.
-  // Prendre le premier segment après `untracked` les aurait tous classés dans
-  // une collection beaucoup trop large.
+  // The collection is the IMMEDIATE parent of the document, not the first
+  // export root. On ACPI, `Outils de gestion` contains several unrelated sets;
+  // the five products are siblings under `Synthèse Solutions externes`. Taking
+  // the first segment after `untracked` would have classified them all in a
+  // collection far too broad.
   const index = parts.findIndex((part) => part === 'untracked' || part === 'ingested');
   if (index < 0 || parts.length - index < 3) return null;
   const parentIndex = parts.length - 2;

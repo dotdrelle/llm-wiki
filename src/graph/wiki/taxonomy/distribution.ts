@@ -1,30 +1,30 @@
 import type { TaxonomyRegistry } from './schema.ts';
 
 /*
- Contrôle de distribution, avant publication.
+ Distribution check, before publication.
 
- La révision qui a fusionné 142 pages dans une seule bulle était
- STRUCTURELLEMENT valide : identifiants cohérents, libellés conformes,
- couverture complète. Elle était fonctionnellement inutilisable. Un registre
- peut donc passer toutes les vérifications de forme et détruire la navigation,
- ce qui veut dire qu'il manquait un contrôle — celui de la forme de la
- distribution, pas de celle des données.
+ The revision that merged 142 pages into a single bubble was
+ STRUCTURALLY valid: consistent identifiers, conforming labels,
+ complete coverage. It was functionally unusable. A registry
+ can therefore pass every form check and destroy navigation,
+ which means a check was missing — the one on the shape of the
+ distribution, not on that of the data.
 */
 
 /**
- * Part maximale du corpus qu'une communauté feuille peut porter.
+ * Maximum share of the corpus that a leaf community can carry.
  *
- * Au-delà, ce n'est plus un sujet : c'est le corpus avec un nom dessus. Le
- * seuil est relatif pour rester valable d'un wiki de 50 pages à un wiki de
- * 5 000, et il s'accompagne d'un plancher absolu pour ne pas déclarer
- * « démesurée » une feuille de 6 pages dans un corpus de 10.
+ * Beyond it, it is no longer a subject: it is the corpus with a name on it. The
+ * threshold is relative so it stays valid from a 50-page wiki to a
+ * 5,000-page one, and it comes with an absolute floor so as not to declare
+ * "excessive" a 6-page leaf in a 10-page corpus.
  */
 export const MAX_LEAF_SHARE = 0.35;
 export const LEAF_SHARE_FLOOR = 12;
 
 /**
- * Un domaine qui n'a qu'une communauté fille ajoute un niveau de navigation
- * pour ne rien séparer : deux clics au lieu d'un, sans information gagnée.
+ * A domain that has only one daughter community adds a navigation level
+ * to separate nothing: two clicks instead of one, with no information gained.
  */
 export const MIN_CHILDREN_PER_DOMAIN = 2;
 
@@ -35,17 +35,17 @@ export type DistributionReport = {
   pageCount: number;
   domains: number;
   leaves: number;
-  /** Taille de la plus grosse feuille, en pages. */
+  /** Size of the largest leaf, in pages. */
   largestLeaf: number;
 };
 
 /**
- * Juge la forme d'une taxonomie : profondeur, tailles, absence de fourre-tout.
+ * Judges the shape of a taxonomy: depth, sizes, absence of catch-alls.
  *
- * Ce contrôle est distinct de la validation de schéma parce qu'il répond à une
- * autre question. La validation demande « ce registre est-il cohérent ? » ; ce
- * rapport demande « cette carte est-elle navigable ? ». Les deux doivent passer
- * avant publication.
+ * This check is distinct from the schema validation because it answers a
+ * different question. Validation asks "is this registry coherent?"; this
+ * report asks "is this map navigable?". Both must pass
+ * before publication.
  */
 export function checkDistribution(registry: TaxonomyRegistry): DistributionReport {
   const issues: DistributionIssue[] = [];
@@ -73,7 +73,7 @@ export function checkDistribution(registry: TaxonomyRegistry): DistributionRepor
     if (size > cap) {
       issues.push({
         code: 'leaf_too_large',
-        reason: `${leaf.id} porte ${size} page(s) sur ${pageCount} (maximum ${cap}) : c'est un fourre-tout, pas un sujet`,
+        reason: `${leaf.id} carries ${size} page(s) out of ${pageCount} (maximum ${cap}): that is a catch-all, not a subject`,
       });
     }
   }
@@ -83,25 +83,25 @@ export function checkDistribution(registry: TaxonomyRegistry): DistributionRepor
     if (count < MIN_CHILDREN_PER_DOMAIN) {
       issues.push({
         code: 'domain_too_thin',
-        reason: `${domain.id} n'a que ${count} communauté(s) fille(s) : un niveau de navigation pour rien`,
+        reason: `${domain.id} has only ${count} daughter communit(y/ies): a navigation level for nothing`,
       });
     }
   }
 
-  // Une taxonomie entièrement plate est exactement le défaut d'origine : elle
-  // peut être légitime sur un très petit corpus, jamais au-delà.
+  // An entirely flat taxonomy is exactly the original defect: it
+  // can be legitimate on a very small corpus, never beyond it.
   if (!domains.length && pageCount > cap) {
     issues.push({
       code: 'no_hierarchy',
-      reason: `aucun domaine parent pour ${pageCount} page(s) : la carte ne peut pas être parcourue par niveaux`,
+      reason: `no parent domain for ${pageCount} page(s): the map cannot be walked level by level`,
     });
   }
 
-  // Une feuille vide n'apparaîtra jamais : elle encombre l'index et laisse
-  // croire à un sujet qui n'existe pas.
+  // An empty leaf will never appear: it clutters the index and makes
+  // one believe in a subject that does not exist.
   for (const leaf of leaves) {
     if (!(sizes.get(leaf.id) ?? 0)) {
-      issues.push({ code: 'empty_leaf', reason: `${leaf.id} ne porte aucune page` });
+      issues.push({ code: 'empty_leaf', reason: `${leaf.id} carries no page` });
     }
   }
 

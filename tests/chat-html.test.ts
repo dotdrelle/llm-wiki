@@ -293,7 +293,7 @@ describe('chat html', () => {
     expect(script).toContain("input.dataset.displayText=display;");
     expect(script).toContain("input.dataset.forceChat='1';");
     expect(script).toContain("input.dataset.hideQuestion='1';");
-    expect(script).toContain('Présente clairement le statut de la cible');
+    expect(script).toContain('Clearly present the status of the target');
     expect(script).toContain("sendRuntimeAgentMessage(input,text,{mode:'chat',displayText:displayOverride||text,hideQuestion})");
     expect(script).toContain("if(hideQuestion) userEl.classList.add('msg-hidden')");
     expect(script).not.toContain("messages.push({role:'assistant',content:answer})");
@@ -304,7 +304,7 @@ describe('chat html', () => {
     expect(script).toContain("focusedPlan=plan.find(item=>matches(item,['id','step','description','label']))");
     expect(script).toContain("focusedActivity=activities.find(item=>matches(item,['id','key','label','tool']))");
     expect(script).toContain("focusedKind=focusedPlan?'Plan task':focusedActivity?'Runtime activity'");
-    expect(script).toContain('Commence par cette tâche ou activité précise');
+    expect(script).toContain('Start with this specific task or activity');
   });
 
   it('always resets the Activity panel to List when leaving Execution view for Chat', () => {

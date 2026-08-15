@@ -6,33 +6,33 @@ import {
 } from './schema.ts';
 
 /*
- Hystérésis (D6) et unicité (D7).
+ Hysteresis (D6) and uniqueness (D7).
 
- Les deux sont des décisions du MOTEUR sur une proposition du modèle. Donna
- propose un regroupement et des noms ; rien n'est appliqué du seul fait d'avoir
- été formulé.
+ Both are decisions of the ENGINE on a model proposal. Donna
+ proposes a grouping and names; nothing is applied by the mere fact of having
+ been formulated.
 
- D6 exigeait que la règle devienne un contrat exact et testé plutôt qu'une
- intention. Les seuils ci-dessous sont génériques et configurables ; aucun
- vocabulaire métier n'y entre.
+ D6 required that the rule become an exact and tested contract rather than an
+ intention. The thresholds below are generic and configurable; no
+ business vocabulary enters them.
 */
 
 /**
- * Recouvrement minimal des membres pour qu'un renommage soit crédible.
+ * Minimal member overlap for a rename to be credible.
  *
- * En dessous, la communauté a trop changé : le nouveau nom décrit peut-être
- * bien son contenu actuel, mais elle n'est plus assez « la même » pour qu'un
- * lecteur reconnaisse la bulle qu'il suivait.
+ * Below it, the community has changed too much: the new name perhaps describes
+ * its current content well, but it is no longer "the same" enough for a
+ * reader to recognize the bubble they were following.
  */
 export const RENAME_MIN_STABILITY = 0.7;
 
 /**
- * Nombre minimal de révisions entre deux renommages d'une même communauté.
+ * Minimal number of revisions between two renames of the same community.
  *
- * C'est le cœur de l'hystérésis : sans lui, deux propositions successives
- * peuvent faire osciller un nom d'une révision à l'autre, et l'utilisateur perd
- * son modèle mental de la carte. Un nom légèrement daté coûte moins cher qu'une
- * carte instable.
+ * This is the heart of the hysteresis: without it, two successive proposals
+ * can make a name oscillate from one revision to the next, and the user loses
+ * their mental model of the map. A slightly dated name costs less than an
+ * unstable map.
  */
 export const RENAME_MIN_REVISION_GAP = 3;
 
@@ -41,14 +41,14 @@ export type ConsolidationOptions = {
   revision: number;
   minStability?: number;
   minRevisionGap?: number;
-  /** Consolidation forcée : l'hystérésis est levée, jamais l'unicité. */
+  /** Forced consolidation: the hysteresis is lifted, never uniqueness. */
   force?: boolean;
 };
 
 export type LabelDecision = {
   id: string;
   label: string;
-  /** `kept` quand l'hystérésis a refusé le nouveau nom. */
+  /** `kept` when the hysteresis refused the new name. */
   outcome: 'created' | 'renamed' | 'kept' | 'unchanged';
   proposed?: string;
   stability?: number;
@@ -78,11 +78,11 @@ function withAltLabel(
 }
 
 /**
- * Applique l'hystérésis puis vérifie l'unicité.
+ * Applies the hysteresis then checks uniqueness.
  *
- * L'ordre compte : l'hystérésis peut CONSERVER un ancien nom et recréer ainsi
- * une collision que la proposition n'avait pas. Vérifier l'unicité avant
- * validerait un état qui ne sera jamais celui du registre.
+ * Order matters: the hysteresis can KEEP an old name and thus recreate
+ * a collision the proposal did not have. Checking uniqueness before
+ * would validate a state that will never be the registry's.
  */
 export function consolidate(
   anchored: AnchoredCommunity[],
@@ -105,7 +105,7 @@ export function consolidate(
   const communities: RegistryCommunity[] = anchored.map((draft) => {
     const before = previousById.get(draft.id);
 
-    // Communauté inédite : rien à stabiliser, elle prend son nom.
+    // Brand-new community: nothing to stabilize, it takes its name.
     if (!before) {
       decisions.push({ id: draft.id, label: draft.label, outcome: 'created' });
       return {
@@ -118,12 +118,12 @@ export function consolidate(
     const current = before.prefLabel[language];
 
     /*
-     Une langue absente n'est pas un renommage, c'est une traduction.
+     An absent language is not a rename, it is a translation.
 
-     Le concept n'a pas changé d'identité parce qu'on l'affiche désormais en
-     anglais. Lui appliquer l'hystérésis interdirait purement et simplement
-     d'ajouter une langue — le repli sur une autre langue resterait affiché
-     pour toujours.
+     The concept did not change identity because it is now displayed in
+     English. Applying the hysteresis to it would purely and simply forbid
+     adding a language — the fallback to another language would remain displayed
+     forever.
     */
     if (current === undefined) {
       decisions.push({ id: draft.id, label: draft.label, outcome: 'created' });
@@ -143,8 +143,8 @@ export function consolidate(
     const accepted = options.force === true || (stability >= minStability && settled);
 
     if (!accepted) {
-      // Le nom proposé n'est pas jeté : il devient un libellé alternatif, donc
-      // consultable et cherchable, et la prochaine consolidation le retrouvera.
+      // The proposed name is not discarded: it becomes an alternate label, hence
+      // consultable and searchable, and the next consolidation will find it again.
       decisions.push({
         id: draft.id,
         label: current,
@@ -163,13 +163,13 @@ export function consolidate(
       stability,
     });
     /*
-     Le nouveau nom d'abord, l'ancien en alias ensuite.
+     The new name first, the old one as alias afterwards.
 
-     `withAltLabel` refuse d'ajouter un alias égal au libellé courant — c'est
-     ce qui évite de dupliquer un nom dans ses propres variantes. Appelé avant
-     le remplacement, ce garde-fou comparait l'ancien nom à lui-même et le
-     laissait donc tomber : le renommage effaçait silencieusement l'ancien
-     libellé au lieu de le conserver.
+     `withAltLabel` refuses to add an alias equal to the current label — that is
+     what avoids duplicating a name in its own variants. Called before
+     the replacement, this guardrail compared the old name to itself and
+     therefore dropped it: the rename silently erased the old
+     label instead of keeping it.
     */
     const renamed = {
       ...before,
@@ -180,13 +180,13 @@ export function consolidate(
   });
 
   /*
-   Unicité des libellés VISIBLES, après hystérésis.
+   Uniqueness of VISIBLE labels, after hysteresis.
 
-   `scopeNote` n'en dispense pas : deux bulles nommées pareil sont un défaut de
-   la carte, quoi que disent leurs notes — personne ne survole une bulle pour
-   lever une ambiguïté que l'affichage ne montre pas. Le moteur n'invente
-   jamais de suffixe : il rend le conflit, et l'appelant relance une synthèse
-   bornée avec ce conflit explicite.
+   `scopeNote` does not dispense from it: two bubbles named alike are a map
+   defect, whatever their notes say — nobody hovers a bubble to
+   lift an ambiguity that the display does not show. The engine never
+   invents a suffix: it returns the conflict, and the caller relaunches a bounded
+   synthesis with this explicit conflict.
   */
   const byLabel = new Map<string, string[]>();
   for (const community of communities) {

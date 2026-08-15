@@ -1,39 +1,39 @@
 /*
- Empaquetage d'une source en lots d'ingestion.
+ Packing a source into ingestion batches.
 
- Le découpage précédent coupait à chaque `##`, puis à chaque `###` d'un bloc
- encore trop grand, et n'a jamais ré-empaqueté. La granularité produite dépendait
- donc de la mise en forme du document plutôt que de son volume : mesuré sur le
- corpus ACPI, Anaplan (14 868 caractères) donnait douze appels quand Board
- (19 838) en donnait cinq. Des documents éditorialement frères recevaient un
- nombre très différent de décisions LLM, et le déséquilibre de concepts qui en
- résultait était ensuite lu comme une différence de richesse.
+ The previous splitting cut at each `##`, then at each `###` of a block that was
+ still too large, and never re-packed. The granularity produced therefore
+ depended on the document's formatting rather than its volume: measured on the
+ ACPI corpus, Anaplan (14,868 characters) yielded twelve calls while Board
+ (19,838) yielded five. Editorially sibling documents received a very different
+ number of LLM decisions, and the resulting imbalance of concepts was then read
+ as a difference of richness.
 
- Le planificateur ci-dessous est PUR — même entrée, même plan — parce que
- `wiki doctor` doit annoncer exactement ce que l'ingestion exécutera. Deux
- estimations calculées autrement seraient pires que pas d'estimation du tout.
+ The planner below is PURE — same input, same plan — because `wiki doctor` must
+ announce exactly what ingestion will execute. Two estimates computed any other
+ way would be worse than no estimate at all.
 */
 
-/** Pourquoi ce lot existe : c'est ce que le diagnostic doit pouvoir expliquer. */
+/** Why this pack exists: it is what the diagnostics must be able to explain. */
 export type PackReason =
-  /** La source entière tient en un seul lot. */
+  /** The whole source fits in a single pack. */
   | 'whole'
-  /** Plusieurs sections adjacentes réunies jusqu'à la limite. */
+  /** Several adjacent sections gathered up to the limit. */
   | 'packed'
-  /** Une section `##` entière. */
+  /** A whole `##` section. */
   | 'section'
-  /** Une sous-section `###` d'une section trop grande. */
+  /** A `###` subsection of an oversized section. */
   | 'subsection'
-  /** Des paragraphes d'une sous-section encore trop grande. */
+  /** Paragraphs of an even larger subsection. */
   | 'paragraph'
-  /** Un bloc indivisible plus grand que la limite : tronqué, et dit. */
+  /** An indivisible block larger than the limit: truncated, and said. */
   | 'atomic';
 
 export type SourcePack = {
-  /** Texte exactement tel qu'il partira au prompt, préfixes compris. */
+  /** Text exactly as it will go to the prompt, prefixes included. */
   text: string;
   chars: number;
-  /** Chemin de titres couvert, du `#` du document au dernier titre inclus. */
+  /** Covered heading path, from the document's `#` down to the last included heading. */
   headingPath: string[];
   reason: PackReason;
   truncated: boolean;
@@ -47,7 +47,7 @@ export type SourcePackDiagnostics = {
   truncatedBlocks: number;
   reasons: Partial<Record<PackReason, number>>;
   maxChars: number;
-  /** Budget consommé par l'enveloppe du prompt, hors texte de la source. */
+  /** Budget consumed by the prompt envelope, excluding the source text. */
   overhead: number;
 };
 
@@ -57,12 +57,12 @@ export type SourcePackPlan = {
 };
 
 /**
- * Unité indivisible du plan : un corps, et les titres qui lui donnent son sens.
+ * Indivisible unit of the plan: a body, and the headings that give it meaning.
  *
- * Séparer les deux est ce qui permet à la fois de ré-empaqueter — plusieurs
- * unités dans un lot — et de conserver le contexte : une unité issue du milieu
- * d'une section reste précédée de ses titres, sans quoi le fragment envoyé au
- * modèle parlerait de rien.
+ * Separating the two is what allows both re-packing — several units in one
+ * pack — and preserving context: a unit taken from the middle of a section
+ * stays preceded by its headings, otherwise the fragment sent to the model
+ * would talk about nothing.
  */
 type Atom = {
   headingLines: string[];
@@ -72,22 +72,22 @@ type Atom = {
 
 const TRUNCATION_SUFFIX = '\n...[section truncated]';
 
-/** Ouverture ou fermeture potentielle : le caractère et sa longueur. */
+/** Potential opening or closing: the character and its length. */
 function fenceMarker(line: string): { char: '`' | '~'; length: number } | null {
   const match = /^(`{3,}|~{3,})/.exec(line.trim());
   return match ? { char: match[1]![0] as '`' | '~', length: match[1]!.length } : null;
 }
 
 /**
- * Suivi d'état des blocs de code, backticks **ou** tildes.
+ * State tracking of code blocks, backticks **or** tildes.
  *
- * CommonMark accepte les deux, et `~~~` est le recours habituel quand le bloc
- * contient lui-même des backticks — donc précisément dans les documents qui
- * citent du Markdown, ceux où un `##` d'exemple est le plus probable.
+ * CommonMark accepts both, and `~~~` is the usual fallback when the block
+ * itself contains backticks — therefore precisely in documents that quote
+ * Markdown, the ones where an example `##` is most likely.
  *
- * Un bloc ne se referme que par le MÊME caractère, au moins aussi long : un
- * `~~~` rencontré dans un bloc ouvert par ``` est du contenu, et le compter
- * comme une clôture rouvrirait la porte qu'on vient de fermer.
+ * A block only closes with the SAME character, at least as long: a `~~~`
+ * encountered inside a block opened by ``` is content, and counting it as a
+ * closing would reopen the door we just closed.
  */
 function createFenceTracker(): (line: string) => boolean {
   let open: { char: '`' | '~'; length: number } | null = null;
@@ -104,11 +104,11 @@ function createFenceTracker(): (line: string) => boolean {
 }
 
 /**
- * Découpe à un niveau de titre, **hors blocs de code**.
+ * Splits at a heading level, **outside code blocks**.
  *
- * Un `## ` en première colonne d'un bloc `~~~` est du texte, pas un titre.
- * Couper dessus produisait un lot commençant au milieu d'un exemple et un autre
- * dont la clôture de bloc n'existait plus.
+ * A `## ` in the first column of a `~~~` block is text, not a heading.
+ * Cutting on it produced a pack starting in the middle of an example and
+ * another whose block closing no longer existed.
  */
 function splitAtLevel(lines: string[], level: number): Array<{ heading: string | null; lines: string[] }> {
   const marker = `${'#'.repeat(level)} `;
@@ -132,7 +132,7 @@ function splitAtLevel(lines: string[], level: number): Array<{ heading: string |
   return blocks;
 }
 
-/** Paragraphes séparés par une ligne vide, blocs de code gardés entiers. */
+/** Paragraphs separated by a blank line, code blocks kept whole. */
 function splitParagraphs(text: string): string[] {
   const paragraphs: string[] = [];
   let current: string[] = [];
@@ -158,8 +158,8 @@ function render(titlePrefix: string, atoms: Atom[]): string {
   const parts: string[] = [];
   let emitted: string[] = [];
   for (const atom of atoms) {
-    // Les titres déjà écrits par l'unité précédente ne sont pas répétés : le
-    // budget doit payer le contexte une fois, pas une fois par paragraphe.
+    // Headings already written by the previous unit are not repeated: the
+    // budget must pay for context once, not once per paragraph.
     const missing = atom.headingLines.filter((line, index) => emitted[index] !== line);
     if (missing.length) parts.push(missing.join('\n'));
     if (atom.body) parts.push(atom.body);
@@ -174,12 +174,11 @@ function truncate(body: string, budget: number): string {
 }
 
 /**
- * Construit les unités d'une section, en descendant seulement si nécessaire.
+ * Builds the units of a section, descending only as needed.
  *
- * `##` d'abord, `###` seulement pour une section trop grande, paragraphes
- * seulement pour une sous-section encore trop grande. Descendre plus tôt
- * multiplierait les appels sans rien gagner ; descendre plus tard obligerait à
- * tronquer du texte parfaitement divisible.
+ * `##` first, `###` only for an oversized section, paragraphs only for an even
+ * larger subsection. Descending earlier would multiply calls without gaining
+ * anything; descending later would force truncating perfectly splittable text.
  */
 function atomsFor(
   headingLines: string[],
@@ -196,10 +195,10 @@ function atomsFor(
     const blocks = splitAtLevel(lines, level);
     const headed = blocks.filter((block) => block.heading !== null);
     /*
-     Un seul bloc titré fait quand même progresser la descente : son titre entre
-     dans le contexte et le niveau suivant est examiné. Exiger deux blocs
-     laissait une section unique trop grande tomber directement en découpe par
-     paragraphes — qui séparait alors son propre titre de son corps.
+     A single headed block still advances the descent: its heading enters the
+     context and the next level is examined. Requiring two blocks let a single
+     oversized section fall straight into paragraph splitting — which then
+     separated its own heading from its body.
     */
     if (headed.length > 0) {
       return blocks.flatMap((block) => atomsFor(
@@ -216,18 +215,18 @@ function atomsFor(
   if (paragraphs.length > 1) {
     return paragraphs.map((paragraph) => ({ headingLines, body: paragraph, reason: 'paragraph' }));
   }
-  // Bloc réellement indivisible : la troncature est le dernier recours, et elle
-  // est signalée plutôt que subie.
+  // Genuinely indivisible block: truncation is the last resort, and it is
+  // flagged rather than suffered.
   return [{ headingLines, body, reason: 'atomic' }];
 }
 
 /**
- * Plan d'empaquetage d'une source.
+ * Packing plan for one source.
  *
- * `maxChars` est la limite du texte envoyé ; `overhead` réserve ce que
- * l'enveloppe du prompt consomme déjà. Mesurer sur le texte rendu — préfixe de
- * titre et titres de contexte compris — est ce qui garantit que la limite
- * annoncée est celle qui s'applique.
+ * `maxChars` is the limit of the text sent; `overhead` reserves what the prompt
+ * envelope already consumes. Measuring on the rendered text — title prefix and
+ * context headings included — is what guarantees that the announced limit is
+ * the one that applies.
  */
 export function planSourcePacks(
   content: string,
@@ -242,8 +241,8 @@ export function planSourcePacks(
   const documentTitle = titleMatch ? titleMatch[1].replace(/^#\s+/, '').trim() : null;
   const body = titleMatch ? normalized.slice(titleMatch[0].length).trim() : normalized;
 
-  // Compté hors blocs de code, comme la découpe elle-même : un diagnostic qui
-  // compterait un `##` d'exemple annoncerait des coupes qui n'auront pas lieu.
+  // Counted outside code blocks, like the splitting itself: a diagnostic that
+  // counted an example `##` would announce cuts that will never happen.
   const headings = ((): number => {
     const fenced = createFenceTracker();
     let count = 0;
@@ -296,11 +295,11 @@ export function planSourcePacks(
   }
 
   /*
-   Regroupement glouton des unités adjacentes.
+   Greedy grouping of adjacent units.
 
-   C'est la moitié qui manquait : sans elle, dix petites sections faisaient dix
-   appels quand un seul suffisait, et le nombre d'appels devenait une propriété
-   de la mise en forme.
+   This is the half that was missing: without it, ten small sections made ten
+   calls when one sufficed, and the number of calls became a property of the
+   formatting.
   */
   const packs: SourcePack[] = [];
   let current: Atom[] = [];
@@ -308,11 +307,10 @@ export function planSourcePacks(
     if (!current.length) return;
     const text = render(titlePrefix, current);
     /*
-     Un lot ne dépasse la limite que s'il ne contenait qu'une unité qu'aucune
-     coupe n'a pu réduire. Le tester sur la longueur plutôt que sur la raison
-     est ce qui rend la garantie inconditionnelle : un paragraphe unique plus
-     grand que le budget est aussi indivisible qu'un bloc de code, quel que soit
-     le chemin qui l'a produit.
+     A pack exceeds the limit only if it contained a single unit that no cut
+     could reduce. Testing it on length rather than reason is what makes the
+     guarantee unconditional: a single paragraph larger than the budget is as
+     indivisible as a code block, whatever path produced it.
     */
     const truncated = text.length > budget;
     const finalText = truncated ? truncate(text, budget) : text;
@@ -332,8 +330,8 @@ export function planSourcePacks(
   for (const atom of atoms) {
     if (!current.length) {
       current = [atom];
-      // Une unité seule qui dépasse déjà est indivisible : elle part telle
-      // quelle, tronquée si nécessaire, et n'attire personne avec elle.
+      // A lone unit that already exceeds is indivisible: it goes as is,
+      // truncated if necessary, and drags nobody along with it.
       if (!fits(current)) flush();
       continue;
     }
@@ -351,11 +349,11 @@ export function planSourcePacks(
 }
 
 /**
- * Vue « textes seuls » du plan.
+ * "Texts only" view of the plan.
  *
- * Une seule implémentation, deux lectures : l'ingestion, `wiki doctor` et les
- * tests historiques passent tous par le même planificateur. Un second chemin de
- * découpage rouvrirait l'écart entre ce qui est annoncé et ce qui est exécuté.
+ * One implementation, two readings: ingestion, `wiki doctor` and the historical
+ * tests all go through the same planner. A second splitting path would reopen
+ * the gap between what is announced and what is executed.
  */
 export function splitSourceSections(content: string, maxChars: number): string[] {
   return planSourcePacks(content, { maxChars }).packs.map((pack) => pack.text);

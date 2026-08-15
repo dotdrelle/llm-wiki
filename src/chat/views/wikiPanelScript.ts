@@ -124,10 +124,10 @@ function applySplitWiki() {
   document.body.classList.toggle('split-wiki', on);
   document.getElementById('split-toggle')?.classList.toggle('active', on);
 }
-// Split et Activity se partagent la largeur restante à droite du chat : les
-// deux ouverts, il ne reste plus rien de lisible au milieu. Ils s'excluent
-// donc, dans les deux sens — la réciproque vit dans toggleActivityPanel /
-// openActivityPanel (runtime/activityPanelScript.ts).
+// Split and Activity share the remaining width to the right of the chat: with
+// both open, nothing readable remains in the middle. They therefore exclude
+// each other, in both directions — the counterpart lives in
+// toggleActivityPanel / openActivityPanel (runtime/activityPanelScript.ts).
 function disableSplitWiki() {
   if (!splitWikiEnabled()) return;
   shellStore(SHELL_SPLIT_KEY, '0');
@@ -136,8 +136,8 @@ function disableSplitWiki() {
 function toggleSplitWiki() {
   shellStore(SHELL_SPLIT_KEY, splitWikiEnabled() ? '0' : '1');
   applySplitWiki();
-  // Les scripts sont concaténés dans une même page : la fonction existe, mais
-  // le garde protège les vues où le panneau d'activité n'est pas monté.
+  // The scripts are concatenated into one page: the function exists, but the
+  // guard protects the views where the activity panel is not mounted.
   if (splitWikiEnabled() && typeof closeActivityPanel === 'function') closeActivityPanel();
   // Turning split on while the chat fills the center: bring the last wiki
   // page alongside so the toggle has a visible effect immediately.
@@ -180,9 +180,9 @@ function initWikiSplitResizer() {
   });
 }
 setTimeout(() => {
-  // Les deux préférences sont persistées séparément et pouvaient donc revenir
-  // ouvertes ensemble au chargement — un état qu'aucune action de
-  // l'utilisateur ne produit plus. Activity, déjà restauré à ce stade, gagne.
+  // The two preferences are persisted separately and could therefore come back
+  // open together on load — a state no user action produces anymore. Activity,
+  // already restored at this point, wins.
   if (!document.getElementById('activity-panel')?.classList.contains('closed')) disableSplitWiki();
   applySplitWiki();
   initWikiSplitResizer();
@@ -242,16 +242,16 @@ function cmdkActions() {
     { type: 'action', title: 'Switch theme', sub: 'View', run: () => toggleTheme() },
   ];
 }
-// Nombre maximum de pages listées. L'ancien plafond de 9, muet, tronquait
-// silencieusement : les pages de wiki/concepts et wiki/sources tombaient
-// derrière les deliverables et templates que le tri alphabétique global place
-// devant, et rien à l'écran ne disait qu'il y en avait d'autres.
+// Maximum number of listed pages. The old cap of 9, silent, truncated without
+// a word: the wiki/concepts and wiki/sources pages fell behind the deliverables
+// and templates that the global alphabetical sort puts first, and nothing on
+// screen said there were more.
 const CMDK_PAGE_LIMIT = 25;
 
 /*
- Pertinence d'une page pour la requête. Trois rangs, du plus au moins explicite :
- le titre commence par la requête, le titre la contient, le chemin la contient.
- Un tri alphabétique global n'est une réponse que quand on ne cherche rien.
+ A page's relevance to the query. Three ranks, from most to least explicit:
+ the title starts with the query, the title contains it, the path contains it.
+ A global alphabetical sort is only an answer when you are not searching.
 */
 function cmdkPageRank(page, nq) {
   if (!nq) return 3;
@@ -272,8 +272,8 @@ function cmdkCollect(query) {
     .sort((a, b) => a.rank - b.rank || a.index - b.index)
     .slice(0, nq ? CMDK_PAGE_LIMIT : 5)
     .map(({ page: p }) => ({ type: 'page', title: p.title || p.path, sub: p.path, tag: p.kind || 'page', path: p.path }));
-  // Dire ce qui est caché. Une liste tronquée en silence fait conclure que la
-  // page cherchée n'existe pas.
+  // Say what is hidden. A silently truncated list makes one conclude the
+  // searched page does not exist.
   const hidden = nq && matching.length > pages.length
     ? [{ type: 'note', title: (matching.length - pages.length) + ' more page(s) match — refine the search', sub: '', tag: 'info' }]
     : [];
@@ -316,8 +316,8 @@ function cmdkMove(delta) {
 function cmdkRun(index, addToContext) {
   const item = cmdkItems[index];
   if (!item) return;
-  // La ligne « n autres résultats » informe, elle n'ouvre rien : la fermer
-  // ferait perdre la recherche en cours pour rien.
+  // The "n more results" line informs, it opens nothing: closing it would
+  // throw away the current search for nothing.
   if (item.type === 'note') return;
   cmdkClose();
   if (item.type === 'page') {

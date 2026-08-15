@@ -160,7 +160,7 @@ const err = (msg: string) => {
 const row = (label: string, value: string) =>
   console.log(`  ${label.padEnd(24)} ${value}`);
 
-/** Nombre d'éléments listés avant de renvoyer au registre. */
+/** Number of items listed before referring back to the registry. */
 const RECONCILIATION_SAMPLE = 5;
 
 function listSample(items: string[]): string {
@@ -170,16 +170,16 @@ function listSample(items: string[]): string {
 }
 
 /**
- * Écarts entre le registre de provenance et ce qui existe réellement.
+ * Discrepancies between the provenance registry and what actually exists.
  *
- * Rapport seul : rien n'est recréé, rien n'est supprimé. Une page effacée à la
- * main est une décision — la faire réapparaître la contredirait, et propager la
- * suppression sans le dire serait pire. Tant que le retrait n'est pas spécifié
- * bout en bout (T32.4 dans `docs/content-lifecycle.md`), nommer l'écart est le
- * seul comportement défendable.
+ * Report only: nothing is recreated, nothing is deleted. A page erased by hand
+ * is a decision — bringing it back would contradict it, and propagating the
+ * deletion silently would be worse. As long as removal is not specified end to
+ * end (T32.4 in `docs/content-lifecycle.md`), naming the discrepancy is the
+ * only defensible behavior.
  *
- * Un registre vide — installation d'avant sa création — ne produit rien : il
- * n'y a pas d'écart à signaler entre rien et quelque chose.
+ * An empty registry — an install predating its creation — produces nothing:
+ * there is no discrepancy to report between nothing and something.
  */
 async function reportSourceReconciliation(
   workspace: WorkspaceService,
@@ -220,11 +220,11 @@ async function reportSourceReconciliation(
 }
 
 /**
- * Valeurs que le scaffold écrit pour documenter la forme du fichier.
+ * Values the scaffold writes to document the shape of the file.
  *
- * Elles partent telles quelles vers l'API si une étape du setup est sautée, et
- * la panne se manifeste alors très loin de sa cause : un 404 au premier
- * `ingest` plutôt qu'une ligne de configuration jamais remplie.
+ * They are sent verbatim to the API if a setup step is skipped, and the
+ * failure then shows up far from its cause: a 404 at the first `ingest` rather
+ * than a configuration line that was never filled in.
  */
 const SCAFFOLD_PLACEHOLDER_RE = /^(YOUR_|<your)/i;
 
@@ -316,9 +316,9 @@ function recommendedMaxInputTokens(
   if (isOllamaEngine(config.llm) && config.llm.numCtx) {
     return Math.max(1000, Math.floor(config.llm.numCtx * 0.9));
   }
-  // Derrière une gateway il n'y a pas d'Ollama local à interroger : le budget
-  // vient du catalogue, qui déclare la fenêtre de contexte par modèle. Même
-  // marge de 10 % que pour numCtx.
+  // Behind a gateway there is no local Ollama to query: the budget comes from
+  // the catalog, which declares the context window per model. Same 10% margin
+  // as for numCtx.
   const gatewayWindow = gateway?.byName.get(config.llm.model)?.maxInputTokens;
   if (gatewayWindow) {
     return Math.max(1000, Math.floor(gatewayWindow * 0.9));
@@ -540,8 +540,8 @@ function isRemoteOllama(baseUrl: string | undefined): boolean {
   }
 }
 
-// Auparavant une heuristique (nom du modèle, port :8080, URL locale). Le
-// moteur est désormais déclaré dans .wikirc.yaml — plus rien à deviner.
+// Formerly a heuristic (model name, port :8080, local URL). The engine is now
+// declared in .wikirc.yaml — nothing left to guess.
 function looksLikeMlx(config: AppConfig): boolean {
   return config.llm.provider !== 'ai-gateway' && config.llm.engine === 'mlx';
 }
@@ -733,13 +733,12 @@ async function checkProvider(
 // ── hardware section (Ollama only) ────────────────────────────────────────────
 
 /**
- * Diagnostic propre au mode `ai-gateway`.
+ * Diagnostics specific to `ai-gateway` mode.
  *
- * Le sous-système matériel d'Ollama (environnement du process, `/api/show`,
- * cache KV, RAM) n'a aucun sens ici et se désactive tout seul — mais on le
- * **dit**, plutôt que de le laisser disparaître sans un mot. Une section qui
- * s'évapore silencieusement est le genre de chose qu'on met une soirée à
- * comprendre.
+ * Ollama's hardware subsystem (process environment, `/api/show`, KV cache, RAM)
+ * makes no sense here and disables itself — but we **say so**, rather than
+ * letting it vanish without a word. A section that silently evaporates is the
+ * kind of thing you spend an evening figuring out.
  */
 async function printGatewayDiagnostics(
   config: AppConfig,
@@ -752,9 +751,10 @@ async function printGatewayDiagnostics(
   );
 
   if (!catalog) {
-    // checkProvider a déjà tranché la joignabilité de /v1/models : si on est
-    // ici sans catalogue, c'est le catalogue qui manque, pas forcément la
-    // gateway. Distinguer les deux évite de diagnostiquer la mauvaise couche.
+    // checkProvider already settled whether /v1/models is reachable: if we are
+    // here without a catalog, it is the catalog that is missing, not
+    // necessarily the gateway. Telling the two apart avoids diagnosing the
+    // wrong layer.
     warn(
       'Gateway model catalog unavailable (neither /model/info nor /v1/models returned a usable list). Model names cannot be verified.',
     );
@@ -790,9 +790,9 @@ async function printGatewayDiagnostics(
   for (const check of checks) {
     const found = catalog.byName.get(check.model);
     if (!found) {
-      // Un modèle peut disparaître du config.yaml de la gateway entre deux
-      // setups. Le dire ici coûte un appel ; le découvrir au premier ingest
-      // coûte un run.
+      // A model can disappear from the gateway's config.yaml between two
+      // setups. Saying so here costs one call; discovering it at the first
+      // ingest costs a run.
       err(`${check.label} "${check.model}" is not in the gateway catalog`);
       continue;
     }
@@ -814,8 +814,8 @@ async function printGatewayDiagnostics(
     config.retrieval.vector.baseUrl.replace(/\/+$/, '') ===
       config.llm.baseUrl.replace(/\/+$/, '')
   ) {
-    // Une gateway peut servir /chat/completions et /embeddings sans /rerank.
-    // Sans ce sondage, l'absence n'apparaît qu'au premier build.
+    // A gateway may serve /chat/completions and /embeddings without /rerank.
+    // Without this probe, the absence only surfaces at the first build.
     const rerank = await probeRerank(config);
     if (rerank.status === 'ok') {
       ok('Gateway exposes POST /rerank');
@@ -1046,8 +1046,8 @@ export default async function doctorCmd(
   const measurements: DoctorMeasurements = {};
   const { ollamaInfo, effectiveNumCtx, effectiveNumCtxSource, probe } =
     await checkProvider(config, resolvedOllamaEnv);
-  // Récupéré une seule fois : il alimente le diagnostic gateway ET le calcul
-  // de recommendedMaxInputTokens plus bas.
+  // Fetched once: it feeds the gateway diagnostics AND the
+  // recommendedMaxInputTokens calculation below.
   const gatewayCatalog =
     config.llm.provider === 'ai-gateway' ? await fetchGatewayCatalog(config) : undefined;
   measurements.provider = probe;
@@ -1139,13 +1139,14 @@ export default async function doctorCmd(
   const buildContext = workspace.composeBuildContext(buildContextSections);
 
   /*
-   Le diagnostic doit voir ce que l'ingestion verra, pas le fichier brut.
+   Diagnostics must see what ingestion will see, not the raw file.
 
-   L'ingestion retire le frontmatter puis passe par `normalizeSourceBody` —
-   qui déplie le HTML exporté en Markdown et écrase les blancs. L'écart n'est
-   pas marginal : un export Confluence de 56 817 caractères retombe à 19 838.
-   Planifier sur le brut annonçait donc neuf appels pour une source qui en coûte
-   quatre, et gonflait du même coup la valeur recommandée de `maxSourceChars`.
+   Ingestion strips the frontmatter then goes through `normalizeSourceBody` —
+   which unfolds the exported HTML into Markdown and collapses whitespace. The
+   gap is not marginal: a 56,817-character Confluence export falls back to
+   19,838. Planning on the raw file therefore announced nine calls for a source
+   that actually costs four, and at the same time inflated the recommended
+   `maxSourceChars` value.
   */
   const untrackedContents = await Promise.all(
     untrackedPaths.map(async (p) => {
@@ -1161,12 +1162,12 @@ export default async function doctorCmd(
   const chunkSizes = allChunks.map((c) => c.content.length);
   const untrackedSizes = untrackedContents.map((u) => u.size);
   /*
-   La recommandation de `maxSourceChars` se lit sur la taille NORMALISÉE.
+   The `maxSourceChars` recommendation is read from the NORMALIZED size.
 
-   `maxSourceChars` borne le corps envoyé au modèle, jamais l'octet brut du
-   fichier. Recommander une limite calculée sur le brut proposait des valeurs
-   deux à trois fois trop hautes sur des exports HTML, c'est-à-dire un prompt
-   que le serveur n'accepterait pas.
+   `maxSourceChars` bounds the body sent to the model, never the raw byte of the
+   file. Recommending a limit computed from the raw file proposed values two to
+   three times too high on HTML exports, i.e. a prompt the server would not
+   accept.
   */
   const untrackedNormalizedSizes = untrackedContents.map((u) => u.normalizedSize);
   const maxUntracked = untrackedNormalizedSizes.length > 0
@@ -1194,11 +1195,11 @@ export default async function doctorCmd(
   );
 
   /*
-   L'estimation passe par le MÊME planificateur que l'ingestion.
+   The estimate goes through the SAME planner as ingestion.
 
-   Une approximation distincte annoncerait un nombre d'appels que l'exécution ne
-   tiendrait pas — et c'est précisément sur cette estimation qu'on décide de
-   lancer, ou non, un lot payant.
+   A separate approximation would announce a number of calls the execution could
+   not meet — and it is precisely on this estimate that we decide whether to
+   launch a paid batch or not.
   */
   const untrackedPlans = untrackedContents.map((source) => ({
     source,

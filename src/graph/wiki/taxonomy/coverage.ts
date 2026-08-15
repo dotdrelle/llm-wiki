@@ -3,36 +3,36 @@ import type { TaxonomyMarker } from './store.ts';
 import type { TaxonomyRegistry } from './schema.ts';
 
 /*
- Couverture d'une page par la taxonomie publiée.
+ Coverage of a page by the published taxonomy.
 
- « Ungrouped » disait une seule chose et en couvrait trois : une page jamais
- soumise au modèle, une page soumise et non classée, une page apparue après la
- synthèse. Le bloc d'environ 130 pages observé sur ACPI relevait presque
- entièrement du troisième cas — donc d'un écart de révision, pas d'une décision
- taxonomique. Un seul mot pour trois causes rend le diagnostic impossible et
- finit par rendre l'avertissement inutile.
+ "Ungrouped" said a single thing and covered three: a page never
+ submitted to the model, a page submitted and not classified, a page that appeared after
+ synthesis. The block of about 130 pages observed on ACPI almost
+ entirely fell under the third case — hence a revision gap, not a
+ taxonomic decision. One word for three causes makes the diagnosis impossible and
+ ends up making the warning useless.
 
- Quatre états, quatre compteurs, une seule bulle `Ungrouped`.
+ Four states, four counters, a single `Ungrouped` bubble.
 */
 
 export type PageCoverageState =
-  /** Affectée par le registre frais. */
+  /** Assigned by the fresh registry. */
   | 'classified'
-  /** Registre absent, périmé, incomparable, ou page apparue depuis. */
+  /** Registry absent, stale, incomparable, or page appeared since. */
   | 'pending-classification'
-  /** Registre frais, page du corpus jamais soumise au modèle. */
+  /** Fresh registry, corpus page never submitted to the model. */
   | 'outside-sample'
-  /** Registre frais, page soumise, aucune affectation : une vraie décision. */
+  /** Fresh registry, page submitted, no assignment: a real decision. */
   | 'unclassified';
 
 export type CoverageCounts = Record<PageCoverageState, number>;
 
 export type CoverageReport = {
-  /** Empreinte du corpus courant. */
+  /** Fingerprint of the current corpus. */
   corpus: string;
-  /** Empreinte sur laquelle le registre actif a été calculé, si comparable. */
+  /** Fingerprint on which the active registry was computed, if comparable. */
   taxonomizedCorpus: string | null;
-  /** Vrai quand les deux empreintes sont comparables ET égales. */
+  /** True when the two fingerprints are comparable AND equal. */
   fresh: boolean;
   states: Map<string, PageCoverageState>;
   counts: CoverageCounts;
@@ -46,13 +46,13 @@ const EMPTY_COUNTS: CoverageCounts = {
 };
 
 /**
- * Classe chaque page du corpus courant.
+ * Classifies each page of the current corpus.
  *
- * Le registre n'est cru que s'il est **comparable et frais** : une empreinte
- * produite par un autre algorithme n'est pas une empreinte différente, c'est une
- * absence d'information, et une absence d'information ne prouve aucune
- * couverture. Dans ce cas tout est en attente — l'état honnête tant que la
- * première publication v3 n'a pas eu lieu.
+ * The registry is only trusted if it is **comparable and fresh**: a fingerprint
+ * produced by another algorithm is not a different fingerprint, it is an
+ * absence of information, and an absence of information proves no
+ * coverage. In that case everything is pending — the honest state until the
+ * first v3 publication has happened.
  */
 export function computeCoverage(input: {
   corpus: string;
@@ -80,8 +80,8 @@ export function computeCoverage(input: {
     } else if (registry.assignments[page]) {
       state = 'classified';
     } else if (!known.has(page)) {
-      // Le corpus est frais mais cette page n'y figurait pas : elle est arrivée
-      // entre la synthèse et la lecture. Rien n'a été décidé à son sujet.
+      // The corpus is fresh but this page was not in it: it arrived
+      // between synthesis and reading. Nothing was decided about it.
       state = 'pending-classification';
     } else if (!sampled.has(page)) {
       state = 'outside-sample';
@@ -96,27 +96,27 @@ export function computeCoverage(input: {
 }
 
 /**
- * Ordre de soumission au modèle : ce qui n'a jamais été jugé passe devant.
+ * Submission order to the model: what has never been judged goes first.
  *
- * Le tri par degré seul est un piège silencieux. Une page fraîchement ingérée
- * est, par construction, la moins connectée du corpus : c'est donc toujours elle
- * que la borne `maxPages` écarte, et elle n'est jamais classée. `outside-sample`
- * deviendrait un parking permanent alimenté par chaque ingestion — le défaut
- * d'origine, sous un nom plus honnête.
+ * Sorting by degree alone is a silent trap. A freshly ingested page
+ * is, by construction, the least connected in the corpus: it is therefore always it
+ * that the `maxPages` bound excludes, and it is never classified. `outside-sample`
+ * would become a permanent parking lot fed by each ingestion — the original
+ * defect, under a more honest name.
  *
- * Les pages déjà couvertes ferment la marche : leur affectation précédente reste
- * valable et se reconduit sans nouvel appel. Elles ne sont pas inutiles pour
- * autant — elles portent la structure que le modèle reconnaît — d'où leur
- * présence, mais après.
+ * The already-covered pages come last: their previous assignment remains
+ * valid and is carried over without a new call. They are not useless for
+ * all that — they carry the structure the model recognizes — hence their
+ * presence, but after.
  */
 export function orderPagesForSampling(
   pages: string[],
   input: {
-    /** Pages déjà affectées par le registre frais. */
+    /** Pages already assigned by the fresh registry. */
     covered: Set<string>;
-    /** Pages restées hors échantillon aux passes précédentes. */
+    /** Pages left outside the sample in previous passes. */
     previouslyOutsideSample?: Set<string>;
-    /** Degré de connexion, pour départager à priorité égale. */
+    /** Connection degree, to break ties at equal priority. */
     degree?: Map<string, number>;
   },
 ): string[] {
@@ -130,18 +130,18 @@ export function orderPagesForSampling(
   return [...pages].sort((a, b) =>
     priority(a) - priority(b)
     || (degree.get(b) ?? 0) - (degree.get(a) ?? 0)
-    // Départage stable : deux passes sur le même corpus doivent soumettre le
-    // même échantillon, sinon la vidange n'est pas reproductible.
+    // Stable tie-break: two passes on the same corpus must submit the
+    // same sample, otherwise the drain is not reproducible.
     || a.localeCompare(b));
 }
 
 /**
- * Échantillon cumulé d'une même empreinte de corpus.
+ * Cumulative sample of a single corpus fingerprint.
  *
- * Sans ce cumul, chaque passe ferait retomber l'échantillon précédent dans
- * `outside-sample` : la passe 2 classerait ce que la passe 1 avait laissé, en
- * déclassant ce que la passe 1 avait vu, et la vidange oscillerait sans jamais
- * converger. Une empreinte nouvelle repart, elle, du corpus qu'elle décrit.
+ * Without this accumulation, each pass would make the previous sample fall back
+ * into `outside-sample`: pass 2 would classify what pass 1 had left, while
+ * declassifying what pass 1 had seen, and the drain would oscillate without ever
+ * converging. A new fingerprint, for its part, starts over from the corpus it describes.
  */
 export function mergeSampledPages(input: {
   previous: TaxonomyRegistry | null;

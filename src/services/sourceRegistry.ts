@@ -3,19 +3,18 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 /**
- * Registre de provenance des sources.
+ * Source provenance registry.
  *
- * **Écriture seule à ce stade.** Rien ne le lit, rien ne s'appuie dessus, et
- * son absence ou sa corruption ne peut pas faire échouer une ingestion. C'est
- * délibéré : c'est l'étape T32.2 du cycle de vie
- * (`docs/content-lifecycle.md`), qui rend le problème observable avant de
- * chercher à le résoudre. Une passe de réconciliation ne peut pas être écrite
- * sans données à réconcilier, et fabriquer les données et la décision dans le
- * même lot rendrait chacune non vérifiable.
+ * **Write-only at this stage.** Nothing reads it, nothing relies on it, and its
+ * absence or corruption cannot fail an ingestion. This is deliberate: it is the
+ * T32.2 step of the lifecycle (`docs/content-lifecycle.md`), which makes the
+ * problem observable before trying to solve it. A reconciliation pass cannot be
+ * written without data to reconcile, and fabricating the data and the decision
+ * in the same batch would make each of them unverifiable.
  *
- * Ce qu'il répond, une fois alimenté : quelles sources existent, quand chacune
- * a été vue pour la dernière fois, et **quelles pages elle a réellement
- * produites** — non ce que le modèle a proposé, mais ce qui a été appliqué.
+ * What it answers, once populated: which sources exist, when each was last seen,
+ * and **which pages it really produced** — not what the model proposed, but what
+ * was applied.
  */
 
 export const SOURCE_REGISTRY_VERSION = 1;
@@ -24,11 +23,11 @@ export type SourceStatus = 'active' | 'missing' | 'retracted';
 
 export type SourceRecord = {
   /**
-   * Identité stable de la source. Voir `docs/content-lifecycle.md` § 4.1 :
-   * à terme fournie par le producteur (`confluence:page:123`). Tant qu'aucun
-   * producteur ne la fournit, elle dérive du chemin d'archive — auquel cas un
-   * renommage amont crée bien une source nouvelle, ce que le registre a
-   * précisément vocation à rendre visible.
+   * Stable identity of the source. See `docs/content-lifecycle.md` § 4.1:
+   * eventually provided by the producer (`confluence:page:123`). Until a
+   * producer provides it, it derives from the archive path — in which case an
+   * upstream rename does create a new source, which the registry is precisely
+   * meant to make visible.
    */
   sourceId: string;
   archivePath: string;
@@ -37,7 +36,7 @@ export type SourceRecord = {
   firstSeenAt: string;
   lastSeenAt: string;
   lastIngestedAt: string | null;
-  /** Pages effectivement créées ou mises à jour par cette source. */
+  /** Pages actually created or updated by this source. */
   producedPages: string[];
 };
 
@@ -59,9 +58,9 @@ function emptyRegistry(): SourceRegistryFile {
 }
 
 /**
- * Lit le registre. Un fichier absent, illisible ou d'une version inconnue rend
- * un registre vide plutôt qu'une erreur : ce fichier est une observation, et
- * une observation ratée ne doit jamais interrompre le travail qu'elle observe.
+ * Reads the registry. An absent, unreadable or unknown-version file yields an
+ * empty registry rather than an error: this file is an observation, and a
+ * failed observation must never interrupt the work it observes.
  */
 export async function readSourceRegistry(registryPath: string): Promise<SourceRegistryFile> {
   let raw: string;
@@ -94,7 +93,7 @@ function isSourceRecord(value: unknown): value is SourceRecord {
   );
 }
 
-/** Écriture atomique : un fichier tronqué serait pire qu'un fichier absent. */
+/** Atomic write: a truncated file would be worse than an absent one. */
 export async function writeSourceRegistry(
   registryPath: string,
   registry: SourceRegistryFile,
@@ -109,19 +108,19 @@ export type SourceObservation = {
   sourceId: string;
   archivePath: string;
   contentHash: string;
-  /** Pages appliquées lors de cette ingestion. Vide pour une source inchangée. */
+  /** Pages applied during this ingestion. Empty for an unchanged source. */
   producedPages?: string[];
-  /** Faux pour une source vue mais non réingérée (`unchanged since last ingest`). */
+  /** False for a source seen but not re-ingested (`unchanged since last ingest`). */
   ingested: boolean;
   observedAt: string;
 };
 
 /**
- * Enregistre une source telle qu'elle vient d'être vue.
+ * Records a source as it has just been seen.
  *
- * Fonction pure : elle rend un nouveau registre, elle n'écrit rien. C'est ce
- * qui permet de la tester sans système de fichiers, et de la relire sans se
- * demander ce qu'elle touche par ailleurs.
+ * Pure function: it returns a new registry, it writes nothing. That is what
+ * lets it be tested without a filesystem, and re-read without wondering what
+ * else it touches.
  */
 export function recordSourceObservation(
   registry: SourceRegistryFile,
@@ -155,14 +154,15 @@ export function recordSourceObservation(
         ...source,
         archivePath: observation.archivePath,
         contentHash: observation.contentHash,
-        // Revoir une source la ramène à `active` : c'est la transition
-        // `missing → active` de la spécification, et elle est gratuite ici.
+        // Seeing a source again brings it back to `active`: that is the
+        // `missing → active` transition of the specification, and it is free
+        // here.
         status: 'active',
         lastSeenAt: observation.observedAt,
         lastIngestedAt: observation.ingested ? observation.observedAt : source.lastIngestedAt,
-        // Une source inchangée ne produit rien : garder l'ancienne liste plutôt
-        // que de l'écraser par un tableau vide, sinon un simple ré-archivage
-        // effacerait la trace de tout ce que la source avait produit.
+        // An unchanged source produces nothing: keep the old list rather than
+        // overwriting it with an empty array, otherwise a simple re-archiving
+        // would erase the trace of everything the source had produced.
         producedPages: observation.ingested
           ? [...new Set(observation.producedPages ?? [])].sort()
           : source.producedPages,
@@ -172,11 +172,11 @@ export function recordSourceObservation(
 }
 
 /**
- * Pages du wiki qu'aucune source vivante ne soutient.
+ * Wiki pages that no living source backs.
  *
- * Une page orpheline n'est pas nécessairement fautive : elle peut avoir été
- * écrite à la main, ou produite avant l'existence du registre. C'est une
- * question posée à l'opérateur, jamais une suppression.
+ * An orphan page is not necessarily wrong: it may have been written by hand, or
+ * produced before the registry existed. It is a question asked to the operator,
+ * never a deletion.
  */
 export function orphanPages(registry: SourceRegistryFile, wikiPages: string[]): string[] {
   const supported = new Set(
@@ -188,13 +188,13 @@ export function orphanPages(registry: SourceRegistryFile, wikiPages: string[]): 
 }
 
 export type ReconciliationReport = {
-  /** Archives disparues du disque alors que le registre les connaît. */
+  /** Archives vanished from disk although the registry knows them. */
   vanishedArchives: string[];
-  /** Pages qu'une source a produites et qui n'existent plus. */
+  /** Pages a source produced and that no longer exist. */
   vanishedPages: Array<{ sourceId: string; pages: string[] }>;
-  /** Archives présentes sur le disque qu'aucune entrée du registre ne couvre. */
+  /** Archives present on disk that no registry entry covers. */
   unregisteredArchives: string[];
-  /** Pages du wiki qu'aucune source vivante ne soutient. */
+  /** Wiki pages that no living source backs. */
   orphans: string[];
 };
 
@@ -206,15 +206,15 @@ export function isReportClean(report: ReconciliationReport): boolean {
 }
 
 /**
- * Compare le registre à ce qui existe réellement sur le disque.
+ * Compares the registry to what actually exists on disk.
  *
- * **Rapporte, n'écrit rien, ne recrée rien.** Une page supprimée à la main est
- * une décision : la faire réapparaître serait la contredire, et la supprimer
- * ailleurs sans le dire serait pire. Le seul comportement défendable tant que
- * le retrait n'est pas spécifié bout en bout (T32.4) est de nommer l'écart.
+ * **Reports, writes nothing, recreates nothing.** A page deleted by hand is a
+ * decision: making it reappear would contradict it, and deleting it elsewhere
+ * without saying so would be worse. The only defensible behaviour until
+ * withdrawal is specified end to end (T32.4) is to name the gap.
  *
- * Fonction pure : l'appelant fournit les inventaires. C'est ce qui la rend
- * testable sur des cas que le système de fichiers rendrait pénibles à monter.
+ * Pure function: the caller provides the inventories. That is what makes it
+ * testable on cases that the filesystem would make tedious to set up.
  */
 export function reconcileRegistry(
   registry: SourceRegistryFile,

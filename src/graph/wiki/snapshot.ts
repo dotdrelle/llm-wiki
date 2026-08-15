@@ -2,19 +2,17 @@ import { createHash } from 'node:crypto';
 import type { WikiGraphEdge, WikiGraphNode } from './projection.ts';
 
 /**
- * Identifiant d'arête dérivé du contenu, jamais de la position.
+ * Edge identifier derived from content, never from position.
  *
- * `rel-${index}` renumérotait toutes les arêtes suivantes dès qu'une page était
- * insérée — c'est-à-dire à chaque ingestion. Aucune continuité n'était donc
- * calculable d'une révision à l'autre : le client ne pouvait pas distinguer une
- * relation qui persiste d'une relation nouvelle qui a hérité du numéro d'une
- * autre.
+ * `rel-${index}` renumbered every following edge as soon as a page was
+ * inserted — that is, on every ingest. No continuity was therefore computable
+ * from one revision to the next: the client could not distinguish a relation
+ * that persists from a new relation that inherited another one's number.
  *
- * Le triplet est unique par construction : `projection.ts` déduplique déjà sur
- * `from\0to\0type` avant de produire ses arêtes. On garde une empreinte plutôt
- * que le triplet brut parce que `from` et `to` sont des chemins relatifs
- * complets, et que ces identifiants voyagent dans **chaque** snapshot renvoyé
- * au client.
+ * The tuple is unique by construction: `projection.ts` already deduplicates on
+ * `from\0to\0type` before producing its edges. We keep a fingerprint rather
+ * than the raw tuple because `from` and `to` are full relative paths, and
+ * these identifiers travel in **every** snapshot sent to the client.
  */
 export function graphEdgeId(edge: Pick<WikiGraphEdge, 'from' | 'to' | 'type'>): string {
   return createHash('sha256')
@@ -32,14 +30,14 @@ export type { WikiGraphCommunity } from './communityProjection.ts';
 import type { CoverageCounts, PageCoverageState } from './taxonomy/coverage.ts';
 
 export type SnapshotCoverage = {
-  /** Empreinte de connaissance du corpus courant. */
+  /** Knowledge fingerprint of the current corpus. */
   corpus: string;
-  /** Empreinte sur laquelle le registre actif a été calculé, si comparable. */
+  /** Fingerprint the active registry was computed against, if comparable. */
   taxonomizedCorpus: string | null;
-  /** Vrai quand les deux empreintes sont comparables ET égales. */
+  /** True when the two fingerprints are comparable AND equal. */
   fresh: boolean;
   counts: CoverageCounts;
-  /** Page de connaissance → état. Absente des nœuds qui n'en sont pas. */
+  /** Knowledge page → state. Absent for nodes that are not knowledge pages. */
   states: Record<string, PageCoverageState>;
 };
 
@@ -61,47 +59,47 @@ export interface WikiGraphSnapshot {
   structureEtag: string;
   topologyEtag: string;
   /**
-   * Révision de taxonomie publiée, 0 quand aucun marqueur n'existe encore.
+   * Published taxonomy revision, 0 when no marker exists yet.
    *
-   * C'est le numéro que le flux SSE annonce et que le client compare pour
-   * ignorer une réponse tardive. Il est exposé même quand la taxonomie est
-   * purement déterministe : le graphe doit pouvoir dire « je suis à jour »
-   * sans que la synthèse existe.
+   * This is the number the SSE stream announces and that the client compares
+   * to ignore a late response. It is exposed even when the taxonomy is purely
+   * deterministic: the graph must be able to say "I am up to date" without the
+   * synthesis existing.
    */
   taxonomyRevision: number;
   /**
-   * Identifiant absorbé → identifiant actif.
+   * Absorbed identifier → active identifier.
    *
-   * Le client s'en sert pour deux pertes qui seraient sinon visibles : suivre
-   * une sélection à travers une fusion, et retrouver la position Canvas
-   * enregistrée sous l'ancien identifiant. Sans cette table, une fusion se lit
-   * comme une disparition et l'utilisateur perd sa disposition manuelle.
+   * The client uses it for two losses that would otherwise be visible:
+   * following a selection across a merge, and recovering the Canvas position
+   * stored under the old identifier. Without this table, a merge reads as a
+   * disappearance and the user loses their manual layout.
    */
   communityRedirects: Record<string, string>;
   /**
-   * Domaines racines : le premier niveau de la carte.
+   * Root domains: the first level of the map.
    *
-   * Vide tant que la taxonomie est déterministe — la carte retombe alors sur
-   * son rendu plat, ce qui est correct puisqu'aucun domaine n'existe.
+   * Empty while the taxonomy is deterministic — the map then falls back to its
+   * flat rendering, which is correct since no domain exists.
    */
   domains: Array<{ id: string; label: string }>;
-  /** Communauté feuille → domaine. C'est ce qui rend `carte → domaine` possible. */
+  /** Leaf community → domain. This is what makes map → domain possible. */
   communityParents: Record<string, string>;
   /**
-   * Faux tant qu'aucun registre synthétisé n'est actif. Dire l'état plutôt que
-   * de le laisser deviner : un repli silencieux se lit comme un bug, et un
-   * appelant qui croit lire une taxonomie synthétisée en tire des conclusions
-   * qu'elle ne porte pas.
+   * False while no synthesized registry is active. State the state rather than
+   * letting it be guessed: a silent fallback reads as a bug, and a caller that
+   * thinks it is reading a synthesized taxonomy draws conclusions it does not
+   * support.
    */
   synthesized: boolean;
   /**
-   * Couverture taxonomique du corpus de connaissance.
+   * Taxonomic coverage of the knowledge corpus.
    *
-   * Quatre compteurs plutôt qu'un seul bloc `Ungrouped`, parce qu'une page sans
-   * affectation peut l'être pour trois raisons qui n'appellent pas la même
-   * réaction : jamais soumise au modèle, soumise et non classée, ou apparue
-   * après la synthèse. Le premier écran ne peut pas rester juste s'il les
-   * confond.
+   * Four counters rather than a single `Ungrouped` bucket, because an
+   * unassigned page can be so for three reasons that call for different
+   * reactions: never submitted to the model, submitted and not classified, or
+   * appeared after synthesis. The first screen cannot stay accurate if it
+   * conflates them.
    */
   coverage: SnapshotCoverage;
   nodes: Array<Omit<WikiGraphNode, 'raw' | 'html' | 'preview'>>;

@@ -200,10 +200,10 @@ function printBuildSummary(
 ): void {
   if (!summary) return;
   const previous =
-    previousRun?.command === 'build' ? ` (précédent : ${formatDuration(previousRun.wallMs)})` : '';
-  console.log(`\n✔ Build terminé — ${formatDuration(summary.wallMs)}${previous}`);
+    previousRun?.command === 'build' ? ` (previous: ${formatDuration(previousRun.wallMs)})` : '';
+  console.log(`\n✔ Build finished — ${formatDuration(summary.wallMs)}${previous}`);
   console.log(
-    `  LLM ${summary.llm.calls} appels · ${formatTokenCount(summary.llm.inputTokens)} tokens in · throttle ${formatDuration(summary.llm.throttleMs)} · latence ${formatDuration(summary.llm.latencyMs)}`,
+    `  LLM ${summary.llm.calls} calls · ${formatTokenCount(summary.llm.inputTokens)} tokens in · throttle ${formatDuration(summary.llm.throttleMs)} · latency ${formatDuration(summary.llm.latencyMs)}`,
   );
   console.log(
     `  Embeddings ${summary.embedding.calls} (${summary.embedding.cacheHits} cache) · Rerank ${summary.rerank.calls} (${summary.rerank.cacheHits} cache)`,

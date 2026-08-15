@@ -221,7 +221,7 @@ describe('validation d’une proposition', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.issues.some((issue) => issue.reason.includes('famille inconnue'))).toBe(true);
+    expect(result.issues.some((issue) => issue.reason.includes('unknown family'))).toBe(true);
   });
 
   it('refuse une couverture incomplète', async () => {
@@ -235,7 +235,7 @@ describe('validation d’une proposition', () => {
     // carte mentirait sur ce qu'elle a compris.
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.issues.some((issue) => issue.reason.startsWith('famille non affectée'))).toBe(true);
+    expect(result.issues.some((issue) => issue.reason.startsWith('unassigned family'))).toBe(true);
   });
 
   it('refuse un libellé qui n’est pas un mot unique', async () => {
@@ -262,7 +262,7 @@ describe('validation d’une proposition', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.issues.some((issue) => issue.reason.includes('communauté inconnue'))).toBe(true);
+    expect(result.issues.some((issue) => issue.reason.includes('unknown community'))).toBe(true);
   });
 });
 
@@ -487,7 +487,7 @@ describe('synthèse complète', () => {
 
     expect(outcome.status).toBe('published');
     if (outcome.status !== 'published') return;
-    expect(outcome.warnings.some((warning) => warning.includes('sans affectation'))).toBe(true);
+    expect(outcome.warnings.some((warning) => warning.includes('without assignment'))).toBe(true);
   });
 
   it('ne se plaint de rien quand le corpus tient entier', async () => {
@@ -495,7 +495,7 @@ describe('synthèse complète', () => {
 
     expect(outcome.status).toBe('published');
     if (outcome.status !== 'published') return;
-    expect(outcome.warnings.some((warning) => warning.includes('sans affectation'))).toBe(false);
+    expect(outcome.warnings.some((warning) => warning.includes('without assignment'))).toBe(false);
   });
 
   it('rejette en bloc une proposition non conforme, sans rien publier', async () => {

@@ -1,22 +1,21 @@
 import type { LlmConfig } from '../types.ts';
 
 /**
- * Capacités et contournements par moteur.
+ * Per-engine capabilities and workarounds.
  *
- * Source unique de vérité pour tout ce que le code faisait auparavant en
- * testant `config.llm.provider`. La séparation des deux axes est la raison
- * d'être de ce module :
+ * Single source of truth for everything the code previously did by testing
+ * `config.llm.provider`. The separation of the two axes is the very purpose of
+ * this module:
  *
- * - `provider` dit **où** l'on tape (serveur direct ou AI gateway) ;
- * - `engine` dit **comment se comporte** le serveur en face.
+ * - `provider` says **where** requests are sent (direct server or AI gateway);
+ * - `engine` says **how** the server in front behaves.
  *
- * Derrière une gateway (`provider: 'ai-gateway'`), il n'existe pas un moteur
- * mais un par modèle : le même endpoint route vers gpt-5 (qui refuse
- * `temperature`) et vers claude (qui l'accepte). Aucune décision statique n'est
- * possible, donc **aucun contournement n'est appliqué** : on suppose une
- * sémantique OpenAI propre et on délègue la normalisation des paramètres à la
- * gateway (`drop_params: true` chez LiteLLM — prérequis documenté du mode
- * gateway, pas une option).
+ * Behind a gateway (`provider: 'ai-gateway'`), there is not one engine but one
+ * per model: the same endpoint routes to gpt-5 (which refuses `temperature`)
+ * and to claude (which accepts it). No static decision is possible, so **no
+ * workaround is applied**: we assume clean OpenAI semantics and delegate
+ * parameter normalization to the gateway (`drop_params: true` on LiteLLM —
+ * documented prerequisite of gateway mode, not an option).
  */
 
 function isGateway(llm: LlmConfig): boolean {
@@ -24,13 +23,13 @@ function isGateway(llm: LlmConfig): boolean {
 }
 
 /**
- * Moteurs auparavant regroupés sous `provider: 'openai-compatible'`, c'est-à-dire
- * les serveurs d'inférence locaux ou auto-hébergés. Ce sont eux qui portent les
- * contournements historiques.
+ * Engines previously grouped under `provider: 'openai-compatible'`, that is
+ * local or self-hosted inference servers. These are the ones that carry the
+ * historical workarounds.
  *
- * `albert` en faisait partie par héritage, jamais par mesure. La sonde
- * `scripts/probe-engine.mjs` a montré qu'il n'en avait besoin pour aucun des
- * trois contournements testables — voir les prédicats concernés.
+ * `albert` was part of it by inheritance, never by measure. The
+ * `scripts/probe-engine.mjs` probe showed that it needed none of the three
+ * testable workarounds — see the relevant predicates.
  */
 function isLocalServer(llm: LlmConfig): boolean {
   if (isGateway(llm)) return false;
@@ -43,39 +42,39 @@ function isLocalServer(llm: LlmConfig): boolean {
 }
 
 /**
- * Serveur distant, mutualisé, à la sémantique OpenAI complète — par opposition
- * aux serveurs d'inférence bruts. Mesuré sur Albert : rôle `system` accepté,
- * `response_format: json_object` respecté, réparation JSON fonctionnelle, lot
- * JSON multi-slots restitué intact.
+ * Remote, shared server with full OpenAI semantics — as opposed to raw
+ * inference servers. Measured on Albert: `system` role accepted,
+ * `response_format: json_object` respected, JSON repair functional, multi-slot
+ * JSON batch returned intact.
  *
- * Volontairement limité à `albert` : `vllm`, `mlx` et `generic` n'ont pas été
- * sondés, et leur accorder les mêmes capacités sans mesure reproduirait
- * exactement l'erreur qu'on est en train de corriger.
+ * Deliberately limited to `albert`: `vllm`, `mlx` and `generic` have not been
+ * probed, and granting them the same capabilities without measurement would
+ * reproduce exactly the error we are correcting.
  */
 function isManagedOpenAiCompatible(llm: LlmConfig): boolean {
   return !isGateway(llm) && llm.engine === 'albert';
 }
 
 /**
- * `temperature` est refusée par les modèles gpt-5 d'OpenAI.
+ * `temperature` is refused by OpenAI gpt-5 models.
  *
- * Le test porte sur le segment final du nom du modèle : derrière une gateway un
- * modèle s'appelle `openai/gpt-5-mini`, et l'ancienne regex ancrée en début de
- * chaîne ne matchait pas — la température partait et OpenAI rejetait la requête
- * (bug B-A). Le préfixe est donc retiré avant le test, ce qui rend la règle
- * valable dans les deux modes.
+ * The test targets the final segment of the model name: behind a gateway a
+ * model is called `openai/gpt-5-mini`, and the old regex anchored at the start
+ * of the string did not match — the temperature went through and OpenAI rejected
+ * the request (bug B-A). The prefix is therefore removed before the test, which
+ * makes the rule valid in both modes.
  */
 export function supportsTemperature(llm: LlmConfig): boolean {
   const bareModel = llm.model.slice(llm.model.lastIndexOf('/') + 1);
   const isGpt5 = /^gpt-5(?:[.-]|$)/i.test(bareModel);
   if (!isGpt5) return true;
-  // Un gpt-5 servi par OpenAI, en direct ou derrière une gateway.
+  // A gpt-5 served by OpenAI, directly or behind a gateway.
   return !(isGateway(llm) || llm.engine === 'openai');
 }
 
 /**
- * En-têtes du client de génération, ajoutés à l'authentification du SDK OpenAI
- * (qui pose déjà `Authorization: Bearer`).
+ * Generation client headers, added on top of the OpenAI SDK authentication
+ * (which already sets `Authorization: Bearer`).
  */
 export function engineHeaders(llm: LlmConfig): Record<string, string> | undefined {
   if (isGateway(llm)) return undefined;
@@ -84,14 +83,14 @@ export function engineHeaders(llm: LlmConfig): Record<string, string> | undefine
 }
 
 /**
- * En-têtes d'un appel `fetch` brut vers l'API du moteur — sondage `/models` de
- * `doctor`, par exemple.
+ * Headers for a raw `fetch` call to the engine API — the `/models` probe of
+ * `doctor`, for example.
  *
- * Distinct de `engineHeaders` à dessein : là-bas le SDK OpenAI fournit
- * `Authorization`, ici personne ne le fait. Anthropic authentifie d'ailleurs
- * son API native par `x-api-key`, pas par un Bearer. Les deux fonctions
- * cohabitent donc au lieu d'être fusionnées, mais elles vivent côte à côte
- * pour qu'un changement de contrat les rende toutes deux visibles.
+ * Distinct from `engineHeaders` on purpose: there the OpenAI SDK provides
+ * `Authorization`, here nobody does. Anthropic authenticates its native API via
+ * `x-api-key`, not a Bearer. The two functions therefore coexist instead of
+ * being merged, but they live side by side so that a contract change makes them
+ * both visible.
  */
 export function engineFetchHeaders(
   llm: LlmConfig,
@@ -104,9 +103,9 @@ export function engineFetchHeaders(
 }
 
 /**
- * Certains serveurs (mlx_lm notamment) rejettent un rôle `system` en tête, ou
- * le traitent comme un tour utilisateur, produisant deux messages `user`
- * consécutifs. On replie alors le system dans le user.
+ * Some servers (mlx_lm in particular) reject a leading `system` role, or treat
+ * it as a user turn, producing two consecutive `user` messages. We then fold
+ * the system into the user.
  */
 export function foldsSystemIntoUser(llm: LlmConfig): boolean {
   return isLocalServer(llm);
@@ -116,80 +115,80 @@ export function foldsSystemIntoUser(llm: LlmConfig): boolean {
 export function supportsJsonResponseFormat(llm: LlmConfig): boolean {
   if (isGateway(llm)) return true;
   if (llm.engine === 'anthropic') return false;
-  // Albert documente et respecte `json_object` (mesuré, M2). La désactivation
-  // héritée lui coûtait le mode JSON natif pour rien.
+  // Albert documents and respects `json_object` (measured, M2). The inherited
+  // deactivation cost it the native JSON mode for nothing.
   if (isManagedOpenAiCompatible(llm)) return true;
   return !isLocalServer(llm);
 }
 
-/** `stream_options: { include_usage: true }` pour récupérer l'usage en streaming. */
+/** `stream_options: { include_usage: true }` to get usage in streaming. */
 export function supportsStreamOptions(llm: LlmConfig): boolean {
   if (isGateway(llm)) return true;
   return llm.engine !== 'anthropic';
 }
 
-/** OpenAI attend `max_completion_tokens` là où les autres attendent `max_tokens`. */
+/** OpenAI expects `max_completion_tokens` where the others expect `max_tokens`. */
 export function usesMaxCompletionTokens(llm: LlmConfig): boolean {
   if (isGateway(llm)) return false;
   return llm.engine === 'openai';
 }
 
-/** `options.num_ctx`, propre au protocole Ollama. */
+/** `options.num_ctx`, specific to the Ollama protocol. */
 export function supportsNumCtx(llm: LlmConfig): boolean {
   return isOllamaEngine(llm);
 }
 
 /**
- * Réparation JSON par un second appel au modèle. Inutilisable sur les serveurs
- * locaux : les modèles à thinking (Qwen3 par exemple) renvoient un contenu vide
- * pour l'appel de réparation, ce qui la rend peu fiable et coûteuse.
+ * JSON repair by a second call to the model. Unusable on local servers:
+ * thinking models (Qwen3 for example) return empty content for the repair call,
+ * which makes it unreliable and costly.
  */
 export function supportsModelJsonRepair(llm: LlmConfig): boolean {
-  // Mesuré sur Albert (M3) : l'appel de réparation renvoie du JSON valide. Le
-  // contournement visait mlx_lm et des Qwen3 locaux, pas ce moteur.
+  // Measured on Albert (M3): the repair call returns valid JSON. The workaround
+  // targeted mlx_lm and local Qwen3s, not this engine.
   if (isManagedOpenAiCompatible(llm)) return true;
   return !isLocalServer(llm);
 }
 
 /**
- * Rendu d'un slot unique par un prompt texte dédié, sans passer par du JSON.
- * Gain de fiabilité sur les serveurs locaux — mais il sérialise le batch, donc
- * il ne doit **jamais** s'activer derrière une gateway, où ce serait une
- * régression de débit pure.
+ * Rendering of a single slot via a dedicated text prompt, without going through
+ * JSON. A reliability gain on local servers — but it serializes the batch, so
+ * it must **never** activate behind a gateway, where it would be a pure
+ * throughput regression.
  */
 export function prefersSingleSlotTextRendering(llm: LlmConfig): boolean {
-  // Mesuré sur Albert (M4) : un lot JSON multi-slots est restitué intact. Le
-  // rendu slot unique sérialisait le build sur une API cloud à RPM 100, sans
-  // le gain de fiabilité qui le justifie sur un serveur local.
+  // Measured on Albert (M4): a multi-slot JSON batch is returned intact.
+  // Single-slot rendering serialized the build on a cloud API at RPM 100,
+  // without the reliability gain that justifies it on a local server.
   if (isManagedOpenAiCompatible(llm)) return false;
   return isLocalServer(llm);
 }
 
 /**
- * Ollama joint en direct. Conditionne le protocole (`options.num_ctx`), les
- * diagnostics d'erreur et tout le sous-système matériel de `doctor` : lecture
- * de l'environnement du process, `/api/show`, calcul du cache KV, alertes RAM.
+ * Ollama reached directly. Conditions the protocol (`options.num_ctx`), the
+ * error diagnostics and the whole `doctor` hardware subsystem: process
+ * environment reading, `/api/show`, KV cache computation, RAM alerts.
  */
 export function isOllamaEngine(llm: LlmConfig): boolean {
   return !isGateway(llm) && llm.engine === 'ollama';
 }
 
-/** Diagnostics d'erreur propres à Ollama (contexte dépassé, RAM insuffisante). */
+/** Error diagnostics specific to Ollama (context exceeded, insufficient RAM). */
 export function hasOllamaDiagnostics(llm: LlmConfig): boolean {
   return isOllamaEngine(llm);
 }
 
 /**
- * Le plafond de sortie couvre-t-il aussi le raisonnement ?
+ * Does the output cap also cover reasoning?
  *
- * Oui presque partout : `max_tokens` (vLLM, Albert, Ollama) et
- * `max_completion_tokens` (OpenAI) bornent le **total généré**, raisonnement
- * compris. Anthropic fait exception, son budget de réflexion étant un
- * paramètre distinct.
+ * Yes almost everywhere: `max_tokens` (vLLM, Albert, Ollama) and
+ * `max_completion_tokens` (OpenAI) bound the **generated total**, reasoning
+ * included. Anthropic is the exception, its reflection budget being a distinct
+ * parameter.
  *
- * Conséquence : un plafond dimensionné pour le contenu seul peut être épuisé
- * avant qu'un caractère utile soit écrit. Mesuré sur Albert / gpt-oss-120b, où
- * le contenu n'arrive qu'au chunk 221 sur 222.
+ * Consequence: a cap sized for content alone can be exhausted before a single
+ * useful character is written. Measured on Albert / gpt-oss-120b, where the
+ * content only arrives at chunk 221 of 222.
  */
 export function outputCapIncludesReasoning(llm: LlmConfig): boolean {
   if (isGateway(llm)) return true;
@@ -197,28 +196,29 @@ export function outputCapIncludesReasoning(llm: LlmConfig): boolean {
 }
 
 /**
- * Marge appliquée au plafond de sortie pour absorber le raisonnement.
+ * Margin applied to the output cap to absorb reasoning.
  *
- * **Valeur provisoire.** Le facteur juste dépend du modèle et de la longueur
- * de la section, et n'a pas encore été mesuré (cf. §5.2 de
- * `plan-implementation-reasoning.md`). Le défaut de 3 est un ordre de grandeur,
- * pas une mesure — il est donc réglable par `llm.reasoningOutputMultiplier`.
+ * **Provisional value.** The right factor depends on the model and the section
+ * length, and has not been measured yet (cf. §5.2 of
+ * `plan-implementation-reasoning.md`). The default of 3 is an order of
+ * magnitude, not a measurement — it is therefore adjustable via
+ * `llm.reasoningOutputMultiplier`.
  *
- * Élargir un plafond ne fait perdre qu'une protection contre l'emballement, et
- * la validation de section borne déjà la sortie par ailleurs. Le vrai garde-fou
- * est l'erreur explicite levée en cas de coupure, pas cette marge.
+ * Widening a cap only loses a protection against runaway generation, and
+ * section validation already bounds the output elsewhere. The real guard is the
+ * explicit error raised on cutoff, not this margin.
  */
 export function reasoningOutputMultiplier(llm: LlmConfig): number {
   if (!outputCapIncludesReasoning(llm)) return 1;
   return llm.reasoningOutputMultiplier ?? 3;
 }
 
-/** Plafond de sortie effectif pour un budget de contenu donné. */
+/** Effective output cap for a given content budget. */
 export function reasoningAwareOutputCap(llm: LlmConfig, contentTokens: number): number {
   return Math.ceil(contentTokens * reasoningOutputMultiplier(llm));
 }
 
-/** Étiquette affichée à l'utilisateur : le moteur est plus parlant que le routage. */
+/** Label shown to the user: the engine is more telling than the routing. */
 export function describeTarget(llm: LlmConfig): string {
   return isGateway(llm) ? 'ai-gateway' : llm.engine;
 }

@@ -10,27 +10,27 @@ export type RecoveryOutcome =
   | { status: 'idle' }
   | { status: 'recovered'; revision: number }
   | { status: 'signalled'; revision: number | null }
-  /** Le corpus a changé depuis l'échec : le travail en attente ne vaut plus. */
+  /** The corpus changed since the failure: the pending work is no longer worth anything. */
   | { status: 'superseded'; revision: number | null }
   | { status: 'deferred' };
 
 /**
- * Reprend le travail laissé en attente par un producteur qui n'a pas pu publier.
+ * Resumes the work left pending by a producer that could not publish.
  *
- * Le drapeau n'a pas le même pouvoir selon son origine, et les confondre
- * promettrait une reprise impossible :
+ * The flag does not have the same power depending on its origin, and confusing
+ * them would promise an impossible resumption:
  *
- * - `deterministic` — la projection se recalcule intégralement depuis les
- *   fichiers du corpus. Serve sait donc réellement reprendre : il publie et
- *   efface le drapeau.
- * - `pendingSynthesis` — la proposition validée vivait en mémoire du producteur
- *   et a disparu avec lui. Serve **n'appelle jamais le modèle** (D2) : il ne
- *   peut pas la reconstituer. Il publie l'état déterministe en conservant la
- *   génération de registre du commit précédent, garde le drapeau, et laisse la
- *   reprise à la prochaine exécution de la capacité orchestrée.
+ * - `deterministic` — the projection recomputes entirely from the
+ *   corpus files. Serve therefore really knows how to resume: it publishes and
+ *   clears the flag.
+ * - `pendingSynthesis` — the validated proposal lived in the producer's memory
+ *   and disappeared with it. Serve **never calls the model** (D2): it
+ *   cannot reconstruct it. It publishes the deterministic state while keeping the
+ *   registry generation of the previous commit, keeps the flag, and leaves the
+ *   resumption to the next execution of the orchestrated capability.
  *
- * Dans les deux cas le registre précédent reste actif : jamais une génération
- * orpheline, jamais un état partiel.
+ * In both cases the previous registry stays active: never an orphan
+ * generation, never a partial state.
  */
 export async function recoverPendingWork(
   rootDir: string,
@@ -41,41 +41,41 @@ export async function recoverPendingWork(
 
   const current = await readMarker(rootDir);
   if (flag.kind === 'pendingSynthesis' && current?.corpus === flag.corpus) {
-    // Le signal doit survivre pour l'orchestrateur, pas créer une nouvelle
-    // révision à chaque poll du watcher. L'état déterministe visé est déjà
-    // publié ; il ne reste précisément que la synthèse que Serve ne sait pas
-    // refaire.
+    // The signal must survive for the orchestrator, not create a new
+    // revision at each watcher poll. The targeted deterministic state is already
+    // published; only the synthesis that Serve does not know how to
+    // redo remains.
     return { status: 'signalled', revision: current.revision };
   }
 
   /*
-   Une empreinte de corpus ne recule jamais.
+   A corpus fingerprint never goes backwards.
 
-   Le drapeau porte l'empreinte figée à l'instant de l'échec. Rien n'empêche une
-   ingestion d'aboutir ENTRE cet échec et cette reprise : le marqueur décrit
-   alors un corpus plus récent, et republier `flag.corpus` le ferait repartir en
-   arrière. Le registre actif resterait pourtant celui d'aujourd'hui — le
-   marqueur mentirait donc sur ce à quoi il correspond, et tout consommateur qui
-   compare les empreintes verrait le corpus « changer » à l'envers.
+   The flag carries the fingerprint frozen at the moment of failure. Nothing prevents an
+   ingestion from succeeding BETWEEN that failure and this resumption: the marker then
+   describes a more recent corpus, and republishing `flag.corpus` would make it go
+   backwards. The active registry would nonetheless remain today's — the
+   marker would therefore lie about what it corresponds to, and every consumer that
+   compares the fingerprints would see the corpus "change" in reverse.
 
-   La révision est le seul ordre total dont on dispose : elle est monotone par
-   construction. Si elle a dépassé la base du drapeau ET que l'empreinte diffère,
-   quelqu'un a publié depuis, et ce drapeau parle d'un état révolu.
+   The revision is the only total order available: it is monotonic by
+   construction. If it exceeded the flag's base AND the fingerprint differs,
+   someone has published since, and this flag speaks of a bygone state.
   */
   const movedOn = Boolean(
     current && current.revision > flag.baseRevision && current.corpus !== flag.corpus,
   );
   if (movedOn) {
     if (flag.kind === 'deterministic') {
-      // La projection réclamée a été supplantée par une plus récente : il n'y a
-      // plus rien à reprendre, et garder le drapeau ferait boucler le watcher.
+      // The requested projection was superseded by a more recent one: there is
+      // nothing left to resume, and keeping the flag would make the watcher loop.
       await clearDirtyFlag(rootDir);
       return { status: 'superseded', revision: current?.revision ?? null };
     }
     /*
-     La synthèse, elle, reste due : personne ne l'a refaite pour le nouveau
-     corpus non plus. Le drapeau survit pour que la capacité orchestrée la
-     reprenne — mais sans toucher au marqueur, qui est déjà à jour.
+     The synthesis, for its part, remains owed: nobody has redone it for the new
+     corpus either. The flag survives so the orchestrated capability
+     resumes it — but without touching the marker, which is already up to date.
     */
     return { status: 'signalled', revision: current?.revision ?? null };
   }
@@ -84,8 +84,8 @@ export async function recoverPendingWork(
     rootDir,
     {
       corpus: flag.corpus,
-      // La synthèse perdue ne doit pas emporter la taxonomie active : on
-      // republie le pointeur courant, pas un pointeur vide.
+      // The lost synthesis must not take the active taxonomy with it: we
+      // republish the current pointer, not an empty pointer.
       registryRef: current?.registryRef ?? null,
       registryHash: current?.registryHash ?? null,
     },
@@ -93,8 +93,8 @@ export async function recoverPendingWork(
   );
 
   if (outcome.status !== 'published') {
-    // Verrou indisponible ou base périmée : on retentera. Le drapeau reste,
-    // c'est précisément son rôle.
+    // Lock unavailable or stale base: we will retry. The flag stays,
+    // that is precisely its role.
     return { status: 'deferred' };
   }
 
@@ -104,9 +104,9 @@ export async function recoverPendingWork(
   }
 
   /*
-   `pendingSynthesis` : la révision avance — l'écran voit l'état déterministe
-   le plus récent — mais le drapeau SURVIT. L'effacer reviendrait à prétendre
-   que la synthèse a été reprise, et plus personne ne saurait qu'elle manque.
+   `pendingSynthesis`: the revision advances — the screen sees the most recent
+   deterministic state — but the flag SURVIVES. Clearing it would pretend
+   that the synthesis was resumed, and nobody would know anymore that it is missing.
   */
   return { status: 'signalled', revision: outcome.marker.revision };
 }

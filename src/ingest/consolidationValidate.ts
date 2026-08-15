@@ -8,25 +8,25 @@ import {
 } from './provenance.ts';
 
 /*
- Contrôle déterministe du plan consolidé.
+ Deterministic check of the consolidated plan.
 
- La validation répond « ce plan est-il applicable ? » ; le budget répond « cette
- granularité est-elle défendable ? ». Les deux sont séparés à dessein : une
- erreur structurelle doit bloquer, une réserve sémantique doit être visible sans
- empêcher de publier — c'est déjà la discipline de la taxonomie, et l'appliquer
- ici évite qu'un plan parfaitement utile soit rejeté pour un concept de trop.
+ Validation answers "is this plan applicable?"; the budget answers "is this
+ granularity defensible?". The two are separated on purpose: a structural error
+ must block, a semantic reservation must be visible without preventing
+ publication — that is already the taxonomy's discipline, and applying it here
+ avoids a perfectly useful plan being rejected for one concept too many.
 */
 
-/** Budget par défaut : une note de source, plus zéro à trois concepts propres. */
+/** Default budget: one source note, plus zero to three concepts of its own. */
 export const DEFAULT_CONCEPT_BUDGET = 3;
 
 export type ConsolidationIssue = { path: string; reason: string };
 
 export type ValidatedConsolidation = {
   operations: WikiOperation[];
-  /** Bloquant : le plan n'est pas applicable en l'état. */
+  /** Blocking: the plan is not applicable as-is. */
   errors: ConsolidationIssue[];
-  /** Observable : publié, jamais bloquant. */
+  /** Observable: published, never blocking. */
   warnings: ConsolidationIssue[];
   provenanceByPath: Map<string, PageProvenance>;
 };
@@ -38,11 +38,11 @@ function isSourceNote(path: string, sourcePagePath: string): boolean {
 }
 
 /**
- * Valide, annote et rend le plan applicable.
+ * Validates, annotates and makes the plan applicable.
  *
- * Les opérations ne sont pas réécrites au-delà de l'injection de provenance :
- * réparer un plan douteux en silence produirait une page que personne n'a
- * décidée, et masquerait précisément ce que le journal doit pouvoir expliquer.
+ * The operations are not rewritten beyond the provenance injection: silently
+ * repairing a dubious plan would produce a page that nobody decided, and would
+ * hide precisely what the log must be able to explain.
  */
 export function validateConsolidation(
   plan: ConsolidationPlan,
@@ -59,30 +59,30 @@ export function validateConsolidation(
   const budget = context.conceptBudget ?? DEFAULT_CONCEPT_BUDGET;
 
   /*
-   `pages` peut manquer : plan relu d'un cache, réponse d'un modèle avare, format
-   antérieur. L'absence de provenance est une réserve — elle est signalée page par
-   page plus bas — jamais une raison de perdre une source entière.
+   `pages` may be missing: a plan re-read from cache, a stingy model answer, an
+   earlier format. The absence of provenance is a reservation — it is reported
+   page by page further down — never a reason to lose an entire source.
   */
   const declaredPages = plan.pages ?? [];
   const provenanceInput = new Map(declaredPages.map((page) => [page.path, page]));
   const provenanceByPath = new Map<string, PageProvenance>();
 
   /*
-   Une source produit UNE note de source.
+   A source produces ONE source note.
 
-   Sans ce contrôle, le défaut d'origine revient sous une autre forme : la
-   consolidation peut proposer une note par fragment si le prompt l'y invite,
-   et la couverture du document se disperse à nouveau.
+   Without this check, the original flaw returns in another form: the
+   consolidation can propose one note per fragment if the prompt invites it to,
+   and the document's coverage scatters again.
   */
   const sourceNotes = plan.operations.filter(
     (operation) => isSourceNote(operation.path, context.sourcePagePath) && operation.type !== 'delete',
   );
   if (sourceNotes.length === 0) {
-    errors.push({ path: context.sourcePagePath, reason: 'aucune note de source dans le plan' });
+    errors.push({ path: context.sourcePagePath, reason: 'no source note in the plan' });
   } else if (sourceNotes.length > 1) {
     errors.push({
       path: context.sourcePagePath,
-      reason: `${sourceNotes.length} notes de source pour un document`,
+      reason: `${sourceNotes.length} source notes for a single document`,
     });
   }
   for (const operation of plan.operations) {
@@ -91,7 +91,7 @@ export function validateConsolidation(
       && operation.type !== 'delete') {
       errors.push({
         path: operation.path,
-        reason: `note de source secondaire interdite ; chemin canonique attendu : ${context.sourcePagePath}`,
+        reason: `secondary source note not allowed; expected canonical path: ${context.sourcePagePath}`,
       });
     }
   }
@@ -104,34 +104,34 @@ export function validateConsolidation(
     const at = operation.path;
 
     /*
-     Deux opérations contradictoires sur le même chemin.
+     Two contradictory operations on the same path.
 
-     Le chemin précédent concaténait les opérations de chaque lot : deux
-     créations du même fichier s'écrasaient en silence, et la dernière gagnait
-     sans que rien ne dise laquelle. Une collision est désormais une erreur, pas
-     un arbitrage implicite.
+     The previous path concatenated the operations of each batch: two creations
+     of the same file silently overwrote each other, and the last one won
+     without anything saying which. A collision is now an error, not an
+     implicit arbitration.
     */
     const previous = seen.get(at);
     if (previous) {
-      errors.push({ path: at, reason: `chemin en double dans le plan (${previous.type} puis ${operation.type})` });
+      errors.push({ path: at, reason: `duplicate path in the plan (${previous.type} then ${operation.type})` });
       continue;
     }
     seen.set(at, operation);
 
     if (operation.type !== 'delete' && !operation.content?.trim()) {
-      errors.push({ path: at, reason: 'contenu vide pour une création ou une mise à jour' });
+      errors.push({ path: at, reason: 'empty content for a create or an update' });
       continue;
     }
 
     /*
-     Toute affirmation doit citer la source ingérée.
+     Every claim must cite the ingested source.
 
-     Contrôlé sur la note de source et les concepts, pas sur l'index : l'index
-     est une table des matières, pas un porteur de faits.
+     Checked on the source note and the concepts, not on the index: the index is
+     a table of contents, not a carrier of facts.
     */
     if (operation.type !== 'delete' && at !== 'wiki/index.md') {
       if (!operation.content?.includes(context.citationPath)) {
-        warnings.push({ path: at, reason: 'aucune citation de la source ingérée' });
+        warnings.push({ path: at, reason: 'no citation of the ingested source' });
       }
     }
 
@@ -143,7 +143,7 @@ export function validateConsolidation(
     const declared = provenanceInput.get(at);
     if (operation.type !== 'delete' && at !== 'wiki/index.md') {
       if (!declared) {
-        warnings.push({ path: at, reason: 'provenance non déclarée' });
+        warnings.push({ path: at, reason: 'undeclared provenance' });
       }
       const subject = declared?.subject ? normalizeProvenanceValue(declared.subject) : null;
       const collection = declared?.collection
@@ -155,7 +155,7 @@ export function validateConsolidation(
         scope: declared?.scope ?? null,
       };
       if (declared?.subject && !provenance.subject) {
-        warnings.push({ path: at, reason: `sujet non normalisable : « ${declared.subject} »` });
+        warnings.push({ path: at, reason: `non-normalizable subject: « ${declared.subject} »` });
       }
       provenanceByPath.set(at, provenance);
       operations.push({
@@ -169,10 +169,11 @@ export function validateConsolidation(
   }
 
   /*
-   Budget conceptuel : une réserve, pas un couperet.
+   Conceptual budget: a reservation, not a guillotine.
 
-   Refuser le plan ferait perdre une source entière pour un concept de trop.
-   L'écart est donc publié, avec son compte, et reste explicable dans le journal.
+   Refusing the plan would lose an entire source for one concept too many. The
+   gap is therefore published, with its count, and remains explainable in the
+   log.
   */
   if (newConcepts > budget) {
     const justified = declaredPages.filter(
@@ -180,8 +181,8 @@ export function validateConsolidation(
     ).length;
     warnings.push({
       path: 'plan',
-      reason: `${newConcepts} nouveaux concepts pour un budget de ${budget}`
-        + ` (${justified} justifié(s))`,
+      reason: `${newConcepts} new concepts for a budget of ${budget}`
+        + ` (${justified} justified)`,
     });
   }
 

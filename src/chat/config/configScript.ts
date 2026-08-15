@@ -33,30 +33,30 @@ function saveConfig() {
 }
 
 /*
- Reset — revenir à la config du profil actif, connexions comprises.
+ Reset — return to the active profile's config, connections included.
 
- Reset ne faisait que réécrire les champs depuis GET /api/llm-config. Sur un
- workspace dont l'endpoint était injoignable, l'écran redevenait donc identique
- à celui d'un workspace sain pendant que tout continuait d'échouer, et les
- connecteurs MCP restaient tels quels. Le seul contournement connu était de
- créer un second profil .wikirc et de basculer dessus — ce qui marchait parce
- que la bascule, elle, passe par le chemin autoritaire côté serveur.
+ Reset used to only rewrite the fields from GET /api/llm-config. On a workspace
+ whose endpoint was unreachable, the screen therefore looked identical to a
+ healthy workspace while everything kept failing, and the MCP connectors stayed
+ as they were. The only known workaround was to create a second .wikirc profile
+ and switch to it — which worked because the switch goes through the
+ authoritative server-side path.
 
- Reset emprunte maintenant ce même chemin quand il existe, puis dit si
- l'endpoint répond.
+ Reset now takes that same path when it exists, then reports whether the
+ endpoint responds.
 */
 async function resetYamlConfig() {
   const select=$('profile-picker');
   const activeProfile=select?.dataset.active||select?.value||null;
   if(activeProfile&&window.__WIKI_CONFIG__?.runtime?.enabled) {
-    // Réappliquer le profil actif : le serveur relit le .wikirc, et
-    // switchConfigProfile reconnecte les MCP.
+    // Reapply the active profile: the server re-reads the .wikirc, and
+    // switchConfigProfile reconnects the MCP servers.
     await switchConfigProfile(activeProfile);
     await probeLlmEndpoint();
     return;
   }
-  // Pas de runtime : le profil ne se rejoue pas côté serveur, on retombe sur
-  // la relecture des champs — mais on reconnecte et on sonde quand même.
+  // No runtime: the profile is not replayed server-side, so we fall back to
+  // re-reading the fields — but we still reconnect and probe.
   const wc = window.__WIKI_CONFIG__;
   let cfg = wc;
   try {
@@ -73,7 +73,7 @@ async function resetYamlConfig() {
   await probeLlmEndpoint();
 }
 
-/** Dit si l'endpoint LLM configuré répond. Silencieux uniquement en cas de succès net. */
+/** Reports whether the configured LLM endpoint responds. Silent only on clean success. */
 async function probeLlmEndpoint() {
   try {
     const res=await fetch('/api/llm/probe',{method:'POST'});

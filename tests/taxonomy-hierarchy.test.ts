@@ -66,19 +66,19 @@ describe('arborescence du registre', () => {
     const data = hierarchical();
     data.assignments['wiki/orpheline.md'] = { primaryCommunity: 'dom_logiciel' };
 
-    expect(reasons(validateRegistry(data))).toContain('porte des communautés filles');
+    expect(reasons(validateRegistry(data))).toContain('carries child communities');
   });
 
   it('refuse un parent inconnu ou une auto-parenté', () => {
     expect(reasons(validateRegistry(registry(
       [community('cmty_a', 'Alpha', 'dom_absent')],
       { 'wiki/a.md': { primaryCommunity: 'cmty_a' } },
-    )))).toContain('domaine parent inconnu');
+    )))).toContain('unknown parent domain');
 
     expect(reasons(validateRegistry(registry(
       [community('cmty_a', 'Alpha', 'cmty_a')],
       { 'wiki/a.md': { primaryCommunity: 'cmty_a' } },
-    )))).toContain('son propre parent');
+    )))).toContain('a community cannot be its own parent');
   });
 
   it('refuse un cycle de parenté', () => {
@@ -89,7 +89,7 @@ describe('arborescence du registre', () => {
       {},
     ));
 
-    expect(reasons(result)).toContain('cycle de parenté');
+    expect(reasons(result)).toContain('parent cycle');
   });
 
   it('borne la profondeur à ce que la navigation sait rendre', () => {
@@ -102,7 +102,7 @@ describe('arborescence du registre', () => {
       { 'wiki/a.md': { primaryCommunity: 'leaf' } },
     ));
 
-    expect(reasons(result)).toContain(`au-delà du maximum ${MAX_COMMUNITY_DEPTH}`);
+    expect(reasons(result)).toContain(`beyond the maximum ${MAX_COMMUNITY_DEPTH}`);
   });
 
   /*
@@ -136,7 +136,7 @@ describe('arborescence du registre', () => {
       { 'wiki/a.md': { primaryCommunity: 'a' }, 'wiki/b.md': { primaryCommunity: 'b' } },
     ));
 
-    expect(reasons(result)).toContain('dans la même fratrie');
+    expect(reasons(result)).toContain('in the same sibling group');
   });
 
   it('refuse deux domaines racines homonymes', () => {
@@ -146,7 +146,7 @@ describe('arborescence du registre', () => {
       {},
     ));
 
-    expect(reasons(result)).toContain('dans la même fratrie');
+    expect(reasons(result)).toContain('in the same sibling group');
   });
 });
 
@@ -173,7 +173,7 @@ describe('facettes secondaires', () => {
       relatedCommunities: ['cmty_anaplan'],
     };
 
-    expect(reasons(validateRegistry(data))).toContain('facette redondante');
+    expect(reasons(validateRegistry(data))).toContain('facet redundant with primaryCommunity');
   });
 
   it('refuse une facette vers une communauté inconnue', () => {
@@ -183,7 +183,7 @@ describe('facettes secondaires', () => {
       relatedCommunities: ['cmty_fantome'],
     };
 
-    expect(reasons(validateRegistry(data))).toContain('inconnue ou dépréciée');
+    expect(reasons(validateRegistry(data))).toContain('unknown or deprecated community');
   });
 });
 

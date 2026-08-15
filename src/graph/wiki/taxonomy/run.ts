@@ -38,25 +38,25 @@ import {
 } from './synthesize.ts';
 import { loadWikiGraphSnapshot } from '../overview.ts';
 
-/** Tentatives de re-synthèse avant abandon. D7 exige que le rejet soit borné. */
+/** Re-synthesis attempts before giving up. D7 requires that the rejection be bounded. */
 export const MAX_SYNTHESIS_ATTEMPTS = 3;
 
 /**
- * Familles soumises au modèle en une passe.
+ * Families submitted to the model in one pass.
  *
- * Une borne explicite, parce que les deux issues silencieuses sont pires : un
- * prompt qui gonfle jusqu'à saturer la fenêtre, ou un échantillonnage de
- * familles que rien n'annonce. Au-delà, la synthèse rend `deferred` avec le
- * diagnostic `family-limit` et le registre précédent reste actif.
+ * An explicit bound, because the two silent outcomes are worse: a
+ * prompt that swells until it saturates the window, or a sampling of
+ * families that nothing announces. Beyond it, the synthesis returns `deferred` with the
+ * diagnostic `family-limit` and the previous registry stays active.
  *
- * La valeur dépasse le nombre de familles mesuré sur le corpus de référence
- * après union transitoire, avec une marge : un `deferred/family-limit` sur ce
- * corpus est un échec de calibrage à corriger, pas un résultat acceptable.
+ * The value exceeds the number of families measured on the reference corpus
+ * after the transitory union, with a margin: a `deferred/family-limit` on this
+ * corpus is a calibration failure to fix, not an acceptable result.
  */
 export const MAX_SYNTHESIS_FAMILIES = 320;
 
 export type SynthesizeDeps = {
-  /** Complétion structurée du LLM configuré. Absente ⇒ rien n'est tenté. */
+  /** Structured completion of the configured LLM. Absent ⇒ nothing is attempted. */
   propose?: (request: { system: string; user: string }) => Promise<unknown>;
   excerpts?: Map<string, string>;
   maxPages?: number;
@@ -68,18 +68,18 @@ export type SynthesizeOutcome =
   | {
       status: 'published';
       revision: number;
-      /** Domaines racines : ce que la carte affiche. */
+      /** Root domains: what the map shows. */
       communities: number;
-      /** Communautés feuilles : ce qu'un domaine ouvre. */
+      /** Leaf communities: what a domain opens. */
       leaves: number;
-      /** Réserves de qualité : publiées, jamais bloquantes. */
+      /** Quality reserves: published, never blocking. */
       warnings: string[];
       /**
-       * Pages du corpus encore jamais soumises après cette passe.
+       * Corpus pages still never submitted after this pass.
        *
-       * Non nul ⇒ une passe supplémentaire sur la MÊME empreinte de corpus a
-       * quelque chose à classer. C'est le pilote de la vidange, que la capacité
-       * de production consomme ; le moteur, lui, ne boucle jamais seul.
+       * Non-zero ⇒ an additional pass on the SAME corpus fingerprint has
+       * something to classify. That is the drain driver, which the production
+       * capability consumes; the engine, for its part, never loops alone.
        */
       outsideSample: number;
       inventory: TaxonomyInventory;
@@ -89,27 +89,27 @@ export type SynthesizeOutcome =
   | { status: 'rejected'; issues: string[] }
   | { status: 'stale' }
   /**
-   * `reason` n'est renseigné que pour un échec inattendu, jamais pour un verrou.
-   * `code` nomme les reports prévus — `family-limit` aujourd'hui.
+   * `reason` is only filled for an unexpected failure, never for a lock.
+   * `code` names the planned deferrals — `family-limit` today.
    *
-   * `deferred` est un résultat de SYNTHÈSE ; `pending-classification` est un
-   * état de PAGE. Les deux vocabulaires ne sont jamais employés l'un pour
-   * l'autre : confondre un report avec une couverture est précisément ce qui a
-   * rendu le § 0.3 illisible.
+   * `deferred` is a SYNTHESIS result; `pending-classification` is a
+   * PAGE state. The two vocabularies are never used for one
+   * another: confusing a deferral with a coverage is precisely what made
+   * § 0.3 unreadable.
    */
   | { status: 'deferred'; reason?: string; code?: 'family-limit' };
 
 /**
- * Synthèse complète : inventaire → proposition → validation → registre publié.
+ * Full synthesis: inventory → proposal → validation → published registry.
  *
- * L'appel LLM se fait **hors verrou**, comme l'écriture de la génération : seul
- * le compare-and-swap du marqueur est sérialisé. Une synthèse calculée sur une
- * empreinte devenue obsolète est abandonnée au commit plutôt que publiée
- * par-dessus une ingestion plus récente.
+ * The LLM call happens **outside the lock**, like the generation write: only
+ * the marker compare-and-swap is serialized. A synthesis computed on a
+ * fingerprint that became obsolete is abandoned at commit rather than published
+ * over a more recent ingestion.
  *
- * Ne lève jamais. Un échec laisse le registre précédent actif et pose
- * `pendingSynthesis` : Serve publiera le déterministe, et la reprise revient à
- * la prochaine exécution de la capacité.
+ * Never throws. A failure leaves the previous registry active and sets
+ * `pendingSynthesis`: Serve will publish the deterministic one, and the resumption goes back
+ * to the next execution of the capability.
  */
 export async function synthesizeTaxonomy(
   rootDir: string,
@@ -117,25 +117,25 @@ export async function synthesizeTaxonomy(
   deps: SynthesizeDeps = {},
 ): Promise<SynthesizeOutcome> {
   /*
-   La promesse ci-dessus n'était tenue que dans la partie basse de la fonction.
+   The promise above was only held in the lower part of the function.
 
-   Le chargement du snapshot, la lecture du registre actif et la construction de
-   l'inventaire précèdent toute la mécanique de repli et n'étaient couverts par
-   rien : un fichier illisible ou un registre tronqué remontait donc jusqu'à
-   l'appelant. Or ces appelants — la commande CLI, le watcher, la capacité de
-   production — ont été écrits en croyant la docstring, et aucun n'a de
-   rattrapage. Une seule lecture ratée arrêtait ce que la synthèse est censée
-   dégrader sans bruit.
+   Loading the snapshot, reading the active registry and building the
+   inventory precede all the fallback mechanics and were covered by
+   nothing: an unreadable file or a truncated registry therefore bubbled up to
+   the caller. Yet these callers — the CLI command, the watcher, the production
+   capability — were written believing the docstring, and none has a
+   catch. A single failed read stopped what synthesis is supposed to
+   degrade silently.
 
-   Le registre précédent reste actif dans tous les cas ; l'échec pose le drapeau
-   et se dit.
+   The previous registry stays active in every case; the failure sets the flag
+   and says so.
   */
   try {
     return await runSynthesis(rootDir, options, deps);
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    // Le drapeau porte l'empreinte du corpus : sans snapshot lisible, on ne
-    // l'a pas, et il n'y a rien d'utile à écrire. L'échec reste rapporté.
+    // The flag carries the corpus fingerprint: without a readable snapshot, we
+    // do not have it, and there is nothing useful to write. The failure stays reported.
     await noteFailure(rootDir, '', [`synthesis: ${reason}`]).catch(() => {});
     return { status: 'deferred', reason };
   }
@@ -153,8 +153,8 @@ async function runSynthesis(
   });
   if (!snapshot.nodes.length) return { status: 'skipped', reason: 'empty_corpus' };
   if (!deps.propose) {
-    // Dégradation gracieuse : sans LLM configuré, la projection déterministe
-    // reste en place et le dit. Jamais une erreur, jamais une page vide.
+    // Graceful degradation: without a configured LLM, the deterministic projection
+    // stays in place and says so. Never an error, never an empty page.
     return { status: 'skipped', reason: 'no_llm' };
   }
 
@@ -163,26 +163,26 @@ async function runSynthesis(
   const previous: TaxonomyRegistry | null = validated?.ok ? validated.registry : null;
 
   /*
-   L'empreinte de connaissance, jamais celle du graphe complet.
+   The knowledge fingerprint, never the complete graph one.
 
-   `snapshot.structureEtag` réagit aux templates, contextes et deliverables : une
-   synthèse calculée sur elle se serait déclarée périmée au premier build, et le
-   compare-and-swap aurait rejeté une proposition parfaitement valide.
+   `snapshot.structureEtag` reacts to templates, contexts and deliverables: a
+   synthesis computed on it would have declared itself stale at the first build, and the
+   compare-and-swap would have rejected a perfectly valid proposal.
   */
   const corpus = await knowledgeEtag(rootDir);
 
   /*
-   Ce que la passe précédente a déjà jugé oriente celle-ci.
+   What the previous pass already judged guides this one.
 
-   Les pages déjà couvertes passent en fin d'échantillon — leur affectation se
-   reconduit sans nouvel appel — et celles restées hors échantillon passent
-   devant. C'est ce qui vide `outside-sample` au lieu de l'entretenir.
+   The already-covered pages go to the end of the sample — their assignment
+   carries over without a new call — and those left outside the sample go
+   first. That is what empties `outside-sample` instead of feeding it.
 
-   Mais tout cela n'a de sens que sur la MÊME empreinte de corpus. Un registre
-   périmé ne prouve aucune couverture : une page qu'il déclarait classée a pu
-   être réécrite depuis, et la reléguer en fin d'échantillon à ce titre
-   reviendrait à la repousser dehors précisément parce qu'elle a changé. Une
-   empreinte nouvelle repart donc sans aucune page réputée couverte.
+   But all of that only makes sense on the SAME corpus fingerprint. A stale
+   registry proves no coverage: a page it declared classified may have
+   been rewritten since, and relegating it to the end of the sample for that reason
+   would mean pushing it out precisely because it changed. A
+   new fingerprint therefore starts over without any page deemed covered.
   */
   const continues = previous?.corpus === corpus
     && previous?.corpusAlgorithm === KNOWLEDGE_ETAG_ALGORITHM;
@@ -206,23 +206,23 @@ async function runSynthesis(
   });
 
   /*
-   Borne de familles : un report explicite plutôt qu'un prompt qui déborde.
+   Family bound: an explicit deferral rather than a prompt that overflows.
 
-   Tant que `subject`/`collection` n'existent pas, l'inventaire peut se
-   fragmenter au point de rendre la proposition ingérable. Dépasser la borne
-   n'est pas une erreur du corpus : c'est un budget insuffisant pour décider
-   honnêtement. On le dit, on garde le registre précédent, et personne ne paie
-   un appel surdimensionné.
+   As long as `subject`/`collection` do not exist, the inventory can
+   fragment to the point of making the proposal unmanageable. Exceeding the bound
+   is not a corpus error: it is an insufficient budget to decide
+   honestly. We say so, we keep the previous registry, and nobody pays
+   an oversized call.
   */
   const maxFamilies = deps.maxFamilies ?? MAX_SYNTHESIS_FAMILIES;
   if (inventory.families.length > maxFamilies) {
     await noteFailure(rootDir, corpus, [
-      `family-limit: ${inventory.families.length} familles pour une borne de ${maxFamilies}`,
+      `family-limit: ${inventory.families.length} families for a bound of ${maxFamilies}`,
     ]);
     return {
       status: 'deferred',
       code: 'family-limit',
-      reason: `${inventory.families.length} familles au-delà de la borne ${maxFamilies}`,
+      reason: `${inventory.families.length} families beyond the bound ${maxFamilies}`,
     };
   }
 
@@ -246,21 +246,21 @@ async function runSynthesis(
       user = `${buildSynthesisPrompt(inventory)}\n\n${retryHint(lastIssues.map((reason) => ({ path: '', reason })))}`;
       continue;
     }
-    // Les coquilles sans conséquence sont retirées avant d'être jugées : une
-    // communauté vide n'est pas une erreur de sens, c'est une ligne en trop.
+    // The inconsequential typos are removed before being judged: an
+    // empty community is not a meaning error, it is one line too many.
     const checked = checkProposal(normalizeProposal(parsed.data).proposal, inventory);
     if (checked.ok) {
       if (reviewed) {
         proposal = checked.proposal;
-        // Ce qui relève du jugement ne bloque pas, mais doit être vu : c'est la
-        // seule façon pour l'utilisateur de savoir ce que la carte a perdu.
+        // What falls under judgment does not block, but must be seen: that is the
+        // only way for the user to know what the map lost.
         warnings = checked.warnings;
         break;
       }
-      // Une réponse structurellement valide peut encore nommer le travail
-      // éditorial (« analyse », « étude ») au lieu du sujet. Une seconde passe
-      // globale relit la proposition entière : deux appels pour le corpus,
-      // jamais un appel par page ou par famille.
+      // A structurally valid answer can still name the editorial
+      // work ("analysis", "study") instead of the subject. A second global
+      // pass re-reads the whole proposal: two calls for the corpus,
+      // never one call per page or per family.
       reviewed = true;
       user = semanticReviewPrompt(inventory, checked.proposal);
       continue;
@@ -275,15 +275,15 @@ async function runSynthesis(
   }
 
   /*
-   Membres réels de chaque niveau.
+   Real members of each level.
 
-   Une feuille porte les pages de ses familles ; un domaine porte l'union de
-   ses feuilles. Le domaine ne reçoit AUCUNE page dans le registre — c'est
-   l'invariant qui interdit le fourre-tout — mais il lui faut ces membres pour
-   être ré-ancré : une bulle se reconnaît à son contenu, pas à son nom.
+   A leaf carries the pages of its families; a domain carries the union of
+   its leaves. The domain receives NO page in the registry — that is
+   the invariant that forbids the catch-all — but it needs these members to
+   be re-anchored: a bubble is recognized by its content, not by its name.
   */
-  // Non nul seulement quand le corpus a été tronqué : sans troncature, la
-  // comparaison porte déjà sur le corpus entier des deux côtés.
+  // Non-null only when the corpus was truncated: without truncation, the
+  // comparison already covers the whole corpus on both sides.
   const sampledPages = inventory.truncated
     ? new Set(inventory.pages.map((page) => page.id))
     : null;
@@ -307,13 +307,13 @@ async function runSynthesis(
   const revision = (marker?.revision ?? 0) + 1;
 
   /*
-   Communautés préservées : vivantes, mais jamais soumises à ce tour.
+   Preserved communities: live, but never submitted to this turn.
 
-   Calculées AVANT l'ancrage, parce que l'ancrage en a besoin. Une passe de
-   vidange soumet un échantillon disjoint du précédent : le modèle ne voit pas
-   ces communautés et peut proposer leur homonyme. Sans les connaître ici, on
-   publiait deux sœurs de même nom — registre invalide, synthèse rejetée, vidange
-   impossible à terminer.
+   Computed BEFORE anchoring, because anchoring needs them. A drain
+   pass submits a sample disjoint from the previous one: the model does not see
+   these communities and can propose their homonym. Without knowing them here, we
+   published two same-named sisters — invalid registry, rejected synthesis, drain
+   impossible to finish.
   */
   const corpusPages = new Set(inventory.corpusPageIds);
   const untouched: RegistryCommunity[] = [];
@@ -334,14 +334,14 @@ async function runSynthesis(
   const adoptedIds = new Set<string>();
 
   /*
-   Ancrage et consolidation PAR NIVEAU.
+   Anchoring and consolidation PER LEVEL.
 
-   Les deux fonctions supposent une liste plate de pairs. Les appeler sur
-   l'arbre entier laisserait un domaine s'emparer de l'identifiant d'une
-   feuille — leurs membres se recouvrent par construction, un domaine contenant
-   exactement l'union de ses feuilles — et un domaine renommé emporterait alors
-   ses enfants. On isole donc chaque niveau, et pour les feuilles chaque
-   fratrie, ce qui donne au passage la bonne portée d'unicité.
+   Both functions assume a flat list of peers. Calling them on
+   the whole tree would let a domain seize the identifier of a
+   leaf — their members overlap by construction, a domain containing
+   exactly the union of its leaves — and a renamed domain would then carry
+   its children away. We therefore isolate each level, and for the leaves each
+   sibling group, which gives along the way the right uniqueness scope.
   */
   const domainAdoption = adoptByLabel(
     anchorCommunities(
@@ -368,9 +368,9 @@ async function runSynthesis(
 
   const leafCommunities: RegistryCommunity[] = [];
   const anchoredLeaves: AnchoredCommunity[] = [];
-  /** Identifiant proposé par le modèle → identifiant stable du registre. */
+  /** Identifier proposed by the model → stable registry identifier. */
   const leafById = new Map<string, string>();
-  /** Domaines aplatis : leur unique enfant est devenu racine. */
+  /** Flattened domains: their single child became a root. */
   const collapsedDomains = new Set<string>();
   for (const domain of proposal.domains) {
     const siblings = proposal.communities.filter((community) => community.domain === domain.id);
@@ -394,12 +394,12 @@ async function runSynthesis(
     if (!consolidated.ok) return rejectConflicts(rootDir, inventory.corpus, consolidated.conflicts);
 
     /*
-     Un domaine qui ne sépare rien est aplati, pas rejeté.
+     A domain that separates nothing is flattened, not rejected.
 
-     Avec une seule communauté fille, le domaine impose deux clics là où un
-     suffit : on promeut donc l'enfant en racine. Le schéma l'accepte — une
-     racine sans enfant est une feuille — et la carte l'affiche comme une bulle
-     ordinaire. Aucune page ne change de communauté.
+     With a single daughter community, the domain imposes two clicks where
+     one suffices: we therefore promote the child to root. The schema accepts it — a
+     childless root is a leaf — and the map displays it as an ordinary
+     bubble. No page changes community.
     */
     const collapse = siblings.length === 1;
     siblings.forEach((community, index) => {
@@ -436,8 +436,8 @@ async function runSynthesis(
       [...(collectionLeaves.get(collection) ?? [])]))]
       .filter((id) => id !== primaryCommunity)
       .sort();
-    // Les pages ne sont rattachées qu'aux feuilles : la collection ajoute des
-    // relations vers ses autres sujets, sans changer leur placement.
+    // The pages are only attached to leaves: the collection adds
+    // relations towards its other subjects, without changing their placement.
     for (const page of family.members) {
       assignments[page] = {
         primaryCommunity,
@@ -447,24 +447,24 @@ async function runSynthesis(
   }
 
   /*
-   Une communauté que le modèle n'a jamais vue n'a pas été supprimée par lui.
+   A community the model never saw was not deleted by it.
 
-   Sur un corpus tronqué, la proposition ne parle que de l'échantillon. Les
-   communautés dont aucune page n'y figurait n'apparaissaient donc dans aucun
-   brouillon, étaient traitées comme disparues, et se faisaient déprécier — avec
-   leurs pages, qui n'avaient plus de cible où être reconduites. Déduire une
-   suppression d'une absence d'information, c'est précisément inventer une
-   décision que personne n'a prise.
+   On a truncated corpus, the proposal only speaks of the sample. The
+   communities of which no page appeared there therefore appeared in no
+   draft, were treated as gone, and got deprecated — with
+   their pages, which had no target left to be carried over to. Inferring a
+   deletion from an absence of information is precisely inventing a
+   decision nobody made.
 
-   Elles traversent donc la révision intactes. Celles dont une partie des pages
-   était visible, en revanche, ont bien été jugées : si le modèle les a
-   écartées, c'est une décision, et la dépréciation ordinaire s'applique.
+   They therefore cross the revision intact. Those of which part of the pages
+   was visible, on the other hand, were indeed judged: if the model
+   set them aside, that is a decision, and the ordinary deprecation applies.
   */
   /*
-   Une communauté adoptée par son libellé n'est plus « préservée » : elle est
-   redevenue le brouillon courant, avec ses membres et son libellé du tour. La
-   laisser aussi dans la liste des préservées la ferait figurer deux fois dans
-   le registre publié, sous le même identifiant.
+   A community adopted by its label is no longer "preserved": it has
+   become the current draft again, with its members and its label of the turn.
+   Leaving it also in the preserved list would make it appear twice in
+   the published registry, under the same identifier.
   */
   const preserved = untouched.filter((community) => !adoptedIds.has(community.id));
   const untouchedSurvivors: AnchoredCommunity[] = preserved.map((community) => ({
@@ -474,37 +474,37 @@ async function runSynthesis(
     reanchored: true,
   }));
 
-  // Les disparues ne sont jamais supprimées : elles gardent leur identifiant
-  // et pointent leur remplaçante, sans quoi une fusion serait indistinguable
-  // d'une destruction pour un client qui revient.
+  // The gone ones are never deleted: they keep their identifier
+  // and point at their replacement, otherwise a merge would be indistinguishable
+  // from a destruction for a client that comes back.
   const communities: RegistryCommunity[] = [
     ...preserved,
-      // Un domaine aplati disparaît : son enfant unique le remplace en racine.
+      // A flattened domain disappears: its single child replaces it at the root.
       ...consolidatedDomains.communities
         .filter((community) => !collapsedDomains.has(community.id))
         .map((community) => ({ ...community, parentCommunity: null })),
       ...leafCommunities,
       /*
-       Un domaine aplati n'est pas un survivant.
+       A flattened domain is not a survivor.
 
-       Il était retiré de `communities` par le filtre ci-dessus tout en restant
-       dans la liste passée ici : `deprecateMissing` le voyait donc « vivant » et
-       ne lui écrivait aucune souche. Son identifiant disparaissait purement et
-       simplement du registre — le seul cas où une communauté s'évanouit sans
-       laisser de trace, ce que tout le reste du modèle s'interdit précisément
-       pour qu'une sélection ancienne reste résoluble.
+       It was removed from `communities` by the filter above while remaining
+       in the list passed here: `deprecateMissing` therefore saw it as "alive" and
+       wrote no stub for it. Its identifier simply disappeared
+       from the registry — the only case where a community vanishes without
+       leaving a trace, which the rest of the model precisely forbids
+       so that an old selection stays resolvable.
 
-       Écarté d'ici, il redevient une disparition ordinaire, et le recouvrement
-       de membres le fait pointer vers son enfant unique promu — qui porte
-       exactement les mêmes pages, donc un recouvrement de 1.
+       Excluded from here, it becomes an ordinary disappearance again, and the
+       member overlap makes it point at its single promoted child — which carries
+       exactly the same pages, hence an overlap of 1.
       */
       ...deprecateMissing(
         previous,
         [
           ...anchoredDomains.filter((domain) => !collapsedDomains.has(domain.id)),
           ...anchoredLeaves,
-          // Intouchées faute d'avoir été soumises : vivantes, donc jamais
-          // dépréciées.
+          // Untouched for lack of being submitted: alive, hence never
+          // deprecated.
           ...untouchedSurvivors,
         ],
         revision,
@@ -514,20 +514,20 @@ async function runSynthesis(
   reattachOrphanedChildren(communities);
 
   /*
-   L'échantillon décide ; le corpus entier reçoit la décision.
+   The sample decides; the whole corpus receives the decision.
 
-   `maxPages` borne ce qu'on SOUMET au modèle — au-delà, on garde les pages les
-   plus connectées, qui portent la structure. Mais les affectations étaient
-   ensuite reconstruites à partir de ce seul échantillon : au-delà de 400 pages,
-   ou sous `--max-pages`, toutes les autres disparaissaient du registre publié.
-   Elles retombaient alors sur la projection déterministe pendant que le
-   snapshot annonçait une taxonomie synthétisée — et la synthèse suivante
-   effaçait au passage leur affectation précédente.
+   `maxPages` bounds what we SUBMIT to the model — beyond it, we keep the most
+   connected pages, which carry the structure. But the assignments were
+   then rebuilt from that sample alone: beyond 400 pages,
+   or under `--max-pages`, all the others disappeared from the published registry.
+   They then fell back on the deterministic projection while the
+   snapshot announced a synthesized taxonomy — and the next synthesis
+   erased their previous assignment along the way.
 
-   Une page non échantillonnée n'est pas une page sans décision : celle de la
-   révision précédente reste la meilleure information disponible, et rien dans
-   ce run ne la contredit. On la reconduit donc, en la suivant à travers les
-   fusions, exactement comme on résoudrait une sélection ancienne.
+   A non-sampled page is not a page without a decision: the previous
+   revision's is still the best available information, and nothing in
+   this run contradicts it. We therefore carry it over, following it through the
+   merges, exactly as we would resolve an old selection.
   */
   const liveCommunities = new Map(communities.map((community) => [community.id, community]));
   const survivingTarget = (id: string): string | null => {
@@ -535,13 +535,13 @@ async function runSynthesis(
     for (let hops = 0; current?.deprecated && current.replacedBy && hops < 16; hops += 1) {
       current = liveCommunities.get(current.replacedBy) ?? null;
     }
-    // Une cible dépréciée sans remplaçante est un concept réellement disparu :
-    // reconduire vers elle rendrait la page invisible sur la carte.
+    // A deprecated target without a replacement is a truly vanished concept:
+    // carrying it over would make the page invisible on the map.
     return current && !current.deprecated ? current.id : null;
   };
   let carriedOver = 0;
   for (const [page, assignment] of Object.entries(previous?.assignments ?? {})) {
-    // Une page sortie du corpus ne se reconduit pas : elle n'existe plus.
+    // A page that left the corpus is not carried over: it no longer exists.
     if (assignments[page] || !corpusPages.has(page)) continue;
     const primaryCommunity = survivingTarget(assignment.primaryCommunity);
     if (!primaryCommunity) continue;
@@ -558,36 +558,36 @@ async function runSynthesis(
   }
 
   /*
-   Ce qui reste sans affectation doit se dire.
+   What remains without assignment must be said.
 
-   Une page ni échantillonnée ni déjà classée n'a aucune décision la concernant.
-   Publier sans le signaler laisserait croire que la carte couvre tout le
-   corpus. C'est une réserve, pas une erreur : la carte reste juste sur ce
-   qu'elle montre, et refuser de publier priverait de tout.
+   A page neither sampled nor already classified has no decision concerning it.
+   Publishing without signalling it would make one believe the map covers the whole
+   corpus. This is a reserve, not an error: the map stays right on what
+   it shows, and refusing to publish would deprive it of everything.
   */
   const submitted = new Set(inventory.sampledPageIds);
   const unassigned = inventory.corpusPageIds.filter((page) => !assignments[page]);
   const neverSubmitted = unassigned.filter((page) => !submitted.has(page)).length;
   const judged = unassigned.length - neverSubmitted;
   if (unassigned.length > 0) {
-    // Deux causes, deux phrases : « jamais soumise » est un budget
-    // d'échantillonnage, « soumise et non retenue » est une décision du modèle.
-    // Les additionner sous un seul nombre rendrait le diagnostic inexploitable.
+    // Two causes, two sentences: "never submitted" is a sampling
+    // budget, "submitted and not kept" is a model decision.
+    // Adding them up under a single number would make the diagnosis unexploitable.
     warnings = [...warnings, {
       path: 'assignments',
-      reason: `${unassigned.length} page(s) sans affectation sur ${inventory.pageCount}`
-        + ` : ${neverSubmitted} hors échantillon, ${judged} soumise(s) et non retenue(s)`
-        + `${carriedOver ? `, ${carriedOver} affectation(s) reconduite(s) de la révision précédente` : ''}`,
+      reason: `${unassigned.length} page(s) without assignment out of ${inventory.pageCount}`
+        + ` : ${neverSubmitted} outside the sample, ${judged} submitted and not kept`
+        + `${carriedOver ? `, ${carriedOver} assignment(s) carried over from the previous revision` : ''}`,
     }];
   }
 
   /*
-   Échantillon CUMULÉ sur une même empreinte de corpus.
+   CUMULATIVE sample over a single corpus fingerprint.
 
-   Sans ce cumul, la passe 2 classerait ce que la passe 1 a laissé tout en
-   faisant retomber l'échantillon de la passe 1 dans `outside-sample` : la
-   vidange oscillerait sans jamais converger. Une empreinte nouvelle, elle,
-   repart du corpus qu'elle décrit.
+   Without this accumulation, pass 2 would classify what pass 1 left while
+   making pass 1's sample fall back into `outside-sample`: the
+   drain would oscillate without ever converging. A new fingerprint, for its part,
+   starts over from the corpus it describes.
   */
   const sampledPageIds = mergeSampledPages({
     previous,
@@ -608,8 +608,8 @@ async function runSynthesis(
     sampledPageIds,
   };
 
-  // Garde-fou (Lot 3, 6.3) : une part trop grande de communautés actives
-  // évanouies sans successeur est un trou ; force ne lève pas cette promesse.
+  // Guardrail (Lot 3, 6.3): too large a share of active communities
+  // vanished without a successor is a hole; force does not lift this promise.
   const filiationGuard = guardAgainstMassDisruption(previous, communities);
   if (!filiationGuard.ok) {
     await noteFailure(rootDir, inventory.corpus, filiationGuard.issues);
@@ -617,12 +617,12 @@ async function runSynthesis(
   }
 
   /*
-   Contrôle de distribution avant publication.
+   Distribution check before publication.
 
-   La révision qui a fusionné 142 pages dans une bulle était structurellement
-   valide : identifiants cohérents, libellés conformes, couverture complète.
-   La validation répond « ce registre est-il cohérent ? » ; ce contrôle répond
-   « cette carte est-elle navigable ? ». Les deux doivent passer.
+   The revision that merged 142 pages into a bubble was structurally
+   valid: consistent identifiers, conforming labels, complete coverage.
+   Validation answers "is this registry coherent?"; this check answers
+   "is this map navigable?". Both must pass.
   */
   const distribution = checkDistribution(registry);
   if (!distribution.ok) {
@@ -633,9 +633,9 @@ async function runSynthesis(
 
   const guard = validateRegistry(registry);
   if (!guard.ok) {
-    // Filet de sécurité : un registre construit par nos soins doit passer le
-    // même contrôle que celui qu'on relit du disque, sinon la validation ne
-    // vaut rien.
+    // Safety net: a registry built by us must pass the
+    // same check as the one we re-read from disk, otherwise the validation is
+    // worthless.
     const issues = guard.issues.map((issue) => `${issue.path}: ${issue.reason}`);
     await noteFailure(rootDir, inventory.corpus, issues);
     return { status: 'rejected', issues };
@@ -652,30 +652,30 @@ async function runSynthesis(
 
   if (outcome.status === 'stale') return { status: 'stale' };
   if (outcome.status !== 'published') {
-    await noteFailure(rootDir, inventory.corpus, ['publication indisponible']);
+    await noteFailure(rootDir, inventory.corpus, ['publication unavailable']);
     return { status: 'deferred' };
   }
-  // Une publication valide satisfait aussi bien un repli déterministe qu'une
-  // reprise de synthèse. Laisser le drapeau ferait croire au redémarrage
-  // suivant qu'un travail reste en attente alors que le commit est actif.
+  // A valid publication satisfies equally well a deterministic fallback and a
+  // synthesis resumption. Leaving the flag would make the next restart
+  // believe work remains pending while the commit is active.
   await clearDirtyFlag(rootDir).catch(() => {});
   return {
     status: 'published',
     revision: outcome.marker.revision,
-    // Ce que l'utilisateur voit sur la carte, ce sont les domaines ; le compte
-    // des feuilles ne dit rien de la lisibilité du premier écran.
+    // What the user sees on the map are the domains; the leaf
+    // count says nothing about the first screen's readability.
     //
-    // On compte APRÈS l'aplatissement : un domaine à enfant unique a disparu du
-    // registre, et l'annoncer quand même ferait chercher sur la carte une bulle
-    // qui n'existe pas — le même défaut que « 33 communities » sur une carte
-    // qui en repliait 3.
+    // We count AFTER the flattening: a single-child domain disappeared from the
+    // registry, and announcing it anyway would make one look on the map for a bubble
+    // that does not exist — the same defect as "33 communities" on a map
+    // that folded 3 of them away.
     communities: consolidatedDomains.communities.filter(
       (community) => !collapsedDomains.has(community.id),
     ).length,
     leaves: leafCommunities.length,
     warnings: warnings.map((issue) => `${issue.path}: ${issue.reason}`),
-    // Ce qui reste à soumettre sur cette même empreinte : le pilote de la
-    // vidange, jamais une accusation de non-classement.
+    // What remains to submit on this same fingerprint: the drain
+    // driver, never a non-classification accusation.
     outsideSample: computeCoverage({
       corpus: inventory.corpus,
       corpusPageIds: inventory.corpusPageIds,
@@ -687,30 +687,30 @@ async function runSynthesis(
 }
 
 /**
- * Vue du registre précédent restreinte à un niveau, pour le ré-ancrage.
+ * View of the previous registry restricted to a level, for re-anchoring.
  *
- * Un domaine et ses feuilles partagent leurs membres par construction : sans
- * cette restriction, l'appariement par recouvrement laisserait un domaine
- * revendiquer l'identifiant d'une de ses feuilles, ou l'inverse. On compare
- * donc des pairs à des pairs — et pour les feuilles, une fratrie à sa fratrie.
+ * A domain and its leaves share their members by construction: without
+ * this restriction, the overlap pairing would let a domain
+ * claim the identifier of one of its leaves, or the reverse. We therefore
+ * compare peers to peers — and for the leaves, a sibling group to its sibling group.
  */
 /**
- * Rend une racine à toute communauté active dont le parent ne l'est plus.
+ * Gives a root back to any active community whose parent is no longer one.
  *
- * Une feuille préservée parce qu'elle n'a pas été soumise garde son
- * `parentCommunity` — mais rien ne garantit que ce domaine ait survécu à la même
- * révision : une AUTRE feuille du même domaine, elle échantillonnée, peut
- * l'avoir fait remplacer ou déprécier. La feuille restait alors active en
- * pointant vers un parent mort.
+ * A leaf preserved because it was not submitted keeps its
+ * `parentCommunity` — but nothing guarantees that this domain survived the same
+ * revision: ANOTHER leaf of the same domain, sampled this time, can
+ * have had it replaced or deprecated. The leaf then stayed active while
+ * pointing at a dead parent.
  *
- * Le registre passait la validation, et pourtant `communityHierarchy` ne
- * construit l'arbre qu'à partir des communautés actives : le parent était
- * introuvable, la feuille sortait de la hiérarchie et réapparaissait comme
- * bulle racine sur la carte, en contradiction avec ce que le registre déclarait.
+ * The registry passed validation, and yet `communityHierarchy`
+ * only builds the tree from the active communities: the parent was
+ * untraceable, the leaf fell out of the hierarchy and reappeared as a
+ * root bubble on the map, contradicting what the registry declared.
  *
- * On suit donc la redirection du parent tant qu'elle mène à une racine vivante,
- * et à défaut on promeut l'enfant en racine — ce que le schéma autorise, et qui
- * le laisse navigable au lieu de le suspendre dans le vide.
+ * We therefore follow the parent's redirection as long as it leads to a live root,
+ * and failing that we promote the child to root — what the schema allows, and
+ * which keeps it navigable instead of suspending it in the void.
  */
 export function reattachOrphanedChildren(communities: RegistryCommunity[]): void {
   const byId = new Map(communities.map((community) => [community.id, community]));
@@ -721,8 +721,8 @@ export function reattachOrphanedChildren(communities: RegistryCommunity[]): void
     if (community.deprecated || !community.parentCommunity) continue;
     let parent = byId.get(community.parentCommunity);
     if (isLiveRoot(parent)) continue;
-    // La cible de remplacement doit être une RACINE vivante : s'accrocher à une
-    // feuille creuserait un troisième niveau que le schéma interdit.
+    // The replacement target must be a live ROOT: hanging onto a
+    // leaf would dig a third level that the schema forbids.
     for (let hops = 0; parent?.deprecated && parent.replacedBy && hops < 16; hops += 1) {
       parent = byId.get(parent.replacedBy);
     }
@@ -735,17 +735,17 @@ function registryAtLevel(
   level: 'root' | 'leaf',
   parentId?: string,
   /*
-   Pages réellement soumises au modèle, quand le corpus a été tronqué.
+   Pages actually submitted to the model, when the corpus was truncated.
 
-   Le ré-ancrage reconnaît une communauté au recouvrement de ses membres. Sur un
-   corpus tronqué, la proposition ne parle que de l'échantillon : comparée aux
-   membres COMPLETS de la révision précédente, une communauté intacte tombait
-   sous le seuil et perdait son identité — puis se faisait déprécier, et les
-   pages hors échantillon n'avaient même plus de cible où être reconduites.
+   Re-anchoring recognizes a community by the overlap of its members. On a
+   truncated corpus, the proposal only speaks of the sample: compared to the
+   COMPLETE members of the previous revision, an intact community fell
+   below the threshold and lost its identity — then got deprecated, and the
+   outside-sample pages no longer even had a target to be carried over to.
 
-   Ce n'est pas la communauté qui a changé, c'est ce qu'on en montre. On compare
-   donc les deux côtés sur le même échantillon : comparer ce qui est comparable
-   est la condition pour que le recouvrement veuille dire quelque chose.
+   It is not the community that changed, it is what we show of it. We therefore
+   compare both sides on the same sample: comparing what is comparable
+   is the condition for the overlap to mean anything.
   */
   sampled?: Set<string> | null,
 ): TaxonomyRegistry | null {
@@ -767,8 +767,8 @@ function registryAtLevel(
       if (keptIds.has(assignment.primaryCommunity)) assignments[page] = assignment;
       continue;
     }
-    // Au niveau racine, les membres d'un domaine sont ceux de ses feuilles :
-    // c'est ce qui permet de le reconnaître après un renommage.
+    // At root level, a domain's members are those of its leaves:
+    // that is what lets it be recognized after a rename.
     const leaf = previous.communities.find((item) => item.id === assignment.primaryCommunity);
     const root = leaf?.parentCommunity ?? (children.has(assignment.primaryCommunity) ? null : assignment.primaryCommunity);
     if (root && keptIds.has(root)) assignments[page] = { primaryCommunity: root };
@@ -781,7 +781,7 @@ async function rejectConflicts(
   corpus: string,
   conflicts: Array<{ label: string; ids: string[] }>,
 ): Promise<SynthesizeOutcome> {
-  const issues = conflicts.map((conflict) => `label: « ${conflict.label} » partagé par ${conflict.ids.join(', ')}`);
+  const issues = conflicts.map((conflict) => `label: "${conflict.label}" shared by ${conflict.ids.join(', ')}`);
   await noteFailure(rootDir, corpus, issues);
   return { status: 'rejected', issues };
 }

@@ -241,12 +241,12 @@ const runtimeProxyDeps: RuntimeProxyDeps = {
 };
 
 /**
- * Façade historique du panneau Pending.
+ * Historical facade of the Pending panel.
  *
- * Toute la logique est passée dans `serve/tree/treeMutations.ts`, partagée avec
- * les autres sections du panneau gauche. Ce point d'entrée reste pour les
- * appelants existants — et parce que ses tests décrivent un contrat que la
- * généralisation ne doit pas changer.
+ * All the logic has moved to `serve/tree/treeMutations.ts`, shared with the
+ * other sections of the left panel. This entry point remains for existing
+ * callers — and because its tests describe a contract that the generalization
+ * must not change.
  */
 export async function handleUntrackedApi(
   rootDir: string,

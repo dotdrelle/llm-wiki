@@ -39,15 +39,15 @@ export async function removeIfExists(filePath: string): Promise<void> {
 }
 
 /**
- * Verrou de fichier inter-processus.
+ * Cross-process file lock.
  *
- * `maxBackoffMs` existe parce que le backoff `50 × (n+1)` n'est pas plafonné :
- * il croît linéairement, donc le budget d'attente croît en n². Vingt tentatives
- * ne font que 10,5 s, et allonger la liste fait exploser la durée des dernières
- * attentes (2,4 s à la 48ᵉ). Un appelant qui a besoin d'un budget long ET
- * régulier — le verrou de révision du graphe, dont la section critique n'est
- * qu'un `rename` — plafonne le palier et augmente le nombre de tentatives.
- * Les défauts ne changent pas : les autres appelants gardent leur comportement.
+ * `maxBackoffMs` exists because the `50 × (n+1)` backoff is not capped: it
+ * grows linearly, so the wait budget grows as n². Twenty attempts only take
+ * 10.5 s, and lengthening the list makes the final waits explode (2.4 s at the
+ * 48th). A caller that needs a long AND regular budget — the graph revision
+ * lock, whose critical section is only a `rename` — caps the step and increases
+ * the number of attempts. The defaults do not change: other callers keep their
+ * behavior.
  */
 export async function withFileLock<T>(
   lockPath: string,
@@ -60,12 +60,12 @@ export async function withFileLock<T>(
   await mkdir(path.dirname(lockPath), { recursive: true });
   let handle: FileHandle | undefined;
   /*
-   Récupérer un verrou périmé ne doit pas coûter une tentative.
+   Reclaiming an expired lock must not cost an attempt.
 
-   Sinon `attempts: 1` échoue toujours : la seule tentative est dépensée à
-   effacer le verrou mort, et la boucle sort sans jamais avoir réessayé
-   d'ouvrir. Le budget est donc rendu — mais un nombre borné de fois, pour
-   qu'un verrou sans cesse recréé ne fasse pas tourner la boucle indéfiniment.
+   Otherwise `attempts: 1` always fails: the only attempt is spent erasing the
+   dead lock, and the loop exits without ever retrying the open. The budget is
+   therefore refunded — but a bounded number of times, so that a lock endlessly
+   recreated does not spin the loop forever.
   */
   let reclaimBudget = 2;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -75,12 +75,12 @@ export async function withFileLock<T>(
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       /*
-       Le TTL est examiné à CHAQUE tentative, y compris la dernière.
+       The TTL is examined on EVERY attempt, including the last.
 
-       La condition testait `attempt === attempts - 1` avant de regarder le
-       verrou : un propriétaire mort dont le verrou venait d'expirer faisait
-       échouer l'appel au lieu d'être récupéré, précisément au moment où la
-       récupération était la seule issue restante.
+       The condition used to test `attempt === attempts - 1` before looking at
+       the lock: a dead owner whose lock had just expired made the call fail
+       instead of being reclaimed, precisely when reclaiming was the only way
+       out left.
       */
       let reclaimed = false;
       try {
@@ -90,10 +90,10 @@ export async function withFileLock<T>(
           reclaimed = true;
         }
       } catch (statError) {
-        // Le propriétaire a pu relâcher le verrou entre EEXIST et stat : il n'y
-        // a alors plus rien à attendre. Toute autre erreur (droits, E/S) ne dit
-        // rien sur la disponibilité du verrou et ne doit pas déclencher une
-        // boucle serrée : on retombe sur l'attente normale.
+        // The owner may have released the lock between EEXIST and stat: there
+        // is then nothing left to wait for. Any other error (permissions, I/O)
+        // says nothing about the lock's availability and must not trigger a
+        // tight loop: we fall back to the normal wait.
         reclaimed = (statError as NodeJS.ErrnoException).code === 'ENOENT';
       }
       if (reclaimed) {

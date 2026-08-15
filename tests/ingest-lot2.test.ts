@@ -17,7 +17,7 @@ import {
   collectionFromSourcePath,
   readProvenance,
 } from '../src/ingest/provenance.ts';
-import { validateConsolidation } from '../src/ingest/validateConsolidation.ts';
+import { validateConsolidation } from '../src/ingest/consolidationValidate.ts';
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -182,8 +182,8 @@ describe('provenance et consolidation', () => {
       sourcePagePath: 'wiki/sources/a.md', citationPath: 'raw/ingested/a.md',
       existingPaths: new Set(), collection: null,
     });
-    expect(result.errors.some((issue) => issue.reason.includes('secondaire'))).toBe(true);
-    expect(result.errors.some((issue) => issue.reason.includes('double'))).toBe(true);
+    expect(result.errors.some((issue) => issue.reason.includes('secondary'))).toBe(true);
+    expect(result.errors.some((issue) => issue.reason.includes('duplicate'))).toBe(true);
   });
 });
 

@@ -20,7 +20,7 @@ import {
   type SourceExtraction,
 } from '../ingest/extractionSchema.ts';
 import { collectionFromSourcePath, readProvenance } from '../ingest/provenance.ts';
-import { validateConsolidation } from '../ingest/validateConsolidation.ts';
+import { validateConsolidation } from '../ingest/consolidationValidate.ts';
 import { hashText } from '../utils/hash.ts';
 import { normalizeSourceBody } from '../utils/markdown.ts';
 import { planSourcePacks } from '../utils/sourcePacking.ts';
@@ -272,11 +272,11 @@ export class IngestService {
     refresh: RefreshService,
     logger: TraceLogger,
     /*
-     Cache de reprise, injectable.
+     Resume cache, injectable.
 
-     Injecté plutôt que construit en dur pour qu'un appelant sans disque — un
-     test unitaire, un dry-run éphémère — puisse le désactiver. Le défaut reste
-     le comportement du produit : reprendre sans repayer.
+     Injected rather than hard-constructed so that a caller without a disk — a
+     unit test, an ephemeral dry-run — can disable it. The default remains the
+     product behaviour: resume without repaying.
     */
     cache?: IngestCache,
   ) {
@@ -329,11 +329,11 @@ export class IngestService {
     const results: IngestResult[] = [];
     const rejectedPaths = new Set(options?.reject ?? []);
     /*
-     Cache de reprise, partagé par toutes les sources du lot.
+     Resume cache, shared by all sources in the batch.
 
-     Il n'est jamais présenté comme un plan approuvable : seul le plan consolidé
-     final passe en revue. Son rôle est qu'une coupure ne repaie pas des appels
-     dont la réponse était valide.
+     It is never presented as an approvable plan: only the final consolidated
+     plan goes through review. Its role is that an interruption does not repay
+     calls whose answer was valid.
     */
     const cache = this.injectedCache
       ?? new IngestCache(this.workspace.paths.rootDir, options?.dryRun !== true);
@@ -388,9 +388,9 @@ export class IngestService {
                 archivePath: source.archiveCitationPath,
                 durationMs: Date.now() - sourceStartedAt,
               });
-              // Une source inchangée reste une source VUE : sans cette ligne,
-              // elle basculerait `missing` au premier inventaire alors qu'elle
-              // vient d'être présentée.
+              // An unchanged source remains a SEEN source: without this line,
+              // it would flip to `missing` on the first inventory even though
+              // it has just been presented.
               await this.observeSource(source, null);
             }
             await this.logger.info('ingest:source-done', {
@@ -405,19 +405,19 @@ export class IngestService {
         const { maxChunkChars, maxSourceChars } = this.config.retrieval;
         const rawBody = normalizeSourceBody(source.body ?? '');
         /*
-         Un seul planificateur, pour l'ingestion comme pour `wiki doctor`.
+         A single planner, for ingestion as well as `wiki doctor`.
 
-         Le découpage précédent coupait à chaque titre sans jamais
-         ré-empaqueter : le nombre d'appels LLM dépendait de la mise en forme du
-         document, pas de son volume. Deux documents frères recevaient un nombre
-         très différent de décisions, et l'écart de concepts qui en résultait se
-         lisait ensuite comme une différence de richesse.
+         The previous splitting cut at every title without ever repacking: the
+         number of LLM calls depended on the document's formatting, not on its
+         volume. Two sibling documents received a very different number of
+         decisions, and the resulting gap in concepts then read as a difference
+         in richness.
         */
         const plan = planSourcePacks(rawBody, { maxChars: maxSourceChars });
         const sections = plan.packs.map((pack) => pack.text);
 
-        // Journalisé pour TOUTE source, même non découpée : c'est la mesure qui
-        // permet d'expliquer après coup pourquoi une source a coûté N appels.
+        // Logged for EVERY source, even unsplit: this is the measure that lets
+        // us explain afterwards why a source cost N calls.
         await this.logger.info('ingest:pack', {
           source: source.relativePath,
           ...plan.diagnostics,
@@ -425,25 +425,24 @@ export class IngestService {
 
         const sourcePagePath = path.posix.join('wiki', 'sources', `${source.slug}.md`);
         /*
-         L'identité de la source entre dans la clé de cache, pas seulement son
-         contenu.
+         The source identity enters the cache key, not just its content.
 
-         Deux documents distincts peuvent avoir un corps identique — un modèle de
-         fiche rempli deux fois, un export dupliqué. Sans le chemin de citation
-         dans la clé, le plan consolidé de l'un serait resservi à l'autre, avec
-         ses citations et sa note de source : une page attribuée au mauvais
-         document, et rien pour le signaler.
+         Two distinct documents can have an identical body — a record template
+         filled twice, a duplicated export. Without the citation path in the
+         key, one document's consolidated plan would be re-served to the other,
+         with its citations and its source note: a page attributed to the wrong
+         document, and nothing to signal it.
         */
         const sourceHash = hashText(`${source.archiveCitationPath}\u0000${rawBody}`);
         const modelId = this.config.llm.model;
 
         /*
-         Phase 1 — N extractions concurrentes, aucune écriture.
+         Phase 1 — N concurrent extractions, no writes.
 
-         Chaque lot rapporte des faits et des sujets candidats avec des
-         identifiants locaux. Aucun ne peut créer, mettre à jour ni supprimer
-         quoi que ce soit : c'est ce qui rend impossible le défaut d'origine, où
-         deux fragments écrivaient deux pages du même concept sans se voir.
+         Each batch reports facts and candidate subjects with local identifiers.
+         None can create, update or delete anything: that is what makes the
+         original flaw impossible, where two fragments wrote two pages of the
+         same concept without seeing each other.
         */
         const sectionResults = await mapWithConcurrency(
           plan.packs,
@@ -480,7 +479,7 @@ export class IngestService {
                     source: source.relativePath,
                     cached: true,
                     ...extraction._dangling,
-                    advice: 'Des références (relations, sujets de faits) vers des identifiants non déclarés ont été écartées sans rejeter la source.',
+                    advice: 'References (relations, fact subjects) to undeclared identifiers were discarded without rejecting the source.',
                   });
                 }
                 return { extraction };
@@ -505,10 +504,10 @@ export class IngestService {
             const progress = { sectionIndex, sectionTotal: plan.packs.length };
             options?.onSourceLlm?.(sourcePath, i, sourcePaths.length, progress);
             /*
-             Un lot qui échoue est retenté seul.
+             A failing batch is retried alone.
 
-             `mapWithConcurrency` isole les lots, et le cache conserve ceux qui
-             ont abouti : une reprise ne repaie jamais un appel déjà valide.
+             `mapWithConcurrency` isolates the batches, and the cache keeps the
+             ones that succeeded: a resume never repays an already-valid call.
             */
             const { value: extraction, retry } = await withRetry(
               () =>
@@ -561,7 +560,7 @@ export class IngestService {
                 source: source.relativePath,
                 pack: `${sectionIndex + 1}/${plan.packs.length}`,
                 ...canonicalExtraction._dangling,
-                advice: 'Des références (relations, sujets de faits) vers des identifiants non déclarés ont été écartées sans rejeter la source.',
+                advice: 'References (relations, fact subjects) to undeclared identifiers were discarded without rejecting the source.',
               });
             }
             return { extraction: canonicalExtraction, ...(retry.retries > 0 && { retry }) };
@@ -569,12 +568,12 @@ export class IngestService {
         );
 
         /*
-         Phase 2 — une consolidation, qui voit toute la source.
+         Phase 2 — one consolidation, which sees the whole source.
 
-         L'ordre de terminaison des extractions ne doit pas changer le résultat :
-         `mapWithConcurrency` rend les résultats dans l'ordre des lots, et la
-         fusion préfixe les identifiants par leur index. Deux exécutions
-         concurrentes différentes produisent donc le même prompt.
+         The completion order of the extractions must not change the result:
+         `mapWithConcurrency` returns results in batch order, and the merge
+         prefixes identifiers by their index. Two different concurrent runs
+         therefore produce the same prompt.
         */
         const merged = mergeExtractions(sectionResults.map((result) => result.extraction));
         const collection = collectionFromSourcePath(source.relativePath);
@@ -676,21 +675,21 @@ export class IngestService {
         }
 
         /*
-         Normaliser d'ABORD, valider ensuite.
+         Normalize FIRST, validate second.
 
-         `normalizeWikiOperations` canonise les chemins que le modèle a écrits —
-         accents, espaces, casse. Valider avant elle reviendrait à comparer la
-         note de source attendue à un chemin que le moteur s'apprête justement à
-         corriger, et à rejeter un plan parfaitement applicable.
+         `normalizeWikiOperations` canonicalizes the paths the model wrote —
+         accents, spaces, case. Validating before it would amount to comparing
+         the expected source note to a path that the engine is about to correct,
+         and rejecting a perfectly applicable plan.
         */
         const normalizedOperations = await this.workspace.normalizeWikiOperations(
           consolidated.operations,
         );
-        // `pages[].path` désigne les mêmes opérations, mais vivait jusque-là
-        // avant la canonisation des chemins. Un modèle proposant un accent ou
-        // une espace recevait donc une opération normalisée et perdait sa
-        // provenance au moment de la jointure. La correspondance par position
-        // est stable : normalizeWikiOperations conserve ordre et cardinalité.
+        // `pages[].path` designates the same operations, but lived until now
+        // before the canonicalization of the paths. A model proposing an accent
+        // or a space therefore received a normalized operation and lost its
+        // provenance at join time. The positional correspondence is stable:
+        // normalizeWikiOperations preserves order and cardinality.
         const normalizedPathByOriginal = new Map<string, string>();
         consolidated.operations.forEach((operation, index) => {
           const normalized = normalizedOperations[index];
@@ -752,10 +751,10 @@ export class IngestService {
         }
         if (validation.errors.length) {
           /*
-           Un plan structurellement invalide n'est pas appliqué à moitié.
+           A structurally invalid plan is not applied halfway.
 
-           Le rejeter entier laisse la source en attente et le cache
-           d'extraction intact : la reprise ne repaiera que la consolidation.
+           Rejecting it whole leaves the source pending and the extraction cache
+           intact: a resume will only repay the consolidation.
           */
           throw new Error(
             `Consolidated plan rejected: ${validation.errors
@@ -769,8 +768,8 @@ export class IngestService {
         }
 
 
-        // Un seul plan, celui de la consolidation. Le `flatMap` d'avant
-        // concaténait les décisions de chaque fragment sans les confronter.
+        // A single plan, the consolidation's. The previous `flatMap`
+        // concatenated the decisions of each fragment without confronting them.
         const allOperations = validation.operations;
         const lastSummary = consolidated.summary;
         sourceRetry = sourceRetry ?? sectionResults.findLast((result) => result.retry)?.retry;
@@ -850,13 +849,13 @@ export class IngestService {
           );
           await this.observeSource(source, applyOperations);
           /*
-           L'unité de commit visible est une source appliquée avec succès.
+           The visible commit unit is a source applied successfully.
 
-           Publier une fois en fin de commande laisserait un long ingest
-           multi-source muet du début à la fin ; publier à chaque fichier écrit
-           ferait un rendu par page. La source cohérente est le grain qui
-           correspond à ce qu'un lecteur perçoit comme « quelque chose est
-           arrivé », et Serve coalesce les marqueurs rapprochés.
+           Publishing once at the end of the command would leave a long
+           multi-source ingest silent from start to finish; publishing on every
+           written file would make one render per page. The coherent source is
+           the grain that matches what a reader perceives as "something
+           happened", and Serve coalesces nearby markers.
           */
           await this.publishGraphRevision(source.relativePath);
         }
@@ -1096,25 +1095,24 @@ export class IngestService {
   }
 
   /**
-   * Consigne une source dans le registre de provenance
+   * Records a source in the provenance registry
    * (`docs/content-lifecycle.md` § 5).
    *
-   * **Ne peut pas faire échouer une ingestion.** Le registre est une
-   * observation : il rend le cycle de vie visible, il n'en fait pas partie.
-   * Une erreur d'écriture est journalisée et l'ingestion continue — l'inverse
-   * ferait perdre un travail LLM déjà payé pour un fichier annexe.
+   * **Must not fail an ingestion.** The registry is an observation: it makes
+   * the lifecycle visible, it is not part of it. A write error is logged and
+   * the ingestion continues — the opposite would lose already-paid LLM work
+   * for a side file.
    *
-   * @param operations opérations appliquées, ou `null` pour une source vue
-   *   sans être réingérée (`unchanged since last ingest`).
+   * @param operations operations applied, or `null` for a source seen without
+   *   being re-ingested (`unchanged since last ingest`).
    */
   /**
-   * Rend visible au graphe ce qui vient d'être écrit.
+   * Makes what has just been written visible to the graph.
    *
-   * Même discipline qu'`observeSource` : c'est une observation du cycle de vie,
-   * pas une étape de celui-ci. Une révision non allouée est un problème
-   * d'affichage, et la faire échouer emporterait un travail d'ingestion déjà
-   * payé. `publishCorpusRevision` ne lève jamais et bascule sur `dirty.json`,
-   * que Serve reprendra.
+   * Same discipline as `observeSource`: it is an observation of the lifecycle,
+   * not a step of it. An unallocated revision is a display problem, and making
+   * it fail would take down already-paid ingestion work. `publishCorpusRevision`
+   * never throws and falls back to `dirty.json`, which Serve will pick up.
    */
   private async publishGraphRevision(sourceLabel: string): Promise<void> {
     const outcome = await publishCorpusRevision(this.workspace.paths.rootDir);
@@ -1145,8 +1143,8 @@ export class IngestService {
           sourceId: sourceIdFromArchivePath(source.archiveCitationPath),
           archivePath: source.archiveCitationPath,
           contentHash: hashContent(source.rawContent),
-          // Ce qui a été APPLIQUÉ, pas ce que le modèle a proposé. Une
-          // suppression ne produit pas de page.
+          // What was APPLIED, not what the model proposed. A deletion does not
+          // produce a page.
           producedPages: operations
             ?.filter((operation) => operation.type !== 'delete')
             .map((operation) => operation.path),

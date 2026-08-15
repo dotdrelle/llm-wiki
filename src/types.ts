@@ -1,18 +1,17 @@
 /**
- * Routage : où l'on tape. Deux valeurs seulement.
- * - `openai-compatible` : un serveur unique, joint en direct.
- * - `ai-gateway` : une AI gateway externe (LiteLLM, Bifrost, Portkey…) qui
- *   route elle-même vers plusieurs providers. Endpoint opaque : aucun
- *   contournement de serveur local n'est appliqué, la normalisation des
- *   paramètres est déléguée à la gateway (cf. `drop_params`).
+ * Routing: where requests are sent. Two values only.
+ * - `openai-compatible`: a single server, reached directly.
+ * - `ai-gateway`: an external AI gateway (LiteLLM, Bifrost, Portkey…) that
+ *   routes to several providers itself. Opaque endpoint: no local-server
+ *   bypass is applied, parameter normalization is delegated to the gateway
+ *   (cf. `drop_params`).
  */
 export type LlmProvider = 'openai-compatible' | 'ai-gateway';
 
 /**
- * Moteur : comment se comporte le serveur en face. Porte les contournements
- * et les calibrations de `doctor`. Non pertinent — et ignoré — lorsque
- * `provider` vaut `ai-gateway`, où chaque modèle peut avoir un moteur
- * différent.
+ * Engine: how the server in front behaves. Carries the `doctor` workarounds
+ * and calibrations. Irrelevant — and ignored — when `provider` is
+ * `ai-gateway`, where each model may have a different engine.
  */
 export type LlmEngine =
   | 'ollama'
@@ -35,8 +34,8 @@ export interface LlmConfig {
   timeoutMs: number;
   numCtx?: number;
   /**
-   * Marge appliquée au plafond de sortie pour absorber le raisonnement, qui
-   * est décompté du même budget que le contenu. Défaut 3, provisoire.
+   * Margin applied to the output cap to absorb reasoning, which is counted
+   * against the same budget as the content. Default 3, provisional.
    */
   reasoningOutputMultiplier?: number;
   flashAttention?: boolean;
@@ -70,10 +69,10 @@ export interface RetrievalConfig {
 export interface VectorRetrievalConfig {
   enabled: boolean;
   /**
-   * Hérités du bloc `llm` quand absents du fichier — `resolveConfig` les
-   * renseigne toujours. Optionnels dans le type parce qu'aucun consommateur
-   * n'y branche de comportement aujourd'hui : ils servent à `doctor` et au
-   * wizard, qui savent retomber sur le bloc `llm`.
+   * Inherited from the `llm` block when absent from the file — `resolveConfig`
+   * always fills them in. Optional in the type because no consumer attaches
+   * behaviour to them today: they serve `doctor` and the wizard, which know
+   * how to fall back to the `llm` block.
    */
   provider?: LlmProvider;
   engine?: LlmEngine;

@@ -2,23 +2,22 @@ import type { SourceDocument } from '../types.ts';
 import { EXTRACTION_IMPORTANCE, EXTRACTION_SCOPES } from '../ingest/extractionSchema.ts';
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
-/** Version du prompt, portée par le cache d'extraction. */
+/** Prompt version, carried by the extraction cache. */
 export const EXTRACTION_PROMPT_VERSION = 4;
 
 /*
- Prompt d'extraction : lire, pas écrire.
+ Extraction prompt: read, do not write.
 
- Les interdictions ci-dessous ne sont pas des précautions de style. Chacune
- correspond à un comportement observé du chemin précédent, où le même prompt
- servait à lire et à décider : une page créée par rubrique du document, un
- `wiki/index.md` réécrit par chaque lot en parallèle, un concept inventé pour
- combler ce que le fragment ne disait pas. Retirer la capacité d'écrire retire
- la tentation de décider.
+ The prohibitions below are not stylistic precautions. Each corresponds to an
+ observed behavior of the previous path, where the same prompt served to read
+ and to decide: a page created per document section, a `wiki/index.md` rewritten
+ by each pack in parallel, a concept invented to fill what the fragment did not
+ say. Removing the ability to write removes the temptation to decide.
 */
 export function buildExtractionPrompt(args: {
   source: SourceDocument;
   body: string;
-  /** Titres couverts par ce lot : le contexte, pas une consigne de découpage. */
+  /** Headings covered by this pack: the context, not a splitting instruction. */
   headingPath: string[];
   packIndex: number;
   packTotal: number;

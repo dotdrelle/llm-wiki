@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import net from 'node:net';
 import path from 'node:path';
 import { CHAT_HTML } from '../../chat/chatHtml.ts';
 import type { AppConfig } from '../../types.ts';
@@ -54,6 +55,86 @@ function headerString(value: string | string[] | undefined): string | undefined 
   return raw.replace(/[\r\n]/g, '').trim();
 }
 
+const BLOCKED_IPV4: Array<[string, number]> = [
+  ['0.0.0.0', 8],
+  ['10.0.0.0', 8],
+  ['100.64.0.0', 10],
+  ['127.0.0.0', 8],
+  ['169.254.0.0', 16],
+  ['172.16.0.0', 12],
+  ['192.0.0.0', 24],
+  ['192.0.2.0', 24],
+  ['192.168.0.0', 16],
+  ['198.18.0.0', 15],
+  ['198.51.100.0', 24],
+  ['203.0.113.0', 24],
+  ['224.0.0.0', 4],
+  ['240.0.0.0', 4],
+];
+
+const INTERNAL_HOSTNAME_SUFFIXES = ['.localhost', '.local', '.internal', '.lan'];
+
+function ipv4ToInt(ip: string): number {
+  const parts = ip.split('.').map((octet) => Number(octet));
+  return ((parts[0] * 256 + parts[1]) * 256 + parts[2]) * 256 + parts[3];
+}
+
+function isInternalIPv4(ip: string): boolean {
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return false;
+  const n = ipv4ToInt(ip);
+  for (const [base, bits] of BLOCKED_IPV4) {
+    const shift = 32 - bits;
+    if ((n >>> shift) === (ipv4ToInt(base) >>> shift)) return true;
+  }
+  return false;
+}
+
+function isInternalIPv6(ip: string): boolean {
+  const lower = ip.toLowerCase();
+  if (lower === '::' || lower === '::1') return true;
+  if (lower.startsWith('::ffff:')) return isInternalIPv4(lower.slice('::ffff:'.length));
+  return (
+    lower.startsWith('fe8') ||
+    lower.startsWith('fe9') ||
+    lower.startsWith('fea') ||
+    lower.startsWith('feb') ||
+    lower.startsWith('fc') ||
+    lower.startsWith('fd') ||
+    lower.startsWith('ff')
+  );
+}
+
+function isInternalHostname(hostname: string): boolean {
+  const lower = hostname.toLowerCase();
+  if (lower === 'localhost') return true;
+  if (lower.includes('metadata.')) return true;
+  return INTERNAL_HOSTNAME_SUFFIXES.some((suffix) => lower.endsWith(suffix));
+}
+
+function hostFromUrl(raw: string): string {
+  return new URL(raw).hostname.replace(/^\[|\]$/g, '');
+}
+
+// The override header is untrusted browser input: it must not turn `serve` into
+// an open proxy toward loopback, link-local, private, or cloud-metadata hosts.
+// The configured baseUrl is trusted, so its own host is always allowed (the
+// override then only tweaks port/key), and public hosts remain switchable.
+function isUnsafeLlmProxyHost(parsed: URL, configBaseUrl: string): boolean {
+  const host = parsed.hostname.replace(/^\[|\]$/g, '');
+  if (!host) return true;
+  let configHost = '';
+  try {
+    configHost = hostFromUrl(configBaseUrl);
+  } catch {
+    configHost = '';
+  }
+  if (host === configHost) return false;
+  const ipVersion = net.isIP(host);
+  if (ipVersion === 4) return isInternalIPv4(host);
+  if (ipVersion === 6) return isInternalIPv6(host);
+  return isInternalHostname(host);
+}
+
 function chatLlmProxyTarget(req: IncomingMessage, config: AppConfig): {
   url: string;
   headers: Record<string, string>;
@@ -69,6 +150,9 @@ function chatLlmProxyTarget(req: IncomingMessage, config: AppConfig): {
       throw new Error('INVALID_LLM_BASE_URL');
     }
     if (!['http:', 'https:'].includes(parsed.protocol)) {
+      throw new Error('INVALID_LLM_BASE_URL');
+    }
+    if (isUnsafeLlmProxyHost(parsed, config.llm.baseUrl)) {
       throw new Error('INVALID_LLM_BASE_URL');
     }
     baseUrl = overrideBaseUrl;
@@ -201,8 +285,8 @@ export async function handleChatRoutes(
         changed: result.changed,
         preference: result.line.replace(/^- /, ''),
         message: result.changed
-          ? `Profil mis à jour : ${result.line.replace(/^- /, '')}`
-          : `Profil déjà à jour : ${result.line.replace(/^- /, '')}`,
+          ? `Profile updated: ${result.line.replace(/^- /, '')}`
+          : `Profile already up to date: ${result.line.replace(/^- /, '')}`,
       });
     } catch (err) {
       deps.sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });

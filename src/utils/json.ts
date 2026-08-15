@@ -66,12 +66,12 @@ export function fixUnescapedQuotes(text: string): string {
       } else if (char === ',') {
         const current = top();
         if (!current) {
-          // Virgule hors de toute structure : on laisse passer (texte du modèle).
+          // Comma outside any structure: let it through (model text).
         } else if (current.state === 'value') {
-          // Valeur littérale (null, true, false, nombre) : elle n'est jamais
-          // passée par une chaîne, l'état est donc resté 'value'. On la marque
-          // terminée avant la virgule, sinon la clé suivante hérite d'un
-          // stringRole 'value' et son guillemet est altéré en '\\"' → JSON invalide.
+          // Literal value (null, true, false, number): it never goes through a
+          // string, so the state remained 'value'. Mark it done before the
+          // comma, otherwise the next key inherits a stringRole 'value' and its
+          // quote gets altered into '\\"' → invalid JSON.
           markValueDone();
           if (current.type === 'object') current.state = 'key';
           else current.state = 'value';

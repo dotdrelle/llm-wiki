@@ -8,13 +8,12 @@ import { communityHierarchy, communityRedirects, registryLookup } from './taxono
 import { validateRegistry } from './taxonomy/schema.ts';
 
 /**
- * Version de la projection, à incrémenter dès que la façon de dériver
- * communautés ou affectations change.
+ * Projection version, to increment as soon as the way communities or
+ * assignments are derived changes.
  *
- * Elle entre dans la clé de cache pour la même raison que la révision de
- * taxonomie : sans elle, un déploiement qui change la projection continuerait
- * de servir des snapshots calculés par l'ancienne, jusqu'à ce qu'un fichier
- * Markdown bouge.
+ * It enters the cache key for the same reason as the taxonomy revision:
+ * without it, a deployment that changes the projection would keep serving
+ * snapshots computed by the old one, until a Markdown file moves.
  */
 export const GRAPH_PROJECTION_VERSION = 1;
 
@@ -31,7 +30,7 @@ export async function loadWikiGraphSnapshot(options: {
   rootDir: string;
   workspace?: string;
   fallbackCommunityLabel?: string;
-  /** Langue d'affichage des libellés du registre (`config.language`). */
+  /** Display language of the registry labels (`config.language`). */
   language?: string;
 }): Promise<WikiGraphSnapshot> {
   const { rootDir } = options;
@@ -42,13 +41,13 @@ export async function loadWikiGraphSnapshot(options: {
   const files = await listGraphFiles(rootDir);
   const etag = await graphEtagForFiles(rootDir, files);
   /*
-   La révision de taxonomie entre dans la clé de cache.
+   The taxonomy revision enters the cache key.
 
-   Sans elle, une réécriture du SEUL registre — c'est-à-dire toute
-   consolidation qui renomme ou fusionne sans que le corpus bouge — resterait
-   invisible jusqu'à la prochaine modification d'un fichier Markdown. Le
-   `structureEtag` ne décrit que les fichiers ; il ne peut rien savoir d'une
-   taxonomie publiée à côté d'eux.
+   Without it, a rewrite of the registry ALONE — that is, any consolidation
+   that renames or merges without the corpus moving — would stay invisible
+   until the next modification of a Markdown file. The `structureEtag` only
+   describes the files; it cannot know anything about a taxonomy published
+   alongside them.
   */
   const marker = await readMarker(rootDir);
   const taxonomyRevision = marker?.revision ?? 0;
@@ -58,8 +57,9 @@ export async function loadWikiGraphSnapshot(options: {
     workspace,
     fallbackCommunityLabel,
     taxonomyRevision,
-    // La langue change les libellés rendus sans changer ni les fichiers ni la
-    // révision : sans elle dans la clé, un basculement resterait invisible.
+    // The language changes the rendered labels without changing either the
+    // files or the revision: without it in the key, a switch would stay
+    // invisible.
     language,
     GRAPH_PROJECTION_VERSION,
   ]);
@@ -68,17 +68,17 @@ export async function loadWikiGraphSnapshot(options: {
   if (cached) return cached;
 
   /*
-   Lecture du registre — jamais un appel LLM.
+   Reading the registry — never an LLM call.
 
-   `loadWikiGraphSnapshot` a deux appelants, dont l'outil MCP `wiki_outline` que
-   Donna appelle elle-même. Faire dépendre ce chemin d'un modèle donnerait une
-   requête HTTP qui attend une inférence, et un cycle
-   `wiki_outline → snapshot → LLM → Donna`. Le registre est un artefact déjà
-   écrit : on le lit, on ne le calcule pas.
+   `loadWikiGraphSnapshot` has two callers, including the `wiki_outline` MCP
+   tool that Donna calls herself. Making this path depend on a model would give
+   an HTTP request waiting for an inference, and a cycle
+   `wiki_outline → snapshot → LLM → Donna`. The registry is an already-written
+   artifact: we read it, we do not compute it.
 
-   Un registre absent, périmé, d'une autre version ou invalide fait retomber
-   sur la projection déterministe. `synthesized` dit lequel des deux a servi,
-   pour qu'un repli ne se lise pas comme un bug.
+   A missing, stale, other-version or invalid registry falls back to the
+   deterministic projection. `synthesized` says which of the two served, so
+   that a fallback does not read as a bug.
   */
   const active = synthesized ? await readActiveRegistry(rootDir) : null;
   const validation = active?.registry ? validateRegistry(active.registry) : null;
@@ -88,12 +88,12 @@ export async function loadWikiGraphSnapshot(options: {
   const graph = await buildGraphOverview(rootDir, files, fallbackCommunityLabel, { registry });
 
   /*
-   Couverture : quatre états, calculés une fois, jamais redéduits à l'écran.
+   Coverage: four states, computed once, never re-derived on screen.
 
-   L'empreinte de connaissance est la seule qui décide de la fraîcheur ; le
-   `structureEtag` ci-dessus continue de piloter le cache d'affichage, où il a
-   raison de réagir aux templates et aux deliverables. Les confondre était le
-   défaut d'origine : un `build` suffisait à annoncer une taxonomie périmée.
+   The knowledge fingerprint is the only thing that decides freshness; the
+   `structureEtag` above keeps driving the display cache, where it is right to
+   react to templates and deliverables. Conflating them was the original
+   defect: a `build` was enough to announce a stale taxonomy.
   */
   const knowledgePages = graph.nodes
     .filter((node) => KNOWLEDGE_NODE_TYPES.has(node.type))
@@ -121,15 +121,15 @@ export async function loadWikiGraphSnapshot(options: {
       },
       communityRedirects: validation?.ok ? communityRedirects(validation.registry) : {},
       /*
-       Correspondance explicite, jamais un spread.
+       Explicit mapping, never a spread.
 
-       `communityHierarchy` renvoie `{ domains, parents }` ; le snapshot attend
-       `communityParents`. Étalé, l'objet passait `parents` — une clé que
-       personne ne lit — et `communityParents` restait vide : toutes les
-       feuilles paraissaient sans parent, donc la carte ET l'index restaient
-       plats alors que le registre était bien hiérarchique. TypeScript ne
-       contrôle pas les propriétés excédentaires d'un spread, d'où un bug
-       invisible au typage comme aux tests qui n'inspectaient que du texte.
+       `communityHierarchy` returns `{ domains, parents }`; the snapshot expects
+       `communityParents`. Spread, the object passed `parents` — a key nobody
+       reads — and `communityParents` stayed empty: all the leaves appeared
+       parentless, so the map AND the index stayed flat while the registry was
+       indeed hierarchical. TypeScript does not check the excess properties of
+       a spread, hence a bug invisible to typing as well as to tests that only
+       inspected text.
       */
       ...(hierarchy ? { domains: hierarchy.domains, communityParents: hierarchy.parents } : {}),
     }),
@@ -137,8 +137,9 @@ export async function loadWikiGraphSnapshot(options: {
   );
 }
 
-// Source de vérité partagée avec l'empreinte de connaissance et l'inventaire :
-// un fichier ne doit pas pouvoir être classé sans participer à l'empreinte.
+// Source of truth shared with the knowledge fingerprint and the inventory: a
+// file must not be able to be classified without taking part in the
+// fingerprint.
 export { KNOWLEDGE_NODE_TYPES } from './taxonomy/knowledge.ts';
 import { KNOWLEDGE_NODE_TYPES } from './taxonomy/knowledge.ts';
 

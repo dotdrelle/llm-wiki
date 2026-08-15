@@ -12,9 +12,9 @@ export type GraphRoutesDeps = {
   language: () => string;
   workspaceNameFromEnv: () => string | null;
   /**
-   * Complétion LLM, injectée par `serve` qui seul détient la configuration.
-   * Absente quand aucun LLM n'est configuré : la fiche de contexte rend alors
-   * un extrait plutôt que rien.
+   * LLM completion, injected by `serve` which alone holds the configuration.
+   * Absent when no LLM is configured: the context card then renders an excerpt
+   * rather than nothing.
    */
   completeText?: (request: { system: string; user: string }) => Promise<string>;
   sendJson: (
@@ -35,13 +35,13 @@ export type GraphRoutesDeps = {
 };
 
 /*
- Un seul diffuseur par processus Serve.
+ A single broadcaster per Serve process.
 
- `/api/graph/events` est une route DIRECTE, pas un proxy vers un service amont
- comme `/api/runtime/events` : Serve est l'origine du flux. Le shell l'ouvre sur
- la même origine puis relaie les révisions à son iframe par postMessage, et
- `/graph` autonome l'ouvre directement — une connexion par document, jamais une
- par panneau.
+ `/api/graph/events` is a DIRECT route, not a proxy toward an upstream service
+ like `/api/runtime/events`: Serve is the origin of the stream. The shell opens
+ it on the same origin then relays revisions to its iframe via postMessage, and
+ the standalone `/graph` opens it directly — one connection per document, never
+ one per panel.
 */
 let hub: GraphEventHub | null = null;
 
@@ -77,8 +77,8 @@ export async function handleGraphRoutes(
   }
 
   if (req.method === 'GET' && urlPath === '/api/graph/overview') {
-    // La seule route dont la charge repart en entier à chaque révision : c'est
-    // celle qui justifie la compression, et la seule à en avoir besoin.
+    // The only route whose payload is re-sent in full on every revision: it is
+    // the one that justifies compression, and the only one that needs it.
     await sendJsonPayload(req, res, 200, await snapshot());
     return true;
   }

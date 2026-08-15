@@ -5,16 +5,16 @@ import { synthesizeTaxonomy } from '../graph/wiki/taxonomy/run.ts';
 import { taxonomyProposalSchema } from '../graph/wiki/taxonomy/synthesize.ts';
 
 /**
- * `wiki taxonomy` — synthèse bornée de la taxonomie du graphe.
+ * `wiki taxonomy` — bounded synthesis of the graph taxonomy.
  *
- * Commande **bornée** au sens du plan : un inventaire condensé, un nombre
- * d'essais fixé, une validation en bloc, une écriture atomique. Elle ne touche
- * jamais au contenu du wiki — la taxonomie est une projection dérivée, pas une
- * réécriture des pages.
+ * A command **bounded** in the plan's sense: a condensed inventory, a fixed
+ * number of attempts, block validation, an atomic write. It never touches the
+ * wiki content — the taxonomy is a derived projection, not a rewrite of the
+ * pages.
  *
- * Elle est le seul endroit où un LLM entre dans le chemin du graphe. Ni
- * `serve`, ni `wiki_outline`, ni le snapshot ne peuvent en déclencher un : ils
- * lisent le registre que cette commande a écrit.
+ * It is the only place where an LLM enters the graph path. Neither `serve`,
+ * nor `wiki_outline`, nor the snapshot can trigger one: they read the registry
+ * this command wrote.
  */
 export default async function taxonomyCmd(
   config: AppConfig,
@@ -33,8 +33,8 @@ export default async function taxonomyCmd(
     );
 
   if (!options.apply) {
-    // Sans --apply, on ne consulte pas le modèle : montrer ce qui serait envoyé
-    // coûte zéro token et suffit à juger l'inventaire.
+    // Without --apply, we do not consult the model: showing what would be sent
+    // costs zero tokens and is enough to judge the inventory.
     const { loadWikiGraphSnapshot } = await import('../graph/wiki/overview.ts');
     const { buildTaxonomyInventory } = await import('../graph/wiki/taxonomy/inventory.ts');
     const { buildSynthesisPrompt } = await import('../graph/wiki/taxonomy/synthesize.ts');
@@ -60,16 +60,16 @@ export default async function taxonomyCmd(
 
   switch (outcome.status) {
     case 'published':
-      // « N communities » comptait les domaines : un lecteur croyait la carte
-      // plate et ne pouvait pas voir que 15 sujets vivaient en dessous.
+      // "N communities" counted the domains: a reader thought the map was flat
+      // and could not see that 15 subjects lived underneath.
       console.log(
         `Taxonomy revision ${outcome.revision} published: ${outcome.communities} domain(s)`
         + ` and ${outcome.leaves} leaf community/ies over ${outcome.inventory.pageCount} page(s),`
         + ` language ${language}.`,
       );
       if (outcome.warnings.length) {
-        // Publié malgré tout : l'utilisateur voit la carte ET ce qui cloche,
-        // au lieu d'un refus qui ne montre rien.
+        // Published anyway: the user sees the map AND what is off, instead of a
+        // refusal that shows nothing.
         console.log(`\n${outcome.warnings.length} reservation(s) on this taxonomy:`);
         for (const warning of outcome.warnings.slice(0, 20)) console.log(`  - ${warning}`);
       }

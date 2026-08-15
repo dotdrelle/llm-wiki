@@ -5,28 +5,28 @@ import type { TaxonomyRegistry } from './schema.ts';
 import { communityLabel } from './schema.ts';
 
 /*
- Inventaire soumis à la synthèse.
+ Inventory submitted to synthesis.
 
- Il sert à DÉCIDER, pas à restituer les pages. C'est la même discipline que
- `summarizeWikiGraph` : injecter du contenu ferait exploser la fenêtre du tour
- censé planifier à bas coût, et le modèle n'a pas besoin de lire pour
- reconnaître un domaine — il a besoin de voir des titres, des voisinages et des
- étiquettes.
+ It is for DECIDING, not for rendering the pages. That is the same discipline as
+ `summarizeWikiGraph`: injecting content would blow up the turn window
+ meant to plan cheaply, and the model does not need to read in order to
+ recognize a domain — it needs to see titles, neighbourhoods and
+ tags.
 */
 
-/** Au-delà, un titre n'apporte plus d'information, il consomme du budget. */
+/** Beyond this, a title brings no more information, it consumes budget. */
 const MAX_TITLE = 90;
-/** Un extrait sert à lever une ambiguïté de titre, pas à résumer la page. */
+/** An excerpt serves to lift a title ambiguity, not to summarize the page. */
 const MAX_EXCERPT = 160;
-/** Voisins cités par page : au-delà, le signal se noie dans le bruit. */
+/** Neighbours cited per page: beyond this, the signal drowns in noise. */
 const MAX_NEIGHBOURS = 6;
 
 export type InventoryPage = {
   id: string;
   title: string;
-  /** Indice d'ingestion, jamais une décision. */
+  /** Ingestion index, never a decision. */
   group?: string;
-  /** Dossier de concepts, quand il y en a un. */
+  /** Concept folder, when there is one. */
   folder?: string;
   excerpt?: string;
   neighbours: string[];
@@ -36,25 +36,25 @@ export type InventoryCommunity = {
   id: string;
   label: string;
   size: number;
-  /** Pages les plus connectées : de quoi reconnaître le domaine sans le lire. */
+  /** Most connected pages: enough to recognize the domain without reading it. */
   topPages: string[];
 };
 
 export type InventoryFamily = {
-  /** Identifiant court et déterministe utilisé dans la réponse du modèle. */
+  /** Short, deterministic identifier used in the model's answer. */
   id: string;
-  /** Pages développées localement après la décision ; jamais répétées par le LLM. */
+  /** Pages developed locally after the decision; never repeated by the LLM. */
   members: string[];
   titles: string[];
   signals: string[];
-  /** Collections comparatives partagées : relation, jamais fusion. */
+  /** Shared comparative collections: relation, never merge. */
   collections: string[];
   /**
-   * Ce qui distingue cette étude de ses sœurs dans la même collection.
+   * What distinguishes this study from its sisters in the same collection.
    *
-   * Déduit par différence de vocabulaire, jamais d'une liste de produits. Quand
-   * il existe, le libellé de la feuille doit le conserver : c'est l'identité du
-   * sujet comparé, et la perdre revient à ne plus pouvoir naviguer vers lui.
+   * Derived by vocabulary difference, never from a product list. When
+   * it exists, the leaf label must preserve it: it is the identity of the
+   * compared subject, and losing it means no longer being able to navigate to it.
    */
   distinctiveTerms: string[];
   neighbours: string[];
@@ -66,25 +66,25 @@ export type TaxonomyInventory = {
   pageCount: number;
   pages: InventoryPage[];
   /**
-   * Toutes les pages de connaissance du corpus, échantillon compris.
+   * All knowledge pages of the corpus, sample included.
    *
-   * `pages` est l'échantillon soumis au modèle ; ce champ est le corpus réel.
-   * Les confondre faisait disparaître du registre publié toute page non
-   * échantillonnée : l'appelant a besoin de savoir sur quoi la décision doit
-   * s'appliquer, pas seulement sur quoi elle a été prise.
+   * `pages` is the sample submitted to the model; this field is the real corpus.
+   * Confusing the two made every non-sampled page disappear from the published
+   * registry: the caller needs to know what the decision must apply to, not only
+   * what it was made on.
    */
   corpusPageIds: string[];
   /**
-   * Pages réellement soumises au modèle dans cette passe.
+   * Pages actually submitted to the model in this pass.
    *
-   * Miroir de `pages`, sous la forme que le registre publie. Une page du corpus
-   * qui n'y figure pas n'a été jugée par personne : c'est ce qui distingue
-   * `outside-sample` d'un échec de classement.
+   * Mirror of `pages`, in the shape the registry publishes. A corpus page
+   * that is not in it was judged by nobody: that is what distinguishes
+   * `outside-sample` from a classification failure.
    */
   sampledPageIds: string[];
   families: InventoryFamily[];
   communities: InventoryCommunity[];
-  /** Vrai quand le corpus a dû être tronqué pour tenir dans le budget. */
+  /** True when the corpus had to be truncated to fit the budget. */
   truncated: boolean;
 };
 
@@ -110,16 +110,16 @@ function familyKey(value: string): string {
 }
 
 /**
- * Construit l'inventaire depuis le snapshot et le registre courant.
+ * Builds the inventory from the snapshot and the current registry.
  *
- * Le snapshot public ne transporte déjà ni `raw`, ni `html`, ni `preview` :
- * l'inventaire n'a donc aucun moyen d'y prendre du contenu, ce qui est la
- * garantie qu'on cherche. Les extraits éventuels sont fournis par l'appelant,
- * qui seul sait les lire à un coût acceptable.
+ * The public snapshot already carries no `raw`, no `html`, no `preview`:
+ * the inventory therefore has no way to take content from it, which is the
+ * guarantee we want. Any excerpts are provided by the caller,
+ * who alone knows how to read them at an acceptable cost.
  *
- * `maxPages` borne le corpus soumis. Au-delà, on garde les pages les plus
- * connectées : ce sont elles qui portent la structure, et un domaine se
- * reconnaît à ses pages centrales bien avant ses feuilles.
+ * `maxPages` bounds the submitted corpus. Beyond it, we keep the most
+ * connected pages: they are the ones that carry the structure, and a domain is
+ * recognized by its central pages long before its leaves.
  */
 export function buildTaxonomyInventory(
   snapshot: WikiGraphSnapshot,
@@ -129,17 +129,17 @@ export function buildTaxonomyInventory(
     excerpts?: Map<string, string>;
     maxPages?: number;
     /**
-     * Empreinte du corpus de connaissance.
+     * Knowledge corpus fingerprint.
      *
-     * Le `structureEtag` du snapshot décrit le graphe complet — templates et
-     * deliverables compris — et sert de repli tant qu'un appelant ne fournit
-     * rien. La synthèse, elle, publie toujours l'empreinte de connaissance :
-     * c'est elle qui décide de la péremption.
+     * The snapshot's `structureEtag` describes the complete graph — templates and
+     * deliverables included — and serves as a fallback as long as a caller provides
+     * nothing. Synthesis, on the other hand, always publishes the knowledge fingerprint:
+     * it is what decides staleness.
      */
     corpus?: string;
-    /** Pages déjà affectées par le registre frais. */
+    /** Pages already assigned by the fresh registry. */
     covered?: Set<string>;
-    /** Pages restées hors échantillon aux passes précédentes. */
+    /** Pages left outside the sample in previous passes. */
     previouslyOutsideSample?: Set<string>;
   },
 ): TaxonomyInventory {
@@ -159,12 +159,12 @@ export function buildTaxonomyInventory(
   }
 
   /*
-   Ordre de soumission : ce qui n'a jamais été jugé passe devant.
+   Submission order: what has never been judged goes first.
 
-   Le tri par degré seul écartait toujours les mêmes pages — les plus récentes
-   sont les moins connectées — et les laissait indéfiniment hors échantillon.
-   `orderPagesForSampling` porte la règle ; le degré ne sert plus qu'à départager
-   à priorité égale.
+   Sorting by degree alone kept excluding the same pages — the most recent
+   are the least connected — and left them indefinitely outside the sample.
+   `orderPagesForSampling` carries the rule; degree now only serves to break
+   ties at equal priority.
   */
   const nodeIndex = new Map(knowledge.map((node) => [node.id, node]));
   const ranked = orderPagesForSampling(knowledge.map((node) => node.id), {
@@ -184,9 +184,9 @@ export function buildTaxonomyInventory(
       ...(node.group ? { group: shorten(node.group, MAX_TITLE) } : {}),
       ...(folder ? { folder } : {}),
       ...(excerpt ? { excerpt: shorten(excerpt, MAX_EXCERPT) } : {}),
-      // Le voisinage est ce qui distingue un domaine d'une étiquette : deux
-      // pages qui se citent appartiennent probablement au même sujet, quel que
-      // soit leur dossier.
+      // The neighbourhood is what distinguishes a domain from a tag: two
+      // pages that cite each other probably belong to the same subject, whatever
+      // their folder.
       neighbours: [...new Set(neighbours.get(node.id) ?? [])]
         .filter((id) => keptIds.has(id))
         .slice(0, MAX_NEIGHBOURS),
@@ -194,10 +194,10 @@ export function buildTaxonomyInventory(
   });
 
   /*
-   Les familles sont déterministes : Donna décide de leur DOMAINE, jamais de
-   leur composition. Cela préserve les structures que le classement plat
-   détruisait sur ACPI : documents frères d'une même étude, miroir archivé / 
-   page source, et concepts partageant explicitement le même groupe ou dossier.
+   Families are deterministic: Donna decides their DOMAIN, never their
+   composition. That preserves the structures that flat classification
+   destroyed on ACPI: sister documents of a single study, archived / source page
+   mirror, and concepts explicitly sharing the same group or folder.
   */
   const parent = new Map(pages.map((page) => [page.id, page.id]));
   const find = (id: string): string => {
@@ -215,9 +215,9 @@ export function buildTaxonomyInventory(
   const pageById = new Map(pages.map((page) => [page.id, page]));
   const nodeById = new Map(kept.map((node) => [node.id, node]));
 
-  // Le parent commun décrit une COLLECTION, pas une identité. Les sources
-  // sœurs doivent rester séparées pour pouvoir devenir des communautés
-  // distinctes sous un même domaine.
+  // The common parent describes a COLLECTION, not an identity. Sister sources
+  // must stay separate so they can become distinct communities under a single
+  // domain.
   const rawByParent = new Map<string, string[]>();
   for (const node of kept) {
     if (node.type !== 'raw-source') continue;
@@ -234,7 +234,7 @@ export function buildTaxonomyInventory(
       ids.forEach((id) => collectionByRaw.set(id, collection));
     });
 
-  // Le miroir wiki/sources n'est pas un second sujet.
+  // The wiki/sources mirror is not a second subject.
   for (const edge of snapshot.edges) {
     if (!pageById.has(edge.from) || !pageById.has(edge.to)) continue;
     const from = nodeById.get(edge.from)?.type;
@@ -244,23 +244,23 @@ export function buildTaxonomyInventory(
   }
 
   /*
-   `group:` ne prouve plus une identité — il ne fait que la suggérer.
+   `group:` no longer proves an identity — it only suggests one.
 
-   Le commentaire d'origine disait déjà qu'un groupe est un signal ; le code, lui,
-   unissait toutes les pages partageant exactement la même valeur. Sur ACPI cela
-   fusionnait cinq produits différents sous `security` ou `integration`, tout en
-   dispersant les pages d'un même produit dont les groupes divergeaient. C'est la
-   perte de provenance du § 0.4.
+   The original comment already said that a group is a signal; the code, for its
+   part, united all pages sharing exactly the same value. On ACPI this
+   merged five different products under `security` or `integration`, while
+   scattering the pages of a single product whose groups diverged. That is the
+   provenance loss of § 0.4.
 
-   Retirer l'union globale sans rien mettre à la place atomiserait l'inventaire
-   jusqu'à l'arrivée de `subject`/`collection` : une union TRANSITOIRE subsiste
-   donc, mais elle ne franchit jamais une frontière de provenance.
+   Removing the global union without putting anything in its place would atomize the
+   inventory until `subject`/`collection` arrive: a TRANSITORY union therefore
+   remains, but it never crosses a provenance boundary.
 
-   Et elle refuse l'ambiguïté au lieu de l'arbitrer. L'union-find est transitive :
-   une seule page rattachée à deux sources suffirait à rechaîner leurs deux
-   collections, de proche en proche, jusqu'à reconstituer la fusion massive qu'on
-   vient de supprimer. Une page à provenance multiple — ou sans provenance — reste
-   donc seule. Il n'y a ni provenance dominante, ni premier lien gagnant.
+   And it refuses ambiguity instead of arbitrating it. Union-find is transitive:
+   a single page attached to two sources would suffice to re-chain their two
+   collections, step by step, until reconstructing the massive merge we
+   just removed. A page with multiple provenance — or none — therefore stays
+   alone. There is no dominant provenance, nor first-link-wins.
   */
   const provenanceOf = new Map<string, string | null>();
   for (const page of pages) {
@@ -322,17 +322,17 @@ export function buildTaxonomyInventory(
   });
 
   /*
-   Terme distinctif d'une étude au sein de sa collection comparative.
+   Distinctive term of a study within its comparative collection.
 
-   Une collection compare N sujets ; ce qui identifie chacun est précisément ce
-   que ses sœurs n'ont pas. Le terme se déduit donc du corpus par différence,
-   sans qu'aucun produit soit connu du code : il apparaît dans les titres et
-   chemins d'une famille, et dans aucune autre famille de la même collection.
+   A collection compares N subjects; what identifies each one is precisely what
+   its sisters do not have. The term is therefore derived from the corpus by
+   difference, without the code knowing any product: it appears in the titles and
+   paths of one family, and in no other family of the same collection.
 
-   C'est le garde-fou qui manquait. Sans lui, le modèle nomme chaque feuille
-   d'après la FONCTION du sujet — « planification », « visualisation » — et les
-   sujets comparés disparaissent comme identités navigables : la carte devient
-   une liste de fonctions dont on ne peut plus retrouver de qui elles parlent.
+   This is the guardrail that was missing. Without it, the model names each leaf
+   after the FUNCTION of the subject — "planning", "visualization" — and the
+   compared subjects disappear as navigable identities: the map becomes
+   a list of functions from which one can no longer find out what they are about.
   */
   const familyById = new Map(families.map((family) => [family.id, family]));
   const termsOf = (family: InventoryFamily): Set<string> => new Set(
@@ -341,14 +341,14 @@ export function buildTaxonomyInventory(
       .filter((token) => token.length >= 3 && !/^\d+$/.test(token)),
   );
   /*
-   Fréquence d'un terme à l'échelle du corpus.
+   Frequency of a term at the corpus scale.
 
-   Un token unique DANS sa collection n'est pas forcément une identité : deux
-   documents rangés dans le même dossier diffèrent par mille accidents de
-   nommage — « version », « source », « open », « etude ». Ces mots reviennent
-   partout ailleurs dans le corpus, alors qu'un sujet nommé n'apparaît que chez
-   lui. C'est cette rareté globale qui sépare une identité d'un accident, et
-   elle se mesure sans connaître aucun produit.
+   A token unique WITHIN its collection is not necessarily an identity: two
+   documents filed in the same folder differ by a thousand naming
+   accidents — "version", "source", "open", "study". These words come back
+   everywhere else in the corpus, whereas a named subject appears only at
+   home. It is this global rarity that separates an identity from an accident, and
+   it is measured without knowing any product.
   */
   const familyFrequency = new Map<string, number>();
   const allTerms = new Map<string, Set<string>>();
@@ -366,8 +366,8 @@ export function buildTaxonomyInventory(
     }
   }
   for (const siblings of byCollection.values()) {
-    // Une collection d'un seul membre ne compare rien : il n'y a pas de
-    // différence à extraire, et tout terme paraîtrait distinctif.
+    // A single-member collection compares nothing: there is no
+    // difference to extract, and any term would look distinctive.
     if (siblings.length < 2) continue;
     for (const family of siblings) {
       const own = allTerms.get(family.id)!;
@@ -378,9 +378,9 @@ export function buildTaxonomyInventory(
       }
       familyById.get(family.id)!.distinctiveTerms = [...own]
         .filter((token) => !shared.has(token))
-        // Le terme ne doit exister QUE chez cette famille dans tout le corpus.
-        // Sinon il décrit un état, un format ou une activité partagés, et
-        // l'imposer comme nom de communauté serait pire que de laisser choisir.
+        // The term must exist ONLY at this family in the whole corpus.
+        // Otherwise it describes a shared state, format or activity, and
+        // imposing it as a community name would be worse than letting the choice open.
         .filter((token) => (familyFrequency.get(token) ?? 0) === 1)
         .sort()
         .slice(0, 4);

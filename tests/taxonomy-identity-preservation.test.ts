@@ -129,7 +129,7 @@ describe('conservation de l’identité à la validation', () => {
     */
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.warnings.filter((issue) => issue.reason.startsWith('identité perdue'))).toHaveLength(5);
+    expect(result.warnings.filter((issue) => issue.reason.startsWith('identity lost'))).toHaveLength(5);
   });
 
   it('signale que deux sujets comparés partagent une communauté', async () => {
@@ -147,7 +147,7 @@ describe('conservation de l’identité à la validation', () => {
     // carte reste utilisable. On publie et on le dit.
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.warnings.some((issue) => issue.reason.includes('partagent la communauté'))).toBe(true);
+    expect(result.warnings.some((issue) => issue.reason.includes('share the community'))).toBe(true);
   });
 
   it('tolère une variante qui contient le terme', async () => {

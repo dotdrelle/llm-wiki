@@ -145,7 +145,7 @@ function templateRenameScript(relativePath: string): string {
   return `<script>
 async function renameTemplate() {
   const currentName = ${JSON.stringify(path.basename(relativePath, '.md'))};
-  const nextName = prompt('Nouveau nom du template', currentName);
+  const nextName = prompt('New template name', currentName);
   if (!nextName) return;
   const res = await fetch(${JSON.stringify(renameHref(relativePath))}, {
     method: 'PATCH',
@@ -153,7 +153,7 @@ async function renameTemplate() {
     body: JSON.stringify({ name: nextName })
   });
   if (!res.ok) {
-    alert('Renommage impossible');
+    alert('Rename failed');
     return;
   }
   const payload = await res.json();
@@ -643,9 +643,9 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
       const kindAttr = file.startsWith('deliverables/')
         ? ` data-deliverable-kind="${deliverableKind(file)}"`
         : '';
-      // `data-tree-*` : mêmes attributs que Pending, donc mêmes gestionnaires.
-      // Sans cela chaque section aurait son jeu, et cinq copies du même code de
-      // glisser-déposer à garder d'accord.
+      // `data-tree-*`: same attributes as Pending, hence the same handlers.
+      // Without it each section would have its own set, and five copies of the
+      // same drag-and-drop code to keep in sync.
       return `<div class="side-file-row" draggable="true" data-tree-drag="${safePath}" data-tree-kind="file"><a class="side-file" href="/${safePath}" title="${safePath}" data-side-path="${safePath}"${kindAttr}>${escapeHtml(title)}</a><button class="side-tree-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-tree-delete="${safePath}" data-tree-kind="file">×</button></div>`;
     }),
   ].join('\n');
@@ -662,15 +662,15 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
     : '';
   const rootClass = depth === 0 && node.name === 'wiki' ? ' side-folder-primary' : '';
   const safeNodePath = escapeAttr(node.path);
-  // Une section entière ne se déplace ni ne se supprime : seuls ses
-  // sous-dossiers le peuvent. Elle reste en revanche une cible de dépôt, sinon
-  // rien ne permettrait de ramener un fichier à la racine de sa section.
+  // A whole section cannot be moved or deleted: only its sub-folders can. It
+  // remains a drop target, otherwise nothing would bring a file back to its
+  // section's root.
   const folderActions = depth === 0
     ? ''
     : `<button class="side-tree-delete" type="button" title="Delete folder ${safeNodePath}" aria-label="Delete folder ${safeNodePath}" data-tree-delete="${safeNodePath}" data-tree-kind="folder">×</button>`;
-  // Icône dossier plutôt qu'un `+□` : les deux actions d'une section se lisent
-  // désormais côte à côte, alignées à droite, et seul le pictogramme les
-  // distingue — un glyphe ASCII n'y suffisait plus.
+  // A folder icon rather than a `+□`: the two actions of a section now read
+  // side by side, right-aligned, and only the pictogram distinguishes them — an
+  // ASCII glyph was no longer enough.
   const newFolderIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v5"/><path d="M9.5 13.5h5"/></svg>';
   const newFolderAction = isEditableTreePath(node.path)
@@ -681,9 +681,9 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
   return `<details class="side-folder${rootClass}"${open} data-tree-id="${safeNodePath}"${dragAttrs}${dropAttr}><summary><span class="side-folder-label">${escapeHtml(label)}</span>${refreshAction}${newFolderAction}${createAction}${folderActions}</summary><div class="side-folder-children">${children}</div></details>`;
 }
 
-// Sections dont l'arborescence est modifiable depuis le panneau. Miroir de
-// `TREE_ROOTS` (serve/tree/treeMutations.ts) : le serveur refuse de toute
-// façon le reste, ceci évite d'afficher des actions qui seraient rejetées.
+// Sections whose tree is editable from the panel. Mirror of `TREE_ROOTS`
+// (serve/tree/treeMutations.ts): the server refuses the rest anyway, this
+// avoids showing actions that would be rejected.
 function isEditableTreePath(nodePath: string): boolean {
   const section = toPosix(nodePath).split('/')[0] ?? '';
   return ['wiki', 'deliverables', 'templates', 'build-context'].includes(section);
@@ -741,12 +741,12 @@ function renderUntrackedNode(
   // The root children live directly in [data-untracked-list], which carries the
   // drop target for raw/untracked itself (see wikiLayoutScript).
   if (root) return children;
-  // Le bouton de suppression d'un dossier portait `onclick="event.
-  // stopPropagation()"`, pour empêcher le <summary> de replier le <details>.
-  // Or le gestionnaire de suppression est délégué au `document` : l'événement
-  // ne l'atteignait donc jamais et le clic ne faisait rien du tout. C'est ce
-  // gestionnaire qui appelle `preventDefault()`, ce qui suffit à annuler le
-  // repli — l'action par défaut n'a lieu qu'une fois la propagation terminée.
+  // A folder's delete button used to carry `onclick="event.
+  // stopPropagation()"`, to stop the <summary> from collapsing the <details>.
+  // But the delete handler is delegated to `document`: the event never reached
+  // it, so the click did nothing at all. It is this handler that calls
+  // `preventDefault()`, which is enough to cancel the collapse — the default
+  // action only happens once propagation finishes.
   const safePath = escapeAttr(node.path);
   return `<details class="side-untracked-folder" open data-tree-id="${safePath}" draggable="true" data-tree-drag="${safePath}" data-tree-kind="folder" data-tree-drop="${safePath}"><summary><span class="side-folder-label">${escapeHtml(node.name)}</span><button class="side-tree-delete" type="button" title="Delete folder ${safePath}" aria-label="Delete folder ${safePath}" data-tree-delete="${safePath}" data-tree-kind="folder">×</button></summary><div class="side-untracked-children">${children}</div></details>`;
 }
@@ -781,9 +781,9 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="M8.6 8.1 10.8 15"/><path d="m15.4 8.1-2.2 6.9"/><path d="M9 6h6"/></svg>';
   const chatIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg>';
-  // La route /history existe depuis longtemps (wikiRoutes.ts) et rend les 50
-  // derniers commits du workspace — mais rien ne pointait dessus. Une page
-  // qu'aucun lien n'atteint n'existe pas pour celui qui la cherche.
+  // The /history route has existed for a long time (wikiRoutes.ts) and renders
+  // the workspace's 50 latest commits — but nothing pointed to it. A page no
+  // link reaches does not exist for whoever is looking for it.
   const historyIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg>';
 const kbdHint = `<kbd style="font-size:.68rem;font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .35rem;border-radius:4px;color:var(--muted);cursor:pointer" title="Open global search (⌘K)" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}))">⌘K</kbd>`;
@@ -951,7 +951,7 @@ export async function generateIndex(rootDir: string): Promise<string> {
 
   const sidebar = await renderSidebar(rootDir, navFiles);
 
-  // ── Onboarding si wiki vide ────────────────────────────────────────────────
+  // ── Onboarding when the wiki is empty ──────────────────────────────────────
   const indexPath = path.join(rootDir, 'wiki', 'index.md');
   if (wikiFiles.length === 0) {
     const title = serveTitle() ?? workspaceNameFromEnv() ?? 'Wiki';

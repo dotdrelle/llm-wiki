@@ -192,8 +192,8 @@ export const WIKI_LAYOUT_CSS = `
       text-overflow: ellipsis;
       white-space: nowrap;
       font-weight: 680;
-      /* Le label prend la place restante, pas chaque action : un
-         margin-left:auto porté par toutes les espaçait sur la ligne. */
+      /* The label takes the remaining space, not each action: a
+         margin-left:auto on all of them spaced them out across the line. */
       margin-right: auto;
     }
     .side-folder-action {
@@ -407,28 +407,27 @@ export const WIKI_LAYOUT_CSS = `
       line-height: 1;
     }
     .side-tree-delete:hover { border-color: var(--err); background: color-mix(in srgb, var(--err) 10%, var(--panel)); color: var(--err); }
-    /* Le bouton de suppression ne s'affiche qu'au survol de sa ligne : une
-       croix sur chaque entrée transformerait l'arbre en champ de mines. */
+    /* The delete button only shows on row hover: a cross on every entry would
+       turn the tree into a minefield. */
     .side-tree-delete { opacity: 0; }
     :hover > .side-tree-delete, .side-tree-delete:focus-visible { opacity: 1; }
     .side-file-row { display: flex; align-items: center; gap: 0.15rem; }
     .side-file-row .side-file { flex: 1 1 auto; min-width: 0; }
     [draggable="true"], [draggable="true"] > summary { cursor: grab; }
-    /* Glisser-déposer : l'ancien style ne posait qu'une opacité sur la source
-       et un liseré pointillé sur la cible. Sur fond sombre les deux passaient
-       inaperçus — on croyait le déplacement inopérant alors qu'il marchait.
-       La source est maintenant estompée ET barrée d'un liseré, la cible reçoit
-       un fond franc en plus de son contour. */
+    /* Drag & drop: the old style only put an opacity on the source and a
+       dotted border on the target. On a dark background both went unnoticed —
+       the move looked broken when it worked. The source is now faded AND marked
+       with a border, and the target gets a solid background in addition to its
+       outline. */
     .is-dragging {
       opacity: 0.4;
       outline: 1px dashed var(--muted);
       outline-offset: -2px;
       border-radius: 5px;
     }
-    /* Contour plutôt qu'un simple aplat : la cible est souvent un dossier dont
-       les enfants sont visibles, et un aplat seul se lirait « tout le
-       sous-arbre est sélectionné ». Les deux ensemble se voient sur les deux
-       thèmes, ce qui est le point. */
+    /* Outline rather than a plain fill: the target is often a folder whose
+       children are visible, and a fill alone would read as "the whole sub-tree
+       is selected". Both together show on both themes, which is the point. */
     .is-drop-target > summary { background: color-mix(in srgb, var(--accent, var(--fg)) 22%, transparent); border-radius: 4px; }
     .is-drop-target {
       outline: 2px solid var(--accent, var(--fg));

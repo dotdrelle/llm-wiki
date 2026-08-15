@@ -898,7 +898,7 @@ function updateApprovalBanner() {
   if(!banner) return;
   if(count>0) {
     const label=$('approval-banner-text');
-    if(label) label.textContent=count+' tâche(s) mutante(s) en attente d\\'approbation avant exécution.';
+    if(label) label.textContent=count+' mutating task(s) awaiting approval before execution.';
     banner.hidden=false;
   } else {
     banner.hidden=true;
@@ -922,7 +922,7 @@ async function approveRuntimeRun() {
       );
     }
     updateApprovalBanner();
-    notify('Approbation accordée');
+    notify('Approval granted');
     await fetchRuntimeState().catch(()=>{});
   } catch(e) {
     notify(e?.message||String(e),'e');
@@ -932,7 +932,7 @@ async function approveRuntimeRun() {
 }
 function rejectRuntimeRun() {
   if(!runtimeEnabled()) return;
-  if(!confirm('Rejeter l\\'approbation ? Cela annule le run en cours.')) return;
+  if(!confirm('Reject the approval? This cancels the current run.')) return;
   cancelRuntimeRun();
 }
 
@@ -1381,12 +1381,12 @@ function requestMessagesForLLM(sourceMessages) {
   });
 }
 
-/* ── Actions de message ──────────────────────────────────────────────────
-   Icônes plutôt que « Copy » / « Redo » : deux mots posés sous chaque bulle
-   se lisent comme du contenu, et la barre les répétait à chaque tour.
-   Déclarations de fonctions, pas des const : activityPanelScript s'en sert et
-   est interpolé plus haut dans le même <script> — seule la remontée des
-   déclarations garantit qu'elles existent à l'appel. */
+/* ── Message actions ─────────────────────────────────────────────────────
+   Icons rather than "Copy" / "Redo": two words under each bubble read like
+   content, and the action bar repeated them on every turn.
+   Function declarations, not consts: activityPanelScript uses them and is
+   interpolated higher up in the same <script> — only declaration hoisting
+   guarantees they exist when called. */
 function msgIcon(name) {
   if(name==='copied') return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>';
   if(name==='redo') return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg>';
@@ -1404,9 +1404,9 @@ async function copyMessage(btn) {
   if(!text.trim()) return;
   try {
     await navigator.clipboard.writeText(text);
-    // Le retour visuel passe par l'icône et le title : sans libellé, remplacer
-    // le texte ne dirait plus rien, et l'infobulle est le seul endroit où
-    // « Copied » reste lisible.
+    // The visual feedback goes through the icon and the title: with no label,
+    // replacing the text would no longer say anything, and the tooltip is the
+    // only place where "Copied" stays readable.
     btn.innerHTML=msgIcon('copied');
     btn.classList.add('done');
     btn.title='Copied';
@@ -1926,7 +1926,7 @@ function wikiResultItemHTML(item) {
     item.type,
     typeof item.score==='number' ? \`score \${Math.round(item.score*100)/100}\` : null,
     citeCount ? \`\${citeCount} citation\${citeCount>1?'s':''}\` : null,
-    relatedCount ? \`\${relatedCount} lien\${relatedCount>1?'s':''}\` : null,
+    relatedCount ? \`\${relatedCount} link\${relatedCount>1?'s':''}\` : null,
   ].filter(Boolean).join(' · ');
   return \`<div class="tc-item">
     <div class="tc-item-title"><span>\${esc(title)}</span></div>
@@ -2327,14 +2327,14 @@ async function tryProfilePreferenceUpdate(input,text) {
     });
     const data=await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(data.error||res.statusText||'Profile update failed');
-    const message=data.message||'Profil mis à jour.';
+    const message=data.message||'Profile updated.';
     messages.push({role:'assistant',content:message});
     appendMsg('assistant',message);
     conversationDirty=true;
     await saveCurrentConversation({immediate:true});
-    notify(data.changed===false?'Profil déjà à jour':'Profil mis à jour');
+    notify(data.changed===false?'Profile already up to date':'Profile updated');
   } catch(err) {
-    const message=\`Profil non modifié : \${err?.message||String(err)}\`;
+    const message=\`Profile not updated: \${err?.message||String(err)}\`;
     messages.push({role:'assistant',content:message});
     appendMsg('assistant',message);
     conversationDirty=true;
@@ -2668,7 +2668,7 @@ async function sendRuntimeControlChoice(intent,text) {
   }
 }
 
-// ── Champs secrets ──────────────────────────────────────────────────────────
+// ── Secret fields ───────────────────────────────────────────────────────────
 
 ${CONFIG_SCRIPT}
 

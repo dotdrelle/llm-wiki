@@ -2,40 +2,40 @@ import { watch, type FSWatcher } from 'node:fs';
 import { collectGenerations, readMarker, taxonomyPaths, type TaxonomyMarker } from './store.ts';
 import { recoverPendingWork } from './recovery.ts';
 
-/** Repli quand les notifications ne traversent pas le mount. */
+/** Fallback when notifications do not cross the mount. */
 export const TAXONOMY_POLL_INTERVAL_MS = 1_500;
-/** Regroupe les notifications rapprochées d'une même publication. */
+/** Groups the close notifications of a single publication. */
 export const TAXONOMY_DEBOUNCE_MS = 150;
 
 export type TaxonomyWatcher = {
-  /** Vérifie l'état maintenant, sans attendre le prochain réveil. */
+  /** Checks the state now, without waiting for the next wake-up. */
   check: () => Promise<void>;
   stop: () => void;
 };
 
 /**
- * Surveille le marqueur de révision d'un workspace.
+ * Watches a workspace's revision marker.
  *
- * Un seul watcher et un seul timer **par workspace Serve**, jamais un par
- * client SSE : les clients s'abonnent à ce que celui-ci publie.
+ * A single watcher and a single timer **per Serve workspace**, never one per
+ * SSE client: clients subscribe to what this one publishes.
  *
- * `fs.watch`/inotify n'est pas fiable à travers un bind mount Docker, ce qui
- * est précisément le déploiement visé. On tente donc le watcher natif et on
- * dégrade sur un `stat` périodique. Ce sondage n'est pas le polling retiré du
- * client : c'est une lecture d'inode côté serveur, sans transfert et sans effet
- * sur le rendu — à ne pas confondre avec un rapatriement de scène.
+ * `fs.watch`/inotify is not reliable across a Docker bind mount, which
+ * is precisely the targeted deployment. We therefore try the native watcher and
+ * degrade to a periodic `stat`. This polling is not the polling removed from the
+ * client: it is a server-side inode read, without transfer and without effect
+ * on the rendering — not to be confused with a scene re-fetch.
  *
- * On surveille le RÉPERTOIRE, pas le fichier : le marqueur est publié par
- * `rename`, donc son inode est remplacé à chaque révision et un watcher posé
- * sur le fichier suivrait l'ancien inode jusqu'à ne plus rien voir.
+ * We watch the DIRECTORY, not the file: the marker is published by
+ * `rename`, so its inode is replaced at each revision and a watcher placed
+ * on the file would follow the old inode until it sees nothing anymore.
  */
 export function createTaxonomyWatcher(options: {
   rootDir: string;
-  /** Appelé une seule fois par révision réellement nouvelle. */
+  /** Called exactly once per genuinely new revision. */
   onRevision: (marker: TaxonomyMarker) => void;
   pollIntervalMs?: number;
   debounceMs?: number;
-  /** Reprise du travail en attente ; désactivable pour un lecteur passif. */
+  /** Resumption of pending work; can be disabled for a passive reader. */
   recover?: boolean;
 }): TaxonomyWatcher {
   const paths = taxonomyPaths(options.rootDir);
@@ -47,19 +47,19 @@ export function createTaxonomyWatcher(options: {
   let initialCollectionPending = true;
   let stopped = false;
   /*
-   Les vérifications sont sérialisées par une file, pas par un drapeau.
+   Checks are serialized by a queue, not by a flag.
 
-   Un drapeau « une à la fois » qui fait sortir l'appelant sans rien vérifier
-   rend `check()` menteur : la promesse se résout alors qu'aucune lecture n'a eu
-   lieu, et un appelant qui vient d'écrire — ou un test — observe l'état
-   d'avant. La file garantit qu'attendre `check()`, c'est attendre une
-   vérification commencée APRÈS l'appel.
+   A "one at a time" flag that exits the caller without checking anything
+   makes `check()` a liar: the promise resolves while no read took
+   place, and a caller that just wrote — or a test — observes the
+   previous state. The queue guarantees that waiting for `check()` means waiting for a
+   check started AFTER the call.
   */
   let queue: Promise<void> = Promise.resolve();
   let watcher: FSWatcher | null = null;
   let debounce: NodeJS.Timeout | null = null;
   const interval = setInterval(() => void check(), pollIntervalMs);
-  // Un timer de sondage ne doit pas maintenir le processus en vie à lui seul.
+  // A polling timer must not keep the process alive on its own.
   interval.unref?.();
 
   function check(): Promise<void> {
@@ -78,20 +78,20 @@ export function createTaxonomyWatcher(options: {
       const marker = await readMarker(options.rootDir);
       if (!marker) return;
       /*
-       La comparaison porte sur le NUMÉRO de révision, pas sur le `mtime`.
+       The comparison is on the revision NUMBER, not on the `mtime`.
 
-       Un mtime bouge à chaque réécriture, y compris identique, et sa
-       granularité varie selon le système de fichiers — deux publications dans
-       la même seconde peuvent partager le sien. Le compteur monotone, lui, dit
-       exactement ce qu'on veut savoir : y a-t-il du neuf.
+       An mtime moves at every rewrite, including identical ones, and its
+       granularity varies by filesystem — two publications in
+       the same second can share it. The monotonic counter, for its part, says
+       exactly what we want to know: is there something new.
       */
       if (marker.revision <= lastRevision) return;
       lastRevision = marker.revision;
       options.onRevision(marker);
     } catch {
-      // Une lecture ratée n'arrête pas la surveillance : le prochain réveil
-      // retentera. Un watcher qui meurt sur une erreur transitoire laisserait
-      // l'écran muet jusqu'au redémarrage de Serve.
+      // A failed read does not stop the watch: the next wake-up
+      // will retry. A watcher that dies on a transient error would leave
+      // the screen mute until Serve restarts.
     }
   }
 
@@ -108,15 +108,15 @@ export function createTaxonomyWatcher(options: {
     if (stopped) return;
     try {
       watcher = watch(paths.dir, (_event, name) => {
-        // Le répertoire porte aussi les générations, bien plus nombreuses que
-        // les publications. Les ignorer évite de relire le marqueur à chaque
-        // proposition écrite, publiée ou non.
+        // The directory also carries the generations, far more numerous than
+        // the publications. Ignoring them avoids re-reading the marker at each
+        // written proposal, published or not.
         if (name && name !== 'revision.json' && name !== 'dirty.json') return;
         schedule();
       });
       watcher.on('error', () => {
-        // Le mount ne propage pas les notifications : le sondage prend le
-        // relais, seul. C'est la dégradation prévue, pas une panne.
+        // The mount does not propagate notifications: polling takes
+        // over, alone. This is the planned degradation, not a failure.
         watcher?.close();
         watcher = null;
       });

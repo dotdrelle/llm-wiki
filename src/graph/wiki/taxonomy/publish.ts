@@ -6,22 +6,22 @@ export type CorpusPublishOutcome =
   | { status: 'deferred'; corpus: string | null };
 
 /**
- * Publie une révision déterministe après une écriture cohérente du wiki.
+ * Publishes a deterministic revision after a coherent wiki write.
  *
- * L'empreinte est celle du **corpus de connaissance** (`knowledgeEtag`), la
- * même que celle sur laquelle la synthèse calcule et publie : deux empreintes
- * calculées autrement rendraient la comparaison de péremption sous verrou sans
- * valeur. Elle ignore délibérément templates, contextes et deliverables — un
- * build ne périme pas un classement.
+ * The fingerprint is that of the **knowledge corpus** (`knowledgeEtag`), the
+ * same one synthesis computes and publishes on: two fingerprints
+ * computed differently would make the staleness comparison under lock
+ * worthless. It deliberately ignores templates, contexts and deliverables — a
+ * build does not stale a classification.
  *
- * La génération de registre active, s'il y en a une, est reconduite telle
- * quelle : une ingestion ne connaît rien à la taxonomie synthétisée et n'a
- * aucune raison de la retirer. Elle fait avancer la révision, c'est tout.
+ * The active registry generation, if there is one, is carried over as
+ * is: an ingestion knows nothing about the synthesized taxonomy and has
+ * no reason to remove it. It just advances the revision, that is all.
  *
- * **Ne lève jamais.** Une révision non allouée est un problème d'affichage ; la
- * faire remonter tuerait un job de production qui a, lui, réussi. En cas
- * d'échec, le drapeau `dirty.json` prend le relais et Serve reprendra — ce
- * travail-là, il sait le refaire, puisqu'il se recalcule depuis les fichiers.
+ * **Never throws.** An unallocated revision is a display problem; letting
+ * it bubble up would kill a production job that has, itself, succeeded. On
+ * failure, the `dirty.json` flag takes over and Serve will resume — that
+ * work, it knows how to redo, since it recomputes from the files.
  */
 export async function publishCorpusRevision(
   rootDir: string,
@@ -32,13 +32,13 @@ export async function publishCorpusRevision(
     corpus = await knowledgeEtag(rootDir);
     const current = await readMarker(rootDir);
 
-    // Une révision décrit un changement observable. Republier le même corpus
-    // ferait clignoter tous les clients et gonflerait le compteur sans état
-    // nouveau, notamment lorsqu'une source inchangée traverse le pipeline.
+    // A revision describes an observable change. Republishing the same corpus
+    // would make every client flicker and inflate the counter with no new
+    // state, notably when an unchanged source goes through the pipeline.
     //
-    // L'égalité n'a de sens qu'entre empreintes du même algorithme : un
-    // marqueur historique doit être republié pour migrer, même si sa chaîne
-    // ressemble à la nôtre.
+    // Equality only means anything between fingerprints of the same algorithm: a
+    // historical marker must be republished to migrate, even if its string
+    // looks like ours.
     if (current?.corpus === corpus && current.corpusAlgorithm === KNOWLEDGE_ETAG_ALGORITHM) {
       return { status: 'published', revision: current.revision, corpus };
     }
@@ -66,8 +66,8 @@ export async function publishCorpusRevision(
     });
     return { status: 'deferred', corpus };
   } catch {
-    // Y compris l'écriture du drapeau : si même elle échoue, la prochaine
-    // ingestion republiera. Rien de tout cela ne remonte à l'appelant.
+    // Including the flag write: if even that fails, the next
+    // ingestion will republish. None of this reaches the caller.
     return { status: 'deferred', corpus };
   }
 }

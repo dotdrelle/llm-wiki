@@ -1,38 +1,38 @@
 /*
- Schéma du registre de taxonomie — vocabulaire inspiré de SKOS.
+ Taxonomy registry schema — vocabulary inspired by SKOS.
 
- Le registre reprend les noms de champs et quelques règles d'un thésaurus
- (`prefLabel` indexé par langue, `altLabel`, `scopeNote`) sans prétendre être un
- modèle SKOS complet : `replaces`, `replacedBy`, `deprecated`, `changeNote` et
- `primaryCommunity` sont des extensions locales, et l'unicité du libellé visible
- est une contrainte de la carte, pas du standard.
+ The registry reuses field names and a few rules from a thesaurus
+ (`prefLabel` indexed by language, `altLabel`, `scopeNote`) without claiming to be a
+ full SKOS model: `replaces`, `replacedBy`, `deprecated`, `changeNote` and
+ `primaryCommunity` are local extensions, and the uniqueness of the visible label
+ is a constraint of the map, not of the standard.
 
- Rien de tout cela ne sort d'ici : le snapshot expose toujours `label` en
- chaîne, dérivé au moment de la lecture.
+ None of this leaves here: the snapshot always exposes `label` as a
+ string, derived at read time.
 */
 
 /**
- * Version du schéma. Un registre d'une autre version est ignoré, jamais
- * réinterprété.
+ * Schema version. A registry of another version is ignored, never
+ * reinterpreted.
  *
- * v3 ajoute la **preuve de couverture** : `corpusPageIds`, `sampledPageIds` et
- * l'algorithme d'empreinte. Sans eux, une page absente de `assignments` est
- * indistinguable entre trois causes — jamais soumise au modèle, soumise et non
- * classée, ou apparue après la synthèse. C'est exactement l'ambiguïté qui avait
- * fait passer un écart de révision pour 130 pages « non classées ».
+ * v3 adds the **coverage proof**: `corpusPageIds`, `sampledPageIds` and
+ * the fingerprint algorithm. Without them, a page absent from `assignments` is
+ * indistinguishable between three causes — never submitted to the model, submitted and not
+ * classified, or appeared after synthesis. That is exactly the ambiguity that had
+ * made a revision gap pass for 130 "unclassified" pages.
  *
- * Un registre v2 reste lisible comme artefact historique mais ne prouve aucune
- * couverture : ses pages sont présentées en attente jusqu'à la première
- * publication v3.
+ * A v2 registry remains readable as a historical artifact but proves no
+ * coverage: its pages are presented as pending until the first
+ * v3 publication.
  */
 export const REGISTRY_SCHEMA_VERSION = 3;
 
 /**
- * Profondeur maximale de l'arborescence : domaine → communauté → pages.
+ * Maximum depth of the tree: domain → community → pages.
  *
- * La navigation du graphe est `carte → domaine → communauté → document`. Un
- * troisième niveau de communauté n'aurait aucun rendu et rendrait la carte
- * illisible avant d'être utile ; il s'ajoutera le jour où un écran l'exprimera.
+ * Graph navigation is `map → domain → community → document`. A
+ * third community level would have no rendering and would make the map
+ * unreadable before being useful; it will be added the day a screen expresses it.
  */
 export const MAX_COMMUNITY_DEPTH = 2;
 
@@ -42,21 +42,21 @@ export type LocalizedList = Record<string, string[]>;
 export type RegistryCommunity = {
   id: string;
   /**
-   * Domaine parent, ou `null`/absent pour un domaine racine.
+   * Parent domain, or `null`/absent for a root domain.
    *
-   * La v1 était plate, et c'est ce qui a produit un fourre-tout : le modèle
-   * n'avait aucun moyen d'exprimer « ces cinq produits sont cinq sujets
-   * distincts qui relèvent du même domaine ». Réduire le nombre de bulles ne
-   * pouvait donc qu'agglomérer, et agglomérer détruit la navigation.
+   * v1 was flat, and that is what produced a catch-all: the model
+   * had no way to express "these five products are five distinct
+   * subjects that fall under the same domain". Reducing the number of bubbles
+   * could therefore only aggregate, and aggregating destroys navigation.
    */
   parentCommunity?: string | null;
-  /** Au plus une valeur par langue. C'est ce qui rend un changement de langue bon marché. */
+  /** At most one value per language. That is what makes a language change cheap. */
   prefLabel: LocalizedText;
   altLabel?: LocalizedList;
   scopeNote?: LocalizedText;
-  /** Concepts absorbés par celui-ci. Extension locale. */
+  /** Concepts absorbed by this one. Local extension. */
   replaces?: string[];
-  /** Renseigné quand CE concept a été absorbé. L'entrée n'est jamais supprimée. */
+  /** Set when THIS concept was absorbed. The entry is never deleted. */
   replacedBy?: string | null;
   deprecated?: boolean;
   firstSeenRevision: number;
@@ -65,22 +65,22 @@ export type RegistryCommunity = {
 
 export type RegistryAssignment = {
   /**
-   * Communauté d'appartenance, obligatoirement une **feuille**.
+   * Home community, necessarily a **leaf**.
    *
-   * Une page n'est jamais rattachée directement à un domaine : le domaine
-   * agrège ses feuilles, il ne les remplace pas. C'est ce qui garantit qu'un
-   * clic sur un domaine ouvre ses communautés et non une liste de 142
+   * A page is never attached directly to a domain: the domain
+   * aggregates its leaves, it does not replace them. That is what guarantees that a
+   * click on a domain opens its communities and not a list of 142
    * documents.
    */
   primaryCommunity: string;
   /**
-   * Facettes secondaires, avec une sémantique explicite : « relié à », jamais
-   * « appartient à ».
+   * Secondary facets, with an explicit semantics: "related to", never
+   * "belongs to".
    *
-   * Une page « sécurité Prophix » relève principalement de Prophix ; la ranger
-   * dans Sécurité la ferait disparaître de son produit, et la dupliquer
-   * fausserait tous les comptes. Ces liens ne pilotent donc aucun placement :
-   * ils enrichissent la lecture et la recherche.
+   * A "Prophix security" page primarily belongs to Prophix; putting it
+   * under Security would make it disappear from its product, and duplicating it
+   * would falsify every count. These links therefore drive no placement:
+   * they enrich reading and search.
    */
   relatedCommunities?: string[];
 };
@@ -90,31 +90,31 @@ export type TaxonomyRegistry = {
   revision: number;
   corpus: string;
   /**
-   * Algorithme ayant produit `corpus`. Deux empreintes d'algorithmes différents
-   * ne se comparent pas — le dire évite de traduire une incomparabilité en
-   * péremption.
+   * Algorithm that produced `corpus`. Two fingerprints from different algorithms
+   * do not compare — saying so avoids turning an incomparability into
+   * staleness.
    */
   corpusAlgorithm: string;
   languages: string[];
   communities: RegistryCommunity[];
-  /** Chemin de page relatif au workspace → affectation. */
+  /** Page path relative to the workspace → assignment. */
   assignments: Record<string, RegistryAssignment>;
   /**
-   * Toutes les pages de connaissance du corpus au moment de la synthèse.
+   * All knowledge pages of the corpus at synthesis time.
    *
-   * C'est le dénominateur de la couverture. Il vit dans le registre publié, et
-   * non seulement dans l'inventaire transitoire, parce qu'un lecteur qui charge
-   * marqueur + registre doit pouvoir calculer les états sans rejouer la
-   * synthèse — c'est-à-dire sans appeler de modèle.
+   * This is the denominator of coverage. It lives in the published registry, and
+   * not only in the transient inventory, because a reader that loads
+   * marker + registry must be able to compute the states without replaying the
+   * synthesis — that is, without calling a model.
    */
   corpusPageIds: string[];
   /**
-   * Pages effectivement soumises au modèle, cumulées sur les passes d'une même
-   * empreinte de corpus.
+   * Pages actually submitted to the model, accumulated over the passes of a single
+   * corpus fingerprint.
    *
-   * Une page du corpus absente d'ici n'a jamais été jugée : la compter comme
-   * « non classée » accuserait la synthèse d'une décision d'échantillonnage
-   * prise en amont.
+   * A corpus page absent from here was never judged: counting it as
+   * "unclassified" would accuse the synthesis of a sampling decision
+   * taken upstream.
    */
   sampledPageIds: string[];
 };
@@ -125,11 +125,11 @@ export type ValidationResult =
   | { ok: false; issues: ValidationIssue[] };
 
 /**
- * Forme normalisée d'un libellé pour la comparaison d'unicité.
+ * Normalized form of a label for uniqueness comparison.
  *
- * `Solution`, `solution` et `Sólution` sont le même mot à l'écran d'un lecteur ;
- * les traiter comme distincts laisserait passer exactement le doublon que D7
- * interdit.
+ * `Solution`, `solution` and `Sólution` are the same word on a reader's screen;
+ * treating them as distinct would let through exactly the duplicate that D7
+ * forbids.
  */
 export function normalizeLabel(label: string): string {
   return label
@@ -140,11 +140,11 @@ export function normalizeLabel(label: string): string {
 }
 
 /**
- * Un libellé visible est un mot unique, sans chemin.
+ * A visible label is a single word, without a path.
  *
- * La contrainte vient du rendu : une bulle porte un mot, pas un syntagme ni un
- * chemin. `/` et `_` sont exclus explicitement parce que ce sont les deux
- * façons dont un modèle recrache une hiérarchie de dossiers en guise de nom.
+ * The constraint comes from the rendering: a bubble carries a word, not a phrase nor a
+ * path. `/` and `_` are excluded explicitly because they are the two
+ * ways a model spits out a folder hierarchy as a name.
  */
 export function isValidLabel(label: string): boolean {
   if (typeof label !== 'string') return false;
@@ -165,64 +165,64 @@ function validateLocalizedText(
   { labels = false }: { labels?: boolean } = {},
 ): void {
   if (!isPlainObject(value)) {
-    issues.push({ path, reason: 'attendu : objet indexé par langue' });
+    issues.push({ path, reason: 'expected: object indexed by language' });
     return;
   }
   for (const [language, text] of Object.entries(value)) {
     if (typeof text !== 'string' || !text.trim()) {
-      issues.push({ path: `${path}.${language}`, reason: 'texte vide ou non textuel' });
+      issues.push({ path: `${path}.${language}`, reason: 'empty or non-textual text' });
       continue;
     }
     if (labels && !isValidLabel(text)) {
-      issues.push({ path: `${path}.${language}`, reason: `libellé invalide : « ${text} »` });
+      issues.push({ path: `${path}.${language}`, reason: `invalid label: "${text}"` });
     }
   }
 }
 
 /**
- * Valide un registre **en bloc**.
+ * Validates a registry **as a whole**.
  *
- * Une proposition non conforme est rejetée entière, jamais réparée en silence
- * ni appliquée partiellement : un registre à moitié appliqué produirait une
- * carte que personne n'a décidée, et dont on ne saurait plus dire de quoi elle
- * dérive.
+ * A non-conforming proposal is rejected entirely, never repaired silently
+ * nor applied partially: a half-applied registry would produce a
+ * map that nobody decided, and from which one could no longer say what it
+ * derives from.
  */
 export function validateRegistry(value: unknown): ValidationResult {
   const issues: ValidationIssue[] = [];
   if (!isPlainObject(value)) {
-    return { ok: false, issues: [{ path: '', reason: 'registre absent ou non objet' }] };
+    return { ok: false, issues: [{ path: '', reason: 'registry absent or not an object' }] };
   }
 
   if (value.schemaVersion !== REGISTRY_SCHEMA_VERSION) {
-    // Un registre d'une autre version est ignoré, pas réinterprété : deviner la
-    // sémantique d'un format inconnu est la façon la plus sûre de corrompre.
+    // A registry of another version is ignored, not reinterpreted: guessing the
+    // semantics of an unknown format is the surest way to corrupt.
     return {
       ok: false,
-      issues: [{ path: 'schemaVersion', reason: `attendu ${REGISTRY_SCHEMA_VERSION}, reçu ${String(value.schemaVersion)}` }],
+      issues: [{ path: 'schemaVersion', reason: `expected ${REGISTRY_SCHEMA_VERSION}, got ${String(value.schemaVersion)}` }],
     };
   }
   if (typeof value.revision !== 'number' || !Number.isInteger(value.revision) || value.revision < 0) {
-    issues.push({ path: 'revision', reason: 'entier positif attendu' });
+    issues.push({ path: 'revision', reason: 'positive integer expected' });
   }
   if (typeof value.corpus !== 'string' || !value.corpus) {
-    issues.push({ path: 'corpus', reason: 'empreinte de corpus manquante' });
+    issues.push({ path: 'corpus', reason: 'missing corpus fingerprint' });
   }
   if (typeof value.corpusAlgorithm !== 'string' || !value.corpusAlgorithm) {
-    issues.push({ path: 'corpusAlgorithm', reason: 'algorithme d’empreinte manquant' });
+    issues.push({ path: 'corpusAlgorithm', reason: 'missing fingerprint algorithm' });
   }
   for (const field of ['corpusPageIds', 'sampledPageIds'] as const) {
     const list = value[field];
     if (!Array.isArray(list) || list.some((item) => typeof item !== 'string' || !item)) {
-      issues.push({ path: field, reason: 'liste de chemins de pages attendue' });
+      issues.push({ path: field, reason: 'list of page paths expected' });
     }
   }
   /*
-   L'échantillon est un sous-ensemble du corpus, jamais l'inverse.
+   The sample is a subset of the corpus, never the reverse.
 
-   Une page soumise mais absente du corpus rendrait la couverture incalculable :
-   elle ne serait ni classée, ni en attente, ni hors échantillon. Mieux vaut
-   rejeter le registre que publier une carte dont les compteurs ne s'additionnent
-   pas.
+   A page submitted but absent from the corpus would make coverage incalculable:
+   it would be neither classified, nor pending, nor outside the sample. Better to
+   reject the registry than to publish a map whose counters do not add
+   up.
   */
   if (Array.isArray(value.corpusPageIds) && Array.isArray(value.sampledPageIds)) {
     const corpus = new Set(value.corpusPageIds.map(String));
@@ -230,31 +230,31 @@ export function validateRegistry(value: unknown): ValidationResult {
     if (stray.length) {
       issues.push({
         path: 'sampledPageIds',
-        reason: `${stray.length} page(s) échantillonnée(s) hors du corpus déclaré`,
+        reason: `${stray.length} page(s) sampled outside the declared corpus`,
       });
     }
   }
   if (!Array.isArray(value.languages) || value.languages.some((item) => typeof item !== 'string')) {
-    issues.push({ path: 'languages', reason: 'liste de langues attendue' });
+    issues.push({ path: 'languages', reason: 'list of languages expected' });
   }
   if (!Array.isArray(value.communities)) {
-    issues.push({ path: 'communities', reason: 'liste attendue' });
+    issues.push({ path: 'communities', reason: 'list expected' });
     return { ok: false, issues };
   }
 
   const ids = new Set<string>();
   /*
-   Unicité du libellé visible, par langue et **par fratrie**.
+   Uniqueness of the visible label, per language and **per sibling group**.
 
-   La v1 imposait l'unicité globale, parce qu'une carte plate affiche tout en
-   même temps. Une arborescence ne montre jamais que les racines, puis les
-   enfants d'un seul domaine : deux « Reporting » sous deux domaines distincts
-   ne se rencontrent donc jamais à l'écran. Garder la règle globale
-   interdirait des noms parfaitement légitimes et repousserait le modèle vers
-   des libellés composés — c'est-à-dire vers ce que la règle du mot unique
-   cherche à éviter.
+   v1 imposed global uniqueness, because a flat map displays everything at
+   once. A tree never shows more than the roots, then the
+   children of a single domain: two "Reporting" under two distinct domains
+   therefore never meet on screen. Keeping the global rule
+   would forbid perfectly legitimate names and push the model towards
+   compound labels — that is, towards what the single-word rule
+   seeks to avoid.
 
-   Les racines sont fratrie entre elles, sous la clé vide.
+   Roots are siblings of each other, under the empty key.
   */
   const labelsBySibling = new Map<string, Map<string, string>>();
   const parentOf = new Map<string, string | null>();
@@ -262,14 +262,14 @@ export function validateRegistry(value: unknown): ValidationResult {
   for (const [index, community] of value.communities.entries()) {
     const at = `communities[${index}]`;
     if (!isPlainObject(community)) {
-      issues.push({ path: at, reason: 'objet attendu' });
+      issues.push({ path: at, reason: 'object expected' });
       continue;
     }
     const id = community.id;
     if (typeof id !== 'string' || !id) {
-      issues.push({ path: `${at}.id`, reason: 'identifiant manquant' });
+      issues.push({ path: `${at}.id`, reason: 'missing identifier' });
     } else if (ids.has(id)) {
-      issues.push({ path: `${at}.id`, reason: `identifiant en double : ${id}` });
+      issues.push({ path: `${at}.id`, reason: `duplicate identifier: ${id}` });
     } else {
       ids.add(id);
     }
@@ -277,11 +277,11 @@ export function validateRegistry(value: unknown): ValidationResult {
     validateLocalizedText(community.prefLabel, `${at}.prefLabel`, issues, { labels: true });
     if (community.altLabel !== undefined) {
       if (!isPlainObject(community.altLabel)) {
-        issues.push({ path: `${at}.altLabel`, reason: 'objet indexé par langue attendu' });
+        issues.push({ path: `${at}.altLabel`, reason: 'object indexed by language expected' });
       } else {
         for (const [language, list] of Object.entries(community.altLabel)) {
           if (!Array.isArray(list) || list.some((item) => typeof item !== 'string')) {
-            issues.push({ path: `${at}.altLabel.${language}`, reason: 'liste de chaînes attendue' });
+            issues.push({ path: `${at}.altLabel.${language}`, reason: 'list of strings expected' });
           }
         }
       }
@@ -290,23 +290,23 @@ export function validateRegistry(value: unknown): ValidationResult {
       validateLocalizedText(community.scopeNote, `${at}.scopeNote`, issues);
     }
     if (typeof community.firstSeenRevision !== 'number') {
-      issues.push({ path: `${at}.firstSeenRevision`, reason: 'révision d’apparition manquante' });
+      issues.push({ path: `${at}.firstSeenRevision`, reason: 'missing first-seen revision' });
     }
 
     /*
-     Un concept déprécié SANS remplaçant est légitime.
+     A deprecated concept WITHOUT a replacement is legitimate.
 
-     La règle exigeait un successeur, au motif qu'une sélection restaurée n'aurait
-     « plus où aller ». C'est faux : `resolveCommunity` s'arrête sur un
-     `replacedBy` nul et rend le concept déprécié lui-même, que le client sait
-     présenter comme disparu.
+     The rule required a successor, on the grounds that a restored selection would
+     "have nowhere to go". That is false: `resolveCommunity` stops on a
+     null `replacedBy` and returns the deprecated concept itself, which the client knows
+     how to present as gone.
 
-     Exiger un successeur avait en revanche une conséquence bien réelle : quand
-     aucune communauté survivante ne reprenait les pages, il fallait bien en
-     inventer un, et le code se repliait sur le premier de la liste. Un lecteur
-     qui revenait avec un identifiant ancien atterrissait donc en silence dans
-     une communauté sans rapport. Une redirection fausse est pire qu'une absence
-     de redirection : la seconde se voit, la première non.
+     Requiring a successor had, however, a very real consequence: when
+     no surviving community took over the pages, one had to
+     invent one, and the code fell back on the first in the list. A reader
+     who came back with an old identifier therefore landed silently in
+     an unrelated community. A false redirection is worse than an absence
+     of redirection: the latter is visible, the former is not.
     */
     const deprecated = community.deprecated === true;
     const parent = community.parentCommunity == null ? null : String(community.parentCommunity);
@@ -321,7 +321,7 @@ export function validateRegistry(value: unknown): ValidationResult {
         if (owner && owner !== id) {
           issues.push({
             path: `${at}.prefLabel.${language}`,
-            reason: `libellé visible en double avec ${owner} dans la même fratrie : « ${text} »`,
+            reason: `duplicate visible label with ${owner} in the same sibling group: "${text}"`,
           });
         }
         seen.set(key, typeof id === 'string' ? id : at);
@@ -330,7 +330,7 @@ export function validateRegistry(value: unknown): ValidationResult {
     }
   }
 
-  // Arborescence : parent connu ET vivant, aucun cycle, profondeur bornée.
+  // Tree: known AND live parent, no cycle, bounded depth.
   const deprecatedIds = new Set(
     value.communities
       .filter((community): community is Record<string, unknown> => isPlainObject(community))
@@ -345,37 +345,37 @@ export function validateRegistry(value: unknown): ValidationResult {
     const parent = community.parentCommunity == null ? null : String(community.parentCommunity);
     if (!parent) continue;
     if (!ids.has(parent)) {
-      issues.push({ path: `${at}.parentCommunity`, reason: `domaine parent inconnu : ${parent}` });
+      issues.push({ path: `${at}.parentCommunity`, reason: `unknown parent domain: ${parent}` });
       continue;
     }
     if (parent === id) {
-      issues.push({ path: `${at}.parentCommunity`, reason: 'une communauté ne peut pas être son propre parent' });
+      issues.push({ path: `${at}.parentCommunity`, reason: 'a community cannot be its own parent' });
       continue;
     }
     /*
-     Une communauté active ne pend pas à un parent mort.
+     An active community does not hang from a dead parent.
 
-     Le parent existait bien dans le registre — la règle ci-dessus était donc
-     satisfaite — mais il pouvait être déprécié. Or `communityHierarchy` ne
-     construit l'arbre qu'à partir des communautés ACTIVES : l'enfant sortait
-     alors de la hiérarchie et remontait comme bulle racine sur la carte, en
-     contredisant ce que le registre déclarait. Un registre valide ne doit pas
-     pouvoir décrire deux arbres différents selon qui le lit.
+     The parent did exist in the registry — the rule above was therefore
+     satisfied — but it could be deprecated. Yet `communityHierarchy` only
+     builds the tree from ACTIVE communities: the child would then fall
+     out of the hierarchy and come back as a root bubble on the map,
+     contradicting what the registry declared. A valid registry must not
+     be able to describe two different trees depending on who reads it.
     */
     if (community.deprecated !== true && deprecatedIds.has(parent)) {
-      issues.push({ path: `${at}.parentCommunity`, reason: `domaine parent déprécié : ${parent}` });
+      issues.push({ path: `${at}.parentCommunity`, reason: `deprecated parent domain: ${parent}` });
       continue;
     }
     childCount.set(parent, (childCount.get(parent) ?? 0) + 1);
 
-    // Remontée bornée : un cycle rendrait la profondeur infinie et ferait
-    // boucler tout consommateur qui remonte l'arbre — carte comprise.
+    // Bounded walk-up: a cycle would make the depth infinite and would
+    // loop every consumer that walks up the tree — map included.
     let depth = 1;
     let cursor = parent;
     const seenAncestors = new Set<string>([id ?? at]);
     while (cursor) {
       if (seenAncestors.has(cursor)) {
-        issues.push({ path: `${at}.parentCommunity`, reason: `cycle de parenté via ${cursor}` });
+        issues.push({ path: `${at}.parentCommunity`, reason: `parent cycle via ${cursor}` });
         depth = Number.POSITIVE_INFINITY;
         break;
       }
@@ -388,7 +388,7 @@ export function validateRegistry(value: unknown): ValidationResult {
     if (depth > MAX_COMMUNITY_DEPTH - 1) {
       issues.push({
         path: `${at}.parentCommunity`,
-        reason: `profondeur ${depth + 1} au-delà du maximum ${MAX_COMMUNITY_DEPTH}`,
+        reason: `depth ${depth + 1} beyond the maximum ${MAX_COMMUNITY_DEPTH}`,
       });
     }
   }
@@ -398,15 +398,15 @@ export function validateRegistry(value: unknown): ValidationResult {
     const at = `communities[${index}]`;
     const replacedBy = community.replacedBy;
     if (replacedBy != null && !ids.has(String(replacedBy))) {
-      issues.push({ path: `${at}.replacedBy`, reason: `cible inconnue : ${String(replacedBy)}` });
+      issues.push({ path: `${at}.replacedBy`, reason: `unknown target: ${String(replacedBy)}` });
     }
     if (community.replaces !== undefined) {
       if (!Array.isArray(community.replaces)) {
-        issues.push({ path: `${at}.replaces`, reason: 'liste attendue' });
+        issues.push({ path: `${at}.replaces`, reason: 'list expected' });
       } else {
         for (const target of community.replaces) {
           if (!ids.has(String(target))) {
-            issues.push({ path: `${at}.replaces`, reason: `concept absorbé inconnu : ${String(target)}` });
+            issues.push({ path: `${at}.replaces`, reason: `unknown absorbed concept: ${String(target)}` });
           }
         }
       }
@@ -414,7 +414,7 @@ export function validateRegistry(value: unknown): ValidationResult {
   }
 
   if (!isPlainObject(value.assignments)) {
-    issues.push({ path: 'assignments', reason: 'objet attendu' });
+    issues.push({ path: 'assignments', reason: 'object expected' });
   } else {
     const active = new Set(
       value.communities
@@ -426,67 +426,67 @@ export function validateRegistry(value: unknown): ValidationResult {
       : null;
     for (const [page, assignment] of Object.entries(value.assignments)) {
       /*
-       Une page affectée appartient au corpus déclaré.
+       An assigned page belongs to the declared corpus.
 
-       Sans cette règle, `classified + pending + outside-sample + unclassified`
-       ne redonnerait pas le corpus, et les compteurs affichés sur la carte
-       cesseraient d'être vérifiables.
+       Without this rule, `classified + pending + outside-sample + unclassified`
+       would not add back up to the corpus, and the counters shown on the map
+       would stop being verifiable.
       */
       if (declaredCorpus && !declaredCorpus.has(page)) {
         issues.push({
           path: `assignments["${page}"]`,
-          reason: 'page affectée absente de corpusPageIds',
+          reason: 'assigned page absent from corpusPageIds',
         });
       }
       /*
-       Une page se rattache à une FEUILLE, jamais à un domaine.
+       A page attaches to a LEAF, never to a domain.
 
-       C'est l'invariant qui empêche le fourre-tout : un domaine agrège ses
-       communautés, il ne les remplace pas. Autoriser l'attache directe
-       rouvrirait exactement la porte par laquelle 142 pages se sont
-       retrouvées dans une seule bulle, et un clic sur le domaine afficherait
-       de nouveau une liste que personne ne peut lire.
+       That is the invariant that prevents the catch-all: a domain aggregates its
+       communities, it does not replace them. Allowing direct attachment
+       would reopen exactly the door through which 142 pages ended
+       up in a single bubble, and a click on the domain would display
+       again a list that nobody can read.
       */
       if (isPlainObject(assignment)
         && typeof assignment.primaryCommunity === 'string'
         && (childCount.get(assignment.primaryCommunity) ?? 0) > 0) {
         issues.push({
           path: `assignments["${page}"].primaryCommunity`,
-          reason: `rattachement à un domaine parent : ${assignment.primaryCommunity} porte des communautés filles`,
+          reason: `attachment to a parent domain: ${assignment.primaryCommunity} carries child communities`,
         });
       }
       if (isPlainObject(assignment) && assignment.relatedCommunities !== undefined) {
         const related = assignment.relatedCommunities;
         if (!Array.isArray(related)) {
-          issues.push({ path: `assignments["${page}"].relatedCommunities`, reason: 'liste attendue' });
+          issues.push({ path: `assignments["${page}"].relatedCommunities`, reason: 'list expected' });
         } else {
           for (const target of related) {
             if (!active.has(String(target))) {
               issues.push({
                 path: `assignments["${page}"].relatedCommunities`,
-                reason: `communauté inconnue ou dépréciée : ${String(target)}`,
+                reason: `unknown or deprecated community: ${String(target)}`,
               });
             } else if (String(target) === assignment.primaryCommunity) {
-              // Une facette qui répète l'appartenance principale n'ajoute rien
-              // et fausserait tout comptage qui additionne les deux.
+              // A facet that repeats the main membership adds nothing
+              // and would falsify any count that adds the two together.
               issues.push({
                 path: `assignments["${page}"].relatedCommunities`,
-                reason: `facette redondante avec primaryCommunity : ${String(target)}`,
+                reason: `facet redundant with primaryCommunity: ${String(target)}`,
               });
             }
           }
         }
       }
       if (!isPlainObject(assignment) || typeof assignment.primaryCommunity !== 'string') {
-        issues.push({ path: `assignments["${page}"]`, reason: 'primaryCommunity manquant' });
+        issues.push({ path: `assignments["${page}"]`, reason: 'missing primaryCommunity' });
         continue;
       }
       if (!active.has(assignment.primaryCommunity)) {
-        // Affecter une page à un concept absorbé la ferait disparaître de la
-        // carte sans que rien ne le signale.
+        // Assigning a page to an absorbed concept would make it disappear from the
+        // map without anything signalling it.
         issues.push({
           path: `assignments["${page}"].primaryCommunity`,
-          reason: `communauté inconnue ou dépréciée : ${assignment.primaryCommunity}`,
+          reason: `unknown or deprecated community: ${assignment.primaryCommunity}`,
         });
       }
     }
@@ -496,11 +496,11 @@ export function validateRegistry(value: unknown): ValidationResult {
 }
 
 /**
- * Libellé à afficher pour une communauté, dans la langue voulue.
+ * Label to display for a community, in the wanted language.
  *
- * C'est le seul point où le vocabulaire du registre redevient la chaîne que le
- * snapshot expose. La langue configurée d'abord, puis un repli, puis
- * l'identifiant — jamais rien de vide.
+ * This is the only point where the registry vocabulary becomes the string that the
+ * snapshot exposes. The configured language first, then a fallback, then
+ * the identifier — never anything empty.
  */
 export function communityLabel(
   community: RegistryCommunity,
@@ -515,7 +515,7 @@ export function communityLabel(
   );
 }
 
-/** Suit les absorptions jusqu'au concept actif, en bornant les cycles. */
+/** Follows absorptions up to the active concept, bounding cycles. */
 export function resolveCommunity(
   registry: TaxonomyRegistry,
   id: string,

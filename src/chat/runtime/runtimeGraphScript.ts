@@ -22,18 +22,18 @@ function runtimeWorkflowGraphCenterHTML() {
   if(!runtimeState?.workflow?.nodes?.length) return '<div class="act-empty">No runtime workflow graph yet.</div>';
   return \`<div class="runtime-graph-main"><div class="runtime-graph-toolbar"><span>Run execution</span><span><button type="button" onclick="zoomRuntimeWorkflowGraph(.8)" title="Zoom out" aria-label="Zoom out">−</button><button type="button" onclick="zoomRuntimeWorkflowGraph(1.25)" title="Zoom in" aria-label="Zoom in">+</button><button type="button" onclick="fitRuntimeWorkflowGraph()">Fit</button><button type="button" onclick="resetRuntimeWorkflowGraph()">Reset</button></span></div>\${runtimeWorkflowSummarySlotHTML()}<div class="runtime-graph-legend"><b>Relation</b><span><i class="depends_on"></i>Sequence / dependency</span><b>Status</b><span><i class="bubble running"></i>Running</span><span><i class="bubble done"></i>Done</span><span><i class="bubble failed"></i>Failed</span><span><i class="bubble approval"></i>Approval</span><span><i class="bubble neutral"></i>Waiting</span></div><div class="runtime-canvas-stage"><canvas class="runtime-graph-canvas" id="runtime-graph-canvas" tabindex="0" role="application" aria-label="Interactive run execution graph"></canvas><div class="runtime-graph-a11y" role="tree" aria-label="Visible execution nodes"></div></div></div>\`;
 }
-// Le résumé est le seul fragment du cadre qui change à chaque tick. Il vit
-// donc dans un emplacement stable, mis à jour en place : réécrire tout le
-// cadre pour lui détruisait le canevas voisin à chaque seconde (voir
-// renderActivities), d'où le clignotement et les déplacements impossibles.
+// The summary is the only fragment of the frame that changes on every tick. It
+// therefore lives in a stable slot, updated in place: rewriting the whole
+// frame for it destroyed the neighboring canvas every second (see
+// renderActivities), hence the flicker and the impossible dragging.
 function runtimeWorkflowSummarySlotHTML() {
   const summary=runtimeWorkflowSummaryParts();
   return \`<div class="runtime-run-summary\${summary.live?' live':''}" id="runtime-run-summary">\${summary.html}</div>\`;
 }
-// L'onglet Plan réutilise le même résumé, mais sans l'emplacement : il n'est
-// pas rafraîchi en place — la liste a son propre garde-fou d'empreinte — et
-// deux éléments portant le même identifiant dans une page, c'est une source de
-// bogue qu'on n'a aucune raison d'introduire.
+// The Plan tab reuses the same summary, but without the slot: it is not
+// refreshed in place — the list has its own fingerprint guard — and two
+// elements carrying the same id in one page is a source of bugs we have no
+// reason to introduce.
 function runtimeWorkflowSummaryHTML() {
   const summary=runtimeWorkflowSummaryParts();
   if(!summary.html) return '';
@@ -222,9 +222,9 @@ function formatRuntimeDuration(ms) {
 }
 function fitRuntimeWorkflowGraph(){runtimeCanvasRenderer?.fit()}
 function zoomRuntimeWorkflowGraph(factor){runtimeCanvasRenderer?.zoom(factor)}
-// « Reset » rend aussi la main au cadrage automatique : sans cela, un
-// déplacement manuel figeait la vue pour le reste de la session et le bouton
-// ne remettait que les positions des nœuds.
+// "Reset" also hands the view back to automatic framing: without it, a manual
+// drag froze the view for the rest of the session and the button only reset
+// the node positions.
 function resetRuntimeWorkflowGraph(){runtimeCanvasPositions.clear();runtimeCanvasCamera=null;runtimeWorkflowUserSelected=false;selectedRuntimeWorkflowTaskId=null;runtimeCanvasRenderer?.releaseCamera();renderRuntimeWorkflowCanvas();runtimeCanvasRenderer?.fit()}
 function renderRuntimeWorkflowGraph(){renderRuntimeWorkflowCanvas()}
 function selectRuntimeWorkflowNode(id) {
@@ -291,8 +291,8 @@ function renderRuntimeWorkflowInspector() {
     return \`<div class="runtime-inspector-section runtime-task-flow"><div class="runtime-inspector-heading">Execution sequence · task \${selectedTaskIndex+1}/\${taskRows.length}</div><div class="rit-flow-line previous"><span>Previous</span><b>\${esc(previous?.task.label||'Start')}</b></div><div class="rit-flow-line current"><span>Selected</span><b>\${esc(selectedTask.task.label)}</b></div><div class="rit-flow-line next"><span>Next</span><b>\${esc(next?.task.label||'End')}</b></div><dl class="runtime-inspector-dl"><dt>Status</dt><dd>\${esc(selectedTask.task.status||'—')}</dd><dt>Started</dt><dd>\${esc(started)}</dd><dt>Duration</dt><dd>\${esc(duration)}</dd><dt>Agent</dt><dd>\${esc(agent)}</dd><dt>Tokens</dt><dd>\${esc(tokens)}</dd></dl></div>\`;
   })():'';
   const html=\`<div class="runtime-inspector-title">\${esc(node.label)}</div><div class="runtime-inspector-meta">\${phase?'phase':run?'run':esc(node.type)} · \${esc(node.status||'-')}</div><dl class="runtime-inspector-dl">\${details.map(([key,value])=>\`<dt>\${esc(key)}</dt><dd>\${esc(value)}</dd>\`).join('')}</dl>\${linked.length?\`<div class="runtime-inspector-section"><div class="runtime-inspector-heading">Sequence</div>\${linked.map(relationLine).join('')}</div>\`:''}\${taskList}\${taskFlow}<div class="runtime-inspector-section"><div class="runtime-inspector-heading">Run journal</div>\${essentialRuntimeLogHTML()}</div>\`;
-  // Même raison que pour le cadre : l'inspecteur est reconstruit à chaque
-  // image, ce qui remettait à zéro le défilement du journal pendant un run.
+  // Same reason as for the frame: the inspector is rebuilt on every frame,
+  // which reset the journal's scrolling during a run.
   if(inspector.__inspectorHTML===html) return;
   inspector.__inspectorHTML=html;
   const journal=inspector.querySelector('.runtime-inspector-section:last-child pre');

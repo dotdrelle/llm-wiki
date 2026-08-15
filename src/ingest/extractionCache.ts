@@ -4,22 +4,21 @@ import path from 'node:path';
 import { safeWriteFile } from '../utils/fs.ts';
 
 /*
- Cache des appels d'extraction et de consolidation.
+ Cache of extraction and consolidation calls.
 
- Une coupure de session, un dépassement de quota ou un simple `Ctrl-C` ne doit
- pas obliger à repayer des appels dont la réponse était valide. Le cache est
- donc adressé par ce qui DÉTERMINE la réponse : le texte envoyé, le modèle qui a
- répondu, et les versions du prompt et du schéma. Changer l'un des quatre change
- la clé — c'est ce qui évite de resservir une réponse produite par un contrat
- qui n'existe plus.
+ A session interruption, a quota overflow or a simple `Ctrl-C` must not force
+ repaying calls whose answer was valid. The cache is therefore addressed by what
+ DETERMINES the answer: the text sent, the model that answered, and the prompt
+ and schema versions. Changing any of the four changes the key — which is what
+ avoids re-serving an answer produced by a contract that no longer exists.
 
- Ce cache est un artefact de DIAGNOSTIC et de reprise. Il n'est jamais présenté
- comme un plan approuvable : le seul objet soumis à revue reste le plan consolidé
- final.
+ This cache is a DIAGNOSTIC and resume artifact. It is never presented as an
+ approvable plan: the only object submitted to review remains the final
+ consolidated plan.
 */
 
 const CACHE_DIR = ['.wiki', 'ingest-cache'];
-/** Au-delà, une entrée décrit un état du corpus que plus personne ne rejouera. */
+/** Beyond this, an entry describes a corpus state that nobody will replay again. */
 export const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type ExtractionCacheKey = {
@@ -33,9 +32,9 @@ export type ExtractionCacheKey = {
 
 export type ConsolidationCacheKey = {
   sourceHash: string;
-  /** Empreinte des extractions ORDONNÉES : leur ordre change le prompt. */
+  /** Fingerprint of the ORDERED extractions: their order changes the prompt. */
   extractionsHash: string;
-  /** Empreinte de l'inventaire pertinent présenté au modèle. */
+  /** Fingerprint of the relevant inventory presented to the model. */
   inventoryHash: string;
   model: string;
   promptVersion: number;
@@ -90,8 +89,8 @@ export class IngestCache {
     try {
       return JSON.parse(await readFile(this.file(name), 'utf8')) as T;
     } catch {
-      // Absente, illisible ou tronquée : dans les trois cas, l'appel est refait.
-      // Un cache ne doit jamais être une raison d'échouer.
+      // Absent, unreadable or truncated: in all three cases, the call is redone.
+      // A cache must never be a reason to fail.
       return null;
     }
   }
@@ -102,11 +101,11 @@ export class IngestCache {
       await mkdir(path.join(this.rootDir, ...CACHE_DIR), { recursive: true });
       await safeWriteFile(this.file(name), `${JSON.stringify(value, null, 2)}\n`);
     } catch {
-      // Un disque plein ne doit pas faire échouer une ingestion qui a réussi.
+      // A full disk must not make a successful ingestion fail.
     }
   }
 
-  /** Ramassage best-effort des entrées trop anciennes pour servir une reprise. */
+  /** Best-effort collection of entries too old to serve a resume. */
   async collect(now = Date.now()): Promise<number> {
     const dir = path.join(this.rootDir, ...CACHE_DIR);
     let removed = 0;
@@ -119,7 +118,7 @@ export class IngestCache {
         removed += 1;
       }
     } catch {
-      // Répertoire absent : rien à ramasser.
+      // Directory absent: nothing to collect.
     }
     return removed;
   }

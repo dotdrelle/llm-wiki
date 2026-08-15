@@ -3,40 +3,40 @@ import type { TaxonomyInventory } from './inventory.ts';
 import { isValidLabel, normalizeLabel } from './schema.ts';
 
 /*
- Synthèse sémantique de la taxonomie.
+ Semantic synthesis of the taxonomy.
 
- Donna propose, le moteur valide. Aucun produit, synonyme ni domaine n'est codé
- en dur — nulle part. Les règles transmises au modèle sont STRUCTURELLES : un
- mot, la langue configurée, pas de chemin, un domaine commun plutôt qu'une
- communauté par produit. C'est cette dernière règle, et elle seule, qui doit
- amener plusieurs produits voisins sous un même domaine conceptuel : l'écrire
- en dur produirait une taxonomie qui ne survivrait pas au prochain corpus.
+ Donna proposes, the engine validates. No product, synonym or domain is
+ hard-coded — anywhere. The rules passed to the model are STRUCTURAL: one
+ word, the configured language, no path, one common domain rather than one
+ community per product. It is this last rule, and it alone, that must
+ bring several neighboring products under a single conceptual domain: hard-coding it
+ would produce a taxonomy that would not survive the next corpus.
 */
 
 /*
- La proposition est un ARBRE, en un seul appel.
+ The proposal is a TREE, in a single call.
 
- Une proposition plate n'avait aucun moyen d'exprimer « ces cinq produits sont
- cinq sujets distincts qui relèvent du même domaine ». Réduire le nombre de
- bulles ne pouvait donc qu'agglomérer — et une bulle de 142 pages détruit la
- navigation qu'elle prétendait simplifier.
+ A flat proposal had no way to express "these five products are
+ five distinct subjects that fall under the same domain". Reducing the number of
+ bubbles could therefore only aggregate — and a 142-page bubble destroys the
+ navigation it pretended to simplify.
 */
 export const taxonomyProposalSchema = z.object({
-  /** Niveau visible sur la carte. Ne porte jamais de page directement. */
+  /** Level visible on the map. Never carries a page directly. */
   domains: z.array(z.object({
     id: z.string(),
     label: z.string(),
-    /** Portée du domaine, pour les diagnostics et la désambiguïsation. */
+    /** Scope of the domain, for diagnostics and disambiguation. */
     scopeNote: z.string().optional(),
   })).min(1),
-  /** Niveau feuille : c'est lui qui porte les pages. */
+  /** Leaf level: this one carries the pages. */
   communities: z.array(z.object({
     id: z.string(),
     label: z.string(),
     domain: z.string(),
     scopeNote: z.string().optional(),
   })).min(1),
-  /** Une clé par famille, vers une FEUILLE. Un objet interdit la double affectation. */
+  /** One key per family, towards a LEAF. An object forbids double assignment. */
   assignments: z.record(z.string(), z.string()),
 });
 
@@ -98,7 +98,7 @@ export const SYNTHESIS_SYSTEM = [
   'scopeNote is one short sentence saying what the domain covers and excludes.',
 ].join('\n');
 
-/** Ce que le modèle reçoit : jamais une page entière, jamais un nom d'outil. */
+/** What the model receives: never a whole page, never a tool name. */
 export function buildSynthesisPrompt(inventory: TaxonomyInventory): string {
   const lines: string[] = [
     `Language for every label: ${inventory.language}.`,
@@ -111,8 +111,8 @@ export function buildSynthesisPrompt(inventory: TaxonomyInventory): string {
     const facts = [
       `pages=${family.members.length}`,
       family.signals.length ? `signals=${family.signals.join(',')}` : null,
-      // Ce qui identifie ce sujet parmi ceux que sa collection compare. Le
-      // libellé de sa communauté doit le conserver.
+      // What identifies this subject among the ones its collection compares. The
+      // label of its community must preserve it.
       family.distinctiveTerms.length ? `identity=${family.distinctiveTerms.join(',')}` : null,
       family.collections.length ? `collections=${family.collections.join(',')}` : null,
       family.neighbours.length ? `links=${family.neighbours.join(',')}` : null,
@@ -124,21 +124,21 @@ export function buildSynthesisPrompt(inventory: TaxonomyInventory): string {
 }
 
 /**
- * Retire ce qui ne porte rien, avant toute validation.
+ * Removes what carries nothing, before any validation.
  *
- * Une communauté à laquelle aucune famille n'est affectée ne contient aucune
- * page : la supprimer ne déplace rien, ne perd rien et ne tranche aucune
- * question de sens. Un domaine vidé de ses communautés disparaît de même.
+ * A community to which no family is assigned contains no
+ * page: deleting it moves nothing, loses nothing and settles no
+ * question of meaning. A domain emptied of its communities disappears likewise.
  *
- * La frontière est là, et elle est nette : **le moteur peut retirer ce qui ne
- * porte rien ; il ne doit jamais inventer ni déplacer ce qui porte quelque
- * chose.** Une page inventée, une page affectée deux fois, une couverture
- * incomplète ou une collision de libellés restent des rejets en bloc, parce
- * que les « réparer » reviendrait à décider à la place du modèle.
+ * The boundary is there, and it is clear: **the engine can remove what
+ * carries nothing; it must never invent or move what carries something.**
+ * An invented page, a page assigned twice, an incomplete coverage
+ * or a label collision remain whole rejections, because
+ * "repairing" them would mean deciding in the model's place.
  *
- * Rejeter une proposition entière — et payer trois appels — pour une coquille
- * que le moteur sait corriger sans risque est disproportionné : c'était la
- * cause de trois refus successifs sur un corpus par ailleurs correct.
+ * Rejecting an entire proposal — and paying three calls — for a typo
+ * that the engine knows how to fix without risk is disproportionate: that was the
+ * cause of three successive refusals on an otherwise correct corpus.
  */
 export function normalizeProposal(proposal: TaxonomyProposal): {
   proposal: TaxonomyProposal;
@@ -154,38 +154,38 @@ export function normalizeProposal(proposal: TaxonomyProposal): {
     ...proposal.domains.filter((item) => !keptDomains.has(item.id)).map((item) => `domain:${item.id}`),
   ];
 
-  // `domains` doit rester non vide pour le schéma : si tout a disparu, on rend
-  // la proposition telle quelle et la validation dira ce qui ne va pas.
+  // `domains` must stay non-empty for the schema: if everything disappeared, we return
+  // the proposal as is and validation will say what is wrong.
   if (!domains.length || !communities.length) return { proposal, dropped: [] };
   return { proposal: { ...proposal, domains, communities }, dropped };
 }
 
 export type ProposalIssue = { path: string; reason: string };
 /*
- Bloquant contre consultatif.
+ Blocking versus advisory.
 
- Toute règle de qualité avait été écrite comme un rejet. Résultat : cinq
- synthèses successives refusées, chacune sur un critère différent, sans qu'une
- seule taxonomie ait pu être regardée. Une règle qui empêche de voir le
- résultat empêche aussi de juger si elle avait raison.
+ Every quality rule had been written as a rejection. Result: five
+ successive syntheses refused, each on a different criterion, without a
+ single taxonomy being looked at. A rule that prevents seeing the
+ result also prevents judging whether it was right.
 
- Ne bloque désormais que ce qui rend le registre FAUX — une page inventée,
- affectée deux fois, oubliée, un libellé illisible ou en collision. Ce qui
- relève du jugement — une identité de sujet effacée, deux sujets comparés
- fondus — est publié ET signalé : l'utilisateur voit la carte, lit ce qui
- cloche, et décide.
+ Only what makes the registry WRONG now blocks — an invented page,
+ assigned twice, forgotten, an unreadable or colliding label. What
+ falls under judgment — an erased subject identity, two compared subjects
+ melted together — is published AND signalled: the user sees the map, reads what
+ is wrong, and decides.
 */
 export type ProposalCheck =
   | { ok: true; proposal: TaxonomyProposal; warnings: ProposalIssue[] }
   | { ok: false; issues: ProposalIssue[] };
 
 /**
- * Valide une proposition **en bloc**, avant toute application.
+ * Validates a proposal **as a whole**, before any application.
  *
- * Le schéma Zod garantit la forme ; ce contrôle garantit le contrat : libellés
- * conformes et uniques, couverture exacte du corpus soumis, aucune page
- * inventée. Une proposition non conforme est rejetée entière — jamais réparée
- * en silence, jamais appliquée partiellement.
+ * The Zod schema guarantees the shape; this check guarantees the contract:
+ * conforming and unique labels, exact coverage of the submitted corpus, no
+ * invented page. A non-conforming proposal is rejected entirely — never repaired
+ * silently, never applied partially.
  */
 export function checkProposal(
   proposal: TaxonomyProposal,
@@ -194,8 +194,8 @@ export function checkProposal(
   const issues: ProposalIssue[] = [];
   const warnings: ProposalIssue[] = [];
   const known = new Set(inventory.families.map((family) => family.id));
-  // Unicité par fratrie : les domaines entre eux, puis les communautés au sein
-  // d'un même domaine. La carte n'affiche jamais deux fratries à la fois.
+  // Uniqueness per sibling group: the domains among themselves, then the communities within
+  // a single domain. The map never displays two sibling groups at once.
   const seenLabels = new Map<string, number>();
   const domainIds = new Set<string>();
   const communityIds = new Set<string>();
@@ -203,27 +203,27 @@ export function checkProposal(
   const childCount = new Map<string, number>();
   const communityUsage = new Map<string, number>();
 
-  // Borne relative, pas une vérité métier codée en dur : une taxonomie qui
-  // approche une communauté par famille n'est plus une synthèse.
+  // Relative bound, not a hard-coded business truth: a taxonomy that
+  // approaches one community per family is no longer a synthesis.
   const maxDomains = Math.max(3, Math.ceil(Math.sqrt(Math.max(1, inventory.families.length)) * 1.5));
   if (proposal.domains.length > maxDomains) {
-    issues.push({ path: 'domains', reason: `taxonomie trop fragmentée : ${proposal.domains.length} domaines, maximum ${maxDomains}` });
+    issues.push({ path: 'domains', reason: `taxonomy too fragmented: ${proposal.domains.length} domains, maximum ${maxDomains}` });
   }
 
   proposal.domains.forEach((domain, index) => {
     const at = `domains[${index}]`;
-    if (!domain.id.trim()) issues.push({ path: `${at}.id`, reason: 'identifiant vide' });
-    if (domainIds.has(domain.id)) issues.push({ path: `${at}.id`, reason: `identifiant en double : ${domain.id}` });
+    if (!domain.id.trim()) issues.push({ path: `${at}.id`, reason: 'empty identifier' });
+    if (domainIds.has(domain.id)) issues.push({ path: `${at}.id`, reason: `duplicate identifier: ${domain.id}` });
     domainIds.add(domain.id);
     if (!isValidLabel(domain.label)) {
-      issues.push({ path: `${at}.label`, reason: `libellé invalide : « ${domain.label} »` });
+      issues.push({ path: `${at}.label`, reason: `invalid label: "${domain.label}"` });
     }
     const key = normalizeLabel(domain.label);
     const owner = seenLabels.get(key);
     if (owner !== undefined) {
-      // Le moteur n'invente jamais de suffixe : il renvoie le conflit pour une
-      // re-synthèse bornée.
-      issues.push({ path: `${at}.label`, reason: `libellé en double avec domains[${owner}] : « ${domain.label} »` });
+      // The engine never invents a suffix: it returns the conflict for a
+      // bounded re-synthesis.
+      issues.push({ path: `${at}.label`, reason: `duplicate label with domains[${owner}]: "${domain.label}"` });
     } else {
       seenLabels.set(key, index);
     }
@@ -233,54 +233,54 @@ export function checkProposal(
   const siblingLabels = new Map<string, string>();
   proposal.communities.forEach((community, index) => {
     const at = `communities[${index}]`;
-    if (!community.id.trim()) issues.push({ path: `${at}.id`, reason: 'identifiant vide' });
+    if (!community.id.trim()) issues.push({ path: `${at}.id`, reason: 'empty identifier' });
     if (communityIds.has(community.id) || domainIds.has(community.id)) {
-      issues.push({ path: `${at}.id`, reason: `identifiant en double : ${community.id}` });
+      issues.push({ path: `${at}.id`, reason: `duplicate identifier: ${community.id}` });
     }
     communityIds.add(community.id);
     if (!domainIds.has(community.domain)) {
-      issues.push({ path: `${at}.domain`, reason: `domaine inconnu : ${community.domain}` });
+      issues.push({ path: `${at}.domain`, reason: `unknown domain: ${community.domain}` });
     } else {
       communityDomain.set(community.id, community.domain);
       childCount.set(community.domain, (childCount.get(community.domain) ?? 0) + 1);
     }
     if (!isValidLabel(community.label)) {
-      issues.push({ path: `${at}.label`, reason: `libellé invalide : « ${community.label} »` });
+      issues.push({ path: `${at}.label`, reason: `invalid label: "${community.label}"` });
     }
     const key = `${community.domain}|${normalizeLabel(community.label)}`;
     const owner = siblingLabels.get(key);
     if (owner) {
-      issues.push({ path: `${at}.label`, reason: `libellé en double avec ${owner} dans le même domaine : « ${community.label} »` });
+      issues.push({ path: `${at}.label`, reason: `duplicate label with ${owner} in the same domain: "${community.label}"` });
     } else {
       siblingLabels.set(key, community.id);
     }
   });
 
   for (const [family, target] of Object.entries(proposal.assignments)) {
-    if (!known.has(family)) issues.push({ path: `assignments.${family}`, reason: `famille inconnue : ${family}` });
+    if (!known.has(family)) issues.push({ path: `assignments.${family}`, reason: `unknown family: ${family}` });
     if (domainIds.has(target)) {
-      // C'est exactement la porte par laquelle un domaine devient un fourre-tout.
-      issues.push({ path: `assignments.${family}`, reason: `affectation à un domaine, pas à une communauté : ${target}` });
+      // This is exactly the door through which a domain becomes a catch-all.
+      issues.push({ path: `assignments.${family}`, reason: `assignment to a domain, not to a community: ${target}` });
     } else if (!communityIds.has(target)) {
-      issues.push({ path: `assignments.${family}`, reason: `communauté inconnue : ${target}` });
+      issues.push({ path: `assignments.${family}`, reason: `unknown community: ${target}` });
     } else {
       communityUsage.set(target, (communityUsage.get(target) ?? 0) + 1);
     }
   }
   for (const family of inventory.families) {
-    if (!(family.id in proposal.assignments)) issues.push({ path: 'assignments', reason: `famille non affectée : ${family.id}` });
+    if (!(family.id in proposal.assignments)) issues.push({ path: 'assignments', reason: `unassigned family: ${family.id}` });
   }
   for (const community of communityIds) {
     if (!communityUsage.has(community)) issues.push({ path: 'assignments', reason: `communauté sans famille : ${community}` });
   }
   /*
-   Conservation de l'identité des sujets comparés.
+   Preservation of the identity of compared subjects.
 
-   C'est le contrôle sémantique qui manquait : les tailles passaient, la
-   hiérarchie passait, et pourtant chaque produit avait été renommé d'après sa
-   fonction — « planification », « visualisation » — donc effacé comme identité
-   navigable. Le terme distinctif est déduit du corpus par différence ; exiger
-   qu'il survive dans le libellé n'introduit aucun vocabulaire métier.
+   This is the semantic check that was missing: the sizes passed, the
+   hierarchy passed, and yet each product had been renamed after its
+   function — "planning", "visualization" — hence erased as a navigable
+   identity. The distinctive term is derived from the corpus by difference; requiring
+   that it survive in the label introduces no business vocabulary.
   */
   const labelOfCommunity = new Map(proposal.communities.map((item) => [item.id, item.label]));
   const collectionMembers = new Map<string, Map<string, string[]>>();
@@ -300,49 +300,49 @@ export function checkProposal(
       (term) => normalized === term || normalized.includes(term) || term.includes(normalized),
     );
     if (!keeps) {
-      // Jugement, pas correction : la carte reste utilisable, mais le sujet
-      // comparé y perd son nom. On publie et on le dit.
+      // Judgment, not correction: the map stays usable, but the compared
+      // subject loses its name there. We publish and we say it.
       warnings.push({
         path: `assignments.${family.id}`,
-        reason: `identité perdue : « ${label} » ne conserve aucun de ${family.distinctiveTerms.join(', ')}`,
+        reason: `identity lost: "${label}" preserves none of ${family.distinctiveTerms.join(', ')}`,
       });
     }
   }
   for (const [collection, byCommunity] of collectionMembers) {
     for (const [community, members] of byCommunity) {
-      // Deux sujets comparés fondus dans une même feuille : la comparaison
-      // devient invisible et l'un des deux disparaît.
+      // Two compared subjects melted into the same leaf: the comparison
+      // becomes invisible and one of the two disappears.
       if (members.length > 1) {
         warnings.push({
           path: 'assignments',
-          reason: `collection ${collection} : ${members.join(', ')} partagent la communauté ${community}`,
+          reason: `collection ${collection}: ${members.join(', ')} share the community ${community}`,
         });
       }
     }
   }
 
   /*
-   Un domaine à une seule communauté n'est plus un rejet.
+   A domain with a single community is no longer a rejection.
 
-   Il ajoute un clic sans rien séparer — mais c'est un défaut de FORME, pas de
-   sens, et il a une correction déterministe : promouvoir l'enfant unique au
-   rang de racine. Aucune page ne bouge, aucune décision n'est prise à la place
-   du modèle. Le rejeter faisait payer trois appels pour une structure que le
-   moteur sait aplatir seul (cf. `collapseThinDomains`).
+   It adds a click without separating anything — but that is a FORM defect, not a
+   meaning defect, and it has a deterministic correction: promote the single child to
+   root rank. No page moves, no decision is taken in the model's
+   place. Rejecting it made us pay three calls for a structure the
+   engine knows how to flatten alone (cf. `collapseThinDomains`).
 
-   Reste ici la seule variante irréparable : un domaine sans aucune communauté,
-   que la normalisation aurait dû retirer.
+   Only the single irreparable variant remains here: a domain with no community
+   at all, which normalization should have removed.
   */
   for (const domain of domainIds) {
     if ((childCount.get(domain) ?? 0) === 0) {
-      issues.push({ path: 'communities', reason: `domaine ${domain} sans aucune communauté` });
+      issues.push({ path: 'communities', reason: `domain ${domain} without any community` });
     }
   }
 
   return issues.length ? { ok: false, issues } : { ok: true, proposal, warnings };
 }
 
-/** Rappel du conflit pour une nouvelle tentative, sans souffler de réponse. */
+/** Reminder of the conflict for a new attempt, without leaking an answer. */
 export function retryHint(issues: ProposalIssue[]): string {
   const emptyCommunities = issues
     .map((issue) => issue.reason.match(/^communauté sans famille : (.+)$/)?.[1])

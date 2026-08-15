@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+
+
+
 import {
   deprecateInto,
   guardAgainstMassDisruption,
@@ -70,7 +73,7 @@ describe('garde-fou contre la dépréciation massive', () => {
     const result = guardAgainstMassDisruption(prev, current);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.issues[0]).toContain('dépréciation non filiée 67 %');
+      expect(result.issues[0]).toContain('unfiled deprecation 67% beyond the ceiling 30%');
       expect(result.issues.join(' ')).toContain('b');
       expect(result.issues.join(' ')).toContain('c');
     }
@@ -149,7 +152,7 @@ describe('rapport de filiation', () => {
     const prev = registry([community('a'), community('b')]);
     const current = [
       community('a'), // même libellé
-      community('b', { prefLabel: { fr: 'renommée' } }), // libellé changé
+      community('b', { prefLabel: { fr: 'renamed' } }), // label changed
     ];
     const report = lineageReport(prev, current);
     const byId = new Map(
@@ -175,43 +178,44 @@ describe('rapport de filiation', () => {
   });
 });
 
-describe('règle stable de choix du survivant (6.3)', () => {
-  it('renvoie null sur une liste vide', () => {
+describe('stable survivor selection (6.3)', () => {
+  it('returns null on an empty list', () => {
     expect(pickSurvivor([])).toBeNull();
   });
 
-  it('garde la communauté la plus ancienne', () => {
+  it('keeps the oldest community', () => {
     const old = community('x', { firstSeenRevision: 1 });
     const recent = community('y', { firstSeenRevision: 4 });
     expect(pickSurvivor([recent, old])).toBe('x');
   });
 
-  it('départage à âges égaux par identifiant lexicographique', () => {
+  it('breaks ties at equal age by lexicographic id', () => {
     const z = community('z', { firstSeenRevision: 2 });
     const a = community('a', { firstSeenRevision: 2 });
     const m = community('m', { firstSeenRevision: 2 });
     expect(pickSurvivor([z, a, m])).toBe('a');
   });
 
-  it('reste déterministe quel que soit l’ordre de la liste à âges égaux', () => {
+  it('stays deterministic whatever the list order at equal age', () => {
     const a = community('a', { firstSeenRevision: 1 });
     const b = community('b', { firstSeenRevision: 1 });
     expect(pickSurvivor([b, a])).toBe('a');
     expect(pickSurvivor([a, b])).toBe('a');
   });
 
-  it('ignore le libellé et la position : seul l’âge puis l’id comptent', () => {
+  it('ignores label and position: only age then id count', () => {
     const attractive = community('n', {
       firstSeenRevision: 5,
-      prefLabel: { fr: 'Sécurité' },
+
+      prefLabel: { fr: 'Security' },
     });
     const older = community('k', { firstSeenRevision: 1, prefLabel: { fr: 'page' } });
     expect(pickSurvivor([attractive, older])).toBe('k');
   });
 });
 
-describe('rédaction d’une souche dépréciée (6.3)', () => {
-  it('déprécie l’absorbée et enregistre l’absorption côté survivant', () => {
+describe('writing a deprecated stub (6.3)', () => {
+  it('deprecates the absorbed community and records the absorption on the survivor', () => {
     const before = [community('a'), community('b')];
     const next = deprecateInto(before, { id: 'b', replacedBy: 'a', revision: 2 });
     const survivor = next.find((c) => c.id === 'a')!;
@@ -220,11 +224,11 @@ describe('rédaction d’une souche dépréciée (6.3)', () => {
     expect(absorbing.replacedBy).toBe('a');
     expect(absorbing.changeNote?.at(-1)?.kind).toBe('deprecated');
     expect(survivor.replaces).toContain('b');
-    // a reste vivante et b n'est plus là comme cible de lecture.
+    // a stays live and b is no longer a read target.
     expect(survivor.deprecated ?? false).toBe(false);
   });
 
-  it('est idempotent : ne duplique jamais replaces', () => {
+  it('is idempotent: never duplicates replaces', () => {
     const once = deprecateInto([community('a'), community('b')], {
       id: 'b',
       replacedBy: 'a',
@@ -235,7 +239,7 @@ describe('rédaction d’une souche dépréciée (6.3)', () => {
     expect(survivor.replaces!.filter((id) => id === 'b')).toHaveLength(1);
   });
 
-  it('refuse de déprécier vers une communauté elle-même', () => {
+  it('refuses to deprecate toward the community itself', () => {
     const next = deprecateInto([community('a')], {
       id: 'a',
       replacedBy: 'a',
@@ -244,7 +248,7 @@ describe('rédaction d’une souche dépréciée (6.3)', () => {
     expect(next.find((c) => c.id === 'a')!.deprecated ?? false).toBe(false);
   });
 
-  it('refuse une cible absente du registre courant', () => {
+  it('refuses a target absent from the current registry', () => {
     const next = deprecateInto([community('a')], {
       id: 'a',
       replacedBy: 'ghost',
@@ -253,7 +257,7 @@ describe('rédaction d’une souche dépréciée (6.3)', () => {
     expect(next.find((c) => c.id === 'a')!.deprecated ?? false).toBe(false);
   });
 
-  it('refuse une cible déjà dépréciée', () => {
+  it('refuses an already deprecated target', () => {
     const next = deprecateInto(
       [community('a'), community('b', { deprecated: true, replacedBy: 'a' })],
       { id: 'c', replacedBy: 'b', revision: 1 },
@@ -262,15 +266,15 @@ describe('rédaction d’une souche dépréciée (6.3)', () => {
   });
 });
 
-describe('rapport avant/après en catégories (6.3)', () => {
-  // Un registre courant complet (communautés + assignations).
+describe('before/after report by category (6.3)', () => {
+  // A complete current registry (communities + assignments).
   const currentRegistry = (
     communities: RegistryCommunity[],
     assignments: TaxonomyRegistry['assignments'] = {},
   ): TaxonomyRegistry => ({ ...registry(communities), assignments });
 
-  it('classe une fusion de pages en merged et non en perte', () => {
-    // a avait les pages p1 p2 ; la révision les déplace toutes dans b.
+  it('classifies a page merge as merged and not as lost', () => {
+    // a held pages p1 p2; the revision moves them all into b.
     const prev: TaxonomyRegistry = {
       ...registry([
         community('a', { firstSeenRevision: 1 }),
@@ -290,7 +294,7 @@ describe('rapport avant/après en catégories (6.3)', () => {
     expect(summary.trulyLost).not.toContain('a');
   });
 
-  it('détecte une scission de deux branches nouvelles issues d’une seule source', () => {
+  it('detects a split of two new branches out of a single source', () => {
     const prev: TaxonomyRegistry = {
       ...registry([community('a', { firstSeenRevision: 1 })]),
       assignments: {
@@ -301,7 +305,7 @@ describe('rapport avant/après en catégories (6.3)', () => {
     };
     const current: TaxonomyRegistry = currentRegistry(
       [
-        // a disparaît ; ses pages se répartissent entre x et y, toutes nouvelles.
+        // a disappears; its pages split between x and y, both new.
         community('x', { firstSeenRevision: 2 }),
         community('y', { firstSeenRevision: 2 }),
       ],
@@ -318,7 +322,7 @@ describe('rapport avant/après en catégories (6.3)', () => {
     expect(summary.created).not.toContain('y');
   });
 
-  it('classe une création simple, sans la confondre avec une scission', () => {
+  it('classifies a plain creation, not to be confused with a split', () => {
     const prev = registry([community('a')]);
     const current = currentRegistry([
       community('a'),
@@ -329,18 +333,18 @@ describe('rapport avant/après en catégories (6.3)', () => {
     expect(summary.split).toEqual([]);
   });
 
-  it('classe unchanged et renamed selon le libellé', () => {
+  it('classifies unchanged and renamed by label', () => {
     const prev = registry([community('a'), community('b')]);
     const current = currentRegistry([
       community('a'),
-      community('b', { prefLabel: { fr: 'renommée' } }),
+      community('b', { prefLabel: { fr: 'renamed' } }),
     ]);
     const summary = summarizeLineage(prev, current);
     expect(summary.unchanged).toContain('a');
     expect(summary.renamed).toContain('b');
   });
 
-  it('classe une disparition sans pages ni successeur en perte réelle', () => {
+  it('classifies a disappearance with no pages nor successor as a real loss', () => {
     const prev: TaxonomyRegistry = {
       ...registry([community('a'), community('b')]),
       assignments: { p1: { primaryCommunity: 'a' } },

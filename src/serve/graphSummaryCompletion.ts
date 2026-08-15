@@ -1,16 +1,16 @@
 /**
- * Pont entre les routes du graphe et le LLM configuré.
+ * Bridge between the graph routes and the configured LLM.
  *
- * `graph/wiki/summary.ts` ne connaît ni la configuration ni le fournisseur :
- * il reçoit une fonction de complétion ou rien. C'est ce qui le rend testable
- * sans réseau, et c'est ici qu'on lui donne son moteur.
+ * `graph/wiki/summary.ts` knows neither the configuration nor the provider: it
+ * receives a completion function or nothing. That is what makes it testable
+ * without a network, and here is where it is given its engine.
  */
 import type { AppConfig } from '../types.ts';
 import { LLMService } from '../services/llmService.ts';
 
-// Un service par configuration : il porte un client HTTP et une clé de
-// limitation de débit, les reconstruire à chaque requête reviendrait à ouvrir
-// une nouvelle connexion par fiche ouverte.
+// One service per configuration: it carries an HTTP client and a rate-limit
+// key, rebuilding them per request would mean opening a new connection per
+// card opened.
 const services = new WeakMap<AppConfig, LLMService>();
 
 export function graphSummaryCompletion(
@@ -27,8 +27,8 @@ export function graphSummaryCompletion(
       system,
       user,
       temperature: 0.2,
-      // Une fiche de contexte fait trois lignes. Sans plafond, un modèle
-      // bavard bloquerait l'ouverture de la carte le temps d'écrire une page.
+      // A context card is three lines long. Without a cap, a chatty model would
+      // block the card from opening while it writes a page.
       maxOutputTokens: 260,
       label: 'graph-context-summary',
     });

@@ -57,7 +57,7 @@ describe('validation du registre', () => {
 
   it('ignore un registre d’une autre version plutôt que de l’interpréter', () => {
     const result = validateRegistry(registry({ schemaVersion: 99 }));
-    expect(reasons(result)).toEqual([`schemaVersion: attendu ${REGISTRY_SCHEMA_VERSION}, reçu 99`]);
+    expect(reasons(result)).toEqual([`schemaVersion: expected ${REGISTRY_SCHEMA_VERSION}, got 99`]);
   });
 
   /*
@@ -74,7 +74,7 @@ describe('validation du registre', () => {
         ],
       }),
     );
-    expect(reasons(result).join()).toContain('libellé visible en double avec cmty_1');
+    expect(reasons(result).join()).toContain('duplicate visible label with cmty_1');
   });
 
   it('tolère le même libellé dans deux langues différentes', () => {
@@ -151,7 +151,7 @@ describe('validation du registre', () => {
         ],
       }),
     );
-    expect(reasons(result).join()).toContain('concept absorbé inconnu');
+    expect(reasons(result).join()).toContain('unknown absorbed concept');
   });
 
   it('refuse une page affectée à une communauté dépréciée', () => {
@@ -171,7 +171,7 @@ describe('validation du registre', () => {
         assignments: { 'wiki/a.md': { primaryCommunity: 'cmty_2' } },
       }),
     );
-    expect(reasons(result).join()).toContain('inconnue ou dépréciée');
+    expect(reasons(result).join()).toContain('unknown or deprecated community');
   });
 
   it('refuse un identifiant en double', () => {
@@ -183,7 +183,7 @@ describe('validation du registre', () => {
         ],
       }),
     );
-    expect(reasons(result).join()).toContain('identifiant en double');
+    expect(reasons(result).join()).toContain('duplicate identifier');
   });
 
   /*

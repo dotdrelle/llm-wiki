@@ -41,11 +41,11 @@ function render(){
   document.querySelector('#focus-back').hidden=view==='map'||view==='list';
   const suffix=selectedCommunity?' · selection: '+graphCommunityLabel(selectedCommunity):'';
   /*
-   Le compteur annonce le niveau AFFICHÉ, pas le contenu du registre.
+   The counter announces the DISPLAYED level, not the registry content.
 
-   Il disait « 33 communities » sur une carte qui en replie 3 : le lecteur
-   croyait voir 33 bulles et cherchait celles qui manquaient. Un compteur qui
-   décrit autre chose que ce qui est à l'écran est pire qu'aucun compteur.
+   It said "33 communities" on a map that folds 3 of them: the reader believed
+   they were seeing 33 bubbles and looked for the missing ones. A counter that
+   describes something other than what is on screen is worse than no counter.
   */
   const domains=data.domains||[],parents=data.communityParents||{};
   const shown=domains.length&&view==='map'
@@ -76,9 +76,9 @@ document.querySelector('#filters').addEventListener('change',render);
 document.querySelector('#zoom-in').addEventListener('click',()=>canvasExplorer?.zoom(1.25));
 document.querySelector('#zoom-out').addEventListener('click',()=>canvasExplorer?.zoom(.8));
 document.querySelector('#fit').addEventListener('click',()=>canvasExplorer?.fit());
-// « ← Back » remonte d'UN cran. Il sautait de la vue focus à la carte dès que
-// le niveau intermédiaire n'était pas une communauté au sens strict, ce qui
-// annulait toute la descente pour un seul clic de retour.
+// "← Back" goes back up ONE step. It jumped from focus view to the map as soon
+// as the intermediate level was not a community in the strict sense, which
+// cancelled the whole descent for a single back click.
 document.querySelector('#focus-back').addEventListener('click',()=>{
   if(view==='focus'&&selectedCommunity&&!graphIsDomain(selectedCommunity))navigateGraphLevel('community');
   else if(view==='focus'||view==='community')navigateGraphLevel('domain');

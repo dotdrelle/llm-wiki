@@ -101,10 +101,10 @@ export const WIKI_LAYOUT_SCRIPT = `
   document.addEventListener('click', async (event) => {
       const button = event.target.closest?.('[data-tree-delete]');
       if (!button) return;
-      // preventDefault suffit à empêcher le <summary> de replier son <details> :
-      // l'action par défaut n'a lieu qu'une fois la propagation terminée. Le
-      // stopPropagation qui traînait sur ce bouton empêchait au contraire ce
-      // gestionnaire, délégué au document, de jamais voir le clic.
+      // preventDefault is enough to stop the <summary> from collapsing its
+      // <details>: the default action only happens once propagation finishes.
+      // The stopPropagation that used to sit on this button instead prevented
+      // this document-delegated handler from ever seeing the click.
       event.preventDefault();
       event.stopPropagation();
       const relativePath = button.getAttribute('data-tree-delete') || '';
@@ -127,9 +127,9 @@ export const WIKI_LAYOUT_SCRIPT = `
       }
   });
 
-  // Création d'un dossier. Un prompt() plutôt qu'un champ en ligne : c'est une
-  // action rare, et un champ permanent dans l'arbre coûterait une ligne à
-  // chaque dossier pour un usage occasionnel.
+  // Folder creation. A prompt() rather than an inline field: it's a rare
+  // action, and a permanent field in the tree would cost a line on every folder
+  // for occasional use.
   document.addEventListener('click', async (event) => {
     const button = event.target.closest?.('[data-tree-new-folder]');
     if (!button) return;
@@ -269,14 +269,14 @@ export const WIKI_LAYOUT_SCRIPT = `
     localStorage.setItem(scrollKey, String(sideTree.scrollTop));
   }, { passive: true });
   window.addEventListener('beforeunload', saveSidebarState);
-  // Les deux ↻ rechargent le MÊME arbre complet.
+  // Both ↻ reload the SAME complete tree.
   //
-  // Celui du Wiki ne remplaçait que les enfants de [data-tree-id="wiki"] : un
-  // fichier créé dans templates/, deliverables/ ou build-context/ — ce que fait
-  // précisément une compétence de production — n'apparaissait jamais, et le
-  // bouton semblait mort. Or /embed/sidebar renvoie déjà tout, et
-  // refreshSidebar() préserve les dossiers ouverts, le filtre et le lien actif :
-  // rafraîchir une seule section coûtait du code pour un résultat incomplet.
+  // The Wiki one only replaced the children of [data-tree-id="wiki"]: a file
+  // created in templates/, deliverables/ or build-context/ — exactly what a
+  // production skill does — never appeared, and the button seemed dead. But
+  // /embed/sidebar already returns everything, and refreshSidebar() preserves
+  // the open folders, the filter and the active link: refreshing a single
+  // section cost code for an incomplete result.
   document.addEventListener('click', async (event) => {
     const button = event.target.closest?.('[data-sidebar-refresh]');
     if (!button) return;
@@ -539,7 +539,7 @@ export const WIKI_LAYOUT_SCRIPT = `
       e.preventDefault();
       window.WikiUi.navigate('/graph');
     }
-    // Escape → fermer modal d'aide
+    // Escape → close help modal
     if (e.key === 'Escape') {
       const m = document.getElementById('shortcuts-modal');
       if (m && m.classList.contains('is-open')) { m.classList.remove('is-open'); }

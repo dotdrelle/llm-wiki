@@ -1,18 +1,18 @@
 import type { AppConfig } from '../types.ts';
 
 /**
- * Sondage d'une AI gateway, pour `wiki doctor`.
+ * Probing of an AI gateway, for `wiki doctor`.
  *
- * À la demande uniquement — jamais au fil des requêtes d'ingest ou de build.
- * Une gateway peut exposer des centaines de modèles et `/model/info` n'est pas
- * gratuit ; l'appeler en boucle transformerait un diagnostic en surcoût.
+ * On demand only — never during ingest or build requests. A gateway can expose
+ * hundreds of models and `/model/info` is not free; calling it in a loop would
+ * turn a diagnostic into an extra cost.
  */
 
 export interface GatewayModel {
   name: string;
-  /** `chat`, `embedding`, `rerank`, `image_generation`… selon la gateway. */
+  /** `chat`, `embedding`, `rerank`, `image_generation`… depending on the gateway. */
   mode?: string;
-  /** Fenêtre de contexte déclarée, quand la gateway la publie. */
+  /** Declared context window, when the gateway publishes it. */
   maxInputTokens?: number;
   maxOutputTokens?: number;
 }
@@ -20,7 +20,7 @@ export interface GatewayModel {
 export interface GatewayCatalog {
   models: GatewayModel[];
   byName: Map<string, GatewayModel>;
-  /** Vrai si `/model/info` a répondu : les modes et fenêtres sont connus. */
+  /** True if `/model/info` answered: modes and windows are known. */
   typed: boolean;
   source: 'model-info' | 'models';
 }
@@ -49,13 +49,13 @@ function rootOf(baseUrl: string): string {
 }
 
 /**
- * Récupère le catalogue de la gateway.
+ * Fetches the gateway catalog.
  *
- * Dégradation gracieuse — jamais un défaut inventé en silence :
- *   1. `/model/info` : modes et fenêtres de contexte connus (`typed: true`) ;
- *   2. `/v1/models` : noms seulement (`typed: false`) — on sait quels modèles
- *      existent, pas ce qu'ils sont ;
- *   3. injoignable : `undefined`, et l'appelant le dit à l'utilisateur.
+ * Graceful degradation — never a silently invented default:
+ *   1. `/model/info`: modes and context windows known (`typed: true`);
+ *   2. `/v1/models`: names only (`typed: false`) — we know which models exist,
+ *      not what they are;
+ *   3. unreachable: `undefined`, and the caller tells the user.
  */
 export async function fetchGatewayCatalog(
   config: AppConfig,
@@ -90,8 +90,8 @@ export async function fetchGatewayCatalog(
       };
     }
   } catch {
-    // `/model/info` est propre à certaines gateways — son absence est normale,
-    // pas une erreur. On tente la voie standard.
+    // `/model/info` is specific to some gateways — its absence is normal, not
+    // an error. We try the standard path.
   }
 
   try {
@@ -121,14 +121,14 @@ export type RerankProbe =
   | { status: 'unknown'; detail: string };
 
 /**
- * Vérifie que l'endpoint de rerank existe réellement.
+ * Verifies that the rerank endpoint actually exists.
  *
- * Une gateway peut très bien servir `/chat/completions` et `/embeddings` sans
- * `/rerank`. Sans ce sondage, l'absence ne se manifeste qu'au premier build,
- * sous la forme d'une erreur HTTP opaque très loin de sa cause.
+ * A gateway can very well serve `/chat/completions` and `/embeddings` without
+ * `/rerank`. Without this probe, the absence only shows up at the first build,
+ * as an opaque HTTP error very far from its cause.
  *
- * Le document envoyé est volontairement trivial : c'est un test d'existence,
- * pas de qualité.
+ * The document sent is deliberately trivial: it is an existence test, not a
+ * quality test.
  */
 export async function probeRerank(
   config: AppConfig,
@@ -160,8 +160,8 @@ export async function probeRerank(
         detail: `HTTP ${res.status} on POST /rerank`,
       };
     }
-    // 400 sur un modèle inconnu, 401/403 sur une clé : l'endpoint existe, le
-    // problème est ailleurs. On ne conclut pas à son absence.
+    // 400 on an unknown model, 401/403 on a key: the endpoint exists, the
+    // problem is elsewhere. We do not conclude to its absence.
     return { status: 'unknown', detail: `HTTP ${res.status}` };
   } catch (error) {
     return {

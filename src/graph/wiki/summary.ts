@@ -1,17 +1,16 @@
 /**
- * Résumé de contexte d'une page du wiki, pour la fiche flottante du graphe.
+ * Context summary of a wiki page, for the graph's floating card.
  *
- * Le lecteur qui clique sur une page isolée ne veut pas la lire en entier : il
- * veut savoir de quoi elle parle avant de décider d'y aller. Trois lignes
- * suffisent, mais elles doivent être une synthèse — un premier paragraphe
- * arraché au fichier dit ce qu'il y a en haut de la page, pas ce qu'elle
- * contient.
+ * The reader who clicks on an isolated page does not want to read it whole:
+ * they want to know what it is about before deciding to go there. Three lines
+ * suffice, but they must be a synthesis — a first paragraph torn from the file
+ * says what is at the top of the page, not what it contains.
  *
- * Le résumé est donc produit par le LLM configuré et mis en cache sur disque,
- * indexé par l'empreinte du fichier : une page inchangée n'est résumée qu'une
- * fois, et un ingest qui la réécrit invalide l'entrée sans qu'on ait à purger
- * quoi que ce soit. Sans LLM configuré, ou s'il échoue, on rend l'extrait —
- * moins bon, mais jamais rien.
+ * The summary is therefore produced by the configured LLM and cached on disk,
+ * indexed by the file's fingerprint: an unchanged page is only summarized
+ * once, and an ingest that rewrites it invalidates the entry without us having
+ * to purge anything. With no LLM configured, or if it fails, we return the
+ * excerpt — worse, but never nothing.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -43,7 +42,7 @@ async function readCache(rootDir: string): Promise<CacheFile> {
     const parsed: unknown = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? (parsed as CacheFile) : {};
   } catch {
-    // Cache absent ou illisible : ce n'est pas une erreur, seulement un coût.
+    // Cache missing or unreadable: it is not an error, only a cost.
     return {};
   }
 }
@@ -54,20 +53,20 @@ async function writeCache(rootDir: string, cache: CacheFile): Promise<void> {
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, JSON.stringify(cache), 'utf8');
   } catch {
-    // Un cache non écrit se recalculera : jamais de quoi faire échouer la
-    // requête qui l'a produit.
+    // An unwritten cache will be recomputed: never anything to fail the request
+    // that produced it.
   }
 }
 
 /**
- * Extrait de repli : premières phrases du texte déjà nettoyé par
- * `markdownPreviewForGraph` (frontmatter, blocs de code et balisage retirés).
+ * Fallback excerpt: first sentences of the text already cleaned by
+ * `markdownPreviewForGraph` (frontmatter, code blocks and markup removed).
  */
 export function excerptSummary(preview: string): string {
   const text = String(preview ?? '').trim();
   if (!text) return 'This page has no readable content yet.';
-  // Chaque capture emporte l'espace qui la précède : les recoller tels quels
-  // doublerait les blancs entre les phrases.
+  // Each capture carries the space that precedes it: gluing them back as-is
+  // would double the blanks between sentences.
   const sentences = text.match(/[^.!?]+[.!?]+/g)?.map((sentence) => sentence.trim());
   const joined = (sentences ? sentences.slice(0, 3).join(' ') : text).trim();
   return joined.length > 420 ? `${joined.slice(0, 417).trimEnd()}…` : joined;
@@ -103,7 +102,7 @@ export async function graphDocumentSummary(options: {
     await writeCache(rootDir, cache);
     return { ...base, summary: answer, source: 'llm' };
   } catch {
-    // Provider injoignable, quota, modèle absent : la fiche s'ouvre quand même.
+    // Provider unreachable, quota, missing model: the card still opens.
     return { ...base, summary: excerptSummary(preview), source: 'excerpt' };
   }
 }

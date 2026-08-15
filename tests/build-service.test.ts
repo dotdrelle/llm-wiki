@@ -692,8 +692,8 @@ describe('build service', () => {
 
     await service.build();
 
-    const focusQueries = retrieval.queries.filter((query) =>
-      query.includes('démonstration outil solution candidate ACME'),
+    const focusQueries = retrieval.queries.filter(
+      (query) => query === 'Alpha' || query === 'Beta',
     );
     expect(focusQueries).toHaveLength(2);
     expect(retrieval.rerankQueries).toHaveLength(3);

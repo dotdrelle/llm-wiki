@@ -7,37 +7,37 @@ import { toPosix } from '../../../utils/path.ts';
 import { canonicalJson } from './canonical.ts';
 
 /*
- Empreinte de connaissance — ce sur quoi la taxonomie a le droit de se périmer.
+ Knowledge fingerprint — what the taxonomy is allowed to go stale on.
 
- `wikiGraphEtagForFiles` décrit le RENDU du graphe : elle couvre templates,
- contextes de build, deliverables et `build-state.json`, et elle hache `mtime` +
- taille. C'est correct pour invalider un cache d'affichage, et faux pour décider
- qu'un classement est périmé — un `build` qui ne touche aucune page de
- connaissance, une copie du workspace ou un `git clone` suffisaient à déclarer
- la carte obsolète. Un avertissement qui s'allume sans raison est un
- avertissement qu'on apprend à ignorer, et le corpus réellement périmé passe
- alors inaperçu.
+ `wikiGraphEtagForFiles` describes the graph RENDER: it covers templates,
+ build contexts, deliverables and `build-state.json`, and it hashes `mtime` +
+ size. That is correct for invalidating a display cache, and wrong for deciding
+ that a classification is stale — a `build` that touches no knowledge
+ page, a workspace copy or a `git clone` sufficed to declare
+ the map obsolete. A warning that lights up for no reason is a
+ warning one learns to ignore, and the actually-stale corpus then
+ goes unnoticed.
 
- Cette empreinte-ci ne voit donc que les pages de connaissance, et seulement par
- leur contenu.
+ This fingerprint therefore only sees the knowledge pages, and only through
+ their content.
 */
 
 /**
- * Types de nœuds qui constituent le corpus de connaissance.
+ * Node types that make up the knowledge corpus.
  *
- * Source de vérité unique : l'inventaire, la projection et l'empreinte doivent
- * s'accorder sur ce qu'est une page de connaissance. Deux listes divergentes
- * autoriseraient un fichier à être classé sans participer à l'empreinte — donc
- * un classement qui ne se périme jamais — ou l'inverse.
+ * Single source of truth: the inventory, the projection and the fingerprint must
+ * agree on what a knowledge page is. Two divergent lists
+ * would allow a file to be classified without participating in the fingerprint — hence
+ * a classification that never goes stale — or the reverse.
  */
 export const KNOWLEDGE_NODE_TYPES = new Set(['wiki', 'wiki-source', 'raw-source']);
 
 /**
- * Fichiers correspondants, exprimés une seule fois.
+ * Corresponding files, expressed once.
  *
- * Le miroir des types ci-dessus : `wiki/**` donne `wiki` et `wiki-source`,
- * `raw/ingested/**` donne `raw-source`. `wiki/log.md` est le journal technique —
- * il est réécrit à chaque job et ne porte aucune connaissance classable.
+ * The mirror of the types above: `wiki/**` gives `wiki` and `wiki-source`,
+ * `raw/ingested/**` gives `raw-source`. `wiki/log.md` is the technical journal —
+ * it is rewritten at every job and carries no classifiable knowledge.
  */
 export const KNOWLEDGE_FILE_PATTERNS = [
   'wiki/**/*.md',
@@ -46,12 +46,12 @@ export const KNOWLEDGE_FILE_PATTERNS = [
 ];
 
 /**
- * Version de l'algorithme d'empreinte, transportée par le marqueur.
+ * Version of the fingerprint algorithm, carried by the marker.
  *
- * Deux empreintes calculées par deux algorithmes différents ne sont pas
- * comparables : les déclarer différentes serait vrai mais inutile, les déclarer
- * égales serait faux. On compare donc d'abord l'algorithme, et une divergence
- * se traite comme une absence d'information — pas comme une péremption.
+ * Two fingerprints computed by two different algorithms are not
+ * comparable: declaring them different would be true but useless, declaring them
+ * equal would be false. We therefore compare the algorithm first, and a divergence
+ * is treated as an absence of information — not as a staleness.
  */
 export const KNOWLEDGE_ETAG_ALGORITHM = 'knowledge-content-sha256-v1';
 
@@ -62,19 +62,19 @@ export async function listKnowledgeFiles(rootDir: string): Promise<string[]> {
 }
 
 /**
- * Contenu logique d'une page : ce qui change son sens, rien d'autre.
+ * Logical content of a page: what changes its meaning, nothing else.
  *
- * Les fins de ligne dépendent du système qui a écrit le fichier et les
- * blancs de fin dépendent de l'éditeur. Les intégrer ferait dépendre la
- * fraîcheur d'une taxonomie du poste de travail qui a fait le dernier `git
- * checkout`, ce qui est exactement le défaut qu'on corrige.
+ * Line endings depend on the system that wrote the file and trailing
+ * whitespace depends on the editor. Including them would make a taxonomy's
+ * freshness depend on the workstation that made the last `git
+ * checkout`, which is exactly the defect being fixed.
  */
 export function knowledgeContentHash(raw: string): string {
   const normalized = raw.replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').trimEnd();
   return createHash('sha256').update(normalized, 'utf8').digest('hex');
 }
 
-type CacheEntry = { mtimeMs: number; size: number; hash: string };
+type CacheEntry = { mtimeMs: number; ctimeMs: number; size: number; hash: string };
 type CacheFile = { algorithm: string; entries: Record<string, CacheEntry> };
 
 function cachePath(rootDir: string): string {
@@ -82,16 +82,23 @@ function cachePath(rootDir: string): string {
 }
 
 /**
- * Cache de hachage — une optimisation, jamais une source de vérité.
+ * Hash cache — an optimization, never a source of truth.
  *
- * Hacher le contenu de ~230 pages à chaque publication, multiplié par le nombre
- * de sources d'un lot, est un coût réel. `mtime` et taille servent ici, et
- * seulement ici, à décider si le hash mémorisé est encore valable : ils
- * n'entrent jamais dans l'empreinte publiée. C'est la nuance qui fait tenir les
- * deux propriétés à la fois — une copie fidèle garde la même empreinte, et une
- * publication répétée ne relit pas tout le corpus.
+ * Hashing the content of ~230 pages at every publication, multiplied by the
+ * number of sources in a batch, is a real cost. `mtime`, `ctime` and size serve
+ * here, and only here, to decide if the memorized hash is still valid: they
+ * never enter the published fingerprint. That is the nuance that keeps the
+ * two properties at once — a faithful copy keeps the same fingerprint, and a
+ * repeated publication does not re-read the whole corpus.
  *
- * Supprimer ce fichier ne change donc aucun résultat, seulement une latence.
+ * `ctime` is the guardrail that `mtime` alone was missing: a rewrite that
+ * restores `mtime` (backup restore, tool that preserves the
+ * timestamp) still updates `ctime`, so the hash is recomputed instead
+ * of being wrongly reused. The `mtime`+`ctime`+size tuple only misses a
+ * modification that would preserve all three, which no current filesystem
+ * allows without out-of-band manipulation.
+ *
+ * Deleting this file therefore changes no result, only latency.
  */
 async function readCache(rootDir: string): Promise<Map<string, CacheEntry>> {
   try {
@@ -112,11 +119,11 @@ async function writeCache(rootDir: string, entries: Map<string, CacheEntry>): Pr
 }
 
 /**
- * Empreinte du corpus de connaissance : chemins canoniques + hash de contenu.
+ * Knowledge corpus fingerprint: canonical paths + content hash.
  *
- * Ne contient ni `mtime`, ni taille, ni horodatage. Deux workspaces dont les
- * pages ont le même contenu ont la même empreinte, quel que soit leur historique
- * de copie, de build ou d'export.
+ * Contains neither `mtime`, nor size, nor timestamp. Two workspaces whose
+ * pages have the same content have the same fingerprint, whatever their
+ * copy, build or export history.
  */
 export async function knowledgeEtagForFiles(
   rootDir: string,
@@ -136,18 +143,22 @@ export async function knowledgeEtagForFiles(
     try {
       const fileStat = await stat(absolute);
       const cached = previous.get(file);
-      if (cached && cached.mtimeMs === fileStat.mtimeMs && cached.size === fileStat.size) {
+      if (cached
+        && cached.mtimeMs === fileStat.mtimeMs
+        && cached.ctimeMs === fileStat.ctimeMs
+        && cached.size === fileStat.size) {
         entry = cached;
       } else {
         entry = {
           mtimeMs: fileStat.mtimeMs,
+          ctimeMs: fileStat.ctimeMs,
           size: fileStat.size,
           hash: knowledgeContentHash(await readFile(absolute, 'utf8')),
         };
       }
     } catch {
-      // Un fichier disparu entre le listage et la lecture n'est pas une erreur
-      // de publication : il n'appartient simplement pas à ce corpus.
+      // A file that disappeared between listing and reading is not a
+      // publication error: it simply does not belong to this corpus.
       continue;
     }
     next.set(file, entry);
@@ -161,7 +172,7 @@ export async function knowledgeEtagForFiles(
   return hash.digest('hex');
 }
 
-/** Raccourci : liste puis empreinte, l'appel courant. */
+/** Shortcut: list then fingerprint, the current call. */
 export async function knowledgeEtag(
   rootDir: string,
   options: { cache?: boolean } = {},

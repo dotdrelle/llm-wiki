@@ -2,16 +2,16 @@ import { communityId, type RegistryLookup } from '../communityProjection.ts';
 import { communityLabel, resolveCommunity, type TaxonomyRegistry } from './schema.ts';
 
 /**
- * Adapte un registre à la vue minimale dont l'affectation a besoin.
+ * Adapts a registry to the minimal view that assignment needs.
  *
- * C'est ici, et seulement ici, que le vocabulaire du registre redevient le
- * couple `(id, label)` que le snapshot expose. La projection reste ignorante
- * de SKOS, des langues et des révisions ; le registre reste ignorant du graphe.
+ * It is here, and only here, that the registry vocabulary becomes the
+ * `(id, label)` pair that the snapshot exposes. The projection stays ignorant
+ * of SKOS, of languages and of revisions; the registry stays ignorant of the graph.
  *
- * Les absorptions sont résolues au passage : une affectation qui pointe encore
- * un concept fusionné rend la communauté ACTIVE, jamais une bulle disparue.
- * C'est ce qui permet à un registre légèrement en retard sur ses propres
- * fusions de rester lisible plutôt que de faire disparaître des pages.
+ * Absorptions are resolved along the way: an assignment that still points at
+ * a merged concept returns the ACTIVE community, never a vanished bubble.
+ * That is what lets a registry slightly behind on its own
+ * merges stay readable rather than make pages disappear.
  */
 export function registryLookup(
   registry: TaxonomyRegistry,
@@ -34,23 +34,23 @@ export function registryLookup(
 
 export type CommunityDomain = { id: string; label: string };
 export type CommunityHierarchy = {
-  /** Domaines racines : ce que la carte affiche au premier niveau. */
+  /** Root domains: what the map shows at the first level. */
   domains: CommunityDomain[];
-  /** Feuille → domaine. Vide quand la taxonomie est encore plate. */
+  /** Leaf → domain. Empty when the taxonomy is still flat. */
   parents: Record<string, string>;
 };
 
 /**
- * Arbre des communautés, tel que l'écran doit le parcourir.
+ * Tree of the communities, as the screen must walk it.
  *
- * Le registre porte la hiérarchie, mais un nœud du graphe ne connaît que sa
- * feuille : c'est le niveau qui porte les pages. Sans cette table, la carte
- * afficherait les feuilles — donc autant de bulles qu'il y a de sujets — au
- * lieu des quelques domaines qu'elle est censée montrer.
+ * The registry carries the hierarchy, but a graph node only knows its
+ * leaf: that is the level that carries the pages. Without this table, the map
+ * would show the leaves — hence as many bubbles as there are subjects — instead
+ * of the few domains it is supposed to show.
  *
- * Elle est vide sur une taxonomie déterministe : la carte retombe alors sur
- * son rendu plat, ce qui est le comportement correct tant qu'aucun domaine
- * n'existe.
+ * It is empty on a deterministic taxonomy: the map then falls back on
+ * its flat rendering, which is the correct behavior as long as no domain
+ * exists.
  */
 export function communityHierarchy(
   registry: TaxonomyRegistry,
@@ -71,8 +71,8 @@ export function communityHierarchy(
   }
 
   return {
-    // Seuls les domaines qui portent réellement des communautés : une racine
-    // sans enfant est une feuille, et elle s'affiche comme telle.
+    // Only the domains that really carry communities: a root
+    // without a child is a leaf, and it displays as such.
     domains: active
       .filter((community) => used.has(community.id))
       .map((community) => ({ id: community.id, label: communityLabel(community, language, fallbackLanguage) })),
@@ -81,11 +81,11 @@ export function communityHierarchy(
 }
 
 /**
- * Redirections d'identifiants, de l'absorbé vers l'actif.
+ * Identifier redirects, from the absorbed one to the active one.
  *
- * Le client s'en sert pour deux choses qui seraient sinon des pertes visibles :
- * suivre une sélection à travers une fusion, et retrouver la position Canvas
- * enregistrée sous l'ancien identifiant.
+ * The client uses them for two things that would otherwise be visible losses:
+ * follow a selection through a merge, and find the Canvas position
+ * saved under the old identifier.
  */
 export function communityRedirects(registry: TaxonomyRegistry): Record<string, string> {
   const redirects: Record<string, string> = {};
@@ -94,10 +94,10 @@ export function communityRedirects(registry: TaxonomyRegistry): Record<string, s
     const target = resolveCommunity(registry, community.id);
     if (target && target.id !== community.id) redirects[community.id] = target.id;
   }
-  // Première activation du registre : les positions historiques sont encore
-  // indexées par le slug dérivé du libellé déterministe. Elles doivent suivre
-  // le nouvel id opaque exactement comme une fusion ultérieure. En cas de
-  // collision multilingue, aucune migration ambiguë n'est inventée.
+  // First activation of the registry: the historical positions are still
+  // indexed by the slug derived from the deterministic label. They must follow
+  // the new opaque id exactly like a later merge. On a
+  // multilingual collision, no ambiguous migration is invented.
   const legacyOwners = new Map<string, string | null>();
   for (const community of registry.communities) {
     if (community.deprecated) continue;

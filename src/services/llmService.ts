@@ -63,24 +63,24 @@ interface ProviderErrorDetails {
   message: string;
 }
 
-// Les contournements par moteur vivent dans config/engineCapabilities.ts —
-// source unique de vérité, cf. plan-implementation-engine-gateway.md.
+// Per-engine workarounds live in config/engineCapabilities.ts —
+// single source of truth, cf. plan-implementation-engine-gateway.md.
 
 function readNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 /**
- * Noms sous lesquels les serveurs exposent le raisonnement, hors du `content`.
+ * Names under which servers expose reasoning, outside `content`.
  *
- * Trois noms, deux formes — relevés sur les endpoints réels avec
- * `scripts/probe-engine.mjs` :
- *   `reasoning`         chaîne · Albert / OpenGateLLM
- *   `reasoning_content` chaîne · LiteLLM, DeepSeek, Ollama
- *   `thinking_blocks`   tableau d'objets · LiteLLM ↔ Anthropic
+ * Three names, two forms — observed on real endpoints with
+ * `scripts/probe-engine.mjs`:
+ *   `reasoning`         string · Albert / OpenGateLLM
+ *   `reasoning_content` string · LiteLLM, DeepSeek, Ollama
+ *   `thinking_blocks`   array of objects · LiteLLM ↔ Anthropic
  *
- * On ne présume donc ni le nom ni le type : présumer l'un des deux a déjà
- * produit une analyse fausse.
+ * So we presume neither the name nor the type: presuming either one has already
+ * produced a wrong analysis.
  */
 const REASONING_DELTA_KEYS = [
   'reasoning',
@@ -90,12 +90,11 @@ const REASONING_DELTA_KEYS = [
 ] as const;
 
 /**
- * Volume de raisonnement d'un delta, en caractères.
+ * Volume of reasoning of a delta, in characters.
  *
- * Sert uniquement à distinguer « le modèle a réfléchi puis s'est fait couper »
- * de « le modèle n'a rien produit ». Le drain complet du raisonnement est le
- * lot A du plan ; ici on ne mesure que ce qu'il faut pour lever la bonne
- * erreur.
+ * Only used to distinguish "the model reasoned then got cut off" from "the model
+ * produced nothing". The full drain of the reasoning is batch A of the plan;
+ * here we only measure what is needed to raise the right error.
  */
 function reasoningDeltaLength(delta: unknown): number {
   if (!delta || typeof delta !== 'object') return 0;
@@ -121,17 +120,17 @@ function reasoningDeltaLength(delta: unknown): number {
 }
 
 /**
- * Coupure par le plafond de sortie pendant la phase de raisonnement.
+ * Cutoff by the output cap during the reasoning phase.
  *
- * Sur un moteur à raisonnement, `max_tokens` couvre le raisonnement **et** le
- * contenu. Le modèle peut donc épuiser le plafond avant d'écrire un seul
- * caractère utile : le serveur répond alors HTTP 200, `finish_reason: length`,
- * et un contenu vide. Sans ce garde-fou, une section vide est écrite dans le
- * livrable sans le moindre signal.
+ * On a reasoning engine, `max_tokens` covers reasoning **and** content. The
+ * model can therefore exhaust the cap before writing a single useful character:
+ * the server then answers HTTP 200, `finish_reason: length`, and empty content.
+ * Without this guard, an empty section is written into the deliverable without
+ * any signal.
  *
- * Observé sur Albert / gpt-oss-120b, où le contenu n'apparaît qu'au chunk 221
- * sur 222 : `exportService` plafonne à 3000 tokens, ce qui laisse de la marge
- * mais ne supprime pas le mécanisme.
+ * Observed on Albert / gpt-oss-120b, where the content only appears at chunk
+ * 221 of 222: `exportService` caps at 3000 tokens, which leaves some margin but
+ * does not remove the mechanism.
  */
 function assertNotTruncatedDuringReasoning(input: {
   finishReason?: string;
@@ -142,10 +141,10 @@ function assertNotTruncatedDuringReasoning(input: {
   model: string;
 }): void {
   if (input.finishReason !== 'length') return;
-  // Contenu partiel : on ne lève pas — la validation de section (export) et le
-  // parseur JSON (ingest, build) rejettent déjà une sortie incomplète, et
-  // couper ici priverait ces chemins de leur retry. Mais l'événement est tracé
-  // pour qu'une troncature répétée soit visible et non déduite.
+  // Partial content: we do not throw — section validation (export) and the JSON
+  // parser (ingest, build) already reject an incomplete output, and cutting here
+  // would deprive those paths of their retry. But the event is traced so that a
+  // repeated truncation is visible and not inferred.
   if (input.content.trim().length > 0) return;
 
   const cap = input.maxOutputTokens
@@ -319,10 +318,10 @@ export class LLMService {
 
     let content: string;
     let capturedUsage: TokenUsage | undefined;
-    // Hors du try : une coupure n'est pas une erreur de transport. Levée à
-    // l'intérieur, elle traversait le catch de la boucle de retry, était
-    // journalisée en `llm:error` et repassait par `normalizeProviderError`,
-    // qui la présentait comme un incident provider.
+    // Outside the try: a cutoff is not a transport error. Raised inside, it
+    // would cross the retry loop's catch, be logged as `llm:error` and go back
+    // through `normalizeProviderError`, which would present it as a provider
+    // incident.
     let finishReason: string | undefined;
     let reasoningChars = 0;
     const maxAttempts = providerRateLimitRetryMaxAttempts();
@@ -436,9 +435,9 @@ export class LLMService {
       }
     }
 
-    // Avant le garde-fou générique : une coupure pendant le raisonnement est
-    // un cas particulier de réponse vide, et le message générique ne dirait ni
-    // la cause ni le remède.
+    // Before the generic guard: a cutoff during reasoning is a special case of
+    // an empty answer, and the generic message would say neither the cause nor
+    // the remedy.
     assertNotTruncatedDuringReasoning({
       finishReason,
       content: content!,

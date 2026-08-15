@@ -3,12 +3,12 @@ import { wikiOperationSchema } from '../config/schema.ts';
 import { EXTRACTION_SCOPES } from './extractionSchema.ts';
 
 /*
- Contrat de consolidation : une source, un plan.
+ Consolidation contract: one source, one plan.
 
- C'est ici — et seulement ici — que des faits deviennent des fichiers. Le plan
- est produit en un appel qui voit TOUTE la source, ce qui est la condition pour
- que deux fragments ne créent pas deux pages du même concept, et pour que le
- nombre de pages cesse de suivre le nombre de lots.
+ It is here — and only here — that facts become files. The plan is produced in
+ a single call that sees the WHOLE source, which is the condition for two
+ fragments not to create two pages of the same concept, and for the number of
+ pages to stop following the number of batches.
 */
 
 export const CONSOLIDATION_SCHEMA_VERSION = 1;
@@ -20,18 +20,18 @@ const optionalValue = z.preprocess(
 );
 
 /**
- * Provenance déclarée pour une page du plan.
+ * Declared provenance for a page of the plan.
  *
- * Séparée des opérations : le moteur l'injecte lui-même dans le frontmatter.
- * Demander au modèle d'écrire ces champs à l'intérieur du contenu reviendrait à
- * accepter qu'ils manquent sur une page sur dix.
+ * Separated from the operations: the engine injects it itself into the
+ * frontmatter. Asking the model to write these fields inside the content would
+ * amount to accepting that they will be missing on one page in ten.
  */
 export const consolidatedPageSchema = z.object({
   path: nonEmpty,
   subject: optionalValue,
   collection: optionalValue,
   scope: z.enum(EXTRACTION_SCOPES).nullish().transform((value) => value ?? null),
-  /** Pourquoi cette page existe : ce que le journal doit pouvoir restituer. */
+  /** Why this page exists: what the log must be able to restitute. */
   rationale: optionalValue,
 });
 
@@ -51,9 +51,9 @@ export const consolidationPlanSchema = z.preprocess(
       ? rawPages.map((page, index) => {
           if (!page || typeof page !== 'object' || Array.isArray(page)) return page;
           const item = page as Record<string, unknown>;
-          // Albert respecte l'ordre mais omet parfois le chemin. Cette jointure
-          // n'invente aucune page : elle rattache la provenance aux opérations
-          // non-index déjà déclarées dans la même réponse.
+          // Albert respects the order but sometimes omits the path. This join
+          // invents no page: it attaches the provenance to the non-index
+          // operations already declared in the same response.
           return { ...item, path: item.path ?? operationPaths[index] };
         }).filter((page) => {
           if (!page || typeof page !== 'object' || Array.isArray(page)) return true;

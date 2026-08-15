@@ -3,30 +3,30 @@ import { normalizeLabel } from './schema.ts';
 import type { RegistryCommunity, TaxonomyRegistry } from './schema.ts';
 
 /*
- Identité d'une communauté.
+ Identity of a community.
 
- §3.1 du plan laisse ouverte la reproductibilité après reconstruction. Ce
- module ne tranche pas cette décision produit : l'allocateur ci-dessous est le
- mécanisme provisoire du registre courant, pas la garantie contractuelle du lot
- 7. Une stratégie reproductible ne doit surtout pas dériver naïvement de la
- liste mutable des membres ; elle peut en revanche reposer sur une source
- d'identité durable ou une sauvegarde du registre.
+ §3.1 of the plan leaves reproducibility after reconstruction open. This
+ module does not settle that product decision: the allocator below is the
+ provisional mechanism of the current registry, not the contractual guarantee of lot
+ 7. A reproducible strategy must above all not derive naively from the
+ mutable member list; it can however rely on a durable
+ identity source or a registry backup.
 
- Le besoin réel n'est pas « recalculer le même identifiant », c'est « ne pas
- perdre la continuité si le registre est reconstruit ». Cela s'obtient par
- ré-ancrage : on reconnaît une communauté à ses membres et on lui rend son
- ancien identifiant. C'est plus robuste que le déterminisme, parce que ça
- survit aussi à un changement d'algorithme de nommage.
+ The real need is not "recompute the same identifier", it is "do not
+ lose continuity if the registry is rebuilt". That is achieved through
+ re-anchoring: a community is recognized by its members and given back its
+ old identifier. This is more robust than determinism, because it
+ also survives a change of naming algorithm.
 */
 
 const ID_PREFIX = 'cmty_';
 
 /**
- * Identifiant opaque provisoire, triable par date de création.
+ * Provisional opaque identifier, sortable by creation date.
  *
- * Les 8 premiers octets encodent l'horodatage : deux identifiants se comparent
- * donc dans leur ordre d'apparition, ce qui rend un `ls` ou un diff de registre
- * lisible sans table de correspondance. Le reste est aléatoire.
+ * The first 8 bytes encode the timestamp: two identifiers therefore compare
+ * in their order of appearance, which makes an `ls` or a registry diff
+ * readable without a lookup table. The rest is random.
  */
 export function newCommunityId(now = Date.now()): string {
   const time = now.toString(36).padStart(9, '0');
@@ -38,12 +38,12 @@ export function isCommunityId(value: string): boolean {
 }
 
 /**
- * Similarité de Jaccard entre deux ensembles de membres.
+ * Jaccard similarity between two member sets.
  *
- * Une communauté qui gagne ou perd quelques pages reste la même communauté ;
- * une qui a changé de moitié n'en est plus une. Le recouvrement dit précisément
- * cela, et il ne dépend ni du libellé — qui peut avoir été renommé — ni de
- * l'ordre.
+ * A community that gains or loses a few pages remains the same community;
+ * one that has changed by half is no longer one. The overlap says precisely
+ * that, and it depends neither on the label — which may have been renamed — nor on
+ * the order.
  */
 export function memberOverlap(a: Iterable<string>, b: Iterable<string>): number {
   const left = new Set(a);
@@ -55,8 +55,8 @@ export function memberOverlap(a: Iterable<string>, b: Iterable<string>): number 
 }
 
 /**
- * Seuil de reconnaissance. Au-dessus, c'est la même communauté qui continue ;
- * en dessous, c'en est une autre qui occupe le terrain.
+ * Recognition threshold. Above it, it is the same community continuing;
+ * below it, it is another one occupying the ground.
  */
 export const REANCHOR_MIN_OVERLAP = 0.5;
 
@@ -66,18 +66,18 @@ export type AnchoredCommunity = {
   id: string;
   members: string[];
   label: string;
-  /** Vrai quand l'identifiant vient du registre précédent. */
+  /** True when the identifier comes from the previous registry. */
   reanchored: boolean;
 };
 
 /**
- * Rend leur identifiant aux communautés reconnues, en alloue un aux autres.
+ * Gives back their identifier to the recognized communities, allocates one to the others.
  *
- * Sans registre précédent — première synthèse, ou registre perdu — tout est
- * neuf et tout reçoit un identifiant. Avec un registre précédent, on apparie
- * par recouvrement de membres, du plus ressemblant au moins ressemblant, chaque
- * ancien identifiant ne pouvant servir qu'une fois : deux communautés issues
- * d'une scission ne peuvent pas revendiquer la même identité.
+ * Without a previous registry — first synthesis, or lost registry — everything is
+ * new and everything receives an identifier. With a previous registry, we pair
+ * by member overlap, from most to least similar, each
+ * old identifier only usable once: two communities born
+ * of a split cannot claim the same identity.
  */
 export function anchorCommunities(
   drafts: CommunityDraft[],
@@ -96,9 +96,9 @@ export function anchorCommunities(
     }
   }
 
-  // Tous les appariements candidats, du meilleur au moins bon. Trier
-  // globalement plutôt que de décider draft par draft évite qu'un premier
-  // brouillon médiocre s'empare de l'identifiant qu'un suivant mérite mieux.
+  // All candidate pairings, from best to worst. Sorting
+  // globally rather than deciding draft by draft avoids a first
+  // mediocre draft seizing the identifier that a later one deserves better.
   const candidates: Array<{ draft: number; id: string; score: number }> = [];
   drafts.forEach((draft, index) => {
     for (const [id, members] of previousMembers) {
@@ -130,29 +130,29 @@ export function anchorCommunities(
 }
 
 /**
- * Rend son identifiant à une communauté préservée que le modèle a redécrite.
+ * Gives back its identifier to a preserved community that the model has redescribed.
  *
- * Le cas apparaît dès qu'une passe de vidange soumet un échantillon DISJOINT du
- * précédent : la communauté d'avant n'a aucune page dans le nouvel échantillon,
- * son recouvrement tombe à zéro, et le modèle — qui ne la voit pas — propose un
- * concept portant exactement le même nom. On obtenait alors deux communautés
- * homonymes dans la même fratrie, ce que le registre refuse à juste titre : la
- * synthèse entière était rejetée, et la vidange ne pouvait jamais se terminer.
+ * The case appears as soon as a drain pass submits a sample DISJOINT from the
+ * previous one: the previous community has no page in the new sample,
+ * its overlap drops to zero, and the model — which does not see it — proposes a
+ * concept carrying exactly the same name. We then obtained two homonymous
+ * communities in the same sibling group, which the registry rightly refuses: the
+ * whole synthesis was rejected, and the drain could never finish.
  *
- * Le recouvrement de membres ne peut pas trancher ici — il n'y a rien à
- * recouvrir. Mais la contrainte d'unicité du libellé par fratrie dit déjà
- * l'essentiel : deux sœurs de même nom sont la même chose. On reconnaît donc la
- * communauté à son nom, dans sa fratrie, et seulement pour un brouillon qui n'a
- * été ré-ancré par aucun membre.
+ * Member overlap cannot decide here — there is nothing to
+ * overlap. But the label uniqueness constraint per sibling group already says
+ * the essential: two same-named sisters are the same thing. We therefore recognize the
+ * community by its name, in its sibling group, and only for a draft that has not
+ * been re-anchored by any member.
  */
 export function adoptByLabel(
   drafts: AnchoredCommunity[],
   preserved: Array<{ id: string; label: string }>,
 ): { communities: AnchoredCommunity[]; adopted: Set<string> } {
-  // `normalizeLabel` porte déjà la règle d'égalité visible du registre. En
-  // dupliquer une variante ici, c'est se condamner à ce que les deux divergent :
-  // l'adoption cesserait alors de reconnaître exactement les homonymes que la
-  // validation refuse.
+  // `normalizeLabel` already carries the registry's visible-equality rule.
+  // Duplicating a variant of it here means condemning the two to diverge:
+  // adoption would then stop recognizing exactly the homonyms that
+  // validation refuses.
   const available = new Map<string, string>();
   for (const community of preserved) {
     const key = normalizeLabel(community.label);
@@ -170,24 +170,24 @@ export function adoptByLabel(
 }
 
 /**
- * Marque comme dépréciées les communautés du registre précédent qui n'ont pas
- * survécu, en les pointant vers leur remplaçante quand il y en a une.
+ * Marks as deprecated the communities of the previous registry that have not
+ * survived, pointing them towards their replacement when there is one.
  *
- * Elles ne sont **jamais supprimées** : c'est ce qui rend la convergence
- * visuelle d'une fusion et le remap d'une sélection résolubles indéfiniment,
- * y compris pour un client qui revient avec un identifiant ancien.
+ * They are **never deleted**: that is what makes the visual
+ * convergence of a merge and the remap of a selection resolvable indefinitely,
+ * including for a client that comes back with an old identifier.
  */
 /**
- * Membres d'une communauté, **descendants compris**.
+ * Members of a community, **descendants included**.
  *
- * Le registre n'assigne une page qu'à une feuille : un domaine ne figure dans
- * aucune valeur de `assignments`. Compter ses membres à partir des seules
- * assignations directes lui en donnait donc zéro — alors qu'il en a par
- * définition plus qu'aucune de ses filles. Tout raisonnement par recouvrement
- * portant sur un domaine renvoyait ainsi systématiquement 0, et la redirection
- * qui en dépend tombait sur un repli arbitraire.
+ * The registry only assigns a page to a leaf: a domain appears in
+ * no value of `assignments`. Counting its members from only the direct
+ * assignments therefore gave it zero — while by
+ * definition it has more than any of its daughters. Any overlap reasoning
+ * about a domain thus always returned 0, and the redirection
+ * that depended on it fell on an arbitrary fallback.
  *
- * Une feuille n'a pas de descendant : pour elle, le résultat est inchangé.
+ * A leaf has no descendant: for it, the result is unchanged.
  */
 export function membersByCommunity(registry: TaxonomyRegistry): Map<string, string[]> {
   const members = new Map<string, string[]>();
@@ -197,8 +197,8 @@ export function membersByCommunity(registry: TaxonomyRegistry): Map<string, stri
   );
   for (const [page, assignment] of Object.entries(registry.assignments)) {
     let current: string | null | undefined = assignment.primaryCommunity;
-    // La profondeur est bornée par le schéma ; la garde protège d'un registre
-    // corrompu en cycle plutôt que de faire tourner la boucle indéfiniment.
+    // The depth is bounded by the schema; the guard protects against a registry
+    // corrupted in a cycle rather than looping the loop indefinitely.
     for (let hops = 0; current && hops < 8; hops += 1) {
       members.get(current)?.push(page);
       current = parentOf.get(current) ?? null;
@@ -219,8 +219,8 @@ export function deprecateMissing(
   return previous.communities
     .filter((community) => !alive.has(community.id) && !community.deprecated)
     .map((community) => {
-      // Vers qui sont partis ses membres ? La communauté qui en a récupéré le
-      // plus est la cible naturelle de la fusion.
+      // Where did its members go? The community that took the most
+      // of them over is the natural merge target.
       const members = previousMembers.get(community.id) ?? [];
       let best: { id: string; score: number } | null = null;
       for (const survivor of survivors) {
@@ -228,17 +228,17 @@ export function deprecateMissing(
         if (score > 0 && (!best || score > best.score)) best = { id: survivor.id, score };
       }
       /*
-       Aucun recouvrement : la cible de repli mentait.
+       No overlap: the fallback target was lying.
 
-       Le repli était `survivors[0]` — la première communauté de la liste, qui
-       n'a aucun rapport avec la disparue. Une sélection restaurée y atterrissait
-       en silence, et la note de changement écrite juste en dessous disait
-       « removed » pendant que `replacedBy` désignait quelqu'un : le registre se
-       contredisait lui-même.
+       The fallback was `survivors[0]` — the first community in the list, which
+       has nothing to do with the disappeared one. A restored selection landed there
+       silently, and the change note written just below said
+       "removed" while `replacedBy` designated someone: the registry was
+       contradicting itself.
 
-       La communauté la plus proche par la STRUCTURE est alors le meilleur
-       candidat honnête — le parent survivant, qui contenait bien ses pages. À
-       défaut, il n'y a pas de successeur, et c'est ce qu'il faut dire.
+       The closest community by STRUCTURE is then the best
+       honest candidate — the surviving parent, which did contain its pages. Failing
+       that, there is no successor, and that is what must be said.
       */
       const survivingParent = community.parentCommunity && alive.has(community.parentCommunity)
         ? community.parentCommunity

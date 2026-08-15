@@ -440,8 +440,8 @@ const retrievalSchema = z
     vector: z
       .object({
         enabled: z.boolean().default(false),
-        // Absents du fichier = hérités du bloc `llm`. Le bloc reste
-        // indépendant : renseigner l'un d'eux le fait diverger.
+        // Absent from the file = inherited from the `llm` block. The block stays
+        // independent: filling in one of them makes it diverge.
         provider: z.enum(['openai-compatible', 'ai-gateway']).optional(),
         engine: z
           .enum(['ollama', 'vllm', 'mlx', 'albert', 'openai', 'anthropic', 'generic'])
@@ -637,11 +637,11 @@ export const buildStateSchema = z.object({
 });
 
 /**
- * Valeurs de `llm.provider` acceptées jusqu'à 0.15. Elles portaient à la fois
- * le routage et le moteur ; les deux axes sont désormais séparés. Le rejet est
- * franc, avec un message actionnable : la table de correspondance vit dans
- * `doctor` (`wiki doctor --apply`), pas ici, pour ne pas grever le chemin de
- * lecture d'une normalisation permanente.
+ * `llm.provider` values accepted until 0.15. They carried both routing and
+ * engine; the two axes are now separated. The rejection is blunt, with an
+ * actionable message: the mapping table lives in `doctor`
+ * (`wiki doctor --apply`), not here, so as not to burden the read path with a
+ * permanent normalization.
  */
 const LEGACY_PROVIDER_MIGRATION: Record<string, string> = {
   openai: 'provider: openai-compatible / engine: openai',
@@ -684,15 +684,16 @@ export function resolveConfigDetails(
   assertNoLegacyProvider(mergedInput);
   const parsed = rawConfigSchema.parse(mergedInput ?? {});
   const provider = parsed.llm?.provider ?? 'openai-compatible';
-  // `engine` est ignoré derrière une gateway : l'endpoint est opaque et chaque
-  // modèle peut avoir un moteur différent. On y suppose une sémantique OpenAI
-  // propre et on délègue la normalisation des paramètres à la gateway.
+  // `engine` is ignored behind a gateway: the endpoint is opaque and each
+  // model may have a different engine. We assume clean OpenAI semantics there
+  // and delegate parameter normalization to the gateway.
   const engine: LlmEngine =
     provider === 'ai-gateway' ? 'generic' : (parsed.llm?.engine ?? 'generic');
 
-  // Aucun `else` par défaut ici : un moteur sans endpoint connu doit être
-  // refusé, pas rabattu sur OpenAI. Sans cette règle, un `engine: vllm` sans
-  // baseUrl expédiait la clé d'un serveur local vers api.openai.com.
+  // No default `else` here: an engine without a known endpoint must be
+  // rejected, not folded back onto OpenAI. Without this rule, an
+  // `engine: vllm` without a baseUrl would send a local server's key to
+  // api.openai.com.
   const engineDefaultBaseUrl = ENGINE_DEFAULT_BASE_URL[engine];
   if (!parsed.llm?.baseUrl && (provider === 'ai-gateway' || !engineDefaultBaseUrl)) {
     throw new Error(
@@ -705,9 +706,9 @@ export function resolveConfigDetails(
 
   const apiKey = parsed.llm?.apiKey ?? (engine === 'ollama' ? 'ollama' : undefined);
 
-  // Le bloc vecteur reste indépendant : il n'hérite du bloc llm que pour les
-  // clés absentes du fichier. Le wizard écrit les valeurs héritées en
-  // commentaire, pour que le fichier reste auto-documenté.
+  // The vector block stays independent: it only inherits from the llm block for
+  // keys absent from the file. The wizard writes the inherited values as
+  // comments, so the file stays self-documented.
   const vectorBaseUrl = parsed.retrieval?.vector?.baseUrl ?? baseUrl;
   const vectorProvider = parsed.retrieval?.vector?.provider ?? provider;
   const vectorEngine: LlmEngine =

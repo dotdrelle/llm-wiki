@@ -1,24 +1,24 @@
 import { createHash } from 'node:crypto';
 
 /**
- * Sérialisation canonique du registre de taxonomie.
+ * Canonical serialization of the taxonomy registry.
  *
- * Une génération est adressée par l'empreinte de son contenu, et le marqueur
- * qui la publie porte cette empreinte pour la vérifier. Les deux exigent que le
- * même registre produise toujours les mêmes octets :
+ * A generation is addressed by the fingerprint of its content, and the marker
+ * that publishes it carries this fingerprint to verify it. Both require that the
+ * same registry always produce the same bytes:
  *
- * - deux producteurs qui calculent la même taxonomie doivent converger sur le
- *   même nom de fichier — c'est la déduplication naturelle et l'idempotence du
- *   rejeu ;
- * - relire une génération valide ne doit jamais échouer au contrôle
- *   d'intégrité parce qu'une autre version de Node a ordonné les clés
- *   autrement.
+ * - two producers that compute the same taxonomy must converge on the
+ *   same file name — that is the natural deduplication and the idempotence of the
+ *   replay;
+ * - re-reading a valid generation must never fail the integrity
+ *   check because another Node version ordered the keys
+ *   differently.
  *
- * `JSON.stringify` conserve l'ordre d'insertion des clés, qui dépend de l'ordre
- * de construction de l'objet : deux chemins de code produisant la même valeur
- * logique produisent des octets différents. On trie donc les clés
- * récursivement. L'ordre des tableaux, lui, est porteur de sens (une liste de
- * membres, un historique) et n'est jamais réordonné.
+ * `JSON.stringify` preserves the key insertion order, which depends on the
+ * object's construction order: two code paths producing the same logical
+ * value produce different bytes. We therefore sort the keys
+ * recursively. The order of arrays, for its part, carries meaning (a member
+ * list, a history) and is never reordered.
  */
 export function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -28,32 +28,32 @@ export function canonicalize(value: unknown): unknown {
     const sorted: Record<string, unknown> = {};
     for (const key of Object.keys(source).sort()) {
       const entry = source[key];
-      // `undefined` disparaîtrait silencieusement de la sortie JSON : deux
-      // objets de formes différentes donneraient alors la même empreinte. Le
-      // schéma valide en amont, donc sa présence ici est un défaut d'appelant.
+      // `undefined` would silently disappear from the JSON output: two
+      // objects of different shapes would then produce the same fingerprint. The
+      // schema validates upstream, so its presence here is a caller defect.
       if (entry === undefined) continue;
       sorted[key] = canonicalize(entry);
     }
     return sorted;
   }
   if (typeof value === 'number' && !Number.isFinite(value)) {
-    throw new TypeError('canonicalize: nombre non fini, non représentable en JSON');
+    throw new TypeError('canonicalize: non-finite number, not representable in JSON');
   }
   return value;
 }
 
-/** Octets exacts qui seront écrits sur le disque — le hash porte sur eux. */
+/** Exact bytes that will be written to disk — the hash covers them. */
 export function canonicalJson(value: unknown): string {
   return JSON.stringify(canonicalize(value));
 }
 
 /**
- * Empreinte d'un contenu canonique, tronquée.
+ * Fingerprint of a canonical content, truncated.
  *
- * Elle sert de nom de fichier et voyage dans le marqueur ; 32 caractères
- * hexadécimaux (128 bits) laissent une marge considérable face au nombre de
- * générations qu'un workspace produira jamais, tout en gardant un nom lisible
- * dans un `ls`.
+ * It serves as a file name and travels in the marker; 32 hexadecimal
+ * characters (128 bits) leave a considerable margin against the number of
+ * generations a workspace will ever produce, while keeping a readable name
+ * in an `ls`.
  */
 export function contentHash(canonical: string): string {
   return createHash('sha256').update(canonical, 'utf8').digest('hex').slice(0, 32);

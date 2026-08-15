@@ -1,21 +1,21 @@
 /**
- * Fiche de contexte, ancrée au nœud.
+ * Context card, anchored to the node.
  *
- * Une page à moins de deux voisins ne descend plus en vue focus : la descente
- * coûtait le niveau où l'on était et ne rendait qu'un graphe d'un ou deux
- * nœuds. Le clic doit pourtant répondre à quelque chose, et ce que le lecteur
- * cherche à ce moment-là est simple — de quoi parle cette page.
+ * A page with fewer than two neighbors no longer descends into focus view: the
+ * descent cost the level we were on and only rendered a graph of one or two
+ * nodes. The click must still answer something, and what the reader is looking
+ * for at that moment is simple — what this page is about.
  *
- * La fiche se pose donc à côté de la bulle, suit le zoom et le déplacement, et
- * porte un résumé produit par le LLM (mis en cache côté serveur, cf.
- * `graph/wiki/summary.ts`). Elle reste petite : c'est un coup d'œil avant de
- * décider d'ouvrir, pas un panneau de lecture — celui-ci existe déjà.
+ * The card therefore sits next to the bubble, follows zoom and pan, and
+ * carries a summary produced by the LLM (cached server-side, cf.
+ * `graph/wiki/summary.ts`). It stays small: it is a glance before deciding to
+ * open, not a reading panel — that one already exists.
  */
 export function graphUiContextCardScript(): string {
   return String.raw`
 let graphContextCard=null,graphContextNodeId=null,graphContextToken=0,graphContextPinned=false;
-// Position choisie à la main, conservée d'une fiche à l'autre tant qu'on n'a
-// pas fermé celle qu'on avait déplacée.
+// Hand-chosen position, kept from one card to the next as long as the one we
+// moved has not been closed.
 let graphContextPlacement={left:'',top:''};
 function graphContextCardElement(){
   if(graphContextCard?.isConnected)return graphContextCard;
@@ -30,22 +30,22 @@ function graphContextCardElement(){
   return card}
 function closeGraphContextCard(){
   graphContextNodeId=null;
-  // Le jeton invalide la réponse d'un résumé encore en vol : la fiche suivante
-  // ne doit pas hériter du texte de la précédente.
+  // The token invalidates the response of a summary still in flight: the next
+  // card must not inherit the previous one's text.
   graphContextToken+=1;
   canvasExplorer?.anchor(null);
   canvasExplorer?.avoid(null);
-  // Fermer est le seul geste qui révoque le placement manuel : on repart d'une
-  // fiche ancrée à son nœud, comme à la première ouverture.
+  // Closing is the only gesture that revokes the manual placement: we start
+  // again from a card anchored to its node, as on first open.
   graphContextPinned=false;graphContextPlacement={left:'',top:''};
   if(graphContextCard)  {graphContextCard.hidden=true;graphContextCard.innerHTML=''}}
 
 /*
- Signaler aux tuiles la place occupée par la fiche.
+ Tell the tiles the space occupied by the card.
 
- Elles s'écartent le temps de la lecture au lieu d'être recouvertes. Le
- rectangle est relu à chaque repositionnement : il suit le zoom et le
- déplacement comme la fiche elle-même.
+ They move aside for the duration of the reading instead of being covered. The
+ rectangle is re-read on every repositioning: it follows zoom and pan like the
+ card itself.
 */
 function updateGraphContextObstacle(){
   const card=graphContextCard;
@@ -57,18 +57,18 @@ function updateGraphContextObstacle(){
     height:card.offsetHeight,
   })}
 /*
- Placement : à droite du nœud si la place existe, sinon à gauche, puis rabattu
- dans le cadre. Une fiche qui déborde de la scène est une fiche qu'on ne lit
- pas — et le canevas occupe toute la scène, donc il n'y a pas de « dehors » où
- la laisser dépasser.
+ Placement: to the right of the node if there is room, otherwise to the left,
+ then clamped back into the frame. A card that overflows the stage is a card
+ one does not read — and the canvas occupies the whole stage, so there is no
+ "outside" where it could be left to stick out.
 */
 function positionGraphContextCard(point){
   const card=graphContextCard;
   if(!card||card.hidden)return;
-  // Une fiche déplacée à la main est un choix : on cesse de la recalculer. La
-  // reposer à chaque image annulerait le geste sous les doigts de celui qui
-  // vient de la faire. Elle doit néanmoins disparaître si son nœud d'ancrage
-  // sort du cadre : sinon elle reste affichée au-dessus de rien.
+  // A card moved by hand is a choice: we stop recomputing it. Repositioning it
+  // on every frame would cancel the gesture under the fingers of whoever just
+  // made it. It must nevertheless disappear if its anchor node leaves the
+  // frame: otherwise it stays displayed above nothing.
   if(graphContextPinned){
     if(!point){card.style.visibility='hidden';canvasExplorer?.avoid(null);return}
     card.style.visibility='';
@@ -88,12 +88,12 @@ function positionGraphContextCard(point){
   updateGraphContextObstacle()}
 
 /*
- Déplacer la fiche à la main.
+ Move the card by hand.
 
- Le glissement démarre sur l'en-tête uniquement : le corps porte le résumé,
- qu'on doit pouvoir sélectionner, et les boutons doivent rester cliquables.
- Dès le premier pixel parcouru la fiche est épinglée — définitivement pour
- cette ouverture, y compris si le graphe bouge ensuite.
+ Dragging starts on the header only: the body carries the summary, which must
+ be selectable, and the buttons must stay clickable. As soon as the first pixel
+ is travelled the card is pinned — definitively for this opening, including if
+ the graph moves afterwards.
 */
 function enableGraphContextCardDrag(card){
   card.addEventListener('pointerdown',event=>{
@@ -119,7 +119,7 @@ function enableGraphContextCardDrag(card){
     window.addEventListener('pointerup',onUp)})}
 function graphContextCardHTML(node,body,pending){
   const relations=documentRelationCount(node.id);
-  return '<div class="gcc-head"><div><small>CONTEXTE</small><strong>'+esc(node.title||node.label||node.id)+'</strong>'
+  return '<div class="gcc-head"><div><small>CONTEXT</small><strong>'+esc(node.title||node.label||node.id)+'</strong>'
     +'<span>'+esc(node.type||'document')+(graphRelationsLabel(relations)?' · '+graphRelationsLabel(relations):'')+'</span></div>'
     +'<button type="button" data-close-context title="Close" aria-label="Close context card">×</button></div>'
     +'<p class="gcc-body'+(pending?' pending':'')+'">'+esc(body)+'</p>'
@@ -131,21 +131,20 @@ async function openGraphContextCard(node){
   const token=++graphContextToken;
   graphContextNodeId=node.id;
   /*
-   Une fiche déplacée reste où on l'a mise, y compris pour la sélection
-   suivante.
+   A moved card stays where it was put, including for the next selection.
 
-   L'épinglage était remis à zéro à chaque ouverture : on choisissait un coin
-   d'écran, on cliquait la feuille d'à côté, et la fiche repartait se coller au
-   nœud. Le geste devait être refait à chaque clic, donc il ne servait à rien —
-   or c'est précisément en enchaînant les sélections qu'on a besoin qu'elle
-   cesse de bouger. Déplacer une fiche est une décision sur la mise en page,
-   pas sur le document affiché ; seule sa fermeture explicite la révoque.
+   Pinning was reset on every open: one chose a corner of the screen, clicked
+   the leaf next to it, and the card went back to sticking to the node. The
+   gesture had to be redone on every click, so it was useless — yet it is
+   precisely when chaining selections that one needs it to stop moving. Moving
+   a card is a decision about the layout, not about the displayed document;
+   only its explicit closing revokes it.
   */
   if(graphContextPinned){card.style.left=graphContextPlacement.left;card.style.top=graphContextPlacement.top}
   card.hidden=false;
   card.innerHTML=graphContextCardHTML(node,'Summarizing…',true);
-  // L'ancre est posée avant la réponse : la fiche doit suivre le graphe même
-  // pendant que le résumé se calcule.
+  // The anchor is set before the response: the card must follow the graph even
+  // while the summary is being computed.
   canvasExplorer?.anchor(node.id,positionGraphContextCard);
   positionGraphContextCard(canvasExplorer?.locate(node.id)||null);
   try{

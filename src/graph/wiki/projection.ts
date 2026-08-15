@@ -131,7 +131,7 @@ export async function buildWikiGraph(
     includeContent?: boolean;
     concurrency?: number;
     fallbackCommunityLabel?: string;
-    /** Registre de taxonomie déjà résolu, quand il y en a un d'actif. */
+    /** Taxonomy registry already resolved, when there is an active one. */
     registry?: RegistryLookup;
   } = {},
 ): Promise<{ nodes: WikiGraphNode[]; edges: WikiGraphEdge[] }> {
@@ -367,13 +367,13 @@ function relationForTarget(
 }
 
 /**
- * Seul `community:` est une décision d'auteur.
+ * Only `community:` is an author decision.
  *
- * `community = rawCommunity ?? group` promouvait silencieusement une graine en
- * décision : une page ne portant que `group:` devenait intouchable par les
- * passes de réparation, alors que `group:` n'est qu'un indice produit à
- * l'ingestion. `group` reste exposé sur le nœud et sert de graine à
- * l'affectation, un cran en dessous du registre.
+ * `community = rawCommunity ?? group` silently promoted a seed into a
+ * decision: a page carrying only `group:` became untouchable by the repair
+ * passes, whereas `group:` is only a hint produced at ingestion. `group`
+ * remains exposed on the node and serves as a seed for the assignment, one
+ * step below the registry.
  */
 function graphCommunityMetadata(markdown: string): { group?: string; community?: string } {
   const parsed = matter(markdown);

@@ -4,32 +4,30 @@ export function graphFrameScript(): string {
 function createGraphFrameScheduler(draw){
   let frame=0,timer=0,dirty=true,animateUntil=0,destroyed=false,failures=0,drawing=false;
   /*
-   Deux régimes d'animation, parce que toutes les animations ne valent pas le
-   même prix.
+   Two animation regimes, because not all animations cost the same.
 
-   Une transition de caméra ou un halo « nouveau » sont brefs et regardés : ils
-   méritent la pleine cadence. Le scintillement de fond des constellations, lui,
-   est permanent — il n'a pas de fin — et le faire passer par animate() gardait
-   le processus de rendu à soixante images par seconde tant que le graphe
-   restait ouvert, y compris sur une session laissée de côté pendant des heures.
-   Chacune de ces images redessine toute la scène.
+   A camera transition or a "new" halo are brief and watched: they deserve the
+   full cadence. The background twinkle of the constellations, on the other
+   hand, is permanent — it has no end — and routing it through animate() kept
+   the render process at sixty frames per second as long as the graph stayed
+   open, including on a session left aside for hours. Each of those frames
+   redraws the whole scene.
 
-   idle() exprime donc « il se passe quelque chose, mais rien d'urgent » : le
-   dessin continue à cadence réduite, et surtout le planificateur DORT entre
-   deux images au lieu de se réveiller à chaque rafraîchissement de l'écran pour
-   ne rien faire.
+   idle() therefore says "something is happening, but nothing urgent": the
+   drawing continues at reduced cadence, and above all the scheduler SLEEPS
+   between two frames instead of waking up on every screen refresh to do
+   nothing.
   */
   let idleUntil=0,idleIntervalMs=80,lastIdle=0,clock=0;
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
   /*
-   Les échéances se posent sur l'horloge du dessin, pas sur une autre.
+   The deadlines are set on the drawing clock, not on another one.
 
-   animate() et idle() sont appelés depuis draw(), qui reçoit l'estampille de
-   requestAnimationFrame ; run() compare ensuite cette même estampille aux
-   échéances. Prendre performance.now() pour les poser marchait par chance —
-   les deux sont la même ligne de temps dans un navigateur — mais faisait
-   dépendre la boucle d'une coïncidence, invisible jusqu'à ce qu'un harnais
-   fournisse ses propres estampilles.
+   animate() and idle() are called from draw(), which receives the
+   requestAnimationFrame timestamp; run() then compares that same timestamp to
+   the deadlines. Taking performance.now() to set them worked by chance — the
+   two are the same timeline in a browser — but made the loop depend on a
+   coincidence, invisible until a harness provides its own timestamps.
   */
   function stamp(){return drawing?clock:performance.now()}
   function request(){if(!frame&&!destroyed&&!document.hidden)frame=requestAnimationFrame(run)}
@@ -37,19 +35,18 @@ function createGraphFrameScheduler(draw){
     if(frame||timer||destroyed||document.hidden)return;
     timer=setTimeout(()=>{timer=0;request()},Math.max(0,delay))}
   /*
-   Une image qui échoue ne doit pas emporter la boucle.
+   A frame that fails must not take the loop down with it.
 
-   La relance était placée après l'appel à draw : la moindre exception — une
-   variable renommée à moitié, par exemple — arrêtait le rendu pour de bon.
-   Le symptôme visible n'avait alors plus rien à voir avec la cause : la scène
-   s'affichait à moitié, l'animation ne repartait qu'au passage de la souris
-   (chaque invalidation redemandant une image), et le clic ne répondait plus
-   puisque les cibles ne sont posées qu'à l'image complète. Trois régressions
-   apparentes pour une seule ligne.
+   The rescheduling was placed after the draw call: the slightest exception — a
+   half-renamed variable, for example — stopped rendering for good. The visible
+   symptom then had nothing to do with the cause: the scene displayed half-way,
+   the animation only restarted on mouse-over (each invalidation re-requesting a
+   frame), and the click no longer responded since the targets are only laid
+   down at the complete frame. Three apparent regressions for a single line.
 
-   La relance passe donc dans un finally, et l'erreur continue de remonter.
-   Après quelques échecs consécutifs on s'arrête pour de bon : mieux vaut une
-   vue figée qu'une exception soixante fois par seconde dans la console.
+   The rescheduling therefore moves into a finally, and the error keeps
+   propagating. After a few consecutive failures we stop for good: a frozen
+   view is better than an exception sixty times per second in the console.
   */
   function run(now){
     frame=0;if(destroyed||document.hidden)return;
@@ -60,30 +57,30 @@ function createGraphFrameScheduler(draw){
     let failed=true;
     try{
       drawing=true;
-      // La cadence réduite se mesure depuis la dernière image RÉELLE, quelle
-      // qu'en soit la raison : sinon une interaction et le scintillement
-      // dessineraient deux fois de suite.
+      // The reduced cadence is measured from the last REAL frame, whatever its
+      // reason: otherwise an interaction and the twinkle would draw twice in a
+      // row.
       if(dirty||animating||idleDue){dirty=false;lastIdle=now;draw(now,{animating,reducedMotion:reduced.matches})}
       failed=false
     }finally{
       drawing=false;
       failures=failed?failures+1:0;
-      // L'image n'a pas eu lieu : dirty avait pourtant déjà été consommé. Sans
-      // cette remise, même une relance ne redessinerait rien.
+      // The frame did not happen: dirty had nevertheless already been consumed.
+      // Without this reset, even a reschedule would redraw nothing.
       if(failed)dirty=true;
       if(failures>=5)destroyed=true;
       /*
-       Les échéances sont relues APRÈS le dessin, pas avant.
+       The deadlines are re-read AFTER the drawing, not before.
 
-       C'est draw() qui les pose : animate() et idle() sont appelés depuis lui.
-       Les valeurs calculées en tête de run() décrivent donc l'image qu'on vient
-       de faire, jamais celle qu'il faut programmer. animate() masquait le
-       défaut en passant par invalidate(), qui redemande une image de toute
-       façon ; le régime réduit, lui, n'a que cette relecture.
+       It is draw() that sets them: animate() and idle() are called from it.
+       The values computed at the top of run() therefore describe the frame we
+       just made, never the one to schedule. animate() masked the defect by
+       going through invalidate(), which re-requests a frame anyway; the
+       reduced regime, on the other hand, only has this re-read.
       */
       else if(dirty||(!reduced.matches&&now<animateUntil))request();
-      // Rien d'urgent : on programme la prochaine image réduite par un timer,
-      // sans réveiller le compositeur entre-temps.
+      // Nothing urgent: we schedule the next reduced frame via a timer, without
+      // waking the compositor in between.
       else if(!reduced.matches&&now<idleUntil)requestLater(idleIntervalMs-(now-lastIdle))
     }
   }
@@ -93,8 +90,9 @@ function createGraphFrameScheduler(draw){
     if(reduced.matches)return;
     idleUntil=Math.max(idleUntil,stamp()+duration);
     if(intervalMs>0)idleIntervalMs=intervalMs;
-    // Pendant un dessin, c'est le finally de run() qui programme la suite : le
-    // faire ici poserait un timer sans délai et annulerait la cadence réduite.
+    // During a drawing, it is run()'s finally that schedules the next step:
+    // doing it here would set a timer without delay and cancel the reduced
+    // cadence.
     if(!drawing)requestLater(idleIntervalMs-(stamp()-lastIdle))}
   function visibility(){if(!document.hidden)invalidate()}
   document.addEventListener('visibilitychange',visibility);

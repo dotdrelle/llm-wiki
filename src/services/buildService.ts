@@ -590,8 +590,7 @@ export class BuildService {
         listText
           .split(/,|;|\bet\b/iu)
           .map((item) => item.trim())
-          .filter((item) => item.length >= 3)
-          .map((item) => `${item} démonstration outil solution candidate ACME`),
+          .filter((item) => item.length >= 3),
       ),
     ];
   }

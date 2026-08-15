@@ -8,23 +8,23 @@ import {
 import type { LlmEngine } from '../types.ts';
 
 /**
- * Migration des `.wikirc.yaml` antérieurs à 0.16.
+ * Migration of `.wikirc.yaml` files predating 0.16.
  *
- * `llm.provider` portait deux axes à la fois : où l'on tape et comment se
- * comporte le serveur en face. Ils sont désormais séparés en `provider`
- * (`openai-compatible` | `ai-gateway`) et `engine`.
+ * `llm.provider` carried two axes at once: where requests are sent and how the
+ * server in front behaves. They are now separated into `provider`
+ * (`openai-compatible` | `ai-gateway`) and `engine`.
  *
- * Cette table vit ici — appelée uniquement par `wiki doctor --apply` — et non
- * dans `resolveConfig`, pour ne pas grever le chemin de lecture d'une
- * normalisation permanente. Elle est supprimable d'un bloc à la 1.0.
+ * This table lives here — called only by `wiki doctor --apply` — and not in
+ * `resolveConfig`, so as not to burden the read path with a permanent
+ * normalization. It can be removed in one block at 1.0.
  */
 
 interface LegacyMapping {
   engine: LlmEngine;
   /**
-   * `resolveConfig` dérivait la baseUrl du provider quand elle était absente.
-   * On la matérialise à la migration : c'est la seule façon de garantir que le
-   * fichier migré cible exactement le même endpoint qu'avant.
+   * `resolveConfig` derived the baseUrl from the provider when it was absent.
+   * We materialize it at migration: that is the only way to guarantee that the
+   * migrated file targets exactly the same endpoint as before.
    */
   defaultBaseUrl: string;
 }
@@ -36,10 +36,10 @@ const LEGACY_PROVIDERS: Record<string, LegacyMapping> = {
 };
 
 /**
- * Heuristique de dernier recours, appliquée une seule fois, pour les anciens
- * `openai-compatible` qui n'avaient pas de moteur déclaré. Elle reprend le
- * `looksLikeMlx()` que `doctor` appliquait à chaque exécution — après la
- * migration, le moteur est déclaré et plus rien n'est deviné.
+ * Last-resort heuristic, applied a single time, for the old
+ * `openai-compatible` that had no declared engine. It takes up the
+ * `looksLikeMlx()` that `doctor` applied on every run — after migration, the
+ * engine is declared and nothing is guessed anymore.
  */
 function guessLocalEngine(llm: Record<string, unknown>): LlmEngine {
   const model = typeof llm.model === 'string' ? llm.model.toLowerCase() : '';
@@ -51,17 +51,17 @@ function guessLocalEngine(llm: Record<string, unknown>): LlmEngine {
 }
 
 export interface LegacyConfigMigration {
-  /** Ancienne valeur de `llm.provider`, telle qu'elle figurait dans le fichier. */
+  /** Old value of `llm.provider`, as it appeared in the file. */
   from: string;
-  /** Nouvelle paire, pour l'affichage. */
+  /** New pair, for display. */
   to: { provider: string; engine: LlmEngine };
-  /** Vrai si la baseUrl, jusqu'ici implicite, a dû être matérialisée. */
+  /** True if the baseUrl, implicit until now, had to be materialized. */
   materializedBaseUrl?: string;
 }
 
 /**
- * Détecte un ancien format et calcule sa réécriture, sans rien écrire.
- * Renvoie `undefined` si le fichier est déjà au format courant.
+ * Detects an old format and computes its rewrite, without writing anything.
+ * Returns `undefined` if the file is already in the current format.
  */
 export function planLegacyConfigMigration(
   rawConfig: unknown,
@@ -76,7 +76,7 @@ export function planLegacyConfigMigration(
   const provider = llmBlock.provider;
   if (typeof provider !== 'string') return undefined;
 
-  // Déjà migré : provider courant et engine déclaré.
+  // Already migrated: current provider and declared engine.
   if (provider === 'ai-gateway') return undefined;
   if (provider === 'openai-compatible' && typeof llmBlock.engine === 'string') {
     return undefined;
@@ -108,7 +108,7 @@ export function planLegacyConfigMigration(
   };
 }
 
-/** Applique la migration au fichier et renvoie ce qui a changé. */
+/** Applies the migration to the file and returns what changed. */
 export async function migrateLegacyConfigFile(
   configPath: string,
   rawText: string,
@@ -120,7 +120,7 @@ export async function migrateLegacyConfigFile(
   return planned.migration;
 }
 
-/** Vrai si l'erreur provient du rejet d'un `llm.provider` obsolète. */
+/** True if the error comes from rejecting an obsolete `llm.provider`. */
 export function isLegacyProviderError(error: unknown): boolean {
   return (
     error instanceof Error && /llm\.provider: ".*" is no longer recognized/.test(error.message)

@@ -532,7 +532,7 @@ describe('panneau unique', () => {
 
     // Les deux niveaux écrivent dans le même panneau, avec le même gabarit.
     expect(html).toContain('<small>DOCUMENT</small>');
-    expect(html).toContain('<small>DOMAINE</small>');
+    expect(html).toContain('<small>DOMAIN</small>');
     expect(html).toContain('.panel-head{');
     expect(html).toContain('.inspector .document-focus-list');
   });

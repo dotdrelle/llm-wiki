@@ -174,11 +174,11 @@ export function canonicalizeSourceCitations(content: string): string {
 }
 
 /*
- Le découpage vit désormais dans `sourcePacking.ts`.
+ The splitting now lives in `sourcePacking.ts`.
 
- Il est ré-exporté ici parce que ses appelants historiques — ingestion, doctor,
- tests — le connaissent sous ce nom, et parce qu'un second point d'entrée
- laisserait croire à deux algorithmes.
+ It is re-exported here because its historical callers — ingestion, doctor,
+ tests — know it under this name, and because a second entry point would
+ suggest two algorithms.
 */
 export { planSourcePacks, splitSourceSections } from './sourcePacking.ts';
 export type { PackReason, SourcePack, SourcePackDiagnostics, SourcePackPlan } from './sourcePacking.ts';

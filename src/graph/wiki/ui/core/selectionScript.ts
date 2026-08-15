@@ -12,37 +12,37 @@ function documentActionRow(node){
   return '<div class="focus-document-row" data-doc-row="'+esc(node.id)+'"><button type="button" class="focus-document-name" data-doc="'+esc(node.id)+'"><span>'+esc(node.title)+'</span><small>'+esc(node.type)+(graphRelationsLabel(node.degree)?' · '+graphRelationsLabel(node.degree):'')+'</small></button><span class="focus-document-actions"><button type="button" data-preview-doc="'+esc(node.id)+'" title="Preview document" aria-label="Preview '+esc(node.title)+'">'+graphIcon('preview')+'</button><button type="button" data-send-doc="'+esc(node.id)+'" title="Send to Donna" aria-label="Send '+esc(node.title)+' to Donna">'+graphIcon('donna')+'</button></span></div>'
 }
 /*
- Un seul panneau, dont le contenu suit le niveau.
+ A single panel, whose content follows the level.
 
- Le focus document ouvrait sa propre fenêtre par-dessus l'inspecteur, qui
- affichait déjà la même liste : deux cadres superposés, mêmes documents, deux
- fois la place. Elle était de surcroît ajoutée au canevas, dont l'explorateur
- remplace le contenu à chaque rendu — elle disparaissait donc au premier
- redessin, ou survivait détachée selon l'ordre des appels.
+ The document focus opened its own window over the inspector, which already
+ showed the same list: two superimposed frames, the same documents, twice the
+ space. It was moreover added to the canvas, whose explorer replaces the
+ content on every render — it therefore disappeared at the first redraw, or
+ survived detached depending on the order of the calls.
 
- Ici le niveau change ce que le panneau montre, pas le nombre de panneaux.
+ Here the level changes what the panel shows, not the number of panels.
 */
 function renderDocumentFocusWindow(node){
   const relatedIds=new Set([node.id]);data.edges.forEach(edge=>{if(edge.from===node.id)relatedIds.add(edge.to);if(edge.to===node.id)relatedIds.add(edge.from)});
   const related=data.nodes.filter(item=>relatedIds.has(item.id)).sort((left,right)=>Number(right.id===node.id)-Number(left.id===node.id)||right.degree-left.degree);
-  // Pas de croix dans l'en-tête : elle promettait une fermeture et remontait
-  // en réalité d'un niveau, exactement comme le « ← Back » de la barre d'outils
-  // (#focus-back, script.ts) — même cible, même condition. Deux commandes pour
-  // un seul geste, dont l'une ment sur ce qu'elle fait.
+  // No cross in the header: it promised a closing and actually went back up a
+  // level, exactly like the "← Back" of the toolbar (#focus-back, script.ts) —
+  // same target, same condition. Two commands for a single gesture, one of
+  // which lies about what it does.
   inspector.innerHTML='<div class="panel-head"><div><small>DOCUMENT</small><strong>'+esc(node.title)+'</strong><span>'+esc(node.id)+'</span></div></div><div class="document-focus-list">'+related.slice(0,50).map(documentActionRow).join('')+'</div>'
 }
 /*
- Descendre doit apporter quelque chose.
+ Descending must bring something.
 
- Le seuil était « au moins une relation », parce qu'une page isolée ouvrait une
- vue focus d'un seul nœud. Mais à une relation la vue en contient deux : on
- quitte le domaine et tout son voisinage pour un segment que le panneau de
- droite énonçait déjà en une ligne. Le prix — perdre le niveau où l'on était —
- ne se paie qu'à partir d'un vrai voisinage, donc de deux liens.
+ The threshold was "at least one relation", because an isolated page opened a
+ focus view of a single node. But with one relation the view contains two: one
+ leaves the domain and all its neighborhood for a segment that the right panel
+ already stated in one line. The price — losing the level we were on — is only
+ paid starting from a real neighborhood, hence two links.
 
- En dessous, la page se sélectionne sur place et ouvre sa fiche de contexte
- juste à côté : ce que le lecteur cherchait en cliquant, c'est de quoi elle
- parle, pas un graphe à un segment.
+ Below that, the page selects itself in place and opens its context card right
+ next to it: what the reader was looking for by clicking is what it is about,
+ not a one-segment graph.
 */
 const GRAPH_FOCUS_MIN_RELATIONS=2;
 function documentRelationCount(id){
@@ -50,45 +50,45 @@ function documentRelationCount(id){
   data.edges.forEach(edge=>{
     if(edge.from===id)seen.add(edge.to);
     else if(edge.to===id)seen.add(edge.from)});
-  // Deux pages reliées par trois relations de types différents restent un seul
-  // voisin : c'est le voisinage qui rend la descente utile, pas le nombre
-  // d'arêtes.
+  // Two pages linked by three relations of different types remain a single
+  // neighbor: it is the neighborhood that makes the descent useful, not the
+  // number of edges.
   return seen.size}
 function documentHasRelations(id){return documentRelationCount(id)>=GRAPH_FOCUS_MIN_RELATIONS}
 async function selectDocument(node){
   if(selected&&selected.id!==node.id)focusHistory.push(selected.id);
   selected=node;selectedCommunity=data.communities.find(community=>community.nodeIds.includes(node.id))?.id||null;
   const descends=documentHasRelations(node.id);
-  // Depuis la vue d'un domaine, la sélection passe d'un domaine à une feuille :
-  // rester au niveau « domaine » ferait chercher les filles d'une feuille, donc
-  // rendrait une scène vide.
+  // From a domain's view, the selection goes from a domain to a leaf: staying
+  // at the "domain" level would make us look for a leaf's children, hence
+  // render an empty scene.
   if(descends)view='focus';else if(view==='map'||view==='domain')view='community';
   render();renderDocumentFocusWindow(node);
-  // La fiche est le seul retour visible quand on ne descend pas : sans elle,
-  // le clic ne ferait qu'écrire une ligne dans un panneau à l'autre bout de
-  // l'écran.
+  // The card is the only visible feedback when one does not descend: without
+  // it, the click would only write a line in a panel at the other end of the
+  // screen.
   if(descends)closeGraphContextCard();else openGraphContextCard(node);
 }
 /*
- Un clic sur un DOMAINE ouvre ses communautés, jamais ses documents.
+ A click on a DOMAIN opens its communities, never its documents.
 
- C'est le niveau de navigation qui manquait : sans lui, ouvrir « Logiciel »
- déversait ses 142 pages d'un coup. Un domaine se déplie en quelques sujets ;
- c'est un sujet qui déplie enfin ses documents.
+ This is the navigation level that was missing: without it, opening "Software"
+ dumped its 142 pages at once. A domain unfolds into a few subjects; it is a
+ subject that finally unfolds its documents.
 */
 function selectCommunity(id){
   const children=graphCommunityChildren(id);
   if(children.length){
     const domain=(data.domains||[]).find(item=>item.id===id);
     selected=null;selectedCommunity=id;view='domain';render();
-    inspector.innerHTML='<div class="panel-head"><div><small>DOMAINE</small><strong>'+esc(graphDomainDisplay(domain?domain.label:id))+'</strong><span>'+children.length+' communautés · '+children.reduce((sum,item)=>sum+item.documentCount,0)+' documents</span></div></div><div class="document-focus-list">'+children.map(item=>'<div class="focus-document-row"><button type="button" class="focus-document-name" data-community="'+esc(item.id)+'"><span>'+esc(graphLeafDisplay(item.label))+'</span><small>'+item.documentCount+' documents</small></button></div>').join('')+'</div>';
+    inspector.innerHTML='<div class="panel-head"><div><small>DOMAIN</small><strong>'+esc(graphDomainDisplay(domain?domain.label:id))+'</strong><span>'+children.length+' communities · '+children.reduce((sum,item)=>sum+item.documentCount,0)+' documents</span></div></div><div class="document-focus-list">'+children.map(item=>'<div class="focus-document-row"><button type="button" class="focus-document-name" data-community="'+esc(item.id)+'"><span>'+esc(graphLeafDisplay(item.label))+'</span><small>'+item.documentCount+' documents</small></button></div>').join('')+'</div>';
     return}
   const community=data.communities.find(item=>item.id===id);if(!community)return;
   selected=null;selectedCommunity=id;view='community';render();
-  // Même gabarit qu'au niveau document : en-tête, puis liste défilante. Deux
-  // mises en page différentes pour la même fonction obligeaient l'œil à
-  // réapprendre le panneau à chaque descente.
-  inspector.innerHTML='<div class="panel-head"><div><small>COMMUNAUTE</small><strong>'+esc(graphLeafDisplay(community.label))+'</strong><span>'+community.documentCount+' documents · '+community.internalRelations+' relations internes · '+community.externalRelations+' externes</span></div></div><div class="document-focus-list">'+community.nodeIds.slice(0,50).map(nodeId=>documentActionRow(data.nodes.find(node=>node.id===nodeId)||{id:nodeId,title:nodeId,type:'document',degree:0})).join('')+'</div>'
+  // Same template as at document level: header, then scrolling list. Two
+  // different layouts for the same function forced the eye to relearn the
+  // panel on every descent.
+  inspector.innerHTML='<div class="panel-head"><div><small>COMMUNITY</small><strong>'+esc(graphLeafDisplay(community.label))+'</strong><span>'+community.documentCount+' documents · '+community.internalRelations+' internal relations · '+community.externalRelations+' external</span></div></div><div class="document-focus-list">'+community.nodeIds.slice(0,50).map(nodeId=>documentActionRow(data.nodes.find(node=>node.id===nodeId)||{id:nodeId,title:nodeId,type:'document',degree:0})).join('')+'</div>'
 }
 document.addEventListener('click',event=>{
   const preview=event.target.closest('[data-preview-doc]');if(preview){event.stopImmediatePropagation();previewGraphDocument(preview.dataset.previewDoc);return}

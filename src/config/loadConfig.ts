@@ -64,9 +64,9 @@ async function loadConfigInput(startDir: string): Promise<{
 }
 
 /**
- * Chemin du `.wikirc.yaml` effectif, sans le résoudre. Nécessaire à la
- * migration de l'ancien format `llm.provider`, qui doit réécrire le fichier
- * avant que `resolveConfig` accepte de le lire.
+ * Path of the effective `.wikirc.yaml`, without resolving it. Needed for the
+ * migration of the old `llm.provider` format, which must rewrite the file
+ * before `resolveConfig` accepts to read it.
  */
 export async function findWikircPath(startDir: string): Promise<string | undefined> {
   const workspaceEnv = process.env.WIKI_WORKSPACE ?? process.env.WIKI_WORKSPACE_PATH;

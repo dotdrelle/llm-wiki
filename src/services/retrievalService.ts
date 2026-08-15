@@ -472,30 +472,29 @@ export class RetrievalService {
     if (this.loggedVectorFallbacks.has(key)) return;
     this.loggedVectorFallbacks.add(key);
     /*
-     Un avertissement dit ce qui ne va pas, pas tout ce qu'on sait.
+     A warning says what is wrong, not everything we know.
 
-     Ce qui noyait la ligne au milieu d'une ingestion, c'était le VOLUME : un
-     extrait de requête de 160 caractères, plus un chemin d'index absolu. La
-     cause — « Vector index is missing. » — se lisait en dernier, après le
-     débordement.
+     What drowned the line in the middle of an ingestion was the VOLUME: a
+     160-character query excerpt, plus an absolute index path. The cause —
+     "Vector index is missing." — was read last, after the overflow.
 
-     La correction précédente est allée trop loin en retirant aussi `fallback`,
-     `disabled` et `consecutiveErrors`. Ce sont trois mots, pas du volume, et
-     ils portent l'état de la dégradation : sur quoi on est retombé, si le
-     vecteur est désormais coupé, et depuis combien d'échecs. Sans eux, un
-     lecteur voit une suite d'avertissements identiques sans jamais savoir que
-     la recherche vectorielle s'est arrêtée — et trois tests le vérifiaient.
+     The previous correction went too far by also removing `fallback`,
+     `disabled` and `consecutiveErrors`. Those are three words, not volume, and
+     they carry the degradation state: what we fell back on, whether the vector
+     is now disabled, and after how many failures. Without them, a reader sees
+     a series of identical warnings without ever knowing that vector retrieval
+     has stopped — and three tests verified it.
 
-     `queryPreview` et `indexPath` restent hors de la console : ils appartiennent
-     à la trace.
+     `queryPreview` and `indexPath` stay out of the console: they belong to the
+     trace.
     */
     const state = Object.fromEntries(
       Object.entries(details).filter(([key]) => key !== 'queryPreview' && key !== 'indexPath'),
     );
     await this.logger.warn('retrieval:vector-fallback', {
       reason,
-      // `rerank-error` rend quand même les résultats vectoriels : il n'y a pas
-      // de repli, et l'annoncer serait faux.
+      // `rerank-error` still returns the vector results: there is no fallback,
+      // and announcing one would be false.
       ...(reason === 'rerank-error' ? {} : { fallback: 'lexical' as const }),
       ...state,
       ...(error

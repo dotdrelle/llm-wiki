@@ -1,28 +1,28 @@
 import type { RegistryCommunity, TaxonomyRegistry } from './schema.ts';
 
 /*
- Filiation explicite et garde-fou de dépréciation massive (plan Lot 3, 6.3).
+ Explicit filiation and mass-deprecation guardrail (plan Lot 3, 6.3).
 
- Le ré-ancrage ordinaire par Jaccard est fait pour une évolution NON planifiée :
- des pages qui bougent un peu, une communauté qui survit à un remaniement
- mineur. Une réorganisation volontaire de granularité — fusion, scission,
- rapprochement comparatif — déplace souvent plus de la moitié des membres et
- fait passer une communauté existante pour une disparition. Décider d'une
- fusion au seul recouvrement de membres effacerait alors, en une révision, une
- carte que l'utilisateur reconnaissait, sans laisser de quoi la reconstruire.
+ Ordinary Jaccard re-anchoring is made for an UNplanned evolution:
+ pages that move a little, a community that survives a minor
+ reshuffle. A deliberate granularity reorganization — merge, split,
+ comparative regrouping — often moves more than half of the members and
+ makes an existing community pass for a disappearance. Deciding a
+ merge on member overlap alone would then erase, in a single revision, a
+ map the user recognized, without leaving anything to rebuild it from.
 
- Ce module ne réinvente pas `anchorCommunities` : il rapporte ce que le
- registre va faire (qui est absorbé, renommé, déprécié, et vers quoi), puis il
- borne la DISPARITION NON FILIÉE. Une communauté qui disparaît en pointant une
- remplaçante avale sa fraction de la carte sans perte ; une communauté qui
- s'évanouit sans successeur est un trou. Au-delà d'un seuil explicite de trous,
- la publication est refusée, quels que soient les seuils de reconnaissance.
+ This module does not reinvent `anchorCommunities`: it reports what the
+ registry is going to do (who is absorbed, renamed, deprecated, and towards what), then it
+ bounds the UNFILED DISAPPEARANCE. A community that disappears pointing at a
+ replacement swallows its fraction of the map without loss; a community that
+ vanishes without a successor is a hole. Beyond an explicit threshold of holes,
+ the publication is refused, whatever the recognition thresholds.
 
- Aucune règle métier n'entre ici : tout est une opération sur des comptes et
- des identifiants.
+ No business rule enters here: everything is an operation on counts and
+ identifiers.
 */
 
-/** La filiation d'une communauté est l'opération que cette révision lui fait subir. */
+/** A community's filiation is the operation this revision makes it undergo. */
 export type LineageOp = 'unchanged' | 'rename' | 'merge' | 'split' | 'move' | 'created';
 
 export type LineageEntry =
@@ -32,36 +32,36 @@ export type LineageEntry =
   | { id: string; op: 'move'; into: string };
 
 export type LineageReport = {
-  /** Opération appliquée à chaque communauté du précédent cette révision. */
+  /** Operation applied to each community of the previous one this revision. */
   entries: LineageEntry[];
-  /** Communautés du précédent restées sans descendant filié : disparitions réelles. */
+  /** Previous communities left with no filiated descendant: real disappearances. */
   trulyLost: string[];
 };
 
 /**
- * Commande de garde-fou : taux maximal de communautés actives du précédent qui
- * peuvent être dépréciées SANS successeur dans une révision.
+ * Guardrail command: maximum rate of active communities of the previous one that
+ * can be deprecated WITHOUT a successor in a revision.
  *
- * Une valeur de 0.3 dit : une révision peut faire disparaître de la carte au
- * plus ~3 communautés actives sur 10 en trous non filiés ; au-delà, c'est une
- * réorganisation que seul un plan de filiation explicite peut expliquer, et
- * rien ne l'a fournie.
+ * A value of 0.3 says: a revision can make at most ~3 active communities out of
+ * 10 disappear from the map in unfiled holes; beyond that, it is a
+ * reorganization that only an explicit filiation plan can explain, and
+ * nothing provided it.
  */
 export const MAX_UNFILED_DEPRECATION_RATE = 0.3;
 
 /**
- * Comment garde-fou contre la dépréciation massive non expliquée.
+ * Guardrail against unexplained mass deprecation.
  *
- * Compte, parmi les communautés ACTIVES du registre précédent (jamais
- * dépréciées), celles que cette révision déprécie sans `replacedBy` résoluble —
- * c'est-à-dire un trou de carte, pas une absorption. Si la proportion dépasse
- * le seuil, la publication est refusée.
+ * Counts, among the ACTIVE communities of the previous registry (never
+ * deprecated), those that this revision deprecates without a resolvable `replacedBy` —
+ * that is, a map hole, not an absorption. If the proportion exceeds
+ * the threshold, the publication is refused.
  *
- * `force` ne doit JAMAIS contourner ce garde-fou : ce n'est pas un seuil de
- * reconnaissance qui tolère qu'on l'assouplisse, c'est la promesse que toute
- * disparition de carte reste traçable. Un `force` qui voudrait quand même
- * déprécier en masse doit d'abord fournir une filiation — ici, des
- * `replacedBy` — et non enfoncer la porte.
+ * `force` must NEVER bypass this guardrail: it is not a recognition
+ * threshold that tolerates being relaxed, it is the promise that every
+ * map disappearance stays traceable. A `force` that still wants to
+ * deprecate en masse must first provide a filiation — here,
+ * `replacedBy` — and not break the door down.
  */
 export function guardAgainstMassDisruption(
   previous: TaxonomyRegistry | null,
@@ -75,8 +75,8 @@ export function guardAgainstMassDisruption(
   if (activeBefore.length === 0) return { ok: true };
 
   const currentById = new Map(current.map((c) => [c.id, c]));
-  // Résoudre une chaîne de dépréciations : vers quelle communauté VIVANTE cette
-  // entrée finit-elle par pointer ?
+  // Resolve a deprecation chain: which LIVE community does this
+  // entry end up pointing at?
   const endsAtLive = (id: string): string | null => {
     const seen = new Set<string>();
     let cursor: string | null = id;
@@ -95,8 +95,8 @@ export function guardAgainstMassDisruption(
     return null;
   };
 
-  // Un « trou » : une communauté active d'avant qui soit n'est pas du tout dans
-  // la révision, soit est dépréciée sans remplaçante vivante.
+  // A "hole": an active community from before that either is not in
+  // the revision at all, or is deprecated without a live replacement.
   const unfiled: string[] = [];
   for (const before of activeBefore) {
     const id = before.id;
@@ -108,20 +108,20 @@ export function guardAgainstMassDisruption(
   if (rate <= maxRate) return { ok: true };
 
   const issues = [
-    `dépréciation non filiée ${Math.round(rate * 100)} % au-delà du plafond ${Math.round(maxRate * 100)} %`,
-    `communautés actives disparues sans successeur : ${unfiled.join(', ')}`,
-    'fournir une filiation explicite (replacedBy / changeNote) avant de publier; force ne contourne pas ce garde-fou',
+    `unfiled deprecation ${Math.round(rate * 100)}% beyond the ceiling ${Math.round(maxRate * 100)}%`,
+    `active communities disappeared without a successor: ${unfiled.join(', ')}`,
+    'provide an explicit filiation (replacedBy / changeNote) before publishing; force does not bypass this guardrail',
   ];
   return { ok: false, issues };
 }
 
 /**
- * Rapporte la filiation de chaque communauté du précédent vers cette révision.
+ * Reports the filiation of each previous community towards this revision.
  *
- * Utile pour les rapports avant/après (§6.3) et pour décider d'un `split` :
- * deux nouvelles communautés qui n'auraient qu'une seule ascendante commune se
- * partagent une scission, et une ascendante recouvrée sous sa propre identité
- * est "renommée" plutôt que "remplacée".
+ * Useful for before/after reports (§6.3) and for deciding a `split`:
+ * two new communities that would only share one common ancestor
+ * split apart, and a recovered ancestor under its own identity
+ * is "renamed" rather than "replaced".
  */
 export function lineageReport(
   previous: TaxonomyRegistry | null,
@@ -137,13 +137,13 @@ export function lineageReport(
   for (const before of previous.communities) {
     const id = before.id;
     if (before.deprecated) {
-      // Déjà un trou d'une révision antérieure : on le suit, on ne le re-rompt pas.
+      // Already a hole from an earlier revision: we follow it, we do not re-break it.
       entries.push({ id, op: 'unchanged' });
       continue;
     }
     const now = currentById.get(id);
     if (!now || now.deprecated) {
-      // Disparue ou dépréciée : la filiation dépend du successeur.
+      // Gone or deprecated: the filiation depends on the successor.
       const target = !now ? undefined : (now.replacedBy ?? undefined);
       if (target && currentById.get(target) && !currentById.get(target)!.deprecated) {
         entries.push({ id, op: 'merge', into: target });
@@ -153,7 +153,7 @@ export function lineageReport(
       }
       continue;
     }
-    // La même identité survit : renommage ? Le libellé a changé.
+    // The same identity survives: rename? The label changed.
     const beforeLabel = before.prefLabel;
     const nowLabel = now.prefLabel;
     const sameLabel = Object.keys(beforeLabel).every(
@@ -165,24 +165,22 @@ export function lineageReport(
 
   return { entries, trulyLost };
 }
-
 /**
- * Règle STABLE et déterministe de choix du survivant d'une fusion (§6.3).
+ * STABLE and deterministic rule for picking the survivor of a merge (§6.3).
  *
- * « Le survivant qui porte le nom le plus parlant » n'a aucune place ici : une
- * identité de carte se reconnaît à sa continuité, pas à un libellé du brouillon.
- * La règle est donc purement mécanique et reproductible à chaque appel sur le
- * même registre.
+ * "The survivor that carries the most telling name" has no place here: a map
+ * identity is recognised by its continuity, not by a draft label. The rule is
+ * purely mechanical and reproducible on every call over the same registry.
  *
- * Survit la communauté la plus ANCIENNE (`firstSeenRevision` minimal) — celle
- * que les lecteurs reconnaissent depuis le plus longtemps ; à âges égaux,
- * l'identifiant lexicographique le plus petit départage. Ni le label, ni le
- * nombre de pages, ni la position dans la liste n'entrent en compte.
+ * The OLDEST community survives (`firstSeenRevision` minimal) — the one readers
+ * have recognised for the longest time; at equal age the smallest id breaks the
+ * tie lexicographically. Neither the label, nor the page count, nor the list
+ * position count.
  */
 export function pickSurvivor(candidates: RegistryCommunity[]): string | null {
   if (candidates.length === 0) return null;
-  // `candidates` non vide garantit qu'au moins une itération affecte survivor,
-  // donc l'assertion non-nulle ci-dessous est sûre.
+  // A non-empty `candidates` guarantees at least one iteration assigns survivor,
+  // so the non-null assertion below is safe.
   let survivor: RegistryCommunity = candidates[0]!;
   for (let index = 1; index < candidates.length; index += 1) {
     const candidate = candidates[index]!;
@@ -199,16 +197,16 @@ export function pickSurvivor(candidates: RegistryCommunity[]): string | null {
 }
 
 /**
- * Rédige la souche dépréciée d'une communauté absorbée par une fusion (§6.3).
+ * Writes the deprecated stub of a community absorbed by a merge (§6.3).
  *
- * Une identité absorbée n'est jamais supprimée : elle reste dans le registre,
- * passe `deprecated: true` et renvoie `replacedBy` vers le survivant, et le
- * survivant l'inscrit dans `replaces` — c'est ce qui permet à
- * `resolveCommunity` et aux rapports avant/après de relire la redirection.
- * Ne mute jamais `current` ; retourne une nouvelle liste.
+ * An absorbed identity is never deleted: it stays in the registry, becomes
+ * `deprecated: true` and redirects `replacedBy` toward the survivor, and the
+ * survivor records it in `replaces` — that is what lets `resolveCommunity` and
+ * the before/after reports read the redirection back. Never mutates `current`;
+ * returns a new list.
  *
- * Refuse les redirections qui effaceraient une identité : une cible absente,
- * déjà dépréciée, ou la communauté elle-même ne produit aucune souche.
+ * Refuses redirections that would erase an identity: a missing target, one
+ * already deprecated, or the community itself produce no stub.
  */
 export function deprecateInto(
   current: RegistryCommunity[],
@@ -243,38 +241,36 @@ export function deprecateInto(
 }
 
 export type LineageSummary = {
-  /** Identités conservées telles quelles. */
+  /** Identities kept as they were. */
   unchanged: string[];
-  /** Identités conservées sous un libellé différent. */
+  /** Identities kept under a different label. */
   renamed: string[];
-  /** Absorbées vers un survivant. */
+  /** Absorbed toward a survivor. */
   merged: Array<{ id: string; into: string }>;
-  /** Une ascendante partagée, repartie entre plusieurs branches nouvelles. */
+  /** A shared ancestor split between new branches. */
   split: Array<{ from: string; branches: string[] }>;
-  /** Déplacées vers une cible (dépréciation filiée au sens strict). */
+  /** Moved toward a target (strictly filiated deprecation). */
   moved: Array<{ id: string; into: string }>;
-  /** Souches dépréciées de la révision, avec leur successeur éventuel. */
+  /** Deprecated stubs of this revision, with their eventual successor. */
   deprecated: Array<{ id: string; into: string | null }>;
-  /** Communautés vivantes nées dans cette révision, hors scissions. */
+  /** Live communities born in this revision, excluding splits. */
   created: string[];
-  /** Disparues sans aucun successeur filié : trous de la carte. */
+  /** Gone with no filiated successor: gaps in the map. */
   trulyLost: string[];
 };
 
 /**
- * Rapport avant/après de la révision, en catégories (§6.3).
+ * Before/after report of the revision, by category (§6.3).
  *
- * Déduit fusions et scissions du MOUVEMENT DES PAGES, jamais d'un inventaire
- * nommé : ce sont les pages qui portent la continuité, et les deux registres
- * (le `assignments` du précédent et du courant) suffisent à retracer où chaque
- * page a atterri. Une communauté disparue dont toutes les pages migrent vers un
- * seul survivant est une fusion ; réparties entre plusieurs survivants, une
- * scission. Une page qui change de feuille sans que sa communauté d'origine
- * disparaisse est un déplacement.
+ * It derives merges and splits from the MOVEMENT OF PAGES, never from a named
+ * inventory: pages carry continuity, and both registries (the previous and
+ * current `assignments`) suffice to trace where each page landed. A vanished
+ * community whose pages all migrate to a single survivor is a merge; spread
+ * across several survivors, a split. A page that changes leaf while its origin
+ * community survives is a move.
  *
- * Requiert le registre courant COMPLET (`assignments` compris) pour retracer le
- * mouvement — contrairement à `lineageReport` qui ne compare que des
- * communautés.
+ * Requires the COMPLETE current registry (`assignments` included) to trace the
+ * movement — unlike `lineageReport`, which only compares communities.
  */
 export function summarizeLineage(
   previous: TaxonomyRegistry | null,
@@ -296,8 +292,8 @@ export function summarizeLineage(
 
   const currentById = new Map(communities.map((c) => [c.id, c]));
 
-  // Page -> communauté vivante du registre courant, en suivant les dépréciations
-  // de la DESTINATION (comme le ferait un lecteur de la carte).
+  // Page -> live community of the current registry, following the deprecations
+  // of the DESTINATION (as a reader of the map would).
   const endsAtLive = (id: string): string | null => {
     let cursor: string | null = id;
     const seen = new Set<string>();
@@ -313,8 +309,8 @@ export function summarizeLineage(
     }
     return null;
   };
-  // Pour chaque page : sa communauté d'origine (dans `previous`) et celle où
-  // elle atterrit (dans `current`, résolue vers une feuille vivante).
+  // For each page: its origin community (in `previous`) and where it lands (in
+  // `current`, resolved to a live leaf).
   const pageFrom = new Map<string, string>();
   const pagesTo = new Map<string, string[]>();
   for (const [page, assignment] of Object.entries(previous.assignments)) {
@@ -354,7 +350,7 @@ export function summarizeLineage(
       continue;
     }
 
-    // Communauté disparue (ou dépréciée) : où sont passées ses pages ?
+    // Vanished (or deprecated) community: where did its pages go?
     const descendants = new Set<string>();
     for (const [to, pages] of pagesTo) {
       for (const page of pages) {
@@ -364,8 +360,8 @@ export function summarizeLineage(
     const named = [...descendants].filter((target) => target !== id);
 
     if (now?.deprecated && named.length === 0) {
-      // Dépréciée explicitement vers un survivant, sans migration de pages
-      // observée : on suit la redirection déclarée elle-même.
+      // Explicitly deprecated toward a survivor with no observed page
+      // migration: follow the declared redirection itself.
       const declared = endsAtLive(now.replacedBy ?? '');
       if (declared) merged.push({ id, into: declared });
       else {
@@ -380,15 +376,15 @@ export function summarizeLineage(
       continue;
     }
     if (named.length >= 2) {
-      // Scission : plusieurs feuilles reprennent les pages d'une même source.
+      // Split: several leaves take over the pages of a single source.
       for (const branch of named) {
         splitByFrom.set(id, [...(splitByFrom.get(id) ?? []), branch]);
       }
       continue;
     }
 
-    // Aucune page migrée observable : vraie disparition ou déplacement sans
-    // continuation. Si aucun successeur explicite n'existe, c'est un trou.
+    // No observable migrated page: a real disappearance or a move without
+    // continuation. Without an explicit successor it is a gap.
     deprecated.push({ id, into: now?.replacedBy ?? null });
     if (!now?.replacedBy) trulyLost.push(id);
   }

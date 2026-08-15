@@ -4,65 +4,65 @@ import { safeWriteFile, withFileLock } from '../../../utils/fs.ts';
 import { canonicalJson, contentHash } from './canonical.ts';
 
 /*
- Registre de taxonomie : générations immuables, marqueur-pointeur.
+ Taxonomy registry: immutable generations, pointer-marker.
 
- Un unique `communities.json` réécrit avant le marqueur ne tient pas la
- promesse « le registre précédent reste actif » : si le producteur meurt entre
- l'écriture et la publication, le contenu précédent est déjà perdu et rien ne
- le reconstruit au redémarrage. Chaque contenu validé est donc écrit dans une
- génération immuable adressée par son empreinte, et le `rename` du marqueur est
- le SEUL point de publication.
+ A single `communities.json` rewritten before the marker does not hold the
+ promise "the previous registry stays active": if the producer dies between
+ the write and the publication, the previous content is already lost and nothing
+ rebuilds it on restart. Each validated content is therefore written into an
+ immutable generation addressed by its fingerprint, and the marker `rename` is
+ the ONLY point of publication.
 
- C'est le motif objets/références : une génération que personne ne référence
- est inerte, deux producteurs concurrents écrivent deux fichiers qui ne se
- rencontrent jamais, et l'écriture peut donc se faire hors du verrou. Le verrou
- ne protège plus qu'un compare-and-swap sur le pointeur.
+ That is the objects/references pattern: a generation that nobody references
+ is inert, two concurrent producers write two files that never
+ meet, and the write can therefore happen outside the lock. The lock
+ now only protects a compare-and-swap on the pointer.
 */
 
-/** Section critique réduite à un `rename` : dépasser cela, c'est être mort. */
+/** Critical section reduced to a `rename`: going beyond that means being dead. */
 export const REVISION_LOCK_TTL_MS = 45_000;
-/** Palier plafonné : budget d'attente long ET régulier (~60 s au total). */
+/** Capped plateau: a LONG and REGULAR wait budget (~60 s total). */
 export const REVISION_LOCK_ATTEMPTS = 240;
 export const REVISION_LOCK_MAX_BACKOFF_MS = 250;
-/** La courante, plus trois publiées : fenêtre de grâce des lecteurs. */
+/** The current one, plus three published: readers' grace window. */
 export const GENERATION_RETENTION = 4;
 /**
- * Une orpheline peut appartenir à un producteur qui attend encore le verrou.
- * Le seuil dépasse donc le budget d'acquisition, avec une marge.
+ * An orphan can belong to a producer still waiting for the lock.
+ * The threshold therefore exceeds the acquisition budget, with a margin.
  */
 export const ORPHAN_MIN_AGE_MS = 120_000;
 
 export type TaxonomyMarker = {
-  /** Compteur monotone par workspace. Ne recule jamais. */
+  /** Monotonic counter per workspace. Never goes backwards. */
   revision: number;
-  /** Empreinte du corpus sur laquelle la génération a été calculée. */
+  /** Fingerprint of the corpus on which the generation was computed. */
   corpus: string;
   /**
-   * Algorithme ayant produit `corpus`.
+   * Algorithm that produced `corpus`.
    *
-   * Absent sur les marqueurs historiques, qui portaient l'empreinte large du
-   * graphe complet. Deux empreintes d'algorithmes différents ne se comparent
-   * pas : `isComparableCorpus` répond « non » plutôt que de laisser une égalité
-   * de chaînes trancher au hasard, et l'appelant traite cela comme une absence
-   * d'information — jamais comme une péremption du corpus.
+   * Absent on historical markers, which carried the broad fingerprint of the
+   * complete graph. Two fingerprints from different algorithms do not
+   * compare: `isComparableCorpus` answers "no" rather than letting a string
+   * equality decide at random, and the caller treats that as an absence
+   * of information — never as a corpus staleness.
    */
   corpusAlgorithm?: string;
-  /** Nom de fichier de la génération active, ou null pour une révision déterministe pure. */
+  /** File name of the active generation, or null for a pure deterministic revision. */
   registryRef: string | null;
-  /** Empreinte du contenu de cette génération. */
+  /** Fingerprint of this generation's content. */
   registryHash: string | null;
-  /** Générations publiées précédentes conservées pour les lecteurs en vol. */
+  /** Previous published generations kept for in-flight readers. */
   retainedRegistryRefs?: string[];
-  /** Horodatage de publication, informatif. */
+  /** Publication timestamp, informational. */
   publishedAt: number;
 };
 
 export type DirtyFlag = {
   /**
-   * `deterministic` — Serve sait recalculer ce travail depuis les fichiers et
-   * le reprend seul. `pendingSynthesis` — la proposition vivait en mémoire du
-   * producteur et a disparu avec lui ; Serve ne rappelle jamais le modèle, il
-   * signale et laisse la capacité orchestrée reprendre.
+   * `deterministic` — Serve knows how to recompute this work from the files and
+   * resumes it alone. `pendingSynthesis` — the proposal lived in the
+   * producer's memory and disappeared with it; Serve never calls the model back, it
+   * signals and lets the orchestrated capability resume.
    */
   kind: 'deterministic' | 'pendingSynthesis';
   corpus: string;
@@ -101,12 +101,12 @@ function generationHash(name: string): string | null {
 }
 
 /**
- * Écrit une génération — **hors verrou**.
+ * Writes a generation — **outside the lock**.
  *
- * Sûr parce qu'immuable : le nom dérive du contenu, donc deux producteurs
- * distincts écrivent deux fichiers distincts, et réécrire la même génération
- * réécrit les mêmes octets. Tant qu'aucun marqueur ne la référence, elle
- * n'existe pour personne.
+ * Safe because immutable: the name derives from the content, so two distinct
+ * producers write two distinct files, and rewriting the same generation
+ * rewrites the same bytes. As long as no marker references it, it
+ * exists for nobody.
  */
 export async function writeGeneration(
   rootDir: string,
@@ -120,13 +120,13 @@ export async function writeGeneration(
 }
 
 /**
- * Deux empreintes de corpus sont-elles comparables ?
+ * Are two corpus fingerprints comparable?
  *
- * Un marqueur historique porte l'empreinte large du graphe complet, sans nom
- * d'algorithme. La comparer à l'empreinte de connaissance donnerait une
- * inégalité systématique — vraie par accident, et interprétée comme « le corpus
- * a changé » alors que personne n'a rien écrit. La bonne réponse est « je ne
- * sais pas », et c'est ce que ce prédicat permet de dire.
+ * A historical marker carries the broad fingerprint of the complete graph, with no
+ * algorithm name. Comparing it to the knowledge fingerprint would give a
+ * systematic inequality — true by accident, and interpreted as "the corpus
+ * has changed" while nobody wrote anything. The right answer is "I don't
+ * know", and that is what this predicate lets us say.
  */
 export function isComparableCorpus(marker: TaxonomyMarker | null, algorithm: string): boolean {
   return Boolean(marker) && marker!.corpusAlgorithm === algorithm;
@@ -138,21 +138,21 @@ export async function readMarker(rootDir: string): Promise<TaxonomyMarker | null
     const marker = JSON.parse(raw) as TaxonomyMarker;
     return typeof marker?.revision === 'number' ? marker : null;
   } catch {
-    // Absent au premier démarrage, tronqué si un disque a lâché : dans les deux
-    // cas le lecteur retombe sur la projection déterministe, jamais sur une
-    // erreur.
+    // Absent on first startup, truncated if a disk gave out: in both
+    // cases the reader falls back on the deterministic projection, never on an
+    // error.
     return null;
   }
 }
 
 /**
- * Lecture cohérente : **registre d'abord, marqueur ensuite**.
+ * Coherent read: **registry first, marker afterwards**.
  *
- * Une seule relecture suffit. Le registre est publié par `rename`, donc jamais
- * observable à moitié ; le risque n'est pas la déchirure mais la fraîcheur —
- * lire la génération de la révision N et découvrir que le monde est en N+1. La
- * révision étant monotone, il n'y a pas d'ABA, et comparer le marqueur APRÈS
- * coup détecte tous les cas.
+ * A single re-read suffices. The registry is published by `rename`, so never
+ * observable half-way; the risk is not tearing but freshness —
+ * reading revision N's generation and discovering the world is at N+1. The
+ * revision being monotonic, there is no ABA, and comparing the marker AFTER
+ * the fact detects every case.
  */
 export async function readActiveRegistry(
   rootDir: string,
@@ -185,12 +185,12 @@ export type PublishOutcome =
   | { status: 'unavailable'; error: unknown };
 
 /**
- * Publie une génération déjà écrite : le compare-and-swap du pointeur.
+ * Publishes an already-written generation: the pointer compare-and-swap.
  *
- * `expectedCorpus` est l'empreinte sur laquelle la proposition a été calculée.
- * Relue sous verrou, si elle a bougé, la proposition est abandonnée : elle
- * décrit un corpus qui n'existe plus, et l'écraser reviendrait à publier une
- * taxonomie par-dessus une ingestion plus récente.
+ * `expectedCorpus` is the fingerprint on which the proposal was computed.
+ * Re-read under lock, if it moved, the proposal is abandoned: it
+ * describes a corpus that no longer exists, and overwriting it would publish a
+ * taxonomy over a more recent ingestion.
  */
 export async function publishGeneration(
   rootDir: string,
@@ -199,11 +199,11 @@ export async function publishGeneration(
     registryRef: string | null;
     registryHash: string | null;
     expectedCorpus?: string;
-    /** Algorithme de `corpus`. Absent ⇒ marqueur historique, non comparable. */
+    /** Algorithm of `corpus`. Absent ⇒ historical marker, not comparable. */
     corpusAlgorithm?: string;
   },
-  // Les défauts sont ceux du produit ; un appelant à contrainte différente — un
-  // CLI ponctuel, un test — resserre le budget sans redéfinir la politique.
+  // The defaults are the product's; a caller with a different constraint — a
+  // one-shot CLI, a test — tightens the budget without redefining the policy.
   lock: { ttlMs?: number; attempts?: number; maxBackoffMs?: number } = {},
 ): Promise<PublishOutcome> {
   const paths = taxonomyPaths(rootDir);
@@ -213,14 +213,14 @@ export async function publishGeneration(
       async (): Promise<PublishOutcome> => {
         const current = await readMarker(rootDir);
         /*
-         L'attente ne se vérifie qu'entre empreintes comparables.
+         The expectation is only checked between comparable fingerprints.
 
-         Un marqueur historique porte l'empreinte large du graphe complet. La
-         confronter à une empreinte de connaissance donnerait une inégalité
-         permanente : la toute première publication après migration serait
-         rejetée comme « périmée », et la suivante aussi, indéfiniment. Le
-         compare-and-swap n'a de sens qu'entre deux valeurs produites par le même
-         algorithme ; sinon il n'y a rien à comparer, et la publication passe.
+         A historical marker carries the broad fingerprint of the complete graph.
+         Confronting it with a knowledge fingerprint would give a permanent
+         inequality: the very first publication after migration would be
+         rejected as "stale", and the next one too, indefinitely. The
+         compare-and-swap only means anything between two values produced by the same
+         algorithm; otherwise there is nothing to compare, and the publication passes.
         */
         const comparable = !current
           || current.corpusAlgorithm === input.corpusAlgorithm;
@@ -258,21 +258,21 @@ export async function publishGeneration(
       },
     );
     if (outcome.status === 'published') {
-      // Le ramassage est best-effort et hors verrou : une panne de nettoyage
-      // ne doit jamais transformer un commit déjà publié en échec apparent.
+      // The collection is best-effort and outside the lock: a cleanup failure
+      // must never turn an already-published commit into an apparent failure.
       try {
         await collectGenerations(rootDir);
       } catch {
-        // Le prochain commit ou démarrage de Serve retentera.
+        // The next commit or Serve startup will retry.
       }
     }
     return outcome;
   } catch (error) {
     /*
-     Invariant : l'échec d'allocation d'une révision ne fait JAMAIS échouer
-     l'ingestion. `withFileLock` propage son exception ; la laisser remonter
-     tuerait un job de production pour un problème d'affichage. Le graphe a le
-     droit d'être en retard, le corpus n'a pas le droit d'être perdu.
+     Invariant: the failure to allocate a revision NEVER makes the
+     ingestion fail. `withFileLock` propagates its exception; letting it bubble
+     up would kill a production job for a display problem. The graph has the
+     right to be late, the corpus does not have the right to be lost.
     */
     return { status: 'unavailable', error };
   }
@@ -297,11 +297,11 @@ export async function clearDirtyFlag(rootDir: string): Promise<void> {
 }
 
 /**
- * Ramasse les générations devenues inutiles.
+ * Collects the generations that have become useless.
  *
- * Trois règles, et la troisième est le piège : une génération écrite il y a
- * 200 ms peut appartenir à un producteur qui attend encore le verrou. La
- * supprimer casserait sa publication, alors même qu'elle paraît orpheline.
+ * Three rules, and the third is the trap: a generation written 200 ms ago
+ * can belong to a producer still waiting for the lock.
+ * Deleting it would break its publication, even though it looks orphan.
  */
 export async function collectGenerations(
   rootDir: string,
@@ -327,7 +327,7 @@ export async function collectGenerations(
       const info = await stat(path.join(paths.dir, name));
       generations.push({ name, mtimeMs: info.mtimeMs });
     } catch {
-      // Disparue entre readdir et stat : rien à ramasser.
+      // Gone between readdir and stat: nothing to collect.
     }
   }
 
@@ -337,9 +337,9 @@ export async function collectGenerations(
   ]);
   const removed: string[] = [];
   for (const generation of generations) {
-    // Seul l'historique du marqueur prouve qu'une génération a été publiée.
-    // Le mtime ne distingue pas une ancienne publication d'une proposition
-    // orpheline écrite par un producteur qui n'a jamais acquis le verrou.
+    // Only the marker history proves that a generation was published.
+    // The mtime does not distinguish an old publication from an orphan
+    // proposal written by a producer that never acquired the lock.
     if (retained.has(generation.name)) continue;
     if (now - generation.mtimeMs < minAgeMs) continue;
     await rm(path.join(paths.dir, generation.name), { force: true });

@@ -7,19 +7,19 @@ import type {
 } from './projection.ts';
 
 /**
- * Provenance d'une affectation, par ordre de priorité décroissante.
+ * Provenance of an assignment, in decreasing priority order.
  *
- * - `explicit` — `community:` en frontmatter. Une décision d'auteur, immuable.
- * - `synthesized` — le registre de taxonomie. Une décision, elle aussi : les
- *   passes de réparation n'y touchent pas.
- * - `seed` — une déduction : `group:`, ou le nom d'un dossier de concepts.
- *   Réparable, et c'est le but.
- * - `inherited` — déduit du voisinage.
- * - `fallback` — rien n'a permis de conclure.
+ * - `explicit` — `community:` in frontmatter. An author decision, immutable.
+ * - `synthesized` — the taxonomy registry. A decision too: the repair passes
+ *   do not touch it.
+ * - `seed` — a deduction: `group:`, or the name of a concept folder.
+ *   Repairable, and that is the point.
+ * - `inherited` — deduced from the neighborhood.
+ * - `fallback` — nothing allowed a conclusion.
  *
- * Réutiliser `inherited` pour une graine masquerait une information nécessaire
- * aux diagnostics et à l'interface. Cette valeur voyage dans le snapshot :
- * tout consommateur qui commute dessus doit avoir une branche par défaut.
+ * Reusing `inherited` for a seed would hide information needed by the
+ * diagnostics and the interface. This value travels in the snapshot: any
+ * consumer that switches on it must have a default branch.
  */
 export type CommunityAssignment = {
   communityId: string;
@@ -28,11 +28,11 @@ export type CommunityAssignment = {
 };
 
 /**
- * Vue minimale du registre de taxonomie.
+ * Minimal view of the taxonomy registry.
  *
- * Volontairement réduite à ce dont l'affectation a besoin : ce module reste
- * ignorant du format du registre, de SKOS et des révisions, et se teste sans
- * en fabriquer un.
+ * Deliberately reduced to what the assignment needs: this module stays
+ * ignorant of the registry format, of SKOS and of revisions, and tests itself
+ * without fabricating one.
  */
 export type RegistryLookup = {
   assign: (pageId: string) => { communityId: string; communityLabel: string } | null;
@@ -143,14 +143,14 @@ export function assignGraphCommunities(
   const assignments = new Map<string, CommunityAssignment>();
 
   /*
-   Hiérarchie d'affectation, par priorité décroissante :
-     1. `community:` explicite  2. registre synthétisé  3. graine (`group:`,
-     dossier de concepts)  4. héritage par voisinage  5. repli.
+   Assignment hierarchy, in decreasing priority:
+     1. explicit `community:`  2. synthesized registry  3. seed (`group:`,
+     concept folder)  4. inheritance by neighborhood  5. fallback.
 
-   `declared` retient ce que les passes de réparation n'ont pas le droit de
-   défaire : une décision d'auteur, et une taxonomie synthétisée. Une déduction
-   — nom de dossier, `group:` — reste réparable, et c'est précisément ce qui
-   distingue une graine d'une décision.
+   `declared` holds what the repair passes have no right to undo: an author
+   decision, and a synthesized taxonomy. A deduction — folder name, `group:` —
+   stays repairable, and that is precisely what distinguishes a seed from a
+   decision.
   */
   const declared = new Set<string>();
   for (const node of nodes) {
@@ -161,7 +161,7 @@ export function assignGraphCommunities(
     }
   }
 
-  // Pass 1b: registre de taxonomie. Il ne prend jamais le pas sur un auteur.
+  // Pass 1b: taxonomy registry. It never overrides an author.
   if (options.registry) {
     for (const node of nodes) {
       if (assignments.has(node.id)) continue;
@@ -176,7 +176,7 @@ export function assignGraphCommunities(
     }
   }
 
-  // Pass 2: graines — `group:` déclaré à l'ingestion, puis dossier de concepts.
+  // Pass 2: seeds — `group:` declared at ingestion, then concept folder.
   for (const node of nodes) {
     if (assignments.has(node.id)) continue;
     const group = node.group?.trim();
@@ -228,40 +228,39 @@ export function assignGraphCommunities(
     if (winner) assignments.set(node.id, winner);
   }
 
-  // Pass 7: propagation jusqu'à stabilisation.
+  // Pass 7: propagation until stable.
   //
-  // Les passes 3 à 5 n'inspectent chacune qu'un type de nœud et ne tournent
-  // qu'une fois : une page dont le seul voisin assigné l'a été APRÈS elle
-  // restait sans domaine. Répéter jusqu'à ce que plus rien ne bouge coûte
-  // quelques itérations et vide l'essentiel du groupe résiduel. Aucun réglage :
-  // le critère d'arrêt est l'absence de changement.
+  // Passes 3 to 5 each only inspect one node type and run only once: a page
+  // whose only assigned neighbor was assigned AFTER it stayed without a
+  // domain. Repeating until nothing moves anymore costs a few iterations and
+  // empties the bulk of the residual group. No tuning: the stopping criterion
+  // is the absence of change.
   propagateUntilStable(nodes, edges, assignments);
 
-  // Pass 8: absorption des communautés faibles.
+  // Pass 8: absorption of weak communities.
   //
-  // Une communauté dont les membres ont plus de relations dehors que dedans
-  // n'en est pas une : c'est la définition faible de Radicchi. On la fusionne
-  // dans le voisinage auquel elle est le plus attachée. Le critère est un
-  // rapport, donc il ne dépend ni de la taille du wiki ni d'un seuil choisi
-  // pour un corpus particulier — contrairement à un « moins de N pages ».
+  // A community whose members have more relations outside than inside is not
+  // one: that is Radicchi's weak definition. We merge it into the neighborhood
+  // to which it is most attached. The criterion is a ratio, so it depends
+  // neither on the wiki's size nor on a threshold chosen for a particular
+  // corpus — unlike a "fewer than N pages".
   absorbWeakCommunities(nodes, edges, assignments, declared);
 
-  // Pass 9: dissolution des communautés sans cohésion interne.
+  // Pass 9: dissolution of communities without internal cohesion.
   //
-  // La passe précédente ne peut rien contre un dossier d'une seule page, sans
-  // aucun lien : ni relation interne, ni relation externe, donc aucun déficit
-  // à mesurer. C'est pourtant le cas le plus visible à l'écran — la moitié des
-  // halos du graphe portaient « 1 page ». Une communauté sans AUCUNE relation
-  // interne n'en est pas une : c'est un nom de dossier. On la dissout et on
-  // replace ses membres un par un.
+  // The previous pass can do nothing against a single-page folder with no link
+  // at all: no internal relation, no external relation, hence no deficit to
+  // measure. Yet it is the most visible case on screen — half of the graph's
+  // halos carried "1 page". A community with NO internal relation is not one:
+  // it is a folder name. We dissolve it and re-place its members one by one.
   dissolveCommunitiesWithoutCohesion(nodes, edges, assignments, declared);
 
-  // Pass 10: pages isolées, rattachées par le vocabulaire.
+  // Pass 10: isolated pages, attached by vocabulary.
   //
-  // Ce qui reste n'a aucune relation : la topologie ne peut plus rien en dire.
-  // Le vocabulaire, lui, est mesurable — et il vient du corpus lui-même, pas
-  // d'une liste de thèmes écrite à l'avance qui ne survivrait pas au prochain
-  // wiki.
+  // What remains has no relation: the topology can no longer say anything
+  // about it. The vocabulary, on the other hand, is measurable — and it comes
+  // from the corpus itself, not from a pre-written list of themes that would
+  // not survive the next wiki.
   attachIsolatedByVocabulary(nodes, assignments);
 
   // Pass 10: stable fallback id, configurable display label.
@@ -275,7 +274,7 @@ export function assignGraphCommunities(
   }));
 }
 
-/** Voisins d'un nœud, tous types de relation confondus. */
+/** Neighbors of a node, all relation types combined. */
 function neighbourMap(edges: WikiGraphEdge[]): Map<string, Set<string>> {
   const map = new Map<string, Set<string>>();
   const add = (from: string, to: string) => {
@@ -295,8 +294,8 @@ function propagateUntilStable(
   assignments: Map<string, CommunityAssignment>,
 ): void {
   const neighbours = neighbourMap(edges);
-  // Borne de sûreté : la propagation converge, mais un graphe pathologique ne
-  // doit pas pouvoir faire tourner le rendu indéfiniment.
+  // Safety bound: propagation converges, but a pathological graph must not be
+  // able to keep the render running indefinitely.
   for (let round = 0; round < nodes.length; round += 1) {
     let changed = 0;
     for (const node of nodes) {
@@ -306,10 +305,9 @@ function propagateUntilStable(
         const community = assignments.get(neighbour);
         if (community) candidates.push(community);
       }
-      // Même exigence qu'à la passe 4 : un gabarit ou un contexte de build
-      // utilisé à parts égales par deux domaines n'appartient à aucun. La
-      // propagation ne doit pas contourner cette règle sous prétexte qu'elle
-      // repasse plus tard.
+      // Same requirement as in pass 4: a template or build context used in
+      // equal shares by two domains belongs to none. Propagation must not
+      // circumvent this rule under the pretext that it runs again later.
       const strict = node.type === 'template' || node.type === 'build-context';
       const winner = winningCommunity(candidates, strict);
       if (winner) {
@@ -354,13 +352,13 @@ function absorbWeakCommunities(
     if (!weakest) return;
 
     const absorbed = members.get(weakest.id) ?? [];
-    // Attachement RELATIF, pas pluralité brute.
+    // RELATIVE attachment, not raw plurality.
     //
-    // Compter les voix favorise le plus gros voisin : il en a davantage du seul
-    // fait de sa taille. Chaque absorption le grossit, ce qui rend la suivante
-    // plus probable — et l'on remplace la dispersion par un unique fourre-tout,
-    // qui n'informe pas davantage. Diviser par la taille compare la densité du
-    // rattachement plutôt que son volume.
+    // Counting votes favors the biggest neighbor: it has more of them by the
+    // mere fact of its size. Each absorption makes it bigger, which makes the
+    // next one more likely — and we replace the dispersion with a single
+    // catch-all, which informs no better. Dividing by the size compares the
+    // density of the attachment rather than its volume.
     const votes = new Map<string, { community: CommunityAssignment; count: number }>();
     for (const nodeId of absorbed) {
       for (const neighbour of neighbours.get(nodeId) ?? []) {
@@ -386,9 +384,8 @@ function absorbWeakCommunities(
       assignments.set(nodeId, winner);
       moved += 1;
     }
-    // Une communauté entièrement déclarée par ses auteurs ne bougera jamais :
-    // sans cette sortie, la boucle la réélirait indéfiniment comme la plus
-    // faible.
+    // A community entirely declared by its authors will never move: without
+    // this exit, the loop would re-elect it indefinitely as the weakest.
     if (!moved) return;
   }
 }
@@ -410,8 +407,8 @@ function dissolveCommunitiesWithoutCohesion(
   if (members.size < 2) return;
 
   for (const [id, ids] of members) {
-    // Une communauté nommée explicitement par l'auteur reste intacte, même
-    // sans cohésion mesurable : c'est une décision, pas une déduction.
+    // A community explicitly named by the author stays intact, even without
+    // measurable cohesion: it is a decision, not a deduction.
     if (ids.some((nodeId) => declared.has(nodeId))) continue;
     let inside = 0;
     for (const nodeId of ids) {
@@ -424,7 +421,7 @@ function dissolveCommunitiesWithoutCohesion(
   }
 }
 
-/** Termes porteurs d'une page, pondérés par leur rareté dans le corpus. */
+/** A page's carrying terms, weighted by their rarity in the corpus. */
 function vocabularyVectors(nodes: WikiGraphNode[]): Map<string, Map<string, number>> {
   const counts = new Map<string, Map<string, number>>();
   const documentFrequency = new Map<string, number>();
@@ -444,14 +441,13 @@ function vocabularyVectors(nodes: WikiGraphNode[]): Map<string, Map<string, numb
     const weighted: Array<[string, number]> = [];
     for (const [word, n] of local) {
       const df = documentFrequency.get(word) ?? 0;
-      // Un mot présent dans une seule page ne peut rapprocher de rien : il
-      // n'entre dans aucun produit scalaire et ne ferait qu'occuper la place
-      // des termes partagés.
+      // A word present in a single page cannot bring anything closer: it enters
+      // no dot product and would only take the place of the shared terms.
       //
-      // En revanche, pas de borne haute. Une coupure du genre « df > moitié du
-      // corpus » paraît raisonnable et devient destructrice sur un petit wiki :
-      // à cinq pages, elle éliminait absolument tous les termes. L'IDF fait
-      // déjà ce travail sans réglage — un mot présent partout pèse log(1) = 0.
+      // On the other hand, no upper bound. A cutoff of the kind "df > half the
+      // corpus" seems reasonable and becomes destructive on a small wiki: at
+      // five pages, it eliminated absolutely every term. The IDF already does
+      // that work without tuning — a word present everywhere weighs log(1) = 0.
       if (df <= 1) continue;
       weighted.push([word, (1 + Math.log(n)) * Math.log(total / df)]);
     }
@@ -488,9 +484,9 @@ function attachIsolatedByVocabulary(
       const score = cosine(own, vectors.get(node.id) ?? new Map());
       if (!best || score > best.score) best = { community, score };
     }
-    // Une page qui ne ressemble à rien reste sans domaine : la ranger de force
-    // dans le plus proche par défaut ferait entrer du bruit dans un domaine
-    // qui, lui, a un sens.
+    // A page that resembles nothing stays without a domain: force-fitting it
+    // into the nearest by default would let noise into a domain that, for its
+    // part, has meaning.
     if (best && best.score > 0) {
       assignments.set(orphan.id, { ...best.community, assignment: 'inherited' });
     }

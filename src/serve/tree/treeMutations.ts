@@ -4,41 +4,41 @@ import path from 'node:path';
 import { resolveInside } from '../../utils/path.ts';
 
 /**
- * Mutations d'arborescence du panneau gauche, pour TOUTES ses sections.
+ * Left-panel tree mutations, for ALL of its sections.
  *
- * Seul `raw/untracked/` était manipulable : supprimer, déplacer. Les autres
- * sections — wiki, templates, build-context, deliverables — n'avaient ni
- * déplacement, ni création ou suppression de dossier. Écrire une seconde
- * implémentation par section aurait multiplié par cinq les endroits où la
- * garantie de non-évasion doit être vraie, sans en rendre aucune plus sûre.
+ * Only `raw/untracked/` used to be editable: delete, move. The other sections —
+ * wiki, templates, build-context, deliverables — had no move, folder create or
+ * delete at all. Writing a second implementation per section would have
+ * multiplied by five the places where the no-escape guarantee must hold,
+ * without making any of them safer.
  *
- * Ce module est donc paramétré par la racine autorisée. Les sections ne
- * diffèrent que par leur `TreeRoot` ; le mécanisme, lui, est unique — y compris
- * pour Pending, dont l'ancienne API délègue désormais ici.
+ * This module is therefore parameterized by the authorized root. The sections
+ * differ only by their `TreeRoot`; the mechanism itself is unique — including
+ * for Pending, whose legacy API now delegates here.
  */
 
 export type TreeEntryKind = 'file' | 'folder';
 
 export type TreeRoot = {
-  /** Chemin relatif du sous-arbre, sans barre finale. */
+  /** Relative path of the sub-tree, without a trailing slash. */
   root: string;
   /**
-   * Extension imposée aux fichiers, ou null pour n'en imposer aucune.
-   * Le wiki, les templates et les livrables sont du Markdown : accepter autre
-   * chose y créerait des fichiers qu'aucune vue ne sait afficher.
+   * File extension imposed on files, or null to impose none.
+   * The wiki, templates and deliverables are Markdown: accepting anything else
+   * there would create files no view can display.
    */
   fileExtension: string | null;
   /**
-   * Purger les dossiers que l'opération vient de vider, jusqu'à la racine
-   * exclue. Vrai pour Pending, où un dossier n'est qu'un regroupement
-   * temporaire ; faux pour le wiki, où un dossier vide est une intention de
-   * rangement que personne n'a demandé d'effacer.
+   * Prune the folders the operation just emptied, up to the excluded root.
+   * True for Pending, where a folder is only a temporary grouping; false for
+   * the wiki, where an empty folder is an organizing intention nobody asked to
+   * erase.
    */
   pruneEmptyDirs: boolean;
 };
 
-// `EDITABLE_DIRS` de wikiHtml.ts est la même liste vue depuis le rendu. Ici
-// elle porte en plus les règles par section, qui n'ont pas de sens côté HTML.
+// `EDITABLE_DIRS` in wikiHtml.ts is the same list seen from the rendering.
+// Here it also carries the per-section rules, which have no meaning HTML-side.
 export const TREE_ROOTS: Record<string, TreeRoot> = {
   wiki: { root: 'wiki', fileExtension: '.md', pruneEmptyDirs: false },
   deliverables: { root: 'deliverables', fileExtension: '.md', pruneEmptyDirs: false },
@@ -60,11 +60,11 @@ function toPosix(value: string): string {
 }
 
 /**
- * Section propriétaire d'un chemin, ou null.
+ * Section that owns a path, or null.
  *
- * C'est ici, et nulle part ailleurs, que se décide ce qu'un chemin fourni par
- * le client a le droit d'être. Un chemin hors des racines connues, ou portant
- * un `..`, n'est pas corrigé : il est refusé.
+ * Here, and nowhere else, is decided what a client-supplied path is allowed to
+ * be. A path outside the known roots, or carrying `..`, is not corrected: it is
+ * refused.
  */
 export function resolveTreeRoot(relativePath: string): TreeRoot | null {
   const normalized = normalizeRelative(relativePath);
@@ -95,7 +95,7 @@ export async function deleteEntry(rootDir: string, rawPath: string): Promise<Tre
   const relativePath = normalizeRelative(rawPath);
   const root = relativePath ? resolveTreeRoot(relativePath) : null;
   if (!relativePath || !root) return fail('path outside the editable tree');
-  // Supprimer la racine d'une section reviendrait à supprimer la section.
+  // Deleting a section's root would amount to deleting the section.
   if (isRootItself(relativePath, root)) return fail('cannot delete a section root');
 
   try {
@@ -118,10 +118,9 @@ export async function deleteEntry(rootDir: string, rawPath: string): Promise<Tre
 }
 
 /**
- * Déplacer une entrée. `toDir` est le dossier DESTINATION ; l'entrée garde son
- * nom. Un déplacement d'une section à une autre est refusé : un template posé
- * dans `wiki/` n'est plus un template, et rien dans l'interface ne dirait ce
- * qu'il est devenu.
+ * Move an entry. `toDir` is the DESTINATION folder; the entry keeps its name.
+ * A move from one section to another is refused: a template placed in `wiki/`
+ * is no longer a template, and nothing in the UI would say what it became.
  */
 export async function moveEntry(
   rootDir: string,
@@ -133,8 +132,8 @@ export async function moveEntry(
   if (!from || !fromRoot) return fail('path outside the editable tree');
   if (isRootItself(from, fromRoot)) return fail('cannot move a section root');
 
-  // Destination vide = racine de la section d'origine, seul dossier qui ne
-  // s'écrit pas comme un chemin complet dans l'interface.
+  // Empty destination = the source section's root, the only folder that is not
+  // written as a full path in the UI.
   const toDir = rawTo === '' || rawTo === undefined || rawTo === null
     ? fromRoot.root
     : normalizeRelative(rawTo);
@@ -147,9 +146,9 @@ export async function moveEntry(
   const name = from.slice(from.lastIndexOf('/') + 1);
   const target = `${toDir}/${name}`;
   if (target === from) return { ok: true, status: 200, body: { from, to: target, unchanged: true } };
-  // Déplacer un dossier dans lui-même ou dans un de ses descendants
-  // détacherait le sous-arbre : rename() renvoie EINVAL dans le premier cas et
-  // se comporte de façon variable selon la plateforme dans le second.
+  // Moving a folder into itself or one of its descendants would detach the
+  // sub-tree: rename() returns EINVAL in the first case and behaves differently
+  // across platforms in the second.
   if (`${toDir}/`.startsWith(`${from}/`)) return fail('cannot move a folder into itself');
 
   try {
@@ -161,8 +160,8 @@ export async function moveEntry(
     }
     const destinationDirInfo = await stat(resolveInside(rootDir, toDir)).catch(() => null);
     if (!destinationDirInfo?.isDirectory()) return fail('destination folder does not exist');
-    // Jamais d'écrasement : rename() remplacerait le fichier en silence. La
-    // collision appartient à celui qui déplace.
+    // Never overwrite: rename() would replace the file silently. The collision
+    // belongs to whoever moves.
     if (await stat(destination).then(() => true, () => false)) {
       return fail(`already exists: ${target}`, 409);
     }
@@ -178,7 +177,7 @@ export async function moveEntry(
   }
 }
 
-/** Créer un dossier, ou un fichier vide, à l'intérieur d'une section. */
+/** Create a folder, or an empty file, inside a section. */
 export async function createEntry(
   rootDir: string,
   rawParent: unknown,
@@ -190,8 +189,8 @@ export async function createEntry(
   if (!parent || !root) return fail('parent outside the editable tree');
 
   const name = typeof rawName === 'string' ? rawName.trim() : '';
-  // Un nom n'est qu'un nom : pas de séparateur, donc pas de traversée possible
-  // par ce chemin, et pas de création implicite de hiérarchie.
+  // A name is just a name: no separator, so no traversal possible through this
+  // path, and no implicit hierarchy creation.
   if (!name || name.includes('/') || name.includes('\\') || name === '.' || name === '..') {
     return fail('invalid name');
   }
@@ -210,8 +209,8 @@ export async function createEntry(
     if (kind === 'folder') {
       await mkdir(absolute, { recursive: false });
     } else {
-      // `wx` : échoue si le fichier existe, plutôt que de le vider. Le test
-      // d'existence ci-dessus laisse une fenêtre de course que ce drapeau ferme.
+      // `wx`: fails if the file exists, rather than truncating it. The
+      // existence check above leaves a race window that this flag closes.
       await writeFile(absolute, '', { encoding: 'utf8', flag: 'wx' });
     }
     return { ok: true, status: 200, body: { path: target, kind } };
@@ -221,9 +220,9 @@ export async function createEntry(
 }
 
 /**
- * Purger les dossiers vidés par l'opération, jusqu'à la racine de section
- * exclue. Toujours au mieux : échouer à ranger ne doit pas transformer une
- * suppression réussie en erreur.
+ * Prune the folders the operation emptied, up to the excluded section root.
+ * Always best-effort: failing to tidy up must not turn a successful deletion
+ * into an error.
  */
 async function pruneEmptyParents(
   rootDir: string,
@@ -247,9 +246,9 @@ async function pruneEmptyParents(
     }
     if (entries.length > 0) return;
     try {
-      // rmdir, et non rm : rm() sans `recursive` lève EISDIR même sur un
-      // dossier vide, ce qui faisait échouer la suppression du dernier fichier
-      // d'un dossier alors que le travail était déjà fait.
+      // rmdir, not rm: rm() without `recursive` throws EISDIR even on an empty
+      // folder, which made deleting the last file of a folder fail even though
+      // the work was already done.
       await rmdir(current);
     } catch {
       return;

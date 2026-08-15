@@ -20,12 +20,12 @@ export function renderWikiGraphV2(): string {
 .theme-toggle{flex:none;width:38px;height:34px;padding:0;font-size:17px}.theme-light{color-scheme:light;--bg:#eef3f8;--panel:#fff;--soft:#e8eef5;--line:#b8c6d5;--text:#172433;--muted:#5f7082}.theme-light body{background:radial-gradient(circle at 55% 25%,#fff 0,#e8eef5 60%);color:var(--text)}body.theme-light{background:radial-gradient(circle at 55% 25%,#fff 0,#e8eef5 60%);color:var(--text)}body.theme-light header{background:#f8fbfddd;border-color:#b8c6d5}body.theme-light .brand{color:#172433}body.theme-light .filters,body.theme-light .inspector,body.theme-light .stage{background:#ffffffeb}body.theme-light button,body.theme-light input{color:#172433;background:#edf3f8;border-color:#b8c6d5}body.theme-light button:hover,body.theme-light button.active{background:#cfe3fb;border-color:#5d91cc}body.theme-light .graph-search-results,body.theme-light .document-preview-overlay{background:#fff;color:#172433}body.theme-light .map-label,body.theme-light .map-count,body.theme-light .map-community-link text,body.theme-light .node text{fill:#172433;stroke:#f7fafc}body.theme-light .focus-title{fill:#172433}body.theme-light .focus-card rect{fill:#f5f8fb;stroke:#8fa3b8}body.theme-light .focus-card.member rect{fill:#eadcff;stroke:#8354bf}body.theme-light .community-relation-legend,body.theme-light .focus-caption-overlay,body.theme-light .focus-name-index,body.theme-light .relation-legend{background:#fffffff0;color:#40556a}
 .community-doc:before{content:'– ';color:var(--muted);font-weight:400}.community-doc.selected:before{color:#fff}
 .inspector-toggle svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.inspector-toggle .icon-expand{display:none}.inspector-collapsed .inspector-toggle .icon-collapse{display:none}.inspector-collapsed .inspector-toggle .icon-expand{display:block}
-/* ── Scène en plein cadre ────────────────────────────────────────────────
-   Le graphe occupait une colonne entre une barre de titre bordée et un
-   panneau latéral fixe de 274 px. Les trois se disputaient la largeur alors
-   que deux d'entre eux ne portent que quelques lignes de texte. Ils flottent
-   désormais AU-DESSUS du canevas, qui prend tout : c'est la surface où l'on
-   lit quelque chose, les autres se contentent de la commenter. */
+/* ── Full-frame scene ────────────────────────────────────────────────────
+   The graph used to occupy a column between a bordered title bar and a fixed
+   274 px side panel. The three fought over the width while two of them carry
+   only a few lines of text. They now float ABOVE the canvas, which takes
+   everything: it is the surface where one reads something, the others merely
+   comment on it. */
 main{grid-template-columns:var(--left-w) 5px minmax(500px,1fr)}
 .stage{position:relative;overflow:hidden}
 #canvas{position:absolute;inset:0;flex:none}
@@ -36,9 +36,9 @@ main{grid-template-columns:var(--left-w) 5px minmax(500px,1fr)}
 .stage-tools{position:absolute;z-index:6;right:14px;top:14px;display:flex;align-items:center;gap:5px}
 .stage-tools button{padding:.28rem .62rem;font-size:11.5px;border-radius:999px;background:#ffffff0d;border-color:#ffffff24}
 .stage-tools button:hover{background:#ffffff1a}
-/* Panneau de sélection en calque, à la place de la colonne de droite. Le
-   verre dépoli laisse voir les liens qui passent derrière : il se pose sur le
-   graphe au lieu de le couper en deux. */
+/* Selection panel in a layer, in place of the right column. The frosted glass
+   lets the links passing behind show through: it sits on the graph instead of
+   cutting it in two. */
 .inspector{position:absolute;z-index:5;right:14px;top:52px;width:250px;max-height:calc(100% - 72px);padding:9px 10px;display:flex;flex-direction:column;gap:6px;overflow:hidden;border:1px solid #ffffff1c;border-radius:11px;background:#0b0d13d1;backdrop-filter:blur(12px);box-shadow:0 18px 44px #000a}
 .inspector h3{margin:0;font-size:11px;font-weight:500;letter-spacing:.02em;color:#dfe5ef}
 .inspector p{margin:0;font-size:11.5px;line-height:1.5;color:#8d96a8}
@@ -51,7 +51,7 @@ body.theme-light .stage-title{text-shadow:0 1px 8px #fff9}
 body.theme-light .inspector{background:#ffffffd9;border-color:#0000001f}
 body.theme-light .inspector h3{color:#1c2b3d}
 body.theme-light .stage-tools button{background:#ffffffc4;border-color:#00000024}
-/* Le panneau reçoit désormais la liste des documents, à tous les niveaux. */
+/* The panel now receives the document list, at every level. */
 .inspector .document-focus-list{min-height:0;flex:1;overflow:auto;padding:0;margin:0 -2px}
 .inspector .focus-document-row{border-bottom:1px solid #ffffff0f;padding:1px 0}
 .inspector .focus-document-name{padding:5px 6px}
@@ -62,7 +62,7 @@ body.theme-light .stage-tools button{background:#ffffffc4;border-color:#00000024
 body.theme-light .panel-head{border-color:#0000001a}
 body.theme-light .inspector .focus-document-row{border-color:#00000012}
 body.theme-light .inspector .focus-document-name span{color:#172433}
-/* Repère du domaine courant dans l'index de gauche. */
+/* Marker of the current domain in the left index. */
 .community-group summary.is-current{background:#ffffff12;border-radius:5px}
 .community-group summary.is-current span:nth-child(2){color:#75aff5;font-weight:500}
 body.theme-light .community-group summary.is-current{background:#0000000d}

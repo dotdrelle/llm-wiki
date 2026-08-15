@@ -1,13 +1,13 @@
 export function graphUiNavigationScript(): string {
   return String.raw`
 /*
- Le fil d'Ariane a autant de crans que la carte a de niveaux.
+ The breadcrumb has as many steps as the map has levels.
 
- Il en connaissait trois — carte, communauté, document — alors que la
- navigation en compte quatre depuis que le registre est un arbre. Le niveau
- « domaine » n'y apparaissant pas, on y entrait sans que rien ne l'indique et
- sans pouvoir en ressortir autrement qu'en retournant à la carte : le seul
- chemin de retour sautait par-dessus le niveau qu'on venait de quitter.
+ It knew three — map, community, document — whereas navigation counts four
+ since the registry is a tree. The "domain" level not appearing in it, one
+ entered it without anything indicating it and without being able to leave
+ except by returning to the map: the only return path skipped over the level
+ one had just left.
 */
 function graphDomainOf(id){
   if(!id)return null;
@@ -27,8 +27,8 @@ function navigateGraphLevel(level){
   if(level==='map'){view='map';selected=null;selectedCommunity=null;focusHistory.length=0}
   else if(level==='domain'){
     const domainId=graphDomainOf(selectedCommunity);
-    // Sans domaine parent — taxonomie plate — remonter d'un cran ramène à la
-    // carte, qui est bien le niveau au-dessus.
+    // Without a parent domain — flat taxonomy — going back up one step
+    // returns to the map, which is indeed the level above.
     if(domainId){view='domain';selected=null;selectedCommunity=domainId}
     else{view='map';selected=null;selectedCommunity=null;focusHistory.length=0}}
   else if(level==='community'&&selectedCommunity){view='community';selected=null}

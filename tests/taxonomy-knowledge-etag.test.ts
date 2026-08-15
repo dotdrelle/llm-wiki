@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -117,6 +117,20 @@ describe('cache de hachage', () => {
     // mais le hash recalculé est le même, donc l'empreinte ne change pas.
     await page('wiki/concepts', 'alpha.md', '---\ngroup: a\n---\n\n# Alpha\n\nContenu.\n');
     expect(await knowledgeEtag(root)).toBe(before);
+  });
+
+  it('recale le hash quand un contenu change à mtime préservé', async () => {
+    // `mtime` seul raterait une réécriture qui le restaure (sauvegarde, outil
+    // préservant le timestamp) : `ctime`, lui, bouge à chaque écriture. Même
+    // taille, contenu différent — le piège que mtime+taille ne voyait pas.
+    const file = path.join(root, 'wiki', 'concepts', 'alpha.md');
+    const before = await knowledgeEtag(root);
+    const { mtimeMs } = await stat(file);
+
+    await writeFile(file, '---\ngroup: a\n---\n\n# Alpha\n\nContenu!\n', 'utf8');
+    await utimes(file, new Date(mtimeMs), new Date(mtimeMs));
+
+    expect(await knowledgeEtag(root)).not.toBe(before);
   });
 });
 

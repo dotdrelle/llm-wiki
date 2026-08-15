@@ -25,10 +25,9 @@ let pendingRuntimeUserRefs=[];
 // the real runtime assistant event replaces them and only that real reply is
 // persisted in conversation history.
 let pendingRuntimeStatusEls=[];
-/* ── Bulles de réponse ────────────────────────────────────────────────── */
-// La bulle d'attente du runtime en est une variante : les deux vivent ici
-// plutôt que d'être séparées entre deux fichiers par le seul hasard de leur
-// date d'écriture.
+/* ── Reply bubbles ─────────────────────────────────────────────────────── */
+// The runtime waiting bubble is a variant of these: both live here rather than
+// being split across two files by the mere accident of when each was written.
 function createStreamBubble() {
   removeEmpty();
   const wrap=$('messages');
@@ -77,11 +76,11 @@ function setStreamContent(div, text, extra='', {html=false,plainText=null}={}) {
   $('messages').scrollTop=$('messages').scrollHeight;
 }
 
-// Au-delà de ce délai sans le moindre signe de vie du runtime, le point
-// d'attente devient un message. Il n'est pas censé être atteint : le tour
-// publie toujours un assistant_message et le streaming retire la bulle dès le
-// premier fragment. C'est un filet, pour qu'un événement perdu coûte une
-// explication et non un sablier qui tourne jusqu'au rechargement de la page.
+// Beyond this delay without the slightest sign of life from the runtime, the
+// waiting bubble becomes a message. It is not meant to be reached: the turn
+// always publishes an assistant_message and streaming removes the bubble on
+// the first fragment. It is a safety net, so a lost event costs an explanation
+// rather than an hourglass spinning until the page reloads.
 const RUNTIME_THINKING_TIMEOUT_MS=120000;
 
 function createRuntimeThinkingBubble(text='Request received · Donna is preparing the response and plan…') {
@@ -97,8 +96,8 @@ function createRuntimeThinkingBubble(text='Request received · Donna is preparin
   return div;
 }
 
-// Toute disparition de la bulle passe par ici, pour que le filet ne survive
-// jamais à ce qu'il surveille.
+// Every bubble removal goes through here, so the safety net never outlives
+// what it watches.
 function clearRuntimeThinkingBubble(div) {
   if(!div) return;
   if(div._runtimeTimeout) { clearTimeout(div._runtimeTimeout); div._runtimeTimeout=null; }
@@ -446,15 +445,15 @@ function renderActivities() {
     el.__renderedHTML=null;
     const center=$('runtime-graph-center');
     const split=document.body.classList.contains('execution-mode')&&!!center;
-    // Le vidage du plan fait disparaître le graphe au profit d'un message : ce
-    // basculement fait partie de la structure du cadre, pas de ses données.
+    // Clearing the plan swaps the graph for a message: this switch is part of
+    // the frame's structure, not of its data.
     const mode=(split?'split':'inline')+(runtimeState?.workflow?.nodes?.length?':graph':':empty');
-    // Le cadre du graphe n'est reconstruit que si sa STRUCTURE change (passage
-    // panneau ↔ vue Execution, ou canevas disparu). Il l'était jusqu'ici à
-    // chaque appel — c'est-à-dire toutes les secondes pendant un run, plus à
-    // chaque événement SSE. Le <canvas> était alors détruit et recréé sous le
-    // curseur : le moteur de rendu repartait de zéro, la caméra se recadrait
-    // (d'où le clignotement) et tout glissement en cours était interrompu.
+    // The graph frame is rebuilt only when its STRUCTURE changes (panel ↔
+    // Execution view switch, or the canvas disappearing). Until now it was
+    // rebuilt on every call — that is, every second during a run, plus on each
+    // SSE event. The <canvas> was then destroyed and recreated under the
+    // cursor: the renderer restarted from scratch, the camera reframed (hence
+    // the flicker) and any drag in progress was interrupted.
     if(el.__graphMode!==mode||!$('runtime-graph-canvas')) {
       if(split) {
         center.innerHTML=runtimeWorkflowGraphCenterHTML();
@@ -465,7 +464,7 @@ function renderActivities() {
       }
       el.__graphMode=mode;
     } else {
-      // Seul fragment réellement variable du cadre.
+      // The only fragment of the frame that actually changes.
       refreshRuntimeWorkflowSummary();
     }
     requestAnimationFrame(renderRuntimeWorkflowGraph);
@@ -542,9 +541,10 @@ function updateActivityBadge() {
     railBtn.setAttribute('aria-expanded',panelOpen?'true':'false');
   }
 }
-// Activity, Help et le mode split se disputent la même colonne de droite.
-// Ouvrir l'un ferme les autres : côte à côte, la conversation au centre devient
-// illisible. La réciproque du split vit dans toggleSplitWiki (views/wikiPanelScript.ts).
+// Activity, Help and split mode fight over the same right-hand column.
+// Opening one closes the others: side by side, the conversation in the center
+// becomes unreadable. The split counterpart lives in toggleSplitWiki
+// (views/wikiPanelScript.ts).
 function closePanelsBesideActivity() {
   $('help-panel')?.classList.add('closed');
   if(typeof disableSplitWiki==='function') disableSplitWiki();
@@ -629,7 +629,7 @@ function askRuntimeStatus(target) {
   const id=String(target||'current run').trim()||'current run';
   const display=\`Status of \${id}\`;
   const raw=runtimeStatusMarkdown(id);
-  const prompt=\`Présente clairement le statut de la cible « \${id} » pour l'utilisateur. Commence par cette tâche ou activité précise, puis donne seulement le contexte global utile : progression, dépendances, blocages, éléments en attente et prochaine action recommandée. Ne confonds pas la cible avec les autres tâches et ne reproduis pas les logs bruts sauf s'ils expliquent un problème.\n\n\${raw}\`;
+  const prompt=\`Clearly present the status of the target « \${id} » to the user. Start with this specific task or activity, then give only the useful global context: progress, dependencies, blockers, pending items and the next recommended action. Do not confuse the target with the other tasks and do not reproduce the raw logs unless they explain a problem.\n\n\${raw}\`;
   showChatView();
   const input=$('chat-input');
   if(!input||isStreaming) return;
@@ -661,9 +661,9 @@ async function retryConvert(uploadId, actId) {
   try {
     const open=localStorage.getItem(ACT_PANEL_KEY)==='1';
     if(open) $('activity-panel')?.classList.remove('closed');
-    // Pas de réconciliation avec le split ici : ses const (SHELL_SPLIT_KEY…)
-    // sont déclarées plus bas dans le même script et seraient encore en zone
-    // morte temporelle. C'est applySplitWiki, au tick suivant, qui tranche.
+    // No reconciliation with the split here: its consts (SHELL_SPLIT_KEY…)
+    // are declared lower in the same script and would still be in the temporal
+    // dead zone. applySplitWiki, on the next tick, decides.
   } catch {}
   if(_activities.some(a=>isActivityActive(a.status))&&!_actTimer) _actTimer=setInterval(renderActivities,1000);
   _activities.forEach(scheduleActivityPoll);

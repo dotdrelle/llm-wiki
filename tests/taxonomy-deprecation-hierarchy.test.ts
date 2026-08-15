@@ -175,7 +175,7 @@ describe('feuille dont le domaine a disparu', () => {
     const result = validateRegistry(data);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.issues.some((issue) => issue.reason.includes('parent déprécié'))).toBe(true);
+    expect(result.issues.some((issue) => issue.reason.includes('deprecated parent domain'))).toBe(true);
   });
 });
 
@@ -214,6 +214,6 @@ describe('registre validé', () => {
     const result = validateRegistry(data);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.issues.some((issue) => issue.reason.includes('cible inconnue'))).toBe(true);
+    expect(result.issues.some((issue) => issue.reason.includes('unknown target'))).toBe(true);
   });
 });

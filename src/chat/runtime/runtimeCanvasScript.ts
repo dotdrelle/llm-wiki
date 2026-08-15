@@ -1,28 +1,27 @@
 export const RUNTIME_CANVAS_SCRIPT = String.raw`
 let runtimeCanvasRenderer=null;
 const runtimeCanvasPositions=new Map;
-// Cadrage courant, conservé hors du moteur de rendu. Un remontage du cadre
-// (bascule panneau ↔ vue Execution, retour depuis la vue liste) recrée le
-// canevas et donc le moteur : sans cela la vue repartait au cadrage par
-// défaut et perdait le zoom choisi par le lecteur.
+// Current framing, kept outside the renderer. A frame remount (panel ↔
+// Execution view switch, return from the list view) recreates the canvas and
+// therefore the renderer: without this the view restarted at the default
+// framing and lost the reader's chosen zoom.
 let runtimeCanvasCamera=null;
 function runtimeStatusColor(status){return{running:'#4f7eff',done:'#22c55e',completed:'#22c55e',failed:'#f06b6b',pending_approval:'#f59e0b',blocked:'#f59e0b',cancelled:'#64748b'}[status]||'#718096'}
 function runtimeCanvasScene(){
   const projection=runtimeWorkflowGraphData(),nodes=projection.nodes.map((node,index)=>{const lane=node.type==='run'?0:node.type==='task_group'?1:node.type==='task_detail'?2:3,peers=projection.nodes.filter(item=>(item.type==='run'?0:item.type==='task_group'?1:item.type==='task_detail'?2:3)===lane),slot=peers.findIndex(item=>item.id===node.id),saved=runtimeCanvasPositions.get(node.id),x=saved?.x??(lane===0?0:(slot-(peers.length-1)/2)*Math.min(.22,.72/Math.max(1,peers.length-1))),y=saved?.y??(-.3+lane*.2);return{...node,x,y,depth:1+(index%4)*.025}});return{nodes,edges:projection.relations}}
 function createRuntimeCanvasRenderer(host){
-  // Plus de mini-carte. Sur un graphe d'exécution qui tient dans son cadre elle
-  // n'orientait personne, mangeait un coin de la scène et dupliquait le rôle du
-  // bouton « Fit » — les mêmes raisons qui l'ont fait disparaître du graphe du
-  // wiki.
+  // No mini-map anymore. On an execution graph that fits its frame it oriented
+  // no one, ate a corner of the scene and duplicated the role of the "Fit"
+  // button — the same reasons it was removed from the wiki graph.
   const canvas=host,context=canvas.getContext('2d'),a11y=canvas.parentElement.querySelector('.runtime-graph-a11y'),state={width:0,height:0,ratio:1,scene:{nodes:[],edges:[]},hits:[],pointer:null,dragged:false,hover:null,topology:'',animated:false,userAdjusted:!!runtimeCanvasCamera,fitted:false};let scheduler,camera;
   const rgba=(hex,alpha)=>{const value=parseInt(hex.slice(1),16);return'rgba('+((value>>16)&255)+','+((value>>8)&255)+','+(value&255)+','+alpha+')'};
   /*
-   Halos pré-rendus, comme sur le graphe du wiki.
+   Pre-rendered halos, like on the wiki graph.
 
-   shadowBlur est un flou gaussien plein cadre par appel de remplissage. Il
-   était posé sur chaque nœud et à chaque image, et sur un nœud « running » la
-   boucle tourne en continu : le coût était donc permanent, pas ponctuel. Un
-   halo ne dépend que d'une couleur, donc il se rend une fois.
+   shadowBlur is a full-frame gaussian blur per fill call. It was applied to
+   every node on every frame, and on a "running" node the loop runs
+   continuously: the cost was therefore permanent, not occasional. A halo
+   depends only on a color, so it is rendered once.
   */
   const sprites=new Map();
   function glowSprite(hex,inner,mid){
@@ -33,32 +32,32 @@ function createRuntimeCanvasRenderer(host){
     paint.fillStyle=gradient;paint.fillRect(0,0,size,size);sprites.set(key,off);return off}
   function paintGlow(hex,inner,mid,x,y,radius){if(radius>0)context.drawImage(glowSprite(hex,inner,mid),x-radius,y-radius,radius*2,radius*2)}
   /*
-   Le premier cadrage attend une taille réelle.
+   The first framing waits for a real size.
 
-   resize() est appelé à la construction, avant que la mise en page ait donné
-   sa hauteur au cadre : la scène mesurait alors 0 × 0 et fit() calculait une
-   échelle absurde, rabotée à .4. Le graphe s'affichait minuscule et le rester
-   jusqu'au prochain « Fit » manuel. On garde donc la trace du premier cadrage
-   et on le rejoue dès que le ResizeObserver annonce une surface utilisable.
+   resize() is called at construction, before layout has given the frame its
+   height: the scene then measured 0 × 0 and fit() computed an absurd scale,
+   clamped to .4. The graph rendered tiny and stayed that way until the next
+   manual "Fit". So we remember the first framing and replay it as soon as the
+   ResizeObserver announces a usable surface.
   */
   function resize(){const rect=canvas.getBoundingClientRect(),ratio=Math.min(2,devicePixelRatio||1),wasEmpty=state.width<8||state.height<8;state.width=rect.width;state.height=rect.height;state.ratio=ratio;canvas.width=Math.max(1,Math.round(rect.width*ratio));canvas.height=Math.max(1,Math.round(rect.height*ratio));context.setTransform(ratio,0,0,ratio,0,0);
     if(wasEmpty&&rect.width>=8&&rect.height>=8&&!state.userAdjusted)state.fitted=false;
     if(!state.fitted&&state.scene.nodes.length&&rect.width>=8&&rect.height>=8&&!state.userAdjusted){state.fitted=true;fit()}
     scheduler.invalidate()}
   function project(node){const size=Math.min(state.width,state.height)*camera.state.scale;return{x:state.width/2+(node.x-camera.state.x)*size,y:state.height/2+(node.y-camera.state.y)*size}}
-  // Encombrement d'un nœud en pixels, libellé compris. Une fiche et une bulle
-  // n'ont ni la même forme ni le même débord sous le texte.
+  // A node's footprint in pixels, label included. A card and a bubble have
+  // neither the same shape nor the same overflow under the text.
   function nodeBox(node){
     if(node.type==='task_group')return{w:164,h:68,card:true};
     if(node.type==='task_detail')return{w:132,h:52,card:true};
     const r=node.type==='run'?28:14;return{w:r*2,h:r*2+(node.type==='run'?36:22),card:false}}
   /*
-   Cadrage par enveloppe.
+   Bounding-box framing.
 
-   Les deux constantes .72 et .62 supposaient une scène carrée et ignoraient la
-   taille des nœuds : une fiche fait 164 px de large quel que soit le zoom, et
-   son débord ne se déduit donc pas d'une fraction du modèle. Sur un cadre
-   large et bas, le résultat était systématiquement trop petit ou tronqué.
+   The two constants .72 and .62 assumed a square scene and ignored the node
+   sizes: a card is 164 px wide whatever the zoom, so its overflow cannot be
+   derived from a fraction of the model. On a wide, low frame the result was
+   consistently too small or truncated.
   */
   function fit(){
     if(!state.scene.nodes.length)return;
@@ -70,8 +69,8 @@ function createRuntimeCanvasRenderer(host){
     const spanX=Math.max(.001,x1-x0)*size,spanY=Math.max(.001,y1-y0)*size;
     const scale=Math.min((inner-padX*2)/Math.max(1,spanX),(tall-padY*2)/Math.max(1,spanY));
     camera.moveTo({x:(x0+x1)/2,y:(y0+y1)/2,scale:Math.max(.4,Math.min(2.6,scale*.98))},280)}
-  // Le fond ne dépend que du format et du thème : inutile de reconstruire le
-  // dégradé à chaque image.
+  // The backdrop depends only on the format and the theme: no need to rebuild
+  // the gradient on every frame.
   let backdrop=null,backdropKey='';
   function drawBackground(){
     const isLight=document.documentElement.classList.contains('theme-light'),key=state.width+'x'+state.height+(isLight?'l':'d');
@@ -96,8 +95,8 @@ function createRuntimeCanvasRenderer(host){
       const box=nodeBox(node),card=box.card,w=box.w,h=card?box.h:0;
       const live=node.status==='running'&&!scheduler.reducedMotion;
       if(live)running=true;
-      // Le battement d'un nœud actif passe par l'intensité du halo, plus par un
-      // rayon de flou : l'image est la même, le coût ne l'est pas.
+      // An active node's pulse goes through the halo intensity rather than a
+      // blur radius: the image is the same, the cost is not.
       const pulse=live?.34+Math.sin(now/180)*.1:selectedNode?.38:.2;
       paintGlow(color,pulse,pulse*.35,point.x,point.y,(card?Math.max(w,box.h):box.w)*.85);
       context.fillStyle=rgba(color,card?.72:.88);context.strokeStyle=selectedNode?'#fff':rgba(color,1);context.lineWidth=selectedNode?3:1.2;
@@ -110,24 +109,24 @@ function createRuntimeCanvasRenderer(host){
       if(card){context.font='9px ui-sans-serif,system-ui';context.fillStyle='rgba(255,255,255,.82)';
         context.fillText(node.type==='task_group'?(node.done||0)+'/'+(node.total||0)+' tasks · ×'+(node.parallelism||1):(node.status||'pending'),point.x,point.y+11)}
       state.hits.push({node,x:point.x,y:point.y,w:card?w:36,h:card?h:36})});
-    // La relance est décidée une fois, après la boucle : la placer dans le
-    // corps la liait à l'ordre de dessin des nœuds.
+    // The re-trigger is decided once, after the loop: putting it in the body
+    // tied it to the node draw order.
     if(running)scheduler.animate(220)}
   scheduler=createGraphFrameScheduler(draw);camera=createGraphCamera(scheduler);
   if(runtimeCanvasCamera)camera.jump({...runtimeCanvasCamera});
-  // Tout geste de cadrage rend la vue à son lecteur : plus aucun recadrage
-  // automatique ne s'imposera ensuite, jusqu'à « Reset ».
+  // Any framing gesture hands the view to its reader: no automatic reframing
+  // will impose itself afterwards, until "Reset".
   const claimCamera=()=>{state.userAdjusted=true;state.fitted=true};
   resize();
   function coords(event){const rect=canvas.getBoundingClientRect();return{x:event.clientX-rect.left,y:event.clientY-rect.top}}
   function hit(point){return[...state.hits].reverse().find(item=>Math.abs(point.x-item.x)<=item.w/2&&Math.abs(point.y-item.y)<=item.h/2)}
   /*
-   Fin de geste, en un seul endroit — même correctif que sur le graphe du wiki.
+   End of gesture, in a single place — same fix as on the wiki graph.
 
-   pointerup remettait state.pointer à null sans jamais libérer la capture, et
-   pointercancel n'était écouté nulle part : le graphe restait accroché au
-   curseur après le relâchement, et le canevas continuait d'intercepter des
-   événements destinés aux panneaux voisins.
+   pointerup reset state.pointer to null without ever releasing the capture,
+   and pointercancel was listened to nowhere: the graph stayed hooked to the
+   cursor after release, and the canvas kept intercepting events intended for
+   neighboring panels.
   */
   function endPointerGesture(point){
     if(!state.pointer)return;
@@ -140,8 +139,8 @@ function createRuntimeCanvasRenderer(host){
   canvas.addEventListener('pointerdown',event=>{const point=coords(event);state.pointer={...point,lastX:point.x,lastY:point.y,target:hit(point),pointerId:event.pointerId};state.dragged=false;canvas.setPointerCapture(event.pointerId)});
   canvas.addEventListener('pointermove',event=>{const point=coords(event);
     if(!state.pointer){const target=hit(point),next=target?.node.id||null;if(next!==state.hover){state.hover=next;scheduler.invalidate()}return}
-    // Le déplacement n'est valide que tant que le bouton est enfoncé : on ne
-    // dépend pas de la bonne réception d'un événement de relâchement.
+    // The drag is valid only while the button is held down: we don't depend on
+    // correctly receiving a release event.
     if(event.buttons===0){endPointerGesture(null);return}
     const dx=point.x-state.pointer.lastX,dy=point.y-state.pointer.lastY;
     if(Math.abs(point.x-state.pointer.x)+Math.abs(point.y-state.pointer.y)>4)state.dragged=true;
@@ -160,13 +159,13 @@ function createRuntimeCanvasRenderer(host){
   a11y.addEventListener('click',event=>{const button=event.target.closest('[data-runtime-node]'),node=state.scene.nodes.find(item=>item.id===button?.dataset.runtimeNode);if(node){if(node.type==='task_detail')selectRuntimeWorkflowTask(node.taskId);else selectRuntimeWorkflowNode(node.id)}});
   const observer=new ResizeObserver(resize);observer.observe(canvas);
   /*
-   Une topologie qui bouge ne recadre plus la vue de force.
+   A changing topology no longer forces the view to reframe.
 
-   Pendant un ingest, des tâches apparaissent et se terminent en continu : la
-   topologie changeait donc en permanence et chaque changement relançait un
-   fit() animé de 280 ms. La vue sautait toutes les quelques secondes et
-   annulait le placement manuel des bulles. Le cadrage automatique n'a de sens
-   qu'au premier remplissage — ensuite, la vue appartient à son lecteur.
+   During an ingest, tasks appear and finish continuously: the topology kept
+   changing and every change relaunched a 280 ms animated fit(). The view jumped
+   every few seconds and cancelled the manual placement of the bubbles.
+   Automatic framing only makes sense on the first fill — after that, the view
+   belongs to its reader.
   */
   return{canvas,setScene(scene){const topology=scene.nodes.map(node=>node.id).join('|')+'#'+scene.edges.map(edge=>edge.from+'>'+edge.to+':'+edge.type).join('|'),changed=topology!==state.topology;state.scene=scene;state.topology=topology;
     const a11yHTML=scene.nodes.map(node=>'<button type="button" role="treeitem" data-runtime-node="'+esc(node.id)+'">'+esc(node.label)+' · '+esc(node.status||'pending')+'</button>').join('');

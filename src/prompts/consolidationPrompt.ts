@@ -2,7 +2,7 @@ import type { SourceDocument } from '../types.ts';
 import type { SourceExtraction } from '../ingest/extractionSchema.ts';
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
-/** Version du prompt, portée par la clé de cache de consolidation. */
+/** Prompt version, carried by the consolidation cache key. */
 export const CONSOLIDATION_PROMPT_VERSION = 2;
 
 export type ConsolidationInventoryPage = {
@@ -14,14 +14,14 @@ export type ConsolidationInventoryPage = {
 };
 
 /*
- Prompt de consolidation : un appel, une source, un plan.
+ Consolidation prompt: one call, one source, one plan.
 
- Le budget conceptuel énoncé ici est un contrôle de QUALITÉ, pas une coupure
- aveugle. Le défaut qu'il corrige est précis : sur cinq études comparatives,
- l'ancien chemin produisait 4 concepts pour l'une et 51 pour une autre, sans que
- rien dans le contenu ne justifie l'écart — seule la découpe des titres le
- séparait. Demander une justification par concept supplémentaire coûte une
- phrase et rend l'écart explicable.
+ The conceptual budget stated here is a QUALITY control, not a blind cut. The
+ defect it corrects is precise: on five comparative studies, the old path
+ produced 4 concepts for one and 51 for another, with nothing in the content
+ justifying the gap — only the heading split separated them. Asking for a
+ justification per additional concept costs one sentence and makes the gap
+ explainable.
 */
 export function buildConsolidationPrompt(args: {
   source: SourceDocument;
@@ -89,8 +89,8 @@ export function buildConsolidationPrompt(args: {
             .map((subject) =>
               `- ${subject.id} :: ${subject.label} [scope=${subject.scope} | importance=${subject.importance}]`
               + `\n  why: ${subject.rationale}`
-              // Le champ est optionnel côté schéma : le prompt ne doit pas
-              // supposer qu'un modèle l'a rempli.
+              // The field is optional on the schema side: the prompt must not
+              // assume a model filled it.
               + (subject.relatedExistingPages?.length
                 ? `\n  may extend: ${subject.relatedExistingPages.join(', ')}`
                 : ''))

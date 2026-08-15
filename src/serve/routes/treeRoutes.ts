@@ -8,23 +8,22 @@ import {
 } from '../tree/treeMutations.ts';
 
 /**
- * Routes de mutation du panneau gauche, communes à toutes ses sections.
+ * Left-panel mutation routes, shared by all of its sections.
  *
- * `/api/untracked/*` reste servie pour Pending — mêmes chemins, même contrat —
- * mais elle délègue ici. Ces routes ne portent aucune règle : elles lisent la
- * requête, appellent le module, et rendent le résultat. Tout ce qui décide
- * (racines autorisées, extensions, non-évasion) vit dans `treeMutations.ts`,
- * pour qu'il n'y ait qu'un seul endroit à relire quand on se demande ce qu'un
- * chemin fourni par le navigateur a le droit d'être.
+ * `/api/untracked/*` stays served for Pending — same paths, same contract — but
+ * it delegates here. These routes carry no rule: they read the request, call
+ * the module, and render the result. Everything that decides (authorized roots,
+ * extensions, no-escape) lives in `treeMutations.ts`, so there is only one
+ * place to re-read when asking what a browser-supplied path is allowed to be.
  */
 export type TreeRoutesDeps = {
   rootDir: string;
   readRequestBuffer: (req: IncomingMessage, maxBytes?: number) => Promise<Buffer>;
   sendJson: (res: ServerResponse, status: number, data: unknown) => void;
   /**
-   * Un run en cours modifie le wiki : bouger ses fichiers sous ses pieds
-   * produirait des échecs incompréhensibles. Même refus que `POST
-   * /mcp/endpoints`, et pour la même raison.
+   * An active run modifies the wiki: moving its files under its feet would
+   * produce incomprehensible failures. Same refusal as `POST /mcp/endpoints`,
+   * and for the same reason.
    */
   isRunActive?: () => Promise<boolean>;
 };

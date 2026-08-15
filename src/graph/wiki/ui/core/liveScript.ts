@@ -1,35 +1,35 @@
 /**
- * État visuel transitoire du graphe, et abonnement aux révisions.
+ * Transient visual state of the graph, and subscription to revisions.
  *
- * Le graphe n'est pas *sondé* : l'ancien polling de la révision entretenait une
- * activité réseau permanente et remplaçait toute la scène Canvas au fil d'une
- * longue session. Il est désormais *notifié*, par un flux d'événements, et
- * réconcilie sa scène en place — jamais un rechargement, jamais un remontage.
+ * The graph is not *polled*: the old revision polling maintained permanent
+ * network activity and replaced the whole Canvas scene over the course of a
+ * long session. It is now *notified*, by an event stream, and reconciles its
+ * scene in place — never a reload, never a remount.
  *
- * Deux modes de réception, un seul flux ouvert par document :
+ * Two receive modes, a single stream opened per document:
  *
- * - **autonome** (`/graph` dans son propre onglet) : le document ouvre lui-même
- *   son `EventSource` ;
- * - **embarqué** (iframe du shell) : le parent tient la connexion et relaie par
- *   `postMessage`. Une `EventSource` par iframe multiplierait les connexions et
- *   les tempêtes de reconnexion pour un seul et même flux.
+ * - **standalone** (`/graph` in its own tab): the document opens its own
+ *   `EventSource`;
+ * - **embedded** (shell iframe): the parent holds the connection and relays via
+ *   `postMessage`. An `EventSource` per iframe would multiply the connections
+ *   and the reconnection storms for one and the same stream.
  */
 export function graphUiLiveScript(): string {
   return String.raw`
 const GRAPH_FRESH_MS=14000;
 /*
- Convergence d'une fusion.
+ Convergence of a merge.
 
- Une bulle absorbée ne doit pas disparaître d'un coup : le lecteur verrait
- trois domaines s'évaporer sans comprendre où sont passées leurs pages. Elle
- glisse donc vers sa cible avant de s'effacer, ce qui raconte la fusion au lieu
- de la subir.
+ An absorbed bubble must not disappear all at once: the reader would see three
+ domains evaporate without understanding where their pages went. It therefore
+ glides toward its target before fading out, which narrates the merge instead
+ of suffering it.
 
- La durée est courte et bornée : c'est une explication, pas un spectacle, et
- elle ne doit pas retarder la lecture de la carte nouvelle.
+ The duration is short and bounded: it is an explanation, not a spectacle, and
+ it must not delay reading the new map.
 */
 const GRAPH_MERGE_MS=900;
-// id absorbé → { vers, depuis quand }
+// absorbed id → { to, since when }
 const graphMerging=new Map();
 function graphMergeProgress(id){
   const entry=graphMerging.get(id);
@@ -40,12 +40,12 @@ function graphMergeProgress(id){
 function hasGraphMerges(){
   if(!graphMerging.size)return false;
   const cutoff=performance.now()-GRAPH_MERGE_MS;
-  // Même purge défensive que pour le halo : une bulle absorbée dans un domaine
-  // qu'on n'affiche pas ne sera jamais interrogée, et sa seule présence
-  // maintiendrait la boucle d'animation active indéfiniment.
+  // Same defensive purge as for the halo: a bubble absorbed into a domain we
+  // are not showing will never be queried, and its mere presence would keep
+  // the animation loop active indefinitely.
   graphMerging.forEach((entry,id)=>{if(entry.at<=cutoff)graphMerging.delete(id)});
   return graphMerging.size>0}
-// id → instant d'apparition. Sert au halo « nouveau », pas à la disposition.
+// id → appearance instant. Used for the "new" halo, not for layout.
 const graphFreshNodes=new Map();
 function graphNodeFreshness(id){
   const at=graphFreshNodes.get(id);
@@ -56,21 +56,21 @@ function graphNodeFreshness(id){
 function hasFreshGraphNodes(){
   if(!graphFreshNodes.size)return false;
   const cutoff=performance.now()-GRAPH_FRESH_MS;
-  // Certains nouveaux nœuds peuvent être masqués par un filtre ou appartenir
-  // à un autre domaine que celui affiché. graphNodeFreshness() ne sera alors
-  // jamais appelée pour eux : on doit tout de même les purger ici, sinon leur
-  // seule présence maintient la boucle d'animation active indéfiniment.
+  // Some new nodes may be hidden by a filter or belong to a domain other than
+  // the one displayed. graphNodeFreshness() will then never be called for them:
+  // we must still purge them here, otherwise their mere presence keeps the
+  // animation loop active indefinitely.
   graphFreshNodes.forEach((at,id)=>{if(at<=cutoff)graphFreshNodes.delete(id)});
   return graphFreshNodes.size>0}
 
 /*
- Réception des révisions et garde anti-obsolescence.
+ Receiving revisions and anti-staleness guard.
 
- Une seule récupération en vol à la fois, et la dernière révision gagne : sans
- cela, deux réponses parties dans l'ordre 41 puis 42 peuvent revenir dans
- l'ordre inverse et la plus ancienne écraserait la scène la plus récente. C'est
- le même problème de concurrence que le flux du runtime, et il se règle au même
- endroit — à l'application, pas à l'émission.
+ A single in-flight fetch at a time, and the last revision wins: without it,
+ two responses sent in the order 41 then 42 can come back in the reverse order
+ and the older one would overwrite the newer scene. It is the same concurrency
+ problem as the runtime stream, and it is solved in the same place — at
+ application, not at emission.
 */
 let graphRevision=0,graphFetching=false,graphWanted=0,graphRetryTimer=0,graphRetryDelay=1000;
 function scheduleGraphRetry(){
@@ -89,8 +89,8 @@ function onGraphRevision(revision){
       while(graphWanted>graphRevision){
         const target=graphWanted;
         const next=await json('/api/graph/overview');
-        // Une réponse partie avant une révision plus récente n'a pas le droit
-        // d'écraser une scène plus à jour : on relit plutôt que d'appliquer.
+        // A response sent before a newer revision has no right to overwrite a
+        // more up-to-date scene: we re-read rather than apply.
         if(next.taxonomyRevision<target)throw new Error('graph snapshot behind announced revision');
         applyGraphRevision(next);
         graphRevision=Math.max(target,next.taxonomyRevision||0);
@@ -98,40 +98,40 @@ function onGraphRevision(revision){
     }catch(error){scheduleGraphRetry()}
     finally{graphFetching=false}})()}
 /*
- Applique un snapshot en place.
+ Applies a snapshot in place.
 
- Les nouveaux identifiants sont relevés AVANT que les données ne changent :
- c'est ce qui alimente le halo « nouveau », jusqu'ici implémenté mais jamais
- nourri. Aucun remontage, aucun rechargement — render() passe par setScene, qui
- conserve caméra, cadrage et positions.
+ The new identifiers are recorded BEFORE the data changes: that is what feeds
+ the "new" halo, until now implemented but never fed. No remount, no reload —
+ render() goes through setScene, which preserves camera, framing and positions.
 */
 function applyGraphRevision(next){
   const known=new Set((data&&data.nodes||[]).map(node=>node.id));
   const knownCommunities=new Set((data&&data.communities||[]).map(item=>item.id));
-  // Les bulles qu'on affichait ET qui viennent d'être absorbées : elles seules
-  // ont une convergence à jouer. Une fusion survenue avant l'ouverture de la
-  // page n'a rien à raconter.
+  // The bubbles we were showing AND that have just been absorbed: only they
+  // have a convergence to play. A merge that happened before the page opened
+  // has nothing to narrate.
   const redirects=next.communityRedirects||{};
   Object.keys(redirects).forEach(from=>{
     if(knownCommunities.has(from)&&redirects[from])graphMerging.set(from,{to:redirects[from],at:performance.now()})});
   data=next;
-  // Une fusion déplace la sélection sur la cible plutôt que de la perdre, et
-  // reporte la position manuelle de l'absorbé.
+  // A merge moves the selection to the target rather than losing it, and
+  // carries over the absorbed one's manual position.
   migrateCanvasExplorerPositions(next.communityRedirects);
   redirectGraphSelection(next.communityRedirects);
-  // Le prochain rendu vient d'une révision, pas d'un geste : il ne recadre pas.
+  // The next render comes from a revision, not from a gesture: it does not
+  // reframe.
   canvasExplorer?.markDataRevision();
   seedCanvasExplorerSlots();
   next.nodes.forEach(node=>{if(!known.has(node.id))graphFreshNodes.set(node.id,performance.now())});
   next.communities.forEach(item=>{if(!knownCommunities.has(item.id))graphFreshNodes.set(item.id,performance.now())});
   renderFilters();renderSearchOptions();render()}
 /*
- La sélection suit l'identifiant stable à travers une fusion.
+ The selection follows the stable identifier across a merge.
 
- Une communauté sélectionnée qui vient d'être absorbée n'a pas disparu : elle a
- une cible. Laisser la sélection pointer un identifiant mort viderait le
- panneau et renverrait l'utilisateur à la carte sans explication, au milieu de
- sa lecture.
+ A selected community that has just been absorbed has not disappeared: it has a
+ target. Leaving the selection pointing at a dead identifier would empty the
+ panel and send the user back to the map without explanation, in the middle of
+ their reading.
 */
 function redirectGraphSelection(redirects){
   if(!redirects)return;
@@ -140,12 +140,13 @@ function redirectGraphSelection(redirects){
   if(selected&&selected.community&&redirects[selected.community.communityId]){
     selected.community={...selected.community,communityId:redirects[selected.community.communityId]}}}
 function startGraphRevisionFeed(){
-  // Embarqué : le parent tient l'unique connexion et relaie. Autonome : on
-  // ouvre la nôtre. Jamais les deux.
+  // Embedded: the parent holds the single connection and relays. Standalone: we
+  // open our own. Never both.
   if(window.parent&&window.parent!==window){
     window.addEventListener('message',event=>{
-      // Le shell et le graphe sont servis par le même processus : tout message
-      // d'une autre origine est étranger au flux et n'a rien à piloter ici.
+      // The shell and the graph are served by the same process: any message
+      // from another origin is foreign to the stream and has nothing to drive
+      // here.
       if(event.origin!==location.origin)return;
       const payload=event.data;
       if(payload&&payload.type==='llmwiki:graph-revision')onGraphRevision(Number(payload.revision))});
@@ -155,8 +156,8 @@ function startGraphRevisionFeed(){
   const stream=new EventSource('/api/graph/events');
   stream.addEventListener('graph.revision',event=>{
     try{onGraphRevision(Number(JSON.parse(event.data).revision))}catch(error){}});
-  // Pas de gestion de reconnexion ici : EventSource la fait seul, et le
-  // serveur impose son backoff par le champ retry.
+  // No reconnection handling here: EventSource does it on its own, and the
+  // server imposes its backoff via the retry field.
   window.addEventListener('pagehide',()=>{stream.close();if(graphRetryTimer)clearTimeout(graphRetryTimer)})}
 `;
 }
