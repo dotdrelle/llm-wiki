@@ -7,13 +7,74 @@ const runtimeCanvasPositions=new Map;
 // framing and lost the reader's chosen zoom.
 let runtimeCanvasCamera=null;
 function runtimeStatusColor(status){return{running:'#4f7eff',done:'#22c55e',completed:'#22c55e',failed:'#f06b6b',pending_approval:'#f59e0b',blocked:'#f59e0b',cancelled:'#64748b'}[status]||'#718096'}
+// "À faire" reads as hollow/dashed, distinct from done (filled) and running
+// (pulsing). pending/queued/waiting are the states that mean "not started yet".
+function runtimeIsPending(status){return status==='pending'||status==='queued'||status==='waiting'}
+// Stable z-order per node type: run hub at the back, phases above it, details
+// on top. Lower value draws first.
+function runtimeNodeDepth(node){return node.type==='run'?.9:node.type==='task_group'?1:node.type==='task_detail'?1.2:1.1}
+/*
+ Layered DAG layout, left → right.
+
+ The previous scene put every phase of the same band side by side on a single
+ line, so an ingest with a dozen phases squashed into an unreadable row. Phases
+ now sit in COLUMNS of topological depth over depends_on (no dependency = depth
+ 0 = leftmost), stacked vertically within a column and wrapped into sub-columns
+ past a row budget. The run hub anchors the left; expanded task details land in
+ a dedicated rightmost column. A manually dragged node keeps its saved position.
+*/
 function runtimeCanvasScene(){
-  const projection=runtimeWorkflowGraphData(),nodes=projection.nodes.map((node,index)=>{const lane=node.type==='run'?0:node.type==='task_group'?1:node.type==='task_detail'?2:3,peers=projection.nodes.filter(item=>(item.type==='run'?0:item.type==='task_group'?1:item.type==='task_detail'?2:3)===lane),slot=peers.findIndex(item=>item.id===node.id),saved=runtimeCanvasPositions.get(node.id),x=saved?.x??(lane===0?0:(slot-(peers.length-1)/2)*Math.min(.22,.72/Math.max(1,peers.length-1))),y=saved?.y??(-.3+lane*.2);return{...node,x,y,depth:1+(index%4)*.025}});return{nodes,edges:projection.relations}}
+  const projection=runtimeWorkflowGraphData(),nodes=projection.nodes,relations=projection.relations;
+  const isRun=node=>node.type==='run',isPhase=node=>node.type==='task_group',isDetail=node=>node.type==='task_detail';
+  // phase -> its prerequisites, over depends_on only.
+  const deps=new Map();
+  relations.forEach(rel=>{if(rel.type==='depends_on'){if(!deps.has(rel.from))deps.set(rel.from,new Set());deps.get(rel.from).add(rel.to)}});
+  const phaseIds=nodes.filter(isPhase).map(node=>node.id);
+  const depthOf=new Map();
+  const computeDepth=id=>{
+    if(depthOf.has(id))return depthOf.get(id);
+    depthOf.set(id,0); // cycle guard: the DAG is acyclic, but never loop on a bug
+    let d=0;
+    (deps.get(id)||[]).forEach(depId=>{d=Math.max(d,computeDepth(depId)+1)});
+    depthOf.set(id,d);
+    return d;
+  };
+  phaseIds.forEach(computeDepth);
+  // Phases grouped by depth, then chunked into sub-columns so a wide parallel
+  // wave wraps instead of stacking into an unreadable tower.
+  const MAX_ROWS=9,COL_X=.46,ROW_Y=.26;
+  const phasesByDepth=new Map();
+  nodes.filter(isPhase).forEach(node=>{const d=depthOf.get(node.id)||0;if(!phasesByDepth.has(d))phasesByDepth.set(d,[]);phasesByDepth.get(d).push(node)});
+  [...phasesByDepth.values()].forEach(list=>list.sort((a,b)=>String(a.label).localeCompare(String(b.label))));
+  const colOf=new Map();
+  nodes.filter(isRun).forEach(node=>colOf.set(node.id,0));
+  let column=1;
+  [...phasesByDepth.keys()].sort((a,b)=>a-b).forEach(d=>{
+    const list=phasesByDepth.get(d);
+    for(let i=0;i<list.length;i+=MAX_ROWS){list.slice(i,i+MAX_ROWS).forEach(node=>colOf.set(node.id,column));column++;}
+  });
+  // Expanded task details: one dedicated column on the far right. Their
+  // contains/depends_on edges carry the membership back to the phase.
+  nodes.filter(isDetail).forEach(node=>colOf.set(node.id,column));
+  const maxCol=Math.max(0,...[...colOf.values()]);
+  const byCol=new Map();
+  nodes.forEach(node=>{const c=colOf.get(node.id)??(maxCol+1);if(!byCol.has(c))byCol.set(c,[]);byCol.get(c).push(node)});
+  const placed=nodes.map(node=>{
+    const saved=runtimeCanvasPositions.get(node.id);
+    if(saved)return{...node,x:saved.x,y:saved.y,depth:runtimeNodeDepth(node)};
+    const c=colOf.get(node.id)??(maxCol+1);
+    const members=byCol.get(c)||[];
+    const idx=members.indexOf(node);
+    const y=(idx-(members.length-1)/2)*ROW_Y;
+    return{...node,x:c*COL_X,y,depth:runtimeNodeDepth(node)};
+  });
+  return{nodes:placed,edges:relations};
+}
 function createRuntimeCanvasRenderer(host){
   // No mini-map anymore. On an execution graph that fits its frame it oriented
   // no one, ate a corner of the scene and duplicated the role of the "Fit"
   // button — the same reasons it was removed from the wiki graph.
-  const canvas=host,context=canvas.getContext('2d'),a11y=canvas.parentElement.querySelector('.runtime-graph-a11y'),state={width:0,height:0,ratio:1,scene:{nodes:[],edges:[]},hits:[],pointer:null,dragged:false,hover:null,topology:'',animated:false,userAdjusted:!!runtimeCanvasCamera,fitted:false};let scheduler,camera;
+  const canvas=host,context=canvas.getContext('2d'),a11y=canvas.parentElement.querySelector('.runtime-graph-a11y'),state={width:0,height:0,ratio:1,scene:{nodes:[],edges:[]},hits:[],pointer:null,dragged:false,hover:null,topology:'',animated:false,userAdjusted:!!runtimeCanvasCamera,fitted:false,transitions:new Map()};let scheduler,camera;
   const rgba=(hex,alpha)=>{const value=parseInt(hex.slice(1),16);return'rgba('+((value>>16)&255)+','+((value>>8)&255)+','+(value&255)+','+alpha+')'};
   /*
    Pre-rendered halos, like on the wiki graph.
@@ -52,66 +113,134 @@ function createRuntimeCanvasRenderer(host){
     if(node.type==='task_detail')return{w:132,h:52,card:true};
     const r=node.type==='run'?28:14;return{w:r*2,h:r*2+(node.type==='run'?36:22),card:false}}
   /*
-   Bounding-box framing.
+   Fixed-point framing, ported from the wiki graph.
 
-   The two constants .72 and .62 assumed a square scene and ignored the node
-   sizes: a card is 164 px wide whatever the zoom, so its overflow cannot be
-   derived from a fraction of the model. On a wide, low frame the result was
-   consistently too small or truncated.
+   The scale depends on the extent, which depends on the scale: an implicit
+   equation, not a division. We iterate to the fixed point, measuring the real
+   envelope (node boxes included) at the current scale on each pass. The center
+   is that of the ENVELOPE, so a tall card no longer pushes the graph high in
+   the frame.
   */
-  function fit(){
-    if(!state.scene.nodes.length)return;
-    const size=Math.min(state.width,state.height)||1,inner=Math.max(220,state.width-28),tall=Math.max(180,state.height-28);
-    let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity,padX=0,padY=0;
-    state.scene.nodes.forEach(node=>{const box=nodeBox(node);
-      x0=Math.min(x0,node.x);x1=Math.max(x1,node.x);y0=Math.min(y0,node.y);y1=Math.max(y1,node.y);
-      padX=Math.max(padX,box.w/2+14);padY=Math.max(padY,box.h/2+14)});
-    const spanX=Math.max(.001,x1-x0)*size,spanY=Math.max(.001,y1-y0)*size;
-    const scale=Math.min((inner-padX*2)/Math.max(1,spanX),(tall-padY*2)/Math.max(1,spanY));
-    camera.moveTo({x:(x0+x1)/2,y:(y0+y1)/2,scale:Math.max(.4,Math.min(2.6,scale*.98))},280)}
-  // The backdrop depends only on the format and the theme: no need to rebuild
-  // the gradient on every frame.
+  function computeBounds(nodes){
+    if(!nodes.length)return{x:0,y:0,scale:1};
+    const size=Math.min(state.width,state.height)||1,inner=Math.max(240,state.width-32),tall=Math.max(180,state.height-32);
+    let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
+    nodes.forEach(node=>{x0=Math.min(x0,node.x);x1=Math.max(x1,node.x);y0=Math.min(y0,node.y);y1=Math.max(y1,node.y)});
+    const cx=(x0+x1)/2,cy=(y0+y1)/2;
+    const envelope=scale=>{
+      let l=Infinity,r=-Infinity,t=-Infinity,b=-Infinity;
+      nodes.forEach(node=>{
+        const box=nodeBox(node);
+        const px=(node.x-cx)*size*scale,py=(node.y-cy)*size*scale;
+        const w=box.w/2+16,h=box.h/2+16;
+        l=Math.min(l,px-w);r=Math.max(r,px+w);t=Math.min(t,py-h);b=Math.max(b,py+h)});
+      return{l,r,t,b}};
+    let scale=1;
+    for(let pass=0;pass<8;pass++){
+      const e=envelope(scale);
+      const next=Math.max(.4,Math.min(2.6,scale*Math.min(inner/Math.max(1,e.r-e.l),tall/Math.max(1,e.b-e.t))));
+      if(Math.abs(next-scale)<=scale*.002){scale=next;break}
+      scale=next}
+    const e=envelope(scale);
+    return{x:cx+(e.l+e.r)/2/(size*scale),y:cy+(e.t+e.b)/2/(size*scale),scale:scale*.99}}
+  function fit(){if(!state.scene.nodes.length)return;camera.moveTo(computeBounds(state.scene.nodes),280)}
+  // The backdrop depends only on the format and the theme, like the wiki
+  // graph's three-stop radial: no need to rebuild the gradient on every frame.
   let backdrop=null,backdropKey='';
   function drawBackground(){
     const isLight=document.documentElement.classList.contains('theme-light'),key=state.width+'x'+state.height+(isLight?'l':'d');
     if(key!==backdropKey){
-      backdrop=context.createRadialGradient(state.width*.5,state.height*.45,0,state.width*.5,state.height*.45,Math.max(state.width,state.height)*.7);
-      backdrop.addColorStop(0,isLight?'#ffffff':'#101928');backdrop.addColorStop(1,isLight?'#e8eef5':'#07090e');
+      backdrop=context.createRadialGradient(state.width*.5,state.height*.42,0,state.width*.5,state.height*.45,Math.max(state.width,state.height)*.75);
+      backdrop.addColorStop(0,isLight?'#ffffff':'#101827');backdrop.addColorStop(.55,isLight?'#f4f7fb':'#0a0e18');backdrop.addColorStop(1,isLight?'#e7edf4':'#06080d');
       backdropKey=key}
     context.fillStyle=backdrop;context.fillRect(0,0,state.width,state.height)}
+  // Curved relation, ported from the wiki graph: a quadratic arc offset
+  // perpendicular to the chord reads as a flow, not a wireframe.
+  function edgePath(a,b){const cx=(a.x+b.x)/2-(b.y-a.y)*.12,cy=(a.y+b.y)/2+(b.x-a.x)*.12;return{cx,cy}}
+  // Deterministic per-edge phase so the flow particle keeps a stable position
+  // from frame to frame instead of restarting on every redraw.
+  function edgeSeed(id){let h=0;for(let i=0;i<id.length;i++)h=(h*31+id.charCodeAt(i))>>>0;return h%1000}
+  function drawEdge(edge,a,b,now){
+    const active=edge.active||a.status==='running'||b.status==='running';
+    const seq=edge.type==='depends_on';
+    context.strokeStyle=active?'rgba(79,126,255,.85)':(seq?'rgba(125,148,180,.4)':'rgba(125,148,180,.26)');
+    context.lineWidth=active?2.2:1.1;
+    context.setLineDash(seq?[4,5]:[]);
+    const curve=edgePath(a,b);
+    context.beginPath();context.moveTo(a.x,a.y);context.quadraticCurveTo(curve.cx,curve.cy,b.x,b.y);context.stroke();context.setLineDash([]);
+    // A particle glides toward the dependent phase while the dependency is live:
+    // it says "work is flowing this way" without an arrowhead.
+    if(active&&seq){
+      const t=((now+edgeSeed(edge.id))%1800)/1800,u=1-t;
+      const px=u*u*a.x+2*u*t*curve.cx+t*t*b.x,py=u*u*a.y+2*u*t*curve.cy+t*t*b.y;
+      context.fillStyle='rgba(220,232,255,.9)';
+      context.beginPath();context.arc(px,py,1.8,0,Math.PI*2);context.fill()}}
+  // Appearance / status-change signal, like the wiki graph's "fresh" ring. A
+  // brand-new node shows a green ring; an existing node whose status just
+  // flipped (pending → running → done) shows a brief amber ring. Both fade on
+  // their own and keep the scene animated only while one is visible.
+  function trackTransition(node,now){
+    let prior=state.transitions.get(node.id);
+    if(!prior){prior={born:now,statusAt:now,status:node.status};state.transitions.set(node.id,prior)}
+    else if(prior.status!==node.status){prior.status=node.status;prior.statusAt=now}
+    const bornAge=now-prior.born,changedAge=now-prior.statusAt;
+    const fresh=bornAge<1200?1-bornAge/1200:0;
+    const flash=changedAge<520?1-changedAge/520:0;
+    return{fresh,flash}}
+  function drawNode(node,now){
+    const point=project(node),color=runtimeStatusColor(node.status);
+    const selectedNode=node.type==='task_detail'?node.taskId===selectedRuntimeWorkflowTaskId:node.id===selectedWorkflowNodeId;
+    const box=nodeBox(node),card=box.card,w=box.w,h=card?box.h:0;
+    const live=node.status==='running'&&!scheduler.reducedMotion;
+    const transition=scheduler.reducedMotion?{fresh:0,flash:0}:trackTransition(node,now);
+    const pulse=live?.34+Math.sin(now/180)*.1:selectedNode?.38:.2;
+    paintGlow(color,pulse,pulse*.35,point.x,point.y,(card?Math.max(w,h):box.w)*.85);
+    const pending=runtimeIsPending(node.status);
+    if(card){
+      // Wiki-style card: dark body, colored accent bar, title + status meta.
+      context.fillStyle=pending?'rgba(16,23,34,.5)':'rgba(16,23,34,.96)';
+      context.beginPath();context.roundRect(point.x-w/2,point.y-h/2,w,h,9);context.fill();
+      context.strokeStyle=selectedNode?'#fff':rgba(color,selectedNode?1:.6);context.lineWidth=selectedNode?2.5:1.1;
+      context.setLineDash(pending?[4,4]:[]);
+      context.stroke();context.setLineDash([]);
+      context.fillStyle=color;context.fillRect(point.x-w/2+3,point.y-h/2+7,3,h-14);
+      context.textAlign='left';context.font='700 10px ui-sans-serif,system-ui';context.fillStyle='#f2f6fd';
+      let label=String(node.label||'');const maxW=w-32;
+      while(context.measureText(label).width>maxW&&label.length>5)label=label.slice(0,-2);
+      context.fillText(label+(label!==String(node.label||'')?'…':''),point.x-w/2+13,point.y-6);
+      context.font='9px ui-sans-serif,system-ui';context.fillStyle=rgba(color,.9);
+      context.fillText(node.type==='task_group'?((node.done||0)+'/'+(node.total||0)+' tasks · ×'+(node.parallelism||1)):String(node.status||'pending'),point.x-w/2+13,point.y+12);
+    } else {
+      const r=node.type==='run'?28:14;
+      context.fillStyle=pending?rgba(color,.28):rgba(color,.9);
+      context.strokeStyle=selectedNode?'#fff':rgba(color,1);context.lineWidth=selectedNode?2.5:1.2;
+      context.setLineDash(pending?[4,4]:[]);
+      context.beginPath();context.arc(point.x,point.y,r,0,Math.PI*2);context.fill();context.stroke();context.setLineDash([]);
+      context.textAlign='center';context.fillStyle='#f7faff';context.font='700 10px ui-sans-serif,system-ui';
+      context.fillText(shortText(node.label,18),point.x,point.y+(node.type==='run'?44:26));
+    }
+    if(transition.fresh>0||transition.flash>0){
+      const ringColor=transition.fresh>0?'#74c365':'#f59e0b';
+      const alpha=transition.fresh>0?transition.fresh:transition.flash;
+      const radius=(card?Math.max(w,h):box.w)/2+8+(1-alpha)*10;
+      context.strokeStyle=rgba(ringColor,alpha);context.lineWidth=2;
+      context.beginPath();context.arc(point.x,point.y,radius,0,Math.PI*2);context.stroke()}
+    state.hits.push({node,x:point.x,y:point.y,w:card?w:36,h:card?h:36});
+    return live||transition.fresh>0||transition.flash>0}
   function draw(now){
     camera.tick(now);runtimeCanvasCamera=state.userAdjusted?{...camera.state}:runtimeCanvasCamera;
     state.hits=[];context.clearRect(0,0,state.width,state.height);drawBackground();
     const byId=new Map(state.scene.nodes.map(node=>[node.id,node]));
     state.scene.edges.forEach(edge=>{const from=byId.get(edge.from),to=byId.get(edge.to);if(!from||!to)return;
-      const a=project(from),b=project(to),active=from.status==='running'||to.status==='running';
-      context.strokeStyle=active?'rgba(79,126,255,.9)':'rgba(125,148,180,.3)';context.lineWidth=active?2.4:1.1;
-      context.setLineDash(edge.type==='depends_on'?[4,5]:[]);
-      context.beginPath();context.moveTo(a.x,a.y);context.lineTo(b.x,b.y);context.stroke();context.setLineDash([])});
-    let running=false;
-    state.scene.nodes.forEach(node=>{
-      const point=project(node),color=runtimeStatusColor(node.status);
-      const selectedNode=node.type==='task_detail'?node.taskId===selectedRuntimeWorkflowTaskId:node.id===selectedWorkflowNodeId;
-      const box=nodeBox(node),card=box.card,w=box.w,h=card?box.h:0;
-      const live=node.status==='running'&&!scheduler.reducedMotion;
-      if(live)running=true;
-      // An active node's pulse goes through the halo intensity rather than a
-      // blur radius: the image is the same, the cost is not.
-      const pulse=live?.34+Math.sin(now/180)*.1:selectedNode?.38:.2;
-      paintGlow(color,pulse,pulse*.35,point.x,point.y,(card?Math.max(w,box.h):box.w)*.85);
-      context.fillStyle=rgba(color,card?.72:.88);context.strokeStyle=selectedNode?'#fff':rgba(color,1);context.lineWidth=selectedNode?3:1.2;
-      context.beginPath();
-      if(card)context.roundRect(point.x-w/2,point.y-h/2,w,h,10);
-      else context.arc(point.x,point.y,node.type==='run'?28:14,0,Math.PI*2);
-      context.fill();context.stroke();
-      context.textAlign='center';context.fillStyle='#f7faff';context.font='700 10px ui-sans-serif,system-ui';
-      context.fillText(shortText(node.label,card?24:18),point.x,point.y+(card?-7:node.type==='run'?44:28));
-      if(card){context.font='9px ui-sans-serif,system-ui';context.fillStyle='rgba(255,255,255,.82)';
-        context.fillText(node.type==='task_group'?(node.done||0)+'/'+(node.total||0)+' tasks · ×'+(node.parallelism||1):(node.status||'pending'),point.x,point.y+11)}
-      state.hits.push({node,x:point.x,y:point.y,w:card?w:36,h:card?h:36})});
+      // depends_on is stored as dependent→prerequisite; draw it prerequisite→
+      // dependent so the flow particle moves with the pipeline (left → right).
+      if(edge.type==='depends_on')drawEdge(edge,project(to),project(from),now);
+      else drawEdge(edge,project(from),project(to),now)});
+    let active=false;
+    state.scene.nodes.slice().sort((a,b)=>(a.depth||1)-(b.depth||1)).forEach(node=>{if(drawNode(node,now))active=true});
     // The re-trigger is decided once, after the loop: putting it in the body
     // tied it to the node draw order.
-    if(running)scheduler.animate(220)}
+    if(active)scheduler.animate(220)}
   scheduler=createGraphFrameScheduler(draw);camera=createGraphCamera(scheduler);
   if(runtimeCanvasCamera)camera.jump({...runtimeCanvasCamera});
   // Any framing gesture hands the view to its reader: no automatic reframing
