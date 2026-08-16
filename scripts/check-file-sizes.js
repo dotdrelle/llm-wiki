@@ -12,7 +12,7 @@ const LEGACY_LIMITS = new Map([
   ['src/commands/serve.ts', 1100],
   ['src/serve/html/wikiHtml.ts', 1400],
   ['src/serve/html/wikiLayoutCss.ts', 1200],
-  ['src/chat/chatHtml.ts', 2710],
+  ['src/chat/chatHtml.ts', 2725],
   ['src/chat/styles/chatStyles.ts', 600],
 ]);
 

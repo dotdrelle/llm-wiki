@@ -204,6 +204,15 @@ function runtimeTime(value,fallback=Date.now()) {
   const parsed=typeof value==='number'?value:Date.parse(String(value));
   return Number.isFinite(parsed)&&parsed>0?parsed:fallback;
 }
+// Live plan ordering: running step first, else the step that just finished.
+function orderedPlanTasks(tasks){
+  const list=[...tasks].sort((a,b)=>(Number(a.step)||0)-(Number(b.step)||0));
+  const running=list.find(t=>String(t.status||'').toLowerCase()==='running');
+  if(running)return [running,...list.filter(t=>t!==running)];
+  const done=list.filter(t=>['done','failed','cancelled'].includes(String(t.status||'').toLowerCase()));
+  const newest=done[done.length-1];
+  return newest?[newest,...list.filter(t=>t!==newest)]:list;
+}
 function runtimeTaskPanelHTML(view='plan') {
   if(!runtimeState) {
     if(window.__WIKI_CONFIG__?.runtime?.enabled) return '<div class="runtime-status">Runtime connecting...</div>';
@@ -230,7 +239,7 @@ function runtimeTaskPanelHTML(view='plan') {
   const runUpdatedAt=runtimeTime(runtimeState.finishedAt||runtimeState.completedAt||runtimeState.updatedAt,runStartedAt);
   const status=\`<div class="runtime-status">Runtime \${runtimeConnected?'connected':'disconnected'} · \${esc(runtimeState.status||'idle')}</div>\`;
   const runCard=runtimeRunCardHTML(plan,activities,runtimeState.workflow?.progress);
-  const planCards=[...plan].reverse().map((step,index)=>actCardHTML({
+  const planCards=orderedPlanTasks(plan).map((step,index)=>actCardHTML({
     id:'runtime-plan-'+(step.id||step.step||index),
     kind:'runtime-plan',
     source:'runtime',
