@@ -13,7 +13,8 @@ function renderFilters(){const types={};data.nodes.forEach(n=>types[n.type]=(typ
  rendering.
 */
 function communityDocsHtml(community){
-  return community.nodeIds.map(id=>{const n=data.nodes.find(x=>x.id===id);return '<div class="community-doc-row"><button class="community-doc" data-doc="'+esc(id)+'" title="'+esc(id)+'">'+esc(n?.title||id)+'.md</button><button type="button" class="community-doc-action" data-preview-doc="'+esc(id)+'" title="Preview">'+graphIcon('preview')+'</button><button type="button" class="community-doc-action" data-send-doc="'+esc(id)+'" title="Send to Donna">'+graphIcon('donna')+'</button></div>'}).join('')}
+  const enabled=enabledTypes(),typeById=graphNodeTypeById();
+  return community.nodeIds.filter(id=>enabled.has(typeById.get(id))).map(id=>{const n=data.nodes.find(x=>x.id===id);return '<div class="community-doc-row"><button class="community-doc" data-doc="'+esc(id)+'" title="'+esc(id)+'">'+esc(n?.title||id)+'.md</button><button type="button" class="community-doc-action" data-preview-doc="'+esc(id)+'" title="Preview">'+graphIcon('preview')+'</button><button type="button" class="community-doc-action" data-send-doc="'+esc(id)+'" title="Send to Donna">'+graphIcon('donna')+'</button></div>'}).join('')}
 function communityGroupHtml(community,index,extraClass){
   return '<details class="community-group'+(extraClass?' '+extraClass:'')+'"><summary data-community="'+esc(community.id)+'"><i class="dot" style="--color:'+colors[index%colors.length]+'"></i><span>'+esc(graphLeafDisplay(community.label))+'</span><b>'+community.documentCount+'</b></summary><div class="community-docs">'+communityDocsHtml(community)+'</div></details>'}
 function renderCommunityIndex(){
@@ -70,6 +71,6 @@ function updateCommunityFilterCounts(){
  single node: one clicked a document and the surrounding domain disappeared. It
  is the view level that decides the scope, not the presence of a selection.
 */
-function visible(){const enabled=new Set([...document.querySelectorAll('[data-type]:checked')].map(x=>x.dataset.type));let nodes=data.nodes.filter(n=>enabled.has(n.type));if(selected&&view==='focus'){const base=new Set([selected.id]),scope=new Set(base);data.edges.forEach(e=>{if(base.has(e.from))scope.add(e.to);if(base.has(e.to))scope.add(e.from)});nodes=nodes.filter(n=>scope.has(n.id))}else if(selectedCommunity&&view!=='map'){const base=new Set(graphCommunityMembers(selectedCommunity)),scope=new Set(base);data.edges.forEach(e=>{if(base.has(e.from))scope.add(e.to);if(base.has(e.to))scope.add(e.from)});nodes=nodes.filter(n=>scope.has(n.id))}const ids=new Set(nodes.map(n=>n.id));return{nodes:nodes.map(n=>({...n})),edges:data.edges.filter(e=>ids.has(e.from)&&ids.has(e.to)).map(e=>({...e}))}}
+function visible(){const enabled=enabledTypes();let nodes=data.nodes.filter(n=>enabled.has(n.type));if(selected&&!nodes.some(n=>n.id===selected.id))nodes=[selected,...nodes];if(selected&&view==='focus'){const base=new Set([selected.id]),scope=new Set(base);data.edges.forEach(e=>{if(base.has(e.from))scope.add(e.to);if(base.has(e.to))scope.add(e.from)});nodes=nodes.filter(n=>scope.has(n.id))}else if(selectedCommunity&&view!=='map'){const base=new Set(graphCommunityMembers(selectedCommunity)),scope=new Set(base);data.edges.forEach(e=>{if(base.has(e.from))scope.add(e.to);if(base.has(e.to))scope.add(e.from)});nodes=nodes.filter(n=>scope.has(n.id))}const ids=new Set(nodes.map(n=>n.id));return{nodes:nodes.map(n=>({...n})),edges:data.edges.filter(e=>ids.has(e.from)&&ids.has(e.to)).map(e=>({...e}))}}
 `;
 }

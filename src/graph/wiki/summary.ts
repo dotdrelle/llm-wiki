@@ -27,8 +27,9 @@ type CacheFile = Record<string, CacheEntry>;
 
 const SUMMARY_SYSTEM = [
   'You summarize a single page of a personal knowledge wiki.',
-  'Answer with 2 to 4 short sentences of plain prose, no heading, no bullet list, no preamble.',
-  'Say what the page is about and what a reader would find in it.',
+  'Answer with 3 to 6 short bullet points, one per line, each starting with "- ".',
+  'Each bullet states one concise fact: what the page is about, or what a reader would find in it.',
+  'No heading, no preamble, no prose paragraph, no nested bullets.',
   'Write in the same language as the page itself.',
 ].join(' ');
 

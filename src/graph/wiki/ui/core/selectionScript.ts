@@ -24,7 +24,7 @@ function documentActionRow(node){
 */
 function renderDocumentFocusWindow(node){
   const relatedIds=new Set([node.id]);data.edges.forEach(edge=>{if(edge.from===node.id)relatedIds.add(edge.to);if(edge.to===node.id)relatedIds.add(edge.from)});
-  const related=data.nodes.filter(item=>relatedIds.has(item.id)).sort((left,right)=>Number(right.id===node.id)-Number(left.id===node.id)||right.degree-left.degree);
+  const related=data.nodes.filter(item=>relatedIds.has(item.id)&&(item.id===node.id||enabledTypes().has(item.type))).sort((left,right)=>Number(right.id===node.id)-Number(left.id===node.id)||right.degree-left.degree);
   // No cross in the header: it promised a closing and actually went back up a
   // level, exactly like the "← Back" of the toolbar (#focus-back, script.ts) —
   // same target, same condition. Two commands for a single gesture, one of
@@ -90,7 +90,8 @@ function selectCommunity(id){
   // Same template as at document level: header, then scrolling list. Two
   // different layouts for the same function forced the eye to relearn the
   // panel on every descent.
-  inspector.innerHTML='<div class="panel-head"><div><small>COMMUNITY</small><strong>'+esc(graphLeafDisplay(community.label))+'</strong><span>'+community.documentCount+' documents · '+community.internalRelations+' internal relations · '+community.externalRelations+' external</span></div></div><div class="document-focus-list">'+community.nodeIds.slice(0,50).map(nodeId=>documentActionRow(data.nodes.find(node=>node.id===nodeId)||{id:nodeId,title:nodeId,type:'document',degree:0})).join('')+'</div>'
+  const enabled=enabledTypes(),typeById=graphNodeTypeById();
+  inspector.innerHTML='<div class="panel-head"><div><small>COMMUNITY</small><strong>'+esc(graphLeafDisplay(community.label))+'</strong><span>'+community.documentCount+' documents · '+community.internalRelations+' internal relations · '+community.externalRelations+' external</span></div></div><div class="document-focus-list">'+community.nodeIds.filter(nodeId=>enabled.has(typeById.get(nodeId))).slice(0,50).map(nodeId=>documentActionRow(data.nodes.find(node=>node.id===nodeId)||{id:nodeId,title:nodeId,type:'document',degree:0})).join('')+'</div>'
 }
 document.addEventListener('click',event=>{
   const preview=event.target.closest('[data-preview-doc]');if(preview){event.stopImmediatePropagation();previewGraphDocument(preview.dataset.previewDoc);return}

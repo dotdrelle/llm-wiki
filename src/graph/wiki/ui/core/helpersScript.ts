@@ -60,5 +60,15 @@ function graphCommunityLabel(id){
   const leaf=(data?.communities||[]).find(item=>item.id===id);
   if(leaf)return leaf.label;
   return (data?.domains||[]).find(item=>item.id===id)?.label||id}
+/*
+ The type filters bear on what is LISTED, exactly as on what is DRAWN.
+
+ The left index and the right panel listed each community's nodeIds whole, so
+ a workspace with templates, build-context and raw sources listed every
+ Markdown file while the corresponding checkboxes stayed unticked. Both lists
+ now read the same single predicate as the graph: an enabled type set.
+*/
+function graphNodeTypeById(){return new Map(data.nodes.map(node=>[node.id,node.type]))}
+function enabledTypes(){return new Set([...document.querySelectorAll('[data-type]:checked')].map(input=>input.dataset.type))}
 `;
 }

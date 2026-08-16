@@ -324,7 +324,7 @@ describe('boucle de dessin du canevas', () => {
     const cards: Array<string | null> = [];
     const build = new Function(
       'data', 'esc', 'inspector', 'render', 'document', 'window', 'colors',
-      'openGraphContextCard', 'closeGraphContextCard', 'graphRelationsLabel', 'graphLeafDisplay',
+      'openGraphContextCard', 'closeGraphContextCard', 'graphRelationsLabel', 'graphLeafDisplay', 'enabledTypes', 'graphNodeTypeById',
       `let selected=null,selectedCommunity=null,view='community',focusHistory=[];
        ${graphUiSelectionScript()}
        return {select:selectDocument,state:()=>({view,selected:selected&&selected.id}),
@@ -348,6 +348,8 @@ describe('boucle de dessin du canevas', () => {
       () => cards.push(null),
       (count: number) => (count === 1 ? '' : `${count || 0} relations`),
       (label: string) => (label ? label.charAt(0).toUpperCase() + label.slice(1) : label),
+      () => new Set(['wiki']),
+      () => new Map(data.nodes.map((node) => [node.id, node.type])),
     );
 
     const hub = data.nodes.find((node) => node.id === 'c0/n2')!;

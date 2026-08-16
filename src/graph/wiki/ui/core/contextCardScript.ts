@@ -122,9 +122,22 @@ function graphContextCardHTML(node,body,pending){
   return '<div class="gcc-head"><div><small>CONTEXT</small><strong>'+esc(node.title||node.label||node.id)+'</strong>'
     +'<span>'+esc(node.type||'document')+(graphRelationsLabel(relations)?' · '+graphRelationsLabel(relations):'')+'</span></div>'
     +'<button type="button" data-close-context title="Close" aria-label="Close context card">×</button></div>'
-    +'<p class="gcc-body'+(pending?' pending':'')+'">'+esc(body)+'</p>'
+    +(pending?'<p class="gcc-body pending">'+esc(body)+'</p>':graphContextSummaryHTML(body))
     +'<div class="gcc-actions"><button type="button" data-preview-doc="'+esc(node.id)+'">Open page</button>'
     +'<button type="button" data-send-doc="'+esc(node.id)+'">Send to Donna</button></div>'}
+/*
+ A bullet summary stays readable as a list, not as a prose block.
+
+ The LLM is asked for one "- " item per line. When every non-empty line is a
+ bullet, they are rendered as a real list; a prose fallback (excerpt, or an
+ older cached summary) keeps its line breaks instead of collapsing into one
+ unreadable paragraph.
+*/
+function graphContextSummaryHTML(body){
+  const lines=String(body??'').split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
+  const allBullets=lines.length>0&&lines.every(line=>/^[-*•]\s+/.test(line));
+  if(allBullets)return '<ul class="gcc-list">'+lines.map(line=>'<li>'+esc(line.replace(/^[-*•]\s+/,''))+'</li>').join('')+'</ul>';
+  return '<p class="gcc-body">'+esc(String(body??'').replace(/\r?\n+/g,'<br>'))+'</p>';}
 async function openGraphContextCard(node){
   const card=graphContextCardElement();
   if(!card)return;

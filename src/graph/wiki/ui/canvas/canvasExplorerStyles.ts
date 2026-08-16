@@ -21,12 +21,15 @@ export const canvasExplorerStyles = String.raw`
 .graph-context-card .gcc-head span{font-size:10px;color:var(--muted)}
 .graph-context-card [data-close-context]{flex:none;padding:0 5px;font-size:15px;line-height:1.2;background:transparent;border-color:transparent;color:var(--muted)}
 .graph-context-card .gcc-body{margin:0;font-size:11.5px;line-height:1.55;color:#c3cddc;overflow-wrap:anywhere}
+.graph-context-card .gcc-list{margin:0;padding:0 0 0 16px;display:flex;flex-direction:column;gap:3px;list-style:disc}
+.graph-context-card .gcc-list li{font-size:11.5px;line-height:1.45;color:#c3cddc;overflow-wrap:anywhere}
 .graph-context-card .gcc-body.pending{color:var(--muted);font-style:italic}
 .graph-context-card .gcc-actions{display:flex;gap:6px}
 .graph-context-card .gcc-actions button{flex:1;padding:.32rem .5rem;font-size:10.5px;white-space:nowrap}
 body.theme-light .graph-context-card{background:#fffffff0;border-color:#0000001f}
 body.theme-light .graph-context-card strong{color:#172433}
 body.theme-light .graph-context-card .gcc-body{color:#33475e}
+body.theme-light .graph-context-card .gcc-list li{color:#33475e}
 @media(max-width:760px){.graph-breadcrumb{max-width:42vw}.graph-context-card{width:min(260px,70vw)}}
 @media(prefers-reduced-motion:reduce){.graph-explorer-canvas{scroll-behavior:auto}}
 `;
