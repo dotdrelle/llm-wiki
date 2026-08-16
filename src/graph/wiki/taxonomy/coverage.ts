@@ -1,5 +1,5 @@
 import { KNOWLEDGE_ETAG_ALGORITHM } from './knowledge.ts';
-import type { TaxonomyMarker } from './store.ts';
+import type { TaxonomyMarker, DirtyFlag } from './store.ts';
 import type { TaxonomyRegistry } from './schema.ts';
 
 /*
@@ -27,6 +27,17 @@ export type PageCoverageState =
 
 export type CoverageCounts = Record<PageCoverageState, number>;
 
+/**
+ * Synthesis status, the five states the freshness UI presents.
+ *
+ * A stale `pendingSynthesis` flag means the last synthesis died before
+ * publishing — the capability will resume it. While the flag's corpus still
+ * matches, the resume is owed and the reader sees `running`; once the corpus
+ * moved past it, nothing will resume that particular attempt and the map is
+ * `stale` until a fresh one lands.
+ */
+export type SynthesisStatus = 'fresh' | 'stale' | 'running' | 'failed' | 'absent';
+
 export type CoverageReport = {
   /** Fingerprint of the current corpus. */
   corpus: string;
@@ -34,6 +45,8 @@ export type CoverageReport = {
   taxonomizedCorpus: string | null;
   /** True when the two fingerprints are comparable AND equal. */
   fresh: boolean;
+  /** The five-state freshness presented to the reader. */
+  status: SynthesisStatus;
   states: Map<string, PageCoverageState>;
   counts: CoverageCounts;
 };
@@ -60,12 +73,37 @@ export function computeCoverage(input: {
   marker: TaxonomyMarker | null;
   registry: TaxonomyRegistry | null;
   algorithm?: string;
+  /** Pending-synthesis flag, when the last synthesis died unpublished. */
+  dirtyFlag?: DirtyFlag | null;
 }): CoverageReport {
   const algorithm = input.algorithm ?? KNOWLEDGE_ETAG_ALGORITHM;
   const comparable = input.marker?.corpusAlgorithm === algorithm
     && input.registry?.corpusAlgorithm === algorithm;
   const taxonomizedCorpus = comparable ? (input.registry?.corpus ?? null) : null;
   const fresh = Boolean(comparable && taxonomizedCorpus === input.corpus);
+
+  /*
+   Five states, so the reader never has to read two counters and infer.
+
+   - `absent`  — no marker at all: the map is the deterministic projection.
+   - `running` — a synthesis died unpublished and its corpus still matches:
+     resuming it would classify what is on screen.
+   - `failed`  — the flag's corpus no longer matches: the owed work is moot and
+     the map cannot claim freshness on its behalf.
+   - `fresh`   — comparable AND equal.
+   - `stale`   — comparable and the corpus moved, or an incomparable legacy
+     registry that proves no coverage.
+   */
+  let status: SynthesisStatus;
+  if (!input.marker) {
+    status = 'absent';
+  } else if (input.dirtyFlag?.kind === 'pendingSynthesis') {
+    status = input.dirtyFlag.corpus === input.corpus ? 'running' : 'failed';
+  } else if (fresh) {
+    status = 'fresh';
+  } else {
+    status = 'stale';
+  }
 
   const states = new Map<string, PageCoverageState>();
   const counts: CoverageCounts = { ...EMPTY_COUNTS };
@@ -92,7 +130,7 @@ export function computeCoverage(input: {
     counts[state] += 1;
   }
 
-  return { corpus: input.corpus, taxonomizedCorpus, fresh, states, counts };
+  return { corpus: input.corpus, taxonomizedCorpus, fresh, status, states, counts };
 }
 
 /**

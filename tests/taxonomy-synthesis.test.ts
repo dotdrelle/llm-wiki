@@ -543,3 +543,56 @@ describe('synthèse complète', () => {
       .toEqual(new Set(before.communities.map((item) => item.id)));
   });
 });
+
+describe('empreinte gelée à la barrière (§7.2)', () => {
+  /*
+   La capacité de production gèle l'empreinte après le dernier apply, puis lance
+   la tâche taxonomique avec cette valeur. Si le corpus a bougé entre la barrière
+   et la synthèse, celle-ci est périmée avant même le premier appel au modèle :
+   la refuser tout de suite est honnête et épargne le coût d'une proposition que
+   le compare-and-swap rejetterait de toute façon.
+   */
+  it('refuse avant tout appel quand le corpus a bougé depuis la barrière', async () => {
+    const { knowledgeEtag } = await import('../src/graph/wiki/taxonomy/knowledge.ts');
+    const frozen = await knowledgeEtag(root);
+
+    // Une ingestion concurrente modifie le corpus après le gel.
+    await page('wiki/concepts', 'arrive-tard', '---\ngroup: autre\n---\n\n# Arrivé tard\n');
+
+    let calls = 0;
+    const outcome = await synthesizeTaxonomy(
+      root,
+      { language: 'fr' },
+      {
+        propose: async () => {
+          calls += 1;
+          return conceptualProposer()({ system: '', user: '' });
+        },
+        expectedCorpus: frozen,
+      },
+    );
+
+    expect(outcome.status).toBe('stale');
+    expect(calls).toBe(0);
+    // Rien n'a été publié.
+    expect(await readActiveRegistry(root)).toBeNull();
+  });
+
+  it('synthétise normalement quand l’empreinte gelée correspond encore', async () => {
+    const { knowledgeEtag } = await import('../src/graph/wiki/taxonomy/knowledge.ts');
+    const frozen = await knowledgeEtag(root);
+
+    const outcome = await synthesizeTaxonomy(
+      root,
+      { language: 'fr' },
+      { propose: conceptualProposer(), expectedCorpus: frozen },
+    );
+
+    expect(outcome.status).toBe('published');
+  });
+
+  it('sans empreinte gelée, ne change rien au comportement existant', async () => {
+    const outcome = await synthesizeTaxonomy(root, { language: 'fr' }, { propose: conceptualProposer() });
+    expect(outcome.status).toBe('published');
+  });
+});

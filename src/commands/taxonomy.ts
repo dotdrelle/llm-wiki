@@ -18,12 +18,20 @@ import { taxonomyProposalSchema } from '../graph/wiki/taxonomy/synthesize.ts';
  */
 export default async function taxonomyCmd(
   config: AppConfig,
-  options: { apply?: boolean; force?: boolean; maxPages?: string },
+  options: { apply?: boolean; force?: boolean; maxPages?: string; expectedCorpus?: string; fingerprint?: boolean },
 ) {
   const workspace = new WorkspaceService(config);
   await workspace.ensureInitialized();
   const rootDir = workspace.paths.rootDir;
   const language = config.language ?? 'en';
+
+  if (options.fingerprint) {
+    // Read-only: the frozen fingerprint the production barrier passes back as
+    // `--expected-corpus`. No model call, no registry read beyond the marker.
+    const { knowledgeEtag } = await import('../graph/wiki/taxonomy/knowledge.ts');
+    console.log(await knowledgeEtag(rootDir));
+    return;
+  }
 
   const llm = new LLMService(config);
   const propose = async (request: { system: string; user: string }) =>
@@ -55,6 +63,7 @@ export default async function taxonomyCmd(
     {
       propose,
       ...(options.maxPages ? { maxPages: Number(options.maxPages) } : {}),
+      ...(options.expectedCorpus ? { expectedCorpus: options.expectedCorpus } : {}),
     },
   );
 

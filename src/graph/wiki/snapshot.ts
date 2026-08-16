@@ -27,7 +27,8 @@ import {
 } from './communityProjection.ts';
 
 export type { WikiGraphCommunity } from './communityProjection.ts';
-import type { CoverageCounts, PageCoverageState } from './taxonomy/coverage.ts';
+import type { CoverageCounts, PageCoverageState, SynthesisStatus } from './taxonomy/coverage.ts';
+import type { SourceCoverage } from './taxonomy/sourceCoverage.ts';
 
 export type SnapshotCoverage = {
   /** Knowledge fingerprint of the current corpus. */
@@ -36,6 +37,8 @@ export type SnapshotCoverage = {
   taxonomizedCorpus: string | null;
   /** True when the two fingerprints are comparable AND equal. */
   fresh: boolean;
+  /** Five-state freshness presented to the reader. */
+  status: SynthesisStatus;
   counts: CoverageCounts;
   /** Knowledge page → state. Absent for nodes that are not knowledge pages. */
   states: Record<string, PageCoverageState>;
@@ -45,6 +48,7 @@ const EMPTY_COVERAGE: SnapshotCoverage = {
   corpus: '',
   taxonomizedCorpus: null,
   fresh: false,
+  status: 'absent',
   counts: {
     'classified': 0,
     'pending-classification': 0,
@@ -102,6 +106,12 @@ export interface WikiGraphSnapshot {
    * conflates them.
    */
   coverage: SnapshotCoverage;
+  /**
+   * Per-source coverage: `citingPages` (pages citing the source) distinct from
+   * `assignedPages` (pages in the source's leaf). A product's coverage reads
+   * with `citingPages`; the size of its leaf is `assignedPages`.
+   */
+  sourceCoverage: SourceCoverage[];
   nodes: Array<Omit<WikiGraphNode, 'raw' | 'html' | 'preview'>>;
   edges: Array<WikiGraphEdge & { id: string }>;
   communities: WikiGraphCommunity[];
@@ -138,6 +148,7 @@ export function createSnapshot(
     domains?: Array<{ id: string; label: string }>;
     communityParents?: Record<string, string>;
     coverage?: SnapshotCoverage;
+    sourceCoverage?: SourceCoverage[];
   } = {},
 ): WikiGraphSnapshot {
   const nodes = graph.nodes.map(({ raw, html, preview, ...node }) => {
@@ -156,6 +167,7 @@ export function createSnapshot(
     domains: options.domains ?? [],
     communityParents: options.communityParents ?? {},
     coverage: options.coverage ?? EMPTY_COVERAGE,
+    sourceCoverage: options.sourceCoverage ?? [],
     nodes,
     edges,
     communities: communityProjection.communities,

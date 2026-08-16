@@ -236,6 +236,8 @@ async function main() {
     .option('--apply', 'Call the configured LLM, validate and publish the registry')
     .option('--force', 'Bypass rename hysteresis for this consolidation')
     .option('--max-pages <count>', 'Cap the pages submitted to the synthesis')
+    .option('--expected-corpus <fingerprint>', 'Knowledge fingerprint frozen at the barrier; synthesis aborts if the corpus moved')
+    .option('--fingerprint', 'Print the current knowledge fingerprint and exit (read-only)')
     .action((options) => taxonomyCmd(config, options));
 
   program

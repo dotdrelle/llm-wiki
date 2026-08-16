@@ -3,7 +3,8 @@ import { buildGraphOverview, graphEtagForFiles, listGraphFiles } from '../../ser
 import { cachedSnapshot, createSnapshot, storeSnapshot, type WikiGraphSnapshot } from './snapshot.ts';
 import { computeCoverage } from './taxonomy/coverage.ts';
 import { knowledgeEtag } from './taxonomy/knowledge.ts';
-import { readActiveRegistry, readMarker } from './taxonomy/store.ts';
+import { computeSourceCoverage } from './taxonomy/sourceCoverage.ts';
+import { readActiveRegistry, readDirtyFlag, readMarker } from './taxonomy/store.ts';
 import { communityHierarchy, communityRedirects, registryLookup } from './taxonomy/lookup.ts';
 import { validateRegistry } from './taxonomy/schema.ts';
 
@@ -104,6 +105,7 @@ export async function loadWikiGraphSnapshot(options: {
     corpusPageIds: knowledgePages,
     marker,
     registry: validation?.ok ? validation.registry : null,
+    dirtyFlag: await readDirtyFlag(rootDir),
   });
 
   return storeSnapshot(
@@ -116,9 +118,11 @@ export async function loadWikiGraphSnapshot(options: {
         corpus: report.corpus,
         taxonomizedCorpus: report.taxonomizedCorpus,
         fresh: report.fresh,
+        status: report.status,
         counts: report.counts,
         states: Object.fromEntries(report.states),
       },
+      sourceCoverage: computeSourceCoverage(graph.nodes, graph.edges, validation?.ok ? validation.registry : null),
       communityRedirects: validation?.ok ? communityRedirects(validation.registry) : {},
       /*
        Explicit mapping, never a spread.

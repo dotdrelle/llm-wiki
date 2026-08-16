@@ -10,6 +10,10 @@ import {
   membersByCommunity,
   type AnchoredCommunity,
 } from './identity.ts';
+import { reattachOrphanedChildren } from './reanchor.ts';
+
+// Re-exported for callers that already import it from the synthesis module.
+export { reattachOrphanedChildren };
 import { buildTaxonomyInventory, type TaxonomyInventory } from './inventory.ts';
 import {
   clearDirtyFlag,
@@ -62,6 +66,15 @@ export type SynthesizeDeps = {
   maxPages?: number;
   maxFamilies?: number;
   now?: number;
+  /**
+   * Knowledge fingerprint frozen at the barrier, before the taxonomy task ran.
+   *
+   * The production capability freezes the corpus after the last `ingest_apply`
+   * and the collection consolidation, then launches the single taxonomy task
+   * with this value. If the corpus has moved since, the synthesis is stale and
+   * must not pay for a proposal the compare-and-swap would reject anyway.
+   */
+  expectedCorpus?: string;
 };
 
 export type SynthesizeOutcome =
@@ -170,6 +183,20 @@ async function runSynthesis(
    compare-and-swap would have rejected a perfectly valid proposal.
   */
   const corpus = await knowledgeEtag(rootDir);
+
+  /*
+   Barrier freeze, verified before any model call.
+
+   The production capability freezes the fingerprint right after the last
+   `ingest_apply` and the collection consolidation, then launches this single
+   taxonomy task with it as `expectedCorpus`. If the corpus moved in between —
+   a concurrent ingestion, a manual edit — the synthesis is stale before it
+   starts: returning now is honest and spares the model the cost of a proposal
+   the compare-and-swap would reject at publication anyway.
+   */
+  if (deps.expectedCorpus !== undefined && deps.expectedCorpus !== corpus) {
+    return { status: 'stale' };
+  }
 
   /*
    What the previous pass already judged guides this one.
@@ -694,42 +721,6 @@ async function runSynthesis(
  * claim the identifier of one of its leaves, or the reverse. We therefore
  * compare peers to peers — and for the leaves, a sibling group to its sibling group.
  */
-/**
- * Gives a root back to any active community whose parent is no longer one.
- *
- * A leaf preserved because it was not submitted keeps its
- * `parentCommunity` — but nothing guarantees that this domain survived the same
- * revision: ANOTHER leaf of the same domain, sampled this time, can
- * have had it replaced or deprecated. The leaf then stayed active while
- * pointing at a dead parent.
- *
- * The registry passed validation, and yet `communityHierarchy`
- * only builds the tree from the active communities: the parent was
- * untraceable, the leaf fell out of the hierarchy and reappeared as a
- * root bubble on the map, contradicting what the registry declared.
- *
- * We therefore follow the parent's redirection as long as it leads to a live root,
- * and failing that we promote the child to root — what the schema allows, and
- * which keeps it navigable instead of suspending it in the void.
- */
-export function reattachOrphanedChildren(communities: RegistryCommunity[]): void {
-  const byId = new Map(communities.map((community) => [community.id, community]));
-  const isLiveRoot = (community: RegistryCommunity | undefined): boolean =>
-    Boolean(community && !community.deprecated && !community.parentCommunity);
-
-  for (const community of communities) {
-    if (community.deprecated || !community.parentCommunity) continue;
-    let parent = byId.get(community.parentCommunity);
-    if (isLiveRoot(parent)) continue;
-    // The replacement target must be a live ROOT: hanging onto a
-    // leaf would dig a third level that the schema forbids.
-    for (let hops = 0; parent?.deprecated && parent.replacedBy && hops < 16; hops += 1) {
-      parent = byId.get(parent.replacedBy);
-    }
-    community.parentCommunity = isLiveRoot(parent) ? parent!.id : null;
-  }
-}
-
 function registryAtLevel(
   previous: TaxonomyRegistry | null,
   level: 'root' | 'leaf',

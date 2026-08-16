@@ -122,6 +122,77 @@ describe('quatre états de couverture', () => {
   });
 });
 
+describe('cinq états de fraîcheur', () => {
+  it('dit « absent » sans marqueur du tout', () => {
+    const report = computeCoverage({
+      corpus: 'corpus-1',
+      corpusPageIds: ['wiki/a.md'],
+      marker: null,
+      registry: null,
+    });
+
+    expect(report.status).toBe('absent');
+  });
+
+  it('dit « frais » sur une empreinte comparable et égale', () => {
+    const report = computeCoverage({
+      corpus: 'corpus-1',
+      corpusPageIds: ['wiki/a.md'],
+      marker: marker('corpus-1', KNOWLEDGE_ETAG_ALGORITHM),
+      registry: registry(),
+    });
+
+    expect(report.status).toBe('fresh');
+  });
+
+  it('dit « périmé » quand le corpus a bougé', () => {
+    const report = computeCoverage({
+      corpus: 'corpus-2',
+      corpusPageIds: ['wiki/a.md'],
+      marker: marker('corpus-1', KNOWLEDGE_ETAG_ALGORITHM),
+      registry: registry(),
+    });
+
+    expect(report.status).toBe('stale');
+  });
+
+  it('dit « en cours » quand une synthèse morte attend sur le même corpus', () => {
+    const report = computeCoverage({
+      corpus: 'corpus-1',
+      corpusPageIds: ['wiki/a.md'],
+      marker: marker('corpus-1', KNOWLEDGE_ETAG_ALGORITHM),
+      registry: registry(),
+      dirtyFlag: { kind: 'pendingSynthesis', corpus: 'corpus-1', baseRevision: 3, at: 1 },
+    });
+
+    expect(report.status).toBe('running');
+  });
+
+  it('dit « échouée » quand le drapeau parle d’un corpus dépassé', () => {
+    const report = computeCoverage({
+      corpus: 'corpus-2',
+      corpusPageIds: ['wiki/a.md'],
+      marker: marker('corpus-2', KNOWLEDGE_ETAG_ALGORITHM),
+      registry: registry({ corpus: 'corpus-2' }),
+      dirtyFlag: { kind: 'pendingSynthesis', corpus: 'corpus-1', baseRevision: 3, at: 1 },
+    });
+
+    expect(report.status).toBe('failed');
+  });
+
+  it('ignore un drapeau déterministe : il ne reflète pas une synthèse en attente', () => {
+    const report = computeCoverage({
+      corpus: 'corpus-1',
+      corpusPageIds: ['wiki/a.md'],
+      marker: marker('corpus-1', KNOWLEDGE_ETAG_ALGORITHM),
+      registry: registry(),
+      dirtyFlag: { kind: 'deterministic', corpus: 'corpus-1', baseRevision: 3, at: 1 },
+    });
+
+    expect(report.status).toBe('fresh');
+  });
+});
+
 describe('ordre de soumission au modèle', () => {
   it('fait passer devant ce qui n’a jamais été jugé', () => {
     /*
