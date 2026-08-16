@@ -64,7 +64,7 @@ function saveCanvasExplorerPosition(node){try{localStorage.setItem(canvasExplore
 // The list view has no bubble to anchor to: the card would leave with the
 // explorer and stay lying in the middle of a table.
 function destroyCanvasExplorer(){closeGraphContextCard();canvasExplorer?.destroy();canvasExplorer=null}
-function separateCanvasExplorerNodes(nodes){const detailed=nodes.slice(0,50);for(let pass=0;pass<90;pass++){let moved=false;for(let i=0;i<detailed.length;i++)for(let j=i+1;j<detailed.length;j++){const a=detailed[i],b=detailed[j],dx=b.x-a.x,dy=b.y-a.y,minX=.142,minY=.078;if(Math.abs(dx)>=minX||Math.abs(dy)>=minY)continue;moved=true;if(minX-Math.abs(dx)<minY-Math.abs(dy)){const push=(dx<0?-1:1)*(minX-Math.abs(dx))*.51;a.x-=push;b.x+=push}else{const push=(dy<0?-1:1)*(minY-Math.abs(dy))*.51;a.y-=push;b.y+=push}}if(!moved)break}return nodes}
+function separateCanvasExplorerNodes(nodes){const detailed=nodes.slice(0,50);for(let pass=0;pass<90;pass++){let moved=false;for(let i=0;i<detailed.length;i++)for(let j=i+1;j<detailed.length;j++){const a=detailed[i],b=detailed[j],dx=b.x-a.x,dy=b.y-a.y,minX=.105,minY=.06;if(Math.abs(dx)>=minX||Math.abs(dy)>=minY)continue;moved=true;if(minX-Math.abs(dx)<minY-Math.abs(dy)){const push=(dx<0?-1:1)*(minX-Math.abs(dx))*.51;a.x-=push;b.x+=push}else{const push=(dy<0?-1:1)*(minY-Math.abs(dy))*.51;a.y-=push;b.y+=push}}if(!moved)break}return nodes}
 function createCanvasExplorer(host){
   // No more mini-map: on a view that already fits entirely in the frame, it
   // helped nothing and occupied a corner. Framing and the breadcrumb fill its
@@ -92,7 +92,11 @@ function createCanvasExplorer(host){
   */
   const sprites=new Map();
   function glowSprite(hex,inner,mid){
-    const key=hex+'|'+inner+'|'+mid,cached=sprites.get(key);if(cached)return cached;
+    // Quantize the intensity: a twinkling star's alpha would otherwise mint a
+    // new key every frame, each allocating a fresh offscreen canvas the cache
+    // never reused — unbounded growth that eventually killed the tab. A glow's
+    // alpha needs no sub-percent precision.
+    const key=hex+'|'+Math.round(inner*20)+'|'+Math.round(mid*20),cached=sprites.get(key);if(cached)return cached;
     const size=64,off=document.createElement('canvas');off.width=size;off.height=size;
     const paint=off.getContext('2d'),gradient=paint.createRadialGradient(32,32,0,32,32,32);
     gradient.addColorStop(0,rgba(hex,inner));gradient.addColorStop(.45,rgba(hex,mid));gradient.addColorStop(1,rgba(hex,0));
@@ -297,7 +301,7 @@ function createCanvasExplorer(host){
     // nebula.
     paintGlow(paint,hot?.34:.22,pale?.10:.07,point.x,point.y,radius*2.1);
     shown.forEach((member,memberIndex)=>{
-      const angle=memberIndex*2.399963,spread=radius*(.24+Math.sqrt(memberIndex/Math.max(1,shown.length))*.66);
+      const angle=memberIndex*2.399963,spread=radius*(.18+Math.sqrt(memberIndex/Math.max(1,shown.length))*.5);
       const qx=point.x+Math.cos(angle)*spread,qy=point.y+Math.sin(angle)*spread*.66;
       const twinkle=.62+.38*Math.sin(beat*3.1+memberIndex*1.7);
       const core=1.5+Math.min(3,Math.sqrt(member.degree||0))*.9;
@@ -325,7 +329,7 @@ function createCanvasExplorer(host){
       // Gaussian blur again per card and per frame.
       if(!selectedNode)paintGlow(paint,.20,.07,point.x,point.y,Math.max(w,h)*.78);
       else{context.shadowBlur=24;context.shadowColor=rgba(paint,.8)}
-      context.fillStyle='rgba(16,23,34,.96)';context.beginPath();context.roundRect(point.x-w/2,point.y-h/2,w,h,9);context.fill();context.shadowBlur=0;context.strokeStyle=rgba(paint,selectedNode?1:.55);context.lineWidth=selectedNode?2:1;context.stroke();context.fillStyle=paint;context.fillRect(point.x-w/2+3,point.y-h/2+7,3,h-14);context.textAlign='left';context.font='600 11.5px ui-sans-serif,system-ui';context.fillStyle='#edf3fb';let label=node.label;while(context.measureText(label).width>w-28&&label.length>5)label=label.slice(0,-2);context.fillText(label+(label!==node.label?'…':''),point.x-w/2+13,point.y-2);context.font='10px ui-sans-serif,system-ui';context.fillStyle=rgba(paint,.9);const relationsLabel=graphRelationsLabel(node.degree);if(relationsLabel)context.fillText(relationsLabel,point.x-w/2+13,point.y+12);state.hits.push({node,x:point.x,y:point.y,w,h})}else{const core=3+Math.sqrt(node.degree||0);paintGlow(paint,.5,.16,point.x,point.y,core*3.6);context.fillStyle='#f4f8ff';context.beginPath();context.arc(point.x,point.y,core,0,Math.PI*2);context.fill();if(point.scale>1.02)state.labels.push({x:point.x,y:point.y,radius:core+3,weight:(node.degree||0)+(selectedNode||state.hover===node.id?1e5:0),always:selectedNode||state.hover===node.id,lines:[{text:node.label.length>22?node.label.slice(0,21)+'…':node.label,font:'10px ui-sans-serif,system-ui',height:12,color:light()?'rgba(44,60,80,.88)':'rgba(220,229,242,.78)'}]});state.hits.push({node,x:point.x,y:point.y,r:15})}}
+      context.fillStyle='rgba(16,23,34,.96)';context.beginPath();context.roundRect(point.x-w/2,point.y-h/2,w,h,9);context.fill();context.shadowBlur=0;context.strokeStyle=rgba(paint,selectedNode?1:.55);context.lineWidth=selectedNode?2:1;context.stroke();context.fillStyle=paint;context.fillRect(point.x-w/2+3,point.y-h/2+7,3,h-14);context.textAlign='left';context.font='600 11.5px ui-sans-serif,system-ui';context.fillStyle='#edf3fb';let label=node.label;while(context.measureText(label).width>w-28&&label.length>5)label=label.slice(0,-2);context.fillText(label+(label!==node.label?'…':''),point.x-w/2+13,point.y-2);context.font='10px ui-sans-serif,system-ui';context.fillStyle=rgba(paint,.9);const relationsLabel=graphRelationsLabel(node.degree);if(relationsLabel)context.fillText(relationsLabel,point.x-w/2+13,point.y+12);state.hits.push({node,x:point.x,y:point.y,w,h})}else{const core=5+Math.sqrt(node.degree||0);paintGlow(paint,.5,.16,point.x,point.y,core*3.6);context.fillStyle='#f4f8ff';context.beginPath();context.arc(point.x,point.y,core,0,Math.PI*2);context.fill();if(point.scale>0.6)state.labels.push({x:point.x,y:point.y,radius:core+3,weight:(node.degree||0)+(selectedNode||state.hover===node.id?1e5:0),always:selectedNode||state.hover===node.id,lines:[{text:node.label.length>22?node.label.slice(0,21)+'…':node.label,font:'10px ui-sans-serif,system-ui',height:12,color:light()?'rgba(44,60,80,.88)':'rgba(220,229,242,.78)'}]});state.hits.push({node,x:point.x,y:point.y,r:15})}}
   /*
    Label placement, in one pass after the nodes.
 
@@ -376,7 +380,7 @@ function createCanvasExplorer(host){
     const node=state.scene?.nodes.find(item=>item.id===id);
     if(!node)return null;
     const point=project(node);
-    const radius=node.type==='community'?communityRadius(node)*point.scale:point.scale>1.55?cardWidth(node)/2:3+Math.sqrt(node.degree||0);
+    const radius=node.type==='community'?communityRadius(node)*point.scale:point.scale>1.55?cardWidth(node)/2:5+Math.sqrt(node.degree||0);
     if(point.x<-radius||point.y<-radius||point.x>state.width+radius||point.y>state.height+radius)return null;
     return{x:point.x,y:point.y,r:radius}}
   function renderA11y(){a11y.innerHTML=state.scene.nodes.map(node=>'<button type="button" role="treeitem" data-canvas-node="'+esc(node.id)+'">'+esc(node.label)+'</button>').join('')}
@@ -668,7 +672,7 @@ function canvasExplorerRollUpEdges(visibleIds){
     if(current)current.weight+=edge.count;
     else merged.set(key,{...edge,from,to,weight:edge.count})});
   return [...merged.values()]}
-function canvasExplorerSceneDocuments(){const graph=visible(),community=data.communities.find(item=>item.id===selectedCommunity)||(selected?data.communities.find(item=>item.nodeIds.includes(selected.id)):null);if(!community)return{level:view,nodes:[],edges:[]};let ids=new Set(community.nodeIds);if(view==='focus'&&selected){ids=new Set([selected.id]);data.edges.forEach(edge=>{if(edge.from===selected.id)ids.add(edge.to);if(edge.to===selected.id)ids.add(edge.from)})}const source=graph.nodes.filter(node=>ids.has(node.id)).sort((a,b)=>Number(b.id===selected?.id)-Number(a.id===selected?.id)||(b.degree||0)-(a.degree||0)||a.id.localeCompare(b.id)).slice(0,50),count=Math.max(1,source.length),typeColumns={'raw-source':-.36,'wiki-source':-.3,template:-.12,'build-context':-.08,wiki:.15,deliverable:.36},nodes=source.map((node,index)=>{let x,y;if(view==='focus'&&selected){if(node.id===selected.id){x=0;y=0}else{const angle=Math.PI*2*index/count-Math.PI/2;x=typeColumns[node.type]??Math.cos(angle)*.34;y=Math.sin(angle)*.28}}else{const angle=index*2.399963,r=.04+Math.sqrt(index)*.048;x=Math.cos(angle)*r;y=Math.sin(angle)*r*.8}const saved=readCanvasExplorerPosition(node.id);if(saved){x=saved.x;y=saved.y}return{...node,label:node.title,x,y,depth:.9+(index%5)*.04,communityId:node.community?.communityId}});separateCanvasExplorerNodes(nodes);const visibleIds=new Set(nodes.map(node=>node.id));
+function canvasExplorerSceneDocuments(){const graph=visible(),community=data.communities.find(item=>item.id===selectedCommunity)||(selected?data.communities.find(item=>item.nodeIds.includes(selected.id)):null);if(!community)return{level:view,nodes:[],edges:[]};let ids=new Set(community.nodeIds);if(view==='focus'&&selected){ids=new Set([selected.id]);data.edges.forEach(edge=>{if(edge.from===selected.id)ids.add(edge.to);if(edge.to===selected.id)ids.add(edge.from)})}const source=graph.nodes.filter(node=>ids.has(node.id)).sort((a,b)=>Number(b.id===selected?.id)-Number(a.id===selected?.id)||(b.degree||0)-(a.degree||0)||a.id.localeCompare(b.id)).slice(0,50),count=Math.max(1,source.length),typeColumns={'raw-source':-.36,'wiki-source':-.3,template:-.12,'build-context':-.08,wiki:.15,deliverable:.36},nodes=source.map((node,index)=>{let x,y;if(view==='focus'&&selected){if(node.id===selected.id){x=0;y=0}else{const angle=Math.PI*2*index/count-Math.PI/2;x=typeColumns[node.type]??Math.cos(angle)*.34;y=Math.sin(angle)*.28}}else{const angle=index*2.399963,r=.03+Math.sqrt(index)*.032;x=Math.cos(angle)*r;y=Math.sin(angle)*r*.8}const saved=readCanvasExplorerPosition(node.id);if(saved){x=saved.x;y=saved.y}return{...node,label:node.title,x,y,depth:.9+(index%5)*.04,communityId:node.community?.communityId}});separateCanvasExplorerNodes(nodes);const visibleIds=new Set(nodes.map(node=>node.id));
   const edges=data.edges.filter(edge=>visibleIds.has(edge.from)&&visibleIds.has(edge.to));
   return{level:view,nodes:[...nodes,...collapsedNeighbourGroups(nodes,visibleIds,edges)],edges}}
 
