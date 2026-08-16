@@ -9,6 +9,8 @@ import { resetProviderRateLimiterForTests } from '../src/services/rateLimiter.ts
 
 const execFileAsync = promisify(execFile);
 
+const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
+
 describe('provider rate limiter', () => {
   const tempRoots: string[] = [];
 
@@ -84,7 +86,7 @@ describe('provider rate limiter', () => {
         // Belt and braces: strip any colour escape codes children might emit
         // even with FORCE_COLOR/NO_COLOR set, so numeric parsing can never
         // turn into NaN on presentation noise.
-        const clean = String(stdout).replace(/\x1b\[[0-9;]*m/g, '').trim();
+        const clean = String(stdout).replace(ANSI_ESCAPE, '').trim();
         const parts = clean.split(/\s+/).map(Number);
         return parts[1] - parts[0];
       })
