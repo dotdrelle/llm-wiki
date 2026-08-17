@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { canvasExplorerScript } from '../src/graph/wiki/ui/canvas/canvasExplorerScript.ts';
 import { graphUiSelectionScript } from '../src/graph/wiki/ui/core/selectionScript.ts';
-import { graphCameraScript } from '../src/graph/core/canvas/graphCameraScript.ts';
+import { graphCanvasScript } from '../src/graph/core/canvas/graphCanvasScript.ts';
 import { graphFrameScript } from '../src/graph/core/canvas/graphFrameScript.ts';
 import { graphUiLiveScript } from '../src/graph/wiki/ui/core/liveScript.ts';
 
@@ -106,7 +106,7 @@ function corpus() {
 // Le petit état de fraîcheur fait partie du même script dans l'application :
 // la boucle de dessin peut l'interroger sans démarrer de polling ni de trafic
 // réseau en arrière-plan.
-const source = [graphFrameScript(), graphCameraScript(), canvasExplorerScript(), graphUiLiveScript()].join('\n');
+const source = [graphCanvasScript(), canvasExplorerScript(), graphUiLiveScript()].join('\n');
 const palette = ['#4d9cff', '#22d3ee', '#a78bfa', '#f472b6', '#fbbf24', '#34d399'];
 
 describe('halo des nouveaux nœuds', () => {
@@ -153,6 +153,7 @@ function mount(
 
   let pending: ((now: number) => void) | null = null;
   let requested = 0;
+  let spriteCreations = 0;
   const timers: Array<{ callback: () => void; delay: number }> = [];
   const environment = {
     document: {
@@ -160,7 +161,8 @@ function mount(
       hidden: false,
       addEventListener() {},
       removeEventListener() {},
-      createElement: () => {
+      createElement: (tag: string) => {
+        if (tag === 'canvas') spriteCreations += 1;
         const offscreen = fakeElement('offscreen', calls);
         offscreen.width = 0;
         offscreen.height = 0;
@@ -245,6 +247,7 @@ function mount(
   return {
     scene,
     calls,
+    spriteCreations: () => spriteCreations,
     frame(now: number) {
       const callback = pending;
       pending = null;
@@ -291,6 +294,23 @@ describe('boucle de dessin du canevas', () => {
     expect(view.fireTimers()).toBe(true);
     expect(view.frame(1080)).toBe(false);
     expect(view.pendingTimers).toEqual([80]);
+  });
+
+  it('borne le cache de sprites malgré le scintillement des étoiles', () => {
+    /*
+     Le scintillement animait l'alpha du halo, donc la clé du cache : chaque
+     image créait un canvas hors écran par étoile, jamais réutilisé — une
+     croissance non bornée qui finissait par tuer l'onglet. L'alpha est
+     désormais quantifié : cinquante images ne doivent pas multiplier le cache
+     par cinquante.
+    */
+    const view = mount('map', null);
+    view.frame(1000);
+    for (let i = 0; i < 50; i += 1) {
+      view.fireTimers();
+      view.frame(1160 + i * 80);
+    }
+    expect(view.spriteCreations()).toBeLessThan(1000);
   });
 
   it('dessine aussi la vue d’un domaine et ses voisins repliés', () => {

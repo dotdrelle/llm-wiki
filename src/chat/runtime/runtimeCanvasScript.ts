@@ -75,23 +75,11 @@ function createRuntimeCanvasRenderer(host){
   // no one, ate a corner of the scene and duplicated the role of the "Fit"
   // button — the same reasons it was removed from the wiki graph.
   const canvas=host,context=canvas.getContext('2d'),a11y=canvas.parentElement.querySelector('.runtime-graph-a11y'),state={width:0,height:0,ratio:1,scene:{nodes:[],edges:[]},hits:[],pointer:null,dragged:false,hover:null,topology:'',animated:false,userAdjusted:!!runtimeCanvasCamera,fitted:false,transitions:new Map()};let scheduler,camera;
-  const rgba=(hex,alpha)=>{const value=parseInt(hex.slice(1),16);return'rgba('+((value>>16)&255)+','+((value>>8)&255)+','+(value&255)+','+alpha+')'};
-  /*
-   Pre-rendered halos, like on the wiki graph.
-
-   shadowBlur is a full-frame gaussian blur per fill call. It was applied to
-   every node on every frame, and on a "running" node the loop runs
-   continuously: the cost was therefore permanent, not occasional. A halo
-   depends only on a color, so it is rendered once.
-  */
-  const sprites=new Map();
-  function glowSprite(hex,inner,mid){
-    const key=hex+'|'+inner+'|'+mid,cached=sprites.get(key);if(cached)return cached;
-    const size=64,off=document.createElement('canvas');off.width=size;off.height=size;
-    const paint=off.getContext('2d'),gradient=paint.createRadialGradient(32,32,0,32,32,32);
-    gradient.addColorStop(0,rgba(hex,inner));gradient.addColorStop(.45,rgba(hex,mid));gradient.addColorStop(1,rgba(hex,0));
-    paint.fillStyle=gradient;paint.fillRect(0,0,size,size);sprites.set(key,off);return off}
-  function paintGlow(hex,inner,mid,x,y,radius){if(radius>0)context.drawImage(glowSprite(hex,inner,mid),x-radius,y-radius,radius*2,radius*2)}
+  // Pre-rendered halos, shared with the wiki graph (graphCanvasGlowScript.ts).
+  // The pulse sweeps only 0.24→0.44, so the coarse default (20) would give five
+  // visible jerks on a large card: a finer grain keeps the beat smooth and the
+  // cache still bounded (~20 sprites, not one per frame).
+  const {glow:paintGlow,rgba}=createGraphGlow(context,100);
   /*
    The first framing waits for a real size.
 
@@ -199,7 +187,7 @@ function createRuntimeCanvasRenderer(host){
     if(card){
       // Wiki-style card: dark body, colored accent bar, title + status meta.
       context.fillStyle=pending?'rgba(16,23,34,.5)':'rgba(16,23,34,.96)';
-      context.beginPath();context.roundRect(point.x-w/2,point.y-h/2,w,h,9);context.fill();
+      context.beginPath();graphRoundedRect(context,point.x-w/2,point.y-h/2,w,h,9);context.fill();
       context.strokeStyle=selectedNode?'#fff':rgba(color,selectedNode?1:.6);context.lineWidth=selectedNode?2.5:1.1;
       context.setLineDash(pending?[4,4]:[]);
       context.stroke();context.setLineDash([]);

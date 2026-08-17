@@ -77,7 +77,6 @@ function createCanvasExplorer(host){
   const nodeById=new Map(data.nodes.map(node=>[node.id,node]));
   const color=index=>colors[index%colors.length];
   const light=()=>document.body.classList.contains('theme-light');
-  const rgba=(hex,alpha)=>{const value=parseInt(hex.slice(1),16);return 'rgba('+((value>>16)&255)+','+((value>>8)&255)+','+(value&255)+','+alpha+')'};
   /*
    Pre-rendered halos.
 
@@ -89,20 +88,11 @@ function createCanvasExplorer(host){
    A halo is an image that depends only on a color: we render it once in an
    off-screen canvas and copy it back at the desired scale. drawImage is
    accelerated, createRadialGradient and shadowBlur are not.
+
+   The halo, its cache and the rgba helper are shared with the run/task graph
+   (graphCanvasGlowScript.ts) so a fix lands on both, never on one.
   */
-  const sprites=new Map();
-  function glowSprite(hex,inner,mid){
-    // Quantize the intensity: a twinkling star's alpha would otherwise mint a
-    // new key every frame, each allocating a fresh offscreen canvas the cache
-    // never reused — unbounded growth that eventually killed the tab. A glow's
-    // alpha needs no sub-percent precision.
-    const key=hex+'|'+Math.round(inner*20)+'|'+Math.round(mid*20),cached=sprites.get(key);if(cached)return cached;
-    const size=64,off=document.createElement('canvas');off.width=size;off.height=size;
-    const paint=off.getContext('2d'),gradient=paint.createRadialGradient(32,32,0,32,32,32);
-    gradient.addColorStop(0,rgba(hex,inner));gradient.addColorStop(.45,rgba(hex,mid));gradient.addColorStop(1,rgba(hex,0));
-    paint.fillStyle=gradient;paint.fillRect(0,0,size,size);sprites.set(key,off);return off}
-  function paintGlow(hex,inner,mid,x,y,radius){
-    if(radius<=0)return;context.drawImage(glowSprite(hex,inner,mid),x-radius,y-radius,radius*2,radius*2)}
+  const {glow:paintGlow,rgba}=createGraphGlow(context);
   // findIndex per document and per frame: linear in the number of domains,
   // executed thousands of times per second for an immutable result.
   const communityRank=new Map(data.communities.map((item,index)=>[item.id,index]));
@@ -329,7 +319,7 @@ function createCanvasExplorer(host){
       // Gaussian blur again per card and per frame.
       if(!selectedNode)paintGlow(paint,.20,.07,point.x,point.y,Math.max(w,h)*.78);
       else{context.shadowBlur=24;context.shadowColor=rgba(paint,.8)}
-      context.fillStyle='rgba(16,23,34,.96)';context.beginPath();context.roundRect(point.x-w/2,point.y-h/2,w,h,9);context.fill();context.shadowBlur=0;context.strokeStyle=rgba(paint,selectedNode?1:.55);context.lineWidth=selectedNode?2:1;context.stroke();context.fillStyle=paint;context.fillRect(point.x-w/2+3,point.y-h/2+7,3,h-14);context.textAlign='left';context.font='600 11.5px ui-sans-serif,system-ui';context.fillStyle='#edf3fb';let label=node.label;while(context.measureText(label).width>w-28&&label.length>5)label=label.slice(0,-2);context.fillText(label+(label!==node.label?'…':''),point.x-w/2+13,point.y-2);context.font='10px ui-sans-serif,system-ui';context.fillStyle=rgba(paint,.9);const relationsLabel=graphRelationsLabel(node.degree);if(relationsLabel)context.fillText(relationsLabel,point.x-w/2+13,point.y+12);state.hits.push({node,x:point.x,y:point.y,w,h})}else{const core=5+Math.sqrt(node.degree||0);paintGlow(paint,.5,.16,point.x,point.y,core*3.6);context.fillStyle='#f4f8ff';context.beginPath();context.arc(point.x,point.y,core,0,Math.PI*2);context.fill();if(point.scale>0.6)state.labels.push({x:point.x,y:point.y,radius:core+3,weight:(node.degree||0)+(selectedNode||state.hover===node.id?1e5:0),always:selectedNode||state.hover===node.id,lines:[{text:node.label.length>22?node.label.slice(0,21)+'…':node.label,font:'10px ui-sans-serif,system-ui',height:12,color:light()?'rgba(44,60,80,.88)':'rgba(220,229,242,.78)'}]});state.hits.push({node,x:point.x,y:point.y,r:15})}}
+      context.fillStyle='rgba(16,23,34,.96)';context.beginPath();graphRoundedRect(context,point.x-w/2,point.y-h/2,w,h,9);context.fill();context.shadowBlur=0;context.strokeStyle=rgba(paint,selectedNode?1:.55);context.lineWidth=selectedNode?2:1;context.stroke();context.fillStyle=paint;context.fillRect(point.x-w/2+3,point.y-h/2+7,3,h-14);context.textAlign='left';context.font='600 11.5px ui-sans-serif,system-ui';context.fillStyle='#edf3fb';let label=node.label;while(context.measureText(label).width>w-28&&label.length>5)label=label.slice(0,-2);context.fillText(label+(label!==node.label?'…':''),point.x-w/2+13,point.y-2);context.font='10px ui-sans-serif,system-ui';context.fillStyle=rgba(paint,.9);const relationsLabel=graphRelationsLabel(node.degree);if(relationsLabel)context.fillText(relationsLabel,point.x-w/2+13,point.y+12);state.hits.push({node,x:point.x,y:point.y,w,h})}else{const core=5+Math.sqrt(node.degree||0);paintGlow(paint,.5,.16,point.x,point.y,core*3.6);context.fillStyle='#f4f8ff';context.beginPath();context.arc(point.x,point.y,core,0,Math.PI*2);context.fill();if(point.scale>0.6)state.labels.push({x:point.x,y:point.y,radius:core+3,weight:(node.degree||0)+(selectedNode||state.hover===node.id?1e5:0),always:selectedNode||state.hover===node.id,lines:[{text:node.label.length>22?node.label.slice(0,21)+'…':node.label,font:'10px ui-sans-serif,system-ui',height:12,color:light()?'rgba(44,60,80,.88)':'rgba(220,229,242,.78)'}]});state.hits.push({node,x:point.x,y:point.y,r:15})}}
   /*
    Label placement, in one pass after the nodes.
 

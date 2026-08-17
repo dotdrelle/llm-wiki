@@ -401,7 +401,7 @@ function graphCommunityMetadata(markdown: string): { group?: string; community?:
   return { group, community };
 }
 
-function markdownPreview(markdown: string): string {
+export function markdownPreview(markdown: string): string {
   const plain = markdown
     .replace(/^---[\s\S]*?---\s*/m, '')
     .replace(/```[\s\S]*?```/g, ' ')

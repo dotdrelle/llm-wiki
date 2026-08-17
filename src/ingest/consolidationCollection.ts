@@ -80,7 +80,10 @@ function communitiesFromConcepts(
 ): RegistryCommunity[] {
   return concepts.map((concept) => ({
     id: concept.path,
-    prefLabel: { fr: concept.subject },
+    // The language key is arbitrary — a `subject` is a normalized identifier,
+    // not a translation — but it must stay consistent with the throwaway
+    // registry's `languages` below, or a future publish would resolve no label.
+    prefLabel: { en: concept.subject },
     firstSeenRevision,
   }));
 }
@@ -134,7 +137,7 @@ export function consolidateCollection(
     const survivor = pickSurvivor(
       group.map((concept) => ({
         id: concept.path,
-        prefLabel: { fr: subject },
+        prefLabel: { en: subject },
         firstSeenRevision,
       })),
     );

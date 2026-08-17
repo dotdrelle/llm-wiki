@@ -3,6 +3,7 @@ import { graphCanvasScript } from '../src/graph/core/canvas/graphCanvasScript.ts
 import { canvasExplorerScript } from '../src/graph/wiki/ui/canvas/canvasExplorerScript.ts';
 import { renderWikiGraphV2 } from '../src/graph/wiki/graphApp.ts';
 import { RUNTIME_GRAPH_SCRIPT } from '../src/chat/runtime/runtimeGraphScript.ts';
+import { RUNTIME_CANVAS_SCRIPT } from '../src/chat/runtime/runtimeCanvasScript.ts';
 
 describe('shared graph canvas foundation', () => {
   it('renders only while dirty or animating and pauses in hidden tabs', () => {
@@ -58,6 +59,25 @@ describe('shared graph canvas foundation', () => {
     expect(source).toContain('function moveTo(next,ms=280)');
     expect(source).toContain("clamp(state.scale*factor,.35,9)");
     expect(source).toContain('scheduler.reducedMotion');
+  });
+
+  it('partage la retombée roundRect et le halo entre les deux graphes', () => {
+    /*
+     Le correctif Safari (< 16, pas de roundRect) et la quantification du cache
+     de halos avaient été portés sur un seul des deux graphes. Ils vivent
+     désormais dans le module partagé, et aucun consommateur ne contourne la
+     retombée par un appel direct.
+    */
+    const shared = graphCanvasScript();
+    expect(shared).toContain('function graphRoundedRect');
+    expect(shared).toContain('else{context.rect(x,y,w,h)}');
+    expect(shared).toContain('function createGraphGlow');
+    expect(shared).toContain('function glowSprite(');
+    // Aucun appel direct à roundRect ni duplication du halo hors du module partagé.
+    expect(canvasExplorerScript()).not.toContain('context.roundRect(');
+    expect(RUNTIME_CANVAS_SCRIPT).not.toContain('context.roundRect(');
+    expect(canvasExplorerScript()).not.toContain('function glowSprite(');
+    expect(RUNTIME_CANVAS_SCRIPT).not.toContain('function glowSprite(');
   });
 
   it('presents map, community, and focus as one Explore navigation', () => {

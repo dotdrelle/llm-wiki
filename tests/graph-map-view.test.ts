@@ -151,7 +151,9 @@ describe('vue des domaines', () => {
     const block = source.slice(source.indexOf('function drawCommunity'), source.indexOf('function cardWidth'));
     expect(block).not.toContain('shadowBlur');
     expect(block).toContain('paintGlow');
-    expect(source).toContain('const sprites=new Map()');
+    // Le cache de halos est celui du module partagé (graphCanvasGlowScript),
+    // partagé avec le graphe d'exécution.
+    expect(source).toContain('createGraphGlow(context)');
   });
 
   it('cadre sur la zone laissée libre par les panneaux, pas sur le canevas', () => {

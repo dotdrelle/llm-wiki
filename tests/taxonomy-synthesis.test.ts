@@ -93,21 +93,77 @@ function conceptualProposer(label = 'Solutions') {
 }
 
 describe('inventaire soumis à la synthèse', () => {
-  it('ne transforme pas les anciens libellés automatiques en vérité sémantique', async () => {
+  it('montre la taxonomie active comme continuité, jamais comme preuve de regroupement', async () => {
     const inventory = await inventoryOf();
-    inventory.communities = [{ id: 'old', label: 'AncienProduit', size: 2, topPages: ['wiki/concepts/anaplan.md'] }];
+    inventory.communitiesFromRegistry = true;
+    inventory.communities = [
+      { id: 'old', label: 'AncienProduit', size: 2, scopeNote: 'Pilotage.', topPages: ['wiki/concepts/anaplan.md'] },
+    ];
 
     const prompt = buildSynthesisPrompt(inventory);
-    expect(prompt).not.toContain('AncienProduit');
-    expect(prompt).not.toContain('Existing communities');
+    // Le libellé précédent est transmis, avec son périmètre et ses pages les
+    // plus centrales : c'est ce qui permet au modèle de réutiliser le nom au
+    // lieu d'en inventer un à chaque exécution.
+    expect(prompt).toContain('AncienProduit');
+    expect(prompt).toContain('scope=Pilotage.');
+    expect(prompt).toContain('top=wiki/concepts/anaplan.md');
+    // Mais la règle le présente comme continuité, pas comme vérité de
+    // regroupement : le modèle regroupe sur les familles, pas sur ces libellés.
+    expect(SYNTHESIS_SYSTEM).toContain('reuse its existing label');
+    expect(SYNTHESIS_SYSTEM).not.toContain('never semantic evidence');
   });
 
-  it('ne transporte jamais le contenu des pages', async () => {
+  it('n’émet aucune continuité depuis la projection déterministe', async () => {
+    /*
+     Sans registre publié, inventory.communities vient d'assignGraphCommunities :
+     des libellés dérivés de group: et le repli « Ungrouped ». Les présenter
+     comme « Previous communities » réintroduirait l'identité que le Lot 0 a
+     retirée, et l'exemple le plus visible contredirait la règle anti fourre-tout.
+    */
+    const inventory = await inventoryOf();
+    expect(inventory.communitiesFromRegistry).toBe(false);
+
+    const prompt = buildSynthesisPrompt(inventory);
+    expect(prompt).not.toContain('Previous communities');
+    expect(prompt).not.toContain('Ungrouped');
+  });
+
+  it('rend l’extrait de la page la plus centrale quand le fournisseur en fournit', async () => {
+    const snapshot = await loadWikiGraphSnapshot({ rootDir: root, language: 'fr' });
+    const inventory = buildTaxonomyInventory(snapshot, {
+      language: 'fr',
+      excerpts: new Map([['wiki/concepts/anaplan.md', 'Outil de pilotage financier.']]),
+    });
+    const prompt = buildSynthesisPrompt(inventory);
+
+    // Un titre ne dit pas le sujet : l'extrait court de la page la plus
+    // connectée de chaque famille est ce qui permet de nommer le domaine.
+    expect(prompt).toContain('excerpt: Outil de pilotage financier.');
+  });
+
+  it('borne l’extrait transmis au modèle', async () => {
+    const snapshot = await loadWikiGraphSnapshot({ rootDir: root, language: 'fr' });
+    const long = 'a'.repeat(500);
+    const inventory = buildTaxonomyInventory(snapshot, {
+      language: 'fr',
+      excerpts: new Map([['wiki/concepts/anaplan.md', long]]),
+    });
+    const prompt = buildSynthesisPrompt(inventory);
+
+    // MAX_EXCERPT tronque : on ne transporte jamais la page entière.
+    const excerptLine = prompt.split('\n').find((line) => line.includes('excerpt:'));
+    expect(excerptLine).toBeDefined();
+    expect(excerptLine!.length).toBeLessThan(200);
+    expect(excerptLine).toContain('…');
+  });
+
+  it('ne transporte jamais le contenu des pages sans extrait fourni', async () => {
     const inventory = await inventoryOf();
     const prompt = buildSynthesisPrompt(inventory);
 
     // Le snapshot public retire déjà raw/html/preview : l'inventaire n'a donc
-    // aucun moyen d'y prendre du contenu, et c'est la garantie recherchée.
+    // aucun moyen d'y prendre du contenu. Le contenu n'entre qu'à travers les
+    // extraits fournis explicitement par l'appelant.
     expect(prompt).not.toContain('Outil de pilotage.');
     expect(prompt).not.toContain('Topologie.');
     expect(JSON.stringify(inventory)).not.toContain('# Réseau');

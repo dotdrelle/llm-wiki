@@ -1,7 +1,7 @@
 import type { WikiGraphSnapshot } from '../snapshot.ts';
 import { orderPagesForSampling } from './coverage.ts';
 import { KNOWLEDGE_NODE_TYPES } from './knowledge.ts';
-import type { TaxonomyRegistry } from './schema.ts';
+import type { LocalizedText, TaxonomyRegistry } from './schema.ts';
 import { communityLabel } from './schema.ts';
 import { normalizeProvenanceValue } from '../../../ingest/provenance.ts';
 
@@ -9,10 +9,10 @@ import { normalizeProvenanceValue } from '../../../ingest/provenance.ts';
  Inventory submitted to synthesis.
 
  It is for DECIDING, not for rendering the pages. That is the same discipline as
- `summarizeWikiGraph`: injecting content would blow up the turn window
- meant to plan cheaply, and the model does not need to read in order to
- recognize a domain — it needs to see titles, neighbourhoods and
- tags.
+ `summarizeWikiGraph`: injecting whole pages would blow up the turn window
+ meant to plan cheaply. The model recognizes a domain from titles, neighbourhoods,
+ tags and — for the most central page of each family — a single short excerpt,
+ which lifts a title ambiguity without summarizing the page.
 */
 
 /** Beyond this, a title brings no more information, it consumes budget. */
@@ -37,6 +37,8 @@ export type InventoryCommunity = {
   id: string;
   label: string;
   size: number;
+  /** What the community covers and excludes, when the registry carries one. */
+  scopeNote?: string;
   /** Most connected pages: enough to recognize the domain without reading it. */
   topPages: string[];
 };
@@ -59,6 +61,11 @@ export type InventoryFamily = {
    */
   distinctiveTerms: string[];
   neighbours: string[];
+  /**
+   * Plain excerpt of the family's most central page, when the caller supplied
+   * excerpts. Lifts a title ambiguity, never summarizes the page.
+   */
+  excerpt?: string;
 };
 
 export type TaxonomyInventory = {
@@ -85,6 +92,13 @@ export type TaxonomyInventory = {
   sampledPageIds: string[];
   families: InventoryFamily[];
   communities: InventoryCommunity[];
+  /**
+   * True when `communities` comes from a published registry, false when it is
+   * the deterministic projection. Only a registry is a previous taxonomy the
+   * model may reuse; the projection is a fallback that must never masquerade
+   * as continuity.
+   */
+  communitiesFromRegistry: boolean;
   /** True when the corpus had to be truncated to fit the budget. */
   truncated: boolean;
 };
@@ -94,6 +108,12 @@ const KNOWLEDGE_TYPES = KNOWLEDGE_NODE_TYPES;
 function shorten(value: string, max: number): string {
   const trimmed = value.replace(/\s+/g, ' ').trim();
   return trimmed.length > max ? `${trimmed.slice(0, max - 1)}…` : trimmed;
+}
+
+/** The configured language first, then English, then whatever exists. */
+function pickLocalized(text: LocalizedText | undefined, language: string): string | undefined {
+  if (!text) return undefined;
+  return text[language] ?? text.en ?? Object.values(text)[0];
 }
 
 function conceptFolder(id: string): string | undefined {
@@ -314,6 +334,14 @@ export function buildTaxonomyInventory(
   }
   const families: InventoryFamily[] = ordered.map((members, index) => {
     const id = `f${String(index + 1).padStart(4, '0')}`;
+    /*
+     A domain is recognized by its central pages long before its leaves. The
+     excerpt shown to the model is therefore that of the most connected member:
+     one line of content that lifts the title's ambiguity, never the whole page.
+     */
+    const central = [...members].sort(
+      (a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0) || a.id.localeCompare(b.id),
+    )[0];
     return {
       id,
       members: members.map((page) => page.id),
@@ -329,6 +357,7 @@ export function buildTaxonomyInventory(
       }))].sort(),
       neighbours: [...(familyLinks.get(id) ?? [])].sort().slice(0, MAX_NEIGHBOURS),
       distinctiveTerms: [],
+      ...(central?.excerpt ? { excerpt: central.excerpt } : {}),
     };
   });
 
@@ -423,6 +452,7 @@ export function buildTaxonomyInventory(
             id: community.id,
             label: communityLabel(community, options.language),
             size: members.length,
+            scopeNote: pickLocalized(community.scopeNote, options.language),
             topPages: members
               .sort((a, b) => (degree.get(b) ?? 0) - (degree.get(a) ?? 0) || a.localeCompare(b))
               .slice(0, 5),
@@ -444,6 +474,7 @@ export function buildTaxonomyInventory(
     sampledPageIds: pages.map((page) => page.id).sort(),
     families,
     communities,
+    communitiesFromRegistry: Boolean(registry),
     truncated: ranked.length > kept.length,
   };
 }

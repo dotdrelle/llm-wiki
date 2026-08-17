@@ -45,12 +45,23 @@ export type ConsolidationOptions = {
   force?: boolean;
 };
 
+/**
+ * Verdict of the hysteresis on one community, as `synthesizeTaxonomy` publishes
+ * it and `wiki taxonomy --apply` prints it.
+ *
+ * The two constants above are only tunable against observed counts: many `kept`
+ * means the model keeps proposing renames the engine refuses, many `renamed`
+ * means the map moves under the reader. This type is what makes that
+ * measurable — without it, raising a threshold is an impression, not a decision.
+ */
 export type LabelDecision = {
   id: string;
   label: string;
   /** `kept` when the hysteresis refused the new name. */
   outcome: 'created' | 'renamed' | 'kept' | 'unchanged';
+  /** The refused name, kept as an alternate label. Only for `kept`/`renamed`. */
   proposed?: string;
+  /** Member overlap that motivated the verdict, against `RENAME_MIN_STABILITY`. */
   stability?: number;
 };
 

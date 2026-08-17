@@ -177,7 +177,13 @@ export class HistoryService {
         '-C', this.rootDir,
         ...args,
       ],
-      { env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }, maxBuffer: 16 * 1024 * 1024 },
+      // Only `show()` uses this path, and only for a WHOLE-COMMIT diff (no
+      // <sha>:<file> specifier): a commit that rewrites large deliverables can
+      // exceed the default cap. Per-file reads go through `gitRawBuffer`
+      // instead. The cap is a measured floor, not a comfort doubling — the real
+      // fix for arbitrarily large diffs is to stream the patch, not to keep
+      // raising it.
+      { env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }, maxBuffer: 64 * 1024 * 1024 },
     );
     return result.stdout;
   }
@@ -412,6 +418,12 @@ export class HistoryService {
     const status = await this.status();
     if (!status.initialized) throw new Error('Workspace history is not initialized.');
     const normalized = file ? normalizeHistoryPath(file) : undefined;
+    // A commit that is no longer resolvable (a reset/reflog prune elsewhere, or
+    // a stale list) fails `git show` with a bare "bad revision". Verify first so
+    // the reader gets a named error instead of a raw git failure.
+    if (!(await this.git(['rev-parse', '--verify', `${sha}^{commit}`], { allowFailure: true }))) {
+      throw new Error(`Unknown commit: ${String(sha).slice(0, 12)}`);
+    }
     return normalized
       ? this.gitRaw(['show', '--format=', `${sha}:${normalized}`])
       : this.gitRaw(['show', '--format=', sha, '--', ...HISTORY_PATHS]);

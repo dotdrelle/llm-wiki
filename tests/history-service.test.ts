@@ -305,6 +305,18 @@ describe('history service', () => {
     expect(source).not.toMatch(/git[^\n]*(reset|rebase|push|amend)/i);
   });
 
+  it('names an unresolvable commit instead of surfacing a raw git failure', async () => {
+    const root = await workspace();
+    await writeFile(path.join(root, 'wiki', 'existing.md'), '# Existing\n', 'utf8');
+    const history = new HistoryService(root);
+    await history.initialize({ baseline: true });
+
+    // `git show` on a stale sha fails with a bare "bad revision": the guard
+    // turns it into a named error the reader can act on.
+    await expect(history.show('deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'))
+      .rejects.toThrow('Unknown commit: deadbeefdead');
+  });
+
   it('restores a file forward and records the restoration as a new commit', async () => {
     const root = await workspace();
     await writeFile(path.join(root, 'wiki', 'existing.md'), '# Existing\n', 'utf8');

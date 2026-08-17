@@ -11,6 +11,7 @@ import { WorkspaceService } from '../services/workspaceService.ts';
 import { HistoryService, commitHistorySafely, prepareHistorySafely } from '../services/historyService.ts';
 import type { HistoryResult } from '../services/historyService.ts';
 import { Spinner } from '../utils/spinner.ts';
+import { summarizeCommit } from '../utils/summary.ts';
 
 export default async function buildCmd(
   config: AppConfig,
@@ -99,9 +100,12 @@ export default async function buildCmd(
       changedOnly: false,
       stabilize: options.stabilize,
       onFinalize: async (finalizedResults) => {
+        const changedOutputs = finalizedResults
+          .filter((result) => result.changed)
+          .map((result) => result.output.replace(/^deliverables\//, '').replace(/\.md$/, ''));
         historyResult = await commitHistorySafely(history, {
           command: 'build',
-          message: `build: ${finalizedResults.filter((result) => result.changed).length} deliverable(s) changed`,
+          message: summarizeCommit('build', 'deliverable', changedOutputs),
           // This callback runs while the cross-process build-state lock is
           // held, so the commit cannot capture a sibling's state update.
           scope: [

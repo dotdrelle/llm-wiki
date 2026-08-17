@@ -1,4 +1,4 @@
-import { consolidate } from './consolidation.ts';
+import { consolidate, type LabelDecision } from './consolidation.ts';
 import { computeCoverage, mergeSampledPages } from './coverage.ts';
 import { checkDistribution } from './distribution.ts';
 import { guardAgainstMassDisruption } from './filiation.ts';
@@ -95,6 +95,8 @@ export type SynthesizeOutcome =
        * capability consumes; the engine, for its part, never loops alone.
        */
       outsideSample: number;
+      /** Hysteresis verdicts (see `consolidation.ts`), flattened domains excluded. */
+      labelDecisions: LabelDecision[];
       inventory: TaxonomyInventory;
     }
   | { status: 'unchanged'; revision: number }
@@ -393,6 +395,9 @@ async function runSynthesis(
     return rejectConflicts(rootDir, inventory.corpus, consolidatedDomains.conflicts);
   }
 
+  // Domains first, then each sibling group of leaves: the order the map reads.
+  const labelDecisions: LabelDecision[] = [...consolidatedDomains.decisions];
+
   const leafCommunities: RegistryCommunity[] = [];
   const anchoredLeaves: AnchoredCommunity[] = [];
   /** Identifier proposed by the model → stable registry identifier. */
@@ -419,6 +424,7 @@ async function runSynthesis(
       force: options.force,
     });
     if (!consolidated.ok) return rejectConflicts(rootDir, inventory.corpus, consolidated.conflicts);
+    labelDecisions.push(...consolidated.decisions);
 
     /*
      A domain that separates nothing is flattened, not rejected.
@@ -701,6 +707,7 @@ async function runSynthesis(
     ).length,
     leaves: leafCommunities.length,
     warnings: warnings.map((issue) => `${issue.path}: ${issue.reason}`),
+    labelDecisions: labelDecisions.filter((decision) => !collapsedDomains.has(decision.id)),
     // What remains to submit on this same fingerprint: the drain
     // driver, never a non-classification accusation.
     outsideSample: computeCoverage({

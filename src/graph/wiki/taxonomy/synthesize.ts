@@ -67,6 +67,14 @@ export const SYNTHESIS_SYSTEM = [
   '- name what the pages are ABOUT or the purpose their subjects serve; never',
   '  name the document form or editorial activity (study, analysis, comparison,',
   '  report, synthesis, documentation);',
+  '- never name a community after the SCOPE of its pages (transverse, product,',
+  '  source, workspace) nor after a catch-all label (divers, various, misc,',
+  '  other, unclassified): those say how pages were produced or sorted, not',
+  '  what they are about;',
+  '- a SHARED dimension (a concern that several products implement, such as',
+  '  security, integration, pricing, hosting or compliance) is ITS OWN subject:',
+  '  give each dimension its own community, never gather several dimensions',
+  '  under a single cross-cutting label;',
   '- unique among SIBLINGS, compared case- and accent-insensitively: two domains',
   '  never share a label, and two communities of the same domain never do; the',
   '  same label under two different domains is fine.',
@@ -92,8 +100,11 @@ export const SYNTHESIS_SYSTEM = [
   '- merge variants that designate the same domain;',
   '- every family given to you must occur exactly once as a key in assignments;',
   '- every assignment value must reference one declared COMMUNITY id, never a domain;',
-  '- infer domains from the supplied families themselves; previous automatic',
-  '  communities are continuity metadata, never semantic evidence.',
+  '- infer domains from the supplied families themselves;',
+  '- the previous communities listed in the prompt are continuity, not grouping',
+  '  evidence: when a subject already named there is still present and unchanged,',
+  '  reuse its existing label instead of inventing a new one, so a page keeps its',
+  '  name from one run to the next.',
   '',
   'scopeNote is one short sentence saying what the domain covers and excludes.',
 ].join('\n');
@@ -118,6 +129,25 @@ export function buildSynthesisPrompt(inventory: TaxonomyInventory): string {
       family.neighbours.length ? `links=${family.neighbours.join(',')}` : null,
     ].filter(Boolean).join(' | ');
     lines.push(`- ${family.id} :: ${family.titles.join(' ; ')} [${facts}]`);
+    if (family.excerpt) lines.push(`    excerpt: ${family.excerpt}`);
+  }
+
+  // Only a published registry is a previous taxonomy the model may reuse. The
+  // deterministic projection (a fresh corpus, no registry yet) is a fallback,
+  // not continuity: reusing its group-derived labels would reintroduce exactly
+  // the identity the engine removed, and its "Ungrouped" bucket contradicts the
+  // catch-all rule above.
+  if (inventory.communitiesFromRegistry && inventory.communities.length) {
+    lines.push('');
+    lines.push('Previous communities (continuity; reuse a matching label when the subject is unchanged):');
+    for (const community of inventory.communities) {
+      const facts = [
+        `pages=${community.size}`,
+        community.scopeNote ? `scope=${community.scopeNote}` : null,
+        community.topPages.length ? `top=${community.topPages.join(', ')}` : null,
+      ].filter(Boolean).join(' | ');
+      lines.push(`- ${community.id} :: ${community.label} [${facts}]`);
+    }
   }
 
   return lines.join('\n');
