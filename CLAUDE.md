@@ -123,6 +123,42 @@ docs/                   User-facing references
 - `build`, `refresh`, `export`, `lint`: generate and verify deliverables.
 - `serve`: web UI, graph, chat, skills, API proxy.
 - `mcp`, `mcp-http`: expose wiki tools over MCP.
+- `taxonomy`: bounded synthesis of the graph taxonomy. Without `--apply` it
+  prints the exact prompt it would send and costs nothing — that dry run is the
+  calibration tool, so it must read the active registry like `--apply` does.
+  `--fingerprint` returns the knowledge fingerprint the production barrier
+  freezes; `--expected-corpus` is the compare-and-swap on publication.
+- `release`: tag the current workspace state (`release-<n>` or `--label`), or
+  `--list`. A release is a git tag, never a history rewrite: the invariant is
+  revert-forward, so older commits are folded out of the `/history` list and stay
+  fully restorable.
+
+## Taxonomy — what the model is allowed to see
+
+The synthesis prompt is built from `buildTaxonomyInventory`, and two of its
+inputs were dead or dangerous:
+
+- **Excerpts.** `SynthesizeDeps.excerpts` existed, was threaded through, and no
+  caller ever filled it — so the model named conceptual domains from title
+  strings alone, which describe the editorial form of a document, not its
+  subject. `commands/taxonomy.ts` now reads the first lines of each knowledge
+  page (bounded pool, like `buildWikiGraph`) and each family carries the excerpt
+  of its most central member. Keep the budget linear in families, never per page.
+- **Previous communities.** They are emitted as continuity — reuse a label when
+  the subject has not changed — but **only** when they come from a published
+  registry (`TaxonomyInventory.communitiesFromRegistry`). Without a registry the
+  field falls back to the deterministic graph projection, whose labels come from
+  `group:` seeds and include an `Ungrouped` bucket; presenting those as
+  continuity would reintroduce the `group:`-as-identity defect Lot 0 removed, and
+  hand the model a catch-all label its own rules forbid.
+
+Naming stability is decided by the hysteresis in `taxonomy/consolidation.ts`
+(`RENAME_MIN_STABILITY`, `RENAME_MIN_REVISION_GAP`), not by the draft label. Its
+verdicts (`created` / `renamed` / `kept` / `unchanged`, with the member overlap)
+are published on the outcome and printed by `wiki taxonomy --apply`: those two
+constants are only tunable against observed counts. Many `kept` means the model
+keeps proposing renames the engine refuses; many `renamed` means the map moves
+under the reader. `--force` lifts the hysteresis entirely.
 
 ## Workspace Skill Model
 
@@ -237,6 +273,28 @@ the browser or proxy. Donna receives the sanitized paths in its prompt and must
 use its allow-listed read tools. The MCP `wiki_read_page`/`wiki_read_pages`
 tools therefore allow `wiki/`, `raw/ingested/`, and `raw/untracked/`, while the
 shared workspace-root/path-traversal guard remains authoritative.
+
+## Serve — what must survive a change of centre view
+
+The shell has four centre views (chat, wiki, connectors, execution) and hides
+`#input-wrap` in three of them. Anything the workspace demands of its reader must
+therefore live **outside** that block:
+
+- `#approval-banner` is a fixed overlay, a sibling of `#main`, not a child. Inside
+  the composer it was invisible exactly where it mattered — a restore launched
+  from `/history` waited on an approval nobody could see. It is kept out of
+  `#main` too: `#main` is a flex column normally and an explicitly-placed grid in
+  split mode, so a new child there needs a placement in both.
+- The type filters of the wiki graph govern **three** surfaces: the left index,
+  the canvas and the right inspector. `renderCommunityInspector` is split from
+  `selectCommunity` precisely so a filter change can replay the panel; the panel
+  head announces `N of M documents` when a filter hides some, because counting
+  one thing and listing another is how the three counters came to disagree.
+- Chat context accepts `wiki/`, `raw/untracked/` **and** `raw/ingested/`. That
+  list must match what the graph offers a "Send to Donna" button on, otherwise
+  the button is offered on pages the shell silently refuses. The graph waits for
+  `llmwiki:addContext:result` before claiming success — it used to turn green
+  before the message was even read.
 
 ## Serve Chat
 
@@ -393,6 +451,17 @@ runner or the CLI.
 
 ## Important Services
 
+- `historyService.ts`: the workspace's own git history. Two rules and one trap.
+  It is **revert-forward only** — no `reset`, `rebase`, `push` or `amend`, and a
+  test enforces that on the source, which is why a release is a tag and not a
+  rewrite. Every mutating surface must write its own commit: a deletion from the
+  left tree used to leave none, so it floated in `git status` until some later
+  `ingest:` commit swallowed it under a message about something else. The trap:
+  `git log` separates records with the format's `%x1e` **and its own newline**, so
+  splitting on the separator alone left a `\n` at the head of every entry but the
+  first — it landed in `%H`, and every `sha` below the top row was unusable for
+  expanding or restoring. Strip the leading newline per record, never by trimming
+  the whole output.
 - `workspaceService.ts`: path safety, workspace IO, skill installation.
 - `ingestService.ts`: source-to-wiki LLM pipeline. `--dry-run` (`wiki
 ingest`) builds a review per planned operation (`buildReviewOperations`):
