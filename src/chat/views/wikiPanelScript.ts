@@ -47,10 +47,21 @@ function decodeWikiPath(value) {
 // generic wiki read tool to call. Contents are never read or injected here.
 const PAGE_CONTEXT_LIMIT=5;
 let pageContexts=[];
+/*
+ Documents the chat may take as context.
+
+ The list must match what the graph OFFERS a "Send to Donna" button on, and the
+ graph draws every knowledge type — \`raw/ingested/\` included, which is where an
+ ingested source note lives. Leaving it out made the button silently do nothing
+ on exactly the pages a comparison is read from.
+
+ The guard's job is traversal and extension, not a second knowledge policy: the
+ three prefixes are the workspace's readable knowledge, nothing more.
+*/
 function validPageContext(path) {
   const value=decodeWikiPath(path).replace(/^\\//,'');
   if(value.includes('..')||!value.endsWith('.md')) return null;
-  return value.startsWith('wiki/')||value.startsWith('raw/untracked/')?value:null;
+  return value.startsWith('wiki/')||value.startsWith('raw/untracked/')||value.startsWith('raw/ingested/')?value:null;
 }
 function pageContextFileName(path) {
   const decoded=decodeWikiPath(path);
@@ -501,12 +512,25 @@ window.addEventListener('message', (event) => {
   } else if (data.type === 'llmwiki:addContext') {
     // "+ Context" clicked inside the central wiki page iframe or the tree menu.
     const contextPath = validPageContext(data.path);
-    if (!contextPath) return;
+    /*
+     The sender is told, accepted or not.
+
+     A refusal used to be a bare \`return\`: the shell dropped the message, and
+     the frame — which had already turned its button green — announced a
+     success nobody had granted. A rejected path is now said out loud AND
+     answered, so no button can claim what did not happen.
+    */
+    if (!contextPath) {
+      if (typeof notify === 'function') notify('This document cannot be added to Donna\\'s context');
+      event.source?.postMessage({ type: 'llmwiki:addContext:result', path: data.path, ok: false }, location.origin);
+      return;
+    }
     const already = pageContexts.includes(contextPath);
     addPageContext(contextPath);
     if (typeof notify === 'function') {
       notify(already ? 'Document already in Donna\\'s context' : 'Document added to Donna\\'s context');
     }
+    event.source?.postMessage({ type: 'llmwiki:addContext:result', path: data.path, ok: true }, location.origin);
   } else if (data.type === 'llmwiki:palette') {
     // Ctrl/Cmd+K pressed inside an embedded wiki iframe.
     cmdkToggle();

@@ -360,7 +360,10 @@ ${CHAT_ACTIVITY_CSS}
 #input-wrap{padding:12px 18px 14px;background:linear-gradient(to top,var(--panel) 82%,rgba(255,255,255,0));display:flex;flex-direction:column;align-items:center}
 #page-context-chips{width:min(900px,100%);display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:5px;margin:0 0 6px;align-self:center;box-sizing:border-box}
 #page-context-chips[hidden]{display:none}
-#approval-banner{width:min(900px,100%);align-self:center;box-sizing:border-box;display:flex;align-items:center;gap:10px;margin:0 0 8px;padding:9px 12px;border:1px solid #f59e0b;border-left-width:3px;border-radius:9px;background:rgba(245,158,11,.12);color:var(--text,#e8edf4)}
+/* Fixed, because the demand outlives the view: the composer is hidden in the
+   wiki, connectors and execution modes, and an approval waited there unseen.
+   Opaque background — it now floats over content instead of sitting in flow. */
+#approval-banner{position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:60;width:min(760px,calc(100vw - 120px));box-sizing:border-box;display:flex;align-items:center;gap:10px;margin:0;padding:9px 12px;border:1px solid #f59e0b;border-left-width:3px;border-radius:9px;background:var(--panel,#141a22);box-shadow:0 6px 20px rgba(0,0,0,.35);color:var(--text,#e8edf4)}
 #approval-banner[hidden]{display:none}
 .approval-banner-icon{font-size:15px;line-height:1;color:#f59e0b}
 .approval-banner-text{flex:1;font-size:13px;line-height:1.35}

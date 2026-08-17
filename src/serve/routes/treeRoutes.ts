@@ -26,6 +26,20 @@ export type TreeRoutesDeps = {
    * and for the same reason.
    */
   isRunActive?: () => Promise<boolean>;
+  /**
+   * Record a deletion in the workspace history, under its own message.
+   *
+   * Without it a deletion left no commit at all: the file vanished, `git
+   * status` carried it until some later run swept it into an `ingest:` or
+   * `build:` commit whose message spoke of something else entirely. The
+   * deletion was recoverable and mislabelled, which is the worst of both.
+   *
+   * Best-effort by contract: a workspace without history, or a failing commit,
+   * must not turn a successful deletion into an error — the file IS gone.
+   */
+  commitDeletion?: (relativePath: string, kind: 'file' | 'folder') => Promise<void>;
+  /** Pages linking to a path, for the confirmation the browser shows. */
+  countReferences?: (relativePath: string) => Promise<string[]>;
 };
 
 function respond(res: ServerResponse, deps: TreeRoutesDeps, result: TreeResult): true {
@@ -78,9 +92,30 @@ export async function handleTreeApi(
     return respond(res, deps, await createEntry(deps.rootDir, body.parent, body.name, kind));
   }
 
+  /*
+   Who points at this path, before anything is destroyed.
+
+   Read-only, and deliberately answered from the graph snapshot rather than a
+   second link parser: the count a reader is shown must be the one the graph
+   draws, or the two disagree the day one of them learns a new link syntax.
+  */
+  if (urlPath === '/api/tree/references' && req.method === 'GET') {
+    const raw = new URL(req.url ?? '', 'http://localhost').searchParams.get('path') ?? '';
+    const pages = (await deps.countReferences?.(raw)) ?? [];
+    deps.sendJson(res, 200, { ok: true, path: raw, count: pages.length, pages: pages.slice(0, 20) });
+    return true;
+  }
+
   const deleteMatch = urlPath.match(/^\/api\/(?:tree|untracked)\/(.+)$/);
   if (deleteMatch && req.method === 'DELETE') {
-    return respond(res, deps, await deleteEntry(deps.rootDir, deleteMatch[1] ?? ''));
+    const result = await deleteEntry(deps.rootDir, deleteMatch[1] ?? '');
+    if (result.ok) {
+      const deleted = String(result.body.path ?? '');
+      const kind = result.body.kind === 'folder' ? 'folder' : 'file';
+      // Never let the bookkeeping fail the operation it only describes.
+      await deps.commitDeletion?.(deleted, kind).catch(() => {});
+    }
+    return respond(res, deps, result);
   }
 
   return false;

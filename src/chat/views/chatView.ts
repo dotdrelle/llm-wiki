@@ -165,14 +165,6 @@ export const CHAT_MARKUP = `<aside id="sidebar">
     <div id="runtime-graph-center"></div>
   </div>
   <div id="input-wrap">
-    <div id="approval-banner" hidden role="alert" aria-live="assertive">
-      <span class="approval-banner-icon">⏸</span>
-      <span class="approval-banner-text" id="approval-banner-text">Approbation requise avant les mutations.</span>
-      <span class="approval-banner-actions">
-        <button type="button" class="approval-btn approve" onclick="approveRuntimeRun()">Approuver</button>
-        <button type="button" class="approval-btn reject" onclick="rejectRuntimeRun()">Rejeter</button>
-      </span>
-    </div>
     <div id="page-context-chips" hidden aria-label="Documents shared with Donna as context"></div>
     <div class="input-box" id="input-box">
       <div class="skill-ac" id="skill-ac"></div>
@@ -194,6 +186,29 @@ export const CHAT_MARKUP = `<aside id="sidebar">
   </div>
 </div>
 
+<!--
+  Approval is a WORKSPACE-level demand, not a chat message.
+
+  This banner used to live inside #input-wrap, which the layout hides in three
+  of its four center views (wiki, connectors, execution). A restore launched
+  from the history page therefore waited on an approval the reader could not
+  see — and neither could the Execution view, the one meant for monitoring.
+  The shell has no such gap because its plan pane is always on screen.
+
+  Kept OUT of #main on purpose: #main is a flex column normally and an
+  explicitly-placed grid in split mode, so any new child there needs a
+  placement in both. A fixed overlay belongs to no layout and survives every
+  mode.
+-->
+<div id="approval-banner" hidden role="alert" aria-live="assertive">
+  <span class="approval-banner-icon">⏸</span>
+  <span class="approval-banner-text" id="approval-banner-text">Approbation requise avant les mutations.</span>
+  <span class="approval-banner-actions">
+    <button type="button" class="approval-btn approve" onclick="approveRuntimeRun()">Approuver</button>
+    <button type="button" class="approval-btn reject" onclick="rejectRuntimeRun()">Rejeter</button>
+  </span>
+</div>
+
 <aside id="activity-panel" class="closed">
   <div class="act-panel-head">
     <span class="act-panel-title">Activity</span>
@@ -205,6 +220,17 @@ export const CHAT_MARKUP = `<aside id="sidebar">
   </div>
   <div class="act-body" id="activity-body"></div>
 </aside>
+<!--
+  The rail was a fixed 360px behind a plain border-left — and that border looks
+  exactly like this layout's two real handles (#main-resizer, .sb-resizer), so
+  it invited a drag it could not honour. A panel carrying a run graph and full
+  file paths is precisely the one a reader wants wider.
+
+  It sits AFTER the panel in the DOM so a CSS sibling rule can hide
+  it (CSS has no previous-sibling selector), and order puts it back on the
+  panel's left visually.
+-->
+<div id="activity-resizer" class="main-resizer" role="separator" aria-orientation="vertical" title="Resize Activity" aria-label="Resize the Activity panel"></div>
 
 <aside id="help-panel" class="closed" aria-label="Help">
   <div class="act-panel-head">

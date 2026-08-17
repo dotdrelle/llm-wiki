@@ -297,12 +297,90 @@ describe('history service', () => {
     expect(await readFile(path.join(root, 'README.md'), 'utf8')).toBe('user-owned\n');
   });
 
+  it('tags releases, filters history around them, and never rewrites history', async () => {
+    const root = await workspace();
+    const history = new HistoryService(root);
+    await history.initialize({ baseline: true });
+
+    for (const name of ['a', 'b', 'c', 'd']) {
+      await writeFile(path.join(root, 'wiki', `${name}.md`), `# ${name}\n`, 'utf8');
+      await history.commit({ command: 'build', scope: [`wiki/${name}.md`] });
+    }
+
+    // Auto-numbered release at HEAD (after d).
+    const first = await history.createRelease();
+    expect(first.name).toBe('release-1');
+    expect(first.sha).toMatch(/^[0-9a-f]{40}$/);
+
+    await writeFile(path.join(root, 'wiki', 'e.md'), '# e\n', 'utf8');
+    await history.commit({ command: 'build', scope: ['wiki/e.md'] });
+    const labelled = await history.createRelease('stable');
+    expect(labelled.name).toBe('release-stable');
+    expect(await history.latestRelease()).toMatchObject({ name: 'release-stable' });
+
+    // Nothing committed since release-stable yet.
+    expect(await history.log({ since: 'release-stable' })).toHaveLength(0);
+
+    await writeFile(path.join(root, 'wiki', 'f.md'), '# f\n', 'utf8');
+    await history.commit({ command: 'build', scope: ['wiki/f.md'] });
+    const since = await history.log({ since: 'release-stable' });
+    expect(since).toHaveLength(1);
+
+    // Commits reachable from release-1 (a..d) stay fully visible when asked.
+    const before = await history.log({ until: 'release-1' });
+    expect(before.length).toBeGreaterThanOrEqual(4);
+    expect(await history.countLog('release-1')).toBe(before.length);
+
+    // Auto-numbering resumes past labelled releases.
+    expect((await history.createRelease()).name).toBe('release-2');
+
+    // Releases must not rewrite history: a duplicate label is refused.
+    await expect(history.createRelease('stable')).rejects.toThrow(/already exists/);
+  });
+
+  it('sanitizes an explicit release label to a path-safe name', async () => {
+    const root = await workspace();
+    await writeFile(path.join(root, 'wiki', 'existing.md'), '# Existing\n', 'utf8');
+    const history = new HistoryService(root);
+    await history.initialize({ baseline: true });
+    const release = await history.createRelease('My Release 1.0');
+    expect(release.name).toBe('release-My-Release-1.0');
+  });
+
   it('keeps the history implementation revert-forward only', async () => {
     const source = await Promise.all([
       readFile(new URL('../src/services/historyService.ts', import.meta.url), 'utf8'),
       readFile(new URL('../src/commands/restore.ts', import.meta.url), 'utf8'),
     ]).then((parts) => parts.join('\n'));
     expect(source).not.toMatch(/git[^\n]*(reset|rebase|push|amend)/i);
+  });
+
+  it('reads every commit of the log, not only the newest', async () => {
+    /*
+     `git log` separates its records with the format's %x1e AND its own newline
+     between commits. Splitting on %x1e alone therefore left a leading "\n" on
+     every entry but the first: their `sha` was unusable, so expanding or
+     restoring anything below the top row failed — the first row worked, which
+     is exactly what made the defect look like a UI quirk.
+    */
+    const root = await workspace();
+    const history = new HistoryService(root);
+    await history.initialize({ baseline: true });
+    for (const name of ['a', 'b', 'c']) {
+      await writeFile(path.join(root, 'wiki', `${name}.md`), `# ${name}\n`, 'utf8');
+      await history.commit({ command: 'build', message: `build: ${name}` });
+    }
+
+    const commits = await history.log({ limit: 10 });
+    expect(commits.length).toBeGreaterThanOrEqual(3);
+    for (const commit of commits) {
+      expect(commit.sha).toMatch(/^[0-9a-f]{40}$/);
+      expect(commit.shortSha).toMatch(/^[0-9a-f]{7,}$/);
+    }
+    // La preuve de bout en bout : chaque sha listé doit être lisible.
+    for (const commit of commits) {
+      await expect(history.show(commit.sha)).resolves.toEqual(expect.any(String));
+    }
   });
 
   it('names an unresolvable commit instead of surfacing a raw git failure', async () => {

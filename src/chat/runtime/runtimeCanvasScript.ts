@@ -116,17 +116,34 @@ function createRuntimeCanvasRenderer(host){
     nodes.forEach(node=>{x0=Math.min(x0,node.x);x1=Math.max(x1,node.x);y0=Math.min(y0,node.y);y1=Math.max(y1,node.y)});
     const cx=(x0+x1)/2,cy=(y0+y1)/2;
     const envelope=scale=>{
-      let l=Infinity,r=-Infinity,t=-Infinity,b=-Infinity;
+      // t is the TOP edge, narrowed by Math.min: seeded at -Infinity it never
+      // moved, the envelope height came out infinite, and every node projected
+      // to y = +Infinity — the graph drew itself outside its own frame.
+      let l=Infinity,r=-Infinity,t=Infinity,b=-Infinity;
       nodes.forEach(node=>{
         const box=nodeBox(node);
         const px=(node.x-cx)*size*scale,py=(node.y-cy)*size*scale;
         const w=box.w/2+16,h=box.h/2+16;
         l=Math.min(l,px-w);r=Math.max(r,px+w);t=Math.min(t,py-h);b=Math.max(b,py+h)});
       return{l,r,t,b}};
+    /*
+     Fitting must never magnify past the layout's own spacing.
+
+     The ceiling was 2.6, so a two-node run was stretched until its envelope
+     filled the frame: the hub pinned to the far left, its single phase two
+     thirds away, and a screen of emptiness between them. Cards keep a fixed
+     pixel size, so zooming in spreads them without ever making them bigger —
+     past scale 1 it buys nothing and costs the whole reading.
+
+     At 1 the layout's own units apply (0.46 of the short side between columns,
+     0.26 between rows): a small run sits centred at a natural distance, a large
+     one still scales down to fit. The floor stays, it is the only direction
+     where magnification actually helps.
+    */
     let scale=1;
     for(let pass=0;pass<8;pass++){
       const e=envelope(scale);
-      const next=Math.max(.4,Math.min(2.6,scale*Math.min(inner/Math.max(1,e.r-e.l),tall/Math.max(1,e.b-e.t))));
+      const next=Math.max(.4,Math.min(1,scale*Math.min(inner/Math.max(1,e.r-e.l),tall/Math.max(1,e.b-e.t))));
       if(Math.abs(next-scale)<=scale*.002){scale=next;break}
       scale=next}
     const e=envelope(scale);
@@ -142,27 +159,68 @@ function createRuntimeCanvasRenderer(host){
       backdrop.addColorStop(0,isLight?'#ffffff':'#101827');backdrop.addColorStop(.55,isLight?'#f4f7fb':'#0a0e18');backdrop.addColorStop(1,isLight?'#e7edf4':'#06080d');
       backdropKey=key}
     context.fillStyle=backdrop;context.fillRect(0,0,state.width,state.height)}
-  // Curved relation, ported from the wiki graph: a quadratic arc offset
-  // perpendicular to the chord reads as a flow, not a wireframe.
-  function edgePath(a,b){const cx=(a.x+b.x)/2-(b.y-a.y)*.12,cy=(a.y+b.y)/2+(b.x-a.x)*.12;return{cx,cy}}
+  /*
+   Orthogonal routing, not the wiki graph's arc.
+
+   The curve was ported from the wiki map, where nodes float and an arc reads as
+   an organic relation. This graph is the opposite: a layered DAG, left to right,
+   whose whole point is "this comes after that". An engineering schematic states
+   that with right angles — out horizontally, one vertical run, in horizontally —
+   and the eye follows a corner far better than it follows a bend.
+
+   Three points rather than a spline: the vertical happens at mid-x, so parallel
+   phases of one column share the same vertical corridor instead of crossing in
+   a fan of arcs. Returns the polyline, so both the stroke and the flow particle
+   read the same geometry.
+  */
+  function edgePath(a,b){
+    const midX=(a.x+b.x)/2;
+    // Same row: a straight segment. An elbow on a horizontal link would draw
+    // two useless corners.
+    if(Math.abs(b.y-a.y)<1)return[{x:a.x,y:a.y},{x:b.x,y:b.y}];
+    return[{x:a.x,y:a.y},{x:midX,y:a.y},{x:midX,y:b.y},{x:b.x,y:b.y}];
+  }
+  /** Point at "t" along a polyline, by arc length. Feeds the flow particle. */
+  function pointAlong(points,t){
+    const spans=[];let total=0;
+    for(let i=1;i<points.length;i++){
+      const d=Math.hypot(points[i].x-points[i-1].x,points[i].y-points[i-1].y);
+      spans.push(d);total+=d}
+    if(total<=0)return points[0];
+    let travelled=t*total;
+    for(let i=0;i<spans.length;i++){
+      if(travelled<=spans[i]||i===spans.length-1){
+        const u=spans[i]>0?Math.min(1,travelled/spans[i]):0;
+        return{x:points[i].x+(points[i+1].x-points[i].x)*u,y:points[i].y+(points[i+1].y-points[i].y)*u}}
+      travelled-=spans[i]}
+    return points[points.length-1];
+  }
   // Deterministic per-edge phase so the flow particle keeps a stable position
   // from frame to frame instead of restarting on every redraw.
-  function edgeSeed(id){let h=0;for(let i=0;i<id.length;i++)h=(h*31+id.charCodeAt(i))>>>0;return h%1000}
+  // String(): an edge without an id threw here, IN the draw loop — and an
+  // exception mid-frame is the black-canvas failure, not a missing particle.
+  function edgeSeed(id){const key=String(id??'');let h=0;for(let i=0;i<key.length;i++)h=(h*31+key.charCodeAt(i))>>>0;return h%1000}
   function drawEdge(edge,a,b,now){
     const active=edge.active||a.status==='running'||b.status==='running';
     const seq=edge.type==='depends_on';
     context.strokeStyle=active?'rgba(79,126,255,.85)':(seq?'rgba(125,148,180,.4)':'rgba(125,148,180,.26)');
     context.lineWidth=active?2.2:1.1;
     context.setLineDash(seq?[4,5]:[]);
-    const curve=edgePath(a,b);
-    context.beginPath();context.moveTo(a.x,a.y);context.quadraticCurveTo(curve.cx,curve.cy,b.x,b.y);context.stroke();context.setLineDash([]);
+    const route=edgePath(a,b);
+    // Rounded corners: a 6px join keeps the right angle legible without the
+    // aliased pixel notch a bare lineTo leaves at this line width.
+    context.lineJoin='round';
+    context.beginPath();context.moveTo(route[0].x,route[0].y);
+    for(let i=1;i<route.length;i++)context.lineTo(route[i].x,route[i].y);
+    context.stroke();context.setLineDash([]);
     // A particle glides toward the dependent phase while the dependency is live:
-    // it says "work is flowing this way" without an arrowhead.
+    // it says "work is flowing this way" without an arrowhead. It follows the
+    // polyline by arc length, so it does not race through the corners.
     if(active&&seq){
-      const t=((now+edgeSeed(edge.id))%1800)/1800,u=1-t;
-      const px=u*u*a.x+2*u*t*curve.cx+t*t*b.x,py=u*u*a.y+2*u*t*curve.cy+t*t*b.y;
+      const t=((now+edgeSeed(edge.id))%1800)/1800;
+      const point=pointAlong(route,t);
       context.fillStyle='rgba(220,232,255,.9)';
-      context.beginPath();context.arc(px,py,1.8,0,Math.PI*2);context.fill()}}
+      context.beginPath();context.arc(point.x,point.y,1.8,0,Math.PI*2);context.fill()}}
   // Appearance / status-change signal, like the wiki graph's "fresh" ring. A
   // brand-new node shows a green ring; an existing node whose status just
   // flipped (pending → running → done) shows a brief amber ring. Both fade on
@@ -284,10 +342,26 @@ function createRuntimeCanvasRenderer(host){
    Automatic framing only makes sense on the first fill — after that, the view
    belongs to its reader.
   */
-  return{canvas,setScene(scene){const topology=scene.nodes.map(node=>node.id).join('|')+'#'+scene.edges.map(edge=>edge.from+'>'+edge.to+':'+edge.type).join('|'),changed=topology!==state.topology;state.scene=scene;state.topology=topology;
+  return{canvas,setScene(scene){const topology=scene.nodes.map(node=>node.id).join('|')+'#'+scene.edges.map(edge=>edge.from+'>'+edge.to+':'+edge.type).join('|'),changed=topology!==state.topology;
+    /*
+     Opening a level is a USER action and reframes; a run progressing does not.
+
+     Expanding a task appends its details in a dedicated rightmost column, well
+     outside the current framing — and state.fitted, set once and never cleared,
+     forbade the only fit that would have shown them. The details were drawn
+     correctly, kilometres off screen.
+
+     The discriminator is the number of DETAIL nodes, not of nodes: details exist
+     only because a reader asked for them, whereas phases appear and finish on
+     their own throughout an ingest. Reframing on any growth would bring back the
+     view that jumped every few seconds and cancelled a manual placement.
+    */
+    const details=nodes=>nodes.filter(node=>node.type==='task_detail').length;
+    const opened=details(scene.nodes)!==details(state.scene.nodes);
+    state.scene=scene;state.topology=topology;
     const a11yHTML=scene.nodes.map(node=>'<button type="button" role="treeitem" data-runtime-node="'+esc(node.id)+'">'+esc(node.label)+' · '+esc(node.status||'pending')+'</button>').join('');
     if(a11y.innerHTML!==a11yHTML)a11y.innerHTML=a11yHTML;
-    if(changed&&!state.userAdjusted&&!state.fitted&&state.width>=8&&state.height>=8){state.fitted=true;fit()}
+    if((changed&&!state.fitted||opened)&&!state.userAdjusted&&state.width>=8&&state.height>=8){state.fitted=true;fit()}
     scheduler.invalidate()},fit(){state.fitted=true;fit()},releaseCamera(){state.userAdjusted=false;state.fitted=false},zoom(factor){claimCamera();camera.zoomAt(factor,camera.state.x,camera.state.y)},destroy(){observer.disconnect();window.removeEventListener('pointerup',releaseOutside);window.removeEventListener('blur',releaseOutside);scheduler.destroy()}}
 }
 function renderRuntimeWorkflowCanvas(){

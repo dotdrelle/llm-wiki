@@ -110,12 +110,35 @@ export const WIKI_LAYOUT_SCRIPT = `
       const relativePath = button.getAttribute('data-tree-delete') || '';
       const kind = button.getAttribute('data-tree-kind') || 'file';
       if (!relativePath) return;
-      // A folder takes its whole subtree with it, so it keeps the prompt. A
-      // single file is cheap to recreate — confirming every one of them was
-      // noise.
-      if (kind === 'folder'
-        && !confirm('Delete this folder and everything in it?\\n' + relativePath)) return;
+      /*
+       What points at it decides whether we ask.
+
+       A folder takes its whole subtree with it, so it always asks. A lone file
+       used to go without a word — "cheap to recreate" — but that is only true
+       of a page nobody cites. A cited page leaves dead links behind, and those
+       degrade to plain text at render time without a single warning: the reader
+       would never learn what was lost. So the count decides, and it is named.
+      */
       button.disabled = true;
+      let citing = [];
+      try {
+        const found = await fetch('/api/tree/references?path=' + encodeURIComponent(relativePath));
+        citing = (await found.json()).pages || [];
+      } catch (err) {
+        // Unknown is not zero: failing to count must not silence the prompt.
+        citing = null;
+      }
+      const cited = citing === null
+        ? '\\nCould not check which pages link to it.'
+        : citing.length
+          ? '\\n' + citing.length + ' page(s) link to it:\\n· ' + citing.slice(0, 5).join('\\n· ')
+            + (citing.length > 5 ? '\\n· …and ' + (citing.length - 5) + ' more' : '')
+          : '';
+      const mustAsk = kind === 'folder' || citing === null || citing.length > 0;
+      if (mustAsk && !confirm(
+        (kind === 'folder' ? 'Delete this folder and everything in it?\\n' : 'Delete this page?\\n')
+        + relativePath + cited,
+      )) { button.disabled = false; return; }
       try {
         const response = await fetch('/api/tree/' + encodeURIComponent(relativePath), { method: 'DELETE' });
         const payload = await response.json().catch(() => ({}));

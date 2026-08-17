@@ -94,6 +94,16 @@ describe('shared graph canvas foundation', () => {
     expect(RUNTIME_GRAPH_SCRIPT).toContain('function createRuntimeCanvasRenderer');
     expect(RUNTIME_GRAPH_SCRIPT).toContain('changed=topology!==state.topology');
     /*
+     Mais un DÉPLIEMENT doit recadrer : les détails d'une tâche atterrissent
+     dans une colonne dédiée à l'extrême droite, hors du cadre courant, et
+     `state.fitted` interdisait le seul fit qui les aurait montrés. Le
+     discriminant est le nombre de nœuds `task_detail` — ils n'existent que
+     parce qu'un lecteur les a demandés — et non le nombre de nœuds, qui bouge
+     tout seul pendant un ingest.
+    */
+    expect(RUNTIME_GRAPH_SCRIPT).toContain("node.type==='task_detail').length");
+    expect(RUNTIME_GRAPH_SCRIPT).toContain('const opened=details(scene.nodes)!==details(state.scene.nodes);');
+    /*
      Le cadrage automatique n'a lieu qu'au premier remplissage. Pendant un
      ingest la topologie change en continu — des tâches naissent et se
      terminent —, et chaque changement relançait un fit() animé : la vue
@@ -101,7 +111,7 @@ describe('shared graph canvas foundation', () => {
      bulles.
     */
     expect(RUNTIME_GRAPH_SCRIPT).toContain(
-      'if(changed&&!state.userAdjusted&&!state.fitted&&state.width>=8&&state.height>=8){state.fitted=true;fit()}',
+      'if((changed&&!state.fitted||opened)&&!state.userAdjusted&&state.width>=8&&state.height>=8){state.fitted=true;fit()}',
     );
     expect(RUNTIME_GRAPH_SCRIPT).toContain('const claimCamera=()=>{state.userAdjusted=true;state.fitted=true}');
     expect(RUNTIME_GRAPH_SCRIPT).toContain('runtimeCanvasPositions.set');

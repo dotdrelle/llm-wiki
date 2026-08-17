@@ -200,7 +200,10 @@ describe('chat html', () => {
     expect(script).toContain("upsertActivity({id:actId,phase:'conversion'});");
     expect(script).toContain("function isActivityActive(status){return status==='running'||status==='queued';}");
     expect(script).toContain("if(!isActivityActive(item.status)) return item;");
-    expect(CHAT_HTML).toContain('#activity-panel{order:2;width:360px;min-width:360px;height:100vh;');
+    // La largeur du rail vient de --act-w, écrite par la poignée : une valeur
+    // en dur ici et une autre dans le script se seraient séparées au premier
+    // glissement.
+    expect(CHAT_HTML).toContain('#activity-panel{order:2;width:var(--act-w,360px);min-width:var(--act-w,360px);height:100vh;');
     expect(script).not.toContain('function buildUploadCardHTML');
     expect(script).not.toContain('function buildUploadResultCardHTML');
     expect(script).not.toContain("actElapsed(item)<2");

@@ -65,7 +65,7 @@ const MARKED_DIST_PATH = path.resolve(
 );
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
-const LLM_WIKI_VERSION = '0.15.49';
+const LLM_WIKI_VERSION = '0.15.50';
 
 type SkillMeta = {
   name: string;
@@ -260,6 +260,30 @@ export async function handleUntrackedApi(
     readRequestBuffer,
     sendJson,
     isRunActive,
+    commitDeletion: async (relativePath, kind) => {
+      const { HistoryService, commitHistorySafely } = await import('../services/historyService.ts');
+      await commitHistorySafely(new HistoryService(rootDir), {
+        command: 'delete',
+        message: `delete: ${kind} ${relativePath}`,
+        // The exact path, nothing else: a deletion from the tree is a single
+        // decision and must not carry a neighbour's in-flight work.
+        scope: [relativePath],
+      });
+    },
+    countReferences: async (relativePath) => {
+      const target = String(relativePath || '').replace(/^\/+/, '');
+      if (!target) return [];
+      const { loadWikiGraphSnapshot } = await import('../graph/wiki/overview.ts');
+      const snapshot = await loadWikiGraphSnapshot({ rootDir });
+      // A folder has no node of its own: its references are those of everything
+      // it holds, minus the links its own pages exchange.
+      const inside = (id: string) => id === target || id.startsWith(`${target}/`);
+      return [...new Set(
+        snapshot.edges
+          .filter((edge) => inside(edge.to) && !inside(edge.from))
+          .map((edge) => edge.from),
+      )].sort();
+    },
   });
 }
 

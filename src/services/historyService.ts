@@ -54,6 +54,13 @@ export interface HistoryCommit {
   paths: string[];
 }
 
+export interface HistoryRelease {
+  name: string;
+  sha: string;
+  date: string;
+  subject: string;
+}
+
 export interface HistoryStatus {
   enabled: boolean;
   available: boolean;
@@ -385,20 +392,36 @@ export class HistoryService {
     });
   }
 
-  async log(options: { file?: string; limit?: number } = {}): Promise<HistoryCommit[]> {
+  async log(options: { file?: string; limit?: number; since?: string; until?: string } = {}): Promise<HistoryCommit[]> {
     const status = await this.status();
     if (!status.initialized) return [];
     const limit = Math.max(1, Math.min(options.limit ?? 20, 200));
     const paths = options.file ? [normalizeHistoryPath(options.file)] : [...HISTORY_PATHS];
+    const revision = options.since ? `${options.since}..HEAD` : options.until;
     const raw = await this.git([
       'log',
+      ...(revision ? [revision] : []),
       `-${limit}`,
       '--format=%H%x1f%h%x1f%s%x1f%an%x1f%aI%x1f%(trailers:key=Wiki-Run-Id,valueonly)%x1e',
       '--',
       ...paths,
     ]);
+    /*
+     %x1e ends a record; git adds its OWN newline between commits.
+
+     Splitting on the separator alone therefore left that newline at the head of
+     every entry but the first, and it landed in `%H` — so `sha` was unusable
+     for all of them. The top row worked, which made the defect read as a UI
+     quirk rather than a parsing one: expanding or restoring any other row hit
+     git with "\n<sha>" and failed.
+
+     The leading whitespace is stripped per record, not by trimming the whole
+     output: only the head of an entry is git's doing, and a trailer value is
+     free to end with whatever it wants.
+    */
     return raw
       .split('\x1e')
+      .map((entry) => entry.replace(/^[\r\n]+/, ''))
       .filter(Boolean)
       .map((entry) => {
         const [sha, shortSha, subject, author, date, runId] = entry.split('\x1f');
@@ -412,6 +435,100 @@ export class HistoryService {
           paths: [],
         };
       });
+  }
+
+  /**
+   * A release is a named, validated snapshot of the workspace ("brain"). It is
+   * a git tag, not a history rewrite: tagging stays strictly revert-forward
+   * (no `reset`/`rebase`), so a release can always be created or deleted later
+   * without disturbing any commit. Releases let a user mark a known-good state
+   * and, in the /history UI, collapse everything before it out of the way so a
+   * long-lived list does not tempt an accidental restore.
+   */
+  async listReleases(): Promise<HistoryRelease[]> {
+    const status = await this.status();
+    if (!status.initialized) return [];
+    const raw = await this.git(['tag', '--list', 'release-*'], { allowFailure: true });
+    if (!raw) return [];
+    const names = raw.split('\n').filter(Boolean);
+    const releases: HistoryRelease[] = [];
+    for (const name of names) {
+      const [sha, subject, date] = await Promise.all([
+        this.git(['rev-list', '-n', '1', name], { allowFailure: true }),
+        this.git(['log', '-1', '--format=%s', name], { allowFailure: true }),
+        this.git(['log', '-1', '--format=%aI', name], { allowFailure: true }),
+      ]);
+      if (!sha) continue;
+      releases.push({ name, sha, date, subject });
+    }
+    // Deterministic, topology-free ordering: newest date first, name as the
+    // tie-breaker (same-second tags are common in quick succession).
+    return releases.sort(
+      (a, b) => b.date.localeCompare(a.date) || b.name.localeCompare(a.name),
+    );
+  }
+
+  async latestRelease(): Promise<HistoryRelease | undefined> {
+    const status = await this.status();
+    if (!status.initialized) return undefined;
+    // `describe` picks the closest reachable tag by commit topology, which is
+    // exactly "latest release" for a linear history — unlike creatordate, it
+    // is immune to several tags being created within the same second.
+    const name = await this.git(
+      ['describe', '--tags', '--abbrev=0', '--match', 'release-*'],
+      { allowFailure: true },
+    );
+    if (!name) return undefined;
+    const [sha, subject, date] = await Promise.all([
+      this.git(['rev-list', '-n', '1', name], { allowFailure: true }),
+      this.git(['log', '-1', '--format=%s', name], { allowFailure: true }),
+      this.git(['log', '-1', '--format=%aI', name], { allowFailure: true }),
+    ]);
+    if (!sha) return undefined;
+    return { name, sha, date, subject };
+  }
+
+  /**
+   * Tag HEAD as a validated release. `label` is optional: without it, the name
+   * auto-increments from the highest existing `release-<n>`. An explicit label
+   * is sanitized to path-safe characters; an already-used name fails the tag.
+   */
+  async createRelease(label?: string): Promise<HistoryRelease> {
+    const status = await this.status();
+    if (!status.initialized) throw new Error('Workspace history is not initialized.');
+    return this.withLock(async () => {
+      const existing = (await this.git(['tag', '--list', 'release-*'], { allowFailure: true }))
+        .split('\n')
+        .filter(Boolean);
+      let name: string;
+      if (label && label.trim()) {
+        name = `release-${label.trim().replace(/[^A-Za-z0-9._-]+/g, '-')}`;
+        if (existing.includes(name)) throw new Error(`Release already exists: ${name}`);
+      } else {
+        const numbers = existing
+          .map((tag) => /^release-(\d+)$/.exec(tag))
+          .filter((match): match is RegExpExecArray => Boolean(match))
+          .map((match) => Number(match[1]));
+        name = `release-${(numbers.length ? Math.max(...numbers) : 0) + 1}`;
+      }
+      const message = `release: workspace snapshot ${name}`;
+      await this.git(['tag', '-a', name, '-m', message]);
+      const [sha, date] = await Promise.all([
+        this.git(['rev-list', '-n', '1', name]),
+        this.git(['log', '-1', '--format=%aI', name]),
+      ]);
+      return { name, sha, date, subject: message };
+    });
+  }
+
+  /** Number of history commits reachable from `ref` over the versioned scope. */
+  async countLog(ref: string, file?: string): Promise<number> {
+    const status = await this.status();
+    if (!status.initialized) return 0;
+    const paths = file ? [normalizeHistoryPath(file)] : [...HISTORY_PATHS];
+    const raw = await this.git(['rev-list', '--count', ref, '--', ...paths], { allowFailure: true });
+    const count = Number.parseInt(raw || '0', 10);
+    return Number.isFinite(count) ? count : 0;
   }
 
   async show(sha: string, file?: string): Promise<string> {

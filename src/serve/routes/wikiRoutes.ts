@@ -68,15 +68,49 @@ export async function handleWikiRoutes(
   if (urlPath === '/history' && req.method === 'GET') {
     const history = new HistoryService(rootDir, deps.historyConfig);
     const status = await history.status();
-    const commits = status.initialized ? await history.log({ limit: 50 }) : [];
+    const release = status.initialized ? await history.latestRelease() : undefined;
+    const commits = status.initialized
+      ? await history.log({ limit: 50, since: release?.name })
+      : [];
+    const older = release
+      ? await history.log({ limit: 50, until: release.name })
+      : [];
+    const olderCount = release ? await history.countLog(release.name) : 0;
+    const card = (commit: { sha: string; shortSha: string; subject: string; date: string; runId?: string }) =>
+      `<article class="history-card"><div class="history-summary"><code class="commit-sha">${escapeHistoryHtml(commit.shortSha)}</code><div class="history-title"><strong>${escapeHistoryHtml(commit.subject)}</strong><span>${escapeHistoryHtml(commit.date)}</span></div><code class="run-id">${escapeHistoryHtml(commit.runId ?? 'No run id')}</code><button class="restore-button" type="button" data-sha="${escapeHistoryHtml(commit.sha)}">Restore run</button></div><details class="change-details" data-sha="${escapeHistoryHtml(commit.sha)}"><summary><span>What will be undone?</span><small>Show the files and textual changes made by this action</small></summary><div class="change-content" data-change-content><p class="loading">Open to load the change details.</p></div></details></article>`;
+    /*
+     An empty list after a release is not an empty history.
+
+     The page reloads right after "Release this state", and at that instant
+     nothing has been committed since the tag. Saying "No workspace history
+     available" over a fold that announces N older commits contradicts itself on
+     the very first screen the feature shows.
+    */
     const rows = commits.length
-      ? commits.map((commit) => `<article class="history-card"><div class="history-summary"><code class="commit-sha">${escapeHistoryHtml(commit.shortSha)}</code><div class="history-title"><strong>${escapeHistoryHtml(commit.subject)}</strong><span>${escapeHistoryHtml(commit.date)}</span></div><code class="run-id">${escapeHistoryHtml(commit.runId ?? 'No run id')}</code><button class="restore-button" type="button" data-sha="${escapeHistoryHtml(commit.sha)}">Restore run</button></div><details class="change-details" data-sha="${escapeHistoryHtml(commit.sha)}"><summary><span>What will be undone?</span><small>Show the files and textual changes made by this action</small></summary><div class="change-content" data-change-content><p class="loading">Open to load the change details.</p></div></details></article>`).join('')
-      : '<div class="empty-state">No workspace history available.</div>';
+      ? commits.map(card).join('')
+      : `<div class="empty-state">${release
+        ? `Nothing changed since ${escapeHistoryHtml(release.name)}. Everything before it is under “Older history”.`
+        : 'No workspace history available.'}</div>`;
+    // The fold counts every older commit but only renders the last 50: saying
+    // one number while showing another is the silent truncation this codebase
+    // keeps paying for.
+    const olderShown = older.length < olderCount
+      ? `<p class="detail-error">Showing the ${older.length} most recent of ${olderCount}.</p>`
+      : '';
+    const archive = release
+      ? `<details class="history-archive"><summary><span>Older history</span><small>${escapeHistoryHtml(olderCount)} commit(s) before ${escapeHistoryHtml(release.name)}</small></summary><div class="history-archive-list">${olderShown}${older.length ? older.map(card).join('') : '<p class="detail-error">No older commits.</p>'}</div></details>`
+      : '';
     const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Workspace history</title><script>try{const t=localStorage.getItem('llm-wiki:theme')||localStorage.getItem('llm-wiki:graph:theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.classList.add('theme-'+(t==='dark'?'dark':'light'))}catch{}</script><style>
 ${WIKI_CSS_VARS}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.page{width:min(1180px,calc(100% - 40px));margin:0 auto;padding:34px 0 60px}.page-head{margin-bottom:24px}.eyebrow{display:block;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.page h1{margin:.2rem 0 .35rem;font-size:clamp(26px,4vw,38px);line-height:1.1}.lede,#status{margin:.25rem 0;color:var(--muted)}a{color:var(--link)}.history-list{display:grid;gap:12px}.history-card{overflow:hidden;border:1px solid var(--border);border-radius:12px;background:var(--panel);box-shadow:var(--shadow)}.history-summary{display:grid;grid-template-columns:82px minmax(240px,1fr) minmax(120px,240px) auto;align-items:center;gap:16px;padding:15px 16px}.commit-sha,.run-id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}.commit-sha{color:var(--accent);font-weight:800}.run-id{overflow:hidden;color:var(--muted);text-overflow:ellipsis;white-space:nowrap}.history-title{min-width:0}.history-title strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.history-title span{display:block;margin-top:3px;color:var(--muted);font-size:12px}.restore-button{border:1px solid var(--border);border-radius:7px;padding:7px 11px;background:var(--panel-soft);color:var(--text);font:inherit;font-weight:700;cursor:pointer}.restore-button:hover{border-color:var(--accent);color:var(--accent)}.restore-button:disabled{opacity:.55;cursor:wait}.change-details{border-top:1px solid var(--border);background:var(--panel-soft)}.change-details summary{display:flex;align-items:center;gap:12px;padding:11px 16px;color:var(--text);cursor:pointer;font-weight:750;list-style-position:inside}.change-details summary small{color:var(--muted);font-weight:500}.change-content{padding:0 16px 16px}.undo-explanation{margin:2px 0 12px;padding:11px 13px;border-left:3px solid var(--accent);border-radius:0 7px 7px 0;background:var(--accent-soft)}.change-stats{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}.stat{padding:3px 8px;border:1px solid var(--border);border-radius:999px;background:var(--panel);font-size:12px}.file-change{margin-top:9px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--panel)}.file-change h3{display:flex;align-items:center;gap:8px;margin:0;padding:8px 11px;border-bottom:1px solid var(--border);font:700 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}.change-kind{flex:0 0 auto;padding:2px 6px;border-radius:4px;background:var(--panel-soft);color:var(--muted);font:700 10px/1.4 Inter,system-ui,sans-serif;text-transform:uppercase}.diff{overflow:auto;margin:0;padding:8px 0;background:var(--bg);font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}.diff-line{display:block;min-width:max-content;padding:0 11px;white-space:pre}.diff-add{background:color-mix(in srgb,#22c55e 14%,transparent);color:color-mix(in srgb,var(--text) 82%,#15803d)}.diff-del{background:color-mix(in srgb,#ef4444 13%,transparent);color:color-mix(in srgb,var(--text) 82%,#b91c1c)}.diff-hunk{color:var(--accent);background:var(--accent-soft)}.diff-meta{color:var(--muted)}.loading,.detail-error,.empty-state{color:var(--muted)}.detail-error{padding:10px;border:1px solid var(--border);border-radius:7px;background:var(--panel)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.page{width:min(1180px,calc(100% - 40px));margin:0 auto;padding:34px 0 60px}.page-head{margin-bottom:24px}.eyebrow{display:block;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.page h1{margin:.2rem 0 .35rem;font-size:clamp(26px,4vw,38px);line-height:1.1}.lede,#status{margin:.25rem 0;color:var(--muted)}a{color:var(--link)}.release-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:.25rem 0 .5rem}.release-badge{display:inline-flex;align-items:center;gap:10px;padding:6px 12px;border:1px solid var(--accent);border-radius:999px;color:var(--text);font-size:12px}.release-badge code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:800;color:var(--accent)}.release-badge span{color:var(--muted)}.release-none{color:var(--muted);font-size:12px}#release-button{border:1px solid var(--accent);border-radius:7px;padding:7px 13px;background:var(--accent);color:#fff;font:inherit;font-weight:800;cursor:pointer}#release-button:hover{filter:brightness(1.08)}#release-button:disabled{opacity:.55;cursor:wait}.history-archive{margin-top:14px;border:1px solid var(--border);border-radius:12px;background:var(--panel);overflow:hidden}.history-archive>summary{display:flex;align-items:center;gap:12px;padding:13px 16px;color:var(--text);cursor:pointer;font-weight:750;list-style-position:inside}.history-archive>summary small{color:var(--muted);font-weight:500}.history-archive-list{display:grid;gap:12px;padding:0 16px 16px}.history-list{display:grid;gap:12px}.history-card{overflow:hidden;border:1px solid var(--border);border-radius:12px;background:var(--panel);box-shadow:var(--shadow)}.history-summary{display:grid;grid-template-columns:82px minmax(240px,1fr) minmax(120px,240px) auto;align-items:center;gap:16px;padding:15px 16px}.commit-sha,.run-id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}.commit-sha{color:var(--accent);font-weight:800}.run-id{overflow:hidden;color:var(--muted);text-overflow:ellipsis;white-space:nowrap}.history-title{min-width:0}.history-title strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.history-title span{display:block;margin-top:3px;color:var(--muted);font-size:12px}.restore-button{border:1px solid var(--border);border-radius:7px;padding:7px 11px;background:var(--panel-soft);color:var(--text);font:inherit;font-weight:700;cursor:pointer}.restore-button:hover{border-color:var(--accent);color:var(--accent)}.restore-button:disabled{opacity:.55;cursor:wait}.change-details{border-top:1px solid var(--border);background:var(--panel-soft)}.change-details summary{display:flex;align-items:center;gap:12px;padding:11px 16px;color:var(--text);cursor:pointer;font-weight:750;list-style-position:inside}.change-details summary small{color:var(--muted);font-weight:500}.change-content{padding:0 16px 16px}.undo-explanation{margin:2px 0 12px;padding:11px 13px;border-left:3px solid var(--... (line truncated to 2000 chars)
 @media(max-width:760px){.page{width:min(100% - 24px,1180px);padding-top:22px}.history-summary{grid-template-columns:70px 1fr}.run-id{grid-column:1/3}.restore-button{grid-column:1/3;justify-self:start}.change-details summary{align-items:flex-start;flex-direction:column;gap:2px}}
-</style></head><body><main class="page"><header class="page-head"><span class="eyebrow">Versioned workspace</span><h1>Workspace history</h1><p class="lede"><a href="/">Back to wiki</a> · Review an action before restoring it.</p><p id="status">${escapeHistoryHtml(status.reason ? `History: ${status.reason}` : `${commits.length} commit(s)`)}</p></header><section class="history-list">${rows}</section></main><script>
+</style></head><body><main class="page"><header class="page-head"><span class="eyebrow">Versioned workspace</span><h1>Workspace history</h1><p class="lede"><a href="/">Back to wiki</a> · Review an action before restoring it.</p><div class="release-bar">${release ? `<span class="release-badge">Latest release: <code>${escapeHistoryHtml(release.name)}</code><span>${escapeHistoryHtml(release.date)}</span></span>` : '<span class="release-none">No release yet</span>'}<button id="release-button" type="button">Release this state</button></div><p id="status">${escapeHistoryHtml(status.reason
+      ? `History: ${status.reason}`
+      // `commits` only counts what followed the release; announcing it bare
+      // read as "0 commit(s)" over a workspace with a full history.
+      : release
+        ? `${commits.length} commit(s) since ${release.name} · ${olderCount} before it`
+        : `${commits.length} commit(s)`)}</p></header><section class="history-list">${rows}</section>${archive}</main><script>
 const THEME_KEY='llm-wiki:theme';
 function applyTheme(theme){const selected=theme==='dark'?'dark':'light';document.documentElement.classList.toggle('theme-dark',selected==='dark');document.documentElement.classList.toggle('theme-light',selected==='light')}
 applyTheme(localStorage.getItem(THEME_KEY)||localStorage.getItem('llm-wiki:graph:theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'));window.addEventListener('storage',event=>{if(event.key===THEME_KEY&&event.newValue)applyTheme(event.newValue)});
@@ -87,6 +121,19 @@ function renderChanges(content){const files=parsePatch(content);const additions=
 document.querySelectorAll('details[data-sha]').forEach(details=>details.addEventListener('toggle',async()=>{if(!details.open||details.dataset.loaded==='1')return;details.dataset.loaded='1';const target=details.querySelector('[data-change-content]');target.innerHTML='<p class="loading">Loading the changes…</p>';try{const response=await fetch('/api/history/show?sha='+encodeURIComponent(details.dataset.sha),{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.error||'Could not load changes.');target.innerHTML=renderChanges(data.content)}catch(error){details.dataset.loaded='0';target.innerHTML='<p class="detail-error">'+esc(error.message||error)+'</p>'}}));
 const post=(body)=>fetch('/api/history/restore',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
 const say=(t)=>{document.querySelector('#status').textContent=t;};
+const releaseButton=document.querySelector('#release-button');
+if(releaseButton)releaseButton.addEventListener('click',async()=>{
+  const label=prompt('Name this release (optional — leave empty to auto-number):');
+  if(label===null)return;
+  releaseButton.disabled=true;
+  try{
+    const r=await fetch('/api/history/release',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(label?{label}:{})});
+    const data=await r.json();
+    if(!r.ok){say(data.error||'Release failed.');return;}
+    say('Released as '+data.release.name+'. Reloading…');
+    location.reload();
+  }finally{releaseButton.disabled=false;}
+});
 document.querySelectorAll('button[data-sha]').forEach(b=>b.addEventListener('click',async()=>{
   const run=b.dataset.sha;
   if(!confirm('Reverse the changes made by this action? A new commit will be created and existing history will be preserved.'))return;
@@ -135,6 +182,17 @@ document.querySelectorAll('button[data-sha]').forEach(b=>b.addEventListener('cli
       deps.sendJson(res, 200, { sha, file: file ?? null, content });
     } catch (error) {
       deps.sendJson(res, 404, { error: error instanceof Error ? error.message : String(error) });
+    }
+    return true;
+  }
+
+  if (urlPath === '/api/history/release' && req.method === 'POST') {
+    try {
+      const payload = JSON.parse(await deps.readRequestBody(req)) as { label?: string };
+      const release = await new HistoryService(rootDir, deps.historyConfig).createRelease(payload.label);
+      deps.sendJson(res, 200, { ok: true, release });
+    } catch (error) {
+      deps.sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
     }
     return true;
   }

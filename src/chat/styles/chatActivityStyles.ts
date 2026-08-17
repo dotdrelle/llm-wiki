@@ -1,7 +1,16 @@
 /** Activity/help side-panel styles, split from chatStyles.ts (size guard). */
 export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
-#activity-panel{order:2;width:360px;min-width:360px;height:100vh;background:var(--panel);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;transition:width .25s,min-width .25s;flex-shrink:0}
+/* --act-w is the single source of the rail width: the handle writes it, the
+   panel reads it. A hard-coded 360px in both places would drift apart. */
+#activity-panel{order:2;width:var(--act-w,360px);min-width:var(--act-w,360px);height:100vh;background:var(--panel);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;transition:width .25s,min-width .25s;flex-shrink:0}
 #activity-panel.closed{width:0;min-width:0}
+/* Same grip as #main-resizer, one order earlier so it sits left of the panel.
+   Hidden with the panel: a handle for something closed resizes nothing. */
+#activity-resizer{order:1}
+#activity-panel.closed + #activity-resizer,#activity-resizer.hidden{display:none}
+/* Dragging must not animate: the width transition of the panel would lag one
+   frame behind the pointer and feel broken. */
+#activity-panel.resizing{transition:none}
 #help-panel{order:2;width:360px;min-width:360px;height:100vh;background:var(--panel);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;transition:width .25s,min-width .25s;flex-shrink:0}
 #help-panel.closed{width:0;min-width:0}
 .help-panel-actions{display:flex;gap:4px;align-items:center}

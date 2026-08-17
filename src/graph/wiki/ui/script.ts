@@ -72,7 +72,10 @@ document.addEventListener('click',event=>{
   const community=event.target.closest('[data-community]');if(community){const group=community.closest('details'),willOpen=group?!group.open:undefined;event.preventDefault();selectCommunity(community.dataset.community);if(group&&willOpen!==undefined)group.open=willOpen;return}
   const documentButton=event.target.closest('[data-doc]');if(documentButton){const node=data.nodes.find(item=>item.id===documentButton.dataset.doc);if(node)selectDocument(node)}
 });
-document.querySelector('#filters').addEventListener('change',()=>{document.querySelector('#community-list').innerHTML=renderCommunityIndex();render()});
+// The three surfaces a type filter governs: the left index, the canvas, and the
+// right panel. The panel was missing, so it kept listing rows the filter had
+// just removed everywhere else.
+document.querySelector('#filters').addEventListener('change',()=>{document.querySelector('#community-list').innerHTML=renderCommunityIndex();render();refreshInspector()});
 document.querySelector('#zoom-in').addEventListener('click',()=>canvasExplorer?.zoom(1.25));
 document.querySelector('#zoom-out').addEventListener('click',()=>canvasExplorer?.zoom(.8));
 document.querySelector('#fit').addEventListener('click',()=>canvasExplorer?.fit());

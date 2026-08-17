@@ -5,6 +5,7 @@ import { OBSERVER_TOOLS_SCRIPT } from './views/observerToolsScript.ts';
 import { MCP_CONNECTOR_SCRIPT } from './runtime/mcpConnectorScript.ts';
 import { CONFIG_SCRIPT } from './config/configScript.ts';
 import { ACTIVITY_PANEL_SCRIPT } from './runtime/activityPanelScript.ts';
+import { SPLITTERS_SCRIPT } from './layout/splittersScript.ts';
 import { REDO_SCRIPT } from './runtime/redoScript.ts';
 import { RUNTIME_GRAPH_SCRIPT } from './runtime/runtimeGraphScript.ts';
 import { SKILL_CHAINS_SCRIPT } from './runtime/skillChainsScript.ts';
@@ -176,6 +177,7 @@ function renderMd(t) {
 const SIDEBAR_SPLIT_KEY = 'mcpchat_sidebar_history_height';
 const MAIN_SPLIT_KEY = 'mcpchat_sidebar_width';
 const SIDEBAR_OPEN_KEY = 'mcpchat_sidebar_open';
+const ACT_SPLIT_KEY = 'mcpchat_activity_width';
 const traceRegistry = new Map();
 let nextTraceId = 1;
 const MCP_STALE_SESSION_MS = 5 * 60 * 1000;
@@ -195,6 +197,7 @@ function notify(msg, type='s') {
   clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3200);
 }
 ${ACTIVITY_PANEL_SCRIPT}
+${SPLITTERS_SCRIPT}
 ${REDO_SCRIPT}
 ${RUNTIME_GRAPH_SCRIPT}
 ${HELP_PANEL_SCRIPT}
@@ -784,41 +787,6 @@ function initSidebarSplitter() {
   window.addEventListener('resize',()=>{
     const current=parseFloat(getComputedStyle(split).getPropertyValue('--history-pane-height'));
     if(Number.isFinite(current)) setSidebarSplitHeight(current);
-  });
-}
-
-function initMainSplitter() {
-  const sidebar=$('sidebar'), handle=$('main-resizer');
-  if(!sidebar || !handle) return;
-
-  applySidebarOpen(localStorage.getItem(SIDEBAR_OPEN_KEY)!=='0');
-
-  const setSidebarW=(width, persist=false)=>{
-    const clamped=Math.max(180, Math.min(width, window.innerWidth-320));
-    sidebar.style.setProperty('--sidebar-w', clamped+'px');
-    if(persist) localStorage.setItem(MAIN_SPLIT_KEY, String(Math.round(clamped)));
-  };
-
-  const saved=Number(localStorage.getItem(MAIN_SPLIT_KEY));
-  if(Number.isFinite(saved) && saved>0) setSidebarW(saved);
-
-  handle.addEventListener('pointerdown',e=>{
-    if(e.target.closest?.('#sidebar-toggle')) return;
-    handle.classList.add('dragging');
-    document.body.style.cursor='col-resize';
-    document.body.style.userSelect='none';
-    handle.setPointerCapture?.(e.pointerId);
-    const move=e=>setSidebarW(e.clientX, true);
-    const up=()=>{
-      handle.classList.remove('dragging');
-      document.body.style.cursor='';
-      document.body.style.userSelect='';
-      window.removeEventListener('pointermove',move);
-      window.removeEventListener('pointerup',up);
-    };
-    window.addEventListener('pointermove',move);
-    window.addEventListener('pointerup',up);
-    e.preventDefault();
   });
 }
 
@@ -2694,6 +2662,7 @@ async function initChat() {
   await loadHistory();
   initSidebarSplitter();
   initMainSplitter();
+  initActivitySplitter();
   renderProductionTrace();
   updateAgentModeUI();
   await Promise.all([restoreEnabledServers(),fetchSkillsAc()]);

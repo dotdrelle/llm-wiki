@@ -149,7 +149,7 @@ wiki export project-brief.md --polish
 
 The LLM expands each section from the cited sources without inventing facts. If sources lack detail for a section, it keeps the original text and appends an insufficient-source note.
 
-## `wiki history` and `wiki restore`
+## `wiki history`, `wiki restore`, and `wiki release`
 
 Workspace history is stored in the workspace-local Git repository. List recent
 commits, optionally for one file:
@@ -167,6 +167,21 @@ wiki restore --file wiki/concepts/example.md --to <commit-sha>
 wiki restore --run <run-commit-sha>
 wiki restore --run <run-commit-sha> --dry-run
 ```
+
+Tag the current workspace state as a validated release. The name is
+auto-numbered (`release-1`, `release-2`, …) unless `--label` is given:
+
+```bash
+wiki release
+wiki release --label v1.0
+wiki release --list
+```
+
+A release is a Git tag, not a history rewrite: it stays revert-forward, so it
+never disturbs any commit. On the `wiki serve` history page, the latest release
+marks the split — commits after it are listed in full, everything before it is
+folded under "Older history" — so a long-lived list does not tempt an accidental
+restore of an old, unrelated state.
 
 Sources removed from `raw/ingested/` are copied to `raw/untracked/` before a
 run rollback. Git history is initialized by `wiki init` for new workspaces or

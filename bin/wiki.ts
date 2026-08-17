@@ -26,6 +26,7 @@ import addSkillCmd from '../src/commands/addSkill.ts';
 import configCmd from '../src/commands/config.ts';
 import historyCmd from '../src/commands/history.ts';
 import restoreCmd from '../src/commands/restore.ts';
+import releaseCmd from '../src/commands/release.ts';
 
 const program = new Command();
 const packageVersion = (() => {
@@ -162,6 +163,13 @@ async function main() {
     .option('--to <sha>', 'Target Git revision for --file')
     .option('--dry-run', 'Show the action without writing files')
     .action((options) => restoreCmd(config, options));
+
+  program
+    .command('release')
+    .description('Tag the current workspace state as a validated release')
+    .option('--label <name>', 'Release name (auto-numbered when omitted)')
+    .option('--list', 'List existing releases')
+    .action((options) => releaseCmd(config, options));
 
   program
     .command('init')
