@@ -34,6 +34,24 @@ describe('source citations', () => {
     ).toBe('Voir [src: wiki/a.md] et [src: wiki/b.md] [src: wiki/c.md] et [RFC 6902].');
   });
 
+  it('repairs labelled and bare-path citations into the canonical [src: path] form', () => {
+    expect(
+      canonicalizeSourceCitations(
+        'Ref [Source 1 – wiki/sources/eas-avant-projet-acpi.md] and [wiki/concepts/product/acpi-renewal.md].',
+      ),
+    ).toBe(
+      'Ref [src: wiki/sources/eas-avant-projet-acpi.md] and [src: wiki/concepts/product/acpi-renewal.md].',
+    );
+  });
+
+  it('leaves wiki links, references and non-workspace brackets untouched', () => {
+    expect(
+      canonicalizeSourceCitations(
+        'See [[wiki/concepts/x.md]] and [RFC 6902] and [see above].',
+      ),
+    ).toBe('See [[wiki/concepts/x.md]] and [RFC 6902] and [see above].');
+  });
+
   it('normalizeGeneratedMarkdown canonicalizes citation markers outside fences', () => {
     const normalized = normalizeGeneratedMarkdown(
       ['# Titre', '', 'Texte [ src: wiki/a.md ].', '', '```', '[ src: keep.md ]', '```'].join(

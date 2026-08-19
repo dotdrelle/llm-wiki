@@ -157,6 +157,12 @@ async function renameTemplate() {
     return;
   }
   const payload = await res.json();
+  // Embedded in the chat shell: the sidebar lives in its own iframe and does
+  // not reload with this page — tell the shell to refresh it, otherwise the
+  // renamed template stays listed under its old name in the left panel.
+  if (window.self !== window.top) {
+    window.parent.postMessage({ type: 'llmwiki:refresh-sidebar' }, window.location.origin);
+  }
   window.location.href = '/' + payload.path;
 }
 </script>`;
@@ -363,7 +369,7 @@ ${body}
   <div class="palette">
     <div class="palette-head">
       <svg class="palette-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-      <input class="palette-input" id="palette-input" type="search" placeholder="Search wiki…" autocomplete="off" spellcheck="false">
+      <input class="palette-input" id="palette-input" type="search" placeholder="Search wiki…" aria-label="Search wiki" autocomplete="off" spellcheck="false">
       <span class="palette-esc">Esc</span>
     </div>
     <div class="palette-results" id="palette-results"></div>
@@ -543,8 +549,12 @@ function renderIndexSectionBrowser(sections: TileSection[]): string {
     .map((section) => {
       const count = section.tiles.length;
       const grouped = new Map<string, typeof section.tiles>();
+      const ungrouped: typeof section.tiles = [];
       for (const tile of section.tiles) {
-        if (!tile.group) continue;
+        if (!tile.group) {
+          ungrouped.push(tile);
+          continue;
+        }
         const tiles = grouped.get(tile.group) ?? [];
         tiles.push(tile);
         grouped.set(tile.group, tiles);
@@ -556,7 +566,14 @@ function renderIndexSectionBrowser(sections: TileSection[]): string {
             `<details class="section-browser-group"><summary><span>${escapeHtml(group)}</span><span>${tiles.length}</span></summary><div class="section-browser-tiles">${tiles.map(renderTile).join('')}</div></details>`,
         )
         .join('');
-      return `<details class="section-browser"${groupsHtml ? ' open' : ''}><summary><span class="section-browser-summary"><span class="section-browser-title">${escapeHtml(section.heading)}</span><span class="section-browser-meta">${count} item${count === 1 ? '' : 's'}</span></span></summary>${groupsHtml}</details>`;
+      // Sections whose tiles carry no group (sources, deliverables, …) rendered
+      // nothing: the <details> opened onto an empty body and the tiles were
+      // unreachable. Ungrouped tiles go straight into the body.
+      const ungroupedHtml = ungrouped.length
+        ? `<div class="section-browser-tiles">${ungrouped.map(renderTile).join('')}</div>`
+        : '';
+      const body = groupsHtml + ungroupedHtml;
+      return `<details class="section-browser"${body ? ' open' : ''}><summary><span class="section-browser-summary"><span class="section-browser-title">${escapeHtml(section.heading)}</span><span class="section-browser-meta">${count} item${count === 1 ? '' : 's'}</span></span></summary>${body}</details>`;
     })
     .join('\n');
 }
@@ -655,11 +672,8 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
   const label = node.name === 'build-context' ? 'build context' : node.name;
   const createAction =
     depth === 0 && isCreatableCollection(node.name)
-      ? `<a class="side-folder-action" href="${escapeHref(newMarkdownHref(node.name))}" title="Create Markdown" aria-label="Create in ${escapeAttr(node.name)}" onclick="event.stopPropagation()">+</a>`
+      ? `<a class="side-folder-action" href="${escapeHref(newMarkdownHref(node.name))}" title="Create Markdown" aria-label="Create in ${escapeAttr(node.name)}">+</a>`
       : '';
-  const refreshAction = depth === 0 && node.name === 'wiki'
-    ? '<button class="side-folder-action side-refresh-action" type="button" title="Refresh Wiki" aria-label="Refresh Wiki" data-sidebar-refresh="wiki">↻</button>'
-    : '';
   const rootClass = depth === 0 && node.name === 'wiki' ? ' side-folder-primary' : '';
   const safeNodePath = escapeAttr(node.path);
   // A whole section cannot be moved or deleted: only its sub-folders can. It
@@ -678,7 +692,13 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
     : '';
   const dragAttrs = depth === 0 ? '' : ` draggable="true" data-tree-drag="${safeNodePath}" data-tree-kind="folder"`;
   const dropAttr = isEditableTreePath(node.path) ? ` data-tree-drop="${safeNodePath}"` : '';
-  return `<details class="side-folder${rootClass}"${open} data-tree-id="${safeNodePath}"${dragAttrs}${dropAttr}><summary><span class="side-folder-label">${escapeHtml(label)}</span>${refreshAction}${newFolderAction}${createAction}${folderActions}</summary><div class="side-folder-children">${children}</div></details>`;
+  // Action buttons sit as a sibling of <summary>, not nested inside it: a
+  // <button>/<a> inside a <summary> is unreachable by keyboard/assistive tech
+  // (nested interactive controls). `.side-folder`'s grid layout keeps them
+  // visually on the same row.
+  const actions = `${newFolderAction}${createAction}${folderActions}`;
+  const actionsHtml = actions ? `<div class="side-folder-actions">${actions}</div>` : '';
+  return `<details class="side-folder${rootClass}"${open} data-tree-id="${safeNodePath}"${dragAttrs}${dropAttr}><summary><span class="side-folder-label">${escapeHtml(label)}</span></summary>${actionsHtml}<div class="side-folder-children">${children}</div></details>`;
 }
 
 // Sections whose tree is editable from the panel. Mirror of `TREE_ROOTS`
@@ -721,7 +741,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
       });
       })()
     : '<li class="side-untracked-empty">No pending sources.</li>';
-  return `<div class="side-pending-resizer" data-pending-resizer title="Resize Pending panel" role="separator" aria-orientation="horizontal"></div><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending">↻</button><span class="side-untracked-count" data-untracked-count>${count}</span></summary><div class="side-untracked-list" data-untracked-list data-tree-drop="">${await items}</div></details>`;
+  return `<div class="side-pending-resizer" data-pending-resizer title="Resize Pending panel" role="separator" aria-orientation="horizontal"></div><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span></summary><div class="side-folder-actions"><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending">↻</button><span class="side-untracked-count" data-untracked-count>${count}</span></div><div class="side-untracked-list" data-untracked-list data-tree-drop="">${await items}</div></details>`;
 }
 
 function renderUntrackedNode(
@@ -741,14 +761,8 @@ function renderUntrackedNode(
   // The root children live directly in [data-untracked-list], which carries the
   // drop target for raw/untracked itself (see wikiLayoutScript).
   if (root) return children;
-  // A folder's delete button used to carry `onclick="event.
-  // stopPropagation()"`, to stop the <summary> from collapsing the <details>.
-  // But the delete handler is delegated to `document`: the event never reached
-  // it, so the click did nothing at all. It is this handler that calls
-  // `preventDefault()`, which is enough to cancel the collapse — the default
-  // action only happens once propagation finishes.
   const safePath = escapeAttr(node.path);
-  return `<details class="side-untracked-folder" open data-tree-id="${safePath}" draggable="true" data-tree-drag="${safePath}" data-tree-kind="folder" data-tree-drop="${safePath}"><summary><span class="side-folder-label">${escapeHtml(node.name)}</span><button class="side-tree-delete" type="button" title="Delete folder ${safePath}" aria-label="Delete folder ${safePath}" data-tree-delete="${safePath}" data-tree-kind="folder">×</button></summary><div class="side-untracked-children">${children}</div></details>`;
+  return `<details class="side-untracked-folder" open data-tree-id="${safePath}" draggable="true" data-tree-drag="${safePath}" data-tree-kind="folder" data-tree-drop="${safePath}"><summary><span class="side-folder-label">${escapeHtml(node.name)}</span></summary><div class="side-folder-actions"><button class="side-tree-delete" type="button" title="Delete folder ${safePath}" aria-label="Delete folder ${safePath}" data-tree-delete="${safePath}" data-tree-kind="folder">×</button></div><div class="side-untracked-children">${children}</div></details>`;
 }
 
 export async function renderSidebar(rootDir: string, precomputedNavFiles?: string[]): Promise<string> {
@@ -765,10 +779,30 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
     addNavPath(root, file);
   }
 
-  const tree = [...root.dirs.values()]
-    .sort((a, b) => SERVED_DIRS.indexOf(a.name) - SERVED_DIRS.indexOf(b.name))
-    .map((dir) => renderNavNode(dir))
-    .join('\n');
+  const rootDirs = [...root.dirs.values()].sort((a, b) => SERVED_DIRS.indexOf(a.name) - SERVED_DIRS.indexOf(b.name));
+  const wikiDir = rootDirs.find((dir) => dir.name === 'wiki');
+  // build-context / templates / deliverables become three mutually exclusive
+  // tabs under the wiki tree: browsing one no longer forces the eye past the
+  // other two's full folder lists.
+  const collectionOrder = ['templates', 'deliverables', 'build-context'];
+  const collectionDirs = collectionOrder
+    .map((name) => rootDirs.find((dir) => dir.name === name))
+    .filter((dir): dir is NonNullable<typeof dir> => Boolean(dir));
+  const wikiTree = wikiDir ? renderNavNode(wikiDir) : '';
+  const collectionTabs = collectionDirs
+    .map((dir, index) => {
+      const label = dir.name === 'build-context' ? 'build context' : dir.name;
+      const active = index === 0;
+      return `<button class="side-collection-tab${active ? ' active' : ''}" type="button" role="tab" data-collection="${escapeAttr(dir.name)}" aria-selected="${active ? 'true' : 'false'}">${escapeHtml(label)}</button>`;
+    })
+    .join('');
+  const collectionPanels = collectionDirs
+    .map((dir, index) => `<div class="side-collection-panel" role="tabpanel" data-collection-panel="${escapeAttr(dir.name)}"${index === 0 ? '' : ' hidden'}>${renderNavNode(dir)}</div>`)
+    .join('');
+  const collections = collectionDirs.length
+    ? `<div class="side-collections"><div class="side-collection-tabs" role="tablist" aria-label="Collections">${collectionTabs}</div><div class="side-collection-panels">${collectionPanels}</div></div>`
+    : '';
+  const tree = wikiTree + collections;
 
   const wsSwitcher = hubPort()
     ? `<div class="ws-switcher" id="ws-switcher" data-current="${escapeAttr(workspaceNameFromEnv() ?? '')}"><p class="ws-switcher-title">Workspaces</p><p class="ws-name" style="font-size:0.8rem;color:var(--muted);padding:0 0.2rem">Loading...</p></div>`
@@ -787,7 +821,7 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
   const historyIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg>';
 const kbdHint = `<kbd style="font-size:.68rem;font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .35rem;border-radius:4px;color:var(--muted);cursor:pointer" title="Open global search (⌘K)" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}))">⌘K</kbd>`;
-  return `<a class="wiki-help-toggle" href="/help" title="Help" aria-label="Help">?</a><button class="wiki-theme-toggle" type="button" data-theme-toggle title="Switch to dark theme" aria-label="Switch color theme">☾</button><aside class="sidebar"><div class="side-head"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}</a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}</a><a class="side-action" href="/history" title="History" aria-label="History">${historyIcon}</a></div></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Markdown documents">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside><div class="wiki-main-resizer" data-wiki-main-resizer title="Resize sidebar" role="separator" aria-orientation="vertical"></div>`;
+  return `<a class="wiki-help-toggle" href="/help" title="Help" aria-label="Help">?</a><button class="wiki-theme-toggle" type="button" data-theme-toggle title="Switch to dark theme" aria-label="Switch color theme">☾</button><aside class="sidebar"><div class="side-head"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}</a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}</a><a class="side-action" href="/history" title="History" aria-label="History">${historyIcon}</a></div></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><button class="side-refresh-all" type="button" title="Refresh sidebar" aria-label="Refresh sidebar" data-sidebar-refresh="wiki">↻ Refresh</button><nav class="side-tree" aria-label="Markdown documents">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside><div class="wiki-main-resizer" data-wiki-main-resizer title="Resize sidebar" role="separator" aria-orientation="vertical"></div>`;
 }
 
 /**
@@ -1133,13 +1167,19 @@ export async function serveMd(
   // embedded in the chat shell's central iframe, where "chat context" exists.
   const chatContextBtn =
     relativePath.endsWith('.md') && (relativePath.startsWith('wiki/') || relativePath.startsWith('raw/untracked/'))
-      ? `<button class="action-button" type="button" data-chat-context="${escapeAttr(`/${relativePath}`)}" hidden title="Add this page to Donna's chat context">+ Context</button>`
+      ? `<button class="action-button action-donna" type="button" data-chat-context="${escapeAttr(`/${relativePath}`)}" hidden title="Add to Donna" aria-label="Add to Donna"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 19.8 7.5v9L12 21l-7.8-4.5v-9Z"/></svg></button>`
       : '';
   const renameBtn = relativePath.startsWith('templates/')
     ? `<button class="action-button" type="button" onclick="renameTemplate()">Rename</button>`
     : '';
+  // Hidden by default: only the chat shell can build (the action runs through
+  // Donna), so WIKI_LAYOUT_SCRIPT reveals it inside the shell's central iframe.
+  const buildTemplateBtn = relativePath.startsWith('templates/') && relativePath.endsWith('.md')
+    ? `<button class="action-button action-donna" type="button" data-build-template="${escapeAttr(relativePath)}" hidden title="Build" aria-label="Build"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg></button>`
+    : '';
   const actions = [
     chatContextBtn,
+    buildTemplateBtn,
     printBtn,
     dlBtn,
     renameBtn,
@@ -1147,7 +1187,7 @@ export async function serveMd(
       ? `<a class="action-link" href="${escapeHref(editHref(relativePath))}">Edit</a>`
       : '',
     isManagedMarkdownRelativePath(relativePath)
-      ? `<form class="delete-confirm" method="post" action="${escapeHref(deleteHref(relativePath))}"><button class="action-button action-danger" type="button" onclick="this.form.querySelector('.delete-confirm-panel').hidden=false">Delete</button><div class="delete-confirm-panel" hidden><p class="delete-confirm-title">Delete this file?</p><p class="delete-confirm-text">${escapeHtml(relativePath)} will be deleted from the workspace.</p><div class="delete-confirm-actions"><button class="action-button" type="button" onclick="this.closest('.delete-confirm-panel').hidden=true">Cancel</button><button class="action-button action-danger" type="submit">Delete</button></div></div></form>`
+      ? `<form class="delete-confirm" method="post" action="${escapeHref(deleteHref(relativePath))}" onsubmit="if(window.self!==window.top)window.parent.postMessage({type:'llmwiki:refresh-sidebar'},window.location.origin)"><button class="action-button action-danger" type="button" onclick="this.form.querySelector('.delete-confirm-panel').hidden=false">Delete</button><div class="delete-confirm-panel" hidden><p class="delete-confirm-title">Delete this file?</p><p class="delete-confirm-text">${escapeHtml(relativePath)} will be deleted from the workspace.</p><div class="delete-confirm-actions"><button class="action-button" type="button" onclick="this.closest('.delete-confirm-panel').hidden=true">Cancel</button><button class="action-button action-danger" type="submit">Delete</button></div></div></form>`
       : '',
   ].join('');
   const tocScript = `<script>

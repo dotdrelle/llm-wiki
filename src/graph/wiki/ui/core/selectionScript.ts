@@ -9,7 +9,7 @@ export function graphUiSelectionScript(): string {
  empty-chat mark), drawn as a stroked path because these buttons style their
  svg with fill:none;stroke:currentColor.
 */
-function graphIcon(name){return name==='preview'?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></svg>':'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 19.8 7.5v9L12 21l-7.8-4.5v-9Z" stroke-linejoin="round"/></svg>'}
+function graphIcon(name){return name==='preview'?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></svg>':name==='hammer'?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg>':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 19.8 7.5v9L12 21l-7.8-4.5v-9Z"/></svg>'}
 /*
  "Send to Donna" only claims success once the shell grants it.
 
@@ -43,7 +43,7 @@ async function previewGraphDocument(id){
   catch(error){content.innerHTML='<p>'+esc(error.message)+'</p>'}
 }
 function documentActionRow(node){
-  return '<div class="focus-document-row" data-doc-row="'+esc(node.id)+'"><button type="button" class="focus-document-name" data-doc="'+esc(node.id)+'"><span>'+esc(node.title)+'</span><small>'+esc(node.type)+(graphRelationsLabel(node.degree)?' · '+graphRelationsLabel(node.degree):'')+'</small></button><span class="focus-document-actions"><button type="button" data-preview-doc="'+esc(node.id)+'" title="Preview document" aria-label="Preview '+esc(node.title)+'">'+graphIcon('preview')+'</button><button type="button" data-send-doc="'+esc(node.id)+'" title="Send to Donna" aria-label="Send '+esc(node.title)+' to Donna">'+graphIcon('donna')+'</button></span></div>'
+  return '<div class="focus-document-row" data-doc-row="'+esc(node.id)+'"><button type="button" class="focus-document-name" data-doc="'+esc(node.id)+'"><span>'+esc(node.title)+'</span><small>'+esc(node.type)+(graphRelationsLabel(node.degree)?' · '+graphRelationsLabel(node.degree):'')+'</small></button><span class="focus-document-actions"><button type="button" data-preview-doc="'+esc(node.id)+'" title="Preview document" aria-label="Preview '+esc(node.title)+'">'+graphIcon('preview')+'</button><button type="button" data-send-doc="'+esc(node.id)+'" title="Add to Donna" aria-label="Add '+esc(node.title)+' to Donna">'+graphIcon('donna')+'</button></span></div>'
 }
 /*
  A single panel, whose content follows the level.

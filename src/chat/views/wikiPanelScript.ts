@@ -531,14 +531,43 @@ window.addEventListener('message', (event) => {
       notify(already ? 'Document already in Donna\\'s context' : 'Document added to Donna\\'s context');
     }
     event.source?.postMessage({ type: 'llmwiki:addContext:result', path: data.path, ok: true }, location.origin);
+  } else if (data.type === 'llmwiki:buildTemplate') {
+    // "Build" clicked on a template page in the central wiki frame. The launch
+    // runs through Donna, so route it as a /wiki-build skill invocation: switch
+    // to the chat, fill the composer with the exact template path and submit.
+    const templatePath = decodeWikiPath(data.path).replace(/^\\//, '');
+    if (!/^templates\\/.+\\.md$/.test(templatePath)) {
+      if (typeof notify === 'function') notify('Cannot build: not a template file');
+      return;
+    }
+    showChatView();
+    const input = $('chat-input');
+    if (!input) return;
+    input.value = '/wiki-build ' + templatePath;
+    sendMessage();
   } else if (data.type === 'llmwiki:palette') {
     // Ctrl/Cmd+K pressed inside an embedded wiki iframe.
     cmdkToggle();
   } else if (data.type === 'llmwiki:graph-subscribe') {
     // An embedded graph asks to be fed. The shell holds the single connection.
     startGraphRevisionRelay();
+  } else if (data.type === 'llmwiki:refresh-sidebar') {
+    // A delete/rename in the central wiki page mutated the tree; the sidebar
+    // iframe does not reload with it, so re-fetch it and re-mark the active file.
+    refreshWikiSidebar();
   }
 });
+
+function refreshWikiSidebar() {
+  const sideFrame = document.getElementById('wiki-side-frame');
+  if (!sideFrame) return;
+  const path = currentWikiPath();
+  sideFrame.addEventListener('load', () => {
+    sideFrame.contentWindow?.postMessage(
+      { type: 'llmwiki:active', path }, location.origin);
+  }, { once: true });
+  sideFrame.setAttribute('src', '/embed/sidebar?refresh=' + Date.now());
+}
 
 /*
  Single graph event stream for the whole shell.

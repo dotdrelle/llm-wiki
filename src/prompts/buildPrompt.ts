@@ -50,7 +50,7 @@ export function buildDeliverablePrompt(args: {
       'Do not output unresolved template placeholders such as {{name}}. Use the documented real name, a neutral label from the sources, or state that the name is not documented.',
       'When comparing candidates, keep labels consistent across sections: the reference candidate must not also be described as an alternative, and numeric/cost details must stay attached to the candidate whose source documents them.',
       'Markdown linting rules: do not emit raw HTML tags; do not emit level-1 headings unless the slot explicitly requires a document title; keep one blank line before and after any heading.',
-      'Cite factual claims with the provided Context citation path, preferably wiki/concepts/ or wiki/sources/. Do not replace a context page citation with nested raw/ingested citations unless the raw source is the only available evidence.',
+      'Cite every factual claim with the exact marker [src: <path>] copied verbatim from the "Context citation:" line of the source you used. Never emit a bare bracketed path like [wiki/...], a labelled source like [Source 1 – ...], or any other citation format. Prefer wiki/concepts/ or wiki/sources/ paths; do not replace a context page citation with nested raw/ingested citations unless the raw source is the only available evidence.',
       'When sources conflict or describe different decision states, prefer the most recent dated source and explicitly treat older decision-pending notes as superseded.',
       args.buildContext
         ? `Common generation rules from build-context/:\n${args.buildContext}`
@@ -107,7 +107,7 @@ export function buildSingleSlotDeliverablePrompt(args: {
       'Do not output unresolved template placeholders such as {{name}}. Use the documented real name, a neutral label from the sources, or state that the name is not documented.',
       'When comparing candidates, keep labels consistent across sections: the reference candidate must not also be described as an alternative, and numeric/cost details must stay attached to the candidate whose source documents them.',
       'Markdown linting rules: do not emit raw HTML tags; do not emit level-1 headings unless the slot explicitly requires a document title; keep one blank line before and after any heading.',
-      'Cite factual claims with the provided Context citation path, preferably wiki/concepts/ or wiki/sources/. Do not replace a context page citation with nested raw/ingested citations unless the raw source is the only available evidence.',
+      'Cite every factual claim with the exact marker [src: <path>] copied verbatim from the "Context citation:" line of the source you used. Never emit a bare bracketed path like [wiki/...], a labelled source like [Source 1 – ...], or any other citation format. Prefer wiki/concepts/ or wiki/sources/ paths; do not replace a context page citation with nested raw/ingested citations unless the raw source is the only available evidence.',
       'When sources conflict or describe different decision states, prefer the most recent dated source and explicitly treat older decision-pending notes as superseded.',
       args.buildContext
         ? `Common generation rules from build-context/:\n${args.buildContext}`

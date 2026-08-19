@@ -17,14 +17,14 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 #help-body{padding:12px 14px;overflow-y:auto}
 .help-toc-item{display:block;width:100%;text-align:left;background:var(--panel-soft);border:1px solid var(--border);border-radius:8px;padding:9px 11px;margin:0 0 7px;font:inherit;font-weight:600;color:var(--text);cursor:pointer}
 .help-toc-item:hover{border-color:var(--accent)}
-.help-article{font-size:.9rem;line-height:1.55}
+.help-article{font-size:.9rem;line-height:1.55;background:#fff9c4;color:#3a3200;border:1px solid #e6d566;border-radius:8px;padding:14px 16px;box-shadow:0 2px 10px rgba(0,0,0,.08)}
 .help-article h1{font-size:1.15rem;margin:.1rem 0 .6rem}
 .help-article h2{font-size:1rem;margin:1rem 0 .4rem}
 .help-article ul,.help-article ol{padding-left:1.2rem}
-.help-article code{background:var(--panel-soft);padding:1px 5px;border-radius:4px;font-size:.85em}
+.help-article code{background:#f1e07a;color:#4a3d00;padding:1px 5px;border-radius:4px;font-size:.85em}
 .help-article table{border-collapse:collapse;width:100%;font-size:.85em}
-.help-article th,.help-article td{border:1px solid var(--border);padding:4px 8px;text-align:left}
-.help-article a{color:var(--accent)}
+.help-article th,.help-article td{border:1px solid #d8c95a;padding:4px 8px;text-align:left}
+.help-article a{color:#7a5d00}
 .help-loading{color:var(--muted);padding:6px 2px}
 .act-panel-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--border);flex-shrink:0;min-height:44px}
 .act-panel-title{font-size:13px;font-weight:800;color:var(--text)}
@@ -37,7 +37,7 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .act-panel-close:hover{color:var(--text);background:var(--panel-soft)}
 .act-body{flex:1;overflow-y:auto;padding:10px 10px 18px;display:flex;flex-direction:column;gap:10px}
 .act-body>*{flex-shrink:0}
-.act-body.activity-list-mode{overflow:hidden}.activity-subtabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;flex:none;margin-bottom:8px}.activity-subtab{min-width:0;border:1px solid var(--border);border-radius:6px;background:var(--panel-soft);color:var(--muted);font:800 9px var(--font-sans);padding:5px 3px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase}.activity-subtab:hover,.activity-subtab.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}.activity-subtab.has-error{border-color:color-mix(in srgb,var(--err) 55%,var(--border));color:var(--err)}.activity-subtab.has-running{border-color:color-mix(in srgb,var(--accent) 55%,var(--border))}.activity-subtab-content{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-right:2px}.activity-subtab-content>.act-card+.act-card{margin-top:6px}.activity-subtab-logs{display:flex;flex-direction:column;overflow:hidden}.activity-subtab-logs .runtime-log-filters{flex:none}.activity-subtab-logs .runtime-log{flex:1;min-height:0;max-height:none}
+.act-body.activity-list-mode{overflow:hidden}.activity-subtabs{display:flex;flex-wrap:wrap;gap:4px;flex:none;margin-bottom:8px}.activity-subtab{flex:1 1 calc(50% - 2px);min-width:0;border:1px solid var(--border);border-radius:6px;background:var(--panel-soft);color:var(--muted);font:800 9px var(--font-sans);padding:5px 3px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase}.activity-subtab:hover,.activity-subtab.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}.activity-subtab:last-child{flex:1 1 100%}.activity-subtab.has-error{border-color:color-mix(in srgb,var(--err) 55%,var(--border));color:var(--err)}.activity-subtab.has-running{border-color:color-mix(in srgb,var(--accent) 55%,var(--border))}.activity-subtab-content{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-right:2px}.activity-subtab-content>.act-card+.act-card{margin-top:6px}.activity-subtab-logs{display:flex;flex-direction:column;overflow:hidden}.activity-subtab-logs .runtime-log-filters{flex:none}.activity-subtab-logs .runtime-log{flex:1;min-height:0;max-height:none}
 .act-section-head{display:flex;align-items:center;justify-content:space-between;padding:2px 4px 6px}
 .act-section-title{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .chain-block{background:var(--panel-soft);border:1px solid var(--border);border-radius:10px;padding:9px 11px;margin-bottom:6px}

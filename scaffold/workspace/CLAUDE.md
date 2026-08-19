@@ -29,8 +29,8 @@ on its own, and each takes optional positional arguments:
   export produced nothing new.
 - `/wiki-build [template]` — build the deliverables from the wiki as it
   currently stands, for one template or all of them. Never ingests.
-- `/deliver [template] [polish]` — export, or polish, deliverables that already
-  exist under `deliverables/`. Template names are accepted with or without the
+- `/deliver [deliverable] [polish]` — export, or polish, deliverables that already
+  exist under `deliverables/`. Deliverable names are accepted with or without the
   `.md` extension.
 - `/pipeline` — the whole chain in one job; `/status` and `/diagnose` are
   read-only checks.

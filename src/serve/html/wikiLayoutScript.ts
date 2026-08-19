@@ -20,6 +20,8 @@ export const WIKI_LAYOUT_SCRIPT = `
   const storagePrefix = 'llm-wiki:sidebar:';
   const searchKey = storagePrefix + 'search';
   const scrollKey = storagePrefix + 'scrollTop';
+  const collectionKey = storagePrefix + 'collection';
+  let activeCollection = localStorage.getItem(collectionKey) || 'templates';
   const currentPath = decodeURIComponent(window.location.pathname).replace(/^\\//, '');
   const sidebar = document.querySelector('.sidebar');
   const sideTree = document.querySelector('.side-tree');
@@ -101,10 +103,6 @@ export const WIKI_LAYOUT_SCRIPT = `
   document.addEventListener('click', async (event) => {
       const button = event.target.closest?.('[data-tree-delete]');
       if (!button) return;
-      // preventDefault is enough to stop the <summary> from collapsing its
-      // <details>: the default action only happens once propagation finishes.
-      // The stopPropagation that used to sit on this button instead prevented
-      // this document-delegated handler from ever seeing the click.
       event.preventDefault();
       event.stopPropagation();
       const relativePath = button.getAttribute('data-tree-delete') || '';
@@ -253,6 +251,28 @@ export const WIKI_LAYOUT_SCRIPT = `
   function folderHasVisibleFile(folder) {
     return Boolean(folder.querySelector('[data-side-path]:not(.is-search-hidden)'));
   }
+  // build-context / templates / deliverables are three tabs; only the active
+  // one is shown. A search query reveals all three so a match in a hidden
+  // collection is not silently invisible, and clearing the query restores the
+  // single-tab view.
+  function applyCollectionTab() {
+    const searching = Boolean((searchInput?.value || '').trim());
+    document.querySelectorAll('.side-collection-tab').forEach((tab) => {
+      const active = tab.getAttribute('data-collection') === activeCollection && !searching;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    document.querySelectorAll('.side-collection-panel').forEach((panel) => {
+      panel.hidden = !searching && panel.getAttribute('data-collection-panel') !== activeCollection;
+    });
+  }
+  document.addEventListener('click', (event) => {
+    const tab = event.target.closest?.('.side-collection-tab');
+    if (!tab) return;
+    activeCollection = tab.getAttribute('data-collection') || 'templates';
+    try { localStorage.setItem(collectionKey, activeCollection); } catch {}
+    applyCollectionTab();
+  });
   function applySidebarSearch() {
     const query = window.WikiUi.normalizeSearch(searchInput?.value.trim() || '');
     let matchCount = 0;
@@ -260,6 +280,7 @@ export const WIKI_LAYOUT_SCRIPT = `
       sideFiles().forEach((link) => link.classList.remove('is-search-hidden'));
       sideFolders().forEach((folder) => folder.classList.remove('is-search-hidden'));
       searchStatus?.classList.remove('is-visible');
+      applyCollectionTab();
       return;
     }
     for (const link of sideFiles()) {
@@ -280,6 +301,7 @@ export const WIKI_LAYOUT_SCRIPT = `
       searchStatus.textContent = matchCount === 0 ? 'No matching files.' : matchCount + ' matching file' + (matchCount > 1 ? 's.' : '.');
       searchStatus.classList.add('is-visible');
     }
+    applyCollectionTab();
   }
   if (searchInput) {
     searchInput.value = localStorage.getItem(searchKey) || '';
@@ -697,6 +719,18 @@ export const WIKI_LAYOUT_SCRIPT = `
       chatContextBtn.addEventListener('click', () => {
         window.parent.postMessage(
           { type: 'llmwiki:addContext', path: chatContextBtn.getAttribute('data-chat-context') },
+          window.location.origin,
+        );
+      });
+    }
+    // "Build": only meaningful inside the chat shell, where Donna owns the
+    // launch. Reveal the button and hand the template path to the shell.
+    const buildTemplateBtn = document.querySelector('[data-build-template]');
+    if (buildTemplateBtn) {
+      buildTemplateBtn.hidden = false;
+      buildTemplateBtn.addEventListener('click', () => {
+        window.parent.postMessage(
+          { type: 'llmwiki:buildTemplate', path: buildTemplateBtn.getAttribute('data-build-template') },
           window.location.origin,
         );
       });

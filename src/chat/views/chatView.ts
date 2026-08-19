@@ -47,12 +47,12 @@ export const CHAT_MARKUP = `<aside id="sidebar">
       <div class="sec-label">LLM<div class="sec-label-actions"><select class="tb-profile-select" id="profile-picker" title="Active .wikirc profile managed by wiki-manager runtime" onchange="switchConfigProfile(this.value)"></select><button type="button" onclick="resetYamlConfig()">Reset</button></div></div>
       <div class="api-block">
         <div class="field">
-          <label>Base URL</label>
+          <label for="base-url">Base URL</label>
           <input id="base-url" type="text" placeholder="http://localhost:11434/v1" onchange="saveConfig()">
         </div>
         <div class="field">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-            <label style="margin:0">API Key</label>
+            <label for="api-key" style="margin:0">API Key</label>
             <span class="key-saved" id="llm-saved">saved</span>
           </div>
           <div class="secret-wrap">
@@ -66,7 +66,7 @@ export const CHAT_MARKUP = `<aside id="sidebar">
         </div>
         <div class="row2">
           <div class="field">
-            <label>Model</label>
+            <label for="model-name">Model</label>
             <input id="model-name" type="text" placeholder="gpt-4o" oninput="syncModel()" onchange="saveConfig()">
           </div>
         </div>
@@ -258,7 +258,7 @@ export const CHAT_MARKUP = `<aside id="sidebar">
   <div id="cmdk" role="dialog" aria-modal="true" aria-label="Command palette">
     <div class="cmdk-input-row">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-      <input id="cmdk-input" type="text" placeholder="Search pages, conversations, actions…" autocomplete="off" spellcheck="false">
+      <input id="cmdk-input" type="text" placeholder="Search pages, conversations, actions…" aria-label="Search pages, conversations, actions" autocomplete="off" spellcheck="false">
     </div>
     <div id="cmdk-results" role="listbox"></div>
     <div class="cmdk-hint"><span><kbd>↑↓</kbd> navigate</span><span><kbd>Enter</kbd> open</span><span><kbd>Ctrl+Enter</kbd> add page to context</span><span><kbd>Esc</kbd> close</span></div>

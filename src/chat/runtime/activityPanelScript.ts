@@ -25,6 +25,12 @@ let pendingRuntimeUserRefs=[];
 // the real runtime assistant event replaces them and only that real reply is
 // persisted in conversation history.
 let pendingRuntimeStatusEls=[];
+// Bubbles whose user turn has been matched in the workspace-wide conversation
+// but whose assistant reply has not arrived yet. The conversation is shared
+// with the ShellUI and other chats, so a bubble must only be cleared by its
+// own reply — never by a foreign assistant message that happens to arrive
+// first (the cross-chat "Request received" stuck-on-screen bug).
+let armedReplyStatusEls=[];
 /* ── Reply bubbles ─────────────────────────────────────────────────────── */
 // The runtime waiting bubble is a variant of these: both live here rather than
 // being split across two files by the mere accident of when each was written.
@@ -90,6 +96,7 @@ function createRuntimeThinkingBubble(text='Request received · Donna is preparin
   div._runtimeTimeout=setTimeout(()=>{
     if(!div.isConnected) return;
     pendingRuntimeStatusEls=pendingRuntimeStatusEls.filter(el=>el!==div);
+    armedReplyStatusEls=armedReplyStatusEls.filter(el=>el!==div);
     div.remove();
     appendMsg('assistant','No response received from the runtime after '+Math.round(RUNTIME_THINKING_TIMEOUT_MS/1000)+'s. Check the Execution panel, or resend.');
   },RUNTIME_THINKING_TIMEOUT_MS);
@@ -116,6 +123,8 @@ function resetRuntimeConversationTracking() {
   pendingRuntimeUserRefs=[];
   pendingRuntimeStatusEls.forEach(el=>clearRuntimeThinkingBubble(el));
   pendingRuntimeStatusEls=[];
+  armedReplyStatusEls.forEach(el=>clearRuntimeThinkingBubble(el));
+  armedReplyStatusEls=[];
 }
 // Agent mode is deliberately session-only: every fresh serve page starts in
 // local chat mode, even if an older release persisted an Agent preference.
@@ -126,7 +135,7 @@ let agentMode=false;
 // which read as broken rather than a deliberate default.
 let activityView='list';
 let activityListTab='plan';
-const activityClearedFingerprints={plan:null,runtime:null,logs:null};
+const activityClearedFingerprints={plan:null,chain:null,runtime:null,logs:null};
 let selectedWorkflowNodeId=null;
 const _activityPollTimers=new Map();
 function isActivityActive(status){return status==='running'||status==='queued';}
@@ -301,6 +310,7 @@ function dismissActivity(id) {
 function activityTabFingerprint(tab) {
   if(!runtimeState) return 'empty';
   if(tab==='plan') return JSON.stringify([runtimeState.runId,runtimeState.currentRunId,runtimeState.plan,runtimeState.queue,runtimeState.workflow?.nodes?.filter(node=>node.type==='task'||node.type==='queue')]);
+  if(tab==='chain') return JSON.stringify(runtimeState.skillChains||[]);
   if(tab==='runtime') return JSON.stringify([runtimeState.runId,runtimeState.currentRunId,runtimeState.activities,runtimeState.workflow?.activity,runtimeState.workflow?.nodes?.filter(node=>node.type==='activity')]);
   if(tab==='logs') return JSON.stringify(runtimeState.logs||[]);
   return '';
@@ -314,13 +324,13 @@ function clearActivityTab(tab,{render=true}={}) {
     _activities.forEach(item=>clearPollTimer(item.id));
     _activities=[];
     saveActivities();
-  } else if(['plan','runtime','logs'].includes(tab)) {
+  } else if(['plan','chain','runtime','logs'].includes(tab)) {
     activityClearedFingerprints[tab]=activityTabFingerprint(tab);
   }
   if(render) { renderActivities(); updateActivityBadge(); }
 }
 function clearAllActivityTabs() {
-  ['plan','local','runtime','logs'].forEach(tab=>clearActivityTab(tab,{render:false}));
+  ['plan','chain','local','runtime','logs'].forEach(tab=>clearActivityTab(tab,{render:false}));
   renderActivities(); updateActivityBadge();
 }
 async function resetRuntimePlan() {
@@ -331,6 +341,7 @@ async function resetRuntimePlan() {
     const data=await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(data.error||'Runtime plan reset failed');
     activityClearedFingerprints.plan=null;
+    activityClearedFingerprints.chain=null;
     activityClearedFingerprints.runtime=null;
     activityClearedFingerprints.logs=null;
     await fetchRuntimeState();
@@ -480,11 +491,12 @@ function renderActivities() {
   const localHTML=section('Uploads',uploads)+section('MCP',mcp);
   const panes={
     plan:activityTabWasCleared('plan')?'':runtimeTaskPanelHTML('plan'),
+    chain:activityTabWasCleared('chain')?'':runtimeTaskPanelHTML('chain'),
     runtime:activityTabWasCleared('runtime')?'':runtimeTaskPanelHTML('runtime'),
     logs:activityTabWasCleared('logs')?'':runtimeTaskPanelHTML('logs'),
     local:localHTML,
   };
-  const labels={plan:'Plan',local:'Direct agents',runtime:'Runtime activity',logs:'Logs'};
+  const labels={plan:'Plan',chain:'Chain',local:'Direct agents',runtime:'Runtime activity',logs:'Logs'};
   const localTabState=uploads.some(item=>item.error||item.status==='failed')?'has-error':uploads.some(item=>isActivityActive(item.status))?'has-running':'';
   const tabs=Object.entries(labels).map(([key,label])=>\`<button class="activity-subtab \${activityListTab===key?'active':''} \${key==='local'?localTabState:''}" type="button" onclick="setActivityListTab('\${key}')">\${label}</button>\`).join('');
   const empty=\`<div class="act-empty">No \${labels[activityListTab].toLowerCase()} yet.</div>\`;
@@ -522,7 +534,7 @@ function finishActivityRender() {
   if(!anyRunning&&_actTimer){clearInterval(_actTimer);_actTimer=null;}
 }
 function setActivityListTab(tab) {
-  if(!['plan','runtime','logs','local'].includes(tab)) return;
+  if(!['plan','chain','runtime','logs','local'].includes(tab)) return;
   activityListTab=tab;
   renderActivities();
 }

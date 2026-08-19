@@ -152,6 +152,14 @@ export function extractWikiLinks(content: string): string[] {
 // ("[ src: ... ]") or chained ("[src: a.md ; src: b.md]") citation markers.
 const SOURCE_CITATION_PATTERN = /\[\s*src\s*:\s*([^\]]+?)\s*\]/gi;
 
+// Models also emit citation attempts that never carry the "src:" marker: a
+// labelled source ("[Source 1 – wiki/x.md]") or a bare workspace path
+// ("[wiki/concepts/x.md]"). Both are citations, not prose — normalise them to
+// the single authorised [src: path] form so citation-based tooling downstream
+// (lint, graph, vector index, export) can see them.
+const SOURCE_LABEL_PATTERN = /\[\s*source\s+\d+\s*[–—:-]\s*([^\]]+?)\s*\]/gi;
+const BARE_WORKSPACE_PATH_PATTERN = /(?<!\[)\[((?:wiki|raw|deliverables|templates|build-context)\/[^\]]+?\.md)\](?!\])/gi;
+
 export function extractSourceCitations(content: string): string[] {
   return [...content.matchAll(SOURCE_CITATION_PATTERN)].flatMap((match) =>
     (match[1] ?? '')
@@ -163,14 +171,17 @@ export function extractSourceCitations(content: string): string[] {
 
 /** Rewrite citation markers to the canonical `[src: path]` form. */
 export function canonicalizeSourceCitations(content: string): string {
-  return content.replace(SOURCE_CITATION_PATTERN, (_match, inner: string) =>
-    inner
-      .split(';')
-      .map((part) => part.trim().replace(/^src\s*:\s*/i, ''))
-      .filter(Boolean)
-      .map((path) => `[src: ${path}]`)
-      .join(' '),
-  );
+  return content
+    .replace(SOURCE_CITATION_PATTERN, (_match, inner: string) =>
+      inner
+        .split(';')
+        .map((part) => part.trim().replace(/^src\s*:\s*/i, ''))
+        .filter(Boolean)
+        .map((path) => `[src: ${path}]`)
+        .join(' '),
+    )
+    .replace(SOURCE_LABEL_PATTERN, (_match, path: string) => `[src: ${path.trim()}]`)
+    .replace(BARE_WORKSPACE_PATH_PATTERN, (_match, path: string) => `[src: ${path.trim()}]`);
 }
 
 /*

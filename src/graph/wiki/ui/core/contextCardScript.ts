@@ -124,7 +124,7 @@ function graphContextCardHTML(node,body,pending){
     +'<button type="button" data-close-context title="Close" aria-label="Close context card">×</button></div>'
     +(pending?'<p class="gcc-body pending">'+esc(body)+'</p>':graphContextSummaryHTML(body))
     +'<div class="gcc-actions"><button type="button" data-preview-doc="'+esc(node.id)+'">Open page</button>'
-    +'<button type="button" data-send-doc="'+esc(node.id)+'">Send to Donna</button></div>'}
+    +'<button type="button" class="gcc-donna" data-send-doc="'+esc(node.id)+'" title="Add to Donna" aria-label="Add to Donna">'+graphIcon('donna')+'</button></div>'}
 /*
  A bullet summary stays readable as a list, not as a prose block.
 

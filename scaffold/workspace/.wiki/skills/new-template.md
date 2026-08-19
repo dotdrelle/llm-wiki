@@ -60,11 +60,13 @@ Copy this complete structure into the new file. Replace the uppercase labels wit
 
 The written template must contain only frontmatter, headings, and multiline `[[INSTRUCTION: ...]]` blocks. Static placeholder prose, ellipses (`...`), empty tables, bare source paths, and prewritten factual content are forbidden.
 
+Every section's prompt must be encapsulated in exactly one `[[INSTRUCTION: ...]]` block: the block opens on its own line with `[[INSTRUCTION:` and closes on its own line with `]]`, with the entire instruction text between them. Never leave an instruction bare under a heading, never drop the closing `]]`, and never write the prompt outside the block.
+
 The only valid generation slot is `[[INSTRUCTION: ...]]`. The only valid citation marker is `[src: wiki/path.md]`. Never use `{{cite:...}}`, `{{> ...}}`, Handlebars, includes, `> Source: ...`, or another invented syntax.
 
 ## Completion
 
-Before reporting success, verify the written template itself. Report the actual written path and any unanchored section.
+Before reporting success, verify the written template itself. Report the actual written path, the complete front-matter YAML you wrote (the `title`, `description`, and `build_context` entries, verbatim), and any unanchored section.
 
 ## Approval
 

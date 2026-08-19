@@ -182,7 +182,7 @@ merging without redesigning the model.
 The default scaffold includes small UI skills: `/status`, `/diagnose`, and the
 production chain `/wiki-sync` (source export + ingest, optional source name) →
 `/wiki-build` (build, optional template) → `/deliver` (export or polish, optional
-template + `polish` flag), with `/pipeline` as the one-shot shortcut.
+deliverable + `polish` flag), with `/pipeline` as the one-shot shortcut.
 `/wiki-ingest` (optional file list) is `/wiki-sync` without the export: it
 ingests what already waits in `raw/untracked/`, whatever staged it.
 
@@ -342,15 +342,16 @@ manager's `state.concurrency` / `workflow.timingByTask` — see
   without the halo stroke (`.runtime-graph-node.task_group text`). Aggregator
   status glyphs are `[✓]`/`[✗]`/`[⏸]`, aligned with the Shell PlanPanel.
 
-The Activity list is split into `Plan`, `Local activity`, `Runtime activity`,
-and `Logs`, in that order. Each tab owns a `Clear` action; `Clear all` beside
-the List/Graph switch applies all four. Local clearing removes browser-owned
-upload/MCP cards, while clearing the other tabs hides the current runtime
-snapshot until new state changes its fingerprint. This is deliberately not a
-runtime deletion. `Reset plan`, shown only in the Plan tab, requires browser
-confirmation and calls `/api/runtime/reset`; it stops active work and purges
-the workspace runtime plan, activities, logs, queue, and persisted projection.
-Upload cards with an `error` always render as failed even if storage succeeded.
+The Activity list is split into `Plan`, `Chain`, `Local activity`,
+`Runtime activity`, and `Logs`, in that order. Each tab owns a `Clear` action;
+`Clear all` beside the List/Graph switch applies all five. Local clearing
+removes browser-owned upload/MCP cards, while clearing the other tabs hides the
+current runtime snapshot until new state changes its fingerprint. This is
+deliberately not a runtime deletion. `Reset plan`, shown only in the Plan tab,
+requires browser confirmation and calls `/api/runtime/reset`; it stops active
+work and purges the workspace runtime plan, activities, logs, queue, and
+persisted projection. Upload cards with an `error` always render as failed even
+if storage succeeded.
 
 **Connector cards** (`src/chat/runtime/mcpConnectorScript.ts`,
 `config/configScript.ts`, `chatHtml.ts`). A card now has an identity in the
@@ -424,12 +425,13 @@ prose and informational questions still reach Donna without this interception.
 sides, and the two lists must be changed together. An explicit `forceChat` wins
 over the switch.
 
-The Activity panel renders a **Chain** section from `runtimeState.skillChains`,
-the projection the runtime publishes over the control queue, with one line per
-step (`✓ ● × –`), its status and its `skipReason`. A chain disappears once it
-is fully `done`; it stays visible when it was cancelled or left incomplete,
-which is exactly when the user needs to see which steps were skipped. Styles
-live in `styles/chatActivityStyles.ts` under `.chain-*`.
+The Activity panel renders a dedicated **Chain** tab from
+`runtimeState.skillChains`, the projection the runtime publishes over the
+control queue, with one line per step (`✓ ● × –`), its status and its
+`skipReason`. A chain disappears once it is fully `done`; it stays visible when
+it was cancelled or left incomplete, which is exactly when the user needs to
+see which steps were skipped. Styles live in `styles/chatActivityStyles.ts`
+under `.chain-*`.
 
 The empty chat's first tile and the empty Activity panel's button both open
 the Help panel (`toggleHelpPanel()`) — a slide-out reader over the bundled,

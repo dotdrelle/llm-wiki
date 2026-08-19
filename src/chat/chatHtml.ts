@@ -221,6 +221,10 @@ function runtimeTaskPanelHTML(view='plan') {
     if(window.__WIKI_CONFIG__?.runtime?.enabled) return '<div class="runtime-status">Runtime connecting...</div>';
     return '';
   }
+  // Chain reads only the skill-chain projection: return before building any
+  // per-view block, so a reader parked on Chain during a live run does not pay
+  // the plan/queue/activity .map(...).join('') work on every SSE refresh.
+  if(view==='chain') return skillChainsHTML();
   const workflowNodes=Array.isArray(runtimeState.workflow?.nodes)?runtimeState.workflow.nodes:null;
   const workflowTasks=workflowNodes?.filter(node=>node.type==='task')||null;
   const workflowActivities=workflowNodes?.filter(node=>node.type==='activity')||null;
@@ -237,9 +241,27 @@ function runtimeTaskPanelHTML(view='plan') {
   const activitySummary=runtimeState.workflow?.activity||null;
   const activityLines=Array.isArray(activitySummary?.lines)?activitySummary.lines:[];
   const initialSynthesis=Array.isArray(activitySummary?.initialSynthesis)?activitySummary.initialSynthesis:[];
-  const logs=filteredRuntimeLogs(runtimeState.logs);
   const runStartedAt=runtimeTime(runtimeState.startedAt||runtimeState.createdAt||runtimeState.updatedAt);
   const runUpdatedAt=runtimeTime(runtimeState.finishedAt||runtimeState.completedAt||runtimeState.updatedAt,runStartedAt);
+  if(view==='runtime') {
+    const activityCards=(activityLines.length?[...activityLines].reverse().map((line,index)=>({
+      id:'runtime-agg-'+(line.id||index),
+      kind:'runtime-activity',
+      source:'runtime',
+      statusTarget:line.id||line.label||\`activity \${index+1}\`,
+      label:line.label||'Runtime activity',
+      detail:'',
+      status:normalizeActivityStatus(line.status||'running',false),
+      progress:line.progress||null,
+      startedAt:runStartedAt,
+      updatedAt:runUpdatedAt,
+    })):[...activities].reverse().map((activity,index)=>runtimeActivityToCard(activity,index,runStartedAt,runUpdatedAt))).map(actCardHTML).join('');
+    return activityCards;
+  }
+  if(view==='logs') {
+    const logFilters=\`<div class="runtime-log-filters"><input id="runtime-log-filter" aria-label="Filter run events" value="\${esc(runtimeLogFilter)}" oninput="setRuntimeLogFilter(this.value)" placeholder="Filter essential run events…"></div>\`;
+    return logFilters+runtimeLogListHTML();
+  }
   const status=\`<div class="runtime-status">Runtime \${runtimeConnected?'connected':'disconnected'} · \${esc(runtimeState.status||'idle')}</div>\`;
   const runCard=runtimeRunCardHTML(plan,activities,runtimeState.workflow?.progress);
   const planCards=orderedPlanTasks(plan).map((step,index)=>actCardHTML({
@@ -257,18 +279,6 @@ function runtimeTaskPanelHTML(view='plan') {
     startedAt:runtimeTime(step.startedAt||step.createdAt,runStartedAt),
     updatedAt:runtimeTime(step.finishedAt||step.completedAt||step.updatedAt,runUpdatedAt),
   })).join('');
-  const activityCards=(activityLines.length?[...activityLines].reverse().map((line,index)=>({
-    id:'runtime-agg-'+(line.id||index),
-    kind:'runtime-activity',
-    source:'runtime',
-    statusTarget:line.id||line.label||\`activity \${index+1}\`,
-    label:line.label||'Runtime activity',
-    detail:'',
-    status:normalizeActivityStatus(line.status||'running',false),
-    progress:line.progress||null,
-    startedAt:runStartedAt,
-    updatedAt:runUpdatedAt,
-  })):[...activities].reverse().map((activity,index)=>runtimeActivityToCard(activity,index,runStartedAt,runUpdatedAt))).map(actCardHTML).join('');
   const queueCards=[...queue].reverse().map((item,index)=>actCardHTML({
     id:'runtime-queue-'+(item.id||index),
     kind:'runtime-queue',
@@ -282,15 +292,11 @@ function runtimeTaskPanelHTML(view='plan') {
     startedAt:runtimeTime(item.startedAt||item.createdAt,runStartedAt),
     updatedAt:runtimeTime(item.finishedAt||item.completedAt||item.updatedAt,runUpdatedAt),
   })).join('');
-  const logFilters=\`<div class="runtime-log-filters"><input id="runtime-log-filter" value="\${esc(runtimeLogFilter)}" oninput="setRuntimeLogFilter(this.value)" placeholder="Filter essential run events…"></div>\`;
-  const logsHtml=logFilters+runtimeLogListHTML();
   const synthesisHtml=initialSynthesis.length?\`<div class="act-section-head"><span class="act-section-title">Initial synthesis</span></div><div class="runtime-log">\${esc(initialSynthesis.join('\\n'))}</div>\`:'';
-  if(view==='runtime') return activityCards;
-  if(view==='logs') return logsHtml;
   const runSummary=runtimeWorkflowSummaryHTML();
   const planHTML=planCards?\`<div class="act-section-head"><span class="act-section-title">Plan</span></div>\${planCards}\`:'';
   const queueHTML=queueCards?\`<div class="act-section-head"><span class="act-section-title">Queue</span></div>\${queueCards}\`:'';
-  return status+runSummary+runCard+synthesisHtml+skillChainsHTML()+planHTML+queueHTML;
+  return status+runSummary+runCard+synthesisHtml+planHTML+queueHTML;
 }
 
 ${SKILL_CHAINS_SCRIPT}
@@ -452,22 +458,33 @@ function mergeRuntimeConversation() {
         ref.message.content=content;
         updateMsgBubble(ref.el,role,content);
         changed=true;
-        if(role==='assistant'&&content&&wasEmpty&&pendingRuntimeStatusEls.length) {
-          clearRuntimeThinkingBubble(pendingRuntimeStatusEls.shift());
+        if(role==='assistant'&&content&&wasEmpty&&armedReplyStatusEls.length) {
+          clearRuntimeThinkingBubble(armedReplyStatusEls.shift());
         }
       }
       continue;
     }
-    if(role==='assistant'&&content&&pendingRuntimeStatusEls.length) {
-      clearRuntimeThinkingBubble(pendingRuntimeStatusEls.shift());
-      changed=true;
-    }
-    if(role==='user' && pendingRuntimeUserRefs.length) {
-      // FIFO: the server processes user turns in submission order, so the
-      // oldest unconfirmed local push always corresponds to the oldest
-      // unconsumed server-side user entry at this position.
-      runtimeConversationRefs.push(pendingRuntimeUserRefs.shift());
+    if(role==='user') {
+      // The runtime conversation is workspace-wide (the ShellUI and other chat
+      // tabs share it), so only a turn this chat itself sent may consume its
+      // pending markers or arm its reply bubble. Match by content, not by FIFO
+      // position: a foreign user turn must not steal this chat's pending entry.
+      const idx=pendingRuntimeUserRefs.findIndex((ref)=>String(ref.message?.content??'')===content);
+      if(idx>=0) {
+        const ref=pendingRuntimeUserRefs.splice(idx,1)[0];
+        const statusEl=pendingRuntimeStatusEls.splice(idx,1)[0] ?? null;
+        runtimeConversationRefs.push(ref);
+        if(statusEl) armedReplyStatusEls.push(statusEl);
+        changed=true;
+      }
       continue;
+    }
+    if(role==='assistant') {
+      // Clear the bubble only when it is this chat's own armed reply; a
+      // foreign assistant message leaves it in place for its real owner.
+      if(content&&armedReplyStatusEls.length) {
+        clearRuntimeThinkingBubble(armedReplyStatusEls.shift());
+      }
     }
     const message={role,content};
     messages.push(message);
@@ -599,7 +616,7 @@ function showSkillAc(filter){
   el.classList.add('open');
 }
 function hideSkillAc(){$('skill-ac').classList.remove('open');skillAcIdx=-1;skillAcItems=[];}
-function updateSkillAcFocus(){$('skill-ac').querySelectorAll('.skill-ac-item').forEach((el,i)=>el.classList.toggle('focused',i===skillAcIdx));}
+function updateSkillAcFocus(){$('skill-ac').querySelectorAll('.skill-ac-item').forEach((el,i)=>{const on=i===skillAcIdx;el.classList.toggle('focused',on);if(on)el.scrollIntoView({block:'nearest'});});}
 function selectSkillAc(idx){
   const skill=skillAcItems[idx];
   if(!skill)return;
@@ -832,6 +849,9 @@ function toggleAgentMode() {
   agentMode=!agentMode;
   updateAgentModeUI();
   notify(agentMode?'Agent mode on':'Chat mode on');
+  // Persist the mode with the conversation, so it survives navigation even
+  // before the next message is sent.
+  scheduleConversationSave();
 }
 
 function handleSendButton() {
@@ -973,6 +993,7 @@ function buildConversationPayload(snapshot={}) {
     title: titleFromMessages(sourceMessages),
     createdAt: existing?.createdAt || now,
     updatedAt: now,
+    agentMode: !!agentMode,
     systemPrompt: snapshot.systemPrompt ?? currentSystemPrompt(),
     mcpServers: snapshot.mcpServers ?? activeServerSnapshot(),
     messages: sourceMessages,
@@ -1064,6 +1085,8 @@ async function newConversation() {
   resetRuntimeConversationTracking();
   conversationDirty=false;
   resetProductionState();
+  agentMode=false;
+  updateAgentModeUI();
   setEmptyChat();
   renderHistory();
   $('chat-input')?.focus();
@@ -1104,6 +1127,10 @@ async function loadConversation(id) {
     if(seq!==historyLoadSeq) return;
     currentConversationId=conv.id;
     messages=Array.isArray(conv.messages) ? conv.messages : [];
+    // Each conversation remembers the mode it was last used in, so a chat that
+    // was in Agent mode stays Agent and a Chat one stays Chat across navigation.
+    agentMode=conv.agentMode===true;
+    updateAgentModeUI();
     resetRuntimeConversationTracking();
     conversationDirty=false;
     if(conv.systemPrompt && $('system-prompt')) {
@@ -1234,24 +1261,24 @@ function cardHTML(s) {
   return \`<div class="mcp-card \${activeClass}" id="card-\${s.id}">
     <div class="mcp-card-head">
       <label class="mcp-toggle">
-        <input type="checkbox" \${s.enabled&&s.status==='ok'?'checked':''} onchange="toggleServer(\${s.id},this.checked)">
+        <input type="checkbox" aria-label="Enable connector" \${s.enabled&&s.status==='ok'?'checked':''} onchange="toggleServer(\${s.id},this.checked)">
         <div class="mcp-toggle-track"><div class="mcp-toggle-thumb"></div></div>
       </label>
-      <input class="mcp-name-input" type="text" value="\${esc(s.name)}" placeholder="Name"
+      <input class="mcp-name-input" type="text" value="\${esc(s.name)}" placeholder="Name" aria-label="Connector name"
         maxlength="80" pattern="[A-Za-z0-9][A-Za-z0-9_.-]{0,79}" title="1–80 letters, numbers, dots, underscores or hyphens"
         \${s.origin==='builtin'?'readonly':''} onchange="updateServerField(\${s.id},'name',this.value)">
       <span class="mcp-origin mcp-origin-\${esc(s.origin||'ui')}" title="Connector source">\${esc(originLabel)}</span>
       <span class="mcp-badge \${badgeClass}">\${badgeLabel}</span>
     </div>
     <div class="mcp-url-row">
-      <input type="text" value="\${esc(s.url)}" placeholder="http://localhost:3000/mcp/"
+      <input type="text" value="\${esc(s.url)}" placeholder="http://localhost:3000/mcp/" aria-label="Connector URL"
         \${s.origin==='builtin'?'readonly':''} onchange="updateServerField(\${s.id},'url',this.value)" style="flex:1">
       <button class="btn-icon" onclick="connectServer(\${s.id})" title="Connect">&#x21BB;</button>
       \${s.origin==='builtin'?'':\`<button class="btn-icon btn-del" onclick="removeServer(\${s.id})" title="Remove">&#x2715;</button>\`}
     </div>
     <div class="mcp-bearer-row">
       <div class="secret-wrap" style="flex:1">
-        <input type="password" value="\${esc(s.bearer||'')}" placeholder="Bearer token (optional)"
+        <input type="password" value="\${esc(s.bearer||'')}" placeholder="Bearer token (optional)" aria-label="Bearer token"
           autocomplete="off" style="padding-right:34px;font-size:11px"
           \${s.origin==='builtin'?'readonly':''} onchange="(function(el,id){updateServerField(id,'bearer',el.value);const sv=servers.find(x=>x.id==id);if(sv?.url)connectServer(id);})(this,\${s.id})">
         <div class="secret-actions">
@@ -2574,10 +2601,11 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
       throw new Error(\`Runtime \${res.status}: \${message}\`);
     }
     const reply=data?.explanation
-      || (data?.kind==='mutate'?'Plan change recorded as a proposal. It is not applied automatically yet.'
-        : data?.kind==='enqueue'?'Request queued for a future run.'
-          : data?.kind==='ambiguous'?'I am not sure whether this is a question, a change to this run, or a future run. Choose explicitly in the runtime controls.'
-            : '');
+      || (data?.kind==='skill_chain' ? \`Started /\${data?.skill||'skill'} — queuing \${data?.objectives||1} step(s). I'll report as it runs.\`
+        : data?.kind==='mutate'?'Plan change recorded as a proposal. It is not applied automatically yet.'
+          : data?.kind==='enqueue'?'Request queued for a future run.'
+            : data?.kind==='ambiguous'?'I am not sure whether this is a question, a change to this run, or a future run. Choose explicitly in the runtime controls.'
+              : '');
     // A conversational /turn does not imply that a run started. If Donna
     // delegates, the runtime SSE stream will publish the actual run state.
     runtimeState={...(runtimeState||{}),status:data?.status ?? runtimeState?.status ?? 'idle'};

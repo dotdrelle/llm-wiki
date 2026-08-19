@@ -239,7 +239,7 @@ describe('serve graph ui', () => {
 
   it('offers explicit refresh actions for Wiki and Pending', async () => {
     const source = await serveSource();
-    expect(source).toContain('title="Refresh Wiki"');
+    expect(source).toContain('title="Refresh sidebar"');
     expect(source).toContain('title="Refresh Pending"');
     expect(source).toContain('data-sidebar-refresh="wiki"');
     expect(source).toContain('data-sidebar-refresh="pending"');

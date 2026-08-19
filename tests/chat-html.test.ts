@@ -139,6 +139,18 @@ describe('chat html', () => {
     expect(script).toContain('await saveCurrentConversation({immediate:true})');
   });
 
+  it('matches runtime user turns by content and arms the reply bubble per turn', () => {
+    // Cross-chat fix: the runtime conversation is workspace-wide, so a foreign
+    // turn (ShellUI / another chat) must not consume this chat's pending marker
+    // or clear its "Request received" bubble out of order.
+    const [script] = chatScripts();
+
+    expect(script).toContain('let armedReplyStatusEls=[];');
+    expect(script).toContain("pendingRuntimeUserRefs.findIndex((ref)=>String(ref.message?.content??'')===content)");
+    expect(script).toContain('if(statusEl) armedReplyStatusEls.push(statusEl)');
+    expect(script).toContain('clearRuntimeThinkingBubble(armedReplyStatusEls.shift())');
+  });
+
   it('confirms before deleting a connector', () => {
     const [script] = chatScripts();
 
@@ -224,7 +236,7 @@ describe('chat html', () => {
     expect(script).toContain('function renderRuntimeWorkflowInspector()');
     expect(script).toContain('function showExecutionView(event)');
     expect(script).toContain("if(activityView==='graph')");
-    expect(script).toContain("if(view==='runtime') return activityCards;");
+    expect(script).toContain("if(view==='runtime') {");
     expect(script).not.toContain("if(view==='runtime') return activityCards?`<div class=\"act-section-head\"");
   });
 
@@ -248,18 +260,18 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('.act-body{flex:1;overflow-y:auto;');
   });
 
-  it('splits Activity List into four internally scrollable sub-tabs', () => {
-    expect(CHAT_HTML).toContain("const labels={plan:'Plan',local:'Direct agents',runtime:'Runtime activity',logs:'Logs'}");
+  it('splits Activity List into five internally scrollable sub-tabs', () => {
+    expect(CHAT_HTML).toContain("const labels={plan:'Plan',chain:'Chain',local:'Direct agents',runtime:'Runtime activity',logs:'Logs'}");
     expect(CHAT_HTML).toContain('.activity-subtab-content{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain');
     expect(CHAT_HTML).toContain("function setActivityListTab(tab)");
     expect(CHAT_HTML).toContain('.activity-subtab-logs .runtime-log{flex:1;min-height:0;max-height:none}');
     expect(CHAT_HTML).not.toContain('runtime-section-toggle');
     expect(CHAT_HTML).toContain('onclick="clearActivityTab(\'${activityListTab}\')">Clear</button>');
     expect(CHAT_HTML).toContain('onclick="clearAllActivityTabs()"');
-    expect(CHAT_HTML).toContain("['plan','local','runtime','logs'].forEach(tab=>clearActivityTab(tab,{render:false}))");
+    expect(CHAT_HTML).toContain("['plan','chain','local','runtime','logs'].forEach(tab=>clearActivityTab(tab,{render:false}))");
     expect(CHAT_HTML).toContain('onclick="resetRuntimePlan()">Reset plan</button>');
     expect(CHAT_HTML).toContain("fetch('/api/runtime/reset',{method:'POST'})");
-    expect(CHAT_HTML).toContain('.activity-subtabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;flex:none;margin-bottom:8px}');
+    expect(CHAT_HTML).toContain('.activity-subtabs{display:flex;flex-wrap:wrap;gap:4px;flex:none;margin-bottom:8px}');
   });
 
   it('keeps the Activity rail button highlighted exactly while its panel is open', () => {
@@ -845,7 +857,7 @@ describe('chat html', () => {
     expect(script).toContain("sendRuntimeAgentMessage(input,text,{mode:'chat',displayText:displayOverride||text,hideQuestion})");
     expect(script).toContain("function createRuntimeThinkingBubble(text='Request received · Donna is preparing the response and plan…')");
     expect(script).toContain("const statusEl=createRuntimeThinkingBubble(mode==='chat'?'Thinking...':undefined)");
-    expect(script).toContain("if(role==='assistant'&&content&&pendingRuntimeStatusEls.length)");
+    expect(script).toContain("if(role==='assistant'&&content&&wasEmpty&&armedReplyStatusEls.length)");
     expect(script).toContain("data?.kind==='ambiguous'");
     expect(script).toContain('function handleSendButton()');
     expect(script).not.toContain('if(agentMode && runtimeIsRunning())');

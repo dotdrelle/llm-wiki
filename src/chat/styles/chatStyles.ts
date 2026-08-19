@@ -15,10 +15,11 @@ body{font-family:var(--font-sans);background:var(--bg);color:var(--text);height:
 #wiki-side-host iframe{display:block;width:100%;height:100%;border:0;background:var(--bg)}
 body.left-wiki .sb-logo,body.left-wiki .sb-scroll{display:none}
 body.left-wiki #wiki-side-host{display:block}
-#right-rail{order:3;width:40px;min-width:40px;height:100vh;background:var(--panel);border-left:1px solid var(--border);display:flex;flex-direction:column;align-items:center;gap:8px;padding-top:10px;flex-shrink:0}
+#right-rail{order:3;width:40px;min-width:40px;height:100vh;background:var(--panel);border-left:1px solid var(--border);display:flex;flex-direction:column;align-items:center;gap:8px;padding:10px 0;flex-shrink:0}
 body.center-wiki #right-rail{padding-top:10px}
 .rail-btn{position:relative;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:8px;background:var(--panel-soft);color:var(--muted);cursor:pointer;font-family:var(--font-sans);font-size:14px;font-weight:800;transition:border-color .2s,color .2s,background .2s}
 .rail-btn:hover,.rail-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+#theme-toggle{margin-top:auto}
 .rail-badge{position:absolute;top:-4px;right:-4px;min-width:14px;height:14px;border-radius:99px;background:var(--accent);color:#fff;font-size:9px;line-height:14px;text-align:center;padding:0 3px;display:none}
 .rail-badge.show{display:block}
 
@@ -363,7 +364,7 @@ ${CHAT_ACTIVITY_CSS}
 /* Fixed, because the demand outlives the view: the composer is hidden in the
    wiki, connectors and execution modes, and an approval waited there unseen.
    Opaque background — it now floats over content instead of sitting in flow. */
-#approval-banner{position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:60;width:min(760px,calc(100vw - 120px));box-sizing:border-box;display:flex;align-items:center;gap:10px;margin:0;padding:9px 12px;border:1px solid #f59e0b;border-left-width:3px;border-radius:9px;background:var(--panel,#141a22);box-shadow:0 6px 20px rgba(0,0,0,.35);color:var(--text,#e8edf4)}
+#approval-banner{position:fixed;bottom:50px;left:50%;transform:translateX(-50%);z-index:60;width:min(760px,calc(100vw - 120px));box-sizing:border-box;display:flex;align-items:center;gap:10px;margin:0;padding:9px 12px;border:1px solid #f59e0b;border-left-width:3px;border-radius:9px;background:var(--panel,#141a22);box-shadow:0 6px 20px rgba(0,0,0,.35);color:var(--text,#e8edf4)}
 #approval-banner[hidden]{display:none}
 .approval-banner-icon{font-size:15px;line-height:1;color:#f59e0b}
 .approval-banner-text{flex:1;font-size:13px;line-height:1.35}
@@ -382,15 +383,15 @@ ${CHAT_ACTIVITY_CSS}
 .input-actions-spacer{flex:1}
 .input-box.agent-on{background:var(--accent-soft);border-color:var(--accent)}
 .input-box.agent-on:focus-within{border-color:var(--accent)}
-.skill-ac{position:absolute;bottom:calc(100% + 8px);left:0;right:0;background:var(--panel);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.14);overflow:hidden;display:none;z-index:200;max-height:300px;overflow-y:auto}
-.skill-ac.open{display:block}
-.skill-ac-item{display:flex;align-items:flex-start;gap:9px;padding:10px 14px;cursor:pointer;transition:background .12s;border-bottom:1px solid var(--border)}
-.skill-ac-item:last-child{border-bottom:0}
-.skill-ac-item:hover,.skill-ac-item.focused{background:var(--panel-soft)}
+.skill-ac{position:absolute;bottom:calc(100% + 8px);left:0;right:0;background:var(--panel);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.14);overflow:hidden;display:none;z-index:200;max-height:300px;overflow-y:auto;padding:6px}
+.skill-ac.open{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.skill-ac-item{display:flex;align-items:flex-start;gap:9px;padding:8px 11px;cursor:pointer;transition:background .12s,border-color .12s;border:1px solid var(--border);border-radius:8px;background:var(--panel)}
+.skill-ac-item:hover,.skill-ac-item.focused{background:var(--accent-soft);border-color:var(--accent)}
 .skill-ac-slash{font-family:var(--font-mono);font-size:14px;font-weight:800;color:var(--accent);flex-shrink:0;padding-top:1px}
 .skill-ac-info{min-width:0}
 .skill-ac-name{font-size:13px;font-weight:700;color:var(--text)}
 .skill-ac-desc{font-size:11px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:400px}
+@media(max-width:720px){.skill-ac.open{grid-template-columns:1fr}}
 .input-box:focus-within{border-color:rgba(127,127,127,.45);box-shadow:0 10px 30px rgba(0,0,0,.08)}
 #chat-input{flex:none;width:100%;background:none;border:none;color:var(--text);font-family:var(--font-sans);font-size:15px;resize:none;max-height:180px;overflow-y:auto;line-height:1.55;outline:none;padding:4px 0}
 #chat-input::placeholder{color:var(--muted)}

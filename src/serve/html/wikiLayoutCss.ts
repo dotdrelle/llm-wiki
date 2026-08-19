@@ -162,8 +162,67 @@ export const WIKI_LAYOUT_CSS = `
       font-size: 0.78rem;
     }
     .side-search-status.is-visible { display: block; }
+    .side-refresh-all {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      width: 100%;
+      min-height: 2.1rem;
+      margin: 0.6rem 0 0;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .side-refresh-all:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+    .side-collections { margin-top: 0.35rem; }
+    .side-collection-tabs { display: flex; gap: 0.15rem; }
+    .side-collection-tab {
+      flex: 1;
+      min-width: 0;
+      min-height: 1.9rem;
+      padding: 0.15rem 0.2rem;
+      border: 1px solid var(--border);
+      border-radius: 6px 6px 0 0;
+      background: var(--panel-soft);
+      color: var(--muted);
+      font: inherit;
+      font-size: 0.76rem;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: pointer;
+    }
+    .side-collection-tab.active {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .side-collection-tab:hover { color: var(--accent); }
+    .side-collection-panels {
+      border: 1px solid var(--border);
+      border-top: 0;
+      border-radius: 0 0 6px 6px;
+      padding: 0.15rem;
+      background: var(--panel);
+    }
+    .side-collection-panel[hidden] { display: none; }
     .side-tree { margin-top: 1rem; font-size: 0.9rem; flex: 1 1 0; min-height: 0; overflow-y: auto; }
-    .side-folder { margin: 0.08rem 0; }
+    /* Grid, not flex: action buttons are a sibling of <summary>, not nested
+       inside it (a nested <button> is unreachable by keyboard/AT), so the
+       label row and the actions row need two columns of the same element. */
+    .side-folder { margin: 0.08rem 0; display: grid; grid-template-columns: 1fr auto; align-items: center; }
+    .side-folder > summary { grid-column: 1; min-width: 0; }
     .side-folder summary {
       display: flex;
       align-items: center;
@@ -214,7 +273,15 @@ export const WIKI_LAYOUT_CSS = `
     .side-folder-action:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
     .side-folder-action-icon svg { width: 0.95rem; height: 0.95rem; display: block; }
     .side-refresh-action { font-size: 0.82rem; font-weight: 800; }
+    .side-folder-actions {
+      grid-column: 2;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding-right: 0.45rem;
+    }
     .side-folder-children {
+      grid-column: 1 / -1;
       margin-left: 0.85rem;
       padding-left: 0.35rem;
       border-left: 1px solid var(--border);
@@ -279,11 +346,16 @@ export const WIKI_LAYOUT_CSS = `
       padding-top: 0.4rem;
       border-top: 1px solid var(--border);
       min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
     }
     .side-untracked[open] {
       flex: 0 0 var(--pending-height, 32vh);
       overflow: hidden;
     }
+    .side-untracked > summary { grid-column: 1; min-width: 0; }
+    .side-untracked > .side-folder-actions { grid-column: 2; }
     .side-untracked summary {
       display: flex;
       align-items: center;
@@ -321,6 +393,7 @@ export const WIKI_LAYOUT_CSS = `
     }
     .side-untracked summary > span:first-child { margin-right: auto; }
     .side-untracked-list {
+      grid-column: 1 / -1;
       overflow-y: auto;
       scrollbar-width: thin;
       max-height: calc(var(--pending-height, 32vh) - 3rem);
@@ -335,7 +408,14 @@ export const WIKI_LAYOUT_CSS = `
       min-height: 1.55rem;
       border-radius: 5px;
     }
+    .side-untracked-folder {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+    }
     .side-untracked-folder > summary {
+      grid-column: 1;
+      min-width: 0;
       min-height: 1.7rem;
       padding: 0.1rem 0.2rem 0.1rem 0.55rem;
       display: flex;
@@ -346,7 +426,9 @@ export const WIKI_LAYOUT_CSS = `
       font-size: 0.8rem;
       font-weight: 700;
     }
+    .side-untracked-folder > .side-folder-actions { grid-column: 2; padding-right: 0.2rem; }
     .side-untracked-children {
+      grid-column: 1 / -1;
       margin-left: 0.65rem;
       padding-left: 0.35rem;
       border-left: 1px solid var(--border);
@@ -410,7 +492,15 @@ export const WIKI_LAYOUT_CSS = `
     /* The delete button only shows on row hover: a cross on every entry would
        turn the tree into a minefield. */
     .side-tree-delete { opacity: 0; }
-    :hover > .side-tree-delete, .side-tree-delete:focus-visible { opacity: 1; }
+    /* For a file row the delete button's own parent is the hoverable row, but
+       a folder's actions now sit in a sibling box next to <summary> (not
+       nested inside it, for keyboard/AT reachability) — reveal on hovering
+       either the label row or the actions box itself. */
+    :hover > .side-tree-delete,
+    .side-folder > summary:hover ~ .side-folder-actions .side-tree-delete,
+    .side-untracked-folder > summary:hover ~ .side-folder-actions .side-tree-delete,
+    .side-folder-actions:hover .side-tree-delete,
+    .side-tree-delete:focus-visible { opacity: 1; }
     .side-file-row { display: flex; align-items: center; gap: 0.15rem; }
     .side-file-row .side-file { flex: 1 1 auto; min-width: 0; }
     [draggable="true"], [draggable="true"] > summary { cursor: grab; }
@@ -502,6 +592,9 @@ export const WIKI_LAYOUT_CSS = `
     }
     .action-danger { color: var(--err); border-color: color-mix(in srgb, var(--err) 55%, var(--border)); }
     .action-danger:hover { border-color: var(--err); background: color-mix(in srgb, var(--err) 10%, var(--panel)); color: var(--err); }
+    .action-donna { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--accent-soft); padding-left: 0.5rem; padding-right: 0.5rem; }
+    .action-donna:hover { background: color-mix(in srgb, var(--accent) 16%, var(--panel)); border-color: var(--accent); color: var(--accent); }
+    .action-donna svg { width: 16px; height: 16px; display: block; }
     .delete-confirm { position: relative; }
     .delete-confirm-panel {
       position: absolute;
@@ -554,10 +647,23 @@ export const WIKI_LAYOUT_CSS = `
     .section-browser summary {
       list-style: none;
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
     }
     .section-browser summary::-webkit-details-marker { display: none; }
+    .section-browser summary::before {
+      content: "▸";
+      flex: none;
+      color: var(--muted);
+      font-size: 0.74rem;
+      transition: transform 120ms ease;
+    }
+    .section-browser[open] > summary::before { transform: rotate(90deg); }
     .section-browser-summary {
       display: flex;
+      flex: 1;
+      min-width: 0;
       min-height: 72px;
       flex-direction: column;
       justify-content: space-between;
@@ -598,6 +704,14 @@ export const WIKI_LAYOUT_CSS = `
       font-size: 0.86rem;
       font-weight: 730;
     }
+    .section-browser-group summary::before {
+      content: "▸";
+      flex: none;
+      color: var(--muted);
+      font-size: 0.74rem;
+      transition: transform 120ms ease;
+    }
+    .section-browser-group[open] > summary::before { transform: rotate(90deg); }
     .section-browser-group summary span:last-child {
       color: var(--muted);
       font-family: ui-monospace, monospace;

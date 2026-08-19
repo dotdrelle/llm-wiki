@@ -42,7 +42,6 @@ to be replaced; those in square brackets `[…]` are optional.
 - `/mcp status` — state of the MCP connectors.
 - `/mcp endpoints` — declared MCP endpoints.
 - `/mcp tools [mcp]` — tools exposed by the connectors.
-- `/mcp call …` — call an MCP tool directly (advanced).
 
 ## Documents and wiki
 
