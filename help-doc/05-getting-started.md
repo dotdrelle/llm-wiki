@@ -6,15 +6,18 @@ panel shows what is running.
 
 ## Step 0 — Services are running
 
-DONNA and its agents run in Docker containers. First of all:
+DONNA and its agents run in Docker containers. This step needs the **Shell**
+(`wiki-manager`) — Serve is a web page running inside an already-started
+workspace, so it cannot start or stop its own containers.
 
 - make sure **Docker is started**;
 - in the Shell, `/services` lists the state, `/start all` starts agents first
   and then workspace services, `/start agents` starts only the agent stack, and
-  `/start services` starts only workspace services.
+  `/start services` starts only workspace services (see `07-commands-shell.md`).
 
-If the Serve interface does not respond, or if agent mode is unavailable, always
-start by checking this (see `06-troubleshooting.md`).
+If you only have the Serve interface and it does not respond, or if agent mode
+is unavailable, someone with terminal access needs to check this first (see
+`06-troubleshooting.md`).
 
 ## Step 1 — The language model (LLM)
 
@@ -37,8 +40,9 @@ Two ways:
 - **Confluence**: configure the connector (base URL, username, personal access
   token; disable TLS verification for an internal certificate), then declare a
   space or pages as sources.
-- **Files**: upload your documents with `/upload <path>`, then
-  `/upload convert pending` to convert non-Markdown formats to Markdown.
+- **Files**: upload your documents — the upload button in Serve's composer, or
+  `/upload <path>` in the Shell — then `/upload convert pending` (Shell) or ask
+  DONNA to convert pending documents to Markdown.
 
 ## Step 3 — Ingest
 

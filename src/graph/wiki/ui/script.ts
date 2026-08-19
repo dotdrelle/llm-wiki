@@ -65,7 +65,7 @@ document.querySelector('#search').addEventListener('input',event=>{renderSearchO
 document.querySelector('#search').addEventListener('change',()=>activateSearch());
 document.querySelector('#search').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();activateSearch()}});
 document.querySelector('#graph-search-results').addEventListener('click',event=>{const item=event.target.closest('[data-search-id]');if(item)activateSearch(item.dataset.searchId)});
-document.querySelector('#reset-search').addEventListener('click',()=>{selected=null;selectedCommunity=null;view='map';focusHistory.length=0;document.querySelector('#search').value='';document.querySelector('#graph-search-results').hidden=true;inspector.innerHTML='<h3>Selection</h3><p>Select a community or document to explore its relations.</p>';renderFilters();render()});
+document.querySelector('#reset-search').addEventListener('click',()=>{selected=null;selectedCommunity=null;view='map';focusHistory.length=0;document.querySelector('#search').value='';document.querySelector('#graph-search-results').hidden=true;inspector.innerHTML='<p>Select a community or document to explore its relations.</p>';renderFilters();render()});
 document.addEventListener('click',event=>{
   const viewButton=event.target.closest('[data-view]');
   if(viewButton){view=viewButton.dataset.view==='list'?'list':selected?'focus':selectedCommunity?(graphIsDomain(selectedCommunity)?'domain':'community'):'map';document.querySelectorAll('[data-view]').forEach(button=>button.classList.toggle('active',button===viewButton));render();return}

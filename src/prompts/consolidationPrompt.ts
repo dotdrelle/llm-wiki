@@ -3,7 +3,7 @@ import type { SourceExtraction } from '../ingest/extractionSchema.ts';
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
 /** Prompt version, carried by the consolidation cache key. */
-export const CONSOLIDATION_PROMPT_VERSION = 3;
+export const CONSOLIDATION_PROMPT_VERSION = 4;
 
 export type ConsolidationInventoryPage = {
   path: string;
@@ -13,6 +13,11 @@ export type ConsolidationInventoryPage = {
   excerpt: string;
   /** True when this page was produced by THIS source in a previous ingest. */
   previousForSource?: boolean;
+  /**
+   * True when this page's subject plausibly matches a subject candidate of
+   * THIS extraction, even though a different source produced the page.
+   */
+  subjectMatch?: boolean;
 };
 
 /*
@@ -49,6 +54,7 @@ export function buildConsolidationPrompt(args: {
       '- transverse dimensions (security, integration, pricing, hosting, compliance, sovereignty, deployment, ...) are SHARED concepts: create or UPDATE one shared concept per dimension with scope=transverse — never one per product',
       '- reuse or update an existing concept page (product or transverse) before creating a near-duplicate',
       '- when a candidate subject matches a page this source PREVIOUSLY produced, UPDATE that page and KEEP its existing subject: never create a new page with a different name for the same product',
+      '- a page marked "existing page for a closely related subject" below was produced by a DIFFERENT source but plausibly names the same real-world thing: verify against its excerpt, and if it is the same subject, UPDATE it and keep its existing subject rather than creating a new page — this is exactly how the same product ends up split into several near-duplicate pages across sources',
       '- the NUMBER of new pages must be justified by the content, not uniform: unrelated documents should yield different counts',
       '- a characteristic that only makes sense for this one document stays in the source note',
       '- never create a page for a one-off datum or for a documentary rubric of the source',
@@ -116,6 +122,7 @@ export function buildConsolidationPrompt(args: {
               + `${page.subject ? ` [subject=${page.subject}]` : ''}`
               + `${page.scope ? ` [scope=${page.scope}]` : ''}`
               + `${page.previousForSource ? ' [previously produced by THIS source]' : ''}`
+              + `${page.subjectMatch ? ' [existing page for a closely related subject]' : ''}`
               + `\n  ${page.excerpt}`)
             .join('\n')
         : '(none)',

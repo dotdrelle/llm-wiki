@@ -19,7 +19,12 @@ import {
   sourceExtractionSchema,
   type SourceExtraction,
 } from '../ingest/extractionSchema.ts';
-import { collectionFromSourcePath, readProvenance } from '../ingest/provenance.ts';
+import {
+  collectionFromSourcePath,
+  normalizeProvenanceValue,
+  readProvenance,
+  subjectsAreRelated,
+} from '../ingest/provenance.ts';
 import { CONCEPT_PREFIX, reanchorToPreviousConcepts, validateConsolidation } from '../ingest/consolidationValidate.ts';
 import { hashText } from '../utils/hash.ts';
 import { normalizeSourceBody } from '../utils/markdown.ts';
@@ -650,7 +655,38 @@ export class IngestService {
               previousForSource: true,
             };
           });
-        const fullInventory = [...inventory, ...previousInventory];
+        // Existing concept pages whose subject plausibly matches a candidate
+        // subject from THIS extraction, regardless of which source produced
+        // them. `inventory` above (retrieval relevance) does not reliably
+        // surface a same-subject page when the wording differs across
+        // sources — this is the concept-homonym gap: "Jedox certifications"
+        // and "Jedox solution" each ingested separately, neither seeing the
+        // other's "jedox" page in its top-N, each inventing its own
+        // near-duplicate. `previousInventory` only covers this source's OWN
+        // prior pages, not ones another source already created for the same
+        // subject.
+        const candidateRoots = merged.subjects
+          .map((subject) => normalizeProvenanceValue(subject.label))
+          .filter(Boolean);
+        const alreadyListed = new Set([...inventory, ...previousInventory].map((page) => page.path));
+        const MAX_SUBJECT_MATCHES = 5;
+        const subjectMatchInventory = candidateRoots.length
+          ? warmPages
+              .filter((page) => page.relativePath.startsWith(CONCEPT_PREFIX) && !alreadyListed.has(page.relativePath))
+              .map((page) => ({ page, provenance: readProvenance(page.content) }))
+              .filter(({ provenance }) => provenance.subject != null
+                && candidateRoots.some((root) => subjectsAreRelated(root, provenance.subject as string)))
+              .slice(0, MAX_SUBJECT_MATCHES)
+              .map(({ page, provenance }) => ({
+                path: page.relativePath,
+                title: page.name,
+                subject: provenance.subject,
+                scope: provenance.scope,
+                excerpt: page.content.replace(/\s+/g, ' ').slice(0, maxChunkChars),
+                subjectMatch: true,
+              }))
+          : [];
+        const fullInventory = [...inventory, ...previousInventory, ...subjectMatchInventory];
 
         const indexContent = await this.workspace.readIndex();
         const consolidationPrompt = buildConsolidationPrompt({

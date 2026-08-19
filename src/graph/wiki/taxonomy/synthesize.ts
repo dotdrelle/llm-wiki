@@ -234,8 +234,14 @@ export function checkProposal(
   const communityUsage = new Map<string, number>();
 
   // Relative bound, not a hard-coded business truth: a taxonomy that
-  // approaches one community per family is no longer a synthesis.
-  const maxDomains = Math.max(3, Math.ceil(Math.sqrt(Math.max(1, inventory.families.length)) * 1.5));
+  // approaches one community per family is no longer a synthesis. The floor
+  // was 3 and the coefficient 1.5 — on a comparative corpus (many distinct
+  // products/vendors, ACPI-style) that forced everything under 3 domains
+  // regardless of how many genuinely distinct subjects the families held,
+  // producing domains so broad they stopped meaning anything. Raised to a
+  // floor of 5 and a coefficient of 2: still a relative, family-count-driven
+  // bound, not a fixed target — it only widens the room before rejection.
+  const maxDomains = Math.max(5, Math.ceil(Math.sqrt(Math.max(1, inventory.families.length)) * 2));
   if (proposal.domains.length > maxDomains) {
     issues.push({ path: 'domains', reason: `taxonomy too fragmented: ${proposal.domains.length} domains, maximum ${maxDomains}` });
   }

@@ -98,10 +98,15 @@ it('follows the shared serve theme without rendering a redundant graph toggle', 
   expect(html).not.toContain("localStorage.setItem(THEME_KEY,theme)");
 });
 
-it('centers the inspector toggle and hides all content when collapsed', () => {
+it('collapses the Selection panel with a +/− toggle on its title', () => {
   const html = renderWikiGraphV2();
-  expect(html).toContain('.inspector-collapsed .inspector-toggle{align-self:center;float:none;margin:0}');
-  expect(html).toContain('.inspector-collapsed .inspector>:not(.inspector-toggle){display:none!important}');
+  expect(html).toContain('.inspector-title::after{content:\'−\';');
+  expect(html).toContain('.inspector-collapsed .inspector-title::after{content:\'+\'}');
+  expect(html).toContain('.inspector-collapsed #inspector{display:none!important}');
+  // The corner collapse button (with its two SVG glyphs) is gone: the title
+  // itself is the toggle now.
+  expect(html).not.toContain('icon-collapse');
+  expect(html).not.toContain('icon-expand');
 });
 
 it('shares the selected color theme with wiki home', async () => {
@@ -261,6 +266,16 @@ describe('serve graph ui', () => {
     // ré-initialisation, l'ouverture des dossiers cessait d'être mémorisée
     // après le premier rafraîchissement.
     expect(source).toContain("document.querySelectorAll('[data-tree-id]').forEach(initializeFolder);");
+  });
+
+  it('offers a Donna ingest button on Pending, hidden until embedded in the shell', async () => {
+    const source = await serveSource();
+    expect(source).toContain('title="Ingest pending sources (Donna)"');
+    expect(source).toContain('data-ingest-launch');
+    // Hidden standalone (no Donna) and only revealed in the embedded sidebar,
+    // where the launch runs through Donna as a /wiki-ingest skill turn.
+    expect(source).toContain('.side-ingest-action[hidden] { display: none; }');
+    expect(source).toContain("window.parent.postMessage({ type: 'llmwiki:ingest' }");
   });
 
   it('visually distinguishes the primary Wiki tree from output collections', async () => {

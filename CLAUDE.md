@@ -160,6 +160,20 @@ constants are only tunable against observed counts. Many `kept` means the model
 keeps proposing renames the engine refuses; many `renamed` means the map moves
 under the reader. `--force` lifts the hysteresis entirely.
 
+`synthesize.ts`'s `maxDomains` (`checkProposal`) is a REJECTION ceiling on the
+number of top-level domains, relative to `inventory.families.length`
+(`max(floor, ceil(√families × coefficient))`) — not a target: a proposal over
+it is rejected whole, forcing a retry with fewer domains regardless of how
+many genuinely distinct subjects the corpus holds. On a comparative corpus
+(ACPI: ~30 leaf communities collapsed under 3 domains) the original floor of
+3 and coefficient of 1.5 were measured as too tight, forcing broad domains
+that stopped separating anything — raised to floor 5 / coefficient 2
+(`tests/taxonomy-domain-ceiling.test.ts` locks the new values). This is
+independent of, and layered on top of, the concept-homonym fix below: fewer
+duplicate concept pages means fewer, more meaningful families reaching this
+formula in the first place, but the ceiling itself was also measurably too
+low on its own.
+
 ## Workspace Skill Model
 
 A workspace skill package uses this layout:
@@ -486,7 +500,22 @@ ingest`) builds a review per planned operation (`buildReviewOperations`):
   preview ignore an earlier source's just-applied changes in the same run.
   Hashing anywhere in this repo goes through `utils/hash.ts`'s `hashText`;
   don't add a second SHA-256 wrapper (this happened once already, in
-  `mcpServer.ts`, and was consolidated).
+  `mcpServer.ts`, and was consolidated). The consolidation prompt's inventory
+  of "existing pages that may already cover this subject" is built from three
+  sources, concatenated in `fullInventory`: retrieval relevance (`inventory`,
+  BM25/vector top-N), this source's own previously-produced concepts
+  (`previousInventory`, `previousForSource: true`), and, since 0.15.50+,
+  any OTHER concept page anywhere in the wiki whose `subject` shares a leading
+  token with a candidate subject of this extraction (`subjectMatchInventory`,
+  `provenance.ts`'s `subjectsAreRelated`, `subjectMatch: true`, capped at 5).
+  The third source closes the concept-homonym defect (B17): retrieval
+  relevance alone does not reliably surface a same-subject page when a later
+  source's wording differs, so two sources about "Jedox" ingested separately
+  each never saw the other's page and each invented its own near-duplicate.
+  Do not fold `subjectMatchInventory` into the retrieval-based `inventory` —
+  it is a structural lookup by the `subject` frontmatter field, independent of
+  and complementary to relevance ranking, and conflating them would make the
+  gap this closes silently reappear the next time retrieval tuning changes.
 - `buildService.ts`: template slot batching and generation.
 - `refreshService.ts`: stale deliverable detection.
 - `exportService.ts`: citation expansion and polish.

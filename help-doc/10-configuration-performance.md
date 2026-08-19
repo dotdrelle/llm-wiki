@@ -69,8 +69,10 @@ lower the concurrency selected from the agent contract; leaving it unset lets
 the agent and plan limits decide. `WIKI_MANAGER_SCHEDULER_CONCURRENCY` controls
 the manager worker capacity.
 
-Use `/status` to see resolved runtime values. Use `/services` and `/mcp status`
-to distinguish a performance setting from a disconnected agent or connector.
+`/status` (Shell or Serve) shows the resolved runtime values. Distinguishing a
+performance setting from a disconnected agent or connector needs the
+infrastructure-level view — the Shell's `/services` and `/mcp status`
+(`07-commands-shell.md`), or the Connectors panel in Serve.
 
 ## Choosing values
 
@@ -79,5 +81,8 @@ it. Raise concurrency when the LLM endpoint, connector APIs and host resources
 can serve more requests simultaneously. Lower it when you observe rate-limit
 errors, memory pressure, timeouts or an overloaded model endpoint.
 
-After changing container environment values, restart the affected services and
-check `/status` again. The live agent contract is the authoritative result.
+These are container environment values, changed where the manager's
+`docker-compose.yml`/`.env` live — that part is Shell/administration territory
+even if you read the result in Serve. After changing them, restart the
+affected services and check `/status` again. The live agent contract is the
+authoritative result.

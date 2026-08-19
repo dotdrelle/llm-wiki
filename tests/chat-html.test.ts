@@ -360,6 +360,14 @@ describe('chat html', () => {
     expect(script).toContain("}, { once: true });");
   });
 
+  it('routes the Pending ingest button through Donna as a /wiki-ingest skill', () => {
+    const script = chatScripts().join('\n');
+    // The ⚡ button posts llmwiki:ingest; the shell must hand the launch to
+    // Donna (skill invocation), never call the execution endpoint directly.
+    expect(script).toContain("data.type === 'llmwiki:ingest'");
+    expect(script).toContain("input.value = '/wiki-ingest';");
+  });
+
   it('keeps the three right rail controls aligned at the top in wiki mode', () => {
     expect(CHAT_HTML).toContain('body.center-wiki #right-rail{padding-top:10px}');
   });

@@ -78,6 +78,30 @@ describe('politique de granularité §6.1', () => {
   });
 
   it('porte une version de prompt distincte pour invalider le cache', () => {
-    expect(CONSOLIDATION_PROMPT_VERSION).toBeGreaterThanOrEqual(2);
+    expect(CONSOLIDATION_PROMPT_VERSION).toBeGreaterThanOrEqual(4);
+  });
+
+  it("instruit de réutiliser une page marquée sujet apparenté plutôt que d'en créer une nouvelle", () => {
+    const { system } = buildConsolidationPrompt(args as never);
+    expect(system).toContain('existing page for a closely related subject');
+    expect(system).toContain('UPDATE it and keep its existing subject');
+  });
+
+  it('rend le marqueur de sujet apparenté dans l\'inventaire des pages existantes', () => {
+    const { user } = buildConsolidationPrompt({
+      ...args,
+      inventory: [
+        {
+          path: 'wiki/concepts/jedox.md',
+          title: 'Jedox',
+          subject: 'jedox',
+          scope: 'product',
+          excerpt: 'Solution de planification.',
+          subjectMatch: true,
+        },
+      ],
+    } as never);
+    expect(user).toContain('wiki/concepts/jedox.md');
+    expect(user).toContain('[existing page for a closely related subject]');
   });
 });

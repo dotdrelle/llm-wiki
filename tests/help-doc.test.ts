@@ -11,7 +11,7 @@ describe('product help documentation', () => {
       'À quoi correspondent Parallelism & throughput et Collection concurrency ?',
       { dir: helpDir },
     );
-    expect(result.chapters[0]?.id).toBe('09-configuration-performance');
+    expect(result.chapters[0]?.id).toBe('10-configuration-performance');
     expect(result.chapters[0]?.content).toContain('scheduler workers');
   });
 

@@ -424,6 +424,28 @@ describe('history service', () => {
     expect(await readFile(path.join(root, 'raw', 'ingested', 'latin1.md'))).toEqual(original);
   });
 
+  it('commits and restores files whose names contain non-ASCII characters', async () => {
+    // Git quotes non-ASCII filenames in its output (core.quotepath default),
+    // e.g. `"wiki/concepts/exigences-imp\303\251ratives.md"`. Feeding those
+    // quoted strings back as pathspecs made `git commit -- <files>` fail with
+    // "pathspec did not match", so a workspace with an accented page name
+    // could never restore (and could not even commit the accented file).
+    const root = await workspace();
+    await mkdir(path.join(root, 'wiki', 'concepts'), { recursive: true });
+    const history = new HistoryService(root);
+    await history.initialize({ baseline: true });
+    const page = 'wiki/concepts/exigences-impératives.md';
+    await writeFile(path.join(root, page), '# v1\n', 'utf8');
+    const first = await history.commit({ command: 'ingest' });
+    expect(first.files).toEqual([page]);
+
+    await writeFile(path.join(root, page), '# v2\n', 'utf8');
+    const second = await history.commit({ command: 'ingest' });
+
+    await history.restoreRun(second.sha!);
+    expect(await readFile(path.join(root, page), 'utf8')).toBe('# v1\n');
+  });
+
   it('preserves an ingested source before restoring a run that removed it', async () => {
     const root = await workspace();
     await writeFile(path.join(root, 'wiki', 'existing.md'), '# Existing\n', 'utf8');

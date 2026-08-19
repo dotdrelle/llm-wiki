@@ -1,8 +1,9 @@
 # Troubleshooting
 
-Most blockers have a simple cause. Reflex #1: run `/status` (workspace state)
-then, if needed, `/services` (container state). Each case below gives the
-**symptom**, the **cause** and the **fix**.
+Most blockers have a simple cause. Reflex #1: run `/status` (workspace state,
+works the same in Serve and the Shell) then, if needed and you have terminal
+access, `/services` in the Shell (container state — Serve cannot see this).
+Each case below gives the **symptom**, the **cause** and the **fix**.
 
 ## Nothing responds / the UI won't open — Docker is not running
 
@@ -11,21 +12,23 @@ then, if needed, `/services` (container state). Each case below gives the
   docker daemon running").
 - **Cause**: Docker is not started, or the workspace services are not running.
   DONNA and its agents run in containers.
-- **Fix**:
+- **Fix**: this needs the **Shell** — a Serve page that won't open has no
+  self-service fix from inside the browser.
   1. Start **Docker Desktop** (or the Docker daemon) and wait until it is ready.
   2. In the Shell, `/services` to see the state.
   3. Use `/start all` for agents and workspace services, `/start agents` for the
      agents only, or `/start services` for workspace services only.
-  4. Re-check with `/status`.
+  4. Re-check with `/status` (works in either interface once it responds).
 
 ## Agent mode is disabled
 
 - **Symptom**: you cannot launch an action; a message says the runtime is
   unavailable (for example a port conflict), the agent is cut off.
 - **Cause**: the execution component (runtime) is not reachable.
-- **Fix**: **chat stays usable** for questions in the meantime. Check services
-  (`/services`, `/start`), consult `/run status` and the runtime `/logs`. Once
-  the runtime is back, `/agent` becomes available again.
+- **Fix**: **chat stays usable** for questions in the meantime. `/run status`
+  works in either interface. Checking or restarting the services themselves
+  (`/services`, `/start`, the runtime's `/logs`) needs the Shell. Once the
+  runtime is back, `/agent` becomes available again.
 
 ## DONNA does not answer, or answers poorly — LLM
 
@@ -40,9 +43,10 @@ then, if needed, `/services` (container state). Each case below gives the
 - **Symptom**: a Confluence source or document conversion fails; a tool "is not
   available".
 - **Cause**: connector present but **not configured**, or agents not started.
-- **Fix**: `/mcp status` for connector state; `/start agents` if they are not
-  running; in chat, ask for the connector's status. If it needs configuration,
-  DONNA will ask only for the required fields, then set it up after confirmation.
+- **Fix**: in Serve, check the **Connectors panel**; in the Shell, `/mcp status`
+  for connector state and `/start agents` if the container isn't running. In
+  chat, ask for the connector's status. If it needs configuration, DONNA will
+  ask only for the required fields, then set it up after confirmation.
 
 ## A connector I added says "local only"
 
@@ -68,8 +72,8 @@ then, if needed, `/services` (container state). Each case below gives the
   crashed, but nothing ever started.
 - **Fix**: the switch is a flag in the **manager's `.env`** file, next to
   `docker-compose.yml` — not in the workspace `.wikirc.yaml`, and not in any
-  per-connector file. For the connectors service the flag is
-  `CONNECTORS_ENABLED`:
+  per-connector file. This is Shell/administration territory. For the
+  connectors service the flag is `CONNECTORS_ENABLED`:
 
   1. set `CONNECTORS_ENABLED=true` in the manager `.env`
   2. run `/start agents` (or `wiki-workspace agents up`) to start the container
@@ -102,9 +106,11 @@ then, if needed, `/services` (container state). Each case below gives the
 
 ## Getting back to a clean state
 
-- `/status`: full diagnosis.
-- `/clear --all`: resets the screen, run, plan, queue and session logs (does not
-  delete your wiki).
+- `/status`: full diagnosis (Shell or Serve).
+- Shell: `/clear --all` resets the screen, run, plan, queue and session logs.
+  Serve: the Activity panel's `Reset plan` (Plan tab) does the equivalent for
+  the current run; `Clear all` beside it only clears what's displayed, not the
+  runtime state. None of these delete your wiki.
 - `doctor` (in agent mode): diagnosis of the workspace itself.
 
 ## I don't know what to do
@@ -112,7 +118,8 @@ then, if needed, `/services` (container state). Each case below gives the
 - Understand the app: `01-overview.md`, `03-content-lifecycle.md`.
 - Choose the right mode: `04-interaction-modes.md`.
 - Start from scratch: `05-getting-started.md`.
-- Every command: `07-commands.md`.
+- Every command: `07-commands-shell.md` (terminal) or `08-commands-serve.md`
+  (web interface).
 
 Still stuck? Describe to DONNA, in chat, what you are trying to do and what you
 see on screen: it will point you to the next step.

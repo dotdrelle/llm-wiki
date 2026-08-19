@@ -6,9 +6,9 @@ and the same content; they differ by usage and entry point.
 ## The Shell (cockpit)
 
 A terminal cockpit, launched with `wiki-manager`. It is the most complete
-interface: it drives everything through **commands** (see `07-commands.md`) —
-manage workspaces, start/stop services, talk to DONNA in chat or agent mode,
-follow runs.
+interface: it drives everything through **commands** (see
+`07-commands-shell.md`) — manage workspaces, start/stop services, talk to
+DONNA in chat or agent mode, follow runs.
 
 - **Entry point**: run `wiki-manager` in a terminal.
 - **For whom**: setup, administration, advanced use, automation.
@@ -20,7 +20,9 @@ follow runs.
 
 The web interface of a workspace, served by `wiki serve`. This is the everyday
 surface: a chat with DONNA, an **Activity** panel to follow processing, and a
-wiki browser. The LLM is usually pre-configured there.
+wiki browser. The LLM is usually pre-configured there. What you can type or
+click here is `08-commands-serve.md` — it is not the Shell's command set:
+Serve cannot start or stop containers, list workspaces or run the raw CLI.
 
 - **Entry point**: open the workspace URL in a browser (or `/openui` from the
   Shell). Page `/`.

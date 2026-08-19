@@ -34,10 +34,13 @@ Read it in order for a full tour, or chapter by chapter as needed.
    consult, when to act.
 5. **Getting started** — `05-getting-started.md` — configure, ingest, produce.
 6. **Troubleshooting** — `06-troubleshooting.md` — diagnose and unblock.
-7. **Command reference** — `07-commands.md` — every command, grouped by purpose.
-8. **Glossary** — `08-glossary.md` — the reference vocabulary.
-9. **Configuration and performance** — `09-configuration-performance.md` —
-   agents, parallelism, collection concurrency, and the `/status` indicators.
+7. **Shell commands** — `07-commands-shell.md` — the terminal cockpit's
+   commands, grouped by purpose.
+8. **Actions in Serve** — `08-commands-serve.md` — what you can type or click
+   in the web interface.
+9. **Glossary** — `09-glossary.md` — the reference vocabulary.
+10. **Configuration and performance** — `10-configuration-performance.md` —
+    agents, parallelism, collection concurrency, and the `/status` indicators.
 
 ## Conventions
 

@@ -218,17 +218,24 @@ export const WIKI_LAYOUT_CSS = `
     }
     .side-collection-panel[hidden] { display: none; }
     .side-tree { margin-top: 1rem; font-size: 0.9rem; flex: 1 1 0; min-height: 0; overflow-y: auto; }
-    /* Grid, not flex: action buttons are a sibling of <summary>, not nested
-       inside it (a nested <button> is unreachable by keyboard/AT), so the
-       label row and the actions row need two columns of the same element. */
-    .side-folder { margin: 0.08rem 0; display: grid; grid-template-columns: 1fr auto; align-items: center; }
-    .side-folder > summary { grid-column: 1; min-width: 0; }
+    /* Action buttons live outside <details> entirely, not just outside
+       <summary>: a <button> nested in <summary> is unreachable by
+       keyboard/AT, but even a sibling of <summary> still sits inside
+       <details>'s collapsible content, and Chrome hides ALL of that (not
+       just the children list, the whole ::details-content box — including
+       any grid/flex placement set on its individual former children) while
+       the folder is closed. .side-folder-row wraps <details> and the
+       actions box as true siblings so the actions stay visible/clickable
+       regardless of open/closed state, matching the original always-visible
+       icons, and position:absolute anchors them to the row without needing
+       either child to agree on a shared grid/flex layout. */
+    .side-folder-row { margin: 0.08rem 0; position: relative; }
     .side-folder summary {
       display: flex;
       align-items: center;
       gap: 0.35rem;
       min-height: 2rem;
-      padding: 0.28rem 0.45rem;
+      padding: 0.28rem 3.8rem 0.28rem 0.45rem;
       border-radius: 6px;
       color: var(--text);
       cursor: pointer;
@@ -244,7 +251,7 @@ export const WIKI_LAYOUT_CSS = `
       transition: transform 120ms ease;
     }
     .side-folder[open] > summary::before { transform: rotate(90deg); }
-    .side-folder summary:hover { background: var(--panel-soft); color: var(--accent); } .side-folder-primary { margin: 0.25rem 0 0.55rem; padding: 0.18rem; border: 1px solid color-mix(in srgb, var(--accent) 62%, var(--border)); border-radius: 8px; background: var(--accent-soft); } .side-folder-primary > summary { color: var(--accent); } .side-folder-primary > summary .side-folder-label { font-weight: 800; }
+    .side-folder summary:hover { background: var(--panel-soft); color: var(--accent); } .side-folder-row.side-folder-primary { margin: 0.25rem 0 0.55rem; padding: 0.18rem; border: 1px solid color-mix(in srgb, var(--accent) 62%, var(--border)); border-radius: 8px; background: var(--accent-soft); } .side-folder-row.side-folder-primary summary { color: var(--accent); } .side-folder-row.side-folder-primary summary .side-folder-label { font-weight: 800; }
     .side-folder-label {
       min-width: 0;
       overflow: hidden;
@@ -273,15 +280,19 @@ export const WIKI_LAYOUT_CSS = `
     .side-folder-action:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
     .side-folder-action-icon svg { width: 0.95rem; height: 0.95rem; display: block; }
     .side-refresh-action { font-size: 0.82rem; font-weight: 800; }
+    .side-ingest-action { font-size: 0.82rem; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+    .side-ingest-action[hidden] { display: none; }
     .side-folder-actions {
-      grid-column: 2;
+      position: absolute;
+      top: 0;
+      right: 0;
+      height: 2rem;
       display: flex;
       align-items: center;
       gap: 0.35rem;
       padding-right: 0.45rem;
     }
     .side-folder-children {
-      grid-column: 1 / -1;
       margin-left: 0.85rem;
       padding-left: 0.35rem;
       border-left: 1px solid var(--border);
@@ -319,6 +330,11 @@ export const WIKI_LAYOUT_CSS = `
     .side-file[data-deliverable-kind="export"]::before { background: #176b87; opacity: 0.85; }
     .side-file[data-deliverable-kind="polish"]::before { background: #8b5cf6; opacity: 0.85; }
     .side-folder.is-search-hidden, .side-file.is-search-hidden { display: none; }
+    /* The search filter toggles .is-search-hidden on the <details> itself
+       (queried via [data-tree-id]); the actions box is a sibling outside it
+       now, so hiding the row on a search miss needs :has() to reach up from
+       the <details> that got hidden. */
+    .side-folder-row:has(> .side-folder.is-search-hidden) { display: none; }
     .side-pending-resizer {
       display: none;
       flex-shrink: 0;
@@ -340,28 +356,27 @@ export const WIKI_LAYOUT_CSS = `
     }
     .side-pending-resizer:hover::before,
     .side-pending-resizer.dragging::before { background: var(--muted); }
-    .side-untracked {
+    .side-untracked-row {
       flex: 0 0 auto;
       margin-top: 0;
       padding-top: 0.4rem;
       border-top: 1px solid var(--border);
       min-height: 0;
-      display: grid;
-      grid-template-columns: 1fr auto;
-      align-items: center;
+      position: relative;
     }
-    .side-untracked[open] {
+    .side-untracked-row:has(> .side-untracked[open]) {
       flex: 0 0 var(--pending-height, 32vh);
       overflow: hidden;
     }
-    .side-untracked > summary { grid-column: 1; min-width: 0; }
-    .side-untracked > .side-folder-actions { grid-column: 2; }
+    .side-untracked { min-height: 0; }
+    .side-untracked[open] { height: 100%; overflow: hidden; }
+    .side-untracked-row > .side-folder-actions { top: 0.4rem; height: 2rem; }
     .side-untracked summary {
       display: flex;
       align-items: center;
       gap: 0.45rem;
       min-height: 2rem;
-      padding: 0.28rem 0.45rem;
+      padding: 0.28rem 3.8rem 0.28rem 0.45rem;
       border-radius: 6px;
       color: var(--text);
       cursor: pointer;
@@ -393,7 +408,6 @@ export const WIKI_LAYOUT_CSS = `
     }
     .side-untracked summary > span:first-child { margin-right: auto; }
     .side-untracked-list {
-      grid-column: 1 / -1;
       overflow-y: auto;
       scrollbar-width: thin;
       max-height: calc(var(--pending-height, 32vh) - 3rem);
@@ -408,16 +422,10 @@ export const WIKI_LAYOUT_CSS = `
       min-height: 1.55rem;
       border-radius: 5px;
     }
-    .side-untracked-folder {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      align-items: center;
-    }
-    .side-untracked-folder > summary {
-      grid-column: 1;
+    .side-untracked-folder summary {
       min-width: 0;
       min-height: 1.7rem;
-      padding: 0.1rem 0.2rem 0.1rem 0.55rem;
+      padding: 0.1rem 2.1rem 0.1rem 0.55rem;
       display: flex;
       align-items: center;
       gap: 0.3rem;
@@ -426,9 +434,8 @@ export const WIKI_LAYOUT_CSS = `
       font-size: 0.8rem;
       font-weight: 700;
     }
-    .side-untracked-folder > .side-folder-actions { grid-column: 2; padding-right: 0.2rem; }
+    .side-folder-row:has(> .side-untracked-folder) > .side-folder-actions { top: 0; height: 1.7rem; padding-right: 0.2rem; }
     .side-untracked-children {
-      grid-column: 1 / -1;
       margin-left: 0.65rem;
       padding-left: 0.35rem;
       border-left: 1px solid var(--border);
@@ -493,12 +500,13 @@ export const WIKI_LAYOUT_CSS = `
        turn the tree into a minefield. */
     .side-tree-delete { opacity: 0; }
     /* For a file row the delete button's own parent is the hoverable row, but
-       a folder's actions now sit in a sibling box next to <summary> (not
-       nested inside it, for keyboard/AT reachability) — reveal on hovering
-       either the label row or the actions box itself. */
+       a folder's actions now live in a sibling box outside <details>
+       entirely (not nested inside it, so they stay visible while the folder
+       is collapsed) — reveal on hovering either the label row or the
+       actions box itself. */
     :hover > .side-tree-delete,
-    .side-folder > summary:hover ~ .side-folder-actions .side-tree-delete,
-    .side-untracked-folder > summary:hover ~ .side-folder-actions .side-tree-delete,
+    .side-folder-row:has(> .side-folder > summary:hover) > .side-folder-actions .side-tree-delete,
+    .side-folder-row:has(> .side-untracked-folder > summary:hover) > .side-folder-actions .side-tree-delete,
     .side-folder-actions:hover .side-tree-delete,
     .side-tree-delete:focus-visible { opacity: 1; }
     .side-file-row { display: flex; align-items: center; gap: 0.15rem; }
@@ -1276,7 +1284,12 @@ export const WIKI_LAYOUT_CSS = `
     @media(prefers-color-scheme:dark){.palette-tag.wiki{color:#d4a800}.palette-tag.deliverables{color:#9abc40}}
     /* ── TOC ──────────────────────────────────────────────────── */
     .doc-toc{position:fixed;z-index:20;top:5rem;right:1.5rem;width:200px;max-height:calc(100vh - 8rem);overflow-y:auto;display:flex;flex-direction:column;gap:.15rem;padding:.75rem;background:var(--panel);border:1px solid var(--border);border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
-    .doc-toc-title{font-size:.7rem;font-weight:780;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 .5rem;padding-bottom:.4rem;border-bottom:1px solid var(--border)}
+    .doc-toc-title{display:flex;align-items:center;justify-content:space-between;gap:.4rem;font-size:.7rem;font-weight:780;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 .5rem;padding-bottom:.4rem;border-bottom:1px solid var(--border);cursor:pointer;user-select:none}
+    .doc-toc-title:hover{color:var(--text)}
+    .doc-toc-title::after{content:'−';flex:none;font-weight:700;font-size:.85rem;line-height:1}
+    .doc-toc.is-collapsed .doc-toc-title{margin-bottom:0;border-bottom:0}
+    .doc-toc.is-collapsed .doc-toc-title::after{content:'+'}
+    .doc-toc.is-collapsed .doc-toc-item{display:none}
     .doc-toc-item{font-size:.8rem;color:var(--muted);text-decoration:none;line-height:1.35;padding:.18rem .3rem;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .doc-toc-item:hover,.doc-toc-item.is-active{color:var(--accent);background:var(--accent-soft)}
     .doc-toc-h3{padding-left:1rem;font-size:.76rem}
@@ -1297,6 +1310,8 @@ export const WIKI_LAYOUT_CSS = `
     html.is-embedded .wiki-theme-toggle,
     html.is-embedded .wiki-help-toggle{display:none!important}
     html.is-embedded:not(.sidebar-panel) .app-shell{display:block}
+    html.is-embedded:not(.sidebar-panel) .content{display:flex;flex-direction:column;min-height:100vh}
+    html.is-embedded:not(.sidebar-panel) .article{flex:1}
     html.is-embedded:not(.sidebar-panel) .topbar{display:flex;flex-wrap:nowrap}
     /* Sidebar-only page hosted in the shell's left panel: blend into the
        shell (same panel background, tighter padding, no duplicated links). */

@@ -46,6 +46,24 @@ export function isValidProvenanceValue(value: string): boolean {
   return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value) && value.length <= 64;
 }
 
+/**
+ * Whether two normalized subjects plausibly identify the same real-world
+ * thing, judging only by their leading token ("jedox" / "jedox-solution" /
+ * "jedox-certifications" all share "jedox"). This is deliberately lenient:
+ * it only decides whether an existing page is worth SHOWING the model as a
+ * reuse candidate during consolidation, never whether to merge anything
+ * outright, so a false positive costs one ignored inventory line while a
+ * false negative reproduces the concept-homonym defect it exists to catch —
+ * one page per source for what is really one subject.
+ */
+export function subjectsAreRelated(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const rootA = a.split('-', 1)[0];
+  const rootB = b.split('-', 1)[0];
+  return rootA.length > 2 && rootA === rootB;
+}
+
 export function isExtractionScope(value: unknown): value is ExtractionScope {
   return typeof value === 'string' && (EXTRACTION_SCOPES as readonly string[]).includes(value);
 }

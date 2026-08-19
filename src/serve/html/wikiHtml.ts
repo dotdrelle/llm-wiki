@@ -693,12 +693,16 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
   const dragAttrs = depth === 0 ? '' : ` draggable="true" data-tree-drag="${safeNodePath}" data-tree-kind="folder"`;
   const dropAttr = isEditableTreePath(node.path) ? ` data-tree-drop="${safeNodePath}"` : '';
   // Action buttons sit as a sibling of <summary>, not nested inside it: a
-  // <button>/<a> inside a <summary> is unreachable by keyboard/assistive tech
-  // (nested interactive controls). `.side-folder`'s grid layout keeps them
-  // visually on the same row.
+  // Action buttons live outside <details> entirely, not just outside
+  // <summary>: a <button> nested in <summary> is unreachable by keyboard/AT,
+  // but a sibling of <summary> still sits inside <details>'s collapsible
+  // content and Chrome hides ALL of that (not just the children list) while
+  // the folder is closed. `.side-folder-row` wraps both so the actions stay
+  // visible and clickable regardless of open/closed state, matching the
+  // original always-visible icons.
   const actions = `${newFolderAction}${createAction}${folderActions}`;
   const actionsHtml = actions ? `<div class="side-folder-actions">${actions}</div>` : '';
-  return `<details class="side-folder${rootClass}"${open} data-tree-id="${safeNodePath}"${dragAttrs}${dropAttr}><summary><span class="side-folder-label">${escapeHtml(label)}</span></summary>${actionsHtml}<div class="side-folder-children">${children}</div></details>`;
+  return `<div class="side-folder-row${rootClass}"><details class="side-folder"${open} data-tree-id="${safeNodePath}"${dragAttrs}${dropAttr}><summary><span class="side-folder-label">${escapeHtml(label)}</span></summary><div class="side-folder-children">${children}</div></details>${actionsHtml}</div>`;
 }
 
 // Sections whose tree is editable from the panel. Mirror of `TREE_ROOTS`
@@ -741,7 +745,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
       });
       })()
     : '<li class="side-untracked-empty">No pending sources.</li>';
-  return `<div class="side-pending-resizer" data-pending-resizer title="Resize Pending panel" role="separator" aria-orientation="horizontal"></div><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span></summary><div class="side-folder-actions"><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending">↻</button><span class="side-untracked-count" data-untracked-count>${count}</span></div><div class="side-untracked-list" data-untracked-list data-tree-drop="">${await items}</div></details>`;
+  return `<div class="side-pending-resizer" data-pending-resizer title="Resize Pending panel" role="separator" aria-orientation="horizontal"></div><div class="side-folder-row side-untracked-row"><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span></summary><div class="side-untracked-list" data-untracked-list data-tree-drop="">${await items}</div></details><div class="side-folder-actions"><button class="side-folder-action side-ingest-action" type="button" title="Ingest pending sources (Donna)" aria-label="Ingest pending sources" data-ingest-launch hidden>⚡</button><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending">↻</button><span class="side-untracked-count" data-untracked-count>${count}</span></div></div>`;
 }
 
 function renderUntrackedNode(
@@ -762,7 +766,7 @@ function renderUntrackedNode(
   // drop target for raw/untracked itself (see wikiLayoutScript).
   if (root) return children;
   const safePath = escapeAttr(node.path);
-  return `<details class="side-untracked-folder" open data-tree-id="${safePath}" draggable="true" data-tree-drag="${safePath}" data-tree-kind="folder" data-tree-drop="${safePath}"><summary><span class="side-folder-label">${escapeHtml(node.name)}</span></summary><div class="side-folder-actions"><button class="side-tree-delete" type="button" title="Delete folder ${safePath}" aria-label="Delete folder ${safePath}" data-tree-delete="${safePath}" data-tree-kind="folder">×</button></div><div class="side-untracked-children">${children}</div></details>`;
+  return `<div class="side-folder-row"><details class="side-untracked-folder" open data-tree-id="${safePath}" draggable="true" data-tree-drag="${safePath}" data-tree-kind="folder" data-tree-drop="${safePath}"><summary><span class="side-folder-label">${escapeHtml(node.name)}</span></summary><div class="side-untracked-children">${children}</div></details><div class="side-folder-actions"><button class="side-tree-delete" type="button" title="Delete folder ${safePath}" aria-label="Delete folder ${safePath}" data-tree-delete="${safePath}" data-tree-kind="folder">×</button></div></div>`;
 }
 
 export async function renderSidebar(rootDir: string, precomputedNavFiles?: string[]): Promise<string> {
@@ -1205,6 +1209,8 @@ export async function serveMd(
   const tocTitle = document.createElement('p');
   tocTitle.className = 'doc-toc-title';
   tocTitle.textContent = 'On this page';
+  tocTitle.title = 'Collapse / expand';
+  tocTitle.addEventListener('click', function() { toc.classList.toggle('is-collapsed'); });
   toc.appendChild(tocTitle);
   headings.forEach(function(h) {
     const link = document.createElement('a');

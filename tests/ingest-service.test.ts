@@ -926,6 +926,50 @@ describe('ingest service', () => {
     });
     expect(workspace.archivedSources).toEqual([]);
   });
+
+  /*
+   Concept-homonym gap (B17): a source about "Sujet" is ingested while a
+   concept page for a related subject already exists but was produced by a
+   DIFFERENT source. `FakeRetrievalService.search()` returns `[]` here,
+   exactly reproducing the observed failure — plain retrieval relevance does
+   not reliably surface the existing page across sources — so this only
+   passes if the subject-based lookup (independent of retrieval) surfaces it.
+  */
+  it('surfaces an existing concept page from another source as a reuse candidate by subject', async () => {
+    const workspace = new FakeWorkspaceService();
+    workspace.wikiPages = [
+      {
+        absolutePath: '/tmp/wiki/wiki/concepts/sujet-historique.md',
+        relativePath: 'wiki/concepts/sujet-historique.md',
+        name: 'Sujet historique',
+        type: 'concept',
+        content: '---\nsubject: sujet-historique\nscope: product\n---\n\n# Sujet historique\n\nContenu existant.\n',
+      },
+    ];
+    class CapturingLLMService extends FakeLLMService {
+      lastPlanPrompt: string | null = null;
+
+      async completeJson(request: { label?: string; user?: string }): Promise<unknown> {
+        if (request?.label !== 'ingest_extract') this.lastPlanPrompt = request?.user ?? null;
+        return super.completeJson(request);
+      }
+    }
+    const llm = new CapturingLLMService();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      llm as unknown as LLMService,
+      new FakeRetrievalService(workspace.wikiPages) as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      new MemoryTraceLogger(),
+      disabledCache(),
+    );
+
+    await service.ingest([], {});
+
+    expect(llm.lastPlanPrompt).toContain('wiki/concepts/sujet-historique.md');
+    expect(llm.lastPlanPrompt).toContain('[existing page for a closely related subject]');
+  });
 });
 
 

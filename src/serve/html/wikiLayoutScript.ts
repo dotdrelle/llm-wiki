@@ -739,6 +739,16 @@ export const WIKI_LAYOUT_SCRIPT = `
 
   // Sidebar panel: reflect the active file when the shell reports navigation.
   if (embedded && isSidebarPanel) {
+    // "Ingest" (⚡) on the Pending panel: only meaningful inside the chat
+    // shell, where Donna owns the launch. Reveal the button and hand the
+    // request to the shell, which routes it as a /wiki-ingest skill turn.
+    const ingestLaunchBtn = document.querySelector('[data-ingest-launch]');
+    if (ingestLaunchBtn) {
+      ingestLaunchBtn.hidden = false;
+      ingestLaunchBtn.addEventListener('click', function() {
+        window.parent.postMessage({ type: 'llmwiki:ingest' }, window.location.origin);
+      });
+    }
     // All local links must go through the shell, including pages such as
     // /graph that do not load WIKI_LAYOUT_SCRIPT and therefore cannot report
     // their own navigation after the iframe has loaded.

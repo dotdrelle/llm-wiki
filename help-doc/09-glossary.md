@@ -6,7 +6,7 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
 
 - **Workspace** — an isolated working space, with its own sources, wiki and
   deliverables. Multiple workspaces are sealed from one another. `/use` selects
-  the active one.
+  the active one (Shell).
 - **Source** — an input document: Confluence page, uploaded file, converted
   document. The raw material of the wiki.
 - **Conversion** — turning a non-Markdown document into Markdown (extraction,
@@ -40,7 +40,8 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
   Confluence space to Markdown…).
 - **Polish** — improving the form of existing content.
 - **Doctor** — diagnosis of the workspace state.
-- **Pipeline** — a chain of several production steps.
+- **Pipeline** — a chain of several production steps, run identically from the
+  Shell or Serve as the `/pipeline` skill.
 
 ## Interaction
 
@@ -48,11 +49,13 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
   `04-interaction-modes.md`.
 - **Agent mode** — DONNA orchestrates actions (import, ingest, build, export).
   See `04-interaction-modes.md`.
-- **Shell** — the terminal cockpit (`wiki-manager`), driven by commands.
+- **Shell** — the terminal cockpit (`wiki-manager`), driven by commands. Its
+  command reference is `07-commands-shell.md`.
 - **Serve** — the web interface of a workspace (chat, Activity, wiki browser).
+  What you can do there is in `08-commands-serve.md`.
 - **Graph** — the visual view of the wiki (page `/graph`) and the Graph view of
   the Activity panel.
-- **Activity** — the panel that shows processing live and its progress.
+- **Activity** — the panel that shows processing live and its progress (Serve).
 
 ## Orchestration
 
@@ -63,7 +66,7 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
 - **Orchestration** — DONNA's coordination of tasks across agents. Agents never
   talk to each other directly.
 - **Approval** — consent requested at sensitive steps of a job, bounded per run
-  (`/approve`).
+  (`/approve`, usable from either interface).
 - **Idempotence** — the property that guarantees re-running an action does not
   duplicate work already done.
 - **Runtime** — the component that executes and tracks agent-mode actions. If it
@@ -79,7 +82,8 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
   endpoint you configure (Base URL, model, optional key).
 - **Embeddings** — vectors that power the wiki's semantic search.
 - **Connector (MCP)** — an external integration (Confluence, documents…)
-  exposed to DONNA. `/mcp status` gives its state.
+  exposed to DONNA. `/mcp status` (Shell) or the Connectors panel (Serve)
+  gives its state.
 - **/status** — the deterministic command that sums up the active workspace,
   configuration, MCP connectors, sources, content, deliverables and agent
-  concurrency.
+  concurrency. Works identically in the Shell and in Serve.

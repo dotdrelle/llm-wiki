@@ -70,5 +70,6 @@ carry it out.
 | Do, run, change | **agent** | "Ingest my new sources." |
 
 Tip: if a chat answer calls for an action, DONNA offers to switch. Type `/agent`
-to act, `/chat` to go back to questions. The full command reference is in
-`07-commands.md`.
+to act, `/chat` to go back to questions. Both work the same in the Shell and
+in Serve. The full command reference is `07-commands-shell.md` for the
+terminal, `08-commands-serve.md` for the web interface.

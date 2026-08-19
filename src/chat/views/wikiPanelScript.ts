@@ -545,6 +545,15 @@ window.addEventListener('message', (event) => {
     if (!input) return;
     input.value = '/wiki-build ' + templatePath;
     sendMessage();
+  } else if (data.type === 'llmwiki:ingest') {
+    // ⚡ "Ingest" clicked on the Pending panel of the wiki sidebar. The launch
+    // runs through Donna, so route it as a /wiki-ingest skill invocation:
+    // switch to the chat and submit — no argument, ingest everything pending.
+    showChatView();
+    const input = $('chat-input');
+    if (!input) return;
+    input.value = '/wiki-ingest';
+    sendMessage();
   } else if (data.type === 'llmwiki:palette') {
     // Ctrl/Cmd+K pressed inside an embedded wiki iframe.
     cmdkToggle();
