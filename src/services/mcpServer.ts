@@ -63,6 +63,11 @@ export const WIKI_MCP_TOOLS = [
       'Read one template under templates/ with its output path and build_context report, or list every template when no path is given.',
   },
   {
+    name: 'wiki_read_deliverable',
+    description:
+      'Read one generated deliverable under deliverables/ by relative path, or list every deliverable when no path is given. Use to inspect the generated output of a build (e.g. a generated presentation) before simplifying or correcting its template.',
+  },
+  {
     name: 'template_write',
     description:
       'Create or update one template under templates/. Preview unless confirm=true; reports build_context resolution; refused while a production job is running.',
@@ -821,6 +826,41 @@ export async function createWikiMcpServer(
     }
   };
 
+  const readDeliverable = async ({ path: requestedPath }: { path?: string }) => {
+    if (!requestedPath) {
+      const deliverables = await workspace.listDeliverablePaths();
+      return textResult(
+        JSON.stringify(
+          { deliverables: relativeWorkspacePaths(workspace, deliverables) },
+          null,
+          2,
+        ),
+      );
+    }
+    try {
+      const absolutePath = resolveWritablePath(
+        workspace,
+        requestedPath,
+        workspace.paths.deliverablesDir,
+        'deliverables/',
+      );
+      const relativePath = path
+        .relative(workspace.paths.rootDir, absolutePath)
+        .replaceAll('\\', '/');
+      if (!(await pathExists(absolutePath))) {
+        return textResult(`Deliverable not found: ${relativePath}`, { isError: true });
+      }
+      const content = await readFile(absolutePath, 'utf8');
+      return textResult(
+        JSON.stringify({ deliverable: relativePath, content }, null, 2),
+      );
+    } catch (error) {
+      return textResult(error instanceof Error ? error.message : String(error), {
+        isError: true,
+      });
+    }
+  };
+
   const writeTemplate = async (input: {
     path: string;
     content: string;
@@ -1313,6 +1353,19 @@ export async function createWikiMcpServer(
     },
     READ_ONLY,
     (input) => loggedTool('template_read', input, readTemplate),
+  );
+
+  server.tool(
+    'wiki_read_deliverable',
+    'Read one generated deliverable under deliverables/ by relative path, or list every deliverable when no path is given. Use to inspect the generated output of a build (e.g. a generated presentation) before simplifying or correcting its template.',
+    {
+      path: z
+        .string()
+        .optional()
+        .describe('Relative path under deliverables/, e.g. deliverables/presentation.md or presentation.md'),
+    },
+    READ_ONLY,
+    (input) => loggedTool('wiki_read_deliverable', input, readDeliverable),
   );
 
   const writeAssetInput = {
