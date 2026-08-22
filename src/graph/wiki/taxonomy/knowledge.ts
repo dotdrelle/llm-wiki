@@ -29,20 +29,28 @@ import { canonicalJson } from './canonical.ts';
  * agree on what a knowledge page is. Two divergent lists
  * would allow a file to be classified without participating in the fingerprint — hence
  * a classification that never goes stale — or the reverse.
+ *
+ * The corpus is the EXTRACTED knowledge, not the raw inputs it came from.
+ * `wiki/sources/**` (the source note) and `raw/ingested/**` (the archived
+ * source) both restate the same document that produced a concept: submitting
+ * all three to the synthesis hands the model three views of one subject and it
+ * groups them as three identities. Classifying concepts alone removes the
+ * redundancy at its root; a source's note remains discoverable in the graph,
+ * it simply no longer drives the taxonomy.
  */
-export const KNOWLEDGE_NODE_TYPES = new Set(['wiki', 'wiki-source', 'raw-source']);
+export const KNOWLEDGE_NODE_TYPES = new Set(['wiki']);
 
 /**
  * Corresponding files, expressed once.
  *
- * The mirror of the types above: `wiki/**` gives `wiki` and `wiki-source`,
- * `raw/ingested/**` gives `raw-source`. `wiki/log.md` is the technical journal —
- * it is rewritten at every job and carries no classifiable knowledge.
+ * The mirror of the type above: `wiki/**` minus the source notes gives `wiki`.
+ * `wiki/log.md` is the technical journal — it is rewritten at every job and
+ * carries no classifiable knowledge.
  */
 export const KNOWLEDGE_FILE_PATTERNS = [
   'wiki/**/*.md',
   '!wiki/log.md',
-  'raw/ingested/**/*.md',
+  '!wiki/sources/**/*.md',
 ];
 
 /**

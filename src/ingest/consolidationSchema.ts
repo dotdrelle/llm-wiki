@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { wikiOperationSchema } from '../config/schema.ts';
-import { EXTRACTION_SCOPES } from './extractionSchema.ts';
+import { EXTRACTION_KINDS, EXTRACTION_SCOPES, normalizeKind, normalizeScope } from './extractionSchema.ts';
 
 /*
  Consolidation contract: one source, one plan.
@@ -30,7 +30,17 @@ export const consolidatedPageSchema = z.object({
   path: nonEmpty,
   subject: optionalValue,
   collection: optionalValue,
-  scope: z.enum(EXTRACTION_SCOPES).nullish().transform((value) => value ?? null),
+  scope: z.preprocess(
+    (value) => (value == null || (typeof value === 'string' && value.trim() === '')
+      ? null
+      : normalizeScope(value)),
+    z.enum(EXTRACTION_SCOPES).nullish().transform((value) => value ?? null),
+  ),
+  /** Nature of the subject: `vendor`, `product`, `requirement`, `regulation`, `dimension`, `scenario`. */
+  kind: z.preprocess(
+    normalizeKind,
+    z.enum(EXTRACTION_KINDS).nullish().transform((value) => value ?? null),
+  ),
   /** Why this page exists: what the log must be able to restitute. */
   rationale: optionalValue,
 });

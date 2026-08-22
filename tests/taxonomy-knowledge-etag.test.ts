@@ -62,15 +62,22 @@ describe('périmètre de l’empreinte de connaissance', () => {
     expect(await listKnowledgeFiles(root)).not.toContain('wiki/log.md');
   });
 
-  it('change dès qu’une page wiki ou une archive ingérée change', async () => {
+  it('change dès qu’une page concept change, pas quand une source brute bouge', async () => {
     const before = await knowledgeEtag(root);
 
     await page('wiki/concepts', 'alpha.md', '---\ngroup: a\n---\n\n# Alpha\n\nContenu révisé.\n');
     const afterWiki = await knowledgeEtag(root);
     expect(afterWiki).not.toBe(before);
 
+    // Option A : l'archive brute et la note source sont HORS du corpus de
+    // connaissance. Une ingestion qui ne touche que raw/ingested/ (ou
+    // wiki/sources/) ne périmera donc plus la taxonomie — c'est le concept
+    // extrait qui compte, pas la matière brute dont il est issu.
     await page('raw/ingested', 'brut-b.md', '# Brut B\n');
-    expect(await knowledgeEtag(root)).not.toBe(afterWiki);
+    expect(await knowledgeEtag(root)).toBe(afterWiki);
+
+    await page('wiki/sources', 'source-a.md', '# Source A\n\nNote révisée.\n');
+    expect(await knowledgeEtag(root)).toBe(afterWiki);
   });
 });
 

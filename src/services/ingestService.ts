@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { buildConsolidationPrompt, CONSOLIDATION_PROMPT_VERSION } from '../prompts/consolidationPrompt.ts';
+import { buildConsolidationPrompt, buildConsolidationRetryUser, CONSOLIDATION_PROMPT_VERSION } from '../prompts/consolidationPrompt.ts';
 import { buildExtractionPrompt, EXTRACTION_PROMPT_VERSION } from '../prompts/extractionPrompt.ts';
 import { buildPromptContext } from '../prompts/systemPreamble.ts';
 import {
@@ -25,7 +25,7 @@ import {
   readProvenance,
   subjectsAreRelated,
 } from '../ingest/provenance.ts';
-import { CONCEPT_PREFIX, reanchorToPreviousConcepts, validateConsolidation } from '../ingest/consolidationValidate.ts';
+import { CONCEPT_PREFIX, DEFAULT_CONCEPT_BUDGET, detectConceptOverflow, detectConceptSplits, detectDuplicatePaths, reanchorToPreviousConcepts, validateConsolidation } from '../ingest/consolidationValidate.ts';
 import { hashText } from '../utils/hash.ts';
 import { normalizeSourceBody } from '../utils/markdown.ts';
 import { planSourcePacks } from '../utils/sourcePacking.ts';
@@ -77,6 +77,14 @@ interface PlannedIngestFile {
 }
 
 export const INGEST_PLAN_FILE_VERSION = 2;
+
+/**
+ * Ceiling on the consolidation split-fix retries. One is usually enough; the
+ * bound exists so a pathological source cannot loop indefinitely on a split the
+ * model refuses to merge. After the last attempt, the plan is applied as-is and
+ * the split is still reported as a warning.
+ */
+const MAX_SPLIT_RETRIES = 2;
 
 function classifyIngestError(error: unknown): IngestRetryInfo['classification'] {
   const message = error instanceof Error ? error.message : String(error);
@@ -761,6 +769,107 @@ export class IngestService {
         consolidated = reanchorToPreviousConcepts(consolidated, previousConcepts);
 
         /*
+         Granularity-fix retry.
+
+         The consolidation is one stateless call per source. Two failures of
+         granularity survive the prompt wording reliably enough to warrant a
+         re-ask: a product split into several concept pages (`board` +
+         `board-international`, `prophix` + its modules), and a source that
+         creates more concepts than its budget. The engine detects both, re-asks
+         with the exact subjects to merge, bounded. The cached plan is never
+         written here: a plan that needed correction must not be re-served
+         verbatim on a resume.
+         */
+        const knownPathsForBudget = new Set(warmPages.map((page) => page.relativePath));
+        // The correction asks the model to merge concepts, but a retry must not
+        // lose the source note: a plan without one is rejected outright, and the
+        // model, once focused on merging, drops it. Capture it once from the
+        // pre-retry plan and re-inject it into any correction that omits it.
+        const sourceNoteOperations = consolidated.operations.filter(
+          (operation) => operation.path === sourcePagePath && operation.type !== 'delete',
+        );
+        const sourceNotePages = (consolidated.pages ?? []).filter(
+          (page) => page.path === sourcePagePath,
+        );
+        // Threaded into validateConsolidation below so it does not repeat this
+        // same O(n²) subject scan on data the loop already checked clean.
+        // The extra `<= MAX_SPLIT_RETRIES` pass (which never corrects, only
+        // checks) guarantees `lastSplits` is always computed against the
+        // FINAL `consolidated` — without it, exhausting the retries would
+        // leave `lastSplits` one correction stale relative to the plan
+        // `validateConsolidation` actually receives.
+        let lastSplits: ReturnType<typeof detectConceptSplits> = [];
+        for (let retryAttempt = 0; retryAttempt <= MAX_SPLIT_RETRIES; retryAttempt += 1) {
+          const splits = detectConceptSplits(consolidated);
+          lastSplits = splits;
+          const overflow = detectConceptOverflow(
+            consolidated,
+            knownPathsForBudget,
+            DEFAULT_CONCEPT_BUDGET,
+          );
+          const duplicatePaths = detectDuplicatePaths(consolidated);
+          if (splits.length === 0 && !overflow && duplicatePaths.length === 0) break;
+          if (retryAttempt === MAX_SPLIT_RETRIES) break;
+          await this.logger.warn('ingest:consolidate-retry', {
+            source: source.relativePath,
+            attempt: retryAttempt + 1,
+            splits: splits.map((split) => `${split.subject}~${split.duplicateOfSubject}`),
+            overflow: overflow ? { newConcepts: overflow.newConcepts, budget: overflow.budget } : null,
+            duplicatePaths,
+          });
+          const retryPrompt = {
+            ...consolidationPrompt,
+            user: buildConsolidationRetryUser(consolidationPrompt.user, {
+              splits,
+              overflow: overflow ? { newConcepts: overflow.newConcepts, budget: overflow.budget } : undefined,
+              duplicatePaths,
+            }),
+          };
+          const { value } = await withRetry(
+            () =>
+              this.llm.completeJson(
+                {
+                  ...retryPrompt,
+                  label: 'ingest_consolidate_retry',
+                  logger: this.logger,
+                  traceData: { source: source.relativePath },
+                  onUsage: (usage) => {
+                    options?.onSourceUsage?.(sourcePath, i, sourcePaths.length, usage);
+                  },
+                },
+                consolidationPlanSchema,
+              ),
+            {
+              onRetry: async (retryInfo) => {
+                await this.logger.warn('ingest:retry', {
+                  source: source.relativePath,
+                  phase: 'consolidate-retry',
+                  attempts: retryInfo.attempts,
+                  retries: retryInfo.retries,
+                  classification: retryInfo.classification,
+                  nextDelayMs: retryInfo.nextDelayMs,
+                  message: retryInfo.message,
+                });
+              },
+            },
+          );
+          let corrected = reanchorToPreviousConcepts(value, previousConcepts);
+          // Re-inject the source note if the merge dropped it: the correction is
+          // about concepts, the note is invariant.
+          const hasSourceNote = corrected.operations.some(
+            (operation) => operation.path === sourcePagePath && operation.type !== 'delete',
+          );
+          if (!hasSourceNote && sourceNoteOperations.length) {
+            corrected = {
+              ...corrected,
+              operations: [...sourceNoteOperations, ...corrected.operations],
+              pages: [...sourceNotePages, ...(corrected.pages ?? [])],
+            };
+          }
+          consolidated = corrected;
+        }
+
+        /*
          Normalize FIRST, validate second.
 
          `normalizeWikiOperations` canonicalizes the paths the model wrote —
@@ -784,6 +893,14 @@ export class IngestService {
         const normalizedPages = (consolidated.pages ?? []).map((page) => ({
           ...page,
           path: normalizedPathByOriginal.get(page.path) ?? page.path,
+        }));
+        // `lastSplits` was computed against pre-normalization paths; remap
+        // them the same way normalizedPages was, so a warning reported below
+        // names the actual page path, not the model's pre-normalized one.
+        const normalizedSplits = lastSplits.map((split) => ({
+          ...split,
+          path: normalizedPathByOriginal.get(split.path) ?? split.path,
+          duplicateOfPath: normalizedPathByOriginal.get(split.duplicateOfPath) ?? split.duplicateOfPath,
         }));
         const {
           operations: citationSafeOperations,
@@ -819,6 +936,7 @@ export class IngestService {
             citationPath: source.archiveCitationPath,
             existingPaths: knownPaths,
             collection,
+            precomputedSplits: normalizedSplits,
           },
         );
         await this.logger.info('ingest:consolidate', {

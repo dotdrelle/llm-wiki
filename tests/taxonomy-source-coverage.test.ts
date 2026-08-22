@@ -89,8 +89,10 @@ describe('couverture d’une source', () => {
 
     // Une page cite la source (l'intégration).
     expect(prophix.citingPages).toBe(1);
-    // La feuille Prophix compte la source + l'intégration = 2.
-    expect(prophix.assignedPages).toBe(2);
+    // Option A : la feuille Prophix ne compte plus la source elle-même — le
+    // corpus de connaissance est fait de concepts, pas des matières brutes qui
+    // les ont produits. Reste le concept d'intégration = 1.
+    expect(prophix.assignedPages).toBe(1);
     expect(prophix.leafId).toBe('leaf_prophix');
     expect(prophix.subject).toBe('prophix');
   });
@@ -126,7 +128,8 @@ describe('couverture d’une source', () => {
     };
     const coverage = computeSourceCoverage(nodes, [], twoSources);
 
-    // La feuille compte 3 pages ; chaque source la rapporte, sans la gonfler.
-    expect(coverage.map((item) => item.assignedPages)).toEqual([3, 3]);
+    // La feuille compte 1 concept ; chaque source la rapporte, sans la gonfler.
+    // Les deux sources brutes ne sont plus comptées dans la feuille (Option A).
+    expect(coverage.map((item) => item.assignedPages)).toEqual([1, 1]);
   });
 });

@@ -1,9 +1,9 @@
 import type { SourceDocument } from '../types.ts';
-import { EXTRACTION_IMPORTANCE, EXTRACTION_SCOPES } from '../ingest/extractionSchema.ts';
+import { EXTRACTION_IMPORTANCE, EXTRACTION_KINDS, EXTRACTION_SCOPES } from '../ingest/extractionSchema.ts';
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
 /** Prompt version, carried by the extraction cache. */
-export const EXTRACTION_PROMPT_VERSION = 5;
+export const EXTRACTION_PROMPT_VERSION = 7;
 
 /*
  Extraction prompt: read, do not write.
@@ -25,6 +25,7 @@ export function buildExtractionPrompt(args: {
 }): { system: string; user: string } {
   const scopes = EXTRACTION_SCOPES.join(' | ');
   const importance = EXTRACTION_IMPORTANCE.join(' | ');
+  const kinds = EXTRACTION_KINDS.join(' | ');
 
   return {
     system: [
@@ -49,12 +50,24 @@ export function buildExtractionPrompt(args: {
       `The "scope" of every subject is exactly one of: ${scopes}. Write the value verbatim, lowercase, no variant — not a paraphrase, not a category name, not a sentence.`,
       `The "importance" of every subject is exactly one of: ${importance}. Write the value verbatim, lowercase, no variant.`,
       `Every subject declares a scope (${scopes}) and an importance (${importance}) with a short rationale.`,
+      `The "kind" of every subject is exactly one of: ${kinds}. Write the value verbatim, lowercase.`,
+      'Kind guidance — it names the NATURE of the subject, not its scope:',
+      '- vendor: the organisation that makes a solution',
+      '- product: the solution/tool itself',
+      '- requirement: an imperative the compared solutions must satisfy',
+      '- regulation: a legal or contractual obligation',
+      '- dimension: a shared characteristic studied ACROSS subjects',
+      '- scenario: a genuine alternative OPTION under comparison (an alternative path, a variant of the solution)',
+      'A vendor and its product are TWO DIFFERENT subjects with two different kinds: never fold a vendor into its product, and never declare a vendor as a product.',
+      'A product and its sub-modules are ONE subject of kind product: do not split one product into one subject per module.',
+      'A deployment mode is NOT a scenario: it is a characteristic of the product, so it is a dimension, or it stays inside the product subject. Reserve scenario for a genuine alternative OPTION under comparison.',
+      'Do not declare a dimension as a product, nor a requirement as a vendor. When in doubt, prefer the kind that says what the thing IS, not what it belongs to.',
       'Scope guidance:',
       '- source: only meaningful inside a note about this specific document',
       '- product: belongs to the specific subject this document is about',
-      '- transverse: a dimension shared across several subjects (security, pricing, hosting, integration, compliance, ...). Declare it whenever the fragment discusses such a shared dimension, even briefly — the consolidation step decides how to merge them',
+      '- transverse: a TOP-LEVEL shared theme. Declare it ONLY for a genuine cross-cutting theme, never for a structural sub-element of the document\'s own product — a list entry, a referential entry, a sub-account, a section are parts of the product, not dimensions',
       '- workspace: applies to the whole workspace regardless of subject',
-      'Prefer few, well-justified subjects over many thin ones. A heading is not a subject.',
+      'Prefer few, well-justified subjects over many thin ones. A heading is not a subject, and neither is a sub-element of a single product: several sub-accounts or referential entries of the same structure are ONE subject, not several dimensions.',
       'Every fact carries the exact citation path given in the user message, copied verbatim.',
       'If a fragment states no durable knowledge, return empty arrays. That is a valid answer.',
       'Return a strict JSON object with { "facts": [], "subjects": [], "relations": [], "mainSubject": string|null } and no extra text.',

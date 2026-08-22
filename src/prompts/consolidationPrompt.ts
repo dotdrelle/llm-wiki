@@ -1,9 +1,10 @@
 import type { SourceDocument } from '../types.ts';
 import type { SourceExtraction } from '../ingest/extractionSchema.ts';
+import { EXTRACTION_KINDS } from '../ingest/extractionSchema.ts';
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
 /** Prompt version, carried by the consolidation cache key. */
-export const CONSOLIDATION_PROMPT_VERSION = 4;
+export const CONSOLIDATION_PROMPT_VERSION = 10;
 
 export type ConsolidationInventoryPage = {
   path: string;
@@ -51,7 +52,8 @@ export function buildConsolidationPrompt(args: {
       '- exactly one source note per document, at the given source note path',
       '- product concepts: at most three NEW ones per source, each justified by content; zero is common',
       '- create a NEW product concept only for knowledge that is durable, specific to this product, and genuinely distinct from any existing page',
-      '- transverse dimensions (security, integration, pricing, hosting, compliance, sovereignty, deployment, ...) are SHARED concepts: create or UPDATE one shared concept per dimension with scope=transverse — never one per product',
+      '- transverse dimensions are SHARED concepts: create or UPDATE one shared concept per TOP-LEVEL dimension with scope=transverse — never one per product, and never one per sub-element of a single product (a list entry, a referential entry, a sub-account, a section are parts of the product, not dimensions)',
+      '- several sub-elements of the same product (several sub-accounts, referential entries, or sections of one structure) belong in ONE concept page about that product\'s structure, not in several pages',
       '- reuse or update an existing concept page (product or transverse) before creating a near-duplicate',
       '- when a candidate subject matches a page this source PREVIOUSLY produced, UPDATE that page and KEEP its existing subject: never create a new page with a different name for the same product',
       '- a page marked "existing page for a closely related subject" below was produced by a DIFFERENT source but plausibly names the same real-world thing: verify against its excerpt, and if it is the same subject, UPDATE it and keep its existing subject rather than creating a new page — this is exactly how the same product ends up split into several near-duplicate pages across sources',
@@ -69,11 +71,13 @@ export function buildConsolidationPrompt(args: {
       'Always update wiki/index.md when creating or renaming pages.',
       '',
       'For every created or updated page, also return an entry in "pages" with its provenance:',
-      '- subject: the canonical identity the page belongs to, lowercase, no spaces (the compared subject, not its function)',
+      '- subject: the canonical identity the page belongs to, lowercase, words separated by dashes (e.g. "board-ai-module", "prophix-fpa-module") — NEVER glue the words together ("boardaimodule" is wrong), never use spaces',
       '- collection: the comparative set this document belongs to, when there is one',
       '- scope: source | product | transverse | workspace',
-      'Do NOT write these three fields inside the page content; the engine writes them.',
+      `- kind: ${EXTRACTION_KINDS.join(' | ')} — the NATURE of the subject (a vendor is not its product, a dimension is not a product)`,
+      'Do NOT write these fields inside the page content; the engine writes them.',
       'Do not copy the free-form "group" field into "subject": a group is a shelf, a subject is an identity.',
+      'A vendor and its product are DIFFERENT pages only when each carries durable, distinct knowledge; otherwise keep the vendor inside the product page. Never create a second product page for a product\'s sub-modules.',
       '',
       'Return a strict JSON object with { "summary": string, "operations": WikiOperation[], "pages": [] } and no extra text.',
     ].join('\n'),
@@ -95,7 +99,7 @@ export function buildConsolidationPrompt(args: {
       args.extraction.subjects.length
         ? args.extraction.subjects
             .map((subject) =>
-              `- ${subject.id} :: ${subject.label} [scope=${subject.scope} | importance=${subject.importance}]`
+              `- ${subject.id} :: ${subject.label} [scope=${subject.scope} | kind=${subject.kind} | importance=${subject.importance}]`
               + `\n  why: ${subject.rationale}`
               // The field is optional on the schema side: the prompt must not
               // assume a model filled it.
@@ -133,4 +137,63 @@ export function buildConsolidationPrompt(args: {
       .filter((line) => line !== '')
       .join('\n'),
   };
+}
+
+/**
+ * The correction instruction appended to the user message on a consolidation
+ * retry.
+ *
+ * The consolidation is a single stateless call per source. When the engine
+ * detects that the plan split ONE identity into several concept pages, or that
+ * it exceeded the concept budget, it re-asks with this instruction: the model
+ * is told exactly which subjects to merge, and it re-answers on the same source.
+ * The `system` prompt is reused verbatim — only the user message gains the
+ * correction.
+ */
+export function buildConsolidationRetryUser(
+  user: string,
+  corrections: {
+    splits?: Array<{ subject: string; duplicateOfSubject: string }>;
+    overflow?: { newConcepts: number; budget: number };
+    duplicatePaths?: string[];
+  },
+): string {
+  const lines: string[] = [
+    'Your previous plan was rejected for its concept granularity.',
+  ];
+
+  if (corrections.splits?.length) {
+    lines.push(
+      '',
+      'Merge each split back into ONE concept page:',
+      ...corrections.splits.map((split) =>
+        `- subject "${split.subject}" is the SAME thing as "${split.duplicateOfSubject}": update the "${split.duplicateOfSubject}" page with this content and DELETE the extra page`),
+    );
+  }
+
+  if (corrections.overflow) {
+    lines.push(
+      '',
+      `You created ${corrections.overflow.newConcepts} new concept pages for a budget of ${corrections.overflow.budget}. Merge related concepts so that at most ${corrections.overflow.budget} remain — several requirements of the same product belong in ONE page about that product, several sub-accounts belong in ONE page about the structure.`,
+    );
+  }
+
+  if (corrections.duplicatePaths?.length) {
+    lines.push(
+      '',
+      'The plan targets these paths more than once:',
+      ...corrections.duplicatePaths.map((path) => `- ${path}`),
+      'Merge each into a single operation (a single update of the index, a single create per concept).',
+    );
+  }
+
+  lines.push(
+    '',
+    'Keep exactly one source note at its path, and keep the wiki/index.md update. Only the concept pages change.',
+    'Return the complete corrected plan (operations + pages), nothing else.',
+    '',
+    '--- previous instructions ---',
+    user,
+  );
+  return lines.join('\n');
 }

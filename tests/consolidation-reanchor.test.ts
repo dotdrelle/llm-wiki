@@ -17,6 +17,7 @@ function page(over: Partial<ConsolidatedPage> = {}): ConsolidatedPage {
     subject: 'prophix',
     collection: null,
     scope: 'product',
+    kind: 'product',
     rationale: null,
     ...over,
   };

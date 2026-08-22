@@ -31,6 +31,31 @@ export const EXTRACTION_SCOPES = ['source', 'product', 'transverse', 'workspace'
 export type ExtractionScope = (typeof EXTRACTION_SCOPES)[number];
 
 /**
+ * Kind of a candidate subject.
+ *
+ * `scope` says WHERE a subject's knowledge lives (one document, one product,
+ * several, the whole workspace); `kind` says WHAT the subject IS. The two are
+ * orthogonal: "Board" is a `product` whose `scope` is `product`, while
+ * "Certifications cloud" is a `dimension` whose `scope` is `transverse`.
+ *
+ * `kind` exists because a taxonomy groups by identity, and identity has a
+ * nature. Without it, the consolidation cannot tell "Board" (the product) from
+ * "Board International" (the vendor behind it) — two near-duplicate pages for
+ * one real-world thing — nor a `dimension` from the `product` it qualifies. A
+ * closed vocabulary lets the taxonomy trust the field instead of re-deriving
+ * nature from prose.
+ */
+export const EXTRACTION_KINDS = [
+  'vendor',
+  'product',
+  'requirement',
+  'regulation',
+  'dimension',
+  'scenario',
+] as const;
+export type ExtractionKind = (typeof EXTRACTION_KINDS)[number];
+
+/**
  * Declared importance, with its justification.
  *
  * Asking for the justification is not decorative: it is what lets the
@@ -100,12 +125,40 @@ const SCOPE_SYNONYMS: Record<string, string> = {
   document: 'source', doc: 'source', note: 'source',
 };
 
+const KIND_SYNONYMS: Record<string, string> = {
+  // vendor: the organisation behind a product/solution.
+  editor: 'vendor', vendor: 'vendor', supplier: 'vendor', publisher: 'vendor',
+  company: 'vendor', organisation: 'vendor', organization: 'vendor', editeur: 'vendor',
+  fournisseur: 'vendor', societe: 'vendor', société: 'vendor',
+  // product: the compared solution/tool itself.
+  solution: 'product', tool: 'product', software: 'product', platform: 'product',
+  application: 'product', app: 'product', produit: 'product', logiciel: 'product',
+  // requirement: an imperative the subject must satisfy.
+  requirement: 'requirement', constraint: 'requirement', criterion: 'requirement',
+  exigence: 'requirement', contrainte: 'requirement',
+  // regulation: a legal/contractual obligation.
+  regulation: 'regulation', compliance: 'regulation', legal: 'regulation',
+  obligation: 'regulation', réglementation: 'regulation', conformite: 'regulation',
+  // dimension: a shared characteristic studied across subjects.
+  dimension: 'dimension', aspect: 'dimension', concern: 'dimension',
+  characteristic: 'dimension', caracteristique: 'dimension', security: 'dimension',
+  securite: 'dimension', hosting: 'dimension', sovereignty: 'dimension',
+  souverainete: 'dimension',
+  // scenario: an alternative option under comparison.
+  scenario: 'scenario', option: 'scenario', alternative: 'scenario',
+  scenari: 'scenario', variant: 'scenario',
+};
+
 function normalizeImportance(value: unknown): string {
   return normalizeClosedVocabulary(value, EXTRACTION_IMPORTANCE, IMPORTANCE_SYNONYMS, 'supporting');
 }
 
-function normalizeScope(value: unknown): string {
+export function normalizeScope(value: unknown): string {
   return normalizeClosedVocabulary(value, EXTRACTION_SCOPES, SCOPE_SYNONYMS, 'product');
+}
+
+export function normalizeKind(value: unknown): string {
+  return normalizeClosedVocabulary(value, EXTRACTION_KINDS, KIND_SYNONYMS, 'product');
 }
 
 /** Local identifier within the document: `s1`, `s2`… Never a path. */
@@ -147,6 +200,7 @@ export const extractedSubjectSchema = z.preprocess((value) => {
   const subject = value as Record<string, unknown>;
   const importance = normalizeImportance(subject.importance);
   const scope = normalizeScope(subject.scope);
+  const kind = normalizeKind(subject.kind);
   return {
     ...subject,
     // Some engines omit the label but provide id + scope +
@@ -154,6 +208,7 @@ export const extractedSubjectSchema = z.preprocess((value) => {
     // never a page name nor a published identity.
     label: subject.label ?? subject.name ?? subject.title ?? subject.id,
     scope,
+    kind,
     importance,
     rationale: firstNonBlank(
       subject.rationale,
@@ -169,6 +224,7 @@ export const extractedSubjectSchema = z.preprocess((value) => {
   id: localId,
   label: nonEmpty,
   scope: z.enum(EXTRACTION_SCOPES),
+  kind: z.enum(EXTRACTION_KINDS),
   importance: z.enum(EXTRACTION_IMPORTANCE),
   rationale: nonEmpty,
   /**

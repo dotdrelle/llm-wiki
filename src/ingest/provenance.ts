@@ -1,8 +1,13 @@
 import matter from 'gray-matter';
-import { EXTRACTION_SCOPES, type ExtractionScope } from './extractionSchema.ts';
+import {
+  EXTRACTION_KINDS,
+  EXTRACTION_SCOPES,
+  type ExtractionKind,
+  type ExtractionScope,
+} from './extractionSchema.ts';
 
 /*
- Canonical provenance of a page: subject, collection, scope.
+ Canonical provenance of a page: subject, collection, scope, kind.
 
  Classification used to rely on `group:`, a free-form string written by the
  model. On a comparative corpus, this produced the opposite of what we want:
@@ -10,18 +15,19 @@ import { EXTRACTION_SCOPES, type ExtractionScope } from './extractionSchema.ts';
  product scattered between `software`, `feature` and `integration`. Provenance
  cannot be inferred from a label whose vocabulary nobody controls.
 
- These three fields are therefore structured, normalized and validated. They do
+ These fields are therefore structured, normalized and validated. They do
  not replace `group:` — which remains a free classification signal — they
  remove from it the burden of proving an identity.
 
  No list of products, providers or domains is hardcoded here: normalization
  only canonicalizes the form of what the source said.
-*/
+ */
 
 export type PageProvenance = {
   subject: string | null;
   collection: string | null;
   scope: ExtractionScope | null;
+  kind: ExtractionKind | null;
 };
 
 /**
@@ -68,6 +74,10 @@ export function isExtractionScope(value: unknown): value is ExtractionScope {
   return typeof value === 'string' && (EXTRACTION_SCOPES as readonly string[]).includes(value);
 }
 
+export function isExtractionKind(value: unknown): value is ExtractionKind {
+  return typeof value === 'string' && (EXTRACTION_KINDS as readonly string[]).includes(value);
+}
+
 /**
  * Injects provenance into the frontmatter of a page content.
  *
@@ -109,6 +119,7 @@ export function readProvenance(content: string): PageProvenance {
     subject: read('subject'),
     collection: read('collection'),
     scope: isExtractionScope(data.scope) ? data.scope : null,
+    kind: isExtractionKind(data.kind) ? data.kind : null,
   };
 }
 

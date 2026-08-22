@@ -17,7 +17,8 @@ import {
   collectionFromSourcePath,
   readProvenance,
 } from '../src/ingest/provenance.ts';
-import { validateConsolidation } from '../src/ingest/consolidationValidate.ts';
+import { detectConceptOverflow, detectConceptSplits, detectDuplicatePaths, validateConsolidation } from '../src/ingest/consolidationValidate.ts';
+import { buildConsolidationRetryUser } from '../src/prompts/consolidationPrompt.ts';
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -160,6 +161,42 @@ describe('contrat d’extraction du Lot 2', () => {
     expect(parsed.subjects.map((subject) => subject.importance)).toEqual(['core', 'supporting', 'incidental', 'core']);
   });
 
+  it('normalise un kind hors vocabulaire vers sa nature, et coerce l’inconnu vers product', () => {
+    // `kind` est un vocabulaire fermé au même titre que `scope` : un moteur qui
+    // écrit « éditeur » (français) ou « solution » (synonyme) doit être compris,
+    // pas rejeté. Un kind réellement inconnu retombe sur `product`, le défaut sûr.
+    const parsed = sourceExtractionSchema.parse({
+      facts: [{ statement: 'Fait', subject: 's1', citation: 'raw/ingested/a.md' }],
+      subjects: [
+        { id: 's1', label: 'A', scope: 'product', kind: 'vendor', rationale: 'x' },
+        { id: 's2', label: 'B', scope: 'product', kind: 'editeur', rationale: 'x' },
+        { id: 's3', label: 'C', scope: 'transverse', kind: 'SECURITY', rationale: 'x' },
+        { id: 's4', label: 'D', scope: 'product', kind: 'solution', rationale: 'x' },
+        { id: 's5', label: 'E', scope: 'product', kind: 'inconnu', rationale: 'x' },
+      ],
+      relations: [],
+      mainSubject: null,
+    });
+    expect(parsed.subjects.map((subject) => subject.kind)).toEqual(['vendor', 'vendor', 'dimension', 'product', 'product']);
+  });
+
+  it('garde un kind déjà valide identique à lui-même', () => {
+    const parsed = sourceExtractionSchema.parse({
+      facts: [{ statement: 'Fait', subject: 's1', citation: 'raw/ingested/a.md' }],
+      subjects: [
+        { id: 's1', label: 'A', scope: 'product', kind: 'vendor', rationale: 'x' },
+        { id: 's2', label: 'B', scope: 'product', kind: 'product', rationale: 'x' },
+        { id: 's3', label: 'C', scope: 'product', kind: 'requirement', rationale: 'x' },
+        { id: 's4', label: 'D', scope: 'product', kind: 'regulation', rationale: 'x' },
+        { id: 's5', label: 'E', scope: 'product', kind: 'dimension', rationale: 'x' },
+        { id: 's6', label: 'F', scope: 'product', kind: 'scenario', rationale: 'x' },
+      ],
+      relations: [],
+      mainSubject: null,
+    });
+    expect(parsed.subjects.map((subject) => subject.kind)).toEqual(['vendor', 'product', 'requirement', 'regulation', 'dimension', 'scenario']);
+  });
+
   it('résout un sujet principal rendu par libellé vers son identifiant local', () => {
     const parsed = sourceExtractionSchema.parse({
       facts: [],
@@ -208,7 +245,7 @@ describe('provenance et consolidation', () => {
       ],
       pages: [
         { path: 'wiki/sources/anaplan.md', subject: 'Anaplan', scope: 'source' },
-        { path: 'wiki/concepts/anaplan.md', subject: 'Anaplan', scope: 'product', rationale: 'Sujet comparé.' },
+        { path: 'wiki/concepts/anaplan.md', subject: 'Anaplan', scope: 'product', kind: 'product', rationale: 'Sujet comparé.' },
       ],
     });
     const result = validateConsolidation(plan, {
@@ -220,7 +257,7 @@ describe('provenance et consolidation', () => {
     expect(result.errors).toEqual([]);
     const concept = result.operations.find((operation) => operation.path.includes('concepts'))!;
     expect(readProvenance(concept.content ?? '')).toEqual({
-      subject: 'anaplan', collection: 'solutions-externes', scope: 'product',
+      subject: 'anaplan', collection: 'solutions-externes', scope: 'product', kind: 'product',
     });
     expect(concept.content).toContain('group: security');
   });
@@ -239,6 +276,164 @@ describe('provenance et consolidation', () => {
     });
     expect(result.errors.some((issue) => issue.reason.includes('secondary'))).toBe(true);
     expect(result.errors.some((issue) => issue.reason.includes('duplicate'))).toBe(true);
+  });
+
+  it('signale un produit atomisé en plusieurs concepts, sans bloquer la publication', () => {
+    // Board (le produit) + Board International (son éditeur) : une seule
+    // identité, deux pages. C'est une réservation visible — le budget ne la
+    // voyait pas — jamais une erreur qui perdrait la source.
+    const plan = consolidationPlanSchema.parse({
+      summary: 'Produit et éditeur.',
+      operations: [
+        { type: 'create', path: 'wiki/sources/board.md', content: '# Board\n\n[src: raw/ingested/board.md]\n' },
+        { type: 'create', path: 'wiki/concepts/board.md', content: '# Board\n\n[src: raw/ingested/board.md]\n' },
+        { type: 'create', path: 'wiki/concepts/board-international.md', content: '# Board International\n\n[src: raw/ingested/board.md]\n' },
+      ],
+      pages: [
+        { path: 'wiki/sources/board.md', subject: 'board', scope: 'source', kind: 'vendor' },
+        { path: 'wiki/concepts/board.md', subject: 'board', scope: 'product', kind: 'product', rationale: 'Solution comparée.' },
+        { path: 'wiki/concepts/board-international.md', subject: 'board-international', scope: 'product', kind: 'vendor', rationale: 'Éditeur.' },
+      ],
+    });
+    const result = validateConsolidation(plan, {
+      sourcePagePath: 'wiki/sources/board.md', citationPath: 'raw/ingested/board.md',
+      existingPaths: new Set(), collection: null,
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.warnings.some((issue) => issue.reason.includes('concept split'))).toBe(true);
+  });
+
+  it('ne signale pas deux sujets réellement distincts', () => {
+    // Anaplan et Pigment partagent une collection, pas une identité : la règle
+    // ne doit pas crier au doublon sur des sujets différents.
+    const plan = consolidationPlanSchema.parse({
+      summary: 'Deux solutions.',
+      operations: [
+        { type: 'create', path: 'wiki/sources/synthese.md', content: '# Synthèse\n\n[src: raw/ingested/s.md]\n' },
+        { type: 'create', path: 'wiki/concepts/anaplan.md', content: '# Anaplan\n\n[src: raw/ingested/s.md]\n' },
+        { type: 'create', path: 'wiki/concepts/pigment.md', content: '# Pigment\n\n[src: raw/ingested/s.md]\n' },
+      ],
+      pages: [
+        { path: 'wiki/sources/synthese.md', subject: 'synthese', scope: 'source' },
+        { path: 'wiki/concepts/anaplan.md', subject: 'anaplan', scope: 'product', kind: 'product', rationale: 'Solution.' },
+        { path: 'wiki/concepts/pigment.md', subject: 'pigment', scope: 'product', kind: 'product', rationale: 'Solution.' },
+      ],
+    });
+    const result = validateConsolidation(plan, {
+      sourcePagePath: 'wiki/sources/synthese.md', citationPath: 'raw/ingested/s.md',
+      existingPaths: new Set(), collection: null,
+    });
+    expect(result.warnings.some((issue) => issue.reason.includes('concept split'))).toBe(false);
+  });
+
+  it('normalise un kind qui confond scope et kind (observed: kind="workspace")', () => {
+    // Le modèle a confondu les deux vocabulaires fermés : il a écrit la valeur
+    // d'un SCOPE dans `kind`. La consolidation doit normaliser au lieu de
+    // rejeter toute la source — exactement le même admissivisme que `scope`.
+    const parsed = consolidationPlanSchema.parse({
+      summary: 'Confusion.',
+      operations: [
+        { type: 'create', path: 'wiki/sources/s.md', content: '# S\n\n[src: raw/ingested/s.md]\n' },
+        { type: 'create', path: 'wiki/concepts/acpi.md', content: '# ACPI\n\n[src: raw/ingested/s.md]\n' },
+      ],
+      pages: [
+        { path: 'wiki/sources/s.md', subject: 's', scope: 'source', kind: 'source' },
+        { path: 'wiki/concepts/acpi.md', subject: 'acpi', scope: 'workspace', kind: 'workspace' },
+      ],
+    });
+    // `kind: "source"` et `kind: "workspace"` ne sont pas des kinds : le
+    // preprocess les coerce vers le fallback `product` (ou, mieux, les traite
+    // comme absents). La valeur exacte est un détail d'implémentation ; ce qui
+    // compte, c'est que le plan parse sans rejeter la source.
+    expect(parsed.pages.map((page) => page.kind)).not.toContain('workspace');
+    expect(parsed.pages.map((page) => page.kind)).not.toContain('source');
+  });
+
+  it('signale un split même quand le modèle colle les mots (boardaimodule)', () => {
+    // Un modèle à qui on a dit "no spaces" colle les mots : `boardaimodule`.
+    // `subjectsAreRelated` (leading token sur le tiret) ne le voit pas ; le
+    // préfixe brut, si.
+    const plan = consolidationPlanSchema.parse({
+      summary: 'Produit et module collés.',
+      operations: [
+        { type: 'create', path: 'wiki/sources/board.md', content: '# Board\n\n[src: raw/ingested/board.md]\n' },
+        { type: 'create', path: 'wiki/concepts/board.md', content: '# Board\n\n[src: raw/ingested/board.md]\n' },
+        { type: 'create', path: 'wiki/concepts/board-ai-module.md', content: '# Board AI\n\n[src: raw/ingested/board.md]\n' },
+      ],
+      pages: [
+        { path: 'wiki/sources/board.md', subject: 'board', scope: 'source', kind: 'vendor' },
+        { path: 'wiki/concepts/board.md', subject: 'board', scope: 'product', kind: 'product', rationale: 'Solution.' },
+        { path: 'wiki/concepts/board-ai-module.md', subject: 'boardaimodule', scope: 'product', kind: 'product', rationale: 'Module.' },
+      ],
+    });
+    const result = validateConsolidation(plan, {
+      sourcePagePath: 'wiki/sources/board.md', citationPath: 'raw/ingested/board.md',
+      existingPaths: new Set(), collection: null,
+    });
+    expect(result.warnings.some((issue) => issue.reason.includes('concept split'))).toBe(true);
+  });
+
+  it('détecte un split via detectConceptSplits et produit une consigne de fusion', () => {
+    const plan = consolidationPlanSchema.parse({
+      summary: 'Produit et module.',
+      operations: [
+        { type: 'create', path: 'wiki/sources/board.md', content: '# Board\n\n[src: raw/ingested/board.md]\n' },
+        { type: 'create', path: 'wiki/concepts/board.md', content: '# Board\n\n[src: raw/ingested/board.md]\n' },
+        { type: 'create', path: 'wiki/concepts/board-ai-module.md', content: '# Board AI\n\n[src: raw/ingested/board.md]\n' },
+      ],
+      pages: [
+        { path: 'wiki/sources/board.md', subject: 'board', scope: 'source', kind: 'vendor' },
+        { path: 'wiki/concepts/board.md', subject: 'board', scope: 'product', kind: 'product', rationale: 'Solution.' },
+        { path: 'wiki/concepts/board-ai-module.md', subject: 'board-ai-module', scope: 'product', kind: 'product', rationale: 'Module.' },
+      ],
+    });
+    const splits = detectConceptSplits(plan);
+    expect(splits.length).toBe(1);
+    expect(splits[0]).toMatchObject({
+      path: 'wiki/concepts/board-ai-module.md',
+      subject: 'board-ai-module',
+      duplicateOfSubject: 'board',
+    });
+
+    const retry = buildConsolidationRetryUser('## Extracted facts\n- x', { splits });
+    expect(retry).toContain('board-ai-module');
+    expect(retry).toContain('board');
+    expect(retry).toContain('Merge');
+    expect(retry).toContain('## Extracted facts');
+    expect(retry).toContain('source note');
+  });
+
+  it('détecte un dépassement du budget conceptuel, pas un plan dans le budget', () => {
+    const plan = consolidationPlanSchema.parse({
+      summary: 'Trop de concepts.',
+      operations: [
+        { type: 'create', path: 'wiki/sources/s.md', content: '# S\n\n[src: raw/ingested/s.md]\n' },
+        { type: 'create', path: 'wiki/concepts/a.md', content: '# A\n\n[src: raw/ingested/s.md]\n' },
+        { type: 'create', path: 'wiki/concepts/b.md', content: '# B\n\n[src: raw/ingested/s.md]\n' },
+        { type: 'create', path: 'wiki/concepts/c.md', content: '# C\n\n[src: raw/ingested/s.md]\n' },
+        { type: 'create', path: 'wiki/concepts/d.md', content: '# D\n\n[src: raw/ingested/s.md]\n' },
+      ],
+    });
+    const overflow = detectConceptOverflow(plan, new Set(), 3);
+    expect(overflow).not.toBeNull();
+    expect(overflow?.newConcepts).toBe(4);
+    expect(overflow?.budget).toBe(3);
+
+    // Un concept existant n'est pas compté comme nouveau.
+    const within = detectConceptOverflow(plan, new Set(['wiki/concepts/a.md']), 3);
+    expect(within).toBeNull();
+  });
+
+  it('détecte un chemin ciblé deux fois (deux update de l’index)', () => {
+    const plan = consolidationPlanSchema.parse({
+      summary: 'Double index.',
+      operations: [
+        { type: 'create', path: 'wiki/sources/s.md', content: '# S\n\n[src: raw/ingested/s.md]\n' },
+        { type: 'update', path: 'wiki/index.md', content: '# Index\n\n- a' },
+        { type: 'update', path: 'wiki/index.md', content: '# Index\n\n- a\n- b' },
+      ],
+    });
+    expect(detectDuplicatePaths(plan)).toEqual(['wiki/index.md']);
   });
 });
 
