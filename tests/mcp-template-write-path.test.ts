@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { resolveWritablePath } from '../src/services/mcpServer.ts';
+import { resolveWritablePath, templateHardContentViolations } from '../src/services/mcpServer.ts';
 import type { WorkspaceService } from '../src/services/workspaceService.ts';
 
 // resolveWritablePath is the single guard for template_write and
@@ -63,5 +63,56 @@ describe('resolveWritablePath', () => {
   it('rejects an empty path', () => {
     expect(() => resolveWritablePath(workspace, '   ', templates(), 'templates/'))
       .toThrow(/Access denied/);
+  });
+});
+
+describe('templateHardContentViolations', () => {
+  it('accepts a template made only of frontmatter, headings and instruction blocks', () => {
+    const content = [
+      '---',
+      'title: "Presentation"',
+      'build_context: []',
+      '---',
+      '',
+      '# Presentation',
+      '',
+      '## Intro',
+      '',
+      '[[INSTRUCTION:',
+      'Describe the project purpose.',
+      '[src: wiki/concepts/acpi.md]',
+      ']]',
+      '',
+      '## Next',
+      '',
+      '[[INSTRUCTION:',
+      'Describe the approach.',
+      ']]',
+      '',
+    ].join('\n');
+    expect(templateHardContentViolations(content)).toEqual([]);
+  });
+
+  it('flags prose written outside an instruction block', () => {
+    const content = [
+      '---',
+      'title: "Presentation"',
+      'build_context: []',
+      '---',
+      '',
+      '# Presentation',
+      '',
+      '## Intro',
+      '',
+      'Le projet ACPI est un système de gestion financière. [src: wiki/concepts/acpi.md]',
+      '',
+      '[[INSTRUCTION:',
+      'Describe the project purpose.',
+      ']]',
+      '',
+    ].join('\n');
+    expect(templateHardContentViolations(content)).toContain(
+      'Le projet ACPI est un système de gestion financière. [src: wiki/concepts/acpi.md]',
+    );
   });
 });

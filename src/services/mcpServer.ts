@@ -7,6 +7,7 @@ import { z } from 'zod';
 import matter from 'gray-matter';
 import { WorkspaceService } from './workspaceService.ts';
 import { RetrievalService } from './retrievalService.ts';
+import { HistoryService, commitHistorySafely } from './historyService.ts';
 import { checkProductionIdle } from './productionLocks.ts';
 import { loadWikiGraphSnapshot, summarizeWikiGraph } from '../graph/wiki/overview.ts';
 import { pathExists } from '../utils/fs.ts';
@@ -20,6 +21,29 @@ const LLM_WIKI_VERSION = '0.15.55';
 const MAX_SOURCE_NAME_CHARS = 200;
 const MAX_SOURCE_SUBDIR_CHARS = 300;
 const MAX_SOURCE_CONTENT_CHARS = 1_000_000;
+
+/**
+ * Lines of a template body that are prose outside an instruction block.
+ *
+ * A template is a generation spec, not a document: its body must contain only
+ * headings and multiline `[[INSTRUCTION: ...]]` blocks (which carry the
+ * `[src: ...]` citations). Prewritten prose written next to the instructions
+ * is copied verbatim into the deliverable on build and can never be refreshed
+ * from the wiki, so it is rejected rather than persisted.
+ */
+export function templateHardContentViolations(content: string): string[] {
+  const parsed = matter(content);
+  const withoutInstructions = parsed.content.replace(/\[\[INSTRUCTION:\s*[\s\S]*?\]\]/g, '');
+  const violations: string[] = [];
+  for (const line of withoutInstructions.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (/^#{1,6}\s+\S/.test(trimmed)) continue;
+    if (/^([-*_])\1{2,}$/.test(trimmed)) continue;
+    violations.push(trimmed);
+  }
+  return violations;
+}
 
 export interface WikiMcpServices {
   workspace: WorkspaceService;
@@ -70,7 +94,7 @@ export const WIKI_MCP_TOOLS = [
   {
     name: 'template_write',
     description:
-      'Create or update one template under templates/. Preview unless confirm=true; reports build_context resolution; refused while a production job is running.',
+      'Create or update one template under templates/. A template is instruction-only: headings plus multiline [[INSTRUCTION: ...]] blocks carrying [src: ...] citations — never prewritten prose. Refused (with the offending lines) when the body contains prose outside an instruction block; preview unless confirm=true; refused while a production job is running.',
   },
   {
     name: 'build_context_write',
@@ -508,6 +532,7 @@ export async function createWikiMcpServer(
     name: 'llm-wiki',
     version: LLM_WIKI_VERSION,
   });
+  const history = new HistoryService(workspace.paths.rootDir, config.history);
 
   const listWikiPages = async () => {
     const pages = await workspace.listWikiPages();
@@ -614,6 +639,11 @@ export async function createWikiMcpServer(
       contentChars: content.length,
       beforeSha256: payload.beforeSha256,
       afterSha256: payload.afterSha256,
+    });
+    await commitHistorySafely(history, {
+      command: 'page',
+      message: `page: ${pagePath}`,
+      scope: [path.relative(workspace.paths.rootDir, absolutePath).replaceAll('\\', '/')],
     });
     return textResult(`Written: ${pagePath}`);
   };
@@ -732,6 +762,11 @@ export async function createWikiMcpServer(
       contentChars: options.content.length,
       beforeSha256: payload.beforeSha256,
       afterSha256: payload.afterSha256,
+    });
+    await commitHistorySafely(history, {
+      command: options.tool === 'template_write' ? 'template' : 'build-context',
+      message: `${options.tool === 'template_write' ? 'template' : 'build-context'}: ${relativePath}`,
+      scope: [relativePath],
     });
     return textResult(
       JSON.stringify(
@@ -866,8 +901,28 @@ export async function createWikiMcpServer(
     content: string;
     confirm?: boolean;
     dryRun?: boolean;
-  }) =>
-    writeWorkspaceAsset({
+  }) => {
+    const violations = templateHardContentViolations(input.content);
+    if (input.confirm === true && violations.length > 0) {
+      return textResult(
+        JSON.stringify(
+          {
+            error: 'TEMPLATE_HARD_CONTENT',
+            message:
+              'Templates are instruction-only: a section must be a heading followed by a ' +
+              '[[INSTRUCTION: ...]] block (with [src: ...] citations inside it), never ' +
+              'prewritten prose. Hard prose is copied verbatim into the deliverable on build ' +
+              'and can never be refreshed from the wiki. Move these lines inside an ' +
+              '[[INSTRUCTION: ...]] block or move the fact to the wiki and cite it.',
+            violations,
+          },
+          null,
+          2,
+        ),
+        { isError: true },
+      );
+    }
+    return writeWorkspaceAsset({
       tool: 'template_write',
       targetDir: workspace.paths.templatesDir,
       label: 'templates/',
@@ -875,8 +930,22 @@ export async function createWikiMcpServer(
       content: input.content,
       confirm: input.confirm,
       dryRun: input.dryRun,
-      decorate: describeTemplateBuildContext,
+      decorate: async (relativePath, content) => ({
+        ...(await describeTemplateBuildContext(relativePath, content)),
+        ...(violations.length > 0
+          ? {
+              instructionViolations: {
+                message:
+                  'This template contains prose outside [[INSTRUCTION: ...]] blocks; ' +
+                  'it will be refused on confirm=true. Move these lines inside an ' +
+                  '[[INSTRUCTION: ...]] block or move the fact to the wiki and cite it.',
+                lines: violations,
+              },
+            }
+          : {}),
+      }),
     });
+  };
 
   const writeBuildContext = async (input: {
     path: string;
@@ -1382,7 +1451,7 @@ export async function createWikiMcpServer(
 
   server.tool(
     'template_write',
-    'Create or update one template under templates/. Returns a diff preview unless confirm=true, including which build_context files resolve and which are missing. Always declare an explicit build_context list (use [] for none): without the key the template inherits every file in build-context/. Refused while a production job is running.',
+    'Create or update one template under templates/. A template is instruction-only: headings plus multiline [[INSTRUCTION: ...]] blocks carrying [src: ...] citations — never prewritten prose (prose is copied verbatim into the deliverable on build and can never be refreshed from the wiki). The write is refused with the offending lines when the body contains prose outside an instruction block. Returns a diff preview unless confirm=true, including which build_context files resolve and which are missing. Always declare an explicit build_context list (use [] for none): without the key the template inherits every file in build-context/. Refused while a production job is running.',
     {
       path: z
         .string()
