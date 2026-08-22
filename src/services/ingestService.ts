@@ -780,7 +780,9 @@ export class IngestService {
          written here: a plan that needed correction must not be re-served
          verbatim on a resume.
          */
-        const knownPathsForBudget = new Set(warmPages.map((page) => page.relativePath));
+        // Reused below (validateConsolidation's existingPaths): warmPages is
+        // not mutated between the two uses, so one Set covers both.
+        const knownPaths = new Set(warmPages.map((page) => page.relativePath));
         // The correction asks the model to merge concepts, but a retry must not
         // lose the source note: a plan without one is rejected outright, and the
         // model, once focused on merging, drops it. Capture it once from the
@@ -804,7 +806,7 @@ export class IngestService {
           lastSplits = splits;
           const overflow = detectConceptOverflow(
             consolidated,
-            knownPathsForBudget,
+            knownPaths,
             DEFAULT_CONCEPT_BUDGET,
           );
           const duplicatePaths = detectDuplicatePaths(consolidated);
@@ -928,7 +930,6 @@ export class IngestService {
           });
         }
 
-        const knownPaths = new Set(warmPages.map((page) => page.relativePath));
         const validation = validateConsolidation(
           { ...consolidated, operations: citationSafeOperations, pages: normalizedPages },
           {
