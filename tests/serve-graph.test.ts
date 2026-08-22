@@ -363,6 +363,16 @@ describe('serve graph ui', () => {
     expect(graphHtml).not.toContain("localStorage.setItem('llm-wiki:graph:node:'+n.id");
   });
 
+  it('exposes refresh and rebuild controls under the Communities index', async () => {
+    const graphHtml = renderWikiGraphV2();
+    const routesSource = await graphRoutesSource();
+    expect(graphHtml).toContain('id="community-refresh"');
+    expect(graphHtml).toContain('id="community-rebuild"');
+    expect(graphHtml).toContain("'/api/graph/taxonomy'");
+    expect(routesSource).toContain("urlPath === '/api/graph/taxonomy'");
+    expect(routesSource).toContain('deps.runTaxonomy');
+  });
+
   it('renders Document Focus in the selection panel without embedding document content', () => {
     const graphHtml = renderWikiGraphV2();
     // Le focus document ouvrait une fenêtre distincte, superposée à

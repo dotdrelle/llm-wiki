@@ -5,6 +5,7 @@ import { loadWikiGraphSnapshot } from '../../graph/wiki/overview.ts';
 import { graphDocumentSummary } from '../../graph/wiki/summary.ts';
 import { createGraphEventHub, type GraphEventHub } from '../sse/graphEvents.ts';
 import { sendJsonPayload } from '../http/sendJsonPayload.ts';
+import type { SimpleSynthesizeOutcome } from '../../graph/wiki/taxonomy/simple.ts';
 
 export type GraphRoutesDeps = {
   rootDir: string;
@@ -17,6 +18,12 @@ export type GraphRoutesDeps = {
    * rather than nothing.
    */
   completeText?: (request: { system: string; user: string }) => Promise<string>;
+  /**
+   * Taxonomy synthesis, injected by `serve`. Absent when no LLM is configured:
+   * the "Rebuild" button is then refused with a clear message rather than a
+   * silent no-op.
+   */
+  runTaxonomy?: (rootDir: string, language: string) => Promise<SimpleSynthesizeOutcome>;
   sendJson: (
     res: {
       writeHead: (s: number, h: Record<string, string>) => void;
@@ -150,6 +157,17 @@ export async function handleGraphRoutes(
   if (req.method === 'GET' && urlPath === '/api/graph/list') {
     const current = await snapshot();
     deps.sendJson(res, 200, current);
+    return true;
+  }
+
+  if (req.method === 'POST' && urlPath === '/api/graph/taxonomy') {
+    if (!deps.runTaxonomy) {
+      deps.sendJson(res, 409, { error: 'TAXONOMY_UNAVAILABLE', message: 'No LLM configured for taxonomy synthesis.' });
+      return true;
+    }
+    const outcome = await deps.runTaxonomy(deps.rootDir, deps.language());
+    await graphEventHub(() => deps.rootDir).check();
+    deps.sendJson(res, 200, outcome);
     return true;
   }
 

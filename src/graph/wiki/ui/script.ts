@@ -79,6 +79,27 @@ document.querySelector('#filters').addEventListener('change',()=>{document.query
 document.querySelector('#zoom-in').addEventListener('click',()=>canvasExplorer?.zoom(1.25));
 document.querySelector('#zoom-out').addEventListener('click',()=>canvasExplorer?.zoom(.8));
 document.querySelector('#fit').addEventListener('click',()=>canvasExplorer?.fit());
+document.querySelector('#community-refresh').addEventListener('click',()=>{onGraphRevision(Math.max(graphRevision+1,(data?.taxonomyRevision||0)+1))});
+document.querySelector('#community-rebuild').addEventListener('click',async()=>{
+  const button=document.querySelector('#community-rebuild');
+  button.disabled=true;button.textContent='Rebuilding…';
+  try{
+    const result=await json('/api/graph/taxonomy',{method:'POST'});
+    if(result.status==='published'){onGraphRevision((result.revision||0)+1)}
+    else if(result.status==='rejected'){summary.textContent='Taxonomy rejected: '+((result.issues||[]).slice(0,3).join(' · '))}
+    else{summary.textContent='Taxonomy rebuild: '+(result.status||'done')+'.'}
+  }catch(error){
+    // json() throws Error(await r.text()) on any non-2xx response (e.g. the
+    // route's 409 TAXONOMY_UNAVAILABLE), so a server-side error never reaches
+    // 'result' above — it lands here as raw response text, JSON or not, and
+    // must be unwrapped to its message field to avoid showing the user a raw
+    // '{"error":"...","message":"..."}' blob.
+    let message=error.message;
+    try{const parsed=JSON.parse(error.message);if(parsed&&parsed.message)message=parsed.message}catch(_){}
+    summary.textContent='Taxonomy rebuild failed: '+esc(message)
+  }
+  finally{button.disabled=false;button.textContent='Rebuild'}
+});
 // "← Back" goes back up ONE step. It jumped from focus view to the map as soon
 // as the intermediate level was not a community in the strict sense, which
 // cancelled the whole descent for a single back click.

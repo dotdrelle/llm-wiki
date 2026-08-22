@@ -26,6 +26,7 @@ import { handleChatRoutes } from '../serve/routes/chatRoutes.ts';
 import { handleConfigRoutes } from '../serve/routes/configRoutes.ts';
 import { handleConnectorsOAuthRoutes } from '../serve/routes/connectorsOAuthRoutes.ts';
 import { graphSummaryCompletion } from '../serve/graphSummaryCompletion.ts';
+import { graphTaxonomyRun } from '../serve/graphTaxonomyRun.ts';
 import { handleGraphRoutes, stopGraphEventHub } from '../serve/routes/graphRoutes.ts';
 import { handleTreeApi } from '../serve/routes/treeRoutes.ts';
 import { handleMcpRoutes } from '../serve/routes/mcpRoutes.ts';
@@ -944,6 +945,7 @@ export default async function serveCmd(
         sendJson,
         sendGzippedHtml,
         completeText: graphSummaryCompletion(config),
+        runTaxonomy: graphTaxonomyRun(config),
       })) return;
 
       if (await handleWikiRoutes(req, res, urlPath, {
