@@ -26,6 +26,14 @@ describe('source citations', () => {
     ]);
   });
 
+  it('recognises and canonicalizes full-width bracket markers', () => {
+    const content = 'Texte 【src: wiki/a.md】 et 【 src: wiki/b.md 】.';
+    expect(extractSourceCitations(content)).toEqual(['wiki/a.md', 'wiki/b.md']);
+    expect(canonicalizeSourceCitations(content)).toBe(
+      'Texte [src: wiki/a.md] et [src: wiki/b.md].',
+    );
+  });
+
   it('canonicalizes marker variants without touching other brackets', () => {
     expect(
       canonicalizeSourceCitations(

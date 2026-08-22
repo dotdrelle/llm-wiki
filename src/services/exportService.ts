@@ -54,8 +54,10 @@ interface ExportSection {
 }
 
 // Tolerant citation-marker matcher: models sometimes reproduce markers with
-// extra spaces ("[ src: ... ]") copied from source fragments.
-const CITATION_MARKER = /\s*\[\s*src\s*:[^\]]*\]/gi;
+// extra spaces ("[ src: ... ]") copied from source fragments, or with
+// full-width brackets ("【 src: ... 】") from engines that render them
+// typographically.
+const CITATION_MARKER = /\s*[[【]\s*src\s*:[^\]】]*[\]】]/gi;
 
 export function stripCitationMarkers(text: string): string {
   return text.replace(CITATION_MARKER, '');

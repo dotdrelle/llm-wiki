@@ -160,8 +160,22 @@ const SOURCE_CITATION_PATTERN = /\[\s*src\s*:\s*([^\]]+?)\s*\]/gi;
 const SOURCE_LABEL_PATTERN = /\[\s*source\s+\d+\s*[–—:-]\s*([^\]]+?)\s*\]/gi;
 const BARE_WORKSPACE_PATH_PATTERN = /(?<!\[)\[((?:wiki|raw|deliverables|templates|build-context)\/[^\]]+?\.md)\](?!\])/gi;
 
+/**
+ * Full-width brackets to the ASCII form.
+ *
+ * Some engines render citation markers with typographic full-width brackets
+ * (【 src: wiki/x.md 】) instead of ASCII `[`/`]`. The citation patterns above
+ * match ASCII only, so a document full of full-width markers was invisible to
+ * citation tooling — export copied it verbatim and never expanded a citation.
+ * Normalise the brackets first so the same text reaches the matchers whatever
+ * the source engine's typography.
+ */
+function normalizeCitationBrackets(content: string): string {
+  return content.replace(/【/g, '[').replace(/】/g, ']');
+}
+
 export function extractSourceCitations(content: string): string[] {
-  return [...content.matchAll(SOURCE_CITATION_PATTERN)].flatMap((match) =>
+  return [...normalizeCitationBrackets(content).matchAll(SOURCE_CITATION_PATTERN)].flatMap((match) =>
     (match[1] ?? '')
       .split(';')
       .map((part) => part.trim().replace(/^src\s*:\s*/i, ''))
@@ -171,7 +185,7 @@ export function extractSourceCitations(content: string): string[] {
 
 /** Rewrite citation markers to the canonical `[src: path]` form. */
 export function canonicalizeSourceCitations(content: string): string {
-  return content
+  return normalizeCitationBrackets(content)
     .replace(SOURCE_CITATION_PATTERN, (_match, inner: string) =>
       inner
         .split(';')
