@@ -41,6 +41,73 @@ export const EXTRACTION_IMPORTANCE = ['core', 'supporting', 'incidental'] as con
 
 const nonEmpty = z.string().trim().min(1);
 
+/**
+ * First non-blank candidate, or `undefined` when none qualifies.
+ *
+ * `rationale` is a short prose justification the extraction model is asked to
+ * provide. When it (and its observed synonyms) are absent or blank, fall back
+ * to a deterministic default derived from the subject's own declared scope and
+ * importance instead of rejecting the whole source. The rationale is advisory
+ * only — it feeds the consolidation prompt's `why:` line, never a published
+ * page — so a synthesized fallback cannot invent content.
+ */
+function firstNonBlank(...candidates: unknown[]): unknown {
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) return candidate;
+  }
+  return undefined;
+}
+
+function defaultSubjectRationale(importance: string, scope: string): string {
+  return `Declared as a ${importance} ${scope} subject; the model provided no rationale.`;
+}
+
+/*
+ * Closed vocabularies must degrade, never reject.
+
+ * `scope` and `importance` are closed vocabularies the model is asked to write
+ * verbatim, and a long multi-pack source makes it write one of them wrong (a
+ * capitalised form, a near-synonym, a French word) on one subject in ten.
+ * Rejecting the whole source for that costs a full re-ingest for a field the
+ * consolidation re-evaluates from content anyway. Normalize case, map the
+ * near-synonyms observed, and coerce anything else to a safe fallback.
+ */
+function normalizeClosedVocabulary(
+  value: unknown,
+  allowed: readonly string[],
+  synonyms: Record<string, string>,
+  fallback: string,
+): string {
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if ((allowed as readonly string[]).includes(normalized)) return normalized;
+    const mapped = synonyms[normalized];
+    if (mapped) return mapped;
+  }
+  return fallback;
+}
+
+const IMPORTANCE_SYNONYMS: Record<string, string> = {
+  primary: 'core', principal: 'core', principale: 'core',
+  critical: 'core', essential: 'core', high: 'core', major: 'core', majeur: 'core', majeure: 'core',
+  secondary: 'supporting', secondaire: 'supporting', medium: 'supporting', normal: 'supporting',
+  minor: 'incidental', low: 'incidental', faible: 'incidental', annexe: 'incidental', accessoire: 'incidental',
+};
+
+const SCOPE_SYNONYMS: Record<string, string> = {
+  transversal: 'transverse', shared: 'transverse', cross: 'transverse',
+  global: 'workspace', general: 'workspace',
+  document: 'source', doc: 'source', note: 'source',
+};
+
+function normalizeImportance(value: unknown): string {
+  return normalizeClosedVocabulary(value, EXTRACTION_IMPORTANCE, IMPORTANCE_SYNONYMS, 'supporting');
+}
+
+function normalizeScope(value: unknown): string {
+  return normalizeClosedVocabulary(value, EXTRACTION_SCOPES, SCOPE_SYNONYMS, 'product');
+}
+
 /** Local identifier within the document: `s1`, `s2`… Never a path. */
 const localId = z
   .string()
@@ -78,13 +145,23 @@ export const extractedFactSchema = z.preprocess((value) => {
 export const extractedSubjectSchema = z.preprocess((value) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const subject = value as Record<string, unknown>;
+  const importance = normalizeImportance(subject.importance);
+  const scope = normalizeScope(subject.scope);
   return {
     ...subject,
     // Some engines omit the label but provide id + scope +
     // justification. The id then stays a PRIVATE marker for the consolidation,
     // never a page name nor a published identity.
     label: subject.label ?? subject.name ?? subject.title ?? subject.id,
-    rationale: subject.rationale ?? subject.justification ?? subject.reason ?? subject.why,
+    scope,
+    importance,
+    rationale: firstNonBlank(
+      subject.rationale,
+      subject.justification,
+      subject.reason,
+      subject.why,
+      defaultSubjectRationale(importance, scope),
+    ),
     relatedExistingPages:
       subject.relatedExistingPages ?? subject.existingPages ?? subject.related_pages ?? [],
   };
@@ -92,7 +169,7 @@ export const extractedSubjectSchema = z.preprocess((value) => {
   id: localId,
   label: nonEmpty,
   scope: z.enum(EXTRACTION_SCOPES),
-  importance: z.enum(EXTRACTION_IMPORTANCE).default('supporting'),
+  importance: z.enum(EXTRACTION_IMPORTANCE),
   rationale: nonEmpty,
   /**
    * Existing pages this candidate could extend.

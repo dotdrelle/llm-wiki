@@ -105,6 +105,61 @@ describe('contrat d’extraction du Lot 2', () => {
     expect(parsed.relations[0]?.kind).toBe('mentions');
   });
 
+  it('synthétise une rationale par défaut quand le modèle l’omet', () => {
+    // Un moteur peut renvoyer des `subjects` sans aucun champ de justification
+    // (ni rationale, ni justification/reason/why). Plutôt que de rejeter toute
+    // la source sur un champ purement consultatif, on dérive une rationale des
+    // informations déclarées (`scope` + `importance`).
+    const parsed = sourceExtractionSchema.parse({
+      facts: [{ statement: 'Fait', subject: 's1', citation: 'raw/ingested/a.md' }],
+      subjects: [{
+        id: 's1', label: 'Prophix', scope: 'product', importance: 'core',
+      }],
+      relations: [],
+      mainSubject: null,
+    });
+    expect(parsed.subjects[0]?.rationale).toBe(
+      'Declared as a core product subject; the model provided no rationale.',
+    );
+  });
+
+  it('coerce un importance ou un scope hors vocabulaire au lieu de rejeter la source', () => {
+    // Un moteur peut écrire une valeur hors du vocabulaire fermé (forme
+    // capitalisée, quasi-synonyme, mot français). Ces champs sont consultatifs
+    // pour la consolidation : on les normalise plutôt que de perdre la source.
+    const parsed = sourceExtractionSchema.parse({
+      facts: [{ statement: 'Fait', subject: 's1', citation: 'raw/ingested/a.md' }],
+      subjects: [
+        { id: 's1', label: 'A', scope: 'Product', importance: 'HIGH', rationale: 'x' },
+        { id: 's2', label: 'B', scope: 'transversal', importance: 'faible', rationale: 'x' },
+        { id: 's3', label: 'C', scope: 'inconnu', importance: 'inconnue', rationale: 'x' },
+      ],
+      relations: [],
+      mainSubject: null,
+    });
+    expect(parsed.subjects.map((subject) => subject.scope)).toEqual(['product', 'transverse', 'product']);
+    expect(parsed.subjects.map((subject) => subject.importance)).toEqual(['core', 'incidental', 'supporting']);
+  });
+
+  it('laisse intacts les scope et importance déjà valides', () => {
+    // La normalisation est strictement admissive : une valeur conforme au
+    // vocabulaire fermé ressort identique, sans passage par les synonymes ni
+    // le repli.
+    const parsed = sourceExtractionSchema.parse({
+      facts: [{ statement: 'Fait', subject: 's1', citation: 'raw/ingested/a.md' }],
+      subjects: [
+        { id: 's1', label: 'A', scope: 'source', importance: 'core', rationale: 'x' },
+        { id: 's2', label: 'B', scope: 'product', importance: 'supporting', rationale: 'x' },
+        { id: 's3', label: 'C', scope: 'transverse', importance: 'incidental', rationale: 'x' },
+        { id: 's4', label: 'D', scope: 'workspace', importance: 'core', rationale: 'x' },
+      ],
+      relations: [],
+      mainSubject: null,
+    });
+    expect(parsed.subjects.map((subject) => subject.scope)).toEqual(['source', 'product', 'transverse', 'workspace']);
+    expect(parsed.subjects.map((subject) => subject.importance)).toEqual(['core', 'supporting', 'incidental', 'core']);
+  });
+
   it('résout un sujet principal rendu par libellé vers son identifiant local', () => {
     const parsed = sourceExtractionSchema.parse({
       facts: [],
