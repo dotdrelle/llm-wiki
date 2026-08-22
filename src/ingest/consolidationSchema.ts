@@ -38,7 +38,9 @@ export const consolidatedPageSchema = z.object({
   ),
   /** Nature of the subject: `vendor`, `product`, `requirement`, `regulation`, `dimension`, `scenario`. */
   kind: z.preprocess(
-    normalizeKind,
+    (value) => (value == null || (typeof value === 'string' && value.trim() === '')
+      ? null
+      : normalizeKind(value)),
     z.enum(EXTRACTION_KINDS).nullish().transform((value) => value ?? null),
   ),
   /** Why this page exists: what the log must be able to restitute. */

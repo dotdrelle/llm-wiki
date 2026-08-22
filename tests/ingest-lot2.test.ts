@@ -229,6 +229,24 @@ describe('provenance et consolidation', () => {
     ]);
   });
 
+  it('laisse kind à null quand il n’est pas déclaré, comme scope, au lieu de le forcer à "product"', () => {
+    // scope a ce garde explicite (null/vide -> null avant normalizeScope) ;
+    // kind ne l'avait pas et tombait dans le fallback de normalizeClosedVocabulary,
+    // qui coerce toute valeur non-string en "product" — un kind simplement omis
+    // se faisait donc déclarer produit/vendor à tort pour detectConceptSplits.
+    const parsed = consolidationPlanSchema.parse({
+      operations: [
+        { type: 'create', path: 'wiki/sources/a.md', content: '# A' },
+        { type: 'create', path: 'wiki/concepts/a.md', content: '# A' },
+      ],
+      pages: [
+        { subject: 'a', scope: 'source' },
+        { subject: 'a', scope: 'transverse' },
+      ],
+    });
+    expect(parsed.pages.map((page) => page.kind)).toEqual([null, null]);
+  });
+
   it('déduit la collection du parent immédiat, pas de la racine d’export', () => {
     expect(collectionFromSourcePath(
       'raw/untracked/Outils de gestion/EAS ACPI/Synthèse Solutions externes/Anaplan.md',
