@@ -179,6 +179,105 @@ export function extractFirstJsonCandidate(text: string): string {
   return text.slice(start).trim();
 }
 
+/**
+ * Whether the `"` at `quoteIndex` is escaped, by counting the run of `\`
+ * immediately before it: an odd count means the quote itself is escaped
+ * (part of the string content), an even count means it is a real boundary —
+ * `\\"` (an escaped backslash then a real quote) must not be mistaken for
+ * `\"` (an escaped quote), which a single character of look-behind cannot
+ * tell apart.
+ */
+function isEscapedQuoteAt(text: string, quoteIndex: number): boolean {
+  let backslashes = 0;
+  let j = quoteIndex - 1;
+  while (j >= 0 && text[j] === '\\') {
+    backslashes += 1;
+    j -= 1;
+  }
+  return backslashes % 2 === 1;
+}
+
+/**
+ * The span of the LAST JSON-shaped chunk in the text — a fenced block if one
+ * is present (last fence first: an earlier one may be a format example ahead
+ * of the real, trailing answer), otherwise the outermost `{…}` found by
+ * scanning backwards from the last `}` (a naive `lastIndexOf('{')` would land
+ * on a nested brace, e.g. the assignments object). Returned as a raw string,
+ * parsed or not — `extractTrailingJson` parses it and gives up on failure;
+ * `extractTrailingJsonCandidate` hands the same span to the repair pipeline
+ * instead, so a span that is well-formed but has a minor defect (an
+ * unescaped quote, say) is still fed to `repairIncompleteJson` rather than
+ * discarded.
+ */
+function findTrailingJsonSpan(trimmed: string): string | null {
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/g);
+  if (fenced) {
+    const last = fenced[fenced.length - 1]!;
+    const inner = last.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    if (inner) return inner;
+  }
+  const end = trimmed.lastIndexOf('}');
+  if (end < 0) return null;
+  let depth = 0;
+  let inString = false;
+  for (let i = end; i >= 0; i -= 1) {
+    const ch = trimmed[i]!;
+    if (ch === '"' && !isEscapedQuoteAt(trimmed, i)) {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === '}') {
+      depth += 1;
+    } else if (ch === '{') {
+      depth -= 1;
+      if (depth === 0) return trimmed.slice(i, end + 1);
+    }
+  }
+  return null;
+}
+
+/**
+ * The LAST balanced JSON object in the text, tolerating prose or a markdown
+ * fence before it — the mirror image of `extractFirstJsonObject`, for a
+ * response that may carry commentary or a reasoning trace ahead of its
+ * answer (a model instructed to return "JSON only" is not guaranteed to
+ * comply, especially a reasoning/agentic one, and `response_format:
+ * json_object` is not sent to every engine — see `supportsJsonResponseFormat`
+ * in `config/engineCapabilities.ts`).
+ */
+export function extractTrailingJson(text: string): unknown {
+  const trimmed = text.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // not pure JSON
+  }
+  const span = findTrailingJsonSpan(trimmed);
+  if (span === null) return null;
+  try {
+    return JSON.parse(span);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The mirror of `extractFirstJsonCandidate` for the `'trailing'` extraction
+ * mode: the LAST JSON-shaped span, returned untouched (not parsed) for the
+ * caller to preprocess/repair — used by `parseJsonPayloadWithLocalRepair`'s
+ * fallback so a trailing object with a fixable defect is repaired instead of
+ * the repair pipeline reverting to the (wrong, in this mode) first bracket.
+ */
+export function extractTrailingJsonCandidate(text: string): string {
+  const trimmed = text.trim();
+  const span = findTrailingJsonSpan(trimmed);
+  if (span === null) {
+    throw new Error('No JSON object found in model response.');
+  }
+  return span;
+}
+
 export function sanitizeJsonStringControlChars(candidate: string): string {
   let sanitized = '';
   let inString = false;

@@ -140,18 +140,69 @@ export function normalizeLabel(label: string): string {
 }
 
 /**
- * A visible label is a single word, without a path.
+ * A visible label is a word or a short phrase, without a path.
  *
- * The constraint comes from the rendering: a bubble carries a word, not a phrase nor a
- * path. `/` and `_` are excluded explicitly because they are the two
- * ways a model spits out a folder hierarchy as a name.
+ * `/` and `_` are excluded explicitly because they are the two ways a model
+ * spits out a folder hierarchy as a name. A space is allowed so a subject can
+ * be named by a short phrase ("sécurité info") instead of a glued word
+ * ("securiteinfo"), but the phrase is bounded so a bubble stays readable.
  */
-export function isValidLabel(label: string): boolean {
-  if (typeof label !== 'string') return false;
+export const MAX_LABEL_WORDS = 2;
+export const MAX_LABEL_CHARS = 48;
+
+/**
+ * Why a label fails the shape check, or `undefined` when it passes.
+ *
+ * A caller that only learns "invalid label" (the former shape of
+ * `isValidLabel`) cannot act on it — a taxonomy-synthesis retry that repeats
+ * "invalid domain label: X" without saying too many words vs. too long vs. a
+ * forbidden character just gets the same kind of violation back. Kept as the
+ * one place the bound is checked; `isValidLabel` below is a thin wrapper.
+ */
+export function labelShapeIssue(label: string): string | undefined {
+  if (typeof label !== 'string') return 'label is not a string';
   const trimmed = label.trim();
-  if (!trimmed || trimmed !== label) return false;
-  if (/[\s/_\\]/.test(trimmed)) return false;
-  return true;
+  if (!trimmed) return 'label is empty';
+  if (trimmed !== label) return 'label has leading or trailing whitespace';
+  if (/[/_\\]/.test(trimmed)) return 'label contains a forbidden character (/, _ or \\)';
+  if (trimmed.length > MAX_LABEL_CHARS) {
+    return `label is ${trimmed.length} characters, limit is ${MAX_LABEL_CHARS}`;
+  }
+  const wordCount = trimmed.split(/\s+/).length;
+  if (wordCount > MAX_LABEL_WORDS) {
+    return `label has ${wordCount} words ("${trimmed}"), limit is ${MAX_LABEL_WORDS}`;
+  }
+  return undefined;
+}
+
+export function isValidLabel(label: string): boolean {
+  return labelShapeIssue(label) === undefined;
+}
+
+/*
+ * Labels that name the page SCOPE or a catch-all, not a subject.
+
+ * They are the first thing a model falls back to when it does not really
+ * group ("Product" with 48 pages, "Transverse", "Ungrouped"). The prompt
+ * forbids them; the prompt is not enough — a model that ignores it publishes
+ * a map that only re-states how pages were produced. Enforced in code so the
+ * proposal is rejected and re-synthesized instead of published.
+ */
+const FORBIDDEN_TAXONOMY_LABELS = new Set([
+  // scope words: how pages were produced or sorted, not what they are about.
+  'source', 'product', 'products', 'produit', 'produits',
+  'transverse', 'transversal', 'workspace', 'espace de travail', 'espace',
+  // catch-all labels.
+  'divers', 'diverses', 'diverse', 'various', 'misc', 'miscellaneous',
+  'other', 'others', 'autre', 'autres', 'unclassified', 'ungrouped',
+  'non classe', 'non groupe', 'inclasses', 'inclassé',
+]);
+
+export function forbiddenLabelReason(label: string): string | undefined {
+  const normalized = normalizeLabel(label);
+  return FORBIDDEN_TAXONOMY_LABELS.has(normalized)
+    ? `label names a page scope or a catch-all, not a subject: "${label}"`
+    : undefined;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

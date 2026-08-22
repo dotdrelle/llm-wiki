@@ -372,6 +372,12 @@ const llmSchema = z
       .enum(['ollama', 'vllm', 'mlx', 'albert', 'openai', 'anthropic', 'generic'])
       .optional(),
     model: z.string().min(1).default('gpt-5-mini'),
+    /**
+     * Model used for the graph taxonomy synthesis only. When absent, `model`
+     * applies. Lets a workspace keep its agentic/ingest model and still run the
+     * semantic grouping on a model that is better at it (and/or faster).
+     */
+    taxonomyModel: z.string().min(1).optional(),
     apiKey: z.string().min(1).optional(),
     baseUrl: z.string().url().optional(),
     temperature: z.number().min(0).max(2).default(0.1),

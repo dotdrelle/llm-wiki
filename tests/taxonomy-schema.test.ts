@@ -32,12 +32,14 @@ const reasons = (result: ReturnType<typeof validateRegistry>) =>
   result.ok ? [] : result.issues.map((issue) => `${issue.path}: ${issue.reason}`);
 
 describe('libellé visible', () => {
-  it('exige un mot unique sans chemin', () => {
+  it('exige un mot ou une courte locution sans chemin', () => {
     expect(isValidLabel('Solution')).toBe(true);
+    expect(isValidLabel('Sécurité info')).toBe(true);
     // Les deux façons dont un modèle recrache une hiérarchie de dossiers.
     expect(isValidLabel('solutions/anaplan')).toBe(false);
     expect(isValidLabel('solutions_saas')).toBe(false);
-    expect(isValidLabel('Solutions SaaS')).toBe(false);
+    // Une locution reste bornée : pas une phrase ni un chemin déguisé.
+    expect(isValidLabel('a b c d')).toBe(false);
     expect(isValidLabel(' Solution')).toBe(false);
     expect(isValidLabel('')).toBe(false);
   });
@@ -194,7 +196,7 @@ describe('validation du registre', () => {
     const result = validateRegistry(
       registry({
         communities: [
-          { id: 'cmty_1', prefLabel: { fr: 'deux mots' }, firstSeenRevision: 1 },
+          { id: 'cmty_1', prefLabel: { fr: 'une locution beaucoup trop longue' }, firstSeenRevision: 1 },
           { id: 'cmty_2', prefLabel: { fr: 'a/b' }, firstSeenRevision: 2 },
         ],
         assignments: { 'wiki/a.md': { primaryCommunity: 'cmty_inconnu' } },

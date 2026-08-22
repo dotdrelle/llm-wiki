@@ -28,6 +28,10 @@ export interface LlmConfig {
   provider: LlmProvider;
   engine: LlmEngine;
   model: string;
+  /**
+   * Model for the graph taxonomy synthesis only. When absent, `model` applies.
+   */
+  taxonomyModel?: string;
   apiKey?: string;
   baseUrl: string;
   temperature: number;

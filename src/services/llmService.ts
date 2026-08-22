@@ -8,6 +8,8 @@ import type { ZodType } from 'zod';
 import {
   extractFirstJsonCandidate,
   extractFirstJsonObject,
+  extractTrailingJson,
+  extractTrailingJsonCandidate,
   fixUnescapedQuotes,
   repairIncompleteJson,
   sanitizeJsonStringControlChars,
@@ -45,6 +47,15 @@ interface CompletionRequest {
   user: string;
   temperature?: number;
   jsonMode?: boolean;
+  /**
+   * Which JSON object to keep when the response may carry text around it.
+   * `'first'` (default) takes the first balanced `{…}`/`[…]` — right for a
+   * model that answers with JSON and nothing else. `'trailing'` takes the
+   * LAST balanced object instead, for a prompt that tolerates (or a
+   * reasoning/agentic model that adds, regardless of instruction) prose
+   * ahead of the JSON.
+   */
+  jsonExtraction?: 'first' | 'trailing';
   label?: string;
   logger?: TraceLogger;
   traceData?: Record<string, unknown>;
@@ -515,23 +526,40 @@ export class LLMService {
     return fixUnescapedQuotes(sanitizeJsonStringControlChars(raw));
   }
 
-  private parseJsonPayload(preprocessed: string): unknown {
+  private parseJsonPayload(preprocessed: string, extraction: 'first' | 'trailing' = 'first'): unknown {
+    if (extraction === 'trailing') {
+      const payload = extractTrailingJson(preprocessed);
+      if (payload === null || payload === undefined) {
+        throw new Error('No JSON object found in model response.');
+      }
+      return payload;
+    }
     return JSON.parse(extractFirstJsonObject(preprocessed));
   }
 
-  private parseJsonPayloadWithLocalRepair(raw: string): {
+  private parseJsonPayloadWithLocalRepair(
+    raw: string,
+    extraction: 'first' | 'trailing' = 'first',
+  ): {
     payload: unknown;
     repaired: boolean;
   } {
     const preprocessed = this.preprocessJson(raw);
     try {
       return {
-        payload: this.parseJsonPayload(preprocessed),
+        payload: this.parseJsonPayload(preprocessed, extraction),
         repaired: false,
       };
     } catch {
+      // Mirror the extraction mode: a `'trailing'` request that failed to
+      // parse cleanly must still be repaired from its LAST JSON-shaped span,
+      // not the first — reverting to `extractFirstJsonCandidate` here would
+      // silently defeat `'trailing'` mode for exactly the malformed-trailing
+      // case it exists to recover from.
       const repairedCandidate = repairIncompleteJson(
-        extractFirstJsonCandidate(preprocessed),
+        extraction === 'trailing'
+          ? extractTrailingJsonCandidate(preprocessed)
+          : extractFirstJsonCandidate(preprocessed),
       );
       return {
         payload: JSON.parse(repairedCandidate),
@@ -573,7 +601,7 @@ export class LLMService {
       | 'model_repair_local_repair' = 'direct';
 
     try {
-      const parsed = this.parseJsonPayloadWithLocalRepair(raw);
+      const parsed = this.parseJsonPayloadWithLocalRepair(raw, request.jsonExtraction);
       payload = parsed.payload;
       parseMode = parsed.repaired ? 'local_repair' : 'direct';
     } catch (localRepairError) {
