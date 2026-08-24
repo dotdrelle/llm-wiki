@@ -3,9 +3,9 @@
 
  The previous splitting cut at each `##`, then at each `###` of a block that was
  still too large, and never re-packed. The granularity produced therefore
- depended on the document's formatting rather than its volume: measured on the
- ACPI corpus, Anaplan (14,868 characters) yielded twelve calls while Board
- (19,838) yielded five. Editorially sibling documents received a very different
+ depended on the document's formatting rather than its volume: measured on a
+ real corpus, one document (14,868 characters) yielded twelve calls while a
+ longer sibling (19,838) yielded five. Editorially sibling documents received a very different
  number of LLM decisions, and the resulting imbalance of concepts was then read
  as a difference of richness.
 

@@ -18,13 +18,13 @@ function registry(): TaxonomyRegistry {
     languages: ['fr'],
     communities: [
       { id: 'dom_logiciel', prefLabel: { fr: 'Logiciel' }, firstSeenRevision: 1, parentCommunity: null },
-      { id: 'cmty_anaplan', prefLabel: { fr: 'Anaplan' }, firstSeenRevision: 1, parentCommunity: 'dom_logiciel' },
-      { id: 'cmty_board', prefLabel: { fr: 'Board' }, firstSeenRevision: 1, parentCommunity: 'dom_logiciel' },
+      { id: 'cmty_alpha', prefLabel: { fr: 'Alpha' }, firstSeenRevision: 1, parentCommunity: 'dom_logiciel' },
+      { id: 'cmty_epsilon', prefLabel: { fr: 'Epsilon' }, firstSeenRevision: 1, parentCommunity: 'dom_logiciel' },
       { id: 'cmty_seul', prefLabel: { fr: 'Isole' }, firstSeenRevision: 1, parentCommunity: null },
     ],
     assignments: {
-      'wiki/a.md': { primaryCommunity: 'cmty_anaplan' },
-      'wiki/b.md': { primaryCommunity: 'cmty_board' },
+      'wiki/a.md': { primaryCommunity: 'cmty_alpha' },
+      'wiki/b.md': { primaryCommunity: 'cmty_epsilon' },
       'wiki/c.md': { primaryCommunity: 'cmty_seul' },
     },
   });
@@ -35,7 +35,7 @@ describe('arbre exposé au client', () => {
     const tree = communityHierarchy(registry(), 'fr');
 
     expect(tree.domains).toEqual([{ id: 'dom_logiciel', label: 'Logiciel' }]);
-    expect(tree.parents).toEqual({ cmty_anaplan: 'dom_logiciel', cmty_board: 'dom_logiciel' });
+    expect(tree.parents).toEqual({ cmty_alpha: 'dom_logiciel', cmty_epsilon: 'dom_logiciel' });
   });
 
   it('ne présente pas comme domaine une racine sans enfant', () => {
@@ -116,7 +116,7 @@ describe('navigation carte → domaine → communauté → document', () => {
 /*
  La hiérarchie doit être visible PARTOUT, pas seulement sur la carte.
 
- Sur ACPI, le registre était hiérarchique et la carte repliait, mais l'index de
+ Sur Demo, le registre était hiérarchique et la carte repliait, mais l'index de
  gauche listait toujours 33 feuilles à plat et l'en-tête annonçait « 33
  communities » sur une carte qui en montrait 3. Deux représentations
  contradictoires du même corpus dans la même fenêtre sont pires qu'aucune

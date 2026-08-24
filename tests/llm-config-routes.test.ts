@@ -44,7 +44,7 @@ function deps(llm: Partial<AppConfig['llm']> = {}, body = '') {
     } as unknown as AppConfig,
     proxyDeps: {} as never,
     runtimePathForWorkspace: (p: string) => p,
-    workspaceNameFromEnv: () => 'acpi',
+    workspaceNameFromEnv: () => 'demo',
     mirrorRuntimeConfig: async () => ({}) as AppConfig,
     readRequestBody: async () => body,
     sendJson,

@@ -23,9 +23,9 @@ type Community = { id: string; label: string; nodeIds: string[]; documentCount: 
 const SCRIPT = graphUiHelpersScript() + graphUiFiltersScript();
 
 const DATA = {
-  workspace: 'acpi',
-  domains: [{ id: 'dom_acpi', label: 'acpi' }],
-  communityParents: { cmty_evaluation: 'dom_acpi', cmty_branches: 'dom_acpi' },
+  workspace: 'demo',
+  domains: [{ id: 'dom_demo', label: 'demo' }],
+  communityParents: { cmty_evaluation: 'dom_demo', cmty_branches: 'dom_demo' },
   communities: [
     { id: 'cmty_evaluation', label: 'evaluation', nodeIds: ['wiki/a.md', 'wiki/b.md'], documentCount: 2 },
     { id: 'cmty_branches', label: 'branches', nodeIds: ['wiki/c.md'], documentCount: 1 },
@@ -98,9 +98,9 @@ describe('périmètre d’un identifiant de la taxonomie', () => {
    des feuilles renvoyait `undefined`, donc l'ensemble vide.
   */
   it('rend l’union des pages des filles pour un domaine', () => {
-    const { api } = evaluate({ view: 'domain', selectedCommunity: 'dom_acpi' });
+    const { api } = evaluate({ view: 'domain', selectedCommunity: 'dom_demo' });
 
-    expect(api.graphCommunityMembers('dom_acpi').sort()).toEqual(['wiki/a.md', 'wiki/b.md', 'wiki/c.md']);
+    expect(api.graphCommunityMembers('dom_demo').sort()).toEqual(['wiki/a.md', 'wiki/b.md', 'wiki/c.md']);
   });
 
   it('rend un ensemble vide pour un identifiant inconnu', () => {
@@ -112,7 +112,7 @@ describe('périmètre d’un identifiant de la taxonomie', () => {
   it('nomme aussi bien un domaine qu’une feuille', () => {
     const { api } = evaluate({ view: 'map', selectedCommunity: null });
 
-    expect(api.graphCommunityLabel('dom_acpi')).toBe('acpi');
+    expect(api.graphCommunityLabel('dom_demo')).toBe('demo');
     expect(api.graphCommunityLabel('cmty_branches')).toBe('branches');
   });
 });
@@ -125,7 +125,7 @@ describe('vue d’un domaine', () => {
    la scène passait par `visible()`.
   */
   it('contient les documents de toutes ses filles', () => {
-    const { api } = evaluate({ view: 'domain', selectedCommunity: 'dom_acpi' });
+    const { api } = evaluate({ view: 'domain', selectedCommunity: 'dom_demo' });
     const scope = api.visible();
 
     expect(scope.nodes.map((node: { id: string }) => node.id).sort()).toEqual(['wiki/a.md', 'wiki/b.md', 'wiki/c.md']);
@@ -156,7 +156,7 @@ describe('index de gauche', () => {
     const { api, groups } = evaluate({
       view: 'map',
       selectedCommunity: null,
-      groups: ['dom_acpi', 'cmty_evaluation', 'cmty_branches', 'cmty_isole'],
+      groups: ['dom_demo', 'cmty_evaluation', 'cmty_branches', 'cmty_isole'],
     });
     api.updateCommunityFilterCounts();
 
@@ -170,7 +170,7 @@ describe('index de gauche', () => {
       view: 'map',
       selectedCommunity: null,
       enabledTypes: ['deliverable'],
-      groups: ['dom_acpi', 'cmty_isole'],
+      groups: ['dom_demo', 'cmty_isole'],
     });
     api.updateCommunityFilterCounts();
 

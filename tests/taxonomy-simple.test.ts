@@ -7,10 +7,10 @@ import {
 } from '../src/graph/wiki/taxonomy/simple.ts';
 
 const pages = [
-  { path: 'wiki/concepts/a.md', title: 'Anaplan', frontmatter: {}, excerpt: '', kind: 'product', scope: 'product' },
-  { path: 'wiki/concepts/b.md', title: 'Sécurité', frontmatter: {}, excerpt: '', kind: 'dimension', scope: 'transverse' },
-  { path: 'wiki/concepts/c.md', title: 'Souveraineté', frontmatter: {}, excerpt: '', kind: 'dimension', scope: 'transverse' },
-  { path: 'wiki/sources/d.md', title: 'Étude', frontmatter: {}, excerpt: '', kind: null, scope: 'source' },
+  { path: 'wiki/concepts/a.md', title: 'Alpha', frontmatter: {}, excerpt: '', kind: 'product', scope: 'product', class: null, subject: null },
+  { path: 'wiki/concepts/b.md', title: 'Sécurité', frontmatter: {}, excerpt: '', kind: 'dimension', scope: 'transverse', class: null, subject: null },
+  { path: 'wiki/concepts/c.md', title: 'Souveraineté', frontmatter: {}, excerpt: '', kind: 'dimension', scope: 'transverse', class: null, subject: null },
+  { path: 'wiki/sources/d.md', title: 'Étude', frontmatter: {}, excerpt: '', kind: null, scope: 'source', class: null, subject: null },
 ];
 
 const valid = {
@@ -19,8 +19,8 @@ const valid = {
     { id: 'd2', label: 'Conformité' },
   ],
   communities: [
-    { id: 'c1', label: 'Anaplan', domain: 'd1' },
-    { id: 'c4', label: 'Pigment', domain: 'd1' },
+    { id: 'c1', label: 'Alpha', domain: 'd1' },
+    { id: 'c4', label: 'Beta', domain: 'd1' },
     { id: 'c2', label: 'Sécurité', domain: 'd2' },
     { id: 'c3', label: 'Souveraineté', domain: 'd2' },
   ],
@@ -49,11 +49,11 @@ describe('validateProposal', () => {
 
   it('signale le nombre de mots en trop plutôt qu’un rejet opaque (libellé FR avec articles)', () => {
     // Observé en usage réel : un modèle qui écrit en français dépasse vite la
-    // limite avec des articles/prépositions ("Gestion de projet ACPI" = 4
+    // limite avec des articles/prépositions ("Gestion de projet Demo" = 4
     // mots). Un message "invalid domain label: X" sans la raison ne permet
     // pas au modèle de corriger au retry ; il doit voir qu'il a dépassé de 1.
     const issues = validateProposal(
-      { ...valid, domains: [{ id: 'd1', label: 'Gestion de projet ACPI' }, { id: 'd2', label: 'Conformité' }] },
+      { ...valid, domains: [{ id: 'd1', label: 'Gestion de projet Demo' }, { id: 'd2', label: 'Conformité' }] },
       pages,
       'fr',
     );
@@ -74,7 +74,7 @@ describe('validateProposal', () => {
       {
         ...valid,
         communities: [
-          { id: 'c1', label: 'Anaplan', domain: 'd1' },
+          { id: 'c1', label: 'Alpha', domain: 'd1' },
           { id: 'c2', label: 'Sécurité', domain: 'd2' },
         ],
       },
@@ -89,6 +89,8 @@ describe('validateProposal', () => {
       path: `wiki/concepts/p${i}.md`,
       title: `Page ${i}`,
       frontmatter: {},
+      class: null,
+      subject: null,
       excerpt: '',
       kind: 'product',
       scope: 'product',
@@ -112,14 +114,14 @@ describe('validateProposal', () => {
 describe('extractTrailingJson', () => {
   it('extrait le JSON à la fin d’une réponse mixte (passe 1 + self-check + JSON)', () => {
     const raw = [
-      'wiki/a.md | Anaplan | produit de planification',
+      'wiki/a.md | Alpha | produit de planification',
       'wiki/b.md | Sécurité | protection de l’information',
       'SELF-CHECK: pages=2 domains=2',
-      '{"domains":[{"id":"d1","label":"Solutions"}],"communities":[{"id":"c1","label":"Anaplan","domain":"d1"}],"assignments":{"wiki/a.md":"c1"}}',
+      '{"domains":[{"id":"d1","label":"Solutions"}],"communities":[{"id":"c1","label":"Alpha","domain":"d1"}],"assignments":{"wiki/a.md":"c1"}}',
     ].join('\n');
     expect(extractTrailingJson(raw)).toEqual({
       domains: [{ id: 'd1', label: 'Solutions' }],
-      communities: [{ id: 'c1', label: 'Anaplan', domain: 'd1' }],
+      communities: [{ id: 'c1', label: 'Alpha', domain: 'd1' }],
       assignments: { 'wiki/a.md': 'c1' },
     });
   });
@@ -148,11 +150,11 @@ describe('buildRetryPrompt', () => {
     // reliste pas les chemins, le modèle n’a plus aucun moyen de savoir ce
     // qu’il a le droit d’écrire dans "assignments" et invente sa propre
     // arborescence au lieu de corriger l’erreur signalée.
-    const prompt = buildRetryPrompt(pages, ['unknown page assigned: wiki/solutions/board.md']);
+    const prompt = buildRetryPrompt(pages, ['unknown page assigned: wiki/solutions/epsilon.md']);
     for (const page of pages) {
       expect(prompt).toContain(page.path);
     }
-    expect(prompt).toContain('unknown page assigned: wiki/solutions/board.md');
+    expect(prompt).toContain('unknown page assigned: wiki/solutions/epsilon.md');
   });
 
   it('ré-injecte la règle de condensation des labels, pas seulement les erreurs', () => {
@@ -165,7 +167,7 @@ describe('buildRetryPrompt', () => {
   });
 
   it('ré-injecte la règle « au moins 2 communautés par domaine », pas seulement l’erreur', () => {
-    // Observé en usage réel (run acpi, 2026-08-22) : un domaine "ERP" à une
+    // Observé en usage réel (run demo, 2026-08-22) : un domaine "ERP" à une
     // seule communauté rejeté 3 tentatives de suite — le retry ne rappelait
     // ni la borne ni comment la corriger (fusionner ou scinder), seulement
     // le message brut "has fewer than two communities".

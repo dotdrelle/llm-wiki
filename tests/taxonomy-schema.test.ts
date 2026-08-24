@@ -36,7 +36,7 @@ describe('libellé visible', () => {
     expect(isValidLabel('Solution')).toBe(true);
     expect(isValidLabel('Sécurité info')).toBe(true);
     // Les deux façons dont un modèle recrache une hiérarchie de dossiers.
-    expect(isValidLabel('solutions/anaplan')).toBe(false);
+    expect(isValidLabel('solutions/alpha')).toBe(false);
     expect(isValidLabel('solutions_saas')).toBe(false);
     // Une locution reste bornée : pas une phrase ni un chemin déguisé.
     expect(isValidLabel('a b c d')).toBe(false);

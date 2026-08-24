@@ -48,24 +48,24 @@ const registry: TaxonomyRegistry = {
   corpusAlgorithm: 'knowledge-content-sha256-v1',
   languages: ['fr'],
   communities: [
-    { id: 'leaf_prophix', prefLabel: { fr: 'Prophix' }, firstSeenRevision: 1 },
+    { id: 'leaf_beta', prefLabel: { fr: 'Beta' }, firstSeenRevision: 1 },
     { id: 'leaf_securite', prefLabel: { fr: 'Sécurité' }, firstSeenRevision: 1 },
   ],
   assignments: {
-    'raw/ingested/prophix.md': { primaryCommunity: 'leaf_prophix' },
-    'wiki/concepts/prophix-integration.md': { primaryCommunity: 'leaf_prophix' },
-    // Une page de sécurité citée par la source prophix : elle n'est PAS dans
+    'raw/ingested/beta.md': { primaryCommunity: 'leaf_beta' },
+    'wiki/concepts/beta-integration.md': { primaryCommunity: 'leaf_beta' },
+    // Une page de sécurité citée par la source beta : elle n'est PAS dans
     // la feuille du produit, pourtant la source la cite.
     'wiki/concepts/securite.md': { primaryCommunity: 'leaf_securite' },
   },
   corpusPageIds: [
-    'raw/ingested/prophix.md',
-    'wiki/concepts/prophix-integration.md',
+    'raw/ingested/beta.md',
+    'wiki/concepts/beta-integration.md',
     'wiki/concepts/securite.md',
   ],
   sampledPageIds: [
-    'raw/ingested/prophix.md',
-    'wiki/concepts/prophix-integration.md',
+    'raw/ingested/beta.md',
+    'wiki/concepts/beta-integration.md',
     'wiki/concepts/securite.md',
   ],
 };
@@ -73,28 +73,28 @@ const registry: TaxonomyRegistry = {
 describe('couverture d’une source', () => {
   it('distingue les pages qui citent la source de la taille de sa feuille', () => {
     const nodes = [
-      node('raw/ingested/prophix.md', 'raw-source', 'prophix'),
-      node('wiki/concepts/prophix-integration.md', 'wiki'),
+      node('raw/ingested/beta.md', 'raw-source', 'beta'),
+      node('wiki/concepts/beta-integration.md', 'wiki'),
       node('wiki/concepts/securite.md', 'wiki'),
     ];
     const edges = [
       // La source cite la page de sécurité : la source COUVRE sécurité.
-      edge('raw/ingested/prophix.md', 'wiki/concepts/securite.md', 'cites'),
+      edge('raw/ingested/beta.md', 'wiki/concepts/securite.md', 'cites'),
       // La page d'intégration cite la source.
-      edge('wiki/concepts/prophix-integration.md', 'raw/ingested/prophix.md', 'cites'),
+      edge('wiki/concepts/beta-integration.md', 'raw/ingested/beta.md', 'cites'),
     ];
 
     const coverage = computeSourceCoverage(nodes, edges, registry);
-    const prophix = coverage.find((item) => item.id === 'raw/ingested/prophix.md')!;
+    const beta = coverage.find((item) => item.id === 'raw/ingested/beta.md')!;
 
     // Une page cite la source (l'intégration).
-    expect(prophix.citingPages).toBe(1);
-    // Option A : la feuille Prophix ne compte plus la source elle-même — le
+    expect(beta.citingPages).toBe(1);
+    // Option A : la feuille Beta ne compte plus la source elle-même — le
     // corpus de connaissance est fait de concepts, pas des matières brutes qui
     // les ont produits. Reste le concept d'intégration = 1.
-    expect(prophix.assignedPages).toBe(1);
-    expect(prophix.leafId).toBe('leaf_prophix');
-    expect(prophix.subject).toBe('prophix');
+    expect(beta.assignedPages).toBe(1);
+    expect(beta.leafId).toBe('leaf_beta');
+    expect(beta.subject).toBe('beta');
   });
 
   it('ne compte une citation que si la cible est bien une source', () => {
@@ -121,9 +121,9 @@ describe('couverture d’une source', () => {
     const twoSources = {
       ...registry,
       assignments: {
-        'raw/ingested/a.md': { primaryCommunity: 'leaf_prophix' },
-        'raw/ingested/b.md': { primaryCommunity: 'leaf_prophix' },
-        'wiki/concepts/c.md': { primaryCommunity: 'leaf_prophix' },
+        'raw/ingested/a.md': { primaryCommunity: 'leaf_beta' },
+        'raw/ingested/b.md': { primaryCommunity: 'leaf_beta' },
+        'wiki/concepts/c.md': { primaryCommunity: 'leaf_beta' },
       },
     };
     const coverage = computeSourceCoverage(nodes, [], twoSources);

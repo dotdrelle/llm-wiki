@@ -570,7 +570,7 @@ describe('mise en page de la scène', () => {
 /*
  Une bulle ne compte que ce qu'elle montre.
 
- Sur ACPI : sept domaines totalisant 101 pages sur une carte dont l'en-tête
+ Sur Demo : sept domaines totalisant 101 pages sur une carte dont l'en-tête
  annonçait 88 documents. L'écart valait exactement le nombre de sources brutes,
  décochées dans les filtres — on ne gardait que les communautés ayant au moins
  une page visible, puis on réutilisait leur liste de membres ENTIÈRE. Le domaine
@@ -608,8 +608,8 @@ describe('compte des pages sur la carte', () => {
     communityParents: { a: 'dom', b: 'dom' },
     communities: [
       // Trois pages chacune, dont une seule source brute masquée par le filtre.
-      { id: 'a', label: 'anaplan', nodeIds: ['a1', 'a2', 'raw-a'], documentCount: 3, conceptCount: 2, sourceCount: 1, internalRelations: 0, externalRelations: 0 },
-      { id: 'b', label: 'board', nodeIds: ['b1', 'raw-b'], documentCount: 2, conceptCount: 1, sourceCount: 1, internalRelations: 0, externalRelations: 0 },
+      { id: 'a', label: 'alpha', nodeIds: ['a1', 'a2', 'raw-a'], documentCount: 3, conceptCount: 2, sourceCount: 1, internalRelations: 0, externalRelations: 0 },
+      { id: 'b', label: 'epsilon', nodeIds: ['b1', 'raw-b'], documentCount: 2, conceptCount: 1, sourceCount: 1, internalRelations: 0, externalRelations: 0 },
     ],
     communityEdges: [],
     nodes: [],
@@ -639,6 +639,6 @@ describe('compte des pages sur la carte', () => {
 
     expect(build(corpus(), ['a1', 'b1']).scene().nodes[0].label).toBe('LOGICIEL');
     const leaves = build(flat, ['a1', 'b1']).scene().nodes.map((node: { label: string }) => node.label);
-    expect(leaves).toEqual(['Anaplan', 'Board']);
+    expect(leaves).toEqual(['Alpha', 'Epsilon']);
   });
 });

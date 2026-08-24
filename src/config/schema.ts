@@ -378,6 +378,7 @@ const llmSchema = z
      * semantic grouping on a model that is better at it (and/or faster).
      */
     taxonomyModel: z.string().min(1).optional(),
+    conceptsModel: z.string().min(1).optional(),
     apiKey: z.string().min(1).optional(),
     baseUrl: z.string().url().optional(),
     temperature: z.number().min(0).max(2).default(0.1),

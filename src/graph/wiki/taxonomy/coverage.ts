@@ -7,7 +7,7 @@ import type { TaxonomyRegistry } from './schema.ts';
 
  "Ungrouped" said a single thing and covered three: a page never
  submitted to the model, a page submitted and not classified, a page that appeared after
- synthesis. The block of about 130 pages observed on ACPI almost
+ synthesis. The block of about 130 pages observed on a real corpus almost
  entirely fell under the third case — hence a revision gap, not a
  taxonomic decision. One word for three causes makes the diagnosis impossible and
  ends up making the warning useless.

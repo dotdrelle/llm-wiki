@@ -7,7 +7,7 @@ import { planSourcePacks, splitSourceSections } from '../src/utils/sourcePacking
  Ce que le Lot 1 doit garantir : le nombre d'appels LLM suit le VOLUME d'une
  source, pas sa mise en forme.
 
- Mesures d'origine sur ACPI : Anaplan, 14 868 caractères, douze appels ; Board,
+ Mesures d'origine sur Demo : Alpha, 14 868 caractères, douze appels ; Epsilon,
  19 838 caractères, cinq appels. Le découpage coupait à chaque titre sans jamais
  ré-empaqueter, si bien que la hiérarchie précise des titres pesait plus lourd
  que la richesse du document.
@@ -33,7 +33,7 @@ describe('ré-empaquetage des sections', () => {
   it('ne multiplie pas les lots quand on ajoute des titres à contenu constant', () => {
     /*
      Le test de non-régression du § 4.3. C'est exactement la différence entre
-     Anaplan et Board : même matière, découpage éditorial différent.
+     Alpha et Epsilon : même matière, découpage éditorial différent.
     */
     const body = filler(120);
     const flat = `# Doc\n\n## Tout\n\n${body}`;

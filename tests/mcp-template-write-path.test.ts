@@ -80,7 +80,7 @@ describe('templateHardContentViolations', () => {
       '',
       '[[INSTRUCTION:',
       'Describe the project purpose.',
-      '[src: wiki/concepts/acpi.md]',
+      '[src: wiki/concepts/demo.md]',
       ']]',
       '',
       '## Next',
@@ -104,7 +104,7 @@ describe('templateHardContentViolations', () => {
       '',
       '## Intro',
       '',
-      'Le projet ACPI est un système de gestion financière. [src: wiki/concepts/acpi.md]',
+      'Le projet Demo est un système de gestion financière. [src: wiki/concepts/demo.md]',
       '',
       '[[INSTRUCTION:',
       'Describe the project purpose.',
@@ -112,7 +112,7 @@ describe('templateHardContentViolations', () => {
       '',
     ].join('\n');
     expect(templateHardContentViolations(content)).toContain(
-      'Le projet ACPI est un système de gestion financière. [src: wiki/concepts/acpi.md]',
+      'Le projet Demo est un système de gestion financière. [src: wiki/concepts/demo.md]',
     );
   });
 });

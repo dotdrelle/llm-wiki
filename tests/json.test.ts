@@ -87,13 +87,13 @@ describe('json utilities', () => {
     // La valeur littérale `null` ne passe jamais par une chaîne, l'état du
     // parseur restait 'value' et la clé suivante héritait d'un stringRole
     // erroné → le guillemet de sa valeur était échappé en '\\"' → JSON invalide.
-    // (Régression observée sur la consolidation Pigment, lot 3 §6.1.)
+    // (Régression observée sur la consolidation Delta, lot 3 §6.1.)
     const raw =
-      '[ { "subject": "pigment", "collection": null, "scope": "product" }, { "subject": "index", "collection": null, "scope": "workspace" } ]';
+      '[ { "subject": "delta", "collection": null, "scope": "product" }, { "subject": "index", "collection": null, "scope": "workspace" } ]';
     const repaired = fixUnescapedQuotes(raw);
 
     expect(JSON.parse(repaired)).toEqual([
-      { subject: 'pigment', collection: null, scope: 'product' },
+      { subject: 'delta', collection: null, scope: 'product' },
       { subject: 'index', collection: null, scope: 'workspace' },
     ]);
   });

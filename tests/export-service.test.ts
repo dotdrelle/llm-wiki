@@ -29,7 +29,7 @@ describe('citation marker stripping', () => {
   it('removes canonical and space-padded markers', () => {
     const text = [
       'Exigence RGPD documentée [src: wiki/concepts/conformite.md].',
-      'Certification visée [ src: wiki/concepts/souverainete-saas/criteres-secnumcloud.md ].',
+      'Certification visée [ src: wiki/concepts/souverainete-saas/criteres-sovereignseal.md ].',
       'Audit prévu [  SRC:  wiki/x.md  ].',
     ].join('\n');
     const stripped = stripCitationMarkers(text);
@@ -48,13 +48,13 @@ describe('citation marker stripping', () => {
 describe('section validation', () => {
   const original = [
     'Le service garantit une disponibilité de 99,9 % et une restitution sous 30 jours.',
-    'La certification SecNumCloud 3.2 est exigée.',
+    'La certification SovereignSeal 3.2 est exigée.',
   ].join('\n');
 
   it('accepts an expansion that preserves numbers and length', () => {
     const candidate = [
       'Le service garantit une disponibilité de 99,9 % et une restitution sous 30 jours,',
-      'conformément au contrat. La certification SecNumCloud 3.2 est exigée et vérifiée',
+      'conformément au contrat. La certification SovereignSeal 3.2 est exigée et vérifiée',
       "par un audit annuel de l'ANSSI.",
     ].join('\n');
     expect(sectionValidationIssue(original, candidate, 0.5)).toBeUndefined();
@@ -81,13 +81,13 @@ describe('section validation', () => {
   it('rejects lost numbers', () => {
     const candidate =
       'Le service garantit une haute disponibilité et une restitution rapide. ' +
-      'La certification SecNumCloud 3.2 est exigée et documentée précisément.';
+      'La certification SovereignSeal 3.2 est exigée et documentée précisément.';
     expect(sectionValidationIssue(original, candidate, 0.5)).toMatch(/^numbers_lost:/);
   });
 
   it('ignores digits inside [src: ...] citation markers', () => {
     const cited =
-      'La restitution est prévue sous 30 jours. [src: raw/ingested/2c4953e3-clausier.md]';
+      'La restitution est prévue sous 30 jours. [src: raw/ingested/2c4953e3-demo.md]';
     const candidate =
       'La restitution des données est prévue sous 30 jours selon le contrat établi.';
     expect(sectionValidationIssue(cited, candidate, 0.5)).toBeUndefined();

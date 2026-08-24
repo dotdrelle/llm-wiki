@@ -45,10 +45,10 @@ describe('source citations', () => {
   it('repairs labelled and bare-path citations into the canonical [src: path] form', () => {
     expect(
       canonicalizeSourceCitations(
-        'Ref [Source 1 – wiki/sources/eas-avant-projet-acpi.md] and [wiki/concepts/product/acpi-renewal.md].',
+        'Ref [Source 1 – wiki/sources/eas-avant-projet-demo.md] and [wiki/concepts/product/demo-renewal.md].',
       ),
     ).toBe(
-      'Ref [src: wiki/sources/eas-avant-projet-acpi.md] and [src: wiki/concepts/product/acpi-renewal.md].',
+      'Ref [src: wiki/sources/eas-avant-projet-demo.md] and [src: wiki/concepts/product/demo-renewal.md].',
     );
   });
 

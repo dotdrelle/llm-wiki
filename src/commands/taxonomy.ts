@@ -8,7 +8,13 @@ import {
   simpleSynthesisSchema,
   synthesizeSimpleTaxonomy,
 } from '../graph/wiki/taxonomy/simple.ts';
+import {
+  buildDomainSystemPrompt,
+  buildDomainUserPrompt,
+  domainProposalSchema,
+} from '../graph/wiki/taxonomy/derived.ts';
 import { knowledgeEtag, listKnowledgeFiles } from '../graph/wiki/taxonomy/knowledge.ts';
+import { readConceptGrid } from '../ingest/conceptGrid.ts';
 
 /**
  * `wiki taxonomy` — prompt-driven synthesis of the graph taxonomy.
@@ -62,11 +68,50 @@ export default async function taxonomyCmd(
       },
       simpleSynthesisSchema,
     );
+  // The derived path (a workspace with a concept grid) asks the model a
+  // different question and a different shape: `{domains, classDomains}`.
+  const proposeJson = async (request: { system: string; user: string }) =>
+    llm.completeJson(
+      {
+        ...request,
+        jsonMode: true,
+        jsonExtraction: 'trailing',
+        label: 'taxonomy-synthesis',
+        temperature: 0,
+      },
+      domainProposalSchema,
+    );
 
   if (!options.apply) {
     // Dry run: show the exact prompts --apply would send, without a model call.
+    // Mirrors synthesizeSimpleTaxonomy's own fork: a workspace with a published
+    // concept grid takes the derived (class-gathering) path, not the legacy one.
     const files = await listKnowledgeFiles(rootDir);
     const pages = await readPageBriefs(rootDir, files);
+    const gridRead = await readConceptGrid(rootDir);
+    if (gridRead.status === 'malformed') {
+      console.log('Concept grid is malformed:');
+      for (const issue of gridRead.issues.slice(0, 20)) console.log(`  - ${issue}`);
+      process.exitCode = 1;
+      return;
+    }
+    if (gridRead.status === 'ok') {
+      const { grid } = gridRead;
+      const pageCountByClass = new Map<string, number>();
+      for (const page of pages) {
+        if (page.class && grid.set.has(page.class)) {
+          pageCountByClass.set(page.class, (pageCountByClass.get(page.class) ?? 0) + 1);
+        }
+      }
+      console.log(buildDomainSystemPrompt(language));
+      console.log('\n--- user ---\n');
+      console.log(buildDomainUserPrompt(grid, pageCountByClass, language));
+      console.log(
+        `\nDry run: ${pages.length} page(s) over ${grid.classes.length} class(es).`
+        + ' Re-run with --apply to synthesize and publish a taxonomy revision.',
+      );
+      return;
+    }
     console.log(buildSystemPrompt(pages.length, language));
     console.log('\n--- user ---\n');
     console.log(buildSimplePrompt(pages, language));
@@ -79,7 +124,7 @@ export default async function taxonomyCmd(
   const outcome = await synthesizeSimpleTaxonomy(
     rootDir,
     { language },
-    { propose, ...(options.expectedCorpus ? { expectedCorpus: options.expectedCorpus } : {}) },
+    { propose, proposeJson, ...(options.expectedCorpus ? { expectedCorpus: options.expectedCorpus } : {}) },
   );
 
   switch (outcome.status) {

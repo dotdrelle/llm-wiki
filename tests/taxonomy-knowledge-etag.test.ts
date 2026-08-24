@@ -62,6 +62,16 @@ describe('périmètre de l’empreinte de connaissance', () => {
     expect(await listKnowledgeFiles(root)).not.toContain('wiki/log.md');
   });
 
+  it('ignore la grille de concepts (fichier de contrôle, pas une page)', async () => {
+    // `wiki/concepts-grid.md` est le plan de classement, pas une page de
+    // connaissance : le classer ferait apparaître le fichier de contrôle comme
+    // une feuille « Non classé » dans le graphe.
+    const before = await knowledgeEtag(root);
+    await page('wiki', 'concepts-grid.md', '# Conceptual grid\n\n```yaml\nclass:\n  - offre-marche\n  - securite\n```\n');
+    expect(await knowledgeEtag(root)).toBe(before);
+    expect(await listKnowledgeFiles(root)).not.toContain('wiki/concepts-grid.md');
+  });
+
   it('change dès qu’une page concept change, pas quand une source brute bouge', async () => {
     const before = await knowledgeEtag(root);
 

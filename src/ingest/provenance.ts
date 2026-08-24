@@ -28,13 +28,26 @@ export type PageProvenance = {
   collection: string | null;
   scope: ExtractionScope | null;
   kind: ExtractionKind | null;
+  /*
+   The ranking class this page belongs to, taken from the workspace grid.
+
+   `kind` and `class` answer two different questions and neither stands in for
+   the other. `kind` says what a named thing IS — a product, a supplier, a
+   regulation. `class` says where a DOCUMENT is filed, and one named thing is
+   filed differently depending on what the page says about it. Deriving one from the other is what produced a corpus of
+   entity pages: `kind` cannot name a class it was never given the vocabulary
+   for.
+  */
+  class: string | null;
+  /** Other classes the page also speaks to; the primary one stays `class`. */
+  classSecondary: string[];
 };
 
 /**
  * Canonical form of a provenance value.
  *
- * Lowercased, accents removed, separators unified: `Anaplan`, `anaplan` and
- * `Anaplan ` must designate the same subject, otherwise the identity we have
+ * Lowercased, accents removed, separators unified: `Name`, `name` and
+ * `Name ` must designate the same subject, otherwise the identity we have
  * just introduced would suffer exactly the same flaw as `group:`.
  */
 export function normalizeProvenanceValue(value: string): string {
@@ -54,8 +67,8 @@ export function isValidProvenanceValue(value: string): boolean {
 
 /**
  * Whether two normalized subjects plausibly identify the same real-world
- * thing, judging only by their leading token ("jedox" / "jedox-solution" /
- * "jedox-certifications" all share "jedox"). This is deliberately lenient:
+ * thing, judging only by their leading token ("x" / "x-solution" /
+ * "x-certifications" all share "x"). This is deliberately lenient:
  * it only decides whether an existing page is worth SHOWING the model as a
  * reuse candidate during consolidation, never whether to merge anything
  * outright, so a false positive costs one ignored inventory line while a
@@ -96,6 +109,10 @@ export function applyProvenance(content: string, provenance: PageProvenance): st
 
   for (const [key, value] of Object.entries(provenance)) {
     if (value == null) continue;
+    // An empty secondary list is not a value: writing `classSecondary: []` in
+    // every frontmatter would say "no other class applies" where the truth is
+    // "nobody looked".
+    if (Array.isArray(value) && value.length === 0) continue;
     data[key] = value;
   }
 
@@ -111,7 +128,7 @@ export function applyProvenance(content: string, provenance: PageProvenance): st
  */
 export function readProvenance(content: string): PageProvenance {
   const { data } = matter(content);
-  const read = (key: 'subject' | 'collection'): string | null => {
+  const read = (key: 'subject' | 'collection' | 'class'): string | null => {
     const value = data[key];
     return typeof value === 'string' && isValidProvenanceValue(value) ? value : null;
   };
@@ -120,6 +137,12 @@ export function readProvenance(content: string): PageProvenance {
     collection: read('collection'),
     scope: isExtractionScope(data.scope) ? data.scope : null,
     kind: isExtractionKind(data.kind) ? data.kind : null,
+    class: read('class'),
+    classSecondary: Array.isArray(data.classSecondary)
+      ? data.classSecondary.filter(
+        (value): value is string => typeof value === 'string' && isValidProvenanceValue(value),
+      )
+      : [],
   };
 }
 

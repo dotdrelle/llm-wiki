@@ -35,12 +35,12 @@ export type ExtractionScope = (typeof EXTRACTION_SCOPES)[number];
  *
  * `scope` says WHERE a subject's knowledge lives (one document, one product,
  * several, the whole workspace); `kind` says WHAT the subject IS. The two are
- * orthogonal: "Board" is a `product` whose `scope` is `product`, while
+ * orthogonal: a named tool is a `product` whose `scope` is `product`, while
  * "Certifications cloud" is a `dimension` whose `scope` is `transverse`.
  *
  * `kind` exists because a taxonomy groups by identity, and identity has a
- * nature. Without it, the consolidation cannot tell "Board" (the product) from
- * "Board International" (the vendor behind it) — two near-duplicate pages for
+ * nature. Without it, the consolidation cannot tell a product from the vendor
+ * that publishes it under a near-identical name — two near-duplicate pages for
  * one real-world thing — nor a `dimension` from the `product` it qualifies. A
  * closed vocabulary lets the taxonomy trust the field instead of re-deriving
  * nature from prose.

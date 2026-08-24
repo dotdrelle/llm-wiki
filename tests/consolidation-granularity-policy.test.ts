@@ -1,18 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { buildConsolidationPrompt, CONSOLIDATION_PROMPT_VERSION } from '../src/prompts/consolidationPrompt.ts';
+import { UNCLASSIFIED_CLASS } from '../src/ingest/conceptGrid.ts';
 import type { SourceDocument } from '../src/types.ts';
 
 /*
- Politique de granularité (plan Lot 3, §6.1).
+ Politique pré-grille (ex « granularité », plan Lot 3 §6.1).
 
- La mesure ACPI a montré des comptes par source suspendus comme uniformes :
- sept sources, sept fois trois pages, etc., quelle que soit leur matière. Le
- prompt l'encourageait sur l'interprétation « default = 3 » d'une borne
- « zero to three by default ». Ce test verrouille le texte normatif : le défaut
- doit être ZÉRO, le nombre justifié par le contenu et non uniforme, et une page
- existante réutilisée avant d'en créer une nouvelle. Ramollir l'un de ces
- points doit casser ce test.
-*/
+ Une grille fermée n'existe pas encore : toute page concept est une feuille sous
+ la classe réservée `unclassified`. Rien n'est inventé, rien n'est perdu — la
+ feuille attend qu'une grille existe (ou qu'un humain la range dans une vraie
+ classe). Ce test verrouille ce comportement : si on remet le modèle à inventer
+ des pages-produit ou des dimensions à la volée, il casse.
+ */
 
 const source: SourceDocument = {
   absolutePath: '/w/raw/untracked/x.md',
@@ -43,48 +42,32 @@ const args = {
   ctx: { language: 'fr' },
 };
 
-describe('politique de granularité §6.1', () => {
-  it('exige un défaut à zéro, pas trois', () => {
+describe('politique pré-grille (unclassified)', () => {
+  it('signale l’absence de grille plutôt que de laisser inventer des classes', () => {
     const { system } = buildConsolidationPrompt(args as never);
-    expect(system).toContain('at most three NEW ones per source');
-    expect(system).toContain('zero is common');
-    // L'ancienne lecture de la borne comme cible ne doit plus apparaître.
-    expect(system).not.toContain('zero to three NEW concept pages');
+    expect(system).toContain('NO conceptual grid');
   });
 
-  it('exige une granularité justifiée par le contenu, non uniforme', () => {
+  it('range chaque feuille sous la classe réservée unclassified', () => {
     const { system } = buildConsolidationPrompt(args as never);
-    expect(system.toLowerCase()).toContain('justified by the content, not uniform');
-    expect(system.toLowerCase()).toContain('unrelated documents should yield different counts');
+    expect(system).toContain(`wiki/concepts/${UNCLASSIFIED_CLASS}/<subject>.md`);
+    expect(system).toContain(`"class" field is ${UNCLASSIFIED_CLASS}`);
   });
 
-  it('interdit de créer une page quand une existante couvre déjà le sujet', () => {
+  it('impose une feuille par sujet, jamais une page par titre', () => {
     const { system } = buildConsolidationPrompt(args as never);
-    expect(system.toLowerCase()).toContain('reuse or update an existing concept page');
-    expect(system.toLowerCase()).toContain('before creating a near-duplicate');
+    expect(system.toLowerCase()).toContain('one leaf per subject');
+    expect(system.toLowerCase()).toContain('never create one page per heading');
   });
 
-  it('borne la création de produit à trois avec une justification par contenu', () => {
+  it('interdit de créer une feuille quand une existante couvre déjà le sujet', () => {
     const { system } = buildConsolidationPrompt(args as never);
-    expect(system.toLowerCase()).toContain('at most three new ones per source');
-    expect(system.toLowerCase()).toContain('justified by content');
-  });
-
-  it('exige les dimensions transverses comme concepts partagés', () => {
-    const { system } = buildConsolidationPrompt(args as never);
-    expect(system.toLowerCase()).toContain('transverse dimensions');
-    expect(system.toLowerCase()).toContain('scope=transverse');
-    expect(system.toLowerCase()).toContain('never one per product');
+    expect(system.toLowerCase()).toContain('reuse or update an existing leaf');
+    expect(system.toLowerCase()).toContain('never recreated under another name');
   });
 
   it('porte une version de prompt distincte pour invalider le cache', () => {
     expect(CONSOLIDATION_PROMPT_VERSION).toBeGreaterThanOrEqual(4);
-  });
-
-  it("instruit de réutiliser une page marquée sujet apparenté plutôt que d'en créer une nouvelle", () => {
-    const { system } = buildConsolidationPrompt(args as never);
-    expect(system).toContain('existing page for a closely related subject');
-    expect(system).toContain('UPDATE it and keep its existing subject');
   });
 
   it('rend le marqueur de sujet apparenté dans l\'inventaire des pages existantes', () => {
@@ -92,16 +75,17 @@ describe('politique de granularité §6.1', () => {
       ...args,
       inventory: [
         {
-          path: 'wiki/concepts/jedox.md',
-          title: 'Jedox',
-          subject: 'jedox',
+          path: 'wiki/concepts/unclassified/gamma.md',
+          title: 'Gamma',
+          subject: 'gamma',
           scope: 'product',
+          class: UNCLASSIFIED_CLASS,
           excerpt: 'Solution de planification.',
           subjectMatch: true,
         },
       ],
     } as never);
-    expect(user).toContain('wiki/concepts/jedox.md');
+    expect(user).toContain('wiki/concepts/unclassified/gamma.md');
     expect(user).toContain('[existing page for a closely related subject]');
   });
 });

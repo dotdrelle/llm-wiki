@@ -4,6 +4,7 @@ import path from 'node:path';
 import fg from 'fast-glob';
 import { safeWriteFile } from '../../../utils/fs.ts';
 import { toPosix } from '../../../utils/path.ts';
+import { CONCEPT_GRID_RELATIVE_PATH } from '../../../ingest/conceptGrid.ts';
 import { canonicalJson } from './canonical.ts';
 
 /*
@@ -45,11 +46,14 @@ export const KNOWLEDGE_NODE_TYPES = new Set(['wiki']);
  *
  * The mirror of the type above: `wiki/**` minus the source notes gives `wiki`.
  * `wiki/log.md` is the technical journal — it is rewritten at every job and
- * carries no classifiable knowledge.
+ * carries no classifiable knowledge. `wiki/concepts-grid.md` is the concept
+ * grid control file, not a knowledge page: including it would publish the
+ * filing plan itself as a (classless) page of the graph.
  */
 export const KNOWLEDGE_FILE_PATTERNS = [
   'wiki/**/*.md',
   '!wiki/log.md',
+  `!${CONCEPT_GRID_RELATIVE_PATH}`,
   '!wiki/sources/**/*.md',
 ];
 

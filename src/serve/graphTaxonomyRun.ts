@@ -15,6 +15,7 @@ import {
   synthesizeSimpleTaxonomy,
   type SimpleSynthesizeOutcome,
 } from '../graph/wiki/taxonomy/simple.ts';
+import { domainProposalSchema } from '../graph/wiki/taxonomy/derived.ts';
 
 // One service per configuration: same reason as graphSummaryCompletion — an
 // HTTP client and a rate-limit key per config, never rebuilt per request.
@@ -56,7 +57,18 @@ export function graphTaxonomyRun(
         },
         simpleSynthesisSchema,
       );
-    const run = synthesizeSimpleTaxonomy(rootDir, { language }, { propose })
+    const proposeJson = async (request: { system: string; user: string }) =>
+      service.completeJson(
+        {
+          ...request,
+          jsonMode: true,
+          jsonExtraction: 'trailing',
+          label: 'taxonomy-synthesis',
+          temperature: 0,
+        },
+        domainProposalSchema,
+      );
+    const run = synthesizeSimpleTaxonomy(rootDir, { language }, { propose, proposeJson })
       .finally(() => inFlight.delete(rootDir));
     inFlight.set(rootDir, run);
     return run;

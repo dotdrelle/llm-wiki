@@ -77,8 +77,8 @@ export type RegistryAssignment = {
    * Secondary facets, with an explicit semantics: "related to", never
    * "belongs to".
    *
-   * A "Prophix security" page primarily belongs to Prophix; putting it
-   * under Security would make it disappear from its product, and duplicating it
+   * A page about one product's security primarily belongs to that product;
+   * putting it under Security would make it disappear from its product, and duplicating it
    * would falsify every count. These links therefore drive no placement:
    * they enrich reading and search.
    */

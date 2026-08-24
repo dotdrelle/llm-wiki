@@ -13,76 +13,78 @@ function plan(over: Partial<ConsolidationPlan> = {}): ConsolidationPlan {
 
 function page(over: Partial<ConsolidatedPage> = {}): ConsolidatedPage {
   return {
-    path: 'wiki/concepts/prophix.md',
-    subject: 'prophix',
+    path: 'wiki/concepts/beta.md',
+    subject: 'beta',
     collection: null,
     scope: 'product',
     kind: 'product',
+    class: null,
+    classSecondary: [],
     rationale: null,
     ...over,
   };
 }
 
-function previous(path: string, subject: string | null, content: string): { path: string; subject: string | null; content: string } {
-  return { path, subject, content };
+function previous(path: string, subject: string | null, content: string, cls: string | null = null): { path: string; subject: string | null; class: string | null; content: string } {
+  return { path, subject, class: cls, content };
 }
 
-const PROPHIX_BODY = 'Prophix is an EPM platform for planning, budgeting and consolidation for finance teams.';
+const BETA_BODY = 'Beta is an EPM platform for planning, budgeting and consolidation for finance teams.';
 
 describe('reanchorToPreviousConcepts (§6.3, §12.2)', () => {
   it('rewrites a new concept create into an update of the previous page (exact subject)', () => {
     const result = reanchorToPreviousConcepts(
       plan({
         operations: [
-          { type: 'create', path: 'wiki/concepts/prophix.md', content: `# Prophix\n\n${PROPHIX_BODY}` },
+          { type: 'create', path: 'wiki/concepts/beta.md', content: `# Beta\n\n${BETA_BODY}` },
         ],
         pages: [page()],
       }),
-      [previous('wiki/concepts/prophix-one.md', 'prophix', PROPHIX_BODY)],
+      [previous('wiki/concepts/beta-one.md', 'beta', BETA_BODY)],
     );
 
     expect(result.operations[0]).toEqual({
       type: 'update',
-      path: 'wiki/concepts/prophix-one.md',
-      content: `# Prophix\n\n${PROPHIX_BODY}`,
+      path: 'wiki/concepts/beta-one.md',
+      content: `# Beta\n\n${BETA_BODY}`,
     });
-    expect(result.pages).toEqual([page({ path: 'wiki/concepts/prophix-one.md' })]);
+    expect(result.pages).toEqual([page({ path: 'wiki/concepts/beta-one.md' })]);
   });
 
   it('re-anchors on content overlap even when the subject was renamed', () => {
     const result = reanchorToPreviousConcepts(
       plan({
         operations: [
-          { type: 'create', path: 'wiki/concepts/prophix.md', content: `# Prophix\n\n${PROPHIX_BODY}` },
+          { type: 'create', path: 'wiki/concepts/beta.md', content: `# Beta\n\n${BETA_BODY}` },
         ],
         pages: [page()],
       }),
-      [previous('wiki/concepts/prophix-one.md', 'prophix-one', `# Prophix One\n\n${PROPHIX_BODY}`)],
+      [previous('wiki/concepts/beta-one.md', 'beta-one', `# Beta One\n\n${BETA_BODY}`)],
     );
 
     expect(result.operations[0]).toEqual({
       type: 'update',
-      path: 'wiki/concepts/prophix-one.md',
-      content: `# Prophix\n\n${PROPHIX_BODY}`,
+      path: 'wiki/concepts/beta-one.md',
+      content: `# Beta\n\n${BETA_BODY}`,
     });
-    expect(result.pages).toEqual([page({ path: 'wiki/concepts/prophix-one.md', subject: 'prophix-one' })]);
+    expect(result.pages).toEqual([page({ path: 'wiki/concepts/beta-one.md', subject: 'beta-one' })]);
   });
 
   it('does not re-anchor a genuinely different product', () => {
     const result = reanchorToPreviousConcepts(
       plan({
         operations: [
-          { type: 'create', path: 'wiki/concepts/board.md', content: '# Board\n\nBoard is a business intelligence toolkit for dashboards and analytics.' },
+          { type: 'create', path: 'wiki/concepts/epsilon.md', content: '# Epsilon\n\nBoard is a business intelligence toolkit for dashboards and analytics.' },
         ],
-        pages: [page({ path: 'wiki/concepts/board.md', subject: 'board' })],
+        pages: [page({ path: 'wiki/concepts/epsilon.md', subject: 'epsilon' })],
       }),
-      [previous('wiki/concepts/prophix-one.md', 'prophix-one', `# Prophix One\n\n${PROPHIX_BODY}`)],
+      [previous('wiki/concepts/beta-one.md', 'beta-one', `# Beta One\n\n${BETA_BODY}`)],
     );
 
     expect(result.operations[0]).toEqual({
       type: 'create',
-      path: 'wiki/concepts/board.md',
-      content: '# Board\n\nBoard is a business intelligence toolkit for dashboards and analytics.',
+      path: 'wiki/concepts/epsilon.md',
+      content: '# Epsilon\n\nBoard is a business intelligence toolkit for dashboards and analytics.',
     });
   });
 
@@ -90,30 +92,30 @@ describe('reanchorToPreviousConcepts (§6.3, §12.2)', () => {
     const result = reanchorToPreviousConcepts(
       plan({
         operations: [
-          { type: 'update', path: 'wiki/concepts/prophix-one.md', content: '# Updated' },
-          { type: 'create', path: 'wiki/concepts/prophix.md', content: '# New' },
+          { type: 'update', path: 'wiki/concepts/beta-one.md', content: '# Updated' },
+          { type: 'create', path: 'wiki/concepts/beta.md', content: '# New' },
         ],
         pages: [page()],
       }),
-      [previous('wiki/concepts/prophix-one.md', 'prophix-one', PROPHIX_BODY)],
+      [previous('wiki/concepts/beta-one.md', 'beta-one', BETA_BODY)],
     );
 
     expect(result.operations.map((op) => op.path)).toEqual([
-      'wiki/concepts/prophix-one.md',
-      'wiki/concepts/prophix.md',
+      'wiki/concepts/beta-one.md',
+      'wiki/concepts/beta.md',
     ]);
   });
 
   it('normalizes the subject before comparing', () => {
     const result = reanchorToPreviousConcepts(
       plan({
-        operations: [{ type: 'create', path: 'wiki/concepts/prophix.md', content: '# X' }],
-        pages: [page({ subject: 'Prophix (SAAS)' })],
+        operations: [{ type: 'create', path: 'wiki/concepts/beta.md', content: '# X' }],
+        pages: [page({ subject: 'Beta (SAAS)' })],
       }),
-      [previous('wiki/concepts/prophix-saas.md', 'prophix-saas', 'Prophix SAAS')],
+      [previous('wiki/concepts/beta-saas.md', 'beta-saas', 'Beta SAAS')],
     );
 
-    expect(result.operations[0]).toEqual({ type: 'update', path: 'wiki/concepts/prophix-saas.md', content: '# X' });
+    expect(result.operations[0]).toEqual({ type: 'update', path: 'wiki/concepts/beta-saas.md', content: '# X' });
   });
 
   it('returns the plan unchanged when there are no previous concepts', () => {
@@ -122,5 +124,76 @@ describe('reanchorToPreviousConcepts (§6.3, §12.2)', () => {
       pages: [page({ path: 'wiki/concepts/a.md', subject: 'a' })],
     });
     expect(reanchorToPreviousConcepts(original, [])).toBe(original);
+  });
+
+  it('ne ré-ancre pas deux feuilles sœurs (même sujet, classes différentes) l’une sur l’autre', () => {
+    // Une feuille = un couple (classe × sujet). Deux feuilles de sujet « beta »
+    // sous deux classes sont le modèle, pas un doublon : ré-ancrer l’une sur la
+    // page de l’autre produirait un chemin dont la classe contredit la sienne.
+    const result = reanchorToPreviousConcepts(
+      plan({
+        operations: [
+          { type: 'create', path: 'wiki/concepts/offre-marche/beta.md', content: `# Beta\n\n${BETA_BODY}` },
+          { type: 'create', path: 'wiki/concepts/securite/beta.md', content: `# Beta\n\n${BETA_BODY}` },
+        ],
+        pages: [
+          page({ path: 'wiki/concepts/offre-marche/beta.md', subject: 'beta', class: 'offre-marche' }),
+          page({ path: 'wiki/concepts/securite/beta.md', subject: 'beta', class: 'securite' }),
+        ],
+      }),
+      [
+        previous('wiki/concepts/offre-marche/beta.md', 'beta', BETA_BODY, 'offre-marche'),
+        previous('wiki/concepts/securite/beta.md', 'beta', BETA_BODY, 'securite'),
+      ],
+    );
+
+    expect(result.operations.map((op) => op.path)).toEqual([
+      'wiki/concepts/offre-marche/beta.md',
+      'wiki/concepts/securite/beta.md',
+    ]);
+    expect(result.operations.every((op) => op.type === 'create')).toBe(true);
+  });
+
+  it('ne ré-ancre pas une feuille classée sur une ancienne page plate sans classe', () => {
+    // Page d’avant la grille (`wiki/concepts/beta.md`, sans classe) : une
+    // feuille nouvellement classée ne doit pas être ramenée sur ce chemin plat,
+    // sinon `class` et chemin se contredisent.
+    const result = reanchorToPreviousConcepts(
+      plan({
+        operations: [
+          { type: 'create', path: 'wiki/concepts/offre-marche/beta.md', content: `# Beta\n\n${BETA_BODY}` },
+        ],
+        pages: [page({ path: 'wiki/concepts/offre-marche/beta.md', subject: 'beta', class: 'offre-marche' })],
+      }),
+      [previous('wiki/concepts/beta.md', 'beta', BETA_BODY)],
+    );
+
+    expect(result.operations[0]).toEqual({
+      type: 'create',
+      path: 'wiki/concepts/offre-marche/beta.md',
+      content: `# Beta\n\n${BETA_BODY}`,
+    });
+  });
+
+  it('déduit la classe du chemin quand le modèle omet le champ declared class', () => {
+    // Le modèle nomme souvent la classe correctement dans le chemin et omet le
+    // champ `class` — même repli que `detectConceptSplits`. Sans lui, la clé de
+    // recherche retombe sur classe=null et ré-ancre à tort sur l’ancienne page
+    // plate d’un autre sujet homonyme.
+    const result = reanchorToPreviousConcepts(
+      plan({
+        operations: [
+          { type: 'create', path: 'wiki/concepts/offre-marche/beta.md', content: `# Beta\n\n${BETA_BODY}` },
+        ],
+        pages: [page({ path: 'wiki/concepts/offre-marche/beta.md', subject: 'beta', class: null })],
+      }),
+      [previous('wiki/concepts/beta.md', 'beta', BETA_BODY)],
+    );
+
+    expect(result.operations[0]).toEqual({
+      type: 'create',
+      path: 'wiki/concepts/offre-marche/beta.md',
+      content: `# Beta\n\n${BETA_BODY}`,
+    });
   });
 });

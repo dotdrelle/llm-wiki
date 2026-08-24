@@ -11,7 +11,7 @@ import type { TaxonomyMarker } from '../src/graph/wiki/taxonomy/store.ts';
 /*
  Quatre états, parce qu'« Ungrouped » en couvrait trois.
 
- Sur ACPI, environ 130 pages étaient affichées comme non classées : la quasi
+ Sur Demo, environ 130 pages étaient affichées comme non classées : la quasi
  totalité relevait d'un écart de révision — le registre avait été publié la
  veille, les pages réingérées le lendemain. Un seul mot pour trois causes rend
  le diagnostic impossible, et un compteur qu'on ne peut pas interpréter finit

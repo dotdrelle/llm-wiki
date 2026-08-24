@@ -26,6 +26,7 @@ import {
   subjectsAreRelated,
 } from '../ingest/provenance.ts';
 import { CONCEPT_PREFIX, DEFAULT_CONCEPT_BUDGET, detectConceptOverflow, detectConceptSplits, detectDuplicatePaths, reanchorToPreviousConcepts, validateConsolidation } from '../ingest/consolidationValidate.ts';
+import { CONCEPT_GRID_RELATIVE_PATH, readConceptGrid } from '../ingest/conceptGrid.ts';
 import { hashText } from '../utils/hash.ts';
 import { normalizeSourceBody } from '../utils/markdown.ts';
 import { planSourcePacks } from '../utils/sourcePacking.ts';
@@ -333,6 +334,31 @@ export class IngestService {
       refreshEnabled: options?.refresh === true,
     });
 
+    /*
+     The workspace's ranking grid, read ONCE for the whole batch.
+
+     Read before the first source, for the same reason the source registry is:
+     every source of a run must see one state of the world. Read per source, a
+     grid edited mid-run would file the first half of the batch against one
+     closed set and the second half against another, with nothing in the log
+     saying which page answered to which.
+
+     A malformed grid stops the run here, before any model call. Falling back to
+     "no grid" would silently downgrade every blocking axis rule to a warning —
+     the failure mode this whole lot exists to remove.
+    */
+    const gridRead = await readConceptGrid(this.workspace.paths.rootDir);
+    if (gridRead.status === 'malformed') {
+      throw new Error(
+        `${CONCEPT_GRID_RELATIVE_PATH} is unusable: ${gridRead.issues.join('; ')}`,
+      );
+    }
+    const grid = gridRead.status === 'ok' ? gridRead.grid : undefined;
+    await this.logger.info('ingest:concept-grid', {
+      status: gridRead.status,
+      classes: grid?.classes.length ?? 0,
+    });
+
     const selectionStartedAt = Date.now();
     const sourcePaths = await this.workspace.resolveSourceInputs(inputs);
     await this.logger.info('ingest:source-selection', {
@@ -619,7 +645,7 @@ export class IngestService {
           .map((page) => {
             const content = warmPages.find((entry) => entry.relativePath === page)?.content ?? null;
             const provenance = content ? readProvenance(content) : null;
-            return { path: page, subject: provenance?.subject ?? null, content };
+            return { path: page, subject: provenance?.subject ?? null, class: provenance?.class ?? null, content };
           });
 
         const contextStartedAt = Date.now();
@@ -640,6 +666,7 @@ export class IngestService {
             title: result.page.name,
             subject: provenance.subject,
             scope: provenance.scope,
+            class: provenance.class,
             excerpt: (result.chunk?.content ?? result.page.content)
               .replace(/\s+/g, ' ')
               .slice(0, maxChunkChars),
@@ -659,6 +686,7 @@ export class IngestService {
               title: page?.name ?? concept.path.split('/').pop() ?? concept.path,
               subject: provenance?.subject ?? concept.subject ?? null,
               scope: provenance?.scope ?? null,
+              class: provenance?.class ?? null,
               excerpt: (page?.content ?? '').replace(/\s+/g, ' ').slice(0, maxChunkChars),
               previousForSource: true,
             };
@@ -667,9 +695,9 @@ export class IngestService {
         // subject from THIS extraction, regardless of which source produced
         // them. `inventory` above (retrieval relevance) does not reliably
         // surface a same-subject page when the wording differs across
-        // sources — this is the concept-homonym gap: "Jedox certifications"
-        // and "Jedox solution" each ingested separately, neither seeing the
-        // other's "jedox" page in its top-N, each inventing its own
+        // sources — this is the concept-homonym gap: "<product> certifications"
+        // and "<product> solution" each ingested separately, neither seeing the
+        // other's "<product>" page in its top-N, each inventing its own
         // near-duplicate. `previousInventory` only covers this source's OWN
         // prior pages, not ones another source already created for the same
         // subject.
@@ -690,6 +718,7 @@ export class IngestService {
                 title: page.name,
                 subject: provenance.subject,
                 scope: provenance.scope,
+                class: provenance.class,
                 excerpt: page.content.replace(/\s+/g, ' ').slice(0, maxChunkChars),
                 subjectMatch: true,
               }))
@@ -705,12 +734,18 @@ export class IngestService {
           inventory: fullInventory,
           indexContent,
           collection,
+          ...(grid ? { grid } : {}),
           ctx: buildPromptContext(this.config, { profileSection }),
         });
         const consolidationCacheKey = consolidationCacheName({
           sourceHash,
           extractionsHash: hashText(JSON.stringify(merged)),
-          inventoryHash: hashText(JSON.stringify([fullInventory, indexContent, existingSourceNote])),
+          // The grid is part of the prompt, so it is part of the cache key:
+          // re-filing the same source against a different closed set must not
+          // replay the answer given for the previous one.
+          inventoryHash: hashText(JSON.stringify([
+            fullInventory, indexContent, existingSourceNote, grid?.classes ?? null,
+          ])),
           model: modelId,
           promptVersion: CONSOLIDATION_PROMPT_VERSION,
           schemaVersion: CONSOLIDATION_SCHEMA_VERSION,
@@ -773,8 +808,8 @@ export class IngestService {
 
          The consolidation is one stateless call per source. Two failures of
          granularity survive the prompt wording reliably enough to warrant a
-         re-ask: a product split into several concept pages (`board` +
-         `board-international`, `prophix` + its modules), and a source that
+         re-ask: a product split into several concept pages (a product and its
+         national arm, a product and its modules), and a source that
          creates more concepts than its budget. The engine detects both, re-asks
          with the exact subjects to merge, bounded. The cached plan is never
          written here: a plan that needed correction must not be re-served
@@ -938,6 +973,7 @@ export class IngestService {
             existingPaths: knownPaths,
             collection,
             precomputedSplits: normalizedSplits,
+            grid,
           },
         );
         await this.logger.info('ingest:consolidate', {
@@ -945,6 +981,7 @@ export class IngestService {
           operations: validation.operations.length,
           errors: validation.errors.length,
           warnings: validation.warnings.length,
+          derivedAxes: validation.derivedAxes,
           summary: consolidated.summary,
         });
         for (const warning of validation.warnings) {

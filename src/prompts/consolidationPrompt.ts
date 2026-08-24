@@ -1,16 +1,19 @@
 import type { SourceDocument } from '../types.ts';
 import type { SourceExtraction } from '../ingest/extractionSchema.ts';
 import { EXTRACTION_KINDS } from '../ingest/extractionSchema.ts';
+import { UNCLASSIFIED_CLASS, type ConceptGrid } from '../ingest/conceptGrid.ts';
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
 /** Prompt version, carried by the consolidation cache key. */
-export const CONSOLIDATION_PROMPT_VERSION = 10;
+export const CONSOLIDATION_PROMPT_VERSION = 11;
 
 export type ConsolidationInventoryPage = {
   path: string;
   title: string;
   subject: string | null;
   scope: string | null;
+  /** Declared filing class, when this page has a grid — the axis a model must not merge across. */
+  class: string | null;
   excerpt: string;
   /** True when this page was produced by THIS source in a previous ingest. */
   previousForSource?: boolean;
@@ -31,6 +34,51 @@ export type ConsolidationInventoryPage = {
  justification per additional concept costs one sentence and makes the gap
  explainable.
 */
+/**
+ * The filing policy, which replaces the granularity policy once a grid exists.
+ *
+ * The granularity policy below asks the model to DECIDE which concepts the wiki
+ * needs, one document at a time. No model answers that well from inside a
+ * single document — it can only ever name what that document names — and that
+ * is why the corpus filled with entity pages. With a grid the question becomes
+ * one a small model answers reliably: given these classes and their membership
+ * questions, where does this document's knowledge go.
+ */
+function filingPolicy(grid: ConceptGrid): string[] {
+  const describe = (id: string): string => {
+    const info = grid.info?.get(id);
+    if (!info) return `- \`${id}\``;
+    return `- \`${id}\` — ${info.label}${info.criterion ? ` · ${info.criterion}` : ''}`;
+  };
+  return [
+    'Filing policy — the wiki has a CLOSED set of ranking classes:',
+    ...grid.classes.map(describe),
+    '',
+    'You do NOT create classes. You FILE into the ones above.',
+    '- ask the membership questions IN ORDER; the first positive answer is the primary class',
+    '- the following positive answers are the secondary classes',
+    '- a concept page is a LEAF: one subject seen under ONE class. Its path is exactly'
+      + ' wiki/concepts/<class>/<subject>.md, and its "class" and "subject" fields must match that path',
+    '- the same subject may hold a leaf under several classes: that is the model, not a duplicate.'
+      + ' Each leaf carries only what belongs to ITS class — the market leaf does not restate the'
+      + ' security leaf',
+    '- create a leaf only when this source gives that (class, subject) pair at least two distinct'
+      + ' things to say. A single passing mention stays in the source note',
+    '- if a subject fits NO class, file its leaf under the reserved class `unclassified`'
+      + ` (path wiki/concepts/${UNCLASSIFIED_CLASS}/<subject>.md). Never force it into the nearest`
+      + ' class, and never invent a class for it',
+    '- a leaf that already exists is UPDATED at its existing path, never recreated under another name',
+    '',
+    'Leaf content: a few lines saying what this source establishes about this subject under this'
+      + ' class, then the citations. Not a copy of the source note.',
+    '',
+    'Also applies:',
+    '- exactly one source note per document, at the given source note path',
+    '- a characteristic that only makes sense for this one document stays in the source note',
+    '- never create one page per heading of the source document',
+  ];
+}
+
 export function buildConsolidationPrompt(args: {
   source: SourceDocument;
   extraction: SourceExtraction;
@@ -39,6 +87,8 @@ export function buildConsolidationPrompt(args: {
   inventory: ConsolidationInventoryPage[];
   indexContent: string;
   collection: string | null;
+  /** The workspace's closed set of classes; absent until the concepts pass has run. */
+  grid?: ConceptGrid;
   ctx: PromptContext;
 }): { system: string; user: string } {
   return {
@@ -48,20 +98,44 @@ export function buildConsolidationPrompt(args: {
       'You receive structured findings extracted from ONE source document, already merged across its fragments.',
       'You decide, once, what the wiki should contain for this document.',
       '',
-      'Granularity policy:',
-      '- exactly one source note per document, at the given source note path',
-      '- product concepts: at most three NEW ones per source, each justified by content; zero is common',
-      '- create a NEW product concept only for knowledge that is durable, specific to this product, and genuinely distinct from any existing page',
-      '- transverse dimensions are SHARED concepts: create or UPDATE one shared concept per TOP-LEVEL dimension with scope=transverse — never one per product, and never one per sub-element of a single product (a list entry, a referential entry, a sub-account, a section are parts of the product, not dimensions)',
-      '- several sub-elements of the same product (several sub-accounts, referential entries, or sections of one structure) belong in ONE concept page about that product\'s structure, not in several pages',
-      '- reuse or update an existing concept page (product or transverse) before creating a near-duplicate',
-      '- when a candidate subject matches a page this source PREVIOUSLY produced, UPDATE that page and KEEP its existing subject: never create a new page with a different name for the same product',
-      '- a page marked "existing page for a closely related subject" below was produced by a DIFFERENT source but plausibly names the same real-world thing: verify against its excerpt, and if it is the same subject, UPDATE it and keep its existing subject rather than creating a new page — this is exactly how the same product ends up split into several near-duplicate pages across sources',
-      '- the NUMBER of new pages must be justified by the content, not uniform: unrelated documents should yield different counts',
-      '- a characteristic that only makes sense for this one document stays in the source note',
-      '- never create a page for a one-off datum or for a documentary rubric of the source',
-      '- never create one page per heading of the source document',
+      ...(args.grid ? filingPolicy(args.grid) : legacyGranularityPolicy()),
       '',
+      ...operationContract(args.grid),
+    ].join('\n'),
+    user: buildConsolidationUser(args),
+  };
+}
+
+/**
+ * The pre-grid policy: no closed set of classes exists yet, so every concept
+ * page is a leaf under the reserved `unclassified` class. Nothing is invented,
+ * and nothing is lost: the leaf waits there until a grid exists (or a human
+ * files it into a real class).
+ */
+function legacyGranularityPolicy(): string[] {
+  return [
+    'Filing policy — the workspace has NO conceptual grid yet.',
+    'Every concept page is a LEAF under the reserved class `unclassified`:',
+    `- its path is exactly wiki/concepts/${UNCLASSIFIED_CLASS}/<subject>.md`,
+    `- its "class" field is ${UNCLASSIFIED_CLASS}; its "subject" field is the canonical identity`,
+    '- one leaf per subject, no matter how many angles this document treats it under',
+    '- exactly one source note per document, at the given source note path',
+    '- reuse or update an existing leaf before creating a near-duplicate',
+    '- a leaf that already exists is UPDATED at its existing path, never recreated under another name',
+    '- a characteristic that only makes sense for this one document stays in the source note',
+    '- never create one page per heading of the source document',
+  ];
+}
+
+/**
+ * The operation contract, shared by both policies.
+ *
+ * `class` is added to the declared provenance only when a grid exists: asking
+ * for a field against a vocabulary the workspace has not defined would invite
+ * the model to invent one, which is the exact failure the grid removes.
+ */
+function operationContract(grid: ConceptGrid | undefined): string[] {
+  return [
       'Allowed operation paths: wiki/index.md, wiki/concepts/**/*.md, wiki/sources/*.md, wiki/answers/*.md.',
       'Every operation must include an explicit "type" and a full path starting with "wiki/".',
       'For create and update operations, "content" is REQUIRED and must be the COMPLETE final file content.',
@@ -71,17 +145,35 @@ export function buildConsolidationPrompt(args: {
       'Always update wiki/index.md when creating or renaming pages.',
       '',
       'For every created or updated page, also return an entry in "pages" with its provenance:',
-      '- subject: the canonical identity the page belongs to, lowercase, words separated by dashes (e.g. "board-ai-module", "prophix-fpa-module") — NEVER glue the words together ("boardaimodule" is wrong), never use spaces',
+      '- subject: the canonical identity the page belongs to, lowercase, words separated by dashes — NEVER glue the words together ("twowordidentity" instead of "two-word-identity" is wrong), never use spaces',
       '- collection: the comparative set this document belongs to, when there is one',
       '- scope: source | product | transverse | workspace',
       `- kind: ${EXTRACTION_KINDS.join(' | ')} — the NATURE of the subject (a vendor is not its product, a dimension is not a product)`,
+      ...(grid
+        ? [
+          `- class: the primary ranking class, one of: ${grid.classes.join(' | ')} | ${UNCLASSIFIED_CLASS}`,
+          '- classSecondary: the other classes this page also speaks to, from the same list',
+          '- class and subject MUST match the page path: wiki/concepts/<class>/<subject>.md',
+        ]
+        : []),
       'Do NOT write these fields inside the page content; the engine writes them.',
       'Do not copy the free-form "group" field into "subject": a group is a shelf, a subject is an identity.',
       'A vendor and its product are DIFFERENT pages only when each carries durable, distinct knowledge; otherwise keep the vendor inside the product page. Never create a second product page for a product\'s sub-modules.',
       '',
       'Return a strict JSON object with { "summary": string, "operations": WikiOperation[], "pages": [] } and no extra text.',
-    ].join('\n'),
-    user: [
+  ];
+}
+
+function buildConsolidationUser(args: {
+  source: SourceDocument;
+  extraction: SourceExtraction;
+  sourcePagePath: string;
+  existingSourceNote: string | null;
+  inventory: ConsolidationInventoryPage[];
+  indexContent: string;
+  collection: string | null;
+}): string {
+  return [
       '# Source document',
       `[src: ...] citation path (exact — copy verbatim into every citation): ${args.source.archiveCitationPath}`,
       `Title: ${args.source.title}`,
@@ -124,6 +216,7 @@ export function buildConsolidationPrompt(args: {
             .map((page) =>
               `- ${page.path} :: ${page.title}`
               + `${page.subject ? ` [subject=${page.subject}]` : ''}`
+              + `${page.class ? ` [class=${page.class}]` : ''}`
               + `${page.scope ? ` [scope=${page.scope}]` : ''}`
               + `${page.previousForSource ? ' [previously produced by THIS source]' : ''}`
               + `${page.subjectMatch ? ' [existing page for a closely related subject]' : ''}`
@@ -135,8 +228,7 @@ export function buildConsolidationPrompt(args: {
       args.indexContent,
     ]
       .filter((line) => line !== '')
-      .join('\n'),
-  };
+      .join('\n');
 }
 
 /**

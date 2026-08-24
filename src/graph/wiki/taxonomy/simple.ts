@@ -16,6 +16,17 @@ import matter from 'gray-matter';
 import { z } from 'zod';
 import { mapWithConcurrency } from '../../../utils/concurrency.ts';
 import { KNOWLEDGE_ETAG_ALGORITHM, knowledgeEtag, listKnowledgeFiles } from './knowledge.ts';
+import { readConceptGrid, type ConceptGrid } from '../../../ingest/conceptGrid.ts';
+import { readProvenance } from '../../../ingest/provenance.ts';
+import {
+  buildDerivedRegistry,
+  buildDomainRetryPrompt,
+  buildDomainSystemPrompt,
+  buildDomainUserPrompt,
+  domainProposalSchema,
+  validateDomainProposal,
+  type DomainProposal,
+} from './derived.ts';
 import {
   clearDirtyFlag,
   publishGeneration,
@@ -39,6 +50,17 @@ export type SimpleSynthesizeDeps = {
   /** Structured JSON completion of the configured LLM (jsonMode). Absent ⇒ nothing is attempted. */
   propose?: (request: { system: string; user: string }) => Promise<SimpleProposal>;
   expectedCorpus?: string;
+  /**
+   * Completion used by the DERIVED path, which asks a different question
+   * (gather classes into communities) and therefore a different shape. Kept
+   * separate from `propose` so a caller wiring one is never silently given the
+   * other's schema. The derived path cannot reuse `propose`: that function
+   * returns a `SimpleProposal` (`{domains, communities, assignments}`), and
+   * feeding it the derived answer (`{domains, classDomains}`) fails inside
+   * `propose` before `synthesizeDerived` ever sees the value. A workspace with
+   * a grid therefore needs `proposeJson` wired to reach the derived path.
+   */
+  proposeJson?: (request: { system: string; user: string }) => Promise<unknown>;
 };
 
 export type SimpleSynthesizeOutcome =
@@ -141,6 +163,9 @@ interface PageBrief {
   excerpt: string;
   kind: string | null;
   scope: string | null;
+  /** Filing class and identity, when the page carries them (see `conceptGrid.ts`). */
+  class: string | null;
+  subject: string | null;
 }
 
 function pageTitle(parsed: matter.GrayMatterFile<string>): string {
@@ -174,15 +199,20 @@ export async function readPageBrief(rootDir: string, file: string): Promise<Page
   const parsed = matter(raw);
   const title = pageTitle(parsed);
   const excerpt = parsed.content.trim().slice(0, EXCERPT_CHARS);
-  const kind = typeof parsed.data?.kind === 'string' ? parsed.data.kind : null;
-  const scope = typeof parsed.data?.scope === 'string' ? parsed.data.scope : null;
+  // Provenance is read through the validated reader, never from raw frontmatter:
+  // an invalid `class`/`subject`/`kind`/`scope` must count as absent here, for
+  // the same reason it does at ingest — otherwise the derived synthesis would
+  // file a page under a class that was never validated.
+  const provenance = readProvenance(raw);
   return {
     path: file,
     title: title || path.basename(file).replace(/\.md$/, ''),
     frontmatter: parsed.data as Record<string, unknown>,
     excerpt,
-    kind,
-    scope,
+    kind: provenance.kind,
+    scope: provenance.scope,
+    class: provenance.class,
+    subject: provenance.subject,
   };
 }
 
@@ -379,6 +409,101 @@ async function notePendingSynthesis(rootDir: string, corpus: string): Promise<vo
   }).catch(() => {});
 }
 
+/**
+ * The derived path: the grid decides the sub-domains, the model only gathers.
+ *
+ * Everything below the community level is a join on the frontmatter, so the
+ * retry loop guards a proposal about at most fifteen entries instead of the
+ * whole corpus. Publication, the compare-and-swap and the pending-synthesis
+ * signal are deliberately identical to the legacy path: the difference between
+ * the two is where the tree comes from, never what happens to it afterwards.
+ */
+async function synthesizeDerived(
+  rootDir: string,
+  grid: ConceptGrid,
+  pages: PageBrief[],
+  corpus: string,
+  options: { language: string },
+  deps: SimpleSynthesizeDeps,
+): Promise<SimpleSynthesizeOutcome> {
+  const pageCountByClass = new Map<string, number>();
+  for (const page of pages) {
+    if (page.class && grid.set.has(page.class)) {
+      pageCountByClass.set(page.class, (pageCountByClass.get(page.class) ?? 0) + 1);
+    }
+  }
+
+  const system = buildDomainSystemPrompt(options.language);
+  const user = buildDomainUserPrompt(grid, pageCountByClass, options.language);
+  // The derived path needs the DOMAIN shape, which only `proposeJson` carries.
+  // Falling back to `propose` here would hand a `SimpleProposal` to
+  // `domainProposalSchema.parse` and burn all three retries on a shape that can
+  // never pass — so there is no fallback: a derived synthesis without its own
+  // completion is reported, never attempted with the wrong schema.
+  const ask = deps.proposeJson;
+  if (typeof ask !== 'function') return { status: 'skipped', reason: 'no_llm' };
+
+  let proposal: DomainProposal | null = null;
+  let lastIssues: string[] = [];
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    let parsed: DomainProposal;
+    try {
+      const answer = await ask({
+        system,
+        user: attempt === 0 ? user : buildDomainRetryPrompt(grid, lastIssues),
+      });
+      parsed = domainProposalSchema.parse(answer);
+    } catch (error) {
+      lastIssues = [`llm: ${error instanceof Error ? error.message : String(error)}`];
+      continue;
+    }
+    const issues = validateDomainProposal(parsed, grid);
+    if (issues.length === 0) {
+      proposal = parsed;
+      break;
+    }
+    lastIssues = issues;
+  }
+
+  if (!proposal) {
+    await notePendingSynthesis(rootDir, corpus);
+    return { status: 'rejected', issues: lastIssues };
+  }
+
+  const revision = ((await readMarker(rootDir))?.revision ?? 0) + 1;
+  const { registry, warnings } = buildDerivedRegistry({
+    grid,
+    pages: pages.map((page) => ({ path: page.path, class: page.class, subject: page.subject })),
+    proposal,
+    language: options.language,
+    corpus,
+    revision,
+  });
+  const generation = await writeGeneration(rootDir, registry);
+  const publish = await publishGeneration(rootDir, {
+    corpus,
+    registryRef: generation.ref,
+    registryHash: generation.hash,
+    expectedCorpus: corpus,
+    corpusAlgorithm: KNOWLEDGE_ETAG_ALGORITHM,
+  });
+  if (publish.status === 'stale') return { status: 'stale' };
+  if (publish.status !== 'published') {
+    await notePendingSynthesis(rootDir, corpus);
+    return { status: 'stale' };
+  }
+  await clearDirtyFlag(rootDir).catch(() => {});
+
+  return {
+    status: 'published',
+    revision,
+    domains: new Set(registry.communities.filter((c) => !c.parentCommunity).map((c) => c.id)).size,
+    leaves: registry.communities.filter((c) => c.parentCommunity).length,
+    pageCount: pages.length,
+    warnings,
+  };
+}
+
 export async function synthesizeSimpleTaxonomy(
   rootDir: string,
   options: { language: string },
@@ -391,7 +516,9 @@ export async function synthesizeSimpleTaxonomy(
   try {
     const files = await listKnowledgeFiles(rootDir);
     if (!files.length) return { status: 'skipped', reason: 'empty_corpus' };
-    if (typeof deps.propose !== 'function') return { status: 'skipped', reason: 'no_llm' };
+    if (typeof deps.propose !== 'function' && typeof deps.proposeJson !== 'function') {
+      return { status: 'skipped', reason: 'no_llm' };
+    }
 
     corpus = await knowledgeEtag(rootDir);
     if (deps.expectedCorpus !== undefined && deps.expectedCorpus !== corpus) {
@@ -399,6 +526,27 @@ export async function synthesizeSimpleTaxonomy(
     }
 
     const pages = await readPageBriefs(rootDir, files);
+
+    /*
+     With a grid, the sub-domains are already decided and the model is asked a
+     much smaller question. Without one, the legacy clustering path stays — a
+     workspace must keep a usable graph before its grid exists, and that is
+     also the state in which the concepts pass itself runs.
+    */
+    const gridRead = await readConceptGrid(rootDir);
+    if (gridRead.status === 'malformed') {
+      await notePendingSynthesis(rootDir, corpus);
+      return { status: 'rejected', issues: gridRead.issues };
+    }
+    if (gridRead.status === 'ok') {
+      return await synthesizeDerived(rootDir, gridRead.grid, pages, corpus, options, deps);
+    }
+
+    // The legacy clustering path needs `propose` specifically; a caller wiring
+    // only the derived `proposeJson` reaches this point on a grid-less
+    // workspace and must be told, not given a half-wired synthesis.
+    if (typeof deps.propose !== 'function') return { status: 'skipped', reason: 'no_llm' };
+
     const system = buildSystemPrompt(pages.length, options.language);
     const user = buildSimplePrompt(pages, options.language);
 

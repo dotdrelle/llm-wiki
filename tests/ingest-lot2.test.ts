@@ -59,7 +59,7 @@ describe('contrat d’extraction du Lot 2', () => {
         { statement: 'Fait orphelin', subject: 'E01', citation: 'raw/ingested/a.md' },
       ],
       subjects: [{
-        id: 's1', label: 'Anaplan', scope: 'product', importance: 'core', rationale: 'Sujet explicite.',
+        id: 's1', label: 'Alpha', scope: 'product', importance: 'core', rationale: 'Sujet explicite.',
       }],
       relations: [{ from: 's1', to: 's1', kind: 'mentions' }, { from: 's1', to: 'E01', kind: 'mentions' }],
       mainSubject: 'absent',
@@ -85,7 +85,7 @@ describe('contrat d’extraction du Lot 2', () => {
   });
 
   it('qualifie les identifiants locaux par lot et conserve l’ordre', () => {
-    const merged = mergeExtractions([extraction('Anaplan'), extraction('Anaplan')]);
+    const merged = mergeExtractions([extraction('Alpha'), extraction('Alpha')]);
     expect(merged.subjects.map((subject) => subject.id)).toEqual(['b1_s1', 'b2_s1']);
     expect(merged.facts.map((fact) => fact.subject)).toEqual(['b1_s1', 'b2_s1']);
     expect(merged.mainSubject).toBe('b1_s1');
@@ -95,14 +95,14 @@ describe('contrat d’extraction du Lot 2', () => {
     const parsed = sourceExtractionSchema.parse({
       facts: [{ text: 'Fait', subject: 's1', citation: 'raw/ingested/a.md' }],
       subjects: [{
-        id: 's1', name: 'Anaplan', scope: 'product', importance: 'core',
+        id: 's1', name: 'Alpha', scope: 'product', importance: 'core',
         justification: 'Sujet explicite.',
       }],
       relations: [{ from: 's1', to: 's1', type: 'mentions' }],
       mainSubject: 's1',
     });
     expect(parsed.facts[0]?.statement).toBe('Fait');
-    expect(parsed.subjects[0]?.label).toBe('Anaplan');
+    expect(parsed.subjects[0]?.label).toBe('Alpha');
     expect(parsed.relations[0]?.kind).toBe('mentions');
   });
 
@@ -114,7 +114,7 @@ describe('contrat d’extraction du Lot 2', () => {
     const parsed = sourceExtractionSchema.parse({
       facts: [{ statement: 'Fait', subject: 's1', citation: 'raw/ingested/a.md' }],
       subjects: [{
-        id: 's1', label: 'Prophix', scope: 'product', importance: 'core',
+        id: 's1', label: 'Beta', scope: 'product', importance: 'core',
       }],
       relations: [],
       mainSubject: null,
@@ -249,35 +249,58 @@ describe('provenance et consolidation', () => {
 
   it('déduit la collection du parent immédiat, pas de la racine d’export', () => {
     expect(collectionFromSourcePath(
-      'raw/untracked/Outils de gestion/EAS ACPI/Synthèse Solutions externes/Anaplan.md',
+      'raw/untracked/Outils de gestion/EAS Demo/Synthèse Solutions externes/Alpha.md',
     )).toBe('synthese-solutions-externes');
-    expect(collectionFromSourcePath('raw/untracked/Anaplan.md')).toBeNull();
+    expect(collectionFromSourcePath('raw/untracked/Alpha.md')).toBeNull();
   });
 
   it('injecte une provenance canonique sans promouvoir group en subject', () => {
     const plan = consolidationPlanSchema.parse({
       summary: 'Une note et un concept.',
       operations: [
-        { type: 'create', path: 'wiki/sources/anaplan.md', content: '# Source\n\n[src: raw/ingested/anaplan.md]\n' },
-        { type: 'create', path: 'wiki/concepts/anaplan.md', content: '---\ngroup: security\n---\n# Anaplan\n\n[src: raw/ingested/anaplan.md]\n' },
+        { type: 'create', path: 'wiki/sources/alpha.md', content: '# Source\n\n[src: raw/ingested/alpha.md]\n' },
+        { type: 'create', path: 'wiki/concepts/alpha.md', content: '---\ngroup: security\n---\n# Alpha\n\n[src: raw/ingested/alpha.md]\n' },
       ],
       pages: [
-        { path: 'wiki/sources/anaplan.md', subject: 'Anaplan', scope: 'source' },
-        { path: 'wiki/concepts/anaplan.md', subject: 'Anaplan', scope: 'product', kind: 'product', rationale: 'Sujet comparé.' },
+        { path: 'wiki/sources/alpha.md', subject: 'Alpha', scope: 'source' },
+        { path: 'wiki/concepts/alpha.md', subject: 'Alpha', scope: 'product', kind: 'product', rationale: 'Sujet comparé.' },
       ],
     });
     const result = validateConsolidation(plan, {
-      sourcePagePath: 'wiki/sources/anaplan.md',
-      citationPath: 'raw/ingested/anaplan.md',
+      sourcePagePath: 'wiki/sources/alpha.md',
+      citationPath: 'raw/ingested/alpha.md',
       existingPaths: new Set(),
       collection: 'solutions-externes',
     });
     expect(result.errors).toEqual([]);
     const concept = result.operations.find((operation) => operation.path.includes('concepts'))!;
     expect(readProvenance(concept.content ?? '')).toEqual({
-      subject: 'anaplan', collection: 'solutions-externes', scope: 'product', kind: 'product',
+      subject: 'alpha', collection: 'solutions-externes', scope: 'product', kind: 'product',
+      class: null, classSecondary: [],
     });
     expect(concept.content).toContain('group: security');
+  });
+
+  it('signale une classSecondary non normalisable au lieu de la laisser tomber en silence', () => {
+    // « !!! » ne normalise vers aucun identifiant valide : la consolidation le
+    // retire du frontmatter, mais la valeur fournie par le modèle doit laisser
+    // une trace dans les réservations, comme le ferait un subject illisible.
+    const plan = consolidationPlanSchema.parse({
+      summary: 'Une classe secondaire mal formée.',
+      operations: [
+        { type: 'create', path: 'wiki/sources/s.md', content: '# S\n\n[src: raw/ingested/s.md]\n' },
+        { type: 'create', path: 'wiki/concepts/alpha.md', content: '# Alpha\n\n[src: raw/ingested/s.md]\n' },
+      ],
+      pages: [
+        { path: 'wiki/sources/s.md', subject: 's', scope: 'source' },
+        { path: 'wiki/concepts/alpha.md', subject: 'alpha', scope: 'product', kind: 'product', class: 'offre-marche', classSecondary: ['!!!', 'securite'], rationale: 'Sujet.' },
+      ],
+    });
+    const result = validateConsolidation(plan, {
+      sourcePagePath: 'wiki/sources/s.md', citationPath: 'raw/ingested/s.md',
+      existingPaths: new Set(), collection: null,
+    });
+    expect(result.warnings.some((issue) => issue.reason.includes('non-normalizable classSecondary'))).toBe(true);
   });
 
   it('refuse une seconde note de source et les collisions atomiquement', () => {
@@ -297,24 +320,24 @@ describe('provenance et consolidation', () => {
   });
 
   it('signale un produit atomisé en plusieurs concepts, sans bloquer la publication', () => {
-    // Board (le produit) + Board International (son éditeur) : une seule
+    // Epsilon (le produit) + Epsilon International (son éditeur) : une seule
     // identité, deux pages. C'est une réservation visible — le budget ne la
     // voyait pas — jamais une erreur qui perdrait la source.
     const plan = consolidationPlanSchema.parse({
       summary: 'Produit et éditeur.',
       operations: [
-        { type: 'create', path: 'wiki/sources/board.md', content: '# Board\n\n[src: raw/ingested/board.md]\n' },
-        { type: 'create', path: 'wiki/concepts/board.md', content: '# Board\n\n[src: raw/ingested/board.md]\n' },
-        { type: 'create', path: 'wiki/concepts/board-international.md', content: '# Board International\n\n[src: raw/ingested/board.md]\n' },
+        { type: 'create', path: 'wiki/sources/epsilon.md', content: '# Epsilon\n\n[src: raw/ingested/epsilon.md]\n' },
+        { type: 'create', path: 'wiki/concepts/epsilon.md', content: '# Epsilon\n\n[src: raw/ingested/epsilon.md]\n' },
+        { type: 'create', path: 'wiki/concepts/epsilon-international.md', content: '# Epsilon International\n\n[src: raw/ingested/epsilon.md]\n' },
       ],
       pages: [
-        { path: 'wiki/sources/board.md', subject: 'board', scope: 'source', kind: 'vendor' },
-        { path: 'wiki/concepts/board.md', subject: 'board', scope: 'product', kind: 'product', rationale: 'Solution comparée.' },
-        { path: 'wiki/concepts/board-international.md', subject: 'board-international', scope: 'product', kind: 'vendor', rationale: 'Éditeur.' },
+        { path: 'wiki/sources/epsilon.md', subject: 'epsilon', scope: 'source', kind: 'vendor' },
+        { path: 'wiki/concepts/epsilon.md', subject: 'epsilon', scope: 'product', kind: 'product', rationale: 'Solution comparée.' },
+        { path: 'wiki/concepts/epsilon-international.md', subject: 'epsilon-international', scope: 'product', kind: 'vendor', rationale: 'Éditeur.' },
       ],
     });
     const result = validateConsolidation(plan, {
-      sourcePagePath: 'wiki/sources/board.md', citationPath: 'raw/ingested/board.md',
+      sourcePagePath: 'wiki/sources/epsilon.md', citationPath: 'raw/ingested/epsilon.md',
       existingPaths: new Set(), collection: null,
     });
     expect(result.errors).toEqual([]);
@@ -322,19 +345,19 @@ describe('provenance et consolidation', () => {
   });
 
   it('ne signale pas deux sujets réellement distincts', () => {
-    // Anaplan et Pigment partagent une collection, pas une identité : la règle
+    // Alpha et Delta partagent une collection, pas une identité : la règle
     // ne doit pas crier au doublon sur des sujets différents.
     const plan = consolidationPlanSchema.parse({
       summary: 'Deux solutions.',
       operations: [
         { type: 'create', path: 'wiki/sources/synthese.md', content: '# Synthèse\n\n[src: raw/ingested/s.md]\n' },
-        { type: 'create', path: 'wiki/concepts/anaplan.md', content: '# Anaplan\n\n[src: raw/ingested/s.md]\n' },
-        { type: 'create', path: 'wiki/concepts/pigment.md', content: '# Pigment\n\n[src: raw/ingested/s.md]\n' },
+        { type: 'create', path: 'wiki/concepts/alpha.md', content: '# Alpha\n\n[src: raw/ingested/s.md]\n' },
+        { type: 'create', path: 'wiki/concepts/delta.md', content: '# Delta\n\n[src: raw/ingested/s.md]\n' },
       ],
       pages: [
         { path: 'wiki/sources/synthese.md', subject: 'synthese', scope: 'source' },
-        { path: 'wiki/concepts/anaplan.md', subject: 'anaplan', scope: 'product', kind: 'product', rationale: 'Solution.' },
-        { path: 'wiki/concepts/pigment.md', subject: 'pigment', scope: 'product', kind: 'product', rationale: 'Solution.' },
+        { path: 'wiki/concepts/alpha.md', subject: 'alpha', scope: 'product', kind: 'product', rationale: 'Solution.' },
+        { path: 'wiki/concepts/delta.md', subject: 'delta', scope: 'product', kind: 'product', rationale: 'Solution.' },
       ],
     });
     const result = validateConsolidation(plan, {
@@ -352,11 +375,11 @@ describe('provenance et consolidation', () => {
       summary: 'Confusion.',
       operations: [
         { type: 'create', path: 'wiki/sources/s.md', content: '# S\n\n[src: raw/ingested/s.md]\n' },
-        { type: 'create', path: 'wiki/concepts/acpi.md', content: '# ACPI\n\n[src: raw/ingested/s.md]\n' },
+        { type: 'create', path: 'wiki/concepts/demo.md', content: '# Demo\n\n[src: raw/ingested/s.md]\n' },
       ],
       pages: [
         { path: 'wiki/sources/s.md', subject: 's', scope: 'source', kind: 'source' },
-        { path: 'wiki/concepts/acpi.md', subject: 'acpi', scope: 'workspace', kind: 'workspace' },
+        { path: 'wiki/concepts/demo.md', subject: 'demo', scope: 'workspace', kind: 'workspace' },
       ],
     });
     // `kind: "source"` et `kind: "workspace"` ne sont pas des kinds : le
@@ -367,25 +390,25 @@ describe('provenance et consolidation', () => {
     expect(parsed.pages.map((page) => page.kind)).not.toContain('source');
   });
 
-  it('signale un split même quand le modèle colle les mots (boardaimodule)', () => {
-    // Un modèle à qui on a dit "no spaces" colle les mots : `boardaimodule`.
+  it('signale un split même quand le modèle colle les mots (epsilonaimodule)', () => {
+    // Un modèle à qui on a dit "no spaces" colle les mots : `epsilonaimodule`.
     // `subjectsAreRelated` (leading token sur le tiret) ne le voit pas ; le
     // préfixe brut, si.
     const plan = consolidationPlanSchema.parse({
       summary: 'Produit et module collés.',
       operations: [
-        { type: 'create', path: 'wiki/sources/board.md', content: '# Board\n\n[src: raw/ingested/board.md]\n' },
-        { type: 'create', path: 'wiki/concepts/board.md', content: '# Board\n\n[src: raw/ingested/board.md]\n' },
-        { type: 'create', path: 'wiki/concepts/board-ai-module.md', content: '# Board AI\n\n[src: raw/ingested/board.md]\n' },
+        { type: 'create', path: 'wiki/sources/epsilon.md', content: '# Epsilon\n\n[src: raw/ingested/epsilon.md]\n' },
+        { type: 'create', path: 'wiki/concepts/epsilon.md', content: '# Epsilon\n\n[src: raw/ingested/epsilon.md]\n' },
+        { type: 'create', path: 'wiki/concepts/epsilon-ai-module.md', content: '# Epsilon AI\n\n[src: raw/ingested/epsilon.md]\n' },
       ],
       pages: [
-        { path: 'wiki/sources/board.md', subject: 'board', scope: 'source', kind: 'vendor' },
-        { path: 'wiki/concepts/board.md', subject: 'board', scope: 'product', kind: 'product', rationale: 'Solution.' },
-        { path: 'wiki/concepts/board-ai-module.md', subject: 'boardaimodule', scope: 'product', kind: 'product', rationale: 'Module.' },
+        { path: 'wiki/sources/epsilon.md', subject: 'epsilon', scope: 'source', kind: 'vendor' },
+        { path: 'wiki/concepts/epsilon.md', subject: 'epsilon', scope: 'product', kind: 'product', rationale: 'Solution.' },
+        { path: 'wiki/concepts/epsilon-ai-module.md', subject: 'epsilonaimodule', scope: 'product', kind: 'product', rationale: 'Module.' },
       ],
     });
     const result = validateConsolidation(plan, {
-      sourcePagePath: 'wiki/sources/board.md', citationPath: 'raw/ingested/board.md',
+      sourcePagePath: 'wiki/sources/epsilon.md', citationPath: 'raw/ingested/epsilon.md',
       existingPaths: new Set(), collection: null,
     });
     expect(result.warnings.some((issue) => issue.reason.includes('concept split'))).toBe(true);
@@ -395,30 +418,72 @@ describe('provenance et consolidation', () => {
     const plan = consolidationPlanSchema.parse({
       summary: 'Produit et module.',
       operations: [
-        { type: 'create', path: 'wiki/sources/board.md', content: '# Board\n\n[src: raw/ingested/board.md]\n' },
-        { type: 'create', path: 'wiki/concepts/board.md', content: '# Board\n\n[src: raw/ingested/board.md]\n' },
-        { type: 'create', path: 'wiki/concepts/board-ai-module.md', content: '# Board AI\n\n[src: raw/ingested/board.md]\n' },
+        { type: 'create', path: 'wiki/sources/epsilon.md', content: '# Epsilon\n\n[src: raw/ingested/epsilon.md]\n' },
+        { type: 'create', path: 'wiki/concepts/epsilon.md', content: '# Epsilon\n\n[src: raw/ingested/epsilon.md]\n' },
+        { type: 'create', path: 'wiki/concepts/epsilon-ai-module.md', content: '# Epsilon AI\n\n[src: raw/ingested/epsilon.md]\n' },
       ],
       pages: [
-        { path: 'wiki/sources/board.md', subject: 'board', scope: 'source', kind: 'vendor' },
-        { path: 'wiki/concepts/board.md', subject: 'board', scope: 'product', kind: 'product', rationale: 'Solution.' },
-        { path: 'wiki/concepts/board-ai-module.md', subject: 'board-ai-module', scope: 'product', kind: 'product', rationale: 'Module.' },
+        { path: 'wiki/sources/epsilon.md', subject: 'epsilon', scope: 'source', kind: 'vendor' },
+        { path: 'wiki/concepts/epsilon.md', subject: 'epsilon', scope: 'product', kind: 'product', rationale: 'Solution.' },
+        { path: 'wiki/concepts/epsilon-ai-module.md', subject: 'epsilon-ai-module', scope: 'product', kind: 'product', rationale: 'Module.' },
       ],
     });
     const splits = detectConceptSplits(plan);
     expect(splits.length).toBe(1);
     expect(splits[0]).toMatchObject({
-      path: 'wiki/concepts/board-ai-module.md',
-      subject: 'board-ai-module',
-      duplicateOfSubject: 'board',
+      path: 'wiki/concepts/epsilon-ai-module.md',
+      subject: 'epsilon-ai-module',
+      duplicateOfSubject: 'epsilon',
     });
 
     const retry = buildConsolidationRetryUser('## Extracted facts\n- x', { splits });
-    expect(retry).toContain('board-ai-module');
-    expect(retry).toContain('board');
+    expect(retry).toContain('epsilon-ai-module');
+    expect(retry).toContain('epsilon');
     expect(retry).toContain('Merge');
     expect(retry).toContain('## Extracted facts');
     expect(retry).toContain('source note');
+  });
+
+  it('ne confond pas deux feuilles sœurs (même sujet, classes différentes) quand class est omis', () => {
+    // La classe est portée par le chemin, pas par la déclaration : deux feuilles
+    // de sujet « epsilon » sous deux classes sont le modèle, pas un split — même
+    // quand le modèle omet `class` dans pages[].
+    const plan = consolidationPlanSchema.parse({
+      summary: 'Feuilles sœurs.',
+      operations: [
+        { type: 'create', path: 'wiki/sources/epsilon.md', content: '# Epsilon\n\n[src: raw/ingested/epsilon.md]\n' },
+        { type: 'create', path: 'wiki/concepts/offre-marche/epsilon.md', content: '# Epsilon\n\n[src: raw/ingested/epsilon.md]\n' },
+        { type: 'create', path: 'wiki/concepts/securite/epsilon.md', content: '# Epsilon\n\n[src: raw/ingested/epsilon.md]\n' },
+      ],
+      pages: [
+        { path: 'wiki/sources/epsilon.md', subject: 'epsilon', scope: 'source', kind: 'vendor' },
+        { path: 'wiki/concepts/offre-marche/epsilon.md', subject: 'epsilon', scope: 'product', kind: 'product', rationale: 'Marché.' },
+        { path: 'wiki/concepts/securite/epsilon.md', subject: 'epsilon', scope: 'product', kind: 'product', rationale: 'Sécurité.' },
+      ],
+    });
+    expect(detectConceptSplits(plan)).toEqual([]);
+  });
+
+  it('détecte un split même quand subject et class sont tous deux omis (axes portés par le chemin)', () => {
+    // Le modèle n'a déclaré ni subject ni class dans pages[] : le scan doit
+    // quand même lire les deux axes dans les chemins, sinon le produit et son
+    // module passeraient pour deux identités distinctes et le split serait raté.
+    const plan = consolidationPlanSchema.parse({
+      summary: 'Produit et module, axes dans le chemin.',
+      operations: [
+        { type: 'create', path: 'wiki/sources/epsilon.md', content: '# Epsilon\n\n[src: raw/ingested/epsilon.md]\n' },
+        { type: 'create', path: 'wiki/concepts/offre-marche/epsilon.md', content: '# Epsilon\n\n[src: raw/ingested/epsilon.md]\n' },
+        { type: 'create', path: 'wiki/concepts/offre-marche/epsilon-ai-module.md', content: '# Epsilon AI\n\n[src: raw/ingested/epsilon.md]\n' },
+      ],
+      pages: [
+        { path: 'wiki/sources/epsilon.md', subject: 'epsilon', scope: 'source', kind: 'vendor' },
+        { path: 'wiki/concepts/offre-marche/epsilon.md', scope: 'product', kind: 'product', rationale: 'Solution.' },
+        { path: 'wiki/concepts/offre-marche/epsilon-ai-module.md', scope: 'product', kind: 'product', rationale: 'Module.' },
+      ],
+    });
+    const splits = detectConceptSplits(plan);
+    expect(splits).toHaveLength(1);
+    expect(splits[0]?.path).toBe('wiki/concepts/offre-marche/epsilon-ai-module.md');
   });
 
   it('détecte un dépassement du budget conceptuel, pas un plan dans le budget', () => {
@@ -476,8 +541,8 @@ describe('cache et reprise', () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-cache-'));
     roots.push(root);
     const cache = new IngestCache(root);
-    await cache.write('extract-test.json', extraction('Anaplan'));
+    await cache.write('extract-test.json', extraction('Alpha'));
     const resumed = sourceExtractionSchema.parse(await cache.read('extract-test.json'));
-    expect(resumed.subjects[0]?.label).toBe('Anaplan');
+    expect(resumed.subjects[0]?.label).toBe('Alpha');
   });
 });

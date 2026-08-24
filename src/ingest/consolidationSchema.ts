@@ -43,6 +43,26 @@ export const consolidatedPageSchema = z.object({
       : normalizeKind(value)),
     z.enum(EXTRACTION_KINDS).nullish().transform((value) => value ?? null),
   ),
+  /*
+   Primary ranking class, from the workspace grid (`wiki/concepts-grid.md`).
+
+   The FORM is tolerant — a stray capital or a French synonym key is normalized
+   rather than lost, because a full re-consolidation is an expensive way to
+   punish a value the model actually supplied. The VALUE is not: an unknown
+   class is an error, checked against the closed set by `validateConsolidation`.
+   Coercing it to a fallback would put a page in a class nobody chose, which is
+   the one outcome the grid exists to prevent.
+  */
+  class: optionalValue,
+  /** Other classes the page also speaks to. Same closed vocabulary as `class`. */
+  classSecondary: z.preprocess(
+    (value) => {
+      if (value == null) return [];
+      const list = Array.isArray(value) ? value : [value];
+      return list.filter((item): item is string => typeof item === 'string' && item.trim() !== '');
+    },
+    z.array(nonEmpty).default([]),
+  ),
   /** Why this page exists: what the log must be able to restitute. */
   rationale: optionalValue,
 });
@@ -66,7 +86,19 @@ export const consolidationPlanSchema = z.preprocess(
           // Albert respects the order but sometimes omits the path. This join
           // invents no page: it attaches the provenance to the non-index
           // operations already declared in the same response.
-          return { ...item, path: item.path ?? operationPaths[index] };
+          return {
+            ...item,
+            path: item.path ?? operationPaths[index],
+            // Key synonyms only: the prompt asks for `class` in a French
+            // vocabulary, so `classe`/`concept` come back often enough that
+            // dropping them would lose a value the model did supply. No VALUE
+            // is invented here — an unknown class is still an error downstream.
+            class: item.class ?? item.classe ?? item.conceptClass ?? item.concept_class ?? item.concept,
+            classSecondary: item.classSecondary
+              ?? item.class_secondary
+              ?? item.classesSecondaires
+              ?? item.secondaryClasses,
+          };
         }).filter((page) => {
           if (!page || typeof page !== 'object' || Array.isArray(page)) return true;
           return (page as Record<string, unknown>).path !== 'wiki/index.md';
