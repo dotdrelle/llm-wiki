@@ -33,6 +33,7 @@ import { planSourcePacks } from '../utils/sourcePacking.ts';
 import { mapWithConcurrency } from '../utils/concurrency.ts';
 import { withFileLock } from '../utils/fs.ts';
 import { publishCorpusRevision } from '../graph/wiki/taxonomy/publish.ts';
+import { regenerateWikiIndex } from './wikiIndexService.ts';
 import type { TokenUsage } from './llmService.ts';
 import type {
   AppConfig,
@@ -151,6 +152,12 @@ async function withRetry<T>(
   throw new Error('Retry exhausted without a captured error.');
 }
 
+// A bare `raw/ingested/…` or `raw/untracked/…` mention, not already inside a
+// `[src: …]` bracket the first pass above already normalized. The lookbehind
+// only needs to rule out the handful of characters `[src: ` actually uses, not
+// arbitrary text, so a small bound is enough and keeps the regex engine-safe.
+const BARE_RAW_PATH_PATTERN = /(?<!\[src:\s{0,4})\braw\/(?:ingested|untracked)\/[^\s\]"'`)]+/gi;
+
 function enforceSourceCitationPath(
   operations: WikiOperation[],
   archiveCitationPath: string,
@@ -158,14 +165,16 @@ function enforceSourceCitationPath(
   operations: WikiOperation[];
   rewrittenCitations: number;
   unreconciledCitations: number;
+  wrappedBarePaths: number;
 } {
   let rewrittenCitations = 0;
   let unreconciledCitations = 0;
+  let wrappedBarePaths = 0;
   const operationsWithCitations = operations.map((operation) => {
     if (operation.content === undefined) return operation;
     let validCitationMarkers = 0;
 
-    const content = operation.content.replace(
+    let content = operation.content.replace(
       /\[src:\s*([^\]]+)\]/gi,
       (match, citationPath: string) => {
         validCitationMarkers += 1;
@@ -174,13 +183,30 @@ function enforceSourceCitationPath(
           unreconciledCitations += 1;
           return match;
         }
-        if (cleanCitationPath === archiveCitationPath) return match;
-        rewrittenCitations += 1;
+        if (cleanCitationPath !== archiveCitationPath) rewrittenCitations += 1;
+        // Always normalize to the single-space canonical form, even when the
+        // path already matched: BARE_RAW_PATH_PATTERN below only tolerates a
+        // small, bounded run of whitespace after "[src:" to recognize an
+        // already-bracketed path. An untouched "[src:\n    path]" the model
+        // emitted verbatim would fall outside that bound and get treated as
+        // bare, wrapping the inner path a second time.
         return `[src: ${archiveCitationPath}]`;
       },
     );
     const sourceMarkers = operation.content.match(/\[src:/gi)?.length ?? 0;
     unreconciledCitations += Math.max(0, sourceMarkers - validCitationMarkers);
+
+    // The model sometimes names its source as bare text instead of a
+    // citation — a header line ("Source: raw/ingested/…") rather than a
+    // per-claim [src: …]. Invisible to the citation machinery above and to
+    // every downstream link renderer, which only ever looks for the bracket.
+    // A per-source consolidation only ever has one legitimate source to name,
+    // so wrapping it to the canonical archive path is the same repair as the
+    // rewrite above, just for a mention that never carried brackets at all.
+    content = content.replace(BARE_RAW_PATH_PATTERN, () => {
+      wrappedBarePaths += 1;
+      return `[src: ${archiveCitationPath}]`;
+    });
 
     return content === operation.content ? operation : { ...operation, content };
   });
@@ -189,6 +215,7 @@ function enforceSourceCitationPath(
     operations: operationsWithCitations,
     rewrittenCitations,
     unreconciledCitations,
+    wrappedBarePaths,
   };
 }
 
@@ -943,12 +970,14 @@ export class IngestService {
           operations: citationSafeOperations,
           rewrittenCitations,
           unreconciledCitations,
+          wrappedBarePaths,
         } = enforceSourceCitationPath(normalizedOperations, source.archiveCitationPath);
         await this.logger.info('ingest:normalize', {
           source: source.relativePath,
           operations: citationSafeOperations.length,
           rewrittenCitations,
           unreconciledCitations,
+          wrappedBarePaths,
         });
         if (rewrittenCitations > 0) {
           await this.logger.info('ingest:citation-path-rewrite', {
@@ -962,6 +991,18 @@ export class IngestService {
             source: source.relativePath,
             archivePath: source.archiveCitationPath,
             unreconciledCitations,
+          });
+        }
+        if (wrappedBarePaths > 0) {
+          // The model named its source as bare text instead of a citation —
+          // invisible to the link renderer until wrapped. Not an error (the
+          // content is still correct and now linkable), but worth surfacing:
+          // a model that keeps doing this despite the prompt instruction is
+          // a signal the instruction itself may need to be strengthened.
+          await this.logger.info('ingest:citation-bare-path-wrapped', {
+            source: source.relativePath,
+            archivePath: source.archiveCitationPath,
+            wrappedBarePaths,
           });
         }
 
@@ -1099,6 +1140,11 @@ export class IngestService {
            the grain that matches what a reader perceives as "something
            happened", and Serve coalesces nearby markers.
           */
+          // Index first: wiki/index.md is itself part of the knowledge corpus
+          // the fingerprint below covers, so publishing before regenerating it
+          // would freeze a corpus the index rewrite immediately invalidates
+          // again — the same stale-marker trap fixed in reclassify-concepts.
+          await this.regenerateIndex(source.relativePath);
           await this.publishGraphRevision(source.relativePath);
         }
 
@@ -1366,6 +1412,29 @@ export class IngestService {
       return;
     }
     await this.logger.warn('ingest:graph-revision-deferred', { source: sourceLabel });
+  }
+
+  /**
+   * Keeps `wiki/index.md` a true reflection of `wiki/concepts/**` and
+   * `wiki/sources/*` — deterministically, not by asking the consolidation
+   * model to reproduce the growing list on top of its per-source work. Same
+   * never-throws discipline as `publishGraphRevision`: an index rebuild
+   * failing must not take down already-applied ingestion work.
+   */
+  private async regenerateIndex(sourceLabel: string): Promise<void> {
+    const outcome = await regenerateWikiIndex(this.workspace.paths.rootDir);
+    if (outcome.status === 'written') {
+      await this.logger.info('ingest:index-regenerated', {
+        source: sourceLabel,
+        concepts: outcome.concepts,
+        sources: outcome.sources,
+      });
+      return;
+    }
+    await this.logger.warn('ingest:index-regeneration-failed', {
+      source: sourceLabel,
+      error: outcome.error instanceof Error ? outcome.error.message : String(outcome.error),
+    });
   }
 
   private async observeSource(

@@ -15,6 +15,7 @@ import path from 'node:path';
 import matter from 'gray-matter';
 import { z } from 'zod';
 import { mapWithConcurrency } from '../../../utils/concurrency.ts';
+import { pageTitle } from '../../../utils/pageTitle.ts';
 import { KNOWLEDGE_ETAG_ALGORITHM, knowledgeEtag, listKnowledgeFiles } from './knowledge.ts';
 import { readConceptGrid, type ConceptGrid } from '../../../ingest/conceptGrid.ts';
 import { readProvenance } from '../../../ingest/provenance.ts';
@@ -166,14 +167,6 @@ interface PageBrief {
   /** Filing class and identity, when the page carries them (see `conceptGrid.ts`). */
   class: string | null;
   subject: string | null;
-}
-
-function pageTitle(parsed: matter.GrayMatterFile<string>): string {
-  if (typeof parsed.data?.title === 'string' && parsed.data.title.trim()) {
-    return parsed.data.title.trim();
-  }
-  const heading = parsed.content.match(/^#\s+(.+)$/m);
-  return heading ? heading[1]!.trim() : '';
 }
 
 /**
@@ -611,7 +604,16 @@ export async function synthesizeSimpleTaxonomy(
       domains: proposal.domains.length,
       leaves: proposal.communities.length,
       pageCount: pages.length,
-      warnings: [],
+      // This branch only runs because gridRead.status was 'absent' above —
+      // say so. The legacy clustering path is exactly the pre-grid engine
+      // this whole rework replaced (identity-per-community, unstable between
+      // runs, per the module comment above `domainBoundsForClasses`), and
+      // `ingest`'s auto-chained taxonomy task runs it silently on every
+      // workspace that has not built a grid yet. Without this, a taxonomy
+      // published this way looks identical to one published with a real
+      // grid, and nothing tells the operator that running `wiki concepts
+      // --apply` first would produce a materially better, stable tree.
+      warnings: ['No concept grid exists yet — taxonomy used legacy per-identity clustering instead of the grid-based join. Run `wiki concepts --apply` for a stable, closed-class taxonomy.'],
     };
   } catch (error) {
     await notePendingSynthesis(rootDir, corpus);

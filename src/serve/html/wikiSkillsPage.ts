@@ -145,7 +145,7 @@ async function saveSkill(){
 }
 
 async function deleteSkill(name){
-  if(!confirm('Delete skill /'+name+'?'))return;
+  if(!(await confirmAction({title:'Delete skill',message:'/'+name,confirmLabel:'Delete',danger:true})))return;
   await fetch('/api/skills/'+encodeURIComponent(name),{method:'DELETE'});
   await loadSkills();
 }

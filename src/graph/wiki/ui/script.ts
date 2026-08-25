@@ -80,26 +80,23 @@ document.querySelector('#zoom-in').addEventListener('click',()=>canvasExplorer?.
 document.querySelector('#zoom-out').addEventListener('click',()=>canvasExplorer?.zoom(.8));
 document.querySelector('#fit').addEventListener('click',()=>canvasExplorer?.fit());
 document.querySelector('#community-refresh').addEventListener('click',()=>{onGraphRevision(Math.max(graphRevision+1,(data?.taxonomyRevision||0)+1))});
-document.querySelector('#community-rebuild').addEventListener('click',async()=>{
-  const button=document.querySelector('#community-rebuild');
-  button.disabled=true;button.textContent='Rebuilding…';
-  try{
-    const result=await json('/api/graph/taxonomy',{method:'POST'});
-    if(result.status==='published'){onGraphRevision((result.revision||0)+1)}
-    else if(result.status==='rejected'){summary.textContent='Taxonomy rejected: '+((result.issues||[]).slice(0,3).join(' · '))}
-    else{summary.textContent='Taxonomy rebuild: '+(result.status||'done')+'.'}
-  }catch(error){
-    // json() throws Error(await r.text()) on any non-2xx response (e.g. the
-    // route's 409 TAXONOMY_UNAVAILABLE), so a server-side error never reaches
-    // 'result' above — it lands here as raw response text, JSON or not, and
-    // must be unwrapped to its message field to avoid showing the user a raw
-    // '{"error":"...","message":"..."}' blob.
-    let message=error.message;
-    try{const parsed=JSON.parse(error.message);if(parsed&&parsed.message)message=parsed.message}catch(_){}
-    summary.textContent='Taxonomy rebuild failed: '+esc(message)
-  }
-  finally{button.disabled=false;button.textContent='Rebuild'}
-});
+// "Build" launches through Donna, not a direct API call: same discipline as
+// the wiki sidebar's Ingest/Build-template buttons (wikiPanelScript.ts). It
+// used to call /api/graph/taxonomy directly, in place, with an inline
+// spinner+timer — a known bypass of the runtime's approval/idempotency
+// machinery. Real orchestration (visible in the Plan, with a proper task
+// dependsOn chain) won this trade-off over the inline spinner. Only
+// meaningful inside the chat shell, where there is a Donna to post to — a
+// standalone /graph visit (no parent frame) has nothing to route through,
+// so the button stays hidden there, same reveal-on-embed rule as every other
+// agent-launched control in this app.
+if(window.parent&&window.parent!==window){
+  const rebuildBtn=document.querySelector('#community-rebuild');
+  rebuildBtn.hidden=false;
+  rebuildBtn.addEventListener('click',()=>{
+    window.parent.postMessage({type:'llmwiki:runTaxonomy'},location.origin);
+  });
+}
 // "← Back" goes back up ONE step. It jumped from focus view to the map as soon
 // as the intermediate level was not a community in the strict sense, which
 // cancelled the whole descent for a single back click.

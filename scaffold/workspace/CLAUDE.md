@@ -25,17 +25,26 @@ by the served chat. The production chain is split so each step can be replayed
 on its own, and each takes optional positional arguments:
 
 - `/wiki-sync [source]` — export the Confluence sources (all, or the named one)
-  into `raw/untracked/`, then ingest them. Stops before the ingest when the
-  export produced nothing new.
+  into `raw/untracked/`, then run the full knowledge chain on the result:
+  ingest, concept grid, filing unclassified pages, taxonomy. Stops before that
+  chain when the export produced nothing new.
 - `/wiki-build [template]` — build the deliverables from the wiki as it
   currently stands, for one template or all of them. Never ingests.
 - `/deliver [deliverable] [polish]` — export, or polish, deliverables that already
   exist under `deliverables/`. Deliverable names are accepted with or without the
   `.md` extension.
-- `/pipeline` — the whole chain in one job; `/status` and `/diagnose` are
-  read-only checks.
+- `/pipeline` — the whole chain in one job (ingest, concept grid, filing,
+  taxonomy, build, export, polish); `/status` and `/diagnose` are read-only
+  checks.
+- `/wiki-rebuild-concepts` — rebuild the concept grid from the ingested
+  corpus, file unclassified pages into it, then republish the taxonomy. Run
+  this deliberately, not on every sync: rebuilding the grid can remove a
+  class existing pages rely on.
+- `/wiki-reclassify` — file pages currently under `wiki/concepts/unclassified`
+  into the EXISTING grid (no rebuild), then republish the taxonomy.
+- `/wiki-taxonomy` — republish the taxonomy alone, from the wiki as it stands.
 
-All three production skills start a **mutating** job and therefore belong to
+Every production skill above starts a **mutating** job and therefore belongs to
 agent mode: chat mode is read-only and must hand off (`/agent`) rather than
 pretend to run them.
 

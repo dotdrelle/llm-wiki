@@ -1,4 +1,5 @@
 import { WIKI_CSS_VARS, WIKI_FONT_STACK, WIKI_MONO_STACK } from '../theme.ts';
+import { CONFIRM_DIALOG_CSS } from '../confirmDialog.ts';
 import { CHAT_ACTIVITY_CSS } from './chatActivityStyles.ts'; const CHAT_COMPONENT_CSS = `*{box-sizing:border-box;margin:0;padding:0}
 body{font-family:var(--font-sans);background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:hidden}
 ::-webkit-scrollbar{width:4px;height:4px}
@@ -407,6 +408,7 @@ ${CHAT_ACTIVITY_CSS}
 #send-btn.is-stop{background:var(--text)}
 #send-btn svg{width:16px;height:16px;fill:currentColor}
 .input-hint{font-size:10px;color:var(--muted);text-align:center;margin-top:7px}
+.input-disclaimer{font-size:10px;color:var(--muted);text-align:center;margin-top:3px;opacity:.82}
 #notif{position:fixed;bottom:18px;right:18px;padding:10px 16px;border-radius:9px;font-size:12px;font-weight:600;opacity:0;transform:translateY(6px);transition:all .25s;pointer-events:none;z-index:999;box-shadow:0 4px 20px rgba(0,0,0,.22)}
 #notif.show{opacity:1;transform:translateY(0)}
 #notif.s{background:var(--panel);border:1px solid var(--ok);color:var(--ok)}
@@ -430,9 +432,8 @@ ${CHAT_ACTIVITY_CSS}
 .doc-content,.doc-content p,.doc-content li,.doc-content a,.doc-content code{max-width:100%;overflow-wrap:anywhere;word-break:normal}
 .doc-content code{font-family:var(--font-mono);background:var(--panel-soft);border:1px solid var(--border);border-radius:5px;padding:1px 5px}
 .doc-content pre{max-width:100%;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--panel-soft);border:1px solid var(--border);border-radius:9px;padding:12px}
-.doc-content table{width:100%;max-width:100%;table-layout:fixed;border-collapse:collapse}
+.doc-content table{width:100%;max-width:100%;table-layout:auto;border-collapse:collapse}
 .doc-content th,.doc-content td{vertical-align:top;white-space:normal;overflow-wrap:anywhere;word-break:normal}
-.doc-content th:first-child,.doc-content td:first-child{width:clamp(8rem,24%,14rem)}
 .prompt-drawer{position:fixed;top:0;left:0;right:0;bottom:0;z-index:997;pointer-events:none}
 .prompt-drawer.open{pointer-events:auto}
 .prompt-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.22);opacity:0;transition:opacity .2s}
@@ -500,7 +501,8 @@ ${CHAT_ACTIVITY_CSS}
 .err-dialog-foot{margin-top:16px;display:flex;justify-content:flex-end}
 .err-dialog-foot button{background:var(--panel-soft);border:1px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:12px;padding:6px 14px;font-family:var(--font-sans)}
 .err-dialog-foot button:hover{border-color:var(--accent);color:var(--accent)}
-hr.divider{border:none;border-top:1px solid var(--border);margin:8px 12px}`; export const CHAT_STYLE = `<style>
+hr.divider{border:none;border-top:1px solid var(--border);margin:8px 12px}
+${CONFIRM_DIALOG_CSS}`; export const CHAT_STYLE = `<style>
 ${WIKI_CSS_VARS}
 :root {
   --font-sans: ${WIKI_FONT_STACK};

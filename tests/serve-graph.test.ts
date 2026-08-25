@@ -290,11 +290,11 @@ describe('serve graph ui', () => {
     expect(source).toContain("depth === 0 && !collapsedByDefault.has(node.name) ? ' open' : ''");
   });
 
-  it('wraps long document lines and gives the first table column a bounded width', async () => {
+  it('wraps long document lines and sizes table columns to content', async () => {
     const source = await serveSource();
     expect(source).toContain('white-space: pre-wrap; overflow-wrap: anywhere;');
-    expect(source).toContain('table-layout: fixed;');
-    expect(source).toContain('th:first-child, td:first-child { width: clamp(8rem, 24%, 14rem); }');
+    expect(source).toContain('table-layout: auto;');
+    expect(source).not.toContain('th:first-child, td:first-child { width: clamp(8rem, 24%, 14rem); }');
   });
 
   it('opens Pending markdown in the editor and keeps save/cancel on valid routes', async () => {
@@ -368,9 +368,11 @@ describe('serve graph ui', () => {
     const routesSource = await graphRoutesSource();
     expect(graphHtml).toContain('id="community-refresh"');
     expect(graphHtml).toContain('id="community-rebuild"');
-    expect(graphHtml).toContain("'/api/graph/taxonomy'");
-    expect(routesSource).toContain("urlPath === '/api/graph/taxonomy'");
-    expect(routesSource).toContain('deps.runTaxonomy');
+    // "Build" launches through Donna (llmwiki:runTaxonomy -> /wiki-taxonomy),
+    // not a direct API call — /api/graph/taxonomy was removed with the
+    // in-place spinner it used to drive.
+    expect(graphHtml).toContain("postMessage({type:'llmwiki:runTaxonomy'}");
+    expect(routesSource).not.toContain('/api/graph/taxonomy');
   });
 
   it('renders Document Focus in the selection panel without embedding document content', () => {

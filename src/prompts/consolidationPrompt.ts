@@ -5,7 +5,7 @@ import { UNCLASSIFIED_CLASS, type ConceptGrid } from '../ingest/conceptGrid.ts';
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
 /** Prompt version, carried by the consolidation cache key. */
-export const CONSOLIDATION_PROMPT_VERSION = 11;
+export const CONSOLIDATION_PROMPT_VERSION = 13;
 
 export type ConsolidationInventoryPage = {
   path: string;
@@ -136,13 +136,14 @@ function legacyGranularityPolicy(): string[] {
  */
 function operationContract(grid: ConceptGrid | undefined): string[] {
   return [
-      'Allowed operation paths: wiki/index.md, wiki/concepts/**/*.md, wiki/sources/*.md, wiki/answers/*.md.',
+      'Allowed operation paths: wiki/concepts/**/*.md, wiki/sources/*.md, wiki/answers/*.md.',
+      'Never propose an operation on wiki/index.md: it is regenerated automatically from wiki/concepts/** and wiki/sources/* after this plan is applied, and any content proposed for it is discarded.',
       'Every operation must include an explicit "type" and a full path starting with "wiki/".',
       'For create and update operations, "content" is REQUIRED and must be the COMPLETE final file content.',
       'Delete operations must omit "content".',
       'Every factual claim must carry the exact [src: ...] citation path from the user message, copied verbatim.',
+      'Never write a raw/ingested/ or raw/untracked/ path as bare text anywhere in the content — not even a header line naming the originating document ("Source: raw/...", "Origin: raw/..."). Every mention of that path, wherever it appears, MUST use the exact [src: <path>] form. A bare path is invisible to the citation machinery and never becomes a link.',
       'Never use placeholders such as "...", "(existing content)", or omission markers.',
-      'Always update wiki/index.md when creating or renaming pages.',
       '',
       'For every created or updated page, also return an entry in "pages" with its provenance:',
       '- subject: the canonical identity the page belongs to, lowercase, words separated by dashes — NEVER glue the words together ("twowordidentity" instead of "two-word-identity" is wrong), never use spaces',
@@ -275,13 +276,13 @@ export function buildConsolidationRetryUser(
       '',
       'The plan targets these paths more than once:',
       ...corrections.duplicatePaths.map((path) => `- ${path}`),
-      'Merge each into a single operation (a single update of the index, a single create per concept).',
+      'Merge each into a single operation (a single create per concept, a single update per source note).',
     );
   }
 
   lines.push(
     '',
-    'Keep exactly one source note at its path, and keep the wiki/index.md update. Only the concept pages change.',
+    'Keep exactly one source note at its path. Only the concept pages change.',
     'Return the complete corrected plan (operations + pages), nothing else.',
     '',
     '--- previous instructions ---',

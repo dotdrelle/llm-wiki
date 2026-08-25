@@ -16,6 +16,7 @@ import buildCmd from '../src/commands/build.ts';
 import indexCmd from '../src/commands/index.ts';
 import groupConceptsCmd from '../src/commands/groupConcepts.ts';
 import conceptsCmd from '../src/commands/concepts.ts';
+import reclassifyConceptsCmd from '../src/commands/reclassifyConcepts.ts';
 import taxonomyCmd from '../src/commands/taxonomy.ts';
 import refreshCmd from '../src/commands/refresh.ts';
 import serveCmd from '../src/commands/serve.ts';
@@ -244,6 +245,14 @@ async function main() {
     .description('Synthesize the workspace conceptual grid from raw documents (dry run by default)')
     .option('--apply', 'Call the configured LLM, validate and write wiki/concepts-grid.md')
     .action((options) => conceptsCmd(config, options));
+
+  program
+    .command('reclassify-concepts')
+    .description(
+      'File pages stuck under wiki/concepts/unclassified into the current grid (dry run by default)',
+    )
+    .option('--apply', 'Call the configured LLM, validate and move the pages')
+    .action((options) => reclassifyConceptsCmd(config, options));
 
   program
     .command('taxonomy')

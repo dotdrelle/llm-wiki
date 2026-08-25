@@ -1,4 +1,7 @@
+import { CONFIRM_DIALOG_SCRIPT } from '../../chat/confirmDialog.ts';
+
 export const WIKI_LAYOUT_SCRIPT = `
+${CONFIRM_DIALOG_SCRIPT}
 (() => {
   const THEME_KEY = 'llm-wiki:theme';
   const themeToggle = document.querySelector('[data-theme-toggle]');
@@ -99,6 +102,10 @@ export const WIKI_LAYOUT_SCRIPT = `
     });
     markActiveSidebarLinks();
     applySidebarSearch();
+    // The tree (and the "Build" button it carries) was just rebuilt: re-wire
+    // the shell-only launch button, which ships hidden and is revealed only
+    // inside the chat shell.
+    initBuildConceptsButton();
   }
   document.addEventListener('click', async (event) => {
       const button = event.target.closest?.('[data-tree-delete]');
@@ -133,10 +140,12 @@ export const WIKI_LAYOUT_SCRIPT = `
             + (citing.length > 5 ? '\\n· …and ' + (citing.length - 5) + ' more' : '')
           : '';
       const mustAsk = kind === 'folder' || citing === null || citing.length > 0;
-      if (mustAsk && !confirm(
-        (kind === 'folder' ? 'Delete this folder and everything in it?\\n' : 'Delete this page?\\n')
-        + relativePath + cited,
-      )) { button.disabled = false; return; }
+      if (mustAsk && !(await confirmAction({
+        title: kind === 'folder' ? 'Delete folder' : 'Delete page',
+        message: (kind === 'folder' ? 'Delete this folder and everything in it?\\n' : 'Delete this page?\\n') + relativePath + cited,
+        confirmLabel: 'Delete',
+        danger: true,
+      }))) { button.disabled = false; return; }
       try {
         const response = await fetch('/api/tree/' + encodeURIComponent(relativePath), { method: 'DELETE' });
         const payload = await response.json().catch(() => ({}));
@@ -328,6 +337,10 @@ export const WIKI_LAYOUT_SCRIPT = `
     event.preventDefault();
     event.stopPropagation();
     button.disabled = true;
+    button.classList.add('is-refreshing');
+    const label = button.querySelector('.side-refresh-label');
+    const originalLabel = label ? label.textContent : null;
+    if (label) label.textContent = 'Refreshing…';
     try {
       await refreshSidebar();
       document.querySelectorAll('[data-tree-id]').forEach(initializeFolder);
@@ -335,6 +348,8 @@ export const WIKI_LAYOUT_SCRIPT = `
       alert(err instanceof Error ? err.message : String(err));
     } finally {
       button.disabled = false;
+      button.classList.remove('is-refreshing');
+      if (label && originalLabel) label.textContent = originalLabel;
     }
   });
   applySidebarSearch();
@@ -698,6 +713,22 @@ export const WIKI_LAYOUT_SCRIPT = `
   });
 })();
 
+// "Build" concept grid → reclassify → taxonomy: only meaningful inside the
+// chat shell, where Serve owns the LLM config. Ships hidden; revealed and
+// wired here. Lives at the TOP level (outside the shell's IIFE) because
+// initShellMessaging — also top-level — calls it, and the IIFE closes before
+// initShellMessaging runs.
+function initBuildConceptsButton() {
+  if (window.self === window.top) return;
+  if (!document.documentElement.classList.contains('sidebar-panel')) return;
+  const buildConceptsBtn = document.querySelector('[data-build-concepts]');
+  if (!buildConceptsBtn) return;
+  buildConceptsBtn.hidden = false;
+  buildConceptsBtn.addEventListener('click', function() {
+    window.parent.postMessage({ type: 'llmwiki:buildConcepts' }, window.location.origin);
+  });
+}
+
 // ── App-shell messaging (no-op on standalone pages) ─────────────────────────
 (function initShellMessaging() {
   const embedded = window.self !== window.top;
@@ -749,6 +780,13 @@ export const WIKI_LAYOUT_SCRIPT = `
         window.parent.postMessage({ type: 'llmwiki:ingest' }, window.location.origin);
       });
     }
+    // "Build" concept grid, then file unclassified pages: launches through
+    // Donna, like Ingest/Build-template above — not the two chained direct
+    // POST calls (with an inline spinner+timer) this used to make. Real
+    // orchestration (visible in the Plan, with a proper task dependency
+    // chain: concepts -> reclassify-concepts -> taxonomy) won this trade-off
+    // over in-place progress.
+    initBuildConceptsButton();
     // All local links must go through the shell, including pages such as
     // /graph that do not load WIKI_LAYOUT_SCRIPT and therefore cannot report
     // their own navigation after the iframe has loaded.

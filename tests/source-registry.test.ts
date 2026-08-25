@@ -255,7 +255,7 @@ describe('provenance des affirmations — état constaté', () => {
       source.indexOf('function diffPreview'),
     );
 
-    expect(fn).toContain('if (cleanCitationPath === archiveCitationPath) return match;');
+    expect(fn).toContain('if (cleanCitationPath !== archiveCitationPath) rewrittenCitations += 1;');
     expect(fn).toContain('return `[src: ${archiveCitationPath}]`;');
     // La correction consistera à épargner un marqueur qui désigne une archive
     // EXISTANTE. Le jour où cette vérification apparaît, ce test doit changer.

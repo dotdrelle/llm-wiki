@@ -1,8 +1,9 @@
-import { mkdir, readFile, rename } from 'node:fs/promises';
+import { mkdir, rename } from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
-import { pathExists, safeWriteFile } from '../utils/fs.ts';
+import { pathExists } from '../utils/fs.ts';
 import { resolveInside, slugify } from '../utils/path.ts';
+import { rewriteWikiLinks } from './wikiLinkRewrite.ts';
 import type { WorkspaceService } from './workspaceService.ts';
 
 export interface ConceptGroupMove {
@@ -80,28 +81,10 @@ export class ConceptGroupingService {
     }
 
     if (resolvedPlan.moves.length) {
-      await this.rewriteWikiLinks(resolvedPlan.moves);
+      await rewriteWikiLinks(this.workspace, resolvedPlan.moves);
     }
 
     return resolvedPlan;
-  }
-
-  private async rewriteWikiLinks(moves: ConceptGroupMove[]): Promise<void> {
-    const pages = await this.workspace.listWikiPages();
-    for (const page of pages) {
-      let content = await readFile(page.absolutePath, 'utf8');
-      const before = content;
-      for (const move of moves) {
-        const sourceNoWiki = move.source.replace(/^wiki\//, '');
-        const targetNoWiki = move.target.replace(/^wiki\//, '');
-        content = content
-          .replaceAll(move.source, move.target)
-          .replaceAll(sourceNoWiki, targetNoWiki);
-      }
-      if (content !== before) {
-        await safeWriteFile(page.absolutePath, content);
-      }
-    }
   }
 }
 

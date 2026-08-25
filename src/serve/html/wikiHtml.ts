@@ -17,6 +17,7 @@ import { resolveInside, toPosix } from '../../utils/path.ts';
 import { listHelpChapters, readHelpChapter } from '../../utils/helpDoc.ts';
 import { WIKI_LAYOUT_CSS } from './wikiLayoutCss.ts';
 import { WIKI_LAYOUT_SCRIPT } from './wikiLayoutScript.ts';
+import { CONFIRM_DIALOG_HTML } from '../../chat/confirmDialog.ts';
 import { removeBrokenWikiLinks } from './wikiLinkValidation.ts';
 
 export { graphEtagForFiles, listGraphFiles, escapeScriptJson };
@@ -34,6 +35,20 @@ const NAV_PATTERNS = [
 ];
 const NAV_DIRECTORY_PATTERNS = ['wiki/**', 'deliverables/**', 'templates/**', 'build-context/**'];
 const EDITABLE_DIRS = ['wiki', 'deliverables', 'templates', 'build-context', 'raw/untracked'];
+
+// Shared stroke icons. The hammer is the same glyph as the template page's
+// "Build" button; the zap is the outlined (transparent-fill) lightning used for
+// the Pending "Ingest" launch. Both render through currentColor so they inherit
+// the button's accent/panel colour instead of carrying an emoji's own tint.
+const HAMMER_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg>';
+const ZAP_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>';
+// The refresh glyph, in the same stroke family as the hammer/zap above (the
+// raw "↻" text depended on the fallback font and could render as a box or a
+// mismatched arrow).
+const REFRESH_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>';
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -283,7 +298,7 @@ function renderLogMarkdown(raw: string): string {
           minute: '2-digit',
         });
 
-    return `<li class="log-entry"><div class="log-entry-head"><time class="log-date" datetime="${escapeAttr(timestamp)}">${escapeHtml(displayDate)}</time><span class="log-kind">${escapeHtml(kindRaw.trim())}</span></div><div class="log-flow"><span class="log-flow-label">source</span>${renderLogPath(source)}${target ? `<span class="log-arrow">→</span><span class="log-flow-label">wiki</span>${renderLogPath(target)}` : ''}</div>${summary ? `<p class="log-summary">${escapeHtml(summary)}</p>` : ''}</li>`;
+    return `<li class="log-entry"><div class="log-entry-head"><time class="log-date" datetime="${escapeAttr(timestamp)}">${escapeHtml(displayDate)}</time><span class="log-kind">${escapeHtml(kindRaw.trim())}</span></div><div class="log-flow${target ? '' : ' log-flow-single'}"><span class="log-flow-label">source</span>${renderLogPath(source)}${target ? `<span class="log-arrow">→</span><span class="log-flow-label">wiki</span>${renderLogPath(target)}` : ''}</div>${summary ? `<p class="log-summary">${escapeHtml(summary)}</p>` : ''}</li>`;
   });
 
   return `<section class="log-article"><h1>${escapeHtml(heading)}</h1><ol class="log-list">${items.join('\n')}</ol></section>`;
@@ -380,6 +395,7 @@ ${body}
     </div>
   </div>
 </div>
+${CONFIRM_DIALOG_HTML}
 <script>${WIKI_LAYOUT_SCRIPT}</script>
 </body>
 </html>`;
@@ -687,8 +703,19 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
   // ASCII glyph was no longer enough.
   const newFolderIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v5"/><path d="M9.5 13.5h5"/></svg>';
-  const newFolderAction = isEditableTreePath(node.path)
+  // The wiki section is a fixed taxonomy (answers/concepts/sources), not a
+  // folder the reader invents: folder creation stays for the collections
+  // (templates, build-context, deliverables) where sub-folders still have a
+  // meaning, and is refused here.
+  const newFolderSection = toPosix(node.path).split('/')[0] ?? '';
+  const newFolderAction = isEditableTreePath(node.path) && newFolderSection !== 'wiki'
     ? `<button class="side-folder-action side-folder-action-icon" type="button" title="New folder" aria-label="New folder in ${safeNodePath}" data-tree-new-folder="${safeNodePath}">${newFolderIcon}</button>`
+    : '';
+  // Concept grid build + reclassify, on the "wiki" root row only: hidden
+  // outside the chat shell (see wikiLayoutScript.ts), same reveal-on-embed
+  // discipline as the other agent-launched buttons.
+  const buildConceptsAction = depth === 0 && node.name === 'wiki'
+    ? '<button class="side-folder-action side-build-concepts" type="button" title="Build the concept grid and file unclassified pages" aria-label="Build concept grid" data-build-concepts hidden><span class="side-build-concepts-label">' + HAMMER_ICON + '</span></button>'
     : '';
   const dragAttrs = depth === 0 ? '' : ` draggable="true" data-tree-drag="${safeNodePath}" data-tree-kind="folder"`;
   const dropAttr = isEditableTreePath(node.path) ? ` data-tree-drop="${safeNodePath}"` : '';
@@ -700,7 +727,7 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
   // the folder is closed. `.side-folder-row` wraps both so the actions stay
   // visible and clickable regardless of open/closed state, matching the
   // original always-visible icons.
-  const actions = `${newFolderAction}${createAction}${folderActions}`;
+  const actions = `${newFolderAction}${buildConceptsAction}${createAction}${folderActions}`;
   const actionsHtml = actions ? `<div class="side-folder-actions">${actions}</div>` : '';
   return `<div class="side-folder-row${rootClass}"><details class="side-folder"${open} data-tree-id="${safeNodePath}"${dragAttrs}${dropAttr}><summary><span class="side-folder-label">${escapeHtml(label)}</span></summary><div class="side-folder-children">${children}</div></details>${actionsHtml}</div>`;
 }
@@ -745,7 +772,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
       });
       })()
     : '<li class="side-untracked-empty">No pending sources.</li>';
-  return `<div class="side-pending-resizer" data-pending-resizer title="Resize Pending panel" role="separator" aria-orientation="horizontal"></div><div class="side-folder-row side-untracked-row"><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span></summary><div class="side-untracked-list" data-untracked-list data-tree-drop="">${await items}</div></details><div class="side-folder-actions"><button class="side-folder-action side-ingest-action" type="button" title="Ingest pending sources (Donna)" aria-label="Ingest pending sources" data-ingest-launch hidden>⚡</button><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending">↻</button><span class="side-untracked-count" data-untracked-count>${count}</span></div></div>`;
+  return `<div class="side-pending-resizer" data-pending-resizer title="Resize Pending panel" role="separator" aria-orientation="horizontal"></div><div class="side-folder-row side-untracked-row"><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span></summary><div class="side-untracked-list" data-untracked-list data-tree-drop="">${await items}</div></details><div class="side-folder-actions"><button class="side-folder-action side-ingest-action" type="button" title="Ingest pending sources (Donna)" aria-label="Ingest pending sources" data-ingest-launch hidden>${ZAP_ICON}</button><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending"><span class="side-refresh-glyph">${REFRESH_ICON}</span></button><span class="side-untracked-count" data-untracked-count>${count}</span></div></div>`;
 }
 
 function renderUntrackedNode(
@@ -825,7 +852,7 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
   const historyIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg>';
 const kbdHint = `<kbd style="font-size:.68rem;font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .35rem;border-radius:4px;color:var(--muted);cursor:pointer" title="Open global search (⌘K)" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}))">⌘K</kbd>`;
-  return `<a class="wiki-help-toggle" href="/help" title="Help" aria-label="Help">?</a><button class="wiki-theme-toggle" type="button" data-theme-toggle title="Switch to dark theme" aria-label="Switch color theme">☾</button><aside class="sidebar"><div class="side-head"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}</a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}</a><a class="side-action" href="/history" title="History" aria-label="History">${historyIcon}</a></div></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><button class="side-refresh-all" type="button" title="Refresh sidebar" aria-label="Refresh sidebar" data-sidebar-refresh="wiki">↻ Refresh</button><nav class="side-tree" aria-label="Markdown documents">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside><div class="wiki-main-resizer" data-wiki-main-resizer title="Resize sidebar" role="separator" aria-orientation="vertical"></div>`;
+  return `<a class="wiki-help-toggle" href="/help" title="Help" aria-label="Help">?</a><button class="wiki-theme-toggle" type="button" data-theme-toggle title="Switch to dark theme" aria-label="Switch color theme">☾</button><aside class="sidebar"><div class="side-head"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}</a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}</a><a class="side-action" href="/history" title="History" aria-label="History">${historyIcon}</a></div></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><button class="side-refresh-all" type="button" title="Refresh sidebar" aria-label="Refresh sidebar" data-sidebar-refresh="wiki"><span class="side-refresh-glyph">${REFRESH_ICON}</span> <span class="side-refresh-label">Refresh</span></button><nav class="side-tree" aria-label="Markdown documents">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside><div class="wiki-main-resizer" data-wiki-main-resizer title="Resize sidebar" role="separator" aria-orientation="vertical"></div>`;
 }
 
 /**
@@ -1179,7 +1206,7 @@ export async function serveMd(
   // Hidden by default: only the chat shell can build (the action runs through
   // Donna), so WIKI_LAYOUT_SCRIPT reveals it inside the shell's central iframe.
   const buildTemplateBtn = relativePath.startsWith('templates/') && relativePath.endsWith('.md')
-    ? `<button class="action-button action-donna" type="button" data-build-template="${escapeAttr(relativePath)}" hidden title="Build" aria-label="Build"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg></button>`
+    ? `<button class="action-button action-donna action-agent" type="button" data-build-template="${escapeAttr(relativePath)}" hidden title="Build" aria-label="Build">${HAMMER_ICON}</button>`
     : '';
   const actions = [
     chatContextBtn,

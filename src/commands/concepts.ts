@@ -10,6 +10,8 @@ import {
   readDocumentBriefs,
   synthesizeConceptGrid,
 } from '../ingest/conceptGridSynthesis.ts';
+import { regenerateWikiIndex } from '../services/wikiIndexService.ts';
+import { publishCorpusRevision } from '../graph/wiki/taxonomy/publish.ts';
 
 /**
  * `wiki concepts` — synthesize the workspace's conceptual grid.
@@ -73,7 +75,7 @@ export default async function conceptsCmd(
   const outcome = await synthesizeConceptGrid(rootDir, { language }, { propose });
 
   switch (outcome.status) {
-    case 'written':
+    case 'written': {
       console.log(
         `${CONCEPT_GRID_RELATIVE_PATH} written: ${outcome.classes} class(es)`
         + ` over ${outcome.documents} document(s), language ${language}.`,
@@ -87,7 +89,26 @@ export default async function conceptsCmd(
         console.log('  Pages filed under a removed class must be re-filed before the next ingest.');
       }
       for (const warning of outcome.warnings) console.log(`  reservation: ${warning}`);
+      // The grid itself sits outside wiki/concepts/** and wiki/sources/*, so
+      // it never changes what regenerateWikiIndex lists — but keep the same
+      // call site as concepts/taxonomy so the index self-heals from any
+      // drift left by an older run, at negligible cost. wiki/index.md is
+      // itself part of the knowledge corpus, so republish AFTER writing it —
+      // publishing first would freeze a corpus the rewrite immediately
+      // invalidates again.
+      const indexOutcome = await regenerateWikiIndex(rootDir);
+      if (indexOutcome.status === 'failed') {
+        console.log(`  warning: wiki/index.md was not regenerated: ${String(indexOutcome.error)}`);
+      }
+      await publishCorpusRevision(rootDir);
+      await workspace.appendLog(
+        'concepts',
+        `${CONCEPT_GRID_RELATIVE_PATH} written: ${outcome.classes} class(es) over ${outcome.documents} document(s).`
+        + (outcome.added.length ? ` Added: ${outcome.added.join(', ')}.` : '')
+        + (outcome.removed.length ? ` REMOVED: ${outcome.removed.join(', ')}.` : ''),
+      );
       return;
+    }
     case 'skipped':
       console.log(
         outcome.reason === 'no_llm'

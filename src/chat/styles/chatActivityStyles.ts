@@ -183,10 +183,9 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .bubble pre code{background:none;padding:0;font-size:.85em}
 .bubble blockquote{border-left:3px solid var(--border);margin:.4em 0;padding:.2em .8em;color:var(--muted)}
 .bubble .table-wrap{overflow-x:auto;max-width:100%;margin:.5em 0}
-.bubble table{border-collapse:collapse;font-size:.9em;width:100%;max-width:100%;table-layout:fixed}
+.bubble table{border-collapse:collapse;font-size:.9em;width:100%;max-width:100%;table-layout:auto}
 .bubble th,.bubble td{border:1px solid var(--border);padding:4px 9px;word-break:break-word;overflow-wrap:anywhere}
 .bubble th{background:var(--panel-deep);font-weight:600;white-space:normal}
-.bubble th:first-child,.bubble td:first-child{width:clamp(7rem,24%,13rem)}
 .bubble a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .bubble .instruction-ref{color:var(--warn);font-family:var(--font-mono);font-size:.92em;background:rgba(199,168,0,.08);border:1px solid rgba(199,168,0,.22);border-radius:5px;padding:1px 5px;white-space:normal;overflow-wrap:anywhere}
 .stream-cursor::after{content:'▋';animation:blink .8s step-end infinite;color:var(--accent);margin-left:1px}`;

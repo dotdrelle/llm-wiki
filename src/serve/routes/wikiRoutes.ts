@@ -25,6 +25,7 @@ import {
 } from '../html/wikiHtml.ts';
 import { generateSkillsPage } from '../html/wikiSkillsPage.ts';
 import { WIKI_CSS_VARS } from '../../chat/theme.ts';
+import { CONFIRM_DIALOG_CSS, CONFIRM_DIALOG_HTML, CONFIRM_DIALOG_SCRIPT } from '../../chat/confirmDialog.ts';
 import { listHelpChapters, readHelpChapter } from '../../utils/helpDoc.ts';
 import { HistoryService } from '../../services/historyService.ts';
 import type { HistoryConfig } from '../../types.ts';
@@ -102,6 +103,7 @@ export async function handleWikiRoutes(
       : '';
     const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Workspace history</title><script>try{const t=localStorage.getItem('llm-wiki:theme')||localStorage.getItem('llm-wiki:graph:theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.classList.add('theme-'+(t==='dark'?'dark':'light'))}catch{}</script><style>
 ${WIKI_CSS_VARS}
+${CONFIRM_DIALOG_CSS}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.page{width:min(1180px,calc(100% - 40px));margin:0 auto;padding:34px 0 60px}.page-head{margin-bottom:24px}.eyebrow{display:block;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.page h1{margin:.2rem 0 .35rem;font-size:clamp(26px,4vw,38px);line-height:1.1}.lede,#status{margin:.25rem 0;color:var(--muted)}a{color:var(--link)}.release-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:.25rem 0 .5rem}.release-badge{display:inline-flex;align-items:center;gap:10px;padding:6px 12px;border:1px solid var(--accent);border-radius:999px;color:var(--text);font-size:12px}.release-badge code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:800;color:var(--accent)}.release-badge span{color:var(--muted)}.release-none{color:var(--muted);font-size:12px}#release-button{border:1px solid var(--accent);border-radius:7px;padding:7px 13px;background:var(--accent);color:#fff;font:inherit;font-weight:800;cursor:pointer}#release-button:hover{filter:brightness(1.08)}#release-button:disabled{opacity:.55;cursor:wait}.history-archive{margin-top:14px;border:1px solid var(--border);border-radius:12px;background:var(--panel);overflow:hidden}.history-archive>summary{display:flex;align-items:center;gap:12px;padding:13px 16px;color:var(--text);cursor:pointer;font-weight:750;list-style-position:inside}.history-archive>summary small{color:var(--muted);font-weight:500}.history-archive-list{display:grid;gap:12px;padding:0 16px 16px}.history-list{display:grid;gap:12px}.history-card{overflow:hidden;border:1px solid var(--border);border-radius:12px;background:var(--panel);box-shadow:var(--shadow)}.history-summary{display:grid;grid-template-columns:82px minmax(240px,1fr) minmax(120px,240px) auto;align-items:center;gap:16px;padding:15px 16px}.commit-sha,.run-id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}.commit-sha{color:var(--accent);font-weight:800}.run-id{overflow:hidden;color:var(--muted);text-overflow:ellipsis;white-space:nowrap}.history-title{min-width:0}.history-title strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.history-title span{display:block;margin-top:3px;color:var(--muted);font-size:12px}.restore-button{border:1px solid var(--border);border-radius:7px;padding:7px 11px;background:var(--panel-soft);color:var(--text);font:inherit;font-weight:700;cursor:pointer}.restore-button:hover{border-color:var(--accent);color:var(--accent)}.restore-button:disabled{opacity:.55;cursor:wait}.change-details{border-top:1px solid var(--border);background:var(--panel-soft)}.change-details summary{display:flex;align-items:center;gap:12px;padding:11px 16px;color:var(--text);cursor:pointer;font-weight:750;list-style-position:inside}.change-details summary small{color:var(--muted);font-weight:500}.change-content{padding:0 16px 16px}.file-change h3{display:flex;gap:8px;align-items:center;margin:0;padding:11px 16px;font-size:13px;border-top:1px solid var(--border)}.file-change:first-of-type h3{border-top:0}.change-kind{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:2px 6px;border-radius:4px;background:var(--panel);color:var(--muted)}.diff{margin:0;padding:12px 14px;background:var(--panel-soft);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.55;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;overflow-x:auto}.diff-line{display:block}.diff-add{color:#7ee2a8}.diff-del{color:#ff9b97}.diff-hunk{color:var(--accent);font-weight:700}.diff-meta{color:var(--muted)}.undo-explanation{margin:2px 0 12px;padding:11px 13px;border-left:3px solid var(--... (line truncated to 2000 chars)
 @media(max-width:760px){.page{width:min(100% - 24px,1180px);padding-top:22px}.history-summary{grid-template-columns:70px 1fr}.run-id{grid-column:1/3}.restore-button{grid-column:1/3;justify-self:start}.change-details summary{align-items:flex-start;flex-direction:column;gap:2px}}
 </style></head><body><main class="page"><header class="page-head"><span class="eyebrow">Versioned workspace</span><h1>Workspace history</h1><p class="lede"><a href="/">Back to wiki</a> · Review an action before restoring it.</p><div class="release-bar">${release ? `<span class="release-badge">Latest release: <code>${escapeHistoryHtml(release.name)}</code><span>${escapeHistoryHtml(release.date)}</span></span>` : '<span class="release-none">No release yet</span>'}<button id="release-button" type="button">Release this state</button></div><p id="status">${escapeHistoryHtml(status.reason
@@ -110,7 +112,8 @@ ${WIKI_CSS_VARS}
       // read as "0 commit(s)" over a workspace with a full history.
       : release
         ? `${commits.length} commit(s) since ${release.name} · ${olderCount} before it`
-        : `${commits.length} commit(s)`)}</p></header><section class="history-list">${rows}</section>${archive}</main><script>
+        : `${commits.length} commit(s)`)}</p></header><section class="history-list">${rows}</section>${archive}</main>${CONFIRM_DIALOG_HTML}<script>
+${CONFIRM_DIALOG_SCRIPT}
 const THEME_KEY='llm-wiki:theme';
 function applyTheme(theme){const selected=theme==='dark'?'dark':'light';document.documentElement.classList.toggle('theme-dark',selected==='dark');document.documentElement.classList.toggle('theme-light',selected==='light')}
 applyTheme(localStorage.getItem(THEME_KEY)||localStorage.getItem('llm-wiki:graph:theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'));window.addEventListener('storage',event=>{if(event.key===THEME_KEY&&event.newValue)applyTheme(event.newValue)});
@@ -136,14 +139,14 @@ if(releaseButton)releaseButton.addEventListener('click',async()=>{
 });
 document.querySelectorAll('button[data-sha]').forEach(b=>b.addEventListener('click',async()=>{
   const run=b.dataset.sha;
-  if(!confirm('Reverse the changes made by this action? A new commit will be created and existing history will be preserved.'))return;
+  if(!(await confirmAction({title:'Restore',message:'Reverse the changes made by this action? A new commit will be created and existing history will be preserved.',confirmLabel:'Restore',danger:true})))return;
   b.disabled=true;
   try{
     let r=await post({run});
     // A run is already active: the restore cannot start now, but it can be
     // queued as a future run with its capability plan carried through.
     if(r.status===409){
-      if(!confirm('A run is currently active. Queue this restore to start when it finishes?')){say('Restore cancelled.');return;}
+      if(!(await confirmAction({title:'Run active',message:'A run is currently active. Queue this restore to start when it finishes?',confirmLabel:'Queue restore'}))){say('Restore cancelled.');return;}
       r=await post({run,intent:'enqueue'});
       say(r.ok?'Restore queued — it will start after the current run.':((await r.json()).error||'Could not queue the restore.'));
       return;

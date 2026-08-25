@@ -154,8 +154,8 @@ describe('chat html', () => {
   it('confirms before deleting a connector', () => {
     const [script] = chatScripts();
 
-    expect(script).toContain('if(!confirm(`Remove ${server.name}?');
-    expect(script).toContain('${scope}`)) return;');
+    expect(script).toContain("confirmAction({title:'Remove '+server.name");
+    expect(script).toContain('message:scope');
     expect(script).toContain("server.origin==='global'");
   });
 
@@ -191,10 +191,10 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('.tc-summary{display:flex;flex-direction:column;gap:8px;min-width:0}');
   });
 
-  it('wraps long chat content and sizes the first table column', () => {
+  it('wraps long chat content and sizes table columns to content', () => {
     expect(CHAT_HTML).toContain('.bubble,.bubble p,.bubble li,.bubble a,.bubble code{max-width:100%;overflow-wrap:anywhere;word-break:normal}');
-    expect(CHAT_HTML).toContain('.bubble table{border-collapse:collapse;font-size:.9em;width:100%;max-width:100%;table-layout:fixed}');
-    expect(CHAT_HTML).toContain('.bubble th:first-child,.bubble td:first-child{width:clamp(7rem,24%,13rem)}');
+    expect(CHAT_HTML).toContain('.bubble table{border-collapse:collapse;font-size:.9em;width:100%;max-width:100%;table-layout:auto}');
+    expect(CHAT_HTML).not.toContain('.bubble th:first-child,.bubble td:first-child{width:clamp(7rem,24%,13rem)}');
     expect(CHAT_HTML).toContain('.bubble .instruction-ref{');
     expect(CHAT_HTML).toContain('white-space:normal;overflow-wrap:anywhere');
   });
@@ -366,6 +366,23 @@ describe('chat html', () => {
     // Donna (skill invocation), never call the execution endpoint directly.
     expect(script).toContain("data.type === 'llmwiki:ingest'");
     expect(script).toContain("input.value = '/wiki-ingest';");
+  });
+
+  it('routes the sidebar concept-grid Build button through Donna as a /wiki-rebuild-concepts skill', () => {
+    const script = chatScripts().join('\n');
+    // The 🔨 button posts llmwiki:buildConcepts — no direct call to
+    // /api/graph/concepts or /api/graph/reclassify-concepts (removed with
+    // the in-place spinner they used to drive).
+    expect(script).toContain("data.type === 'llmwiki:buildConcepts'");
+    expect(script).toContain("input.value = '/wiki-rebuild-concepts';");
+    expect(script).not.toContain('/api/graph/concepts');
+    expect(script).not.toContain('/api/graph/reclassify-concepts');
+  });
+
+  it('routes the /graph Build button through Donna as a /wiki-taxonomy skill', () => {
+    const script = chatScripts().join('\n');
+    expect(script).toContain("data.type === 'llmwiki:runTaxonomy'");
+    expect(script).toContain("input.value = '/wiki-taxonomy';");
   });
 
   it('keeps the three right rail controls aligned at the top in wiki mode', () => {
@@ -822,11 +839,13 @@ describe('chat html', () => {
     // Sans réponse du runtime, aucune bulle : un tour vide vaut mieux qu'un
     // tour faux.
     expect(script).toContain("if(data?.kind!=='turn'&&reply)");
-    // Le correctif porte sur le fourre-tout : les états qui ont un sens précis
-    // gardent leur libellé, sinon l'utilisateur perdrait l'information.
-    expect(script).toContain("data?.kind==='mutate'?'Plan change recorded as a proposal.");
-    expect(script).toContain("data?.kind==='enqueue'?'Request queued for a future run.'");
-    expect(script).toContain("data?.kind==='ambiguous'?");
+    // The per-kind labels (mutate/enqueue/ambiguous…) now come from the
+    // runtime's own localized explanation (controlMessages.js / Donna for
+    // skill_chain) — the browser must not keep a second hardcoded copy that
+    // can drift out of sync with the server's wording.
+    expect(script).toContain("const reply=data?.explanation||'';");
+    expect(script).not.toContain("data?.kind==='mutate'");
+    expect(script).not.toContain("data?.kind==='enqueue'?'Request queued for a future run.'");
   });
 
   it('renders the active runtime run card with inspect and cancel controls', () => {
@@ -909,8 +928,14 @@ describe('chat html', () => {
   it('keeps MCP connection health separate from runtime synchronization failures', () => {
     const [script] = chatScripts();
 
-    expect(script).toContain("s.syncError=syncErr?.message||String(syncErr)");
-    expect(script).toContain("s.needsSync=true");
+    // connectServer's post-handshake sync and chatHtml.ts's persistServerName
+    // (connector rename) share one try/persist/clear-or-set-syncError helper
+    // instead of each hand-rolling the same catch block.
+    expect(script).toContain('async function syncRuntimeMcpServerName(server,');
+    expect(script).toContain("server.syncError=err?.message||String(err)");
+    expect(script).toContain("server.needsSync=true");
+    expect(script).toContain('await syncRuntimeMcpServerName(s,');
+    expect(script).toContain('await syncRuntimeMcpServerName(server,');
     expect(script).not.toContain("await reconnectMCPServer(s);\n    if(runtimeEnabled() && !s.injected) await persistRuntimeMcpServer(s);");
     expect(script).toContain("Connected in this browser; runtime synchronization pending.");
   });
@@ -922,6 +947,9 @@ describe('chat html', () => {
     expect(script).toContain("server.persistedName=server.name");
     expect(script).toContain("name:server.persistedName");
     expect(script).toContain("function updateServerField(id,field,value)");
+    expect(script).toContain("function persistServerName(server)");
+    expect(script).toContain("server.persistedName!==server.name");
+    expect(script).toContain("if(field==='name' && server.origin!=='ui') return");
   });
 
   it('distinguishes connector origins and explains global deletion scope', () => {

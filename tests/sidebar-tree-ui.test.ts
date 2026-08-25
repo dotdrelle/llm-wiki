@@ -51,10 +51,14 @@ describe('a single set of attributes for the whole panel', () => {
     expect(html).not.toContain('data-untracked-drop');
   });
 
-  it('offers folder creation in wiki sections, not in Pending', async () => {
+  it('offers folder creation in collections, not in the fixed wiki taxonomy or Pending', async () => {
     const html = await renderSidebar(root);
 
-    expect(html).toContain('data-tree-new-folder="wiki"');
+    // The wiki section is a fixed taxonomy (answers/concepts/sources), not a
+    // folder the reader invents: folder creation stays for the collections
+    // (templates, build-context, deliverables) where sub-folders still matter.
+    expect(html).not.toContain('data-tree-new-folder="wiki"');
+    expect(html).not.toContain('data-tree-new-folder="wiki/concepts"');
     expect(html).toContain('data-tree-new-folder="templates"');
     // Pending is fed by ingestion and uploads: creating a folder there by
     // hand has no recipient.

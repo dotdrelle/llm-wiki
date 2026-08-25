@@ -127,17 +127,12 @@ async function connectServer(id,{silent=false}={}) {
   try {
     await reconnectMCPServer(s);
     if(runtimeEnabled() && s.origin!=='builtin' && s.needsSync) {
-      try {
-        await persistRuntimeMcpServer(s);
-        s.syncError='';
-        s.needsSync=false;
-      } catch(syncErr) {
-        // The MCP itself is healthy. A busy runtime (409), invalid name, or
-        // persistence failure must not be mislabeled as a connection failure.
-        s.syncError=syncErr?.message||String(syncErr);
-        s.needsSync=true;
-        if(!silent) notify(\`\${s.name}: connected locally, runtime sync pending — \${s.syncError}\`,'e');
-      }
+      // The MCP itself is healthy. A busy runtime (409), invalid name, or
+      // persistence failure must not be mislabeled as a connection failure.
+      await syncRuntimeMcpServerName(s, {
+        silent,
+        failureMessage:err=>\`\${s.name}: connected locally, runtime sync pending — \${err}\`,
+      });
     }
     if(!silent && !s.syncError) notify(\`✓ \${s.name}: \${s.tools.length} tool(s)\`);
   } catch(err) {
@@ -145,6 +140,24 @@ async function connectServer(id,{silent=false}={}) {
     if(!silent) showErrModal(\`MCP connection — \${s.name}\`, mcpConnectErrorMessage(err));
   }
   renderCards(); renderTopPills(); saveServers();
+}
+
+// Shared by connectServer's post-handshake sync and chatHtml.ts's
+// persistServerName (a rename of an already-persisted UI connector): both
+// need the same try/persist/clear-or-set-syncError sequence, only the
+// silence policy and the failure wording differ per caller.
+async function syncRuntimeMcpServerName(server, {silent=false, failureMessage=err=>\`\${server.name}: runtime sync failed — \${err}\`}={}) {
+  try {
+    await persistRuntimeMcpServer(server);
+    server.syncError='';
+    server.needsSync=false;
+    return true;
+  } catch(err) {
+    server.syncError=err?.message||String(err);
+    server.needsSync=true;
+    if(!silent) notify(failureMessage(server.syncError),'e');
+    return false;
+  }
 }
 
 async function persistRuntimeMcpServer(server) {
@@ -174,7 +187,7 @@ async function reconnectMCPServer(server) {
   const initResp = await mcpRPC(server, 'initialize', {
     protocolVersion: '2024-11-05',
     capabilities: {},
-    clientInfo: {name: 'WikiChatConnector', version: '0.15.59'}
+    clientInfo: {name: 'WikiChatConnector', version: '0.15.60'}
   });
   if (initResp?.error) throw new Error(initResp.error.message || 'initialize failed');
   await mcpNotify(server, 'notifications/initialized', {});

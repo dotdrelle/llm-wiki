@@ -1,14 +1,16 @@
 import { WIKI_CSS_VARS } from '../../chat/theme.ts';
+import { CONFIRM_DIALOG_CSS } from '../../chat/confirmDialog.ts';
 
 export const WIKI_LAYOUT_CSS = `
-    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,wght@0,400;0,600;0,700;1,400&display=swap');
     ${WIKI_CSS_VARS}
+    ${CONFIRM_DIALOG_CSS}
     * { box-sizing: border-box; }
     body {
       margin: 0;
       background: var(--bg);
       color: var(--text);
-      font-family: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Inter, system-ui, sans-serif;
+      font-family: "Tiempos Text", "Source Serif 4", Spectral, Lora, Georgia, "Times New Roman", serif;
       line-height: 1.65;
     }
     a { color: var(--link); text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
@@ -104,7 +106,7 @@ export const WIKI_LAYOUT_CSS = `
     .brand { display: block; margin-bottom: 0.8rem; color: var(--text); text-decoration: none; }
     .brand-title {
       display: block;
-      font-family: "Playfair Display", sans-serif;
+      font-family: Copernicus, "Source Serif 4", Spectral, Lora, Georgia, serif;
       font-size: 1.28rem;
       font-weight: 700;
       line-height: 1.08;
@@ -184,6 +186,11 @@ export const WIKI_LAYOUT_CSS = `
       color: var(--accent);
       background: var(--accent-soft);
     }
+    .side-refresh-glyph { display: inline-block; line-height: 1; }
+    .side-refresh-glyph svg { width: 0.82rem; height: 0.82rem; display: block; }
+    .is-refreshing .side-refresh-glyph { animation: side-refresh-spin 0.7s linear infinite; }
+    .is-refreshing { opacity: 0.7; cursor: wait; }
+    @keyframes side-refresh-spin { to { transform: rotate(360deg); } }
     .side-collections { margin-top: 0.35rem; }
     .side-collection-tabs { display: flex; gap: 0.15rem; }
     .side-collection-tab {
@@ -279,9 +286,37 @@ export const WIKI_LAYOUT_CSS = `
     }
     .side-folder-action:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
     .side-folder-action-icon svg { width: 0.95rem; height: 0.95rem; display: block; }
+    .side-build-concepts svg, .side-ingest-action svg { width: 0.95rem; height: 0.95rem; display: block; }
     .side-refresh-action { font-size: 0.82rem; font-weight: 800; }
-    .side-ingest-action { font-size: 0.82rem; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+    /* Solid accent fill: same "agent/LLM-launched action" marker as
+       .side-build-concepts and the /graph .agent-btn, applied to the other
+       Donna-routed launch button of this sidebar. */
+    .side-ingest-action { font-size: 0.82rem; color: var(--panel); background: var(--accent); border-color: var(--accent); }
+    .side-ingest-action:hover { background: color-mix(in srgb, var(--accent) 82%, black); border-color: color-mix(in srgb, var(--accent) 82%, black); color: var(--panel); }
     .side-ingest-action[hidden] { display: none; }
+    /* Solid accent fill: the "Build concept grid" launch button, same
+       agent/LLM-launched marker as .side-ingest-action and the /graph
+       .agent-btn. Placed after .side-folder-action so it overrides the
+       outline base instead of being overridden by it. */
+    .side-build-concepts {
+      min-width: 1.45rem;
+      height: 1.45rem;
+      padding: 0 0.4rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.3rem;
+      border: 1px solid var(--accent);
+      border-radius: 5px;
+      background: var(--accent);
+      color: var(--panel);
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .side-build-concepts:hover { background: color-mix(in srgb, var(--accent) 82%, black); border-color: color-mix(in srgb, var(--accent) 82%, black); }
+    .side-build-concepts[hidden] { display: none; }
     .side-folder-actions {
       position: absolute;
       top: 0;
@@ -333,8 +368,11 @@ export const WIKI_LAYOUT_CSS = `
     /* The search filter toggles .is-search-hidden on the <details> itself
        (queried via [data-tree-id]); the actions box is a sibling outside it
        now, so hiding the row on a search miss needs :has() to reach up from
-       the <details> that got hidden. */
+       the <details> that got hidden. A file row has the same shape — the link
+       gets hidden but its delete button is a sibling — so it must hide too,
+       or a search leaves a column of empty (white) rows behind. */
     .side-folder-row:has(> .side-folder.is-search-hidden) { display: none; }
+    .side-file-row:has(> .side-file.is-search-hidden) { display: none; }
     .side-pending-resizer {
       display: none;
       flex-shrink: 0;
@@ -603,6 +641,12 @@ export const WIKI_LAYOUT_CSS = `
     .action-donna { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--accent-soft); padding-left: 0.5rem; padding-right: 0.5rem; }
     .action-donna:hover { background: color-mix(in srgb, var(--accent) 16%, var(--panel)); border-color: var(--accent); color: var(--accent); }
     .action-donna svg { width: 16px; height: 16px; display: block; }
+    /* Solid accent fill on top of .action-donna: the "Build" launch button
+       specifically, not the "+ Add to Donna" context button it shares a base
+       class with — same agent/LLM-launched marker as .side-build-concepts,
+       .side-ingest-action and the /graph .agent-btn. */
+    .action-agent { color: var(--panel); background: var(--accent); border-color: var(--accent); }
+    .action-agent:hover { background: color-mix(in srgb, var(--accent) 82%, black); border-color: color-mix(in srgb, var(--accent) 82%, black); color: var(--panel); }
     .delete-confirm { position: relative; }
     .delete-confirm-panel {
       position: absolute;
@@ -764,7 +808,7 @@ export const WIKI_LAYOUT_CSS = `
       border-radius: 8px;
       background: var(--panel);
     }
-    .article h1, .article h2, .article h3 { line-height: 1.2; letter-spacing: 0; }
+    .article h1, .article h2, .article h3 { line-height: 1.2; letter-spacing: 0; font-family: Copernicus, "Source Serif 4", Spectral, Lora, Georgia, serif; }
     .article h1 { margin-top: 0; }
     .article img { max-width: 100%; }
     .article, .article p, .article li, .article a, .article code {
@@ -774,16 +818,11 @@ export const WIKI_LAYOUT_CSS = `
     }
     .index-layout .article ul { columns: 2; column-gap: 2rem; }
     .index-layout .article ul li { break-inside: avoid; }
-    .log-article {
-      max-width: 1160px;
-      padding: clamp(1.1rem, 2.6vw, 2rem);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--panel);
-    }
+    /* Rendered inside .article, which already draws the frame, padding and
+       background — a second box here would only double the border. */
     .log-article h1 {
       margin: 0 0 1rem;
-      font-family: "Playfair Display", sans-serif;
+      font-family: Copernicus, "Source Serif 4", Spectral, Lora, Georgia, serif;
       line-height: 1.05;
       letter-spacing: 0;
     }
@@ -834,6 +873,10 @@ export const WIKI_LAYOUT_CSS = `
       align-items: center;
       font-size: 0.84rem;
     }
+    /* A source-only entry has no arrow/target columns: collapse the grid to
+       two columns so the path takes the full width instead of sharing it with
+       the empty target column. */
+    .log-flow-single { grid-template-columns: auto minmax(0, 1fr); }
     .log-flow-label {
       color: var(--muted);
       font-size: 0.72rem;
@@ -948,9 +991,8 @@ export const WIKI_LAYOUT_CSS = `
     .field-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
     pre { background: #edf1f5; padding: 1rem; border-radius: 6px; max-width: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
     code { font-size: 0.9em; }
-    table { border-collapse: collapse; width: 100%; max-width: 100%; table-layout: fixed; }
+    table { border-collapse: collapse; width: 100%; max-width: 100%; table-layout: auto; }
     th, td { border: 1px solid var(--border); padding: 0.45rem 0.75rem; text-align: left; vertical-align: top; white-space: normal; overflow-wrap: anywhere; word-break: normal; }
-    th:first-child, td:first-child { width: clamp(8rem, 24%, 14rem); }
     blockquote { border-left: 3px solid var(--accent); margin: 1rem 0; padding-left: 1rem; color: var(--muted); }
     .empty { color: var(--muted); }
     .not-found-panel {

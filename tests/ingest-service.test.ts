@@ -298,6 +298,39 @@ class UnreconciledCitationLLMService extends FakeLLMService {
   }
 }
 
+class BareSourcePathLLMService extends FakeLLMService {
+  protected async plan(): Promise<IngestPlan> {
+    return {
+      summary: 'Updated wiki from source with a bare (unbracketed) source path.',
+      operations: [
+        {
+          type: 'create',
+          path: 'wiki/sources/note.md',
+          content: '# Note\n\nSource: raw/ingested/note.md\nCollection: demo\n\nFait documenté.\n',
+        },
+      ],
+    };
+  }
+}
+
+class WideWhitespaceCitationLLMService extends FakeLLMService {
+  protected async plan(): Promise<IngestPlan> {
+    return {
+      summary: 'Updated wiki from source with an already-correct but oddly wrapped citation.',
+      operations: [
+        {
+          type: 'create',
+          path: 'wiki/sources/note.md',
+          // Already the exact archive path, but with 5+ whitespace characters
+          // (a line break) after "[src:" — more than the bare-path
+          // lookbehind's small bound tolerates if left unnormalized.
+          content: '# Note\n\nFait documenté [src:\n    raw/ingested/note.md].\n',
+        },
+      ],
+    };
+  }
+}
+
 class FakeRetrievalService {
   invalidateCalls = 0;
 
@@ -522,6 +555,63 @@ describe('ingest service', () => {
     ).toMatchObject({ unreconciledCitations: 1 });
   });
 
+  it('wraps a bare source-path mention (no [src: ] brackets) into a real citation', async () => {
+    // Regression: the model sometimes names its source as a plain "Source:
+    // raw/ingested/…" header line instead of a per-claim [src: …] citation.
+    // Invisible to enforceSourceCitationPath's bracket-matching regex and to
+    // every downstream link renderer — the reference silently never becomes
+    // a link. A per-source consolidation only ever has one legitimate source
+    // to name, so wrapping it to the canonical archive path is safe.
+    const workspace = new FakeWorkspaceService();
+    const logger = new MemoryTraceLogger();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new BareSourcePathLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+      disabledCache(),
+    );
+
+    await service.ingest([], {});
+
+    expect(workspace.appliedOperations[0].content).toContain('Source: [src: raw/ingested/note.md]');
+    expect(workspace.appliedOperations[0].content).not.toContain('Source: raw/ingested/note.md\n');
+    expect(
+      logger.entries.find((entry) => entry.event === 'ingest:citation-bare-path-wrapped')?.data,
+    ).toMatchObject({ wrappedBarePaths: 1 });
+  });
+
+  it('normalizes an already-correct citation with multi-line whitespace instead of leaving it for the bare-path pass to double-wrap', async () => {
+    // Regression: the bracket-normalization pass used to return an
+    // already-matching "[src: ...]" marker untouched, preserving whatever
+    // whitespace the model used inside the brackets (including a newline,
+    // since \s matches it). BARE_RAW_PATH_PATTERN's lookbehind only tolerates
+    // up to 4 whitespace characters, so a 5+-character gap (a line break)
+    // fell outside it and the inner path got wrapped a second time, producing
+    // "[src:\n    [src: raw/ingested/note.md]]".
+    const workspace = new FakeWorkspaceService();
+    const logger = new MemoryTraceLogger();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new WideWhitespaceCitationLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+      disabledCache(),
+    );
+
+    await service.ingest([], {});
+
+    expect(workspace.appliedOperations[0].content).toContain('[src: raw/ingested/note.md]');
+    expect(workspace.appliedOperations[0].content).not.toMatch(/\[src:[^\]]*\[src:/);
+    expect(
+      logger.entries.find((entry) => entry.event === 'ingest:citation-bare-path-wrapped'),
+    ).toBeUndefined();
+  });
+
   it('warns when a source was decoded with the Latin-1 fallback', async () => {
     const workspace = new FakeWorkspaceService();
     workspace.detectedEncoding = 'latin-1';
@@ -721,7 +811,7 @@ describe('ingest service', () => {
   });
 
   it('retries a transient LLM planning failure once before failing the source', async () => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       const workspace = new FakeWorkspaceService();
       const logger = new MemoryTraceLogger();
@@ -785,7 +875,7 @@ describe('ingest service', () => {
   });
 
   it('continues ingesting remaining sources when one source fails', async () => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const workspace = new FakeWorkspaceService();
     workspace.sourcePaths = [
       '/tmp/wiki/raw/untracked/first.md',

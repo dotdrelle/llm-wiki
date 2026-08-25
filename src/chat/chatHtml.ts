@@ -1,4 +1,5 @@
 import { CHAT_STYLE } from './styles/chatStyles.ts';
+import { CONFIRM_DIALOG_SCRIPT } from './confirmDialog.ts';
 import { PRODUCTION_STATE_SCRIPT } from './workflow/productionStateScript.ts';
 import { PRODUCTION_TRACE_SCRIPT } from './workflow/productionTraceScript.ts';
 import { OBSERVER_TOOLS_SCRIPT } from './views/observerToolsScript.ts';
@@ -42,6 +43,7 @@ let clearChatSeq = 0;
 let skillsCache = null;
 let skillAcIdx = -1;
 let skillAcItems = [];
+let skillAcFilter = '';
 let skillEditingName = null;
 const SKILL_AC_LIMIT = 8;
 let productionState = {
@@ -164,6 +166,7 @@ Do not store secrets, credentials, API keys, passwords, temporary facts, or unne
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const jsArg = value => esc(JSON.stringify(value));
+${CONFIRM_DIALOG_SCRIPT}
 function renderInstructionRefs(html) {
   return String(html||'').replace(/\\[\\[([^\\]\\n]+)\\]\\]/g,(_,label)=>\`<span class="instruction-ref">[[\${esc(label.trim())}]]</span>\`);
 }
@@ -588,10 +591,11 @@ function autoResize(ta) {
 }
 function handleKey(e) {
   if($('skill-ac').classList.contains('open')){
-    if(e.key==='ArrowDown'){e.preventDefault();skillAcIdx=Math.min(skillAcIdx+1,skillAcItems.length-1);updateSkillAcFocus();return;}
-    if(e.key==='ArrowUp'){e.preventDefault();skillAcIdx=Math.max(skillAcIdx-1,-1);updateSkillAcFocus();return;}
-    if(e.key==='Tab'||(e.key==='Enter'&&skillAcIdx>=0)){e.preventDefault();selectSkillAc(skillAcIdx>=0?skillAcIdx:0);return;}
-    if(e.key==='Escape'){e.preventDefault();hideSkillAc();return;}
+    if(e.key==='ArrowDown'||e.key==='ArrowRight'){e.preventDefault();skillAcIdx=Math.min(skillAcIdx+1,skillAcItems.length-1);updateSkillAcFocus();return;}
+    if(e.key==='ArrowUp'||e.key==='ArrowLeft'){e.preventDefault();skillAcIdx=Math.max(skillAcIdx-1,-1);updateSkillAcFocus();return;}
+    if(e.key==='Tab'){e.preventDefault();selectSkillAc(skillAcIdx>=0?skillAcIdx:0);return;}
+    if(e.key==='Enter'){e.preventDefault();if(skillAcIdx>=0){selectSkillAc(skillAcIdx);}else{hideSkillAc();}return;}
+    if(e.key==='Escape'){e.preventDefault();restoreSkillAcFilter();hideSkillAc();return;}
   }
   if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}
 }
@@ -612,11 +616,32 @@ function showSkillAc(filter){
   skillAcItems=filtered;
   if(!filtered.length){hideSkillAc();return;}
   skillAcIdx=-1;
+  skillAcFilter=normalized;
   el.innerHTML=filtered.map((s,i)=>\`<div class="skill-ac-item" data-idx="\${i}" onclick="selectSkillAc(\${i})" onmouseenter="skillAcIdx=\${i};updateSkillAcFocus()"><div class="skill-ac-slash">/</div><div class="skill-ac-info"><div class="skill-ac-name">\${esc(s.name)}</div>\${s.description?'<div class="skill-ac-desc">'+esc(s.description)+'</div>':''}</div></div>\`).join('');
   el.classList.add('open');
 }
-function hideSkillAc(){$('skill-ac').classList.remove('open');skillAcIdx=-1;skillAcItems=[];}
-function updateSkillAcFocus(){$('skill-ac').querySelectorAll('.skill-ac-item').forEach((el,i)=>{const on=i===skillAcIdx;el.classList.toggle('focused',on);if(on)el.scrollIntoView({block:'nearest'});});}
+function hideSkillAc(){$('skill-ac').classList.remove('open');skillAcIdx=-1;skillAcItems=[];skillAcFilter='';}
+function updateSkillAcFocus(){$('skill-ac').querySelectorAll('.skill-ac-item').forEach((el,i)=>{const on=i===skillAcIdx;el.classList.toggle('focused',on);if(on)el.scrollIntoView({block:'nearest'});});previewSkillAc();}
+// The composer mirrors the highlighted skill while the list is open: arrow
+// navigation (and mouse hover) write the hovered skill into the input, so the
+// reader always sees what Enter will commit. Without a selection it falls back
+// to the raw filter the user typed.
+function previewSkillAc(){
+  const ta=$('chat-input');
+  if(!ta)return;
+  const skill=skillAcIdx>=0?skillAcItems[skillAcIdx]:null;
+  ta.value=skill?('/'+skill.name):('/'+skillAcFilter);
+  ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,180)+'px';
+}
+// Escape reverts the composer to the filter the user actually typed (the
+// preview above may have replaced it with a hovered skill name).
+function restoreSkillAcFilter(){
+  const ta=$('chat-input');
+  if(!ta)return;
+  ta.value='/'+skillAcFilter;
+  ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,180)+'px';
+  ta.focus();
+}
 function selectSkillAc(idx){
   const skill=skillAcItems[idx];
   if(!skill)return;
@@ -727,7 +752,7 @@ async function saveSkillFromEditor() {
 async function deleteSkillFromManager(idx) {
   const skill=(skillsCache||[])[idx];
   if(!skill) return;
-  if(!confirm(\`Delete skill /\${skill.name}?\`)) return;
+  if(!(await confirmAction({title:'Delete skill',message:'/'+skill.name,confirmLabel:'Delete',danger:true}))) return;
   try {
     const r=await fetch('/api/skills/'+encodeURIComponent(skill.name),{method:'DELETE'});
     if(!r.ok) throw new Error('Deletion failed');
@@ -927,9 +952,9 @@ async function approveRuntimeRun() {
     buttons.forEach(button=>{ button.disabled=false; });
   }
 }
-function rejectRuntimeRun() {
+async function rejectRuntimeRun() {
   if(!runtimeEnabled()) return;
-  if(!confirm('Reject the approval? This cancels the current run.')) return;
+  if(!(await confirmAction({title:'Reject approval',message:'This cancels the current run.',confirmLabel:'Reject',danger:true}))) return;
   cancelRuntimeRun();
 }
 
@@ -1198,6 +1223,10 @@ function addServer(name='', url='', bearer='') {
 
 function updateServerField(id,field,value) {
   const server=servers.find(x=>x.id===id); if(!server||server.origin==='builtin') return;
+  // A name is a connector's runtime identity. Only connectors added in this UI
+  // own that identity; renaming a global/builtin entry would rewrite a name
+  // authored outside serve.
+  if(field==='name' && server.origin!=='ui') return;
   server[field]=field==='name'?String(value||'').trim():value;
   server.needsSync=true;
   server.syncError=field==='name'&&!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(server.name)
@@ -1206,6 +1235,21 @@ function updateServerField(id,field,value) {
   if(server.syncError) renderCards();
   renderTopPills();
   saveServers();
+  // A rename of an already-persisted UI connector must reach the runtime on its
+  // own, not wait for the next reconnect: the rename is a rename of the runtime
+  // entry, and it must not depend on the MCP server being reachable.
+  if(field==='name' && server.origin==='ui' && !server.syncError && server.persistedName && server.persistedName!==server.name && runtimeEnabled()) {
+    persistServerName(server);
+  }
+}
+
+async function persistServerName(server) {
+  // Sync sequence shared with connectServer via syncRuntimeMcpServerName
+  // (runtime/mcpConnectorScript.ts) — only the failure wording differs here.
+  await syncRuntimeMcpServerName(server, {
+    failureMessage:err=>\`\${server.name}: rename not saved to runtime — \${err}\`,
+  });
+  renderCards(); renderTopPills(); saveServers();
 }
 
 async function removeServer(id) {
@@ -1214,7 +1258,7 @@ async function removeServer(id) {
   const scope=server.origin==='global'
     ? 'This removes the connector from every chat, agent and future plan. Its container and data are kept.'
     : 'This removes the connector from chat, agent mode and future plans. Its remote data is not deleted.';
-  if(!confirm(\`Remove \${server.name}?\n\n\${scope}\`)) return;
+  if(!(await confirmAction({title:'Remove '+server.name,message:scope,confirmLabel:'Remove',danger:true}))) return;
   try { await deleteRuntimeMcpServer(server); }
   catch(err) { notify(err?.message||String(err),'e'); return; }
   servers=servers.filter(s=>s.id!==id);
@@ -1266,7 +1310,7 @@ function cardHTML(s) {
       </label>
       <input class="mcp-name-input" type="text" value="\${esc(s.name)}" placeholder="Name" aria-label="Connector name"
         maxlength="80" pattern="[A-Za-z0-9][A-Za-z0-9_.-]{0,79}" title="1–80 letters, numbers, dots, underscores or hyphens"
-        \${s.origin==='builtin'?'readonly':''} onchange="updateServerField(\${s.id},'name',this.value)">
+        \${s.origin==='builtin'||s.origin==='global'?'readonly':''} onchange="updateServerField(\${s.id},'name',this.value)">
       <span class="mcp-origin mcp-origin-\${esc(s.origin||'ui')}" title="Connector source">\${esc(originLabel)}</span>
       <span class="mcp-badge \${badgeClass}">\${badgeLabel}</span>
     </div>
@@ -2600,12 +2644,11 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
       message=data?.error||data?.message||message;
       throw new Error(\`Runtime \${res.status}: \${message}\`);
     }
-    const reply=data?.explanation
-      || (data?.kind==='skill_chain' ? \`Started /\${data?.skill||'skill'} — queuing \${data?.objectives||1} step(s). I'll report as it runs.\`
-        : data?.kind==='mutate'?'Plan change recorded as a proposal. It is not applied automatically yet.'
-          : data?.kind==='enqueue'?'Request queued for a future run.'
-            : data?.kind==='ambiguous'?'I am not sure whether this is a question, a change to this run, or a future run. Choose explicitly in the runtime controls.'
-              : '');
+    // The runtime always supplies an explanation for every non-'turn' kind
+    // (skill_chain via Donna's localized reply, the rest via the server's
+    // controlMessages.js catalog, deterministic and English-only by design)
+    // — no local fallback text to keep in sync.
+    const reply=data?.explanation||'';
     // A conversational /turn does not imply that a run started. If Donna
     // delegates, the runtime SSE stream will publish the actual run state.
     runtimeState={...(runtimeState||{}),status:data?.status ?? runtimeState?.status ?? 'idle'};
@@ -2657,11 +2700,9 @@ async function sendRuntimeControlChoice(intent,text) {
     });
     const data=await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(data?.error||data?.message||\`Runtime \${res.status}\`);
-    const reply=data?.explanation
-      || (data?.kind==='enqueue'?'Request queued for a future run.'
-        : data?.kind==='mutate'?'Plan change recorded as a proposal. It is not applied automatically yet.'
-          : data?.kind==='observe'?'Runtime status refreshed.'
-            : 'Runtime control accepted.');
+    // Same localized-explanation contract as sendRuntimeAgentMessage above —
+    // one fallback string, not a second per-kind mapping to keep in sync.
+    const reply=data?.explanation||'Runtime control accepted.';
     messages.push({role:'assistant',content:reply});
     appendMsg('assistant',reply);
     scheduleConversationSave();

@@ -1,3 +1,5 @@
+import { CONFIRM_DIALOG_HTML } from '../confirmDialog.ts';
+
 export const EMPTY_CHAT_HTML = `<div id="empty">
   <div class="em-icon">⬡</div>
   <h2>Donna</h2>
@@ -183,6 +185,7 @@ export const CHAT_MARKUP = `<aside id="sidebar">
       </div>
     </div>
     <div class="input-hint">Enter to send · Shift+Enter for new line</div>
+    <div class="input-disclaimer">Donna is an AI and can make mistakes. Please check important information.</div>
   </div>
 </div>
 
@@ -301,4 +304,5 @@ export const CHAT_MARKUP = `<aside id="sidebar">
     <div class="err-dialog-foot"><button onclick="closeErrModal()">Close</button></div>
   </div>
 </div>
+${CONFIRM_DIALOG_HTML}
 `;

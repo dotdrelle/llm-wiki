@@ -335,7 +335,7 @@ function clearAllActivityTabs() {
 }
 async function resetRuntimePlan() {
   if(!runtimeEnabled()) { notify('Runtime is not configured.','e'); return; }
-  if(!confirm('Reset the current plan? This stops active work and clears the runtime plan, activities, logs and queue for this workspace.')) return;
+  if(!(await confirmAction({title:'Reset plan',message:'This stops active work and clears the runtime plan, activities, logs and queue for this workspace.',confirmLabel:'Reset',danger:true}))) return;
   try {
     const res=await fetch('/api/runtime/reset',{method:'POST'});
     const data=await res.json().catch(()=>({}));

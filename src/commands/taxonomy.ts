@@ -23,12 +23,13 @@ import { readConceptGrid } from '../ingest/conceptGrid.ts';
  * atomic write. It never touches the wiki content — the taxonomy is a derived
  * projection, not a rewrite of the pages.
  *
- * Not the only place an LLM enters the graph path any more: `serve`'s `/graph`
- * "Rebuild" button also runs a synthesis, directly (`graphTaxonomyRun.ts` →
- * `POST /api/graph/taxonomy`), bypassing Donna/the runtime's approval and
- * idempotency-key machinery — see the finding tracked against that route.
- * `wiki_outline` and the snapshot still only read the registry this command
- * (or the Rebuild button) wrote.
+ * `serve`'s `/graph` "Build" button used to run this synthesis directly
+ * (`graphTaxonomyRun.ts` → `POST /api/graph/taxonomy`), bypassing Donna and
+ * the runtime's approval/idempotency-key machinery. It now posts a
+ * `/wiki-taxonomy` skill invocation to Donna instead (wikiPanelScript.ts) —
+ * the same production-pipeline `taxonomy` step this command's `--apply`
+ * wraps. `wiki_outline` and the snapshot only read the registry this command
+ * (or that skill) publishes.
  */
 export default async function taxonomyCmd(
   config: AppConfig,
@@ -132,6 +133,17 @@ export default async function taxonomyCmd(
       console.log(
         `Taxonomy revision ${outcome.revision} published: ${outcome.domains} domain(s)`
         + ` and ${outcome.leaves} leaf communit(y/ies) over ${outcome.pageCount} page(s), language ${language}.`,
+      );
+      // Computed but silently dropped before this: a published taxonomy read
+      // exactly the same whether it used the grid or fell back to legacy
+      // per-identity clustering, or gathered pages under `unclassified` for
+      // lack of a class. This is the only place these reach the operator.
+      for (const warning of outcome.warnings) console.log(`  warning: ${warning}`);
+      await workspace.appendLog(
+        'taxonomy',
+        `Revision ${outcome.revision} published: ${outcome.domains} domain(s) and ${outcome.leaves}`
+        + ` leaf communit(y/ies) over ${outcome.pageCount} page(s), language ${language}.`
+        + (outcome.warnings.length ? ` Warnings: ${outcome.warnings.join(' | ')}` : ''),
       );
       return;
     case 'skipped':
