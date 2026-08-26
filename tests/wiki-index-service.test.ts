@@ -30,6 +30,7 @@ describe('regenerateWikiIndex', () => {
     const content = await readFile(path.join(root, 'wiki', 'index.md'), 'utf8');
     expect(content).toContain('- No concepts yet.');
     expect(content).toContain('- No source notes yet.');
+    expect(content).toContain('type: index');
   });
 
   it('lists every concept page on disk, across class subfolders and legacy flat pages', async () => {

@@ -4,7 +4,9 @@
  * `confirm()` is synchronous and unstyled; this module ships one uniform,
  * styled modal that resolves a Promise<boolean> instead, so call sites await it
  * exactly like the native call (just `await confirmAction(...)` instead of
- * `confirm(...)`).
+ * `confirm(...)`). `notifyAction(...)` is the same modal with a single Close
+ * button, replacing `alert()` so a plain message never falls back to the
+ * unstyled native box.
  *
  * The three exports are injected separately because the chat shell, the wiki
  * browser, the skills page and the history page each assemble their own
@@ -48,9 +50,9 @@ export const CONFIRM_DIALOG_HTML = `
 
 export const CONFIRM_DIALOG_SCRIPT = `
 function confirmAction(options){
-  const opts=Object.assign({title:'Confirm',message:'',confirmLabel:'Confirm',danger:false},options||{});
+  const opts=Object.assign({title:'Confirm',message:'',confirmLabel:'Confirm',danger:false,notice:false},options||{});
   const modal=document.getElementById('confirm-modal');
-  if(!modal){ return Promise.resolve(window.confirm(opts.message||opts.title)); }
+  if(!modal){ if(opts.notice){ window.alert(opts.message||opts.title); return Promise.resolve(true); } return Promise.resolve(window.confirm(opts.message||opts.title)); }
   return new Promise(function(resolve){
     const dialog=modal.querySelector('.confirm-dialog');
     const titleEl=document.getElementById('confirm-title');
@@ -63,6 +65,8 @@ function confirmAction(options){
     msgEl.textContent=opts.message;
     okBtn.textContent=opts.confirmLabel;
     okBtn.classList.toggle('danger',!!opts.danger);
+    // Notice mode: nothing to decline, so the modal shows Close alone.
+    cancelBtn.style.display=opts.notice?'none':'';
     let settled=false;
     function settle(result){
       if(settled) return;
@@ -82,6 +86,11 @@ function confirmAction(options){
     document.addEventListener('keydown',onKey);
     modal.classList.add('open');
     modal.setAttribute('aria-hidden','false');
-    cancelBtn.focus();
+    (opts.notice?okBtn:cancelBtn).focus();
   });
+}
+
+function notifyAction(options){
+  const opts=Object.assign({title:'Notice',message:'',closeLabel:'Close'},options||{});
+  return confirmAction({title:opts.title,message:opts.message,confirmLabel:opts.closeLabel,danger:!!opts.danger,notice:true}).then(function(){});
 }`;

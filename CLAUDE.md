@@ -585,6 +585,12 @@ must be supplied together. Keep TLS in env/Compose, not `.wikirc.yaml`.
 - Treat `raw/untracked/` as the only ingest input area.
 - Treat `deliverables/` as generated and reproducible.
 - Do not invent facts in generated content; cite available context.
+- **OKF frontmatter.** Every new write point that produces a `.md` file **in the
+  bundle** (`wiki/**` and `deliverables/**`) must give it an OKF `type` — either
+  through `applyProvenance(…, type)` (provenance pages) or
+  `applyOkfFrontmatter` (`src/okf/frontmatter.ts`). The `type` vocabulary is
+  closed in `okfTypeForPath`; `wiki doctor` (and `--apply`) list/write the
+  missing ones, and `lint` reports `pagesMissingOkfType`.
 - `wiki_write_page`/`profile_update` (0.10.3, `src/services/mcpServer.ts`)
   require `confirm=true` to actually write; omitting `confirm` or passing
   `dryRun=true` returns a JSON preview (`createWritePreviewPayload`: before/

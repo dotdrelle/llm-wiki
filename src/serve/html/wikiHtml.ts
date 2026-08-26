@@ -168,7 +168,7 @@ async function renameTemplate() {
     body: JSON.stringify({ name: nextName })
   });
   if (!res.ok) {
-    alert('Rename failed');
+    await notifyAction({ title: 'Rename failed', message: 'The page could not be renamed.', danger: true });
     return;
   }
   const payload = await res.json();

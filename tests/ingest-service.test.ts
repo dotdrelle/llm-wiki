@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -84,7 +84,9 @@ class FakeWorkspaceService {
   // Racine unique par instance : le cache d'ingestion écrit réellement sur
   // disque, et un répertoire partagé ferait fuiter le plan d'un test dans un
   // autre — exactement le faux positif qui a masqué la clé de cache incomplète.
-  paths = { rootDir: path.join(os.tmpdir(), `wiki-ingest-${Math.random().toString(36).slice(2)}`) };
+  paths: { rootDir: string; internalDir?: string } = {
+    rootDir: path.join(os.tmpdir(), `wiki-ingest-${Math.random().toString(36).slice(2)}`),
+  };
   sourcePaths = ['/tmp/wiki/raw/untracked/note.md'];
   sourceBody = 'Body.';
   detectedEncoding?: SourceDocument['detectedEncoding'];
@@ -138,8 +140,10 @@ class FakeWorkspaceService {
     return this.wikiPages;
   }
 
+  sourceUnchanged = false;
+
   async isSourceUnchangedSinceIngest(): Promise<boolean> {
-    return false;
+    return this.sourceUnchanged;
   }
 
   async applyWikiOperations(operations: WikiOperation[]): Promise<void> {
@@ -488,6 +492,86 @@ describe('ingest service', () => {
       true,
     );
     expect(logger.entries.some((entry) => entry.event === 'ingest:run-done')).toBe(true);
+  });
+
+  it('re-ingests an unchanged source whose produced pages have vanished', async () => {
+    const workspace = new FakeWorkspaceService();
+    workspace.sourceUnchanged = true;
+    const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-vanish-'));
+    workspace.paths.rootDir = root;
+    workspace.paths.internalDir = path.join(root, '.wiki', 'internal');
+    await mkdir(workspace.paths.internalDir, { recursive: true });
+    await writeFile(
+      path.join(workspace.paths.internalDir, 'source-registry.json'),
+      `${JSON.stringify({
+        version: 1,
+        sources: [{
+          sourceId: 'path:raw/ingested/note.md',
+          archivePath: 'raw/ingested/note.md',
+          producedPages: ['wiki/sources/note.md', 'wiki/concepts/unclassified/foo.md'],
+        }],
+      })}\n`,
+      'utf8',
+    );
+    const logger = new MemoryTraceLogger();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new FakeLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      new CountingRefreshService() as unknown as RefreshService,
+      logger,
+      disabledCache(),
+    );
+
+    await service.ingest([], {});
+
+    expect(workspace.appliedOperations.length).toBeGreaterThan(0);
+    expect(workspace.archivedSources).toEqual(['raw/untracked/note.md']);
+    expect(logger.entries.some((entry) => entry.event === 'ingest:source-skip')).toBe(false);
+    expect(logger.entries.some((entry) => entry.event === 'ingest:source-reingest')).toBe(true);
+  });
+
+  it('still skips an unchanged source whose produced pages all exist', async () => {
+    const workspace = new FakeWorkspaceService();
+    workspace.sourceUnchanged = true;
+    const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-present-'));
+    workspace.paths.rootDir = root;
+    workspace.paths.internalDir = path.join(root, '.wiki', 'internal');
+    await mkdir(workspace.paths.internalDir, { recursive: true });
+    await mkdir(path.join(root, 'wiki', 'sources'), { recursive: true });
+    await mkdir(path.join(root, 'wiki', 'concepts', 'unclassified'), { recursive: true });
+    await writeFile(path.join(root, 'wiki', 'sources', 'note.md'), '# Note\n', 'utf8');
+    await writeFile(path.join(root, 'wiki', 'concepts', 'unclassified', 'foo.md'), '# Foo\n', 'utf8');
+    await writeFile(
+      path.join(workspace.paths.internalDir, 'source-registry.json'),
+      `${JSON.stringify({
+        version: 1,
+        sources: [{
+          sourceId: 'path:raw/ingested/note.md',
+          archivePath: 'raw/ingested/note.md',
+          producedPages: ['wiki/sources/note.md', 'wiki/concepts/unclassified/foo.md'],
+        }],
+      })}\n`,
+      'utf8',
+    );
+    const logger = new MemoryTraceLogger();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new FakeLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      new CountingRefreshService() as unknown as RefreshService,
+      logger,
+      disabledCache(),
+    );
+
+    const results = await service.ingest([], {});
+
+    expect(workspace.appliedOperations.length).toBe(0);
+    expect(workspace.archivedSources).toEqual(['raw/untracked/note.md']);
+    expect(results[0]?.skipped).toBe(true);
+    expect(logger.entries.some((entry) => entry.event === 'ingest:source-skip')).toBe(true);
   });
 
   it('rewrites model-mutated source citations to the exact archived source path', async () => {
@@ -990,6 +1074,51 @@ describe('ingest service', () => {
     ]);
     expect(workspace.archivedSources).toEqual(['raw/untracked/note.md']);
     expect(logger.entries.some((entry) => entry.event === 'ingest:apply')).toBe(true);
+  });
+
+  it('advances the taxonomy marker after a planned ingest', async () => {
+    // The taxonomy step freezes a knowledge fingerprint and compares it against
+    // the marker at publication. `applyPlannedIngest` must advance that marker
+    // (publish a corpus revision) or the next `taxonomy` aborts with 'stale':
+    // its compare-and-swap sees a marker that no other step advanced.
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-publish-'));
+    const workspace = new FakeWorkspaceService();
+    workspace.paths = { rootDir };
+    const planPath = path.join(rootDir, '.wiki', 'ingest-plans', 'plan.json');
+    await mkdir(path.dirname(planPath), { recursive: true });
+    await writeFile(
+      planPath,
+      JSON.stringify({
+        generatedAt: new Date().toISOString(),
+        sources: [
+          {
+            source: 'raw/untracked/note.md',
+            summary: 'Planned note.',
+            operations: [
+              { type: 'create', path: 'wiki/concepts/unclassified/foo.md', content: '---\nsubject: foo\nclass: unclassified\n---\n# Foo\n' },
+            ],
+            review: [],
+          },
+        ],
+      }),
+      'utf8',
+    );
+    const logger = new MemoryTraceLogger();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new FakeLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+      disabledCache(),
+    );
+
+    await service.applyPlannedIngest(['.wiki/ingest-plans/plan.json']);
+
+    const marker = JSON.parse(await readFile(path.join(rootDir, '.wiki', 'graph', 'revision.json'), 'utf8'));
+    expect(typeof marker.revision).toBe('number');
+    expect(marker.corpusAlgorithm).toBe('knowledge-content-sha256-v1');
   });
 
   it('does not report a source as successful when applying operations fails', async () => {

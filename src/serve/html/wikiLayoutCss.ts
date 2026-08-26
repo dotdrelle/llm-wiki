@@ -285,6 +285,16 @@ export const WIKI_LAYOUT_CSS = `
       line-height: 1;
     }
     .side-folder-action:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+    /* Curseur main sur tout ce qui se clique dans le panneau de gauche : les
+       boutons d'action, les onglets de collection, les raccourcis de l'entete
+       et les lignes de dossier repliables. Un bouton qui garde la fleche par
+       defaut ne se lit pas comme un bouton. */
+    .sidebar button,
+    .sidebar summary,
+    .sidebar .side-action,
+    .sidebar .side-folder-action,
+    .sidebar .side-collection-tabs > * { cursor: pointer; }
+    .sidebar button:disabled { cursor: default; }
     .side-folder-action-icon svg { width: 0.95rem; height: 0.95rem; display: block; }
     .side-build-concepts svg, .side-ingest-action svg { width: 0.95rem; height: 0.95rem; display: block; }
     .side-refresh-action { font-size: 0.82rem; font-weight: 800; }

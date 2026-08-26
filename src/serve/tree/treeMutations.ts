@@ -49,9 +49,9 @@ export const TREE_ROOTS: Record<string, TreeRoot> = {
 
 export type TreeResult =
   | { ok: true; status: 200; body: Record<string, unknown> }
-  | { ok: false; status: 400 | 409; error: string };
+  | { ok: false; status: 400 | 409 | 413; error: string };
 
-function fail(error: string, status: 400 | 409 = 400): TreeResult {
+function fail(error: string, status: 400 | 409 | 413 = 400): TreeResult {
   return { ok: false, status, error };
 }
 
@@ -177,12 +177,23 @@ export async function moveEntry(
   }
 }
 
-/** Create a folder, or an empty file, inside a section. */
+// Un fichier depose dans Pending est du Markdown redige a la main : au-dela de
+// 5 Mo ce n'est plus une source, c'est une erreur de manipulation.
+const MAX_CREATED_FILE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Create a folder, or a file, inside a section.
+ *
+ * `rawContent` lets a caller seed the file (drag & drop of a .md into Pending
+ * writes the dropped file's text here). Absent, the file is created empty, as
+ * the "New file" button has always done.
+ */
 export async function createEntry(
   rootDir: string,
   rawParent: unknown,
   rawName: unknown,
   kind: TreeEntryKind,
+  rawContent?: unknown,
 ): Promise<TreeResult> {
   const parent = normalizeRelative(rawParent);
   const root = parent ? resolveTreeRoot(parent) : null;
@@ -209,9 +220,11 @@ export async function createEntry(
     if (kind === 'folder') {
       await mkdir(absolute, { recursive: false });
     } else {
+      const content = typeof rawContent === 'string' ? rawContent : '';
+      if (content.length > MAX_CREATED_FILE_BYTES) return fail('file too large', 413);
       // `wx`: fails if the file exists, rather than truncating it. The
       // existence check above leaves a race window that this flag closes.
-      await writeFile(absolute, '', { encoding: 'utf8', flag: 'wx' });
+      await writeFile(absolute, content, { encoding: 'utf8', flag: 'wx' });
     }
     return { ok: true, status: 200, body: { path: target, kind } };
   } catch (err) {

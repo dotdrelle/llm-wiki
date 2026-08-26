@@ -51,9 +51,10 @@ function respond(res: ServerResponse, deps: TreeRoutesDeps, result: TreeResult):
 async function readBody(
   req: IncomingMessage,
   deps: TreeRoutesDeps,
+  maxBytes = 16_384,
 ): Promise<Record<string, unknown> | null> {
   try {
-    const raw = await deps.readRequestBuffer(req, 16_384);
+    const raw = await deps.readRequestBuffer(req, maxBytes);
     return raw.length > 0 ? (JSON.parse(raw.toString('utf8')) as Record<string, unknown>) : {};
   } catch {
     return null;
@@ -86,10 +87,12 @@ export async function handleTreeApi(
   }
 
   if (urlPath === '/api/tree/create' && req.method === 'POST') {
-    const body = await readBody(req, deps);
+    // Un drop de .md dans Pending envoie le contenu du fichier dans ce corps :
+    // la limite est celle de createEntry (5 Mo) plus la marge du JSON.
+    const body = await readBody(req, deps, 6 * 1024 * 1024);
     if (!body) return respond(res, deps, { ok: false, status: 400, error: 'invalid request' });
     const kind = body.kind === 'folder' ? 'folder' : 'file';
-    return respond(res, deps, await createEntry(deps.rootDir, body.parent, body.name, kind));
+    return respond(res, deps, await createEntry(deps.rootDir, body.parent, body.name, kind, body.content));
   }
 
   /*

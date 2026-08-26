@@ -34,6 +34,23 @@ async function load(){
 }
 function render(){
   if(!data)return;
+  /*
+   Corpus vide : on l'annonce, on ne dessine pas.
+
+   Sans ce garde-fou l'ecran affichait un canvas vide sous un compteur
+   "0 communautes · 0 documents" — indistinguable d'un chargement qui n'a pas
+   abouti. Le message dit quoi faire ensuite.
+  */
+  if(!data.nodes.length){
+    destroyCanvasExplorer();
+    canvas.innerHTML='<div class="loading">No document in the graph yet. Add sources to Pending, then run an ingest.</div>';
+    summary.textContent='Empty wiki';
+    title.textContent='Global map view';
+    document.querySelector('#graph-breadcrumb').hidden=true;
+    document.querySelector('#spacing-control').hidden=true;
+    document.querySelector('#focus-back').hidden=true;
+    return;
+  }
   const current=visible(),visibleCommunities=data.communities.filter(community=>community.nodeIds.some(id=>current.nodes.some(node=>node.id===id)));
   updateCommunityFilterCounts();updateGraphBreadcrumb();
   document.querySelector('#graph-breadcrumb').hidden=view==='list';
@@ -93,7 +110,14 @@ document.querySelector('#community-refresh').addEventListener('click',()=>{onGra
 if(window.parent&&window.parent!==window){
   const rebuildBtn=document.querySelector('#community-rebuild');
   rebuildBtn.hidden=false;
-  rebuildBtn.addEventListener('click',()=>{
+  // Meme garde-fou que les autres lancements d'agent : une confirmation
+  // explicite avant d'occuper le runtime.
+  rebuildBtn.addEventListener('click',async()=>{
+    if(!(await confirmAction({
+      title:'Rebuild taxonomy',
+      message:'Run the taxonomy agent to synthesize communities from the current corpus?',
+      confirmLabel:'Rebuild',
+    }))) return;
     window.parent.postMessage({type:'llmwiki:runTaxonomy'},location.origin);
   });
 }

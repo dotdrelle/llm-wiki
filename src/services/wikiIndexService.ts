@@ -6,6 +6,7 @@ import { safeWriteFile } from '../utils/fs.ts';
 import { toPosix } from '../utils/path.ts';
 import { pageTitle } from '../utils/pageTitle.ts';
 import { mapWithConcurrency } from '../utils/concurrency.ts';
+import { applyOkfFrontmatter, OKF_TYPE_INDEX } from '../okf/frontmatter.ts';
 
 /*
  `wiki/index.md` used to be written by the consolidation LLM, per source, as
@@ -105,12 +106,15 @@ export async function regenerateWikiIndex(
       listEntries(rootDir, CONCEPTS_GLOB),
       listEntries(rootDir, SOURCES_GLOB),
     ]);
-    const content = [
-      HEADER,
-      renderSection('Concepts', CONCEPTS_INTRO, concepts, 'No concepts yet.'),
-      renderSection('Sources', SOURCES_INTRO, sources, 'No source notes yet.'),
-      FOOTER,
-    ].join('\n');
+    const content = applyOkfFrontmatter(
+      [
+        HEADER,
+        renderSection('Concepts', CONCEPTS_INTRO, concepts, 'No concepts yet.'),
+        renderSection('Sources', SOURCES_INTRO, sources, 'No source notes yet.'),
+        FOOTER,
+      ].join('\n'),
+      { type: OKF_TYPE_INDEX, title: 'Wiki Index' },
+    );
     await safeWriteFile(path.join(rootDir, INDEX_RELATIVE_PATH), content);
     return { status: 'written', concepts: concepts.length, sources: sources.length };
   } catch (error) {

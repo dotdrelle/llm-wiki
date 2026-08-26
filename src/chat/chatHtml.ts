@@ -45,7 +45,6 @@ let skillAcIdx = -1;
 let skillAcItems = [];
 let skillAcFilter = '';
 let skillEditingName = null;
-const SKILL_AC_LIMIT = 8;
 let productionState = {
   jobId: null,
   job: null,
@@ -238,9 +237,20 @@ function runtimeTaskPanelHTML(view='plan') {
   const activities=workflowActivities
     ? workflowActivities.map(node=>({...(node.raw||{}),key:node.key,label:node.label,status:node.status,terminal:['done','failed','cancelled'].includes(String(node.status)),progress:node.progress}))
     : Array.isArray(runtimeState.activities)?runtimeState.activities:[];
-  const queue=workflowQueue
+  const jobQueue=workflowQueue
     ? workflowQueue.map(node=>({...(node.raw||{}),id:node.itemId||node.id,label:node.label,status:node.status}))
     : Array.isArray(runtimeState.queue)?runtimeState.queue:[];
+  // The control lane (runs queued while another run is active) is a distinct
+  // queue from the MCP job queue. Surface it here too, labelled by the request
+  // it carries, so a queued task is visible in serve — not only in Donna's reply.
+  const controlQueue=Array.isArray(runtimeState.controlQueue)
+    ? runtimeState.controlQueue.map((item,index)=>({
+        ...item,
+        id:item.id||\`control-\${index}\`,
+        label:item.input||item.skillName||'Queued request',
+      }))
+    : [];
+  const queue=[...controlQueue, ...jobQueue];
   const activitySummary=runtimeState.workflow?.activity||null;
   const activityLines=Array.isArray(activitySummary?.lines)?activitySummary.lines:[];
   const initialSynthesis=Array.isArray(activitySummary?.initialSynthesis)?activitySummary.initialSynthesis:[];
@@ -297,7 +307,9 @@ function runtimeTaskPanelHTML(view='plan') {
   })).join('');
   const synthesisHtml=initialSynthesis.length?\`<div class="act-section-head"><span class="act-section-title">Initial synthesis</span></div><div class="runtime-log">\${esc(initialSynthesis.join('\\n'))}</div>\`:'';
   const runSummary=runtimeWorkflowSummaryHTML();
-  const planHTML=planCards?\`<div class="act-section-head"><span class="act-section-title">Plan</span></div>\${planCards}\`:'';
+  // Le titre "Plan" doublonnait l'onglet et la barre d'outils Activity : on ne
+  // garde que le filet de separation avec le bloc precedent.
+  const planHTML=planCards?\`<div class="act-section-rule"></div>\${planCards}\`:'';
   const queueHTML=queueCards?\`<div class="act-section-head"><span class="act-section-title">Queue</span></div>\${queueCards}\`:'';
   return status+runSummary+runCard+synthesisHtml+planHTML+queueHTML;
 }
@@ -591,8 +603,13 @@ function autoResize(ta) {
 }
 function handleKey(e) {
   if($('skill-ac').classList.contains('open')){
-    if(e.key==='ArrowDown'||e.key==='ArrowRight'){e.preventDefault();skillAcIdx=Math.min(skillAcIdx+1,skillAcItems.length-1);updateSkillAcFocus();return;}
-    if(e.key==='ArrowUp'||e.key==='ArrowLeft'){e.preventDefault();skillAcIdx=Math.max(skillAcIdx-1,-1);updateSkillAcFocus();return;}
+    // La liste est une grille a 2 colonnes : Bas/Haut changent de ligne (pas de
+    // 2), Droite/Gauche changent de colonne (pas de 1). Sur une seule colonne
+    // (ecran etroit) le pas vaut 1.
+    if(e.key==='ArrowDown'){e.preventDefault();skillAcIdx=skillAcIdx<0?0:Math.min(skillAcIdx+skillAcColumns(),skillAcItems.length-1);updateSkillAcFocus();return;}
+    if(e.key==='ArrowUp'){e.preventDefault();skillAcIdx=Math.max(skillAcIdx-skillAcColumns(),-1);updateSkillAcFocus();return;}
+    if(e.key==='ArrowRight'){e.preventDefault();skillAcIdx=Math.min(skillAcIdx+1,skillAcItems.length-1);updateSkillAcFocus();return;}
+    if(e.key==='ArrowLeft'){e.preventDefault();skillAcIdx=Math.max(skillAcIdx-1,-1);updateSkillAcFocus();return;}
     if(e.key==='Tab'){e.preventDefault();selectSkillAc(skillAcIdx>=0?skillAcIdx:0);return;}
     if(e.key==='Enter'){e.preventDefault();if(skillAcIdx>=0){selectSkillAc(skillAcIdx);}else{hideSkillAc();}return;}
     if(e.key==='Escape'){e.preventDefault();restoreSkillAcFilter();hideSkillAc();return;}
@@ -610,15 +627,25 @@ function showSkillAc(filter){
   const el=$('skill-ac');
   const normalized=String(filter||'').toLowerCase();
   const builtins=[{name:'connector',description:'List connectors or authorize one: /connector auth google',params:['list | auth google']}];
+  // Pas de troncature : la liste complete est rendue et le conteneur defile
+  // (max-height + overflow-y). Un cap fixe bloquait la navigation clavier sur
+  // les premieres entrees des qu'aucun filtre n'etait saisi.
   const filtered=[...builtins,...(skillsCache||[]).filter(s=>s.name!=='connector')]
-    .filter(s=>String(s.name||'').toLowerCase().startsWith(normalized))
-    .slice(0,SKILL_AC_LIMIT);
+    .filter(s=>String(s.name||'').toLowerCase().startsWith(normalized));
   skillAcItems=filtered;
   if(!filtered.length){hideSkillAc();return;}
   skillAcIdx=-1;
   skillAcFilter=normalized;
   el.innerHTML=filtered.map((s,i)=>\`<div class="skill-ac-item" data-idx="\${i}" onclick="selectSkillAc(\${i})" onmouseenter="skillAcIdx=\${i};updateSkillAcFocus()"><div class="skill-ac-slash">/</div><div class="skill-ac-info"><div class="skill-ac-name">\${esc(s.name)}</div>\${s.description?'<div class="skill-ac-desc">'+esc(s.description)+'</div>':''}</div></div>\`).join('');
   el.classList.add('open');
+}
+// Nombre de colonnes reellement rendues par la grille CSS (2, ou 1 sous 720px).
+function skillAcColumns(){
+  const el=$('skill-ac');
+  if(!el) return 1;
+  const columns=getComputedStyle(el).gridTemplateColumns;
+  const count=String(columns||'').trim().split(/\\s+/).filter(Boolean).length;
+  return Math.max(1,count);
 }
 function hideSkillAc(){$('skill-ac').classList.remove('open');skillAcIdx=-1;skillAcItems=[];skillAcFilter='';}
 function updateSkillAcFocus(){$('skill-ac').querySelectorAll('.skill-ac-item').forEach((el,i)=>{const on=i===skillAcIdx;el.classList.toggle('focused',on);if(on)el.scrollIntoView({block:'nearest'});});previewSkillAc();}

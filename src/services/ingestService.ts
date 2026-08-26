@@ -28,10 +28,11 @@ import {
 import { CONCEPT_PREFIX, DEFAULT_CONCEPT_BUDGET, detectConceptOverflow, detectConceptSplits, detectDuplicatePaths, reanchorToPreviousConcepts, validateConsolidation } from '../ingest/consolidationValidate.ts';
 import { CONCEPT_GRID_RELATIVE_PATH, readConceptGrid } from '../ingest/conceptGrid.ts';
 import { hashText } from '../utils/hash.ts';
+import { resolveInside } from '../utils/path.ts';
 import { normalizeSourceBody } from '../utils/markdown.ts';
 import { planSourcePacks } from '../utils/sourcePacking.ts';
 import { mapWithConcurrency } from '../utils/concurrency.ts';
-import { withFileLock } from '../utils/fs.ts';
+import { pathExists, withFileLock } from '../utils/fs.ts';
 import { publishCorpusRevision } from '../graph/wiki/taxonomy/publish.ts';
 import { regenerateWikiIndex } from './wikiIndexService.ts';
 import type { TokenUsage } from './llmService.ts';
@@ -57,6 +58,7 @@ import {
   SOURCE_REGISTRY_FILENAME,
   sourceIdFromArchivePath,
   writeSourceRegistry,
+  type SourceRegistryFile,
 } from './sourceRegistry.ts';
 
 interface IngestSectionResult {
@@ -453,33 +455,44 @@ export class IngestService {
         if (!options?.force) {
           const unchanged = await this.workspace.isSourceUnchangedSinceIngest(source);
           if (unchanged) {
-            await this.logger.info('ingest:source-skip', {
-              source: source.relativePath,
-              reason: 'unchanged since last ingest',
-            });
-            results.push({
-              source: source.relativePath,
-              plan: { summary: 'unchanged since last ingest', operations: [] },
-              skipped: true,
-            });
-            if (!options?.dryRun) {
-              await this.workspace.archiveSource(source);
-              await this.logger.info('ingest:archive', {
+            const vanished = await this.findVanishedProducedPages(source, previousRegistry);
+            if (vanished.length === 0) {
+              await this.logger.info('ingest:source-skip', {
                 source: source.relativePath,
-                archivePath: source.archiveCitationPath,
-                durationMs: Date.now() - sourceStartedAt,
+                reason: 'unchanged since last ingest',
               });
-              // An unchanged source remains a SEEN source: without this line,
-              // it would flip to `missing` on the first inventory even though
-              // it has just been presented.
-              await this.observeSource(source, null);
+              results.push({
+                source: source.relativePath,
+                plan: { summary: 'unchanged since last ingest', operations: [] },
+                skipped: true,
+              });
+              if (!options?.dryRun) {
+                await this.workspace.archiveSource(source);
+                await this.logger.info('ingest:archive', {
+                  source: source.relativePath,
+                  archivePath: source.archiveCitationPath,
+                  durationMs: Date.now() - sourceStartedAt,
+                });
+                // An unchanged source remains a SEEN source: without this line,
+                // it would flip to `missing` on the first inventory even though
+                // it has just been presented.
+                await this.observeSource(source, null);
+              }
+              await this.logger.info('ingest:source-done', {
+                source: source.relativePath,
+                durationMs: Date.now() - sourceStartedAt,
+                status: 'skipped',
+              });
+              continue;
             }
-            await this.logger.info('ingest:source-done', {
+            // The archive is unchanged but the pages it produced are gone: the
+            // skip above would leave the wiki empty while every step reported
+            // success. Fall through and re-ingest, which restores them.
+            await this.logger.warn('ingest:source-reingest', {
               source: source.relativePath,
-              durationMs: Date.now() - sourceStartedAt,
-              status: 'skipped',
+              reason: 'produced pages vanished',
+              vanished,
             });
-            continue;
           }
         }
 
@@ -1321,6 +1334,18 @@ export class IngestService {
           'ingest',
           `${planned.source} (${planned.summary ?? 'planned ingest applied'})`,
         );
+        // Same discipline as the sequential ingest path: the taxonomy barrier
+        // freezes a knowledge fingerprint and compares it against the marker at
+        // publication. `applyPlannedIngest` used to skip both of these, so the
+        // marker stayed on the previous corpus and the very next `taxonomy`
+        // aborted with 'stale' (compare-and-swap sees a marker that no other
+        // step advanced). Regenerate the index BEFORE publishing — wiki/index.md
+        // is itself part of the knowledge corpus, so publishing first would
+        // freeze a corpus the index rewrite immediately invalidates again.
+        if (applyOperations.length > 0) {
+          await this.regenerateIndex(planned.source);
+          await this.publishGraphRevision(planned.source);
+        }
         results.push({
           source: planned.source,
           plan: { summary: planned.summary ?? '', operations: applyOperations },
@@ -1435,6 +1460,63 @@ export class IngestService {
       source: sourceLabel,
       error: outcome.error instanceof Error ? outcome.error.message : String(outcome.error),
     });
+  }
+
+  /**
+   * Produced pages of a source that no longer exist on disk.
+   *
+   * The "unchanged since last ingest" skip is keyed on the ARCHIVE hash, not on
+   * the wiki pages the previous ingest actually wrote. A page deleted by hand (a
+   * source note, a concept leaf) would therefore stay deleted forever: re-exporting
+   * the identical source re-archives it and skips, so every step reports success
+   * over an empty wiki. This closes that gap — an unchanged source whose produced
+   * pages have vanished is re-ingested instead of skipped.
+   *
+   * A concept leaf missing from its recorded path is not necessarily deleted:
+   * `wiki/concepts/**` pages are also manually re-filed (moving
+   * `wiki/concepts/unclassified/x.md` to `wiki/concepts/<class>/x.md` keeps the
+   * `<subject>.md` basename — see `conceptPagePath`/`parseConceptPagePath`).
+   * Re-ingesting on a manual move would re-derive and write a fresh page at the
+   * old location, leaving both the moved page and a duplicate for the same
+   * subject. Before declaring such a page vanished, check whether a page with
+   * the same basename still exists elsewhere under `wiki/concepts/` — if so,
+   * it moved, and re-ingesting it is exactly the thing to avoid.
+   */
+  private async findVanishedProducedPages(
+    source: SourceDocument,
+    previousRegistry: SourceRegistryFile | null,
+  ): Promise<string[]> {
+    if (!previousRegistry) return [];
+    const sourceId = sourceIdFromArchivePath(source.archiveCitationPath);
+    const record = previousRegistry.sources.find((entry) => entry.sourceId === sourceId);
+    if (!record) return [];
+    const missing: string[] = [];
+    for (const page of record.producedPages) {
+      if (!(await pathExists(resolveInside(this.workspace.paths.rootDir, page)))) {
+        missing.push(page);
+      }
+    }
+    if (missing.length === 0) return [];
+    const missingConceptPages = missing.filter((page) => page.startsWith(CONCEPT_PREFIX));
+    if (missingConceptPages.length === 0) return missing;
+    const existingBasenames = new Set(
+      (await this.retrieval.warmCache())
+        .map((page) => page.relativePath)
+        .filter((relativePath) => relativePath.startsWith(CONCEPT_PREFIX))
+        .map((relativePath) => relativePath.slice(relativePath.lastIndexOf('/') + 1)),
+    );
+    const vanished = missing.filter((page) => {
+      if (!page.startsWith(CONCEPT_PREFIX)) return true;
+      const basename = page.slice(page.lastIndexOf('/') + 1);
+      return !existingBasenames.has(basename);
+    });
+    if (vanished.length !== missing.length) {
+      await this.logger.info('ingest:concept-page-moved', {
+        source: source.relativePath,
+        moved: missing.filter((page) => !vanished.includes(page)),
+      });
+    }
+    return vanished;
   }
 
   private async observeSource(

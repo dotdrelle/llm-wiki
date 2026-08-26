@@ -46,6 +46,23 @@ async function fixtureWorkspace(): Promise<string> {
 }
 
 describe('wiki graph projection', () => {
+  it("laisse hors du graphe les pages de service regenerees", async () => {
+    // Sur un wiki encore vide, index.md et concepts-grid.md produisaient a eux
+    // seuls une communaute "Non classe" a 1 page : un graphe qui annonce du
+    // contenu la ou il n'y en a pas.
+    const root = await fixtureWorkspace();
+    await writeFile(path.join(root, 'wiki/index.md'), '# Index\n');
+    await writeFile(path.join(root, 'wiki/concepts-grid.md'), '# Grid\n');
+    await writeFile(path.join(root, 'wiki/log.md'), '# Log\n');
+
+    const files = await listWikiGraphFiles(root);
+
+    expect(files).not.toContain('wiki/index.md');
+    expect(files).not.toContain('wiki/concepts-grid.md');
+    expect(files).not.toContain('wiki/log.md');
+    expect(files).toContain('wiki/concepts/domain/main.md');
+  });
+
   it('reads community frontmatter on every document type with community ahead of group', async () => {
     const root = await fixtureWorkspace();
     const files = await listWikiGraphFiles(root);

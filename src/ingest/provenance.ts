@@ -102,8 +102,12 @@ export function isExtractionKind(value: unknown): value is ExtractionKind {
  *
  * A value already present in the file and not provided here is kept: an
  * explicit manual edit takes precedence over the automatic projection.
+ *
+ * `type` is the OKF type (see `okf/frontmatter.ts`), and is written ADDITIVELY:
+ * a `type` already present — including one written by hand — is never
+ * overwritten. A page with no provenance but a type still gets its frontmatter.
  */
-export function applyProvenance(content: string, provenance: PageProvenance): string {
+export function applyProvenance(content: string, provenance: PageProvenance, type?: string | null): string {
   const parsed = matter(content);
   const data: Record<string, unknown> = { ...parsed.data };
 
@@ -115,6 +119,8 @@ export function applyProvenance(content: string, provenance: PageProvenance): st
     if (Array.isArray(value) && value.length === 0) continue;
     data[key] = value;
   }
+
+  if (type != null && data.type == null) data.type = type;
 
   if (!Object.keys(data).length) return content;
   return matter.stringify(parsed.content, data);

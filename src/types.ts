@@ -411,5 +411,6 @@ export interface LintReport {
   flatConceptPages: string[];
   conceptPagesMissingGroup: string[];
   duplicateConceptGroups: Array<{ key: string; groups: string[] }>;
+  pagesMissingOkfType: string[];
   semantic?: SemanticLintReport;
 }

@@ -30,6 +30,7 @@ import {
 } from '../services/gatewayProbe.ts';
 import { pathExists, safeWriteFile } from '../utils/fs.ts';
 import { HistoryService } from '../services/historyService.ts';
+import { applyMissingOkfTypes, listBundleFilesMissingType } from '../okf/scan.ts';
 import {
   isReportClean,
   readSourceRegistry,
@@ -1560,6 +1561,25 @@ export default async function doctorCmd(
     }
   } catch (error) {
     warn(`build plan failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  console.log('\n── OKF ────────────────────────────────────────────────────');
+  try {
+    const missingOkfType = await listBundleFilesMissingType(config.wikiRoot);
+    row('pages missing type:', String(missingOkfType.length));
+    for (const file of missingOkfType.slice(0, 20)) console.log(`  - ${file}`);
+    if (missingOkfType.length > 20) console.log(`  … and ${missingOkfType.length - 20} more`);
+    if (missingOkfType.length === 0) {
+      ok('every bundle page carries an OKF type');
+    } else if (options.apply) {
+      const { written, skipped } = await applyMissingOkfTypes(config.wikiRoot);
+      if (written.length > 0) ok(`OKF type written to ${written.length} page(s)`);
+      for (const file of skipped) warn(`could not write OKF type: ${file}`);
+    } else {
+      row('action:', 'run `wiki doctor --apply` to write the missing type(s)');
+    }
+  } catch (error) {
+    warn(`OKF check failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   printDoctorStatus();

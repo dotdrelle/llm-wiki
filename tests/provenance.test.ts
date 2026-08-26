@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { subjectsAreRelated } from '../src/ingest/provenance.ts';
+import { applyProvenance, subjectsAreRelated, type PageProvenance } from '../src/ingest/provenance.ts';
 
 /*
  Concept-homonym gap (B17): "gamma", "gamma-solution", "gamma-certifications"
@@ -33,7 +33,38 @@ describe('subjectsAreRelated', () => {
   });
 
   it('rejects empty input', () => {
-    expect(subjectsAreRelated('', 'gamma')).toBe(false);
-    expect(subjectsAreRelated('gamma', '')).toBe(false);
+    expect(subjectsAreRelated('', '')).toBe(false);
+    expect(subjectsAreRelated('a', '')).toBe(false);
+  });
+});
+
+describe('applyProvenance — OKF type', () => {
+  const provenance: PageProvenance = {
+    subject: 'foo',
+    collection: null,
+    scope: null,
+    kind: 'product',
+    class: null,
+    classSecondary: [],
+  };
+
+  it('writes the OKF type alongside the provenance fields', () => {
+    const out = applyProvenance('# Foo\n', provenance, 'product');
+    expect(out).toContain('subject: foo');
+    expect(out).toContain('type: product');
+  });
+
+  it('writes the type even when the provenance is empty', () => {
+    const empty: PageProvenance = {
+      subject: null, collection: null, scope: null, kind: null, class: null, classSecondary: [],
+    };
+    const out = applyProvenance('# Bar\n', empty, 'concept');
+    expect(out).toContain('type: concept');
+  });
+
+  it('never overwrites a manual type', () => {
+    const out = applyProvenance('---\ntype: regulation\n---\n# Foo\n', provenance, 'product');
+    expect(out).toContain('type: regulation');
+    expect(out).not.toContain('type: product');
   });
 });

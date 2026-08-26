@@ -240,6 +240,7 @@ describe('renderConceptGrid', () => {
     if (read.status !== 'ok') return;
     expect(read.grid.classes).toEqual(['offre-marche', 'economie-projet']);
     expect(markdown).toContain('Le document porte-t-il un montant ou une charge ?');
+    expect(markdown).toContain('type: concept-grid');
   });
 });
 

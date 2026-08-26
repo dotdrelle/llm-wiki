@@ -10,5 +10,5 @@ export const SKILL_CHAINS_SCRIPT = `function skillChainsHTML() {
     const selection=chain.selectionKind?\` · \${esc(chain.selectionKind)}\`:'';
     return \`<div class="chain-block"><div class="chain-head">\${esc(chain.skillName||'skill')}\${selection} · \${chain.steps.length} step\${chain.steps.length>1?'s':''}</div>\${steps}</div>\`;
   }).join('');
-  return \`<div class="act-section-head"><span class="act-section-title">Chain</span></div>\${blocks}\`;
+  return blocks;
 }`;

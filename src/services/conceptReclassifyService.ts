@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { pathExists, safeWriteFile } from '../utils/fs.ts';
 import { resolveInside } from '../utils/path.ts';
 import { applyProvenance, readProvenance } from '../ingest/provenance.ts';
+import { okfTypeForPath } from '../okf/frontmatter.ts';
 import {
   conceptPagePath,
   readConceptGrid,
@@ -204,14 +205,18 @@ async function applyPlan(workspace: WorkspaceService, plan: ReclassifyPlan): Pro
     const source = resolveInside(workspace.paths.rootDir, move.path);
     const target = resolveInside(workspace.paths.rootDir, move.to);
     const content = await readFile(source, 'utf8');
-    const rewritten = applyProvenance(content, {
-      subject: null,
-      collection: null,
-      scope: null,
-      kind: null,
-      class: move.class,
-      classSecondary: [],
-    });
+    const rewritten = applyProvenance(
+      content,
+      {
+        subject: null,
+        collection: null,
+        scope: null,
+        kind: null,
+        class: move.class,
+        classSecondary: [],
+      },
+      okfTypeForPath(move.to, { kind: readProvenance(content).kind }),
+    );
     // Write-then-delete, not rename: the target's content differs from the
     // source's (the `class` field changed), so a plain rename would overwrite
     // the just-written target with the source's stale bytes.

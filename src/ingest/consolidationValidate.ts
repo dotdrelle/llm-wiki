@@ -8,6 +8,7 @@ import {
   subjectsAreRelated,
   type PageProvenance,
 } from './provenance.ts';
+import { okfTypeForPath } from '../okf/frontmatter.ts';
 
 /*
  Deterministic check of the consolidated plan.
@@ -384,7 +385,7 @@ export function validateConsolidation(
       provenanceByPath.set(at, finalProvenance);
       operations.push({
         ...operation,
-        content: applyProvenance(operation.content ?? '', finalProvenance),
+        content: applyProvenance(operation.content ?? '', finalProvenance, okfTypeForPath(at, finalProvenance)),
       });
       continue;
     }

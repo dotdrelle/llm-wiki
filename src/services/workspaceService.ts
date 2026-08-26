@@ -38,6 +38,7 @@ import {
   normalizeGeneratedMarkdown,
   parseTemplateInstructions,
 } from '../utils/markdown.ts';
+import { applyOkfFrontmatter, OKF_TYPE_ANSWER, OKF_TYPE_LOG } from '../okf/frontmatter.ts';
 import type {
   AppConfig,
   BuildState,
@@ -369,7 +370,10 @@ export class WorkspaceService {
     const current = (await pathExists(this.paths.wikiLogPath))
       ? await readFile(this.paths.wikiLogPath, 'utf8')
       : '# Wiki Log\n\n';
-    await safeWriteFile(this.paths.wikiLogPath, `${current}${line}`);
+    // The `type: log` header is written once, additively, when the file is
+    // first created — an existing header (or a hand-written one) is kept.
+    const withHeader = applyOkfFrontmatter(current, { type: OKF_TYPE_LOG });
+    await safeWriteFile(this.paths.wikiLogPath, `${withHeader}${line}`);
   }
 
   async listUntrackedSourcePaths(): Promise<string[]> {
@@ -1013,7 +1017,7 @@ export class WorkspaceService {
     const absolutePath = path.join(this.paths.wikiAnswersDir, `${slug}.md`);
     await mkdir(this.paths.wikiAnswersDir, { recursive: true });
     const date = new Date().toISOString().slice(0, 10);
-    const fileContent = matter.stringify(content, { question, date });
+    const fileContent = matter.stringify(content, { type: OKF_TYPE_ANSWER, question, date });
     await safeWriteFile(absolutePath, fileContent);
     return relativeFrom(this.paths.rootDir, absolutePath);
   }

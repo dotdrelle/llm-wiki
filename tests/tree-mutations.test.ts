@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -185,6 +185,22 @@ describe('création', () => {
       expect(result.ok, name).toBe(false);
     }
     expect((await readdir(path.join(root, 'wiki'))).sort()).toEqual(['concepts']);
+  });
+
+  it('écrit le contenu fourni dans le fichier créé', async () => {
+    // Le drag & drop d'un .md sur Pending passe par ce chemin : sans contenu,
+    // l'import déposerait des fichiers vides.
+    const result = await createEntry(root, 'raw/untracked', 'source', 'file', '# Titre\n');
+
+    expect(result.ok).toBe(true);
+    expect(await readFile(path.join(root, 'raw/untracked/source.md'), 'utf8')).toBe('# Titre\n');
+  });
+
+  it('refuse un contenu au-delà de la limite', async () => {
+    const result = await createEntry(root, 'raw/untracked', 'gros', 'file', 'x'.repeat(5 * 1024 * 1024 + 1));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.status).toBe(413);
   });
 
   it('refuse d’écraser une entrée existante', async () => {

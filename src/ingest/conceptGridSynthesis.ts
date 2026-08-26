@@ -14,6 +14,7 @@ import {
 } from './conceptGrid.ts';
 import { isValidProvenanceValue, normalizeProvenanceValue } from './provenance.ts';
 import { forbiddenLabelReason, labelShapeIssue } from '../graph/wiki/taxonomy/schema.ts';
+import { applyOkfFrontmatter, OKF_TYPE_CONCEPT_GRID } from '../okf/frontmatter.ts';
 
 /*
  The concepts pass: build the workspace's closed set of ranking classes.
@@ -555,7 +556,7 @@ export function renderConceptGrid(
     '   is missing: propose it rather than forcing the filing.',
     '',
   );
-  return lines.join('\n');
+  return applyOkfFrontmatter(lines.join('\n'), { type: OKF_TYPE_CONCEPT_GRID });
 }
 
 export type GridSynthesisOutcome =

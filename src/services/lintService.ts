@@ -6,6 +6,7 @@ import { buildPromptContext } from '../prompts/systemPreamble.ts';
 import { extractSourceCitations, extractWikiLinks } from '../utils/markdown.ts';
 import { canonicalizeName, slugify } from '../utils/path.ts';
 import { pathExists } from '../utils/fs.ts';
+import { listBundleFilesMissingType } from '../okf/scan.ts';
 import type { AppConfig, LintReport } from '../types.ts';
 import type { LLMService } from './llmService.ts';
 import type { WorkspaceService } from './workspaceService.ts';
@@ -115,6 +116,8 @@ export class LintService {
       .map(([key, groups]) => ({ key, groups: [...groups].sort() }))
       .filter((entry) => entry.groups.length > 1);
 
+    const pagesMissingOkfType = await listBundleFilesMissingType(this.workspace.paths.rootDir);
+
     const report: LintReport = {
       deadLinks,
       orphanPages,
@@ -124,6 +127,7 @@ export class LintService {
       flatConceptPages,
       conceptPagesMissingGroup,
       duplicateConceptGroups,
+      pagesMissingOkfType,
     };
 
     if (options?.withLlm) {

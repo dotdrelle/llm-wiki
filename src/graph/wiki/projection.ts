@@ -87,9 +87,21 @@ export const WIKI_GRAPH_RELATION_LABELS: Record<WikiGraphRelationType, string> =
   related_to: 'related to',
 };
 
+/*
+ Ce qui entre dans le graphe.
+
+ `wiki/index.md` et `wiki/concepts-grid.md` en sont exclus : ce sont des pages
+ de service regenerees automatiquement (sommaire, plan de classement), pas des
+ documents. Les inclure produisait, sur un wiki encore vide, une communaute
+ "Non classe / ungrouped" a 1 page dont le seul membre etait le sommaire — un
+ graphe qui annonce du contenu la ou il n'y en a pas. L'index relie par ailleurs
+ toutes les pages entre elles, ce qui fausse le calcul des communautes.
+*/
 const GRAPH_PATTERNS = [
   'wiki/**/*.md',
   '!wiki/log.md',
+  '!wiki/index.md',
+  '!wiki/concepts-grid.md',
   'deliverables/**/*.md',
   'templates/**/*.md',
   'build-context/**/*.md',

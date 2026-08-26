@@ -52,6 +52,11 @@ export default async function lintCmd(
     console.log(`  - ${duplicateGroup.key}: ${duplicateGroup.groups.join(', ')}`);
   }
 
+  console.log('Pages missing OKF type:', report.pagesMissingOkfType.length);
+  for (const page of report.pagesMissingOkfType) {
+    console.log(`  - ${page}`);
+  }
+
   if (report.semantic) {
     console.log('Semantic contradictions:', report.semantic.contradictions.length);
     console.log('Missing concepts:', report.semantic.missingConcepts.length);

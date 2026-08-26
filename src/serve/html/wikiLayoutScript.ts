@@ -152,7 +152,7 @@ ${CONFIRM_DIALOG_SCRIPT}
         if (!response.ok || payload.ok === false) throw new Error(payload.error || 'Delete failed');
         await refreshSidebar();
       } catch (err) {
-        alert(err instanceof Error ? err.message : String(err));
+        await notifyAction({ title: 'Delete failed', message: err instanceof Error ? err.message : String(err), danger: true });
         button.disabled = false;
       }
   });
@@ -178,7 +178,7 @@ ${CONFIRM_DIALOG_SCRIPT}
       if (!response.ok || payload.ok === false) throw new Error(payload.error || 'Create failed');
       await refreshSidebar();
     } catch (err) {
-      alert(err instanceof Error ? err.message : String(err));
+      await notifyAction({ title: 'Create failed', message: err instanceof Error ? err.message : String(err), danger: true });
     }
   });
 
@@ -254,7 +254,90 @@ ${CONFIRM_DIALOG_SCRIPT}
       if (!response.ok || payload.ok === false) throw new Error(payload.error || 'Move failed');
       await refreshSidebar();
     } catch (err) {
-      alert(err instanceof Error ? err.message : String(err));
+      await notifyAction({ title: 'Move failed', message: err instanceof Error ? err.message : String(err), danger: true });
+    }
+  });
+  /*
+   Depot de fichiers depuis le bureau sur le panneau Pending.
+
+   Pending est la boite d'entree des sources : y deposer un .md doit suffire.
+   Markdown uniquement, et volontairement : les autres formats passent par la
+   conversion (upload de document), qui ne se resume pas a ecrire un fichier.
+   Un lot mixte est refuse en bloc plutot qu'a moitie importe, pour que le
+   lecteur sache exactement ce qui a ete ecrit.
+  */
+  const PENDING_PARENT = 'raw/untracked';
+  function pendingDropTarget(event) {
+    return event.target.closest?.('[data-untracked-panel], [data-untracked-list]') || null;
+  }
+  function dragCarriesFiles(event) {
+    const types = event.dataTransfer?.types;
+    return Boolean(types && Array.prototype.indexOf.call(types, 'Files') !== -1);
+  }
+  function isMarkdownFile(file) {
+    return /\\.(?:md|markdown)$/i.test(String(file?.name || ''));
+  }
+  document.addEventListener('dragover', (event) => {
+    if (!dragCarriesFiles(event)) return;
+    const target = pendingDropTarget(event);
+    if (!target) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    if (!target.classList.contains('is-drop-target')) {
+      clearDropTargets();
+      target.classList.add('is-drop-target');
+    }
+  });
+  // Unlike [data-tree-drop], [data-untracked-panel] carries no attribute the
+  // shared dragleave handler above matches, so an OS file drag that leaves
+  // the panel (or is cancelled) would keep it highlighted until an unrelated
+  // drag elsewhere happened to call clearDropTargets().
+  document.addEventListener('dragleave', (event) => {
+    if (!dragCarriesFiles(event)) return;
+    pendingDropTarget(event)?.classList.remove('is-drop-target');
+  });
+  document.addEventListener('drop', async (event) => {
+    if (!dragCarriesFiles(event)) return;
+    const target = pendingDropTarget(event);
+    if (!target) return;
+    event.preventDefault();
+    clearDropTargets();
+    const files = Array.from(event.dataTransfer?.files || []);
+    if (!files.length) return;
+    const rejected = files.filter((file) => !isMarkdownFile(file));
+    if (rejected.length) {
+      await notifyAction({
+        title: 'Markdown only',
+        message: 'Pending accepts .md files only. Rejected:\\n· '
+          + rejected.map((file) => file.name).join('\\n· '),
+        danger: true,
+      });
+      return;
+    }
+    const written = [];
+    const failed = [];
+    for (const file of files) {
+      try {
+        const content = await file.text();
+        const response = await fetch('/api/tree/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ parent: PENDING_PARENT, name: file.name, kind: 'file', content }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.ok === false) throw new Error(payload.error || 'Import failed');
+        written.push(file.name);
+      } catch (err) {
+        failed.push(file.name + ' — ' + (err instanceof Error ? err.message : String(err)));
+      }
+    }
+    if (written.length) await refreshSidebar();
+    if (failed.length) {
+      await notifyAction({
+        title: 'Import failed',
+        message: (written.length ? written.length + ' file(s) imported.\\n' : '') + '· ' + failed.join('\\n· '),
+        danger: true,
+      });
     }
   });
   function folderHasVisibleFile(folder) {
@@ -345,7 +428,7 @@ ${CONFIRM_DIALOG_SCRIPT}
       await refreshSidebar();
       document.querySelectorAll('[data-tree-id]').forEach(initializeFolder);
     } catch (err) {
-      alert(err instanceof Error ? err.message : String(err));
+      await notifyAction({ title: 'Refresh failed', message: err instanceof Error ? err.message : String(err), danger: true });
     } finally {
       button.disabled = false;
       button.classList.remove('is-refreshing');
@@ -724,7 +807,12 @@ function initBuildConceptsButton() {
   const buildConceptsBtn = document.querySelector('[data-build-concepts]');
   if (!buildConceptsBtn) return;
   buildConceptsBtn.hidden = false;
-  buildConceptsBtn.addEventListener('click', function() {
+  buildConceptsBtn.addEventListener('click', async function() {
+    if (!(await confirmAction({
+      title: 'Build concept grid',
+      message: 'Rebuild the concept grid, then file unclassified pages?',
+      confirmLabel: 'Build',
+    }))) return;
     window.parent.postMessage({ type: 'llmwiki:buildConcepts' }, window.location.origin);
   });
 }
@@ -759,9 +847,17 @@ function initBuildConceptsButton() {
     const buildTemplateBtn = document.querySelector('[data-build-template]');
     if (buildTemplateBtn) {
       buildTemplateBtn.hidden = false;
-      buildTemplateBtn.addEventListener('click', () => {
+      // Un lancement d'agent consomme du budget LLM et occupe le runtime : il
+      // passe par la meme confirmation que les actions destructives.
+      buildTemplateBtn.addEventListener('click', async () => {
+        const path = buildTemplateBtn.getAttribute('data-build-template');
+        if (!(await confirmAction({
+          title: 'Build template',
+          message: 'Run the build agent on this template?\\n' + path,
+          confirmLabel: 'Build',
+        }))) return;
         window.parent.postMessage(
-          { type: 'llmwiki:buildTemplate', path: buildTemplateBtn.getAttribute('data-build-template') },
+          { type: 'llmwiki:buildTemplate', path },
           window.location.origin,
         );
       });
@@ -776,7 +872,12 @@ function initBuildConceptsButton() {
     const ingestLaunchBtn = document.querySelector('[data-ingest-launch]');
     if (ingestLaunchBtn) {
       ingestLaunchBtn.hidden = false;
-      ingestLaunchBtn.addEventListener('click', function() {
+      ingestLaunchBtn.addEventListener('click', async function() {
+        if (!(await confirmAction({
+          title: 'Ingest pending sources',
+          message: 'Run the ingest agent on every source in Pending?',
+          confirmLabel: 'Ingest',
+        }))) return;
         window.parent.postMessage({ type: 'llmwiki:ingest' }, window.location.origin);
       });
     }

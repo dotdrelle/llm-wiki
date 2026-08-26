@@ -12,6 +12,7 @@ import {
   extractSourceCitations,
   sanitizeFrontmatter,
 } from '../utils/markdown.ts';
+import { OKF_TYPE_DELIVERABLE } from '../okf/frontmatter.ts';
 import { hashText } from '../utils/hash.ts';
 import { pathExists } from '../utils/fs.ts';
 import { mapWithConcurrency } from '../utils/concurrency.ts';
@@ -318,7 +319,8 @@ export class BuildService {
     ) => void,
   ): Promise<string> {
     if (template.instructions.length === 0) {
-      const outputFrontmatter = sanitizeFrontmatter(template.frontmatter);
+      const sanitized = sanitizeFrontmatter(template.frontmatter);
+      const outputFrontmatter = { type: OKF_TYPE_DELIVERABLE, ...sanitized };
       return Object.keys(outputFrontmatter).length > 0
         ? matter.stringify(template.content.trim(), outputFrontmatter)
         : `${template.content.trim()}\n`;
@@ -403,7 +405,7 @@ export class BuildService {
       renderedBody = renderedBody.replace(instruction.token, replacement);
     }
 
-    const outputFrontmatter = sanitizeFrontmatter(template.frontmatter);
+    const outputFrontmatter = { type: OKF_TYPE_DELIVERABLE, ...sanitizeFrontmatter(template.frontmatter) };
     return Object.keys(outputFrontmatter).length > 0
       ? matter.stringify(renderedBody.trim(), outputFrontmatter)
       : `${renderedBody.trim()}\n`;
