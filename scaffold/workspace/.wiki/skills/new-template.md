@@ -1,6 +1,6 @@
 ---
 name: new-template
-description: Design and write one evidence-grounded deliverable template
+description: Author one instruction-only deliverable template — never build, export or publish it
 execution: direct
 params:
   - family
@@ -20,7 +20,9 @@ Do not build the resulting deliverable. Creating a template never means building
 
 Never create or update any file under `wiki/` while running this skill. The requested artifact is a deliverable template, never a wiki page, and its path must start exactly with `templates/` — a workspace root directory, parallel to `wiki/`, not inside it.
 
-Correct path: `templates/overview/example.md`.
+The path is deterministic, derived from the parameters — never invented. The file name is the `intent` parameter, slugified (lowercase, words separated by hyphens, at most four words, never a `.md` suffix added twice); the subfolder is the `family` parameter, slugified the same way. When `family` is absent or empty, write directly at the root of `templates/`.
+
+Correct paths: `family=overview, intent=example` → `templates/overview/example.md`; no family, `intent=project overview` → `templates/project-overview.md`.
 
 Incorrect path: `wiki/templates/overview/example.md`.
 
@@ -72,7 +74,7 @@ The only valid generation slot is `[[INSTRUCTION: ...]]`. The only valid citatio
 
 ## Completion
 
-Before reporting success, verify the written template itself, and report the actual written path, the complete front-matter YAML you wrote (the `title`, `description`, and `build_context` entries, verbatim), and any unanchored section.
+The file must actually exist on disk before success is reported — a preview, a plan, or a pending approval is not a write. Verify the written template itself, then report the actual written path, the complete front-matter YAML you wrote (the `title`, `description`, and `build_context` entries, verbatim), and any unanchored section.
 
 ## Approval
 

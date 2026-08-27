@@ -1004,6 +1004,25 @@ function initBuildConceptsButton() {
         );
       });
     }
+    // "Export / polish" on a deliverable: same reveal-on-embed + confirmation +
+    // Donna-routed launch as Build-template above. The deliverable path travels
+    // with the message; the shell turns it into a /deliver skill turn.
+    const deliverBtn = document.querySelector('[data-deliver]');
+    if (deliverBtn) {
+      deliverBtn.hidden = false;
+      deliverBtn.addEventListener('click', async () => {
+        const path = deliverBtn.getAttribute('data-deliver');
+        if (!(await confirmAction({
+          title: 'Export deliverable',
+          message: 'Run the deliver agent to export or polish this deliverable?\\n' + path,
+          confirmLabel: 'Export',
+        }))) return;
+        window.parent.postMessage(
+          { type: 'llmwiki:deliver', path },
+          window.location.origin,
+        );
+      });
+    }
   }
 
   // Sidebar panel: reflect the active file when the shell reports navigation.

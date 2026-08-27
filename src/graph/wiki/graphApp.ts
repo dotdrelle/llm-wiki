@@ -3,6 +3,12 @@ import { graphAppScript } from './ui/script.ts';
 import { canvasExplorerStyles } from './ui/canvas/canvasExplorerStyles.ts';
 import { CONFIRM_DIALOG_CSS, CONFIRM_DIALOG_HTML, CONFIRM_DIALOG_SCRIPT } from '../../chat/confirmDialog.ts';
 
+// The graph's own mark — the same three connected circles as the sidebar's
+// "Graph" action — so the page header and the left-panel entry read as one
+// identity instead of a stray "⌘". currentColor so it follows the theme.
+const GRAPH_BRAND_MARK =
+  '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="M8.6 8.1 10.8 15"/><path d="m15.4 8.1-2.2 6.9"/><path d="M9 6h6"/></svg>';
+
 export function renderWikiGraphV2(): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Wiki Graph</title><style>${graphAppCss}${canvasExplorerStyles}${CONFIRM_DIALOG_CSS}
 /* Le graph n'utilise pas les memes noms de variables que le chat : on mappe
@@ -50,6 +56,7 @@ main{grid-template-columns:var(--left-w) 5px minmax(500px,1fr)}
 .stage-tools{position:absolute;z-index:6;right:14px;top:14px;display:flex;align-items:center;gap:5px}
 .stage-tools button{padding:.28rem .62rem;font-size:11.5px;border-radius:999px;background:#ffffff0d;border-color:#ffffff24}
 .stage-tools button:hover{background:#ffffff1a}
+main.list-view .stage-tools,main.list-view .inspector{display:none!important}
 /* Selection panel in a layer, in place of the right column. The frosted glass
    lets the links passing behind show through: it sits on the graph instead of
    cutting it in two. */
@@ -79,7 +86,7 @@ body.theme-light .inspector .focus-document-name span{color:#172433}
 .community-group summary.is-current span:nth-child(2){color:#75aff5;font-weight:500}
 body.theme-light .community-group summary.is-current{background:#0000000d}
 </style></head><body>
-<header><a class="brand" href="/">⌘ LLM-WIKI</a><div class="graph-search"><input id="search" type="search" autocomplete="off" placeholder="Search documents, topics, or tags…"><button id="reset-search" class="reset-search" type="button" title="Reset search, filters, and selection">Reset</button><div id="graph-search-results" class="graph-search-results" hidden></div></div><nav><button data-view="explore" class="active">Explore</button><button data-view="list">List</button></nav></header>
+<header><a class="brand" href="/"><span class="brand-logo">${GRAPH_BRAND_MARK}</span>LLM-WIKI</a><div class="graph-search"><input id="search" type="search" autocomplete="off" placeholder="Search documents, topics, or tags…"><button id="reset-search" class="reset-search" type="button" title="Reset search, filters, and selection">Reset</button><div id="graph-search-results" class="graph-search-results" hidden></div></div><nav><button data-view="explore" class="active">Explore</button><button data-view="list">List</button></nav></header>
 <main><aside class="filters"><h3>Filters</h3><div id="filters"></div><div class="community-head"><h3>Communities</h3><div class="community-actions"><button id="community-refresh" type="button" title="Refresh the community display">↻</button><button id="community-rebuild" class="agent-btn" type="button" title="Synthesize the taxonomy from the current corpus" data-runtime-only hidden><span class="agent-btn-label"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg></span></button></div></div><div id="community-list"></div></aside><div class="left-resizer" role="separator" aria-orientation="vertical" title="Resize filters"></div><section class="stage"><div id="canvas"><div class="relation-legend"><span style="--c:#72a7e8">Link</span><span style="--c:#9f7aea">Citation</span><span style="--c:#74c365">Generated from</span><span style="--c:#e4b44c">Template</span><span style="--c:#44c2c7">Context</span><span style="--c:#ed7d4d">Produces</span></div><div class="loading">Computing communities…</div></div><div class="stage-title"><div id="graph-breadcrumb" class="graph-breadcrumb" aria-label="Graph navigation"><button type="button" data-graph-level="map" aria-current="page">Map</button></div><b id="view-title">Global map view</b><small id="summary">Loading graph…</small></div><div class="stage-tools"><label class="spacing-control" id="spacing-control">Spacing <input id="map-spacing" type="range" min="70" max="300" value="150"><output id="map-spacing-value">150%</output></label><button id="focus-back" hidden>← Back</button><button id="zoom-out">−</button><button id="zoom-in">+</button><button id="fit">Fit</button><button id="fullscreen" title="Fullscreen">⛶</button></div><aside class="inspector"><h3 class="inspector-title" id="inspector-toggle" title="Collapse panel">Selection</h3><div id="inspector"><p>Select a community or document to explore its relations.</p></div></aside></section></main>
 <div id="document-preview-overlay" class="document-preview-overlay" hidden><div class="document-preview-head"><strong id="document-preview-title">Document preview</strong><button id="close-document-preview" type="button">Close</button></div><div id="document-preview-content" class="document-preview-content"></div></div>${CONFIRM_DIALOG_HTML}<script>${CONFIRM_DIALOG_SCRIPT}</script><script>${graphAppScript}</script></body></html>`;
 }

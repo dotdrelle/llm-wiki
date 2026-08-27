@@ -529,9 +529,45 @@ function finishActivityRender() {
   const runtimeRunning=Array.isArray(runtimeState?.activities)
     ? runtimeState.activities.some(a=>isActivityActive(normalizeActivityStatus(a.status,a.terminal)))
     : false;
-  const anyRunning=_activities.some(a=>isActivityActive(a.status))||runtimeRunning;
+  // A run can be 'running' with no active activity yet (LLM thinking, approval
+  // wait, between agentic turns) — the panel must keep ticking then too, or the
+  // run card and chain look frozen exactly when nothing else re-renders.
+  const anyRunning=_activities.some(a=>isActivityActive(a.status))||runtimeRunning||runtimeIsRunning();
   if(anyRunning&&!_actTimer) _actTimer=setInterval(renderActivities,1000);
   if(!anyRunning&&_actTimer){clearInterval(_actTimer);_actTimer=null;}
+  updateRunElapsed();
+}
+// The elapsed timer lives on the run card as a stable element updated in place,
+// never inside the rendered HTML string: an incrementing value there would make
+// every tick look like a change, defeating the fingerprint guard that preserves
+// the reader's scroll position during a run.
+function runtimeRunStartedAt() {
+  const runNode=Array.isArray(runtimeState?.workflow?.nodes)
+    ? runtimeState.workflow.nodes.find(node=>node.type==='run')
+    : null;
+  const fromNode=runtimeTime(runNode?.startedAt,0);
+  if(fromNode>0) return fromNode;
+  const runId=runtimeState?.runId||runtimeState?.currentRunId||null;
+  const run=Array.isArray(runtimeState?.runs)&&runId
+    ? runtimeState.runs.find(item=>String(item.id)===String(runId))
+    : null;
+  return runtimeTime(run?.createdAt||run?.startedAt||runtimeState?.startedAt||runtimeState?.createdAt||runtimeState?.updatedAt,0);
+}
+function formatRunElapsed(ms) {
+  const total=Math.max(0,Math.round(Number(ms)||0)/1000);
+  const hours=Math.floor(total/3600);
+  const minutes=Math.floor((total%3600)/60);
+  const seconds=Math.floor(total%60);
+  if(hours>0) return hours+'h '+minutes+'m '+seconds+'s';
+  if(minutes>0) return minutes+'m '+seconds+'s';
+  return seconds+'s';
+}
+function updateRunElapsed() {
+  const el=$('run-elapsed');
+  if(!el) return;
+  const started=Number(el.dataset.startedAt||0);
+  if(!started) { el.textContent=''; return; }
+  el.textContent=formatRunElapsed(Date.now()-started);
 }
 function setActivityListTab(tab) {
   if(!['plan','chain','runtime','logs','local'].includes(tab)) return;

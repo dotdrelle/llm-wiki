@@ -56,6 +56,10 @@ function render(){
   document.querySelector('#graph-breadcrumb').hidden=view==='list';
   document.querySelector('#spacing-control').hidden=true;
   document.querySelector('#focus-back').hidden=view==='map'||view==='list';
+  // The floating toolbar (Map/+/−/Fit/fullscreen) and the Selection window only
+  // read against a canvas: in list view there is nothing to zoom or select, so
+  // they would float over a table they do not control. Hide both.
+  document.querySelector('main').classList.toggle('list-view',view==='list');
   const suffix=selectedCommunity?' · selection: '+graphCommunityLabel(selectedCommunity):'';
   /*
    The counter announces the DISPLAYED level, not the registry content.

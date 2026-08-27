@@ -545,6 +545,20 @@ window.addEventListener('message', (event) => {
     if (!input) return;
     input.value = '/wiki-build ' + templatePath;
     sendMessage();
+  } else if (data.type === 'llmwiki:deliver') {
+    // "Export / polish" clicked on a deliverable page in the central wiki frame.
+    // Same Donna-routed launch as Build-template: switch to the chat, fill the
+    // composer with the exact deliverable path and submit as a /deliver turn.
+    const deliverablePath = decodeWikiPath(data.path).replace(/^\\//, '');
+    if (!/^deliverables\\/.+\\.md$/.test(deliverablePath)) {
+      if (typeof notify === 'function') notify('Cannot deliver: not a deliverable file');
+      return;
+    }
+    showChatView();
+    const input = $('chat-input');
+    if (!input) return;
+    input.value = '/deliver ' + deliverablePath;
+    sendMessage();
   } else if (data.type === 'llmwiki:ingest') {
     // ⚡ "Ingest" clicked on the Pending panel of the wiki sidebar. The launch
     // runs through Donna, so route it as a /wiki-ingest skill invocation:

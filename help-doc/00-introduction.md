@@ -41,6 +41,8 @@ Read it in order for a full tour, or chapter by chapter as needed.
 9. **Glossary** — `09-glossary.md` — the reference vocabulary.
 10. **Configuration and performance** — `10-configuration-performance.md` —
     agents, parallelism, collection concurrency, and the `/status` indicators.
+11. **Staying up to date** — `11-staying-up-to-date.md` — how drift is detected
+    and how to keep the documentation current, including headless automation.
 
 ## Conventions
 

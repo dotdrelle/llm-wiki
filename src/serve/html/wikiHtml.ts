@@ -44,6 +44,10 @@ const HAMMER_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg>';
 const ZAP_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>';
+// Publish/export glyph (arrow out of a tray), same stroke family as the hammer
+// and zap: the deliverable page's "Export / polish" launch button.
+const EXPORT_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M4 15v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"/></svg>';
 // The refresh glyph, in the same stroke family as the hammer/zap above (the
 // raw "↻" text depended on the fallback font and could render as a box or a
 // mismatched arrow).
@@ -852,7 +856,7 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
   const historyIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg>';
 const kbdHint = `<kbd style="font-size:.68rem;font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .35rem;border-radius:4px;color:var(--muted);cursor:pointer" title="Open global search (⌘K)" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}))">⌘K</kbd>`;
-  return `<a class="wiki-help-toggle" href="/help" title="Help" aria-label="Help">?</a><button class="wiki-theme-toggle" type="button" data-theme-toggle title="Switch to dark theme" aria-label="Switch color theme">☾</button><aside class="sidebar"><div class="side-head"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}</a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}</a><a class="side-action" href="/history" title="History" aria-label="History">${historyIcon}</a></div></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><button class="side-refresh-all" type="button" title="Refresh sidebar" aria-label="Refresh sidebar" data-sidebar-refresh="wiki"><span class="side-refresh-glyph">${REFRESH_ICON}</span> <span class="side-refresh-label">Refresh</span></button><nav class="side-tree" aria-label="Markdown documents">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside><div class="wiki-main-resizer" data-wiki-main-resizer title="Resize sidebar" role="separator" aria-orientation="vertical"></div>`;
+  return `<a class="wiki-help-toggle" href="/help" title="Help" aria-label="Help">?</a><button class="wiki-theme-toggle" type="button" data-theme-toggle title="Switch to dark theme" aria-label="Switch color theme">☾</button><aside class="sidebar"><div class="side-head"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}</a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}</a><a class="side-action" href="/history" title="History" aria-label="History">${historyIcon}</a><button class="side-action" type="button" title="Refresh sidebar" aria-label="Refresh sidebar" data-sidebar-refresh="wiki"><span class="side-refresh-glyph">${REFRESH_ICON}</span></button></div></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Markdown documents">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside><div class="wiki-main-resizer" data-wiki-main-resizer title="Resize sidebar" role="separator" aria-orientation="vertical"></div>`;
 }
 
 /**
@@ -1208,9 +1212,16 @@ export async function serveMd(
   const buildTemplateBtn = relativePath.startsWith('templates/') && relativePath.endsWith('.md')
     ? `<button class="action-button action-donna action-agent" type="button" data-build-template="${escapeAttr(relativePath)}" hidden title="Build" aria-label="Build">${HAMMER_ICON}</button>`
     : '';
+  // Hidden by default: only the chat shell can deliver (the export/polish runs
+  // through Donna), so WIKI_LAYOUT_SCRIPT reveals it inside the shell's central
+  // iframe, exactly like the template "Build" button above.
+  const deliverBtn = relativePath.startsWith('deliverables/') && relativePath.endsWith('.md')
+    ? `<button class="action-button action-donna action-agent" type="button" data-deliver="${escapeAttr(relativePath)}" hidden title="Export / polish" aria-label="Export / polish">${EXPORT_ICON}</button>`
+    : '';
   const actions = [
     chatContextBtn,
     buildTemplateBtn,
+    deliverBtn,
     printBtn,
     dlBtn,
     renameBtn,

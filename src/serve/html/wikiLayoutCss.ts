@@ -134,6 +134,8 @@ export const WIKI_LAYOUT_CSS = `
       text-decoration: none;
       font-size: 0.86rem;
       font-weight: 720;
+      appearance: none;
+      font-family: inherit;
     }
     .side-action:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
     .side-action svg { width: 1.05rem; height: 1.05rem; stroke: currentColor; flex-shrink: 0; }
@@ -164,35 +166,14 @@ export const WIKI_LAYOUT_CSS = `
       font-size: 0.78rem;
     }
     .side-search-status.is-visible { display: block; }
-    .side-refresh-all {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.4rem;
-      width: 100%;
-      min-height: 2.1rem;
-      margin: 0.6rem 0 0;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--panel-soft);
-      color: var(--muted);
-      font: inherit;
-      font-size: 0.82rem;
-      font-weight: 700;
-      cursor: pointer;
-    }
-    .side-refresh-all:hover {
-      border-color: var(--accent);
-      color: var(--accent);
-      background: var(--accent-soft);
-    }
     .side-refresh-glyph { display: inline-block; line-height: 1; }
     .side-refresh-glyph svg { width: 0.82rem; height: 0.82rem; display: block; }
+    .side-action .side-refresh-glyph svg { width: 1.05rem; height: 1.05rem; }
     .is-refreshing .side-refresh-glyph { animation: side-refresh-spin 0.7s linear infinite; }
     .is-refreshing { opacity: 0.7; cursor: wait; }
     @keyframes side-refresh-spin { to { transform: rotate(360deg); } }
-    .side-collections { margin-top: 0.35rem; }
-    .side-collection-tabs { display: flex; gap: 0.15rem; }
+    .side-collections { margin-top: 0.35rem; display: flex; flex-direction: column; flex: 1 1 auto; }
+    .side-collection-tabs { display: flex; gap: 0.15rem; flex: 0 0 auto; }
     .side-collection-tab {
       flex: 1;
       min-width: 0;
@@ -222,9 +203,10 @@ export const WIKI_LAYOUT_CSS = `
       border-radius: 0 0 6px 6px;
       padding: 0.15rem;
       background: var(--panel);
+      flex: 1 1 auto;
     }
     .side-collection-panel[hidden] { display: none; }
-    .side-tree { margin-top: 1rem; font-size: 0.9rem; flex: 1 1 0; min-height: 0; overflow-y: auto; }
+    .side-tree { margin-top: 1rem; font-size: 0.9rem; flex: 1 1 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
     /* Action buttons live outside <details> entirely, not just outside
        <summary>: a <button> nested in <summary> is unreachable by
        keyboard/AT, but even a sibling of <summary> still sits inside

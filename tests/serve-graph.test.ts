@@ -6,6 +6,7 @@ import { renderWikiGraphV2 } from '../src/graph/wiki/graphApp.ts';
 import { graphUiContextCardScript } from '../src/graph/wiki/ui/core/contextCardScript.ts';
 import { renderSidebar, serveMd } from '../src/serve/html/wikiHtml.ts';
 import { generateSkillsPage } from '../src/serve/html/wikiSkillsPage.ts';
+import { WIKI_PANEL_SCRIPT } from '../src/chat/views/wikiPanelScript.ts';
 
 it('renders skill execution mode and an expandable body editor', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-skills-page-'));
@@ -197,6 +198,52 @@ describe('serve graph ui', () => {
     expect(source).toContain('html.sidebar-panel .side-head .side-action{width:100%}');
   });
 
+  it('brands the graph page with the same mark as the sidebar Graph action, not a stray ⌘', () => {
+    const html = renderWikiGraphV2();
+    expect(html).toContain('<a class="brand" href="/"><span class="brand-logo">');
+    expect(html).toContain('<circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/>');
+    expect(html).not.toContain('<a class="brand" href="/">⌘');
+  });
+
+  it('hides the map toolbar and selection panel in list view', () => {
+    const html = renderWikiGraphV2();
+    expect(html).toContain("document.querySelector('main').classList.toggle('list-view',view==='list')");
+    expect(html).toContain('main.list-view .stage-tools,main.list-view .inspector{display:none!important}');
+  });
+
+  it('checks only the wiki type by default, not wiki-source', () => {
+    const html = renderWikiGraphV2();
+    expect(html).toContain("const defaults=new Set(['wiki'])");
+    expect(html).not.toContain("const defaults=new Set(['wiki','wiki-source','deliverable'])");
+  });
+
+  it('offers an export/polish agent button on deliverable pages', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-deliver-btn-'));
+    try {
+      await mkdir(path.join(root, 'deliverables'), { recursive: true });
+      await writeFile(path.join(root, 'deliverables', 'brief.md'), '# Brief\n', 'utf8');
+
+      const page = await serveMd(root, path.join(root, 'deliverables', 'brief.md'), '/deliverables/brief.md');
+      expect(page).toContain('data-deliver="deliverables/brief.md"');
+      expect(page).toContain('aria-label="Export / polish"');
+      // Same agent-button family as the template "Build" button, hidden
+      // standalone and revealed only inside the chat shell.
+      expect(page).toContain('action-button action-donna action-agent');
+
+      const source = await serveSource();
+      expect(source).toContain("querySelector('[data-deliver]')");
+      expect(source).toContain("type: 'llmwiki:deliver'");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('routes the deliverable export through the /deliver skill turn', () => {
+    expect(WIKI_PANEL_SCRIPT).toContain("data.type === 'llmwiki:deliver'");
+    expect(WIKI_PANEL_SCRIPT).toContain("'/deliver ' + deliverablePath");
+    expect(WIKI_PANEL_SCRIPT).toContain("'Cannot deliver: not a deliverable file'");
+  });
+
   it('renders a persistent draggable main sidebar resizer', async () => {
     const source = await serveSource();
 
@@ -338,7 +385,7 @@ describe('serve graph ui', () => {
 
     expect(source).toContain('handleGraphRoutes(req, res, urlPath');
     expect(source).toContain('buildWikiGraph(rootDir');
-    expect(source).toContain('renderWikiGraphV2()');
+    expect(source).toContain('renderWikiGraphV2(');
     expect(source).toContain('buildGraphOverview');
     // Le snapshot ne transporte jamais le contenu des pages : c'est ce qui le
     // garde transférable à chaque révision.

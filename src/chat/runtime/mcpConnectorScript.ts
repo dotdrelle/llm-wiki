@@ -187,7 +187,7 @@ async function reconnectMCPServer(server) {
   const initResp = await mcpRPC(server, 'initialize', {
     protocolVersion: '2024-11-05',
     capabilities: {},
-    clientInfo: {name: 'WikiChatConnector', version: '0.15.62'}
+    clientInfo: {name: 'WikiChatConnector', version: '0.15.63'}
   });
   if (initResp?.error) throw new Error(initResp.error.message || 'initialize failed');
   await mcpNotify(server, 'notifications/initialized', {});

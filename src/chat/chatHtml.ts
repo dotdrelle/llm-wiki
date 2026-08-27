@@ -332,7 +332,13 @@ function runtimeRunCardHTML(plan,activities,progress=null) {
     workspace?\`workspace: \${workspace}\`:null,
   ].filter(Boolean).join(' · ');
   const progressLabel=\`Running\${percent?' · '+percent:''}\`;
-  return \`<div class="act-card running" data-run-id="\${esc(runId)}" data-turn-id="\${esc(turnId)}" data-workspace="\${esc(workspace)}"><div class="act-card-head"><span class="act-card-icon">▶</span><div class="act-card-info"><div class="act-card-name">Run — \${esc(title)}</div><div class="act-card-meta"><span class="run-progress">\${esc(progressLabel)}</span>\${meta?' · '+esc(meta):''}</div></div><span class="act-badge running">Running</span></div><div class="act-actions"><button class="act-btn" type="button" onclick="askRuntimeStatus(\${jsArg(runId||title)})">Inspect</button><button class="act-btn del" type="button" onclick="cancelRuntimeRun()">Cancel</button></div></div>\`;
+  const runStartedAt=runtimeRunStartedAt();
+  // Placeholder, not the live value: updateRunElapsed fills it in place so the
+  // rendered string stays stable and the per-second tick never resets scroll.
+  const elapsedHtml=runStartedAt
+    ? \`<span class="run-elapsed" id="run-elapsed" data-started-at="\${runStartedAt}">–</span>\`
+    : '';
+  return \`<div class="act-card running" data-run-id="\${esc(runId)}" data-turn-id="\${esc(turnId)}" data-workspace="\${esc(workspace)}"><div class="act-card-head"><span class="act-card-icon">▶</span><div class="act-card-info"><div class="act-card-name">Run — \${esc(title)}</div><div class="act-card-meta"><span class="run-progress">\${esc(progressLabel)}</span>\${elapsedHtml?' · '+elapsedHtml:''}\${meta?' · '+esc(meta):''}</div></div><span class="act-badge running">Running</span></div><div class="act-actions"><button class="act-btn" type="button" onclick="askRuntimeStatus(\${jsArg(runId||title)})">Inspect</button><button class="act-btn del" type="button" onclick="cancelRuntimeRun()">Cancel</button></div></div>\`;
 }
 
 function runtimeActivityToCard(activity,index=0,runStartedAt=Date.now(),runUpdatedAt=runStartedAt) {

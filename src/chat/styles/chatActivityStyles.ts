@@ -42,7 +42,14 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .act-section-rule{border-top:1px solid var(--border);margin:6px 4px 10px}
 .act-section-title{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .chain-block{background:var(--panel-soft);border:1px solid var(--border);border-radius:10px;padding:9px 11px;margin-bottom:6px}
-.chain-head{font-size:11px;font-weight:800;color:var(--text);margin-bottom:6px}
+.chain-head{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:var(--text);margin-bottom:6px;min-width:0}
+.chain-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chain-count{color:var(--muted);font-weight:600;font-size:10px;white-space:nowrap}
+.chain-live{color:var(--accent);animation:upload-pulse 1.2s ease-in-out infinite}
+.chain-head-status{margin-left:auto;font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:1px 6px;border-radius:999px;white-space:nowrap}
+.chain-head-status-running{color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.chain-head-status-failed,.chain-head-status-cancelled{color:var(--err);background:color-mix(in srgb,var(--err) 14%,transparent)}
+.chain-head-status-queued,.chain-head-status-incomplete{color:var(--muted);background:color-mix(in srgb,var(--muted) 12%,transparent)}
 .chain-step{display:grid;grid-template-columns:14px 1fr auto;align-items:baseline;gap:6px;padding:2px 0;font-size:11px;color:var(--muted)}
 .chain-symbol{font-weight:800;text-align:center}
 .chain-label{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -64,6 +71,7 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .act-card-name{font-size:12px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .act-card-meta{font-size:10px;color:var(--muted);margin-top:1px}
 .act-card-meta .run-progress{display:inline-flex;align-items:center;border-radius:999px;background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);font-weight:850;padding:1px 6px;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 32%,transparent)}
+.act-card-meta .run-elapsed{display:inline-flex;align-items:center;border-radius:999px;background:color-mix(in srgb,var(--text) 9%,transparent);color:var(--text);font-weight:800;padding:1px 7px;font-variant-numeric:tabular-nums;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--text) 16%,transparent)}
 .act-badge{font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:99px;flex-shrink:0;margin-top:2px}
 .act-badge.running{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}
 .act-badge.done{background:color-mix(in srgb,#22c55e 14%,transparent);color:#16a34a}
