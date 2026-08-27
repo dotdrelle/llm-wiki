@@ -65,7 +65,27 @@ filling them with the wiki's knowledge:
 - **doctor**: diagnoses the state of the workspace and flags problems.
 
 These operations can be chained; DONNA can also run a *pipeline* that combines
-them.
+them with the knowledge steps below.
+
+## 5 bis. Organizing the knowledge
+
+Between ingestion and production, three steps keep the wiki navigable. They run
+in this order, and each one assumes the previous is done:
+
+- **concepts**: synthesizes the **concept grid** — the small, closed set of
+  headings the wiki is filed under;
+- **reclassify-concepts**: files the pages sitting in
+  `wiki/concepts/unclassified` into that grid, without rebuilding it;
+- **taxonomy**: republishes the **graph taxonomy** used by the `/graph` view and
+  by navigation.
+
+An ingestion already ends with the three of them, so you rarely run them by
+hand. When you do — after editing pages directly, or when a grid rebuild left
+strays behind — pick the narrowest one that covers your case; see the skills in
+`08-commands-serve.md`.
+
+The full default chain is therefore: ingest, concepts, reclassify-concepts,
+taxonomy, build, export, polish.
 
 ## 7. Tracking
 
@@ -78,7 +98,7 @@ the whole workspace.
 1. You connect a Confluence space as a source.
 2. DONNA exports it to Markdown into the working area.
 3. You run a dry-run ingestion, review the proposed pages, then apply.
-4. The wiki fills up: concepts, links, index.
+4. The wiki fills up: pages, concept grid, links, index, taxonomy.
 5. You request a build: the deliverables come out, consistent with the wiki.
 6. A new version of a document? You re-ingest: nothing is duplicated, only what
    is needed is updated.

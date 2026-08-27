@@ -25,14 +25,37 @@ in Serve's chat or in the Shell:
 
 Workspace skills run identically from Serve or the Shell — the runtime reads
 and compiles the skill, not the interface you typed it into. Type the name
-directly (`/pipeline`) or `/skills run <name> [arguments]`:
+directly (`/pipeline`) or `/skills run <name> [arguments]`. A name in brackets
+is an optional argument; leaving it out means "everything in scope".
 
-- `/status`, `/diagnose` — read-only checks.
-- `/wiki-sync [source]` — export a source, then ingest it.
-- `/wiki-ingest [files]` — ingest what already sits in `raw/untracked/`.
-- `/wiki-build [template]` — build deliverables.
-- `/deliver [deliverable] [polish]` — export, or polish, existing deliverables.
-- `/pipeline` — the one-shot shortcut through the whole chain.
+The list below is generated from the shipped skills themselves, so it can never
+fall behind them:
+
+<!-- BEGIN GENERATED SKILLS -- run `npm run generate:help-skills`, do not edit by hand -->
+
+- `/deliver [deliverable] [polish]` — publish existing deliverables, with or without polishing.
+- `/diagnose` — diagnose workspace configuration and prioritize concrete remedies.
+- `/new-template [family] [intent]` — design and write one evidence-grounded deliverable template.
+- `/pipeline` — run the whole production chain in one go, from ingest to polish.
+- `/status` — summarize connector health and current or recent jobs.
+- `/wiki-build [template]` — build deliverables from the current wiki for one template or all templates.
+- `/wiki-ingest [files]` — ingest Markdown already waiting in raw/untracked, then refresh the concept grid and taxonomy.
+- `/wiki-rebuild-concepts` — rebuild the concept grid, file unclassified pages into it, and republish the graph taxonomy.
+- `/wiki-reclassify` — file unclassified concept pages into the existing grid, then republish the taxonomy.
+- `/wiki-sync [source]` — export Confluence sources and then ingest the exported Markdown.
+- `/wiki-taxonomy` — republish the graph taxonomy from the current wiki content.
+
+<!-- END GENERATED SKILLS -->
+
+`/status` and `/diagnose` are read-only. Every other skill mutates the
+workspace and asks for approval before it does.
+
+For the knowledge lifecycle, three of them are partial reruns of the same
+chain, from the widest to the narrowest: `/wiki-rebuild-concepts` resynthesizes
+the concept grid, refiles what sits unclassified and republishes the taxonomy;
+`/wiki-reclassify` skips the grid rebuild; `/wiki-taxonomy` republishes the
+taxonomy alone. `/wiki-ingest` already ends with the first of the three, so
+running one of them right after an ingest repeats work that has just been done.
 
 You can also describe the goal in ordinary language — "run the deliver skill
 with the quarterly template" — instead of typing the command. See

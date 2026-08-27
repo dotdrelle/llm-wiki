@@ -6,6 +6,18 @@ params:
 ---
 Build deliverables from the current wiki within the exact scope requested by the `template` parameter.
 
-When `template` is non-empty, treat it as a strict selector. Resolve only templates whose family, relative path, or file name matches that value. Never widen a non-empty selector to every applicable template. For example, `template: overview` means templates under `templates/overview/`, not templates from other families.
+## Selector
 
-Only when `template` is genuinely empty may every applicable template be built. Resolve templates without guessing, use stable rebuilding when existing outputs permit it, obtain the normal mutation approval, preserve the build capability's internal plan, and report produced files and failures. Do not ingest sources or publish the deliverables. If a messaging connector and a notification recipient from the workspace profile are available, send a short best-effort terminal summary in the reply language; otherwise skip notification silently, and never let notification failure change the build outcome.
+A non-empty `template` is a strict selector: resolve only templates whose family, relative path, or file name matches that value, and never widen it to every applicable template. For example, `template: overview` means templates under `templates/overview/`, not templates from other families. Every applicable template may be covered only when `template` is genuinely empty.
+
+## Execution
+
+Resolve templates without guessing, use stable rebuilding when existing outputs permit it, obtain the normal mutation approval, preserve the build capability's internal plan, and report produced files and failures.
+
+## Boundaries
+
+This workflow never ingests sources and never publishes the deliverables.
+
+## Notification
+
+When a messaging connector and a notification recipient from the workspace profile are available, send a short best-effort terminal summary in the reply language. Otherwise skip the notification silently, and never let a notification failure change the build outcome.

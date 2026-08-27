@@ -24,6 +24,14 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
 - **Wiki** — the set of durable knowledge pages produced by ingestion.
 - **Concept** — a page carrying reusable knowledge (system, actor, rule,
   architecture) rather than a raw document.
+- **Concept grid** — the small, closed set of headings the wiki's concepts are
+  filed under. Rebuilt by the *concepts* step.
+- **Unclassified** — a concept page not yet filed into the grid; it waits under
+  `wiki/concepts/unclassified` until a *reclassify-concepts* step files it.
+- **Reclassification (reclassify-concepts)** — filing unclassified pages into
+  the grid as it stands, without rebuilding it.
+- **Taxonomy** — the published classification of the wiki used by the `/graph`
+  view and by navigation. Republished by the *taxonomy* step.
 - **Source note** — a page that traces the origin of a piece of information.
 - **Index** — the canonical map that links and references the wiki's pages.
 - **Log** — the chronological journal of ingestions and updates.

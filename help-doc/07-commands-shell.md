@@ -57,10 +57,10 @@ replaced; those in square brackets `[…]` are optional.
 - `/wiki` — (re)generate the wiki index directly, bypassing the runtime.
 - `/wiki run <args>` — run the raw wiki CLI (advanced).
 
-These are direct, synchronous CLI calls. The production skills covered in
-`08-commands-serve.md` (`/wiki-sync`, `/wiki-ingest`, `/wiki-build`, `/deliver`,
-`/pipeline`) go through the same orchestrated, approved path in both
-interfaces and are almost always the right choice instead.
+These are direct, synchronous CLI calls. The production skills go through the
+same orchestrated, approved path in both interfaces and are almost always the
+right choice instead — `08-commands-serve.md` lists them, and that list is
+generated from the shipped skills, so it is the one to trust.
 
 ## Skill administration
 

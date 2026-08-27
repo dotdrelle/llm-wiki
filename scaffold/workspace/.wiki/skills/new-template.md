@@ -6,27 +6,25 @@ params:
   - family
   - intent
 ---
-Design one evidence-grounded deliverable template for the requested family and intent. Ground it in the current wiki structure, existing templates, workspace profile, and applicable build context.
+Design one evidence-grounded deliverable template for the requested family and intent, grounded in the current wiki structure, existing templates, workspace profile, and applicable build context.
 
 ## Workflow
 
-Start from the complete empty template shown below. Adapt its title, description, section headings, and instruction text to the user's request. Keep every requested section anchored in available material, and identify any section that cannot be anchored.
+Start from the complete empty template shown below. Adapt its title, description, section headings, and instruction text to the user's request, keep every requested section anchored in available material, and identify any section that cannot be anchored.
 
-Do not build the resulting deliverable.
+## What this skill never does
 
-## Document type and location
+Do not build the resulting deliverable. Creating a template never means building it: never start a build, generate a deliverable, export, publish, or process any other template. Stop after the requested template file has been written and verified.
 
-The requested artifact is a deliverable template, never a wiki page.
+## Where the file goes
 
-Its path must start exactly with `templates/`. The `templates/` directory is a workspace root directory, parallel to `wiki/`; it is not inside `wiki/`.
+Never create or update any file under `wiki/` while running this skill. The requested artifact is a deliverable template, never a wiki page, and its path must start exactly with `templates/` — a workspace root directory, parallel to `wiki/`, not inside it.
 
 Correct path: `templates/overview/example.md`.
 
 Incorrect path: `wiki/templates/overview/example.md`.
 
-Never create or update any file under `wiki/` while running this skill. If writing under `templates/` is unavailable, stop and report that the template could not be created. Do not fall back to creating a wiki page.
-
-Creating a template never means building it. Never start a build, generate a deliverable, export, publish, or process any other template. Stop after the requested template file has been written and verified.
+If writing under `templates/` is unavailable, stop and report that the template could not be created, without falling back to a wiki page.
 
 ## Empty template to copy and adapt
 
@@ -56,20 +54,30 @@ Cite every factual claim with [src: wiki/path.md].
 ]]
 ```
 
-Copy this complete structure into the new file. Replace the uppercase labels with the requested content and repeat the section block until every requested section is covered.
+## How to use that structure
+
+Copy this complete structure into the new file, replacing the uppercase labels with the requested content and repeating the section block until every requested section is covered.
+
+## Allowed content
 
 The written template must contain only frontmatter, headings, and multiline `[[INSTRUCTION: ...]]` blocks. Static placeholder prose, ellipses (`...`), empty tables, bare source paths, and prewritten factual content are forbidden.
 
+## Instruction blocks
+
 Every section's prompt must be encapsulated in exactly one `[[INSTRUCTION: ...]]` block: the block opens on its own line with `[[INSTRUCTION:` and closes on its own line with `]]`, with the entire instruction text between them. Never leave an instruction bare under a heading, never drop the closing `]]`, and never write the prompt outside the block.
+
+## Allowed syntax
 
 The only valid generation slot is `[[INSTRUCTION: ...]]`. The only valid citation marker is `[src: wiki/path.md]`. Never use `{{cite:...}}`, `{{> ...}}`, Handlebars, includes, `> Source: ...`, or another invented syntax.
 
 ## Completion
 
-Before reporting success, verify the written template itself. Report the actual written path, the complete front-matter YAML you wrote (the `title`, `description`, and `build_context` entries, verbatim), and any unanchored section.
+Before reporting success, verify the written template itself, and report the actual written path, the complete front-matter YAML you wrote (the `title`, `description`, and `build_context` entries, verbatim), and any unanchored section.
 
 ## Approval
 
-Prepare the complete template before requesting approval. When approval is required, keep the pending creation as the next action instead of ending with a prose-only plan. Never ask the user to relaunch the skill. Do not report success unless the requested file was actually written.
+Prepare the complete template before requesting approval. When approval is required, keep the pending creation as the next action instead of ending with a prose-only plan. Never ask the user to relaunch the skill, and never report success unless the requested file was actually written.
 
-A notification is optional. When messaging and a notification recipient are available, send a short best-effort terminal summary in the reply language. Otherwise skip it silently, and never let notification failure change the template-authoring outcome.
+## Notification
+
+When a messaging connector and a notification recipient from the workspace profile are available, send a short best-effort terminal summary in the reply language. Otherwise skip the notification silently, and never let a notification failure change the template-authoring outcome.

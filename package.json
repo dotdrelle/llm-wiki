@@ -21,6 +21,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "check-file-sizes": "node scripts/check-file-sizes.js",
+    "generate:help-skills": "node scripts/generate-help-skills.js",
+    "check-help-skills": "node scripts/generate-help-skills.js --check",
     "test": "vitest run",
     "test:watch": "vitest"
   },

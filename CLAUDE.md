@@ -455,6 +455,15 @@ static, workspace-independent documentation, not a workspace skill: it never
 auto-starts and has no per-workspace customization (unlike `.wiki/skills/`
 entries, which are per-workspace and can be edited via `wiki add-skill`).
 
+The skill list in `help-doc/08-commands-serve.md` is **generated** from
+`scaffold/workspace/.wiki/skills/` by `scripts/generate-help-skills.js`, between
+its two markers — do not hand-edit it, run `npm run generate:help-skills`. Prose
+outside the markers stays authored. `npm run check-help-skills` fails on drift
+and `tests/help-doc-skills.test.ts` runs that same check: the help advertised
+six skills for a while after the concepts rework shipped eleven, and nothing
+caught it. A skill's `description` is therefore read by two audiences — the
+help, and the catalog the model selects from — so write it for a user.
+
 The second empty-chat tile, `Fill workspace profile`, should prompt the user to
 populate `.wiki/profile.md`; it must not mutate files without confirmation.
 
