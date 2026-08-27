@@ -455,6 +455,12 @@ static, workspace-independent documentation, not a workspace skill: it never
 auto-starts and has no per-workspace customization (unlike `.wiki/skills/`
 entries, which are per-workspace and can be edited via `wiki add-skill`).
 
+Documentation has three trees with three readers: `help-doc/` is shipped and
+read at runtime by the **user**; each repo's `docs/` is repo-only and read by
+whoever **changes or deploys** that code. Write a fact once, in the tree whose
+reader needs it, and link from the other. The full ownership table is in the
+wikiLLM root `CLAUDE.md`, § "Where a documented fact belongs".
+
 The skill list in `help-doc/08-commands-serve.md` is **generated** from
 `scaffold/workspace/.wiki/skills/` by `scripts/generate-help-skills.js`, between
 its two markers — do not hand-edit it, run `npm run generate:help-skills`. Prose

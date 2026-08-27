@@ -7,7 +7,7 @@ import path from 'node:path';
  *
  * **Write-only at this stage.** Nothing reads it, nothing relies on it, and its
  * absence or corruption cannot fail an ingestion. This is deliberate: it is the
- * T32.2 step of the lifecycle (`docs/content-lifecycle.md`), which makes the
+ * T32.2 step of the lifecycle (`docs/content-lifecycle-spec.md`), which makes the
  * problem observable before trying to solve it. A reconciliation pass cannot be
  * written without data to reconcile, and fabricating the data and the decision
  * in the same batch would make each of them unverifiable.
@@ -26,7 +26,7 @@ export type SourceStatus = 'active' | 'missing' | 'retracted';
 
 export type SourceRecord = {
   /**
-   * Stable identity of the source. See `docs/content-lifecycle.md` § 4.1:
+   * Stable identity of the source. See `docs/content-lifecycle-spec.md` § 4.1:
    * eventually provided by the producer (`confluence:page:123`). Until a
    * producer provides it, it derives from the archive path — in which case an
    * upstream rename does create a new source, which the registry is precisely

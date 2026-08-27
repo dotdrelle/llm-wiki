@@ -445,6 +445,7 @@ pnpm test
 | Topic                          | File                        |
 | ------------------------------ | --------------------------- |
 | Commands                       | `docs/commands.md`          |
+| Content lifecycle (spec)       | `docs/content-lifecycle-spec.md` |
 | Configuration                  | `docs/configuration.md`     |
 | Docker                         | `docs/docker.md`            |
 | Industrialisation / multi-user | `docs/industrialisation.md` |

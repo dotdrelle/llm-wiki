@@ -1409,7 +1409,7 @@ export class IngestService {
 
   /**
    * Records a source in the provenance registry
-   * (`docs/content-lifecycle.md` § 5).
+   * (`docs/content-lifecycle-spec.md` § 5).
    *
    * **Must not fail an ingestion.** The registry is an observation: it makes
    * the lifecycle visible, it is not part of it. A write error is logged and

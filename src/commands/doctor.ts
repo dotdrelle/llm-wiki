@@ -177,7 +177,7 @@ function listSample(items: string[]): string {
  * Report only: nothing is recreated, nothing is deleted. A page erased by hand
  * is a decision — bringing it back would contradict it, and propagating the
  * deletion silently would be worse. As long as removal is not specified end to
- * end (T32.4 in `docs/content-lifecycle.md`), naming the discrepancy is the
+ * end (T32.4 in `docs/content-lifecycle-spec.md`), naming the discrepancy is the
  * only defensible behavior.
  *
  * An empty registry — an install predating its creation — produces nothing:
@@ -218,7 +218,7 @@ async function reportSourceReconciliation(
   if (report.orphans.length > 0) {
     warn(`${report.orphans.length} wiki page(s) have no live source: ${listSample(report.orphans)}`);
   }
-  console.log('  Nothing was changed. See docs/content-lifecycle.md for what each case means.');
+  console.log('  Nothing was changed. See docs/content-lifecycle-spec.md for what each case means.');
 }
 
 /**
