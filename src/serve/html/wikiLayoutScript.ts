@@ -267,6 +267,23 @@ ${CONFIRM_DIALOG_SCRIPT}
    lecteur sache exactement ce qui a ete ecrit.
   */
   const PENDING_PARENT = 'raw/untracked';
+  // Markdown is written directly; the rest is handed to the documents agent,
+  // which converts it and writes its Markdown into this same folder. Refreshed
+  // before each drop rather than cached at load: the agent can come up or go
+  // down while the page stays open, and a stale answer would either refuse a
+  // file the agent can now take or accept one it cannot.
+  let pendingCaps = { markdown: ['.md', '.markdown'], convertible: [], documents: { configured: false, up: false, reason: null } };
+  async function refreshPendingCapabilities() {
+    try {
+      const res = await fetch('/api/uploads/capabilities');
+      const payload = await res.json();
+      if (payload && payload.ok !== false) pendingCaps = payload;
+    } catch {
+      // Keep the last known answer: Markdown must stay droppable even when the
+      // capability probe itself cannot be reached.
+    }
+    return pendingCaps;
+  }
   function pendingDropTarget(event) {
     return event.target.closest?.('[data-untracked-panel], [data-untracked-list]') || null;
   }
@@ -274,8 +291,45 @@ ${CONFIRM_DIALOG_SCRIPT}
     const types = event.dataTransfer?.types;
     return Boolean(types && Array.prototype.indexOf.call(types, 'Files') !== -1);
   }
+  function fileExtension(file) {
+    const name = String(file?.name || '');
+    const dot = name.lastIndexOf('.');
+    return dot === -1 ? '' : name.slice(dot).toLowerCase();
+  }
   function isMarkdownFile(file) {
-    return /\\.(?:md|markdown)$/i.test(String(file?.name || ''));
+    return pendingCaps.markdown.indexOf(fileExtension(file)) !== -1;
+  }
+  function isConvertibleFile(file) {
+    return pendingCaps.convertible.indexOf(fileExtension(file)) !== -1;
+  }
+  // Names what the panel would have taken had the agent been up, so a refusal
+  // says which file and why, not just "no".
+  const PENDING_CONVERTIBLE_LABEL = '.pdf and .txt';
+  function rejectionMessage(rejected) {
+    const accepted = pendingCaps.markdown.concat(pendingCaps.convertible).join(', ');
+    const listed = '\\n· ' + rejected.map((file) => file.name).join('\\n· ');
+    if (!pendingCaps.documents.up) {
+      const why = pendingCaps.documents.configured
+        ? (pendingCaps.documents.reason || 'the documents agent is not answering')
+        : 'the documents agent is not configured';
+      return 'Pending accepts ' + accepted + '. Conversion of ' + PENDING_CONVERTIBLE_LABEL
+        + ' needs the documents agent, and ' + why + '. Rejected:' + listed;
+    }
+    return 'Pending accepts ' + accepted + '. Rejected:' + listed;
+  }
+  async function uploadForConversion(file) {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    const response = await fetch('/api/upload', { method: 'POST', body: form });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.ok === false) throw new Error(payload.error || 'Conversion failed');
+    const upload = payload.upload || {};
+    // 'stored' means the agent never took it: reporting success here would put
+    // a file in the panel's story that is not in the folder.
+    if (upload.status !== 'converted') {
+      throw new Error(upload.error || 'documents agent did not convert this file (status: ' + (upload.status || 'unknown') + ')');
+    }
+    return upload;
   }
   document.addEventListener('dragover', (event) => {
     if (!dragCarriesFiles(event)) return;
@@ -304,12 +358,12 @@ ${CONFIRM_DIALOG_SCRIPT}
     clearDropTargets();
     const files = Array.from(event.dataTransfer?.files || []);
     if (!files.length) return;
-    const rejected = files.filter((file) => !isMarkdownFile(file));
+    await refreshPendingCapabilities();
+    const rejected = files.filter((file) => !isMarkdownFile(file) && !isConvertibleFile(file));
     if (rejected.length) {
       await notifyAction({
-        title: 'Markdown only',
-        message: 'Pending accepts .md files only. Rejected:\\n· '
-          + rejected.map((file) => file.name).join('\\n· '),
+        title: 'Unsupported in Pending',
+        message: rejectionMessage(rejected),
         danger: true,
       });
       return;
@@ -318,6 +372,11 @@ ${CONFIRM_DIALOG_SCRIPT}
     const failed = [];
     for (const file of files) {
       try {
+        if (isConvertibleFile(file)) {
+          const upload = await uploadForConversion(file);
+          written.push(file.name + ' → ' + String(upload.outputPath || '').split('/').pop());
+          continue;
+        }
         const content = await file.text();
         const response = await fetch('/api/tree/create', {
           method: 'POST',

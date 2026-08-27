@@ -65,6 +65,71 @@ const DOCUMENT_EXTENSIONS = new Set([
   '.pdf',
 ]);
 
+/*
+ What the Pending panel accepts on an OS file drop.
+
+ Markdown is written straight into raw/untracked: dropping a .md there is just
+ a file write. Everything else has to be converted first, and conversion is the
+ documents agent's job — it writes its Markdown into that same raw/untracked,
+ which is why a converted drop lands exactly where a Markdown drop does.
+
+ The list is deliberately narrow. The agent converts images and Office formats
+ too, and widening this set is one constant away, but a drop that silently
+ becomes an OCR run is a surprise; .pdf and .txt are what the panel promises.
+ The set is intersected at runtime with what the agent itself reports, so the
+ panel can never offer a conversion the running agent would refuse.
+*/
+export const PENDING_MARKDOWN_EXTENSIONS = ['.md', '.markdown'];
+export const PENDING_CONVERTIBLE_EXTENSIONS = ['.pdf', '.txt'];
+
+export type PendingUploadCapabilities = {
+  markdown: string[];
+  convertible: string[];
+  documents: { configured: boolean; up: boolean; reason: string | null };
+};
+
+// A cheap, read-only probe: documents_status mutates nothing and reports the
+// extensions the agent actually handles. "Configured" and "up" are kept apart
+// on purpose — a missing endpoint and an endpoint that does not answer need
+// different words in front of the user.
+export async function pendingUploadCapabilities(deps: Pick<UploadRoutesDeps, 'externalMcpEndpoints' | 'version'>): Promise<PendingUploadCapabilities> {
+  const endpoint = deps.externalMcpEndpoints.find((item) => item.name === 'documents');
+  if (!endpoint) {
+    return {
+      markdown: PENDING_MARKDOWN_EXTENSIONS,
+      convertible: [],
+      documents: { configured: false, up: false, reason: 'documents MCP endpoint is not configured' },
+    };
+  }
+  try {
+    const result = await postMcp({ ...endpoint }, 'tools/call', { name: 'documents_status', arguments: {} }, deps.version);
+    const parsed = JSON.parse(mcpTextResult(result) || '{}') as { ok?: boolean; error?: string; supportedExtensions?: unknown };
+    if (parsed.ok === false) throw new Error(parsed.error || 'documents agent reported an error');
+    const supported = Array.isArray(parsed.supportedExtensions)
+      ? parsed.supportedExtensions.map((item) => String(item).toLowerCase())
+      : null;
+    return {
+      markdown: PENDING_MARKDOWN_EXTENSIONS,
+      // No reported list means an older agent: trust the policy rather than
+      // refusing every conversion on a missing field.
+      convertible: supported
+        ? PENDING_CONVERTIBLE_EXTENSIONS.filter((ext) => supported.includes(ext))
+        : [...PENDING_CONVERTIBLE_EXTENSIONS],
+      documents: { configured: true, up: true, reason: null },
+    };
+  } catch (err) {
+    return {
+      markdown: PENDING_MARKDOWN_EXTENSIONS,
+      convertible: [],
+      documents: {
+        configured: true,
+        up: false,
+        reason: isMcpUnavailable(err) ? 'documents agent is not answering' : (err instanceof Error ? err.message : String(err)),
+      },
+    };
+  }
+}
+
 function sanitizeUploadFilename(filename: string): string {
   const name = path.basename(filename || 'upload.bin')
     .normalize('NFKD')
@@ -334,6 +399,10 @@ export async function handleUploadRoutes(
   const workspaceName = deps.workspaceNameFromEnv() ?? path.basename(process.env.WIKI_WORKSPACE_PATH ?? process.cwd());
   if (urlPath === '/api/uploads' && req.method === 'GET') {
     deps.sendJson(res, 200, { ok: true, uploads: await readDocumentUploads(deps.rootDir, workspaceName, deps) });
+    return true;
+  }
+  if (urlPath === '/api/uploads/capabilities' && req.method === 'GET') {
+    deps.sendJson(res, 200, { ok: true, ...(await pendingUploadCapabilities(deps)) });
     return true;
   }
   if (urlPath === '/api/upload' && req.method === 'POST') {

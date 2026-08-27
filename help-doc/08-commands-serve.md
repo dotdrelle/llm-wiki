@@ -71,6 +71,13 @@ Everything below is a **UI panel**, not something you type:
   equivalent of the Shell's `/skills edit`.
 - **Upload button** — attach a document to the conversation; the equivalent of
   the Shell's `/upload <path>`.
+- **Pending panel** (wiki browser) — the inbox of sources, `raw/untracked/`.
+  Drop files on it from your desktop: Markdown is written as is, and PDF or
+  text files are converted to Markdown first. That conversion is done by the
+  documents agent, so those two formats are accepted **only while that agent is
+  running** — when it is down or not configured, the panel says so and takes
+  Markdown only. Its lightning button starts the ingestion of everything
+  pending.
 - **Activity panel** — live tracking of runs, with *List* and *Graph* views.
   Each of its five tabs (Plan, Chain, Local activity, Runtime activity, Logs)
   has its own `Clear`; `Clear all` clears all five. `Reset plan` (Plan tab
