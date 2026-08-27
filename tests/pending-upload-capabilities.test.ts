@@ -107,6 +107,29 @@ describe('Pending drop handler', () => {
     expect(dropHandler).toContain('await refreshPendingCapabilities()');
   });
 
+  it('shows the accepted formats outside the node refreshSidebar replaces', () => {
+    // [data-untracked-list] has its innerHTML swapped on every sidebar refresh.
+    // A hint rendered inside it would vanish on the first refresh.
+    const markup = readFileSync('src/serve/html/wikiHtml.ts', 'utf8');
+    const panel = markup.slice(markup.indexOf('data-untracked-panel'), markup.indexOf('side-untracked-count'));
+    expect(panel).toContain('data-untracked-formats');
+    expect(panel.indexOf('data-untracked-formats')).toBeLessThan(panel.indexOf('data-untracked-list'));
+    expect(WIKI_LAYOUT_SCRIPT).not.toContain("querySelector('[data-untracked-list]').innerHTML = ");
+  });
+
+  it('strikes the conversion formats through when the agent is down', () => {
+    const render = WIKI_LAYOUT_SCRIPT.slice(
+      WIKI_LAYOUT_SCRIPT.indexOf('function renderPendingFormats'),
+      WIKI_LAYOUT_SCRIPT.indexOf('function pendingDropTarget'),
+    );
+    // The formats stay listed when the agent is down — struck through, with the
+    // reason — instead of disappearing: a panel that silently drops them cannot
+    // tell the user an agent is missing.
+    expect(render).toContain('PENDING_CONVERTIBLE_POLICY');
+    expect(render).toContain('line-through');
+    expect(render).toContain('Unavailable: ');
+  });
+
   it('routes a convertible file through the upload endpoint, not the file writer', () => {
     expect(WIKI_LAYOUT_SCRIPT).toContain("fetch('/api/upload'");
     // A conversion the agent left as 'stored' is a failure, not a success:

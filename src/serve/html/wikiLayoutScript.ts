@@ -272,6 +272,7 @@ ${CONFIRM_DIALOG_SCRIPT}
   // before each drop rather than cached at load: the agent can come up or go
   // down while the page stays open, and a stale answer would either refuse a
   // file the agent can now take or accept one it cannot.
+  const PENDING_CONVERTIBLE_POLICY = ['.pdf', '.txt'];
   let pendingCaps = { markdown: ['.md', '.markdown'], convertible: [], documents: { configured: false, up: false, reason: null } };
   async function refreshPendingCapabilities() {
     try {
@@ -282,7 +283,49 @@ ${CONFIRM_DIALOG_SCRIPT}
       // Keep the last known answer: Markdown must stay droppable even when the
       // capability probe itself cannot be reached.
     }
+    renderPendingFormats();
     return pendingCaps;
+  }
+  /*
+   Says what the panel takes, and shows the conversion formats struck through
+   when the agent that performs it is not answering.
+
+   Without this the only way to learn that a PDF is accepted was to drop one,
+   and the only way to learn the agent was down was to be refused. The line
+   lives inside <details> but outside [data-untracked-list], which is the node
+   refreshSidebar replaces, so it survives a refresh.
+  */
+  function renderPendingFormats() {
+    const host = document.querySelector('[data-untracked-formats]');
+    if (!host) return;
+    const md = pendingCaps.markdown.join(' ');
+    const up = pendingCaps.documents.up;
+    const convertible = (up ? pendingCaps.convertible : PENDING_CONVERTIBLE_POLICY).join(' ');
+    const why = pendingCaps.documents.configured
+      ? (pendingCaps.documents.reason || 'documents agent is not answering')
+      : 'documents agent is not configured';
+    host.textContent = '';
+    const accepts = document.createElement('span');
+    accepts.textContent = 'Drop ' + md;
+    host.appendChild(accepts);
+    if (!convertible) return;
+    const rest = document.createElement('span');
+    rest.textContent = ' · ' + convertible;
+    if (up) {
+      rest.title = 'Converted to Markdown by the documents agent';
+    } else {
+      rest.style.textDecoration = 'line-through';
+      rest.style.opacity = '.55';
+      rest.title = 'Unavailable: ' + why;
+    }
+    host.appendChild(rest);
+    if (!up) {
+      const note = document.createElement('span');
+      note.textContent = ' (agent down)';
+      note.style.opacity = '.55';
+      note.title = why;
+      host.appendChild(note);
+    }
   }
   function pendingDropTarget(event) {
     return event.target.closest?.('[data-untracked-panel], [data-untracked-list]') || null;
@@ -331,6 +374,8 @@ ${CONFIRM_DIALOG_SCRIPT}
     }
     return upload;
   }
+  renderPendingFormats();
+  void refreshPendingCapabilities();
   document.addEventListener('dragover', (event) => {
     if (!dragCarriesFiles(event)) return;
     const target = pendingDropTarget(event);
