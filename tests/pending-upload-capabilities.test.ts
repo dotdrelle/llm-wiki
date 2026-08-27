@@ -6,6 +6,7 @@ import {
   pendingUploadCapabilities,
 } from '../src/serve/routes/uploadRoutes.ts';
 import { WIKI_LAYOUT_SCRIPT } from '../src/serve/html/wikiLayoutScript.ts';
+import { WIKI_PANEL_SCRIPT } from '../src/chat/views/wikiPanelScript.ts';
 
 /*
  The Pending panel used to accept Markdown and nothing else. It now also takes
@@ -128,6 +129,44 @@ describe('Pending drop handler', () => {
     expect(render).toContain('PENDING_CONVERTIBLE_POLICY');
     expect(render).toContain('line-through');
     expect(render).toContain('Unavailable: ');
+  });
+
+  it('reports every conversion to the shell, at its start and at its end', () => {
+    const loop = WIKI_LAYOUT_SCRIPT.slice(
+      WIKI_LAYOUT_SCRIPT.indexOf('for (const file of files)'),
+      WIKI_LAYOUT_SCRIPT.indexOf('if (written.length)'),
+    );
+    expect(loop).toContain("phase: 'start'");
+    expect(loop).toContain("status: 'converted'");
+    expect(loop).toContain("status: 'failed'");
+    // The converted Markdown has landed in the folder: the panel must show it
+    // now, not once the whole batch is done.
+    expect(loop).toContain('await refreshSidebar()');
+  });
+
+  it('says nothing when the wiki page is open outside the shell', () => {
+    const report = WIKI_LAYOUT_SCRIPT.slice(
+      WIKI_LAYOUT_SCRIPT.indexOf('function reportPendingUpload'),
+      WIKI_LAYOUT_SCRIPT.indexOf('async function uploadForConversion'),
+    );
+    expect(report).toContain('window.parent === window');
+    expect(report).toContain('window.location.origin');
+  });
+
+  it('renders a Pending conversion as an ordinary upload activity in the shell', () => {
+    expect(WIKI_PANEL_SCRIPT).toContain("data.type === 'llmwiki:pendingUpload'");
+    const handler = WIKI_PANEL_SCRIPT.slice(WIKI_PANEL_SCRIPT.indexOf("data.type === 'llmwiki:pendingUpload'"));
+    expect(handler).toContain('upsertActivity(');
+    expect(handler).toContain("kind: 'upload'");
+    // A Pending drop feeds the ingestion; it is not a document you opened a
+    // conversation about, so it must not silently enter Donna's context.
+    expect(handler.length).toBeGreaterThan(400);
+    expect(handler).not.toContain('addPageContext');
+  });
+
+  it('checks the sender origin before acting on a pending-upload message', () => {
+    const listener = WIKI_PANEL_SCRIPT.slice(WIKI_PANEL_SCRIPT.indexOf("window.addEventListener('message'"));
+    expect(listener.indexOf('event.origin !== location.origin')).toBeLessThan(listener.indexOf('llmwiki:pendingUpload'));
   });
 
   it('routes a convertible file through the upload endpoint, not the file writer', () => {

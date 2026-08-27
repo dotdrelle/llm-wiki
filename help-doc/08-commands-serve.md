@@ -35,7 +35,7 @@ fall behind them:
 
 - `/deliver [deliverable] [polish]` — publish existing deliverables, with or without polishing.
 - `/diagnose` — diagnose workspace configuration and prioritize concrete remedies.
-- `/new-template [family] [intent]` — design and write one evidence-grounded deliverable template.
+- `/new-template [family] [intent]` — author one instruction-only deliverable template — never build, export or publish it.
 - `/pipeline` — run the whole production chain in one go, from ingest to polish.
 - `/status` — summarize connector health and current or recent jobs.
 - `/wiki-build [template]` — build deliverables from the current wiki for one template or all templates.
@@ -76,8 +76,12 @@ Everything below is a **UI panel**, not something you type:
   text files are converted to Markdown first. That conversion is done by the
   documents agent, so those two formats are accepted **only while that agent is
   running** — when it is down or not configured, the panel says so and takes
-  Markdown only. Its lightning button starts the ingestion of everything
-  pending.
+  Markdown only. Each conversion appears in the **Activity panel** as it runs,
+  one file at a time, exactly like a conversion started from the Upload button;
+  the panel fills in as each file lands. Dropping while a run is in progress is
+  allowed: a file that arrives after the run listed what was pending simply
+  waits for the next ingestion. Its lightning button starts the ingestion of
+  everything pending.
 - **Activity panel** — live tracking of runs, with *List* and *Graph* views.
   Each of its five tabs (Plan, Chain, Local activity, Runtime activity, Logs)
   has its own `Clear`; `Clear all` clears all five. `Reset plan` (Plan tab

@@ -583,6 +583,51 @@ window.addEventListener('message', (event) => {
     // A delete/rename in the central wiki page mutated the tree; the sidebar
     // iframe does not reload with it, so re-fetch it and re-mark the active file.
     refreshWikiSidebar();
+  } else if (data.type === 'llmwiki:pendingUpload') {
+    /*
+     A PDF or text file dropped on the wiki's Pending panel is converted by the
+     documents agent, one file at a time, up to five minutes each. The sidebar
+     iframe cannot report that on its own, so it reports here — into the same
+     Activity panel, with the same item shape, as a conversion started from the
+     chat's Upload button. It is the same operation done by the same agent, and
+     a batch that runs for half an hour must not look like nothing happening.
+
+     One thing is deliberately NOT done here: the converted document is not
+     added to Donna's context. A chat upload is a file you want to talk about;
+     a Pending drop is a source you want ingested. Same conversion, different
+     intent.
+    */
+    const uploadActivityId = 'pending-upload-' + String(data.id || data.filename || '');
+    const uploadName = String(data.filename || 'document');
+    if (data.phase === 'start') {
+      upsertActivity({
+        id: uploadActivityId,
+        kind: 'upload',
+        label: uploadName,
+        filename: uploadName,
+        bytes: data.bytes || null,
+        status: 'running',
+        phase: 'conversion',
+        startedAt: Date.now(),
+        error: null,
+        outputPath: null,
+      });
+      if (typeof openActivityPanel === 'function') openActivityPanel();
+      return;
+    }
+    const converted = data.status === 'converted';
+    upsertActivity({
+      id: uploadActivityId,
+      status: converted ? 'converted' : 'failed',
+      outputPath: data.outputPath || null,
+      method: data.method || null,
+      uploadId: data.uploadId || null,
+      error: data.error || null,
+    });
+    if (typeof notify === 'function') {
+      if (converted) notify('Pending: ' + uploadName + ' converted');
+      else notify('Pending: ' + uploadName + ' — ' + String(data.error || 'conversion failed'), 'e');
+    }
   }
 });
 

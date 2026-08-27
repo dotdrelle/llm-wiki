@@ -360,6 +360,26 @@ ${CONFIRM_DIALOG_SCRIPT}
     }
     return 'Pending accepts ' + accepted + '. Rejected:' + listed;
   }
+  /*
+   Chaque conversion est annoncee au shell au depart et a l'arrivee.
+
+   Un lot de dix PDF tient la boucle jusqu'a cinquante minutes — cinq par
+   fichier au plafond du poll — et, sans cela, ni le panneau ni le chat ne
+   bougeaient d'ici la fin. Le shell rend ces messages dans le meme panneau
+   Activity que les conversions lancees depuis le bouton Upload du chat : c'est
+   la meme operation, faite par le meme agent.
+
+   Page wiki ouverte seule, hors du shell : il n'y a personne a qui parler, et
+   postMessage vers son propre window ferait un message que personne n'ecoute.
+  */
+  function reportPendingUpload(payload) {
+    if (window.parent === window) return;
+    try {
+      window.parent.postMessage(Object.assign({ type: 'llmwiki:pendingUpload' }, payload), window.location.origin);
+    } catch (err) {
+      // Un shell absent ou d'une autre origine ne doit pas interrompre l'import.
+    }
+  }
   async function uploadForConversion(file) {
     const form = new FormData();
     form.append('file', file, file.name);
@@ -416,10 +436,24 @@ ${CONFIRM_DIALOG_SCRIPT}
     const written = [];
     const failed = [];
     for (const file of files) {
+      const actId = 'pending-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
       try {
         if (isConvertibleFile(file)) {
+          reportPendingUpload({ id: actId, phase: 'start', filename: file.name, bytes: file.size });
           const upload = await uploadForConversion(file);
+          reportPendingUpload({
+            id: actId,
+            phase: 'done',
+            filename: file.name,
+            status: 'converted',
+            outputPath: upload.outputPath || null,
+            method: upload.method || null,
+            uploadId: upload.id || null,
+          });
           written.push(file.name + ' → ' + String(upload.outputPath || '').split('/').pop());
+          // Le Markdown converti est arrive dans le dossier : le panneau doit le
+          // montrer maintenant, pas a la fin du lot.
+          await refreshSidebar();
           continue;
         }
         const content = await file.text();
@@ -432,7 +466,11 @@ ${CONFIRM_DIALOG_SCRIPT}
         if (!response.ok || payload.ok === false) throw new Error(payload.error || 'Import failed');
         written.push(file.name);
       } catch (err) {
-        failed.push(file.name + ' — ' + (err instanceof Error ? err.message : String(err)));
+        const message = err instanceof Error ? err.message : String(err);
+        if (isConvertibleFile(file)) {
+          reportPendingUpload({ id: actId, phase: 'done', filename: file.name, status: 'failed', error: message });
+        }
+        failed.push(file.name + ' — ' + message);
       }
     }
     if (written.length) await refreshSidebar();
