@@ -78,10 +78,10 @@ Everything below is a **UI panel**, not something you type:
   running** — when it is down or not configured, the panel says so and takes
   Markdown only. Each conversion appears in the **Activity panel** as it runs,
   one file at a time, exactly like a conversion started from the Upload button;
-  the panel fills in as each file lands. Dropping while a run is in progress is
-  allowed: a file that arrives after the run listed what was pending simply
-  waits for the next ingestion. Its lightning button starts the ingestion of
-  everything pending.
+  the panel fills in as each file lands. While a run is in progress, a Markdown
+  drop is refused — the tree is read-only during a run — whereas a PDF or text
+  drop goes through and waits for the next ingestion. Its lightning button
+  starts the ingestion of everything pending.
 - **Activity panel** — live tracking of runs, with *List* and *Graph* views.
   Each of its five tabs (Plan, Chain, Local activity, Runtime activity, Logs)
   has its own `Clear`; `Clear all` clears all five. `Reset plan` (Plan tab

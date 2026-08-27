@@ -254,12 +254,14 @@ export async function handleUntrackedApi(
   res: ServerResponse,
   urlPath: string,
   isRunActive?: () => Promise<boolean>,
+  rewriteLinks?: (moves: Array<{ source: string; target: string }>) => Promise<void>,
 ): Promise<boolean> {
   return handleTreeApi(req, res, urlPath, {
     rootDir,
     readRequestBuffer,
     sendJson,
     isRunActive,
+    rewriteLinks,
     commitDeletion: async (relativePath, kind) => {
       const { HistoryService, commitHistorySafely } = await import('../services/historyService.ts');
       await commitHistorySafely(new HistoryService(rootDir), {
@@ -782,7 +784,12 @@ export default async function serveCmd(
         return;
       }
 
-      if (await handleUntrackedApi(rootDir, req, res, urlPath, isRuntimeRunActive)) {
+      if (await handleUntrackedApi(rootDir, req, res, urlPath, isRuntimeRunActive, async (moves) => {
+        // The one rewriter, the one used by reclassify-concepts: two link
+        // rewriters would disagree the day one of them learns a new syntax.
+        const { rewriteWikiLinks } = await import('../services/wikiLinkRewrite.ts');
+        await rewriteWikiLinks(workspace, moves);
+      })) {
         return;
       }
 

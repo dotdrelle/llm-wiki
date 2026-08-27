@@ -2,6 +2,7 @@ import { mkdir, readdir, rename, rm, rmdir, stat, writeFile } from 'node:fs/prom
 import path from 'node:path';
 
 import { resolveInside } from '../../utils/path.ts';
+import { applyConceptAxes, conceptGridClasses, decideConceptMove } from './conceptMove.ts';
 
 /**
  * Left-panel tree mutations, for ALL of its sections.
@@ -122,10 +123,23 @@ export async function deleteEntry(rootDir: string, rawPath: string): Promise<Tre
  * A move from one section to another is refused: a template placed in `wiki/`
  * is no longer a template, and nothing in the UI would say what it became.
  */
+export type MoveOptions = {
+  /**
+   * Rewrites the inbound links of a page that moved.
+   *
+   * Injected rather than imported: the rewriter walks the wiki through a
+   * WorkspaceService, which this module — deliberately rootDir-only — does not
+   * build. Absent, a move still happens; it is the caller that decides whether
+   * the links are its business.
+   */
+  rewriteLinks?: (moves: Array<{ source: string; target: string }>) => Promise<void>;
+};
+
 export async function moveEntry(
   rootDir: string,
   rawFrom: unknown,
   rawTo: unknown,
+  options: MoveOptions = {},
 ): Promise<TreeResult> {
   const from = normalizeRelative(rawFrom);
   const fromRoot = from ? resolveTreeRoot(from) : null;
@@ -165,7 +179,25 @@ export async function moveEntry(
     if (await stat(destination).then(() => true, () => false)) {
       return fail(`already exists: ${target}`, 409);
     }
+    /*
+     A move under wiki/concepts/ is a filing decision, not a rename: it is
+     refused before anything is touched when the destination is not a class of
+     the grid, and the leaf's axes and inbound links follow it when it is.
+    */
+    const concept = decideConceptMove({
+      from,
+      to: target,
+      isFile: sourceInfo.isFile(),
+      grid: await conceptGridClasses(rootDir),
+    });
+    if (concept.kind === 'reject') return fail(concept.reason);
     await rename(source, destination);
+    if (concept.kind === 'refile') {
+      await applyConceptAxes(rootDir, target, { className: concept.className, subject: concept.subject });
+      // The links last: the page must already be at its destination, with the
+      // right axes, before anything else is told to point at it.
+      await options.rewriteLinks?.([{ source: from, target }]);
+    }
     await pruneEmptyParents(rootDir, path.posix.dirname(from), fromRoot);
     return {
       ok: true,

@@ -40,6 +40,15 @@ export type TreeRoutesDeps = {
   commitDeletion?: (relativePath: string, kind: 'file' | 'folder') => Promise<void>;
   /** Pages linking to a path, for the confirmation the browser shows. */
   countReferences?: (relativePath: string) => Promise<string[]>;
+  /**
+   * Repoints the inbound links of a page that moved.
+   *
+   * Only used for a concept leaf re-filed by hand today: a bare rename left
+   * every `[src: wiki/concepts/unclassified/x.md]` in the corpus pointing at a
+   * path that no longer exists, and the next build regenerated the deliverables
+   * from those broken citations.
+   */
+  rewriteLinks?: (moves: Array<{ source: string; target: string }>) => Promise<void>;
 };
 
 function respond(res: ServerResponse, deps: TreeRoutesDeps, result: TreeResult): true {
@@ -83,7 +92,7 @@ export async function handleTreeApi(
   if ((urlPath === '/api/tree/move' || urlPath === '/api/untracked/move') && req.method === 'POST') {
     const body = await readBody(req, deps);
     if (!body) return respond(res, deps, { ok: false, status: 400, error: 'invalid request' });
-    return respond(res, deps, await moveEntry(deps.rootDir, body.from, body.to));
+    return respond(res, deps, await moveEntry(deps.rootDir, body.from, body.to, { rewriteLinks: deps.rewriteLinks }));
   }
 
   if (urlPath === '/api/tree/create' && req.method === 'POST') {

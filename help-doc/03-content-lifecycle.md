@@ -79,6 +79,13 @@ in this order, and each one assumes the previous is done:
 - **taxonomy**: republishes the **graph taxonomy** used by the `/graph` view and
   by navigation.
 
+Filing a page by hand works too: drag a page out of
+`wiki/concepts/unclassified/` into a class folder and it is re-filed for real —
+its `class` is rewritten and every link pointing at it is repointed. A class the
+grid does not declare is refused rather than half-applied, and a whole class
+folder cannot be dragged: emptying or retiring a class changes the vocabulary,
+not just the files.
+
 An ingestion already ends with the three of them, so you rarely run them by
 hand. When you do — after editing pages directly, or when a grid rebuild left
 strays behind — pick the narrowest one that covers your case; see the skills in
