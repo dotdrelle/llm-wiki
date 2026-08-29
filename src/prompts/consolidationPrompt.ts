@@ -1,19 +1,18 @@
 import type { SourceDocument } from '../types.ts';
 import type { SourceExtraction } from '../ingest/extractionSchema.ts';
-import { EXTRACTION_KINDS } from '../ingest/extractionSchema.ts';
-import { UNCLASSIFIED_CLASS, type ConceptGrid } from '../ingest/conceptGrid.ts';
+import { UNCLASSIFIED_CLASS } from '../ingest/conceptGrid.ts';
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
 /** Prompt version, carried by the consolidation cache key. */
-export const CONSOLIDATION_PROMPT_VERSION = 13;
+export const CONSOLIDATION_PROMPT_VERSION = 18;
 
 export type ConsolidationInventoryPage = {
   path: string;
   title: string;
   subject: string | null;
   scope: string | null;
-  /** Declared filing class, when this page has a grid — the axis a model must not merge across. */
-  class: string | null;
+  /** The concept folder the leaf lives in (its path's first segment under wiki/concepts/). */
+  folder: string | null;
   excerpt: string;
   /** True when this page was produced by THIS source in a previous ingest. */
   previousForSource?: boolean;
@@ -27,50 +26,40 @@ export type ConsolidationInventoryPage = {
 /*
  Consolidation prompt: one call, one source, one plan.
 
- The conceptual budget stated here is a QUALITY control, not a blind cut. The
- defect it corrects is precise: on five comparative studies, the old path
- produced 4 concepts for one and 51 for another, with nothing in the content
- justifying the gap — only the heading split separated them. Asking for a
- justification per additional concept costs one sentence and makes the gap
- explainable.
+ The concept is the FOLDER the leaf lives in; `subject` is its canonical
+ identity; `tags` are its multivalued links. There is no closed grid: the model
+ files into an existing folder when the concept already exists (reuse before
+ create), or proposes a new folder when the document genuinely introduces one.
 */
+
 /**
- * The filing policy, which replaces the granularity policy once a grid exists.
- *
- * The granularity policy below asks the model to DECIDE which concepts the wiki
- * needs, one document at a time. No model answers that well from inside a
- * single document — it can only ever name what that document names — and that
- * is why the corpus filled with entity pages. With a grid the question becomes
- * one a small model answers reliably: given these classes and their membership
- * questions, where does this document's knowledge go.
+ * The filing policy: folders are the concepts.
  */
-function filingPolicy(grid: ConceptGrid): string[] {
-  const describe = (id: string): string => {
-    const info = grid.info?.get(id);
-    if (!info) return `- \`${id}\``;
-    return `- \`${id}\` — ${info.label}${info.criterion ? ` · ${info.criterion}` : ''}`;
-  };
+function folderPolicy(existingFolders: string[]): string[] {
   return [
-    'Filing policy — the wiki has a CLOSED set of ranking classes:',
-    ...grid.classes.map(describe),
+    'Filing policy — the concept is the FOLDER a page lives in.',
+    `Existing concept folders: ${existingFolders.join(', ') || '(none yet)'}.`,
     '',
-    'You do NOT create classes. You FILE into the ones above.',
-    '- ask the membership questions IN ORDER; the first positive answer is the primary class',
-    '- the following positive answers are the secondary classes',
-    '- a concept page is a LEAF: one subject seen under ONE class. Its path is exactly'
-      + ' wiki/concepts/<class>/<subject>.md, and its "class" and "subject" fields must match that path',
-    '- the same subject may hold a leaf under several classes: that is the model, not a duplicate.'
-      + ' Each leaf carries only what belongs to ITS class — the market leaf does not restate the'
-      + ' security leaf',
-    '- create a leaf only when this source gives that (class, subject) pair at least two distinct'
-      + ' things to say. A single passing mention stays in the source note',
-    '- if a subject fits NO class, file its leaf under the reserved class `unclassified`'
-      + ` (path wiki/concepts/${UNCLASSIFIED_CLASS}/<subject>.md). Never force it into the nearest`
-      + ' class, and never invent a class for it',
-    '- a leaf that already exists is UPDATED at its existing path, never recreated under another name',
+    '- a concept page is a LEAF: one subject seen under one concept. Its path is exactly'
+      + ' wiki/concepts/<concept>/<subject>.md',
+    '- the same subject may hold a leaf under several concepts: that is the model, not a'
+      + ' duplicate. Each leaf carries only what belongs to ITS concept',
+    '- an existing concept is ALWAYS an existing folder: REUSE one of the folders listed'
+      + ' above whenever a subject plausibly belongs to it. "offre-marche" and'
+      + ' "solutions-marche" are ONE concept — pick one and file the leaf there, never open'
+      + ' a near-duplicate folder',
+    '- open a NEW folder only when a subject fits NONE of the existing folders; name it a'
+      + ' short kebab-case common noun phrase',
+    '- create a leaf only when this source gives that (concept, subject) pair at least two'
+      + ' distinct things to say. A single passing mention stays in the source note',
+    '- if a subject fits NO concept, file its leaf under the reserved folder'
+      + ` \`${UNCLASSIFIED_CLASS}\` (path wiki/concepts/${UNCLASSIFIED_CLASS}/<subject>.md).`
+      + ' Never force it into the nearest folder',
+    '- a leaf that already exists is UPDATED at its existing path, never recreated under'
+      + ' another name',
     '',
-    'Leaf content: a few lines saying what this source establishes about this subject under this'
-      + ' class, then the citations. Not a copy of the source note.',
+    'Leaf content: a few lines saying what this source establishes about this subject under'
+      + ' this concept, then the citations. Not a copy of the source note.',
     '',
     'Also applies:',
     '- exactly one source note per document, at the given source note path',
@@ -86,9 +75,8 @@ export function buildConsolidationPrompt(args: {
   existingSourceNote: string | null;
   inventory: ConsolidationInventoryPage[];
   indexContent: string;
-  collection: string | null;
-  /** The workspace's closed set of classes; absent until the concepts pass has run. */
-  grid?: ConceptGrid;
+  existingFolders: string[];
+  existingTags: string[];
   ctx: PromptContext;
 }): { system: string; user: string } {
   return {
@@ -98,43 +86,23 @@ export function buildConsolidationPrompt(args: {
       'You receive structured findings extracted from ONE source document, already merged across its fragments.',
       'You decide, once, what the wiki should contain for this document.',
       '',
-      ...(args.grid ? filingPolicy(args.grid) : legacyGranularityPolicy()),
+      'You ALWAYS produce exactly one source note for this document, at the given',
+      'source note path — a create when it does not exist yet, an update when it',
+      'does. Even when every concept page is already present and unchanged, the',
+      'source note is part of the plan. An empty plan is never a correct answer.',
       '',
-      ...operationContract(args.grid),
+      ...folderPolicy(args.existingFolders),
+      '',
+      ...operationContract(),
     ].join('\n'),
     user: buildConsolidationUser(args),
   };
 }
 
 /**
- * The pre-grid policy: no closed set of classes exists yet, so every concept
- * page is a leaf under the reserved `unclassified` class. Nothing is invented,
- * and nothing is lost: the leaf waits there until a grid exists (or a human
- * files it into a real class).
+ * The operation contract.
  */
-function legacyGranularityPolicy(): string[] {
-  return [
-    'Filing policy — the workspace has NO conceptual grid yet.',
-    'Every concept page is a LEAF under the reserved class `unclassified`:',
-    `- its path is exactly wiki/concepts/${UNCLASSIFIED_CLASS}/<subject>.md`,
-    `- its "class" field is ${UNCLASSIFIED_CLASS}; its "subject" field is the canonical identity`,
-    '- one leaf per subject, no matter how many angles this document treats it under',
-    '- exactly one source note per document, at the given source note path',
-    '- reuse or update an existing leaf before creating a near-duplicate',
-    '- a leaf that already exists is UPDATED at its existing path, never recreated under another name',
-    '- a characteristic that only makes sense for this one document stays in the source note',
-    '- never create one page per heading of the source document',
-  ];
-}
-
-/**
- * The operation contract, shared by both policies.
- *
- * `class` is added to the declared provenance only when a grid exists: asking
- * for a field against a vocabulary the workspace has not defined would invite
- * the model to invent one, which is the exact failure the grid removes.
- */
-function operationContract(grid: ConceptGrid | undefined): string[] {
+function operationContract(): string[] {
   return [
       'Allowed operation paths: wiki/concepts/**/*.md, wiki/sources/*.md, wiki/answers/*.md.',
       'Never propose an operation on wiki/index.md: it is regenerated automatically from wiki/concepts/** and wiki/sources/* after this plan is applied, and any content proposed for it is discarded.',
@@ -147,16 +115,10 @@ function operationContract(grid: ConceptGrid | undefined): string[] {
       '',
       'For every created or updated page, also return an entry in "pages" with its provenance:',
       '- subject: the canonical identity the page belongs to, lowercase, words separated by dashes — NEVER glue the words together ("twowordidentity" instead of "two-word-identity" is wrong), never use spaces',
-      '- collection: the comparative set this document belongs to, when there is one',
       '- scope: source | product | transverse | workspace',
-      `- kind: ${EXTRACTION_KINDS.join(' | ')} — the NATURE of the subject (a vendor is not its product, a dimension is not a product)`,
-      ...(grid
-        ? [
-          `- class: the primary ranking class, one of: ${grid.classes.join(' | ')} | ${UNCLASSIFIED_CLASS}`,
-          '- classSecondary: the other classes this page also speaks to, from the same list',
-          '- class and subject MUST match the page path: wiki/concepts/<class>/<subject>.md',
-        ]
-        : []),
+      `- kind: vendor | product | requirement | regulation | dimension | scenario — the NATURE of the subject (a vendor is not its product, a dimension is not a product)`,
+      '- tags: 2 to 4 words linking this leaf — its entity AND the cross-cutting themes it speaks to (security, sovereignty, cost, integration…). Each tag is a SINGLE word, in the SINGULAR, in the output language — never a plural (write "exigence", not "exigences"; "solution", not "solutions"). REUSE an existing tag from the "Existing tags" list in the user message when one is close, rather than inventing a near-synonym. At most 4 tags.',
+      '- subject MUST match the page path: wiki/concepts/<concept>/<subject>.md',
       'Do NOT write these fields inside the page content; the engine writes them.',
       'Do not copy the free-form "group" field into "subject": a group is a shelf, a subject is an identity.',
       'A vendor and its product are DIFFERENT pages only when each carries durable, distinct knowledge; otherwise keep the vendor inside the product page. Never create a second product page for a product\'s sub-modules.',
@@ -172,14 +134,14 @@ function buildConsolidationUser(args: {
   existingSourceNote: string | null;
   inventory: ConsolidationInventoryPage[];
   indexContent: string;
-  collection: string | null;
+  existingFolders: string[];
+  existingTags: string[];
 }): string {
   return [
       '# Source document',
       `[src: ...] citation path (exact — copy verbatim into every citation): ${args.source.archiveCitationPath}`,
       `Title: ${args.source.title}`,
       `Source note path: ${args.sourcePagePath}`,
-      args.collection ? `Detected collection: ${args.collection}` : 'Detected collection: (none)',
       '',
       '## Extracted facts',
       args.extraction.facts.length
@@ -194,8 +156,6 @@ function buildConsolidationUser(args: {
             .map((subject) =>
               `- ${subject.id} :: ${subject.label} [scope=${subject.scope} | kind=${subject.kind} | importance=${subject.importance}]`
               + `\n  why: ${subject.rationale}`
-              // The field is optional on the schema side: the prompt must not
-              // assume a model filled it.
               + (subject.relatedExistingPages?.length
                 ? `\n  may extend: ${subject.relatedExistingPages.join(', ')}`
                 : ''))
@@ -217,13 +177,23 @@ function buildConsolidationUser(args: {
             .map((page) =>
               `- ${page.path} :: ${page.title}`
               + `${page.subject ? ` [subject=${page.subject}]` : ''}`
-              + `${page.class ? ` [class=${page.class}]` : ''}`
+              + `${page.folder ? ` [concept=${page.folder}]` : ''}`
               + `${page.scope ? ` [scope=${page.scope}]` : ''}`
               + `${page.previousForSource ? ' [previously produced by THIS source]' : ''}`
               + `${page.subjectMatch ? ' [existing page for a closely related subject]' : ''}`
               + `\n  ${page.excerpt}`)
             .join('\n')
         : '(none)',
+      '',
+      '## Existing concept folders',
+      args.existingFolders.length
+        ? `File a subject into one of these folders when it is close, rather than opening a near-duplicate: ${args.existingFolders.join(', ')}.`
+        : '(none yet)',
+      '',
+      '## Existing tags',
+      args.existingTags.length
+        ? `Reuse one of these when it matches, rather than inventing a near-synonym: ${args.existingTags.join(', ')}.`
+        : '(none yet)',
       '',
       '# Current wiki index',
       args.indexContent,
@@ -235,13 +205,6 @@ function buildConsolidationUser(args: {
 /**
  * The correction instruction appended to the user message on a consolidation
  * retry.
- *
- * The consolidation is a single stateless call per source. When the engine
- * detects that the plan split ONE identity into several concept pages, or that
- * it exceeded the concept budget, it re-asks with this instruction: the model
- * is told exactly which subjects to merge, and it re-answers on the same source.
- * The `system` prompt is reused verbatim — only the user message gains the
- * correction.
  */
 export function buildConsolidationRetryUser(
   user: string,
@@ -249,6 +212,7 @@ export function buildConsolidationRetryUser(
     splits?: Array<{ subject: string; duplicateOfSubject: string }>;
     overflow?: { newConcepts: number; budget: number };
     duplicatePaths?: string[];
+    folders?: string[];
   },
 ): string {
   const lines: string[] = [
@@ -277,6 +241,14 @@ export function buildConsolidationRetryUser(
       'The plan targets these paths more than once:',
       ...corrections.duplicatePaths.map((path) => `- ${path}`),
       'Merge each into a single operation (a single create per concept, a single update per source note).',
+    );
+  }
+
+  if (corrections.folders?.length) {
+    lines.push(
+      '',
+      'When re-filing, reuse an existing concept folder rather than opening a near-duplicate. Existing folders:',
+      ...corrections.folders.map((folder) => `- ${folder}`),
     );
   }
 

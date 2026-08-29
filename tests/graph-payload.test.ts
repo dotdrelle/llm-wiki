@@ -41,7 +41,7 @@ function corpus(pages: number) {
       raw: 'y'.repeat(800),
       html: '<p>z</p>',
       group,
-      community: { communityId: `domaine-${index % 12}`, communityLabel: group, assignment: 'explicit' },
+      community: { communityId: `domaine-${index % 12}`, communityLabel: group, assignment: 'seed' },
       degree: 3,
       x: 0,
       y: 0,
@@ -123,8 +123,10 @@ describe('charge utile du snapshot', () => {
       // Un graphe reste largement compressible : chemins, types et libellés
       // se répètent d'un nœud à l'autre.
       expect(compressed).toBeLessThan(raw / 4);
-      // Garde-fou de régression, très au-dessus des valeurs observées.
-      expect(raw / pages).toBeLessThan(700);
+      // Garde-fou de régression, très au-dessus des valeurs observées. Les
+      // trois regroupements alternatifs (subject/type/tag) ajoutent ~3 listes
+      // d'identifiants de nœuds, ce qui relève le plancher par page.
+      expect(raw / pages).toBeLessThan(900);
     }
   });
 });

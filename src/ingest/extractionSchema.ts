@@ -41,9 +41,7 @@ export type ExtractionScope = (typeof EXTRACTION_SCOPES)[number];
  * `kind` exists because a taxonomy groups by identity, and identity has a
  * nature. Without it, the consolidation cannot tell a product from the vendor
  * that publishes it under a near-identical name — two near-duplicate pages for
- * one real-world thing — nor a `dimension` from the `product` it qualifies. A
- * closed vocabulary lets the taxonomy trust the field instead of re-deriving
- * nature from prose.
+ * one real-world thing — nor a `dimension` from the `product` it qualifies.
  */
 export const EXTRACTION_KINDS = [
   'vendor',
@@ -126,25 +124,19 @@ const SCOPE_SYNONYMS: Record<string, string> = {
 };
 
 const KIND_SYNONYMS: Record<string, string> = {
-  // vendor: the organisation behind a product/solution.
   editor: 'vendor', vendor: 'vendor', supplier: 'vendor', publisher: 'vendor',
   company: 'vendor', organisation: 'vendor', organization: 'vendor', editeur: 'vendor',
   fournisseur: 'vendor', societe: 'vendor', société: 'vendor',
-  // product: the compared solution/tool itself.
   solution: 'product', tool: 'product', software: 'product', platform: 'product',
   application: 'product', app: 'product', produit: 'product', logiciel: 'product',
-  // requirement: an imperative the subject must satisfy.
   requirement: 'requirement', constraint: 'requirement', criterion: 'requirement',
   exigence: 'requirement', contrainte: 'requirement',
-  // regulation: a legal/contractual obligation.
   regulation: 'regulation', compliance: 'regulation', legal: 'regulation',
   obligation: 'regulation', réglementation: 'regulation', conformite: 'regulation',
-  // dimension: a shared characteristic studied across subjects.
   dimension: 'dimension', aspect: 'dimension', concern: 'dimension',
   characteristic: 'dimension', caracteristique: 'dimension', security: 'dimension',
   securite: 'dimension', hosting: 'dimension', sovereignty: 'dimension',
   souverainete: 'dimension',
-  // scenario: an alternative option under comparison.
   scenario: 'scenario', option: 'scenario', alternative: 'scenario',
   scenari: 'scenario', variant: 'scenario',
 };
@@ -203,9 +195,9 @@ export const extractedSubjectSchema = z.preprocess((value) => {
   const kind = normalizeKind(subject.kind);
   return {
     ...subject,
-    // Some engines omit the label but provide id + scope +
-    // justification. The id then stays a PRIVATE marker for the consolidation,
-    // never a page name nor a published identity.
+    // Some engines omit the label but provide id + scope + justification. The
+    // id then stays a PRIVATE marker for the consolidation, never a page name
+    // nor a published identity.
     label: subject.label ?? subject.name ?? subject.title ?? subject.id,
     scope,
     kind,

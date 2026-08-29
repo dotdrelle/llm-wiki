@@ -25,13 +25,15 @@ export const canvasExplorerStyles = String.raw`
 .graph-context-card .gcc-list li{font-size:11.5px;line-height:1.45;color:#c3cddc;overflow-wrap:anywhere}
 .graph-context-card .gcc-body.pending{color:var(--muted);font-style:italic}
 .graph-context-card .gcc-actions{display:flex;gap:6px}
+.graph-context-card .gcc-tags{display:flex;flex-wrap:wrap;gap:4px;flex:none}
+.graph-context-card .gcc-tag{font-size:10px;line-height:1;padding:3px 7px;border-radius:999px;color:var(--tag-color);border:1px solid color-mix(in srgb,var(--tag-color) 45%,transparent);background:color-mix(in srgb,var(--tag-color) 14%,transparent)}
 .graph-context-card .gcc-actions button{flex:1;padding:.32rem .5rem;font-size:10.5px;white-space:nowrap}
 .graph-context-card .gcc-actions .gcc-donna{flex:0 0 auto;display:grid;place-items:center;width:30px;padding:0;color:#75aff5}
 .graph-context-card .gcc-actions .gcc-donna svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2}
-body.theme-light .graph-context-card{background:#fffffff0;border-color:#0000001f}
-body.theme-light .graph-context-card strong{color:#172433}
-body.theme-light .graph-context-card .gcc-body{color:#33475e}
-body.theme-light .graph-context-card .gcc-list li{color:#33475e}
+:root.theme-light body .graph-context-card{background:#fffffff0;border-color:#0000001f}
+:root.theme-light body .graph-context-card strong{color:#172433}
+:root.theme-light body .graph-context-card .gcc-body{color:#33475e}
+:root.theme-light body .graph-context-card .gcc-list li{color:#33475e}
 @media(max-width:760px){.graph-breadcrumb{max-width:42vw}.graph-context-card{width:min(260px,70vw)}}
 @media(prefers-reduced-motion:reduce){.graph-explorer-canvas{scroll-behavior:auto}}
 `;

@@ -111,10 +111,6 @@ export interface ServeConfig {
   tls?: TlsConfig;
 }
 
-export interface GraphConfig {
-  fallbackCommunityLabel: string;
-}
-
 export interface HistoryConfig {
   enabled: boolean;
   authorName: string;
@@ -133,7 +129,6 @@ export interface AppConfig {
   mcp: McpConfig;
   history?: HistoryConfig;
   serve?: ServeConfig;
-  graph?: GraphConfig;
 }
 
 export interface BuildCommandOptions {

@@ -83,6 +83,9 @@ function corpus() {
       title: id,
       type: 'wiki',
       degree: member,
+      subject: id,
+      // c0 et c1 partagent un tag : ouvrir c0 replie c1 en voisin.
+      tags: community.id === 'c0' && member < 2 ? ['partage'] : community.id === 'c1' && member < 2 ? ['partage'] : [],
       community: { communityId: community.id, communityLabel: community.label },
     })),
   );
@@ -158,6 +161,7 @@ function mount(
   const environment = {
     document: {
       body: { classList: { contains: () => false } },
+      documentElement: { classList: { contains: () => false } },
       hidden: false,
       addEventListener() {},
       removeEventListener() {},
@@ -210,12 +214,13 @@ function mount(
     (count: number) => (count === 1 ? '' : `${count || 0} relations`),
     (label: string) => String(label ?? '').toUpperCase(),
     (label: string) => (label ? label.charAt(0).toUpperCase() + label.slice(1) : label),
+    'concept',
   ];
   const names = [
     'data', 'colors', 'selected', 'selectedCommunity', 'view', 'esc', 'render', 'selectDocument', 'selectCommunity',
     'visible', 'graphIcon', 'localStorage', 'document', 'window', 'matchMedia', 'devicePixelRatio', 'ResizeObserver',
     'MutationObserver', 'requestAnimationFrame', 'cancelAnimationFrame', 'setTimeout', 'clearTimeout',
-    'graphRelationsLabel', 'graphDomainDisplay', 'graphLeafDisplay',
+    'graphRelationsLabel', 'graphDomainDisplay', 'graphLeafDisplay', 'groupAxis',
   ];
   const build = new Function(
     ...names,

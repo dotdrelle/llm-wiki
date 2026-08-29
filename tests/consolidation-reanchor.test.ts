@@ -15,11 +15,9 @@ function page(over: Partial<ConsolidatedPage> = {}): ConsolidatedPage {
   return {
     path: 'wiki/concepts/beta.md',
     subject: 'beta',
-    collection: null,
     scope: 'product',
     kind: 'product',
-    class: null,
-    classSecondary: [],
+    tags: [],
     rationale: null,
     ...over,
   };
@@ -137,8 +135,8 @@ describe('reanchorToPreviousConcepts (§6.3, §12.2)', () => {
           { type: 'create', path: 'wiki/concepts/securite/beta.md', content: `# Beta\n\n${BETA_BODY}` },
         ],
         pages: [
-          page({ path: 'wiki/concepts/offre-marche/beta.md', subject: 'beta', class: 'offre-marche' }),
-          page({ path: 'wiki/concepts/securite/beta.md', subject: 'beta', class: 'securite' }),
+          page({ path: 'wiki/concepts/offre-marche/beta.md', subject: 'beta' }),
+          page({ path: 'wiki/concepts/securite/beta.md', subject: 'beta' }),
         ],
       }),
       [
@@ -163,7 +161,7 @@ describe('reanchorToPreviousConcepts (§6.3, §12.2)', () => {
         operations: [
           { type: 'create', path: 'wiki/concepts/offre-marche/beta.md', content: `# Beta\n\n${BETA_BODY}` },
         ],
-        pages: [page({ path: 'wiki/concepts/offre-marche/beta.md', subject: 'beta', class: 'offre-marche' })],
+        pages: [page({ path: 'wiki/concepts/offre-marche/beta.md', subject: 'beta' })],
       }),
       [previous('wiki/concepts/beta.md', 'beta', BETA_BODY)],
     );
@@ -185,7 +183,7 @@ describe('reanchorToPreviousConcepts (§6.3, §12.2)', () => {
         operations: [
           { type: 'create', path: 'wiki/concepts/offre-marche/beta.md', content: `# Beta\n\n${BETA_BODY}` },
         ],
-        pages: [page({ path: 'wiki/concepts/offre-marche/beta.md', subject: 'beta', class: null })],
+        pages: [page({ path: 'wiki/concepts/offre-marche/beta.md', subject: 'beta' })],
       }),
       [previous('wiki/concepts/beta.md', 'beta', BETA_BODY)],
     );

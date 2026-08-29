@@ -114,6 +114,15 @@ function applyGraphRevision(next){
   Object.keys(redirects).forEach(from=>{
     if(knownCommunities.has(from)&&redirects[from])graphMerging.set(from,{to:redirects[from],at:performance.now()})});
   data=next;
+  // The concept grouping is the top-level communities; the server does not
+  // ship it twice, so the browser restores the entry the combobox reads.
+  data.groupings={...(data.groupings||{}),concept:{communities:data.communities,communityEdges:data.communityEdges}};
+  // A revision replaces the snapshot whole: the grouping axis the reader chose
+  // is a reading, not data, so it is re-applied on the fresh snapshot rather
+  // than silently dropping back to the concept map.
+  if(groupAxis!=='concept'){
+    const grouping=data?.groupings?.[groupAxis];
+    if(grouping){data.communities=grouping.communities;data.communityEdges=grouping.communityEdges}}
   // A merge moves the selection to the target rather than losing it, and
   // carries over the absorbed one's manual position.
   migrateCanvasExplorerPositions(next.communityRedirects);

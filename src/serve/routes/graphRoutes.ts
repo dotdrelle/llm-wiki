@@ -8,7 +8,6 @@ import { sendJsonPayload } from '../http/sendJsonPayload.ts';
 
 export type GraphRoutesDeps = {
   rootDir: string;
-  fallbackCommunityLabel: () => string;
   language: () => string;
   workspaceNameFromEnv: () => string | null;
   /**
@@ -67,7 +66,6 @@ export async function handleGraphRoutes(
     loadWikiGraphSnapshot({
       rootDir: deps.rootDir,
       workspace: deps.workspaceNameFromEnv() ?? path.basename(deps.rootDir),
-      fallbackCommunityLabel: deps.fallbackCommunityLabel(),
       language: deps.language(),
     });
 

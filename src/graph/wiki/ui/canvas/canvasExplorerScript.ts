@@ -32,7 +32,7 @@ function seedCanvasExplorerSlots(){(data?.communities||[]).forEach(item=>canvasE
  remains ensured by each cluster's own radius.
 */
 function canvasExplorerSlotPosition(id){
-  const slot=canvasExplorerSlot(id),angle=slot*2.399963-Math.PI/2,radius=slot?.092+Math.sqrt(slot)*.076:0;
+  const slot=canvasExplorerSlot(id),angle=slot*2.399963-Math.PI/2,radius=slot?.06+Math.sqrt(slot)*.055:0;
   return{x:Math.cos(angle)*radius,y:Math.sin(angle)*radius*.72}}
 // A card's remembered position no longer depends on the topology: it changed
 // on every ingest, so any manual placement was lost at the precise moment the
@@ -76,7 +76,7 @@ function createCanvasExplorer(host){
   let scheduler,camera;
   const nodeById=new Map(data.nodes.map(node=>[node.id,node]));
   const color=index=>colors[index%colors.length];
-  const light=()=>document.body.classList.contains('theme-light');
+  const light=()=>document.documentElement.classList.contains('theme-light');
   /*
    Pre-rendered halos.
 
@@ -155,7 +155,12 @@ function createCanvasExplorer(host){
     if(min===outRight)return{...projected,x:right};
     if(min===outTop)return{...projected,y:top};
     return{...projected,y:bottom}}
-  function communityRadius(node){return 28+Math.min(34,Math.sqrt(node.community.nodeIds.length)*7)}
+  function communityRadius(node){
+    // A folded neighbour halo sizes by the number of links that tie it to the
+    // open halo, not by its total membership: several links to the same halo
+    // stay one bubble, but a bigger one.
+    const size=node.collapsed?(node.links||[]).reduce((sum,link)=>sum+(link.count||1),0):node.community.nodeIds.length;
+    return 28+Math.min(34,Math.sqrt(size)*7)}
   // Overflow of a node, in pixels and per side, at a given scale. A
   // constellation halo grows with zoom, a card does not: the two are not
   // computed the same way. Since the label can be placed on any side, the
@@ -202,7 +207,7 @@ function createCanvasExplorer(host){
       scale=next;
       if(settled)break}
     const shape=envelope(scale);
-    return{x:cx+(shape.left+shape.right)/2/(size*scale),y:cy+(shape.top+shape.bottom)/2/(size*scale),scale:scale*.99}
+    return{x:cx+(shape.left+shape.right)/2/(size*scale),y:cy+(shape.top+shape.bottom)/2/(size*scale),scale:scale*.94}
   }
   // Deterministic star dust: hashing rather than Math.random, hence the same
   // image on every render and no allocation per frame. The same principle as
@@ -240,10 +245,10 @@ function createCanvasExplorer(host){
     const a=project(from),b=project(to),cx=(a.x+b.x)/2-(b.y-a.y)*.13,cy=(a.y+b.y)/2+(b.x-a.x)*.13;
     const count=edge.weight||edge.count||1,pale=light();
     const gradient=context.createLinearGradient(a.x,a.y,b.x,b.y);
-    gradient.addColorStop(0,rgba(color(indexFrom),pale?.5:.36));
-    gradient.addColorStop(.5,pale?'rgba(120,138,166,.16)':'rgba(150,165,200,.10)');
-    gradient.addColorStop(1,rgba(color(indexTo),pale?.5:.36));
-    context.strokeStyle=gradient;context.lineWidth=.7+Math.min(2.8,Math.sqrt(count)*.9);
+    gradient.addColorStop(0,rgba(color(indexFrom),pale?.7:.55));
+    gradient.addColorStop(.5,pale?'rgba(110,128,156,.4)':'rgba(150,165,200,.38)');
+    gradient.addColorStop(1,rgba(color(indexTo),pale?.7:.55));
+    context.strokeStyle=gradient;context.lineWidth=1+Math.min(3,Math.sqrt(count)*.75);
     context.beginPath();context.moveTo(a.x,a.y);context.quadraticCurveTo(cx,cy,b.x,b.y);context.stroke();
     const t=(Math.sin(state.clock*1.6+indexFrom*1.3+indexTo)*.5+.5),u=1-t;
     context.fillStyle=pale?'rgba(70,92,124,.65)':'rgba(220,232,255,.55)';
@@ -313,13 +318,13 @@ function createCanvasExplorer(host){
       {text:node.community.nodeIds.length+' pages',font:'11px ui-sans-serif,system-ui',height:13,color:rgba(paint,pale?.95:.8)}]});
     state.hits.push({node,x:point.x,y:point.y,r:Math.max(28,radius*1.1)})}
   function cardWidth(node){return Math.min(210,82+String(node.label).length*5.8)}
-  function drawDocument(node,index){const point=project(node),paint=color(communityIndex(node.communityId)),selectedNode=selected?.id===node.id,detail=point.scale>1.55,w=cardWidth(node),h=38;if(detail){
+  function drawDocument(node,index){const point=project(node),paint=color(communityIndex(node.communityId)),selectedNode=selected?.id===node.id,detail=point.scale>1.55,w=cardWidth(node),h=50;if(detail){
       // The shadow blur is reserved for the selected card — a single one. On
       // the others, a pre-rendered halo gives the same relief without running a
       // Gaussian blur again per card and per frame.
       if(!selectedNode)paintGlow(paint,.20,.07,point.x,point.y,Math.max(w,h)*.78);
       else{context.shadowBlur=24;context.shadowColor=rgba(paint,.8)}
-      context.fillStyle='rgba(16,23,34,.96)';context.beginPath();graphRoundedRect(context,point.x-w/2,point.y-h/2,w,h,9);context.fill();context.shadowBlur=0;context.strokeStyle=rgba(paint,selectedNode?1:.55);context.lineWidth=selectedNode?2:1;context.stroke();context.fillStyle=paint;context.fillRect(point.x-w/2+3,point.y-h/2+7,3,h-14);context.textAlign='left';context.font='600 11.5px ui-sans-serif,system-ui';context.fillStyle='#edf3fb';let label=node.label;while(context.measureText(label).width>w-28&&label.length>5)label=label.slice(0,-2);context.fillText(label+(label!==node.label?'…':''),point.x-w/2+13,point.y-2);context.font='10px ui-sans-serif,system-ui';context.fillStyle=rgba(paint,.9);const relationsLabel=graphRelationsLabel(node.degree);if(relationsLabel)context.fillText(relationsLabel,point.x-w/2+13,point.y+12);state.hits.push({node,x:point.x,y:point.y,w,h})}else{const core=5+Math.sqrt(node.degree||0);paintGlow(paint,.5,.16,point.x,point.y,core*3.6);context.fillStyle='#f4f8ff';context.beginPath();context.arc(point.x,point.y,core,0,Math.PI*2);context.fill();if(point.scale>0.6)state.labels.push({x:point.x,y:point.y,radius:core+3,weight:(node.degree||0)+(selectedNode||state.hover===node.id?1e5:0),always:selectedNode||state.hover===node.id,lines:[{text:node.label.length>22?node.label.slice(0,21)+'…':node.label,font:'10px ui-sans-serif,system-ui',height:12,color:light()?'rgba(44,60,80,.88)':'rgba(220,229,242,.78)'}]});state.hits.push({node,x:point.x,y:point.y,r:15})}}
+      context.fillStyle='rgba(16,23,34,.96)';context.beginPath();graphRoundedRect(context,point.x-w/2,point.y-h/2,w,h,9);context.fill();context.shadowBlur=0;context.strokeStyle=rgba(paint,selectedNode?1:.55);context.lineWidth=selectedNode?2:1;context.stroke();if(node.external){context.strokeStyle=rgba(paint,.95);context.lineWidth=2.5;context.setLineDash([6,4]);context.beginPath();graphRoundedRect(context,point.x-w/2-2,point.y-h/2-2,w+4,h+4,11);context.stroke();context.setLineDash([])}context.fillStyle=paint;context.fillRect(point.x-w/2+3,point.y-h/2+7,3,h-14);context.textAlign='left';context.font='600 11.5px ui-sans-serif,system-ui';context.fillStyle='#edf3fb';let label=node.label;while(context.measureText(label).width>w-28&&label.length>5)label=label.slice(0,-2);context.fillText(label+(label!==node.label?'…':''),point.x-w/2+13,point.y-9);const meta=leafMetaLine(node);if(meta){context.font='9.5px ui-sans-serif,system-ui';context.fillStyle='#edf3fb';let m=meta;while(context.measureText(m).width>w-28&&m.length>4)m=m.slice(0,-2);context.fillText(m+(m!==meta?'…':''),point.x-w/2+13,point.y+4)}context.font='10px ui-sans-serif,system-ui';context.fillStyle=rgba(paint,.9);const relationsLabel=graphRelationsLabel(node.degree);if(relationsLabel)context.fillText(relationsLabel,point.x-w/2+13,point.y+16);state.hits.push({node,x:point.x,y:point.y,w,h})}else{const core=5+Math.sqrt(node.degree||0);paintGlow(paint,.5,.16,point.x,point.y,core*3.6);context.fillStyle='#f4f8ff';context.beginPath();context.arc(point.x,point.y,core,0,Math.PI*2);context.fill();if(node.external){context.strokeStyle=rgba(paint,.9);context.lineWidth=2.5;context.setLineDash([6,4]);context.beginPath();context.arc(point.x,point.y,core+6,0,Math.PI*2);context.stroke();context.setLineDash([])}if(point.scale>0.6)state.labels.push({x:point.x,y:point.y,radius:core+3,weight:(node.degree||0)+(selectedNode||state.hover===node.id?1e5:0),always:selectedNode||state.hover===node.id,lines:[{text:node.label.length>22?node.label.slice(0,21)+'…':node.label,font:'10px ui-sans-serif,system-ui',height:12,color:light()?'rgba(44,60,80,.88)':'rgba(220,229,242,.78)'}]});state.hits.push({node,x:point.x,y:point.y,r:15})}}
   /*
    Label placement, in one pass after the nodes.
 
@@ -408,6 +413,20 @@ function createCanvasExplorer(host){
         const spot=project(node),ring=(node.type==='community'?communityRadius(node)*spot.scale:9)+7+(1-fresh)*10;
         context.strokeStyle='rgba(116,195,101,'+(fresh*.85).toFixed(3)+')';context.lineWidth=2;
         context.beginPath();context.arc(spot.x,spot.y,ring,0,Math.PI*2);context.stroke()});
+    // The selected leaf must read on the canvas, not only in the inspector: a
+    // pulsing ring marks it in place, at the ambient cadence.
+    if(selected){
+      const sel=byId.get(selected.id);
+      if(sel){
+        const spot=project(sel);
+        const pulse=.5+.5*Math.sin(state.clock*5);
+        const inner=sel.type==='community'?communityRadius(sel)*spot.scale:(spot.scale>1.55?cardWidth(sel)/2:(5+Math.sqrt(sel.degree||0))*spot.scale);
+        context.strokeStyle=rgba('#75aff5',.35+.45*pulse);context.lineWidth=3;
+        context.beginPath();context.arc(spot.x,spot.y,inner+8+pulse*8,0,Math.PI*2);context.stroke();
+        context.strokeStyle=rgba('#ffffff',.2*pulse);context.lineWidth=7;
+        context.beginPath();context.arc(spot.x,spot.y,inner+8+pulse*8,0,Math.PI*2);context.stroke()
+      }
+    }
     drawLabels();
     // The anchor is sampled at the frame, not at the event: zoom, pan and
     // animated reframing all go through the drawing, and a single measurement
@@ -452,7 +471,8 @@ function createCanvasExplorer(host){
   */
   function endPointerGesture(event,point){
     if(!state.pointer)return;
-    const dragging=state.pointer.target&&state.pointer.target.node.type!=='community';
+    // A halo is draggable like a card: any node remembers its manual position.
+    const dragging=state.pointer.target;
     if(state.dragged&&dragging)saveCanvasExplorerPosition(state.pointer.target.node);
     // A click in the void closes the context card: it is the gesture by which
     // one closes any layer, and the cross remains for those who do not try it.
@@ -473,7 +493,7 @@ function createCanvasExplorer(host){
     // the gesture independent of a release event being correctly received: if
     // the button is up, we let go, period.
     if(event.buttons===0){endPointerGesture(event,null);return}
-    const dx=point.x-state.pointer.lastX,dy=point.y-state.pointer.lastY;if(Math.abs(point.x-state.pointer.x)+Math.abs(point.y-state.pointer.y)>4)state.dragged=true;if(state.pointer.target&&state.pointer.target.node.type!=='community'){const modelScale=Math.min(state.width,state.height)*camera.state.scale;state.pointer.target.node.x+=dx/modelScale;state.pointer.target.node.y+=dy/modelScale}else camera.pan(-dx/(Math.min(state.width,state.height)*camera.state.scale),-dy/(Math.min(state.width,state.height)*camera.state.scale));state.pointer.lastX=point.x;state.pointer.lastY=point.y;scheduler.invalidate()});
+    const dx=point.x-state.pointer.lastX,dy=point.y-state.pointer.lastY;if(Math.abs(point.x-state.pointer.x)+Math.abs(point.y-state.pointer.y)>4)state.dragged=true;    if(state.pointer.target){const modelScale=Math.min(state.width,state.height)*camera.state.scale;state.pointer.target.node.x+=dx/modelScale;state.pointer.target.node.y+=dy/modelScale}else camera.pan(-dx/(Math.min(state.width,state.height)*camera.state.scale),-dy/(Math.min(state.width,state.height)*camera.state.scale));state.pointer.lastX=point.x;state.pointer.lastY=point.y;scheduler.invalidate()});
   surface.addEventListener('pointerup',event=>endPointerGesture(event,coordinates(event)));
   surface.addEventListener('pointercancel',event=>endPointerGesture(event,null));
   // Last safety net: a release that happens outside the canvas, on a panel or
@@ -631,11 +651,11 @@ function canvasExplorerVisibleCommunities(ids){
     if(!nodeIds.length)return;
     scoped.push({...item,nodeIds,documentCount:nodeIds.length})});
   return scoped}
-function canvasExplorerSceneMap(){const graph=visible(),ids=new Set(graph.nodes.map(node=>node.id)),communities=canvasExplorerRollUp(canvasExplorerVisibleCommunities(ids)),nodes=communities.map((item,index)=>{const spot=canvasExplorerSlotPosition(item.id);
+function canvasExplorerSceneMap(){const graph=visible(),ids=new Set(graph.nodes.map(node=>node.id)),communities=canvasExplorerRollUp(canvasExplorerVisibleCommunities(ids)),nodes=communities.map((item,index)=>{const spot=canvasExplorerSlotPosition(item.id),saved=readCanvasExplorerPosition(item.id);
   // The level decides the typography: a domain is a heading, a leaf is a named
   // subject.
   const isDomain=(data.domains||[]).some(domain=>domain.id===item.id);
-  return{id:item.id,label:isDomain?graphDomainDisplay(item.label):graphLeafDisplay(item.label),type:'community',community:item,x:spot.x,y:spot.y,depth:.92+(index%4)*.04}}),visibleIds=new Set(nodes.map(node=>node.id));return{level:'map',nodes:[...nodes,...canvasExplorerMergingNodes(visibleIds)],edges:canvasExplorerRollUpEdges(visibleIds)}}
+  return{id:item.id,label:isDomain?graphDomainDisplay(item.label):graphLeafDisplay(item.label),type:'community',community:item,x:saved?saved.x:spot.x,y:saved?saved.y:spot.y,depth:.92+(index%4)*.04}}),visibleIds=new Set(nodes.map(node=>node.id));return{level:'map',nodes:[...nodes,...canvasExplorerMergingNodes(visibleIds)],edges:canvasExplorerRollUpEdges(visibleIds)}}
 /*
  The links follow the fold, otherwise the domain map has no edge.
 
@@ -662,9 +682,10 @@ function canvasExplorerRollUpEdges(visibleIds){
     if(current)current.weight+=edge.count;
     else merged.set(key,{...edge,from,to,weight:edge.count})});
   return [...merged.values()]}
-function canvasExplorerSceneDocuments(){const graph=visible(),community=data.communities.find(item=>item.id===selectedCommunity)||(selected?data.communities.find(item=>item.nodeIds.includes(selected.id)):null);if(!community)return{level:view,nodes:[],edges:[]};let ids=new Set(community.nodeIds);if(view==='focus'&&selected){ids=new Set([selected.id]);data.edges.forEach(edge=>{if(edge.from===selected.id)ids.add(edge.to);if(edge.to===selected.id)ids.add(edge.from)})}const source=graph.nodes.filter(node=>ids.has(node.id)).sort((a,b)=>Number(b.id===selected?.id)-Number(a.id===selected?.id)||(b.degree||0)-(a.degree||0)||a.id.localeCompare(b.id)).slice(0,50),count=Math.max(1,source.length),typeColumns={'raw-source':-.36,'wiki-source':-.3,template:-.12,'build-context':-.08,wiki:.15,deliverable:.36},nodes=source.map((node,index)=>{let x,y;if(view==='focus'&&selected){if(node.id===selected.id){x=0;y=0}else{const angle=Math.PI*2*index/count-Math.PI/2;x=typeColumns[node.type]??Math.cos(angle)*.34;y=Math.sin(angle)*.28}}else{const angle=index*2.399963,r=.03+Math.sqrt(index)*.032;x=Math.cos(angle)*r;y=Math.sin(angle)*r*.8}const saved=readCanvasExplorerPosition(node.id);if(saved){x=saved.x;y=saved.y}return{...node,label:node.title,x,y,depth:.9+(index%5)*.04,communityId:node.community?.communityId}});separateCanvasExplorerNodes(nodes);const visibleIds=new Set(nodes.map(node=>node.id));
+function canvasExplorerSceneDocuments(){const graph=visible(),community=data.communities.find(item=>item.id===selectedCommunity)||(selected?data.communities.find(item=>item.nodeIds.includes(selected.id)):null);if(!community)return{level:view,nodes:[],edges:[]};let ids=new Set(community.nodeIds);if(view==='focus'&&selected){ids=new Set([selected.id]);data.edges.forEach(edge=>{if(edge.from===selected.id)ids.add(edge.to);if(edge.to===selected.id)ids.add(edge.from)})}const source=graph.nodes.filter(node=>ids.has(node.id)).sort((a,b)=>Number(b.id===selected?.id)-Number(a.id===selected?.id)||(b.degree||0)-(a.degree||0)||a.id.localeCompare(b.id)).slice(0,50),count=Math.max(1,source.length),typeColumns={'raw-source':-.36,'wiki-source':-.3,template:-.12,'build-context':-.08,wiki:.15,deliverable:.36},nodes=source.map((node,index)=>{let x,y;if(view==='focus'&&selected){if(node.id===selected.id){x=0;y=0}else{const angle=Math.PI*2*index/count-Math.PI/2;x=typeColumns[node.type]??Math.cos(angle)*.34;y=Math.sin(angle)*.28}}else{const angle=index*2.399963,r=.024+Math.sqrt(index)*.028;x=Math.cos(angle)*r;y=Math.sin(angle)*r*.8}const saved=readCanvasExplorerPosition(node.id);if(saved){x=saved.x;y=saved.y}return{...node,label:node.title,x,y,depth:.9+(index%5)*.04,communityId:node.community?.communityId}});separateCanvasExplorerNodes(nodes);const visibleIds=new Set(nodes.map(node=>node.id));
   const edges=data.edges.filter(edge=>visibleIds.has(edge.from)&&visibleIds.has(edge.to));
-  return{level:view,nodes:[...nodes,...collapsedNeighbourGroups(nodes,visibleIds,edges)],edges}}
+  const neighbours=collapsedNeighbourGroups(nodes,visibleIds);
+  return{level:view,nodes:[...nodes,...neighbours.nodes],edges:[...edges,...neighbours.edges]}}
 
 /*
  Neighboring domains, left folded on the periphery.
@@ -678,64 +699,108 @@ function canvasExplorerSceneDocuments(){const graph=visible(),community=data.com
  opens it in turn, which makes lateral navigation possible without going back
  through the map.
 */
-function collapsedNeighbourGroups(inner,visibleIds,edges){
+function leafRelationKinds(axis){
+  const folder=node=>{const parts=node.id.split('/');return parts[0]==='wiki'&&parts[1]==='concepts'&&parts.length>=4?[parts[2]]:[]};
+  const kinds=[
+    {relation:'subject',values:node=>node.subject?[node.subject]:[]},
+    {relation:'folder',values:folder},
+    {relation:'type',values:node=>node.okfType?[node.okfType]:[]},
+    {relation:'tag',values:node=>node.tags||[]},
+  ];
+  // En mode tag, la relation EST le tag : chaque feuille relie toutes les
+  // feuilles qui partagent l'un de ses tags. Les autres modes relient par les
+  // axes restants — partager l'axe du regroupement, c'est être déjà dans le
+  // même halo.
+  if(axis==='tag')return kinds.filter(kind=>kind.relation==='tag');
+  const skip={subject:'subject',type:'type',concept:'folder'}[axis]||'folder';
+  return kinds.filter(kind=>kind.relation!==skip)}
+function metaShort(value){return String(value||'').split(/[-_]/)[0]}
+function leafMetaLine(node){
+  const seg=(node.id||'').split('/');
+  const folder=(seg[0]==='wiki'&&seg[1]==='concepts'&&seg.length>=4)?seg[2]:null;
+  if(groupAxis==='tag')return (node.tags||[]).map(metaShort).join(' ');
+  if(groupAxis==='subject')return node.subject?metaShort(node.subject):(folder||'');
+  if(groupAxis==='type')return metaShort(node.okfType||'');
+  return folder||node.subject||''}
+function collapsedNeighbourGroups(inner,visibleIds){
   const home=new Map();data.communities.forEach(item=>item.nodeIds.forEach(id=>home.set(id,item.id)));
+  const nodeById=new Map(data.nodes.map(node=>[node.id,node]));
   const openIds=new Set(inner.map(node=>node.id));
+  /*
+   The relations are the shared axes of the chosen grouping (subject/type/tag/
+   folder) PLUS the base edges (citations, uses_template/context): a leaf links
+   to another leaf when they share an axis value OR when one links to the other.
+   The shared index is built once per axis over the whole corpus; the base edges
+   cover the non-knowledge surfaces (templates draw on build-context, leaves
+   cite their sources) that have no axis value to share.
+  */
   const reach=new Map();
+  for(const {values} of leafRelationKinds(groupAxis)){
+    const byValue=new Map();
+    data.nodes.forEach(node=>{for(const value of values(node)){let list=byValue.get(value);if(!list){list=[];byValue.set(value,list)}list.push(node.id)}});
+    for(const inside of inner){
+      for(const value of values(inside)){
+        for(const otherId of byValue.get(value)||[]){
+          if(otherId===inside.id||openIds.has(otherId))continue;
+          let entry=reach.get(otherId);
+          if(!entry){entry={from:new Map()};reach.set(otherId,entry)}
+          entry.from.set(inside.id,(entry.from.get(inside.id)||0)+1)}}}}
+  // Base edges: one endpoint inside, one outside. The outside node is a
+  // neighbour regardless of any shared axis value.
   data.edges.forEach(edge=>{
     const insideFrom=openIds.has(edge.from),insideTo=openIds.has(edge.to);
     if(insideFrom===insideTo)return;
     const outsideId=insideFrom?edge.to:edge.from,insideId=insideFrom?edge.from:edge.to;
-    const groupId=home.get(outsideId);
-    // A neighbor already displayed does not need to be represented twice, and a
-    // domain-less page has no constellation to tuck into.
-    if(!groupId||visibleIds.has(outsideId)||openIds.has(outsideId))return;
-    if(!reach.has(groupId))reach.set(groupId,{ids:new Set(),from:new Map()});
-    const entry=reach.get(groupId);entry.ids.add(outsideId);
+    let entry=reach.get(outsideId);
+    if(!entry){entry={from:new Map()};reach.set(outsideId,entry)}
     entry.from.set(insideId,(entry.from.get(insideId)||0)+1)});
-  if(!reach.size)return[];
+  if(!reach.size)return{nodes:[],edges:[]};
   /*
-   Each neighbor settles on the side by which it is linked.
-
-   They were distributed at a regular step on a circle of uniform radius, in
-   alphabetical order: a domain's position therefore said nothing about its
-   relation to the open group. A neighbor hooked at the bottom left could land
-   due north, its link crossing the whole cloud, while a free sector stayed
-   empty — and the framing had to encompass a ring whose main part contained
-   nothing.
-
-   The direction now comes from the barycenter of the pages that cite it,
-   weighted by the number of links. The distance follows the real silhouette of
-   the cloud in that direction, not its maximal radius: an elongated cloud no
-   longer pushes its lateral neighbors back to the distance of its tip. The
-   links are short, they no longer cross anything, and the free space is
-   occupied where it is.
+   Several linked leaves of the same bubble fold into that bubble; a single
+   linked leaf is shown as itself, in its own colour.
+  */
+  const groups=new Map();
+  reach.forEach((entry,outsideId)=>{
+    const gid=home.get(outsideId);
+    if(!gid)return;
+    let group=groups.get(gid);if(!group){group={ids:new Set(),from:new Map()};groups.set(gid,group)}
+    group.ids.add(outsideId);
+    entry.from.forEach((count,id)=>group.from.set(id,(group.from.get(id)||0)+count))});
+  if(!groups.size)return{nodes:[],edges:[]};
+  /*
+   Each neighbor settles on the side by which it is linked, weighted by the
+   barycenter of the pages it shares a value with — same placement as the
+   folded domains that preceded it.
   */
   const position=new Map(inner.map(node=>[node.id,node]));
   const centre=inner.reduce((sum,node)=>({x:sum.x+node.x/inner.length,y:sum.y+node.y/inner.length}),{x:0,y:0});
   const innerRadius=Math.max(.12,...inner.map(node=>Math.hypot(node.x-centre.x,node.y-centre.y)));
-  const margin=Math.max(.10,innerRadius*.38);
-  const groups=[...reach].sort(([a],[b])=>a.localeCompare(b));
-  const placed=groups.map(([groupId,entry],index)=>{
+  const margin=Math.max(.07,innerRadius*.3);
+  const groupList=[...groups].sort(([a],[b])=>a.localeCompare(b));
+  const placed=[];
+  const extraEdges=[];
+  groupList.forEach(([groupId,entry],index)=>{
     const item=data.communities.find(candidate=>candidate.id===groupId);
-    if(!item)return null;
     let ax=0,ay=0,weight=0;
     entry.from.forEach((count,id)=>{const node=position.get(id);if(!node)return;
       ax+=(node.x-centre.x)*count;ay+=(node.y-centre.y)*count;weight+=count});
     let dx=weight?ax/weight:0,dy=weight?ay/weight:0,length=Math.hypot(dx,dy);
-    // A neighbor hooked at the exact center — or to pages that cancel each
-    // other out in pairs — has no direction of its own: we give it one, stable.
-    if(length<1e-4){const angle=Math.PI*2*index/groups.length-Math.PI/2;dx=Math.cos(angle);dy=Math.sin(angle)*.68;length=Math.hypot(dx,dy)||1}
+    if(length<1e-4){const angle=Math.PI*2*index/groupList.length-Math.PI/2;dx=Math.cos(angle);dy=Math.sin(angle)*.68;length=Math.hypot(dx,dy)||1}
     dx/=length;dy/=length;
     let silhouette=0;
     inner.forEach(node=>{silhouette=Math.max(silhouette,(node.x-centre.x)*dx+(node.y-centre.y)*dy)});
     const base=Math.max(innerRadius*.5,silhouette)+margin;
-    return{id:groupId,label:graphLeafDisplay(item.label),type:'community',community:item,collapsed:true,depth:.86,
-      x:centre.x+dx*base,y:centre.y+dy*base,base,
-      links:[...entry.from].map(([from,count])=>({from,count}))}}).filter(Boolean);
-  // Two neighbors hooked at the same place would overlap: we separate them,
-  // then set them back outside the cloud, the separation being able to bring
-  // them back into it.
+    const x=centre.x+dx*base,y=centre.y+dy*base;
+    const links=[...entry.from].map(([from,count])=>({from,count}));
+    if(entry.ids.size>1&&item){
+      placed.push({id:groupId,label:graphLeafDisplay(item.label),type:'community',community:item,collapsed:true,depth:.86,x,y,base,links});
+    }else{
+      const leafId=[...entry.ids][0],leaf=nodeById.get(leafId);
+      if(leaf){
+        placed.push({...leaf,label:leaf.title,x,y,depth:.9,base,communityId:groupId,external:true});
+        entry.from.forEach((count,id)=>{if(count>0)extraEdges.push({from:id,to:leafId,type:'related_to'})})}}});
+  // Two neighbors hooked at the same place would overlap: separate them, then
+  // set them back outside the cloud.
   const gap=margin*1.4;
   for(let pass=0;pass<24;pass++){
     let moved=false;
@@ -743,15 +808,12 @@ function collapsedNeighbourGroups(inner,visibleIds,edges){
       const a=placed[i],b=placed[j];
       let dx=b.x-a.x,dy=b.y-a.y,distance=Math.hypot(dx,dy);
       if(distance>=gap)continue;
-      // Two neighbors cited by the same pages fall at the same point: there is
-      // then no direction to push in. We fabricate one, derived from the pair
-      // so it stays stable from one render to the next.
       if(distance<1e-6){const angle=(i*3+j)*2.399963;dx=Math.cos(angle);dy=Math.sin(angle);distance=1}
       moved=true;const push=(gap-distance)/2/distance;
       a.x-=dx*push;a.y-=dy*push;b.x+=dx*push;b.y+=dy*push}
     placed.forEach(group=>{const dx=group.x-centre.x,dy=group.y-centre.y,distance=Math.hypot(dx,dy)||1e-4;
-      if(distance<group.base){group.x=centre.x+dx/distance*group.base;group.y=centre.y+dy/distance*group.base}});
+      if(distance<(group.base||0)){group.x=centre.x+dx/distance*group.base;group.y=centre.y+dy/distance*group.base}});
     if(!moved)break}
-  return placed}
+  return{nodes:placed,edges:extraEdges}}
 `;
 }

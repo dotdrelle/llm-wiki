@@ -132,14 +132,14 @@ async function saveSkill(){
   const execution=document.getElementById('f-execution').value;
   const params=document.getElementById('f-params').value.split(',').map(p=>p.trim()).filter(Boolean);
   const body=document.getElementById('f-body').value;
-  if(!name){alert('Name is required.');return;}
-  if(!body.trim()){alert('Skill body is required.');return;}
+  if(!name){await notifyAction({title:'Name required',message:'Name is required.'});return;}
+  if(!body.trim()){await notifyAction({title:'Body required',message:'Skill body is required.'});return;}
   const r=await fetch('/api/skills/'+encodeURIComponent(name),{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({description,execution,params,body}),
   });
-  if(!r.ok){const e=await r.json();alert(e.error||'Error');return;}
+  if(!r.ok){const e=await r.json();await notifyAction({title:'Save failed',message:e.error||'Error',danger:true});return;}
   closeEditor();
   await loadSkills();
 }

@@ -17,14 +17,17 @@ function communityDocsHtml(community){
   return community.nodeIds.filter(id=>enabled.has(typeById.get(id))).map(id=>{const n=data.nodes.find(x=>x.id===id);return '<div class="community-doc-row"><button class="community-doc" data-doc="'+esc(id)+'" title="'+esc(id)+'">'+esc(n?.title||id)+'.md</button><button type="button" class="community-doc-action" data-preview-doc="'+esc(id)+'" title="Preview">'+graphIcon('preview')+'</button><button type="button" class="community-doc-action" data-send-doc="'+esc(id)+'" title="Add to Donna" aria-label="Add '+esc(n?.title||id)+' to Donna">'+graphIcon('donna')+'</button></div>'}).join('')}
 function communityGroupHtml(community,index,extraClass){
   return '<details class="community-group'+(extraClass?' '+extraClass:'')+'"><summary data-community="'+esc(community.id)+'"><i class="dot" style="--color:'+colors[index%colors.length]+'"></i><span>'+esc(graphLeafDisplay(community.label))+'</span><b>'+community.documentCount+'</b></summary><div class="community-docs">'+communityDocsHtml(community)+'</div></details>'}
+// The index reads alphabetically whatever the grouping axis: the map may rank
+// by size, but a list one browses must be findable at a glance.
+function communityOrder(a,b){return String(a.label||'').localeCompare(String(b.label||''),undefined,{sensitivity:'base'})}
 function renderCommunityIndex(){
   const domains=data.domains||[],parents=data.communityParents||{};
-  if(!domains.length)return data.communities.map((c,i)=>communityGroupHtml(c,i)).join('');
+  if(!domains.length)return [...data.communities].sort(communityOrder).map((c,i)=>communityGroupHtml(c,i)).join('');
   const byId=new Map(data.communities.map(item=>[item.id,item]));
-  const orphans=data.communities.filter(item=>!parents[item.id]&&!domains.some(d=>d.id===item.id));
+  const orphans=data.communities.filter(item=>!parents[item.id]&&!domains.some(d=>d.id===item.id)).sort(communityOrder);
   return [
     ...domains.map((domain,index)=>{
-      const children=data.communities.filter(item=>parents[item.id]===domain.id);
+      const children=data.communities.filter(item=>parents[item.id]===domain.id).sort(communityOrder);
       const total=children.reduce((sum,item)=>sum+item.documentCount,0);
       return '<details class="community-group community-domain"><summary data-community="'+esc(domain.id)+'"><i class="dot" style="--color:'+colors[index%colors.length]+'"></i><span>'+esc(graphDomainDisplay(domain.label))+'</span><b>'+total+'</b></summary><div class="community-children">'
         +children.map((child,childIndex)=>communityGroupHtml(child,index+childIndex+1,'community-child')).join('')

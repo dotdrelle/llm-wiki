@@ -17,7 +17,7 @@ import { hashText } from '../utils/hash.ts';
 import { listHelpChapters, readHelpChapter, searchHelpChapters } from '../utils/helpDoc.ts';
 import type { AppConfig } from '../types.ts';
 
-const LLM_WIKI_VERSION = '0.15.64';
+const LLM_WIKI_VERSION = '0.15.66';
 const MAX_SOURCE_NAME_CHARS = 200;
 const MAX_SOURCE_SUBDIR_CHARS = 300;
 const MAX_SOURCE_CONTENT_CHARS = 1_000_000;
@@ -992,14 +992,11 @@ export async function createWikiMcpServer(
     maxCommunities?: number;
     maxPagesPerCommunity?: number;
   }) => {
-    const fallbackCommunityLabel = config.graph?.fallbackCommunityLabel ?? 'Ungrouped';
     const snapshot = await loadWikiGraphSnapshot({
       rootDir: workspace.paths.rootDir,
-      fallbackCommunityLabel,
       language: config.language,
     });
     const outline = summarizeWikiGraph(snapshot, {
-      fallbackCommunityLabel,
       maxCommunities,
       maxPagesPerCommunity,
     });

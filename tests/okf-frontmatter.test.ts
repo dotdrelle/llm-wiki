@@ -9,9 +9,8 @@ import {
 } from '../src/okf/frontmatter.ts';
 
 describe('okfTypeForPath', () => {
-  it('derives the concept type from kind, falling back to the generic concept', () => {
-    expect(okfTypeForPath('wiki/concepts/offre-marche/anaplan.md', { kind: 'product' })).toBe('product');
-    expect(okfTypeForPath('wiki/concepts/unclassified/foo.md', { kind: null })).toBe('concept');
+  it('derives the generic concept type for every concept path', () => {
+    expect(okfTypeForPath('wiki/concepts/offre-marche/anaplan.md')).toBe('concept');
     expect(okfTypeForPath('wiki/concepts/unclassified/foo.md')).toBe('concept');
   });
 

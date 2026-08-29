@@ -91,22 +91,9 @@ describe('summarizeWikiGraph', () => {
     expect(billing.topPages).not.toContain('deliverables/notes/basic-note.md');
   });
 
-  it('flags a graph where every community fell back to the default label', () => {
-    const fallback = snapshot({
-      communities: [
-        {
-          id: 'ungrouped',
-          label: 'Ungrouped',
-          nodeIds: ['wiki/concepts/billing.md'],
-          documentCount: 1,
-          conceptCount: 1,
-          sourceCount: 0,
-          internalRelations: 0,
-          externalRelations: 0,
-        },
-      ],
-    } as Partial<WikiGraphSnapshot>);
-    expect(summarizeWikiGraph(fallback).degenerate).toBe(true);
+  it('flags a graph with no communities at all', () => {
+    const empty = snapshot({ communities: [] } as Partial<WikiGraphSnapshot>);
+    expect(summarizeWikiGraph(empty).degenerate).toBe(true);
     expect(summarizeWikiGraph(snapshot()).degenerate).toBe(false);
   });
 

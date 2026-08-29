@@ -2,7 +2,7 @@ import { mkdir, readdir, rename, rm, rmdir, stat, writeFile } from 'node:fs/prom
 import path from 'node:path';
 
 import { resolveInside } from '../../utils/path.ts';
-import { applyConceptAxes, conceptGridClasses, decideConceptMove } from './conceptMove.ts';
+import { applyConceptAxes, decideConceptMove } from './conceptMove.ts';
 
 /**
  * Left-panel tree mutations, for ALL of its sections.
@@ -188,7 +188,6 @@ export async function moveEntry(
       from,
       to: target,
       isFile: sourceInfo.isFile(),
-      grid: await conceptGridClasses(rootDir),
     });
     if (concept.kind === 'reject') return fail(concept.reason);
     await rename(source, destination);

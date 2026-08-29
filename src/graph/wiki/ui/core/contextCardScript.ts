@@ -117,11 +117,17 @@ function enableGraphContextCardDrag(card){
       window.removeEventListener('pointerup',onUp)};
     window.addEventListener('pointermove',onMove);
     window.addEventListener('pointerup',onUp)})}
+function graphTagColor(tag){let h=0;const s=String(tag);for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return colors[h%colors.length]}
+function graphTagBadges(node){
+  const tags=node.tags||[];
+  if(!tags.length)return '';
+  return '<div class="gcc-tags">'+tags.map(tag=>'<span class="gcc-tag" style="--tag-color:'+graphTagColor(tag)+'">'+esc(tag)+'</span>').join('')+'</div>'}
 function graphContextCardHTML(node,body,pending){
   const relations=documentRelationCount(node.id);
   return '<div class="gcc-head"><div><small>CONTEXT</small><strong>'+esc(node.title||node.label||node.id)+'</strong>'
     +'<span>'+esc(node.type||'document')+(graphRelationsLabel(relations)?' · '+graphRelationsLabel(relations):'')+'</span></div>'
     +'<button type="button" data-close-context title="Close" aria-label="Close context card">×</button></div>'
+    +graphTagBadges(node)
     +(pending?'<p class="gcc-body pending">'+esc(body)+'</p>':graphContextSummaryHTML(body))
     +'<div class="gcc-actions"><button type="button" data-preview-doc="'+esc(node.id)+'">Open page</button>'
     +'<button type="button" class="gcc-donna" data-send-doc="'+esc(node.id)+'" title="Add to Donna" aria-label="Add to Donna">'+graphIcon('donna')+'</button></div>'}

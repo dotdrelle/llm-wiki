@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { wikiOperationSchema } from '../config/schema.ts';
 import { EXTRACTION_KINDS, EXTRACTION_SCOPES, normalizeKind, normalizeScope } from './extractionSchema.ts';
+import { normalizeTags } from './provenance.ts';
 
 /*
  Consolidation contract: one source, one plan.
@@ -29,7 +30,6 @@ const optionalValue = z.preprocess(
 export const consolidatedPageSchema = z.object({
   path: nonEmpty,
   subject: optionalValue,
-  collection: optionalValue,
   scope: z.preprocess(
     (value) => (value == null || (typeof value === 'string' && value.trim() === '')
       ? null
@@ -44,23 +44,13 @@ export const consolidatedPageSchema = z.object({
     z.enum(EXTRACTION_KINDS).nullish().transform((value) => value ?? null),
   ),
   /*
-   Primary ranking class, from the workspace grid (`wiki/concepts-grid.md`).
-
-   The FORM is tolerant — a stray capital or a French synonym key is normalized
-   rather than lost, because a full re-consolidation is an expensive way to
-   punish a value the model actually supplied. The VALUE is not: an unknown
-   class is an error, checked against the closed set by `validateConsolidation`.
-   Coercing it to a fallback would put a page in a class nobody chose, which is
-   the one outcome the grid exists to prevent.
+   Multivalued links. The folder the leaf lives in is its concept; `subject` is
+   its identity; `tags` are its relations — an entity tag re-links leaves of the
+   same nature across concepts, a theme tag links leaves sharing a notion. Free
+   vocabulary, normalized and deduplicated here.
   */
-  class: optionalValue,
-  /** Other classes the page also speaks to. Same closed vocabulary as `class`. */
-  classSecondary: z.preprocess(
-    (value) => {
-      if (value == null) return [];
-      const list = Array.isArray(value) ? value : [value];
-      return list.filter((item): item is string => typeof item === 'string' && item.trim() !== '');
-    },
+  tags: z.preprocess(
+    (value) => normalizeTags(value),
     z.array(nonEmpty).default([]),
   ),
   /** Why this page exists: what the log must be able to restitute. */
@@ -89,15 +79,6 @@ export const consolidationPlanSchema = z.preprocess(
           return {
             ...item,
             path: item.path ?? operationPaths[index],
-            // Key synonyms only: the prompt asks for `class` in a French
-            // vocabulary, so `classe`/`concept` come back often enough that
-            // dropping them would lose a value the model did supply. No VALUE
-            // is invented here — an unknown class is still an error downstream.
-            class: item.class ?? item.classe ?? item.conceptClass ?? item.concept_class ?? item.concept,
-            classSecondary: item.classSecondary
-              ?? item.class_secondary
-              ?? item.classesSecondaires
-              ?? item.secondaryClasses,
           };
         }).filter((page) => {
           if (!page || typeof page !== 'object' || Array.isArray(page)) return true;

@@ -6,10 +6,10 @@ import matter from 'gray-matter';
 import { extractWikiLinks } from '../../utils/markdown.ts';
 import { canonicalizeName, toPosix } from '../../utils/path.ts';
 import { readProvenance } from '../../ingest/provenance.ts';
+import { UNCLASSIFIED_ID, UNCLASSIFIED_LABEL } from '../../ingest/conceptGrid.ts';
 import {
   assignGraphCommunities,
   type CommunityAssignment,
-  type RegistryLookup,
 } from './communityProjection.ts';
 
 export type WikiGraphNodeType =
@@ -40,8 +40,10 @@ export interface WikiGraphNode {
   group?: string;
   /** Structured provenance injected by the engine (Lot 2), when present. */
   subject?: string | null;
-  collection?: string | null;
-  scope?: string | null;
+  /** Multivalued links: entity and theme tags. */
+  tags?: string[];
+  /** The OKF `type` frontmatter value, when present (product, vendor, source…). */
+  okfType?: string | null;
   community: CommunityAssignment;
   degree: number;
   x: number;
@@ -147,9 +149,6 @@ export async function buildWikiGraph(
   options: {
     includeContent?: boolean;
     concurrency?: number;
-    fallbackCommunityLabel?: string;
-    /** Taxonomy registry already resolved, when there is an active one. */
-    registry?: RegistryLookup;
   } = {},
 ): Promise<{ nodes: WikiGraphNode[]; edges: WikiGraphEdge[] }> {
   const files = graphFiles ?? (await listWikiGraphFiles(rootDir));
@@ -162,11 +161,9 @@ export async function buildWikiGraph(
   const previews = new Map<string, string>();
   const rawContents = new Map<string, string>();
   const htmlContents = new Map<string, string>();
-  const groups = new Map<string, string>();
   const subjects = new Map<string, string>();
-  const collections = new Map<string, string>();
-  const scopes = new Map<string, string>();
-  const explicitCommunities = new Map<string, { label: string }>();
+  const tags = new Map<string, string[]>();
+  const okfTypes = new Map<string, string | null>();
 
   const includeContent = options.includeContent ?? true;
   const concurrency = Math.max(1, Math.min(options.concurrency ?? 8, 32));
@@ -187,14 +184,11 @@ export async function buildWikiGraph(
       previews.set(file, markdownPreview(raw));
       htmlContents.set(file, await deps.renderMarkdown(raw, currentDir));
     }
-    const metadata = graphCommunityMetadata(raw);
-    const group = metadata.group;
-    if (group) groups.set(file, group);
-    if (metadata.community) explicitCommunities.set(file, { label: metadata.community });
     const provenance = readProvenance(raw);
     if (provenance.subject) subjects.set(file, provenance.subject);
-    if (provenance.collection) collections.set(file, provenance.collection);
-    if (provenance.scope) scopes.set(file, provenance.scope);
+    if (provenance.tags.length) tags.set(file, provenance.tags);
+    const { data: frontmatterData } = matter(raw);
+    okfTypes.set(file, typeof frontmatterData.type === 'string' ? frontmatterData.type : null);
 
     for (const target of extractGraphTargets(raw, currentDir, nodeIds, deps)) {
       if (!nodeIds.has(target.to) || target.to === file) continue;
@@ -209,6 +203,28 @@ export async function buildWikiGraph(
       degree.set(target.to, (degree.get(target.to) ?? 0) + 1);
       outbound.set(file, (outbound.get(file) ?? 0) + 1);
       inbound.set(target.to, (inbound.get(target.to) ?? 0) + 1);
+    }
+
+    // A template declares the build-context files it draws on in the
+    // `build_context` frontmatter. Those references are real edges — the
+    // template genuinely uses that context — even though they are not markdown
+    // links in the body.
+    const buildContextRefs = Array.isArray(frontmatterData.build_context)
+      ? frontmatterData.build_context.filter((value): value is string => typeof value === 'string')
+      : [];
+    for (const ref of buildContextRefs) {
+      const clean = toPosix(String(ref)).replace(/^\/+/, '');
+      const target = clean.endsWith('.md') ? clean : `${clean}.md`;
+      if (!nodeIds.has(target) || target === file) continue;
+      const relation: WikiGraphRelationType = target.startsWith('templates/') ? 'uses_template' : 'uses_context';
+      const edgeKey = `${file}\0${target}\0${relation}`;
+      if (edgeKeys.has(edgeKey)) continue;
+      edgeKeys.add(edgeKey);
+      edges.push({ from: file, to: target, type: relation });
+      degree.set(file, (degree.get(file) ?? 0) + 1);
+      degree.set(target, (degree.get(target) ?? 0) + 1);
+      outbound.set(file, (outbound.get(file) ?? 0) + 1);
+      inbound.set(target, (inbound.get(target) ?? 0) + 1);
     }
   }
 
@@ -252,13 +268,12 @@ export async function buildWikiGraph(
       preview: previews.get(file) || '(No readable content in this file.)',
       raw: rawContents.get(file) ?? '',
       html: htmlContents.get(file) ?? '',
-      group: groups.get(file),
       subject: subjects.get(file) ?? null,
-      collection: collections.get(file) ?? null,
-      scope: scopes.get(file) ?? null,
+      tags: tags.get(file) ?? [],
+      okfType: okfTypes.get(file) ?? null,
       community: {
-        communityId: 'ungrouped',
-        communityLabel: options.fallbackCommunityLabel ?? 'Ungrouped',
+        communityId: UNCLASSIFIED_ID,
+        communityLabel: UNCLASSIFIED_LABEL,
         assignment: 'fallback',
       },
       degree: nodeDegree,
@@ -266,20 +281,14 @@ export async function buildWikiGraph(
       y,
       r: Math.round(9 + (nodeDegree / maxDegree) * 20),
       ring,
-      secondary: groups.get(file) ? `${groups.get(file)} · ${file}` : file,
+      secondary: file,
       inbound: inbound.get(file) ?? 0,
       outbound: outbound.get(file) ?? 0,
     };
   });
 
   return {
-    nodes: assignGraphCommunities(
-      nodes,
-      edges,
-      explicitCommunities,
-      options.fallbackCommunityLabel ?? 'Ungrouped',
-      { registry: options.registry },
-    ),
+    nodes: assignGraphCommunities(nodes),
     edges,
   };
 }
@@ -391,26 +400,6 @@ function relationForTarget(
   if (from.startsWith('wiki/') && to.startsWith('deliverables/')) return 'produces';
   if (targetType === 'wiki') return 'related_to';
   return 'links_to';
-}
-
-/**
- * Only `community:` is an author decision.
- *
- * `community = rawCommunity ?? group` silently promoted a seed into a
- * decision: a page carrying only `group:` became untouchable by the repair
- * passes, whereas `group:` is only a hint produced at ingestion. `group`
- * remains exposed on the node and serves as a seed for the assignment, one
- * step below the registry.
- */
-function graphCommunityMetadata(markdown: string): { group?: string; community?: string } {
-  const parsed = matter(markdown);
-  const rawGroup = parsed.data.group;
-  const rawCommunity = parsed.data.community;
-  const group = typeof rawGroup === 'string' && rawGroup.trim() ? rawGroup.trim() : undefined;
-  const community = typeof rawCommunity === 'string' && rawCommunity.trim()
-    ? rawCommunity.trim()
-    : undefined;
-  return { group, community };
 }
 
 export function markdownPreview(markdown: string): string {

@@ -205,10 +205,10 @@ export const CHAT_MARKUP = `<aside id="sidebar">
 -->
 <div id="approval-banner" hidden role="alert" aria-live="assertive">
   <span class="approval-banner-icon">⏸</span>
-  <span class="approval-banner-text" id="approval-banner-text">Approbation requise avant les mutations.</span>
+  <span class="approval-banner-text" id="approval-banner-text">Approval required before mutations.</span>
   <span class="approval-banner-actions">
-    <button type="button" class="approval-btn approve" onclick="approveRuntimeRun()">Approuver</button>
-    <button type="button" class="approval-btn reject" onclick="rejectRuntimeRun()">Rejeter</button>
+    <button type="button" class="approval-btn approve" onclick="approveRuntimeRun()">Approve</button>
+    <button type="button" class="approval-btn reject" onclick="rejectRuntimeRun()">Reject</button>
   </span>
 </div>
 

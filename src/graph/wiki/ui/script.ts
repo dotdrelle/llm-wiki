@@ -28,6 +28,9 @@ async function load(){
   try{
     data=await json('/api/graph/overview');
     graphRevision=data.taxonomyRevision||0;
+    // The concept grouping is the top-level communities; the server does not
+    // ship it twice, so the browser restores the entry the combobox reads.
+    data.groupings={...(data.groupings||{}),concept:{communities:data.communities,communityEdges:data.communityEdges}};
     seedCanvasExplorerSlots();renderFilters();renderSearchOptions();render();
     startGraphRevisionFeed()}
   catch(error){canvas.innerHTML='<div class="loading">Unable to load graph: '+esc(error.message)+'</div>'}
@@ -97,6 +100,21 @@ document.addEventListener('click',event=>{
 // right panel. The panel was missing, so it kept listing rows the filter had
 // just removed everywhere else.
 document.querySelector('#filters').addEventListener('change',()=>{document.querySelector('#community-list').innerHTML=renderCommunityIndex();render();refreshInspector()});
+// The grouping axis re-roots the map: the halos and their relations come from
+// the precomputed grouping for the chosen axis (concept/subject/type/tag). The
+// swap is a reading change, not a re-projection: it reuses the snapshot the
+// server already sent. A selection made under one grouping means nothing under
+// another, so the descent is reset to the map.
+document.querySelector('#group-axis').addEventListener('change',event=>{
+  groupAxis=event.target.value;
+  const grouping=data?.groupings?.[groupAxis];
+  if(!grouping)return;
+  data.communities=grouping.communities;
+  data.communityEdges=grouping.communityEdges;
+  selected=null;selectedCommunity=null;view='map';focusHistory.length=0;
+  document.querySelector('#inspector').innerHTML='<p>Select a community or document to explore its relations.</p>';
+  document.querySelector('#community-list').innerHTML=renderCommunityIndex();
+  render()});
 document.querySelector('#zoom-in').addEventListener('click',()=>canvasExplorer?.zoom(1.25));
 document.querySelector('#zoom-out').addEventListener('click',()=>canvasExplorer?.zoom(.8));
 document.querySelector('#fit').addEventListener('click',()=>canvasExplorer?.fit());

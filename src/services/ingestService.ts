@@ -20,20 +20,18 @@ import {
   type SourceExtraction,
 } from '../ingest/extractionSchema.ts';
 import {
-  collectionFromSourcePath,
   normalizeProvenanceValue,
   readProvenance,
   subjectsAreRelated,
 } from '../ingest/provenance.ts';
 import { CONCEPT_PREFIX, DEFAULT_CONCEPT_BUDGET, detectConceptOverflow, detectConceptSplits, detectDuplicatePaths, reanchorToPreviousConcepts, validateConsolidation } from '../ingest/consolidationValidate.ts';
-import { CONCEPT_GRID_RELATIVE_PATH, readConceptGrid } from '../ingest/conceptGrid.ts';
+import { parseConceptPagePath } from '../ingest/conceptGrid.ts';
 import { hashText } from '../utils/hash.ts';
 import { resolveInside } from '../utils/path.ts';
 import { normalizeSourceBody } from '../utils/markdown.ts';
 import { planSourcePacks } from '../utils/sourcePacking.ts';
 import { mapWithConcurrency } from '../utils/concurrency.ts';
 import { pathExists, withFileLock } from '../utils/fs.ts';
-import { publishCorpusRevision } from '../graph/wiki/taxonomy/publish.ts';
 import { regenerateWikiIndex } from './wikiIndexService.ts';
 import type { TokenUsage } from './llmService.ts';
 import type {
@@ -364,30 +362,10 @@ export class IngestService {
     });
 
     /*
-     The workspace's ranking grid, read ONCE for the whole batch.
-
-     Read before the first source, for the same reason the source registry is:
-     every source of a run must see one state of the world. Read per source, a
-     grid edited mid-run would file the first half of the batch against one
-     closed set and the second half against another, with nothing in the log
-     saying which page answered to which.
-
-     A malformed grid stops the run here, before any model call. Falling back to
-     "no grid" would silently downgrade every blocking axis rule to a warning —
-     the failure mode this whole lot exists to remove.
+     The concept is the folder a leaf lives in. There is no grid: the set of
+     concept folders is read from the files already on disk, per source, so a
+     folder the model creates mid-run is visible to the next source.
     */
-    const gridRead = await readConceptGrid(this.workspace.paths.rootDir);
-    if (gridRead.status === 'malformed') {
-      throw new Error(
-        `${CONCEPT_GRID_RELATIVE_PATH} is unusable: ${gridRead.issues.join('; ')}`,
-      );
-    }
-    const grid = gridRead.status === 'ok' ? gridRead.grid : undefined;
-    await this.logger.info('ingest:concept-grid', {
-      status: gridRead.status,
-      classes: grid?.classes.length ?? 0,
-    });
-
     const selectionStartedAt = Date.now();
     const sourcePaths = await this.workspace.resolveSourceInputs(inputs);
     await this.logger.info('ingest:source-selection', {
@@ -670,7 +648,6 @@ export class IngestService {
          therefore produce the same prompt.
         */
         const merged = mergeExtractions(sectionResults.map((result) => result.extraction));
-        const collection = collectionFromSourcePath(source.relativePath);
         const warmPages = await this.retrieval.warmCache();
         const existingSourceNote = warmPages.find(
           (page) => page.relativePath === sourcePagePath,
@@ -685,7 +662,7 @@ export class IngestService {
           .map((page) => {
             const content = warmPages.find((entry) => entry.relativePath === page)?.content ?? null;
             const provenance = content ? readProvenance(content) : null;
-            return { path: page, subject: provenance?.subject ?? null, class: provenance?.class ?? null, content };
+            return { path: page, subject: provenance?.subject ?? null, class: parseConceptPagePath(page)?.class ?? null, content };
           });
 
         const contextStartedAt = Date.now();
@@ -706,7 +683,7 @@ export class IngestService {
             title: result.page.name,
             subject: provenance.subject,
             scope: provenance.scope,
-            class: provenance.class,
+            folder: parseConceptPagePath(result.page.relativePath)?.class ?? null,
             excerpt: (result.chunk?.content ?? result.page.content)
               .replace(/\s+/g, ' ')
               .slice(0, maxChunkChars),
@@ -726,7 +703,7 @@ export class IngestService {
               title: page?.name ?? concept.path.split('/').pop() ?? concept.path,
               subject: provenance?.subject ?? concept.subject ?? null,
               scope: provenance?.scope ?? null,
-              class: provenance?.class ?? null,
+              folder: parseConceptPagePath(concept.path)?.class ?? null,
               excerpt: (page?.content ?? '').replace(/\s+/g, ' ').slice(0, maxChunkChars),
               previousForSource: true,
             };
@@ -758,7 +735,7 @@ export class IngestService {
                 title: page.name,
                 subject: provenance.subject,
                 scope: provenance.scope,
-                class: provenance.class,
+                folder: parseConceptPagePath(page.relativePath)?.class ?? null,
                 excerpt: page.content.replace(/\s+/g, ' ').slice(0, maxChunkChars),
                 subjectMatch: true,
               }))
@@ -766,6 +743,14 @@ export class IngestService {
         const fullInventory = [...inventory, ...previousInventory, ...subjectMatchInventory];
 
         const indexContent = await this.workspace.readIndex();
+        const existingFolders = [...new Set(
+          warmPages
+            .map((page) => parseConceptPagePath(page.relativePath)?.class)
+            .filter((folder): folder is string => Boolean(folder)),
+        )].sort();
+        const existingTags = [...new Set(
+          warmPages.flatMap((page) => readProvenance(page.content).tags),
+        )].sort();
         const consolidationPrompt = buildConsolidationPrompt({
           source,
           extraction: merged,
@@ -773,18 +758,15 @@ export class IngestService {
           existingSourceNote,
           inventory: fullInventory,
           indexContent,
-          collection,
-          ...(grid ? { grid } : {}),
+          existingFolders,
+          existingTags,
           ctx: buildPromptContext(this.config, { profileSection }),
         });
         const consolidationCacheKey = consolidationCacheName({
           sourceHash,
           extractionsHash: hashText(JSON.stringify(merged)),
-          // The grid is part of the prompt, so it is part of the cache key:
-          // re-filing the same source against a different closed set must not
-          // replay the answer given for the previous one.
           inventoryHash: hashText(JSON.stringify([
-            fullInventory, indexContent, existingSourceNote, grid?.classes ?? null,
+            fullInventory, indexContent, existingSourceNote, existingFolders, existingTags,
           ])),
           model: modelId,
           promptVersion: CONSOLIDATION_PROMPT_VERSION,
@@ -900,6 +882,7 @@ export class IngestService {
               splits,
               overflow: overflow ? { newConcepts: overflow.newConcepts, budget: overflow.budget } : undefined,
               duplicatePaths,
+              folders: existingFolders,
             }),
           };
           const { value } = await withRetry(
@@ -1025,9 +1008,7 @@ export class IngestService {
             sourcePagePath,
             citationPath: source.archiveCitationPath,
             existingPaths: knownPaths,
-            collection,
             precomputedSplits: normalizedSplits,
-            grid,
           },
         );
         await this.logger.info('ingest:consolidate', {
@@ -1422,21 +1403,16 @@ export class IngestService {
   /**
    * Makes what has just been written visible to the graph.
    *
-   * Same discipline as `observeSource`: it is an observation of the lifecycle,
-   * not a step of it. An unallocated revision is a display problem, and making
-   * it fail would take down already-paid ingestion work. `publishCorpusRevision`
-   * never throws and falls back to `dirty.json`, which Serve will pick up.
+   * There is no registry to publish any more: the graph reads the concept
+   * folders, `subject` and `tags` directly from disk, so a finished ingest is
+   * visible on the next read. Kept as a hook so the log still records the
+   * lifecycle boundary, never throwing.
    */
   private async publishGraphRevision(sourceLabel: string): Promise<void> {
-    const outcome = await publishCorpusRevision(this.workspace.paths.rootDir);
-    if (outcome.status === 'published') {
-      await this.logger.info('ingest:graph-revision', {
-        source: sourceLabel,
-        revision: outcome.revision,
-      });
-      return;
-    }
-    await this.logger.warn('ingest:graph-revision-deferred', { source: sourceLabel });
+    await this.logger.info('ingest:graph-revision', {
+      source: sourceLabel,
+      revision: 'direct-read',
+    });
   }
 
   /**

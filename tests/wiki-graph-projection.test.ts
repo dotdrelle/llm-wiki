@@ -63,16 +63,9 @@ describe('wiki graph projection', () => {
     expect(files).toContain('wiki/concepts/domain/main.md');
   });
 
-  it('reads community frontmatter on every document type with community ahead of group', async () => {
+  it('uses the concept folder and the node type as the community', async () => {
     const root = await fixtureWorkspace();
     const files = await listWikiGraphFiles(root);
-    await Promise.all(files.map((file) => writeFile(path.join(root, file), [
-      '---',
-      `community: Community for ${path.basename(file, '.md')}`,
-      'group: Raw group value',
-      '---',
-      `# ${file}`,
-    ].join('\n'))));
     const graph = await buildWikiGraph(root, {
       decodeHrefPath: (href) => href,
       hrefToRelativePath: (href, currentDir = '') => path.posix.normalize(path.posix.join(currentDir, href)).replace(/^\.\.\//, ''),
@@ -80,12 +73,13 @@ describe('wiki graph projection', () => {
       renderMarkdown: async (raw) => raw,
     }, files);
 
-    expect(new Set(graph.nodes.map((item) => item.type))).toEqual(new Set([
-      'wiki', 'wiki-source', 'raw-source', 'template', 'build-context', 'deliverable',
-    ]));
-    expect(graph.nodes.every((item) => item.community.assignment === 'explicit')).toBe(true);
-    expect(graph.nodes.every((item) => item.community.communityLabel.startsWith('Community for '))).toBe(true);
-    expect(graph.nodes.every((item) => item.group === 'Raw group value')).toBe(true);
+    const communityOf = (id: string) => graph.nodes.find((item) => item.id === id)?.community;
+    expect(communityOf('wiki/concepts/domain/main.md')).toMatchObject({
+      communityId: 'domain', communityLabel: 'Domain', assignment: 'seed',
+    });
+    expect(communityOf('raw/ingested/source-a.md')).toMatchObject({ communityLabel: 'Raw sources', assignment: 'seed' });
+    expect(communityOf('templates/report.md')).toMatchObject({ communityLabel: 'Templates', assignment: 'seed' });
+    expect(communityOf('deliverables/report.md')).toMatchObject({ communityLabel: 'Deliverables', assignment: 'seed' });
   });
 
   it('projects wiki pages, sources, templates, context and deliverables with document relation types', async () => {
@@ -106,14 +100,9 @@ describe('wiki graph projection', () => {
       'build-context',
       'deliverable',
     ]));
-    expect(graph.nodes.find((node) => node.id === 'wiki/concepts/domain/main.md')?.secondary).toContain('Domain');
-    expect(graph.nodes.find((node) => node.id === 'raw/ingested/source-a.md')?.community).toMatchObject({ communityId: 'domain', assignment: 'inherited' });
-    expect(graph.nodes.find((node) => node.id === 'templates/report.md')).toMatchObject({
-      group: 'Legacy template group',
-      community: { communityId: 'publishing', communityLabel: 'Publishing', assignment: 'explicit' },
+    expect(graph.nodes.find((node) => node.id === 'wiki/concepts/domain/main.md')?.community).toMatchObject({
+      communityId: 'domain', assignment: 'seed',
     });
-    expect(graph.nodes.find((node) => node.id === 'build-context/audience.md')?.community).toMatchObject({ communityId: 'domain', assignment: 'inherited' });
-    expect(graph.nodes.find((node) => node.id === 'deliverables/report.md')?.community).toMatchObject({ communityId: 'publishing', assignment: 'inherited' });
     expect(graph.edges.map((edge) => edge.type)).toEqual(expect.arrayContaining([
       'links_to',
       'cites',

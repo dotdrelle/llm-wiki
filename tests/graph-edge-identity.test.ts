@@ -12,7 +12,7 @@ function node(id: string, group = 'Domaine'): WikiGraphNode {
     raw: '',
     html: '',
     group,
-    community: { communityId: 'domaine', communityLabel: group, assignment: 'explicit' },
+    community: { communityId: 'domaine', communityLabel: group, assignment: 'seed' },
     degree: 1,
     x: 0,
     y: 0,

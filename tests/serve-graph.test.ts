@@ -93,7 +93,7 @@ async function serveSource(): Promise<string> {
 it('follows the shared serve theme without rendering a redundant graph toggle', () => {
   const html = renderWikiGraphV2();
   expect(html).toContain("const THEME_KEY='llm-wiki:theme'");
-  expect(html).toContain("localStorage.getItem(THEME_KEY)||'dark'");
+  expect(html).toContain("localStorage.getItem(THEME_KEY)||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')");
   expect(html).toContain('event.key===THEME_KEY&&event.newValue');
   expect(html).not.toContain('id="theme-toggle"');
   expect(html).not.toContain("localStorage.setItem(THEME_KEY,theme)");
@@ -369,10 +369,9 @@ describe('serve graph ui', () => {
 
     expect(source).toContain('function graphWikiTargetPath');
     expect(source).toContain('extractWikiLinks(markdown)');
-    expect(source).toContain('function graphCommunityMetadata');
     expect(source).toContain('assignGraphCommunities');
-    expect(source).toContain('group: groups.get(file)');
-    expect(source).toContain('secondary: groups.get(file)');
+    expect(source).toContain('tags: tags.get(file)');
+    expect(source).toContain('readProvenance(raw)');
     expect(source).toContain('uses_template');
     expect(source).toContain('uses_context');
     expect(source).toContain('generated_from');
@@ -391,7 +390,7 @@ describe('serve graph ui', () => {
     // garde transférable à chaque révision.
     expect(source).toContain('includeContent: false');
     expect(source).toContain('concurrency: 8');
-    expect(source).toContain('registry: options.registry');
+    expect(source).toContain('buildWikiGraph(rootDir');
     expect(routesSource).not.toContain("urlPath === '/api/graph-etag'");
     expect(routesSource).not.toContain("urlPath === '/api/graph-data'");
     expect(routesSource).toContain("urlPath === '/api/graph/overview'");

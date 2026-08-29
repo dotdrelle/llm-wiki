@@ -65,10 +65,14 @@ describe('config resolution', () => {
     expect(config.build.maxBuildContextChars).toBe(24000);
   });
 
-  it('defaults and overrides the graph fallback community label', () => {
-    expect(resolveConfig({}, '/tmp/wiki').graph?.fallbackCommunityLabel).toBe('Ungrouped');
-    expect(resolveConfig({ graph: { fallbackCommunityLabel: 'Non classé' } }, '/tmp/wiki').graph)
-      .toEqual({ fallbackCommunityLabel: 'Non classé' });
+  it('exposes no graph section: the unfiled label is engine-owned, never configured', () => {
+    // `graph.fallbackCommunityLabel` used to let a workspace rename the
+    // fallback bubble, which is how one tree ended up showing `Ungrouped`
+    // beside `Non classé` for the same observation. The word is now
+    // `UNCLASSIFIED_LABEL`, in English, everywhere.
+    expect('graph' in resolveConfig({}, '/tmp/wiki')).toBe(false);
+    expect('graph' in resolveConfig({ graph: { fallbackCommunityLabel: 'Non classé' } }, '/tmp/wiki'))
+      .toBe(false);
   });
 
   it('parses vector retrieval settings with defaults', () => {

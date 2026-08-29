@@ -41,11 +41,9 @@ describe('subjectsAreRelated', () => {
 describe('applyProvenance — OKF type', () => {
   const provenance: PageProvenance = {
     subject: 'foo',
-    collection: null,
-    scope: null,
+    scope: 'product',
     kind: 'product',
-    class: null,
-    classSecondary: [],
+    tags: [],
   };
 
   it('writes the OKF type alongside the provenance fields', () => {
@@ -56,7 +54,7 @@ describe('applyProvenance — OKF type', () => {
 
   it('writes the type even when the provenance is empty', () => {
     const empty: PageProvenance = {
-      subject: null, collection: null, scope: null, kind: null, class: null, classSecondary: [],
+      subject: null, scope: null, kind: null, tags: [],
     };
     const out = applyProvenance('# Bar\n', empty, 'concept');
     expect(out).toContain('type: concept');

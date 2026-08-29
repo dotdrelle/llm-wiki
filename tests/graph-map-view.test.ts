@@ -266,56 +266,82 @@ describe('fin du geste de déplacement', () => {
 
 describe('domaines voisins restés repliés', () => {
   // Ouvrir un domaine filtrait toutes les relations qui en sortent : rien à
-  // l'écran ne laissait deviner qu'une page renvoyait ailleurs.
-  const scene = () => {
-    const nodes = [
-      { id: 'a1', title: 'Alpha 1', type: 'wiki', degree: 2 },
-      { id: 'a2', title: 'Alpha 2', type: 'wiki', degree: 2 },
-      { id: 'b1', title: 'Beta 1', type: 'wiki', degree: 2 },
-      { id: 'c1', title: 'Gamma 1', type: 'wiki', degree: 1 },
-    ];
-    const data = {
-      nodes,
-      communities: [
-        { id: 'alpha', label: 'Alpha', nodeIds: ['a1', 'a2'] },
-        { id: 'beta', label: 'Beta', nodeIds: ['b1'] },
-        { id: 'gamma', label: 'Gamma', nodeIds: ['c1'] },
-      ],
-      communityEdges: [],
-      edges: [
-        { from: 'a1', to: 'a2', type: 'related_to' },
-        { from: 'a1', to: 'b1', type: 'related_to' },
-        { from: 'a2', to: 'b1', type: 'related_to' },
-        { from: 'a2', to: 'c1', type: 'related_to' },
-      ],
-    };
+  // l'écran ne laissait deviner qu'une page renvoyait ailleurs. Les liens vers
+  // l'extérieur viennent désormais des axes partagés (subject/type/tag/dossier)
+  // selon le regroupement choisi : plusieurs feuilles du même voisin se replient
+  // en un halo, une feuille seule s'affiche elle-même, dans sa couleur.
+  const buildScene = (nodes: Array<Record<string, unknown>>, communities: Array<Record<string, unknown>>, open: string, axis = 'concept') => {
+    const data = { nodes, communities, communityEdges: [], edges: [], groupings: {} };
     const build = new Function(
-      'data', 'selected', 'selectedCommunity', 'view', 'visible', 'localStorage', 'graphLeafDisplay',
+      'data', 'selected', 'selectedCommunity', 'view', 'visible', 'localStorage', 'graphLeafDisplay', 'groupAxis',
       `${source}\nreturn canvasExplorerSceneDocuments;`,
     );
-    return build(data, null, 'alpha', 'community', () => ({ nodes }), {
+    return build(data, null, open, 'community', () => ({ nodes }), {
       getItem: () => null,
       setItem: () => {},
-    }, (label: string) => (label ? label.charAt(0).toUpperCase() + label.slice(1) : label))();
+    }, (label: string) => (label ? label.charAt(0).toUpperCase() + label.slice(1) : label), axis)();
   };
 
-  it('représente chaque domaine voisin par une constellation repliée', () => {
-    const groups = scene().nodes.filter((node: { type: string }) => node.type === 'community');
-    expect(groups.map((group: { label: string }) => group.label).sort()).toEqual(['Beta', 'Gamma']);
-    expect(groups.every((group: { collapsed: boolean }) => group.collapsed)).toBe(true);
+  it('replie plusieurs feuilles voisines d’un même domaine, la feuille seule reste elle-même', () => {
+    const nodes = [
+      { id: 'a1', title: 'Alpha 1', type: 'wiki', degree: 2, subject: 'a1', tags: ['x'] },
+      { id: 'a2', title: 'Alpha 2', type: 'wiki', degree: 2, subject: 'a2', tags: ['x', 'y'] },
+      { id: 'b1', title: 'Beta 1', type: 'wiki', degree: 2, subject: 'b1', tags: ['x'] },
+      { id: 'b2', title: 'Beta 2', type: 'wiki', degree: 2, subject: 'b2', tags: ['x'] },
+      { id: 'c1', title: 'Gamma 1', type: 'wiki', degree: 1, subject: 'c1', tags: ['y'] },
+    ];
+    const communities = [
+      { id: 'alpha', label: 'Alpha', nodeIds: ['a1', 'a2'] },
+      { id: 'beta', label: 'Beta', nodeIds: ['b1', 'b2'] },
+      { id: 'gamma', label: 'Gamma', nodeIds: ['c1'] },
+    ];
+    const scene = buildScene(nodes, communities, 'alpha');
+    // Beta : deux feuilles liées → un halo replié. Gamma : une seule → la
+    // feuille elle-même, reliée par une arête, pas un halo.
+    const folded = scene.nodes.filter((node: { type: string }) => node.type === 'community');
+    expect(folded.map((group: { label: string }) => group.label)).toEqual(['Beta']);
+    expect(folded.every((group: { collapsed: boolean }) => group.collapsed)).toBe(true);
+    const gammaLeaf = scene.nodes.find((node: { id: string }) => node.id === 'c1');
+    expect(gammaLeaf.type).toBe('wiki');
+    expect(scene.edges.map((edge: { from: string; to: string }) => `${edge.from}->${edge.to}`)).toEqual(['a2->c1']);
   });
 
-  it('rebranche les relations sortantes sur elles, en les agrégeant', () => {
-    const beta = scene().nodes.find((node: { id: string }) => node.id === 'beta');
-    // Deux pages du domaine ouvert pointent vers Beta : l'une et l'autre le
-    // montrent, plutôt qu'un unique trait qui masquerait la provenance.
+  it('agrège les liens sortants d’un voisin replié', () => {
+    const nodes = [
+      { id: 'a1', title: 'Alpha 1', type: 'wiki', degree: 2, subject: 'a1', tags: ['x'] },
+      { id: 'a2', title: 'Alpha 2', type: 'wiki', degree: 2, subject: 'a2', tags: ['x'] },
+      { id: 'b1', title: 'Beta 1', type: 'wiki', degree: 2, subject: 'b1', tags: ['x'] },
+      { id: 'b2', title: 'Beta 2', type: 'wiki', degree: 2, subject: 'b2', tags: ['x'] },
+    ];
+    const communities = [
+      { id: 'alpha', label: 'Alpha', nodeIds: ['a1', 'a2'] },
+      { id: 'beta', label: 'Beta', nodeIds: ['b1', 'b2'] },
+    ];
+    const scene = buildScene(nodes, communities, 'alpha');
+    const beta = scene.nodes.find((node: { id: string }) => node.id === 'beta');
+    // Deux pages du domaine ouvert partagent le tag du voisin : l'une et
+    // l'autre le montrent, plutôt qu'un unique trait qui masquerait la
+    // provenance.
     expect(beta.links.map((link: { from: string }) => link.from).sort()).toEqual(['a1', 'a2']);
   });
 
-  it('ne dessine pas ces liens depuis scene.edges, qui ignore les groupes', () => {
-    const edges = scene().edges;
-    expect(edges.map((edge: { from: string; to: string }) => `${edge.from}->${edge.to}`)).toEqual(['a1->a2']);
-    expect(source).toContain('if(!node.collapsed||!node.links)return');
+  it('en mode tag, relie par les tags partagés, pas par un subject commun', () => {
+    const nodes = [
+      { id: 'in1', title: 'In 1', type: 'wiki', degree: 1, subject: 's1', tags: ['cloud', 'rgpd'] },
+      { id: 'outTag', title: 'Out tag', type: 'wiki', degree: 1, subject: 'other', tags: ['rgpd'] },
+      { id: 'outSubject', title: 'Out subject', type: 'wiki', degree: 1, subject: 's1', tags: [] },
+    ];
+    const communities = [
+      { id: 'cloud', label: 'Cloud', nodeIds: ['in1'] },
+      { id: 'rgpd', label: 'Rgpd', nodeIds: ['outTag'] },
+      { id: 's1', label: 'S1', nodeIds: ['outSubject'] },
+    ];
+    const scene = buildScene(nodes, communities, 'cloud', 'tag');
+    const ids = scene.nodes.map((node: { id: string }) => node.id);
+    // La feuille extérieure qui partage un tag apparaît ; celle qui ne partage
+    // qu'un subject n'est pas un lien en mode tag.
+    expect(ids).toContain('outTag');
+    expect(ids).not.toContain('outSubject');
   });
 
   /*
@@ -326,38 +352,22 @@ describe('domaines voisins restés repliés', () => {
    en bas à gauche pouvait se retrouver plein nord, son lien traversant tout le
    nuage, pendant qu'un secteur libre restait vide et que le cadrage devait
    quand même englober l'anneau entier.
-  */
+   */
   const placement = () => {
     // Deux pages du domaine ouvert, écartées horizontalement, et un voisin
-    // accroché à chacune d'un côté seulement.
+    // accroché à chacune d'un côté seulement — chacun une feuille seule.
     const nodes = [
-      { id: 'open/left', title: 'Gauche', type: 'wiki', degree: 2 },
-      { id: 'open/right', title: 'Droite', type: 'wiki', degree: 2 },
-      { id: 'west/1', title: 'Ouest', type: 'wiki', degree: 1 },
-      { id: 'east/1', title: 'Est', type: 'wiki', degree: 1 },
+      { id: 'open/left', title: 'Gauche', type: 'wiki', degree: 2, subject: 'left', tags: ['w'] },
+      { id: 'open/right', title: 'Droite', type: 'wiki', degree: 2, subject: 'right', tags: ['e'] },
+      { id: 'west/1', title: 'Ouest', type: 'wiki', degree: 1, subject: 'west', tags: ['w'] },
+      { id: 'east/1', title: 'Est', type: 'wiki', degree: 1, subject: 'east', tags: ['e'] },
     ];
-    const data = {
-      nodes,
-      communities: [
-        { id: 'open', label: 'Open', nodeIds: ['open/left', 'open/right'] },
-        { id: 'west', label: 'West', nodeIds: ['west/1'] },
-        { id: 'east', label: 'East', nodeIds: ['east/1'] },
-      ],
-      communityEdges: [],
-      edges: [
-        { from: 'open/left', to: 'open/right', type: 'related_to' },
-        { from: 'open/left', to: 'west/1', type: 'related_to' },
-        { from: 'open/right', to: 'east/1', type: 'related_to' },
-      ],
-    };
-    const build = new Function(
-      'data', 'selected', 'selectedCommunity', 'view', 'visible', 'localStorage', 'graphLeafDisplay',
-      `${source}\nreturn canvasExplorerSceneDocuments;`,
-    );
-    const scene = build(data, null, 'open', 'community', () => ({ nodes }), {
-      getItem: () => null,
-      setItem: () => {},
-    }, (label: string) => (label ? label.charAt(0).toUpperCase() + label.slice(1) : label))();
+    const communities = [
+      { id: 'open', label: 'Open', nodeIds: ['open/left', 'open/right'] },
+      { id: 'west', label: 'West', nodeIds: ['west/1'] },
+      { id: 'east', label: 'East', nodeIds: ['east/1'] },
+    ];
+    const scene = buildScene(nodes, communities, 'open');
     const by = (id: string) => scene.nodes.find((node: { id: string }) => node.id === id);
     return { scene, by };
   };
@@ -366,12 +376,12 @@ describe('domaines voisins restés repliés', () => {
     const { by } = placement();
     const left = by('open/left');
     const right = by('open/right');
-    const west = by('west');
-    const east = by('east');
+    const west = by('west/1');
+    const east = by('east/1');
     const middle = (left.x + right.x) / 2;
 
-    // « West » n'est cité que par la page de gauche, « East » que par celle de
-    // droite : chacun se pose de son côté, aucun lien ne traverse le nuage.
+    // « Ouest » ne partage de tag qu'avec la page de gauche, « Est » qu'avec
+    // celle de droite : chacun se pose de son côté, aucun lien ne traverse.
     expect(Math.sign(west.x - middle)).toBe(Math.sign(left.x - middle));
     expect(Math.sign(east.x - middle)).toBe(Math.sign(right.x - middle));
   });
@@ -385,7 +395,7 @@ describe('domaines voisins restés repliés', () => {
       Math.hypot(left.x - centre.x, left.y - centre.y),
       Math.hypot(right.x - centre.x, right.y - centre.y),
     );
-    for (const id of ['west', 'east']) {
+    for (const id of ['west/1', 'east/1']) {
       const group = by(id);
       const distance = Math.hypot(group.x - centre.x, group.y - centre.y);
       // Dehors — un voisin ne se pose pas au milieu des fiches…
@@ -400,47 +410,35 @@ describe('domaines voisins restés repliés', () => {
     // Même point d'accroche pour les deux : sans passe de séparation ils se
     // superposeraient exactement.
     const nodes = [
-      { id: 'open/1', title: 'Un', type: 'wiki', degree: 2 },
-      { id: 'open/2', title: 'Deux', type: 'wiki', degree: 1 },
-      { id: 'x/1', title: 'X', type: 'wiki', degree: 1 },
-      { id: 'y/1', title: 'Y', type: 'wiki', degree: 1 },
+      { id: 'open/1', title: 'Un', type: 'wiki', degree: 2, subject: 'one', tags: ['x', 'y'] },
+      { id: 'open/2', title: 'Deux', type: 'wiki', degree: 1, subject: 'two', tags: [] },
+      { id: 'x/1', title: 'X', type: 'wiki', degree: 1, subject: 'x', tags: ['x'] },
+      { id: 'y/1', title: 'Y', type: 'wiki', degree: 1, subject: 'y', tags: ['y'] },
     ];
-    const data = {
-      nodes,
-      communities: [
-        { id: 'open', label: 'Open', nodeIds: ['open/1', 'open/2'] },
-        { id: 'x', label: 'X', nodeIds: ['x/1'] },
-        { id: 'y', label: 'Y', nodeIds: ['y/1'] },
-      ],
-      communityEdges: [],
-      edges: [
-        { from: 'open/1', to: 'open/2', type: 'related_to' },
-        { from: 'open/1', to: 'x/1', type: 'related_to' },
-        { from: 'open/1', to: 'y/1', type: 'related_to' },
-      ],
-    };
-    const build = new Function(
-      'data', 'selected', 'selectedCommunity', 'view', 'visible', 'localStorage', 'graphLeafDisplay',
-      `${source}\nreturn canvasExplorerSceneDocuments;`,
-    );
-    const scene = build(data, null, 'open', 'community', () => ({ nodes }), {
-      getItem: () => null,
-      setItem: () => {},
-    }, (label: string) => (label ? label.charAt(0).toUpperCase() + label.slice(1) : label))();
-    const x = scene.nodes.find((node: { id: string }) => node.id === 'x');
-    const y = scene.nodes.find((node: { id: string }) => node.id === 'y');
+    const communities = [
+      { id: 'open', label: 'Open', nodeIds: ['open/1', 'open/2'] },
+      { id: 'x', label: 'X', nodeIds: ['x/1'] },
+      { id: 'y', label: 'Y', nodeIds: ['y/1'] },
+    ];
+    const scene = buildScene(nodes, communities, 'open');
+    const x = scene.nodes.find((node: { id: string }) => node.id === 'x/1');
+    const y = scene.nodes.find((node: { id: string }) => node.id === 'y/1');
     expect(Math.hypot(x.x - y.x, x.y - y.y)).toBeGreaterThan(0.05);
 
-    const documents = scene.nodes.filter((node: { type: string }) => node.type !== 'community');
-    const centre = documents.reduce(
+    // Les voisins restent dehors : la passe de séparation ne doit pas les
+    // ramener dans le nuage ouvert. L'emprise de référence est celle du domaine
+    // ouvert seul — les voisins, désormais des fiches, n'en font pas partie.
+    const inner = scene.nodes.filter((node: { id: string; type: string }) =>
+      node.type !== 'community' && (node.id === 'open/1' || node.id === 'open/2'));
+    const centre = inner.reduce(
       (sum: { x: number; y: number }, node: { x: number; y: number }) => ({
-        x: sum.x + node.x / documents.length,
-        y: sum.y + node.y / documents.length,
+        x: sum.x + node.x / inner.length,
+        y: sum.y + node.y / inner.length,
       }),
       { x: 0, y: 0 },
     );
     const spread = Math.max(
-      ...documents.map((node: { x: number; y: number }) => Math.hypot(node.x - centre.x, node.y - centre.y)),
+      ...inner.map((node: { x: number; y: number }) => Math.hypot(node.x - centre.x, node.y - centre.y)),
     );
     for (const group of [x, y]) {
       expect(Math.hypot(group.x - centre.x, group.y - centre.y)).toBeGreaterThan(spread);
@@ -562,8 +560,8 @@ describe('mise en page de la scène', () => {
     expect(html).toContain('backdrop-filter:blur(12px)');
 
     // Et il reste lisible sur le thème clair, qui n'était pas traité.
-    expect(html).toContain('body.theme-light .inspector');
-    expect(html).toContain('body.theme-light .stage-title');
+    expect(html).toContain(':root.theme-light body .inspector');
+    expect(html).toContain(':root.theme-light body .stage-title');
   });
 });
 
