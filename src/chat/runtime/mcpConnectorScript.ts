@@ -186,11 +186,13 @@ async function deleteRuntimeMcpServer(server) {
 // failed (runtime busy, 401 during a token drift, runtime down) and the card
 // stayed \`local only\`. On every page load, silently retry each pending sync
 // once — the operator should never have to click Connect again just to heal a
-// transient write failure.
+// transient write failure. A failed *initial* add never set persistedName, so
+// gating on it would leave exactly that case unhealed; persistRuntimeMcpServer
+// sends previousName only when it is set, so a plain upsert is correct here.
 async function retryPendingServerSyncs() {
   if(!runtimeEnabled()) return;
   for(const s of servers){
-    if(!s || s.origin==='builtin' || !s.needsSync || !s.url || !s.persistedName) continue;
+    if(!s || s.origin==='builtin' || !s.needsSync || !s.url || !s.name) continue;
     try {
       const ok = await syncRuntimeMcpServerName(s, {silent:true});
       if(ok){ renderCards(); renderTopPills(); saveServers(); }
@@ -203,7 +205,7 @@ async function reconnectMCPServer(server) {
   const initResp = await mcpRPC(server, 'initialize', {
     protocolVersion: '2024-11-05',
     capabilities: {},
-    clientInfo: {name: 'WikiChatConnector', version: '0.15.70'}
+    clientInfo: {name: 'WikiChatConnector', version: '0.15.71'}
   });
   if (initResp?.error) throw new Error(initResp.error.message || 'initialize failed');
   await mcpNotify(server, 'notifications/initialized', {});

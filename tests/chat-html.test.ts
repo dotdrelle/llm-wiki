@@ -922,6 +922,12 @@ describe('chat html', () => {
     expect(script).toContain('await syncRuntimeMcpServerName(server,');
     expect(script).not.toContain("await reconnectMCPServer(s);\n    if(runtimeEnabled() && !s.injected) await persistRuntimeMcpServer(s);");
     expect(script).toContain("Connected in this browser; runtime synchronization pending.");
+
+    // The page-load heal must cover a FAILED INITIAL add too — that case never
+    // reached `server.persistedName = server.name`, so gating the retry on
+    // persistedName left exactly it unhealed. Gate on name + needsSync instead.
+    expect(script).toContain("if(!s || s.origin==='builtin' || !s.needsSync || !s.url || !s.name) continue;");
+    expect(script).not.toContain("!s.needsSync || !s.url || !s.persistedName) continue;");
   });
 
   it('renames and deletes MCPs through their persisted runtime identity', () => {
