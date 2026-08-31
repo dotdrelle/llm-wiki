@@ -118,17 +118,19 @@ describe('Pending drop handler', () => {
     expect(WIKI_LAYOUT_SCRIPT).not.toContain("querySelector('[data-untracked-list]').innerHTML = ");
   });
 
-  it('strikes the conversion formats through when the agent is down', () => {
+  it('greys the conversion formats out when the agent is down', () => {
     const render = WIKI_LAYOUT_SCRIPT.slice(
       WIKI_LAYOUT_SCRIPT.indexOf('function renderPendingFormats'),
       WIKI_LAYOUT_SCRIPT.indexOf('function pendingDropTarget'),
     );
-    // The formats stay listed when the agent is down — struck through, with the
-    // reason — instead of disappearing: a panel that silently drops them cannot
-    // tell the user an agent is missing.
+    // The formats stay listed when the agent is down — greyed with the reason
+    // tooltip, the supported ones in green — instead of disappearing: a panel
+    // that silently drops them cannot tell the user an agent is missing.
     expect(render).toContain('PENDING_CONVERTIBLE_POLICY');
-    expect(render).toContain('line-through');
+    expect(render).toContain("part.style.color = green");
+    expect(render).toContain("part.style.color = grey");
     expect(render).toContain('Unavailable: ');
+    expect(render).toContain('(documents agent down)');
   });
 
   it('reports every conversion to the shell, at its start and at its end', () => {

@@ -294,31 +294,42 @@ ${CONFIRM_DIALOG_SCRIPT}
   function renderPendingFormats() {
     const host = document.querySelector('[data-untracked-formats]');
     if (!host) return;
-    const md = pendingCaps.markdown.join(' ');
     const up = pendingCaps.documents.up;
-    const convertible = (up ? pendingCaps.convertible : PENDING_CONVERTIBLE_POLICY).join(' ');
+    const markdown = pendingCaps.markdown.includes('.md') ? '.md' : (pendingCaps.markdown[0] ?? '.md');
+    const convertible = up ? pendingCaps.convertible : PENDING_CONVERTIBLE_POLICY;
     const why = pendingCaps.documents.configured
       ? (pendingCaps.documents.reason || 'documents agent is not answering')
       : 'documents agent is not configured';
     host.textContent = '';
-    const accepts = document.createElement('span');
-    accepts.textContent = 'Drop ' + md;
-    host.appendChild(accepts);
-    if (!convertible) return;
-    const rest = document.createElement('span');
-    rest.textContent = ' · ' + convertible;
-    if (up) {
-      rest.title = 'Converted to Markdown by the documents agent';
-    } else {
-      rest.style.textDecoration = 'line-through';
-      rest.style.opacity = '.55';
-      rest.title = 'Unavailable: ' + why;
+    const green = 'var(--ok)';
+    const grey = 'var(--muted)';
+    const open = document.createElement('span');
+    open.textContent = '(';
+    host.appendChild(open);
+    const mk = document.createElement('span');
+    mk.textContent = markdown;
+    mk.style.color = green;
+    mk.title = 'Written to Pending as Markdown';
+    host.appendChild(mk);
+    for (const ext of convertible) {
+      const part = document.createElement('span');
+      part.textContent = ' ' + ext;
+      if (up) {
+        part.style.color = green;
+        part.title = 'Converted to Markdown by the documents agent';
+      } else {
+        part.style.color = grey;
+        part.title = 'Unavailable: ' + why;
+      }
+      host.appendChild(part);
     }
-    host.appendChild(rest);
+    const close = document.createElement('span');
+    close.textContent = ')';
+    host.appendChild(close);
     if (!up) {
       const note = document.createElement('span');
-      note.textContent = ' (agent down)';
-      note.style.opacity = '.55';
+      note.textContent = ' (documents agent down)';
+      note.style.color = grey;
       note.title = why;
       host.appendChild(note);
     }

@@ -997,7 +997,11 @@ function toggleSystemPrompt() {
   drawer.classList.toggle('open',open);
   drawer.setAttribute('aria-hidden',open?'false':'true');
   btn?.classList.toggle('active',open);
-  if(open) setTimeout(()=>$('system-prompt')?.focus(),50);
+  if(open) {
+    // Markdown is the reading format, editing is the exception: open in
+    // rendered preview by default.
+    if(!systemPromptPreviewMode) toggleSystemPromptPreview();
+  }
 }
 
 function closeSystemPrompt() {
