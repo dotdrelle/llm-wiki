@@ -470,29 +470,29 @@ describe('workspace safety', () => {
       root,
       'raw',
       'untracked',
-      'Programme exemple meteo',
-      'Programme exemple meteo',
-      'Volet fonctionnel AP Alpha',
+      'Example program weather',
+      'Example program weather',
+      'Functional scope AP Alpha',
     );
     await mkdir(sourceDir, { recursive: true });
     const sourcePath = path.join(
       sourceDir,
-      'Synthese du positionnement des directions.md',
+      'Naive synthesis of positioning.md',
     );
-    await writeFile(sourcePath, '# Synthèse\n\nContenu.\n', 'utf8');
+    await writeFile(sourcePath, '# Naive synthesis\n\nContent.\n', 'utf8');
     const workspace = new WorkspaceService(createConfig(root));
 
     const source = await workspace.readSourceDocument(sourcePath);
 
     expect(source.archiveCitationPath).toBe(
-      'raw/ingested/programme-exemple-meteo/volet-fonctionnel-ap-alpha/synthese-du-positionnement-des-directions.md',
+      'raw/ingested/example-program-weather/functional-scope-ap-alpha/naive-synthesis-of-positioning.md',
     );
   });
 
   it('falls back to Latin-1 when a source file is not valid UTF-8', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-'));
     await mkdir(path.join(root, 'raw', 'untracked'), { recursive: true });
-    const sourcePath = path.join(root, 'raw', 'untracked', 'modalites.md');
+    const sourcePath = path.join(root, 'raw', 'untracked', 'modalities.md');
     await writeFile(
       sourcePath,
       Buffer.from([

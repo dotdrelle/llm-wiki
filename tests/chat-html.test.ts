@@ -971,3 +971,13 @@ describe('message actions', () => {
     expect(CHAT_HTML).toContain("<div class=\"msg-actions\">'+msgCopyButton()+'</div>");
   });
 });
+
+describe('system prompt drawer', () => {
+  it('offers a rendered markdown preview of the system instructions', () => {
+    expect(CHAT_HTML).toContain('id="system-prompt-preview"');
+    expect(CHAT_HTML).toContain('onclick="toggleSystemPromptPreview()"');
+    const [script] = chatScripts();
+    expect(script).toContain('function toggleSystemPromptPreview');
+    expect(script).toContain("preview.innerHTML = renderMd(ta.value || '')");
+  });
+});

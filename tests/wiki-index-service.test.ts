@@ -34,11 +34,11 @@ describe('regenerateWikiIndex', () => {
   });
 
   it('lists every concept page on disk, across class subfolders and legacy flat pages', async () => {
-    await mkdir(path.join(root, 'wiki', 'concepts', 'offre-marche'), { recursive: true });
+    await mkdir(path.join(root, 'wiki', 'concepts', 'market-offering'), { recursive: true });
     await mkdir(path.join(root, 'wiki', 'concepts', 'unclassified'), { recursive: true });
     await writeFile(
-      path.join(root, 'wiki', 'concepts', 'offre-marche', 'jedox.md'),
-      '---\nclass: offre-marche\nsubject: jedox\n---\n# Jedox\n\nUn éditeur EPM.\n',
+      path.join(root, 'wiki', 'concepts', 'market-offering', 'quartz.md'),
+      '---\nclass: market-offering\nsubject: quartz\n---\n# Quartz\n\nAn EPM vendor.\n',
       'utf8',
     );
     await writeFile(
@@ -52,7 +52,7 @@ describe('regenerateWikiIndex', () => {
     const outcome = await regenerateWikiIndex(root);
     expect(outcome).toEqual({ status: 'written', concepts: 3, sources: 0 });
     const content = await readFile(path.join(root, 'wiki', 'index.md'), 'utf8');
-    expect(content).toContain('- [Jedox](concepts/offre-marche/jedox.md)');
+    expect(content).toContain('- [Quartz](concepts/market-offering/quartz.md)');
     expect(content).toContain('- [Orphan concept](concepts/unclassified/orphan.md)');
     expect(content).toContain('- [Legacy concept](concepts/legacy.md)');
   });

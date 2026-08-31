@@ -279,7 +279,9 @@ export const CHAT_MARKUP = `<aside id="sidebar">
     </div>
     <div class="prompt-body">
       <textarea id="system-prompt" spellcheck="false" onchange="saveSystemPrompt()" oninput="saveSystemPrompt()"></textarea>
+      <div class="prompt-preview" id="system-prompt-preview" hidden></div>
       <div class="prompt-actions">
+        <button type="button" id="system-prompt-preview-btn" onclick="toggleSystemPromptPreview()">Preview</button>
         <button type="button" onclick="resetSystemPrompt()">Reset</button>
       </div>
     </div>

@@ -21,16 +21,16 @@ describe('decideConceptMove', () => {
 
   it('re-files a leaf dragged out of unclassified into a concept folder', () => {
     expect(decideConceptMove({
-      from: 'wiki/concepts/unclassified/anaplan.md',
-      to: 'wiki/concepts/offre-marche/anaplan.md',
+      from: 'wiki/concepts/unclassified/zephyr.md',
+      to: 'wiki/concepts/market-offering/zephyr.md',
       isFile: true,
-    })).toEqual({ kind: 'refile', className: 'offre-marche', subject: 'anaplan' });
+    })).toEqual({ kind: 'refile', className: 'market-offering', subject: 'zephyr' });
   });
 
   it('refuses a leaf dropped straight under wiki/concepts, with no concept folder', () => {
     const decision = decideConceptMove({
-      from: 'wiki/concepts/unclassified/anaplan.md',
-      to: 'wiki/concepts/anaplan.md',
+      from: 'wiki/concepts/unclassified/zephyr.md',
+      to: 'wiki/concepts/zephyr.md',
       isFile: true,
     });
     expect(decision.kind).toBe('reject');
@@ -38,8 +38,8 @@ describe('decideConceptMove', () => {
 
   it('refuses to move a whole concept folder', () => {
     const decision = decideConceptMove({
-      from: 'wiki/concepts/offre-marche',
-      to: 'wiki/concepts/securite-souverainete/offre-marche',
+      from: 'wiki/concepts/market-offering',
+      to: 'wiki/concepts/security-sovereignty/market-offering',
       isFile: false,
     });
     expect(decision.kind).toBe('reject');
@@ -52,19 +52,19 @@ describe('moveEntry on a concept leaf', () => {
   beforeEach(async () => {
     root = await mkdtemp(path.join(tmpdir(), 'concept-move-'));
     await mkdir(path.join(root, 'wiki/concepts/unclassified'), { recursive: true });
-    await mkdir(path.join(root, 'wiki/concepts/offre-marche'), { recursive: true });
+    await mkdir(path.join(root, 'wiki/concepts/market-offering'), { recursive: true });
     await mkdir(path.join(root, 'wiki/sources'), { recursive: true });
-    await writeFile(path.join(root, 'wiki/concepts/unclassified/anaplan.md'),
-      '---\nsubject: anaplan\n---\n\n# Anaplan\n');
+    await writeFile(path.join(root, 'wiki/concepts/unclassified/zephyr.md'),
+      '---\nsubject: zephyr\n---\n\n# Zephyr\n');
     await writeFile(path.join(root, 'wiki/sources/note.md'),
-      '---\n---\n\nSee [src: wiki/concepts/unclassified/anaplan.md] for details.\n');
+      '---\n---\n\nSee [src: wiki/concepts/unclassified/zephyr.md] for details.\n');
   });
 
   afterEach(async () => { await rm(root, { recursive: true, force: true }); });
 
   it('moves the file and repoints the inbound links', async () => {
     const seen: Array<{ source: string; target: string }> = [];
-    const result = await moveEntry(root, 'wiki/concepts/unclassified/anaplan.md', 'wiki/concepts/offre-marche', {
+    const result = await moveEntry(root, 'wiki/concepts/unclassified/zephyr.md', 'wiki/concepts/market-offering', {
       rewriteLinks: async (moves) => {
         seen.push(...moves);
         const notePath = path.join(root, 'wiki/sources/note.md');
@@ -75,27 +75,27 @@ describe('moveEntry on a concept leaf', () => {
     });
 
     expect(result.ok).toBe(true);
-    const moved = await readFile(path.join(root, 'wiki/concepts/offre-marche/anaplan.md'), 'utf8');
-    expect(moved).toContain('subject: anaplan');
+    const moved = await readFile(path.join(root, 'wiki/concepts/market-offering/zephyr.md'), 'utf8');
+    expect(moved).toContain('subject: zephyr');
     expect(seen).toEqual([{
-      source: 'wiki/concepts/unclassified/anaplan.md',
-      target: 'wiki/concepts/offre-marche/anaplan.md',
+      source: 'wiki/concepts/unclassified/zephyr.md',
+      target: 'wiki/concepts/market-offering/zephyr.md',
     }]);
     expect(await readFile(path.join(root, 'wiki/sources/note.md'), 'utf8'))
-      .toContain('[src: wiki/concepts/offre-marche/anaplan.md]');
+      .toContain('[src: wiki/concepts/market-offering/zephyr.md]');
   });
 
   it('fills a missing subject from the file name, and never overwrites one that exists', async () => {
-    await writeFile(path.join(root, 'wiki/concepts/unclassified/anaplan.md'),
-      '---\n---\n\n# Anaplan\n');
-    await moveEntry(root, 'wiki/concepts/unclassified/anaplan.md', 'wiki/concepts/offre-marche');
-    expect(await readFile(path.join(root, 'wiki/concepts/offre-marche/anaplan.md'), 'utf8'))
-      .toContain('subject: anaplan');
+    await writeFile(path.join(root, 'wiki/concepts/unclassified/zephyr.md'),
+      '---\n---\n\n# Zephyr\n');
+    await moveEntry(root, 'wiki/concepts/unclassified/zephyr.md', 'wiki/concepts/market-offering');
+    expect(await readFile(path.join(root, 'wiki/concepts/market-offering/zephyr.md'), 'utf8'))
+      .toContain('subject: zephyr');
 
     await writeFile(path.join(root, 'wiki/concepts/unclassified/other.md'),
       '---\nsubject: something-else\n---\n\n# Other\n');
-    await moveEntry(root, 'wiki/concepts/unclassified/other.md', 'wiki/concepts/offre-marche');
-    expect(await readFile(path.join(root, 'wiki/concepts/offre-marche/other.md'), 'utf8'))
+    await moveEntry(root, 'wiki/concepts/unclassified/other.md', 'wiki/concepts/market-offering');
+    expect(await readFile(path.join(root, 'wiki/concepts/market-offering/other.md'), 'utf8'))
       .toContain('subject: something-else');
   });
 });

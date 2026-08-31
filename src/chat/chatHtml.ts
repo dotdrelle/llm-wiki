@@ -1011,6 +1011,27 @@ function saveSystemPrompt() {
   localStorage.setItem(storageKey('mcpchat_system_prompt'), $('system-prompt').value);
 }
 
+// The drawer edits raw markdown, but the operator reads it rendered — a raw
+// textarea made a markdown system prompt look like uninterpreted noise.
+// Toggle between the editor and a live rendered view of the same content.
+let systemPromptPreviewMode = false;
+function toggleSystemPromptPreview() {
+  const ta = $('system-prompt'), preview = $('system-prompt-preview'), btn = $('system-prompt-preview-btn');
+  if (!ta || !preview || !btn) return;
+  systemPromptPreviewMode = !systemPromptPreviewMode;
+  if (systemPromptPreviewMode) {
+    preview.innerHTML = renderMd(ta.value || '');
+    preview.hidden = false;
+    ta.hidden = true;
+    btn.textContent = 'Edit';
+  } else {
+    preview.hidden = true;
+    ta.hidden = false;
+    btn.textContent = 'Preview';
+    ta.focus();
+  }
+}
+
 function resetSystemPrompt() {
   $('system-prompt').value = DEFAULT_SYSTEM_PROMPT;
   saveSystemPrompt();
@@ -2759,6 +2780,7 @@ async function initChat() {
   loadConfig();
   await loadConfigProfiles();
   loadServers();
+  retryPendingServerSyncs?.();
   initPageMode();
   initShellTabs();
   await loadHistory();

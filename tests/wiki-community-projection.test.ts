@@ -36,8 +36,8 @@ function node(id: string, type: WikiGraphNodeType = 'wiki', extra: Partial<WikiG
 describe('wiki community projection', () => {
   it('uses the concept folder as the community, and the node type for the rest', () => {
     const nodes = [
-      node('wiki/concepts/offre-marche/a.md'),
-      node('wiki/concepts/securite/b.md'),
+      node('wiki/concepts/market-offering/a.md'),
+      node('wiki/concepts/security/b.md'),
       node('raw/ingested/source.md', 'raw-source'),
       node('templates/report.md', 'template'),
       node('deliverables/report.md', 'deliverable'),
@@ -45,11 +45,11 @@ describe('wiki community projection', () => {
     const assigned = assignGraphCommunities(nodes);
     const byId = new Map(assigned.map((item) => [item.id, item.community]));
 
-    expect(byId.get('wiki/concepts/offre-marche/a.md')).toMatchObject({
-      communityId: 'offre-marche', communityLabel: 'Offre Marche', assignment: 'seed',
+    expect(byId.get('wiki/concepts/market-offering/a.md')).toMatchObject({
+      communityId: 'market-offering', communityLabel: 'Market Offering', assignment: 'seed',
     });
-    expect(byId.get('wiki/concepts/securite/b.md')).toMatchObject({
-      communityId: 'securite', communityLabel: 'Securite', assignment: 'seed',
+    expect(byId.get('wiki/concepts/security/b.md')).toMatchObject({
+      communityId: 'security', communityLabel: 'Security', assignment: 'seed',
     });
     expect(byId.get('raw/ingested/source.md')).toMatchObject({ communityLabel: 'Raw sources', assignment: 'seed' });
     expect(byId.get('templates/report.md')).toMatchObject({ communityLabel: 'Templates', assignment: 'seed' });
@@ -58,14 +58,14 @@ describe('wiki community projection', () => {
 
   it('links two concept folders when their leaves share a subject or a tag', () => {
     const nodes = [
-      node('wiki/concepts/offre-marche/anaplan.md', 'wiki', { subject: 'anaplan', tags: ['securite'] }),
-      node('wiki/concepts/securite/anaplan.md', 'wiki', { subject: 'anaplan', tags: ['securite'] }),
+      node('wiki/concepts/market-offering/zephyr.md', 'wiki', { subject: 'zephyr', tags: ['security'] }),
+      node('wiki/concepts/security/zephyr.md', 'wiki', { subject: 'zephyr', tags: ['security'] }),
     ];
     const assigned = assignGraphCommunities(nodes);
     const projection = createCommunityProjection(assigned, []);
     const pairs = projection.communityEdges.map((edge) => `${edge.from}->${edge.to}:${edge.count}`);
-    expect(pairs.some((pair) => pair.startsWith('offre-marche->securite')
-      || pair.startsWith('securite->offre-marche'))).toBe(true);
+    expect(pairs.some((pair) => pair.startsWith('market-offering->security')
+      || pair.startsWith('security->market-offering'))).toBe(true);
   });
 
   it('hashes unambiguous sorted topology tuples', () => {
@@ -81,35 +81,35 @@ describe('wiki community projection', () => {
 describe('wiki axis grouping', () => {
   it('groups concept leaves by subject across folders', () => {
     const nodes = [
-      node('wiki/concepts/offre-marche/anaplan.md', 'wiki', { subject: 'anaplan', tags: ['securite'] }),
-      node('wiki/concepts/securite/anaplan.md', 'wiki', { subject: 'anaplan', tags: ['securite'] }),
+      node('wiki/concepts/market-offering/zephyr.md', 'wiki', { subject: 'zephyr', tags: ['security'] }),
+      node('wiki/concepts/security/zephyr.md', 'wiki', { subject: 'zephyr', tags: ['security'] }),
     ];
     const { communities } = createAxisGrouping(nodes, [], 'subject');
     expect(communities).toHaveLength(1);
-    expect(communities[0]).toMatchObject({ id: 'anaplan', documentCount: 2 });
+    expect(communities[0]).toMatchObject({ id: 'zephyr', documentCount: 2 });
   });
 
   it('groups by OKF type and groups by tag with multi-membership', () => {
     const nodes = [
-      node('wiki/concepts/offre-marche/a.md', 'wiki', { subject: 'a', okfType: 'product', tags: ['cloud', 'rgpd'] }),
-      node('wiki/concepts/securite/b.md', 'wiki', { subject: 'b', okfType: 'requirement', tags: ['cloud'] }),
+      node('wiki/concepts/market-offering/a.md', 'wiki', { subject: 'a', okfType: 'product', tags: ['cloud', 'gdpr'] }),
+      node('wiki/concepts/security/b.md', 'wiki', { subject: 'b', okfType: 'requirement', tags: ['cloud'] }),
     ];
     const byType = createAxisGrouping(nodes, [], 'type');
     expect(byType.communities.map((item) => item.id).sort()).toEqual(['product', 'requirement']);
 
     const byTag = createAxisGrouping(nodes, [], 'tag');
-    expect(byTag.communities.map((item) => item.id).sort()).toEqual(['cloud', 'rgpd']);
+    expect(byTag.communities.map((item) => item.id).sort()).toEqual(['cloud', 'gdpr']);
     // The first leaf carries both tags: it appears in both bubbles.
     const cloud = byTag.communities.find((item) => item.id === 'cloud');
-    expect(cloud?.nodeIds).toEqual(['wiki/concepts/offre-marche/a.md', 'wiki/concepts/securite/b.md']);
+    expect(cloud?.nodeIds).toEqual(['wiki/concepts/market-offering/a.md', 'wiki/concepts/security/b.md']);
   });
 
   it('links two tag bubbles when a leaf carries both tags', () => {
     const nodes = [
-      node('wiki/concepts/offre-marche/a.md', 'wiki', { subject: 'a', tags: ['cloud', 'rgpd'] }),
+      node('wiki/concepts/market-offering/a.md', 'wiki', { subject: 'a', tags: ['cloud', 'gdpr'] }),
     ];
     const { communityEdges } = createAxisGrouping(nodes, [], 'tag');
     const pairs = communityEdges.map((edge) => `${edge.from}->${edge.to}`);
-    expect(pairs.some((pair) => pair.includes('cloud') && pair.includes('rgpd'))).toBe(true);
+    expect(pairs.some((pair) => pair.includes('cloud') && pair.includes('gdpr'))).toBe(true);
   });
 });

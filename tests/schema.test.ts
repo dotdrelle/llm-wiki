@@ -108,8 +108,8 @@ describe('deliverable response schema', () => {
               'Points forts': '- Expertise par zones fixes',
             },
             {
-              Solution: 'OREA',
-              'Points forts': '- Expertise par polygones',
+              Solution: 'ONYX',
+              'Points forts': '- Expertise by polygons',
             },
           ],
         },
@@ -121,7 +121,7 @@ describe('deliverable response schema', () => {
       '| MFI / Synergie Web | - Expertise par zones fixes |',
     );
     expect(response.replacements[0]?.content).toContain(
-      '| OREA | - Expertise par polygones |',
+      '| ONYX | - Expertise by polygons |',
     );
   });
 });

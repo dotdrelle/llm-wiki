@@ -450,6 +450,21 @@ ${CHAT_ACTIVITY_CSS}
 #system-prompt{flex:1;width:100%;min-height:260px;resize:none;background:var(--panel-soft);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--font-mono);font-size:12px;line-height:1.5;padding:12px;outline:none}
 #system-prompt:focus{border-color:var(--accent)}
 .prompt-actions{display:flex;justify-content:flex-end;gap:8px;padding-top:2px}
+.prompt-preview{flex:1;overflow:auto;min-height:0;background:var(--panel-soft);border:1px solid var(--border);border-radius:10px;padding:14px 16px;font-size:14px;line-height:1.7;color:var(--text)}
+.prompt-preview h1,.prompt-preview h2,.prompt-preview h3{margin:14px 0 6px;line-height:1.3}
+.prompt-preview h1{font-size:19px}.prompt-preview h2{font-size:16px}.prompt-preview h3{font-size:14px}
+.prompt-preview p{margin:8px 0}
+.prompt-preview ul,.prompt-preview ol{margin:8px 0;padding-left:22px}
+.prompt-preview li{margin:4px 0}
+.prompt-preview code{background:var(--panel);border:1px solid var(--border);border-radius:5px;padding:1px 5px;font-family:var(--font-mono);font-size:12px}
+.prompt-preview pre{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;overflow:auto}
+.prompt-preview pre code{background:none;border:0;padding:0}
+.prompt-preview blockquote{border-left:3px solid var(--accent);margin:8px 0;padding:2px 12px;color:var(--muted)}
+.prompt-preview a{color:var(--accent)}
+.prompt-preview .table-wrap{overflow-x:auto;margin:8px 0}
+.prompt-preview table{border-collapse:collapse;width:100%}
+.prompt-preview th,.prompt-preview td{border:1px solid var(--border);padding:6px 10px;font-size:13px;text-align:left}
+.prompt-preview[hidden]{display:none}
 .prompt-actions button{background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);cursor:pointer;padding:7px 10px;font-size:12px;font-family:var(--font-sans);font-weight:600;transition:all .2s}
 .prompt-actions button:hover{border-color:var(--accent);color:var(--accent)}
 .prod-empty{color:var(--muted);font-size:13px;line-height:1.55;padding:10px 0}

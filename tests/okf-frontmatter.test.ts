@@ -10,7 +10,7 @@ import {
 
 describe('okfTypeForPath', () => {
   it('derives the generic concept type for every concept path', () => {
-    expect(okfTypeForPath('wiki/concepts/offre-marche/anaplan.md')).toBe('concept');
+    expect(okfTypeForPath('wiki/concepts/market-offering/zephyr.md')).toBe('concept');
     expect(okfTypeForPath('wiki/concepts/unclassified/foo.md')).toBe('concept');
   });
 
@@ -41,8 +41,8 @@ describe('applyOkfFrontmatter', () => {
   });
 
   it('adds type alongside existing frontmatter without touching it', () => {
-    const out = applyOkfFrontmatter('---\nsubject: anaplan\n---\n# Anaplan\n', { type: OKF_TYPE_CONCEPT });
-    expect(out).toContain('subject: anaplan');
+    const out = applyOkfFrontmatter('---\nsubject: zephyr\n---\n# Zephyr\n', { type: OKF_TYPE_CONCEPT });
+    expect(out).toContain('subject: zephyr');
     expect(out).toContain('type: concept');
   });
 

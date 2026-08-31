@@ -22,10 +22,12 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
   anything.
 - **Rejected page** — a page an ingestion sets aside (irrelevant or redundant).
 - **Wiki** — the set of durable knowledge pages produced by ingestion.
-- **Concept** — a page carrying reusable knowledge (system, actor, rule,
-  architecture) rather than a raw document.
-- **Concept** — the folder a knowledge page is filed under; one leaf per
-  (concept × subject) lives at `wiki/concepts/<concept>/<subject>.md`.
+- **Concept** — the folder a knowledge page is filed under, naming a piece of
+  reusable knowledge (a system, an actor, a rule, an architecture) rather than a
+  raw document. One leaf per (concept × subject) lives at
+  `wiki/concepts/<concept>/<subject>.md`: the concept **is** the folder,
+  produced by the ingestion itself. There is no separate step that builds,
+  rebuilds or reclassifies it — re-running an ingestion is how concepts change.
 - **Unclassified** — a leaf that fits no concept folder yet; it waits under
   the reserved `wiki/concepts/unclassified` folder until someone files it by
   hand.

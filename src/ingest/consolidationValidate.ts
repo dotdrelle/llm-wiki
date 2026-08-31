@@ -110,6 +110,7 @@ export function validateConsolidation(
     existingPaths: Set<string>;
     conceptBudget?: number;
     precomputedSplits?: ConceptSplit[];
+    precomputedFolderConflicts?: FolderConflict[];
   },
 ): ValidatedConsolidation {
   const errors: ConsolidationIssue[] = [];
@@ -247,6 +248,13 @@ export function validateConsolidation(
     });
   }
 
+  for (const conflict of context.precomputedFolderConflicts ?? []) {
+    warnings.push({
+      path: conflict.path,
+      reason: `near-duplicate concept folder: "${conflict.proposedFolder}" doubles the existing folder "${conflict.existingFolder}" (singular/plural of one word) — reuse the existing folder`,
+    });
+  }
+
   return { operations, errors, warnings, provenanceByPath, derivedAxes };
 }
 
@@ -315,6 +323,116 @@ export type ConceptOverflow = {
   budget: number;
   newConceptPaths: string[];
 };
+
+/**
+ * A proposed folder that near-duplicates an EXISTING concept folder.
+ *
+ * The closed grid used to make this impossible by construction: classes were
+ * a fixed vocabulary built once at corpus level. The folder model removed
+ * that guarantee, and the LLM re-invented it per source — the first parallel
+ * a first parallel ingest once produced both `products` and `product`, one folder per
+ * singular/plural spelling, and every later source filed into whichever the
+ * model happened to pick. Nothing merged them afterwards. This detector is
+ * the structural replacement: singular/plural variants (or an exact match
+ * after accent/lowercase normalization) of an existing folder are a
+ * near-duplicate, and the ingest retry loop tells the model to reuse the
+ * existing folder instead.
+ */
+export type FolderConflict = {
+  /** The planned leaf path that would open the near-duplicate folder. */
+  path: string;
+  /** The folder name the plan proposes. */
+  proposedFolder: string;
+  /** The existing folder it near-duplicates. */
+  existingFolder: string;
+};
+
+const FOLDER_SINGULAR_SUFFIXES = new Set(['s', 'x']);
+
+export function folderNearKey(folder: string): string {
+  return folder
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+/**
+ * The words of a folder name, each singularized. Both '-' and '_' collapse to
+ * the same separator in `folderNearKey`, so a name written with underscores
+ * compares like its hyphenated twin — "exigences_meteo_france" and
+ * "requirements-operations" are one folder for this check.
+ */
+export function folderWords(key: string): string[] {
+  return key.split('-').filter(Boolean).map((word) => {
+    if (word.length >= 4 && FOLDER_SINGULAR_SUFFIXES.has(word[word.length - 1] ?? '')) {
+      const stem = word.slice(0, -1);
+      return stem.length >= 3 ? stem : word;
+    }
+    return word;
+  });
+}
+
+export function foldersAreNearDuplicates(left: string, right: string): boolean {
+  const a = folderNearKey(left);
+  const b = folderNearKey(right);
+  if (!a || !b || a === b) return false;
+  // Whole-name singular/plural: "produit" / "produits".
+  if (a.length >= 4 && b.length >= 4) {
+    const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+    if (longer.length - shorter.length === 1
+      && longer.startsWith(shorter)
+      && FOLDER_SINGULAR_SUFFIXES.has(longer[longer.length - 1] ?? '')) {
+      return true;
+    }
+  }
+  // Word-aware: one concept, one folder — whatever the number or the
+  // refinement appended after a hyphen. "requirement"/"requirements",
+  // "exigence"/"requirements-operations", "produit"/"produit-anaplan",
+  // "solution-logicielle"/"solutions-externes" are all the SAME first word
+  // and therefore near-duplicates: file into the existing folder, keep the
+  // refinement as the subject.
+  const wa = folderWords(a);
+  const wb = folderWords(b);
+  if (wa.length > 0 && wb.length > 0 && wa[0] === wb[0]) return true;
+  return false;
+}
+
+export function detectNearDuplicateFolders(
+  plan: ConsolidationPlan,
+  { existingFolders = [] }: { existingFolders?: string[] } = {},
+): FolderConflict[] {
+  const conflicts: FolderConflict[] = [];
+  const proposedNew = new Set<string>();
+  for (const operation of plan.operations ?? []) {
+    if (operation.type !== 'create' || !operation.path.startsWith(CONCEPT_PREFIX)) continue;
+    const folder = parseConceptPagePath(operation.path)?.class ?? null;
+    if (!folder) continue;
+    // A leaf filed into an existing folder is the model working as intended.
+    if (existingFolders.includes(folder)) continue;
+    const conflictWith = (existing: string) => {
+      conflicts.push({ path: operation.path, proposedFolder: folder, existingFolder: existing });
+    };
+    const existing = existingFolders.find((candidate) =>
+      foldersAreNearDuplicates(folder, candidate)
+      || folderNearKey(folder) === folderNearKey(candidate));
+    if (existing) {
+      conflictWith(existing);
+      continue;
+    }
+    // Two NEW folders proposed in one plan (or one batch) that are variants
+    // of each other: the first one written wins, the second is the duplicate.
+    const sibling = [...proposedNew].find((candidate) =>
+      foldersAreNearDuplicates(folder, candidate));
+    if (sibling) {
+      conflictWith(sibling);
+      continue;
+    }
+    proposedNew.add(folder);
+  }
+  return conflicts;
+}
 
 export function detectConceptOverflow(
   plan: ConsolidationPlan,

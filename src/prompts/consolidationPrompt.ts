@@ -4,7 +4,7 @@ import { UNCLASSIFIED_CLASS } from '../ingest/conceptGrid.ts';
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
 /** Prompt version, carried by the consolidation cache key. */
-export const CONSOLIDATION_PROMPT_VERSION = 18;
+export const CONSOLIDATION_PROMPT_VERSION = 19;
 
 export type ConsolidationInventoryPage = {
   path: string;
@@ -45,9 +45,12 @@ function folderPolicy(existingFolders: string[]): string[] {
     '- the same subject may hold a leaf under several concepts: that is the model, not a'
       + ' duplicate. Each leaf carries only what belongs to ITS concept',
     '- an existing concept is ALWAYS an existing folder: REUSE one of the folders listed'
-      + ' above whenever a subject plausibly belongs to it. "offre-marche" and'
-      + ' "solutions-marche" are ONE concept — pick one and file the leaf there, never open'
+      + ' above whenever a subject plausibly belongs to it. "cost-model" and'
+      + ' "pricing-model" are ONE concept — pick one and file the leaf there, never open'
       + ' a near-duplicate folder',
+    '- name folders in the SINGULAR: write "product", never "products"; "server", never'
+      + ' "servers". Reuse the existing folder even when its number differs from the one'
+      + ' you would have picked',
     '- open a NEW folder only when a subject fits NONE of the existing folders; name it a'
       + ' short kebab-case common noun phrase',
     '- create a leaf only when this source gives that (concept, subject) pair at least two'
@@ -117,7 +120,7 @@ function operationContract(): string[] {
       '- subject: the canonical identity the page belongs to, lowercase, words separated by dashes — NEVER glue the words together ("twowordidentity" instead of "two-word-identity" is wrong), never use spaces',
       '- scope: source | product | transverse | workspace',
       `- kind: vendor | product | requirement | regulation | dimension | scenario — the NATURE of the subject (a vendor is not its product, a dimension is not a product)`,
-      '- tags: 2 to 4 words linking this leaf — its entity AND the cross-cutting themes it speaks to (security, sovereignty, cost, integration…). Each tag is a SINGLE word, in the SINGULAR, in the output language — never a plural (write "exigence", not "exigences"; "solution", not "solutions"). REUSE an existing tag from the "Existing tags" list in the user message when one is close, rather than inventing a near-synonym. At most 4 tags.',
+      '- tags: 2 to 4 words linking this leaf — its entity AND the cross-cutting themes it speaks to (security, sovereignty, cost, integration…). Each tag is a SINGLE word, in the SINGULAR, in the output language — never a plural (write "requirement", not "requirements"; "solution", not "solutions"). REUSE an existing tag from the "Existing tags" list in the user message when one is close, rather than inventing a near-synonym. At most 4 tags.',
       '- subject MUST match the page path: wiki/concepts/<concept>/<subject>.md',
       'Do NOT write these fields inside the page content; the engine writes them.',
       'Do not copy the free-form "group" field into "subject": a group is a shelf, a subject is an identity.',
@@ -213,6 +216,7 @@ export function buildConsolidationRetryUser(
     overflow?: { newConcepts: number; budget: number };
     duplicatePaths?: string[];
     folders?: string[];
+    folderConflicts?: Array<{ path: string; proposedFolder: string; existingFolder: string }>;
   },
 ): string {
   const lines: string[] = [
@@ -241,6 +245,15 @@ export function buildConsolidationRetryUser(
       'The plan targets these paths more than once:',
       ...corrections.duplicatePaths.map((path) => `- ${path}`),
       'Merge each into a single operation (a single create per concept, a single update per source note).',
+    );
+  }
+
+  if (corrections.folderConflicts?.length) {
+    lines.push(
+      '',
+      'Your plan opens a folder that near-duplicates an EXISTING concept folder (singular/plural of the same word). Reuse the existing folder and file the leaf there:',
+      ...corrections.folderConflicts.map((conflict) =>
+        `- reuse "${conflict.existingFolder}" instead of opening "${conflict.proposedFolder}" (planned path: ${conflict.path})`),
     );
   }
 

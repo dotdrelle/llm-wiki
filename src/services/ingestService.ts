@@ -24,7 +24,7 @@ import {
   readProvenance,
   subjectsAreRelated,
 } from '../ingest/provenance.ts';
-import { CONCEPT_PREFIX, DEFAULT_CONCEPT_BUDGET, detectConceptOverflow, detectConceptSplits, detectDuplicatePaths, reanchorToPreviousConcepts, validateConsolidation } from '../ingest/consolidationValidate.ts';
+import { CONCEPT_PREFIX, DEFAULT_CONCEPT_BUDGET, detectConceptOverflow, detectConceptSplits, detectDuplicatePaths, detectNearDuplicateFolders, reanchorToPreviousConcepts, validateConsolidation } from '../ingest/consolidationValidate.ts';
 import { parseConceptPagePath } from '../ingest/conceptGrid.ts';
 import { hashText } from '../utils/hash.ts';
 import { resolveInside } from '../utils/path.ts';
@@ -858,21 +858,25 @@ export class IngestService {
         // leave `lastSplits` one correction stale relative to the plan
         // `validateConsolidation` actually receives.
         let lastSplits: ReturnType<typeof detectConceptSplits> = [];
+        let lastFolderConflicts: ReturnType<typeof detectNearDuplicateFolders> = [];
         for (let retryAttempt = 0; retryAttempt <= MAX_SPLIT_RETRIES; retryAttempt += 1) {
           const splits = detectConceptSplits(consolidated);
           lastSplits = splits;
+          const folderConflicts = detectNearDuplicateFolders(consolidated, { existingFolders });
+          lastFolderConflicts = folderConflicts;
           const overflow = detectConceptOverflow(
             consolidated,
             knownPaths,
             DEFAULT_CONCEPT_BUDGET,
           );
           const duplicatePaths = detectDuplicatePaths(consolidated);
-          if (splits.length === 0 && !overflow && duplicatePaths.length === 0) break;
+          if (splits.length === 0 && folderConflicts.length === 0 && !overflow && duplicatePaths.length === 0) break;
           if (retryAttempt === MAX_SPLIT_RETRIES) break;
           await this.logger.warn('ingest:consolidate-retry', {
             source: source.relativePath,
             attempt: retryAttempt + 1,
             splits: splits.map((split) => `${split.subject}~${split.duplicateOfSubject}`),
+            folderConflicts: folderConflicts.map((conflict) => `${conflict.proposedFolder}~${conflict.existingFolder}`),
             overflow: overflow ? { newConcepts: overflow.newConcepts, budget: overflow.budget } : null,
             duplicatePaths,
           });
@@ -883,6 +887,7 @@ export class IngestService {
               overflow: overflow ? { newConcepts: overflow.newConcepts, budget: overflow.budget } : undefined,
               duplicatePaths,
               folders: existingFolders,
+              folderConflicts,
             }),
           };
           const { value } = await withRetry(
@@ -962,6 +967,10 @@ export class IngestService {
           path: normalizedPathByOriginal.get(split.path) ?? split.path,
           duplicateOfPath: normalizedPathByOriginal.get(split.duplicateOfPath) ?? split.duplicateOfPath,
         }));
+        const normalizedFolderConflicts = lastFolderConflicts.map((conflict) => ({
+          ...conflict,
+          path: normalizedPathByOriginal.get(conflict.path) ?? conflict.path,
+        }));
         const {
           operations: citationSafeOperations,
           rewrittenCitations,
@@ -1009,6 +1018,7 @@ export class IngestService {
             citationPath: source.archiveCitationPath,
             existingPaths: knownPaths,
             precomputedSplits: normalizedSplits,
+            precomputedFolderConflicts: normalizedFolderConflicts,
           },
         );
         await this.logger.info('ingest:consolidate', {

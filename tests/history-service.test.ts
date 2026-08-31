@@ -426,7 +426,7 @@ describe('history service', () => {
 
   it('commits and restores files whose names contain non-ASCII characters', async () => {
     // Git quotes non-ASCII filenames in its output (core.quotepath default),
-    // e.g. `"wiki/concepts/exigences-imp\303\251ratives.md"`. Feeding those
+    // e.g. `"wiki/concepts/fa\303\247ade-plan.md"`. Feeding those
     // quoted strings back as pathspecs made `git commit -- <files>` fail with
     // "pathspec did not match", so a workspace with an accented page name
     // could never restore (and could not even commit the accented file).
@@ -434,7 +434,7 @@ describe('history service', () => {
     await mkdir(path.join(root, 'wiki', 'concepts'), { recursive: true });
     const history = new HistoryService(root);
     await history.initialize({ baseline: true });
-    const page = 'wiki/concepts/exigences-impératives.md';
+    const page = 'wiki/concepts/façade-plan.md';
     await writeFile(path.join(root, page), '# v1\n', 'utf8');
     const first = await history.commit({ command: 'ingest' });
     expect(first.files).toEqual([page]);

@@ -8,7 +8,7 @@ function plan(over: Partial<ConsolidationPlan> = {}): ConsolidationPlan {
 
 function page(over: Partial<ConsolidatedPage> = {}): ConsolidatedPage {
   return {
-    path: 'wiki/concepts/offre-marche/beta.md',
+    path: 'wiki/concepts/market-offering/beta.md',
     subject: 'beta',
     scope: 'product',
     kind: 'product',
@@ -24,7 +24,7 @@ const CTX = {
   existingPaths: new Set<string>(),
 };
 
-function tagsFor(pages: ConsolidatedPage[], path = 'wiki/concepts/offre-marche/beta.md'): string[] {
+function tagsFor(pages: ConsolidatedPage[], path = 'wiki/concepts/market-offering/beta.md'): string[] {
   const result = validateConsolidation(
     plan({
       operations: [
@@ -60,16 +60,68 @@ describe('plancher des tags (validateConsolidation)', () => {
       plan({
         operations: [
           { type: 'create', path: 'wiki/sources/s.md', content: '# S\n\nBody. [src: raw/ingested/s.md]' },
-          { type: 'create', path: 'wiki/concepts/offre-marche/beta-saas.md', content: '# X\n\nBody. [src: raw/ingested/s.md]' },
+          { type: 'create', path: 'wiki/concepts/market-offering/beta-saas.md', content: '# X\n\nBody. [src: raw/ingested/s.md]' },
         ],
-        pages: [page({ path: 'wiki/concepts/offre-marche/beta-saas.md', subject: 'beta-saas' })],
+        pages: [page({ path: 'wiki/concepts/market-offering/beta-saas.md', subject: 'beta-saas' })],
       }),
       CTX,
     );
-    expect(result.provenanceByPath.get('wiki/concepts/offre-marche/beta-saas.md')?.tags).toEqual(['beta', 'product']);
+    expect(result.provenanceByPath.get('wiki/concepts/market-offering/beta-saas.md')?.tags).toEqual(['beta', 'product']);
   });
 
   it('n’ajoute rien quand il y a déjà au moins deux tags', () => {
     expect(tagsFor([page({ tags: ['beta', 'cloud'] })])).toEqual(['beta', 'cloud']);
+  });
+});
+
+import { detectNearDuplicateFolders, folderNearKey, foldersAreNearDuplicates, folderWords } from '../src/ingest/consolidationValidate.ts';
+
+describe('folder near-duplicates (singular/plural and hyphen refinements)', () => {
+  it('flags a trailing-s plural of the same word', () => {
+    expect(foldersAreNearDuplicates('product', 'products')).toBe(true);
+    expect(foldersAreNearDuplicates('requirement', 'requirements')).toBe(true);
+    expect(foldersAreNearDuplicates('serveur', 'serveurs')).toBe(true);
+  });
+  it('flags a hyphenated refinement of an existing folder (same first word)', () => {
+    expect(foldersAreNearDuplicates('requirement', 'requirements-operations')).toBe(true);
+    expect(foldersAreNearDuplicates('product', 'product-zephyr')).toBe(true);
+    expect(foldersAreNearDuplicates('solution-suite', 'solutions-external')).toBe(true);
+  });
+  it('treats underscore spellings like hyphenated ones at the comparison level', () => {
+    // Concept paths themselves reject '_' (isValidProvenanceValue); the
+    // normalization matters for any value that reaches the comparison, so an
+    // underscore twin of a hyphenated folder compares as the same name.
+    expect(folderNearKey('requirements_operations')).toBe(folderNearKey('requirements-operations'));
+    expect(folderWords(folderNearKey('requirements_operations'))).toEqual(
+      folderWords(folderNearKey('requirements-operations')),
+    );
+  });
+  it('leaves genuinely different concepts alone', () => {
+    expect(foldersAreNearDuplicates('market-offering', 'solutions-market')).toBe(false);
+    expect(foldersAreNearDuplicates('budget', 'infrastructure')).toBe(false);
+    expect(foldersAreNearDuplicates('product', 'production')).toBe(false);
+    expect(foldersAreNearDuplicates('projet', 'product')).toBe(false);
+  });
+  it('detects the conflict in a plan that would open a near-duplicate folder', () => {
+    const conflicts = detectNearDuplicateFolders(
+      plan({
+        operations: [
+          { type: 'create', path: 'wiki/concepts/product-zephyr/certifications.md', content: '# x' },
+          { type: 'create', path: 'wiki/concepts/requirements/outil.md', content: '# y' },
+        ],
+      }),
+      { existingFolders: ['product', 'requirement', 'budget'] },
+    );
+    expect(conflicts.map((c) => `${c.proposedFolder}~${c.existingFolder}`)).toEqual([
+      'product-zephyr~product',
+      'requirements~requirement',
+    ]);
+  });
+  it('leaves a leaf filed into an existing folder alone', () => {
+    const conflicts = detectNearDuplicateFolders(
+      plan({ operations: [{ type: 'create', path: 'wiki/concepts/product/nouveau.md', content: '# x' }] }),
+      { existingFolders: ['product'] },
+    );
+    expect(conflicts).toEqual([]);
   });
 });

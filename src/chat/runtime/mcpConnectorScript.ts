@@ -182,6 +182,22 @@ async function deleteRuntimeMcpServer(server) {
   if(!res.ok) throw new Error(data.error||\`Runtime MCP deletion failed (HTTP \${res.status})\`);
 }
 
+// A pending sync is a promise the page can keep on its own: a previous write
+// failed (runtime busy, 401 during a token drift, runtime down) and the card
+// stayed \`local only\`. On every page load, silently retry each pending sync
+// once — the operator should never have to click Connect again just to heal a
+// transient write failure.
+async function retryPendingServerSyncs() {
+  if(!runtimeEnabled()) return;
+  for(const s of servers){
+    if(!s || s.origin==='builtin' || !s.needsSync || !s.url || !s.persistedName) continue;
+    try {
+      const ok = await syncRuntimeMcpServerName(s, {silent:true});
+      if(ok){ renderCards(); renderTopPills(); saveServers(); }
+    } catch {}
+  }
+}
+
 async function reconnectMCPServer(server) {
   server.sessionId=null;
   const initResp = await mcpRPC(server, 'initialize', {

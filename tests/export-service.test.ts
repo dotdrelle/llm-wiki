@@ -28,19 +28,19 @@ describe('heading demotion', () => {
 describe('citation marker stripping', () => {
   it('removes canonical and space-padded markers', () => {
     const text = [
-      'Exigence RGPD documentée [src: wiki/concepts/conformite.md].',
-      'Certification visée [ src: wiki/concepts/souverainete-saas/criteres-sovereignseal.md ].',
-      'Audit prévu [  SRC:  wiki/x.md  ].',
+      'Documented GDPR requirement [src: wiki/concepts/compliance.md].',
+      'Targeted certification [ src: wiki/concepts/sovereignty-saas/sovereign-seal-criteria.md ].',
+      'Planned audit [  SRC:  wiki/x.md  ].',
     ].join('\n');
     const stripped = stripCitationMarkers(text);
     expect(stripped).not.toMatch(/\[\s*src\s*:/i);
-    expect(stripped).toContain('Exigence RGPD documentée.');
-    expect(stripped).toContain('Certification visée.');
+    expect(stripped).toContain('Documented GDPR requirement.');
+    expect(stripped).toContain('Targeted certification.');
   });
 
   it('keeps unrelated bracketed text', () => {
-    expect(stripCitationMarkers('Voir [annexe A] et [RFC 6902].')).toBe(
-      'Voir [annexe A] et [RFC 6902].',
+    expect(stripCitationMarkers('See [appendix A] and [RFC 6902].')).toBe(
+      'See [appendix A] and [RFC 6902].',
     );
   });
 });

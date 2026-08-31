@@ -131,22 +131,22 @@ describe('reanchorToPreviousConcepts (§6.3, §12.2)', () => {
     const result = reanchorToPreviousConcepts(
       plan({
         operations: [
-          { type: 'create', path: 'wiki/concepts/offre-marche/beta.md', content: `# Beta\n\n${BETA_BODY}` },
+          { type: 'create', path: 'wiki/concepts/market-offering/beta.md', content: `# Beta\n\n${BETA_BODY}` },
           { type: 'create', path: 'wiki/concepts/securite/beta.md', content: `# Beta\n\n${BETA_BODY}` },
         ],
         pages: [
-          page({ path: 'wiki/concepts/offre-marche/beta.md', subject: 'beta' }),
+          page({ path: 'wiki/concepts/market-offering/beta.md', subject: 'beta' }),
           page({ path: 'wiki/concepts/securite/beta.md', subject: 'beta' }),
         ],
       }),
       [
-        previous('wiki/concepts/offre-marche/beta.md', 'beta', BETA_BODY, 'offre-marche'),
+        previous('wiki/concepts/market-offering/beta.md', 'beta', BETA_BODY, 'market-offering'),
         previous('wiki/concepts/securite/beta.md', 'beta', BETA_BODY, 'securite'),
       ],
     );
 
     expect(result.operations.map((op) => op.path)).toEqual([
-      'wiki/concepts/offre-marche/beta.md',
+      'wiki/concepts/market-offering/beta.md',
       'wiki/concepts/securite/beta.md',
     ]);
     expect(result.operations.every((op) => op.type === 'create')).toBe(true);
@@ -159,16 +159,16 @@ describe('reanchorToPreviousConcepts (§6.3, §12.2)', () => {
     const result = reanchorToPreviousConcepts(
       plan({
         operations: [
-          { type: 'create', path: 'wiki/concepts/offre-marche/beta.md', content: `# Beta\n\n${BETA_BODY}` },
+          { type: 'create', path: 'wiki/concepts/market-offering/beta.md', content: `# Beta\n\n${BETA_BODY}` },
         ],
-        pages: [page({ path: 'wiki/concepts/offre-marche/beta.md', subject: 'beta' })],
+        pages: [page({ path: 'wiki/concepts/market-offering/beta.md', subject: 'beta' })],
       }),
       [previous('wiki/concepts/beta.md', 'beta', BETA_BODY)],
     );
 
     expect(result.operations[0]).toEqual({
       type: 'create',
-      path: 'wiki/concepts/offre-marche/beta.md',
+      path: 'wiki/concepts/market-offering/beta.md',
       content: `# Beta\n\n${BETA_BODY}`,
     });
   });
@@ -181,16 +181,16 @@ describe('reanchorToPreviousConcepts (§6.3, §12.2)', () => {
     const result = reanchorToPreviousConcepts(
       plan({
         operations: [
-          { type: 'create', path: 'wiki/concepts/offre-marche/beta.md', content: `# Beta\n\n${BETA_BODY}` },
+          { type: 'create', path: 'wiki/concepts/market-offering/beta.md', content: `# Beta\n\n${BETA_BODY}` },
         ],
-        pages: [page({ path: 'wiki/concepts/offre-marche/beta.md', subject: 'beta' })],
+        pages: [page({ path: 'wiki/concepts/market-offering/beta.md', subject: 'beta' })],
       }),
       [previous('wiki/concepts/beta.md', 'beta', BETA_BODY)],
     );
 
     expect(result.operations[0]).toEqual({
       type: 'create',
-      path: 'wiki/concepts/offre-marche/beta.md',
+      path: 'wiki/concepts/market-offering/beta.md',
       content: `# Beta\n\n${BETA_BODY}`,
     });
   });
