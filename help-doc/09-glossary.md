@@ -24,14 +24,14 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
 - **Wiki** — the set of durable knowledge pages produced by ingestion.
 - **Concept** — a page carrying reusable knowledge (system, actor, rule,
   architecture) rather than a raw document.
-- **Concept grid** — the small, closed set of headings the wiki's concepts are
-  filed under. Rebuilt by the *concepts* step.
-- **Unclassified** — a concept page not yet filed into the grid; it waits under
-  `wiki/concepts/unclassified` until a *reclassify-concepts* step files it.
-- **Reclassification (reclassify-concepts)** — filing unclassified pages into
-  the grid as it stands, without rebuilding it.
-- **Taxonomy** — the published classification of the wiki used by the `/graph`
-  view and by navigation. Republished by the *taxonomy* step.
+- **Concept** — the folder a knowledge page is filed under; one leaf per
+  (concept × subject) lives at `wiki/concepts/<concept>/<subject>.md`.
+- **Unclassified** — a leaf that fits no concept folder yet; it waits under
+  the reserved `wiki/concepts/unclassified` folder until someone files it by
+  hand.
+- **Taxonomy** — the classification of the wiki used by the `/graph` view and
+  by navigation. It is derived from the concept folders themselves — there is
+  no separate step to publish it.
 - **Source note** — a page that traces the origin of a piece of information.
 - **Index** — the canonical map that links and references the wiki's pages.
 - **Log** — the chronological journal of ingestions and updates.
@@ -79,6 +79,11 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
   duplicate work already done.
 - **Runtime** — the component that executes and tracks agent-mode actions. If it
   is unavailable, chat stays usable.
+- **Agentic runtime** — an external analysis engine DONNA can delegate open
+  questions to (audit, synthesis, web research). It reads, reasons and
+  proposes — but never modifies the workspace itself: its side-effects go
+  through approval, and its proposals enter the plan like any other job. See
+  `12-agentic-runtime.md`.
 - **Parallelism** — the number of independent tasks that may run at the same
   time, subject to agent limits, plan limits and resource locks.
 - **Collection concurrency** — the parallelism used when connectors collect

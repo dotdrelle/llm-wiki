@@ -39,23 +39,19 @@ fall behind them:
 - `/pipeline` — run the whole production chain in one go, from ingest to polish.
 - `/status` — summarize connector health and current or recent jobs.
 - `/wiki-build [template]` — build deliverables from the current wiki for one template or all templates.
-- `/wiki-ingest [files]` — ingest Markdown already waiting in raw/untracked, then refresh the concept grid and taxonomy.
-- `/wiki-rebuild-concepts` — rebuild the concept grid, file unclassified pages into it, and republish the graph taxonomy.
-- `/wiki-reclassify` — file unclassified concept pages into the existing grid, then republish the taxonomy.
+- `/wiki-ingest [files]` — ingest Markdown already waiting in raw/untracked into the wiki.
 - `/wiki-sync [source]` — export Confluence sources and then ingest the exported Markdown.
-- `/wiki-taxonomy` — republish the graph taxonomy from the current wiki content.
 
 <!-- END GENERATED SKILLS -->
 
 `/status` and `/diagnose` are read-only. Every other skill mutates the
 workspace and asks for approval before it does.
 
-For the knowledge lifecycle, three of them are partial reruns of the same
-chain, from the widest to the narrowest: `/wiki-rebuild-concepts` resynthesizes
-the concept grid, refiles what sits unclassified and republishes the taxonomy;
-`/wiki-reclassify` skips the grid rebuild; `/wiki-taxonomy` republishes the
-taxonomy alone. `/wiki-ingest` already ends with the first of the three, so
-running one of them right after an ingest repeats work that has just been done.
+For the knowledge lifecycle, `/wiki-ingest` is the narrowest rerun: it ingests
+what already waits in `raw/untracked/` and, as each source goes in, files it
+as a concept leaf under its concept folder. There is no separate concept or
+taxonomy step — the concept is the folder, and the graph derives its taxonomy
+from the folders.
 
 You can also describe the goal in ordinary language — "run the deliver skill
 with the quarterly template" — instead of typing the command. See

@@ -233,7 +233,7 @@ async function writeIngestPlan(rootDir: string, results: Awaited<ReturnType<Inge
   await mkdir(dir, { recursive: true });
   // Deterministic plan filename: hashing the *sorted* source paths makes a
   // given input set always name its plan file the same way. This is the
-  // contract `agent-wiki-production`'s `_ingest_plan_ref` predicts exactly
+  // contract `agent-production`'s `_ingest_plan_ref` predicts exactly
   // (`ingest-{sha256(sorted paths \n-joined)[:16]}.json`), so a replan of the
   // same files overwrites the previous plan instead of accumulating one
   // timestamped file per run (D1/D2), and a retried `ingest_plan` lands on a

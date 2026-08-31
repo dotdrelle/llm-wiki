@@ -3,7 +3,7 @@ name: pipeline
 description: Run the whole production chain in one go, from ingest to polish
 params: []
 ---
-Execute the complete wiki production pipeline for the requested deliverables: ingest, the concept grid, filing unclassified concept pages into it, the graph taxonomy, build, export and polish, in that order.
+Execute the complete wiki production pipeline for the requested deliverables: ingest, build, export and polish, in that order. During ingest every source is filed as a concept leaf under `wiki/concepts/<concept>/<subject>.md` — the concept is the folder, so the concept map updates with the ingestion itself.
 
 ## Indivisibility
 

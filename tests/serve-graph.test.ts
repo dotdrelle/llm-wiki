@@ -409,15 +409,14 @@ describe('serve graph ui', () => {
     expect(graphHtml).not.toContain("localStorage.setItem('llm-wiki:graph:node:'+n.id");
   });
 
-  it('exposes refresh and rebuild controls under the Communities index', async () => {
+  it('exposes the refresh control under the Communities index, and no rebuild button', async () => {
     const graphHtml = renderWikiGraphV2();
     const routesSource = await graphRoutesSource();
     expect(graphHtml).toContain('id="community-refresh"');
-    expect(graphHtml).toContain('id="community-rebuild"');
-    // "Build" launches through Donna (llmwiki:runTaxonomy -> /wiki-taxonomy),
-    // not a direct API call — /api/graph/taxonomy was removed with the
-    // in-place spinner it used to drive.
-    expect(graphHtml).toContain("postMessage({type:'llmwiki:runTaxonomy'}");
+    // 0.15.66: the taxonomy synthesis is gone — communities derive from the
+    // concept folders, so there is no rebuild button and no taxonomy route.
+    expect(graphHtml).not.toContain('id="community-rebuild"');
+    expect(graphHtml).not.toContain('llmwiki:runTaxonomy');
     expect(routesSource).not.toContain('/api/graph/taxonomy');
   });
 
@@ -530,6 +529,24 @@ describe('serve deliverables ui', () => {
     expect(source).toContain('class="delete-confirm"');
     expect(source).toContain('delete-confirm-panel');
     expect(source).not.toContain("confirm('Delete this file?')");
+  });
+
+  it('styles every class the file header/delete markup still emits', async () => {
+    const css = await readFile(
+      path.resolve(import.meta.dirname, '../src/serve/html/wikiLayoutCss.ts'),
+      'utf8',
+    );
+    // The delete confirmation popover is positioned/backed by CSS; without
+    // these rules it renders as a transparent, unpositioned block over the
+    // sidebar rows.
+    expect(css).toMatch(/\.delete-confirm \{[^}]*position: relative/s);
+    expect(css).toMatch(/\.delete-confirm-panel \{[^}]*position: absolute[^}]*z-index[^}]*background/s);
+    // The accent fill that marks an agent/LLM-launched button (Build,
+    // Export / polish) apart from the instant local controls.
+    expect(css).toMatch(/\.action-agent \{[^}]*background: var\(--accent\)/s);
+    // Comment blocks stay balanced — a botched removal once left an
+    // unterminated /* that swallowed the rest of the stylesheet.
+    expect((css.match(/\/\*/g) ?? []).length).toBe((css.match(/\*\//g) ?? []).length);
   });
 });
 

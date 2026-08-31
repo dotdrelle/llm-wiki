@@ -368,22 +368,6 @@ describe('chat html', () => {
     expect(script).toContain("input.value = '/wiki-ingest';");
   });
 
-  it('routes the sidebar concept-grid Build button through Donna as a /wiki-rebuild-concepts skill', () => {
-    const script = chatScripts().join('\n');
-    // The 🔨 button posts llmwiki:buildConcepts — no direct call to
-    // /api/graph/concepts or /api/graph/reclassify-concepts (removed with
-    // the in-place spinner they used to drive).
-    expect(script).toContain("data.type === 'llmwiki:buildConcepts'");
-    expect(script).toContain("input.value = '/wiki-rebuild-concepts';");
-    expect(script).not.toContain('/api/graph/concepts');
-    expect(script).not.toContain('/api/graph/reclassify-concepts');
-  });
-
-  it('routes the /graph Build button through Donna as a /wiki-taxonomy skill', () => {
-    const script = chatScripts().join('\n');
-    expect(script).toContain("data.type === 'llmwiki:runTaxonomy'");
-    expect(script).toContain("input.value = '/wiki-taxonomy';");
-  });
 
   it('keeps the three right rail controls aligned at the top in wiki mode', () => {
     expect(CHAT_HTML).toContain('body.center-wiki #right-rail{padding-top:10px}');

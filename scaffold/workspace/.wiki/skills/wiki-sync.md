@@ -6,7 +6,7 @@ params:
 ---
 Export the requested Confluence source, or all configured sources when none is specified. Check configuration and source availability first, wait for the export to finish, and stop without producing partial input if it fails or exports nothing.
 
-Then run the production pipeline over the newly exported Markdown — steps ingest, concepts, reclassify-concepts and taxonomy, in that order: ingest it into the wiki, refresh the concept grid, file any page currently under `wiki/concepts/unclassified` into it, then republish the graph taxonomy.
+Then run the production pipeline step ingest over the newly exported Markdown. During the ingest every source is filed as a concept leaf under `wiki/concepts/<concept>/<subject>.md` — the concept is the folder, so no separate concept or taxonomy pass exists anymore.
 
 ## Boundaries
 

@@ -4,13 +4,18 @@
 
 `llm-wiki` is a local-first Markdown knowledge engine.
 
-## 0.14.5
+## 0.15.66
 
-The browser now uses the Wiki Graph v2 exclusively. It provides lightweight
-structure snapshots, community map, relation-focused community and provenance
-views, searchable document selection, list view, theme switching, and lazy
-document previews. The legacy Wiki graph renderer and endpoints were removed;
-the shared force primitives remain only for the Run/Task graph.
+The workspace now runs the shipped concepts & taxonomy model: `wiki concepts`
+builds a per-workspace grid of ranking classes from the raw documents, each
+(class × subject) pair gets one synthesis leaf in `wiki/concepts/`, and the
+taxonomy derives from the grid deterministically. Re-ingesting a document
+never touches the grid, and hand-moving a concept leaf re-files it properly.
+The browser uses the Wiki Graph v2 exclusively: structure snapshots, community
+map, relation-focused community and provenance views, searchable document
+selection, list view, theme switching, and lazy document previews. The legacy
+Wiki graph renderer and endpoints were removed; the shared force primitives
+remain only for the Run/Task graph.
 
 It turns raw project material into a persistent wiki, builds a local retrieval
 index, and regenerates deliverables from templates. It works as a standalone CLI
@@ -32,7 +37,7 @@ multi-user surface.
 | [`llm-wiki`](https://github.com/dotdrelle/llm-wiki)                           | Workspace engine: CLI, web UI, MCP server, retrieval, deliverables, skills |
 | [`llm-wiki-manager`](https://github.com/dotdrelle/llm-wiki-manager)           | Multi-workspace cockpit, Docker orchestration, `dot` shell                 |
 | [`agent-cme`](https://github.com/dotdrelle/agent-cme)                         | Workspace-scoped Confluence to Markdown exporter                           |
-| [`agent-wiki-production`](https://github.com/dotdrelle/agent-wiki-production) | Workspace-scoped production jobs                                           |
+| [`agent-production`](https://github.com/dotdrelle/agent-production) | Workspace-scoped production jobs                                           |
 
 ## What It Does
 

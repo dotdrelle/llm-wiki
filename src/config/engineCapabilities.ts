@@ -64,9 +64,12 @@ function isManagedOpenAiCompatible(llm: LlmConfig): boolean {
  * the request (bug B-A). The prefix is therefore removed before the test, which
  * makes the rule valid in both modes.
  */
+export function bareModelName(model: string): string {
+  return model.slice(model.lastIndexOf('/') + 1);
+}
+
 export function supportsTemperature(llm: LlmConfig): boolean {
-  const bareModel = llm.model.slice(llm.model.lastIndexOf('/') + 1);
-  const isGpt5 = /^gpt-5(?:[.-]|$)/i.test(bareModel);
+  const isGpt5 = /^gpt-5(?:[.-]|$)/i.test(bareModelName(llm.model));
   if (!isGpt5) return true;
   // A gpt-5 served by OpenAI, directly or behind a gateway.
   return !(isGateway(llm) || llm.engine === 'openai');

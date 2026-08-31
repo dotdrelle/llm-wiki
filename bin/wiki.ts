@@ -88,7 +88,7 @@ async function loadConfigWithMigration(cwd: string) {
     if (!isLegacyProviderError(error)) throw error;
 
     // `argv.includes('doctor')` ne suffit pas : `--apply` existe aussi sur
-    // `group-concepts`, et « doctor » peut apparaître comme valeur d'option
+    // d'autres commandes, et « doctor » peut apparaître comme valeur d'option
     // (un workspace nommé ainsi, par exemple). On identifie donc la
     // sous-commande réelle en écartant les options et leurs valeurs.
     const argv = process.argv.slice(2);

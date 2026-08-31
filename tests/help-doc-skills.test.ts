@@ -9,7 +9,9 @@ import { join } from 'node:path';
  It did: the concepts rework added wiki-rebuild-concepts, wiki-reclassify and
  wiki-taxonomy, and help-doc kept advertising the six skills it already knew.
  A user reading `/help` could not discover the three that mattered most to the
- new lifecycle, and nothing failed.
+ new lifecycle, and nothing failed. The 0.15.66 simplification then REMOVED
+ those three skills again — same drift class, opposite direction — which is
+ exactly why this list stays generated and tested.
 
  The list is now generated from scaffold/workspace/.wiki/skills/ into
  08-commands-serve.md. These tests are what makes the generation binding.

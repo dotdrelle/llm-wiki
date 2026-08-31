@@ -135,6 +135,40 @@ describe('doctor qualitative diagnostics', () => {
     expect(output).toContain('✗ 1 error(s)');
   });
 
+  it('does not warn about a refused temperature the user never configured', async () => {
+    const root = await createWorkspace();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ data: [{ id: 'gpt-5-mini' }] })),
+    );
+    const config = createConfig(root, {
+      llm: { ...createConfig(root).llm, engine: 'openai', model: 'gpt-5-mini' },
+    });
+
+    const output = await captureDoctor(config);
+
+    // config.llm.temperature always resolves to a number (schema default),
+    // so this must be decided from the .wikirc.yaml file, not the resolved
+    // config — there is none here, so the warning must not fire.
+    expect(output).not.toContain('is refused by');
+  });
+
+  it('warns about a temperature explicitly set in .wikirc.yaml for a model that refuses it', async () => {
+    const root = await createWorkspace();
+    await writeFile(path.join(root, '.wikirc.yaml'), 'llm:\n  temperature: 0.2\n', 'utf8');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ data: [{ id: 'gpt-5-mini' }] })),
+    );
+    const config = createConfig(root, {
+      llm: { ...createConfig(root).llm, engine: 'openai', model: 'gpt-5-mini' },
+    });
+
+    const output = await captureDoctor(config);
+
+    expect(output).toContain('llm.temperature (0.1) is refused by gpt-5-mini');
+  });
+
   it('classifies a missing rerank endpoint in the vector check output', async () => {
     const root = await createWorkspace();
     vi.stubGlobal(

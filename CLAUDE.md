@@ -123,57 +123,37 @@ docs/                   User-facing references
 - `build`, `refresh`, `export`, `lint`: generate and verify deliverables.
 - `serve`: web UI, graph, chat, skills, API proxy.
 - `mcp`, `mcp-http`: expose wiki tools over MCP.
-- `taxonomy`: bounded synthesis of the graph taxonomy. Without `--apply` it
-  prints the exact prompt it would send and costs nothing — that dry run is the
-  calibration tool, so it must read the active registry like `--apply` does.
-  `--fingerprint` returns the knowledge fingerprint the production barrier
-  freezes; `--expected-corpus` is the compare-and-swap on publication.
 - `release`: tag the current workspace state (`release-<n>` or `--label`), or
   `--list`. A release is a git tag, never a history rewrite: the invariant is
   revert-forward, so older commits are folded out of the `/history` list and stay
   fully restorable.
 
-## Taxonomy — what the model is allowed to see
+## Concepts & taxonomy — the deterministic model
 
-The synthesis prompt is built from `buildTaxonomyInventory`, and two of its
-inputs were dead or dangerous:
+Since 0.15.66 there is no registry, no grid synthesis and no LLM taxonomy
+pass. The concept IS the folder: ingest files each leaf under
+`wiki/concepts/<concept>/<subject>.md` (`src/ingest/conceptGrid.ts` carries the
+path convention), a subject cited under several concepts gets one leaf per
+concept, and a subject that fits none waits under the reserved
+`unclassified` folder. The path carries the identity — the `subject` frontmatter
+is reconciled FROM the path at apply time, never the reverse.
 
-- **Excerpts.** `SynthesizeDeps.excerpts` existed, was threaded through, and no
-  caller ever filled it — so the model named conceptual domains from title
-  strings alone, which describe the editorial form of a document, not its
-  subject. `commands/taxonomy.ts` now reads the first lines of each knowledge
-  page (bounded pool, like `buildWikiGraph`) and each family carries the excerpt
-  of its most central member. Keep the budget linear in families, never per page.
-- **Previous communities.** They are emitted as continuity — reuse a label when
-  the subject has not changed — but **only** when they come from a published
-  registry (`TaxonomyInventory.communitiesFromRegistry`). Without a registry the
-  field falls back to the deterministic graph projection, whose labels come from
-  `group:` seeds and include an `Ungrouped` bucket; presenting those as
-  continuity would reintroduce the `group:`-as-identity defect Lot 0 removed, and
-  hand the model a catch-all label its own rules forbid.
+The graph derives communities deterministically from the folders
+(`src/graph/wiki/communityProjection.ts`: a node's community is its concept
+folder, or a fixed group per node type for the non-concept surfaces); the
+transverse edges (shared `subject`, shared `tags`) are computed there too,
+never materialized. Hand-moving a leaf goes through the same filing steps as
+any re-file (`src/serve/tree/conceptMove.ts`) — "move the file" is a filing
+decision, never a silent rename.
 
-Naming stability is decided by the hysteresis in `taxonomy/consolidation.ts`
-(`RENAME_MIN_STABILITY`, `RENAME_MIN_REVISION_GAP`), not by the draft label. Its
-verdicts (`created` / `renamed` / `kept` / `unchanged`, with the member overlap)
-are published on the outcome and printed by `wiki taxonomy --apply`: those two
-constants are only tunable against observed counts. Many `kept` means the model
-keeps proposing renames the engine refuses; many `renamed` means the map moves
-under the reader. `--force` lifts the hysteresis entirely.
+The retired commands (`concepts`, `reclassify-concepts`, `taxonomy`,
+`group-concepts`) and the whole `src/graph/wiki/taxonomy/` module were removed
+in the same release; the production agent's default pipeline is now
+`ingest, build, export, polish`. Do not reintroduce a separate synthesis pass:
+the folder model is the simplification, and the two axes (folder = class,
+file name = subject) are what the split detector and the transverse edges read.
 
-`synthesize.ts`'s `maxDomains` (`checkProposal`) is a REJECTION ceiling on the
-number of top-level domains, relative to `inventory.families.length`
-(`max(floor, ceil(√families × coefficient))`) — not a target: a proposal over
-it is rejected whole, forcing a retry with fewer domains regardless of how
-many genuinely distinct subjects the corpus holds. On a comparative corpus
-(ACPI: ~30 leaf communities collapsed under 3 domains) the original floor of
-3 and coefficient of 1.5 were measured as too tight, forcing broad domains
-that stopped separating anything — raised to floor 5 / coefficient 2
-(`tests/taxonomy-domain-ceiling.test.ts` locks the new values). This is
-independent of, and layered on top of, the concept-homonym fix below: fewer
-duplicate concept pages means fewer, more meaningful families reaching this
-formula in the first place, but the ceiling itself was also measurably too
-low on its own.
-
+## Workspace Skill Model
 ## Workspace Skill Model
 
 A workspace skill package uses this layout:

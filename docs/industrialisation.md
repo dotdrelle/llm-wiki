@@ -51,7 +51,7 @@ deployment choice, not the default.
 
 ### Lock model already in production
 
-The production agent (`agent-wiki-production`) already implements the per-run
+The production agent (`agent-production`) already implements the per-run
 lock model that the multi-user boundary above names as a requirement. It is
 deliberately asymmetric in *severity* but symmetric in *detection*, and this
 design is what multi-user ownership must preserve, not reinvent:

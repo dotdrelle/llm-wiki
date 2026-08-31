@@ -568,25 +568,6 @@ window.addEventListener('message', (event) => {
     if (!input) return;
     input.value = '/wiki-ingest';
     sendMessage();
-  } else if (data.type === 'llmwiki:buildConcepts') {
-    // 🔨 "Build" clicked next to the wiki root row in the sidebar. Routes to
-    // /wiki-rebuild-concepts: concepts -> reclassify-concepts -> taxonomy,
-    // chained as one production-pipeline run (visible in the Plan with its
-    // real dependency chain) instead of the two direct API calls this used
-    // to make with an inline spinner.
-    showChatView();
-    const input = $('chat-input');
-    if (!input) return;
-    input.value = '/wiki-rebuild-concepts';
-    sendMessage();
-  } else if (data.type === 'llmwiki:runTaxonomy') {
-    // "Build" clicked on the /graph community panel. Routes to
-    // /wiki-taxonomy: taxonomy alone, no grid rebuild, no refiling.
-    showChatView();
-    const input = $('chat-input');
-    if (!input) return;
-    input.value = '/wiki-taxonomy';
-    sendMessage();
   } else if (data.type === 'llmwiki:palette') {
     // Ctrl/Cmd+K pressed inside an embedded wiki iframe.
     cmdkToggle();

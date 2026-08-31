@@ -102,10 +102,6 @@ ${CONFIRM_DIALOG_SCRIPT}
     });
     markActiveSidebarLinks();
     applySidebarSearch();
-    // The tree (and the "Build" button it carries) was just rebuilt: re-wire
-    // the shell-only launch button, which ships hidden and is revealed only
-    // inside the chat shell.
-    initBuildConceptsButton();
   }
   document.addEventListener('click', async (event) => {
       const button = event.target.closest?.('[data-tree-delete]');
@@ -938,27 +934,6 @@ ${CONFIRM_DIALOG_SCRIPT}
   });
 })();
 
-// "Build" concept grid → reclassify → taxonomy: only meaningful inside the
-// chat shell, where Serve owns the LLM config. Ships hidden; revealed and
-// wired here. Lives at the TOP level (outside the shell's IIFE) because
-// initShellMessaging — also top-level — calls it, and the IIFE closes before
-// initShellMessaging runs.
-function initBuildConceptsButton() {
-  if (window.self === window.top) return;
-  if (!document.documentElement.classList.contains('sidebar-panel')) return;
-  const buildConceptsBtn = document.querySelector('[data-build-concepts]');
-  if (!buildConceptsBtn) return;
-  buildConceptsBtn.hidden = false;
-  buildConceptsBtn.addEventListener('click', async function() {
-    if (!(await confirmAction({
-      title: 'Build concept grid',
-      message: 'Rebuild the concept grid, then file unclassified pages?',
-      confirmLabel: 'Build',
-    }))) return;
-    window.parent.postMessage({ type: 'llmwiki:buildConcepts' }, window.location.origin);
-  });
-}
-
 // ── App-shell messaging (no-op on standalone pages) ─────────────────────────
 (function initShellMessaging() {
   const embedded = window.self !== window.top;
@@ -1042,13 +1017,6 @@ function initBuildConceptsButton() {
         window.parent.postMessage({ type: 'llmwiki:ingest' }, window.location.origin);
       });
     }
-    // "Build" concept grid, then file unclassified pages: launches through
-    // Donna, like Ingest/Build-template above — not the two chained direct
-    // POST calls (with an inline spinner+timer) this used to make. Real
-    // orchestration (visible in the Plan, with a proper task dependency
-    // chain: concepts -> reclassify-concepts -> taxonomy) won this trade-off
-    // over in-place progress.
-    initBuildConceptsButton();
     // All local links must go through the shell, including pages such as
     // /graph that do not load WIKI_LAYOUT_SCRIPT and therefore cannot report
     // their own navigation after the iframe has loaded.

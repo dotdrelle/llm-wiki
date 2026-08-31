@@ -73,3 +73,8 @@ Tip: if a chat answer calls for an action, DONNA offers to switch. Type `/agent`
 to act, `/chat` to go back to questions. Both work the same in the Shell and
 in Serve. The full command reference is `07-commands-shell.md` for the
 terminal, `08-commands-serve.md` for the web interface.
+
+Open-ended analyses (audit, synthesis, contradictions, web research) can also
+be delegated to the **agentic runtime** — an external engine that reasons on
+its own and hands its conclusions back to agent mode. See
+`12-agentic-runtime.md`.

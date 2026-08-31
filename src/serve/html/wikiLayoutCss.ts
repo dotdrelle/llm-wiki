@@ -278,37 +278,13 @@ export const WIKI_LAYOUT_CSS = `
     .sidebar .side-collection-tabs > * { cursor: pointer; }
     .sidebar button:disabled { cursor: default; }
     .side-folder-action-icon svg { width: 0.95rem; height: 0.95rem; display: block; }
-    .side-build-concepts svg, .side-ingest-action svg { width: 0.95rem; height: 0.95rem; display: block; }
+    .side-ingest-action svg { width: 0.95rem; height: 0.95rem; display: block; }
     .side-refresh-action { font-size: 0.82rem; font-weight: 800; }
-    /* Solid accent fill: same "agent/LLM-launched action" marker as
-       .side-build-concepts and the /graph .agent-btn, applied to the other
-       Donna-routed launch button of this sidebar. */
+    /* Solid accent fill: the "agent/LLM-launched action" marker of this
+       sidebar, applied to the Donna-routed ingest button. */
     .side-ingest-action { font-size: 0.82rem; color: var(--panel); background: var(--accent); border-color: var(--accent); }
     .side-ingest-action:hover { background: color-mix(in srgb, var(--accent) 82%, black); border-color: color-mix(in srgb, var(--accent) 82%, black); color: var(--panel); }
     .side-ingest-action[hidden] { display: none; }
-    /* Solid accent fill: the "Build concept grid" launch button, same
-       agent/LLM-launched marker as .side-ingest-action and the /graph
-       .agent-btn. Placed after .side-folder-action so it overrides the
-       outline base instead of being overridden by it. */
-    .side-build-concepts {
-      min-width: 1.45rem;
-      height: 1.45rem;
-      padding: 0 0.4rem;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.3rem;
-      border: 1px solid var(--accent);
-      border-radius: 5px;
-      background: var(--accent);
-      color: var(--panel);
-      font: inherit;
-      font-size: 0.82rem;
-      font-weight: 700;
-      cursor: pointer;
-    }
-    .side-build-concepts:hover { background: color-mix(in srgb, var(--accent) 82%, black); border-color: color-mix(in srgb, var(--accent) 82%, black); }
-    .side-build-concepts[hidden] { display: none; }
     .side-folder-actions {
       position: absolute;
       top: 0;
@@ -633,9 +609,9 @@ export const WIKI_LAYOUT_CSS = `
     .action-donna { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--accent-soft); padding-left: 0.5rem; padding-right: 0.5rem; }
     .action-donna:hover { background: color-mix(in srgb, var(--accent) 16%, var(--panel)); border-color: var(--accent); color: var(--accent); }
     .action-donna svg { width: 16px; height: 16px; display: block; }
-    /* Solid accent fill on top of .action-donna: the "Build" launch button
-       specifically, not the "+ Add to Donna" context button it shares a base
-       class with — same agent/LLM-launched marker as .side-build-concepts,
+    /* Solid accent fill on top of .action-donna: the "Build" / "Export / polish"
+       launch buttons specifically, not the "+ Add to Donna" context button they
+       share a base class with — same agent/LLM-launched marker as
        .side-ingest-action and the /graph .agent-btn. */
     .action-agent { color: var(--panel); background: var(--accent); border-color: var(--accent); }
     .action-agent:hover { background: color-mix(in srgb, var(--accent) 82%, black); border-color: color-mix(in srgb, var(--accent) 82%, black); color: var(--panel); }

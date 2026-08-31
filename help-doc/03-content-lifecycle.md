@@ -69,30 +69,19 @@ them with the knowledge steps below.
 
 ## 5 bis. Organizing the knowledge
 
-Between ingestion and production, three steps keep the wiki navigable. They run
-in this order, and each one assumes the previous is done:
+The knowledge is organized as it is ingested — there is no separate step.
+Every source is filed as a **concept leaf** under
+`wiki/concepts/<concept>/<subject>.md`: the **concept is the folder**, and the
+`/graph` view derives its communities and its taxonomy directly from that
+folder structure. A subject cited under several concepts gets one leaf per
+concept; a subject that fits no concept yet waits under the reserved
+`wiki/concepts/unclassified/` folder.
 
-- **concepts**: synthesizes the **concept grid** — the small, closed set of
-  headings the wiki is filed under;
-- **reclassify-concepts**: files the pages sitting in
-  `wiki/concepts/unclassified` into that grid, without rebuilding it;
-- **taxonomy**: republishes the **graph taxonomy** used by the `/graph` view and
-  by navigation.
+Filing a page by hand works too: move a page into a concept folder and it is
+re-filed for real — its axes are rewritten and every link pointing at it is
+repointed. A move is a filing decision, never a silent rename.
 
-Filing a page by hand works too: drag a page out of
-`wiki/concepts/unclassified/` into a class folder and it is re-filed for real —
-its `class` is rewritten and every link pointing at it is repointed. A class the
-grid does not declare is refused rather than half-applied, and a whole class
-folder cannot be dragged: emptying or retiring a class changes the vocabulary,
-not just the files.
-
-An ingestion already ends with the three of them, so you rarely run them by
-hand. When you do — after editing pages directly, or when a grid rebuild left
-strays behind — pick the narrowest one that covers your case; see the skills in
-`08-commands-serve.md`.
-
-The full default chain is therefore: ingest, concepts, reclassify-concepts,
-taxonomy, build, export, polish.
+The full default chain is therefore: ingest, build, export, polish.
 
 ## 7. Tracking
 
@@ -105,7 +94,7 @@ the whole workspace.
 1. You connect a Confluence space as a source.
 2. DONNA exports it to Markdown into the working area.
 3. You run a dry-run ingestion, review the proposed pages, then apply.
-4. The wiki fills up: pages, concept grid, links, index, taxonomy.
+4. The wiki fills up: pages filed under their concept folders, links, index.
 5. You request a build: the deliverables come out, consistent with the wiki.
 6. A new version of a document? You re-ingest: nothing is duplicated, only what
    is needed is updated.

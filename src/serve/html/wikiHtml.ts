@@ -715,12 +715,6 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
   const newFolderAction = isEditableTreePath(node.path) && newFolderSection !== 'wiki'
     ? `<button class="side-folder-action side-folder-action-icon" type="button" title="New folder" aria-label="New folder in ${safeNodePath}" data-tree-new-folder="${safeNodePath}">${newFolderIcon}</button>`
     : '';
-  // Concept grid build + reclassify, on the "wiki" root row only: hidden
-  // outside the chat shell (see wikiLayoutScript.ts), same reveal-on-embed
-  // discipline as the other agent-launched buttons.
-  const buildConceptsAction = depth === 0 && node.name === 'wiki'
-    ? '<button class="side-folder-action side-build-concepts" type="button" title="Build the concept grid and file unclassified pages" aria-label="Build concept grid" data-build-concepts hidden><span class="side-build-concepts-label">' + HAMMER_ICON + '</span></button>'
-    : '';
   const dragAttrs = depth === 0 ? '' : ` draggable="true" data-tree-drag="${safeNodePath}" data-tree-kind="folder"`;
   const dropAttr = isEditableTreePath(node.path) ? ` data-tree-drop="${safeNodePath}"` : '';
   // Action buttons sit as a sibling of <summary>, not nested inside it: a
@@ -731,7 +725,7 @@ function renderNavNode(node: NavTreeNode, depth = 0): string {
   // the folder is closed. `.side-folder-row` wraps both so the actions stay
   // visible and clickable regardless of open/closed state, matching the
   // original always-visible icons.
-  const actions = `${newFolderAction}${buildConceptsAction}${createAction}${folderActions}`;
+  const actions = `${newFolderAction}${createAction}${folderActions}`;
   const actionsHtml = actions ? `<div class="side-folder-actions">${actions}</div>` : '';
   return `<div class="side-folder-row${rootClass}"><details class="side-folder"${open} data-tree-id="${safeNodePath}"${dragAttrs}${dropAttr}><summary><span class="side-folder-label">${escapeHtml(label)}</span></summary><div class="side-folder-children">${children}</div></details>${actionsHtml}</div>`;
 }

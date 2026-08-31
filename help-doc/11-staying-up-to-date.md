@@ -32,13 +32,12 @@ Detection is deterministic and costs nothing — none of it calls the LLM:
 - `wiki build`, or `/wiki-build [template]` — rebuild everything, or one template.
 - `wiki ingest`, or `/wiki-ingest [files]` — turn new or edited sources into
   wiki pages.
-- `/wiki-sync [source]` — export Confluence sources, then ingest, refresh the
-  concept grid and republish the taxonomy.
-- `/pipeline` — the whole chain in one run: ingest, taxonomy, build, export,
-  polish.
+- `/wiki-sync [source]` — export Confluence sources, then ingest them (each
+  source is filed as a concept leaf as it goes in).
+- `/pipeline` — the whole chain in one run: ingest, build, export, polish.
 
-The full default chain is: ingest, concepts, reclassify-concepts, taxonomy,
-build, export, polish (see `03-content-lifecycle.md`).
+The full default chain is: ingest, build, export, polish (see
+`03-content-lifecycle.md`).
 
 ## Automating it (headless)
 
@@ -46,7 +45,7 @@ For a cron job or CI, run the headless manager. Two commands cover the whole
 loop:
 
 ```bash
-# knowledge: sources -> wiki -> concept grid -> taxonomy
+# knowledge: sources -> wiki (filed as concept leaves)
 wiki-manager --headless --workspace <name> --skill "wiki-sync" --auto-approve --timeout 3600
 
 # deliverables: build -> export -> polish

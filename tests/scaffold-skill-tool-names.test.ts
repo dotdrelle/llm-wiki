@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 // skill that reintroduces a bare name must fail here.
 //
 // The known bare names mirror the tools exposed by the agent servers
-// (agent-cme, agent-wiki-production, agent-wiki-documents) plus the generic
+// (agent-cme, agent-production, agent-documents) plus the generic
 // orchestration contract.
 const KNOWN_BARE_TOOL_NAMES = [
   'cme_status', 'cme_setup', 'cme_sources_list', 'cme_source_add',

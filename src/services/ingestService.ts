@@ -1137,7 +1137,7 @@ export class IngestService {
           // Index first: wiki/index.md is itself part of the knowledge corpus
           // the fingerprint below covers, so publishing before regenerating it
           // would freeze a corpus the index rewrite immediately invalidates
-          // again — the same stale-marker trap fixed in reclassify-concepts.
+          // again — the same stale-marker trap this marker exists to catch.
           await this.regenerateIndex(source.relativePath);
           await this.publishGraphRevision(source.relativePath);
         }

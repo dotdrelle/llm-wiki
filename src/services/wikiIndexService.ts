@@ -94,7 +94,7 @@ function renderSection(title: string, intro: string, entries: WikiIndexEntry[], 
  * Rebuilds `wiki/index.md` from what is actually on disk. Idempotent and safe
  * to call after any command that touches `wiki/concepts/**` or `wiki/sources/*`
  * — ingest, `concepts --apply` (grid changes leave pages untouched but this
- * stays cheap enough to call anyway), `reclassify-concepts --apply`. Never
+ * stays cheap enough to call anyway). Never
  * throws: an index rebuild failing must not take down the mutation that
  * triggered it.
  */

@@ -33,16 +33,10 @@ on its own, and each takes optional positional arguments:
 - `/deliver [deliverable] [polish]` — export, or polish, deliverables that already
   exist under `deliverables/`. Deliverable names are accepted with or without the
   `.md` extension.
-- `/pipeline` — the whole chain in one job (ingest, concept grid, filing,
-  taxonomy, build, export, polish); `/status` and `/diagnose` are read-only
-  checks.
-- `/wiki-rebuild-concepts` — rebuild the concept grid from the ingested
-  corpus, file unclassified pages into it, then republish the taxonomy. Run
-  this deliberately, not on every sync: rebuilding the grid can remove a
-  class existing pages rely on.
-- `/wiki-reclassify` — file pages currently under `wiki/concepts/unclassified`
-  into the EXISTING grid (no rebuild), then republish the taxonomy.
-- `/wiki-taxonomy` — republish the taxonomy alone, from the wiki as it stands.
+- `/pipeline` — the whole chain in one job (ingest, build, export, polish);
+  `/status` and `/diagnose` are read-only checks. There is no separate concept
+  or taxonomy step: the concept is the folder, and each ingested source is
+  filed as a leaf under `wiki/concepts/<concept>/<subject>.md` as it goes in.
 
 Every production skill above starts a **mutating** job and therefore belongs to
 agent mode: chat mode is read-only and must hand off (`/agent`) rather than

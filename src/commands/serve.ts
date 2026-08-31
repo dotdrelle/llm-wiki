@@ -65,7 +65,7 @@ const MARKED_DIST_PATH = path.resolve(
 );
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
-const LLM_WIKI_VERSION = '0.15.66';
+const LLM_WIKI_VERSION = '0.15.70';
 
 type SkillMeta = {
   name: string;
@@ -785,7 +785,7 @@ export default async function serveCmd(
       }
 
       if (await handleUntrackedApi(rootDir, req, res, urlPath, isRuntimeRunActive, async (moves) => {
-        // The one rewriter, the one used by reclassify-concepts: two link
+        // The one link rewriter: two link
         // rewriters would disagree the day one of them learns a new syntax.
         const { rewriteWikiLinks } = await import('../services/wikiLinkRewrite.ts');
         await rewriteWikiLinks(workspace, moves);

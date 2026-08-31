@@ -19,9 +19,11 @@ import {
 import { WorkspaceService } from '../services/workspaceService.ts';
 import type { AppConfig } from '../types.ts';
 import {
+  bareModelName,
   describeTarget,
   engineFetchHeaders,
   isOllamaEngine,
+  supportsTemperature,
 } from '../config/engineCapabilities.ts';
 import {
   fetchGatewayCatalog,
@@ -397,6 +399,12 @@ function deepMergeConfig(current: unknown, patch: unknown): Record<string, unkno
 
   for (const [key, value] of Object.entries(patch as Record<string, unknown>)) {
     if (typeof value === 'undefined') continue;
+    // `null` is the removal marker: a recommendation to DELETE the key (e.g.
+    // llm.temperature on a model that refuses it), not to write null.
+    if (value === null) {
+      delete base[key];
+      continue;
+    }
     const currentValue = base[key];
     base[key] =
       value &&
@@ -412,15 +420,20 @@ function deepMergeConfig(current: unknown, patch: unknown): Record<string, unkno
   return base;
 }
 
+async function readRawConfigFile(config: AppConfig): Promise<Record<string, unknown>> {
+  const configPath = config.configPath ?? path.join(config.wikiRoot, '.wikirc.yaml');
+  const rawText = (await pathExists(configPath))
+    ? await readFile(configPath, 'utf8')
+    : '';
+  return rawText.trim() ? YAML.parse(rawText) : {};
+}
+
 async function applyRecommendedConfig(
   config: AppConfig,
   recommendedConfig: Record<string, unknown>,
 ): Promise<void> {
   const configPath = config.configPath ?? path.join(config.wikiRoot, '.wikirc.yaml');
-  const rawText = (await pathExists(configPath))
-    ? await readFile(configPath, 'utf8')
-    : '';
-  const rawConfig = rawText.trim() ? YAML.parse(rawText) : {};
+  const rawConfig = await readRawConfigFile(config);
   const nextConfig = deepMergeConfig(rawConfig, recommendedConfig);
   await safeWriteFile(configPath, YAML.stringify(nextConfig));
   ok(`Updated ${configPath}`);
@@ -1060,6 +1073,36 @@ export default async function doctorCmd(
         .map(([key, value]) => `${key}=${value}`)
         .join(', '),
     );
+  }
+
+  // A declared temperature that the model refuses is dead config: the engine
+  // already omits it, and the agentic gateway retries without it. The fix is
+  // to remove the line — one source of truth, and every consumer inherits.
+  // `config.llm.temperature` always resolves to a number (schema default
+  // 0.1), so checking it against `undefined` fired this warning on every
+  // gpt-5-class workspace even when the user's own .wikirc.yaml never
+  // mentioned temperature at all. Check the raw file instead — the same
+  // thing `--apply` below actually reads and writes.
+  const rawConfigForTemperatureCheck = await readRawConfigFile(config);
+  const rawLlmConfig = rawConfigForTemperatureCheck?.llm;
+  const temperatureExplicitlySet =
+    rawLlmConfig != null &&
+    typeof rawLlmConfig === 'object' &&
+    'temperature' in (rawLlmConfig as Record<string, unknown>);
+  if (temperatureExplicitlySet && !supportsTemperature(config.llm)) {
+    const bareModel = bareModelName(config.llm.model);
+    warn(
+      `llm.temperature (${config.llm.temperature}) is refused by ${bareModel} — it is silently ignored by the engine; remove it from the config`,
+    );
+    row(
+      'action:',
+      options.apply
+        ? 'removing llm.temperature from .wikirc.yaml'
+        : 'run `wiki doctor --apply` to remove it',
+    );
+    if (options.apply) {
+      await applyRecommendedConfig(config, { llm: { temperature: null } });
+    }
   }
 
   if (isOllamaEngine(config.llm) && ollamaInfo) {

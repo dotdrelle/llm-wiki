@@ -127,22 +127,6 @@ document.querySelector('#community-refresh').addEventListener('click',()=>{onGra
 // dependsOn chain) won this trade-off over the inline spinner. Only
 // meaningful inside the chat shell, where there is a Donna to post to — a
 // standalone /graph visit (no parent frame) has nothing to route through,
-// so the button stays hidden there, same reveal-on-embed rule as every other
-// agent-launched control in this app.
-if(window.parent&&window.parent!==window){
-  const rebuildBtn=document.querySelector('#community-rebuild');
-  rebuildBtn.hidden=false;
-  // Meme garde-fou que les autres lancements d'agent : une confirmation
-  // explicite avant d'occuper le runtime.
-  rebuildBtn.addEventListener('click',async()=>{
-    if(!(await confirmAction({
-      title:'Rebuild taxonomy',
-      message:'Run the taxonomy agent to synthesize communities from the current corpus?',
-      confirmLabel:'Rebuild',
-    }))) return;
-    window.parent.postMessage({type:'llmwiki:runTaxonomy'},location.origin);
-  });
-}
 // "← Back" goes back up ONE step. It jumped from focus view to the map as soon
 // as the intermediate level was not a community in the strict sense, which
 // cancelled the whole descent for a single back click.

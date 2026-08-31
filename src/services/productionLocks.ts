@@ -6,7 +6,7 @@ import { pathExists } from '../utils/fs.ts';
 /**
  * Read-only view of the production agent's lock directory.
  *
- * `agent-wiki-production` serializes its jobs with lock files under
+ * `agent-production` serializes its jobs with lock files under
  * `<workspace>/.wiki/production-jobs/locks/<workspace>/*.lock`, and the
  * llm-wiki container mounts the very same workspace. We never write there:
  * the agent owns those files. We only need to answer one question before
