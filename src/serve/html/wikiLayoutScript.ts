@@ -24,14 +24,37 @@ ${CONFIRM_DIALOG_SCRIPT}
   const searchKey = storagePrefix + 'search';
   const scrollKey = storagePrefix + 'scrollTop';
   const collectionKey = storagePrefix + 'collection';
-  let activeCollection = localStorage.getItem(collectionKey) || 'templates';
+  const viewKey = storagePrefix + 'view';
+  // Pending is the default view: it is the inbox of sources, and the first
+  // question of a fresh reader is "what is waiting here". A persisted choice
+  // always wins over the default.
+  let activeView = localStorage.getItem(viewKey) || 'pending';
+  let activeCollection = localStorage.getItem(collectionKey) || 'build-context';
   const currentPath = decodeURIComponent(window.location.pathname).replace(/^\\//, '');
   const sidebar = document.querySelector('.sidebar');
   const sideTree = document.querySelector('.side-tree');
   const searchInput = document.querySelector('[data-side-search]');
   const searchStatus = document.querySelector('[data-side-search-status]');
-  const sideFiles = () => [...document.querySelectorAll('.side-tree [data-side-path]')];
-  const sideFolders = () => [...document.querySelectorAll('[data-tree-id]')];
+  const sideFiles = () => [...document.querySelectorAll('.sidebar [data-side-path]')];
+  const sideFolders = () => [...document.querySelectorAll('.sidebar [data-tree-id]')];
+  const VIEW_ORDER = ['wiki', 'files', 'pending'];
+  function applySideView() {
+    document.querySelectorAll('[data-side-view]').forEach((button) => {
+      const active = button.getAttribute('data-side-view') === activeView;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    document.querySelectorAll('[data-side-view-pane]').forEach((pane) => {
+      pane.hidden = pane.getAttribute('data-side-view-pane') !== activeView;
+    });
+  }
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest?.('[data-side-view]');
+    if (!button) return;
+    activeView = button.getAttribute('data-side-view') || 'pending';
+    try { localStorage.setItem(viewKey, activeView); } catch {}
+    applySideView();
+  });
   function saveSidebarState() {
     if (searchInput) localStorage.setItem(searchKey, searchInput.value);
     if (sideTree) localStorage.setItem(scrollKey, String(sideTree.scrollTop));
@@ -78,12 +101,13 @@ ${CONFIRM_DIALOG_SCRIPT}
     // Which folders are open is the reader's place in the tree, not server
     // state: rebuilding the markup must not send them back to the top.
     const openBefore = new Set(
-      [...document.querySelectorAll('.side-tree [data-tree-id]')]
+      [...document.querySelectorAll('.sidebar [data-tree-id]')]
         .filter((node) => node.open)
         .map((node) => node.getAttribute('data-tree-id')),
     );
     const pairs = [
       ['nav.side-tree', 'innerHTML'],
+      ['.side-collections', 'innerHTML'],
       ['[data-untracked-list]', 'innerHTML'],
       ['[data-untracked-count]', 'textContent'],
     ];
@@ -96,11 +120,12 @@ ${CONFIRM_DIALOG_SCRIPT}
       replaced += 1;
     }
     if (!replaced) throw new Error('Sidebar unavailable');
-    document.querySelectorAll('.side-tree [data-tree-id]').forEach((node) => {
+    document.querySelectorAll('.sidebar [data-tree-id]').forEach((node) => {
       const id = node.getAttribute('data-tree-id');
       if (id && openBefore.size) node.open = openBefore.has(id);
     });
     markActiveSidebarLinks();
+    applySideView();
     applySidebarSearch();
   }
   document.addEventListener('click', async (event) => {
@@ -190,9 +215,18 @@ ${CONFIRM_DIALOG_SCRIPT}
     untrackedDragPath = source.getAttribute('data-tree-drag');
     source.classList.add('is-dragging');
     if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = 'move';
-      // Some browsers cancel a drag with no payload attached.
+      event.dataTransfer.effectAllowed = 'copyMove';
       event.dataTransfer.setData('text/plain', untrackedDragPath || '');
+      // Dropped on the chat, the same drag becomes "add this document to
+      // Donna's context": .md rows of the wiki tree and of Pending carry a
+      // context MIME stamp the shell recognizes mid-flight. The move handlers
+      // below keep working — the stamp is additive, never a substitute.
+      const kind = source.getAttribute('data-tree-kind');
+      const dragPath = untrackedDragPath || '';
+      if (kind === 'file' && dragPath.endsWith('.md')
+        && (dragPath.startsWith('wiki/') || dragPath.startsWith('raw/untracked/'))) {
+        event.dataTransfer.setData('application/x-llm-wiki-context', dragPath);
+      }
     }
   });
   document.addEventListener('dragend', () => {
@@ -303,9 +337,6 @@ ${CONFIRM_DIALOG_SCRIPT}
     host.textContent = '';
     const green = 'var(--ok)';
     const grey = 'var(--muted)';
-    const open = document.createElement('span');
-    open.textContent = '(';
-    host.appendChild(open);
     const mk = document.createElement('span');
     mk.textContent = markdown;
     mk.style.color = green;
@@ -323,12 +354,9 @@ ${CONFIRM_DIALOG_SCRIPT}
       }
       host.appendChild(part);
     }
-    const close = document.createElement('span');
-    close.textContent = ')';
-    host.appendChild(close);
     if (!up) {
       const note = document.createElement('span');
-      note.textContent = ' (documents agent down)';
+      note.textContent = ' — documents agent down';
       note.style.color = grey;
       note.title = why;
       host.appendChild(note);
@@ -542,6 +570,23 @@ ${CONFIRM_DIALOG_SCRIPT}
       searchStatus.textContent = matchCount === 0 ? 'No matching files.' : matchCount + ' matching file' + (matchCount > 1 ? 's.' : '.');
       searchStatus.classList.add('is-visible');
     }
+    // A match in a hidden view must not stay invisible: when the active view
+    // shows nothing, move to the first view that does.
+    if (matchCount > 0) {
+      const activePane = document.querySelector('[data-side-view-pane="' + activeView + '"]');
+      const activeHasMatch = Boolean(activePane?.querySelector('[data-side-path]:not(.is-search-hidden)'));
+      if (!activeHasMatch) {
+        const next = VIEW_ORDER.find((view) => {
+          const pane = document.querySelector('[data-side-view-pane="' + view + '"]');
+          return Boolean(pane?.querySelector('[data-side-path]:not(.is-search-hidden)'));
+        });
+        if (next) {
+          activeView = next;
+          try { localStorage.setItem(viewKey, activeView); } catch {}
+          applySideView();
+        }
+      }
+    }
     applyCollectionTab();
   }
   if (searchInput) {
@@ -584,6 +629,7 @@ ${CONFIRM_DIALOG_SCRIPT}
       if (label && originalLabel) label.textContent = originalLabel;
     }
   });
+  applySideView();
   applySidebarSearch();
   requestAnimationFrame(() => {
     const savedScroll = Number(localStorage.getItem(scrollKey) || '0');
@@ -623,62 +669,6 @@ ${CONFIRM_DIALOG_SCRIPT}
       window.addEventListener('pointerup', onUp);
       e.preventDefault();
     });
-  })();
-
-  // ── pending panel resizer ─────────────────────────────────────────────────
-  (function initPendingResizer() {
-    const sb = document.querySelector('.sidebar');
-    const handle = document.querySelector('[data-pending-resizer]');
-    const panel = document.querySelector('[data-untracked-panel]');
-    if (!sb || !handle || !panel) return;
-    const PKEY = 'llm-wiki:sidebar:pendingHeight';
-    function clamp(px) {
-      return Math.max(60, Math.min(px, sb.clientHeight * 0.72));
-    }
-    function applyHeight(px, persist) {
-      const v = clamp(px);
-      sb.style.setProperty('--pending-height', v + 'px');
-      if (persist) localStorage.setItem(PKEY, String(Math.round(v)));
-    }
-    function syncResizer() {
-      handle.classList.toggle('is-visible', panel.open);
-      if (!panel.open) {
-        sb.style.removeProperty('--pending-height');
-      } else {
-        const saved = Number(localStorage.getItem(PKEY));
-        if (Number.isFinite(saved) && saved > 0) applyHeight(saved);
-        else applyHeight(panel.offsetHeight);
-      }
-    }
-    panel.addEventListener('toggle', syncResizer);
-    syncResizer();
-    let startY = 0, startH = 0, dragging = false;
-    const onMove = e => {
-      if (!dragging) return;
-      applyHeight(startH + (startY - e.clientY), true);
-    };
-    const onUp = () => {
-      if (!dragging) return;
-      dragging = false;
-      handle.classList.remove('dragging');
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-    };
-    handle.addEventListener('pointerdown', e => {
-      startY = e.clientY;
-      startH = parseFloat(sb.style.getPropertyValue('--pending-height')) || panel.offsetHeight;
-      dragging = true;
-      handle.classList.add('dragging');
-      document.body.style.cursor = 'row-resize';
-      document.body.style.userSelect = 'none';
-      handle.setPointerCapture?.(e.pointerId);
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', onUp);
-      e.preventDefault();
-    });
-    window.addEventListener('resize', syncResizer);
   })();
 
   // ── workspace switcher ────────────────────────────────────────────────────

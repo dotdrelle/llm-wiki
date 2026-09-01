@@ -65,13 +65,12 @@ describe('a single set of attributes for the whole panel', () => {
     expect(html).not.toContain('data-tree-new-folder="raw/untracked"');
   });
 
-  it('keeps empty folders visible and deletable in every tree', async () => {
+  it('keeps empty folders visible and deletable in the wiki tree and collections', async () => {
     for (const directory of [
       'wiki/empty-wiki',
       'templates/empty-template',
       'build-context/empty-context',
       'deliverables/empty-build',
-      'raw/untracked/empty-pending',
     ]) {
       await mkdir(path.join(root, directory), { recursive: true });
     }
@@ -83,11 +82,37 @@ describe('a single set of attributes for the whole panel', () => {
       'templates/empty-template',
       'build-context/empty-context',
       'deliverables/empty-build',
-      'raw/untracked/empty-pending',
     ]) {
       expect(html, directory).toContain(`data-tree-id="${directory}"`);
       expect(html, directory).toContain(`data-tree-delete="${directory}"`);
     }
+  });
+
+  it('shows only Pending folders that hold a document directly, and collapses empty ancestor chains', async () => {
+    // Pending is the inbox of documents, not of folders: a directory no
+    // source sits DIRECTLY under is scaffolding, not structure. Six empty
+    // ancestor levels in front of the first document must not each cost a
+    // line — the first folder that holds a document becomes the top level.
+    await mkdir(path.join(root, 'raw/untracked/empty-pending'), { recursive: true });
+    await mkdir(path.join(root, 'raw/untracked/lot/sous-lot'), { recursive: true });
+    await writeFile(path.join(root, 'raw/untracked/lot/sous-lot/note.md'), '# x\n', 'utf8');
+    await mkdir(path.join(root, 'raw/untracked/a/b/c'), { recursive: true });
+    await writeFile(path.join(root, 'raw/untracked/a/b/c/profond.md'), '# x\n', 'utf8');
+
+    const html = await renderSidebar(root);
+
+    expect(html).not.toContain('data-tree-id="raw/untracked/empty-pending"');
+    // The folder chain down to a real document is preserved when every level
+    // holds a document itself.
+    expect(html).toContain('data-tree-id="raw/untracked/lot"');
+    expect(html).toContain('data-tree-id="raw/untracked/lot/sous-lot"');
+    expect(html).toContain('data-tree-drag="raw/untracked/lot/sous-lot/note.md"');
+    // The empty ancestors a/ and a/b/ of the deep document are collapsed:
+    // c/ appears at the top, carrying its document, without the scaffolding.
+    expect(html).not.toContain('data-tree-id="raw/untracked/a"');
+    expect(html).not.toContain('data-tree-id="raw/untracked/a/b"');
+    expect(html).toContain('data-tree-id="raw/untracked/a/b/c"');
+    expect(html).toContain('data-tree-drag="raw/untracked/a/b/c/profond.md"');
   });
 
   it('makes a section root neither draggable nor deletable', async () => {
@@ -115,6 +140,7 @@ describe('panel refresh', () => {
     // Pending emptied on screen while wiki/, deliverables/, and templates/
     // stayed as-is — the sections most likely to have changed.
     expect(WIKI_LAYOUT_SCRIPT).toContain("['nav.side-tree', 'innerHTML']");
+    expect(WIKI_LAYOUT_SCRIPT).toContain("['.side-collections', 'innerHTML']");
     expect(WIKI_LAYOUT_SCRIPT).toContain("['[data-untracked-list]', 'innerHTML']");
     expect(WIKI_LAYOUT_SCRIPT).toContain("['[data-untracked-count]', 'textContent']");
   });
@@ -124,6 +150,110 @@ describe('panel refresh', () => {
     // server state to be rebuilt.
     expect(WIKI_LAYOUT_SCRIPT).toContain('const openBefore = new Set(');
     expect(WIKI_LAYOUT_SCRIPT).toContain('node.open = openBefore.has(id)');
+  });
+});
+
+describe('sidebar views', () => {
+  it('splits the sidebar into three views behind an icon rail, Pending by default', async () => {
+    const html = await renderSidebar(root);
+
+    expect(html).toContain('aria-label="Sidebar views"');
+    expect(html).toContain('data-side-view="wiki"');
+    expect(html).toContain('data-side-view="files"');
+    expect(html).toContain('data-side-view="pending"');
+    expect(html).toContain('data-side-view-pane="wiki"');
+    expect(html).toContain('data-side-view-pane="files"');
+    expect(html).toContain('data-side-view-pane="pending"');
+    // Pending is the default view: its pane ships visible, the others hidden.
+    expect(html).toContain('<section class="side-view-pane" data-side-view-pane="pending" role="tabpanel" aria-label="Pending sources">');
+    expect(html).toContain('data-side-view-pane="wiki" role="tabpanel" aria-label="Wiki pages" hidden');
+    expect(html).toContain('data-side-view-pane="files" role="tabpanel" aria-label="Context, templates, deliverables" hidden');
+    expect(WIKI_LAYOUT_SCRIPT).toContain("let activeView = localStorage.getItem(viewKey) || 'pending';");
+    // The wiki tree lives in its own view now: it never shares its column
+    // with the Pending stack or the collection tabs.
+    expect(html).toContain('<nav class="side-tree" aria-label="Wiki pages">');
+    expect(html).not.toContain('data-pending-resizer');
+  });
+
+  it('orders the collection tabs context, templates, deliverables', async () => {
+    const html = await renderSidebar(root);
+
+    const tabs = html.slice(html.indexOf('aria-label="Collections"'));
+    const context = tabs.indexOf('data-collection="build-context"');
+    const templates = tabs.indexOf('data-collection="templates"');
+    const deliverables = tabs.indexOf('data-collection="deliverables"');
+    expect(context).toBeGreaterThan(-1);
+    expect(templates).toBeGreaterThan(context);
+    expect(deliverables).toBeGreaterThan(templates);
+    // The first tab — context — is the active one.
+    expect(tabs).toContain('>context</button>');
+    expect(WIKI_LAYOUT_SCRIPT).toContain("let activeCollection = localStorage.getItem(collectionKey) || 'build-context';");
+  });
+
+  it('moves to the view that holds a search match', () => {
+    // A match in a hidden view must not stay invisible: the filter runs over
+    // the whole sidebar and jumps to the first view that shows one.
+    expect(WIKI_LAYOUT_SCRIPT).toContain('const VIEW_ORDER = [\'wiki\', \'files\', \'pending\'];');
+    expect(WIKI_LAYOUT_SCRIPT).toContain('[data-side-path]:not(.is-search-hidden)');
+    expect(WIKI_LAYOUT_SCRIPT).toContain('activeView = next;');
+  });
+
+  it('stamps dragged .md rows with the chat context MIME without breaking tree moves', () => {
+    // The same drag that moves a file between folders becomes "add to Donna"
+    // when dropped on the chat: the payload is additive, moves keep working.
+    expect(WIKI_LAYOUT_SCRIPT).toContain("event.dataTransfer.effectAllowed = 'copyMove';");
+    expect(WIKI_LAYOUT_SCRIPT).toContain("event.dataTransfer.setData('application/x-llm-wiki-context', dragPath)");
+    expect(WIKI_LAYOUT_SCRIPT).toContain("dragPath.startsWith('wiki/') || dragPath.startsWith('raw/untracked/')");
+    expect(WIKI_LAYOUT_SCRIPT).toContain("kind === 'file' && dragPath.endsWith('.md')");
+  });
+});
+
+describe('titles in the tree', () => {
+  it('reads a wiki page by its first heading, not by its filename', async () => {
+    await writeFile(
+      path.join(root, 'wiki/concepts/reseau.md'),
+      '---\ntype: note\n---\n\n# Architecture du réseau\n\nCorps du document.\n',
+      'utf8',
+    );
+
+    const html = await renderSidebar(root);
+
+    expect(html).toContain('>Architecture du réseau</a>');
+    expect(html).not.toContain('>reseau</a>');
+    // The path is not lost: it stays on the tooltip and the data attribute.
+    expect(html).toContain('title="wiki/concepts/reseau.md"');
+    expect(html).toContain('data-side-path="wiki/concepts/reseau.md"');
+  });
+
+  it('keeps the filename when the page has no heading', async () => {
+    await writeFile(path.join(root, 'wiki/concepts/reseau.md'), 'Sans titre.\n', 'utf8');
+
+    const html = await renderSidebar(root);
+
+    expect(html).toContain('>reseau</a>');
+  });
+
+  it('strips the leading transport hash of downloaded Pending files', async () => {
+    await writeFile(path.join(root, 'raw/untracked/8d5e3fe3-ACPI_RapportEtudeDonneesAmont_V0.md'), '# x\n', 'utf8');
+
+    const html = await renderSidebar(root);
+
+    expect(html).toContain('>ACPI RapportEtudeDonneesAmont V0</a>');
+    expect(html).not.toContain('>8d5e3fe3</a>');
+    expect(html).not.toContain('>8d5e3fe3 ACPI</a>');
+  });
+});
+
+describe('wiki tree chrome', () => {
+  it('drops the blue frame around the wiki tree but keeps the wiki line highlighted', () => {
+    // The accent border used to box the whole wiki section, children
+    // included. The background now sits on the "wiki" summary line only.
+    const rule = WIKI_LAYOUT_CSS.slice(
+      WIKI_LAYOUT_CSS.indexOf('.side-folder-row.side-folder-primary {'),
+      WIKI_LAYOUT_CSS.indexOf('\n    .side-folder-label {'),
+    );
+    expect(rule).not.toContain('border: 1px solid');
+    expect(rule).toContain('.side-folder-row.side-folder-primary summary { color: var(--accent); background: var(--accent-soft); }');
   });
 });
 

@@ -130,7 +130,10 @@ describe('Pending drop handler', () => {
     expect(render).toContain("part.style.color = green");
     expect(render).toContain("part.style.color = grey");
     expect(render).toContain('Unavailable: ');
-    expect(render).toContain('(documents agent down)');
+    expect(render).toContain('documents agent down');
+    // No parentheses around the format list: the line reads as plain text.
+    expect(render).not.toContain("textContent = '('");
+    expect(render).not.toContain("textContent = ')'");
   });
 
   it('reports every conversion to the shell, at its start and at its end', () => {
@@ -157,7 +160,12 @@ describe('Pending drop handler', () => {
 
   it('renders a Pending conversion as an ordinary upload activity in the shell', () => {
     expect(WIKI_PANEL_SCRIPT).toContain("data.type === 'llmwiki:pendingUpload'");
-    const handler = WIKI_PANEL_SCRIPT.slice(WIKI_PANEL_SCRIPT.indexOf("data.type === 'llmwiki:pendingUpload'"));
+    // Bound the slice at the next function: the drag-and-drop context handler
+    // below legitimately calls addPageContext, but this branch must not.
+    const handler = WIKI_PANEL_SCRIPT.slice(
+      WIKI_PANEL_SCRIPT.indexOf("data.type === 'llmwiki:pendingUpload'"),
+      WIKI_PANEL_SCRIPT.indexOf('function refreshWikiSidebar'),
+    );
     expect(handler).toContain('upsertActivity(');
     expect(handler).toContain("kind: 'upload'");
     // A Pending drop feeds the ingestion; it is not a document you opened a

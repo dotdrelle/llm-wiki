@@ -166,13 +166,45 @@ export const WIKI_LAYOUT_CSS = `
       font-size: 0.78rem;
     }
     .side-search-status.is-visible { display: block; }
+    /* ── Sidebar views (icon rail) ──────────────────────────────────────────
+       Three mutually exclusive views share the space below the search: Wiki
+       pages (brain), the file collections (file), and Pending (inbox, the
+       default). Each view owns the full height, so a tree no longer has to
+       share its column with the Pending stack. */
+    .side-views { flex: 1 1 0; min-height: 0; display: flex; gap: 0.45rem; margin-top: 0.45rem; }
+    .side-view-rail { flex: 0 0 auto; display: flex; flex-direction: column; gap: 0.35rem; }
+    .side-view-btn {
+      width: 2.25rem;
+      height: 2.25rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .side-view-btn svg { width: 1.05rem; height: 1.05rem; stroke: currentColor; }
+    .side-view-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+    .side-view-btn.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-soft);
+      box-shadow: inset 0 0 0 1px var(--accent);
+    }
+    .side-view-panes { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+    .side-view-pane { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+    .side-view-pane[hidden] { display: none; }
+    .side-view-pane > .side-tree { margin-top: 0; }
     .side-refresh-glyph { display: inline-block; line-height: 1; }
     .side-refresh-glyph svg { width: 0.82rem; height: 0.82rem; display: block; }
     .side-action .side-refresh-glyph svg { width: 1.05rem; height: 1.05rem; }
     .is-refreshing .side-refresh-glyph { animation: side-refresh-spin 0.7s linear infinite; }
     .is-refreshing { opacity: 0.7; cursor: wait; }
     @keyframes side-refresh-spin { to { transform: rotate(360deg); } }
-    .side-collections { margin-top: 0.35rem; display: flex; flex-direction: column; flex: 1 1 auto; }
+    .side-collections { margin-top: 0; display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; }
     .side-collection-tabs { display: flex; gap: 0.15rem; flex: 0 0 auto; }
     .side-collection-tab {
       flex: 1;
@@ -204,6 +236,8 @@ export const WIKI_LAYOUT_CSS = `
       padding: 0.15rem;
       background: var(--panel);
       flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
     }
     .side-collection-panel[hidden] { display: none; }
     .side-tree { margin-top: 1rem; font-size: 0.9rem; flex: 1 1 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
@@ -240,7 +274,7 @@ export const WIKI_LAYOUT_CSS = `
       transition: transform 120ms ease;
     }
     .side-folder[open] > summary::before { transform: rotate(90deg); }
-    .side-folder summary:hover { background: var(--panel-soft); color: var(--accent); } .side-folder-row.side-folder-primary { margin: 0.25rem 0 0.55rem; padding: 0.18rem; border: 1px solid color-mix(in srgb, var(--accent) 62%, var(--border)); border-radius: 8px; background: var(--accent-soft); } .side-folder-row.side-folder-primary summary { color: var(--accent); } .side-folder-row.side-folder-primary summary .side-folder-label { font-weight: 800; }
+    .side-folder summary:hover { background: var(--panel-soft); color: var(--accent); } .side-folder-row.side-folder-primary { margin: 0.25rem 0 0.55rem; } .side-folder-row.side-folder-primary summary { color: var(--accent); background: var(--accent-soft); } .side-folder-row.side-folder-primary summary .side-folder-label { font-weight: 800; }
     .side-folder-label {
       min-width: 0;
       overflow: hidden;
@@ -341,42 +375,20 @@ export const WIKI_LAYOUT_CSS = `
        or a search leaves a column of empty (white) rows behind. */
     .side-folder-row:has(> .side-folder.is-search-hidden) { display: none; }
     .side-file-row:has(> .side-file.is-search-hidden) { display: none; }
-    .side-pending-resizer {
-      display: none;
-      flex-shrink: 0;
-      height: 8px;
-      cursor: row-resize;
-      align-items: center;
-      justify-content: center;
-      touch-action: none;
-    }
-    .side-pending-resizer.is-visible { display: flex; }
-    .side-pending-resizer:hover,
-    .side-pending-resizer.dragging { background: var(--panel-soft); }
-    .side-pending-resizer::before {
-      content: '';
-      width: 34px;
-      height: 3px;
-      border-radius: 99px;
-      background: var(--border);
-    }
-    .side-pending-resizer:hover::before,
-    .side-pending-resizer.dragging::before { background: var(--muted); }
+    .side-folder-row:has(> .side-untracked-folder.is-search-hidden) { display: none; }
+    .side-untracked-item:has(> .side-untracked-link.is-search-hidden) { display: none; }
     .side-untracked-row {
-      flex: 0 0 auto;
-      margin-top: 0;
-      padding-top: 0.4rem;
-      border-top: 1px solid var(--border);
+      flex: 1 1 0;
       min-height: 0;
+      margin-top: 0;
+      padding-top: 0;
       position: relative;
-    }
-    .side-untracked-row:has(> .side-untracked[open]) {
-      flex: 0 0 var(--pending-height, 32vh);
-      overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
     .side-untracked { min-height: 0; }
-    .side-untracked[open] { height: 100%; overflow: hidden; }
-    .side-untracked-row > .side-folder-actions { top: 0.4rem; height: 2rem; }
+    .side-untracked[open] { flex: 1 1 0; display: flex; flex-direction: column; overflow: hidden; }
+    .side-untracked-row > .side-folder-actions { top: 0; height: 2rem; }
     .side-untracked summary {
       display: flex;
       align-items: center;
@@ -416,7 +428,8 @@ export const WIKI_LAYOUT_CSS = `
     .side-untracked-list {
       overflow-y: auto;
       scrollbar-width: thin;
-      max-height: calc(var(--pending-height, 32vh) - 3rem);
+      flex: 1 1 0;
+      min-height: 0;
       margin: 0.25rem 0 0;
       padding: 0 0 0.25rem;
       list-style: none;
@@ -653,6 +666,26 @@ export const WIKI_LAYOUT_CSS = `
       top: 1rem;
       min-width: 0;
     }
+    /* "Main sections" is a collapsible block, closed by default: the article
+       index is the primary reading surface, the tile browser stays one click
+       away. Same chevron language as the section browsers below. */
+    .index-aside > summary {
+      list-style: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .index-aside > summary::-webkit-details-marker { display: none; }
+    .index-aside > summary::before {
+      content: "▸";
+      flex: none;
+      color: var(--muted);
+      font-size: 0.74rem;
+      transition: transform 120ms ease;
+    }
+    .index-aside[open] > summary::before { transform: rotate(90deg); }
+    .index-aside > summary:hover .index-aside-title { color: var(--accent); }
     .index-aside-title {
       margin: 0 0 0.7rem;
       color: var(--muted);
@@ -661,6 +694,8 @@ export const WIKI_LAYOUT_CSS = `
       letter-spacing: 0.08em;
       text-transform: uppercase;
     }
+    .index-aside[open] > summary .index-aside-title { margin-bottom: 0.7rem; }
+    .index-aside:not([open]) > summary .index-aside-title { margin-bottom: 0; }
     .section-browser {
       margin: 0 0 0.75rem;
     }

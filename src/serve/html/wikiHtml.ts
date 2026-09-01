@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import fg from 'fast-glob';
 import matter from 'gray-matter';
@@ -85,6 +85,35 @@ export function escapeHref(href: string): string {
 
 function humanTitle(value: string): string {
   return path.basename(value, '.md').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// Downloads arrive named like `8d5e3fe3-ACPI_RapportEtudeDonneesAmont_V0.md`:
+// the leading hash/token is a transport id, not part of the title the reader
+// should see. Strips a UUID or a 8+ hex token (with at least one letter) that
+// opens the filename — a plain date like `20240115-` is not a hash and stays.
+function pendingDisplayTitle(file: string): string {
+  const base = path.basename(file, '.md');
+  const stripped = base
+    .replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[-_]/i, '')
+    .replace(/^(?=[0-9a-f]{8,}[-_])[0-9a-f]*[a-f][0-9a-f]*[-_]/i, '');
+  return humanTitle(stripped);
+}
+
+// The first `#` heading of a wiki page is its title, not its filename. Reads
+// only the head of the file and skips the frontmatter block, so the sidebar
+// and the graph never pay for a full page load per node.
+async function firstHeading(rootDir: string, relativePath: string): Promise<string | null> {
+  try {
+    const handle = await open(resolveInside(rootDir, relativePath), 'r');
+    const buffer = Buffer.alloc(4096);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    await handle.close();
+    const body = buffer.toString('utf8', 0, bytesRead).replace(/^---[\s\S]*?---\s*/m, '');
+    const match = body.match(/^#[ \t]+([^\r\n]+)/m);
+    return match ? match[1].trim() : null;
+  } catch {
+    return null;
+  }
 }
 
 function deliverableKind(relativePath: string): 'build' | 'export' | 'polish' {
@@ -669,13 +698,13 @@ function addNavDirectory(root: NavTreeNode, relativePath: string): void {
   }
 }
 
-function renderNavNode(node: NavTreeNode, depth = 0): string {
+function renderNavNode(node: NavTreeNode, depth = 0, titles: Map<string, string> | null = null): string {
   const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name));
   const files = [...node.files].sort((a, b) => a.localeCompare(b));
   const children = [
-    ...dirs.map((dir) => renderNavNode(dir, depth + 1)),
+    ...dirs.map((dir) => renderNavNode(dir, depth + 1, titles)),
     ...files.map((file) => {
-      const title = humanTitle(file);
+      const title = titles?.get(file) ?? humanTitle(file);
       const safePath = escapeAttr(toPosix(file));
       const kindAttr = file.startsWith('deliverables/')
         ? ` data-deliverable-kind="${deliverableKind(file)}"`
@@ -744,17 +773,41 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
     fg('raw/untracked/**', { cwd: rootDir, dot: false, onlyDirectories: true }),
   ]);
   const files = foundFiles.map(toPosix).sort((a, b) => a.localeCompare(b));
-  const directories = foundDirectories.map(toPosix).sort((a, b) => a.localeCompare(b));
   const count = files.length;
   const open = count > 0 ? ' open' : '';
-  const items = count > 0 || directories.some((dir) => dir !== 'raw' && dir !== 'raw/untracked')
+  // Pending is the inbox of documents, not of folders: only a folder that has
+  // at least one document DIRECTLY below it is shown. Ancestor chains with no
+  // document at any level are collapsed away — a source buried six folders
+  // deep is displayed under its own folder at the top, not under six levels
+  // of empty scaffolding.
+  const stripPrefix = (value: string) => (value === 'raw/untracked' ? '' : value.replace(/^raw\/untracked\//, ''));
+  const parentOf = (file: string) => stripPrefix(file.slice(0, file.lastIndexOf('/')));
+  const directParents = new Set(files.map(parentOf));
+  const directories = foundDirectories
+    .map(toPosix)
+    .filter((dir) => dir !== 'raw' && dir !== 'raw/untracked' && directParents.has(stripPrefix(dir)))
+    .sort((a, b) => a.localeCompare(b));
+  const items = count > 0
     ? (() => {
         const titles = new Map<string, string>();
-        const tree = createNavNode('', '');
-        for (const directory of directories) addNavDirectory(tree, directory);
-        for (const file of files) addNavPath(tree, file);
+        const root = createNavNode('pending', '');
+        const nodes = new Map<string, NavTreeNode>();
+        for (const directory of directories) {
+          const displayPath = stripPrefix(directory);
+          nodes.set(displayPath, createNavNode(displayPath.split('/').pop() ?? displayPath, directory));
+        }
+        for (const [displayPath, node] of nodes) {
+          let parent = displayPath.slice(0, displayPath.lastIndexOf('/'));
+          while (parent && !nodes.has(parent)) parent = parent.slice(0, parent.lastIndexOf('/'));
+          (parent ? nodes.get(parent) : root)?.dirs.set(node.name, node);
+        }
+        for (const file of files) {
+          const parentPath = parentOf(file);
+          const target = parentPath ? (nodes.get(parentPath) ?? root) : root;
+          target.files.push(file);
+        }
         return Promise.all(files.map(async (file) => {
-        let title = humanTitle(file);
+        let title = pendingDisplayTitle(file);
         try {
           const parsed = matter(await readFile(resolveInside(rootDir, file), 'utf8'));
           if (typeof parsed.data.title === 'string' && parsed.data.title.trim()) {
@@ -764,13 +817,10 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
           // Keep the filename fallback for an unreadable or malformed source.
         }
         titles.set(file, title);
-      })).then(() => {
-        const untracked = tree.dirs.get('raw')?.dirs.get('untracked');
-        return untracked ? renderUntrackedNode(untracked, titles, true) : '';
-      });
+      })).then(() => renderUntrackedNode(root, titles, true));
       })()
     : '<li class="side-untracked-empty">No pending sources.</li>';
-  return `<div class="side-pending-resizer" data-pending-resizer title="Resize Pending panel" role="separator" aria-orientation="horizontal"></div><div class="side-folder-row side-untracked-row"><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span></summary><div class="side-untracked-formats" data-untracked-formats style="padding:.15rem .5rem .3rem;font-size:.72rem;color:var(--muted)"></div><div class="side-untracked-list" data-untracked-list data-tree-drop="" title="Drop files here: Markdown is written as is, PDF and text are converted by the documents agent">${await items}</div></details><div class="side-folder-actions"><button class="side-folder-action side-ingest-action" type="button" title="Ingest pending sources (Donna)" aria-label="Ingest pending sources" data-ingest-launch hidden>${ZAP_ICON}</button><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending"><span class="side-refresh-glyph">${REFRESH_ICON}</span></button><span class="side-untracked-count" data-untracked-count>${count}</span></div></div>`;
+  return `<div class="side-folder-row side-untracked-row"><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span></summary><div class="side-untracked-formats" data-untracked-formats style="padding:.15rem .5rem .3rem;font-size:.72rem;color:var(--muted)"></div><div class="side-untracked-list" data-untracked-list data-tree-drop="" title="Drop files here: Markdown is written as is, PDF and text are converted by the documents agent">${await items}</div></details><div class="side-folder-actions"><button class="side-folder-action side-ingest-action" type="button" title="Ingest pending sources (Donna)" aria-label="Ingest pending sources" data-ingest-launch hidden>${ZAP_ICON}</button><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending"><span class="side-refresh-glyph">${REFRESH_ICON}</span></button><span class="side-untracked-count" data-untracked-count>${count}</span></div></div>`;
 }
 
 function renderUntrackedNode(
@@ -810,17 +860,26 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
 
   const rootDirs = [...root.dirs.values()].sort((a, b) => SERVED_DIRS.indexOf(a.name) - SERVED_DIRS.indexOf(b.name));
   const wikiDir = rootDirs.find((dir) => dir.name === 'wiki');
-  // build-context / templates / deliverables become three mutually exclusive
-  // tabs under the wiki tree: browsing one no longer forces the eye past the
-  // other two's full folder lists.
-  const collectionOrder = ['templates', 'deliverables', 'build-context'];
+  // In the wiki tree a page reads by its title (first `#` heading), not by
+  // its filename — the path stays on the tooltip and on the graph's
+  // secondary label, so the identifier is never lost, only quieter.
+  const wikiTitles = new Map<string, string>();
+  await Promise.all(
+    navFiles.map(toPosix).filter((file) => file.startsWith('wiki/')).map(async (file) => {
+      const heading = await firstHeading(rootDir, file);
+      if (heading) wikiTitles.set(file, heading);
+    }),
+  );
+  // build-context / templates / deliverables become three tabs of the Files
+  // view, in that order: context first, then templates, then deliverables.
+  const collectionOrder = ['build-context', 'templates', 'deliverables'];
   const collectionDirs = collectionOrder
     .map((name) => rootDirs.find((dir) => dir.name === name))
     .filter((dir): dir is NonNullable<typeof dir> => Boolean(dir));
-  const wikiTree = wikiDir ? renderNavNode(wikiDir) : '';
+  const wikiTree = wikiDir ? renderNavNode(wikiDir, 0, wikiTitles) : '';
   const collectionTabs = collectionDirs
     .map((dir, index) => {
-      const label = dir.name === 'build-context' ? 'build context' : dir.name;
+      const label = dir.name === 'build-context' ? 'context' : dir.name;
       const active = index === 0;
       return `<button class="side-collection-tab${active ? ' active' : ''}" type="button" role="tab" data-collection="${escapeAttr(dir.name)}" aria-selected="${active ? 'true' : 'false'}">${escapeHtml(label)}</button>`;
     })
@@ -831,7 +890,18 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
   const collections = collectionDirs.length
     ? `<div class="side-collections"><div class="side-collection-tabs" role="tablist" aria-label="Collections">${collectionTabs}</div><div class="side-collection-panels">${collectionPanels}</div></div>`
     : '';
-  const tree = wikiTree + collections;
+
+  // The sidebar content is three mutually exclusive views behind a small icon
+  // rail: Wiki pages (brain), the file collections (file), and Pending (inbox,
+  // the default view). Each view owns the full height below the search — a
+  // tree no longer has to share its column with the Pending stack.
+  const brainIcon =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/><path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M19.938 10.5a4 4 0 0 1 .585.396"/><path d="M6 18a4 4 0 0 1-1.967-.516"/><path d="M19.967 17.484A4 4 0 0 1 18 18"/></svg>';
+  const fileIcon =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>';
+  const inboxIcon =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>';
+  const viewBar = `<div class="side-views"><div class="side-view-rail" role="tablist" aria-label="Sidebar views"><button class="side-view-btn" type="button" role="tab" data-side-view="wiki" title="Wiki pages" aria-label="Wiki pages">${brainIcon}</button><button class="side-view-btn" type="button" role="tab" data-side-view="files" title="Context, templates, deliverables" aria-label="Context, templates, deliverables">${fileIcon}</button><button class="side-view-btn" type="button" role="tab" data-side-view="pending" title="Pending sources" aria-label="Pending sources">${inboxIcon}</button></div><div class="side-view-panes"><section class="side-view-pane" data-side-view-pane="wiki" role="tabpanel" aria-label="Wiki pages" hidden><nav class="side-tree" aria-label="Wiki pages">${wikiTree}</nav></section><section class="side-view-pane" data-side-view-pane="files" role="tabpanel" aria-label="Context, templates, deliverables" hidden>${collections}</section><section class="side-view-pane" data-side-view-pane="pending" role="tabpanel" aria-label="Pending sources">${untrackedPanel}</section></div></div>`;
 
   const wsSwitcher = hubPort()
     ? `<div class="ws-switcher" id="ws-switcher" data-current="${escapeAttr(workspaceNameFromEnv() ?? '')}"><p class="ws-switcher-title">Workspaces</p><p class="ws-name" style="font-size:0.8rem;color:var(--muted);padding:0 0.2rem">Loading...</p></div>`
@@ -850,7 +920,7 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
   const historyIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg>';
 const kbdHint = `<kbd style="font-size:.68rem;font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .35rem;border-radius:4px;color:var(--muted);cursor:pointer" title="Open global search (⌘K)" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}))">⌘K</kbd>`;
-  return `<a class="wiki-help-toggle" href="/help" title="Help" aria-label="Help">?</a><button class="wiki-theme-toggle" type="button" data-theme-toggle title="Switch to dark theme" aria-label="Switch color theme">☾</button><aside class="sidebar"><div class="side-head"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}</a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}</a><a class="side-action" href="/history" title="History" aria-label="History">${historyIcon}</a><button class="side-action" type="button" title="Refresh sidebar" aria-label="Refresh sidebar" data-sidebar-refresh="wiki"><span class="side-refresh-glyph">${REFRESH_ICON}</span></button></div></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p><nav class="side-tree" aria-label="Markdown documents">${tree}</nav>${untrackedPanel}${wsSwitcher}</aside><div class="wiki-main-resizer" data-wiki-main-resizer title="Resize sidebar" role="separator" aria-orientation="vertical"></div>`;
+  return `<a class="wiki-help-toggle" href="/help" title="Help" aria-label="Help">?</a><button class="wiki-theme-toggle" type="button" data-theme-toggle title="Switch to dark theme" aria-label="Switch color theme">☾</button><aside class="sidebar"><div class="side-head"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}</a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}</a><a class="side-action" href="/history" title="History" aria-label="History">${historyIcon}</a><button class="side-action" type="button" title="Refresh sidebar" aria-label="Refresh sidebar" data-sidebar-refresh="wiki"><span class="side-refresh-glyph">${REFRESH_ICON}</span></button></div></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p>${viewBar}${wsSwitcher}</aside><div class="wiki-main-resizer" data-wiki-main-resizer title="Resize sidebar" role="separator" aria-orientation="vertical"></div>`;
 }
 
 /**
@@ -1057,7 +1127,7 @@ export async function generateIndex(rootDir: string): Promise<string> {
   });
 
   const tiles = renderIndexSectionBrowser(indexTiles);
-  const body = `${sidebar}<main class="content">${statsBar}<div class="hero"><h1>Wiki Index</h1><p>Entry point for the local wiki. The full index remains readable on the left, with the main sections available as tiles on the right.</p></div><div class="index-layout"><article class="article">${html}</article><aside class="index-aside"><h2 class="index-aside-title">Main sections</h2>${tiles}</aside></div></main>`;
+  const body = `${sidebar}<main class="content">${statsBar}<div class="hero"><h1>Wiki Index</h1><p>Entry point for the local wiki. The full index remains readable on the left, with the main sections available as tiles on the right.</p></div><div class="index-layout"><article class="article">${html}</article><details class="index-aside"><summary><h2 class="index-aside-title">Main sections</h2></summary>${tiles}</details></div></main>`;
   return layout('wiki', body);
 }
 

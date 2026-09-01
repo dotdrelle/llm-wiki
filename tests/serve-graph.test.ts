@@ -53,8 +53,10 @@ it('renders pending connector sources by frontmatter title without displaying fr
     expect(sidebar).toContain('class="side-untracked-folder"');
     // Attributs renommés en data-tree-* : Pending partage désormais ses
     // gestionnaires avec les autres sections du panneau (voir
-    // tests/sidebar-tree-ui.test.ts).
-    expect(sidebar).toContain('data-tree-delete="raw/untracked/connectors"');
+    // tests/sidebar-tree-ui.test.ts). Le dossier `connectors` n'a pas de
+    // document direct : il est replié, et c'est `google-1`, premier niveau
+    // qui en porte un, qui devient la racine affichée.
+    expect(sidebar).not.toContain('data-tree-delete="raw/untracked/connectors"');
     expect(sidebar).toContain('data-tree-delete="raw/untracked/connectors/google-1"');
     expect(sidebar).toContain('data-tree-kind="folder"');
 
@@ -278,15 +280,28 @@ describe('serve graph ui', () => {
     expect(source).toContain('html.is-embedded:not(.sidebar-panel) .topbar{display:flex;flex-wrap:nowrap}');
   });
 
-  it('renders a persistent draggable Pending panel resizer', async () => {
+  it('collapses Main sections by default on the wiki index', async () => {
     const source = await serveSource();
 
-    expect(source).toContain('data-pending-resizer');
-    expect(source).toContain("role=\"separator\" aria-orientation=\"horizontal\"");
-    expect(source).toContain('flex: 0 0 var(--pending-height, 32vh);');
-    expect(source).toContain("const PKEY = 'llm-wiki:sidebar:pendingHeight';");
-    expect(source).toContain('startH + (startY - e.clientY)');
-    expect(source).toContain("panel.addEventListener('toggle', syncResizer);");
+    // The tile browser is a <details> without `open`: the article index is the
+    // primary surface, the sections stay one click away.
+    expect(source).toContain('<details class="index-aside"><summary><h2 class="index-aside-title">Main sections</h2></summary>');
+    expect(source).not.toContain('<aside class="index-aside">');
+    expect(source).toContain('.index-aside > summary::before {');
+    expect(source).toContain('.index-aside[open] > summary::before { transform: rotate(90deg); }');
+  });
+
+  it('renders Pending as a dedicated full-height sidebar view', async () => {
+    const source = await serveSource();
+
+    // Pending is one of three views behind the sidebar icon rail, and it is
+    // the default one — the old draggable half-column resizer is gone, since
+    // the panel no longer shares its column with the wiki tree.
+    expect(source).toContain('data-side-view="pending"');
+    expect(source).toContain('role="tablist" aria-label="Sidebar views"');
+    expect(source).not.toContain('data-pending-resizer');
+    expect(source).not.toContain('var(--pending-height');
+    expect(source).not.toContain("const PKEY = 'llm-wiki:sidebar:pendingHeight';");
   });
 
   it('offers explicit refresh actions for Wiki and Pending', async () => {

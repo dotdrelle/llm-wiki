@@ -164,6 +164,7 @@ export async function buildWikiGraph(
   const subjects = new Map<string, string>();
   const tags = new Map<string, string[]>();
   const okfTypes = new Map<string, string | null>();
+  const pageTitles = new Map<string, string>();
 
   const includeContent = options.includeContent ?? true;
   const concurrency = Math.max(1, Math.min(options.concurrency ?? 8, 32));
@@ -183,6 +184,12 @@ export async function buildWikiGraph(
       rawContents.set(file, raw);
       previews.set(file, markdownPreview(raw));
       htmlContents.set(file, await deps.renderMarkdown(raw, currentDir));
+    }
+    // A wiki page reads by its title (first `#` heading), not by its filename.
+    // Display-only: the node keeps `id` and `secondary` carrying the real path.
+    if (file.startsWith('wiki/')) {
+      const heading = raw.replace(/^---[\s\S]*?---\s*/m, '').match(/^#[ \t]+([^\r\n]+)/m)?.[1]?.trim();
+      if (heading) pageTitles.set(file, heading);
     }
     const provenance = readProvenance(raw);
     if (provenance.subject) subjects.set(file, provenance.subject);
@@ -262,7 +269,7 @@ export async function buildWikiGraph(
     const nodeDegree = degree.get(file) ?? 0;
     return {
       id: file,
-      title: deps.humanTitle(file),
+      title: pageTitles.get(file) ?? deps.humanTitle(file),
       type: graphNodeType(file),
       href: `/${file}`,
       preview: previews.get(file) || '(No readable content in this file.)',
