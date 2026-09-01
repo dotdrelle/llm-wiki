@@ -32,6 +32,43 @@ describe('chat html', () => {
     expect(script).toContain("fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:text,mode:'agent'})})");
   });
 
+  it('accepts wiki-tree and Pending drops as page context, like "+ Context"', () => {
+    const script = chatScripts().join('\n');
+
+    // The drop lands on the same validated path as the "+ Context" button:
+    // addPageContext caps the list and renders the chips.
+    expect(script).toContain("const CONTEXT_MIME = 'application/x-llm-wiki-context';");
+    expect(script).toContain("targets.forEach((target) => {");
+    expect(script).toContain('target.classList.add(\'is-context-drop\')');
+    expect(script).toContain("event.dataTransfer.dropEffect = 'copy';");
+    expect(script).toContain('validPageContext(String((event.dataTransfer && event.dataTransfer.getData(CONTEXT_MIME)) || \'\'))');
+    expect(script).toContain('addPageContext(path)');
+    expect(CHAT_HTML).toContain('#messages.is-context-drop,#input-wrap.is-context-drop');
+  });
+
+  it('closes the split document with a shell × that hands the width to the chat', () => {
+    const script = chatScripts().join('\n');
+
+    // The × is shell chrome over the wiki column, shown only while the split
+    // grid is active; closing disarms the split so the split toggle reopens
+    // the pair in one click. The iframe is hidden, never unloaded.
+    expect(CHAT_HTML).toContain('id="wiki-close-btn"');
+    expect(CHAT_HTML).toContain('onclick="closeWikiPanel()"');
+    expect(script).toContain('function closeWikiPanel()');
+    expect(script).toContain('setCenterChat();');
+    expect(script).toContain('disableSplitWiki();');
+    expect(CHAT_HTML).toContain('body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #wiki-close-btn{display:inline-flex}');
+  });
+
+  it('renders ⚠ runtime announcements in blue, ahead of the error rules', () => {
+    const script = chatScripts().join('\n');
+
+    // The gateway answering 401 before its agents are loaded is a transient
+    // state, not a failure: the ⚠ glyph selects the accent (blue) tone and
+    // must be tested before the failed/error keywords.
+    expect(script).toContain("const tone=/⚠/.test(text)?'running':/failed|error|cancel/i.test(text)?'error'");
+  });
+
   it('edits and preserves skill execution mode with an expandable body', () => {
     expect(CHAT_HTML).toContain('id="skill-execution"');
     expect(CHAT_HTML).toContain("$('skill-execution').value=skill?.execution||'orchestrated'");
@@ -149,6 +186,11 @@ describe('chat html', () => {
     expect(script).toContain("pendingRuntimeUserRefs.findIndex((ref)=>String(ref.message?.content??'')===content)");
     expect(script).toContain('if(statusEl) armedReplyStatusEls.push(statusEl)');
     expect(script).toContain('clearRuntimeThinkingBubble(armedReplyStatusEls.shift())');
+    // Foreign user turns (ShellUI / another chat) hold a placeholder ref so the
+    // refs array stays 1:1 with the conversation tail — without it, a later poll
+    // rewrites synced bubbles with foreign content and duplicates replies.
+    expect(script).toContain('runtimeConversationRefs.push({message:{role,content},el:null})');
+    expect(script).toContain('if(ref.el) {');
   });
 
   it('confirms before deleting a connector', () => {

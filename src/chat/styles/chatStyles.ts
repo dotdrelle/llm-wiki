@@ -118,8 +118,15 @@ input[type=password]{letter-spacing:3px}
 
 /* MAIN */
 #main{flex:1;height:100vh;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
-#wiki-view{flex:1;min-height:0;display:none}
+#wiki-view{flex:1;min-height:0;display:none;position:relative}
 #wiki-view iframe{display:block;width:100%;height:100%;border:0;background:var(--bg)}
+/* Close-document button: shell chrome over the wiki column, visible only while
+   the split grid is active. Closing hands the full width to the chat and
+   disarms the split — the split toggle reopens the pair in one click. The
+   iframe is hidden, never unloaded, so the page state survives. */
+#wiki-close-btn{position:absolute;top:8px;right:8px;z-index:12;width:30px;height:30px;display:none;align-items:center;justify-content:center;padding:0;border:1px solid var(--border);border-radius:7px;background:var(--panel);color:var(--muted);cursor:pointer}
+#wiki-close-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+#wiki-close-btn svg{width:15px;height:15px;stroke:currentColor}
 body.center-wiki:not(.connectors-mode):not(.execution-mode) #wiki-view{display:block}
 body.center-wiki:not(.connectors-mode):not(.execution-mode) #topbar,
 body.center-wiki:not(.connectors-mode):not(.execution-mode) #messages,
@@ -146,6 +153,7 @@ body.iframe-drag iframe{pointer-events:none}
 @media (min-width:900px){
 body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #main{display:grid;grid-template-columns:minmax(280px,var(--split-wiki-w,50%)) 6px minmax(340px,1fr);grid-template-rows:auto minmax(0,1fr) auto}
 body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #wiki-view{display:block;grid-column:1;grid-row:1/4;min-width:0;border-right:1px solid var(--border)}
+body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #wiki-close-btn{display:inline-flex}
 body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #wiki-split-resizer{display:block;grid-column:2;grid-row:1/4;cursor:col-resize;background:transparent;transition:background .15s}
 body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #wiki-split-resizer:hover,
 body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #wiki-split-resizer.dragging{background:var(--accent)}
@@ -362,6 +370,9 @@ ${CHAT_ACTIVITY_CSS}
 #input-wrap{padding:12px 18px 14px;background:linear-gradient(to top,var(--panel) 82%,rgba(255,255,255,0));display:flex;flex-direction:column;align-items:center}
 #page-context-chips{width:min(900px,100%);display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:5px;margin:0 0 6px;align-self:center;box-sizing:border-box}
 #page-context-chips[hidden]{display:none}
+/* Drop target highlight: dragging a document row out of the wiki tree or the
+   Pending panel over the chat marks the whole column as the landing zone. */
+#messages.is-context-drop,#input-wrap.is-context-drop{outline:2px dashed var(--accent,#4f7eff);outline-offset:-4px;background:color-mix(in srgb,var(--accent-soft,rgba(79,126,255,.12)) 55%,transparent)}
 /* Fixed, because the demand outlives the view: the composer is hidden in the
    wiki, connectors and execution modes, and an approval waited there unseen.
    Opaque background — it now floats over content instead of sitting in flow. */

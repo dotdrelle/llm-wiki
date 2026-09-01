@@ -157,6 +157,18 @@ function toggleSplitWiki() {
     if (last && last !== '/') setCenterWiki(last);
   }
 }
+/*
+ Closing the document in split view. The × lives on the wiki column and only
+ shows while the split grid is active: closing hands the full width to the
+ chat and disarms the split, so the same split toggle reopens the pair in one
+ click. The iframe is only hidden, never unloaded — reopening shows the same
+ page, scroll and edit state.
+*/
+function closeWikiPanel() {
+  if (!splitWikiEnabled()) return;
+  setCenterChat();
+  disableSplitWiki();
+}
 function initWikiSplitResizer() {
   const handle = document.getElementById('wiki-split-resizer');
   const main = document.getElementById('main');
@@ -636,6 +648,56 @@ function refreshWikiSidebar() {
   }, { once: true });
   sideFrame.setAttribute('src', '/embed/sidebar?refresh=' + Date.now());
 }
+
+/*
+ Drag & drop a document row from the wiki tree or the Pending panel into the
+ chat: the sidebar stamps the drag with its context MIME type, and dropping it
+ here takes the exact same path as the "+ Context" button — the path is
+ validated, capped at five, and shown as a chip. Same opt-in rule as the
+ button: navigating never adds context, only an explicit drop does.
+*/
+(function initPageContextDrop() {
+  const CONTEXT_MIME = 'application/x-llm-wiki-context';
+  const targets = ['messages', 'input-wrap'].map((id) => document.getElementById(id)).filter(Boolean);
+  if (!targets.length) return;
+  const counters = new Map();
+  function carriesContext(event) {
+    const types = event.dataTransfer && event.dataTransfer.types;
+    return Boolean(types && Array.prototype.indexOf.call(types, CONTEXT_MIME) !== -1);
+  }
+  targets.forEach((target) => {
+    target.addEventListener('dragenter', (event) => {
+      if (!carriesContext(event)) return;
+      event.preventDefault();
+      counters.set(target, (counters.get(target) || 0) + 1);
+      target.classList.add('is-context-drop');
+    });
+    target.addEventListener('dragover', (event) => {
+      if (!carriesContext(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    });
+    target.addEventListener('dragleave', (event) => {
+      if (!carriesContext(event)) return;
+      counters.set(target, Math.max(0, (counters.get(target) || 0) - 1));
+      if (!counters.get(target)) target.classList.remove('is-context-drop');
+    });
+    target.addEventListener('drop', (event) => {
+      if (!carriesContext(event)) return;
+      event.preventDefault();
+      counters.set(target, 0);
+      target.classList.remove('is-context-drop');
+      const path = validPageContext(String((event.dataTransfer && event.dataTransfer.getData(CONTEXT_MIME)) || ''));
+      if (!path) {
+        if (typeof notify === 'function') notify('This document cannot be added to Donna\\'s context');
+        return;
+      }
+      const already = pageContexts.includes(path);
+      addPageContext(path);
+      if (typeof notify === 'function') notify(already ? 'Document already in Donna\\'s context' : 'Document added to Donna\\'s context');
+    });
+  });
+})();
 
 /*
  Single graph event stream for the whole shell.

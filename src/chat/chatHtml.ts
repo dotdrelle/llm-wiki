@@ -109,7 +109,7 @@ function essentialRuntimeLogEntries(logs) {
     const key=text.toLowerCase().replace(/\\d+%/g,'%');
     if(seen.has(key)) continue;
     seen.add(key);
-    const tone=/failed|error|cancel/i.test(text)?'error':/done|complete|success/i.test(text)?'success':/approval|approb|waiting/i.test(text)?'warning':/running|started/i.test(text)?'running':'info';
+    const tone=/⚠/.test(text)?'running':/failed|error|cancel/i.test(text)?'error':/done|complete|success/i.test(text)?'success':/approval|approb|waiting/i.test(text)?'warning':/running|started/i.test(text)?'running':'info';
     entries.push({time,text,tone});
   }
   return entries;
@@ -477,10 +477,14 @@ function mergeRuntimeConversation() {
         // pending status bubble queued by a later, still-unanswered request.
         const wasEmpty=!ref.message.content;
         ref.message.content=content;
-        updateMsgBubble(ref.el,role,content);
-        changed=true;
-        if(role==='assistant'&&content&&wasEmpty&&armedReplyStatusEls.length) {
-          clearRuntimeThinkingBubble(armedReplyStatusEls.shift());
+        // Foreign entries (ShellUI / another chat) carry no element: they are
+        // tracked only to keep this array 1:1 with the conversation tail.
+        if(ref.el) {
+          updateMsgBubble(ref.el,role,content);
+          changed=true;
+          if(role==='assistant'&&content&&wasEmpty&&armedReplyStatusEls.length) {
+            clearRuntimeThinkingBubble(armedReplyStatusEls.shift());
+          }
         }
       }
       continue;
@@ -497,6 +501,13 @@ function mergeRuntimeConversation() {
         runtimeConversationRefs.push(ref);
         if(statusEl) armedReplyStatusEls.push(statusEl);
         changed=true;
+      } else {
+        // Foreign user turn: hold its slot with a placeholder ref. Skipping it
+        // without one shifts every later entry out of alignment with its ref —
+        // the next poll then rewrites a synced bubble with foreign content and
+        // re-appends already-shown assistant replies as duplicates, which is
+        // what made ShellUI answers look like they never reached this chat.
+        runtimeConversationRefs.push({message:{role,content},el:null});
       }
       continue;
     }
