@@ -78,6 +78,21 @@ Everything below is a **UI panel**, not something you type:
   drop is refused — the tree is read-only during a run — whereas a PDF or text
   drop goes through and waits for the next ingestion. Its lightning button
   starts the ingestion of everything pending.
+- **Wiki browser sidebar** — three views behind the small icon rail on the
+  left: **Wiki pages** (brain), **Files** (context / templates / deliverables
+  tabs) and **Pending** (inbox, the default view). Each view owns the full
+  height. The Pending tree shows only folders that hold at least one document
+  directly — empty ancestor chains are collapsed away. Wiki pages read by
+  their title (first `#` heading) rather than their filename, and downloaded
+  files   lose their leading transport hash (`8d5e3fe3-report.md` reads
+  "report"); the real path stays on the tooltip. On the home page, *Main
+  sections* is always visible and each section (concepts, sources,
+  deliverables…) starts collapsed.
+- **Drag into the chat** — drag a `.md` row from the wiki tree or from Pending
+  onto the conversation or the composer: it joins DONNA's context, exactly like
+  the *+ Context* button (validated paths only, five at most). In split mode,
+  the **×** on the document column closes it and hands the full width to the
+  chat; the split button reopens the pair.
 - **Activity panel** — live tracking of runs, with *List* and *Graph* views.
   Each of its five tabs (Plan, Chain, Local activity, Runtime activity, Logs)
   has its own `Clear`; `Clear all` clears all five. `Reset plan` (Plan tab

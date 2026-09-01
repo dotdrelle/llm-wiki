@@ -32,7 +32,12 @@ Serve cannot start or stop containers, list workspaces or run the raw CLI.
     empty screen (help, fill the workspace profile).
   - **Activity** — live tracking of imports, ingestions, exports and jobs, with
     two views: *List* and *Graph*.
-  - **Wiki browser** — browse the pages produced.
+  - **Wiki browser** — browse the pages produced. Its sidebar holds three views
+    behind an icon rail — Wiki pages, Files (context / templates /
+    deliverables) and Pending (the default) — and a page can be dragged from
+    the tree straight into the chat to add it to DONNA's context. In split
+    mode, the × on the document column closes it and hands the full width to
+    the chat.
   - **Connectors** — the MCP servers DONNA can call.
 
 ### Adding a connector from Serve

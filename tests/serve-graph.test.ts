@@ -280,15 +280,17 @@ describe('serve graph ui', () => {
     expect(source).toContain('html.is-embedded:not(.sidebar-panel) .topbar{display:flex;flex-wrap:nowrap}');
   });
 
-  it('collapses Main sections by default on the wiki index', async () => {
+  it('keeps Main sections always visible and collapses each section by default', async () => {
     const source = await serveSource();
 
-    // The tile browser is a <details> without `open`: the article index is the
-    // primary surface, the sections stay one click away.
-    expect(source).toContain('<details class="index-aside"><summary><h2 class="index-aside-title">Main sections</h2></summary>');
-    expect(source).not.toContain('<aside class="index-aside">');
-    expect(source).toContain('.index-aside > summary::before {');
-    expect(source).toContain('.index-aside[open] > summary::before { transform: rotate(90deg); }');
+    // Main sections is a plain block — no expand/collapse on the whole
+    // aside. The collapse happens per section: each section browser ships
+    // WITHOUT `open`, so concepts, sources, deliverables… start folded.
+    expect(source).toContain('<aside class="index-aside"><h2 class="index-aside-title">Main sections</h2>');
+    expect(source).not.toContain('<details class="index-aside">');
+    expect(source).toContain('<details class="section-browser">');
+    expect(source).not.toContain('<details class="section-browser" open');
+    expect(source).not.toContain('.index-aside > summary::before {');
   });
 
   it('renders Pending as a dedicated full-height sidebar view', async () => {

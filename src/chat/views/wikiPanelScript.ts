@@ -165,9 +165,11 @@ function toggleSplitWiki() {
  page, scroll and edit state.
 */
 function closeWikiPanel() {
-  if (!splitWikiEnabled()) return;
+  // Works from both layouts: hand the centre back to the chat, and disarm the
+  // split when it was on. Reached by the embedded page's own close control
+  // (llmwiki:close) — the old overlay button only ever showed in split mode.
   setCenterChat();
-  disableSplitWiki();
+  if (splitWikiEnabled()) disableSplitWiki();
 }
 function initWikiSplitResizer() {
   const handle = document.getElementById('wiki-split-resizer');
@@ -580,6 +582,9 @@ window.addEventListener('message', (event) => {
     if (!input) return;
     input.value = '/wiki-ingest';
     sendMessage();
+  } else if (data.type === 'llmwiki:close') {
+    // The embedded wiki page or graph asked to be closed from its own toolbar.
+    closeWikiPanel();
   } else if (data.type === 'llmwiki:palette') {
     // Ctrl/Cmd+K pressed inside an embedded wiki iframe.
     cmdkToggle();

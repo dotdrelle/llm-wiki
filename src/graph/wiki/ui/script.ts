@@ -145,6 +145,16 @@ resizer.addEventListener('pointerdown',event=>{resizing=true;resizer.classList.a
 window.addEventListener('pointermove',event=>{if(resizing)applyLeft(event.clientX)});
 window.addEventListener('pointerup',()=>{resizing=false;resizer.classList.remove('dragging')});
 window.addEventListener('pagehide',()=>destroyCanvasExplorer());
+// Close button: only when the graph runs inside the chat shell's central
+// frame. Standalone (a top-level /graph tab) it stays hidden — there is
+// nothing to close back to, and no parent to tell.
+if(window.parent&&window.parent!==window){
+  const graphClose=document.querySelector('#graph-shell-close');
+  if(graphClose){
+    graphClose.hidden=false;
+    graphClose.addEventListener('click',()=>{try{window.parent.postMessage({type:'llmwiki:close'},location.origin)}catch(error){}});
+  }
+}
 load()
 })();
 `;

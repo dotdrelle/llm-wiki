@@ -188,7 +188,9 @@ export async function buildWikiGraph(
     // A wiki page reads by its title (first `#` heading), not by its filename.
     // Display-only: the node keeps `id` and `secondary` carrying the real path.
     if (file.startsWith('wiki/')) {
-      const heading = raw.replace(/^---[\s\S]*?---\s*/m, '').match(/^#[ \t]+([^\r\n]+)/m)?.[1]?.trim();
+      // Anchored to the file start (no `/m`): otherwise `^---` matched a
+      // mid-document thematic break and stripped the title between two rules.
+      const heading = raw.replace(/^---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/, '').match(/^#[ \t]+([^\r\n]+)/m)?.[1]?.trim();
       if (heading) pageTitles.set(file, heading);
     }
     const provenance = readProvenance(raw);

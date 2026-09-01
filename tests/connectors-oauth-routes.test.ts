@@ -86,9 +86,102 @@ describe('connectors OAuth serve proxy', () => {
       authorization: 'Bearer start-secret',
       'content-type': 'application/json',
     });
+    // Send is part of the normal authorization, and the callback page links
+    // back to the serve origin the user started from.
     assert.deepEqual(JSON.parse(String(init?.body)), {
       workspace: 'active-workspace',
       instanceId: 'google-2',
+      grants: ['read', 'send'],
+      returnTo: 'http://wiki.example.test/',
+    });
+  });
+
+  it('falls back to read-only when the deployment disabled Gmail send', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
+      const body = JSON.parse(String(init?.body));
+      if (Array.isArray(body.grants) && body.grants.includes('send')) {
+        return Response.json(
+          { ok: false, error: 'send_capability_disabled' },
+          { status: 409 },
+        );
+      }
+      return Response.json(
+        { ok: true, authorizationUrl: 'https://accounts.google.test/auth', grants: ['read'] },
+        { status: 200 },
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const req = Readable.from(['{}']);
+    Object.assign(req, {
+      method: 'POST',
+      headers: {
+        host: 'wiki.example.test',
+        origin: 'https://wiki.example.test',
+        'x-llm-wiki-oauth': '1',
+      },
+    });
+    const res = responseRecorder();
+    await handleConnectorsOAuthRoutes(
+      req as never,
+      res as never,
+      '/api/connectors/google/oauth/start',
+      {
+        connectorUrl: () => 'http://connectors:3338',
+        oauthStartToken: () => 'secret',
+        workspaceName: () => 'demo',
+        readRequestBuffer: readRequestBuffer as never,
+        sendJson: sendJson as never,
+      },
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(fetchMock.mock.calls.length, 2, 'read+send refused, then read retried');
+    const bodies = fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)));
+    assert.deepEqual(bodies[0].grants, ['read', 'send']);
+    assert.deepEqual(bodies[1].grants, ['read']);
+    assert.equal(JSON.parse(String(res.body)).ok, true);
+  });
+
+  it('passes explicit grants through untouched, without a send fallback', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json(
+        { ok: true, authorizationUrl: 'https://accounts.google.test/auth' },
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const req = Readable.from([
+      JSON.stringify({ workspace: 'demo', instanceId: 'google-1', grants: ['read', 'modify'] }),
+    ]);
+    Object.assign(req, {
+      method: 'POST',
+      headers: {
+        host: 'wiki.example.test',
+        origin: 'https://wiki.example.test',
+        'x-llm-wiki-oauth': '1',
+      },
+    });
+    const res = responseRecorder();
+    await handleConnectorsOAuthRoutes(
+      req as never,
+      res as never,
+      '/api/connectors/google/oauth/start',
+      {
+        connectorUrl: () => 'http://connectors:3338',
+        oauthStartToken: () => 'secret',
+        workspaceName: () => 'demo',
+        readRequestBuffer: readRequestBuffer as never,
+        sendJson: sendJson as never,
+      },
+    );
+
+    assert.equal(fetchMock.mock.calls.length, 1);
+    const [, init] = fetchMock.mock.calls[0]!;
+    assert.deepEqual(JSON.parse(String(init?.body)), {
+      workspace: 'demo',
+      instanceId: 'google-1',
+      grants: ['read', 'modify'],
+      returnTo: 'http://wiki.example.test/',
     });
   });
 

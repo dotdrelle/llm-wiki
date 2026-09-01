@@ -48,19 +48,31 @@ export async function handleConnectorsOAuthRoutes(
       typeof body.instanceId === 'string' && body.instanceId.trim()
         ? body.instanceId.trim()
         : 'google-1';
-    try {
-      const upstream = await fetch(
-        `${base.replace(/\/+$/, '')}/oauth/google/start`,
-        {
-          method: 'POST',
-          headers: {
-            authorization: `Bearer ${token}`,
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({ workspace, instanceId }),
+    // Send is part of the normal authorization: the connector both reads and
+    // sends Gmail, so the default grants ask for both. When the deployment
+    // disabled send (CONNECTORS_SEND_ENABLED=false) the agent refuses the
+    // pair — fall back to read-only instead of failing the whole flow.
+    const requestedGrants =
+      Array.isArray(body.grants) &&
+      body.grants.every((grant) => typeof grant === 'string')
+        ? (body.grants as string[])
+        : null;
+    const returnTo = originFromRequest(req);
+    const upstreamStart = (grants: string[]) =>
+      fetch(`${base.replace(/\/+$/, '')}/oauth/google/start`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
         },
-      );
-      const text = await upstream.text();
+        body: JSON.stringify({
+          workspace,
+          instanceId,
+          grants,
+          ...(returnTo ? { returnTo } : {}),
+        }),
+      });
+    const relay = (text: string, upstream: Response) => {
       res.writeHead(upstream.status, {
         'Content-Type':
           upstream.headers.get('content-type') ??
@@ -68,6 +80,26 @@ export async function handleConnectorsOAuthRoutes(
         'Cache-Control': 'no-store',
       });
       res.end(text);
+      return true;
+    };
+    try {
+      const grants = requestedGrants ?? ['read', 'send'];
+      const first = await upstreamStart(grants);
+      const text = await first.text();
+      if (requestedGrants === null && first.status === 409) {
+        let payload: Record<string, unknown> | null = null;
+        try {
+          payload = JSON.parse(text) as Record<string, unknown>;
+        } catch {
+          payload = null;
+        }
+        if (payload?.error === 'send_capability_disabled') {
+          const retry = await upstreamStart(['read']);
+          const retryText = await retry.text();
+          return relay(retryText, retry);
+        }
+      }
+      return relay(text, first);
     } catch {
       deps.sendJson(res, 503, {
         ok: false,
@@ -138,5 +170,25 @@ function sameOrigin(req: IncomingMessage): boolean {
     );
   } catch {
     return false;
+  }
+}
+
+// The "back to the workspace" link on the connector's callback page points at
+// this serve origin — the page the user started from. Built from the request
+// itself (never from Host-agnostic state), honouring the proxy protocol when
+// one is announced; the agent sanitizes it again before rendering.
+function originFromRequest(req: IncomingMessage): string | null {
+  const host = String(req.headers.host ?? '').trim();
+  if (!host) return null;
+  const forwarded = String(req.headers['x-forwarded-proto'] ?? '')
+    .split(',')[0]
+    .trim();
+  const proto = forwarded === 'https' ? 'https' : forwarded === 'http' ? 'http' : 'http';
+  try {
+    const url = new URL(`${proto}://${host}/`);
+    if (!url.hostname) return null;
+    return url.toString();
+  } catch {
+    return null;
   }
 }

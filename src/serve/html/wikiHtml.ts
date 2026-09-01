@@ -108,7 +108,10 @@ async function firstHeading(rootDir: string, relativePath: string): Promise<stri
     const buffer = Buffer.alloc(4096);
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
     await handle.close();
-    const body = buffer.toString('utf8', 0, bytesRead).replace(/^---[\s\S]*?---\s*/m, '');
+    // Anchored to the very start of the file (no `/m`): frontmatter only exists
+    // there. With `/m`, `^---` also matched a mid-document thematic break and
+    // deleted the region up to the next `---` — the page title with it.
+    const body = buffer.toString('utf8', 0, bytesRead).replace(/^---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/, '');
     const match = body.match(/^#[ \t]+([^\r\n]+)/m);
     return match ? match[1].trim() : null;
   } catch {
@@ -622,7 +625,7 @@ function renderIndexSectionBrowser(sections: TileSection[]): string {
         ? `<div class="section-browser-tiles">${ungrouped.map(renderTile).join('')}</div>`
         : '';
       const body = groupsHtml + ungroupedHtml;
-      return `<details class="section-browser"${body ? ' open' : ''}><summary><span class="section-browser-summary"><span class="section-browser-title">${escapeHtml(section.heading)}</span><span class="section-browser-meta">${count} item${count === 1 ? '' : 's'}</span></span></summary>${body}</details>`;
+      return `<details class="section-browser"><summary><span class="section-browser-summary"><span class="section-browser-title">${escapeHtml(section.heading)}</span><span class="section-browser-meta">${count} item${count === 1 ? '' : 's'}</span></span></summary>${body}</details>`;
     })
     .join('\n');
 }
@@ -796,10 +799,21 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
           const displayPath = stripPrefix(directory);
           nodes.set(displayPath, createNavNode(displayPath.split('/').pop() ?? displayPath, directory));
         }
+        // Walk to the nearest kept ancestor. `lastIndexOf('/')` is -1 for a
+        // top-level path, so slice on the raw index would drop a character
+        // ('docs' → 'doc') and misattach the folder; guard it explicitly. The
+        // child is keyed by its full display path, never its leaf name: two
+        // flattened siblings from different sources ('DOCS/Overview',
+        // 'ENG/Overview') share a leaf and one folder — with all its documents —
+        // silently vanished under the other.
+        const parentDisplayPath = (value: string): string => {
+          const slash = value.lastIndexOf('/');
+          return slash >= 0 ? value.slice(0, slash) : '';
+        };
         for (const [displayPath, node] of nodes) {
-          let parent = displayPath.slice(0, displayPath.lastIndexOf('/'));
-          while (parent && !nodes.has(parent)) parent = parent.slice(0, parent.lastIndexOf('/'));
-          (parent ? nodes.get(parent) : root)?.dirs.set(node.name, node);
+          let parent = parentDisplayPath(displayPath);
+          while (parent && !nodes.has(parent)) parent = parentDisplayPath(parent);
+          (parent ? nodes.get(parent) : root)?.dirs.set(displayPath, node);
         }
         for (const file of files) {
           const parentPath = parentOf(file);
@@ -820,7 +834,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
       })).then(() => renderUntrackedNode(root, titles, true));
       })()
     : '<li class="side-untracked-empty">No pending sources.</li>';
-  return `<div class="side-folder-row side-untracked-row"><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span></summary><div class="side-untracked-formats" data-untracked-formats style="padding:.15rem .5rem .3rem;font-size:.72rem;color:var(--muted)"></div><div class="side-untracked-list" data-untracked-list data-tree-drop="" title="Drop files here: Markdown is written as is, PDF and text are converted by the documents agent">${await items}</div></details><div class="side-folder-actions"><button class="side-folder-action side-ingest-action" type="button" title="Ingest pending sources (Donna)" aria-label="Ingest pending sources" data-ingest-launch hidden>${ZAP_ICON}</button><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending"><span class="side-refresh-glyph">${REFRESH_ICON}</span></button><span class="side-untracked-count" data-untracked-count>${count}</span></div></div>`;
+  return `<div class="side-folder-row side-untracked-row"><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span></summary><div class="side-untracked-formats" data-untracked-formats style="padding:.15rem .5rem .3rem;font-size:.72rem;color:var(--muted);text-align:right"></div><div class="side-untracked-list" data-untracked-list data-tree-drop="" title="Drop files here: Markdown is written as is, PDF and text are converted by the documents agent">${await items}</div></details><div class="side-folder-actions"><button class="side-folder-action side-ingest-action" type="button" title="Ingest pending sources (Donna)" aria-label="Ingest pending sources" data-ingest-launch hidden>${ZAP_ICON}</button><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending"><span class="side-refresh-glyph">${REFRESH_ICON}</span></button><span class="side-untracked-count" data-untracked-count>${count}</span></div></div>`;
 }
 
 function renderUntrackedNode(
@@ -1127,7 +1141,7 @@ export async function generateIndex(rootDir: string): Promise<string> {
   });
 
   const tiles = renderIndexSectionBrowser(indexTiles);
-  const body = `${sidebar}<main class="content">${statsBar}<div class="hero"><h1>Wiki Index</h1><p>Entry point for the local wiki. The full index remains readable on the left, with the main sections available as tiles on the right.</p></div><div class="index-layout"><article class="article">${html}</article><details class="index-aside"><summary><h2 class="index-aside-title">Main sections</h2></summary>${tiles}</details></div></main>`;
+  const body = `${sidebar}<main class="content">${statsBar}<div class="hero"><h1>Wiki Index</h1><p>Entry point for the local wiki. The full index remains readable on the left, with the main sections available as tiles on the right.</p></div><div class="index-layout"><article class="article">${html}</article><aside class="index-aside"><h2 class="index-aside-title">Main sections</h2>${tiles}</aside></div></main>`;
   return layout('wiki', body);
 }
 
@@ -1256,8 +1270,15 @@ export async function serveMd(
     relativePath === 'wiki/log.md'
       ? renderLogMarkdown(raw)
       : await renderMarkdown(displayRaw, currentDir, rootDir);
-  const printBtn = `<button class="action-button" onclick="window.print()" title="Print / Export to PDF">↑ PDF</button>`;
-  const dlBtn = `<a class="action-link" href="${escapeHref(`/raw/${relativePath}`)}" download title="Download source Markdown file">↓ .md</a>`;
+  // "Print / PDF" and "Download .md" are one decision — take this page out of
+  // the wiki — so they share a single disclosure menu instead of two separate
+  // toolbar buttons. Native <details>: no JS, works on a standalone page too.
+  const exportMenu = `<details class="action-menu"><summary class="action-button" title="Export this page">Export<span class="action-menu-caret" aria-hidden="true">▾</span></summary><div class="action-menu-panel"><button type="button" class="action-menu-item" onclick="this.closest('details').open=false;window.print()" title="Print / Export to PDF">Print / PDF</button><a class="action-menu-item" href="${escapeHref(`/raw/${relativePath}`)}" download title="Download source Markdown file">Download .md</a></div></details>`;
+  // Close the document and hand the width back to the chat. Only meaningful in
+  // the chat shell's central frame: WIKI_LAYOUT_SCRIPT reveals it on embed and
+  // turns the click into an `llmwiki:close` message. It sits in the toolbar as
+  // a normal action, at the right — not as an overlay pinned over it.
+  const shellCloseBtn = `<button class="action-button action-close" type="button" data-shell-close hidden title="Close document" aria-label="Close document">✕</button>`;
   // Hidden by default: only revealed by WIKI_LAYOUT_SCRIPT when the page is
   // embedded in the chat shell's central iframe, where "chat context" exists.
   const chatContextBtn =
@@ -1282,8 +1303,7 @@ export async function serveMd(
     chatContextBtn,
     buildTemplateBtn,
     deliverBtn,
-    printBtn,
-    dlBtn,
+    exportMenu,
     renameBtn,
     isEditableRelativePath(relativePath)
       ? `<a class="action-link" href="${escapeHref(editHref(relativePath))}">Edit</a>`
@@ -1291,6 +1311,7 @@ export async function serveMd(
     isManagedMarkdownRelativePath(relativePath)
       ? `<form class="delete-confirm" method="post" action="${escapeHref(deleteHref(relativePath))}" onsubmit="if(window.self!==window.top)window.parent.postMessage({type:'llmwiki:refresh-sidebar'},window.location.origin)"><button class="action-button action-danger" type="button" onclick="this.form.querySelector('.delete-confirm-panel').hidden=false">Delete</button><div class="delete-confirm-panel" hidden><p class="delete-confirm-title">Delete this file?</p><p class="delete-confirm-text">${escapeHtml(relativePath)} will be deleted from the workspace.</p><div class="delete-confirm-actions"><button class="action-button" type="button" onclick="this.closest('.delete-confirm-panel').hidden=true">Cancel</button><button class="action-button action-danger" type="submit">Delete</button></div></div></form>`
       : '',
+    shellCloseBtn,
   ].join('');
   const tocScript = `<script>
 (function buildToc() {

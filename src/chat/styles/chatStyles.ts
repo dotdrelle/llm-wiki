@@ -1,4 +1,4 @@
-import { WIKI_CSS_VARS, WIKI_FONT_STACK, WIKI_MONO_STACK } from '../theme.ts';
+import { WIKI_CSS_VARS } from '../theme.ts';
 import { CONFIRM_DIALOG_CSS } from '../confirmDialog.ts';
 import { CHAT_ACTIVITY_CSS } from './chatActivityStyles.ts'; const CHAT_COMPONENT_CSS = `*{box-sizing:border-box;margin:0;padding:0}
 body{font-family:var(--font-sans);background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:hidden}
@@ -120,13 +120,9 @@ input[type=password]{letter-spacing:3px}
 #main{flex:1;height:100vh;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
 #wiki-view{flex:1;min-height:0;display:none;position:relative}
 #wiki-view iframe{display:block;width:100%;height:100%;border:0;background:var(--bg)}
-/* Close-document button: shell chrome over the wiki column, visible only while
-   the split grid is active. Closing hands the full width to the chat and
-   disarms the split — the split toggle reopens the pair in one click. The
-   iframe is hidden, never unloaded, so the page state survives. */
-#wiki-close-btn{position:absolute;top:8px;right:8px;z-index:12;width:30px;height:30px;display:none;align-items:center;justify-content:center;padding:0;border:1px solid var(--border);border-radius:7px;background:var(--panel);color:var(--muted);cursor:pointer}
-#wiki-close-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
-#wiki-close-btn svg{width:15px;height:15px;stroke:currentColor}
+/* The close-document control is rendered by the embedded page itself, in its
+   own toolbar, and posts an llmwiki:close message (wikiPanelScript). No overlay
+   button here — it used to sit over the iframe's own toolbar buttons. */
 body.center-wiki:not(.connectors-mode):not(.execution-mode) #wiki-view{display:block}
 body.center-wiki:not(.connectors-mode):not(.execution-mode) #topbar,
 body.center-wiki:not(.connectors-mode):not(.execution-mode) #messages,
@@ -153,7 +149,6 @@ body.iframe-drag iframe{pointer-events:none}
 @media (min-width:900px){
 body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #main{display:grid;grid-template-columns:minmax(280px,var(--split-wiki-w,50%)) 6px minmax(340px,1fr);grid-template-rows:auto minmax(0,1fr) auto}
 body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #wiki-view{display:block;grid-column:1;grid-row:1/4;min-width:0;border-right:1px solid var(--border)}
-body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #wiki-close-btn{display:inline-flex}
 body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #wiki-split-resizer{display:block;grid-column:2;grid-row:1/4;cursor:col-resize;background:transparent;transition:background .15s}
 body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #wiki-split-resizer:hover,
 body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #wiki-split-resizer.dragging{background:var(--accent)}
@@ -531,8 +526,7 @@ hr.divider{border:none;border-top:1px solid var(--border);margin:8px 12px}
 ${CONFIRM_DIALOG_CSS}`; export const CHAT_STYLE = `<style>
 ${WIKI_CSS_VARS}
 :root {
-  --font-sans: ${WIKI_FONT_STACK};
-  --font-mono: ${WIKI_MONO_STACK};
+  /* --font-sans / --font-serif / --font-mono come from WIKI_CSS_VARS */
   --panel-deep: #e2e8f0;
   --accent2: var(--link);
   --muted2: var(--muted);

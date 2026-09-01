@@ -947,6 +947,16 @@ ${CONFIRM_DIALOG_SCRIPT}
       { type: 'llmwiki:nav', path: window.location.pathname },
       window.location.origin,
     );
+    // Close: only meaningful inside the shell's central frame. Revealed here
+    // and turned into an llmwiki:close message the shell acts on — so the
+    // control lives in this toolbar, not as an overlay pinned over it.
+    const shellCloseBtn = document.querySelector('[data-shell-close]');
+    if (shellCloseBtn) {
+      shellCloseBtn.hidden = false;
+      shellCloseBtn.addEventListener('click', () => {
+        window.parent.postMessage({ type: 'llmwiki:close' }, window.location.origin);
+      });
+    }
     // "+ Context": only meaningful inside the chat shell, so the button
     // ships hidden and is revealed here. Clicking hands the page path to the
     // shell, which validates it and renders the context chip.

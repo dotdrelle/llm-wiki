@@ -1,8 +1,10 @@
 import { WIKI_CSS_VARS } from '../../chat/theme.ts';
 import { CONFIRM_DIALOG_CSS } from '../../chat/confirmDialog.ts';
 
+// The self-hosted Newsreader @font-face rules ride inside WIKI_CSS_VARS, so the
+// reader shares exactly one font source with the chat UI — no Google Fonts
+// @import, nothing fetched off-origin.
 export const WIKI_LAYOUT_CSS = `
-    @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,wght@0,400;0,600;0,700;1,400&display=swap');
     ${WIKI_CSS_VARS}
     ${CONFIRM_DIALOG_CSS}
     * { box-sizing: border-box; }
@@ -10,7 +12,7 @@ export const WIKI_LAYOUT_CSS = `
       margin: 0;
       background: var(--bg);
       color: var(--text);
-      font-family: "Tiempos Text", "Source Serif 4", Spectral, Lora, Georgia, "Times New Roman", serif;
+      font-family: var(--font-serif);
       line-height: 1.65;
     }
     a { color: var(--link); text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
@@ -106,7 +108,7 @@ export const WIKI_LAYOUT_CSS = `
     .brand { display: block; margin-bottom: 0.8rem; color: var(--text); text-decoration: none; }
     .brand-title {
       display: block;
-      font-family: Copernicus, "Source Serif 4", Spectral, Lora, Georgia, serif;
+      font-family: var(--font-serif);
       font-size: 1.28rem;
       font-weight: 700;
       line-height: 1.08;
@@ -617,6 +619,29 @@ export const WIKI_LAYOUT_CSS = `
       background: var(--accent-soft);
       color: var(--accent);
     }
+    /* Export disclosure: the <summary> is a plain .action-button; the panel
+       drops below it, right-aligned, and never widens the toolbar. */
+    .action-menu { position: relative; }
+    .action-menu > summary { list-style: none; gap: 0.3rem; }
+    .action-menu > summary::-webkit-details-marker { display: none; }
+    .action-menu > summary::marker { content: ""; }
+    .action-menu[open] > summary { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+    .action-menu-caret { font-size: 0.72em; opacity: 0.75; }
+    .action-menu-panel {
+      position: absolute; right: 0; top: calc(100% + 4px); z-index: 30;
+      display: flex; flex-direction: column; min-width: 11rem;
+      padding: 0.25rem; border: 1px solid var(--border); border-radius: 8px;
+      background: var(--panel); box-shadow: var(--shadow);
+    }
+    .action-menu-item {
+      display: block; width: 100%; text-align: left; white-space: nowrap;
+      padding: 0.4rem 0.55rem; border: 0; border-radius: 5px;
+      background: none; color: var(--text); font: inherit; font-size: 0.86rem;
+      font-weight: 620; text-decoration: none; cursor: pointer;
+    }
+    .action-menu-item:hover { background: var(--accent-soft); color: var(--accent); }
+    /* Icon-only close: same height as its neighbours, just tighter sides. */
+    .action-close { padding-left: 0.5rem; padding-right: 0.5rem; font-size: 0.95rem; line-height: 1; }
     .action-danger { color: var(--err); border-color: color-mix(in srgb, var(--err) 55%, var(--border)); }
     .action-danger:hover { border-color: var(--err); background: color-mix(in srgb, var(--err) 10%, var(--panel)); color: var(--err); }
     .action-donna { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--accent-soft); padding-left: 0.5rem; padding-right: 0.5rem; }
@@ -653,7 +678,7 @@ export const WIKI_LAYOUT_CSS = `
       background: var(--panel);
       box-shadow: var(--shadow);
     }
-    .hero h1 { margin: 0; font-family: "Playfair Display", sans-serif; font-size: clamp(1.7rem, 3vw, 2.55rem); line-height: 1.05; letter-spacing: 0; }
+    .hero h1 { margin: 0; font-family: var(--font-serif); font-size: clamp(1.7rem, 3vw, 2.55rem); line-height: 1.05; letter-spacing: 0; }
     .hero p { max-width: 72ch; margin: 0.75rem 0 0; color: var(--muted); }
     .index-layout {
       display: grid;
@@ -666,26 +691,6 @@ export const WIKI_LAYOUT_CSS = `
       top: 1rem;
       min-width: 0;
     }
-    /* "Main sections" is a collapsible block, closed by default: the article
-       index is the primary reading surface, the tile browser stays one click
-       away. Same chevron language as the section browsers below. */
-    .index-aside > summary {
-      list-style: none;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-    }
-    .index-aside > summary::-webkit-details-marker { display: none; }
-    .index-aside > summary::before {
-      content: "▸";
-      flex: none;
-      color: var(--muted);
-      font-size: 0.74rem;
-      transition: transform 120ms ease;
-    }
-    .index-aside[open] > summary::before { transform: rotate(90deg); }
-    .index-aside > summary:hover .index-aside-title { color: var(--accent); }
     .index-aside-title {
       margin: 0 0 0.7rem;
       color: var(--muted);
@@ -694,8 +699,6 @@ export const WIKI_LAYOUT_CSS = `
       letter-spacing: 0.08em;
       text-transform: uppercase;
     }
-    .index-aside[open] > summary .index-aside-title { margin-bottom: 0.7rem; }
-    .index-aside:not([open]) > summary .index-aside-title { margin-bottom: 0; }
     .section-browser {
       margin: 0 0 0.75rem;
     }
@@ -811,7 +814,7 @@ export const WIKI_LAYOUT_CSS = `
       border-radius: 8px;
       background: var(--panel);
     }
-    .article h1, .article h2, .article h3 { line-height: 1.2; letter-spacing: 0; font-family: Copernicus, "Source Serif 4", Spectral, Lora, Georgia, serif; }
+    .article h1, .article h2, .article h3 { line-height: 1.2; letter-spacing: 0; font-family: var(--font-serif); }
     .article h1 { margin-top: 0; }
     .article img { max-width: 100%; }
     .article, .article p, .article li, .article a, .article code {
@@ -825,7 +828,7 @@ export const WIKI_LAYOUT_CSS = `
        background — a second box here would only double the border. */
     .log-article h1 {
       margin: 0 0 1rem;
-      font-family: Copernicus, "Source Serif 4", Spectral, Lora, Georgia, serif;
+      font-family: var(--font-serif);
       line-height: 1.05;
       letter-spacing: 0;
     }
@@ -1341,7 +1344,7 @@ export const WIKI_LAYOUT_CSS = `
     @media(max-width:1280px){.doc-toc{display:none}}
     html.is-embedded:not(.sidebar-panel) .doc-toc{display:flex;right:.75rem;width:clamp(120px,22vw,200px)}
     /* ── Stabilize tags ───────────────────────────────────────── */
-    .section-tag{display:inline-flex;align-items:center;margin-left:.5rem;padding:.08rem .42rem;border:1px solid var(--border);border-radius:999px;background:var(--panel-soft);color:var(--muted);font-size:.58rem;font-weight:760;letter-spacing:.05em;text-transform:uppercase;vertical-align:middle;font-family:ui-sans-serif,system-ui,sans-serif;line-height:1.5}
+    .section-tag{display:inline-flex;align-items:center;margin-left:.5rem;padding:.08rem .42rem;border:1px solid var(--border);border-radius:999px;background:var(--panel-soft);color:var(--muted);font-size:.58rem;font-weight:760;letter-spacing:.05em;text-transform:uppercase;vertical-align:middle;font-family:var(--font-serif);line-height:1.5}
     .section-tag-modified{border-color:color-mix(in srgb,var(--accent) 35%,var(--border));color:var(--accent);background:var(--accent-soft)}
     .section-tag-inserted{border-color:color-mix(in srgb,#22c55e 35%,var(--border));color:#16a34a;background:rgba(34,197,94,.08)}
     .stabilize-badge{display:inline-flex;align-items:center;gap:.4rem;padding:.28rem .65rem;margin-bottom:1rem;border:1px solid var(--border);border-radius:6px;background:var(--panel-soft);color:var(--muted);font-size:.78rem}
@@ -1368,5 +1371,9 @@ export const WIKI_LAYOUT_CSS = `
     html.sidebar-panel .side-head .brand{flex:1}
     html.sidebar-panel .side-head .side-actions{width:calc(50% - .25rem)}
     html.sidebar-panel .side-head .side-action{width:100%}
-    html.sidebar-panel .brand{margin-bottom:.55rem}
+    /* Tighter than the standalone sidebar: in the shell panel the title row
+       sits right above the filter input. The brand's own bottom margin (which
+       won on specificity and inflated the flex row) is zeroed here. */
+    html.sidebar-panel .side-head{margin-bottom:.4rem}
+    html.sidebar-panel .side-head .brand{margin-bottom:0}
 `;

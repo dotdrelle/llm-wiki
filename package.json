@@ -1,6 +1,6 @@
 {
   "name": "llm-wiki",
-  "version": "0.15.72",
+  "version": "0.15.73",
   "description": "Local-first LLM wiki CLI for persistent markdown memory and regenerable deliverables.",
   "repository": {
     "type": "git",
@@ -50,6 +50,7 @@
     "!**/.gitkeep"
   ],
   "dependencies": {
+    "@fontsource-variable/geist": "^5.3.0",
     "@lancedb/lancedb": "^0.27.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "apache-arrow": "18.1.0",

@@ -153,9 +153,9 @@ export const CHAT_MARKUP = `<aside id="sidebar">
     </section>
   </div>
   <div id="wiki-view">
-    <button id="wiki-close-btn" type="button" onclick="closeWikiPanel()" title="Close document" aria-label="Close document">
-      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-    </button>
+    <!-- The close control lives in the embedded page's own toolbar (wiki
+         reader: .action-close; graph: #graph-shell-close), which posts
+         llmwiki:close — no overlay button pinned over the iframe chrome. -->
     <iframe id="wiki-frame" name="wiki-frame" title="Wiki"></iframe>
   </div>
   <div id="wiki-split-resizer" role="separator" aria-orientation="vertical" title="Resize"></div>

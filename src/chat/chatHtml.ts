@@ -109,7 +109,12 @@ function essentialRuntimeLogEntries(logs) {
     const key=text.toLowerCase().replace(/\\d+%/g,'%');
     if(seen.has(key)) continue;
     seen.add(key);
-    const tone=/⚠/.test(text)?'running':/failed|error|cancel/i.test(text)?'error':/done|complete|success/i.test(text)?'success':/approval|approb|waiting/i.test(text)?'warning':/running|started/i.test(text)?'running':'info';
+    // Order matters. A real failure reads as an error even when its text
+    // carries a "⚠" glyph; but a doctor summary with zero errors
+    // ("⚠ 0 error(s), 2 warning(s)") is a warning by construction, and a bare
+    // "⚠ … not ready yet …" notice is a warning, never in-progress activity.
+    const isZeroErrorSummary=/\\b0 error\\(s\\)/i.test(text);
+    const tone=(/failed|error|cancel/i.test(text)&&!isZeroErrorSummary)?'error':(/⚠/.test(text)||isZeroErrorSummary)?'warning':/done|complete|success/i.test(text)?'success':/approval|approb|waiting/i.test(text)?'warning':/running|started/i.test(text)?'running':'info';
     entries.push({time,text,tone});
   }
   return entries;
@@ -482,7 +487,7 @@ function mergeRuntimeConversation() {
         if(ref.el) {
           updateMsgBubble(ref.el,role,content);
           changed=true;
-          if(role==='assistant'&&content&&wasEmpty&&armedReplyStatusEls.length) {
+          if(role==='assistant'&&content&&wasEmpty&&ref.own&&armedReplyStatusEls.length) {
             clearRuntimeThinkingBubble(armedReplyStatusEls.shift());
           }
         }
@@ -511,17 +516,24 @@ function mergeRuntimeConversation() {
       }
       continue;
     }
+    // Attribute an assistant turn to the entry it follows: its own user turn
+    // (ours when that ref carries a real element — a foreign turn is held with
+    // an el:null placeholder), or an earlier fragment of the same reply, whose
+    // ownership it inherits. Clearing the armed bubble on a foreign assistant
+    // message — one answering a ShellUI / other-tab turn that landed first — is
+    // the cross-chat "stuck thinking bubble" bug: leave it for its real owner.
+    let assistantOwn=false;
     if(role==='assistant') {
-      // Clear the bubble only when it is this chat's own armed reply; a
-      // foreign assistant message leaves it in place for its real owner.
-      if(content&&armedReplyStatusEls.length) {
+      const prevRef=runtimeConversationRefs[runtimeConversationRefs.length-1];
+      assistantOwn=prevRef?(prevRef.message.role==='user'?!!prevRef.el:!!prevRef.own):false;
+      if(assistantOwn&&content&&armedReplyStatusEls.length) {
         clearRuntimeThinkingBubble(armedReplyStatusEls.shift());
       }
     }
     const message={role,content};
     messages.push(message);
     const el=appendMsg(role,content);
-    runtimeConversationRefs.push({message,el});
+    runtimeConversationRefs.push({message,el,own:assistantOwn});
     changed=true;
   }
   if(changed) scheduleConversationSave();

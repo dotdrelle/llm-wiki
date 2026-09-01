@@ -63,9 +63,18 @@ const MARKED_DIST_PATH = path.resolve(
   path.dirname(require.resolve('marked')),
   'marked.umd.js',
 );
+// Geist — the serve UI font — self-hosted from node_modules, never a CDN.
+const GEIST_WOFF2: Record<string, string> = {
+  '/assets/geist-latin-wght-normal.woff2': require.resolve(
+    '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2',
+  ),
+  '/assets/geist-latin-wght-italic.woff2': require.resolve(
+    '@fontsource-variable/geist/files/geist-latin-wght-italic.woff2',
+  ),
+};
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
-const LLM_WIKI_VERSION = '0.15.72';
+const LLM_WIKI_VERSION = '0.15.73';
 
 type SkillMeta = {
   name: string;
@@ -940,6 +949,16 @@ export default async function serveCmd(
           'Cache-Control': 'public, max-age=3600',
         });
         res.end(js);
+        return;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(GEIST_WOFF2, urlPath)) {
+        const font = await readFile(GEIST_WOFF2[urlPath]);
+        res.writeHead(200, {
+          'Content-Type': 'font/woff2',
+          'Cache-Control': 'public, max-age=31536000, immutable',
+        });
+        res.end(font);
         return;
       }
 

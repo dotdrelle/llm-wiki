@@ -46,27 +46,28 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('#messages.is-context-drop,#input-wrap.is-context-drop');
   });
 
-  it('closes the split document with a shell × that hands the width to the chat', () => {
+  it('closes the split document from the embedded page toolbar, not an overlay button', () => {
     const script = chatScripts().join('\n');
 
-    // The × is shell chrome over the wiki column, shown only while the split
-    // grid is active; closing disarms the split so the split toggle reopens
-    // the pair in one click. The iframe is hidden, never unloaded.
-    expect(CHAT_HTML).toContain('id="wiki-close-btn"');
-    expect(CHAT_HTML).toContain('onclick="closeWikiPanel()"');
+    // The close control now lives in the embedded page's own toolbar and
+    // posts llmwiki:close; no overlay button is pinned over the iframe chrome.
+    expect(CHAT_HTML).not.toContain('id="wiki-close-btn"');
+    expect(CHAT_HTML).not.toContain('#wiki-close-btn{');
+    expect(script).toContain("} else if (data.type === 'llmwiki:close') {");
     expect(script).toContain('function closeWikiPanel()');
     expect(script).toContain('setCenterChat();');
-    expect(script).toContain('disableSplitWiki();');
-    expect(CHAT_HTML).toContain('body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #wiki-close-btn{display:inline-flex}');
+    expect(script).toContain('if (splitWikiEnabled()) disableSplitWiki();');
   });
 
-  it('renders ⚠ runtime announcements in blue, ahead of the error rules', () => {
+  it('buckets ⚠ runtime announcements as warnings, not activity, and keeps real failures red', () => {
     const script = chatScripts().join('\n');
 
-    // The gateway answering 401 before its agents are loaded is a transient
-    // state, not a failure: the ⚠ glyph selects the accent (blue) tone and
-    // must be tested before the failed/error keywords.
-    expect(script).toContain("const tone=/⚠/.test(text)?'running':/failed|error|cancel/i.test(text)?'error'");
+    // A ⚠ line ("agent-runtimes: X not ready yet") is a warning, never
+    // in-progress activity; a doctor summary with zero errors
+    // ("⚠ 0 error(s), 2 warning(s)") is a warning even though it says "error";
+    // a genuine failure whose text carries a ⚠ still reads red.
+    expect(script).toContain('const isZeroErrorSummary=/\\b0 error\\(s\\)/i.test(text);');
+    expect(script).toContain("const tone=(/failed|error|cancel/i.test(text)&&!isZeroErrorSummary)?'error':(/⚠/.test(text)||isZeroErrorSummary)?'warning'");
   });
 
   it('edits and preserves skill execution mode with an expandable body', () => {
@@ -910,7 +911,8 @@ describe('chat html', () => {
     expect(script).toContain("sendRuntimeAgentMessage(input,text,{mode:'chat',displayText:displayOverride||text,hideQuestion})");
     expect(script).toContain("function createRuntimeThinkingBubble(text='Request received · Donna is preparing the response and plan…')");
     expect(script).toContain("const statusEl=createRuntimeThinkingBubble(mode==='chat'?'Thinking...':undefined)");
-    expect(script).toContain("if(role==='assistant'&&content&&wasEmpty&&armedReplyStatusEls.length)");
+    expect(script).toContain("if(role==='assistant'&&content&&wasEmpty&&ref.own&&armedReplyStatusEls.length)");
+    expect(script).toContain("assistantOwn=prevRef?(prevRef.message.role==='user'?!!prevRef.el:!!prevRef.own):false;");
     expect(script).toContain("data?.kind==='ambiguous'");
     expect(script).toContain('function handleSendButton()');
     expect(script).not.toContain('if(agentMode && runtimeIsRunning())');
