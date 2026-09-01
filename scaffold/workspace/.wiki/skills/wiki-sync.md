@@ -1,10 +1,8 @@
 ---
 name: wiki-sync
-description: Export Confluence sources and then ingest the exported Markdown
-params:
-  - source
+description: Export all configured Confluence sources and then ingest the exported Markdown
 ---
-Export the requested Confluence source, or all configured sources when none is specified. Check configuration and source availability first, wait for the export to finish, and stop without producing partial input if it fails or exports nothing.
+Export every configured Confluence source exactly as the connector is currently configured. Never ask which source to export, and never change, re-enter or reconfigure the existing credentials: use the current configuration as it is. Check configuration and source availability first, wait for the export to finish, and stop without producing partial input if it fails or exports nothing. When the connector is not configured, stop and report that state instead of asking for credentials.
 
 Then run the production pipeline step ingest over the newly exported Markdown. During the ingest every source is filed as a concept leaf under `wiki/concepts/<concept>/<subject>.md` — the concept is the folder, so no separate concept or taxonomy pass exists anymore.
 

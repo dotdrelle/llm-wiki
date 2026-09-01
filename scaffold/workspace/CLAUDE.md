@@ -24,10 +24,10 @@ This workspace follows a local-first LLM Wiki pattern.
 by the served chat. The production chain is split so each step can be replayed
 on its own, and each takes optional positional arguments:
 
-- `/wiki-sync [source]` — export the Confluence sources (all, or the named one)
-  into `raw/untracked/`, then run the full knowledge chain on the result:
-  ingest, concept grid, filing unclassified pages, taxonomy. Stops before that
-  chain when the export produced nothing new.
+- `/wiki-sync` — export all configured Confluence sources into
+  `raw/untracked/`, then run the ingest step on the result. It uses the
+  connector's existing configuration as-is and never asks which source to
+  export; it stops before the ingest when the export produced nothing new.
 - `/wiki-build [template]` — build the deliverables from the wiki as it
   currently stands, for one template or all of them. Never ingests.
 - `/deliver [deliverable] [polish]` — export, or polish, deliverables that already

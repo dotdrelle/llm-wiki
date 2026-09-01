@@ -174,7 +174,8 @@ entry. This is intentionally one-skill-per-workspace; do not add multi-skill
 merging without redesigning the model.
 
 The default scaffold includes small UI skills: `/status`, `/diagnose`, and the
-production chain `/wiki-sync` (source export + ingest, optional source name) →
+production chain `/wiki-sync` (export all configured sources + ingest, no
+source selection and no credential reconfiguration) →
 `/wiki-build` (build, optional template) → `/deliver` (export or polish, optional
 deliverable + `polish` flag), with `/pipeline` as the one-shot shortcut.
 `/wiki-ingest` (optional file list) is `/wiki-sync` without the export: it

@@ -32,8 +32,9 @@ Detection is deterministic and costs nothing — none of it calls the LLM:
 - `wiki build`, or `/wiki-build [template]` — rebuild everything, or one template.
 - `wiki ingest`, or `/wiki-ingest [files]` — turn new or edited sources into
   wiki pages.
-- `/wiki-sync [source]` — export Confluence sources, then ingest them (each
-  source is filed as a concept leaf as it goes in).
+- `/wiki-sync` — export every configured Confluence source, then ingest them
+  (each source is filed as a concept leaf as it goes in). It uses the existing
+  connector configuration as-is and never asks which source to export.
 - `/pipeline` — the whole chain in one run: ingest, build, export, polish.
 
 The full default chain is: ingest, build, export, polish (see

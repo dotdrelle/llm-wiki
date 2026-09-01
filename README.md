@@ -221,7 +221,7 @@ demo ingest/build cycle. It includes one demo source in `raw/untracked/`.
 ### Chat skills in `wiki serve`
 
 The served chat exposes workspace skills as slash commands. Typing a matching
-skill such as `/wiki-sync team-space` switches from read-only chat to agent mode
+skill such as `/wiki-sync` switches from read-only chat to agent mode
 and sends the literal invocation to the manager runtime. Serve does not expand
 the skill body or execute mutations through its local chat path.
 
@@ -245,8 +245,10 @@ cme_status
 -> production_job_status
 ```
 
-It accepts an optional source name (`/wiki-sync my-source`) and stops before the
-ingest when the export produced nothing new. The rest of the chain is split into
+It always exports every configured source and uses the connector's existing
+configuration as-is — it never asks which source to export and never
+reconfigures credentials. It stops before the ingest when the export produced
+nothing new. The rest of the chain is split into
 two further scaffold skills so each step can be replayed on its own:
 
 - `/wiki-ingest [files]` — ingest what is already staged in `raw/untracked/`,
