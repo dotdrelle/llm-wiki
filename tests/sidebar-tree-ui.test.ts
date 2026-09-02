@@ -242,6 +242,23 @@ describe('titles in the tree', () => {
     expect(html).not.toContain('>8d5e3fe3</a>');
     expect(html).not.toContain('>8d5e3fe3 ACPI</a>');
   });
+
+  it('strips the transport id carried by the converted frontmatter title', async () => {
+    // The documents agent derives the `title` frontmatter from the source
+    // filename, so a converted Pending upload stores its id there too — the
+    // filename strip alone is not enough, the title must be cleaned as well.
+    await writeFile(
+      path.join(root, 'raw/untracked/3f2a1b9c-mon_rapport.md'),
+      '---\ntitle: "3f2a1b9c mon rapport"\n---\n\n# x\n',
+      'utf8',
+    );
+
+    const html = await renderSidebar(root);
+
+    expect(html).toContain('>mon rapport</a>');
+    expect(html).not.toContain('>3f2a1b9c</a>');
+    expect(html).not.toContain('3f2a1b9c mon rapport');
+  });
 });
 
 describe('wiki tree chrome', () => {

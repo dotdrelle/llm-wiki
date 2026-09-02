@@ -90,13 +90,18 @@ function humanTitle(value: string): string {
 // Downloads arrive named like `8d5e3fe3-ACPI_RapportEtudeDonneesAmont_V0.md`:
 // the leading hash/token is a transport id, not part of the title the reader
 // should see. Strips a UUID or a 8+ hex token (with at least one letter) that
-// opens the filename — a plain date like `20240115-` is not a hash and stays.
+// opens the name — a plain date like `20240115-` is not a hash and stays.
+// The documents agent derives the converted Markdown's frontmatter `title`
+// from that same source filename, so the token shows up a second time there
+// (joined with spaces): the strip must run on both, or the id reappears.
+function stripTransportId(value: string): string {
+  return value
+    .replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[\s_-]+/i, '')
+    .replace(/^(?=[0-9a-f]{8,}[\s_-])[0-9a-f]*[a-f][0-9a-f]*[\s_-]+/i, '');
+}
+
 function pendingDisplayTitle(file: string): string {
-  const base = path.basename(file, '.md');
-  const stripped = base
-    .replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[-_]/i, '')
-    .replace(/^(?=[0-9a-f]{8,}[-_])[0-9a-f]*[a-f][0-9a-f]*[-_]/i, '');
-  return humanTitle(stripped);
+  return humanTitle(stripTransportId(path.basename(file, '.md')));
 }
 
 // The first `#` heading of a wiki page is its title, not its filename. Reads
@@ -825,7 +830,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
         try {
           const parsed = matter(await readFile(resolveInside(rootDir, file), 'utf8'));
           if (typeof parsed.data.title === 'string' && parsed.data.title.trim()) {
-            title = parsed.data.title.trim();
+            title = humanTitle(stripTransportId(parsed.data.title.trim()));
           }
         } catch {
           // Keep the filename fallback for an unreadable or malformed source.
@@ -961,7 +966,7 @@ export async function buildPagesIndex(
   const entries = [...navFiles.map(toPosix), ...untrackedFiles.map(toPosix)].sort();
   return entries.map((file) => ({
     path: file,
-    title: humanTitle(file),
+    title: file.startsWith('raw/untracked/') ? pendingDisplayTitle(file) : humanTitle(file),
     kind: file.startsWith('raw/untracked/') ? 'pending' : file.split('/')[0],
   }));
 }
@@ -973,7 +978,7 @@ export async function buildGraphOverview(
   return buildWikiGraph(rootDir, {
     decodeHrefPath,
     hrefToRelativePath,
-    humanTitle,
+    humanTitle: (value) => (value.includes('raw/untracked/') ? pendingDisplayTitle(value) : humanTitle(value)),
     renderMarkdown: (raw, currentDir) => renderMarkdown(raw, currentDir, rootDir),
   }, graphFiles, {
     includeContent: false,
@@ -1262,8 +1267,10 @@ export async function serveMd(
   const currentDir = toPosix(path.dirname(urlPath.replace(/^\//, '')));
   const parsedForDisplay = isRawUntrackedReference(relativePath) ? matter(raw) : null;
   const displayRaw = parsedForDisplay ? parsedForDisplay.content : raw;
-  const title = typeof parsedForDisplay?.data.title === 'string' && parsedForDisplay.data.title.trim()
-    ? parsedForDisplay.data.title.trim()
+  const title = parsedForDisplay
+    ? (typeof parsedForDisplay.data.title === 'string' && parsedForDisplay.data.title.trim()
+      ? humanTitle(stripTransportId(parsedForDisplay.data.title.trim()))
+      : pendingDisplayTitle(filePath))
     : path.basename(filePath, '.md');
   const sidebar = await renderSidebar(rootDir);
   const html =

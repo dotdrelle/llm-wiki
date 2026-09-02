@@ -417,7 +417,14 @@ export async function handleUploadRoutes(
       assertDocumentUpload(filename, content.length, deps.documentMaxUploadBytes);
       await removeDocumentUploadsForFilename(deps.rootDir, workspaceName, filename, deps);
       const id = randomUUID().slice(0, 8);
-      const storedFilename = `${id}-${filename}`;
+      // The input file is stored under its clean filename: the documents agent
+      // derives the converted Markdown's frontmatter `title` from the source
+      // filename, so an id-prefixed input would carry the transport id into
+      // every downstream label (Pending list, palette, wiki page title). Only
+      // the converted OUTPUT keeps the id prefix, so a re-drop cannot clobber
+      // an existing raw/untracked source with the same stem; the display
+      // strips that prefix for the reader.
+      const storedFilename = filename;
       const inputDir = path.join(deps.documentInputDir(deps.rootDir), workspaceName);
       await mkdir(inputDir, { recursive: true });
       const storedPath = path.join(inputDir, storedFilename);
