@@ -201,11 +201,9 @@ export function outputCapIncludesReasoning(llm: LlmConfig): boolean {
 /**
  * Margin applied to the output cap to absorb reasoning.
  *
- * **Provisional value.** The right factor depends on the model and the section
- * length, and has not been measured yet (cf. §5.2 of
- * `plan-implementation-reasoning.md`). The default of 3 is an order of
- * magnitude, not a measurement — it is therefore adjustable via
- * `llm.reasoningOutputMultiplier`.
+ * The right factor depends on the model and the section length. The default of
+ * 3 is an order of magnitude, not a measurement — it is therefore adjustable
+ * via `llm.reasoningOutputMultiplier`.
  *
  * Widening a cap only loses a protection against runaway generation, and
  * section validation already bounds the output elsewhere. The real guard is the

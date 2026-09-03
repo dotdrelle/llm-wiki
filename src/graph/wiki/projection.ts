@@ -38,7 +38,7 @@ export interface WikiGraphNode {
   raw: string;
   html: string;
   group?: string;
-  /** Structured provenance injected by the engine (Lot 2), when present. */
+  /** Structured provenance injected by the engine, when present. */
   subject?: string | null;
   /** Multivalued links: entity and theme tags. */
   tags?: string[];

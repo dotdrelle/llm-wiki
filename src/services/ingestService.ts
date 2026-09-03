@@ -389,7 +389,7 @@ export class IngestService {
     /*
      Previous run's produced pages, read once for the whole batch.
 
-     §12.2: on an unchanged body the consolidation renamed the same products
+     On an unchanged body the consolidation used to rename the same products
      from run to run. The stable reference against which a re-ingest must
      re-anchor is the source registry — what this source ACTUALLY produced last
      time — not the model's memory. Read it before the first source is observed,

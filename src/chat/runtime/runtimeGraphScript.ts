@@ -1,14 +1,13 @@
 import { graphCanvasScript } from '../../graph/core/canvas/graphCanvasScript.ts';
 import { RUNTIME_CANVAS_SCRIPT } from './runtimeCanvasScript.ts';
 
-// Run/Task graph (0.10.2). Node/link SVG mechanics come from graph/core's
-// shared Canvas camera and scheduler — this file supplies the runtime workflow
-// projection, a laned/layered DAG layout (Run / Tasks / Agents / Outputs
-// bands; tasks layered left→right by topological depth over depends_on and
-// wrapped into sub-columns), repeated-satellite aggregation (N identical
-// activities/approvals on one anchor collapse into a single counted bubble),
-// and its own minimal inspector, per plan directeur §9.1 (no toolbar/search/
-// relation-modal chrome like the wiki graph).
+// Run/Task graph. Node/link SVG mechanics come from graph/core's shared Canvas
+// camera and scheduler — this file supplies the runtime workflow projection, a
+// laned/layered DAG layout (Run / Tasks / Agents / Outputs bands; tasks layered
+// left→right by topological depth over depends_on and wrapped into sub-columns),
+// repeated-satellite aggregation (N identical activities/approvals on one anchor
+// collapse into a single counted bubble), and its own minimal inspector — no
+// toolbar/search/relation-modal chrome like the wiki graph.
 export const RUNTIME_GRAPH_SCRIPT = `/* ── Runtime Graph ─────────────────────────────────────────────────── */
 ${graphCanvasScript()}
 ${RUNTIME_CANVAS_SCRIPT}

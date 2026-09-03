@@ -4,19 +4,6 @@
 
 `llm-wiki` is a local-first Markdown knowledge engine.
 
-## 0.15.66
-
-The workspace now runs the shipped concepts & taxonomy model: `wiki concepts`
-builds a per-workspace grid of ranking classes from the raw documents, each
-(class × subject) pair gets one synthesis leaf in `wiki/concepts/`, and the
-taxonomy derives from the grid deterministically. Re-ingesting a document
-never touches the grid, and hand-moving a concept leaf re-files it properly.
-The browser uses the Wiki Graph v2 exclusively: structure snapshots, community
-map, relation-focused community and provenance views, searchable document
-selection, list view, theme switching, and lazy document previews. The legacy
-Wiki graph renderer and endpoints were removed; the shared force primitives
-remain only for the Run/Task graph.
-
 It turns raw project material into a persistent wiki, builds a local retrieval
 index, and regenerates deliverables from templates. It works as a standalone CLI
 or as the workspace engine used by `llm-wiki-manager`.
@@ -25,10 +12,8 @@ The core rule is simple: the workspace is the source of truth. Sources, wiki
 pages, templates, build rules, generated deliverables, traces, and skill state
 all live on disk.
 
-Scope note: this is a single-user deployment baseline. The multi-user model is
-specified in `docs/industrialisation.md` and planned next; until then, keep
-runtime write access local/proxied rather than exposing it as a shared
-multi-user surface.
+Scope note: this is a single-user deployment baseline. Keep runtime write
+access local or proxied rather than exposing it as a shared multi-user surface.
 
 ## Toolchain
 

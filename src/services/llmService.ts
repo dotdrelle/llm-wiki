@@ -74,8 +74,8 @@ interface ProviderErrorDetails {
   message: string;
 }
 
-// Per-engine workarounds live in config/engineCapabilities.ts —
-// single source of truth, cf. plan-implementation-engine-gateway.md.
+// Per-engine workarounds live in config/engineCapabilities.ts — the single
+// source of truth. Never reintroduce a provider/engine test here.
 
 function readNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
