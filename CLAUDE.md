@@ -174,22 +174,22 @@ entry. This is intentionally one-skill-per-workspace; do not add multi-skill
 merging without redesigning the model.
 
 The default scaffold includes small UI skills: `/status`, `/diagnose`, and the
-production chain `/wiki-sync` (export all configured sources + ingest, no
-source selection and no credential reconfiguration) →
-`/wiki-build` (build, optional template) → `/deliver` (export or polish, optional
-deliverable + `polish` flag), with `/pipeline` as the one-shot shortcut.
-`/wiki-ingest` (optional file list) is `/wiki-sync` without the export: it
-ingests what already waits in `raw/untracked/`, whatever staged it.
+production chain `/wiki-sync` (export all configured Confluence sources into
+`raw/untracked/` — no source selection, no credential reconfiguration, and no
+ingest) → `/wiki-ingest` (ingest what waits in `raw/untracked/`, whatever staged
+it) → `/wiki-build` (build, optional template) → `/deliver` (export or polish,
+optional deliverable + `polish` flag), with `/pipeline` as the one-shot
+shortcut.
 
 Scaffold skill bodies are **business intentions**, not procedures: they state
 the outcome, the guardrails and the reporting, and never name an MCP server, a
 tool or a job type. The manager's compiler turns a body into one delegable
 intention per strong boundary, so the markdown shape is load-bearing — a body
-written as a numbered list of phases becomes that many runs. Keep each shipped
-skill on one intention, except `wiki-sync`, whose second paragraph opens with
-`Then` precisely so the export and the ingest become two sequential runs.
-`pipeline` must stay a single intention: splitting it would take the production
-capability's own DAG and concurrency away from it.
+written as a numbered list of phases becomes that many runs. **Every shipped
+skill is a single intention**; only a user-authored body that opens a paragraph
+on `Puis` / `Then` / `if available`… splits into a sequential chain. `pipeline`
+in particular must stay a single intention: splitting it would take the
+production capability's own DAG and concurrency away from it.
 
 Params are positional and whitespace-separated. The manager appends them as a
 `User parameters:` block to every objective of a chain; the legacy `{param}`

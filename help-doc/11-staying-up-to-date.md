@@ -32,9 +32,10 @@ Detection is deterministic and costs nothing — none of it calls the LLM:
 - `wiki build`, or `/wiki-build [template]` — rebuild everything, or one template.
 - `wiki ingest`, or `/wiki-ingest [files]` — turn new or edited sources into
   wiki pages.
-- `/wiki-sync` — export every configured Confluence source, then ingest them
-  (each source is filed as a concept leaf as it goes in). It uses the existing
-  connector configuration as-is and never asks which source to export.
+- `/wiki-sync` — export every configured Confluence source into the pending
+  inbox (`raw/untracked/`). It uses the existing connector configuration as-is
+  and never asks which source to export. Run `/wiki-ingest` afterwards to turn
+  the exported Markdown into wiki pages.
 - `/pipeline` — the whole chain in one run: ingest, build, export, polish.
 
 The full default chain is: ingest, build, export, polish (see
@@ -46,15 +47,16 @@ For a cron job or CI, run the headless manager. Two commands cover the whole
 loop:
 
 ```bash
-# knowledge: sources -> wiki (filed as concept leaves)
+# fetch Confluence into the pending inbox, then file it into the wiki
 wiki-manager --headless --workspace <name> --skill "wiki-sync" --auto-approve --timeout 3600
+wiki-manager --headless --workspace <name> --skill "wiki-ingest" --auto-approve --timeout 3600
 
 # deliverables: build -> export -> polish
 wiki-manager --headless --workspace <name> --skill "pipeline" --auto-approve --timeout 3600
 ```
 
-Why two commands: `wiki-sync` never builds deliverables, and `pipeline` does not
-export Confluence — each covers one half of the loop.
+`wiki-sync` only fetches Confluence into `raw/untracked/`; `wiki-ingest` files
+the pending Markdown into the wiki; `pipeline` regenerates the deliverables.
 
 - `--auto-approve` is required: mutations are approval-gated by default, and
   headless is the explicit opt-in for unattended runs.

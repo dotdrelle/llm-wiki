@@ -40,7 +40,7 @@ fall behind them:
 - `/status` — summarize connector health and current or recent jobs.
 - `/wiki-build [template]` — build deliverables from the current wiki for one template or all templates.
 - `/wiki-ingest [files]` — ingest Markdown already waiting in raw/untracked into the wiki.
-- `/wiki-sync` — export all configured Confluence sources and then ingest the exported Markdown.
+- `/wiki-sync` — export all configured Confluence sources into the pending inbox.
 
 <!-- END GENERATED SKILLS -->
 
