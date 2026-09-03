@@ -813,14 +813,16 @@ export const WIKI_LAYOUT_CSS = `
       border: 1px solid var(--border);
       border-radius: 8px;
       background: var(--panel);
+      font-size: 0.94rem;
+      line-height: 1.6;
     }
     .article h1, .article h2, .article h3, .article h4 { line-height: 1.25; letter-spacing: 0; font-family: var(--font-serif); }
     /* Explicit scale: the UA default is 2em/1.5em, which reads as an oversized
        page title on a document body. */
-    .article h1 { margin: 0 0 0.8rem; font-size: 1.7rem; }
-    .article h2 { margin: 1.6rem 0 0.6rem; font-size: 1.32rem; }
-    .article h3 { margin: 1.3rem 0 0.45rem; font-size: 1.1rem; }
-    .article h4 { margin: 1.1rem 0 0.4rem; font-size: 1rem; }
+    .article h1 { margin: 0 0 0.75rem; font-size: 1.55rem; }
+    .article h2 { margin: 1.5rem 0 0.55rem; font-size: 1.22rem; }
+    .article h3 { margin: 1.25rem 0 0.4rem; font-size: 1.05rem; }
+    .article h4 { margin: 1.05rem 0 0.35rem; font-size: 0.95rem; }
     .article img { max-width: 100%; }
     .article, .article p, .article li, .article a, .article code {
       max-width: 100%;
@@ -1002,8 +1004,23 @@ export const WIKI_LAYOUT_CSS = `
     .field-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
     pre { background: #edf1f5; padding: 1rem; border-radius: 6px; max-width: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
     code { font-size: 0.9em; }
-    table { border-collapse: collapse; width: 100%; max-width: 100%; table-layout: auto; }
-    th, td { border: 1px solid var(--border); padding: 0.45rem 0.75rem; text-align: left; vertical-align: top; white-space: normal; overflow-wrap: anywhere; word-break: normal; }
+    table { border-collapse: collapse; max-width: 100%; }
+    th, td { border: 1px solid var(--border); padding: 0.4rem 0.62rem; text-align: left; vertical-align: top; white-space: normal; overflow-wrap: break-word; word-break: normal; }
+    /* Content-sized columns capped at the container: a compact table stays
+       compact, a wide one scrolls inside its own box instead of crushing every
+       column to fit 100%. table-layout auto (the default) lets each column take
+       what its content needs. */
+    .article table {
+      display: block;
+      width: max-content;
+      max-width: 100%;
+      overflow-x: auto;
+      table-layout: auto;
+      margin: 1.1rem 0;
+      font-size: 0.86rem;
+    }
+    .article thead th { background: var(--panel-soft); font-weight: 700; }
+    .article tbody tr:nth-child(even) { background: color-mix(in srgb, var(--panel-soft) 45%, transparent); }
     blockquote { border-left: 3px solid var(--accent); margin: 1rem 0; padding-left: 1rem; color: var(--muted); }
     .empty { color: var(--muted); }
     .not-found-panel {

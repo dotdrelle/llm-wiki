@@ -53,6 +53,9 @@ const EXPORT_ICON =
 // mismatched arrow).
 const REFRESH_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>';
+// Sparkle/wand — the "reformat this page" launch button, same stroke family.
+const SPARKLE_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 3 11 7l4 1.5L11 10l-1.5 4L8 10 4 8.5 8 7Z"/><path d="M18 4v3"/><path d="M16.5 5.5h3"/><path d="M17.5 15v3"/><path d="M16 16.5h3"/></svg>';
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -1325,10 +1328,21 @@ export async function serveMd(
   const deliverBtn = relativePath.startsWith('deliverables/') && relativePath.endsWith('.md')
     ? `<button class="action-button action-donna action-agent" type="button" data-deliver="${escapeAttr(relativePath)}" hidden title="Export / polish" aria-label="Export / polish">${EXPORT_ICON}</button>`
     : '';
+  // "Reformat" on an ingested wiki page: a Donna-run LLM pass that re-normalizes
+  // the Markdown, checks the links and repairs the OKF frontmatter, in place and
+  // under approval. Hidden by default — WIKI_LAYOUT_SCRIPT reveals it only in the
+  // chat shell, where Donna owns the launch. Concept / source / answer pages
+  // only, never the generated index or log.
+  const reformatBtn =
+    relativePath.endsWith('.md')
+    && ['wiki/concepts/', 'wiki/sources/', 'wiki/answers/'].some((dir) => relativePath.startsWith(dir))
+      ? `<button class="action-button action-donna action-agent" type="button" data-reformat-page="${escapeAttr(relativePath)}" hidden title="Reformat — clean Markdown, check links, repair OKF frontmatter" aria-label="Reformat this page">${SPARKLE_ICON}</button>`
+      : '';
   const actions = [
     chatContextBtn,
     buildTemplateBtn,
     deliverBtn,
+    reformatBtn,
     exportMenu,
     renameBtn,
     isEditableRelativePath(relativePath)

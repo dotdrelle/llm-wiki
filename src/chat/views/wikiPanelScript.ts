@@ -573,6 +573,24 @@ window.addEventListener('message', (event) => {
     if (!input) return;
     input.value = '/deliver ' + deliverablePath;
     sendMessage();
+  } else if (data.type === 'llmwiki:reformat') {
+    // "Reformat" clicked on an ingested wiki page. No slash-command skill for
+    // this: switch to agent mode and hand Donna a precise in-place instruction.
+    // Donna reads the page, rewrites it and calls wiki_write_page with a preview
+    // so the diff is approved before the real write.
+    const pagePath = decodeWikiPath(data.path).replace(/^\\//, '');
+    if (!/^wiki\\/(concepts|sources|answers)\\/.+\\.md$/.test(pagePath)) {
+      if (typeof notify === 'function') notify('Cannot reformat: not an ingested wiki page');
+      return;
+    }
+    showChatView();
+    const input = $('chat-input');
+    if (!input) return;
+    // A plain-prose instruction: force agent mode so Donna gets its write tools
+    // (chat mode is read-only), mirroring sendMessage's own skill-invocation path.
+    if (!agentMode) { agentMode = true; updateAgentModeUI(); }
+    input.value = 'Reformat the ingested wiki page ' + pagePath + ' in place. Do not move, rename or re-file it, and keep its subject and concept folder unchanged. Read the current page, then: (1) rewrite the body as clean, standards-compliant Markdown — consistent heading levels, well-formed lists and tables, no stray HTML, tidy spacing — while preserving every fact and every section; (2) check every link and citation, fix the ones that are merely malformed, and add a short "Broken links" note listing any that cannot be resolved; (3) ensure the frontmatter carries a valid OKF type and the standard keys, adding what is missing. Write it back with wiki_write_page using a preview first and show me the diff for approval before the real write.';
+    sendMessage();
   } else if (data.type === 'llmwiki:ingest') {
     // ⚡ "Ingest" clicked on the Pending panel of the wiki sidebar. The launch
     // runs through Donna, so route it as a /wiki-ingest skill invocation:

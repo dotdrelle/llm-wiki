@@ -1009,6 +1009,26 @@ ${CONFIRM_DIALOG_SCRIPT}
         );
       });
     }
+    // "Reformat" on an ingested wiki page: an LLM pass, run by Donna under
+    // approval, that cleans the Markdown, checks the links and repairs the OKF
+    // frontmatter without moving or renaming the page. Same reveal-on-embed +
+    // confirmation + Donna-routed launch as the two buttons above.
+    const reformatBtn = document.querySelector('[data-reformat-page]');
+    if (reformatBtn) {
+      reformatBtn.hidden = false;
+      reformatBtn.addEventListener('click', async () => {
+        const path = reformatBtn.getAttribute('data-reformat-page');
+        if (!(await confirmAction({
+          title: 'Reformat page',
+          message: 'Run an LLM reformat pass on this page (clean Markdown, link check, OKF frontmatter)? You will review the diff before it is written.\\n' + path,
+          confirmLabel: 'Reformat',
+        }))) return;
+        window.parent.postMessage(
+          { type: 'llmwiki:reformat', path },
+          window.location.origin,
+        );
+      });
+    }
   }
 
   // Sidebar panel: reflect the active file when the shell reports navigation.
