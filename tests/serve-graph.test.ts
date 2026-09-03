@@ -101,6 +101,26 @@ it('follows the shared serve theme without rendering a redundant graph toggle', 
   expect(html).not.toContain("localStorage.setItem(THEME_KEY,theme)");
 });
 
+it('shows community document titles without a filename extension', () => {
+  const html = renderWikiGraphV2();
+
+  // The Communities index appended ".md" to every document name, so a title
+  // read like a filename. The name is the title; the path stays in the
+  // tooltip.
+  expect(html).not.toContain("esc(n?.title||id)+'.md</button>'");
+  expect(html).toContain('graphLeafDisplay(n?.title||id)');
+});
+
+it('displays domain and document names capitalized, never all-caps', () => {
+  const html = renderWikiGraphV2();
+
+  // A domain name in full capitals read as shouting, and the preview modal
+  // forced the same through CSS. Names get an initial capital instead.
+  expect(html).not.toContain("function graphDomainDisplay(label){return String(label??'').toUpperCase()}");
+  expect(html).toContain("heading.textContent=graphLeafDisplay(documentData.title)");
+  expect(html).not.toContain('#document-preview-title{text-transform:uppercase}');
+});
+
 it('collapses the Selection panel with a +/− toggle on its title', () => {
   const html = renderWikiGraphV2();
   expect(html).toContain('.inspector-title::after{content:\'−\';');

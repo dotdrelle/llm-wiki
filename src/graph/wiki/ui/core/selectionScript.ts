@@ -39,11 +39,11 @@ window.addEventListener('message',event=>{
 async function previewGraphDocument(id){
   const overlay=document.querySelector('#document-preview-overlay'),content=document.querySelector('#document-preview-content'),heading=document.querySelector('#document-preview-title');
   overlay.hidden=false;heading.textContent='Document preview';content.innerHTML='<div class="loading" style="position:static;padding:2rem">Loading…</div>';
-  try{const documentData=await json('/api/graph/document?id='+encodeURIComponent(id));heading.textContent=documentData.title;content.innerHTML=documentData.html}
+  try{const documentData=await json('/api/graph/document?id='+encodeURIComponent(id));heading.textContent=graphLeafDisplay(documentData.title);content.innerHTML=documentData.html}
   catch(error){content.innerHTML='<p>'+esc(error.message)+'</p>'}
 }
 function documentActionRow(node){
-  return '<div class="focus-document-row" data-doc-row="'+esc(node.id)+'"><button type="button" class="focus-document-name" data-doc="'+esc(node.id)+'"><span>'+esc(node.title)+'</span><small>'+esc(node.type)+(graphRelationsLabel(node.degree)?' · '+graphRelationsLabel(node.degree):'')+'</small></button><span class="focus-document-actions"><button type="button" data-preview-doc="'+esc(node.id)+'" title="Preview document" aria-label="Preview '+esc(node.title)+'">'+graphIcon('preview')+'</button><button type="button" data-send-doc="'+esc(node.id)+'" title="Add to Donna" aria-label="Add '+esc(node.title)+' to Donna">'+graphIcon('donna')+'</button></span></div>'
+  return '<div class="focus-document-row" data-doc-row="'+esc(node.id)+'"><button type="button" class="focus-document-name" data-doc="'+esc(node.id)+'"><span>'+esc(graphLeafDisplay(node.title))+'</span><small>'+esc(node.type)+(graphRelationsLabel(node.degree)?' · '+graphRelationsLabel(node.degree):'')+'</small></button><span class="focus-document-actions"><button type="button" data-preview-doc="'+esc(node.id)+'" title="Preview document" aria-label="Preview '+esc(node.title)+'">'+graphIcon('preview')+'</button><button type="button" data-send-doc="'+esc(node.id)+'" title="Add to Donna" aria-label="Add '+esc(node.title)+' to Donna">'+graphIcon('donna')+'</button></span></div>'
 }
 /*
  A single panel, whose content follows the level.
@@ -63,7 +63,7 @@ function renderDocumentFocusWindow(node){
   // level, exactly like the "← Back" of the toolbar (#focus-back, script.ts) —
   // same target, same condition. Two commands for a single gesture, one of
   // which lies about what it does.
-  inspector.innerHTML='<div class="panel-head"><div><small>DOCUMENT</small><strong>'+esc(node.title)+'</strong><span>'+esc(node.id)+'</span></div></div><div class="document-focus-list">'+related.slice(0,50).map(documentActionRow).join('')+'</div>'
+  inspector.innerHTML='<div class="panel-head"><div><small>DOCUMENT</small><strong>'+esc(graphLeafDisplay(node.title))+'</strong><span>'+esc(node.id)+'</span></div></div><div class="document-focus-list">'+related.slice(0,50).map(documentActionRow).join('')+'</div>'
 }
 /*
  Descending must bring something.

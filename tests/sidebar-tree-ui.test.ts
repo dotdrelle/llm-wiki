@@ -208,6 +208,37 @@ describe('sidebar views', () => {
   });
 });
 
+describe('pending status colours', () => {
+  it('marks a pending source green when its subject is new', async () => {
+    const html = await renderSidebar(root);
+
+    expect(html).toContain('class="side-untracked-item side-untracked-new"');
+  });
+
+  it('marks a pending source blue when the same subject exists and differs', async () => {
+    await writeFile(path.join(root, 'wiki/concepts/source.md'), '# Ancien contenu.\n', 'utf8');
+
+    const html = await renderSidebar(root);
+
+    expect(html).toContain('class="side-untracked-item side-untracked-update"');
+    expect(html).not.toContain('side-untracked-new');
+  });
+
+  it('leaves an identical re-drop unmarked', async () => {
+    await writeFile(path.join(root, 'wiki/concepts/source.md'), '# x\n', 'utf8');
+
+    const html = await renderSidebar(root);
+
+    expect(html).not.toContain('side-untracked-new');
+    expect(html).not.toContain('side-untracked-update');
+  });
+
+  it('styles the two statuses in the layout css', () => {
+    expect(WIKI_LAYOUT_CSS).toContain('.side-untracked-item.side-untracked-new .side-untracked-link');
+    expect(WIKI_LAYOUT_CSS).toContain('.side-untracked-item.side-untracked-update .side-untracked-link');
+  });
+});
+
 describe('titles in the tree', () => {
   it('reads a wiki page by its first heading, not by its filename', async () => {
     await writeFile(

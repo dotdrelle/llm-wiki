@@ -816,13 +816,23 @@ function isEditableTreePath(nodePath: string): boolean {
 }
 
 async function renderUntrackedSidebar(rootDir: string): Promise<string> {
-  const [foundFiles, foundDirectories] = await Promise.all([
+  const [foundFiles, foundDirectories, wikiFiles] = await Promise.all([
     fg('raw/untracked/**/*.md', { cwd: rootDir, dot: false, onlyFiles: true }),
     fg('raw/untracked/**', { cwd: rootDir, dot: false, onlyDirectories: true }),
+    fg('wiki/**/*.md', { cwd: rootDir, dot: false, onlyFiles: true }),
   ]);
   const files = foundFiles.map(toPosix).sort((a, b) => a.localeCompare(b));
   const count = files.length;
   const open = count > 0 ? ' open' : '';
+  // A pending source whose subject already exists in the wiki is an update,
+  // not a newcomer: the tree announces it in colour before the ingest does.
+  // Green = new subject, blue = an existing page that differs.
+  const wikiBySubject = new Map<string, string>();
+  for (const wikiFile of wikiFiles.map(toPosix)) {
+    const subject = path.basename(wikiFile, '.md');
+    if (subject && !wikiBySubject.has(subject)) wikiBySubject.set(subject, wikiFile);
+  }
+  const statuses = new Map<string, 'new' | 'update'>();
   // Pending is the inbox of documents, not of folders: only a folder that has
   // at least one document DIRECTLY below it is shown. Ancestor chains with no
   // document at any level are collapsed away — a source buried six folders
@@ -867,8 +877,10 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
         }
         return Promise.all(files.map(async (file) => {
         let title = pendingDisplayTitle(file);
+        let content: string | null = null;
         try {
-          const parsed = matter(await readFile(resolveInside(rootDir, file), 'utf8'));
+          content = await readFile(resolveInside(rootDir, file), 'utf8');
+          const parsed = matter(content);
           if (typeof parsed.data.title === 'string' && parsed.data.title.trim()) {
             title = humanTitle(stripTransportId(parsed.data.title.trim()));
           }
@@ -876,7 +888,19 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
           // Keep the filename fallback for an unreadable or malformed source.
         }
         titles.set(file, title);
-      })).then(() => renderUntrackedNode(root, titles, true));
+        const existing = wikiBySubject.get(stripTransportId(path.basename(file, '.md')));
+        if (!existing) {
+          statuses.set(file, 'new');
+          return;
+        }
+        if (content === null) return;
+        try {
+          const current = await readFile(resolveInside(rootDir, existing), 'utf8');
+          if (content.trim() !== current.trim()) statuses.set(file, 'update');
+        } catch {
+          // Unreadable wiki page: leave the source unmarked rather than guess.
+        }
+      })).then(() => renderUntrackedNode(root, titles, statuses, true));
       })()
     : '<li class="side-untracked-empty">No pending sources.</li>';
   return `<div class="side-folder-row side-untracked-row"><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span></summary><div class="side-untracked-formats" data-untracked-formats style="padding:.15rem .5rem .3rem;font-size:.72rem;color:var(--muted);text-align:right"></div><div class="side-untracked-list" data-untracked-list data-tree-drop="" title="Drop files here: Markdown is written as is, PDF and text are converted by the documents agent">${await items}</div></details><div class="side-folder-actions"><button class="side-folder-action side-ingest-action" type="button" title="Ingest pending sources (Donna)" aria-label="Ingest pending sources" data-ingest-launch hidden>${ZAP_ICON}</button><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending"><span class="side-refresh-glyph">${REFRESH_ICON}</span></button><span class="side-untracked-count" data-untracked-count>${count}</span></div></div>`;
@@ -885,15 +909,22 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
 function renderUntrackedNode(
   node: NavTreeNode,
   titles: Map<string, string>,
+  statuses: Map<string, 'new' | 'update'>,
   root = false,
 ): string {
   const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name));
   const files = [...node.files].sort((a, b) => a.localeCompare(b));
   const children = [
-    ...dirs.map((dir) => renderUntrackedNode(dir, titles)),
+    ...dirs.map((dir) => renderUntrackedNode(dir, titles, statuses)),
     ...files.map((file) => {
       const safePath = escapeAttr(file);
-      return `<div class="side-untracked-item" draggable="true" data-tree-drag="${safePath}" data-tree-kind="file"><a class="side-untracked-link" href="${escapeHref(`/${file}`)}" title="${safePath}" aria-label="${safePath}" data-side-path="${safePath}">${escapeHtml(titles.get(file) ?? humanTitle(file))}</a><button class="side-tree-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-tree-delete="${safePath}" data-tree-kind="file">×</button></div>`;
+      const status = statuses.get(file);
+      const statusClass = status === 'new'
+        ? ' side-untracked-new'
+        : status === 'update'
+          ? ' side-untracked-update'
+          : '';
+      return `<div class="side-untracked-item${statusClass}" draggable="true" data-tree-drag="${safePath}" data-tree-kind="file"><a class="side-untracked-link" href="${escapeHref(`/${file}`)}" title="${safePath}" aria-label="${safePath}" data-side-path="${safePath}">${escapeHtml(titles.get(file) ?? humanTitle(file))}</a><button class="side-tree-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-tree-delete="${safePath}" data-tree-kind="file">×</button></div>`;
     }),
   ].join('\n');
   // The root children live directly in [data-untracked-list], which carries the

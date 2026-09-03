@@ -46,12 +46,13 @@ function graphRelationsLabel(count){
 /*
  Two levels, two typographic treatments.
 
- A domain is a heading: capitals, as on the map. A leaf is a named subject —
- often a proper noun that the registry stores in lowercase because the model
- writes in lowercase. The initial capital restores its noun status without
- altering the registry, which remains the source.
+ A domain is a heading; a leaf is a named subject. Both restore the initial
+ capital that a lowercase folder or registry entry lacks — full capitals on a
+ domain read as shouting, and hid the difference with a proper noun.
 */
-function graphDomainDisplay(label){return String(label??'').toUpperCase()}
+function graphDomainDisplay(label){
+  const text=String(label??'');
+  return text ? text.charAt(0).toUpperCase()+text.slice(1) : text}
 function graphLeafDisplay(label){
   const text=String(label??'');
   return text ? text.charAt(0).toUpperCase()+text.slice(1) : text}

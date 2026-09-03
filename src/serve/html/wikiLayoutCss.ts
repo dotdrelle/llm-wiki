@@ -489,6 +489,10 @@ export const WIKI_LAYOUT_CSS = `
       background: var(--panel-soft);
       color: var(--accent);
     }
+    .side-untracked-item.side-untracked-new .side-untracked-link { color: #34d399; }
+    .side-untracked-item.side-untracked-new .side-untracked-link::before { background: #22c55e; }
+    .side-untracked-item.side-untracked-update .side-untracked-link { color: #6ea1ff; }
+    .side-untracked-item.side-untracked-update .side-untracked-link::before { background: #4f7eff; }
     .side-untracked-link.is-active { font-weight: 720; }
     .side-untracked-link.is-active::before { background: var(--accent); opacity: 1; }
     .side-untracked-link:hover::after {

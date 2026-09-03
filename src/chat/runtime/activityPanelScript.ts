@@ -39,7 +39,7 @@ function createStreamBubble() {
   const wrap=$('messages');
   const div=document.createElement('div');
   div.className='msg assistant';
-  div.innerHTML='<div class="msg-content"><div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div><div class="msg-actions">'+msgCopyButton()+'</div></div>';
+  div.innerHTML='<div class="msg-content"><div class="bubble"><div class="typing">>_</div></div><div class="msg-actions">'+msgCopyButton()+'</div></div>';
   wrap.appendChild(div);
   wrap.scrollTop=wrap.scrollHeight;
   return div;
@@ -77,7 +77,7 @@ function setStreamContent(div, text, extra='', {html=false,plainText=null}={}) {
   const bubble=div.querySelector('.bubble');
   if(!bubble) return;
   div.dataset.copy=plainText??text??'';
-  const main=html ? (text||'') : (text ? renderMd(text) : (extra ? '' : '<div class="typing"><span></span><span></span><span></span></div>'));
+  const main=html ? (text||'') : (text ? renderMd(text) : (extra ? '' : '<div class="typing">>_</div>'));
   bubble.innerHTML=main+extra;
   $('messages').scrollTop=$('messages').scrollHeight;
 }
@@ -92,7 +92,7 @@ const RUNTIME_THINKING_TIMEOUT_MS=120000;
 function createRuntimeThinkingBubble(text='Request received · Donna is preparing the response and plan…') {
   const div=createStreamBubble();
   const bubble=div.querySelector('.bubble');
-  if(bubble) bubble.innerHTML=\`<div class="runtime-thinking"><div class="typing"><span></span><span></span><span></span></div><span>\${esc(text)}</span></div>\`;
+  if(bubble) bubble.innerHTML=\`<div class="runtime-thinking"><div class="typing">>_</div><span>\${esc(text)}</span></div>\`;
   div._runtimeTimeout=setTimeout(()=>{
     if(!div.isConnected) return;
     pendingRuntimeStatusEls=pendingRuntimeStatusEls.filter(el=>el!==div);

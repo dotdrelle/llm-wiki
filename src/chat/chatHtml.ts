@@ -2073,7 +2073,7 @@ async function openLocalDoc(href, label) {
   modal.setAttribute('aria-hidden','false');
   title.textContent=label||href;
   open.href=href;
-  content.innerHTML='<div class="typing"><span></span><span></span><span></span></div>';
+  content.innerHTML='<div class="typing">>_</div>';
   try {
     const res=await fetch(href,{headers:{Accept:'text/html'}});
     if(!res.ok) throw new Error(\`HTTP \${res.status}\`);

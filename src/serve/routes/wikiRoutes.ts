@@ -30,15 +30,6 @@ import { listHelpChapters, readHelpChapter } from '../../utils/helpDoc.ts';
 import { HistoryService } from '../../services/historyService.ts';
 import type { HistoryConfig } from '../../types.ts';
 
-function escapeHistoryHtml(value: unknown): string {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
 export type WikiRoutesDeps = {
   rootDir: string;
   historyConfig?: HistoryConfig;
@@ -67,52 +58,17 @@ export async function handleWikiRoutes(
   const { rootDir } = deps;
 
   if (urlPath === '/history' && req.method === 'GET') {
-    const history = new HistoryService(rootDir, deps.historyConfig);
-    const status = await history.status();
-    const release = status.initialized ? await history.latestRelease() : undefined;
-    const commits = status.initialized
-      ? await history.log({ limit: 50, since: release?.name })
-      : [];
-    const older = release
-      ? await history.log({ limit: 50, until: release.name })
-      : [];
-    const olderCount = release ? await history.countLog(release.name) : 0;
-    const card = (commit: { sha: string; shortSha: string; subject: string; date: string; runId?: string }) =>
-      `<article class="history-card"><div class="history-summary"><code class="commit-sha">${escapeHistoryHtml(commit.shortSha)}</code><div class="history-title"><strong>${escapeHistoryHtml(commit.subject)}</strong><span>${escapeHistoryHtml(commit.date)}</span></div><code class="run-id">${escapeHistoryHtml(commit.runId ?? 'No run id')}</code><button class="restore-button" type="button" data-sha="${escapeHistoryHtml(commit.sha)}">Restore run</button></div><details class="change-details" data-sha="${escapeHistoryHtml(commit.sha)}"><summary><span>What will be undone?</span><small>Show the files and textual changes made by this action</small></summary><div class="change-content" data-change-content><p class="loading">Open to load the change details.</p></div></details></article>`;
-    /*
-     An empty list after a release is not an empty history.
-
-     The page reloads right after "Release this state", and at that instant
-     nothing has been committed since the tag. Saying "No workspace history
-     available" over a fold that announces N older commits contradicts itself on
-     the very first screen the feature shows.
-    */
-    const rows = commits.length
-      ? commits.map(card).join('')
-      : `<div class="empty-state">${release
-        ? `Nothing changed since ${escapeHistoryHtml(release.name)}. Everything before it is under “Older history”.`
-        : 'No workspace history available.'}</div>`;
-    // The fold counts every older commit but only renders the last 50: saying
-    // one number while showing another is the silent truncation this codebase
-    // keeps paying for.
-    const olderShown = older.length < olderCount
-      ? `<p class="detail-error">Showing the ${older.length} most recent of ${olderCount}.</p>`
-      : '';
-    const archive = release
-      ? `<details class="history-archive"><summary><span>Older history</span><small>${escapeHistoryHtml(olderCount)} commit(s) before ${escapeHistoryHtml(release.name)}</small></summary><div class="history-archive-list">${olderShown}${older.length ? older.map(card).join('') : '<p class="detail-error">No older commits.</p>'}</div></details>`
-      : '';
+    // The history itself is not rendered server-side: git log on a large
+    // workspace used to hold the first paint hostage with no loading state.
+    // The shell below renders immediately; the browser then loads
+    // /api/history/summary, and the "Older history" fold lazily fetches
+    // /api/history/older on open.
     const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Workspace history</title><script>try{const t=localStorage.getItem('llm-wiki:theme')||localStorage.getItem('llm-wiki:graph:theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.classList.add('theme-'+(t==='dark'?'dark':'light'))}catch{}</script><style>
 ${WIKI_CSS_VARS}
 ${CONFIRM_DIALOG_CSS}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.page{width:min(1180px,calc(100% - 40px));margin:0 auto;padding:34px 0 60px}.page-head{margin-bottom:24px}.eyebrow{display:block;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.page h1{margin:.2rem 0 .35rem;font-size:clamp(26px,4vw,38px);line-height:1.1}.lede,#status{margin:.25rem 0;color:var(--muted)}a{color:var(--link)}.release-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:.25rem 0 .5rem}.release-badge{display:inline-flex;align-items:center;gap:10px;padding:6px 12px;border:1px solid var(--accent);border-radius:999px;color:var(--text);font-size:12px}.release-badge code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:800;color:var(--accent)}.release-badge span{color:var(--muted)}.release-none{color:var(--muted);font-size:12px}#release-button{border:1px solid var(--accent);border-radius:7px;padding:7px 13px;background:var(--accent);color:#fff;font:inherit;font-weight:800;cursor:pointer}#release-button:hover{filter:brightness(1.08)}#release-button:disabled{opacity:.55;cursor:wait}.history-archive{margin-top:14px;border:1px solid var(--border);border-radius:12px;background:var(--panel);overflow:hidden}.history-archive>summary{display:flex;align-items:center;gap:12px;padding:13px 16px;color:var(--text);cursor:pointer;font-weight:750;list-style-position:inside}.history-archive>summary small{color:var(--muted);font-weight:500}.history-archive-list{display:grid;gap:12px;padding:0 16px 16px}.history-list{display:grid;gap:12px}.history-card{overflow:hidden;border:1px solid var(--border);border-radius:12px;background:var(--panel);box-shadow:var(--shadow)}.history-summary{display:grid;grid-template-columns:82px minmax(240px,1fr) minmax(120px,240px) auto;align-items:center;gap:16px;padding:15px 16px}.commit-sha,.run-id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}.commit-sha{color:var(--accent);font-weight:800}.run-id{overflow:hidden;color:var(--muted);text-overflow:ellipsis;white-space:nowrap}.history-title{min-width:0}.history-title strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.history-title span{display:block;margin-top:3px;color:var(--muted);font-size:12px}.restore-button{border:1px solid var(--border);border-radius:7px;padding:7px 11px;background:var(--panel-soft);color:var(--text);font:inherit;font-weight:700;cursor:pointer}.restore-button:hover{border-color:var(--accent);color:var(--accent)}.restore-button:disabled{opacity:.55;cursor:wait}.change-details{border-top:1px solid var(--border);background:var(--panel-soft)}.change-details summary{display:flex;align-items:center;gap:12px;padding:11px 16px;color:var(--text);cursor:pointer;font-weight:750;list-style-position:inside}.change-details summary small{color:var(--muted);font-weight:500}.change-content{padding:0 16px 16px}.file-change h3{display:flex;gap:8px;align-items:center;margin:0;padding:11px 16px;font-size:13px;border-top:1px solid var(--border)}.file-change:first-of-type h3{border-top:0}.change-kind{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:2px 6px;border-radius:4px;background:var(--panel);color:var(--muted)}.diff{margin:0;padding:12px 14px;background:var(--panel-soft);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.55;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;overflow-x:auto}.diff-line{display:block}.diff-add{color:#7ee2a8}.diff-del{color:#ff9b97}.diff-hunk{color:var(--accent);font-weight:700}.diff-meta{color:var(--muted)}.undo-explanation{margin:2px 0 12px;padding:11px 13px;border-left:3px solid var(--... (line truncated to 2000 chars)
-@media(max-width:760px){.page{width:min(100% - 24px,1180px);padding-top:22px}.history-summary{grid-template-columns:70px 1fr}.run-id{grid-column:1/3}.restore-button{grid-column:1/3;justify-self:start}.change-details summary{align-items:flex-start;flex-direction:column;gap:2px}}
-</style></head><body><main class="page"><header class="page-head"><span class="eyebrow">Versioned workspace</span><h1>Workspace history</h1><p class="lede"><a href="/">Back to wiki</a> · Review an action before restoring it.</p><div class="release-bar">${release ? `<span class="release-badge">Latest release: <code>${escapeHistoryHtml(release.name)}</code><span>${escapeHistoryHtml(release.date)}</span></span>` : '<span class="release-none">No release yet</span>'}<button id="release-button" type="button">Release this state</button></div><p id="status">${escapeHistoryHtml(status.reason
-      ? `History: ${status.reason}`
-      // `commits` only counts what followed the release; announcing it bare
-      // read as "0 commit(s)" over a workspace with a full history.
-      : release
-        ? `${commits.length} commit(s) since ${release.name} · ${olderCount} before it`
-        : `${commits.length} commit(s)`)}</p></header><section class="history-list">${rows}</section>${archive}</main>${CONFIRM_DIALOG_HTML}<script>
+@media(max-width:760px){.page{width:min(100% - 24px,1180px);padding-top:22px}.history-summary{grid-template-columns:70px 1fr}.run-id{grid-column:1/3}.restore-button{grid-column:1/3;justify-self:start}.change-details summary{align-items:flex-start;flex-direction:column;gap:2px}}.history-loading{display:flex;align-items:center;gap:8px;color:var(--muted);padding:16px 4px;font-size:13px}.history-loading-glyph{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;animation:history-blink 1.1s steps(1) infinite}@keyframes history-blink{50%{opacity:.35}}
+</style></head><body><main class="page"><header class="page-head"><span class="eyebrow">Versioned workspace</span><h1>Workspace history</h1><p class="lede"><a href="/">Back to wiki</a> · Review an action before restoring it.</p><div class="release-bar"><span id="release-badge"><span class="release-none">No release yet</span></span><button id="release-button" type="button">Release this state</button></div><p id="status"><span class="history-loading-glyph">>_</span> Loading history…</p></header><section class="history-list"><div class="history-loading"><span class="history-loading-glyph">>_</span> Loading history…</div></section><div id="history-archive"></div></main>${CONFIRM_DIALOG_HTML}<script>
 ${CONFIRM_DIALOG_SCRIPT}
 const THEME_KEY='llm-wiki:theme';
 function applyTheme(theme){const selected=theme==='dark'?'dark':'light';document.documentElement.classList.toggle('theme-dark',selected==='dark');document.documentElement.classList.toggle('theme-light',selected==='light')}
@@ -121,7 +77,8 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&
 function parsePatch(content){const files=[];let current=null;for(const line of String(content||'').split('\\n')){if(line.startsWith('diff --git ')){if(current)files.push(current);const match=/^diff --git a\\/(.+) b\\/(.+)$/.exec(line);current={path:match?match[2]:'Changed file',kind:'modified',lines:[],additions:0,deletions:0};continue}if(!current)continue;if(line.startsWith('new file mode'))current.kind='added';else if(line.startsWith('deleted file mode'))current.kind='deleted';else if(line.startsWith('rename to ')){current.kind='renamed';current.path=line.slice(10)}if(line.startsWith('+')&&!line.startsWith('+++'))current.additions++;if(line.startsWith('-')&&!line.startsWith('---'))current.deletions++;current.lines.push(line)}if(current)files.push(current);return files}
 function lineClass(line){if(line.startsWith('+')&&!line.startsWith('+++'))return'diff-add';if(line.startsWith('-')&&!line.startsWith('---'))return'diff-del';if(line.startsWith('@@'))return'diff-hunk';if(/^(index |--- |\\+\\+\\+ |new file|deleted file|similarity|rename )/.test(line))return'diff-meta';return''}
 function renderChanges(content){const files=parsePatch(content);const additions=files.reduce((n,file)=>n+file.additions,0);const deletions=files.reduce((n,file)=>n+file.deletions,0);const cards=files.map(file=>'<section class="file-change"><h3><span class="change-kind">'+esc(file.kind)+'</span>'+esc(file.path)+'</h3><pre class="diff">'+file.lines.map(line=>'<span class="diff-line '+lineClass(line)+'">'+esc(line||' ')+'</span>').join('\\n')+'</pre></section>').join('');return '<p class="undo-explanation"><strong>What restore will do:</strong> reverse only the changes recorded by this action and create a new history commit. Existing history is preserved.</p><div class="change-stats"><span class="stat">'+files.length+' file(s)</span><span class="stat">+'+additions+' line(s)</span><span class="stat">−'+deletions+' line(s)</span></div>'+(cards||'<p class="detail-error">No textual file change is recorded for this commit.</p>')}
-document.querySelectorAll('details[data-sha]').forEach(details=>details.addEventListener('toggle',async()=>{if(!details.open||details.dataset.loaded==='1')return;details.dataset.loaded='1';const target=details.querySelector('[data-change-content]');target.innerHTML='<p class="loading">Loading the changes…</p>';try{const response=await fetch('/api/history/show?sha='+encodeURIComponent(details.dataset.sha),{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.error||'Could not load changes.');target.innerHTML=renderChanges(data.content)}catch(error){details.dataset.loaded='0';target.innerHTML='<p class="detail-error">'+esc(error.message||error)+'</p>'}}));
+function historyCard(commit){return '<article class="history-card"><div class="history-summary"><code class="commit-sha">'+esc(commit.shortSha)+'</code><div class="history-title"><strong>'+esc(commit.subject)+'</strong><span>'+esc(commit.date)+'</span></div><code class="run-id">'+esc(commit.runId||'No run id')+'</code><button class="restore-button" type="button" data-sha="'+esc(commit.sha)+'">Restore run</button></div><details class="change-details" data-sha="'+esc(commit.sha)+'"><summary><span>What will be undone?</span><small>Show the files and textual changes made by this action</small></summary><div class="change-content" data-change-content><p class="loading">Open to load the change details.</p></div></details></article>'}
+function wireChangeDetails(root){root.querySelectorAll('details[data-sha]').forEach(details=>details.addEventListener('toggle',async()=>{if(!details.open||details.dataset.loaded==='1')return;details.dataset.loaded='1';const target=details.querySelector('[data-change-content]');target.innerHTML='<p class="loading">Loading the changes…</p>';try{const response=await fetch('/api/history/show?sha='+encodeURIComponent(details.dataset.sha),{cache:'no-store'});const data=await response.json();if(!response.ok)throw new Error(data.error||'Could not load changes.');target.innerHTML=renderChanges(data.content)}catch(error){details.dataset.loaded='0';target.innerHTML='<p class="detail-error">'+esc(error.message||error)+'</p>'}}));}
 const post=(body)=>fetch('/api/history/restore',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
 const say=(t)=>{document.querySelector('#status').textContent=t;};
 const releaseButton=document.querySelector('#release-button');
@@ -137,7 +94,7 @@ if(releaseButton)releaseButton.addEventListener('click',async()=>{
     location.reload();
   }finally{releaseButton.disabled=false;}
 });
-document.querySelectorAll('button[data-sha]').forEach(b=>b.addEventListener('click',async()=>{
+function wireRestoreButtons(root){root.querySelectorAll('button[data-sha]').forEach(b=>b.addEventListener('click',async()=>{
   const run=b.dataset.sha;
   if(!(await confirmAction({title:'Restore',message:'Reverse the changes made by this action? A new commit will be created and existing history will be preserved.',confirmLabel:'Restore',danger:true})))return;
   b.disabled=true;
@@ -153,7 +110,63 @@ document.querySelectorAll('button[data-sha]').forEach(b=>b.addEventListener('cli
     }
     say(r.ok?'Restore submitted for approval':((await r.json()).error||'Restore submission failed'));
   }finally{b.disabled=false;}
-}));
+}));}
+function historyStatusText(status,release,commits,olderCount){
+  if(status&&status.reason)return 'History: '+status.reason;
+  if(release)return commits.length+' commit(s) since '+release.name+' · '+olderCount+' before it';
+  return commits.length+' commit(s)';
+}
+function historyEmptyState(release){
+  return '<div class="empty-state">'+(release?'Nothing changed since '+esc(release.name)+'. Everything before it is under “Older history”.':'No workspace history available.')+'</div>';
+}
+async function loadHistory(){
+  const list=document.querySelector('.history-list');
+  const archiveWrap=document.querySelector('#history-archive');
+  const badge=document.querySelector('#release-badge');
+  let data;
+  try{
+    const response=await fetch('/api/history/summary',{cache:'no-store'});
+    data=await response.json();
+    if(!response.ok)throw new Error(data.error||'Could not load history.');
+  }catch(error){
+    say('History unavailable');
+    list.innerHTML='<div class="empty-state">'+esc(error.message||error)+'</div>';
+    return;
+  }
+  const commits=Array.isArray(data.commits)?data.commits:[];
+  const olderCount=Number(data.olderCount)||0;
+  say(historyStatusText(data.status,data.release,commits,olderCount));
+  badge.innerHTML=data.release?'<span class="release-badge">Latest release: <code>'+esc(data.release.name)+'</code><span>'+esc(data.release.date)+'</span></span>':'<span class="release-none">No release yet</span>';
+  list.innerHTML=commits.length?commits.map(historyCard).join(''):historyEmptyState(data.release);
+  wireChangeDetails(list);
+  wireRestoreButtons(list);
+  if(data.release){
+    const archive=document.createElement('details');
+    archive.className='history-archive';
+    archive.innerHTML='<summary><span>Older history</span><small>'+esc(olderCount)+' commit(s) before '+esc(data.release.name)+'</small></summary><div class="history-archive-list" data-archive-content></div>';
+    archive.addEventListener('toggle',async()=>{
+      if(!archive.open||archive.dataset.loaded==='1')return;
+      archive.dataset.loaded='1';
+      const target=archive.querySelector('[data-archive-content]');
+      target.innerHTML='<p class="loading">Loading older history…</p>';
+      try{
+        const response=await fetch('/api/history/older?until='+encodeURIComponent(data.release.name)+'&limit=50',{cache:'no-store'});
+        const older=await response.json();
+        if(!response.ok)throw new Error(older.error||'Could not load older history.');
+        const olderCommits=Array.isArray(older.commits)?older.commits:[];
+        const note=olderCommits.length<olderCount?'<p class="detail-error">Showing the '+olderCommits.length+' most recent of '+olderCount+'.</p>':'';
+        target.innerHTML=note+(olderCommits.length?olderCommits.map(historyCard).join(''):'<p class="detail-error">No older commits.</p>');
+        wireChangeDetails(target);
+        wireRestoreButtons(target);
+      }catch(error){
+        archive.dataset.loaded='0';
+        target.innerHTML='<p class="detail-error">'+esc(error.message||error)+'</p>';
+      }
+    });
+    archiveWrap.appendChild(archive);
+  }
+}
+loadHistory();
 </script></body></html>`;
     await deps.sendGzippedHtml(req, res, html);
     return true;
@@ -169,6 +182,43 @@ document.querySelectorAll('button[data-sha]').forEach(b=>b.addEventListener('cli
       status,
       commits: status.initialized ? await history.log({ file, limit: rawLimit }) : [],
     });
+    return true;
+  }
+
+  if (urlPath === '/api/history/summary' && req.method === 'GET') {
+    // One round-trip for the page: the status text, the release badge, the
+    // post-release commits and the count folded under "Older history".
+    const history = new HistoryService(rootDir, deps.historyConfig);
+    const status = await history.status();
+    const release = status.initialized ? await history.latestRelease() : undefined;
+    const commits = status.initialized
+      ? await history.log({ limit: 50, since: release?.name })
+      : [];
+    const olderCount = release ? await history.countLog(release.name) : 0;
+    deps.sendJson(res, 200, { status, release, commits, olderCount });
+    return true;
+  }
+
+  if (urlPath === '/api/history/older' && req.method === 'GET') {
+    // Lazily fetched by the "Older history" fold when the user opens it, so a
+    // long history never costs anything before it is actually read.
+    const requestUrl = new URL(req.url ?? '/api/history/older', 'http://localhost');
+    const until = requestUrl.searchParams.get('until');
+    if (!until) {
+      deps.sendJson(res, 400, { error: 'Missing until' });
+      return true;
+    }
+    const rawLimit = Number.parseInt(requestUrl.searchParams.get('limit') ?? '50', 10);
+    const limit = Number.isFinite(rawLimit) ? rawLimit : 50;
+    try {
+      // `until` is a client-supplied ref: HistoryService.log validates its
+      // shape and passes it after `--end-of-options`, but a ref git rejects
+      // still needs a clean 4xx rather than a 500.
+      const commits = await new HistoryService(rootDir, deps.historyConfig).log({ limit, until });
+      deps.sendJson(res, 200, { commits });
+    } catch (error) {
+      deps.sendJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
     return true;
   }
 

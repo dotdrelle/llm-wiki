@@ -342,13 +342,10 @@ ${CHAT_ACTIVITY_CSS}
 .tc-raw{margin-top:8px}
 .tc-raw summary{cursor:pointer;color:var(--muted);font-family:var(--font-sans);font-size:11px;font-weight:600}
 .tc-raw pre{margin-top:6px}
-.typing{display:flex;align-items:center;gap:4px;padding:3px 0}
-.typing span{width:5px;height:5px;border-radius:50%;background:var(--muted);animation:boing .8s infinite}
-.typing span:nth-child(2){animation-delay:.15s}
-.typing span:nth-child(3){animation-delay:.3s}
+.typing{display:flex;align-items:center;gap:4px;padding:3px 0;font-family:var(--font-mono);font-size:13px;color:var(--muted);animation:typing-blink 1.1s steps(1) infinite}
 .runtime-thinking{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px}
 .runtime-thinking .typing{flex:none}
-@keyframes boing{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}
+@keyframes typing-blink{50%{opacity:.35}}
 #empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--muted)}
 #empty .em-icon{font-size:36px;opacity:.6}
 #empty h2{font-size:17px;font-weight:800;color:var(--muted2)}
