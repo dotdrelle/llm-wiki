@@ -814,8 +814,13 @@ export const WIKI_LAYOUT_CSS = `
       border-radius: 8px;
       background: var(--panel);
     }
-    .article h1, .article h2, .article h3 { line-height: 1.2; letter-spacing: 0; font-family: var(--font-serif); }
-    .article h1 { margin-top: 0; }
+    .article h1, .article h2, .article h3, .article h4 { line-height: 1.25; letter-spacing: 0; font-family: var(--font-serif); }
+    /* Explicit scale: the UA default is 2em/1.5em, which reads as an oversized
+       page title on a document body. */
+    .article h1 { margin: 0 0 0.8rem; font-size: 1.7rem; }
+    .article h2 { margin: 1.6rem 0 0.6rem; font-size: 1.32rem; }
+    .article h3 { margin: 1.3rem 0 0.45rem; font-size: 1.1rem; }
+    .article h4 { margin: 1.1rem 0 0.4rem; font-size: 1rem; }
     .article img { max-width: 100%; }
     .article, .article p, .article li, .article a, .article code {
       max-width: 100%;

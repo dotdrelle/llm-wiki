@@ -62,9 +62,35 @@ describe('serve link handling', () => {
     expect(html).toContain('Absent reference');
     expect(html).not.toContain('missing.md');
     expect(html).not.toContain('absent.md');
-    expect(html).toContain('href="https://example.com"');
+    // External destinations open in a new tab; internal ones stay in place.
+    expect(html).toContain('href="https://example.com" target="_blank" rel="noopener noreferrer"');
+    expect(html).toMatch(/href="\/wiki\/concepts\/valid\.md"(?![^>]*target=)/);
     expect(html).toContain('href="/raw/archive/legacy.md"');
     expect(html).toContain('class="source-citation"');
+  });
+
+  it('strips YAML frontmatter from wiki pages instead of rendering it as a heading', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-fm-'));
+    await mkdir(path.join(root, 'wiki', 'concepts', 'securite'), { recursive: true });
+    const page = path.join(root, 'wiki', 'concepts', 'securite', 'anaplan.md');
+    await writeFile(page, [
+      '---',
+      'subject: Anaplan',
+      'kind: system',
+      'resource: https://confluence.example.com/pages/123',
+      'type: concept',
+      '---',
+      '# Anaplan',
+      '',
+      'Body.',
+    ].join('\n'), 'utf8');
+
+    const html = await serveMd(root, page, '/wiki/concepts/securite/anaplan.md');
+    const article = html.slice(html.indexOf('<article'), html.indexOf('</article>'));
+    expect(article).toContain('<h1>Anaplan</h1>');
+    expect(article).not.toContain('subject: Anaplan');
+    expect(article).not.toContain('confluence.example.com'); // frontmatter URL not autolinked
+    expect(article).not.toMatch(/<h2[^>]*>[^<]*(subject|resource|type:)/);
   });
 
   it('renders stabilization tags from deliverable sidecars', async () => {

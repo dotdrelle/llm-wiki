@@ -262,6 +262,16 @@ function linkWikiLinks(raw: string): string {
 }
 
 async function renderMarkdown(raw: string, currentDir = '', rootDir?: string): Promise<string> {
+  // Frontmatter is metadata, never content. Strip it here — the single render
+  // choke point — so a page's `subject:` / `type:` / `tags:` block never
+  // surfaces as a spurious setext heading (and its URL values as a stray blue
+  // autolink) at the top of the article.
+  let body = raw;
+  try {
+    body = matter(raw).content;
+  } catch {
+    // Malformed YAML frontmatter: render the file verbatim rather than nothing.
+  }
   const renderer = new marked.Renderer();
   renderer.link = ({ href, title, text }) => {
     const resolvedHref = localHref(href, currentDir);
@@ -273,9 +283,13 @@ async function renderMarkdown(raw: string, currentDir = '', rootDir?: string): P
     }
     const safeHref = escapeHref(resolvedHref);
     const safeTitle = title ? ` title="${escapeAttr(title)}"` : '';
-    return `<a href="${safeHref}"${safeTitle}>${text}</a>`;
+    // Off-site links open in a new tab: a wiki page is often shown in the
+    // shell's central iframe (or under a <base target> in the sidebar panel),
+    // where following an external link would replace the whole shell.
+    const external = /^https?:\/\//i.test(resolvedHref) ? ' target="_blank" rel="noopener noreferrer"' : '';
+    return `<a href="${safeHref}"${safeTitle}${external}>${text}</a>`;
   };
-  const validated = rootDir ? await removeBrokenWikiLinks(raw, currentDir, rootDir) : raw;
+  const validated = rootDir ? await removeBrokenWikiLinks(body, currentDir, rootDir) : body;
   return marked(linkSourceCitations(linkWikiLinks(validated), currentDir), {
     gfm: true,
     renderer,
@@ -1001,7 +1015,13 @@ export async function renderGraphDocument(rootDir: string, relativePath: string)
 }
 
 function markdownPreviewForGraph(raw: string): string {
-  return raw.replace(/^---[\s\S]*?---\s*/m, '').replace(/```[\s\S]*?```/g, ' ')
+  let body = raw;
+  try {
+    body = matter(raw).content;
+  } catch {
+    // Malformed frontmatter: preview the file as-is.
+  }
+  return body.replace(/```[\s\S]*?```/g, ' ')
     .replace(/[#>*_`|~-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 900);
 }
 
@@ -1266,7 +1286,6 @@ export async function serveMd(
   }
   const currentDir = toPosix(path.dirname(urlPath.replace(/^\//, '')));
   const parsedForDisplay = isRawUntrackedReference(relativePath) ? matter(raw) : null;
-  const displayRaw = parsedForDisplay ? parsedForDisplay.content : raw;
   const title = parsedForDisplay
     ? (typeof parsedForDisplay.data.title === 'string' && parsedForDisplay.data.title.trim()
       ? humanTitle(stripTransportId(parsedForDisplay.data.title.trim()))
@@ -1276,7 +1295,7 @@ export async function serveMd(
   const html =
     relativePath === 'wiki/log.md'
       ? renderLogMarkdown(raw)
-      : await renderMarkdown(displayRaw, currentDir, rootDir);
+      : await renderMarkdown(raw, currentDir, rootDir);
   // "Print / PDF" and "Download .md" are one decision — take this page out of
   // the wiki — so they share a single disclosure menu instead of two separate
   // toolbar buttons. Native <details>: no JS, works on a standalone page too.
