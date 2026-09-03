@@ -90,6 +90,17 @@ function humanTitle(value: string): string {
   return path.basename(value, '.md').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function capitalizeFirst(value: string): string {
+  return value ? value.charAt(0).toLocaleUpperCase() + value.slice(1) : value;
+}
+
+// A concept is the folder directly under `wiki/concepts/` — its name is shown
+// in capitals, its subjects (the leaves inside it) with a leading capital.
+function isConceptFolderPath(nodePath: string): boolean {
+  const parts = toPosix(nodePath).split('/');
+  return parts.length === 3 && parts[0] === 'wiki' && parts[1] === 'concepts';
+}
+
 // Downloads arrive named like `8d5e3fe3-ACPI_RapportEtudeDonneesAmont_V0.md`:
 // the leading hash/token is a transport id, not part of the title the reader
 // should see. Strips a UUID or a 8+ hex token (with at least one letter) that
@@ -463,12 +474,16 @@ function breadcrumb(urlPath: string): string {
   const parts = urlPath.split('/').filter(Boolean);
   let href = '';
   const links = ['<a href="/">index</a>'];
-  for (const part of parts) {
+  const conceptTrail = parts[0] === 'wiki' && parts[1] === 'concepts';
+  parts.forEach((part, index) => {
     href += `/${part}`;
     const relative = href.replace(/^\//, '');
     const target = href === '/wiki' || !isServedRelativePath(relative) ? '/' : href;
-    links.push(`<a href="${escapeHref(target)}">${escapeHtml(part)}</a>`);
-  }
+    let label = part;
+    if (conceptTrail && index === 2) label = humanTitle(part).toLocaleUpperCase();
+    else if (conceptTrail && index === parts.length - 1 && part.endsWith('.md')) label = capitalizeFirst(humanTitle(part));
+    links.push(`<a href="${escapeHref(target)}">${escapeHtml(label)}</a>`);
+  });
   return `<nav>${links.join('')}</nav>`;
 }
 
@@ -610,6 +625,9 @@ async function hydrateConceptTileGroups(
   await Promise.all(
     targets.map(async ({ tile, href, fallback }) => {
       tile.group = (await readPageGroup(rootDir, href)) || fallback;
+      // Subjects (leaves) read with a leading capital; the concept group itself
+      // is shown in capitals at render time.
+      tile.title = capitalizeFirst(tile.title);
     }),
   );
 }
@@ -637,7 +655,7 @@ function renderIndexSectionBrowser(sections: TileSection[]): string {
         .sort(([a], [b]) => a.localeCompare(b))
         .map(
           ([group, tiles]) =>
-            `<details class="section-browser-group"><summary><span>${escapeHtml(group)}</span><span>${tiles.length}</span></summary><div class="section-browser-tiles">${tiles.map(renderTile).join('')}</div></details>`,
+            `<details class="section-browser-group"><summary><span>${escapeHtml(group.toLocaleUpperCase())}</span><span>${tiles.length}</span></summary><div class="section-browser-tiles">${tiles.map(renderTile).join('')}</div></details>`,
         )
         .join('');
       // Sections whose tiles carry no group (sources, deliverables, …) rendered
@@ -729,7 +747,8 @@ function renderNavNode(node: NavTreeNode, depth = 0, titles: Map<string, string>
   const children = [
     ...dirs.map((dir) => renderNavNode(dir, depth + 1, titles)),
     ...files.map((file) => {
-      const title = titles?.get(file) ?? humanTitle(file);
+      const rawTitle = titles?.get(file) ?? humanTitle(file);
+      const title = toPosix(file).startsWith('wiki/concepts/') ? capitalizeFirst(rawTitle) : rawTitle;
       const safePath = escapeAttr(toPosix(file));
       const kindAttr = file.startsWith('deliverables/')
         ? ` data-deliverable-kind="${deliverableKind(file)}"`
@@ -743,7 +762,11 @@ function renderNavNode(node: NavTreeNode, depth = 0, titles: Map<string, string>
 
   const collapsedByDefault = new Set(['deliverables', 'templates', 'build-context']);
   const open = depth === 0 && !collapsedByDefault.has(node.name) ? ' open' : '';
-  const label = node.name === 'build-context' ? 'build context' : node.name;
+  const label = node.name === 'build-context'
+    ? 'build context'
+    : isConceptFolderPath(node.path)
+      ? humanTitle(node.name).toLocaleUpperCase()
+      : node.name;
   const createAction =
     depth === 0 && isCreatableCollection(node.name)
       ? `<a class="side-folder-action" href="${escapeHref(newMarkdownHref(node.name))}" title="Create Markdown" aria-label="Create in ${escapeAttr(node.name)}">+</a>`

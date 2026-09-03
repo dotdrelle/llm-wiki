@@ -230,7 +230,25 @@ describe('titles in the tree', () => {
 
     const html = await renderSidebar(root);
 
-    expect(html).toContain('>reseau</a>');
+    // Falls back to the filename; a concept subject is shown with a leading
+    // capital, so `reseau` reads as `Reseau`.
+    expect(html).toContain('>Reseau</a>');
+  });
+
+  it('shows a concept folder in capitals and its subjects with a leading capital', async () => {
+    await mkdir(path.join(root, 'wiki/concepts/offre-marche'), { recursive: true });
+    await writeFile(path.join(root, 'wiki/concepts/offre-marche/anaplan.md'), '# anaplan platform\n', 'utf8');
+    await writeFile(path.join(root, 'wiki/concepts/offre-marche/s3ns.md'), 'no heading here\n', 'utf8');
+
+    const html = await renderSidebar(root);
+
+    expect(html).toContain('<span class="side-folder-label">OFFRE MARCHE</span>');
+    expect(html).toContain('>Anaplan platform</a>');
+    expect(html).toContain('>S3ns</a>');
+    // The section folder itself is not shouted.
+    expect(html).toContain('<span class="side-folder-label">concepts</span>');
+    // The path is untouched.
+    expect(html).toContain('data-tree-id="wiki/concepts/offre-marche"');
   });
 
   it('strips the leading transport hash of downloaded Pending files', async () => {
