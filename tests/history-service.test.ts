@@ -338,6 +338,22 @@ describe('history service', () => {
     await expect(history.createRelease('stable')).rejects.toThrow(/already exists/);
   });
 
+  it('rejects a revision that is really a git option instead of running it', async () => {
+    const root = await workspace();
+    const history = new HistoryService(root);
+    await history.initialize({ baseline: true });
+    await writeFile(path.join(root, 'wiki', 'a.md'), '# a\n', 'utf8');
+    await history.commit({ command: 'build', scope: ['wiki/a.md'] });
+
+    for (const evil of ['--all', '-G.', '--glob=*', '--output=/tmp/x', ' release-1', 'release 1', '--pretty=../../etc']) {
+      await expect(history.log({ until: evil })).rejects.toThrow(/not a valid git revision/);
+      await expect(history.log({ since: evil })).rejects.toThrow(/not a valid git revision/);
+      await expect(history.countLog(evil)).rejects.toThrow(/not a valid git revision/);
+    }
+    // A real ref still works.
+    expect(Array.isArray(await history.log({ until: 'HEAD' }))).toBe(true);
+  });
+
   it('sanitizes an explicit release label to a path-safe name', async () => {
     const root = await workspace();
     await writeFile(path.join(root, 'wiki', 'existing.md'), '# Existing\n', 'utf8');

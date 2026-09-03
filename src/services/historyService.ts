@@ -107,6 +107,28 @@ function isHistoryPath(file: string): boolean {
   return HISTORY_PATHS.some((scope) => file === scope || file.startsWith(`${scope}/`));
 }
 
+// A revision handed to `git log` / `git rev-list` sits before the `--` guard,
+// so `git` would read `--all`, `--glob=*`, `-G<regex>`, `--output=…` as options
+// rather than a ref — option injection, history-wide disclosure past
+// HISTORY_PATHS, or a pickaxe-regex CPU DoS on a `serve` that has no auth. The
+// callers pass a release tag / sha / `HEAD`; accept only that shape.
+const SAFE_GIT_REF = /^[0-9A-Za-z][0-9A-Za-z._/~^@{}-]{0,200}$/;
+
+function assertGitRef(value: string, field: string): string {
+  // No trim: leading/trailing whitespace has no place in a ref and hides a
+  // stripped `-` from the check.
+  const ref = String(value ?? '');
+  if (!SAFE_GIT_REF.test(ref)) {
+    throw new Error(`Invalid ${field}: not a valid git revision`);
+  }
+  return ref;
+}
+
+function clampLimit(value: unknown, fallback: number): number {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+  return Math.max(1, Math.min(Math.trunc(n), 200));
+}
+
 function normalizeHistoryPath(file: string): string {
   const normalized = normalizeSafeRelativePath(file.trim().replace(/^\.\//, ''));
   if (!normalized) throw new Error(`Invalid workspace path: ${file}`);
@@ -399,14 +421,16 @@ export class HistoryService {
   async log(options: { file?: string; limit?: number; since?: string; until?: string } = {}): Promise<HistoryCommit[]> {
     const status = await this.status();
     if (!status.initialized) return [];
-    const limit = Math.max(1, Math.min(options.limit ?? 20, 200));
+    const limit = clampLimit(options.limit, 20);
     const paths = options.file ? [normalizeHistoryPath(options.file)] : [...HISTORY_PATHS];
-    const revision = options.since ? `${options.since}..HEAD` : options.until;
+    const since = options.since ? assertGitRef(options.since, 'since') : undefined;
+    const until = options.until ? assertGitRef(options.until, 'until') : undefined;
+    const revision = since ? `${since}..HEAD` : until;
     const raw = await this.git([
       'log',
-      ...(revision ? [revision] : []),
       `-${limit}`,
       '--format=%H%x1f%h%x1f%s%x1f%an%x1f%aI%x1f%(trailers:key=Wiki-Run-Id,valueonly)%x1e',
+      ...(revision ? ['--end-of-options', revision] : []),
       '--',
       ...paths,
     ]);
@@ -530,7 +554,8 @@ export class HistoryService {
     const status = await this.status();
     if (!status.initialized) return 0;
     const paths = file ? [normalizeHistoryPath(file)] : [...HISTORY_PATHS];
-    const raw = await this.git(['rev-list', '--count', ref, '--', ...paths], { allowFailure: true });
+    const safeRef = assertGitRef(ref, 'ref');
+    const raw = await this.git(['rev-list', '--count', '--end-of-options', safeRef, '--', ...paths], { allowFailure: true });
     const count = Number.parseInt(raw || '0', 10);
     return Number.isFinite(count) ? count : 0;
   }
