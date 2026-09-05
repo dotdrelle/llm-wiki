@@ -315,6 +315,17 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('onclick="resetRuntimePlan()">Reset plan</button>');
     expect(CHAT_HTML).toContain("fetch('/api/runtime/reset',{method:'POST'})");
     expect(CHAT_HTML).toContain('.activity-subtabs{display:flex;flex-wrap:wrap;gap:4px;flex:none;margin-bottom:8px}');
+    expect(CHAT_HTML).toContain('const tabStates={');
+    expect(CHAT_HTML).toContain('const tabCounts={local:localActiveCount,runtime:runtimeActiveCount}');
+    expect(CHAT_HTML).toContain('function autoSelectActivityTab()');
+    expect(CHAT_HTML).toContain("const suffix=count>0?` · ${count}`:''");
+  });
+
+  it('renders activity card icons as stroke SVGs, not emoji', () => {
+    expect(CHAT_HTML).toContain('function actSourceIcon(item)');
+    expect(CHAT_HTML).toContain('const ACT_ICON_STROKE=');
+    expect(CHAT_HTML).toContain('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>');
+    expect(CHAT_HTML).not.toContain("{production:'⚙',cme:'⇄',documents:'📄'}");
   });
 
   it('keeps the Activity rail button highlighted exactly while its panel is open', () => {

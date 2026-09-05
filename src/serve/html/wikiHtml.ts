@@ -741,6 +741,12 @@ function addNavDirectory(root: NavTreeNode, relativePath: string): void {
   }
 }
 
+function countNavFiles(node: NavTreeNode): number {
+  let total = node.files.length;
+  for (const dir of node.dirs.values()) total += countNavFiles(dir);
+  return total;
+}
+
 function renderNavNode(node: NavTreeNode, depth = 0, titles: Map<string, string> | null = null): string {
   const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name));
   const files = [...node.files].sort((a, b) => a.localeCompare(b));
@@ -804,7 +810,14 @@ function renderNavNode(node: NavTreeNode, depth = 0, titles: Map<string, string>
   // original always-visible icons.
   const actions = `${newFolderAction}${createAction}${folderActions}`;
   const actionsHtml = actions ? `<div class="side-folder-actions">${actions}</div>` : '';
-  return `<div class="side-folder-row${rootClass}"><details class="side-folder"${open} data-tree-id="${safeNodePath}"${dragAttrs}${dropAttr}><summary><span class="side-folder-label">${escapeHtml(label)}</span></summary><div class="side-folder-children">${children}</div></details>${actionsHtml}</div>`;
+  // The wiki taxonomy (answers/concepts/sources) announces how many documents
+  // each section holds — a folded section must still say whether it is empty
+  // or full without being opened.
+  const isWikiSection = depth === 1 && toPosix(node.path).startsWith('wiki/');
+  const sectionCount = isWikiSection
+    ? `<span class="side-folder-count" title="${countNavFiles(node)} document(s)">${countNavFiles(node)}</span>`
+    : '';
+  return `<div class="side-folder-row${rootClass}"><details class="side-folder"${open} data-tree-id="${safeNodePath}"${dragAttrs}${dropAttr}><summary><span class="side-folder-label">${escapeHtml(label)}</span>${sectionCount}</summary><div class="side-folder-children">${children}</div></details>${actionsHtml}</div>`;
 }
 
 // Sections whose tree is editable from the panel. Mirror of `TREE_ROOTS`
@@ -1223,7 +1236,7 @@ export async function generateIndex(rootDir: string): Promise<string> {
   });
 
   const tiles = renderIndexSectionBrowser(indexTiles);
-  const body = `${sidebar}<main class="content">${statsBar}<div class="hero"><h1>Wiki Index</h1><p>Entry point for the local wiki. The full index remains readable on the left, with the main sections available as tiles on the right.</p></div><div class="index-layout"><article class="article">${html}</article><aside class="index-aside"><h2 class="index-aside-title">Main sections</h2>${tiles}</aside></div></main>`;
+  const body = `${sidebar}<main class="content">${statsBar}<div class="index-layout"><article class="article">${html}</article><aside class="index-aside"><h2 class="index-aside-title">Main sections</h2>${tiles}</aside></div></main>`;
   return layout('wiki', body);
 }
 

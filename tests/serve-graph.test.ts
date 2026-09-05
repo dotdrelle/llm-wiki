@@ -311,6 +311,9 @@ describe('serve graph ui', () => {
     expect(source).toContain('<details class="section-browser">');
     expect(source).not.toContain('<details class="section-browser" open');
     expect(source).not.toContain('.index-aside > summary::before {');
+    // The wiki index page renders the index content directly — a "Wiki
+    // Index" hero restating what the content already says was removed.
+    expect(source).not.toContain('Entry point for the local wiki.');
   });
 
   it('renders Pending as a dedicated full-height sidebar view', async () => {

@@ -382,6 +382,16 @@ function actUploadSteps(item) {
   ];
 }
 const ACT_CARD_BADGES={running:'Running',done:'Done',stored:'Stored',cancelled:'Cancelled',failed:'Failed'};
+// Stroke SVGs, same family as the rest of the app's pictograms — emoji icons
+// rendered with a different weight and color than every neighbouring icon.
+const ACT_ICON_STROKE='fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+function actSourceIcon(item) {
+  const attrs='viewBox="0 0 24 24" aria-hidden="true" '+ACT_ICON_STROKE;
+  if(item.kind==='upload'||item.source==='documents') return '<svg '+attrs+'><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
+  if(item.source==='production') return '<svg '+attrs+'><circle cx="12" cy="12" r="3"/><path d="M12 2v3"/><path d="M12 19v3"/><path d="M2 12h3"/><path d="M19 12h3"/><path d="M4.9 4.9l2.1 2.1"/><path d="M17 17l2.1 2.1"/><path d="M19.1 4.9L17 7"/><path d="M7 17l-2.1 2.1"/></svg>';
+  if(item.source==='cme') return '<svg '+attrs+'><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>';
+  return '<svg '+attrs+'><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a6 6 0 0 1-12 0V8z"/></svg>';
+}
 function actCardHTML(item) {
   const running=isActivityActive(item.status);
   const converted=item.status==='converted';
@@ -406,7 +416,7 @@ function actCardHTML(item) {
   const hint=converted?\`<div class="act-card-meta">Ready · run ingest to integrate.</div>\`
     :stored?\`<div class="act-card-meta">Stored, no conversion agent.</div>\`
     :'';
-  const icon={production:'⚙',cme:'⇄',documents:'📄'}[item.source]||(item.kind==='upload'?'📄':'⌁');
+  const icon=actSourceIcon(item);
   const cardTitle=String(item.label||item.filename||'-');
   const sourceMeta=item.source&&item.kind!=='upload'?(item.sourceLabel||activitySourceLabel(item.source)):null;
   const seenMeta=new Set([cardTitle.trim().toLowerCase()]);
@@ -497,8 +507,24 @@ function renderActivities() {
     local:localHTML,
   };
   const labels={plan:'Plan',chain:'Chain',local:'Direct agents',runtime:'Runtime activity',logs:'Logs'};
-  const localTabState=uploads.some(item=>item.error||item.status==='failed')?'has-error':uploads.some(item=>isActivityActive(item.status))?'has-running':'';
-  const tabs=Object.entries(labels).map(([key,label])=>\`<button class="activity-subtab \${activityListTab===key?'active':''} \${key==='local'?localTabState:''}" type="button" onclick="setActivityListTab('\${key}')">\${label}</button>\`).join('');
+  const localActiveCount=_activities.filter(a=>isActivityActive(a.status)).length;
+  const localFailedCount=_activities.filter(a=>a.status==='failed'||a.error).length;
+  const runtimeActiveCount=Array.isArray(runtimeState?.activities)
+    ? runtimeState.activities.filter(a=>isActivityActive(normalizeActivityStatus(a.status,a.terminal))).length
+    : 0;
+  const tabStates={
+    local:localFailedCount>0?'has-error':localActiveCount>0?'has-running':'',
+    runtime:runtimeActiveCount>0?'has-running':'',
+  };
+  // Counts and highlights follow ACTIVE items only: once a conversion is done
+  // the tab returns to a plain label — a finished card must not leave a
+  // permanent "· 1" residue. Failures stay flagged until dismissed.
+  const tabCounts={local:localActiveCount,runtime:runtimeActiveCount};
+  const tabs=Object.entries(labels).map(([key,label])=>{
+    const count=tabCounts[key]||0;
+    const suffix=count>0?\` · \${count}\`:'';
+    return \`<button class="activity-subtab \${activityListTab===key?'active':''} \${tabStates[key]||''}" type="button" onclick="setActivityListTab('\${key}')">\${label}\${suffix}</button>\`;
+  }).join('');
   const empty=\`<div class="act-empty">No \${labels[activityListTab].toLowerCase()} yet.</div>\`;
   const resetPlan=activityListTab==='plan'?'<button class="activity-subtab-reset" type="button" onclick="resetRuntimePlan()">Reset plan</button>':'';
   const toolbar=\`<div class="activity-subtab-toolbar"><span class="activity-subtab-toolbar-title">\${labels[activityListTab]}</span><span class="activity-subtab-actions">\${resetPlan}<button class="activity-subtab-clear" type="button" onclick="clearActivityTab('\${activityListTab}')">Clear</button></span></div>\`;
@@ -597,11 +623,22 @@ function closePanelsBesideActivity() {
   $('help-panel')?.classList.add('closed');
   if(typeof disableSplitWiki==='function') disableSplitWiki();
 }
+// Opening the panel is the moment to answer "where do I look": a running
+// local conversion (upload or direct MCP card) switches the list to the
+// Direct agents tab instead of leaving the reader on an empty Plan tab. Only
+// runs on open — never while the reader is already looking at something else.
+function autoSelectActivityTab() {
+  const localActive=_activities.some(a=>isActivityActive(a.status));
+  if(!localActive||activityListTab==='local') return;
+  activityListTab='local';
+  renderActivities();
+}
 function toggleActivityPanel() {
   const panel=$('activity-panel');
   if(!panel) return;
   if(panel.classList.contains('closed')) closePanelsBesideActivity();
   const opening=panel.classList.toggle('closed');
+  if(!opening) autoSelectActivityTab();
   try { localStorage.setItem(ACT_PANEL_KEY,opening?'0':'1'); } catch {}
   updateActivityBadge();
 }
@@ -611,6 +648,7 @@ function openActivityPanel() {
   if(panel.classList.contains('closed')) closePanelsBesideActivity();
   panel.classList.remove('closed');
   try { localStorage.setItem(ACT_PANEL_KEY,'1'); } catch {}
+  autoSelectActivityTab();
   updateActivityBadge();
 }
 function closeActivityPanel() {

@@ -287,6 +287,17 @@ export const WIKI_LAYOUT_CSS = `
          margin-left:auto on all of them spaced them out across the line. */
       margin-right: auto;
     }
+    .side-folder-count {
+      flex-shrink: 0;
+      margin-left: 0.1rem;
+      padding: 0.05rem 0.45rem;
+      border-radius: 99px;
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-size: 0.68rem;
+      font-weight: 700;
+      line-height: 1.25rem;
+    }
     .side-folder-action {
       min-width: 1.45rem;
       height: 1.45rem;

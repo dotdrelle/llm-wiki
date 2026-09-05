@@ -282,6 +282,22 @@ describe('titles in the tree', () => {
     expect(html).toContain('data-tree-id="wiki/concepts/offre-marche"');
   });
 
+  it('counts the documents of each wiki section, folders included', async () => {
+    await mkdir(path.join(root, 'wiki/concepts/offre-marche'), { recursive: true });
+    await mkdir(path.join(root, 'wiki/sources'), { recursive: true });
+    await mkdir(path.join(root, 'wiki/answers'), { recursive: true });
+    await writeFile(path.join(root, 'wiki/concepts/offre-marche/anaplan.md'), '# x\n', 'utf8');
+    await writeFile(path.join(root, 'wiki/sources/note.md'), '# x\n', 'utf8');
+
+    const html = await renderSidebar(root);
+
+    // reseau.md (concepts root, from beforeEach) + anaplan.md in the
+    // offre-marche folder = 2.
+    expect(html).toContain('<span class="side-folder-label">concepts</span><span class="side-folder-count" title="2 document(s)">2</span>');
+    expect(html).toContain('<span class="side-folder-label">sources</span><span class="side-folder-count" title="1 document(s)">1</span>');
+    expect(html).toContain('<span class="side-folder-label">answers</span><span class="side-folder-count" title="0 document(s)">0</span>');
+  });
+
   it('strips the leading transport hash of downloaded Pending files', async () => {
     await writeFile(path.join(root, 'raw/untracked/8d5e3fe3-ACPI_RapportEtudeDonneesAmont_V0.md'), '# x\n', 'utf8');
 
