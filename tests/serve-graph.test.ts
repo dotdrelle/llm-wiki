@@ -138,7 +138,11 @@ it('shares the selected color theme with wiki home', async () => {
   expect(source).toContain("const THEME_KEY = 'llm-wiki:theme';");
   expect(source).toContain("localStorage.getItem('llm-wiki:graph:theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')");
   expect(source).toContain('event.key === THEME_KEY && event.newValue');
-  expect(source).toContain(":root.theme-dark .sidebar");
+  // The sidebar paints the themed --panel token (glass look): no per-theme
+  // hard-coded background is left behind for the toggle to miss.
+  expect(source).toContain('background: var(--panel);\n      border-right: 1px solid var(--border);');
+  expect(source).not.toContain(':root.theme-dark .sidebar');
+  expect(source).not.toContain('#fbfcfd');
 });
 
 async function runtimeEventsSource(): Promise<string> {

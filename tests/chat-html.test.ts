@@ -680,6 +680,50 @@ describe('chat html', () => {
     expect(script).not.toContain('publishAssistantOutput(observerToolLoopHTML([],true),statusDiv,{html:true,plainText:summary})');
   });
 
+  it('turns runtime events into a progress label instead of discarding the SSE payload', () => {
+    const [script] = chatScripts();
+
+    // An interactive turn's events never reach /state, so refetching it cannot
+    // show progress; the payload must be read. Guard both halves.
+    expect(script).toContain('const parsed=JSON.parse(event.data);');
+    expect(script).toContain('const label=runtimeProgressLabel(parsed);');
+    expect(script).toContain('pendingRuntimeStatusEls.forEach(el=>updateRuntimeThinkingBubble(el,label))');
+
+    const source = script.match(/function runtimeProgressLabel\(event\) \{[\s\S]*?\n\}/)?.[0];
+    expect(source).toBeTruthy();
+    const context: Record<string, unknown> = {};
+    vm.runInNewContext(`${source};this.runtimeProgressLabel=runtimeProgressLabel;`, context);
+    const label = context.runtimeProgressLabel as (event: unknown) => string;
+
+    expect(label({ type: 'assistant_message', payload: {} })).toBe('Writing the answer…');
+    expect(label({ type: 'runtime_log', payload: { message: '  [2/8]   MCP  call  ' } })).toBe(
+      '[2/8] MCP call',
+    );
+    // Tool steps belong to the thread, not the label: showing them in both
+    // would print the same sentence twice on screen at once.
+    expect(label({ type: 'tool_call_started', payload: { name: 'template_write' } })).toBe('');
+    // Unmapped events keep the current label rather than replacing it with noise.
+    expect(label({ type: 'plan_set', payload: {} })).toBe('');
+    expect(label(null)).toBe('');
+  });
+
+  it('renders Donna progress notes in the thread from the runtime text alone', () => {
+    const [script] = chatScripts();
+
+    // The sentence must come from the event: the browser must never synthesize
+    // an acknowledgement of its own.
+    expect(script).toContain(
+      "if(parsed&&parsed.type==='assistant_progress') appendRuntimeProgressNote(parsed.payload&&parsed.payload.message);",
+    );
+    expect(script).toContain('function appendRuntimeProgressNote(text) {');
+    // Notes are DOM-only: they are not runtime history and must not join the
+    // conversation array, or a reload would resurrect them as real messages.
+    const source = script.match(/function appendRuntimeProgressNote\(text\) \{[\s\S]*?\n\}/)?.[0];
+    expect(source).toBeTruthy();
+    expect(source).not.toContain('messages.push');
+    expect(source).toContain("div.className='msg assistant runtime-progress-note'");
+  });
+
   it('accepts JSON returned directly, in a markdown fence or inside an MCP envelope', () => {
     const [script] = chatScripts();
 

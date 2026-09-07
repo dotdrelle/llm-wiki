@@ -63,18 +63,37 @@ const MARKED_DIST_PATH = path.resolve(
   path.dirname(require.resolve('marked')),
   'marked.umd.js',
 );
-// Geist — the serve UI font — self-hosted from node_modules, never a CDN.
-const GEIST_WOFF2: Record<string, string> = {
-  '/assets/geist-latin-wght-normal.woff2': require.resolve(
-    '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2',
-  ),
-  '/assets/geist-latin-wght-italic.woff2': require.resolve(
-    '@fontsource-variable/geist/files/geist-latin-wght-italic.woff2',
-  ),
+// Self-hosted UI fonts, served from node_modules, never a CDN: Geist (body)
+// and Cormorant Garamond 600 (display serif for titles). Both @font-face
+// declarations live in `src/chat/theme.ts` — keep the two lists in sync.
+// A font package that is not installed is not fatal — the browser falls back
+// to the next face in the stack — but it is announced once at startup rather
+// than discovered as a silently different-looking page.
+const UI_FONT_SOURCES: Record<string, string> = {
+  '/assets/geist-latin-wght-normal.woff2': '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2',
+  '/assets/geist-latin-wght-italic.woff2': '@fontsource-variable/geist/files/geist-latin-wght-italic.woff2',
+  '/assets/cormorant-garamond-latin-600-normal.woff2': '@fontsource/cormorant-garamond/files/cormorant-garamond-latin-600-normal.woff2',
+  '/assets/cormorant-garamond-latin-600-italic.woff2': '@fontsource/cormorant-garamond/files/cormorant-garamond-latin-600-italic.woff2',
 };
+const UI_FONT_WOFF2: Record<string, string> = {};
+{
+  const missing: string[] = [];
+  for (const [urlPath, specifier] of Object.entries(UI_FONT_SOURCES)) {
+    try {
+      UI_FONT_WOFF2[urlPath] = require.resolve(specifier);
+    } catch {
+      missing.push(specifier);
+    }
+  }
+  if (missing.length) {
+    console.warn(
+      `[serve] ${missing.length} UI font file(s) not installed — the browser will use fallback faces: ${missing.join(', ')}. Run the package install (pnpm install) to restore them.`,
+    );
+  }
+}
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
-const LLM_WIKI_VERSION = '0.15.82';
+const LLM_WIKI_VERSION = '0.15.83';
 
 type SkillMeta = {
   name: string;
@@ -952,8 +971,8 @@ export default async function serveCmd(
         return;
       }
 
-      if (Object.prototype.hasOwnProperty.call(GEIST_WOFF2, urlPath)) {
-        const font = await readFile(GEIST_WOFF2[urlPath]);
+      if (Object.prototype.hasOwnProperty.call(UI_FONT_WOFF2, urlPath)) {
+        const font = await readFile(UI_FONT_WOFF2[urlPath]);
         res.writeHead(200, {
           'Content-Type': 'font/woff2',
           'Cache-Control': 'public, max-age=31536000, immutable',

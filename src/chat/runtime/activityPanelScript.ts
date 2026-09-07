@@ -93,14 +93,52 @@ function createRuntimeThinkingBubble(text='Request received · Donna is preparin
   const div=createStreamBubble();
   const bubble=div.querySelector('.bubble');
   if(bubble) bubble.innerHTML=\`<div class="runtime-thinking"><div class="typing">>_</div><span>\${esc(text)}</span></div>\`;
-  div._runtimeTimeout=setTimeout(()=>{
+  div._runtimeTimeoutFn=()=>{
     if(!div.isConnected) return;
     pendingRuntimeStatusEls=pendingRuntimeStatusEls.filter(el=>el!==div);
     armedReplyStatusEls=armedReplyStatusEls.filter(el=>el!==div);
     div.remove();
     appendMsg('assistant','No response received from the runtime after '+Math.round(RUNTIME_THINKING_TIMEOUT_MS/1000)+'s. Check the Execution panel, or resend.');
-  },RUNTIME_THINKING_TIMEOUT_MS);
+  };
+  div._runtimeTimeout=setTimeout(div._runtimeTimeoutFn,RUNTIME_THINKING_TIMEOUT_MS);
   return div;
+}
+
+// Donna's own account of the turn, kept in the thread rather than in a panel.
+// The text always comes from the runtime (\`assistant_progress\`) and is never
+// composed here: the browser must not synthesize an acknowledgement, and a
+// second phrasing in the browser would be a second source to keep in sync.
+// Inserted above the pending bubble so the spinner stays at the bottom, and
+// held outside the \`messages\` array — these are not conversation history, the
+// runtime does not persist them, and a reload must not resurrect them.
+function appendRuntimeProgressNote(text) {
+  if(!text) return;
+  const wrap=$('messages');
+  if(!wrap) return;
+  const div=document.createElement('div');
+  div.className='msg assistant runtime-progress-note';
+  div.innerHTML=\`<div class="msg-content"><div class="bubble">\${esc(text)}</div></div>\`;
+  const pending=pendingRuntimeStatusEls[pendingRuntimeStatusEls.length-1];
+  if(pending&&pending.isConnected&&pending.parentNode===wrap) wrap.insertBefore(div,pending);
+  else wrap.appendChild(div);
+  wrap.scrollTop=wrap.scrollHeight;
+}
+
+// An agent-mode turn runs on an ephemeral runtime session whose events never
+// reach /state, and it buffers its text until validation — so the panels and
+// the stream are both empty for its whole duration. The SSE events are the only
+// live signal, and this is where they land: one label at a time, replaced in
+// place, so a turn with fifty tool calls still shows a single line.
+// Each event is also proof the runtime is alive, so it restarts the watchdog:
+// a slow-but-working turn must not be reported as lost after 120s.
+function updateRuntimeThinkingBubble(div,text) {
+  if(!div||!div.isConnected||!text) return;
+  const span=div.querySelector('.runtime-thinking span');
+  if(span) span.textContent=text;
+  if(div._runtimeTimeoutFn) {
+    clearTimeout(div._runtimeTimeout);
+    div._runtimeTimeout=setTimeout(div._runtimeTimeoutFn,RUNTIME_THINKING_TIMEOUT_MS);
+  }
 }
 
 // Every bubble removal goes through here, so the safety net never outlives

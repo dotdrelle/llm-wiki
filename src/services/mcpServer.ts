@@ -17,7 +17,7 @@ import { hashText } from '../utils/hash.ts';
 import { listHelpChapters, readHelpChapter, searchHelpChapters } from '../utils/helpDoc.ts';
 import type { AppConfig } from '../types.ts';
 
-const LLM_WIKI_VERSION = '0.15.82';
+const LLM_WIKI_VERSION = '0.15.83';
 const MAX_SOURCE_NAME_CHARS = 200;
 const MAX_SOURCE_SUBDIR_CHARS = 300;
 const MAX_SOURCE_CONTENT_CHARS = 1_000_000;
@@ -43,6 +43,27 @@ export function templateHardContentViolations(content: string): string[] {
     violations.push(trimmed);
   }
   return violations;
+}
+
+/**
+ * `[src: ...]` markers whose target is not a wiki page.
+ *
+ * The authoring contract is `[src: wiki/path.md]` only: a citation is an anchor
+ * the build expands into a wiki-backed reference. Citing a raw source
+ * (`raw/untracked/...`) puts a volatile path into every deliverable the
+ * template produces — the file is archived the moment it is ingested, and the
+ * built document then carries a dead link that no refresh can repair. Reusable
+ * context belongs in build-context/ (declared through the `build_context`
+ * frontmatter), never in a citation.
+ */
+export function templateCitationViolations(content: string): string[] {
+  const parsed = matter(content);
+  const violations = new Set<string>();
+  for (const match of parsed.content.matchAll(/\[src:\s*([^\]]+)\]/gi)) {
+    const target = String(match[1] ?? '').trim().replace(/\\/g, '/');
+    if (target && !target.startsWith('wiki/')) violations.add(target);
+  }
+  return [...violations];
 }
 
 export interface WikiMcpServices {
@@ -94,7 +115,7 @@ export const WIKI_MCP_TOOLS = [
   {
     name: 'template_write',
     description:
-      'Create or update one template under templates/. A template is instruction-only: headings plus multiline [[INSTRUCTION: ...]] blocks carrying [src: ...] citations — never prewritten prose. Refused (with the offending lines) when the body contains prose outside an instruction block; preview unless confirm=true; refused while a production job is running.',
+      'Create or update one template under templates/. A template is instruction-only: headings plus multiline [[INSTRUCTION: ...]] blocks carrying [src: wiki/...] citations (wiki pages only) — never prewritten prose. Refused (with the offending lines) when the body contains prose outside an instruction block, when a citation is not a wiki page, or when the frontmatter has no explicit build_context list; preview unless confirm=true; refused while a production job is running.',
   },
   {
     name: 'build_context_write',
@@ -903,7 +924,15 @@ export async function createWikiMcpServer(
     dryRun?: boolean;
   }) => {
     const violations = templateHardContentViolations(input.content);
-    if (input.confirm === true && violations.length > 0) {
+    const citationViolations = templateCitationViolations(input.content);
+    const frontmatter = matter(input.content).data;
+    const missingBuildContext = !Object.prototype.hasOwnProperty.call(frontmatter, 'build_context');
+    const hardErrors = [
+      ...violations.map((line) => ({ kind: 'prose', line })),
+      ...citationViolations.map((target) => ({ kind: 'citation', target })),
+      ...(missingBuildContext ? [{ kind: 'missing_build_context' }] : []),
+    ];
+    if (input.confirm === true && hardErrors.length > 0) {
       return textResult(
         JSON.stringify(
           {
@@ -915,6 +944,26 @@ export async function createWikiMcpServer(
               'and can never be refreshed from the wiki. Move these lines inside an ' +
               '[[INSTRUCTION: ...]] block or move the fact to the wiki and cite it.',
             violations,
+            ...(citationViolations.length > 0
+              ? {
+                  citationViolations,
+                  citationRule:
+                    'Citations must point at wiki pages only ([src: wiki/...]). Citing a raw ' +
+                    'source (raw/untracked/...) puts a volatile path into every built deliverable. ' +
+                    'Ingest the source into the wiki and cite the resulting page, or move reusable ' +
+                    'context into build-context/ and declare it in build_context.',
+                }
+              : {}),
+            ...(missingBuildContext
+              ? {
+                  missingBuildContext: {
+                    message:
+                      'No build_context key in the frontmatter: this template would inherit every ' +
+                      'file in build-context/, including rules written for other deliverables. ' +
+                      'Declare an explicit list (or [] for none).',
+                  },
+                }
+              : {}),
           },
           null,
           2,
@@ -940,6 +989,26 @@ export async function createWikiMcpServer(
                   'it will be refused on confirm=true. Move these lines inside an ' +
                   '[[INSTRUCTION: ...]] block or move the fact to the wiki and cite it.',
                 lines: violations,
+              },
+            }
+          : {}),
+        ...(citationViolations.length > 0
+          ? {
+              citationViolations: {
+                message:
+                  'Citations must point at wiki pages only ([src: wiki/...]). ' +
+                  'This template will be refused on confirm=true while it cites these targets.',
+                targets: citationViolations,
+              },
+            }
+          : {}),
+        ...(missingBuildContext
+          ? {
+              missingBuildContext: {
+                message:
+                  'No build_context key in the frontmatter: this template would inherit every ' +
+                  'file in build-context/. Declare an explicit list (or [] for none); ' +
+                  'the write will be refused on confirm=true without it.',
               },
             }
           : {}),
@@ -1448,7 +1517,7 @@ export async function createWikiMcpServer(
 
   server.tool(
     'template_write',
-    'Create or update one template under templates/. A template is instruction-only: headings plus multiline [[INSTRUCTION: ...]] blocks carrying [src: ...] citations — never prewritten prose (prose is copied verbatim into the deliverable on build and can never be refreshed from the wiki). The write is refused with the offending lines when the body contains prose outside an instruction block. Returns a diff preview unless confirm=true, including which build_context files resolve and which are missing. Always declare an explicit build_context list (use [] for none): without the key the template inherits every file in build-context/. Refused while a production job is running.',
+    'Create or update one template under templates/. A template is instruction-only: headings plus multiline [[INSTRUCTION: ...]] blocks carrying [src: ...] citations — never prewritten prose (prose is copied verbatim into the deliverable on build and can never be refreshed from the wiki). Citations must point at wiki pages only ([src: wiki/...]) — citing a raw source (raw/untracked/...) is refused because the file is archived once ingested and the built deliverable would carry a dead link; put reusable context in build-context/ instead. The write is refused with the offending lines when the body contains prose outside an instruction block. Returns a diff preview unless confirm=true, including which build_context files resolve and which are missing. Always declare an explicit build_context list (use [] for none): without the key the template inherits every file in build-context/ and the write is refused. Refused while a production job is running.',
     {
       path: z
         .string()

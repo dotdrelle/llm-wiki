@@ -407,6 +407,24 @@ async function fetchRuntimeState() {
   applyRuntimeState(data);
 }
 
+// Main steps only, deliberately: which tool is running is what the user cannot
+// otherwise know, and it is the one line worth showing. Anything unmapped
+// returns '' and leaves the current label alone rather than replacing it with
+// noise. Keep this list short — it is a progress indicator, not a log.
+function runtimeProgressLabel(event) {
+  const type=event&&event.type;
+  const p=(event&&event.payload)||{};
+  // Tool steps are not handled here: they arrive as assistant_progress and go
+  // to the thread, where they persist. Showing them here too would print the
+  // same sentence twice on screen at once.
+  if(type==='assistant_message') return 'Writing the answer…';
+  if(type==='runtime_log') {
+    const msg=String(p.message||'').replace(/\\s+/g,' ').trim();
+    return msg?(msg.length>90?msg.slice(0,90)+'…':msg):'';
+  }
+  return '';
+}
+
 function connectRuntimePanel() {
   if(!window.__WIKI_CONFIG__?.runtime?.enabled) return;
   fetchRuntimeState().catch(()=>{runtimeConnected=false;renderActivities();});
@@ -417,7 +435,17 @@ function connectRuntimePanel() {
       applyRuntimeState(JSON.parse(event.data));
     } catch {}
   });
-  events.addEventListener('agent_event',()=>{
+  events.addEventListener('agent_event',(event)=>{
+    // The payload used to be dropped here and only /state was refetched. For an
+    // interactive turn that is a blind spot by construction: its events run on
+    // an ephemeral session and never enter the projection /state serves, so the
+    // panels stay empty however often they are refetched. Read the event.
+    try {
+      const parsed=JSON.parse(event.data);
+      if(parsed&&parsed.type==='assistant_progress') appendRuntimeProgressNote(parsed.payload&&parsed.payload.message);
+      const label=runtimeProgressLabel(parsed);
+      if(label) pendingRuntimeStatusEls.forEach(el=>updateRuntimeThinkingBubble(el,label));
+    } catch {}
     if(runtimeFetchPending) return;
     runtimeFetchPending=true;
     setTimeout(()=>{

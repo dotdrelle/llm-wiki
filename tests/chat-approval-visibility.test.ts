@@ -36,10 +36,14 @@ describe('visibilité de la demande d’approbation', () => {
   });
 
   it('reste au-dessus des vues centrales et lisible sur elles', () => {
-    // Fond opaque et ombre : elle flotte désormais sur du contenu au lieu de
-    // s'insérer dans le flux au-dessus du composer.
+    // Fond ambré sur verre dépoli (dégradé + --panel + blur) et ombre : elle
+    // flotte désormais sur du contenu au lieu de s'insérer dans le flux
+    // au-dessus du composer, et reste une alerte — jamais fondue dans le décor.
     expect(CHAT_HTML).toContain('z-index:60');
-    expect(CHAT_HTML).toContain('background:var(--panel,#141a22)');
+    expect(CHAT_HTML).toContain('rgba(245,158,11,.16)');
+    expect(CHAT_HTML).toContain('#approval-banner{position:fixed;');
+    expect(CHAT_HTML).toMatch(/#approval-banner\{[^}]*backdrop-filter:blur\(var\(--glass-blur\)\)/);
+    expect(CHAT_HTML).toMatch(/#approval-banner\{[^}]*border-left-color:#f59e0b/);
     expect(CHAT_HTML).not.toContain('#approval-banner{width:min(900px,100%);align-self:center;');
   });
 

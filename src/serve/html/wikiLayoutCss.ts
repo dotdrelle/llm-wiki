@@ -11,6 +11,9 @@ export const WIKI_LAYOUT_CSS = `
     body {
       margin: 0;
       background: var(--bg);
+      background-image: var(--bg-image);
+      background-size: var(--bg-size);
+      background-attachment: fixed;
       color: var(--text);
       font-family: var(--font-serif);
       line-height: 1.65;
@@ -19,8 +22,8 @@ export const WIKI_LAYOUT_CSS = `
     .wiki-theme-toggle, .wiki-help-toggle {
       position: fixed; top: 9px; z-index: 1000;
       width: 38px; height: 34px; padding: 0;
-      border: 1px solid var(--border); border-radius: 6px;
-      background: var(--panel-soft); color: var(--text);
+      border: 1px solid var(--border); border-radius: 8px;
+      background: var(--panel); backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur)); color: var(--text);
       font: inherit; font-size: 17px; cursor: pointer;
       display: inline-flex; align-items: center; justify-content: center;
       text-decoration: none; line-height: 1;
@@ -74,7 +77,9 @@ export const WIKI_LAYOUT_CSS = `
       display: flex;
       flex-direction: column;
       padding: 1.25rem;
-      background: #fbfcfd;
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur));
     }
     .wiki-main-resizer {
       position: sticky;
@@ -86,7 +91,7 @@ export const WIKI_LAYOUT_CSS = `
       justify-content: center;
       border-left: 1px solid var(--border);
       border-right: 1px solid var(--border);
-      background: #fbfcfd;
+      background: var(--panel);
       touch-action: none;
       z-index: 2;
     }
@@ -108,11 +113,11 @@ export const WIKI_LAYOUT_CSS = `
     .brand { display: block; margin-bottom: 0.8rem; color: var(--text); text-decoration: none; }
     .brand-title {
       display: block;
-      font-family: var(--font-serif);
-      font-size: 1.28rem;
-      font-weight: 700;
-      line-height: 1.08;
-      text-transform: uppercase;
+      font-family: var(--font-display);
+      font-size: 1.55rem;
+      font-weight: 600;
+      line-height: 1.05;
+      letter-spacing: .01em;
       overflow-wrap: anywhere;
     }
     .side-actions {
@@ -689,11 +694,11 @@ export const WIKI_LAYOUT_CSS = `
       margin-bottom: 1.5rem;
       padding: clamp(1.3rem, 3vw, 2rem);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--panel);
+      border-radius: 12px;
+      background: var(--card-grad), var(--panel);
       box-shadow: var(--shadow);
     }
-    .hero h1 { margin: 0; font-family: var(--font-serif); font-size: clamp(1.7rem, 3vw, 2.55rem); line-height: 1.05; letter-spacing: 0; }
+    .hero h1 { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: clamp(2rem, 3.4vw, 3rem); line-height: 1.02; letter-spacing: .005em; text-wrap: balance; }
     .hero p { max-width: 72ch; margin: 0.75rem 0 0; color: var(--muted); }
     .index-layout {
       display: grid;
@@ -826,15 +831,16 @@ export const WIKI_LAYOUT_CSS = `
       max-width: 960px;
       padding: clamp(1.1rem, 2.6vw, 2rem);
       border: 1px solid var(--border);
-      border-radius: 8px;
+      border-radius: 12px;
       background: var(--panel);
       font-size: 0.94rem;
       line-height: 1.6;
     }
     .article h1, .article h2, .article h3, .article h4 { line-height: 1.25; letter-spacing: 0; font-family: var(--font-serif); }
+    .article h1 { font-family: var(--font-display); font-weight: 600; letter-spacing: .005em; text-wrap: balance; }
     /* Explicit scale: the UA default is 2em/1.5em, which reads as an oversized
        page title on a document body. */
-    .article h1 { margin: 0 0 0.75rem; font-size: 1.55rem; }
+    .article h1 { margin: 0 0 0.75rem; font-size: 1.9rem; }
     .article h2 { margin: 1.5rem 0 0.55rem; font-size: 1.22rem; }
     .article h3 { margin: 1.25rem 0 0.4rem; font-size: 1.05rem; }
     .article h4 { margin: 1.05rem 0 0.35rem; font-size: 0.95rem; }
@@ -1017,7 +1023,7 @@ export const WIKI_LAYOUT_CSS = `
       outline: none;
     }
     .field-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-    pre { background: #edf1f5; padding: 1rem; border-radius: 6px; max-width: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+    pre { background: var(--panel-soft); border: 1px solid var(--border); padding: 1rem; border-radius: 8px; max-width: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
     code { font-size: 0.9em; }
     table { border-collapse: collapse; max-width: 100%; }
     th, td { border: 1px solid var(--border); padding: 0.4rem 0.62rem; text-align: left; vertical-align: top; white-space: normal; overflow-wrap: break-word; word-break: normal; }
@@ -1314,18 +1320,10 @@ export const WIKI_LAYOUT_CSS = `
       .log-flow { grid-template-columns: 1fr; }
       .log-arrow { display: none; }
     }
-    @media (prefers-color-scheme: dark) {
-      .sidebar, .wiki-main-resizer { background: #121820; }
-      pre { background: #101419; }
-    }
-    :root.theme-light .sidebar, :root.theme-light .wiki-main-resizer { background: #fbfcfd; }
-    :root.theme-light pre { background: #f4f6f8; }
-    :root.theme-dark .sidebar, :root.theme-dark .wiki-main-resizer { background: #121820; }
-    :root.theme-dark pre { background: #101419; }
     /* ── Dashboard stats ──────────────────────────────────────── */
     .ws-stats{display:flex;flex-wrap:wrap;gap:.65rem;margin-bottom:1.5rem}
-    .ws-stat{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:88px;padding:.75rem 1rem;border:1px solid var(--border);border-radius:8px;background:var(--panel);text-align:center;gap:.2rem}
-    .ws-stat-n{font-size:1.6rem;font-weight:800;line-height:1;color:var(--accent)}
+    .ws-stat{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:88px;padding:.75rem 1rem;border:1px solid var(--border);border-radius:12px;background:var(--card-grad),var(--panel);text-align:center;gap:.2rem}
+    .ws-stat-n{font-family:var(--font-display);font-size:2rem;font-weight:600;line-height:1;color:var(--accent);font-variant-numeric:lining-nums tabular-nums}
     .ws-stat-l{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
     .ws-stat-warn .ws-stat-n{color:#c07000}
     .ws-stat-warn{border-color:rgba(192,112,0,.25)}
@@ -1342,7 +1340,7 @@ export const WIKI_LAYOUT_CSS = `
     /* ── ⌘K Palette ──────────────────────────────────────────── */
     .palette-backdrop{position:fixed;inset:0;z-index:9000;display:none;align-items:flex-start;justify-content:center;padding-top:10vh;background:rgba(10,14,18,.42);backdrop-filter:blur(3px)}
     .palette-backdrop.is-open{display:flex}
-    .palette{width:min(700px,calc(100vw - 2rem));border:1px solid var(--border);border-radius:14px;background:var(--panel);box-shadow:0 24px 64px rgba(0,0,0,.22),0 4px 12px rgba(0,0,0,.1);overflow:hidden;animation:paletteIn .13s ease}
+    .palette{width:min(700px,calc(100vw - 2rem));border:1px solid var(--line-hi);border-radius:14px;background:var(--panel);backdrop-filter:blur(var(--glass-blur));-webkit-backdrop-filter:blur(var(--glass-blur));box-shadow:0 24px 64px rgba(0,0,0,.22),0 4px 12px rgba(0,0,0,.1);overflow:hidden;animation:paletteIn .13s ease}
     @keyframes paletteIn{from{opacity:0;transform:translateY(-10px) scale(.97)}to{opacity:1;transform:none}}
     .palette-head{display:flex;align-items:center;gap:.65rem;padding:1rem 1.2rem;border-bottom:1px solid var(--border)}
     .palette-search-icon{color:var(--muted);flex-shrink:0}

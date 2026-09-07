@@ -2,7 +2,7 @@
 export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 /* --act-w is the single source of the rail width: the handle writes it, the
    panel reads it. A hard-coded 360px in both places would drift apart. */
-#activity-panel{order:2;width:var(--act-w,360px);min-width:var(--act-w,360px);height:100vh;background:var(--panel);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;transition:width .25s,min-width .25s;flex-shrink:0}
+#activity-panel{order:2;width:var(--act-w,360px);min-width:var(--act-w,360px);height:100vh;background:var(--panel);backdrop-filter:blur(var(--glass-blur));-webkit-backdrop-filter:blur(var(--glass-blur));border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;transition:width .25s,min-width .25s;flex-shrink:0}
 #activity-panel.closed{width:0;min-width:0}
 /* Same grip as #main-resizer, one order earlier so it sits left of the panel.
    Hidden with the panel: a handle for something closed resizes nothing. */
@@ -63,7 +63,7 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .act-empty{font-size:12px;color:var(--muted2);text-align:center;padding:22px 10px;line-height:1.5}
 .act-empty-btn{margin-top:10px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);font-size:12px;font-weight:700;font-family:var(--font-sans);padding:8px 10px;cursor:pointer}
 .act-empty-btn:hover{border-color:var(--accent);color:var(--accent)}
-.act-card{background:var(--panel-soft);border:1px solid var(--border);border-radius:10px;padding:10px 11px;display:flex;flex-direction:column;gap:7px}
+.act-card{background:var(--card-grad),var(--panel-soft);border:1px solid var(--border);border-radius:10px;padding:10px 11px;display:flex;flex-direction:column;gap:7px}
 .act-card.running{border-color:color-mix(in srgb,var(--accent) 35%,var(--border))}
 .act-card-head{display:flex;align-items:flex-start;gap:8px}
 .act-card-icon{flex-shrink:0;margin-top:1px;color:var(--muted);display:flex}.act-card-icon svg{width:15px;height:15px}
@@ -197,4 +197,7 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .bubble th{background:var(--panel-deep);font-weight:600;white-space:normal}
 .bubble a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .bubble .instruction-ref{color:var(--warn);font-family:var(--font-mono);font-size:.92em;background:rgba(199,168,0,.08);border:1px solid rgba(199,168,0,.22);border-radius:5px;padding:1px 5px;white-space:normal;overflow-wrap:anywhere}
-.stream-cursor::after{content:'▋';animation:blink .8s step-end infinite;color:var(--accent);margin-left:1px}`;
+.stream-cursor::after{content:'▋';animation:blink .8s step-end infinite;color:var(--accent);margin-left:1px}
+/* Progress notes are Donna reporting on the turn in progress, not the answer:
+   muted and smaller so the eye keeps separating the account from the result. */
+.runtime-progress-note .bubble{background:transparent;border:1px dashed var(--border);color:var(--muted);font-size:12px;padding:5px 9px}`;

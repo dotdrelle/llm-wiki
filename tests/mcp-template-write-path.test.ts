@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { resolveWritablePath, templateHardContentViolations } from '../src/services/mcpServer.ts';
+import { resolveWritablePath, templateCitationViolations, templateHardContentViolations } from '../src/services/mcpServer.ts';
 import type { WorkspaceService } from '../src/services/workspaceService.ts';
 
 // resolveWritablePath is the single guard for template_write and
@@ -114,5 +114,45 @@ describe('templateHardContentViolations', () => {
     expect(templateHardContentViolations(content)).toContain(
       'Le projet Demo est un système de gestion financière. [src: wiki/concepts/demo.md]',
     );
+  });
+});
+
+describe('templateCitationViolations', () => {
+  const wrap = (body: string) => [
+    '---',
+    'title: "Presentation"',
+    'build_context: []',
+    '---',
+    '',
+    body,
+  ].join('\n');
+
+  it('accepts wiki-page citations inside instructions', () => {
+    expect(templateCitationViolations(wrap([
+      '# Presentation',
+      '[[INSTRUCTION:',
+      'Describe the purpose. [src: wiki/concepts/demo.md]',
+      ']]',
+    ].join('\n')))).toEqual([]);
+  });
+
+  it('flags a citation pointing at a raw source file', () => {
+    const violations = templateCitationViolations(wrap([
+      '# Presentation',
+      '[[INSTRUCTION:',
+      'Describe the purpose. [src: raw/untracked/976c34f6-MF_FO_MACSI_Rapport_EAS_ACPI-v0.3.md]',
+      ']]',
+    ].join('\n')));
+    expect(violations).toContain('raw/untracked/976c34f6-MF_FO_MACSI_Rapport_EAS_ACPI-v0.3.md');
+  });
+
+  it('flags every non-wiki target exactly once', () => {
+    const violations = templateCitationViolations(wrap([
+      '# Presentation',
+      '[[INSTRUCTION:',
+      'A. [src: raw/ingested/old.md] B. [src: raw/ingested/old.md] C. [src: build-context/rules/x.md]',
+      ']]',
+    ].join('\n')));
+    expect(violations).toEqual(['raw/ingested/old.md', 'build-context/rules/x.md']);
   });
 });
