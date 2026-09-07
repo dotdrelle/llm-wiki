@@ -93,7 +93,7 @@ const UI_FONT_WOFF2: Record<string, string> = {};
 }
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
-const LLM_WIKI_VERSION = '0.15.83';
+const LLM_WIKI_VERSION = '0.15.84';
 
 type SkillMeta = {
   name: string;
