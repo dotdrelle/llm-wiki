@@ -963,6 +963,19 @@ describe('chat html', () => {
     expect(script).toContain("runningBeforeFetch&&!readOnlyChat?'/api/runtime/control':'/api/runtime/turn'");
     expect(script).toContain("body:runningBeforeFetch&&!readOnlyChat?controlBody:JSON.stringify({input:text,...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})})");
     expect(script).toContain("const readOnlyChat=mode==='chat'");
+    // Selected wiki pages / converted uploads must reach the agent turn too,
+    // not only the read-only chat turn.
+    expect(script).toContain("const openWikiPages=activePageContexts();");
+    // Live-write highlight: runtime events pulse the Activity rail button and
+    // the Runtime tab, and the pulse expires once the update finishes.
+    expect(script).toContain("noteRuntimeEvent();");
+    expect(script).toContain("function noteRuntimeEvent() { lastRuntimeEventAt=Date.now(); }");
+    expect(script).toContain("runtime:[runtimeActiveCount>0?'has-running':'',runtimeWritingNow()?'writing':''].filter(Boolean).join(' ')");
+    expect(script).toContain("railBtn.classList.toggle('writing',runtimeWritingNow());");
+    // OS file drops on the chat route to the same upload flow as the paperclip
+    // button; only wiki-graph context drops use the custom MIME.
+    expect(script).toContain("function carriesFiles(event)");
+    expect(script).toContain("uploadSelectedDocument(input)");
     expect(script).toContain("sendRuntimeAgentMessage(input,text,{mode:'chat',displayText:displayOverride||text,hideQuestion})");
     expect(script).toContain("function createRuntimeThinkingBubble(text='Request received · Donna is preparing the response and plan…')");
     expect(script).toContain("const statusEl=createRuntimeThinkingBubble(mode==='chat'?'Thinking...':undefined)");

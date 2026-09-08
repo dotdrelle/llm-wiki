@@ -78,7 +78,12 @@ function removePageContext(path) {
   pageContexts=pageContexts.filter(item=>item!==path);
   refreshPageContextChip();
 }
-function activePageContexts() { return agentMode?[]:pageContexts.slice(0,PAGE_CONTEXT_LIMIT); }
+// Both modes send the selection. The agent-mode gate here made the whole
+// feature a no-op on the branch that was built for it: the agent turn read
+// this helper, always got [], sent no context key at all, and Donna asked which
+// page — while the chips vanished from the composer, because this is also
+// what refreshPageContextChip renders from.
+function activePageContexts() { return pageContexts.slice(0,PAGE_CONTEXT_LIMIT); }
 function refreshPageContextChip() {
   const host=$('page-context-chips');
   if(!host) return;
@@ -688,28 +693,52 @@ function refreshWikiSidebar() {
     const types = event.dataTransfer && event.dataTransfer.types;
     return Boolean(types && Array.prototype.indexOf.call(types, CONTEXT_MIME) !== -1);
   }
+  // An OS file drag (Finder/Explorer) has no wiki MIME: route it to the same
+  // upload flow as the paperclip button instead of letting the browser open
+  // the file over the chat, or silently swallowing the drop.
+  function carriesFiles(event) {
+    return Boolean(event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files.length);
+  }
   targets.forEach((target) => {
     target.addEventListener('dragenter', (event) => {
-      if (!carriesContext(event)) return;
+      if (!carriesContext(event) && !carriesFiles(event)) return;
       event.preventDefault();
       counters.set(target, (counters.get(target) || 0) + 1);
       target.classList.add('is-context-drop');
     });
     target.addEventListener('dragover', (event) => {
-      if (!carriesContext(event)) return;
+      if (!carriesContext(event) && !carriesFiles(event)) return;
       event.preventDefault();
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
     });
     target.addEventListener('dragleave', (event) => {
-      if (!carriesContext(event)) return;
+      if (!carriesContext(event) && !carriesFiles(event)) return;
       counters.set(target, Math.max(0, (counters.get(target) || 0) - 1));
       if (!counters.get(target)) target.classList.remove('is-context-drop');
     });
     target.addEventListener('drop', (event) => {
-      if (!carriesContext(event)) return;
+      if (!carriesContext(event) && !carriesFiles(event)) return;
       event.preventDefault();
       counters.set(target, 0);
       target.classList.remove('is-context-drop');
+      if (carriesFiles(event)) {
+        const input = $('doc-upload-input');
+        if (input) {
+          try {
+            input.files = event.dataTransfer.files;
+          } catch {
+            try {
+              const dt = new DataTransfer();
+              for (const file of event.dataTransfer.files) dt.items.add(file);
+              input.files = dt.files;
+            } catch {}
+          }
+          if (input.files && input.files.length && typeof uploadSelectedDocument === 'function') {
+            uploadSelectedDocument(input);
+          }
+        }
+        return;
+      }
       const path = validPageContext(String((event.dataTransfer && event.dataTransfer.getData(CONTEXT_MIME)) || ''));
       if (!path) {
         if (typeof notify === 'function') notify('This document cannot be added to Donna\\'s context');

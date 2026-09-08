@@ -6,6 +6,17 @@ let _actTimer=null;
 let runtimeState=null;
 let runtimeConnected=false;
 let runtimeFetchPending=false;
+// Live-write highlight: while runtime events keep arriving AND a run is
+// active, the Activity rail button and the Runtime tab pulse ("something is
+// being written here now"). The pulse fades WRITING_IDLE_MS after the last
+// event and disappears entirely once the run is terminal — the marker must
+// never outlive the update it announced.
+let lastRuntimeEventAt=0;
+const RUNTIME_WRITING_IDLE_MS=4000;
+function noteRuntimeEvent() { lastRuntimeEventAt=Date.now(); }
+function runtimeWritingNow() {
+  return runtimeIsRunning() && Date.now()-lastRuntimeEventAt<RUNTIME_WRITING_IDLE_MS;
+}
 // Index-aligned with runtimeState.conversation — see mergeRuntimeConversation
 // in chatHtml.ts. Not just a length count: a turn can finalize a streaming
 // placeholder in place (text-before-tool-calls case) without the runtime
@@ -552,7 +563,7 @@ function renderActivities() {
     : 0;
   const tabStates={
     local:localFailedCount>0?'has-error':localActiveCount>0?'has-running':'',
-    runtime:runtimeActiveCount>0?'has-running':'',
+    runtime:[runtimeActiveCount>0?'has-running':'',runtimeWritingNow()?'writing':''].filter(Boolean).join(' '),
   };
   // Counts and highlights follow ACTIVE items only: once a conversion is done
   // the tab returns to a plain label — a finished card must not leave a
@@ -600,6 +611,10 @@ function finishActivityRender() {
   if(anyRunning&&!_actTimer) _actTimer=setInterval(renderActivities,1000);
   if(!anyRunning&&_actTimer){clearInterval(_actTimer);_actTimer=null;}
   updateRunElapsed();
+  // The tick is also what expires the live-write pulse: 4s after the last
+  // runtime event the writing highlight fades, and the terminal render clears
+  // it for good — the marker never outlives the update it announced.
+  updateActivityBadge();
 }
 // The elapsed timer lives on the run card as a stable element updated in place,
 // never inside the rendered HTML string: an incrementing value there would make
@@ -650,6 +665,7 @@ function updateActivityBadge() {
   const railBtn=$('activity-toggle');
   if(railBtn) {
     railBtn.classList.toggle('active',panelOpen);
+    railBtn.classList.toggle('writing',runtimeWritingNow());
     railBtn.setAttribute('aria-expanded',panelOpen?'true':'false');
   }
 }

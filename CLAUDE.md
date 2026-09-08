@@ -260,12 +260,15 @@ ShellTUI uses; do not add a second one here.
 `window.__WIKI_CONFIG__.runtime.enabled` is `true` when `WIKI_MANAGER_RUNTIME_URL`
 is set; chatHtml uses this to show/hide the Agent mode toggle.
 
-Direct Chat can send `context.openWikiPages` through `/api/runtime/turn`. The
+Both Chat and Agent mode send `context.openWikiPages` through `/api/runtime/turn`. The
 browser keeps at most five distinct Markdown paths selected from `wiki/` or
 `raw/untracked/`; opening a wiki page or successfully converting an upload adds
-its path. These are references only: never read or inline document content in
-the browser or proxy. Donna receives the sanitized paths in its prompt and must
-use its allow-listed read tools. The MCP `wiki_read_page`/`wiki_read_pages`
+its path. An OS file drag onto the chat routes to the same upload flow as the
+paperclip button (`initPageContextDrop` in `wikiPanelScript.ts`); only wiki
+graph items travel as the custom context MIME. These are references only:
+never read or inline document content in the browser or proxy. Donna receives
+the sanitized paths in its prompt and must use its allow-listed read tools. The
+MCP `wiki_read_page`/`wiki_read_pages`
 tools therefore allow `wiki/`, `raw/ingested/`, and `raw/untracked/`, while the
 shared workspace-root/path-traversal guard remains authoritative.
 

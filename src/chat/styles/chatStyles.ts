@@ -19,7 +19,7 @@ body.left-wiki #wiki-side-host{display:block}
 #right-rail{order:3;width:40px;min-width:40px;height:100vh;background:var(--panel);backdrop-filter:blur(var(--glass-blur));-webkit-backdrop-filter:blur(var(--glass-blur));border-left:1px solid var(--border);display:flex;flex-direction:column;align-items:center;gap:8px;padding:10px 0;flex-shrink:0}
 body.center-wiki #right-rail{padding-top:10px}
 .rail-btn{position:relative;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:8px;background:var(--panel-soft);color:var(--muted);cursor:pointer;font-family:var(--font-sans);font-size:14px;font-weight:800;transition:border-color .2s,color .2s,background .2s}
-.rail-btn:hover,.rail-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.rail-btn:hover,.rail-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}.rail-btn.writing{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);animation:railWritingPulse 1.1s ease-in-out infinite}@keyframes railWritingPulse{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 40%,transparent)}}
 #theme-toggle{margin-top:auto;margin-bottom:15px}
 .rail-badge{position:absolute;top:-4px;right:-4px;min-width:14px;height:14px;border-radius:99px;background:var(--accent);color:var(--panel-solid);font-size:9px;line-height:14px;text-align:center;padding:0 3px;display:none}
 .rail-badge.show{display:block}

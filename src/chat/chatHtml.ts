@@ -432,6 +432,7 @@ function connectRuntimePanel() {
   events.addEventListener('state',(event)=>{
     try {
       runtimeStateSeq++;
+      noteRuntimeEvent();
       applyRuntimeState(JSON.parse(event.data));
     } catch {}
   });
@@ -441,6 +442,7 @@ function connectRuntimePanel() {
     // an ephemeral session and never enter the projection /state serves, so the
     // panels stay empty however often they are refetched. Read the event.
     try {
+      noteRuntimeEvent();
       const parsed=JSON.parse(event.data);
       if(parsed&&parsed.type==='assistant_progress') appendRuntimeProgressNote(parsed.payload&&parsed.payload.message);
       const label=runtimeProgressLabel(parsed);
@@ -2732,7 +2734,7 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
     const runningBeforeFetch=runtimeIsRunning();
     const readOnlyChat=mode==='chat';
     const skillRun=mode==='skill';
-    const openWikiPages=readOnlyChat?activePageContexts():[];
+    const openWikiPages=activePageContexts();
     const doTurnFetch=()=>skillRun
       ? fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:text,mode:'agent'})})
       : fetch(runningBeforeFetch&&!readOnlyChat?'/api/runtime/control':'/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:runningBeforeFetch&&!readOnlyChat?controlBody:JSON.stringify({input:text,...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})})});

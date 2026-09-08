@@ -115,6 +115,54 @@ describe('templateHardContentViolations', () => {
       'Le projet Demo est un système de gestion financière. [src: wiki/concepts/demo.md]',
     );
   });
+
+  it('explains a stray closing bracket instead of reporting an opaque line', () => {
+    // A model iteration once left a "]]" line after a footer note: the raw
+    // line tells it nothing, the structural message says what to do.
+    const content = [
+      '---',
+      'title: "Presentation"',
+      'build_context: []',
+      '---',
+      '',
+      '# Presentation',
+      '',
+      '## Intro',
+      '',
+      '[[INSTRUCTION:',
+      'Describe the project purpose.',
+      ']]',
+      '',
+      ']]',
+      '',
+    ].join('\n');
+    expect(templateHardContentViolations(content)).toContain(
+      "a ']]' line outside any instruction block: delete it or merge it into " +
+        'the block above — an instruction block is one [[INSTRUCTION: ... ]] pair',
+    );
+  });
+
+  it('explains an unterminated instruction block instead of leaking its lines as prose', () => {
+    const content = [
+      '---',
+      'title: "Presentation"',
+      'build_context: []',
+      '---',
+      '',
+      '# Presentation',
+      '',
+      '## Intro',
+      '',
+      '[[INSTRUCTION:',
+      'Describe the project purpose.',
+      '',
+    ].join('\n');
+    const violations = templateHardContentViolations(content);
+    expect(
+      violations.some((line) => line.startsWith('unterminated instruction block')),
+    ).toBe(true);
+    expect(violations).not.toContain('Describe the project purpose.');
+  });
 });
 
 describe('templateCitationViolations', () => {

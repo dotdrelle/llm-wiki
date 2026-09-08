@@ -17,7 +17,7 @@ import { hashText } from '../utils/hash.ts';
 import { listHelpChapters, readHelpChapter, searchHelpChapters } from '../utils/helpDoc.ts';
 import type { AppConfig } from '../types.ts';
 
-const LLM_WIKI_VERSION = '0.15.84';
+const LLM_WIKI_VERSION = '0.15.85';
 const MAX_SOURCE_NAME_CHARS = 200;
 const MAX_SOURCE_SUBDIR_CHARS = 300;
 const MAX_SOURCE_CONTENT_CHARS = 1_000_000;
@@ -35,12 +35,48 @@ export function templateHardContentViolations(content: string): string[] {
   const parsed = matter(content);
   const withoutInstructions = parsed.content.replace(/\[\[INSTRUCTION:\s*[\s\S]*?\]\]/g, '');
   const violations: string[] = [];
+  let insideUnclosed = false;
+  let skippedAfterUnclosed = 0;
   for (const line of withoutInstructions.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     if (/^#{1,6}\s+\S/.test(trimmed)) continue;
     if (/^([-*_])\1{2,}$/.test(trimmed)) continue;
+    // Everything after an unterminated opener is INSIDE that block, so it is
+    // not prose and must not be reported as such. But stopping silently made
+    // the refusal claim to list the offending lines while checking none of
+    // them: the author fixes the closer, resubmits, and only then discovers the
+    // rest. Skip them — and say the check stopped.
+    if (insideUnclosed) {
+      skippedAfterUnclosed += 1;
+      continue;
+    }
+    if (trimmed === ']]') {
+      violations.push(
+        "a ']]' line outside any instruction block: delete it or merge it into " +
+          'the block above — an instruction block is one [[INSTRUCTION: ... ]] pair',
+      );
+      continue;
+    }
+    // Not anchored: an opener after prose on the same line ("Intro. [[INSTRUCTION:")
+    // left insideUnclosed false, and the block's own body was then reported
+    // line by line as prose — the exact leak this detector exists to prevent,
+    // just moved to a different input.
+    if (/\[\[INSTRUCTION:/.test(trimmed) && !trimmed.includes(']]')) {
+      violations.push(
+        `unterminated instruction block starting with "${trimmed.slice(0, 100)}" — ` +
+          "close it with ']]' (the closer is part of the same block, not a new line of prose)",
+      );
+      insideUnclosed = true;
+      continue;
+    }
     violations.push(trimmed);
+  }
+  if (skippedAfterUnclosed > 0) {
+    violations.push(
+      `${skippedAfterUnclosed} further line(s) were not checked: they follow the unterminated ` +
+        'instruction block above and are treated as part of it. Close the block and resubmit to check them',
+    );
   }
   return violations;
 }
@@ -115,7 +151,7 @@ export const WIKI_MCP_TOOLS = [
   {
     name: 'template_write',
     description:
-      'Create or update one template under templates/. A template is instruction-only: headings plus multiline [[INSTRUCTION: ...]] blocks carrying [src: wiki/...] citations (wiki pages only) — never prewritten prose. Refused (with the offending lines) when the body contains prose outside an instruction block, when a citation is not a wiki page, or when the frontmatter has no explicit build_context list; preview unless confirm=true; refused while a production job is running.',
+      'Create or update one template under templates/. A template is a generation spec: an OKF-style frontmatter (title, description, and an explicit build_context list — use [] for none; the write is refused without the build_context key) followed by headings and multiline [[INSTRUCTION: ...]] blocks, nothing else — never prewritten prose, never notes about the template itself. [src: ...] citations are OPTIONAL, never required: when used they must point at wiki pages only ([src: wiki/...]), and citing a raw source (raw/untracked/...) is refused because the file is archived once ingested — put reusable context in build-context/ instead. Instruction blocks state WHAT to produce and HOW to format it (sections, tables, bullet lists, length, language), never the facts themselves: no vendor comparisons, figures, dates, conclusions or any claim — facts are pulled from the wiki at build time. Refused (with the offending lines) when the body contains prose outside an instruction block, when a citation is not a wiki page, or when the frontmatter has no explicit build_context list; preview unless confirm=true; refused while a production job is running.',
   },
   {
     name: 'build_context_write',
@@ -518,7 +554,25 @@ export function resolveReadableWorkspacePath(
     // boundary checks below remain authoritative.
   }
   const normalizedPath = decodedPath.replace(/\\/g, '/').replace(/^\.\//, '');
-  const absolutePath = resolveInside(workspace.paths.rootDir, normalizedPath);
+  // Models reconstruct full paths from the status output (absolute workspace
+  // path + relative file) or pass manager-style `workspaces/<name>/…`
+  // prefixes. Both mean the same file the user selected: relativize them
+  // instead of answering "Access denied" on a path that points at the right
+  // place. The allow-list check below stays authoritative either way.
+  let candidatePath = normalizedPath;
+  if (path.isAbsolute(normalizedPath)) {
+    const relativeToRoot = path.relative(
+      workspace.paths.rootDir,
+      path.normalize(normalizedPath),
+    );
+    if (!relativeToRoot.startsWith('..') && !path.isAbsolute(relativeToRoot)) {
+      candidatePath = relativeToRoot;
+    }
+  } else {
+    const managerPrefix = /^workspaces\/[^/]+\/(.+)$/.exec(normalizedPath);
+    if (managerPrefix) candidatePath = managerPrefix[1];
+  }
+  const absolutePath = resolveInside(workspace.paths.rootDir, candidatePath);
   const relativeToRoot = path.relative(workspace.paths.rootDir, absolutePath);
   const relativeToWiki = path.relative(workspace.paths.wikiDir, absolutePath);
   const relativeToIngested = path.relative(workspace.paths.rawIngestedDir, absolutePath);
@@ -734,7 +788,7 @@ export async function createWikiMcpServer(
           {
             ...payload,
             ...decoration,
-            message: 'Preview only. Re-run with confirm=true to write.',
+            message: 'NOT WRITTEN — preview only. Re-run with confirm=true to write.',
           },
           null,
           2,
@@ -933,6 +987,7 @@ export async function createWikiMcpServer(
       ...(missingBuildContext ? [{ kind: 'missing_build_context' }] : []),
     ];
     if (input.confirm === true && hardErrors.length > 0) {
+      const shownViolations = violations.slice(0, 12);
       return textResult(
         JSON.stringify(
           {
@@ -942,8 +997,14 @@ export async function createWikiMcpServer(
               '[[INSTRUCTION: ...]] block (with [src: ...] citations inside it), never ' +
               'prewritten prose. Hard prose is copied verbatim into the deliverable on build ' +
               'and can never be refreshed from the wiki. Move these lines inside an ' +
-              '[[INSTRUCTION: ...]] block or move the fact to the wiki and cite it.',
-            violations,
+              '[[INSTRUCTION: ...]] block or move the fact to the wiki and cite it. ' +
+              'Lines that only describe the template itself (footer notes, annex lists, ' +
+              'glossaries) are hard content too: delete them — the template body must ' +
+              'contain nothing but headings and instruction blocks.',
+            violations: shownViolations,
+            ...(violations.length > shownViolations.length
+              ? { truncatedViolations: violations.length - shownViolations.length }
+              : {}),
             ...(citationViolations.length > 0
               ? {
                   citationViolations,
@@ -987,8 +1048,13 @@ export async function createWikiMcpServer(
                 message:
                   'This template contains prose outside [[INSTRUCTION: ...]] blocks; ' +
                   'it will be refused on confirm=true. Move these lines inside an ' +
-                  '[[INSTRUCTION: ...]] block or move the fact to the wiki and cite it.',
-                lines: violations,
+                  '[[INSTRUCTION: ...]] block or move the fact to the wiki and cite it. ' +
+                  'Lines that only describe the template itself (footer notes, annex lists, ' +
+                  'glossaries) are hard content too: delete them.',
+                lines: violations.slice(0, 12),
+                ...(violations.length > 12
+                  ? { truncatedLines: violations.length - 12 }
+                  : {}),
               },
             }
           : {}),
@@ -1517,7 +1583,7 @@ export async function createWikiMcpServer(
 
   server.tool(
     'template_write',
-    'Create or update one template under templates/. A template is instruction-only: headings plus multiline [[INSTRUCTION: ...]] blocks carrying [src: ...] citations — never prewritten prose (prose is copied verbatim into the deliverable on build and can never be refreshed from the wiki). Citations must point at wiki pages only ([src: wiki/...]) — citing a raw source (raw/untracked/...) is refused because the file is archived once ingested and the built deliverable would carry a dead link; put reusable context in build-context/ instead. The write is refused with the offending lines when the body contains prose outside an instruction block. Returns a diff preview unless confirm=true, including which build_context files resolve and which are missing. Always declare an explicit build_context list (use [] for none): without the key the template inherits every file in build-context/ and the write is refused. Refused while a production job is running.',
+    'Create or update one template under templates/. A template is a generation spec: an OKF-style frontmatter (title, description, and an explicit build_context list — use [] for none; the write is refused without the build_context key) followed by headings and multiline [[INSTRUCTION: ...]] blocks, nothing else — never prewritten prose, never notes about the template itself. [src: ...] citations are OPTIONAL, never required: when used they must point at wiki pages only ([src: wiki/...]); citing a raw source (raw/untracked/...) is refused because the file is archived once ingested and the built deliverable would carry a dead link — put reusable context in build-context/ instead. Instruction blocks state WHAT to produce and HOW to format it (sections, tables, bullet lists, length, language), never the facts themselves: no vendor comparisons, figures, dates, conclusions or any claim — facts are pulled from the wiki at build time. The write is refused (with the offending lines) when the body contains prose outside an instruction block, when a citation is not a wiki page, or when the frontmatter has no explicit build_context list. Returns a diff preview unless confirm=true, including which build_context files resolve and which are missing. Refused while a production job is running.',
     {
       path: z
         .string()

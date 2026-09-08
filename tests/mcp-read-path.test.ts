@@ -40,4 +40,27 @@ describe('resolveReadableWorkspacePath decoding', () => {
     expect(resolveReadableWorkspacePath(workspace, 'wiki/%E0%A4%A.md'))
       .toBe(path.join(root, 'wiki', '%E0%A4%A.md'));
   });
+
+  it('accepts an absolute path that lands inside a readable root', () => {
+    expect(resolveReadableWorkspacePath(workspace, path.join(root, 'raw', 'untracked', 'x.md')))
+      .toBe(path.join(root, 'raw', 'untracked', 'x.md'));
+    expect(resolveReadableWorkspacePath(workspace, path.join(root, 'wiki', 'a', 'b.md')))
+      .toBe(path.join(root, 'wiki', 'a', 'b.md'));
+  });
+
+  it('rejects an absolute path inside the workspace but outside the readable roots', () => {
+    expect(() => resolveReadableWorkspacePath(workspace, path.join(root, 'templates', 'x.md')))
+      .toThrow(/Access denied/);
+    expect(() => resolveReadableWorkspacePath(workspace, '/elsewhere/raw/untracked/x.md'))
+      .toThrow();
+  });
+
+  it('accepts a manager-style workspaces/<name>/ prefix that lands under a readable root', () => {
+    expect(resolveReadableWorkspacePath(workspace, 'workspaces/acpi/raw/untracked/x.md'))
+      .toBe(path.join(root, 'raw', 'untracked', 'x.md'));
+    expect(() => resolveReadableWorkspacePath(workspace, 'workspaces/acpi/templates/x.md'))
+      .toThrow(/Access denied/);
+    expect(() => resolveReadableWorkspacePath(workspace, 'workspaces/acpi/../raw/ingested/x.md'))
+      .toThrow();
+  });
 });

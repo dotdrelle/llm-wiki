@@ -1,8 +1,10 @@
 ---
 name: wiki-sync
 description: Export all configured Confluence sources into the pending inbox
+capability: external-source.export
+operation: export
 ---
-Export every configured Confluence source exactly as the connector is currently configured, staging the exported Markdown in the pending inbox (`raw/untracked/`). Never ask which source to export, and never change, re-enter or reconfigure the existing credentials: use the current configuration as it is. Check configuration and source availability first, wait for the export to finish, and stop without producing partial input if it fails or exports nothing. When the connector is not configured, stop and report that state instead of asking for credentials.
+Export every configured Confluence source exactly as the connector is currently configured, staging the exported Markdown in the pending inbox (`raw/untracked/`). Never ask which source to export, and never change, re-enter or reconfigure the existing credentials: use the current configuration as it is. Check configuration and source availability first, wait for the export to finish, and stop without producing partial input if it fails or exports nothing. When the connector is not configured, stop and report that state instead of asking for credentials. Unchanged Confluence pages are skipped by design: if the export finishes reporting that no file changed, say plainly that the wiki sources are already up to date — that is the normal successful outcome, never a failure, and not a reason to launch an ingest or a build.
 
 ## Boundaries
 
