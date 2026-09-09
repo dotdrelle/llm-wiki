@@ -29,6 +29,20 @@ export function conceptPagePath(concept: string, subject: string): string {
   return `${CONCEPT_PATH_PREFIX}${concept}/${subject}.md`;
 }
 
+/**
+ * The concept folder of a graph node id (with or without a trailing `.md`),
+ * or undefined when the id is not a concept leaf. Structural only — unlike
+ * `parseConceptPagePath`, it does not validate the folder/subject values,
+ * which is what graph builders that only need "which bubble does this belong
+ * to" want; use `parseConceptPagePath` where an invalid axis must be caught.
+ */
+export function conceptFolderFromId(nodeId: string): string | undefined {
+  const parts = nodeId.split('/');
+  return parts[0] === 'wiki' && parts[1] === 'concepts' && parts.length >= 4
+    ? parts[2]
+    : undefined;
+}
+
 export type ConceptPathAxes = { class: string; subject: string };
 
 export function parseConceptPagePath(pagePath: string): ConceptPathAxes | null {

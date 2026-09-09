@@ -5,7 +5,7 @@ import type {
   WikiGraphNodeType,
   WikiGraphRelationType,
 } from './projection.ts';
-import { UNCLASSIFIED_ID, UNCLASSIFIED_LABEL } from '../../ingest/conceptGrid.ts';
+import { UNCLASSIFIED_ID, UNCLASSIFIED_LABEL, conceptFolderFromId } from '../../ingest/conceptGrid.ts';
 
 /**
  * Community assignment for the flat graph.
@@ -64,13 +64,6 @@ function title(value: string): string {
   return value.replace(/[-_]+/g, ' ').replace(/\b\p{L}/gu, (letter) => letter.toUpperCase());
 }
 
-function conceptFolder(nodeId: string): string | undefined {
-  const parts = nodeId.split('/');
-  return parts[0] === 'wiki' && parts[1] === 'concepts' && parts.length >= 4
-    ? parts[2]
-    : undefined;
-}
-
 const TYPE_LABELS: Partial<Record<WikiGraphNodeType, string>> = {
   'raw-source': 'Raw sources',
   'wiki-source': 'Sources',
@@ -91,7 +84,7 @@ export function assignGraphCommunities(
   nodes: WikiGraphNode[],
 ): WikiGraphNode[] {
   return nodes.map((node) => {
-    const folder = conceptFolder(node.id);
+    const folder = conceptFolderFromId(node.id);
     if (folder) return { ...node, community: assigned(title(folder), 'seed') };
     const typeLabel = TYPE_LABELS[node.type];
     if (typeLabel) return { ...node, community: assigned(typeLabel, 'seed') };
@@ -103,7 +96,7 @@ export function assignGraphCommunities(
 }
 
 function isConcept(node: WikiGraphNode): boolean {
-  return Boolean(conceptFolder(node.id));
+  return Boolean(conceptFolderFromId(node.id));
 }
 
 function isSource(type: WikiGraphNodeType): boolean {
@@ -239,7 +232,7 @@ export function createCommunityProjection(
  */
 function axisGroupKeys(node: WikiGraphNode, axis: GroupAxis): string[] {
   if (axis === 'concept') {
-    const folder = conceptFolder(node.id);
+    const folder = conceptFolderFromId(node.id);
     return folder ? [folder] : fallbackGroupKeys(node);
   }
   if (node.type !== 'wiki' && node.type !== 'wiki-source') return fallbackGroupKeys(node);
@@ -353,7 +346,7 @@ export function createAxisGrouping(
     {
       relation: 'shared_folder',
       values: (node) => {
-        const folder = conceptFolder(node.id);
+        const folder = conceptFolderFromId(node.id);
         return folder ? [folder] : [];
       },
     },
@@ -390,7 +383,7 @@ export function createAxisGrouping(
       label: labelById.get(id) ?? id,
       nodeIds: sortedMembers,
       documentCount: sortedMembers.length,
-      conceptCount: sortedMembers.filter((nodeId) => conceptFolder(nodeId) != null).length,
+      conceptCount: sortedMembers.filter((nodeId) => conceptFolderFromId(nodeId) != null).length,
       sourceCount: sortedMembers.filter((nodeId) => isSource(nodeById.get(nodeId)?.type ?? 'wiki')).length,
       internalRelations: internalCounts.get(id) ?? 0,
       externalRelations: externalCounts.get(id) ?? 0,

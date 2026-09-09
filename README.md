@@ -45,13 +45,17 @@ Main capabilities:
 
 - initialize a workspace with `wiki init`;
 - ingest Markdown sources from `raw/untracked/`;
+- rebuild concept pages from the archived sources (`wiki ingest --from-ingested`);
 - expose internal ingest planning/apply phases for orchestrated parallel ingest;
 - maintain durable wiki pages under `wiki/`;
 - query the wiki with lexical and optional vector retrieval;
+- query the **knowledge graph** (citations, wiki links, shared subjects/tags)
+  through the `wiki_graph_query` / `wiki_graph_path` MCP tools;
 - generate deliverables from `templates/` and `build-context/`;
 - show a build runtime/provider summary and compare it with the previous build;
 - export deliverables with inline source detail;
-- serve a local web UI and MCP endpoint;
+- serve a local web UI and MCP endpoint, including the agent-proposals review
+  queue where curation diffs are merged or rejected;
 - install a complete workspace skill with `wiki add-skill`.
 
 ## Extraction contract
@@ -72,9 +76,16 @@ structure and deliberately forgiving on references:
   falls back to `null`) and counted in `_dangling` on the parse result, then
   logged as an `ingest:extract-dangling` warning. A source is never thrown
   away for a reference no one can resolve.
-- the extraction prompt (`src/prompts/extractionPrompt.ts`, version 3) states
+- the extraction prompt (`src/prompts/extractionPrompt.ts`, version 7) states
   these constraints normatively so the model meets the contract rather than
   the engine loosening it.
+
+Consolidation (`src/prompts/consolidationPrompt.ts`, version 19) then files
+each subject as a concept leaf — the concept IS the folder
+(`wiki/concepts/<concept>/<subject>.md`) — from the extracted facts plus a
+bounded source excerpt, and stamps OKF frontmatter: `type`, `generated`
+(who produced it and when), `status: draft`, and `sources` (the raw sources
+it was filed from, with `usage_count`).
 
 
 ## Quick Start
@@ -233,7 +244,9 @@ cme_status
 It always exports every configured source and uses the connector's existing
 configuration as-is — it never asks which source to export and never
 reconfigures credentials. It stops before the ingest when the export produced
-nothing new. The rest of the chain is split into
+nothing new. A pending file modified by hand since its delivery is never
+overwritten: it is flagged orange in the Pending panel, and keeping or
+deleting it is yours to decide. The rest of the chain is split into
 two further scaffold skills so each step can be replayed on its own:
 
 - `/wiki-ingest [files]` — ingest what is already staged in `raw/untracked/`,
@@ -247,7 +260,9 @@ two further scaffold skills so each step can be replayed on its own:
 - `/deliver [deliverable] [polish]` — export, or polish, deliverables that already
   exist under `deliverables/` (`production_start_job {"type":"export"}` or
   `{"type":"polish"}`). Deliverable names are accepted with or without their `.md`
-  extension.
+  extension, and a bare name is resolved across the `deliverables/`
+  sub-directories; the export is written next to its deliverable, in the same
+  tree.
 
 `/pipeline` remains the one-shot shortcut for the whole chain.
 
@@ -288,7 +303,9 @@ independently. A document converted from an upload is added automatically even
 before ingestion, from `raw/untracked/`. The interface sends only these paths:
 Donna reads the relevant files with the wiki read tools when the question
 refers to the selected documents; their contents are not injected into every
-prompt.
+prompt. The selection is part of the conversation: it is saved with it and
+restored on reload, and "+ Context" on a wiki page opens the split view so the
+document and the chat are visible together.
 
 The Activity list has five scrollable tabs: **Plan**, **Chain**, **Local
 activity**, **Runtime activity**, and **Logs**. `Clear` cleans only the visible
@@ -300,13 +317,29 @@ are purged. The same reset remains available conversationally by explicitly
 asking Donna to delete, reset, abandon, or replace the current plan; asking
 only to stop work performs a non-purging stop.
 
+The execution graph renders the run's collective too: each subagent (Scout,
+Analyst, Critique, Redactor, Archivist) appears as a child node of the run
+node, with its status and start/finish times in the inspector.
+
+### Agent proposals (curation review)
+
+`agent.curate` runs work with confined hands: a git branch per objective, a
+diff, never a direct write. When the run finishes, the proposal waits in the
+review queue — a link with an amber badge in the left sidebar opens
+`/agent-proposals`, showing the agent's reasoning, the unresolved objections,
+the changed files and the full diff. **Merge into the wiki** applies the pages
+through the normal write path (recording `verified` and `status: stable` in
+their OKF frontmatter) and discards the branch; **Reject** discards it and
+leaves the wiki untouched. Nothing reaches the wiki unless a human merges it.
+
 ## Core Commands
 
 ```bash
 wiki init
 wiki add-skill <directory-or-zip-or-url>
-wiki doctor
+wiki doctor                 # reports missing OKF keys; --apply writes them and migrates older pages to OKF v0.2
 wiki ingest [files...]
+wiki ingest --from-ingested [files...]   # rebuild concept pages from the archived sources
 wiki index
 wiki query "question"
 wiki build [templates...]

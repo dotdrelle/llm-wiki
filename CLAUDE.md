@@ -32,7 +32,10 @@ window. Earlier per-lot history below is kept for context.
 0.9.4 is the incremental, iso-behavior extraction of `src/commands/serve.ts`
 and `src/chat/chatHtml.ts` into smaller modules (see Layout below); neither
 file has reached its final target size yet, and `scripts/check-file-sizes.js`
-keeps temporary legacy thresholds for both until it does. 0.9.5 is the runtime
+keeps temporary legacy thresholds for the still-unsplit files until they do
+(`serve.ts`, `chatHtml.ts`, `wikiHtml.ts`, `activityPanelScript.ts` — the
+ceilings record the shipped reality and drop as the extractions land).
+0.9.5 is the runtime
 control-lane work described under Agent Runtime Integration. 0.9.6 is the
 `projectWorkflow` canonical projection (defined in `llm-wiki-manager`); this
 repo consumes it as `runtimeState.workflow.nodes` in `runtimeTaskPanelHTML`
@@ -118,6 +121,10 @@ docs/                   User-facing references
 - `add-skill`: install one workspace skill package.
 - `doctor`: validate provider, retrieval, build planning, and config.
 - `ingest`: read `raw/untracked/`, update wiki pages, archive sources.
+  `--from-ingested` rebuilds concept pages from the ARCHIVED sources
+  (`raw/ingested/`) instead — the archive identity is preserved (no sibling
+  "ingested-…" paths), nothing is moved or archived again, and the
+  unchanged-since-last-ingest skip is bypassed on purpose.
 - `index`: build/update `.wiki/vector-index`.
 - `query`: answer from wiki context.
 - `build`, `refresh`, `export`, `lint`: generate and verify deliverables.
@@ -223,6 +230,16 @@ never becomes an extra run. Keep scaffold skills generic and English by default.
   section)
 - `GET /api/config/profiles`, `POST /api/config/use` → runtime `/config/*`
   (`.wikirc` profile switching, described below)
+- `GET /api/agent-proposals`, `GET /agent-proposals(/:id)` — the curation
+  review surface (lot 1): proposals the manager persisted into
+  `.wiki/agent-proposals/` from the gateway's worktree runs; the merge IS the
+  approval. `POST /api/agent-proposals/:id/merge` writes the proposed pages
+  through `applyWikiOperations` (adding OKF `verified` + `status: stable`),
+  commits them to history, and removes the git worktree + branch;
+  `POST /api/agent-proposals/:id/reject` removes the worktree and the proposal
+  without touching the wiki. Both refuse with 409 while a run is active, and
+  only `wiki/` paths are mergeable — the proposal travels from another
+  process and is treated as untrusted. See `src/serve/routes/agentProposalRoutes.ts`.
 
 `proxyRuntimeJson` accepts an optional `extra` object merged into the POST body
 before forwarding. The workspace injection (`{ workspace: workspaceNameFromEnv() }`)
@@ -247,15 +264,20 @@ from local LLM to runtime dispatch. When running, the Send button becomes Stop
 fetched via `/api/runtime/state` and kept fresh by the SSE stream with a 200ms
 leading-edge debounce on `agent_event` messages.
 
-`sendRuntimeAgentMessage` (0.9.5) no longer blocks with an error when a run is
-already active: ordinary Agent messages post to `/api/runtime/turn` when idle,
-or
-`/api/runtime/control {action:"message", input}` when busy (with a 409 fallback
-from `/run` to `/control` for the idle→busy race), and shows the runtime's
-`explanation` for the resulting `observe`/`converse`/`mutate`/`enqueue`/
-`ambiguous` classification — see `llm-wiki-manager/CLAUDE.md`'s control lane
+`sendRuntimeAgentMessage` always posts to `/api/runtime/turn` (chat AND agent
+mode): the runtime itself classifies agent-mode messages sent while a run is
+active — control verbs and new tasks go to the control lane, plain
+conversation is answered read-only (no more choice menu blocking the
+composer). A 409 fallback to `/control` remains for the idle→busy race, and
+the runtime's `explanation` is shown for the `observe`/`converse`/`mutate`/
+`enqueue` classification — see `llm-wiki-manager/CLAUDE.md`'s control lane
 section for what each classification means. This is the same classifier the
 ShellTUI uses; do not add a second one here.
+
+Replies are rendered from `/state`, never from the SSE payloads: while an
+answer is awaited, a gentle poll (2.5 s) keeps merging the conversation even
+when the stream dies — a silent SSE break no longer leaves an answer visible
+in the ShellUI but never in serve.
 
 `window.__WIKI_CONFIG__.runtime.enabled` is `true` when `WIKI_MANAGER_RUNTIME_URL`
 is set; chatHtml uses this to show/hide the Agent mode toggle.
@@ -271,6 +293,12 @@ the sanitized paths in its prompt and must use its allow-listed read tools. The
 MCP `wiki_read_page`/`wiki_read_pages`
 tools therefore allow `wiki/`, `raw/ingested/`, and `raw/untracked/`, while the
 shared workspace-root/path-traversal guard remains authoritative.
+
+The selection is part of the conversation: it travels in the payload saved
+with the history (`pageContexts`, restored by `resetPageContexts` on load), and
+"+ Context" on a wiki page opens the split view so the document and the chat
+are visible together. A graph closed from its own toolbar hands the centre
+back to the page it replaced.
 
 ## Serve — what must survive a change of centre view
 
@@ -515,9 +543,15 @@ ingest`) builds a review per planned operation (`buildReviewOperations`):
   it is a structural lookup by the `subject` frontmatter field, independent of
   and complementary to relevance ranking, and conflating them would make the
   gap this closes silently reappear the next time retrieval tuning changes.
-- `buildService.ts`: template slot batching and generation.
+- `buildService.ts`: template slot batching and generation. Build retrieval
+  runs with `includeRaw: true` — the raw corpus (`raw/ingested/`) is part of
+  the evidence, merged with the vector/lexical results, never instead of
+  them.
 - `refreshService.ts`: stale deliverable detection.
-- `exportService.ts`: citation expansion and polish.
+- `exportService.ts`: citation expansion and polish. Each cited source is
+  read WHOLE (bounded by `maxSourceChars`) and replaces its chunk fragments —
+  the "insufficient source documentation" note only appears when the evidence
+  genuinely lacks the detail.
 - `retrievalService.ts`: lexical/vector context assembly. Lexical scoring is
   BM25 (`BM25_K1`/`BM25_B`, `buildBm25Corpus`/`scoreDocument`), not naive
   term-presence counting — `tokenize()` NFKD-normalizes and strips
@@ -532,7 +566,14 @@ ingest`) builds a review per planned operation (`buildReviewOperations`):
   embedding batch profile `wiki doctor` reports — don't hardcode those
   numbers as a second copy anywhere else.
 - `llmService.ts`: OpenAI-compatible provider abstraction.
-- `mcpServer.ts`: wiki MCP tools.
+- `mcpServer.ts`: wiki MCP tools — reads (`wiki_read_page(s)` now carry the
+  page's `citations`/`links` structurally, so callers follow provenance
+  without re-parsing markdown), the queryable graph (`wiki_graph_query` /
+  `wiki_graph_path` over `src/graph/wiki/queryGraph.ts` — the materialized
+  adjacency incl. the transverse `shared_subject`/`shared_tag` edges, rebuilt
+  per call), templates (listing carries frontmatter titles; a missing path
+  falls back to the basename search before refusing) and deliverables (same
+  title treatment).
 
 ## Config And Environment
 
@@ -590,6 +631,14 @@ must be supplied together. Keep TLS in env/Compose, not `.wikirc.yaml`.
   `applyOkfFrontmatter` (`src/okf/frontmatter.ts`). The `type` vocabulary is
   closed in `okfTypeForPath`; `wiki doctor` (and `--apply`) list/write the
   missing ones, and `lint` reports `pagesMissingOkfType`.
+
+  OKF v0.2 keys are additive everywhere, never overwriting a hand-set value:
+  ingest writes `generated {by, at}` + `status: draft` and stamps `sources`
+  (the raw archive paths, with `usage_count` from `source-registry.json`);
+  the agent-proposals merge writes `verified` + `status: stable`. `wiki doctor
+  --apply` also runs the v0.2 catch-up (`timestamp` → `generated`, a trailing
+  `## Citations` section → `sources`, missing `status` → `draft`) — one line
+  per file, idempotent, never during an ingest run (`src/okf/scan.ts`).
 - `wiki_write_page`/`profile_update` (0.10.3, `src/services/mcpServer.ts`)
   require `confirm=true` to actually write; omitting `confirm` or passing
   `dryRun=true` returns a JSON preview (`createWritePreviewPayload`: before/

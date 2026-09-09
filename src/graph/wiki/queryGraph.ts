@@ -1,5 +1,6 @@
 import matter from 'gray-matter';
 import { extractSourceCitations, extractWikiLinks } from '../../utils/markdown.ts';
+import { conceptFolderFromId } from '../../ingest/conceptGrid.ts';
 import type { WorkspaceService } from '../../services/workspaceService.ts';
 
 // The structural minimum the builder reads from a workspace page.
@@ -65,13 +66,6 @@ function frontmatterOf(page: GraphPage): { subject?: string; tags: string[]; tit
   }
 }
 
-function conceptFolderOf(id: string): string | undefined {
-  const parts = id.split('/');
-  return parts[0] === 'wiki' && parts[1] === 'concepts' && parts.length >= 4
-    ? parts[2]
-    : undefined;
-}
-
 function normalizeLinkTarget(target: string): string {
   const cleaned = target.replace(/^\.\//, '').replace(/\.md$/, '');
   if (cleaned.startsWith('wiki/')) return cleaned;
@@ -89,6 +83,22 @@ function addEdge(
   if (!outgoing.some((entry) => entry.to === to && entry.type === type)) {
     outgoing.push({ to, type });
     adjacency.set(from, outgoing);
+  }
+}
+
+/** Connects every pair of ids sharing a grouped value (subject or tag), both ways. */
+function addPairwiseEdges(
+  adjacency: Map<string, Array<{ to: string; type: QueryEdgeType }>>,
+  groups: Map<string, string[]>,
+  type: QueryEdgeType,
+): void {
+  for (const ids of groups.values()) {
+    for (let i = 0; i < ids.length; i += 1) {
+      for (let j = i + 1; j < ids.length; j += 1) {
+        addEdge(adjacency, ids[i], ids[j], type);
+        addEdge(adjacency, ids[j], ids[i], type);
+      }
+    }
   }
 }
 
@@ -120,7 +130,7 @@ export async function buildQueryGraph(workspace: WorkspaceService): Promise<Quer
       ...(meta.subject ? { subject: meta.subject } : {}),
       tags: meta.tags,
     };
-    const concept = conceptFolderOf(page.relativePath);
+    const concept = conceptFolderFromId(page.relativePath);
     if (concept) node.concept = concept;
     nodes.push(node);
     nodeById.set(node.id, node);
@@ -160,22 +170,8 @@ export async function buildQueryGraph(workspace: WorkspaceService): Promise<Quer
 
   // The transverse edges, now materialized: an entity cited under several
   // concepts, or a theme shared through tags.
-  for (const ids of bySubject.values()) {
-    for (let i = 0; i < ids.length; i += 1) {
-      for (let j = i + 1; j < ids.length; j += 1) {
-        addEdge(adjacency, ids[i], ids[j], 'shared_subject');
-        addEdge(adjacency, ids[j], ids[i], 'shared_subject');
-      }
-    }
-  }
-  for (const ids of byTag.values()) {
-    for (let i = 0; i < ids.length; i += 1) {
-      for (let j = i + 1; j < ids.length; j += 1) {
-        addEdge(adjacency, ids[i], ids[j], 'shared_tag');
-        addEdge(adjacency, ids[j], ids[i], 'shared_tag');
-      }
-    }
-  }
+  addPairwiseEdges(adjacency, bySubject, 'shared_subject');
+  addPairwiseEdges(adjacency, byTag, 'shared_tag');
 
   return { nodes, nodeById, adjacency, byTag, byConcept };
 }
