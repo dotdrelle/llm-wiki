@@ -13,7 +13,13 @@ import { loadWikiGraphSnapshot, summarizeWikiGraph } from '../graph/wiki/overvie
 import { pathExists } from '../utils/fs.ts';
 import { resolveInside, relativeFrom } from '../utils/path.ts';
 import { extractSourceCitations, extractWikiLinks, parseTemplateInstructions } from '../utils/markdown.ts';
-import { hashText } from '../utils/hash.ts';
+import {
+  buildQueryGraph,
+  graphNeighbors,
+  graphNodesByConcept,
+  graphNodesByTag,
+  graphShortestPath,
+} from '../graph/wiki/queryGraph.ts';import { hashText } from '../utils/hash.ts';
 import { listHelpChapters, readHelpChapter, searchHelpChapters } from '../utils/helpDoc.ts';
 import type { AppConfig } from '../types.ts';
 
@@ -1586,6 +1592,152 @@ const withTitles = async (
   // read tools for /chat regardless of naming conventions. Never put it on a
   // mutating tool (wiki_write_page, wiki_add_source, profile_update).
   const READ_ONLY = { readOnlyHint: true };
+
+  // ── The queryable graph ─────────────────────────────────────────────────────
+  // The transverse edges (shared subject, shared tags) were never
+  // materialized, so no agent could ask "which pages share this subject" or
+  // "what sits between this source and that concept". These two tools answer
+  // that over the live corpus — the graph is rebuilt per call, never cached.
+
+  const queryGraphContext = async () => buildQueryGraph(workspace);
+
+  const graphNodeSummary = (node: {
+    id: string;
+    label: string;
+    type: string;
+    subject?: string;
+    concept?: string;
+    tags: string[];
+  }) => ({
+    path: node.id,
+    label: node.label,
+    type: node.type,
+    ...(node.subject ? { subject: node.subject } : {}),
+    ...(node.concept ? { concept: node.concept } : {}),
+    tags: node.tags,
+  });
+
+  const readGraphQuery = async (input: {
+    node?: string;
+    concept?: string;
+    tag?: string;
+    edgeTypes?: string[];
+    maxDepth?: number;
+    limit?: number;
+  }) => {
+    const graph = await queryGraphContext();
+    if (input.node) {
+      const normalized = String(input.node).replace(/\.md$/, '');
+      if (!graph.nodeById.has(normalized)) {
+        return textResult(`Graph node not found: ${input.node}`, { isError: true });
+      }
+      const neighbors = graphNeighbors(graph, normalized, {
+        edgeTypes: input.edgeTypes as never,
+        maxDepth: input.maxDepth,
+        limit: input.limit,
+      });
+      return textResult(
+        JSON.stringify(
+          {
+            node: graphNodeSummary(graph.nodeById.get(normalized)!),
+            neighbors: neighbors.map((entry) => ({
+              ...graphNodeSummary(entry.node),
+              edgeType: entry.edgeType,
+              depth: entry.depth,
+            })),
+          },
+          null,
+          2,
+        ),
+      );
+    }
+    if (input.concept) {
+      const nodes = graphNodesByConcept(graph, String(input.concept)).map(graphNodeSummary);
+      return textResult(
+        JSON.stringify(
+          { concept: input.concept, count: nodes.length, nodes: nodes.slice(0, input.limit ?? 50) },
+          null,
+          2,
+        ),
+      );
+    }
+    if (input.tag) {
+      const nodes = graphNodesByTag(graph, String(input.tag)).map(graphNodeSummary);
+      return textResult(
+        JSON.stringify(
+          { tag: input.tag, count: nodes.length, nodes: nodes.slice(0, input.limit ?? 50) },
+          null,
+          2,
+        ),
+      );
+    }
+    return textResult(
+      JSON.stringify(
+        {
+          error: 'name one selector: node, concept, or tag',
+          nodeCount: graph.nodes.length,
+          concepts: [...graph.byConcept.entries()].map(([concept, ids]) => ({ concept, count: ids.length })).sort((a, b) => b.count - a.count).slice(0, 30),
+          tags: [...graph.byTag.entries()].map(([tag, ids]) => ({ tag, count: ids.length })).sort((a, b) => b.count - a.count).slice(0, 30),
+        },
+        null,
+        2,
+      ),
+    );
+  };
+
+  const readGraphPath = async (input: { from: string; to: string; edgeTypes?: string[] }) => {
+    const graph = await queryGraphContext();
+    const from = String(input.from).replace(/\.md$/, '');
+    const to = String(input.to).replace(/\.md$/, '');
+    const path = graphShortestPath(graph, from, to, { edgeTypes: input.edgeTypes as never });
+    if (!path) {
+      return textResult(
+        JSON.stringify({ from: input.from, to: input.to, path: null, message: 'no path found between these nodes' }, null, 2),
+      );
+    }
+    return textResult(
+      JSON.stringify(
+        {
+          from: input.from,
+          to: input.to,
+          length: path.length - 1,
+          path: path.map((entry) => ({
+            ...graphNodeSummary(entry.node),
+            via: entry.edgeType,
+          })),
+        },
+        null,
+        2,
+      ),
+    );
+  };
+
+  server.tool(
+    'wiki_graph_query',
+    'Query the knowledge graph: the neighbors of a page (citations, wiki links, shared subject, shared tags), or the pages of a concept or tag. Use to trace how pages relate — which pages share a subject, which pages a source produced, what a concept contains — without reading page content.',
+    {
+      node: z.string().optional().describe('Relative page path (wiki/... or raw/ingested/...) to start from; omit to list concepts and tags'),
+      concept: z.string().optional().describe('Concept folder name (e.g. "product"); lists its pages'),
+      tag: z.string().optional().describe('Tag value; lists the pages carrying it'),
+      edgeTypes: z.array(z.string()).optional().describe('Restrict the traversal to edge types: citation, produces, wiki_link, shared_subject, shared_tag'),
+      maxDepth: z.number().int().min(1).max(3).optional().describe('Neighbor depth, default 1'),
+      limit: z.number().int().min(1).max(200).optional().describe('Result cap, default 50'),
+    },
+    READ_ONLY,
+    (input) => loggedTool('wiki_graph_query', input, readGraphQuery),
+  );
+
+  server.tool(
+    'wiki_graph_path',
+    'Find the shortest path between two pages in the knowledge graph, with the edge type of each hop. Use to explain HOW two documents are related before reading them.',
+    {
+      from: z.string().describe('Relative path of the start page (wiki/... or raw/ingested/...)'),
+      to: z.string().describe('Relative path of the end page'),
+      edgeTypes: z.array(z.string()).optional().describe('Restrict the traversal to edge types: citation, produces, wiki_link, shared_subject, shared_tag'),
+    },
+    READ_ONLY,
+    (input) => loggedTool('wiki_graph_path', input, readGraphPath),
+  );
 
   server.tool(
     'wiki_workspace_status',
