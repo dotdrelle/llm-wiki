@@ -153,6 +153,7 @@ export interface IngestCommandOptions {
   apply?: string[];
   refresh?: boolean;
   force?: boolean;
+  fromIngested?: boolean;
   reject?: string[];
   verbose?: boolean;
   debug?: boolean;

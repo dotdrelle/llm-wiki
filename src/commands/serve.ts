@@ -28,6 +28,7 @@ import { handleConnectorsOAuthRoutes } from '../serve/routes/connectorsOAuthRout
 import { graphSummaryCompletion } from '../serve/graphSummaryCompletion.ts';
 import { handleGraphRoutes, stopGraphEventHub } from '../serve/routes/graphRoutes.ts';
 import { handleTreeApi } from '../serve/routes/treeRoutes.ts';
+import { handleAgentProposalRoutes } from '../serve/routes/agentProposalRoutes.ts';
 import { handleMcpRoutes } from '../serve/routes/mcpRoutes.ts';
 import { handleRuntimeRoutes } from '../serve/routes/runtimeRoutes.ts';
 import { handleUploadRoutes, type ExternalMcpEndpoint } from '../serve/routes/uploadRoutes.ts';
@@ -93,7 +94,7 @@ const UI_FONT_WOFF2: Record<string, string> = {};
 }
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
-const LLM_WIKI_VERSION = '0.15.85';
+const LLM_WIKI_VERSION = '0.15.86';
 
 type SkillMeta = {
   name: string;
@@ -996,6 +997,15 @@ export default async function serveCmd(
         submitHistoryRestore: (response, payload) =>
           submitHistoryRestoreToRuntime(response, runtimeProxyDeps, payload, workspaceNameFromEnv()),
         readRequestBody,
+        sendGzippedHtml,
+        sendJson,
+      })) return;
+
+      if (await handleAgentProposalRoutes(req, res, urlPath, {
+        rootDir,
+        workspace,
+        historyConfig: config.history,
+        isRunActive: isRuntimeRunActive,
         sendGzippedHtml,
         sendJson,
       })) return;

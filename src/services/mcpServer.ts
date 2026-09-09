@@ -11,13 +11,13 @@ import { HistoryService, commitHistorySafely } from './historyService.ts';
 import { checkProductionIdle } from './productionLocks.ts';
 import { loadWikiGraphSnapshot, summarizeWikiGraph } from '../graph/wiki/overview.ts';
 import { pathExists } from '../utils/fs.ts';
-import { resolveInside } from '../utils/path.ts';
-import { extractSourceCitations, parseTemplateInstructions } from '../utils/markdown.ts';
+import { resolveInside, relativeFrom } from '../utils/path.ts';
+import { extractSourceCitations, extractWikiLinks, parseTemplateInstructions } from '../utils/markdown.ts';
 import { hashText } from '../utils/hash.ts';
 import { listHelpChapters, readHelpChapter, searchHelpChapters } from '../utils/helpDoc.ts';
 import type { AppConfig } from '../types.ts';
 
-const LLM_WIKI_VERSION = '0.15.85';
+const LLM_WIKI_VERSION = '0.15.86';
 const MAX_SOURCE_NAME_CHARS = 200;
 const MAX_SOURCE_SUBDIR_CHARS = 300;
 const MAX_SOURCE_CONTENT_CHARS = 1_000_000;
@@ -121,12 +121,12 @@ export const WIKI_MCP_TOOLS = [
   {
     name: 'wiki_read_page',
     description:
-      'Read one llm-wiki markdown page under wiki/ by relative path. Use for targeted inspection when a page needs full content.',
+      'Read one llm-wiki markdown page (wiki/, raw/ingested/, or raw/untracked/) by relative path. Use for targeted inspection when a page needs full content. The result ends with a wiki_read_page sources comment naming every [src: ...] citation in the page — follow a wiki/... target with this same tool (or wiki_read_pages) and a raw/ingested/... target with wiki_read_ingested_source; do not re-read a file whose content you already hold.',
   },
   {
     name: 'wiki_read_pages',
     description:
-      'Read multiple llm-wiki markdown pages under wiki/ by relative path in one call. Use after wiki_search_context, or after wiki_collect_context when additional pages are needed.',
+      'Read multiple llm-wiki markdown pages (wiki/, raw/ingested/, or raw/untracked/) by relative path in one call. Use after wiki_search_context, or after wiki_collect_context when additional pages are needed. Each entry carries path, content, found, allowed, truncated, citations (the [src: ...] paths of the page) and links (its [[...]] wiki targets) — follow them with this same tool or wiki_read_ingested_source, and do not re-read a path already returned.',
   },
   {
     name: 'wiki_write_page',
@@ -151,7 +151,7 @@ export const WIKI_MCP_TOOLS = [
   {
     name: 'template_write',
     description:
-      'Create or update one template under templates/. A template is a generation spec: an OKF-style frontmatter (title, description, and an explicit build_context list — use [] for none; the write is refused without the build_context key) followed by headings and multiline [[INSTRUCTION: ...]] blocks, nothing else — never prewritten prose, never notes about the template itself. [src: ...] citations are OPTIONAL, never required: when used they must point at wiki pages only ([src: wiki/...]), and citing a raw source (raw/untracked/...) is refused because the file is archived once ingested — put reusable context in build-context/ instead. Instruction blocks state WHAT to produce and HOW to format it (sections, tables, bullet lists, length, language), never the facts themselves: no vendor comparisons, figures, dates, conclusions or any claim — facts are pulled from the wiki at build time. Refused (with the offending lines) when the body contains prose outside an instruction block, when a citation is not a wiki page, or when the frontmatter has no explicit build_context list; preview unless confirm=true; refused while a production job is running.',
+      'Create or update one template under templates/. A template is a generation spec: an OKF-style frontmatter (title, description, and an explicit build_context list — use [] for none; the write is refused without the build_context key) followed by headings and multiline [[INSTRUCTION: ...]] blocks, nothing else — never prewritten prose, never notes about the template itself. Do NOT write [src: ...] citations in a template: they are the build model\'s job, not the template author\'s — an instruction may state that every claim must be cited, and the build fills the markers in at build time. Citing a raw source (raw/untracked/...) is refused outright because the file is archived once ingested — put reusable context in build-context/ instead. Instruction blocks state WHAT to produce and HOW to format it (sections, tables, bullet lists, length, language), never the facts themselves: no vendor comparisons, figures, dates, conclusions or any claim — facts are pulled from the wiki at build time. Refused (with the offending lines) when the body contains prose outside an instruction block, when a citation targets a non-wiki path, or when the frontmatter has no explicit build_context list; preview unless confirm=true; refused while a production job is running.',
   },
   {
     name: 'build_context_write',
@@ -469,6 +469,12 @@ interface ReadWikiPagePayload {
   allowed: boolean;
   truncated: boolean;
   content: string;
+  // The page's provenance, surfaced structurally so the caller can follow it:
+  // citations are [src: ...] paths (wiki/... pages or raw/ingested/... archive
+  // sources), links are wiki-internal [[...]] targets. Content alone forced
+  // the caller to re-parse markdown it already held.
+  citations?: string[];
+  links?: string[];
   error?: string;
 }
 
@@ -504,6 +510,8 @@ async function readWorkspaceWikiPage(
       content: truncated
         ? `${content.slice(0, maxPageChars).trimEnd()}\n[truncated]`
         : content,
+      citations: [...new Set(extractSourceCitations(content))],
+      links: [...new Set(extractWikiLinks(content))],
     };
   } catch (error) {
     return {
@@ -585,7 +593,20 @@ export function resolveReadableWorkspacePath(
     !relativeToUntracked.startsWith('..') && !path.isAbsolute(relativeToUntracked);
 
   if (!underRoot || (!underWiki && !underIngested && !underUntracked)) {
-    throw new Error('Access denied: path must be under wiki/, raw/ingested/, or raw/untracked/.');
+    // Name the tool that DOES read this tree. The bare refusal sent the caller
+    // looping — it read the templates listing, tried this tool again on a
+    // templates/ path, was refused again, and eventually wrote a new template
+    // rather than reading the one it was asked to edit.
+    const suggestion = relativeToRoot.startsWith('templates/')
+      ? ' Use template_read for templates/.'
+      : relativeToRoot.startsWith('deliverables/')
+        ? ' Deliverables are generated: read the template that produces it with template_read, or the wiki pages it cites.'
+        : relativeToRoot.startsWith('build-context/')
+          ? ' build-context/ is applied at build time, not read here; template_read reports which files a template resolves.'
+          : '';
+    throw new Error(
+      `Access denied: path must be under wiki/, raw/ingested/, or raw/untracked/.${suggestion}`,
+    );
   }
 
   return absolutePath;
@@ -627,7 +648,17 @@ export async function createWikiMcpServer(
       if (!page.found) {
         return textResult(`Page not found: ${pagePath}`, { isError: true });
       }
-      return textResult(page.content);
+      // The content stays the page, verbatim; the trailer is tool furniture,
+      // not page text — never write it back. It names the page's real sources
+      // so the caller can follow them with wiki_read_page/wiki_read_pages (for
+      // wiki/... targets) or wiki_read_ingested_source (for raw/ingested/...),
+      // without having to parse the markdown itself or re-read a page it
+      // already holds.
+      const trailer =
+        page.citations && page.citations.length > 0
+          ? `\n\n<!-- wiki_read_page sources: ${page.citations.join(', ')} -->`
+          : '';
+      return textResult(page.content + trailer);
     } catch (error) {
       return textResult(error instanceof Error ? error.message : String(error), {
         isError: true,
@@ -885,23 +916,53 @@ export async function createWikiMcpServer(
                 'including rules written for other deliverables. Declare an explicit list ' +
                 '(or [] for none).',
             }),
+        // A declared entry that resolves to nothing is reported but not fatal,
+        // by design — so an invented path (wiki/concepts/product) was written
+        // and never noticed, and an author with nothing to go on left the list
+        // empty. Naming what actually exists answers both: it is the only way
+        // the caller can tell an invented path from a real one.
+        ...(resolution.missing.length > 0 || resolution.resolved.length === 0
+          ? { available: sections.map((section) => section.relativePath) }
+          : {}),
       },
     };
   };
+
+
+// Listings named files; the reader — human or model — reasons about titles.
+// "detaille.md" told nobody what the template produces, so a caller looking for
+// the technical presentation guessed a path instead of recognising one. The
+// frontmatter title is authoritative and its casing is preserved; the path stays
+// beside it because that is what the tools take as input.
+const withTitles = async (
+  paths: string[],
+  read: (absolutePath: string) => Promise<{ frontmatter: Record<string, unknown> }>,
+) => Promise.all(
+  paths.map(async (absolutePath) => {
+    const relativePath = relativeFrom(workspace.paths.rootDir, absolutePath);
+    try {
+      const parsed = await read(absolutePath);
+      const title = typeof parsed.frontmatter.title === 'string' ? parsed.frontmatter.title.trim() : '';
+      return title ? { path: relativePath, title } : { path: relativePath };
+    } catch {
+      return { path: relativePath };
+    }
+  }),
+);
 
   const readTemplate = async ({ path: requestedPath }: { path?: string }) => {
     if (!requestedPath) {
       const templates = await workspace.listTemplatePaths();
       return textResult(
         JSON.stringify(
-          { templates: relativeWorkspacePaths(workspace, templates) },
+          { templates: await withTitles(templates, (file) => workspace.readTemplateDocument(file)) },
           null,
           2,
         ),
       );
     }
     try {
-      const absolutePath = resolveWritablePath(
+      let absolutePath = resolveWritablePath(
         workspace,
         requestedPath,
         workspace.paths.templatesDir,
@@ -911,7 +972,45 @@ export async function createWikiMcpServer(
         .relative(workspace.paths.rootDir, absolutePath)
         .replaceAll('\\', '/');
       if (!(await pathExists(absolutePath))) {
-        return textResult(`Template not found: ${relativePath}`, { isError: true });
+        // A bare "not found" taught the caller nothing, so it guessed a flat
+        // path (templates/technical-presentation.md), missed the real one
+        // (templates/technical/detaille.md), and concluded it had to CREATE a
+        // template — producing a near-duplicate beside the one it was asked to
+        // edit. First try the exact basename anywhere under templates/ (the
+        // recursive search the flat guess implied); only a genuine miss
+        // returns the full listing.
+        const allTemplates = await workspace.listTemplatePaths();
+        const wanted = path.basename(requestedPath);
+        const basenameMatches = allTemplates.filter(
+          (file) => path.basename(file) === wanted,
+        );
+        if (basenameMatches.length === 1) {
+          absolutePath = basenameMatches[0];
+        } else {
+          const available = relativeWorkspacePaths(workspace, allTemplates);
+          return textResult(
+            JSON.stringify(
+              {
+                error: 'TEMPLATE_NOT_FOUND',
+                requested: relativePath,
+                message: available.length
+                  ? 'No template at that path. Templates live in sub-directories; read one of the existing paths below before creating anything new.'
+                  : 'No template at that path, and this workspace has none yet.',
+                ...(basenameMatches.length > 1
+                  ? {
+                      sameName: basenameMatches.map((file) =>
+                        relativeFrom(workspace.paths.rootDir, file),
+                      ),
+                    }
+                  : {}),
+                templates: available,
+              },
+              null,
+              2,
+            ),
+            { isError: true },
+          );
+        }
       }
       const content = await readFile(absolutePath, 'utf8');
       const document = await workspace.readTemplateDocument(absolutePath);
@@ -939,13 +1038,29 @@ export async function createWikiMcpServer(
   const readDeliverable = async ({ path: requestedPath }: { path?: string }) => {
     if (!requestedPath) {
       const deliverables = await workspace.listDeliverablePaths();
-      return textResult(
-        JSON.stringify(
-          { deliverables: relativeWorkspacePaths(workspace, deliverables) },
-          null,
-          2,
-        ),
+      // Titles, not file names: same fix as the template listing. The
+      // deliverable frontmatter title is authoritative; the path stays beside
+      // it because that is what the tools take as input.
+      const readDocument = async (absolutePath: string) => {
+        const raw = await readFile(absolutePath, 'utf8');
+        return { frontmatter: matter(raw).data };
+      };
+      const titled = await Promise.all(
+        deliverables.map(async (absolutePath) => {
+          const relativePath = relativeFrom(workspace.paths.rootDir, absolutePath);
+          try {
+            const parsed = await readDocument(absolutePath);
+            const title =
+              typeof parsed.frontmatter.title === 'string'
+                ? parsed.frontmatter.title.trim()
+                : '';
+            return title ? { path: relativePath, title } : { path: relativePath };
+          } catch {
+            return { path: relativePath };
+          }
+        }),
       );
+      return textResult(JSON.stringify({ deliverables: titled }, null, 2));
     }
     try {
       const absolutePath = resolveWritablePath(
@@ -958,7 +1073,28 @@ export async function createWikiMcpServer(
         .relative(workspace.paths.rootDir, absolutePath)
         .replaceAll('\\', '/');
       if (!(await pathExists(absolutePath))) {
-        return textResult(`Deliverable not found: ${relativePath}`, { isError: true });
+        // Deliverables live in sub-directories too; a bare miss must teach,
+        // not punish — the listing is the same information this tool already
+        // returns without a path.
+        const available = relativeWorkspacePaths(
+          workspace,
+          await workspace.listDeliverablePaths(),
+        );
+        return textResult(
+          JSON.stringify(
+            {
+              error: 'DELIVERABLE_NOT_FOUND',
+              requested: relativePath,
+              message: available.length
+                ? 'No deliverable at that path. Deliverables live in sub-directories; use one of the existing paths below.'
+                : 'No deliverable at that path, and this workspace has none yet.',
+              deliverables: available,
+            },
+            null,
+            2,
+          ),
+          { isError: true },
+        );
       }
       const content = await readFile(absolutePath, 'utf8');
       return textResult(
@@ -994,10 +1130,13 @@ export async function createWikiMcpServer(
             error: 'TEMPLATE_HARD_CONTENT',
             message:
               'Templates are instruction-only: a section must be a heading followed by a ' +
-              '[[INSTRUCTION: ...]] block (with [src: ...] citations inside it), never ' +
+              '[[INSTRUCTION: ...]] block, never ' +
               'prewritten prose. Hard prose is copied verbatim into the deliverable on build ' +
               'and can never be refreshed from the wiki. Move these lines inside an ' +
               '[[INSTRUCTION: ...]] block or move the fact to the wiki and cite it. ' +
+              'Citations are the build model\'s job, not the template author\'s: do not write ' +
+              '[src: ...] markers in a template — the instruction may say where facts should ' +
+              'be cited, and the build fills them in. ' +
               'Lines that only describe the template itself (footer notes, annex lists, ' +
               'glossaries) are hard content too: delete them — the template body must ' +
               'contain nothing but headings and instruction blocks.',

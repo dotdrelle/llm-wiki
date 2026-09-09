@@ -439,7 +439,7 @@ export class BuildService {
               focus,
               await this.searchContextCached(focus, {
                 limit: 15,
-                includeRaw: false,
+                includeRaw: true,
                 rerank: false,
                 intent: 'build',
               }),
@@ -455,7 +455,7 @@ export class BuildService {
           `${instruction.headingPath.join(' ')} ${instruction.instruction}`,
           {
             limit: Math.max(24, this.config.retrieval.vector.maxResults),
-            includeRaw: false,
+            includeRaw: true,
             rerank: false,
             intent: 'build',
           },
@@ -467,7 +467,7 @@ export class BuildService {
           instructionFocusQueries.slice(0, 6).map((focus) =>
             this.searchContextCached(`${instruction.headingPath.join(' ')} ${focus}`, {
               limit: 15,
-              includeRaw: false,
+              includeRaw: true,
               rerank: false,
               intent: 'build',
             }),

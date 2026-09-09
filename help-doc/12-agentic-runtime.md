@@ -44,10 +44,37 @@ Describe the analysis in your own words, in agent mode:
 - "Audit the concept coverage of the workspace."
 - "Check the wiki for contradictions between pages and their sources."
 - "Synthesize the sources about sovereignty, completing with the web if available."
+- "Look for duplicate, outdated or unsourced pages and propose corrections."
 
 You never name the engine or a capability. DONNA routes the request to the
-declared agentic capability (for example `agent.review`) from its aliases and
-description, and shows you the run in the Activity panel.
+declared agentic capability (for example `agent.review` or `agent.curate`)
+from its aliases and description, and shows you the run in the Activity panel.
+
+## Curation proposals: the merge is the approval
+
+`agent.curate` works with **confined hands**: for each objective it gets its
+own git branch (a copy of the wiki), reads the pages, and writes its
+corrections there. The wiki itself is never touched by the runtime.
+
+The run is a small collective: a **Scout** finds the material, an **Analyst**
+structures it, a **Critique** raises structured objections (duplicates,
+contradictions, unsourced claims — it never blocks), a **Redactor** writes the
+corrections on the branch, and an **Archivist** lists what is learned,
+obsolete or to re-verify. Each role's progress appears in the Activity panel.
+
+When the run finishes, the proposal waits in the **review queue**: a link with
+an amber badge appears in the left sidebar, opening the `/agent-proposals`
+page. Each proposal shows the agent's reasoning, the unresolved objections,
+the changed files and the full diff.
+
+- **Merge into the wiki** — applies the proposed pages through the normal
+  write path (they are recorded as verified and stable, per OKF), commits
+  them to the workspace history, and discards the branch.
+- **Reject & discard the branch** — nothing changes in the wiki.
+
+Nothing reaches your wiki unless you merge it. That is the approval: you read
+the diff and decide, instead of approving a generic intention before the
+analysis.
 
 ## Approval on the analysis
 
@@ -65,9 +92,9 @@ your approval, like any other mutation.
 ## What the runtime cannot do
 
 - It cannot modify the workspace directly — no ingestion, build or page edit
-  of its own.
+  of its own. Its only hands are the curation branches you review and merge.
 - It cannot bypass approval: sending a mail or writing a finding waits for
-  your `/approve`.
+  your `/approve`, and a curation branch changes nothing until you merge it.
 - It cannot take over a known operation: "sync" and "ingest" route to the
   production pipeline, not to the runtime.
 - If the runtime is unavailable, its capabilities simply disappear from

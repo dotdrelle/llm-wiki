@@ -144,6 +144,8 @@ export const WIKI_LAYOUT_CSS = `
       appearance: none;
       font-family: inherit;
     }
+    .side-action-review { position: relative; }
+    .side-action-badge { position: absolute; top: -6px; right: -6px; min-width: 15px; height: 15px; border-radius: 99px; background: #f59e0b; color: #fff; font-size: 9px; font-weight: 800; line-height: 15px; text-align: center; padding: 0 3px; }
     .side-action:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
     .side-action svg { width: 1.05rem; height: 1.05rem; stroke: currentColor; flex-shrink: 0; }
     .side-action span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -509,6 +511,8 @@ export const WIKI_LAYOUT_CSS = `
     .side-untracked-item.side-untracked-new .side-untracked-link::before { background: #22c55e; }
     .side-untracked-item.side-untracked-update .side-untracked-link { color: #6ea1ff; }
     .side-untracked-item.side-untracked-update .side-untracked-link::before { background: #4f7eff; }
+    .side-untracked-item.side-untracked-modified .side-untracked-link { color: #f5a623; }
+    .side-untracked-item.side-untracked-modified .side-untracked-link::before { background: #f59e0b; }
     .side-untracked-link.is-active { font-weight: 720; }
     .side-untracked-link.is-active::before { background: var(--accent); opacity: 1; }
     .side-untracked-link:hover::after {
@@ -603,12 +607,24 @@ export const WIKI_LAYOUT_CSS = `
     .ws-btn:hover:not(:disabled) { border-color: var(--accent); }
     .ws-btn:disabled { opacity: 0.45; cursor: default; }
     .content { min-width: 0; padding: 2rem clamp(1rem, 3vw, 3rem) 3rem; }
+    /* Sticky, like .edit-form .hero already is: the actions (Edit, Reformat,
+       Add to Donna, History) scrolled away on a long page, exactly where a
+       reader decides to act on what they just read. Same treatment on both
+       surfaces so viewing and editing do not behave differently. */
     .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 8;
       display: flex;
       align-items: center;
       gap: 1rem;
       justify-content: space-between;
       margin-bottom: 1.25rem;
+      padding: 0.55rem 0.75rem;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--panel) 94%, transparent);
+      -webkit-backdrop-filter: blur(8px);
+      backdrop-filter: blur(8px);
       color: var(--muted);
       font-size: 0.9rem;
     }
@@ -836,14 +852,21 @@ export const WIKI_LAYOUT_CSS = `
       font-size: 0.94rem;
       line-height: 1.6;
     }
-    .article h1, .article h2, .article h3, .article h4 { line-height: 1.25; letter-spacing: 0; font-family: var(--font-serif); }
+    .article h1, .article h2, .article h3, .article h4, .article h5, .article h6 { line-height: 1.25; letter-spacing: 0; font-family: var(--font-serif); }
     .article h1 { font-family: var(--font-display); font-weight: 600; letter-spacing: .005em; text-wrap: balance; }
     /* Explicit scale: the UA default is 2em/1.5em, which reads as an oversized
-       page title on a document body. */
+       page title on a document body.
+       One ratio (~1.22) all the way down. The previous values jumped 1.9 → 1.22
+       then crawled 1.22 → 1.05 → 0.95, so h2 read as a sub-heading of nothing
+       while h3 and h4 were indistinguishable. h5/h6 had no rule at all and fell
+       back to the UA's 0.83em/0.67em — BOLD TEXT SMALLER THAN THE BODY, which
+       is why deep sections looked broken rather than nested. */
     .article h1 { margin: 0 0 0.75rem; font-size: 1.9rem; }
-    .article h2 { margin: 1.5rem 0 0.55rem; font-size: 1.22rem; }
-    .article h3 { margin: 1.25rem 0 0.4rem; font-size: 1.05rem; }
-    .article h4 { margin: 1.05rem 0 0.35rem; font-size: 0.95rem; }
+    .article h2 { margin: 1.6rem 0 0.6rem; font-size: 1.56rem; }
+    .article h3 { margin: 1.35rem 0 0.45rem; font-size: 1.28rem; }
+    .article h4 { margin: 1.15rem 0 0.4rem; font-size: 1.1rem; }
+    .article h5 { margin: 1rem 0 0.35rem; font-size: 1rem; }
+    .article h6 { margin: 0.9rem 0 0.3rem; font-size: 0.95rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
     .article img { max-width: 100%; }
     .article, .article p, .article li, .article a, .article code {
       max-width: 100%;
@@ -1376,6 +1399,9 @@ export const WIKI_LAYOUT_CSS = `
     .doc-toc-item{font-size:.8rem;color:var(--muted);text-decoration:none;line-height:1.35;padding:.18rem .3rem;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .doc-toc-item:hover,.doc-toc-item.is-active{color:var(--accent);background:var(--accent-soft)}
     .doc-toc-h3{padding-left:1rem;font-size:.76rem}
+    .doc-toc-h4{padding-left:1.7rem;font-size:.72rem}
+    .doc-toc-h5{padding-left:2.3rem;font-size:.68rem}
+    .doc-toc-h6{padding-left:2.9rem;font-size:.65rem}
     @media(max-width:1280px){.doc-toc{display:none}}
     html.is-embedded:not(.sidebar-panel) .doc-toc{display:flex;right:.75rem;width:clamp(120px,22vw,200px)}
     /* ── Stabilize tags ───────────────────────────────────────── */

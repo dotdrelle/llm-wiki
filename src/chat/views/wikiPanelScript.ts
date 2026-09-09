@@ -78,6 +78,17 @@ function removePageContext(path) {
   pageContexts=pageContexts.filter(item=>item!==path);
   refreshPageContextChip();
 }
+// Attached documents are part of the conversation: saved with it and restored
+// on load, so a reload or a history switch does not silently drop what the
+// reader had attached.
+function resetPageContexts(paths) {
+  pageContexts=[];
+  (Array.isArray(paths)?paths:[]).slice(0,PAGE_CONTEXT_LIMIT).forEach(path=>{
+    const value=validPageContext(path);
+    if(value) pageContexts.push(value);
+  });
+  refreshPageContextChip();
+}
 // Both modes send the selection. The agent-mode gate here made the whole
 // feature a no-op on the branch that was built for it: the agent turn read
 // this helper, always got [], sent no context key at all, and Donna asked which
@@ -549,6 +560,10 @@ window.addEventListener('message', (event) => {
     if (typeof notify === 'function') {
       notify(already ? 'Document already in Donna\\'s context' : 'Document added to Donna\\'s context');
     }
+    // The reader asked to discuss this document: bring the chat alongside it
+    // (split mode, chat on the right) so the attached context chip is visible
+    // in the conversation it now belongs to.
+    if (!splitWikiEnabled()) toggleSplitWiki();
     event.source?.postMessage({ type: 'llmwiki:addContext:result', path: data.path, ok: true }, location.origin);
   } else if (data.type === 'llmwiki:buildTemplate') {
     // "Build" clicked on a template page in the central wiki frame. The launch
@@ -580,21 +595,24 @@ window.addEventListener('message', (event) => {
     sendMessage();
   } else if (data.type === 'llmwiki:reformat') {
     // "Reformat" clicked on an ingested wiki page. No slash-command skill for
-    // this: switch to agent mode and hand Donna a precise in-place instruction.
-    // Donna reads the page, rewrites it and calls wiki_write_page with a preview
-    // so the diff is approved before the real write.
+    // this: switch to agent mode and hand Donna a plain, conversational
+    // request in the session language — never a raw English instruction body,
+    // which read as an unreadable machine prompt in a French session.
     const pagePath = decodeWikiPath(data.path).replace(/^\\//, '');
     if (!/^wiki\\/(concepts|sources|answers)\\/.+\\.md$/.test(pagePath)) {
       if (typeof notify === 'function') notify('Cannot reformat: not an ingested wiki page');
       return;
     }
+    const contextPath = validPageContext(data.path);
+    if (contextPath) addPageContext(contextPath);
     showChatView();
     const input = $('chat-input');
     if (!input) return;
-    // A plain-prose instruction: force agent mode so Donna gets its write tools
-    // (chat mode is read-only), mirroring sendMessage's own skill-invocation path.
     if (!agentMode) { agentMode = true; updateAgentModeUI(); }
-    input.value = 'Reformat the ingested wiki page ' + pagePath + ' in place. Do not move, rename or re-file it, and keep its subject and concept folder unchanged. Read the current page, then: (1) rewrite the body as clean, standards-compliant Markdown — consistent heading levels, well-formed lists and tables, no stray HTML, tidy spacing — while preserving every fact and every section; (2) check every link and citation, fix the ones that are merely malformed, and add a short "Broken links" note listing any that cannot be resolved; (3) ensure the frontmatter carries a valid OKF type and the standard keys, adding what is missing. Write it back with wiki_write_page using a preview first and show me the diff for approval before the real write.';
+    const french = window.__WIKI_CONFIG__?.language === 'fr';
+    input.value = french
+      ? 'Reformate la page ' + pagePath + ' sur place, sans la déplacer ni la re-filer. Mets le corps en Markdown propre (niveaux de titres cohérents, listes et tableaux bien formés, espacements nets) en conservant tous les faits et toutes les sections ; répare les liens et citations mal formés et signale ceux impossibles à résoudre dans une note « Broken links » ; complète le frontmatter OKF (type, title et les clés manquantes) ; puis écris le résultat avec wiki_write_page en confirmant l\\'écriture (confirm=true).'
+      : 'Reformat the page ' + pagePath + ' in place, without moving or re-filing it. Rewrite the body as clean Markdown (consistent heading levels, well-formed lists and tables, tidy spacing) while preserving every fact and section; fix malformed links and citations and list the unresolvable ones under a "Broken links" note; complete the OKF frontmatter (type, title and any missing keys); then write the result back with wiki_write_page, confirming the write (confirm=true).';
     sendMessage();
   } else if (data.type === 'llmwiki:ingest') {
     // ⚡ "Ingest" clicked on the Pending panel of the wiki sidebar. The launch
@@ -607,6 +625,15 @@ window.addEventListener('message', (event) => {
     sendMessage();
   } else if (data.type === 'llmwiki:close') {
     // The embedded wiki page or graph asked to be closed from its own toolbar.
+    // A graph opened from a page must hand the centre BACK to that page on
+    // close — handing it to the chat used to lose the page the reader was
+    // just on, edits included.
+    if (data.from === 'graph') {
+      const last = sanitizeWikiPath(shellStore(SHELL_WIKI_PATH_KEY));
+      if (last && last !== '/') setCenterWiki(last);
+      else closeWikiPanel();
+      return;
+    }
     closeWikiPanel();
   } else if (data.type === 'llmwiki:palette') {
     // Ctrl/Cmd+K pressed inside an embedded wiki iframe.

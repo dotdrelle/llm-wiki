@@ -83,8 +83,13 @@ export async function handleTreeApi(
     || urlPath.startsWith('/api/untracked/');
   if (!isTree) return false;
 
+  const isCreate = urlPath === '/api/tree/create' && req.method === 'POST';
   const mutating = req.method === 'POST' || req.method === 'DELETE';
-  if (mutating && (await deps.isRunActive?.())) {
+  // Folder creation is judged after the body is read: an empty directory is
+  // inert — a run cannot be disturbed by it — and refusing it stopped a reader
+  // from preparing the deliverables tree mid-run for no reason a run cares
+  // about. File creation and move/delete stay refused.
+  if (mutating && !isCreate && (await deps.isRunActive?.())) {
     deps.sendJson(res, 409, { ok: false, error: 'a run is active — try again once it finishes' });
     return true;
   }
@@ -95,12 +100,16 @@ export async function handleTreeApi(
     return respond(res, deps, await moveEntry(deps.rootDir, body.from, body.to, { rewriteLinks: deps.rewriteLinks }));
   }
 
-  if (urlPath === '/api/tree/create' && req.method === 'POST') {
+  if (isCreate) {
     // Un drop de .md dans Pending envoie le contenu du fichier dans ce corps :
     // la limite est celle de createEntry (5 Mo) plus la marge du JSON.
     const body = await readBody(req, deps, 6 * 1024 * 1024);
     if (!body) return respond(res, deps, { ok: false, status: 400, error: 'invalid request' });
     const kind = body.kind === 'folder' ? 'folder' : 'file';
+    if (kind === 'file' && (await deps.isRunActive?.())) {
+      deps.sendJson(res, 409, { ok: false, error: 'a run is active — try again once it finishes' });
+      return true;
+    }
     return respond(res, deps, await createEntry(deps.rootDir, body.parent, body.name, kind, body.content));
   }
 

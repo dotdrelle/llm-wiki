@@ -367,7 +367,9 @@ export class IngestService {
      folder the model creates mid-run is visible to the next source.
     */
     const selectionStartedAt = Date.now();
-    const sourcePaths = await this.workspace.resolveSourceInputs(inputs);
+    const sourcePaths = options?.fromIngested
+      ? await this.workspace.resolveIngestedSourceInputs(inputs)
+      : await this.workspace.resolveSourceInputs(inputs);
     await this.logger.info('ingest:source-selection', {
       resolvedCount: sourcePaths.length,
       durationMs: Date.now() - selectionStartedAt,
@@ -412,7 +414,9 @@ export class IngestService {
 
       try {
         const readStartedAt = Date.now();
-        const source = await this.workspace.readSourceDocument(sourcePath);
+        const source = await this.workspace.readSourceDocument(sourcePath, {
+          ingested: options?.fromIngested === true,
+        });
         sourceLabel = source.relativePath;
         await this.logger.info('ingest:source', {
           source: source.relativePath,
@@ -430,7 +434,11 @@ export class IngestService {
           });
         }
 
-        if (!options?.force) {
+        // A rebuild from raw/ingested always re-consolidates: the point of
+        // the command is to regenerate the concept pages, so the
+        // unchanged-since-last-ingest skip must not fire on the very archive
+        // the comparison would read.
+        if (!options?.force && !options?.fromIngested) {
           const unchanged = await this.workspace.isSourceUnchangedSinceIngest(source);
           if (unchanged) {
             const vanished = await this.findVanishedProducedPages(source, previousRegistry);
@@ -1123,11 +1131,14 @@ export class IngestService {
           });
 
           const archiveStartedAt = Date.now();
-          await this.workspace.archiveSource(source);
+          if (!options?.fromIngested) {
+            await this.workspace.archiveSource(source);
+          }
           await this.logger.info('ingest:archive', {
             source: source.relativePath,
             archivePath: source.archiveCitationPath,
             durationMs: Date.now() - archiveStartedAt,
+            ...(options?.fromIngested ? { note: 'already archived (rebuild)' } : {}),
           });
 
           await this.workspace.appendLog(

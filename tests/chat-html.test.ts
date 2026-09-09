@@ -29,7 +29,7 @@ describe('chat html', () => {
     expect(matcher).toContain('sendText:text');
     expect(matcher).not.toContain('skill.body');
     expect(matcher).not.toContain('replaceAll');
-    expect(script).toContain("fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:text,mode:'agent'})})");
+    expect(script).toContain("body:JSON.stringify(skillRun?{input:text,mode:'agent'}:turnBody)");
   });
 
   it('accepts wiki-tree and Pending drops as page context, like "+ Context"', () => {
@@ -887,7 +887,8 @@ describe('chat html', () => {
     expect(script).toContain("fetch('/api/runtime/state',{cache:'no-store'})");
     expect(script).toContain("new EventSource('/api/runtime/events')");
     expect(script).toContain('if(runtimeFetchPending) return;');
-    expect(script).toContain("runningBeforeFetch&&!readOnlyChat?'/api/runtime/control':'/api/runtime/turn'");
+    expect(script).toContain("const doTurnFetch=()=>fetch('/api/runtime/turn'");
+    expect(script).toContain("body:JSON.stringify({action:'message',input:text})");
     expect(script).toContain("if(data?.kind!=='turn'&&reply)");
     expect(script).not.toContain('Runtime run accepted. Follow progress in Activity.');
     expect(script).not.toContain('Runtime request accepted. Follow progress in Activity.');
@@ -956,12 +957,17 @@ describe('chat html', () => {
     expect(script).not.toContain("const composerButton=$('composer-approve-btn');");
   });
 
-  it('sends agent-mode messages through the runtime control lane while a run is active', () => {
+  it('sends agent-mode messages through /turn so the runtime classifies them while a run is active', () => {
     const [script] = chatScripts();
 
     expect(script).not.toContain("notify('Runtime is already running.'");
-    expect(script).toContain("runningBeforeFetch&&!readOnlyChat?'/api/runtime/control':'/api/runtime/turn'");
-    expect(script).toContain("body:runningBeforeFetch&&!readOnlyChat?controlBody:JSON.stringify({input:text,...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})})");
+    // Posting /control directly while a run was active is what made the
+    // composer feel blocked: its 'converse' answer was a status line, never a
+    // reply. The runtime now receives every agent-mode message on /turn and
+    // classifies it there (control verbs and new tasks → control lane, plain
+    // conversation → read-only chat answer).
+    expect(script).toContain("const turnBody={input:text,...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})};");
+    expect(script).toContain("const doTurnFetch=()=>fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(skillRun?{input:text,mode:'agent'}:turnBody)});");
     expect(script).toContain("const readOnlyChat=mode==='chat'");
     // Selected wiki pages / converted uploads must reach the agent turn too,
     // not only the read-only chat turn.

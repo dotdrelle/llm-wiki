@@ -52,7 +52,10 @@ function folderPolicy(existingFolders: string[]): string[] {
       + ' "servers". Reuse the existing folder even when its number differs from the one'
       + ' you would have picked',
     '- open a NEW folder only when a subject fits NONE of the existing folders; name it a'
-      + ' short kebab-case common noun phrase',
+      + ' short kebab-case common noun phrase, IN THE OUTPUT LANGUAGE. The tags rule below'
+      + ' already says so for tags; folder names had no language rule at all and only'
+      + ' English examples, so they came out English in a French workspace while the tags'
+      + ' beside them were French',
     '- create a leaf only when this source gives that (concept, subject) pair at least two'
       + ' distinct things to say. A single passing mention stays in the source note',
     '- if a subject fits NO concept, file its leaf under the reserved folder'
@@ -61,8 +64,14 @@ function folderPolicy(existingFolders: string[]): string[] {
     '- a leaf that already exists is UPDATED at its existing path, never recreated under'
       + ' another name',
     '',
-    'Leaf content: a few lines saying what this source establishes about this subject under'
-      + ' this concept, then the citations. Not a copy of the source note.',
+    'Leaf content: what this source establishes about this subject under this concept,'
+      + ' with its citations. Not a copy of the source note.',
+    '- STRUCTURE it: short `##` headings grouping the claims by theme as soon as there are'
+      + ' more than three, and a one-line summary before them. A flat bullet list is what'
+      + ' "a few lines" used to produce, and it reads as a scrap rather than a page',
+    '- cover what the extracted facts actually contain for this pair. Being brief is not a'
+      + ' goal: a page that drops half of what was extracted is a worse page, not a'
+      + ' tighter one. Say each thing once, in the section where it belongs',
     '',
     'Also applies:',
     '- exactly one source note per document, at the given source note path',
@@ -112,7 +121,7 @@ function operationContract(): string[] {
       'Every operation must include an explicit "type" and a full path starting with "wiki/".',
       'For create and update operations, "content" is REQUIRED and must be the COMPLETE final file content.',
       'Delete operations must omit "content".',
-      'Every factual claim must carry the exact [src: ...] citation path from the user message, copied verbatim.',
+      'Cite each distinct source ONCE per section, on its own line at the end of that section, using the exact [src: ...] path from the user message copied verbatim. NOT on every claim: the export deduplicates a section\'s citations, so repeating the same path line after line changes nothing downstream while consuming the page — pages have been measured at 86% citation boilerplate and 14% knowledge. One occurrence per section is what provenance needs; the rest is padding.',
       'Never write a raw/ingested/ or raw/untracked/ path as bare text anywhere in the content — not even a header line naming the originating document ("Source: raw/...", "Origin: raw/..."). Every mention of that path, wherever it appears, MUST use the exact [src: <path>] form. A bare path is invisible to the citation machinery and never becomes a link.',
       'Never use placeholders such as "...", "(existing content)", or omission markers.',
       '',
@@ -130,6 +139,20 @@ function operationContract(): string[] {
   ];
 }
 
+
+// Bounded on purpose: the whole document would drown the facts it is meant to
+// illustrate, and consolidation is called once per source. The tail is dropped
+// rather than the head — a source document states its subject first.
+const SOURCE_EXCERPT_MAX_CHARS = 4000;
+
+function sourceExcerpt(body: string): string {
+  const text = String(body ?? '').trim();
+  if (!text) return '(empty document)';
+  return text.length > SOURCE_EXCERPT_MAX_CHARS
+    ? `${text.slice(0, SOURCE_EXCERPT_MAX_CHARS)}\n…[excerpt truncated]`
+    : text;
+}
+
 function buildConsolidationUser(args: {
   source: SourceDocument;
   extraction: SourceExtraction;
@@ -145,6 +168,16 @@ function buildConsolidationUser(args: {
       `[src: ...] citation path (exact — copy verbatim into every citation): ${args.source.archiveCitationPath}`,
       `Title: ${args.source.title}`,
       `Source note path: ${args.sourcePagePath}`,
+      '',
+      // Consolidation used to see ONLY the extracted facts, never the document.
+      // Fidelity was therefore capped by the extraction pass with no way to
+      // recover: a nuance it missed was lost for good, and measured end to end
+      // the chain kept about 9% of the source material. The excerpt is bounded
+      // and explicitly subordinate — the facts remain what must be covered; this
+      // is here so a leaf can be written with the document's own wording and
+      // detail rather than from a list of bare statements.
+      '## Source excerpt (context only — the extracted facts below are what must be covered)',
+      sourceExcerpt(args.source.body),
       '',
       '## Extracted facts',
       args.extraction.facts.length

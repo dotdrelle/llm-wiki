@@ -236,7 +236,10 @@ body:not(.execution-mode) #execution-view{display:none}
 .msg.assistant .msg-content{flex:1}
 .msg.user .msg-content{align-items:flex-end}
 .bubble{font-size:14px;line-height:1.72;word-break:break-word}
-.msg.user .bubble{width:max-content;max-width:min(30vw,460px);background:transparent;border:0;border-radius:0;padding:4px 0;white-space:pre-wrap;text-align:left}
+/* 65% of the exchange column, not 30vw: a pasted question wrapped after a
+   third of the width while the answer beside it used everything. width:max-content
+   keeps a short question short, so only long ones grow. */
+.msg.user .bubble{width:max-content;max-width:min(65%,900px);background:transparent;border:0;border-radius:0;padding:4px 0;white-space:pre-wrap;text-align:left}
 .msg.assistant .bubble{flex:1;min-width:0;padding:2px 0;white-space:normal}
 .msg-actions{display:flex;gap:6px;opacity:.45;transition:opacity .2s}
 .msg:hover .msg-actions{opacity:1}
@@ -244,6 +247,8 @@ body:not(.execution-mode) #execution-view{display:none}
 .msg-action svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .msg-action:hover{color:var(--accent)}
 .msg-action.done{color:#54d28b}
+.msg-action.busy{color:var(--accent);opacity:1;animation:msgActionPulse 1s ease-in-out infinite;pointer-events:none}
+@keyframes msgActionPulse{0%,100%{opacity:.4}50%{opacity:1}}
 .trace-card{width:min(820px,100%);background:var(--card-grad),var(--panel-soft);border:1px solid var(--border);border-radius:14px;padding:10px 12px;animation:fadeUp .25s ease}
 .trace-card.empty{display:none}
 .trace-head{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;user-select:none}

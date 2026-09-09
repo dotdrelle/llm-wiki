@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { AppConfig } from '../types.ts';
 import { LLMService } from '../services/llmService.ts';
 import { RetrievalService } from '../services/retrievalService.ts';
@@ -62,8 +63,33 @@ export default async function exportCmd(
       }
     }
 
+    // Both candidates are FLAT. A deliverable built into deliverables/technical/
+    // is therefore invisible to its own name, and the caller — Donna included,
+    // since the listing shows bare names — either got "not found" or, when a
+    // stray file of that name sat at the root, exported THAT one and wrote the
+    // result beside it instead of next to the build.
     if (!absoluteInput) {
-      throw new Error(`Deliverable not found: ${input}`);
+      const deliverables = await workspace.listDeliverablePaths();
+      const wanted = path.basename(input);
+      const matches = deliverables.filter((file) => path.basename(file) === wanted);
+      if (matches.length === 1) absoluteInput = matches[0];
+      else if (matches.length > 1) {
+        throw new Error(
+          `Several deliverables are named ${wanted}: ${matches
+            .map((file) => relativeFrom(workspace.paths.rootDir, file))
+            .join(', ')}. Pass the full path.`,
+        );
+      }
+    }
+
+    if (!absoluteInput) {
+      const available = (await workspace.listDeliverablePaths())
+        .map((file) => relativeFrom(workspace.paths.rootDir, file));
+      throw new Error(
+        available.length
+          ? `Deliverable not found: ${input}. Available: ${available.join(', ')}.`
+          : `Deliverable not found: ${input}, and this workspace has none yet.`,
+      );
     }
 
     const relativeInput = relativeFrom(workspace.paths.rootDir, absoluteInput);

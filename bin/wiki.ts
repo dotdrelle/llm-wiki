@@ -205,6 +205,10 @@ async function main() {
     )
     .option('--refresh', 'Run deliverable rebuild after ingest')
     .option('--force', 'Re-ingest even if the source is unchanged since last ingest')
+    .option(
+      '--from-ingested',
+      'Rebuild concept pages from the archived raw/ingested sources instead of raw/untracked. No file is moved or archived again; [files...] match against raw/ingested when given.',
+    )
     .option('--reject <path...>', 'Reject planned wiki operation path(s) during review')
     .option('-v, --verbose', 'Print ingestion step traces')
     .option('--debug', 'Print detailed ingestion traces')

@@ -535,14 +535,64 @@ export class WorkspaceService {
     return resolved;
   }
 
-  async readSourceDocument(sourcePath: string): Promise<SourceDocument> {
+  async listIngestedSourcePaths(): Promise<string[]> {
+    const files = await fg('**/*.md', {
+      cwd: this.paths.rawIngestedDir,
+      absolute: true,
+    });
+    return files.sort();
+  }
+
+  async resolveIngestedSourceInputs(inputs: string[]): Promise<string[]> {
+    const ingested = await this.listIngestedSourcePaths();
+    if (inputs.length === 0) return ingested;
+    const resolved: string[] = [];
+    for (const input of inputs) {
+      const candidates = [
+        resolveInside(this.paths.rootDir, input),
+        resolveInside(this.paths.rawIngestedDir, input),
+      ];
+      const found = await Promise.all(
+        candidates.map(async (candidate) => ({
+          candidate,
+          exists: await pathExists(candidate),
+        })),
+      );
+      const match = found.find((entry) => entry.exists);
+      if (!match) {
+        throw new Error(`Ingested source not found: ${input}`);
+      }
+      const relativeToIngested = path.relative(this.paths.rawIngestedDir, match.candidate);
+      if (
+        relativeToIngested.startsWith('..') ||
+        path.isAbsolute(relativeToIngested) ||
+        !match.candidate.endsWith('.md')
+      ) {
+        throw new Error(
+          `Source must live under raw/ingested and end with .md: ${input}`,
+        );
+      }
+      resolved.push(match.candidate);
+    }
+    return resolved;
+  }
+
+  async readSourceDocument(
+    sourcePath: string,
+    options?: { ingested?: boolean },
+  ): Promise<SourceDocument> {
     const absolutePath = path.resolve(sourcePath);
     const buffer = await readFile(absolutePath);
     const { text: rawContent, encoding: detectedEncoding } = decodeBuffer(buffer);
     const parsed = matter(rawContent);
     const relativePath = relativeFrom(this.paths.rootDir, absolutePath);
-    const relativeToUntracked = relativeFrom(this.paths.rawUntrackedDir, absolutePath);
-    const archiveRelativePath = `raw/ingested/${slugifyPath(relativeToUntracked)}`;
+    // The archive identity of a rebuild input (raw/ingested/...) is the
+    // archived file itself — re-deriving it through the untracked folder
+    // would mint a sibling "ingested-…" path and every citation would point
+    // at a file that does not exist.
+    const archiveRelativePath = options?.ingested
+      ? `raw/ingested/${slugifyPath(relativeFrom(this.paths.rawIngestedDir, absolutePath))}`
+      : `raw/ingested/${slugifyPath(relativeFrom(this.paths.rawUntrackedDir, absolutePath))}`;
     const fileName = path.basename(absolutePath);
     const title =
       typeof parsed.data.title === 'string' && parsed.data.title.trim()

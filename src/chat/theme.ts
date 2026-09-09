@@ -56,8 +56,12 @@ const GLASS_LIGHT = `
     radial-gradient(760px 480px at 6% 108%, rgba(90, 150, 210, .22), transparent 62%),
     linear-gradient(rgba(20, 80, 130, .045) 1px, transparent 1px),
     linear-gradient(90deg, rgba(20, 80, 130, .045) 1px, transparent 1px);
-  --panel: rgba(255, 255, 255, .66);
-  --panel-soft: rgba(255, 255, 255, .5);
+  /* Frosted, not see-through: at .66/.5 the animated gradient behind these
+     surfaces showed through every panel, popup and modal and made their text
+     hard to read. The blur stays; the ground under it is now opaque enough to
+     carry text. */
+  --panel: rgba(255, 255, 255, .9);
+  --panel-soft: rgba(255, 255, 255, .82);
   --panel-solid: #f7f9fc;
   --text: #12202e;
   --muted: #5b6d82;
@@ -80,8 +84,8 @@ const GLASS_DARK = `
     radial-gradient(800px 500px at 8% 110%, rgba(20, 70, 120, .25), transparent 60%),
     linear-gradient(rgba(120, 190, 230, .035) 1px, transparent 1px),
     linear-gradient(90deg, rgba(120, 190, 230, .035) 1px, transparent 1px);
-  --panel: rgba(14, 22, 36, .62);
-  --panel-soft: rgba(20, 32, 50, .55);
+  --panel: rgba(14, 22, 36, .9);
+  --panel-soft: rgba(20, 32, 50, .82);
   --panel-solid: #0e1624;
   --text: #e6eef7;
   --muted: #8fa3b8;

@@ -107,7 +107,11 @@ export default async function ingestCmd(
     spinner?.stop();
 
     if (results.length === 0) {
-      console.log('No markdown source found in raw/untracked.');
+      console.log(
+        options.fromIngested
+          ? 'No markdown source found in raw/ingested.'
+          : 'No markdown source found in raw/untracked.',
+      );
       return;
     }
 

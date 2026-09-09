@@ -69,10 +69,24 @@ export function okfTypeForPath(
  * Adds reserved OKF keys to a file's frontmatter, **additively**: a key already
  * present — including a `type` written by hand — is never overwritten, and the
  * body is never touched. Returns the content unchanged when nothing is added.
+ *
+ * OKF v0.2 keys beyond v0.1's `type`/`title`/`timestamp`:
+ * - `generated` — who produced the page and when (written at ingest);
+ * - `verified` — the human decisions that reviewed it (written at merge);
+ * - `status` — draft | stable | deprecated (draft at ingest, stable at merge).
+ * `timestamp` stays a tolerated legacy key; the v0.2 migration of existing
+ * pages is a separate manual catch-up phase, never a mass write during a run.
  */
 export function applyOkfFrontmatter(
   content: string,
-  options: { type?: string; title?: string; timestamp?: string },
+  options: {
+    type?: string;
+    title?: string;
+    timestamp?: string;
+    generated?: { by: string; at: string };
+    verified?: Array<{ by: string; at: string }>;
+    status?: string;
+  },
 ): string {
   const parsed = matter(content);
   const data: Record<string, unknown> = { ...parsed.data };
@@ -87,6 +101,21 @@ export function applyOkfFrontmatter(
   }
   if (options.timestamp != null && data.timestamp == null) {
     data.timestamp = options.timestamp;
+    changed = true;
+  }
+  if (options.generated != null && data.generated == null) {
+    data.generated = options.generated;
+    changed = true;
+  }
+  if (options.status != null && data.status == null) {
+    data.status = options.status;
+    changed = true;
+  }
+  if (Array.isArray(options.verified) && options.verified.length > 0) {
+    // A merge ADDS its decision to the existing ones; it never rewrites them.
+    const existing = Array.isArray(data.verified) ? data.verified : [];
+    const merged = [...existing, ...options.verified];
+    data.verified = merged;
     changed = true;
   }
   if (!changed) return content;

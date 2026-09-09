@@ -131,6 +131,15 @@ export function applyProvenance(content: string, provenance: PageProvenance, typ
 
   if (type != null && data.type == null) data.type = type;
 
+  // OKF v0.2 lifecycle, additive like everything else here: an ingested page
+  // is a draft produced by the engine; a human merge later writes `verified`
+  // and `status: stable` (see the agent-proposals review surface). A key set
+  // by hand always wins.
+  if (data.generated == null) {
+    data.generated = { by: 'llm-wiki', at: new Date().toISOString() };
+  }
+  if (data.status == null) data.status = 'draft';
+
   if (!Object.keys(data).length) return content;
   return matter.stringify(parsed.content, data);
 }

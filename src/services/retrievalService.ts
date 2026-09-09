@@ -368,7 +368,6 @@ export class RetrievalService {
       options?.intent === 'build' && this.config.retrieval.buildStrategy === 'bm25';
     if (
       !buildBm25Only &&
-      !options?.includeRaw &&
       this.config.retrieval.vector.enabled &&
       !this.vectorDisabledAfterError
     ) {

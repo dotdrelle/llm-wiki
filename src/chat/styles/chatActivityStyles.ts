@@ -183,8 +183,12 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 @media(max-width:900px){#activity-panel,#help-panel{position:fixed;top:0;right:40px;width:min(92vw,360px);min-width:0;height:100vh;margin-top:0;z-index:999;box-shadow:-4px 0 24px rgba(0,0,0,.18);transform:translateX(0);transition:transform .25s,width .25s}#activity-panel.closed,#help-panel.closed{width:min(92vw,360px);min-width:0;transform:translateX(calc(100% + 40px))}}
 @media (max-width: 720px){.msg.user .bubble{width:max-content;max-width:min(80vw,100%)}.trace-flow{align-items:stretch;flex-direction:column}.trace-link{width:1px;height:16px;margin-left:18px}.trace-link::after{right:-3px;top:auto;bottom:0;border-left:3.5px solid transparent;border-right:3.5px solid transparent;border-top:5px solid var(--border);border-bottom:0}.trace-tile{max-width:100%}.trace-detail-grid{grid-template-columns:1fr}}
 .bubble p{margin:0 0 .6em}.bubble p:last-child{margin:0}
-.bubble h1,.bubble h2,.bubble h3,.bubble h4{font-weight:700;margin:.8em 0 .3em;line-height:1.3}
-.bubble h1{font-size:1.15em}.bubble h2{font-size:1.05em}.bubble h3,.bubble h4{font-size:.95em}
+/* Same ladder as the wiki article, compressed for a chat bubble: h3 and h4 were
+   identical at .95em and h5/h6 had no rule, so a structured answer rendered as
+   one flat block of bold lines. */
+.bubble h1,.bubble h2,.bubble h3,.bubble h4,.bubble h5,.bubble h6{font-weight:700;margin:.8em 0 .3em;line-height:1.3}
+.bubble h1{font-size:1.3em}.bubble h2{font-size:1.16em}.bubble h3{font-size:1.06em}.bubble h4{font-size:1em}
+.bubble h5{font-size:.95em}.bubble h6{font-size:.9em;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
 .bubble ul,.bubble ol{padding-left:1.4em;margin:.3em 0 .6em}.bubble li{margin:.2em 0}
 .bubble code{font-family:var(--font-mono);font-size:.88em;background:var(--panel-deep);padding:1px 5px;border-radius:4px}
 .bubble,.bubble p,.bubble li,.bubble a,.bubble code{max-width:100%;overflow-wrap:anywhere;word-break:normal}

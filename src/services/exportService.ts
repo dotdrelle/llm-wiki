@@ -263,6 +263,43 @@ export async function expandDeliverable(
       });
     }
 
+    // Exact citations are the section's own evidence, and chunks were the
+    // reason a fully-documented concept page still produced "insufficient
+    // source documentation": retrieval caps at maxChunksPerPage × maxChunkChars,
+    // so half a concept page reached the model and it honestly reported the
+    // other half as missing. Read each cited file whole (bounded by
+    // maxSourceChars) and let it replace the chunk fragments of the same path.
+    const directReads: Array<{ path: string; content: string }> = [];
+    for (const cited of citedPaths) {
+      let sourceAbsolute: string;
+      try {
+        sourceAbsolute = resolveInside(workspace.paths.rootDir, cited);
+      } catch {
+        warnings.push(`source path escapes workspace: ${cited} (section "${sectionLabel}")`);
+        continue;
+      }
+      if (!(await pathExists(sourceAbsolute))) continue;
+      const raw = stripCitationMarkers(await workspace.readTextFile(sourceAbsolute));
+      directReads.push({
+        path: cited,
+        content:
+          raw.length > config.retrieval.maxSourceChars
+            ? `${raw.slice(0, config.retrieval.maxSourceChars)}\n...[source truncated]`
+            : raw,
+      });
+    }
+    if (directReads.length > 0) {
+      const directPaths = new Set(directReads.map((fragment) => fragment.path));
+      fragments = [
+        ...directReads,
+        ...fragments.filter((fragment) => !directPaths.has(fragment.path)),
+      ].slice(0, Math.max(config.retrieval.maxContextFiles, directReads.length));
+      await logger.info('export:direct-sources', {
+        section: sectionLabel,
+        sources: directReads.map((fragment) => fragment.path),
+      });
+    }
+
     if (fragments.length === 0) {
       // Fallback: no indexed content for the cited sources — inject the raw
       // files directly (bounded), as the legacy export did.

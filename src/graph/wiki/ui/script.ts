@@ -152,7 +152,7 @@ if(window.parent&&window.parent!==window){
   const graphClose=document.querySelector('#graph-shell-close');
   if(graphClose){
     graphClose.hidden=false;
-    graphClose.addEventListener('click',()=>{try{window.parent.postMessage({type:'llmwiki:close'},location.origin)}catch(error){}});
+    graphClose.addEventListener('click',()=>{try{window.parent.postMessage({type:'llmwiki:close',from:'graph'},location.origin)}catch(error){}});
   }
 }
 load()

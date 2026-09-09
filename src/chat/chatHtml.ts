@@ -456,6 +456,19 @@ function connectRuntimePanel() {
     },200);
   });
   events.onerror=()=>{runtimeConnected=false;renderActivities();updateAgentModeUI();};
+  // Self-healing merge: the conversation text is rendered from /state, not
+  // from the SSE payloads. When the stream dies silently (and EventSource's
+  // reconnect takes a while), a pending answer would otherwise never appear
+  // in this tab while the ShellUI already shows it. Poll gently as long as an
+  // answer is awaited.
+  setInterval(()=>{
+    if(pendingRuntimeStatusEls.length>0 && !runtimeFetchPending) {
+      runtimeFetchPending=true;
+      fetchRuntimeState()
+        .catch(()=>{runtimeConnected=false;renderActivities();})
+        .finally(()=>{runtimeFetchPending=false;});
+    }
+  },2500);
 }
 
 function updateMsgBubble(el,role,content) {
@@ -1133,6 +1146,7 @@ function buildConversationPayload(snapshot={}) {
     systemPrompt: snapshot.systemPrompt ?? currentSystemPrompt(),
     mcpServers: snapshot.mcpServers ?? activeServerSnapshot(),
     messages: sourceMessages,
+    pageContexts: typeof activePageContexts==='function' ? activePageContexts() : [],
     traceHtml: snapshot.traceHtml ?? [...document.querySelectorAll('.trace-card')].map(el=>el.outerHTML),
     messageHtml: snapshot.messageHtml ?? $('messages')?.innerHTML ?? '',
   };
@@ -1263,6 +1277,8 @@ async function loadConversation(id) {
     if(seq!==historyLoadSeq) return;
     currentConversationId=conv.id;
     messages=Array.isArray(conv.messages) ? conv.messages : [];
+    // Attached documents follow the conversation they were attached to.
+    if(typeof resetPageContexts==='function') resetPageContexts(conv.pageContexts);
     // Each conversation remembers the mode it was last used in, so a chat that
     // was in Agent mode stays Agent and a Chat one stays Chat across navigation.
     agentMode=conv.agentMode===true;
@@ -2727,17 +2743,16 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
   // The /state merge consumes this reference instead of appending a duplicate.
   pendingRuntimeUserRefs.push({message:userMessage,el:userEl});
   try {
-    const controlBody=JSON.stringify({action:'message',input:text});
-    // Read runtimeIsRunning() fresh before and after the request (not hoisted
-    // to one shared value): an SSE update can flip it while the fetch below
-    // is in flight, and the 409 fallback exists specifically to catch that.
-    const runningBeforeFetch=runtimeIsRunning();
     const readOnlyChat=mode==='chat';
     const skillRun=mode==='skill';
     const openWikiPages=activePageContexts();
-    const doTurnFetch=()=>skillRun
-      ? fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:text,mode:'agent'})})
-      : fetch(runningBeforeFetch&&!readOnlyChat?'/api/runtime/control':'/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:runningBeforeFetch&&!readOnlyChat?controlBody:JSON.stringify({input:text,...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})})});
+    // Always /turn: the runtime itself classifies agent-mode messages sent
+    // while a run is active (control verbs and new tasks go to the control
+    // lane, plain conversation is answered read-only). Posting /control
+    // directly is what made the composer feel blocked — its 'converse'
+    // answer was a status line, never a reply. Attachments go in every body.
+    const turnBody={input:text,...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})};
+    const doTurnFetch=()=>fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(skillRun?{input:text,mode:'agent'}:turnBody)});
     let res=await doTurnFetch();
     // Transient 503 (host runtime booting/restarting): wait, then replay once.
     if(res.status===503&&(notify('Runtime unavailable — waiting for it to come back…','i'),await waitForRuntimeReady(30000))) res=await doTurnFetch();
@@ -2745,7 +2760,7 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
       res=await fetch('/api/runtime/control',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body:controlBody,
+        body:JSON.stringify({action:'message',input:text}),
       });
     }
     let data={};
