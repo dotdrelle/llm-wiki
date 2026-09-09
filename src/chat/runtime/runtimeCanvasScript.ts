@@ -12,7 +12,7 @@ function runtimeStatusColor(status){return{running:'#4f7eff',done:'#22c55e',comp
 function runtimeIsPending(status){return status==='pending'||status==='queued'||status==='waiting'}
 // Stable z-order per node type: run hub at the back, phases above it, details
 // on top. Lower value draws first.
-function runtimeNodeDepth(node){return node.type==='run'?.9:node.type==='task_group'?1:node.type==='task_detail'?1.2:1.1}
+function runtimeNodeDepth(node){return node.type==='run'?.9:node.type==='task_group'?1:node.type==='task_detail'?1.2:node.type==='subagent'?1.15:1.1}
 /*
  Layered DAG layout, left → right.
 
@@ -25,7 +25,7 @@ function runtimeNodeDepth(node){return node.type==='run'?.9:node.type==='task_gr
 */
 function runtimeCanvasScene(){
   const projection=runtimeWorkflowGraphData(),nodes=projection.nodes,relations=projection.relations;
-  const isRun=node=>node.type==='run',isPhase=node=>node.type==='task_group',isDetail=node=>node.type==='task_detail';
+  const isRun=node=>node.type==='run',isPhase=node=>node.type==='task_group',isDetail=node=>node.type==='task_detail',isSub=node=>node.type==='subagent';
   // phase -> its prerequisites, over depends_on only.
   const deps=new Map();
   relations.forEach(rel=>{if(rel.type==='depends_on'){if(!deps.has(rel.from))deps.set(rel.from,new Set());deps.get(rel.from).add(rel.to)}});
@@ -56,6 +56,9 @@ function runtimeCanvasScene(){
   // Expanded task details: one dedicated column on the far right. Their
   // contains/depends_on edges carry the membership back to the phase.
   nodes.filter(isDetail).forEach(node=>colOf.set(node.id,column));
+  // The collective's subagents share that fringe column: they hang off the
+  // run node by their contains edges, sequenced vertically with the details.
+  nodes.filter(isSub).forEach(node=>colOf.set(node.id,column));
   const maxCol=Math.max(0,...[...colOf.values()]);
   const byCol=new Map();
   nodes.forEach(node=>{const c=colOf.get(node.id)??(maxCol+1);if(!byCol.has(c))byCol.set(c,[]);byCol.get(c).push(node)});

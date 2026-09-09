@@ -1068,7 +1068,8 @@ describe('ingest service', () => {
         {
           type: 'create',
           path: 'wiki/sources/note.md',
-          content: '# Note\n\n[src: raw/ingested/note.md]\n',
+          content:
+            '---\nsources:\n  - path: raw/ingested/note.md\n---\n# Note\n\n[src: raw/ingested/note.md]\n',
         },
       ],
     ]);

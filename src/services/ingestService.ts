@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
+import { applyOkfFrontmatter } from '../okf/frontmatter.ts';
 import { buildConsolidationPrompt, buildConsolidationRetryUser, CONSOLIDATION_PROMPT_VERSION } from '../prompts/consolidationPrompt.ts';
 import { buildExtractionPrompt, EXTRACTION_PROMPT_VERSION } from '../prompts/extractionPrompt.ts';
 import { buildPromptContext } from '../prompts/systemPreamble.ts';
@@ -1118,7 +1119,21 @@ export class IngestService {
             { create: 0, update: 0, delete: 0 },
           );
           const applyStartedAt = Date.now();
-          await this.workspace.applyNormalizedWikiOperations(applyOperations);
+          // OKF v0.2 provenance: every leaf this source produces records its
+          // raw source in the frontmatter `sources` list — the structured
+          // complement of the body's [src: ...] citations, accumulated
+          // additively across ingests (a source cited twice is listed once).
+          const stampedOperations = applyOperations.map((operation) =>
+            operation.type === 'delete'
+              ? operation
+              : {
+                  ...operation,
+                  content: applyOkfFrontmatter(operation.content ?? '', {
+                    sources: [{ path: source.archiveCitationPath }],
+                  }),
+                },
+          );
+          await this.workspace.applyNormalizedWikiOperations(stampedOperations);
           this.retrieval.invalidateCache();
           await this.logger.info('ingest:apply', {
             source: source.relativePath,
@@ -1319,7 +1334,24 @@ export class IngestService {
             { create: 0, update: 0, delete: 0 },
           );
           const applyStartedAt = Date.now();
-          await this.workspace.applyNormalizedWikiOperations(applyOperations);
+          // Same OKF v0.2 provenance as the live ingest path: the planned
+          // apply stamps the source's archive path into each leaf's
+          // `sources` list. The archive path comes from the source document
+          // itself (still on disk at apply time — archiving happens after).
+          const plannedSource = await this.workspace.readSourceDocument(
+            path.resolve(this.workspace.paths.rootDir, planned.source),
+          );
+          const stampedOperations = applyOperations.map((operation) =>
+            operation.type === 'delete'
+              ? operation
+              : {
+                  ...operation,
+                  content: applyOkfFrontmatter(operation.content ?? '', {
+                    sources: [{ path: plannedSource.archiveCitationPath }],
+                  }),
+                },
+          );
+          await this.workspace.applyNormalizedWikiOperations(stampedOperations);
           this.retrieval.invalidateCache();
           await this.logger.info('ingest:apply', {
             source: planned.source,

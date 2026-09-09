@@ -86,6 +86,7 @@ export function applyOkfFrontmatter(
     generated?: { by: string; at: string };
     verified?: Array<{ by: string; at: string }>;
     status?: string;
+    sources?: Array<{ path: string }>;
   },
 ): string {
   const parsed = matter(content);
@@ -116,6 +117,20 @@ export function applyOkfFrontmatter(
     const existing = Array.isArray(data.verified) ? data.verified : [];
     const merged = [...existing, ...options.verified];
     data.verified = merged;
+    changed = true;
+  }
+  if (Array.isArray(options.sources) && options.sources.length > 0) {
+    // The raw sources that produced this page, accumulated across ingests —
+    // a source cited twice is listed once.
+    const existing = Array.isArray(data.sources) ? data.sources : [];
+    const knownPaths = new Set(existing.map((entry) => String(entry?.path ?? '')));
+    const merged = [...existing, ...options.sources.filter((entry) => {
+      const pathValue = String(entry?.path ?? '');
+      if (!pathValue || knownPaths.has(pathValue)) return false;
+      knownPaths.add(pathValue);
+      return true;
+    })];
+    data.sources = merged;
     changed = true;
   }
   if (!changed) return content;

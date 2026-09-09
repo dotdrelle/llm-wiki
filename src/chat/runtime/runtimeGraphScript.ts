@@ -194,10 +194,22 @@ function runtimeWorkflowGraphData() {
       }
     }
   }
+  // The external runtime's collective: each named subagent is a child node of
+  // the run, so the Canvas shows the run's internal timeline — the roles the
+  // gateway ran, with their status, instead of burying them in log lines.
+  const subagentNodes=workflowNodes.filter(node=>node.type==='subagent').map(node=>({
+    ...node,
+    id:String(node.id),
+    type:'subagent',
+    label:String(node.label||node.subagent||'subagent'),
+    status:String(node.status||'pending'),
+  }));
+  if(runNode) subagentNodes.forEach(node=>relations.push({id:'run-subagent:'+node.id,type:'contains',from:String(runNode.id),to:node.id}));
   const nodes=[
     ...(runNode?[{...runNode,id:String(runNode.id),type:'run',label:String(runNode.label||'Runtime run'),agents:[...new Set(phases.flatMap(phase=>phase.agents))],usage:workflow.usage||{},phaseCount:phases.length,taskCount:taskNodes.length}]:[]),
     ...phases,
     ...expandedTasks,
+    ...subagentNodes,
   ];
   if(runNode) phases.filter(phase=>!relations.some(rel=>rel.from===phase.id)).forEach(phase=>relations.push({id:'run-phase:'+phase.id,type:'starts',from:phase.id,to:String(runNode.id)}));
   const nodeIds=new Set(nodes.map(node=>node.id));
@@ -256,11 +268,14 @@ function renderRuntimeWorkflowInspector() {
   };
   const phase=node.type==='task_group';
   const run=node.type==='run';
+  const subagent=node.type==='subagent';
   const details=phase
     ? [['Status',node.status],['Tasks',node.done+' / '+node.total],['Agents',node.agents?.join(', ')||'Not reported'],['Parallelism',(node.currentParallel||0)+' active / max ×'+node.parallelism],['Tokens',formatRuntimeTokens(node.usage)]]
-    : [['Status',node.status],['Phases',node.phaseCount||0],['Tasks',node.taskCount||0],['Agents',node.agents?.length||0],
-      ...(Number.isFinite(Number(runtimeState?.concurrency?.limit))?[['Parallelism','max ×'+Number(runtimeState.concurrency.limit)+(runtimeState.concurrency.cappedByCeiling?' (ceiling)':'')]]:[]),
-      ['Tokens',formatRuntimeTokens(node.usage)]];
+    : subagent
+      ? [['Status',node.status],['Started',node.startedAt?new Date(Number(node.startedAt)).toLocaleTimeString():'—'],['Finished',node.finishedAt?new Date(Number(node.finishedAt)).toLocaleTimeString():'—']]
+      : [['Status',node.status],['Phases',node.phaseCount||0],['Tasks',node.taskCount||0],['Agents',node.agents?.length||0],
+        ...(Number.isFinite(Number(runtimeState?.concurrency?.limit))?[['Parallelism','max ×'+Number(runtimeState.concurrency.limit)+(runtimeState.concurrency.cappedByCeiling?' (ceiling)':'')]]:[]),
+        ['Tokens',formatRuntimeTokens(node.usage)]];
   // Per-task rows ordered by start time (temporal flow), each with wall-clock
   // duration and tokens in/out — sourced from the workflow projection
   // (usage.byTask + timingByTask), the same numbers as the phase aggregate.
@@ -289,7 +304,7 @@ function renderRuntimeWorkflowInspector() {
     const agent=selectedTask.task.executor||selectedTask.task.raw?.executor||'—';
     return \`<div class="runtime-inspector-section runtime-task-flow"><div class="runtime-inspector-heading">Execution sequence · task \${selectedTaskIndex+1}/\${taskRows.length}</div><div class="rit-flow-line previous"><span>Previous</span><b>\${esc(previous?.task.label||'Start')}</b></div><div class="rit-flow-line current"><span>Selected</span><b>\${esc(selectedTask.task.label)}</b></div><div class="rit-flow-line next"><span>Next</span><b>\${esc(next?.task.label||'End')}</b></div><dl class="runtime-inspector-dl"><dt>Status</dt><dd>\${esc(selectedTask.task.status||'—')}</dd><dt>Started</dt><dd>\${esc(started)}</dd><dt>Duration</dt><dd>\${esc(duration)}</dd><dt>Agent</dt><dd>\${esc(agent)}</dd><dt>Tokens</dt><dd>\${esc(tokens)}</dd></dl></div>\`;
   })():'';
-  const html=\`<div class="runtime-inspector-title">\${esc(node.label)}</div><div class="runtime-inspector-meta">\${phase?'phase':run?'run':esc(node.type)} · \${esc(node.status||'-')}</div><dl class="runtime-inspector-dl">\${details.map(([key,value])=>\`<dt>\${esc(key)}</dt><dd>\${esc(value)}</dd>\`).join('')}</dl>\${linked.length?\`<div class="runtime-inspector-section"><div class="runtime-inspector-heading">Sequence</div>\${linked.map(relationLine).join('')}</div>\`:''}\${taskList}\${taskFlow}<div class="runtime-inspector-section"><div class="runtime-inspector-heading">Run journal</div>\${essentialRuntimeLogHTML()}</div>\`;
+  const html=\`<div class="runtime-inspector-title">\${esc(node.label)}</div><div class="runtime-inspector-meta">\${phase?'phase':run?'run':subagent?'subagent':esc(node.type)} · \${esc(node.status||'-')}</div><dl class="runtime-inspector-dl">\${details.map(([key,value])=>\`<dt>\${esc(key)}</dt><dd>\${esc(value)}</dd>\`).join('')}</dl>\${linked.length?\`<div class="runtime-inspector-section"><div class="runtime-inspector-heading">Sequence</div>\${linked.map(relationLine).join('')}</div>\`:''}\${taskList}\${taskFlow}<div class="runtime-inspector-section"><div class="runtime-inspector-heading">Run journal</div>\${essentialRuntimeLogHTML()}</div>\`;
   // Same reason as for the frame: the inspector is rebuilt on every frame,
   // which reset the journal's scrolling during a run.
   if(inspector.__inspectorHTML===html) return;
