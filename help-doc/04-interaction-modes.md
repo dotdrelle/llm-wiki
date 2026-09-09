@@ -50,10 +50,15 @@ A few guarantees specific to agent mode:
   limited number of times per run (`/approve` command).
 - **Idempotence**: re-running does not duplicate work already done.
 - **Recovery**: an interrupted job is re-attached at restart.
+- **Curation is reviewed, not approved blind**: `agent.curate` works on a
+  branch and you merge or reject its diff afterwards — see
+  `12-agentic-runtime.md`.
 
 Agent mode relies on an execution component (the *runtime*). If it is
 unavailable, the agent is temporarily cut off — but chat remains usable (see
-`06-troubleshooting.md`).
+`06-troubleshooting.md`). While a run is active, conversation stays open: a
+plain question is answered right away (read-only), a new task is queued to run
+after the current one — the composer never locks up.
 
 ## How to express yourself
 

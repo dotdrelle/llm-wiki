@@ -69,6 +69,14 @@ lower the concurrency selected from the agent contract; leaving it unset lets
 the agent and plan limits decide. `WIKI_MANAGER_SCHEDULER_CONCURRENCY` controls
 the manager worker capacity.
 
+The agentic gateway's own ceilings live in the same manager environment (all
+optional, defaults in parentheses): `GATEWAY_RECURSION_LIMIT` (40) reasoning
+steps, `GATEWAY_TOKEN_BUDGET` (500 000) estimated tokens, and — for curation
+hands — `GATEWAY_WORKTREE_MAX_FILES` (40) / `GATEWAY_WORKTREE_MAX_DIFF_CHARS`
+(300 000): beyond them a curation run fails loudly and discards its branch
+instead of queueing a diff nobody can read, and `GATEWAY_WORKTREE_MAX_AGE_MS`
+(7 days) prunes abandoned review branches at startup.
+
 `/status` (Shell or Serve) shows the resolved runtime values. Distinguishing a
 performance setting from a disconnected agent or connector needs the
 infrastructure-level view — the Shell's `/services` and `/mcp status`

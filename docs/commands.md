@@ -55,7 +55,16 @@ wiki ingest --no-refresh
 wiki ingest --verbose
 wiki ingest --debug
 wiki ingest --trace-file .wiki/logs/ingest-manual.log
+wiki ingest --force
+wiki ingest --from-ingested [files...]
 ```
+
+`--from-ingested` rebuilds the concept pages from the ARCHIVED sources
+(`raw/ingested/`) instead of the inbox: the archive identity is preserved
+(citations keep pointing at the real archive paths), nothing is moved or
+archived again, and the unchanged-since-last-ingest skip is bypassed on
+purpose — it is the re-consolidation command, and `[files...]` match against
+`raw/ingested/` when given.
 
 By default, `wiki ingest` also runs `wiki refresh` so stale deliverables get regenerated. If the follow-up build fails, the wiki updates remain applied and the CLI tells you to rerun `wiki refresh` later.
 
@@ -147,7 +156,13 @@ wiki export project-brief.md --polish
 # → deliverables/project-brief.export.polished.md  (with --polish on the .export)
 ```
 
-The LLM expands each section from the cited sources without inventing facts. If sources lack detail for a section, it keeps the original text and appends an insufficient-source note.
+The LLM expands each section from the cited sources without inventing facts.
+Each cited source is read WHOLE (bounded by `retrieval.maxSourceChars`) and
+replaces its chunk fragments; the insufficient-source note only appears when
+the evidence genuinely lacks the detail. A bare deliverable name is resolved
+across the `deliverables/` sub-directories (an unambiguous basename wins, an
+ambiguous one lists the candidates), and the export is written **next to its
+deliverable** in the same tree.
 
 ## `wiki history`, `wiki restore`, and `wiki release`
 
@@ -249,6 +264,13 @@ docker compose --profile cli run --rm wiki doctor
 ```
 
 By default, `doctor` prints suggested `.wikirc.yaml` changes only. Use `--apply` to write the suggested values directly.
+
+`doctor` also owns the OKF checks: pages missing their `type`, and pages
+pending the **v0.2 migration** (`timestamp` → `generated`, a trailing
+`## Citations` section → the frontmatter `sources` list, missing `status` →
+`draft`). `--apply` writes both, idempotently, one line per file; a Citations
+section that is not the last section of the body is left in place and
+reported, never half-moved.
 
 ## `wiki mcp`
 

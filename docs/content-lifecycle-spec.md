@@ -277,7 +277,7 @@ fact, not the model's intention.
 | Step | Content | Risk |
 | --- | --- | --- |
 | **T32.1** | This document | — |
-| **T32.2** | Registry, **write-only**, fed by `ingest` | none: nothing reads it |
+| **T32.2** | Registry, fed by `ingest` — write-only at first; its first reader arrived with OKF v0.2: the ingest stamp reads `producedPages.length` as the page's `sources[].usage_count` | low |
 | **T32.3** | `wiki sync --manifest <file>`: compares, **reports** `missing` / `orphan`, does not write | none: read-only |
 | **T32.4** | Retraction plan from a confirmed `retracted`, subject to approval | moderate |
 | **T32.5** | Provenance per claim (§ 4.4) + marker lint | high: touches ingestion |

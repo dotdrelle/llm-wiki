@@ -47,11 +47,21 @@ The wiki is the set of durable knowledge pages. It is organized into:
 Pages are linked to one another by internal links, so you can navigate from one
 concept to the next.
 
+Every page also carries **OKF frontmatter**: its `type`, who generated it and
+when (`generated`), its lifecycle status (`status`: draft / stable) and the raw
+sources it was filed from (`sources`, with how many pages each source produced).
+A page merged from a curation proposal is recorded as **verified and stable**.
+`wiki doctor` reports the pages missing these keys and `--apply` writes them —
+idempotently, never overwriting a value you wrote by hand.
+
 ## 5. Search
 
 The wiki content is indexed for **semantic search**: you can find information by
 its meaning, not just by keyword. DONNA relies on this index to answer your
-questions about your domain.
+questions about your domain. The knowledge **graph** is queryable too: how
+pages cite their sources, which pages share a subject or a tag, and what path
+links two documents — DONNA uses it to explain relationships without reading
+every page.
 
 ## 6. Producing deliverables
 
@@ -80,6 +90,12 @@ concept; a subject that fits no concept yet waits under the reserved
 Filing a page by hand works too: move a page into a concept folder and it is
 re-filed for real — its axes are rewritten and every link pointing at it is
 repointed. A move is a filing decision, never a silent rename.
+
+A sync (Confluence) never overwrites local work: a pending file you deleted
+stays deleted, and one you modified is flagged **orange** in the Pending panel
+— keep it or delete it, the sync will not decide for you. To rebuild the
+concept pages from the archived sources without touching Confluence, run
+`wiki ingest --from-ingested` (see `07-commands-shell.md`).
 
 The full default chain is therefore: ingest, build, export, polish.
 

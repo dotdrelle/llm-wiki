@@ -95,7 +95,21 @@ Each case below gives the **symptom**, the **cause** and the **fix**.
 - **Cause**: waiting for an approval, or a long-running task.
 - **Fix**: open the **Activity** panel; `/run status` and `/queue` for the state;
   `/approve` if an approval is pending; `/cancel` (or `/run cancel`) to stop,
-  `/queue cancel <id>` for a specific job.
+  `/queue cancel <id>` for a specific job. In Serve, a long silence shows a
+  "no response after 120s" note in the Activity panel — the chat itself never
+  locks: plain questions are answered while a run is active, new tasks queue
+  behind it.
+
+## A curation run did not change anything
+
+- **Symptom**: you asked for corrections (`agent.curate`), the run finished,
+  but the wiki looks the same.
+- **Cause**: curation writes on a **branch**, never on the wiki — and it may
+  have refused itself when the diff was too large to review.
+- **Fix**: open the **Agent proposals** page (amber badge in the sidebar): each
+  finished proposal shows its diff, and the run's log explains a refusal.
+  **Merge into the wiki** to apply, **Reject** to discard. Nothing changes
+  without a merge.
 
 ## Did I create duplicates?
 

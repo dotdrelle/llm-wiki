@@ -14,14 +14,21 @@ Two transports are available:
 | Tool                         | Description                                                                                                                           |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `wiki_list_pages`            | List all pages under `wiki/` with their type                                                                                          |
-| `wiki_read_page`             | Read a page by relative path (e.g. `wiki/concepts/foo.md`)                                                                            |
-| `wiki_read_pages`            | Read multiple wiki pages by relative path in one call                                                                                 |
+| `wiki_read_page`             | Read a page by relative path (`wiki/`, `raw/ingested/`, `raw/untracked/`); the result ends with a sources comment naming every `[src: ...]` citation |
+| `wiki_read_pages`            | Read multiple pages by relative path in one call; each entry carries the page's `citations` and `links` structurally                  |
 | `wiki_write_page`            | Write or update a page — restricted to `wiki/*` paths                                                                                 |
 | `wiki_add_source`            | Stage Markdown content in the workspace ingestion inbox; writes directly unless `dryRun=true`                                         |
 | `wiki_list_ingested_sources` | List ingested source documents in `raw/ingested/`                                                                                     |
 | `wiki_read_ingested_source`  | Read an ingested source by relative path when raw source inspection is needed                                                         |
 | `wiki_search_context`        | Search wiki pages (excluding `wiki/answers/`) and return ranked paths, excerpts, and `relatedPaths`. Uses vector search when enabled. |
 | `wiki_collect_context`       | Search wiki pages, read up to 10 returned pages by default, and report coverage in one call                                           |
+| `wiki_graph_query`           | Query the knowledge graph: the neighbors of a page (citations, produces, wiki links, shared subject/tags), or the pages of a concept or tag |
+| `wiki_graph_path`            | Shortest path between two pages in the knowledge graph, with the edge type of every hop                                                   |
+| `wiki_outline`               | Structural map of the wiki: communities, sizes, most connected pages — no content                                                       |
+| `template_read`              | Read a template (listing carries frontmatter titles; a missing path falls back to a basename search)                                   |
+| `template_write`             | Write a template (instruction blocks only; explicit `build_context` required)                                                           |
+| `wiki_read_deliverable`      | Read a generated deliverable (listing carries frontmatter titles)                                                                       |
+| `profile_read` / `profile_update` | Read / update the workspace profile                                                                                                 |
 
 Write operations use workspace-owned path guards. `wiki_add_source` resolves its target from the configured `workspace.paths.rawUntrackedDir`, rejects traversal, and refuses replacement unless `overwrite=true`.
 
@@ -31,6 +38,13 @@ Write operations use workspace-owned path guards. `wiki_add_source` resolves its
 2. Inspect returned paths, scores, excerpts, and `[src: ...]` citations.
 3. Call `wiki_read_page` or `wiki_read_pages` for the pages you want to read in full.
 4. Produce the answer from that context.
+
+**Relationship questions (what connects A to B, what shares a subject):**
+
+1. Call `wiki_graph_query` (a node's neighbors, a concept or tag's pages) or
+   `wiki_graph_path` (the shortest path between two pages).
+2. Read only the pages the traversal named that matter for the answer — the
+   graph answers the topology, the reads answer the content.
 
 **Recommended search flow for synthesis, architecture, audit, functional analysis, or comparison:**
 

@@ -55,7 +55,10 @@ replaced; those in square brackets `[…]` are optional.
 - `/upload convert pending` — convert pending documents to Markdown.
 - `/uploads clean` — clean up uploaded documents.
 - `/wiki` — (re)generate the wiki index directly, bypassing the runtime.
-- `/wiki run <args>` — run the raw wiki CLI (advanced).
+- `/wiki run <args>` — run the raw wiki CLI (advanced). Useful raw examples:
+  `wiki ingest --from-ingested [files…]` (rebuild concept pages from the
+  archived sources), `wiki doctor --apply` (write the missing OKF keys and
+  migrate older pages to the v0.2 format).
 
 These are direct, synchronous CLI calls. The production skills go through the
 same orchestrated, approved path in both interfaces and are almost always the

@@ -35,9 +35,12 @@ Serve cannot start or stop containers, list workspaces or run the raw CLI.
   - **Wiki browser** — browse the pages produced. Its sidebar holds three views
     behind an icon rail — Wiki pages, Files (context / templates /
     deliverables) and Pending (the default) — and a page can be dragged from
-    the tree straight into the chat to add it to DONNA's context. In split
-    mode, the × on the document column closes it and hands the full width to
-    the chat.
+    the tree straight into the chat to add it to DONNA's context (the selection
+    is saved with the conversation). In split mode, the × on the document
+    column closes it and hands the full width to the chat.
+  - **Agent proposals** — the curation review queue: the diffs `agent.curate`
+    produced on its branches, with a **Merge** / **Reject** decision each (an
+    amber badge in the sidebar shows how many are waiting).
   - **Connectors** — the MCP servers DONNA can call.
 
 ### Adding a connector from Serve

@@ -39,6 +39,14 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
 - **Log** — the chronological journal of ingestions and updates.
 - **Semantic search** — search by meaning (not just keyword), backed by a vector
   index of the wiki.
+- **Knowledge graph** — the wiki's materialized adjacency: which pages cite
+  which sources, which pages share a subject or a tag. DONNA queries it with
+  the `wiki_graph_query` / `wiki_graph_path` tools.
+- **OKF (Open Knowledge Format)** — the page-metadata convention: `type`,
+  `generated` (who produced the page and when), `status` (draft / stable) and
+  `sources` (the raw sources the page was filed from). Written additively by
+  the engine, never overwriting a value you wrote by hand; `wiki doctor
+  --apply` fills the gaps and migrates older pages.
 
 ## Production
 
@@ -86,6 +94,10 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
   proposes — but never modifies the workspace itself: its side-effects go
   through approval, and its proposals enter the plan like any other job. See
   `12-agentic-runtime.md`.
+- **Curation (`agent.curate`)** — the agentic capability with confined hands:
+  a run writes corrections on its own branch and hands back a reviewable diff.
+  The **merge** (on the Agent proposals page) is the approval — nothing
+  reaches the wiki without it.
 - **Parallelism** — the number of independent tasks that may run at the same
   time, subject to agent limits, plan limits and resource locks.
 - **Collection concurrency** — the parallelism used when connectors collect

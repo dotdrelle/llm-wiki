@@ -23,7 +23,9 @@ specialized agents, each an expert in one area:
 
 - a **production** agent for wiki processing (diagnose, ingest, build, export…);
 - an **external sources** agent for exporting from Confluence;
-- a **documents** agent to convert files to Markdown before ingestion.
+- a **documents** agent to convert files to Markdown before ingestion;
+- an **agentic runtime** for open-ended analysis (audits, synthesis, research),
+  which can also propose **curation** edits on a branch you review and merge.
 
 Agents never talk to each other directly: everything flows back through DONNA,
 which decides, sequences and controls. You do not need to know or name them — you
@@ -43,12 +45,13 @@ act on.
 - **Capability-driven.** You describe *what* to do; DONNA determines *who* does
   it. No need to know the internal organization of agents.
 - **Confirmation before changes.** Mutating orchestration tasks require
-  approval by default. Explicitly configured unattended flows may opt into
+  approval by default. Curation edits are reviewed as a diff and the **merge**
+  is the approval. Explicitly configured unattended flows may opt into
   automatic approval.
 - **Protected retries.** Orchestrated mutations carry an idempotency key so a
   retry of the same task does not start duplicate work.
 - **Chat stays available during processing.** You can keep asking questions while
-  a job runs.
+  a job runs — plain questions are answered right away, new tasks queue.
 - **Recovery after interruption.** A job interrupted (restart, outage) is
   re-attached automatically at the next start.
 
