@@ -41,6 +41,16 @@ Detection is deterministic and costs nothing — none of it calls the LLM:
 The full default chain is: ingest, build, export, polish (see
 `03-content-lifecycle.md`).
 
+## Page metadata (OKF)
+
+Every page carries Open Knowledge Format frontmatter: `type`, and since 0.15.86
+`generated` (who produced it), `status` (draft / stable) and `sources` (the raw
+sources it was filed from). `wiki doctor` reports the pages missing those keys;
+`wiki doctor --apply` writes them — idempotently, one line per file. It also
+applies the format migration for older workspaces (`timestamp` becomes
+`generated`, a trailing `## Citations` section becomes the `sources` list).
+Run it after an upgrade; it never overwrites a value you wrote by hand.
+
 ## Automating it (headless)
 
 For a cron job or CI, run the headless manager. Two commands cover the whole

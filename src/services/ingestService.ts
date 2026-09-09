@@ -1123,13 +1123,20 @@ export class IngestService {
           // raw source in the frontmatter `sources` list — the structured
           // complement of the body's [src: ...] citations, accumulated
           // additively across ingests (a source cited twice is listed once).
+          // The usage_count is the registry's first reader: how many pages
+          // this source has produced so far (the previous run's count — this
+          // run's pages are appended to the registry AFTER the apply).
+          const registryRecord = previousRegistry?.sources?.find(
+            (record) => record.sourceId === sourceIdFromArchivePath(source.archiveCitationPath),
+          );
+          const usageCount = registryRecord?.producedPages?.length ?? 0;
           const stampedOperations = applyOperations.map((operation) =>
             operation.type === 'delete'
               ? operation
               : {
                   ...operation,
                   content: applyOkfFrontmatter(operation.content ?? '', {
-                    sources: [{ path: source.archiveCitationPath }],
+                    sources: [{ path: source.archiveCitationPath, usage_count: usageCount }],
                   }),
                 },
           );

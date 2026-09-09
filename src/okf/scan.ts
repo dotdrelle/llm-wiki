@@ -80,3 +80,132 @@ export async function applyMissingOkfTypes(
   }
   return { written, skipped };
 }
+
+// ── OKF v0.2 catch-up ────────────────────────────────────────────────────────
+//
+// The rupture the refonte report records, as a manual phase: `timestamp` →
+// `generated`, a trailing `## Citations` section → frontmatter `sources`, and
+// a missing `status` → `draft`. Deliberately NOT wired into ingest — a bulk
+// write would take the global `workspace-write` lock (PlanOKF.md, phase 3) —
+// and deliberately conservative: a Citations section that is NOT the last
+// section of the body is left in place and reported, never half-moved.
+
+const CITATIONS_HEADING = /^#{1,3}\s+Citations\s*$/im;
+const SRC_MARKER = /\[src:\s*([^\]]+)\]/g;
+
+/** What the v0.2 migration would change on one file, and why. */
+export type OkfV02Migration = { file: string; reasons: string[] };
+
+export function migrateOkfV02(content: string): { content: string; reasons: string[] } {
+  const parsed = matter(content);
+  const data: Record<string, unknown> = { ...parsed.data };
+  const reasons: string[] = [];
+
+  if (data.timestamp != null && data.generated == null) {
+    const raw = data.timestamp;
+    // gray-matter (js-yaml) parses an ISO timestamp into a Date instance;
+    // both shapes migrate to the same ISO string.
+    const at = raw instanceof Date && !Number.isNaN(raw.getTime())
+      ? raw.toISOString()
+      : typeof raw === 'string' && !Number.isNaN(Date.parse(raw))
+        ? raw
+        : new Date().toISOString();
+    data.generated = { by: 'llm-wiki', at };
+    delete data.timestamp;
+    reasons.push('timestamp → generated');
+  }
+  if (data.status == null) {
+    data.status = 'draft';
+    reasons.push('status: draft');
+  }
+
+  // The Citations section moves ONLY when it is the trailing section — the
+  // generated shape. Mid-document it stays and is reported as manual.
+  let body = parsed.content;
+  const match = CITATIONS_HEADING.exec(body);
+  let citations: string[] = [];
+  if (match) {
+    const sectionStart = match.index;
+    const rest = body.slice(sectionStart);
+    const lines = rest.split('\n');
+    const headingLevel = (lines[0]?.match(/^#+/) ?? [''])[0].length;
+    let end = lines.length;
+    for (let i = 1; i < lines.length; i += 1) {
+      const level = (lines[i].match(/^#+/) ?? [''])[0].length;
+      if (level > 0 && level <= headingLevel) {
+        end = i;
+        break;
+      }
+    }
+    const sectionLines = lines.slice(0, end);
+    const sectionText = sectionLines.join('\n');
+    if (end === lines.length) {
+      citations = [...sectionText.matchAll(SRC_MARKER)].map((entry) => entry[1].trim()).filter(Boolean);
+      body = body.slice(0, sectionStart).replace(/\n+$/, '\n');
+      reasons.push(`Citations section → sources (${citations.length} source(s))`);
+    } else {
+      reasons.push('Citations section not trailing — left for a manual move');
+    }
+  }
+
+  if (citations.length > 0) {
+    const existing = Array.isArray(data.sources) ? data.sources : [];
+    const known = new Set(existing.map((entry) => String(entry?.path ?? '')));
+    data.sources = [
+      ...existing,
+      ...citations.filter((citation) => !known.has(citation)).map((citation) => ({ path: citation })),
+    ];
+  }
+
+  if (reasons.length === 0) return { content, reasons };
+  return { content: matter.stringify(body, data), reasons };
+}
+
+/** Bundle files the v0.2 migration would touch, in path order. */
+export async function listBundleFilesV02Migration(rootDir: string): Promise<OkfV02Migration[]> {
+  const files = await listBundleMarkdownFiles(rootDir);
+  const migrations: OkfV02Migration[] = [];
+  for (const file of files) {
+    if (!okfTypeForPath(file)) continue;
+    let content: string;
+    try {
+      content = await readFile(path.join(rootDir, file), 'utf8');
+    } catch {
+      continue;
+    }
+    const { reasons } = migrateOkfV02(content);
+    if (reasons.length > 0) migrations.push({ file, reasons });
+  }
+  return migrations;
+}
+
+/**
+ * Applies the v0.2 migration to every bundle file that needs it. Idempotent:
+ * a migrated file reports no reasons on the next scan, and the diff stays
+ * one line per file.
+ */
+export async function applyOkfV02Migration(
+  rootDir: string,
+): Promise<{ written: string[]; skipped: string[] }> {
+  const migrations = await listBundleFilesV02Migration(rootDir);
+  const written: string[] = [];
+  const skipped: string[] = [];
+  for (const migration of migrations) {
+    const absolutePath = path.join(rootDir, migration.file);
+    let content: string;
+    try {
+      content = await readFile(absolutePath, 'utf8');
+    } catch {
+      skipped.push(migration.file);
+      continue;
+    }
+    const { content: next } = migrateOkfV02(content);
+    if (next === content) {
+      skipped.push(migration.file);
+      continue;
+    }
+    await safeWriteFile(absolutePath, next);
+    written.push(migration.file);
+  }
+  return { written, skipped };
+}

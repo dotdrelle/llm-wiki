@@ -32,7 +32,7 @@ import {
 } from '../services/gatewayProbe.ts';
 import { pathExists, safeWriteFile } from '../utils/fs.ts';
 import { HistoryService } from '../services/historyService.ts';
-import { applyMissingOkfTypes, listBundleFilesMissingType } from '../okf/scan.ts';
+import { applyMissingOkfTypes, applyOkfV02Migration, listBundleFilesMissingType, listBundleFilesV02Migration } from '../okf/scan.ts';
 import {
   isReportClean,
   readSourceRegistry,
@@ -1620,6 +1620,24 @@ export default async function doctorCmd(
       for (const file of skipped) warn(`could not write OKF type: ${file}`);
     } else {
       row('action:', 'run `wiki doctor --apply` to write the missing type(s)');
+    }
+
+    // OKF v0.2 catch-up (the refonte report's lot 3 rupture): timestamp →
+    // generated, trailing Citations section → sources, status: draft.
+    const v02 = await listBundleFilesV02Migration(config.wikiRoot);
+    row('pages pending the v0.2 migration:', String(v02.length));
+    for (const migration of v02.slice(0, 20)) {
+      console.log(`  - ${migration.file} (${migration.reasons.join('; ')})`);
+    }
+    if (v02.length > 20) console.log(`  … and ${v02.length - 20} more`);
+    if (v02.length === 0) {
+      ok('every bundle page carries its OKF v0.2 keys');
+    } else if (options.apply) {
+      const { written, skipped } = await applyOkfV02Migration(config.wikiRoot);
+      if (written.length > 0) ok(`OKF v0.2 migration applied to ${written.length} page(s)`);
+      for (const file of skipped) warn(`could not migrate: ${file}`);
+    } else {
+      row('action:', 'run `wiki doctor --apply` to apply the v0.2 migration');
     }
   } catch (error) {
     warn(`OKF check failed: ${error instanceof Error ? error.message : String(error)}`);

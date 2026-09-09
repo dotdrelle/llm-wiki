@@ -86,7 +86,7 @@ export function applyOkfFrontmatter(
     generated?: { by: string; at: string };
     verified?: Array<{ by: string; at: string }>;
     status?: string;
-    sources?: Array<{ path: string }>;
+    sources?: Array<{ path: string; usage_count?: number }>;
   },
 ): string {
   const parsed = matter(content);
@@ -121,16 +121,27 @@ export function applyOkfFrontmatter(
   }
   if (Array.isArray(options.sources) && options.sources.length > 0) {
     // The raw sources that produced this page, accumulated across ingests —
-    // a source cited twice is listed once.
-    const existing = Array.isArray(data.sources) ? data.sources : [];
-    const knownPaths = new Set(existing.map((entry) => String(entry?.path ?? '')));
-    const merged = [...existing, ...options.sources.filter((entry) => {
+    // a source cited twice is listed once, and a fresh usage_count replaces
+    // the previous observation for a path already listed.
+    const existing = Array.isArray(data.sources)
+      ? data.sources.map((entry) => ({ ...(entry as Record<string, unknown>) }))
+      : [];
+    const byPath = new Map<string, Record<string, unknown>>(
+      existing.map((entry) => [String(entry.path ?? ''), entry]),
+    );
+    for (const entry of options.sources) {
       const pathValue = String(entry?.path ?? '');
-      if (!pathValue || knownPaths.has(pathValue)) return false;
-      knownPaths.add(pathValue);
-      return true;
-    })];
-    data.sources = merged;
+      if (!pathValue) continue;
+      const known = byPath.get(pathValue);
+      if (known) {
+        if (Number.isFinite(Number(entry?.usage_count))) known.usage_count = Number(entry.usage_count);
+        continue;
+      }
+      const added: Record<string, unknown> = { path: pathValue };
+      if (Number.isFinite(Number(entry?.usage_count))) added.usage_count = Number(entry.usage_count);
+      byPath.set(pathValue, added);
+    }
+    data.sources = [...byPath.values()];
     changed = true;
   }
   if (!changed) return content;
