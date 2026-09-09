@@ -1,9 +1,10 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { IngestService } from '../src/services/ingestService.ts';
 import { IngestCache } from '../src/ingest/extractionCache.ts';
+import { pathExists } from '../src/utils/fs.ts';
 import type { LLMService } from '../src/services/llmService.ts';
 import type { RefreshService } from '../src/services/refreshService.ts';
 import type { RetrievalService } from '../src/services/retrievalService.ts';
@@ -1010,7 +1011,10 @@ describe('ingest service', () => {
   it('applies a planned ingest file without calling the LLM', async () => {
     const rootDir = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-plan-'));
     const workspace = new FakeWorkspaceService();
-    workspace.paths = { rootDir };
+    // The internal dir must be real for the registry to be exercised: with
+    // no internalDir the read silently degrades to null and the write-back
+    // gap (the exact defect this test now guards against) stays invisible.
+    workspace.paths = { rootDir, internalDir: path.join(rootDir, '.wiki') };
     const planPath = path.join(rootDir, '.wiki', 'ingest-plans', 'plan.json');
     await mkdir(path.dirname(planPath), { recursive: true });
     await writeFile(
@@ -1075,6 +1079,67 @@ describe('ingest service', () => {
     ]);
     expect(workspace.archivedSources).toEqual(['raw/untracked/note.md']);
     expect(logger.entries.some((entry) => entry.event === 'ingest:apply')).toBe(true);
+    // The registry write-back (the defect this guards): the orchestrated
+    // apply must record what it produced, or usage_count stays 0 forever and
+    // the doctor/lint inventory orphans every page this flow wrote.
+    const registryPath = path.join(rootDir, '.wiki', 'source-registry.json');
+    expect(await pathExists(registryPath)).toBe(true);
+    const registry = JSON.parse(await readFile(registryPath, 'utf8'));
+    expect(registry.sources).toHaveLength(1);
+    expect(registry.sources[0].sourceId).toBe('path:raw/ingested/note.md');
+    expect(registry.sources[0].archivePath).toBe('raw/ingested/note.md');
+    expect(registry.sources[0].producedPages).toEqual(['wiki/sources/note.md']);
+    expect(registry.sources[0].lastIngestedAt).toBeTruthy();
+  });
+
+  it('does not archive or observe a planned source whose every operation is rejected', async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-reject-'));
+    const workspace = new FakeWorkspaceService();
+    workspace.paths = { rootDir, internalDir: path.join(rootDir, '.wiki') };
+    const planPath = path.join(rootDir, '.wiki', 'ingest-plans', 'plan.json');
+    await mkdir(path.dirname(planPath), { recursive: true });
+    await writeFile(
+      planPath,
+      JSON.stringify({
+        generatedAt: new Date().toISOString(),
+        sources: [
+          {
+            source: 'raw/untracked/note.md',
+            summary: 'Planned note.',
+            operations: [
+              {
+                type: 'create',
+                path: 'wiki/sources/note.md',
+                content: '# Note\n\n[src: raw/ingested/note.md]\n',
+              },
+            ],
+            review: [],
+          },
+        ],
+      }),
+      'utf8',
+    );
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new FakeLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      new MemoryTraceLogger(),
+      disabledCache(),
+    );
+
+    const results = await service.applyPlannedIngest(
+      ['.wiki/ingest-plans/plan.json'],
+      { reject: ['wiki/sources/note.md'] },
+    );
+
+    expect(results[0].failed).toBeUndefined();
+    expect(workspace.appliedBatches).toHaveLength(0);
+    // Same contract as the live path: a fully rejected source stays staged —
+    // not archived, not observed.
+    expect(workspace.archivedSources).toHaveLength(0);
+    expect(await pathExists(path.join(rootDir, '.wiki', 'source-registry.json'))).toBe(false);
   });
 
   it('does not report a source as successful when applying operations fails', async () => {

@@ -419,10 +419,7 @@ export class IngestService {
      time — not the model's memory. Read it before the first source is observed,
      so every source sees the state of the PREVIOUS run.
      */
-    const registryPath = this.workspace.paths?.internalDir
-      ? path.join(this.workspace.paths.internalDir, SOURCE_REGISTRY_FILENAME)
-      : null;
-    const previousRegistry = registryPath ? await readSourceRegistry(registryPath) : null;
+    const previousRegistry = await this.previousRegistry();
 
     for (let i = 0; i < sourcePaths.length; i++) {
       const sourcePath = sourcePaths[i];
@@ -1285,10 +1282,7 @@ export class IngestService {
     // The registry read mirrors the live ingest path: the previous run's
     // produced-pages count feeds the stamped usage_count, so a planned apply
     // and a live ingest of the same source write the same provenance shape.
-    const registryPath = this.workspace.paths?.internalDir
-      ? path.join(this.workspace.paths.internalDir, SOURCE_REGISTRY_FILENAME)
-      : null;
-    const previousRegistry = registryPath ? await readSourceRegistry(registryPath) : null;
+    const previousRegistry = await this.previousRegistry();
     const plannedSources: PlannedIngestSource[] = [];
     for (const planFile of planFiles) {
       const absolutePath = this.resolveWorkspacePath(planFile, 'ingest plan file');
@@ -1320,8 +1314,23 @@ export class IngestService {
         sourcePath: planned.source,
       });
       try {
+        // Read the source document ONCE for the whole branch: the archive
+        // path (and therefore the registry identity) must match what the
+        // planning run computed. A plan built with --from-ingested names
+        // raw/ingested/ paths, and re-reading those WITHOUT the ingested flag
+        // re-derives the archive path through the untracked folder — a
+        // different identity than at plan time, which silently broke the
+        // registry lookup and the citations.
+        const plannedSource = await this.workspace.readSourceDocument(
+          path.resolve(this.workspace.paths.rootDir, planned.source),
+          { ingested: planned.source.startsWith('raw/ingested/') },
+        );
         if (planned.skipped) {
-          await this.archivePlannedSource(planned);
+          await this.archivePlannedSource(planned, plannedSource);
+          // An unchanged source remains a SEEN source (same rule as the live
+          // ingest path): without this observation it would flip to `missing`
+          // on the first inventory even though it has just been presented.
+          await this.observeSource(plannedSource, null);
           results.push({
             source: planned.source,
             plan: { summary: planned.summary ?? 'unchanged since last ingest', operations: [] },
@@ -1349,7 +1358,13 @@ export class IngestService {
           apply: true,
         });
 
-        if (operations.length > 0 && applyOperations.length === 0) {
+        const allRejected = operations.length > 0 && applyOperations.length === 0;
+        if (allRejected) {
+          // Same contract as the live ingest path: a source whose every
+          // operation was rejected is NOT archived and NOT observed — it
+          // stays staged for a later decision. (The planned path used to
+          // archive it anyway, which is how a rejected source vanished from
+          // the inbox while its plan claimed it was merely set aside.)
           await this.logger.info('ingest:apply-skip', {
             source: planned.source,
             reason: 'all operations rejected',
@@ -1363,14 +1378,8 @@ export class IngestService {
             { create: 0, update: 0, delete: 0 },
           );
           const applyStartedAt = Date.now();
-          // Same OKF v0.2 provenance as the live ingest path: the planned
-          // apply stamps the source's archive path into each leaf's
-          // `sources` list, with the previous run's produced-pages count as
-          // usage_count. The archive path comes from the source document
-          // itself (still on disk at apply time — archiving happens after).
-          const plannedSource = await this.workspace.readSourceDocument(
-            path.resolve(this.workspace.paths.rootDir, planned.source),
-          );
+          // OKF v0.2 provenance: the previous run's produced-pages count
+          // feeds the stamped usage_count, from the registry read above.
           const registryRecord = previousRegistry?.sources?.find(
             (record) => record.sourceId === sourceIdFromArchivePath(plannedSource.archiveCitationPath),
           );
@@ -1390,7 +1399,13 @@ export class IngestService {
           });
         }
 
-        await this.archivePlannedSource(planned);
+        if (!allRejected) {
+          await this.archivePlannedSource(planned, plannedSource);
+          // The registry write-back the live path has always done: without it
+          // usage_count stays 0 forever for orchestrated ingests and the
+          // doctor/lint inventory orphans every page this flow produced.
+          await this.observeSource(plannedSource, applyOperations);
+        }
         await this.workspace.appendLog(
           'ingest',
           `${planned.source} (${planned.summary ?? 'planned ingest applied'})`,
@@ -1575,11 +1590,25 @@ export class IngestService {
     return vanished;
   }
 
+  /**
+   * The previous run's provenance registry, read once for the whole batch.
+   *
+   * Shared by `ingest()` and `applyPlannedIngest` — the copy that used to live
+   * in each method is how the planned path lost its write-back: the registry
+   * load and the registry write belong to the same lifecycle, and splitting
+   * the load off invited the write to go missing.
+   */
+  private async previousRegistry(): Promise<SourceRegistryFile | null> {
+    const registryPath = this.workspace.paths?.internalDir
+      ? path.join(this.workspace.paths.internalDir, SOURCE_REGISTRY_FILENAME)
+      : null;
+    return registryPath ? readSourceRegistry(registryPath) : null;
+  }
+
   private async observeSource(
     source: SourceDocument,
     operations: WikiOperation[] | null,
-  ): Promise<void> {
-    try {
+  ): Promise<void> {    try {
       const registryPath = path.join(this.workspace.paths.internalDir, SOURCE_REGISTRY_FILENAME);
       const lockPath = `${registryPath}.lock`;
       // Ingest processes can run concurrently against the same workspace
@@ -1610,14 +1639,20 @@ export class IngestService {
     }
   }
 
-  private async archivePlannedSource(planned: PlannedIngestSource): Promise<void> {
-    const sourcePath = this.resolveWorkspacePath(planned.source, 'ingest source');
-    const source = await this.workspace.readSourceDocument(sourcePath);
+  private async archivePlannedSource(
+    planned: PlannedIngestSource,
+    source?: SourceDocument,
+  ): Promise<void> {
+    const sourceDocument = source
+      ?? await this.workspace.readSourceDocument(
+        this.resolveWorkspacePath(planned.source, 'ingest source'),
+        { ingested: planned.source.startsWith('raw/ingested/') },
+      );
     const archiveStartedAt = Date.now();
-    await this.workspace.archiveSource(source);
+    await this.workspace.archiveSource(sourceDocument);
     await this.logger.info('ingest:archive', {
-      source: source.relativePath,
-      archivePath: source.archiveCitationPath,
+      source: sourceDocument.relativePath,
+      archivePath: sourceDocument.archiveCitationPath,
       durationMs: Date.now() - archiveStartedAt,
     });
   }
