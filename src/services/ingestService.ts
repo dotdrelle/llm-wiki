@@ -1282,6 +1282,13 @@ export class IngestService {
     });
 
     const rejectedPaths = new Set(options?.reject ?? []);
+    // The registry read mirrors the live ingest path: the previous run's
+    // produced-pages count feeds the stamped usage_count, so a planned apply
+    // and a live ingest of the same source write the same provenance shape.
+    const registryPath = this.workspace.paths?.internalDir
+      ? path.join(this.workspace.paths.internalDir, SOURCE_REGISTRY_FILENAME)
+      : null;
+    const previousRegistry = registryPath ? await readSourceRegistry(registryPath) : null;
     const plannedSources: PlannedIngestSource[] = [];
     for (const planFile of planFiles) {
       const absolutePath = this.resolveWorkspacePath(planFile, 'ingest plan file');
@@ -1358,13 +1365,18 @@ export class IngestService {
           const applyStartedAt = Date.now();
           // Same OKF v0.2 provenance as the live ingest path: the planned
           // apply stamps the source's archive path into each leaf's
-          // `sources` list. The archive path comes from the source document
+          // `sources` list, with the previous run's produced-pages count as
+          // usage_count. The archive path comes from the source document
           // itself (still on disk at apply time — archiving happens after).
           const plannedSource = await this.workspace.readSourceDocument(
             path.resolve(this.workspace.paths.rootDir, planned.source),
           );
+          const registryRecord = previousRegistry?.sources?.find(
+            (record) => record.sourceId === sourceIdFromArchivePath(plannedSource.archiveCitationPath),
+          );
           const stampedOperations = stampSourceProvenance(applyOperations, {
             path: plannedSource.archiveCitationPath,
+            usageCount: registryRecord?.producedPages?.length ?? 0,
           });
           await this.workspace.applyNormalizedWikiOperations(stampedOperations);
           this.retrieval.invalidateCache();

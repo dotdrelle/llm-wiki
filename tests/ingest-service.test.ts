@@ -1069,7 +1069,7 @@ describe('ingest service', () => {
           type: 'create',
           path: 'wiki/sources/note.md',
           content:
-            '---\nsources:\n  - path: raw/ingested/note.md\n---\n# Note\n\n[src: raw/ingested/note.md]\n',
+            '---\nsources:\n  - path: raw/ingested/note.md\n    usage_count: 0\n---\n# Note\n\n[src: raw/ingested/note.md]\n',
         },
       ],
     ]);
