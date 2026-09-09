@@ -159,6 +159,27 @@ async function withRetry<T>(
 // arbitrary text, so a small bound is enough and keeps the regex engine-safe.
 const BARE_RAW_PATH_PATTERN = /(?<!\[src:\s{0,4})\braw\/(?:ingested|untracked)\/[^\s\]"'`)]+/gi;
 
+// OKF v0.2 provenance: every leaf a source produces records that source in
+// its frontmatter `sources` list — the structured complement of the body's
+// [src: ...] citations, accumulated additively across ingests (a source cited
+// twice is listed once). Shared by the live and planned apply paths so the
+// stamped shape can't drift between them.
+function stampSourceProvenance(
+  operations: WikiOperation[],
+  source: { path: string; usageCount?: number },
+): WikiOperation[] {
+  return operations.map((operation) =>
+    operation.type === 'delete'
+      ? operation
+      : {
+          ...operation,
+          content: applyOkfFrontmatter(operation.content ?? '', {
+            sources: [{ path: source.path, usage_count: source.usageCount }],
+          }),
+        },
+  );
+}
+
 function enforceSourceCitationPath(
   operations: WikiOperation[],
   archiveCitationPath: string,
@@ -1130,16 +1151,10 @@ export class IngestService {
             (record) => record.sourceId === sourceIdFromArchivePath(source.archiveCitationPath),
           );
           const usageCount = registryRecord?.producedPages?.length ?? 0;
-          const stampedOperations = applyOperations.map((operation) =>
-            operation.type === 'delete'
-              ? operation
-              : {
-                  ...operation,
-                  content: applyOkfFrontmatter(operation.content ?? '', {
-                    sources: [{ path: source.archiveCitationPath, usage_count: usageCount }],
-                  }),
-                },
-          );
+          const stampedOperations = stampSourceProvenance(applyOperations, {
+            path: source.archiveCitationPath,
+            usageCount,
+          });
           await this.workspace.applyNormalizedWikiOperations(stampedOperations);
           this.retrieval.invalidateCache();
           await this.logger.info('ingest:apply', {
@@ -1348,16 +1363,9 @@ export class IngestService {
           const plannedSource = await this.workspace.readSourceDocument(
             path.resolve(this.workspace.paths.rootDir, planned.source),
           );
-          const stampedOperations = applyOperations.map((operation) =>
-            operation.type === 'delete'
-              ? operation
-              : {
-                  ...operation,
-                  content: applyOkfFrontmatter(operation.content ?? '', {
-                    sources: [{ path: plannedSource.archiveCitationPath }],
-                  }),
-                },
-          );
+          const stampedOperations = stampSourceProvenance(applyOperations, {
+            path: plannedSource.archiveCitationPath,
+          });
           await this.workspace.applyNormalizedWikiOperations(stampedOperations);
           this.retrieval.invalidateCache();
           await this.logger.info('ingest:apply', {
