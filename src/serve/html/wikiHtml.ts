@@ -139,6 +139,26 @@ async function firstHeading(rootDir: string, relativePath: string): Promise<stri
   }
 }
 
+// A `<concept>_<resume>.md` leaf: the `subject` (resume) is the display name,
+// the `title` the fallback — dashes to spaces, first letter capitalized.
+async function conceptLeafTitle(rootDir: string, relativePath: string): Promise<string | null> {
+  try {
+    const handle = await open(resolveInside(rootDir, relativePath), 'r');
+    const buffer = Buffer.alloc(4096);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    await handle.close();
+    const raw = buffer.toString('utf8', 0, bytesRead);
+    const frontmatter = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1];
+    const subject = frontmatter?.match(/^subject:\s*(.+)$/m)?.[1]?.trim();
+    if (subject) return capitalizeFirst(humanTitle(stripTransportId(subject)));
+    const title = frontmatter?.match(/^title:\s*(.+)$/m)?.[1]?.trim();
+    if (title) return capitalizeFirst(humanTitle(stripTransportId(title)));
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function deliverableKind(relativePath: string): 'build' | 'export' | 'polish' {
   const base = path.basename(relativePath, '.md');
   if (base.endsWith('.export.polished')) return 'polish';
@@ -1037,8 +1057,18 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
   const wikiTitles = new Map<string, string>();
   await Promise.all(
     navFiles.map(toPosix).filter((file) => file.startsWith('wiki/')).map(async (file) => {
-      const heading = await firstHeading(rootDir, file);
-      if (heading) wikiTitles.set(file, heading);
+      // A leaf named `<concept>_<resume>.md` repeats its folder in the filename:
+      // display its `subject` first (the resume), the `title` as a fallback —
+      // dashes to spaces, first letter capitalized. Any other page keeps its
+      // first `#` heading, the historical title rule.
+      const leaf = toPosix(file).split('/');
+      const isConceptResumeLeaf = leaf.length === 4
+        && leaf[1] === 'concepts'
+        && leaf[3].startsWith(`${leaf[2]}_`);
+      const title = isConceptResumeLeaf
+        ? await conceptLeafTitle(rootDir, file)
+        : await firstHeading(rootDir, file);
+      if (title) wikiTitles.set(file, title);
     }),
   );
   // build-context / templates / deliverables become three tabs of the Files
