@@ -102,6 +102,13 @@ describe('folder near-duplicates (singular/plural and hyphen refinements)', () =
     expect(foldersAreNearDuplicates('product', 'production')).toBe(false);
     expect(foldersAreNearDuplicates('projet', 'product')).toBe(false);
   });
+  it('flags a curated synonym with no shared word at all ("produit" / "solution-logicielle")', () => {
+    expect(foldersAreNearDuplicates('produit', 'solution-logicielle')).toBe(true);
+    expect(foldersAreNearDuplicates('produit', 'solution')).toBe(true);
+    expect(foldersAreNearDuplicates('logiciel', 'outil')).toBe(true);
+    // Not a member of the curated group: stays a lexical-only comparison.
+    expect(foldersAreNearDuplicates('produit', 'infrastructure')).toBe(false);
+  });
   it('detects the conflict in a plan that would open a near-duplicate folder', () => {
     const conflicts = detectNearDuplicateFolders(
       plan({
@@ -121,6 +128,35 @@ describe('folder near-duplicates (singular/plural and hyphen refinements)', () =
     const conflicts = detectNearDuplicateFolders(
       plan({ operations: [{ type: 'create', path: 'wiki/concepts/product/nouveau.md', content: '# x' }] }),
       { existingFolders: ['product'] },
+    );
+    expect(conflicts).toEqual([]);
+  });
+  it('flags a NEW folder that near-duplicates an existing synonym ("vendor" doubling "produit")', () => {
+    const conflicts = detectNearDuplicateFolders(
+      plan({ operations: [{ type: 'create', path: 'wiki/concepts/vendor/jedox.md', content: '# x' }] }),
+      { existingFolders: ['produit', 'exigence'] },
+    );
+    expect(conflicts).toEqual([{ path: 'wiki/concepts/vendor/jedox.md', proposedFolder: 'vendor', existingFolder: 'produit' }]);
+  });
+  it('flags an OLD split still on disk: two near-duplicate folders that both already exist', () => {
+    // A workspace ingested before FOLDER_SYNONYM_GROUPS covered "solution-logicielle"
+    // (or before the check existed) can carry both folders already. Picking
+    // either looks correct in isolation, so this must be caught even though
+    // the chosen folder is itself already in existingFolders.
+    const conflicts = detectNearDuplicateFolders(
+      plan({ operations: [{ type: 'create', path: 'wiki/concepts/solution-logicielle/pigment.md', content: '# x' }] }),
+      { existingFolders: ['produit', 'solution-logicielle'] },
+    );
+    expect(conflicts).toEqual([{
+      path: 'wiki/concepts/solution-logicielle/pigment.md',
+      proposedFolder: 'solution-logicielle',
+      existingFolder: 'produit',
+    }]);
+  });
+  it('does not complain when the model picks the canonical (alphabetically-first) side of an old split', () => {
+    const conflicts = detectNearDuplicateFolders(
+      plan({ operations: [{ type: 'create', path: 'wiki/concepts/produit/pigment.md', content: '# x' }] }),
+      { existingFolders: ['produit', 'solution-logicielle'] },
     );
     expect(conflicts).toEqual([]);
   });

@@ -349,6 +349,28 @@ export type FolderConflict = {
 
 const FOLDER_SINGULAR_SUFFIXES = new Set(['s', 'x']);
 
+/**
+ * Curated groups of folder names that are the SAME real category under
+ * different vocabulary — "produit" and "solution-logicielle" share no
+ * lexical token at all, so no amount of stemming or word-position matching
+ * below can ever catch them: that is a synonym, not a spelling variant, and
+ * a synonym needs an authored equivalence. Extend a group (or add one) the
+ * next time two folders turn out to mean the same thing; this is a small,
+ * hand-maintained list on purpose — see foldersAreNearDuplicates for the
+ * general (lexical) case this complements, not replaces.
+ */
+const FOLDER_SYNONYM_GROUPS: readonly (readonly string[])[] = [
+  ['produit', 'solution', 'solution-logicielle', 'logiciel', 'progiciel', 'application', 'outil',
+    'vendor', 'fournisseur', 'editeur'],
+];
+
+function folderSynonymGroup(key: string): number | null {
+  for (let index = 0; index < FOLDER_SYNONYM_GROUPS.length; index++) {
+    if (FOLDER_SYNONYM_GROUPS[index]!.includes(key)) return index;
+  }
+  return null;
+}
+
 export function folderNearKey(folder: string): string {
   return folder
     .normalize('NFKD')
@@ -378,6 +400,10 @@ export function foldersAreNearDuplicates(left: string, right: string): boolean {
   const a = folderNearKey(left);
   const b = folderNearKey(right);
   if (!a || !b || a === b) return false;
+  // Authored synonym: no shared token to find lexically (see the curated
+  // list above for why).
+  const groupA = folderSynonymGroup(a);
+  if (groupA !== null && groupA === folderSynonymGroup(b)) return true;
   // Whole-name singular/plural: "produit" / "produits".
   if (a.length >= 4 && b.length >= 4) {
     const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
@@ -409,11 +435,26 @@ export function detectNearDuplicateFolders(
     if (operation.type !== 'create' || !operation.path.startsWith(CONCEPT_PREFIX)) continue;
     const folder = parseConceptPagePath(operation.path)?.class ?? null;
     if (!folder) continue;
-    // A leaf filed into an existing folder is the model working as intended.
-    if (existingFolders.includes(folder)) continue;
     const conflictWith = (existing: string) => {
       conflicts.push({ path: operation.path, proposedFolder: folder, existingFolder: existing });
     };
+    if (existingFolders.includes(folder)) {
+      // The chosen folder itself pre-exists, so in isolation this looks like
+      // the model working as intended — but a workspace can carry an OLD
+      // split (two near-duplicate folders both already on disk, e.g. from
+      // before FOLDER_SYNONYM_GROUPS gained an entry, or before this check
+      // existed at all). Left alone, every later source keeps alternating
+      // between the two, because picking either one always looks correct.
+      // Steer to a stable, deterministic canonical folder (alphabetically
+      // first) so sources converge onto ONE of the two instead of drifting
+      // between them: comparing against candidates < folder means the
+      // canonical folder itself never triggers a conflict against its own
+      // sibling, only the non-canonical one does.
+      const sibling = existingFolders.find((candidate) =>
+        candidate !== folder && candidate < folder && foldersAreNearDuplicates(folder, candidate));
+      if (sibling) conflictWith(sibling);
+      continue;
+    }
     const existing = existingFolders.find((candidate) =>
       foldersAreNearDuplicates(folder, candidate)
       || folderNearKey(folder) === folderNearKey(candidate));

@@ -4,7 +4,7 @@ import { UNCLASSIFIED_CLASS } from '../ingest/conceptGrid.ts';
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
 /** Prompt version, carried by the consolidation cache key. */
-export const CONSOLIDATION_PROMPT_VERSION = 19;
+export const CONSOLIDATION_PROMPT_VERSION = 21;
 
 export type ConsolidationInventoryPage = {
   path: string;
@@ -47,7 +47,10 @@ function folderPolicy(existingFolders: string[]): string[] {
     '- an existing concept is ALWAYS an existing folder: REUSE one of the folders listed'
       + ' above whenever a subject plausibly belongs to it. "cost-model" and'
       + ' "pricing-model" are ONE concept — pick one and file the leaf there, never open'
-      + ' a near-duplicate folder',
+      + ' a near-duplicate folder. This is a MEANING check, not a spelling check: "produit"'
+      + ' and "solution-logicielle" (or "solution", "logiciel", "application", "outil") are'
+      + ' ALSO one concept despite sharing no word at all — if the existing list already has'
+      + ' one of that family, reuse it instead of opening another',
     '- name folders in the SINGULAR: write "product", never "products"; "server", never'
       + ' "servers". Reuse the existing folder even when its number differs from the one'
       + ' you would have picked',
@@ -127,6 +130,7 @@ function operationContract(): string[] {
       '',
       'For every created or updated page, also return an entry in "pages" with its provenance:',
       '- subject: the canonical identity the page belongs to, lowercase, words separated by dashes — NEVER glue the words together ("twowordidentity" instead of "two-word-identity" is wrong), never use spaces',
+      '- subject word order: the FIRST word is always the entity\'s own name (the product, vendor, requirement or regulation this leaf is about), NEVER a descriptive prefix such as "etude", "analyse", "comparatif", "projet" or "solution" — write "jedox-etude-onpremise", never "etude-jedox-onpremise". The engine matches an existing page to reuse by comparing the first word of "subject" only; a document-shaped prefix instead of the entity name is why the same real subject keeps reappearing as several near-duplicate pages across separate sources.',
       '- scope: source | product | transverse | workspace',
       `- kind: vendor | product | requirement | regulation | dimension | scenario — the NATURE of the subject (a vendor is not its product, a dimension is not a product)`,
       '- tags: 2 to 4 words linking this leaf — its entity AND the cross-cutting themes it speaks to (security, sovereignty, cost, integration…). Each tag is a SINGLE word, in the SINGULAR, in the output language — never a plural (write "requirement", not "requirements"; "solution", not "solutions"). REUSE an existing tag from the "Existing tags" list in the user message when one is close, rather than inventing a near-synonym. At most 4 tags.',
