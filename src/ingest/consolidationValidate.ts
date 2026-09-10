@@ -10,6 +10,7 @@ import {
   type PageProvenance,
 } from './provenance.ts';
 import { okfTypeForPath } from '../okf/frontmatter.ts';
+import { strictKindOf } from './extractionSchema.ts';
 
 /*
  Deterministic check of the consolidated plan.
@@ -350,43 +351,32 @@ export type FolderConflict = {
 const FOLDER_SINGULAR_SUFFIXES = new Set(['s', 'x']);
 
 /**
- * Curated groups of folder names that are the SAME real category under
- * different vocabulary — "produit" and "solution-logicielle" share no
- * lexical token at all, so no amount of stemming or word-position matching
- * below can ever catch them: that is a synonym, not a spelling variant, and
- * a synonym needs an authored equivalence. Extend a group (or add one) the
- * next time two folders turn out to mean the same thing; this is a small,
- * hand-maintained list on purpose — see foldersAreNearDuplicates for the
- * general (lexical) case this complements, not replaces.
+ * The preferred folder name for a kind, when a workspace already has two
+ * near-duplicate folders coexisting for it and one must be picked as
+ * canonical. Purely alphabetical order (the fallback in `canonicalFolder`
+ * below) is an accident of string sort, not an editorial decision — this
+ * lets a maintainer state which name wins explicitly. Optional and small on
+ * purpose: any kind absent here still resolves deterministically via the
+ * alphabetical fallback, so a partial or empty table never breaks anything.
  */
-const FOLDER_SYNONYM_GROUPS: readonly (readonly string[])[] = [
-  ['produit', 'solution', 'solution-logicielle', 'logiciel', 'progiciel', 'application', 'outil',
-    'vendor', 'fournisseur', 'editeur'],
-];
-
-function folderSynonymGroup(key: string): number | null {
-  const singular = wholeNameSingular(key);
-  for (let index = 0; index < FOLDER_SYNONYM_GROUPS.length; index++) {
-    if (FOLDER_SYNONYM_GROUPS[index]!.includes(key) || FOLDER_SYNONYM_GROUPS[index]!.includes(singular)) {
-      return index;
-    }
-  }
-  return null;
-}
+const CANONICAL_FOLDER_BY_KIND: Readonly<Record<string, string>> = {
+  product: 'produit',
+  vendor: 'vendor',
+};
 
 /**
- * Strips one trailing plural suffix from a whole (possibly hyphenated)
- * folder key — "produits" -> "produit", "solutions-logicielles" unchanged
- * (plural lives mid-compound, out of scope here). The curated synonym list
- * above is written in the singular; without this, a plural spelling of a
- * listed synonym silently misses the group it belongs to.
+ * Which of two already-existing near-duplicate folders should be treated as
+ * canonical, so every source converges onto ONE of them instead of drifting
+ * between them. Consults `CANONICAL_FOLDER_BY_KIND` first; falls back to
+ * alphabetical order (stable and deterministic, even if not an editorial
+ * choice) when neither name — or a workspace using an entirely different
+ * vocabulary — appears in that table.
  */
-function wholeNameSingular(key: string): string {
-  if (key.length >= 4 && FOLDER_SINGULAR_SUFFIXES.has(key[key.length - 1] ?? '')) {
-    const stem = key.slice(0, -1);
-    if (stem.length >= 3) return stem;
-  }
-  return key;
+function canonicalFolder(a: string, b: string): string {
+  const kind = strictKindOf(folderWords(a)[0] ?? a) ?? strictKindOf(folderWords(b)[0] ?? b);
+  const preferred = kind ? CANONICAL_FOLDER_BY_KIND[kind] : undefined;
+  if (preferred === a || preferred === b) return preferred;
+  return a < b ? a : b;
 }
 
 export function folderNearKey(folder: string): string {
@@ -418,10 +408,6 @@ export function foldersAreNearDuplicates(left: string, right: string): boolean {
   const a = folderNearKey(left);
   const b = folderNearKey(right);
   if (!a || !b || a === b) return false;
-  // Authored synonym: no shared token to find lexically (see the curated
-  // list above for why).
-  const groupA = folderSynonymGroup(a);
-  if (groupA !== null && groupA === folderSynonymGroup(b)) return true;
   // Whole-name singular/plural: "produit" / "produits".
   if (a.length >= 4 && b.length >= 4) {
     const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
@@ -440,6 +426,17 @@ export function foldersAreNearDuplicates(left: string, right: string): boolean {
   const wa = folderWords(a);
   const wb = folderWords(b);
   if (wa.length > 0 && wb.length > 0 && wa[0] === wb[0]) return true;
+  // Kind-derived synonym: no shared token to find lexically at all (e.g.
+  // "produit" / "solution-logicielle"). Derived from the SAME kind
+  // vocabulary extraction already uses (extractionSchema.ts's
+  // KIND_SYNONYMS), not a second, independently hand-maintained word list —
+  // which also means "vendor" correctly stays out of "product"'s group
+  // here, matching the deliberate vendor-is-not-its-product distinction the
+  // rest of the pipeline keeps.
+  if (wa.length > 0 && wb.length > 0) {
+    const kindA = strictKindOf(wa[0]!);
+    if (kindA !== null && kindA === strictKindOf(wb[0]!)) return true;
+  }
   return false;
 }
 
@@ -460,17 +457,19 @@ export function detectNearDuplicateFolders(
       // The chosen folder itself pre-exists, so in isolation this looks like
       // the model working as intended — but a workspace can carry an OLD
       // split (two near-duplicate folders both already on disk, e.g. from
-      // before FOLDER_SYNONYM_GROUPS gained an entry, or before this check
-      // existed at all). Left alone, every later source keeps alternating
-      // between the two, because picking either one always looks correct.
-      // Steer to a stable, deterministic canonical folder (alphabetically
-      // first) so sources converge onto ONE of the two instead of drifting
-      // between them: comparing against candidates < folder means the
-      // canonical folder itself never triggers a conflict against its own
-      // sibling, only the non-canonical one does.
+      // before this check existed, or before a synonym was recognized).
+      // Left alone, every later source keeps alternating between the two,
+      // because picking either one always looks correct. Steer to a stable
+      // canonical folder (see canonicalFolder — an explicit preference when
+      // one is declared, alphabetical otherwise) so sources converge onto
+      // ONE of the two instead of drifting between them: the canonical
+      // folder itself never triggers a conflict against its own sibling,
+      // only the non-canonical one does.
       const sibling = existingFolders.find((candidate) =>
-        candidate !== folder && candidate < folder && foldersAreNearDuplicates(folder, candidate));
-      if (sibling) conflictWith(sibling);
+        candidate !== folder
+        && foldersAreNearDuplicates(folder, candidate)
+        && canonicalFolder(folder, candidate) !== folder);
+      if (sibling) conflictWith(canonicalFolder(folder, sibling));
       continue;
     }
     const existing = existingFolders.find((candidate) =>

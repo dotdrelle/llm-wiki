@@ -533,6 +533,117 @@ describe('ingest service', () => {
     expect(logger.entries.some((entry) => entry.event === 'ingest:source-reingest')).toBe(true);
   });
 
+  it('recognizes a taxo leaf renamed by a manual move as moved, not vanished', async () => {
+    const workspace = new FakeWorkspaceService();
+    workspace.sourceUnchanged = true;
+    const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-taxo-moved-'));
+    workspace.paths.rootDir = root;
+    workspace.paths.internalDir = path.join(root, '.wiki', 'internal');
+    await mkdir(workspace.paths.internalDir, { recursive: true });
+    await mkdir(path.join(root, 'wiki', 'sources'), { recursive: true });
+    await writeFile(path.join(root, 'wiki', 'sources', 'note.md'), '# Note\n', 'utf8');
+    // The registry still names the OLD taxo path (jedox_tarifs.md); a human
+    // moved the leaf to produit/ in the UI, which renames it to
+    // produit_tarifs.md — same "resume" identity, different concept prefix.
+    // Nothing on disk exists at the old path any more.
+    await writeFile(
+      path.join(workspace.paths.internalDir, 'source-registry.json'),
+      `${JSON.stringify({
+        version: 1,
+        sources: [{
+          sourceId: 'path:raw/ingested/note.md',
+          archivePath: 'raw/ingested/note.md',
+          producedPages: ['wiki/sources/note.md', 'wiki/concepts/jedox/jedox_tarifs.md'],
+        }],
+      })}\n`,
+      'utf8',
+    );
+    const logger = new MemoryTraceLogger();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new FakeLLMService() as unknown as LLMService,
+      new FakeRetrievalService([{
+        absolutePath: path.join(root, 'wiki', 'concepts', 'produit', 'produit_tarifs.md'),
+        relativePath: 'wiki/concepts/produit/produit_tarifs.md',
+        name: 'produit_tarifs',
+        type: 'concept',
+        content: '',
+      }]) as unknown as RetrievalService,
+      new CountingRefreshService() as unknown as RefreshService,
+      logger,
+      disabledCache(),
+    );
+
+    const results = await service.ingest([], {});
+
+    expect(results[0]?.skipped).toBe(true);
+    expect(logger.entries.some((entry) => entry.event === 'ingest:source-reingest')).toBe(false);
+    expect(logger.entries.some((entry) => entry.event === 'ingest:concept-page-moved')).toBe(true);
+  });
+
+  it('skips the taxo pre-pass LLM calls entirely for an unchanged source', async () => {
+    class TaxoLLMService extends FakeLLMService {
+      taxoExtractCalls = 0;
+      taxoDedupCalls = 0;
+      async completeJson(request: { label?: string; user?: string }): Promise<unknown> {
+        if (request?.label === 'ingest_taxo_extract') {
+          this.taxoExtractCalls += 1;
+          return { concept: 'jedox', resume: 'tarifs', facts: 'Fait.' };
+        }
+        if (request?.label === 'ingest_taxo_dedup') {
+          this.taxoDedupCalls += 1;
+          return {
+            concepts: [{
+              name: 'jedox', label: 'Jedox', kind: 'product', scope: 'product',
+              definition: 'Def.', tags: ['a', 'b'], covers: [1],
+            }],
+          };
+        }
+        return super.completeJson(request);
+      }
+    }
+    const workspace = new FakeWorkspaceService();
+    workspace.sourceUnchanged = true;
+    const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-taxo-skip-'));
+    workspace.paths.rootDir = root;
+    workspace.paths.internalDir = path.join(root, '.wiki', 'internal');
+    await mkdir(workspace.paths.internalDir, { recursive: true });
+    await mkdir(path.join(root, 'wiki', 'sources'), { recursive: true });
+    await mkdir(path.join(root, 'wiki', 'concepts', 'unclassified'), { recursive: true });
+    await writeFile(path.join(root, 'wiki', 'sources', 'note.md'), '# Note\n', 'utf8');
+    await writeFile(path.join(root, 'wiki', 'concepts', 'unclassified', 'foo.md'), '# Foo\n', 'utf8');
+    await writeFile(
+      path.join(workspace.paths.internalDir, 'source-registry.json'),
+      `${JSON.stringify({
+        version: 1,
+        sources: [{
+          sourceId: 'path:raw/ingested/note.md',
+          archivePath: 'raw/ingested/note.md',
+          producedPages: ['wiki/sources/note.md', 'wiki/concepts/unclassified/foo.md'],
+        }],
+      })}\n`,
+      'utf8',
+    );
+    const logger = new MemoryTraceLogger();
+    const llm = new TaxoLLMService();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      llm as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      new CountingRefreshService() as unknown as RefreshService,
+      logger,
+      disabledCache(),
+    );
+
+    const results = await service.ingest([], { taxo: true });
+
+    expect(results[0]?.skipped).toBe(true);
+    expect(llm.taxoExtractCalls).toBe(0);
+    expect(llm.taxoDedupCalls).toBe(0);
+  });
+
   it('still skips an unchanged source whose produced pages all exist', async () => {
     const workspace = new FakeWorkspaceService();
     workspace.sourceUnchanged = true;

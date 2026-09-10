@@ -175,6 +175,22 @@ const BARE_RAW_PATH_PATTERN = /(?<!\[src:\s{0,4})\braw\/(?:ingested|untracked)\/
 // [src: ...] citations, accumulated additively across ingests (a source cited
 // twice is listed once). Shared by the live and planned apply paths so the
 // stamped shape can't drift between them.
+/**
+ * The basename's own identity for "did this page move" purposes.
+ *
+ * A taxo leaf's basename CHANGES on a re-file — `<concept>_<resume>.md`
+ * follows its new folder (see `conceptMove.ts`) — so comparing raw basenames
+ * missed every taxo move and re-created the page as a fresh duplicate at the
+ * new location's expense. A classic subject never contains an underscore
+ * (`isValidProvenanceValue` forbids it), so stripping up to the first one is
+ * a no-op for every classic leaf and only changes behavior for the taxo
+ * convention.
+ */
+function conceptBasenameIdentity(basename: string): string {
+  const underscoreIndex = basename.indexOf('_');
+  return underscoreIndex === -1 ? basename : basename.slice(underscoreIndex + 1);
+}
+
 function stampSourceProvenance(
   operations: WikiOperation[],
   source: { path: string; usageCount?: number },
@@ -432,8 +448,11 @@ export class IngestService {
      */
     const previousRegistry = await this.previousRegistry();
 
+    const taxoSourcePaths = options?.taxo
+      ? await this.filterSourcesNeedingTaxoPrePass(sourcePaths, previousRegistry, options)
+      : sourcePaths;
     const taxoPre = options?.taxo
-      ? await this.runTaxoPrePass(sourcePaths, cache, options)
+      ? await this.runTaxoPrePass(taxoSourcePaths, cache, options)
       : null;
 
     for (let i = 0; i < sourcePaths.length; i++) {
@@ -1333,6 +1352,45 @@ export class IngestService {
    * The per-source plans are derived deterministically afterwards, in the
    * main loop, from the result of this pass.
    */
+  /**
+   * Which sources the taxo pre-pass actually needs to spend LLM calls on.
+   *
+   * The pre-pass used to run over the WHOLE batch before the per-source
+   * "unchanged since last ingest" skip below ever got a chance to fire:
+   * every unchanged source paid for full section extraction, and its rows
+   * even fed the global dedup call's naming decisions, only to be discarded
+   * moments later when the main loop skipped it anyway. Re-checking here is
+   * cheap — a hash comparison, no LLM call — which is exactly the cost the
+   * pre-pass itself is not; any read error here is swallowed and the source
+   * is conservatively kept in, so the main loop's own per-source try/catch
+   * is what reports a genuine failure, never this optimization.
+   */
+  private async filterSourcesNeedingTaxoPrePass(
+    sourcePaths: string[],
+    previousRegistry: SourceRegistryFile | null,
+    options?: IngestCommandOptions,
+  ): Promise<string[]> {
+    if (options?.force || options?.fromIngested) return sourcePaths;
+    const needed: string[] = [];
+    for (const sourcePath of sourcePaths) {
+      try {
+        const source = await this.workspace.readSourceDocument(sourcePath, {
+          ingested: options?.fromIngested === true,
+        });
+        const unchanged = await this.workspace.isSourceUnchangedSinceIngest(source);
+        if (unchanged) {
+          const vanished = await this.findVanishedProducedPages(source, previousRegistry);
+          if (vanished.length === 0) continue;
+        }
+      } catch {
+        // Fall through to keeping it in — the main loop reads the source
+        // again and reports the real failure through its own try/catch.
+      }
+      needed.push(sourcePath);
+    }
+    return needed;
+  }
+
   private async runTaxoPrePass(
     sourcePaths: string[],
     cache: IngestCache,
@@ -1400,7 +1458,7 @@ export class IngestService {
         const rawBody = normalizeSourceBody(source.body ?? '');
         const sections = splitIntoSections(rawBody);
         sectionCounts.set(source.relativePath, sections.length);
-        const sourceHash = hashText(`${source.archiveCitationPath} ${rawBody}`);
+        const sourceHash = hashText(`${source.archiveCitationPath}\u0000${rawBody}`);
         const docTitle = /^#\s+(.+)$/m.exec(source.body ?? '')?.[1]?.trim()
           ?? source.title;
 
@@ -1847,7 +1905,11 @@ export class IngestService {
    * old location, leaving both the moved page and a duplicate for the same
    * subject. Before declaring such a page vanished, check whether a page with
    * the same basename still exists elsewhere under `wiki/concepts/` — if so,
-   * it moved, and re-ingesting it is exactly the thing to avoid.
+   * it moved, and re-ingesting it is exactly the thing to avoid. The
+   * comparison goes through `conceptBasenameIdentity`, not the raw basename:
+   * a taxo leaf's basename itself changes on a move (`jedox_tarifs.md` ->
+   * `produit_tarifs.md`), so matching literally would have missed every taxo
+   * re-file and re-created the exact duplicate this check exists to prevent.
    */
   private async findVanishedProducedPages(
     source: SourceDocument,
@@ -1870,12 +1932,12 @@ export class IngestService {
       (await this.retrieval.warmCache())
         .map((page) => page.relativePath)
         .filter((relativePath) => relativePath.startsWith(CONCEPT_PREFIX))
-        .map((relativePath) => relativePath.slice(relativePath.lastIndexOf('/') + 1)),
+        .map((relativePath) => conceptBasenameIdentity(relativePath.slice(relativePath.lastIndexOf('/') + 1))),
     );
     const vanished = missing.filter((page) => {
       if (!page.startsWith(CONCEPT_PREFIX)) return true;
       const basename = page.slice(page.lastIndexOf('/') + 1);
-      return !existingBasenames.has(basename);
+      return !existingBasenames.has(conceptBasenameIdentity(basename));
     });
     if (vanished.length !== missing.length) {
       await this.logger.info('ingest:concept-page-moved', {

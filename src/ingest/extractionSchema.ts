@@ -129,6 +129,7 @@ const KIND_SYNONYMS: Record<string, string> = {
   fournisseur: 'vendor', societe: 'vendor', société: 'vendor',
   solution: 'product', tool: 'product', software: 'product', platform: 'product',
   application: 'product', app: 'product', produit: 'product', logiciel: 'product',
+  progiciel: 'product', outil: 'product',
   requirement: 'requirement', constraint: 'requirement', criterion: 'requirement',
   exigence: 'requirement', contrainte: 'requirement',
   regulation: 'regulation', compliance: 'regulation', legal: 'regulation',
@@ -151,6 +152,25 @@ export function normalizeScope(value: unknown): string {
 
 export function normalizeKind(value: unknown): string {
   return normalizeClosedVocabulary(value, EXTRACTION_KINDS, KIND_SYNONYMS, 'product');
+}
+
+/**
+ * The canonical kind a raw word denotes, when the vocabulary actually
+ * recognizes it — unlike `normalizeKind`, there is NO fallback: an
+ * unrecognized word returns `null` rather than silently landing on
+ * `'product'`. `normalizeKind`'s fallback exists so extraction always has a
+ * kind to write; a caller that instead wants to ask "do these two words mean
+ * the SAME kind" (consolidationValidate.ts's folder-equivalence check) needs
+ * exactly the opposite — two unrelated, unrecognized words must never both
+ * silently resolve to `'product'` and compare as equal.
+ */
+export function strictKindOf(value: string): ExtractionKind | null {
+  const normalized = value.trim().toLowerCase();
+  if ((EXTRACTION_KINDS as readonly string[]).includes(normalized)) {
+    return normalized as ExtractionKind;
+  }
+  const mapped = KIND_SYNONYMS[normalized];
+  return mapped ? (mapped as ExtractionKind) : null;
 }
 
 /** Local identifier within the document: `s1`, `s2`… Never a path. */
