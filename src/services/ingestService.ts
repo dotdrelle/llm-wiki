@@ -433,7 +433,7 @@ export class IngestService {
     const previousRegistry = await this.previousRegistry();
 
     const taxoPre = options?.taxo
-      ? await this.runTaxoPrePass(sourcePaths, options, profileSection)
+      ? await this.runTaxoPrePass(sourcePaths, options)
       : null;
 
     for (let i = 0; i < sourcePaths.length; i++) {
@@ -1323,7 +1323,6 @@ export class IngestService {
         progress?: { sectionIndex: number; sectionTotal: number },
       ) => void;
     },
-    profileSection?: string | null,
   ): Promise<{
     rowsBySource: Map<string, TaxoRow[]>;
     concepts: TaxoConcept[];
@@ -1352,7 +1351,7 @@ export class IngestService {
     const modelId = this.config.llm.model;
     const rowsBySource = new Map<string, TaxoRow[]>();
     const sectionCounts = new Map<string, number>();
-    let rows: TaxoRow[] = [];
+    const rows: TaxoRow[] = [];
 
     for (let i = 0; i < sourcePaths.length; i++) {
       const sourcePath = sourcePaths[i];
