@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { applyProvenance, readProvenance } from '../../ingest/provenance.ts';
+import { applyProvenance, isValidProvenanceValue, readProvenance } from '../../ingest/provenance.ts';
 import { okfTypeForPath } from '../../okf/frontmatter.ts';
 import {
   CONCEPT_PATH_PREFIX,
@@ -21,7 +21,7 @@ import { safeWriteFile } from '../../utils/fs.ts';
 export type ConceptMoveDecision =
   | { kind: 'ignore' }
   | { kind: 'reject'; reason: string }
-  | { kind: 'refile'; className: string; subject: string };
+  | { kind: 'refile'; className: string; subject: string; target?: string };
 
 /**
  * Decides what a move touching `wiki/concepts/` means, before anything is
@@ -42,11 +42,43 @@ export function decideConceptMove(input: {
     };
   }
 
+  const toRest = input.to.startsWith(CONCEPT_PATH_PREFIX) && input.to.endsWith('.md')
+    ? input.to.slice(CONCEPT_PATH_PREFIX.length, -'.md'.length).split('/')
+    : null;
+  if (!toRest || toRest.length !== 2) {
+    return {
+      kind: 'reject',
+      reason: 'a concept page can only be refiled inside a concept folder',
+    };
+  }
+  const [className, base] = toRest as [string, string];
+  // A `<concept>_<resume>.md` leaf carries its concept in the file name: the
+  // move renames it to the new concept, so the name never lies about where
+  // the leaf lives. Parsed structurally here — the underscore in the name is
+  // the taxo convention, not a provenance value.
+  const fromRest = input.from.startsWith(CONCEPT_PATH_PREFIX) && input.from.endsWith('.md')
+    ? input.from.slice(CONCEPT_PATH_PREFIX.length, -'.md'.length).split('/')
+    : null;
+  if (fromRest && fromRest.length === 2 && base.startsWith(`${fromRest[0]}_`)) {
+    const resume = base.slice(fromRest[0].length + 1);
+    if (!isValidProvenanceValue(className) || !isValidProvenanceValue(resume)) {
+      return {
+        kind: 'reject',
+        reason: 'a concept page can only be refiled inside a concept folder',
+      };
+    }
+    return {
+      kind: 'refile',
+      className,
+      subject: resume,
+      target: `${CONCEPT_PATH_PREFIX}${className}/${className}_${resume}.md`,
+    };
+  }
   const axes = parseConceptPagePath(input.to);
   if (!axes) {
     return {
       kind: 'reject',
-      reason: 'a concept page must live under wiki/concepts/<concept>/<subject>.md',
+      reason: 'a concept page can only be refiled inside a concept folder',
     };
   }
   return { kind: 'refile', className: axes.class, subject: axes.subject };
@@ -65,9 +97,15 @@ export async function applyConceptAxes(
 ): Promise<void> {
   const absolute = resolveInside(rootDir, target);
   const content = await readFile(absolute, 'utf8');
-  const current = readProvenance(content);
+  // The taxo leaves carry an explicit `concept:` field in their frontmatter:
+  // the move changed the folder, so the field follows it — the metadata must
+  // never contradict the path.
+  const withConcept = /^concept:[ \t]*[^\n]*$/m.test(content)
+    ? content.replace(/^concept:[ \t]*[^\n]*$/m, `concept: ${axes.className}`)
+    : content;
+  const current = readProvenance(withConcept);
   const rewritten = applyProvenance(
-    content,
+    withConcept,
     {
       subject: current.subject ? null : axes.subject,
       scope: null,
@@ -76,5 +114,5 @@ export async function applyConceptAxes(
     },
     okfTypeForPath(target, { kind: current.kind }),
   );
-  if (rewritten !== content) await safeWriteFile(absolute, rewritten);
+  if (rewritten !== withConcept || withConcept !== content) await safeWriteFile(absolute, rewritten);
 }

@@ -167,7 +167,7 @@ export async function moveEntry(
 
   try {
     const source = resolveInside(rootDir, from);
-    const destination = resolveInside(rootDir, target);
+    let destination = resolveInside(rootDir, target);
     const sourceInfo = await stat(source);
     if (sourceInfo.isFile() && !hasAllowedExtension(from, fromRoot)) {
       return fail(`only ${fromRoot.fileExtension ?? 'known'} files can be moved here`);
@@ -190,18 +190,27 @@ export async function moveEntry(
       isFile: sourceInfo.isFile(),
     });
     if (concept.kind === 'reject') return fail(concept.reason);
+    // A `<concept>_<resume>.md` leaf renames to the new concept on the move:
+    // the file name carries the concept, so it must follow the folder.
+    const finalTarget = concept.kind === 'refile' && concept.target ? concept.target : target;
+    destination = resolveInside(rootDir, finalTarget);
+    if (finalTarget !== target) {
+      if (await stat(destination).then(() => true, () => false)) {
+        return fail(`already exists: ${finalTarget}`, 409);
+      }
+    }
     await rename(source, destination);
     if (concept.kind === 'refile') {
-      await applyConceptAxes(rootDir, target, { className: concept.className, subject: concept.subject });
+      await applyConceptAxes(rootDir, finalTarget, { className: concept.className, subject: concept.subject });
       // The links last: the page must already be at its destination, with the
       // right axes, before anything else is told to point at it.
-      await options.rewriteLinks?.([{ source: from, target }]);
+      await options.rewriteLinks?.([{ source: from, target: finalTarget }]);
     }
     await pruneEmptyParents(rootDir, path.posix.dirname(from), fromRoot);
     return {
       ok: true,
       status: 200,
-      body: { from, to: target, kind: sourceInfo.isDirectory() ? 'folder' : 'file' },
+      body: { from, to: finalTarget, kind: sourceInfo.isDirectory() ? 'folder' : 'file' },
     };
   } catch (err) {
     return fail(err instanceof Error ? err.message : String(err));

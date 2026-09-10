@@ -44,6 +44,29 @@ describe('decideConceptMove', () => {
     });
     expect(decision.kind).toBe('reject');
   });
+
+  it('renames a <concept>_<resume>.md leaf to the new concept on the move', () => {
+    expect(decideConceptMove({
+      from: 'wiki/concepts/jedox/jedox_tarifs.md',
+      to: 'wiki/concepts/produit/jedox_tarifs.md',
+      isFile: true,
+    })).toEqual({
+      kind: 'refile',
+      className: 'produit',
+      subject: 'tarifs',
+      target: 'wiki/concepts/produit/produit_tarifs.md',
+    });
+  });
+
+  it('keeps the plain name for a leaf that does not carry its concept in the file name', () => {
+    const decision = decideConceptMove({
+      from: 'wiki/concepts/unclassified/zephyr.md',
+      to: 'wiki/concepts/market-offering/zephyr.md',
+      isFile: true,
+    });
+    expect(decision.kind).toBe('refile');
+    if (decision.kind === 'refile') expect(decision.target).toBeUndefined();
+  });
 });
 
 describe('moveEntry on a concept leaf', () => {
@@ -97,5 +120,23 @@ describe('moveEntry on a concept leaf', () => {
     await moveEntry(root, 'wiki/concepts/unclassified/other.md', 'wiki/concepts/market-offering');
     expect(await readFile(path.join(root, 'wiki/concepts/market-offering/other.md'), 'utf8'))
       .toContain('subject: something-else');
+  });
+
+  it('renames a taxo leaf to the new concept and updates its concept metadata', async () => {
+    await mkdir(path.join(root, 'wiki/concepts/jedox'), { recursive: true });
+    await writeFile(path.join(root, 'wiki/concepts/jedox/jedox_tarifs.md'),
+      '---\ntitle: Jedox — tarifs\ntype: product\nsubject: tarifs\nconcept: jedox\n---\n\n# Jedox — tarifs\n');
+    const seen: Array<{ source: string; target: string }> = [];
+    await moveEntry(root, 'wiki/concepts/jedox/jedox_tarifs.md', 'wiki/concepts/market-offering', {
+      rewriteLinks: async (moves) => { seen.push(...moves); },
+    });
+
+    const moved = await readFile(path.join(root, 'wiki/concepts/market-offering/market-offering_tarifs.md'), 'utf8');
+    expect(moved).toContain('concept: market-offering');
+    expect(moved).toContain('subject: tarifs');
+    expect(seen).toEqual([{
+      source: 'wiki/concepts/jedox/jedox_tarifs.md',
+      target: 'wiki/concepts/market-offering/market-offering_tarifs.md',
+    }]);
   });
 });
