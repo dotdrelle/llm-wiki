@@ -144,10 +144,15 @@ describe('déplacement', () => {
   });
 
   it('n’écrase jamais une entrée existante', async () => {
+    // A destination outside wiki/concepts/ on purpose: the point of this
+    // test is the generic anti-overwrite guard, independent of concept-move
+    // validation (wiki/concepts alone, with no subfolder, is itself an
+    // invalid concept destination and would be rejected for THAT reason
+    // first, which is a different invariant than the one under test here).
     await write('wiki/a.md', 'source');
-    await write('wiki/concepts/a.md', 'destination');
+    await write('wiki/other/a.md', 'destination');
 
-    const result = await moveEntry(root, 'wiki/a.md', 'wiki/concepts');
+    const result = await moveEntry(root, 'wiki/a.md', 'wiki/other');
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.status).toBe(409);

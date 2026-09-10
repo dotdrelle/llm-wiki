@@ -89,7 +89,7 @@ function fenceMarker(line: string): { char: '`' | '~'; length: number } | null {
  * encountered inside a block opened by ``` is content, and counting it as a
  * closing would reopen the door we just closed.
  */
-function createFenceTracker(): (line: string) => boolean {
+export function createFenceTracker(): (line: string) => boolean {
   let open: { char: '`' | '~'; length: number } | null = null;
   return (line: string): boolean => {
     const marker = fenceMarker(line);

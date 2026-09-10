@@ -1,6 +1,8 @@
 import type { WikiOperation } from '../types.ts';
 import type { ConsolidatedPage, ConsolidationPlan } from './consolidationSchema.ts';
-import { normalizeTags } from './provenance.ts';
+import { normalizeProvenanceValue, normalizeTags } from './provenance.ts';
+import { EXTRACTION_KINDS, EXTRACTION_SCOPES } from './extractionSchema.ts';
+import { createFenceTracker } from '../utils/sourcePacking.ts';
 
 /*
  Taxo pipeline — the generation core replacing the per-source consolidation.
@@ -29,8 +31,14 @@ export function splitIntoSections(markdown: string): TaxoSection[] {
   const lines = markdown.replace(/^---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/, '').split('\n');
   const sections: TaxoSection[] = [];
   let current: TaxoSection | null = null;
+  // A `# ` in the first column of a fenced code block is content, not a
+  // heading — sourcePacking.ts's splitAtLevel exists specifically to avoid
+  // cutting a pack in the middle of a quoted Markdown example; reusing its
+  // tracker here avoids re-deciding (and re-fixing) the same bug twice.
+  const fenced = createFenceTracker();
   for (let index = 0; index < lines.length; index++) {
-    const heading = /^#\s+(.+)$/.exec(lines[index] ?? '');
+    const line = lines[index] ?? '';
+    const heading = !fenced(line) ? /^#\s+(.+)$/.exec(line) : null;
     if (heading) {
       current = {
         heading: heading[1].trim(),
@@ -41,13 +49,13 @@ export function splitIntoSections(markdown: string): TaxoSection[] {
       };
       sections.push(current);
     } else if (current) {
-      current.body += (current.body ? '\n' : '') + (lines[index] ?? '');
+      current.body += (current.body ? '\n' : '') + line;
       current.endLine = index + 1;
       current.locator = `${current.startLine}-${index + 1}`;
     } else {
       current = {
         heading: '(intro)',
-        body: lines[index] ?? '',
+        body: line,
         startLine: index + 1,
         endLine: index + 1,
         locator: `${index + 1}-${index + 1}`,
@@ -121,26 +129,43 @@ export function buildTaxoTable(rows: TaxoRow[]): string {
 export function taxoKindForSchema(kind: string): ConsolidatedPage['kind'] {
   const raw = String(kind ?? '').trim();
   if (raw === 'tool') return 'product';
-  if (['vendor', 'product', 'requirement', 'regulation', 'dimension', 'scenario'].includes(raw)) {
-    return raw as ConsolidatedPage['kind'];
-  }
-  return null;
+  return (EXTRACTION_KINDS as readonly string[]).includes(raw)
+    ? (raw as ConsolidatedPage['kind'])
+    : null;
 }
 
 export function taxoScopeForSchema(scope: string): ConsolidatedPage['scope'] {
   const raw = String(scope ?? '').trim();
-  return ['source', 'product', 'transverse', 'workspace'].includes(raw)
-    ? raw as ConsolidatedPage['scope']
+  return (EXTRACTION_SCOPES as readonly string[]).includes(raw)
+    ? (raw as ConsolidatedPage['scope'])
     : 'product';
 }
 
+/**
+ * The shared "resume" slug both a leaf's path and its own frontmatter/title
+ * derive from — one implementation instead of two independent ones, so they
+ * can never disagree. Also picks up normalizeProvenanceValue's NFKD accent
+ * stripping, which the previous ad hoc regex lacked (a French "sécurité"
+ * resume used to mangle into the raw byte sequence instead of "securite").
+ */
+function taxoResumeSlug(resume: string): string {
+  return normalizeProvenanceValue(resume || 'note') || 'note';
+}
+
+/** Escapes a value for a YAML double-quoted flow scalar — backslashes FIRST,
+ * then quotes: the reverse order would re-escape the backslash the
+ * quote-escape just inserted, and a lone unescaped backslash (e.g. a pasted
+ * Windows path) otherwise leaves the scalar unterminated. */
+function escapeYamlDoubleQuoted(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
 export function taxoLeafPath(concept: string, resume: string): string {
-  const clean = String(resume ?? 'note').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-|-$/g, '');
-  return `wiki/concepts/${concept}/${concept}_${clean}.md`;
+  return `wiki/concepts/${concept}/${concept}_${taxoResumeSlug(resume)}.md`;
 }
 
 export function taxoLeafContent(row: TaxoRow, concept: TaxoConcept, generatedAt: string): string {
-  const resume = String(row.resume || 'note').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-|-$/g, '');
+  const resume = taxoResumeSlug(row.resume);
   const title = `${concept.label ?? concept.name} — ${resume.replace(/-/g, ' ')}`;
   const kind = taxoKindForSchema(concept.kind) ?? 'concept';
   return [
@@ -156,9 +181,13 @@ export function taxoLeafContent(row: TaxoRow, concept: TaxoConcept, generatedAt:
     '  by: taxo-pipeline',
     `  at: '${generatedAt}'`,
     'status: draft',
-    `sources:`,
-    `  - raw/ingested/${row.source}`,
-    `locator: { heading: "${row.heading.replace(/"/g, '\\"')}", lines: "${row.locator}" }`,
+    // No hand-written `sources:` here: IngestService's stampSourceProvenance
+    // additively stamps the correctly-shaped { path, usage_count } entry on
+    // every operation, unconditionally, right before apply. A second,
+    // wrongly-shaped copy here (a raw string, and the wrong pre-archive
+    // path) used to get spread as a string during that merge —
+    // {...'a string'} produces {0:'a',1:' ',...} — corrupting every leaf.
+    `locator: { heading: "${escapeYamlDoubleQuoted(row.heading)}", lines: "${row.locator}" }`,
     `confidence: ${concept.covers.length >= 2 ? 0.9 : 0.6}`,
     '---',
     '',
@@ -180,31 +209,55 @@ export function taxoLeafContent(row: TaxoRow, concept: TaxoConcept, generatedAt:
  */
 export function taxoPlanForSource(
   rows: TaxoRow[],
-  concepts: TaxoConcept[],
+  conceptByRow: Map<number, TaxoConcept>,
   sourcePagePath: string,
   generatedAt: string,
 ): ConsolidationPlan {
-  const byRow = new Map(rows.map((row) => [row.row, row]));
   const operations: WikiOperation[] = [];
   const pages: ConsolidatedPage[] = [];
+  const usedPaths = new Set<string>();
+  const touchedConcepts = new Set<TaxoConcept>();
   let leafCount = 0;
-  for (const concept of concepts) {
-    for (const rowNumber of concept.covers ?? []) {
-      const row = byRow.get(Number(rowNumber));
-      if (!row) continue;
-      const path = taxoLeafPath(concept.name, row.resume);
-      operations.push({ type: 'create', path, content: taxoLeafContent(row, concept, generatedAt) });
-      pages.push({
-        path,
-        subject: path.split('/').pop()?.replace(/\.md$/, '') ?? null,
-        scope: taxoScopeForSchema(concept.scope),
-        kind: taxoKindForSchema(concept.kind),
-        tags: normalizeTags(concept.tags),
-        rationale: concept.definition ?? null,
-      });
-      leafCount += 1;
+  // `rows` is already scoped to this one source (by the caller); looking up
+  // each row's concept in a map built ONCE for the whole batch keeps this
+  // O(rows for this source) instead of rescanning every concept's entire
+  // (batch-wide) `covers` array once per source.
+  for (const row of rows) {
+    const concept = conceptByRow.get(row.row);
+    if (!concept) continue;
+    touchedConcepts.add(concept);
+    let path = taxoLeafPath(concept.name, row.resume);
+    if (usedPaths.has(path)) {
+      // Two rows of this source resolved to the same (concept, resume) leaf —
+      // disambiguate instead of letting the collision reach
+      // validateConsolidation's blocking duplicate-path error, which used to
+      // fail the WHOLE source over one colliding leaf.
+      let suffix = 2;
+      let candidate = taxoLeafPath(concept.name, `${row.resume}-${suffix}`);
+      while (usedPaths.has(candidate)) {
+        suffix += 1;
+        candidate = taxoLeafPath(concept.name, `${row.resume}-${suffix}`);
+      }
+      path = candidate;
     }
+    usedPaths.add(path);
+    operations.push({ type: 'create', path, content: taxoLeafContent(row, concept, generatedAt) });
+    pages.push({
+      path,
+      subject: path.split('/').pop()?.replace(/\.md$/, '') ?? null,
+      scope: taxoScopeForSchema(concept.scope),
+      kind: taxoKindForSchema(concept.kind),
+      tags: normalizeTags(concept.tags),
+      rationale: concept.definition ?? null,
+    });
+    leafCount += 1;
   }
+  // Every row of a source shares its archive path; enforceSourceCitationPath
+  // (IngestService) rewrites whatever this names to the canonical archive
+  // path regardless — but without a `[src: ...]` bracket to rewrite at all,
+  // the source note carried no citation and the "no citation of the ingested
+  // source" check fired on every single taxo ingest, unconditionally.
+  const citationSource = rows[0]?.source;
   operations.push({
     type: 'create',
     path: sourcePagePath,
@@ -221,6 +274,7 @@ export function taxoPlanForSource(
       '',
       ...rows.map((row) => `- ${row.heading} — ${row.facts.split('.')[0] ?? row.facts}`.trim()),
       '',
+      ...(citationSource ? [`[src: raw/ingested/${citationSource}]`, ''] : []),
     ].join('\n'),
   });
   pages.push({
@@ -232,7 +286,7 @@ export function taxoPlanForSource(
     rationale: null,
   });
   return {
-    summary: `${leafCount} leaf/leaves filed under ${concepts.length} concept(s).`,
+    summary: `${leafCount} leaf/leaves filed under ${touchedConcepts.size} concept(s).`,
     operations,
     pages,
   };

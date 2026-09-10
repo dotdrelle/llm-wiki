@@ -1,5 +1,11 @@
 import { readFile } from 'node:fs/promises';
-import { applyProvenance, isValidProvenanceValue, readProvenance } from '../../ingest/provenance.ts';
+import matter from 'gray-matter';
+import {
+  applyProvenance,
+  isValidProvenanceValue,
+  normalizeProvenanceValue,
+  readProvenance,
+} from '../../ingest/provenance.ts';
 import { okfTypeForPath } from '../../okf/frontmatter.ts';
 import {
   CONCEPT_PATH_PREFIX,
@@ -21,7 +27,7 @@ import { safeWriteFile } from '../../utils/fs.ts';
 export type ConceptMoveDecision =
   | { kind: 'ignore' }
   | { kind: 'reject'; reason: string }
-  | { kind: 'refile'; className: string; subject: string; target?: string };
+  | { kind: 'refile'; className: string; subject: string; target: string; isTaxoRefile: boolean };
 
 /**
  * Decides what a move touching `wiki/concepts/` means, before anything is
@@ -72,6 +78,7 @@ export function decideConceptMove(input: {
       className,
       subject: resume,
       target: `${CONCEPT_PATH_PREFIX}${className}/${className}_${resume}.md`,
+      isTaxoRefile: true,
     };
   }
   const axes = parseConceptPagePath(input.to);
@@ -81,7 +88,7 @@ export function decideConceptMove(input: {
       reason: 'a concept page can only be refiled inside a concept folder',
     };
   }
-  return { kind: 'refile', className: axes.class, subject: axes.subject };
+  return { kind: 'refile', className: axes.class, subject: axes.subject, target: input.to, isTaxoRefile: false };
 }
 
 /**
@@ -93,21 +100,35 @@ export function decideConceptMove(input: {
 export async function applyConceptAxes(
   rootDir: string,
   target: string,
-  axes: { className: string; subject: string },
+  axes: { className: string; subject: string; isTaxoRefile: boolean },
 ): Promise<void> {
   const absolute = resolveInside(rootDir, target);
   const content = await readFile(absolute, 'utf8');
+  const parsed = matter(content);
   // The taxo leaves carry an explicit `concept:` field in their frontmatter:
-  // the move changed the folder, so the field follows it — the metadata must
-  // never contradict the path.
-  const withConcept = /^concept:[ \t]*[^\n]*$/m.test(content)
-    ? content.replace(/^concept:[ \t]*[^\n]*$/m, `concept: ${axes.className}`)
+  // the move changed the folder, so the field follows it — read and
+  // rewritten through the parsed frontmatter DATA object, never matched
+  // against the raw file text, so a body line that happens to start with
+  // "concept:" (prose, a bullet list) is never touched.
+  const withConcept = parsed.data.concept != null
+    ? matter.stringify(parsed.content, { ...parsed.data, concept: axes.className })
     : content;
   const current = readProvenance(withConcept);
   const rewritten = applyProvenance(
     withConcept,
     {
-      subject: current.subject ? null : axes.subject,
+      // A taxo leaf's subject is derived from its OWN basename
+      // (<concept>_<resume> normalized, e.g. "jedox-tarifs") — it is
+      // therefore always truthy, so "only fill when absent" would silently
+      // leave it naming the OLD concept forever after a move. Re-derive it
+      // from the file's new basename, the same way ingest does at creation
+      // time. The classic model's subject is independent of the folder
+      // ("cost-model" stays "cost-model" wherever it is filed) and must NOT
+      // be touched on a plain re-file — only the taxo convention ties the
+      // subject to the path this tightly.
+      subject: axes.isTaxoRefile
+        ? normalizeProvenanceValue(target.split('/').pop()?.replace(/\.md$/, '') ?? '')
+        : (current.subject ? null : axes.subject),
       scope: null,
       kind: null,
       tags: [],

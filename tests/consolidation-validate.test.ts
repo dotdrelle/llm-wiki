@@ -109,6 +109,12 @@ describe('folder near-duplicates (singular/plural and hyphen refinements)', () =
     // Not a member of the curated group: stays a lexical-only comparison.
     expect(foldersAreNearDuplicates('produit', 'infrastructure')).toBe(false);
   });
+  it('composes the curated synonym match with singular/plural', () => {
+    // A plural spelling of a curated synonym must still resolve to its group.
+    expect(foldersAreNearDuplicates('produits', 'solution-logicielle')).toBe(true);
+    expect(foldersAreNearDuplicates('produit', 'outils')).toBe(true);
+    expect(foldersAreNearDuplicates('vendors', 'produit')).toBe(true);
+  });
   it('detects the conflict in a plan that would open a near-duplicate folder', () => {
     const conflicts = detectNearDuplicateFolders(
       plan({

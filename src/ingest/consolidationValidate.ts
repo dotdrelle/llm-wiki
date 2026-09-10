@@ -365,10 +365,28 @@ const FOLDER_SYNONYM_GROUPS: readonly (readonly string[])[] = [
 ];
 
 function folderSynonymGroup(key: string): number | null {
+  const singular = wholeNameSingular(key);
   for (let index = 0; index < FOLDER_SYNONYM_GROUPS.length; index++) {
-    if (FOLDER_SYNONYM_GROUPS[index]!.includes(key)) return index;
+    if (FOLDER_SYNONYM_GROUPS[index]!.includes(key) || FOLDER_SYNONYM_GROUPS[index]!.includes(singular)) {
+      return index;
+    }
   }
   return null;
+}
+
+/**
+ * Strips one trailing plural suffix from a whole (possibly hyphenated)
+ * folder key — "produits" -> "produit", "solutions-logicielles" unchanged
+ * (plural lives mid-compound, out of scope here). The curated synonym list
+ * above is written in the singular; without this, a plural spelling of a
+ * listed synonym silently misses the group it belongs to.
+ */
+function wholeNameSingular(key: string): string {
+  if (key.length >= 4 && FOLDER_SINGULAR_SUFFIXES.has(key[key.length - 1] ?? '')) {
+    const stem = key.slice(0, -1);
+    if (stem.length >= 3) return stem;
+  }
+  return key;
 }
 
 export function folderNearKey(folder: string): string {

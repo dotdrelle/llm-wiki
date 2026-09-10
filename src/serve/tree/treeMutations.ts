@@ -167,18 +167,12 @@ export async function moveEntry(
 
   try {
     const source = resolveInside(rootDir, from);
-    let destination = resolveInside(rootDir, target);
     const sourceInfo = await stat(source);
     if (sourceInfo.isFile() && !hasAllowedExtension(from, fromRoot)) {
       return fail(`only ${fromRoot.fileExtension ?? 'known'} files can be moved here`);
     }
     const destinationDirInfo = await stat(resolveInside(rootDir, toDir)).catch(() => null);
     if (!destinationDirInfo?.isDirectory()) return fail('destination folder does not exist');
-    // Never overwrite: rename() would replace the file silently. The collision
-    // belongs to whoever moves.
-    if (await stat(destination).then(() => true, () => false)) {
-      return fail(`already exists: ${target}`, 409);
-    }
     /*
      A move under wiki/concepts/ is a filing decision, not a rename: it is
      refused before anything is touched when the destination is not a class of
@@ -192,16 +186,25 @@ export async function moveEntry(
     if (concept.kind === 'reject') return fail(concept.reason);
     // A `<concept>_<resume>.md` leaf renames to the new concept on the move:
     // the file name carries the concept, so it must follow the folder.
-    const finalTarget = concept.kind === 'refile' && concept.target ? concept.target : target;
-    destination = resolveInside(rootDir, finalTarget);
-    if (finalTarget !== target) {
-      if (await stat(destination).then(() => true, () => false)) {
-        return fail(`already exists: ${finalTarget}`, 409);
-      }
+    // `finalTarget` is the ONLY path this move ever writes to — checked for
+    // collision below exactly once, against that real destination. Checking
+    // `target` (the pre-rename path, old basename under the new folder)
+    // first used to false-positive a 409 whenever an unrelated stale file
+    // happened to already sit at a path nothing was actually about to write.
+    const finalTarget = concept.kind === 'refile' ? concept.target : target;
+    const destination = resolveInside(rootDir, finalTarget);
+    // Never overwrite: rename() would replace the file silently. The collision
+    // belongs to whoever moves.
+    if (await stat(destination).then(() => true, () => false)) {
+      return fail(`already exists: ${finalTarget}`, 409);
     }
     await rename(source, destination);
     if (concept.kind === 'refile') {
-      await applyConceptAxes(rootDir, finalTarget, { className: concept.className, subject: concept.subject });
+      await applyConceptAxes(rootDir, finalTarget, {
+        className: concept.className,
+        subject: concept.subject,
+        isTaxoRefile: concept.isTaxoRefile,
+      });
       // The links last: the page must already be at its destination, with the
       // right axes, before anything else is told to point at it.
       await options.rewriteLinks?.([{ source: from, target: finalTarget }]);

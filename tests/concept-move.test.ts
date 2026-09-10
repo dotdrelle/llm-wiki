@@ -24,7 +24,13 @@ describe('decideConceptMove', () => {
       from: 'wiki/concepts/unclassified/zephyr.md',
       to: 'wiki/concepts/market-offering/zephyr.md',
       isFile: true,
-    })).toEqual({ kind: 'refile', className: 'market-offering', subject: 'zephyr' });
+    })).toEqual({
+      kind: 'refile',
+      className: 'market-offering',
+      subject: 'zephyr',
+      target: 'wiki/concepts/market-offering/zephyr.md',
+      isTaxoRefile: false,
+    });
   });
 
   it('refuses a leaf dropped straight under wiki/concepts, with no concept folder', () => {
@@ -55,6 +61,7 @@ describe('decideConceptMove', () => {
       className: 'produit',
       subject: 'tarifs',
       target: 'wiki/concepts/produit/produit_tarifs.md',
+      isTaxoRefile: true,
     });
   });
 
@@ -65,7 +72,10 @@ describe('decideConceptMove', () => {
       isFile: true,
     });
     expect(decision.kind).toBe('refile');
-    if (decision.kind === 'refile') expect(decision.target).toBeUndefined();
+    if (decision.kind === 'refile') {
+      expect(decision.target).toBe('wiki/concepts/market-offering/zephyr.md');
+      expect(decision.isTaxoRefile).toBe(false);
+    }
   });
 });
 
@@ -122,10 +132,13 @@ describe('moveEntry on a concept leaf', () => {
       .toContain('subject: something-else');
   });
 
-  it('renames a taxo leaf to the new concept and updates its concept metadata', async () => {
+  it('renames a taxo leaf to the new concept and updates its concept AND subject metadata', async () => {
     await mkdir(path.join(root, 'wiki/concepts/jedox'), { recursive: true });
+    // A real taxo leaf's on-disk subject is concept-prefixed
+    // (validateConsolidation derives it from the full basename) — a clean
+    // unprefixed fixture here would not exercise the bug this test guards.
     await writeFile(path.join(root, 'wiki/concepts/jedox/jedox_tarifs.md'),
-      '---\ntitle: Jedox — tarifs\ntype: product\nsubject: tarifs\nconcept: jedox\n---\n\n# Jedox — tarifs\n');
+      '---\ntitle: Jedox — tarifs\ntype: product\nsubject: jedox-tarifs\nconcept: jedox\n---\n\n# Jedox — tarifs\n\nSee also concept: pricing in the body — must not be touched.\n');
     const seen: Array<{ source: string; target: string }> = [];
     await moveEntry(root, 'wiki/concepts/jedox/jedox_tarifs.md', 'wiki/concepts/market-offering', {
       rewriteLinks: async (moves) => { seen.push(...moves); },
@@ -133,10 +146,31 @@ describe('moveEntry on a concept leaf', () => {
 
     const moved = await readFile(path.join(root, 'wiki/concepts/market-offering/market-offering_tarifs.md'), 'utf8');
     expect(moved).toContain('concept: market-offering');
-    expect(moved).toContain('subject: tarifs');
+    // The subject must follow the new concept too — it used to stay
+    // "jedox-tarifs" forever, contradicting the folder the page now lives in.
+    expect(moved).toContain('subject: market-offering-tarifs');
+    // The body line starting with "concept:" is prose, not frontmatter — the
+    // old raw-text regex used to rewrite it too.
+    expect(moved).toContain('See also concept: pricing in the body — must not be touched.');
     expect(seen).toEqual([{
       source: 'wiki/concepts/jedox/jedox_tarifs.md',
       target: 'wiki/concepts/market-offering/market-offering_tarifs.md',
     }]);
+  });
+
+  it('does not false-positive on a stale file sitting at the pre-rename path', async () => {
+    await mkdir(path.join(root, 'wiki/concepts/jedox'), { recursive: true });
+    await writeFile(path.join(root, 'wiki/concepts/jedox/jedox_tarifs.md'),
+      '---\nsubject: jedox-tarifs\nconcept: jedox\n---\n\n# Jedox — tarifs\n');
+    // An unrelated leftover file happens to sit at the OLD basename under the
+    // NEW folder — nothing is actually about to write there (the taxo rename
+    // targets market-offering_tarifs.md instead), so this must not block the
+    // move.
+    await writeFile(path.join(root, 'wiki/concepts/market-offering/jedox_tarifs.md'), '# stale leftover\n');
+
+    const result = await moveEntry(root, 'wiki/concepts/jedox/jedox_tarifs.md', 'wiki/concepts/market-offering');
+    expect(result.ok).toBe(true);
+    expect(await readFile(path.join(root, 'wiki/concepts/market-offering/market-offering_tarifs.md'), 'utf8'))
+      .toContain('concept: market-offering');
   });
 });

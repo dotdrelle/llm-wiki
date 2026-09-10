@@ -433,7 +433,7 @@ export class IngestService {
     const previousRegistry = await this.previousRegistry();
 
     const taxoPre = options?.taxo
-      ? await this.runTaxoPrePass(sourcePaths, options)
+      ? await this.runTaxoPrePass(sourcePaths, cache, options)
       : null;
 
     for (let i = 0; i < sourcePaths.length; i++) {
@@ -452,6 +452,16 @@ export class IngestService {
           ingested: options?.fromIngested === true,
         });
         sourceLabel = source.relativePath;
+        if (options?.taxo && taxoPre?.failedSources.has(source.relativePath)) {
+          // The taxo pre-pass isolates failures per source (a bad section
+          // extraction no longer aborts the whole batch) — surface that
+          // failure here, through the SAME per-source catch/results shape
+          // every other failure reason already uses, instead of silently
+          // producing zero concepts for this source with nothing in the log.
+          throw new Error(
+            `Taxo pre-pass failed for this source: ${taxoPre.failedSources.get(source.relativePath)}`,
+          );
+        }
         await this.logger.info('ingest:source', {
           source: source.relativePath,
           title: source.title,
@@ -984,13 +994,31 @@ export class IngestService {
         if (options?.taxo && taxoPre) {
           consolidated = taxoPlanForSource(
             taxoPre.rowsBySource.get(source.relativePath) ?? [],
-            taxoPre.concepts,
+            taxoPre.conceptByRow,
             sourcePagePath,
             new Date().toISOString(),
           );
-          sections = [];
           const warmPages = await this.retrieval.warmCache();
           knownPaths = new Set(warmPages.map((page) => page.relativePath));
+          // The classic path's split/near-duplicate-folder detection is
+          // deterministic and plan-shaped, not classic-pipeline-specific —
+          // run it here too. Without this, a taxo plan that opens a folder
+          // near-duplicating an existing one (exactly the produit /
+          // solution-logicielle case FOLDER_SYNONYM_GROUPS exists to catch)
+          // got zero warning, because these checks used to run only inside
+          // the classic branch above.
+          const existingFolders = [...new Set(
+            warmPages
+              .map((page) => parseConceptPagePath(page.relativePath)?.class)
+              .filter((folder): folder is string => Boolean(folder)),
+          )].sort();
+          lastSplits = detectConceptSplits(consolidated);
+          lastFolderConflicts = detectNearDuplicateFolders(consolidated, { existingFolders });
+          // `sections` is read only for its .length in the ingest:apply log
+          // below; taxo's real per-source section count lives in
+          // taxoPre.sectionCounts (computed once, in the pre-pass).
+          sections = new Array(taxoPre.sectionCounts.get(source.relativePath) ?? 0).fill('');
+          sourceRetry = taxoPre.retryBySource.get(source.relativePath);
         }
         consolidated ??= { summary: 'No plan produced.', operations: [], pages: [] };
 
@@ -1307,6 +1335,7 @@ export class IngestService {
    */
   private async runTaxoPrePass(
     sourcePaths: string[],
+    cache: IngestCache,
     options?: IngestCommandOptions & {
       onSourceStart?: (sourcePath: string, index: number, total: number) => void;
       onSourceLlm?: (
@@ -1325,8 +1354,13 @@ export class IngestService {
     },
   ): Promise<{
     rowsBySource: Map<string, TaxoRow[]>;
+    conceptByRow: Map<number, TaxoConcept>;
     concepts: TaxoConcept[];
     sectionCounts: Map<string, number>;
+    retryBySource: Map<string, IngestRetryInfo>;
+    /** sourcePath -> error message. Surfaced by the main per-source loop as
+     * a normal `failed: true` result. */
+    failedSources: Map<string, string>;
   }> {
     const taxoSectionSchema = z.object({
       concept: z.string().default(''),
@@ -1345,121 +1379,188 @@ export class IngestService {
       })),
     });
     const TAXO_PROMPT_VERSION = 1;
-    const cache = this.injectedCache
-      ?? new IngestCache(this.workspace.paths.rootDir, options?.dryRun !== true);
-    if (!options?.dryRun) await cache.collect().catch(() => 0);
     const modelId = this.config.llm.model;
     const rowsBySource = new Map<string, TaxoRow[]>();
     const sectionCounts = new Map<string, number>();
+    const retryBySource = new Map<string, IngestRetryInfo>();
+    const failedSources = new Map<string, string>();
     const rows: TaxoRow[] = [];
 
     for (let i = 0; i < sourcePaths.length; i++) {
       const sourcePath = sourcePaths[i];
-      options?.onSourceStart?.(sourcePath, i, sourcePaths.length);
-      const source = await this.workspace.readSourceDocument(sourcePath, {
-        ingested: options?.fromIngested === true,
-      });
-      const rawBody = normalizeSourceBody(source.body ?? '');
-      const sections = splitIntoSections(rawBody);
-      sectionCounts.set(source.relativePath, sections.length);
-      const sourceRows: TaxoRow[] = [];
-      for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
-        const section = sections[sectionIndex];
-        const sourceHash = hashText(`${source.archiveCitationPath}\u0000${rawBody}`);
-        const cacheName = extractionCacheName({
-          sourceHash,
-          packIndex: sectionIndex,
-          packHash: hashText(section.body),
-          model: modelId,
-          promptVersion: TAXO_PROMPT_VERSION,
-          schemaVersion: 1,
+      // NOT options?.onSourceStart here: its contract is "fires once per
+      // source, at the start of ITS processing." The main loop already
+      // fires it when the source reaches its own turn — firing it here too
+      // made the CLI spinner jump back to "source 1 of N" the moment this
+      // (often much longer) pre-pass finished, reading as a restart.
+      try {
+        const source = await this.workspace.readSourceDocument(sourcePath, {
+          ingested: options?.fromIngested === true,
         });
-        let extraction: { concept: string; resume: string; facts: string } | null = null;
-        const cached = await cache.read<unknown>(cacheName);
-        if (cached) {
-          const parsed = taxoSectionSchema.safeParse(cached);
-          if (parsed.success) extraction = parsed.data;
-        }
-        if (!extraction) {
-          const docTitle = /^#\s+(.+)$/m.exec(source.body ?? '')?.[1]?.trim()
-            ?? source.title;
-          const { value, retry } = await withRetry(
-            () => this.llm.completeJson(
-              {
-                system: TAXO_SECTION_SYSTEM,
-                user: buildTaxoSectionUser(docTitle, section),
-                label: 'ingest_taxo_extract',
-                logger: this.logger,
-                traceData: { source: source.relativePath, section: section.heading },
-                onUsage: (usage) => {
-                  options?.onSourceUsage?.(sourcePath, i, sourcePaths.length, usage, {
-                    sectionIndex,
-                    sectionTotal: sections.length,
-                  });
-                },
-              },
-              taxoSectionSchema,
-            ),
-            {
-              onRetry: async (retryInfo) => {
-                await this.logger.warn('ingest:retry', {
-                  source: source.relativePath,
-                  phase: 'taxo_extract',
-                  attempts: retryInfo.attempts,
-                  retries: retryInfo.retries,
-                  classification: retryInfo.classification,
-                  message: retryInfo.message,
-                  section: section.heading,
-                });
-              },
-            },
-          );
-          extraction = value;
-          if (retry.retries > 0 && options?.verbose) {
-            await this.logger.info('ingest:extract', {
-              source: source.relativePath,
-              section: section.heading,
-              cached: false,
-              retries: retry.retries,
+        const rawBody = normalizeSourceBody(source.body ?? '');
+        const sections = splitIntoSections(rawBody);
+        sectionCounts.set(source.relativePath, sections.length);
+        const sourceHash = hashText(`${source.archiveCitationPath} ${rawBody}`);
+        const docTitle = /^#\s+(.+)$/m.exec(source.body ?? '')?.[1]?.trim()
+          ?? source.title;
+
+        /*
+         Phase 1 — N concurrent extractions, one per section, no writes.
+
+         Mirrors the classic pipeline's own per-pack extraction: independent
+         reads of the same source have no reason to run one at a time.
+        */
+        const sectionResults = await mapWithConcurrency(
+          sections,
+          this.config.limits.maxInFlightRequests ?? 3,
+          async (section, sectionIndex): Promise<{
+            extraction: { concept: string; resume: string; facts: string };
+            retry?: IngestRetryInfo;
+          }> => {
+            const cacheName = extractionCacheName({
+              sourceHash,
+              packIndex: sectionIndex,
+              packHash: hashText(section.body),
+              model: modelId,
+              promptVersion: TAXO_PROMPT_VERSION,
+              schemaVersion: 1,
             });
+            let extraction: { concept: string; resume: string; facts: string } | null = null;
+            const cached = await cache.read<unknown>(cacheName);
+            if (cached) {
+              const parsed = taxoSectionSchema.safeParse(cached);
+              if (parsed.success) extraction = parsed.data;
+            }
+            let sectionRetry: IngestRetryInfo | undefined;
+            if (!extraction) {
+              const { value, retry } = await withRetry(
+                () => this.llm.completeJson(
+                  {
+                    system: TAXO_SECTION_SYSTEM,
+                    user: buildTaxoSectionUser(docTitle, section),
+                    label: 'ingest_taxo_extract',
+                    logger: this.logger,
+                    traceData: { source: source.relativePath, section: section.heading },
+                    onUsage: (usage) => {
+                      options?.onSourceUsage?.(sourcePath, i, sourcePaths.length, usage, {
+                        sectionIndex,
+                        sectionTotal: sections.length,
+                      });
+                    },
+                  },
+                  taxoSectionSchema,
+                ),
+                {
+                  onRetry: async (retryInfo) => {
+                    await this.logger.warn('ingest:retry', {
+                      source: source.relativePath,
+                      phase: 'taxo_extract',
+                      attempts: retryInfo.attempts,
+                      retries: retryInfo.retries,
+                      classification: retryInfo.classification,
+                      message: retryInfo.message,
+                      section: section.heading,
+                    });
+                  },
+                },
+              );
+              extraction = value;
+              if (retry.retries > 0) {
+                sectionRetry = retry;
+                if (options?.verbose) {
+                  await this.logger.info('ingest:extract', {
+                    source: source.relativePath,
+                    section: section.heading,
+                    cached: false,
+                    retries: retry.retries,
+                  });
+                }
+              }
+              await cache.write(cacheName, extraction);
+            }
+            options?.onSourceLlm?.(sourcePath, i, sourcePaths.length, {
+              sectionIndex,
+              sectionTotal: sections.length,
+            });
+            return { extraction, retry: sectionRetry };
+          },
+        );
+
+        const sourceRetry = sectionResults.findLast((result) => result.retry)?.retry;
+        if (sourceRetry) retryBySource.set(source.relativePath, sourceRetry);
+
+        // Row numbers must be assigned in section order, not completion
+        // order: mapWithConcurrency preserves input order in its results
+        // array (each worker writes to results[index]), so iterating it
+        // sequentially here — outside the concurrent mapper — keeps
+        // `row.row` stable and matching the table the dedup call sees.
+        const sourceRows: TaxoRow[] = [];
+        for (let sectionIndex = 0; sectionIndex < sectionResults.length; sectionIndex++) {
+          const { extraction } = sectionResults[sectionIndex]!;
+          const section = sections[sectionIndex]!;
+          if (extraction.concept) {
+            const row: TaxoRow = {
+              row: rows.length + 1,
+              source: source.relativePath,
+              heading: section.heading,
+              locator: section.locator,
+              concept: extraction.concept,
+              resume: extraction.resume,
+              facts: extraction.facts,
+            };
+            rows.push(row);
+            sourceRows.push(row);
           }
-          await cache.write(cacheName, extraction);
         }
-        options?.onSourceLlm?.(sourcePath, i, sourcePaths.length, {
-          sectionIndex,
-          sectionTotal: sections.length,
-        });
-        if (extraction.concept) {
-          const row: TaxoRow = {
-            row: rows.length + 1,
-            source: source.relativePath,
-            heading: section.heading,
-            locator: section.locator,
-            concept: extraction.concept,
-            resume: extraction.resume,
-            facts: extraction.facts,
-          };
-          rows.push(row);
-          sourceRows.push(row);
-        }
+        rowsBySource.set(source.relativePath, sourceRows);
+      } catch (error) {
+        // Per-source isolation: one source's fatal extraction failure (every
+        // retry exhausted, a malformed response, an unreadable file) used to
+        // abort the ENTIRE batch before a single result was produced — even
+        // when every other source's extraction had already succeeded and
+        // been cached. Record it and let the rest of the batch proceed; the
+        // main per-source loop surfaces this source as a normal failure.
+        const message = error instanceof Error ? error.message : String(error);
+        await this.logger.error('ingest:taxo-prepass-failed', { sourcePath, message });
+        failedSources.set(sourcePath, message);
+        rowsBySource.set(sourcePath, []);
       }
-      rowsBySource.set(source.relativePath, sourceRows);
     }
 
-    if (rows.length === 0) return { rowsBySource, concepts: [], sectionCounts };
+    if (rows.length === 0) {
+      return { rowsBySource, conceptByRow: new Map(), concepts: [], sectionCounts, retryBySource, failedSources };
+    }
     await this.logger.info('ingest:taxo-table', { rows: rows.length });
-    const dedup = await this.llm.completeJson(
+    const { value: dedup } = await withRetry(
+      () => this.llm.completeJson(
+        {
+          system: TAXO_DEDUP_SYSTEM,
+          user: buildTaxoTable(rows),
+          label: 'ingest_taxo_dedup',
+          logger: this.logger,
+          traceData: { rows: rows.length },
+        },
+        taxoDedupSchema,
+      ),
       {
-        system: TAXO_DEDUP_SYSTEM,
-        user: buildTaxoTable(rows),
-        label: 'ingest_taxo_dedup',
-        logger: this.logger,
-        traceData: { rows: rows.length },
+        onRetry: async (retryInfo) => {
+          await this.logger.warn('ingest:retry', {
+            phase: 'taxo_dedup',
+            attempts: retryInfo.attempts,
+            retries: retryInfo.retries,
+            classification: retryInfo.classification,
+            message: retryInfo.message,
+          });
+        },
       },
-      taxoDedupSchema,
     );
-    return { rowsBySource, concepts: dedup.concepts, sectionCounts };
+    const conceptByRow = new Map<number, TaxoConcept>();
+    for (const concept of dedup.concepts) {
+      for (const rowNumber of concept.covers ?? []) conceptByRow.set(Number(rowNumber), concept);
+    }
+    return { rowsBySource, conceptByRow, concepts: dedup.concepts, sectionCounts, retryBySource, failedSources };
   }
+
 
   async applyPlannedIngest(
     planFiles: string[],
