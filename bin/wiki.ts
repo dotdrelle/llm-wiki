@@ -210,6 +210,7 @@ async function main() {
       'Rebuild concept pages from the archived raw/ingested sources instead of raw/untracked. No file is moved or archived again; [files...] match against raw/ingested when given.',
     )
     .option('--reject <path...>', 'Reject planned wiki operation path(s) during review')
+    .option('--taxo', 'Use the taxo pipeline: section-level extraction plus a global dedup pass')
     .option('-v, --verbose', 'Print ingestion step traces')
     .option('--debug', 'Print detailed ingestion traces')
     .option(

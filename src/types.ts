@@ -158,6 +158,8 @@ export interface IngestCommandOptions {
   verbose?: boolean;
   debug?: boolean;
   traceFile?: string;
+  /** Use the taxo pipeline: section-level extraction + global dedup pass. */
+  taxo?: boolean;
 }
 
 export interface AddSkillResult {

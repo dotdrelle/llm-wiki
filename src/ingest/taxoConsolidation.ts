@@ -223,6 +223,14 @@ export function taxoPlanForSource(
       '',
     ].join('\n'),
   });
+  pages.push({
+    path: sourcePagePath,
+    subject: sourcePagePath.split('/').pop()?.replace(/\.md$/, '') ?? null,
+    scope: 'source',
+    kind: null,
+    tags: [],
+    rationale: null,
+  });
   return {
     summary: `${leafCount} leaf/leaves filed under ${concepts.length} concept(s).`,
     operations,

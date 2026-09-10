@@ -27,6 +27,17 @@ import {
 } from '../ingest/provenance.ts';
 import { CONCEPT_PREFIX, DEFAULT_CONCEPT_BUDGET, detectConceptOverflow, detectConceptSplits, detectDuplicatePaths, detectNearDuplicateFolders, reanchorToPreviousConcepts, validateConsolidation } from '../ingest/consolidationValidate.ts';
 import { parseConceptPagePath } from '../ingest/conceptGrid.ts';
+import {
+  buildTaxoSectionUser,
+  buildTaxoTable,
+  splitIntoSections,
+  TAXO_DEDUP_SYSTEM,
+  TAXO_SECTION_SYSTEM,
+  taxoPlanForSource,
+  type TaxoConcept,
+  type TaxoRow,
+} from '../ingest/taxoConsolidation.ts';
+import { z } from 'zod';
 import { hashText } from '../utils/hash.ts';
 import { resolveInside } from '../utils/path.ts';
 import { normalizeSourceBody } from '../utils/markdown.ts';
@@ -421,6 +432,10 @@ export class IngestService {
      */
     const previousRegistry = await this.previousRegistry();
 
+    const taxoPre = options?.taxo
+      ? await this.runTaxoPrePass(sourcePaths, options, profileSection)
+      : null;
+
     for (let i = 0; i < sourcePaths.length; i++) {
       const sourcePath = sourcePaths[i];
       let sourceLabel = sourcePath;
@@ -503,6 +518,14 @@ export class IngestService {
 
         const { maxChunkChars, maxSourceChars } = this.config.retrieval;
         const rawBody = normalizeSourceBody(source.body ?? '');
+        const sourcePagePath = path.posix.join('wiki', 'sources', `${source.slug}.md`);
+        let consolidated: ConsolidationPlan | null = null;
+        let lastSplits: ReturnType<typeof detectConceptSplits> = [];
+        let lastFolderConflicts: ReturnType<typeof detectNearDuplicateFolders> = [];
+        let sections: string[] = [];
+        let knownPaths: Set<string> = new Set();
+        let sectionResults: Array<{ extraction: SourceExtraction; retry?: IngestRetryInfo }> = [];
+        if (!options?.taxo) {
         /*
          A single planner, for ingestion as well as `wiki doctor`.
 
@@ -513,7 +536,7 @@ export class IngestService {
          in richness.
         */
         const plan = planSourcePacks(rawBody, { maxChars: maxSourceChars });
-        const sections = plan.packs.map((pack) => pack.text);
+        sections = plan.packs.map((pack) => pack.text);
 
         // Logged for EVERY source, even unsplit: this is the measure that lets
         // us explain afterwards why a source cost N calls.
@@ -522,7 +545,6 @@ export class IngestService {
           ...plan.diagnostics,
         });
 
-        const sourcePagePath = path.posix.join('wiki', 'sources', `${source.slug}.md`);
         /*
          The source identity enters the cache key, not just its content.
 
@@ -531,7 +553,7 @@ export class IngestService {
          key, one document's consolidated plan would be re-served to the other,
          with its citations and its source note: a page attributed to the wrong
          document, and nothing to signal it.
-        */
+         */
         const sourceHash = hashText(`${source.archiveCitationPath}\u0000${rawBody}`);
         const modelId = this.config.llm.model;
 
@@ -543,7 +565,7 @@ export class IngestService {
          original flaw impossible, where two fragments wrote two pages of the
          same concept without seeing each other.
         */
-        const sectionResults = await mapWithConcurrency(
+        sectionResults = await mapWithConcurrency(
           plan.packs,
           this.config.limits.maxInFlightRequests ?? 3,
           async (pack, sectionIndex): Promise<IngestSectionResult> => {
@@ -808,7 +830,6 @@ export class IngestService {
           inventory: fullInventory.length,
         });
 
-        let consolidated: ConsolidationPlan | null = null;
         const cachedPlan = await cache.read<unknown>(consolidationCacheKey);
         if (cachedPlan) {
           const parsed = consolidationPlanSchema.safeParse(cachedPlan);
@@ -866,7 +887,7 @@ export class IngestService {
          */
         // Reused below (validateConsolidation's existingPaths): warmPages is
         // not mutated between the two uses, so one Set covers both.
-        const knownPaths = new Set(warmPages.map((page) => page.relativePath));
+        knownPaths = new Set(warmPages.map((page) => page.relativePath));
         // The correction asks the model to merge concepts, but a retry must not
         // lose the source note: a plan without one is rejected outright, and the
         // model, once focused on merging, drops it. Capture it once from the
@@ -884,8 +905,6 @@ export class IngestService {
         // FINAL `consolidated` — without it, exhausting the retries would
         // leave `lastSplits` one correction stale relative to the plan
         // `validateConsolidation` actually receives.
-        let lastSplits: ReturnType<typeof detectConceptSplits> = [];
-        let lastFolderConflicts: ReturnType<typeof detectNearDuplicateFolders> = [];
         for (let retryAttempt = 0; retryAttempt <= MAX_SPLIT_RETRIES; retryAttempt += 1) {
           const splits = detectConceptSplits(consolidated);
           lastSplits = splits;
@@ -960,6 +979,20 @@ export class IngestService {
           }
           consolidated = corrected;
         }
+        } // end of the classic extraction + consolidation generation
+
+        if (options?.taxo && taxoPre) {
+          consolidated = taxoPlanForSource(
+            taxoPre.rowsBySource.get(source.relativePath) ?? [],
+            taxoPre.concepts,
+            sourcePagePath,
+            new Date().toISOString(),
+          );
+          sections = [];
+          const warmPages = await this.retrieval.warmCache();
+          knownPaths = new Set(warmPages.map((page) => page.relativePath));
+        }
+        consolidated ??= { summary: 'No plan produced.', operations: [], pages: [] };
 
         /*
          Normalize FIRST, validate second.
@@ -1264,6 +1297,169 @@ export class IngestService {
     });
 
     return results;
+  }
+
+  /**
+   * Taxo pipeline pre-pass: one extraction call per `#` section of every
+   * source in the batch, then ONE global dedup call over the whole table.
+   * The per-source plans are derived deterministically afterwards, in the
+   * main loop, from the result of this pass.
+   */
+  private async runTaxoPrePass(
+    sourcePaths: string[],
+    options?: IngestCommandOptions & {
+      onSourceStart?: (sourcePath: string, index: number, total: number) => void;
+      onSourceLlm?: (
+        sourcePath: string,
+        index: number,
+        total: number,
+        progress?: { sectionIndex: number; sectionTotal: number },
+      ) => void;
+      onSourceUsage?: (
+        sourcePath: string,
+        index: number,
+        total: number,
+        usage: TokenUsage,
+        progress?: { sectionIndex: number; sectionTotal: number },
+      ) => void;
+    },
+    profileSection?: string | null,
+  ): Promise<{
+    rowsBySource: Map<string, TaxoRow[]>;
+    concepts: TaxoConcept[];
+    sectionCounts: Map<string, number>;
+  }> {
+    const taxoSectionSchema = z.object({
+      concept: z.string().default(''),
+      resume: z.string().default(''),
+      facts: z.string().default(''),
+    });
+    const taxoDedupSchema = z.object({
+      concepts: z.array(z.object({
+        name: z.string(),
+        label: z.string().default(''),
+        kind: z.string().default('concept'),
+        scope: z.string().default('product'),
+        definition: z.string().default(''),
+        tags: z.array(z.string()).default([]),
+        covers: z.array(z.number()),
+      })),
+    });
+    const TAXO_PROMPT_VERSION = 1;
+    const cache = this.injectedCache
+      ?? new IngestCache(this.workspace.paths.rootDir, options?.dryRun !== true);
+    if (!options?.dryRun) await cache.collect().catch(() => 0);
+    const modelId = this.config.llm.model;
+    const rowsBySource = new Map<string, TaxoRow[]>();
+    const sectionCounts = new Map<string, number>();
+    let rows: TaxoRow[] = [];
+
+    for (let i = 0; i < sourcePaths.length; i++) {
+      const sourcePath = sourcePaths[i];
+      options?.onSourceStart?.(sourcePath, i, sourcePaths.length);
+      const source = await this.workspace.readSourceDocument(sourcePath, {
+        ingested: options?.fromIngested === true,
+      });
+      const rawBody = normalizeSourceBody(source.body ?? '');
+      const sections = splitIntoSections(rawBody);
+      sectionCounts.set(source.relativePath, sections.length);
+      const sourceRows: TaxoRow[] = [];
+      for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+        const section = sections[sectionIndex];
+        const sourceHash = hashText(`${source.archiveCitationPath}\u0000${rawBody}`);
+        const cacheName = extractionCacheName({
+          sourceHash,
+          packIndex: sectionIndex,
+          packHash: hashText(section.body),
+          model: modelId,
+          promptVersion: TAXO_PROMPT_VERSION,
+          schemaVersion: 1,
+        });
+        let extraction: { concept: string; resume: string; facts: string } | null = null;
+        const cached = await cache.read<unknown>(cacheName);
+        if (cached) {
+          const parsed = taxoSectionSchema.safeParse(cached);
+          if (parsed.success) extraction = parsed.data;
+        }
+        if (!extraction) {
+          const docTitle = /^#\s+(.+)$/m.exec(source.body ?? '')?.[1]?.trim()
+            ?? source.title;
+          const { value, retry } = await withRetry(
+            () => this.llm.completeJson(
+              {
+                system: TAXO_SECTION_SYSTEM,
+                user: buildTaxoSectionUser(docTitle, section),
+                label: 'ingest_taxo_extract',
+                logger: this.logger,
+                traceData: { source: source.relativePath, section: section.heading },
+                onUsage: (usage) => {
+                  options?.onSourceUsage?.(sourcePath, i, sourcePaths.length, usage, {
+                    sectionIndex,
+                    sectionTotal: sections.length,
+                  });
+                },
+              },
+              taxoSectionSchema,
+            ),
+            {
+              onRetry: async (retryInfo) => {
+                await this.logger.warn('ingest:retry', {
+                  source: source.relativePath,
+                  phase: 'taxo_extract',
+                  attempts: retryInfo.attempts,
+                  retries: retryInfo.retries,
+                  classification: retryInfo.classification,
+                  message: retryInfo.message,
+                  section: section.heading,
+                });
+              },
+            },
+          );
+          extraction = value;
+          if (retry.retries > 0 && options?.verbose) {
+            await this.logger.info('ingest:extract', {
+              source: source.relativePath,
+              section: section.heading,
+              cached: false,
+              retries: retry.retries,
+            });
+          }
+          await cache.write(cacheName, extraction);
+        }
+        options?.onSourceLlm?.(sourcePath, i, sourcePaths.length, {
+          sectionIndex,
+          sectionTotal: sections.length,
+        });
+        if (extraction.concept) {
+          const row: TaxoRow = {
+            row: rows.length + 1,
+            source: source.relativePath,
+            heading: section.heading,
+            locator: section.locator,
+            concept: extraction.concept,
+            resume: extraction.resume,
+            facts: extraction.facts,
+          };
+          rows.push(row);
+          sourceRows.push(row);
+        }
+      }
+      rowsBySource.set(source.relativePath, sourceRows);
+    }
+
+    if (rows.length === 0) return { rowsBySource, concepts: [], sectionCounts };
+    await this.logger.info('ingest:taxo-table', { rows: rows.length });
+    const dedup = await this.llm.completeJson(
+      {
+        system: TAXO_DEDUP_SYSTEM,
+        user: buildTaxoTable(rows),
+        label: 'ingest_taxo_dedup',
+        logger: this.logger,
+        traceData: { rows: rows.length },
+      },
+      taxoDedupSchema,
+    );
+    return { rowsBySource, concepts: dedup.concepts, sectionCounts };
   }
 
   async applyPlannedIngest(

@@ -55,10 +55,12 @@ describe('taxo plan mapping', () => {
       'wiki/concepts/jedox/jedox_tarifs.md',
       'wiki/sources/a.md',
     ]);
-    expect(plan.pages).toHaveLength(2);
+    expect(plan.pages).toHaveLength(3);
     expect(plan.pages[0]!.kind).toBe('product');
     expect(plan.pages[0]!.tags).toEqual(['solution', 'cout']);
     expect(plan.pages[0]!.rationale).toBe('Progiciel EPM.');
+    expect(plan.pages[2]!.path).toBe('wiki/sources/a.md');
+    expect(plan.pages[2]!.scope).toBe('source');
   });
 
   it('writes the OKF frontmatter with title, subject, locator and shared tags', () => {
