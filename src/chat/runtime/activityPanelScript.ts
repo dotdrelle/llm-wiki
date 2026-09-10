@@ -84,10 +84,21 @@ function publishAssistantOutput(content, statusDiv, opts={}) {
   return appendMsg('assistant',content,opts);
 }
 
-function setStreamContent(div, text, extra='', {html=false,plainText=null}={}) {
+function setStreamContent(div, text, extra='', {html=false,plainText=null,streaming=false}={}) {
   const bubble=div.querySelector('.bubble');
   if(!bubble) return;
   div.dataset.copy=plainText??text??'';
+  // Mid-stream, every token was re-parsing the WHOLE accumulated text as
+  // markdown and replacing the bubble's innerHTML — cost growing with the
+  // reply's length, on every single delta, with nothing batching same-frame
+  // updates. That is what made streaming look choppy rather than smooth: a
+  // plain-text write is orders of magnitude cheaper, and the one-time
+  // markdown render still happens on the final, non-streaming call below.
+  if(streaming && !html && text) {
+    bubble.textContent=text;
+    $('messages').scrollTop=$('messages').scrollHeight;
+    return;
+  }
   const main=html ? (text||'') : (text ? renderMd(text) : (extra ? '' : '<div class="typing">>_</div>'));
   bubble.innerHTML=main+extra;
   $('messages').scrollTop=$('messages').scrollHeight;

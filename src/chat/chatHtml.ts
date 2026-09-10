@@ -495,7 +495,16 @@ function connectRuntimePanel() {
 function updateMsgBubble(el,role,content) {
   el.dataset.copy=content||'';
   const bubble=el.querySelector('.bubble');
-  if(bubble) bubble.innerHTML=role==='assistant'?renderMd(content||''):esc(content||'');
+  if(bubble) {
+    // This runs on every /state poll while a reply is still streaming in
+    // (see mergeRuntimeConversation) — re-parsing the whole answer as
+    // markdown and replacing the bubble's innerHTML each time is the same
+    // choppy-render cost as the local chat path. While the run is still
+    // active, write plain text; the final poll after it ends (content stops
+    // changing) is what gets the real markdown render.
+    if(role==='assistant'&&runtimeIsRunning()) bubble.textContent=content||'';
+    else bubble.innerHTML=role==='assistant'?renderMd(content||''):esc(content||'');
+  }
   if(content) el.classList.remove('msg-empty');
 }
 
@@ -2697,9 +2706,24 @@ async function sendMessage() {
     const reqMessages=sysContent ? [{role:'system',content:sysContent},...cleanMessages] : cleanMessages;
     const reqBody={model,...(Number.isFinite(temp)?{temperature:temp}:{}),messages:reqMessages};
     streamDiv=createStreamBubble();
+    // fetchStream's onDelta fires once per SSE token with no throttling of its
+    // own — a fast provider can call this dozens of times a second. Batch to
+    // one DOM write per animation frame (the latest accumulated text wins;
+    // frames skipped between deltas just coalesce) instead of one per token.
+    let streamRafPending=false;
     const {content}=await fetchStream(llmUrl,llmHeaders,reqBody,t=>{
       streamText=t;
-      setStreamContent(streamDiv,t);
+      if(streamRafPending) return;
+      streamRafPending=true;
+      requestAnimationFrame(()=>{
+        streamRafPending=false;
+        // A frame requested for the last delta can still be pending once the
+        // read loop ends and the final markdown render already ran below —
+        // without this guard it would fire right after and overwrite that
+        // proper render with a plain-text one.
+        if(streamFinalized) return;
+        setStreamContent(streamDiv,streamText,'',{streaming:true});
+      });
     },streamAbortController.signal);
     if(streamAbortController.signal.aborted) return;
     streamText=content;
@@ -2747,6 +2771,7 @@ async function sendMessage() {
     if(streamDiv && !streamFinalized && streamClearSeq===clearChatSeq) {
       const finalText=streamText || (streamAbortController?.signal.aborted ? 'Response stopped.' : '');
       setStreamContent(streamDiv,finalText);
+      streamFinalized=true;
       if(finalText && !streamMessagePersisted) {
         messages.push({role:'assistant',content:finalText});
         conversationDirty=true;

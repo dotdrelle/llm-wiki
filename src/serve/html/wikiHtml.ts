@@ -1,5 +1,5 @@
 import { mkdir, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import fg from 'fast-glob';
 import matter from 'gray-matter';
@@ -829,6 +829,42 @@ function isEditableTreePath(nodePath: string): boolean {
   return ['wiki', 'deliverables', 'templates', 'build-context'].includes(section);
 }
 
+// Which pending sources are being worked on right now, read from the live
+// production jobs the agent writes next to the workspace: an `ingest_plan`
+// job means its inputs are being ANALYZED, an `ingest_apply` job (whose
+// inputs are plan files) means the plan's sources are being WRITTEN. One
+// directory scan, no other state — the sidebar render and each refresh see
+// the same truth the job status pages do.
+function activeIngestPhases(rootDir: string): Map<string, 'analyze' | 'write'> {
+  const phases = new Map<string, 'analyze' | 'write'>();
+  const jobsDir = path.join(rootDir, '.wiki', 'production-jobs', 'jobs');
+  let names: string[] = [];
+  try { names = readdirSync(jobsDir); } catch { return phases; }
+  for (const name of names) {
+    if (!name.endsWith('.json')) continue;
+    let job: any = null;
+    try { job = JSON.parse(readFileSync(path.join(jobsDir, name), 'utf8')); } catch { continue; }
+    if (job?.status !== 'running') continue;
+    if (job.type === 'ingest_plan') {
+      for (const input of Array.isArray(job.inputs) ? job.inputs : []) {
+        const posix = toPosix(String(input));
+        if (posix.startsWith('raw/untracked/')) phases.set(posix, 'analyze');
+      }
+    } else if (job.type === 'ingest_apply') {
+      for (const input of Array.isArray(job.inputs) ? job.inputs : []) {
+        try {
+          const plan = JSON.parse(readFileSync(path.join(rootDir, String(input)), 'utf8'));
+          for (const source of Array.isArray(plan?.sources) ? plan.sources : []) {
+            const posix = toPosix(String(source?.source ?? ''));
+            if (posix.startsWith('raw/untracked/')) phases.set(posix, 'write');
+          }
+        } catch { /* unreadable plan: skip */ }
+      }
+    }
+  }
+  return phases;
+}
+
 async function renderUntrackedSidebar(rootDir: string): Promise<string> {
   const [foundFiles, foundDirectories, wikiFiles] = await Promise.all([
     fg('raw/untracked/**/*.md', { cwd: rootDir, dot: false, onlyFiles: true }),
@@ -838,6 +874,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
   const files = foundFiles.map(toPosix).sort((a, b) => a.localeCompare(b));
   const count = files.length;
   const open = count > 0 ? ' open' : '';
+  const phases = activeIngestPhases(rootDir);
   // A pending source whose subject already exists in the wiki is an update,
   // not a newcomer: the tree announces it in colour before the ingest does.
   // Green = new subject, blue = an existing page that differs.
@@ -937,22 +974,23 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
         } catch {
           // Unreadable wiki page: leave the source unmarked rather than guess.
         }
-      })).then(() => renderUntrackedNode(root, titles, statuses, true));
+      })).then(() => renderUntrackedNode(root, titles, statuses, phases, true));
       })()
     : '<li class="side-untracked-empty">No pending sources.</li>';
-  return `<div class="side-folder-row side-untracked-row"><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span></summary><div class="side-untracked-formats" data-untracked-formats style="padding:.15rem .5rem .3rem;font-size:.72rem;color:var(--muted);text-align:right"></div><div class="side-untracked-list" data-untracked-list data-tree-drop="" title="Drop files here: Markdown is written as is, PDF and text are converted by the documents agent">${await items}</div></details><div class="side-folder-actions"><button class="side-folder-action side-ingest-action" type="button" title="Ingest pending sources (Donna)" aria-label="Ingest pending sources" data-ingest-launch hidden>${ZAP_ICON}</button><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending"><span class="side-refresh-glyph">${REFRESH_ICON}</span></button><span class="side-untracked-count" data-untracked-count>${count}</span></div></div>`;
+  return `<div class="side-folder-row side-untracked-row"><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span></summary><div class="side-untracked-formats" data-untracked-formats style="padding:.15rem .5rem .3rem;font-size:.72rem;color:var(--muted);text-align:right"></div><div class="side-untracked-list" data-untracked-list data-tree-drop="" title="Drop files here: Markdown is written as is, PDF and text are converted by the documents agent"${phases.size > 0 ? ' data-active-ingest="1"' : ''}>${await items}</div></details><div class="side-folder-actions"><button class="side-folder-action side-ingest-action" type="button" title="Ingest pending sources (Donna)" aria-label="Ingest pending sources" data-ingest-launch hidden>${ZAP_ICON}</button><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending"><span class="side-refresh-glyph">${REFRESH_ICON}</span></button><span class="side-untracked-count" data-untracked-count>${count}</span></div></div>`;
 }
 
 function renderUntrackedNode(
   node: NavTreeNode,
   titles: Map<string, string>,
   statuses: Map<string, 'new' | 'update' | 'modified'>,
+  phases: Map<string, 'analyze' | 'write'> = new Map(),
   root = false,
 ): string {
   const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name));
   const files = [...node.files].sort((a, b) => a.localeCompare(b));
   const children = [
-    ...dirs.map((dir) => renderUntrackedNode(dir, titles, statuses)),
+    ...dirs.map((dir) => renderUntrackedNode(dir, titles, statuses, phases)),
     ...files.map((file) => {
       const safePath = escapeAttr(file);
       const status = statuses.get(file);
@@ -963,7 +1001,11 @@ function renderUntrackedNode(
           : status === 'modified'
             ? ' side-untracked-modified'
             : '';
-      return `<div class="side-untracked-item${statusClass}" draggable="true" data-tree-drag="${safePath}" data-tree-kind="file"><a class="side-untracked-link" href="${escapeHref(`/${file}`)}" title="${safePath}" aria-label="${safePath}" data-side-path="${safePath}">${escapeHtml(titles.get(file) ?? humanTitle(file))}</a><button class="side-tree-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-tree-delete="${safePath}" data-tree-kind="file">×</button></div>`;
+      const phase = phases.get(file);
+      const phaseMark = phase
+        ? `<span class="side-ingest-phase ${phase}" aria-hidden="true" title="${phase === 'analyze' ? 'Analyse en cours' : 'Écriture en cours'}">${phase === 'analyze' ? '◌' : '✎'}</span>`
+        : '';
+      return `<div class="side-untracked-item${statusClass}" draggable="true" data-tree-drag="${safePath}" data-tree-kind="file">${phaseMark}<a class="side-untracked-link" href="${escapeHref(`/${file}`)}" title="${safePath}" aria-label="${safePath}" data-side-path="${safePath}">${escapeHtml(titles.get(file) ?? humanTitle(file))}</a><button class="side-tree-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-tree-delete="${safePath}" data-tree-kind="file">×</button></div>`;
     }),
   ].join('\n');
   // The root children live directly in [data-untracked-list], which carries the

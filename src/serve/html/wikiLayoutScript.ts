@@ -127,6 +127,22 @@ ${CONFIRM_DIALOG_SCRIPT}
     markActiveSidebarLinks();
     applySideView();
     applySidebarSearch();
+    armIngestPolling();
+  }
+  // While an ingest is running (the sidebar carries data-active-ingest),
+  // refresh the Pending list on a slow tick so the per-file markers follow
+  // the jobs. The loop stops by itself when the marker disappears.
+  let ingestPollTimer = null;
+  function armIngestPolling() {
+    const active = Boolean(document.querySelector('[data-active-ingest]'));
+    if (active && !ingestPollTimer) {
+      ingestPollTimer = setInterval(() => {
+        void refreshSidebar().catch(() => {});
+      }, 4000);
+    } else if (!active && ingestPollTimer) {
+      clearInterval(ingestPollTimer);
+      ingestPollTimer = null;
+    }
   }
   document.addEventListener('click', async (event) => {
       const button = event.target.closest?.('[data-tree-delete]');
@@ -631,6 +647,7 @@ ${CONFIRM_DIALOG_SCRIPT}
   });
   applySideView();
   applySidebarSearch();
+  armIngestPolling();
   requestAnimationFrame(() => {
     const savedScroll = Number(localStorage.getItem(scrollKey) || '0');
     if (sideTree && Number.isFinite(savedScroll)) sideTree.scrollTop = savedScroll;
