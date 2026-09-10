@@ -365,25 +365,43 @@ export class LLMService {
         if (supportsStreamOptions(this.config.llm)) {
           createParams.stream_options = { include_usage: true };
         }
-        const stream = (await this.client.chat.completions.create(
-          createParams,
-          request.timeoutMs ? { timeout: request.timeoutMs } : undefined,
-        )) as unknown as AsyncIterable<ChatCompletionChunk>;
-        const chunks: string[] = [];
-        capturedUsage = undefined;
-        finishReason = undefined;
-        reasoningChars = 0;
-        for await (const chunk of stream) {
-          const choice = chunk.choices[0];
-          chunks.push(choice?.delta?.content ?? '');
-          if (choice?.finish_reason) finishReason = choice.finish_reason;
-          reasoningChars += reasoningDeltaLength(choice?.delta);
-          const usage = extractTokenUsage(chunk);
-          if (usage) {
-            capturedUsage = usage;
+        // The SDK's own timeout option does not reliably cover the STREAMING
+        // body: a provider that accepts the connection and then stalls leaves
+        // the `for await` below hanging forever (ingest jobs observed stuck for
+        // hours with a logged 10-minute timeout). Abort the whole stream on the
+        // same budget, explicitly.
+        const abortController = new AbortController();
+        const abortTimer = setTimeout(
+          () => abortController.abort(new Error(`LLM request timed out after ${effectiveTimeoutMs} ms.`)),
+          effectiveTimeoutMs,
+        );
+        let stream: AsyncIterable<ChatCompletionChunk>;
+        try {
+          stream = (await this.client.chat.completions.create(
+            createParams,
+            {
+              ...(request.timeoutMs ? { timeout: request.timeoutMs } : {}),
+              signal: abortController.signal,
+            },
+          )) as unknown as AsyncIterable<ChatCompletionChunk>;
+          const chunks: string[] = [];
+          capturedUsage = undefined;
+          finishReason = undefined;
+          reasoningChars = 0;
+          for await (const chunk of stream) {
+            const choice = chunk.choices[0];
+            chunks.push(choice?.delta?.content ?? '');
+            if (choice?.finish_reason) finishReason = choice.finish_reason;
+            reasoningChars += reasoningDeltaLength(choice?.delta);
+            const usage = extractTokenUsage(chunk);
+            if (usage) {
+              capturedUsage = usage;
+            }
           }
+          content = stripThinkingBlocks(chunks.join(''));
+        } finally {
+          clearTimeout(abortTimer);
         }
-        content = stripThinkingBlocks(chunks.join(''));
         if (capturedUsage) {
           request.onUsage?.(capturedUsage);
         }

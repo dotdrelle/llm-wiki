@@ -109,8 +109,22 @@ export function engineFetchHeaders(
  * Some servers (mlx_lm in particular) reject a leading `system` role, or treat
  * it as a user turn, producing two consecutive `user` messages. We then fold
  * the system into the user.
+ *
+ * Measured on Albert (see isManagedOpenAiCompatible): the leading `system`
+ * role is accepted normally. This predicate was the one sibling left on the
+ * bare isLocalServer() check when the others (supportsJsonResponseFormat,
+ * supportsModelJsonRepair, prefersSingleSlotTextRendering) were each given
+ * the same guard — folding still fired for Albert here, merging every
+ * extraction/consolidation call's system + user prompt into a single `user`
+ * turn. A reasoning model given one undifferentiated turn instead of a clean
+ * system/user split reasons far more before answering: observed 10-40x wall
+ * time on ingest LLM calls (single-digit seconds expected, tens of seconds to
+ * 2 minutes seen) for no token-count difference — response_format, JSON
+ * repair and temperature were all already fine, only the message shape was
+ * still wrong.
  */
 export function foldsSystemIntoUser(llm: LlmConfig): boolean {
+  if (isManagedOpenAiCompatible(llm)) return false;
   return isLocalServer(llm);
 }
 

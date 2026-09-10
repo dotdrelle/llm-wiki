@@ -94,7 +94,7 @@ const UI_FONT_WOFF2: Record<string, string> = {};
 }
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
-const LLM_WIKI_VERSION = '0.15.86';
+const LLM_WIKI_VERSION = '0.15.87';
 
 type SkillMeta = {
   name: string;
@@ -963,7 +963,13 @@ export default async function serveCmd(
       }
 
       if (urlPath === '/assets/marked.min.js') {
-        const js = await readFile(MARKED_DIST_PATH, 'utf8');
+        // The package's own sourceMappingURL comment points at a .map file
+        // this route never serves, so the browser 404s on it every load —
+        // harmless but noisy. We don't ship the .map, so drop the comment
+        // rather than add a route for a file that isn't there.
+        const js = (await readFile(MARKED_DIST_PATH, 'utf8'))
+          .replace(/\/\/# sourceMappingURL=.*/, '')
+          .trimEnd();
         res.writeHead(200, {
           'Content-Type': 'application/javascript; charset=utf-8',
           'Cache-Control': 'public, max-age=3600',

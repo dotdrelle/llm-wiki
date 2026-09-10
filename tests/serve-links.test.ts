@@ -9,6 +9,7 @@ import {
   localHref,
   serveMd,
 } from '../src/commands/serve.ts';
+import { generateEditPage } from '../src/serve/html/wikiHtml.ts';
 
 describe('serve link handling', () => {
   it('keeps wiki index concept and source links clickable', () => {
@@ -67,6 +68,23 @@ describe('serve link handling', () => {
     expect(html).toMatch(/href="\/wiki\/concepts\/valid\.md"(?![^>]*target=)/);
     expect(html).toContain('href="/raw/archive/legacy.md"');
     expect(html).toContain('class="source-citation"');
+  });
+
+  it('Cancel on the edit page returns to the file just edited, even under raw/untracked', async () => {
+    // isRawUntrackedReference marks raw/untracked as an unstable LINK TARGET
+    // for citations from OTHER pages (they can be archived by ingest before
+    // the link is followed) — generateEditPage's Cancel link had reused that
+    // same check and fallen back to '/', losing the page mid-edit instead of
+    // returning to it. The file being edited always exists (it was just read
+    // to build this form), raw/untracked or not.
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-cancel-href-'));
+    await mkdir(path.join(root, 'raw', 'untracked', 'notes'), { recursive: true });
+    const relativePath = 'raw/untracked/notes/draft.md';
+    await writeFile(path.join(root, relativePath), '# Draft\n', 'utf8');
+
+    const html = await generateEditPage(root, relativePath);
+    expect(html).toContain(`href="/${relativePath}"`);
+    expect(html).not.toMatch(/class="action-link" href="\/"/);
   });
 
   it('strips YAML frontmatter from wiki pages instead of rendering it as a heading', async () => {

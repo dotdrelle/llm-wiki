@@ -185,6 +185,9 @@ describe('chat html', () => {
 
     expect(script).toContain('let armedReplyStatusEls=[];');
     expect(script).toContain("pendingRuntimeUserRefs.findIndex((ref)=>String(ref.message?.content??'')===content)");
+    // Skill turns store the compiled objective, never the typed text: an exact
+    // match can never succeed, so the next pending turn is claimed positionally.
+    expect(script).toContain('if(idx<0 && pendingRuntimeUserRefs.length>0) idx=0;');
     expect(script).toContain('if(statusEl) armedReplyStatusEls.push(statusEl)');
     expect(script).toContain('clearRuntimeThinkingBubble(armedReplyStatusEls.shift())');
     // Foreign user turns (ShellUI / another chat) hold a placeholder ref so the
@@ -721,7 +724,9 @@ describe('chat html', () => {
     const source = script.match(/function appendRuntimeProgressNote\(text\) \{[\s\S]*?\n\}/)?.[0];
     expect(source).toBeTruthy();
     expect(source).not.toContain('messages.push');
-    expect(source).toContain("div.className='msg assistant runtime-progress-note'");
+    expect(source).toContain("feed.className='msg assistant runtime-progress-feed'");
+    expect(source).toContain('⬡');
+    expect(source).toContain("list.scrollTop=list.scrollHeight");
   });
 
   it('accepts JSON returned directly, in a markdown fence or inside an MCP envelope', () => {

@@ -1021,17 +1021,16 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
     : '';
 
   // The sidebar content is three mutually exclusive views behind a small icon
-  // rail: Wiki pages (inbox), the file collections (file), and Pending (brain,
+  // rail: Wiki pages (brain), the file collections (file), and Pending (inbox,
   // the default view). Each view owns the full height below the search — a
   // tree no longer has to share its column with the Pending stack.
-  // (The brain belongs on the Pending button: that stack is Donna's inbox.)
   const brainIcon =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/><path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M19.938 10.5a4 4 0 0 1 .585.396"/><path d="M6 18a4 4 0 0 1-1.967-.516"/><path d="M19.967 17.484A4 4 0 0 1 18 18"/></svg>';
   const fileIcon =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>';
   const inboxIcon =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>';
-  const viewBar = `<div class="side-views"><div class="side-view-rail" role="tablist" aria-label="Sidebar views"><button class="side-view-btn" type="button" role="tab" data-side-view="wiki" title="Wiki pages" aria-label="Wiki pages">${inboxIcon}</button><button class="side-view-btn" type="button" role="tab" data-side-view="files" title="Context, templates, deliverables" aria-label="Context, templates, deliverables">${fileIcon}</button><button class="side-view-btn" type="button" role="tab" data-side-view="pending" title="Pending sources" aria-label="Pending sources">${brainIcon}</button></div><div class="side-view-panes"><section class="side-view-pane" data-side-view-pane="wiki" role="tabpanel" aria-label="Wiki pages" hidden><nav class="side-tree" aria-label="Wiki pages">${wikiTree}</nav></section><section class="side-view-pane" data-side-view-pane="files" role="tabpanel" aria-label="Context, templates, deliverables" hidden>${collections}</section><section class="side-view-pane" data-side-view-pane="pending" role="tabpanel" aria-label="Pending sources">${untrackedPanel}</section></div></div>`;
+  const viewBar = `<div class="side-views"><div class="side-view-rail" role="tablist" aria-label="Sidebar views"><button class="side-view-btn" type="button" role="tab" data-side-view="wiki" title="Wiki pages" aria-label="Wiki pages">${brainIcon}</button><button class="side-view-btn" type="button" role="tab" data-side-view="files" title="Context, templates, deliverables" aria-label="Context, templates, deliverables">${fileIcon}</button><button class="side-view-btn" type="button" role="tab" data-side-view="pending" title="Pending sources" aria-label="Pending sources">${inboxIcon}</button></div><div class="side-view-panes"><section class="side-view-pane" data-side-view-pane="wiki" role="tabpanel" aria-label="Wiki pages" hidden><nav class="side-tree" aria-label="Wiki pages">${wikiTree}</nav></section><section class="side-view-pane" data-side-view-pane="files" role="tabpanel" aria-label="Context, templates, deliverables" hidden>${collections}</section><section class="side-view-pane" data-side-view-pane="pending" role="tabpanel" aria-label="Pending sources">${untrackedPanel}</section></div></div>`;
 
   const wsSwitcher = hubPort()
     ? `<div class="ws-switcher" id="ws-switcher" data-current="${escapeAttr(workspaceNameFromEnv() ?? '')}"><p class="ws-switcher-title">Workspaces</p><p class="ws-name" style="font-size:0.8rem;color:var(--muted);padding:0 0.2rem">Loading...</p></div>`
@@ -1609,7 +1608,12 @@ export async function generateEditPage(rootDir: string, relativePath: string): P
   }
   const raw = await readFile(absolute, 'utf8');
   const sidebar = await renderSidebar(rootDir);
-  const cancelHref = isRawUntrackedReference(cleanRelativePath) ? '/' : `/${cleanRelativePath}`;
+  // isRawUntrackedReference elsewhere marks a raw/untracked path as an
+  // unstable LINK TARGET from other pages (it may be archived or moved by
+  // ingest before that link is followed). That caution doesn't apply here:
+  // this file is the one just read to build this very edit form, so Cancel
+  // returning to its own view page is always safe, raw/untracked or not.
+  const cancelHref = `/${cleanRelativePath}`;
   const fileState = fileStateLabel(fileInfo);
   const fileStateHtml = `<span class="edit-file-state ${fileState.state === 'new' ? 'is-new' : ''}" title="${escapeAttr(fileState.title)}">${escapeHtml(fileState.label)}</span>`;
   const body = `${sidebar}<main class="content"><form class="edit-form" method="post" action="${escapeHref(editHref(cleanRelativePath))}"><div class="hero"><span class="edit-path-label"><span>${escapeHtml(cleanRelativePath)}</span>${fileStateHtml}</span><div class="page-actions"><button class="action-button" type="submit">Save</button><a class="action-link" href="${escapeHref(cancelHref)}">Cancel</a></div></div><textarea class="edit-textarea" name="content" spellcheck="false">${escapeHtml(raw)}</textarea></form></main>`;

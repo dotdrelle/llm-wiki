@@ -178,8 +178,17 @@ function renderMd(t) {
   try {
     let html = typeof marked!=='undefined' ? marked.parse(t||'') : esc(t||'');
     html = String(html).split('<table').join('<div class="table-wrap"><table').split('</table>').join('</table></div>');
-    return renderInstructionRefs(html);
+    return renderInstructionRefs(openExternalLinks(html));
   } catch { return renderInstructionRefs(esc(t||'')); }
+}
+// External links in a reply open in a new tab: following them in place would
+// replace the chat and lose the conversation. Internal/anchored links stay.
+function openExternalLinks(html) {
+  return String(html).replace(/<a\\s+([^>]*)>/g, (full, attrs) => {
+    if (/\\btarget=/.test(attrs)) return full;
+    if (!/href\\s*=\\s*["']https?:\\/\\//i.test(attrs)) return full;
+    return \`<a \${attrs} target="_blank" rel="noopener noreferrer">\`;
+  });
 }
 const SIDEBAR_SPLIT_KEY = 'mcpchat_sidebar_history_height';
 const MAIN_SPLIT_KEY = 'mcpchat_sidebar_width';
@@ -389,6 +398,18 @@ function applyRuntimeState(state) {
   runtimeState=state;
   runtimeConnected=true;
   const conversationChanged=mergeRuntimeConversation();
+  // Safety net against the "No response received after 120s" watchdog: a
+  // reply is already in the conversation, but the armed bubble was never
+  // matched (skill turns store the compiled objective, cross-chat turns
+  // interleave). The reply exists — the "request received" bubble must not
+  // outlive it and later claim nothing arrived.
+  if(armedReplyStatusEls.length) {
+    const conversation=Array.isArray(runtimeState?.conversation)?runtimeState.conversation:[];
+    const last=conversation[conversation.length-1];
+    if(last&&last.role==='assistant'&&String(last.content??'').trim()) {
+      armedReplyStatusEls.splice(0).forEach((el)=>clearRuntimeThinkingBubble(el));
+    }
+  }
   renderActivities();
   updateActivityBadge();
   updateApprovalBanner();
@@ -475,6 +496,7 @@ function updateMsgBubble(el,role,content) {
   el.dataset.copy=content||'';
   const bubble=el.querySelector('.bubble');
   if(bubble) bubble.innerHTML=role==='assistant'?renderMd(content||''):esc(content||'');
+  if(content) el.classList.remove('msg-empty');
 }
 
 // Merges Donna's actual replies (and any user turns not already shown, e.g.
@@ -542,7 +564,11 @@ function mergeRuntimeConversation() {
       // tabs share it), so only a turn this chat itself sent may consume its
       // pending markers or arm its reply bubble. Match by content, not by FIFO
       // position: a foreign user turn must not steal this chat's pending entry.
-      const idx=pendingRuntimeUserRefs.findIndex((ref)=>String(ref.message?.content??'')===content);
+      let idx=pendingRuntimeUserRefs.findIndex((ref)=>String(ref.message?.content??'')===content);
+      // Skill turns store the COMPILED objective as their user turn, never the
+      // typed text — an exact match can never succeed. Claim the next pending
+      // turn positionally; the content mismatch is the rule there, not an edge.
+      if(idx<0 && pendingRuntimeUserRefs.length>0) idx=0;
       if(idx>=0) {
         const ref=pendingRuntimeUserRefs.splice(idx,1)[0];
         const statusEl=pendingRuntimeStatusEls.splice(idx,1)[0] ?? null;
@@ -575,7 +601,14 @@ function mergeRuntimeConversation() {
     }
     const message={role,content};
     messages.push(message);
-    const el=appendMsg(role,content);
+    const lastLocal=messages.length>1?messages[messages.length-2]:null;
+    // A /turn that returned a direct reply (converse/answer) already rendered
+    // it locally; the same text then arrives again through the conversation
+    // merge. Skip the duplicate bubble instead of showing the answer twice.
+    const duplicateOfDirectReply=role==='assistant'&&content
+      &&lastLocal?.role==='assistant'&&lastLocal.content===content;
+    const el=duplicateOfDirectReply?null:appendMsg(role,content);
+    if(role==='assistant'&&!content) el?.classList.add('msg-empty');
     runtimeConversationRefs.push({message,el,own:assistantOwn});
     changed=true;
   }

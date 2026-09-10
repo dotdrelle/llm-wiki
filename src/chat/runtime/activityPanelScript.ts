@@ -119,19 +119,30 @@ function createRuntimeThinkingBubble(text='Request received · Donna is preparin
 // The text always comes from the runtime (\`assistant_progress\`) and is never
 // composed here: the browser must not synthesize an acknowledgement, and a
 // second phrasing in the browser would be a second source to keep in sync.
-// Inserted above the pending bubble so the spinner stays at the bottom, and
-// held outside the \`messages\` array — these are not conversation history, the
-// runtime does not persist them, and a reload must not resurrect them.
+// The notes share ONE feed instead of stacking one message per line: a Donna
+// logo on the left, and the last three entries visible — older ones stay
+// reachable by scrolling the list up. Held outside the \`messages\` array —
+// these are not conversation history, the runtime does not persist them, and
+// a reload must not resurrect them.
 function appendRuntimeProgressNote(text) {
   if(!text) return;
   const wrap=$('messages');
   if(!wrap) return;
-  const div=document.createElement('div');
-  div.className='msg assistant runtime-progress-note';
-  div.innerHTML=\`<div class="msg-content"><div class="bubble">\${esc(text)}</div></div>\`;
-  const pending=pendingRuntimeStatusEls[pendingRuntimeStatusEls.length-1];
-  if(pending&&pending.isConnected&&pending.parentNode===wrap) wrap.insertBefore(div,pending);
-  else wrap.appendChild(div);
+  let feed=wrap.querySelector('.runtime-progress-feed');
+  if(!feed) {
+    feed=document.createElement('div');
+    feed.className='msg assistant runtime-progress-feed';
+    feed.innerHTML=\`<div class="feed-logo" aria-hidden="true">⬡</div><div class="msg-content"><div class="feed-list"></div></div>\`;
+    const pending=pendingRuntimeStatusEls[pendingRuntimeStatusEls.length-1];
+    if(pending&&pending.isConnected&&pending.parentNode===wrap) wrap.insertBefore(feed,pending);
+    else wrap.appendChild(feed);
+  }
+  const list=feed.querySelector('.feed-list');
+  const entry=document.createElement('div');
+  entry.className='feed-entry';
+  entry.textContent=text;
+  list.appendChild(entry);
+  list.scrollTop=list.scrollHeight;
   wrap.scrollTop=wrap.scrollHeight;
 }
 

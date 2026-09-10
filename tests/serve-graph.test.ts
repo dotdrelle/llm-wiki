@@ -393,7 +393,7 @@ describe('serve graph ui', () => {
 
     expect(source).toContain('href="${escapeHref(`/${file}`)}"');
     expect(source).toContain('title="${safePath}"');
-    expect(source).toContain("const cancelHref = isRawUntrackedReference(cleanRelativePath) ? '/'");
+    expect(source).toContain('const cancelHref = `/${cleanRelativePath}`');
     expect(source).toContain('const redirectAfterSave = isRawUntrackedReference(savedRelative)');
     expect(source).toContain("? escapeHref(`/edit/${savedRelative}`)");
   });

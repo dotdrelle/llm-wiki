@@ -227,6 +227,7 @@ body:not(.execution-mode) #execution-view{display:none}
 #messages{flex:1;overflow-y:auto;padding:28px clamp(16px,4vw,48px) 22px;display:flex;flex-direction:column;gap:22px;align-items:center}
 .msg{width:min(820px,100%);display:flex;gap:12px;animation:fadeUp .25s ease}
 .msg.msg-hidden{display:none}
+.msg.msg-empty{display:none}
 .msg.user{justify-content:flex-end}
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .av{width:30px;height:30px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700}
@@ -234,11 +235,16 @@ body:not(.execution-mode) #execution-view{display:none}
 .av.a{display:none}
 .msg-content{min-width:0;display:flex;flex-direction:column;gap:6px}
 .msg.assistant .msg-content{flex:1}
-.msg.user .msg-content{align-items:flex-end}
+.msg.user .msg-content{align-items:flex-end;flex:1}
 .bubble{font-size:14px;line-height:1.72;word-break:break-word}
 /* 65% of the exchange column, not 30vw: a pasted question wrapped after a
    third of the width while the answer beside it used everything. width:max-content
-   keeps a short question short, so only long ones grow. */
+   keeps a short question short, so only long ones grow. Percentage max-width
+   resolves against .msg-content, so it needs flex:1 (matching the assistant
+   rule above) to have a definite width of its own — without it .msg-content
+   shrink-wraps to the bubble's own content, the bubble's max-width becomes a
+   percentage of ITS OWN natural size, and the text wraps far too early no
+   matter what percentage is picked. */
 .msg.user .bubble{width:max-content;max-width:min(65%,900px);background:transparent;border:0;border-radius:0;padding:4px 0;white-space:pre-wrap;text-align:left}
 .msg.assistant .bubble{flex:1;min-width:0;padding:2px 0;white-space:normal}
 .msg-actions{display:flex;gap:6px;opacity:.45;transition:opacity .2s}

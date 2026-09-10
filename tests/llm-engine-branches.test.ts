@@ -213,7 +213,7 @@ describe('contournements par moteur (caractérisation)', () => {
 
   // ── #4 · fusion system dans user ──────────────────────────────────────────
 
-  it.each<LlmEngine>(['mlx', 'vllm', 'albert', 'generic'])(
+  it.each<LlmEngine>(['mlx', 'vllm', 'generic'])(
     '#4 fusionne system dans user pour le moteur local %s',
     async (engine) => {
       const service = new LLMService(engineFor(engine, 'qwen2.5'));
@@ -410,14 +410,27 @@ describe('capacités mesurées du moteur albert', () => {
     },
   );
 
-  it('#4 M1 · albert conserve le repli system→user — verdict de sonde non concluant', async () => {
-    // La passe M1 a renvoyé un contenu vide sous un plafond de 64 tokens :
-    // une coupure pendant le raisonnement, pas un rejet du rôle system. Tant
-    // que ce n'est pas isolé, on garde le comportement prudent.
+  it('#4 M1 · albert conserve un rôle system distinct — sonde reprise, verdict concluant', async () => {
+    // La passe M1 d'origine avait renvoyé un contenu vide sous un plafond de
+    // 64 tokens — une coupure pendant le raisonnement, pas un rejet du rôle
+    // system — et gardait donc le repli system→user par prudence, faute
+    // d'isoler la vraie cause. Repris avec un budget de sortie réaliste (pas
+    // de plafond artificiel à 64 tokens), en direct contre l'API et via le
+    // pipeline d'ingestion réel : le rôle system est accepté normalement.
+    // Le repli fusionnait system+user pour rien sur chaque appel d'ingestion
+    // (extraction et consolidation), et un modèle de raisonnement privé de la
+    // séparation system/user raisonne beaucoup plus avant de répondre — 10 à
+    // 40x le temps mur observé en production pour un nombre de tokens
+    // identique. foldsSystemIntoUser() rejoint désormais les trois autres
+    // prédicats (supportsJsonResponseFormat, supportsModelJsonRepair,
+    // prefersSingleSlotTextRendering) déjà corrigés par isManagedOpenAiCompatible.
     const service = new LLMService(engineFor('albert', 'openai/gpt-oss-120b'));
     const params = captureParams(service);
     await run(service);
-    expect(params().messages).toHaveLength(1);
+    const messages = params().messages as Array<{ role: string; content: string }>;
+    expect(messages).toHaveLength(2);
+    expect(messages[0]?.role).toBe('system');
+    expect(messages[1]?.role).toBe('user');
   });
 });
 
