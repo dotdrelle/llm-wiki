@@ -1434,9 +1434,15 @@ export const WIKI_LAYOUT_CSS = `
     html.sidebar-panel .sidebar{position:static;width:auto;height:100vh;background:var(--panel);padding:.8rem .85rem 1rem}
     html.sidebar-panel .wiki-main-resizer{display:none!important}
     html.sidebar-panel .side-action[href="/chat"]{display:none}
-    html.sidebar-panel .side-head .brand{flex:1}
-    html.sidebar-panel .side-head .side-actions{width:calc(50% - .25rem)}
-    html.sidebar-panel .side-head .side-action{width:100%}
+    /* The action row (Graph/History/Agent proposals/Refresh) was pinned to
+       exactly half the row's width with each icon forced to width:100% of
+       that half — four icons fighting over one slot each squeezed them
+       past usable size. Let the row size to its icons' natural content
+       width instead (matching the base .side-head .side-actions/.side-action
+       rules above) and let the workspace name give up whatever room that
+       frees, wrapping via its existing overflow-wrap instead of the row
+       clipping. */
+    html.sidebar-panel .side-head .brand{flex:1;min-width:0}
     /* Tighter than the standalone sidebar: in the shell panel the title row
        sits right above the filter input. The brand's own bottom margin (which
        won on specificity and inflated the flex row) is zeroed here. */

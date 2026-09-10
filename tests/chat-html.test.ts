@@ -59,6 +59,32 @@ describe('chat html', () => {
     expect(script).toContain('if (splitWikiEnabled()) disableSplitWiki();');
   });
 
+  it('closing the graph returns to the wiki root, not the chat view, when it was the page the graph replaced', () => {
+    const script = chatScripts().join('\n');
+
+    // Excluding '/' here (as the unrelated split-view toggle does) sent the
+    // "open Wiki (lands on '/'), open Graph, close it" flow all the way to
+    // chat instead of back to the wiki root — the close button looked broken.
+    expect(script).toContain(
+      "if (data.from === 'graph') {\n      const last = sanitizeWikiPath(shellStore(SHELL_WIKI_PATH_KEY));\n      if (last) { setCenterWiki(last); return; }\n    }",
+    );
+  });
+
+  it('never remembers /graph, /history or /agent-proposals as the wiki page to return to', () => {
+    const script = chatScripts().join('\n');
+
+    // The sidebar's generic link interceptor sends every internal click,
+    // including the Graph/History/Agent-proposals icons, through
+    // llmwiki:navigate -> setCenterWiki. Without this guard, opening the
+    // graph stored '/graph' itself as SHELL_WIKI_PATH_KEY, so the close
+    // button just reloaded the graph again — indistinguishable from doing
+    // nothing, confirmed end-to-end in a real browser (CDP).
+    expect(script).toContain(
+      "function isWikiUtilityPath(path) {\n  return path === '/graph' || path === '/history'\n    || path === '/agent-proposals' || path.startsWith('/agent-proposals/');\n}",
+    );
+    expect(script).toContain('if (!isWikiUtilityPath(target)) shellStore(SHELL_WIKI_PATH_KEY, target);');
+  });
+
   it('buckets ⚠ runtime announcements as warnings, not activity, and keeps real failures red', () => {
     const script = chatScripts().join('\n');
 

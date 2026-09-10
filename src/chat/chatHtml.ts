@@ -492,20 +492,26 @@ function connectRuntimePanel() {
   },2500);
 }
 
+// Returns true when the bubble was left in the cheap plain-text streaming
+// state (still needs a markdown re-render once the run stops), false once it
+// holds the final rendered HTML.
 function updateMsgBubble(el,role,content) {
   el.dataset.copy=content||'';
   const bubble=el.querySelector('.bubble');
+  let renderedPlain=false;
   if(bubble) {
     // This runs on every /state poll while a reply is still streaming in
     // (see mergeRuntimeConversation) — re-parsing the whole answer as
     // markdown and replacing the bubble's innerHTML each time is the same
     // choppy-render cost as the local chat path. While the run is still
-    // active, write plain text; the final poll after it ends (content stops
-    // changing) is what gets the real markdown render.
-    if(role==='assistant'&&runtimeIsRunning()) bubble.textContent=content||'';
+    // active, write plain text; mergeRuntimeConversation forces one more call
+    // once the run stops, even if the content itself did not change on that
+    // poll, so every plain-text bubble always gets its final markdown render.
+    if(role==='assistant'&&runtimeIsRunning()) { bubble.textContent=content||''; renderedPlain=true; }
     else bubble.innerHTML=role==='assistant'?renderMd(content||''):esc(content||'');
   }
   if(content) el.classList.remove('msg-empty');
+  return renderedPlain;
 }
 
 // Merges Donna's actual replies (and any user turns not already shown, e.g.
@@ -548,7 +554,13 @@ function mergeRuntimeConversation() {
     const content=String(raw.content??'');
     if(i<runtimeConversationRefs.length) {
       const ref=runtimeConversationRefs[i];
-      if(ref.message.content!==content) {
+      const contentChanged=ref.message.content!==content;
+      // A bubble left in the cheap plain-text streaming state (see
+      // updateMsgBubble) needs one more render once the run stops, even when
+      // this exact poll's content is unchanged from the last one — otherwise
+      // the final answer is left showing raw markdown source forever.
+      const needsFinalRender=ref.el&&ref.renderedPlain&&role==='assistant'&&!runtimeIsRunning();
+      if(contentChanged||needsFinalRender) {
         // Only the first transition from empty to non-empty content marks a
         // streaming reply actually materializing. Without the wasEmpty guard,
         // every later poll that revisits this same (already-answered) last
@@ -559,8 +571,8 @@ function mergeRuntimeConversation() {
         // Foreign entries (ShellUI / another chat) carry no element: they are
         // tracked only to keep this array 1:1 with the conversation tail.
         if(ref.el) {
-          updateMsgBubble(ref.el,role,content);
-          changed=true;
+          ref.renderedPlain=updateMsgBubble(ref.el,role,content);
+          changed=changed||contentChanged;
           if(role==='assistant'&&content&&wasEmpty&&ref.own&&armedReplyStatusEls.length) {
             clearRuntimeThinkingBubble(armedReplyStatusEls.shift());
           }

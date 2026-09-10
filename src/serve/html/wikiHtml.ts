@@ -1534,7 +1534,15 @@ export async function serveMd(
   if (content) content.appendChild(toc);
   function alignEmbeddedToc() {
     if (window.self === window.top) return;
-    const top = Math.max(16, article.getBoundingClientRect().top);
+    // The topbar (Export/Edit/... actions) is position:sticky at top:0, so it
+    // stays on screen through the same scroll that drives this alignment. A
+    // fixed 16px floor let the panel rise above the article's top edge once
+    // scrolled far enough to sit on top of — and hide — that sticky toolbar.
+    // Floor on the toolbar's own rendered bottom edge instead, so the panel
+    // never climbs higher than the space actually below it.
+    const topbar = document.querySelector('.topbar');
+    const minTop = (topbar ? topbar.getBoundingClientRect().bottom : 16) + 12;
+    const top = Math.max(minTop, article.getBoundingClientRect().top);
     toc.style.top = top + 'px';
     toc.style.maxHeight = 'calc(100vh - ' + (top + 16) + 'px)';
   }

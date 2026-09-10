@@ -220,8 +220,17 @@ describe('serve graph ui', () => {
     expect(source).not.toContain('<span>Help</span>');
     expect(source).toContain("event.target instanceof Element ? event.target.closest('a[href]') : null");
     expect(source).toContain('window.WikiUi.navigate(href);');
-    expect(source).toContain('html.sidebar-panel .side-head .side-actions{width:calc(50% - .25rem)}');
-    expect(source).toContain('html.sidebar-panel .side-head .side-action{width:100%}');
+    // The actions row used to be pinned to exactly half the row's width with
+    // each icon forced to width:100% of that half. Fine for the 2 icons this
+    // shipped with (Graph, History — Chat is hidden in this mode), it broke
+    // once Agent proposals became a 3rd icon in 0.15.86: 3 icons fighting
+    // over one half-width slot squeezed past usable size. The row now sizes
+    // to its icons' natural content width (the base .side-head .side-actions/
+    // .side-action rules), and the workspace name gives up whatever room
+    // that frees.
+    expect(source).not.toContain('html.sidebar-panel .side-head .side-actions{width:calc(50% - .25rem)}');
+    expect(source).not.toContain('html.sidebar-panel .side-head .side-action{width:100%}');
+    expect(source).toContain('html.sidebar-panel .side-head .brand{flex:1;min-width:0}');
   });
 
   it('brands the graph page with the same mark as the sidebar Graph action, not a stray ⌘', () => {
@@ -289,7 +298,11 @@ describe('serve graph ui', () => {
     expect(source).toContain("tocTitle.textContent = 'On this page';");
     expect(source).toContain('if (content) content.appendChild(toc);');
     expect(source).toContain('.doc-toc{position:fixed;z-index:20;');
-    expect(source).toContain('const top = Math.max(16, article.getBoundingClientRect().top);');
+    // Floors on the sticky topbar's own rendered bottom edge, not a fixed
+    // 16px, so the panel (z-index 20) never scrolls up over the toolbar
+    // (position:sticky, z-index 8) it would otherwise render above.
+    expect(source).toContain("const minTop = (topbar ? topbar.getBoundingClientRect().bottom : 16) + 12;");
+    expect(source).toContain('const top = Math.max(minTop, article.getBoundingClientRect().top);');
     expect(source).toContain("toc.style.top = top + 'px';");
     expect(source).toContain("window.addEventListener('scroll', alignEmbeddedToc, { passive: true });");
     expect(source).not.toContain('.content:has(.doc-toc)');

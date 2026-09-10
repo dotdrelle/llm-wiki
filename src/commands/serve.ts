@@ -94,7 +94,7 @@ const UI_FONT_WOFF2: Record<string, string> = {};
 }
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
-const LLM_WIKI_VERSION = '0.15.88';
+const LLM_WIKI_VERSION = '0.15.89';
 
 type SkillMeta = {
   name: string;
@@ -997,21 +997,26 @@ export default async function serveCmd(
         completeText: graphSummaryCompletion(config),
       })) return;
 
+      // Must run before handleWikiRoutes: that handler's fallback treats any
+      // unmatched path as a wiki document lookup and answers with its own 404
+      // page, so /agent-proposals(/:id) and /api/agent-proposals/* never
+      // reached this handler when it was ordered after — the whole review
+      // page was unreachable.
+      if (await handleAgentProposalRoutes(req, res, urlPath, {
+        rootDir,
+        workspace,
+        historyConfig: config.history,
+        isRunActive: isRuntimeRunActive,
+        sendGzippedHtml,
+        sendJson,
+      })) return;
+
       if (await handleWikiRoutes(req, res, urlPath, {
         rootDir,
         historyConfig: config.history,
         submitHistoryRestore: (response, payload) =>
           submitHistoryRestoreToRuntime(response, runtimeProxyDeps, payload, workspaceNameFromEnv()),
         readRequestBody,
-        sendGzippedHtml,
-        sendJson,
-      })) return;
-
-      if (await handleAgentProposalRoutes(req, res, urlPath, {
-        rootDir,
-        workspace,
-        historyConfig: config.history,
-        isRunActive: isRuntimeRunActive,
         sendGzippedHtml,
         sendJson,
       })) return;

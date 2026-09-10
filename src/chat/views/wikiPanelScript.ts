@@ -27,6 +27,19 @@ function sanitizeWikiPath(value) {
   return value;
 }
 
+// Utility views (graph, history, agent proposals) load into the central
+// wiki-frame like any wiki content page, but they are not a wiki DOCUMENT —
+// remembering one of them as SHELL_WIKI_PATH_KEY corrupted the "page the
+// graph replaced" bookmark: every click on the sidebar Graph icon stored
+// '/graph' itself as the last wiki path (via the generic in-sidebar link
+// interceptor -> llmwiki:navigate -> setCenterWiki), so closing the graph
+// just reloaded the graph again — indistinguishable from the close button
+// doing nothing.
+function isWikiUtilityPath(path) {
+  return path === '/graph' || path === '/history'
+    || path === '/agent-proposals' || path.startsWith('/agent-proposals/');
+}
+
 function wikiHashPath() {
   const match = location.hash.match(/^#wiki=(.+)$/);
   if (!match) return null;
@@ -422,7 +435,11 @@ function setCenterWiki(path) {
   leaveChatOnlyPaths();
   history.replaceState(null, '', '#wiki=' + encodeURIComponent(target));
   shellStore(SHELL_CENTER_KEY, 'wiki');
-  shellStore(SHELL_WIKI_PATH_KEY, target);
+  // Only a real wiki document is worth remembering as "the page to return
+  // to" — see isWikiUtilityPath. The hash above still deep-links a reload
+  // straight back into the utility view itself, which is the intended,
+  // unrelated behavior for the current tab.
+  if (!isWikiUtilityPath(target)) shellStore(SHELL_WIKI_PATH_KEY, target);
   window.dispatchEvent(new CustomEvent('llmwiki:wikiPathChanged', { detail: target }));
 }
 
@@ -615,10 +632,15 @@ window.addEventListener('message', (event) => {
     input.value = '/wiki-ingest';
     sendMessage();
   } else if (data.type === 'llmwiki:close') {
-    // A closed graph hands the centre back to the page it replaced.
+    // A closed graph hands the centre back to the page it replaced — including
+    // the wiki root ('/'): excluding it here (as the unrelated split-view
+    // toggle does, where showing '/' for no reason is worth avoiding) sent
+    // the very common "open Wiki, immediately open Graph, close it" flow to
+    // the chat view instead, which reads as the close button doing nothing
+    // useful.
     if (data.from === 'graph') {
       const last = sanitizeWikiPath(shellStore(SHELL_WIKI_PATH_KEY));
-      if (last && last !== '/') { setCenterWiki(last); return; }
+      if (last) { setCenterWiki(last); return; }
     }
     closeWikiPanel();
   } else if (data.type === 'llmwiki:palette') {

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -176,5 +177,17 @@ describe('agent proposal review routes', () => {
     expect(body().proposals).toHaveLength(1);
     expect(body().proposals[0].id).toBe('t5');
     expect(body().proposals[0].diff).toBeUndefined();
+  });
+
+  it('is routed before handleWikiRoutes, whose fallback treats any unmatched path as a wiki document and 404s it', async () => {
+    const source = await readFile(
+      path.resolve(import.meta.dirname, '../src/commands/serve.ts'),
+      'utf8',
+    );
+    const proposalCallIndex = source.indexOf('handleAgentProposalRoutes(req, res, urlPath');
+    const wikiCallIndex = source.indexOf('handleWikiRoutes(req, res, urlPath');
+    expect(proposalCallIndex).toBeGreaterThan(-1);
+    expect(wikiCallIndex).toBeGreaterThan(-1);
+    expect(proposalCallIndex).toBeLessThan(wikiCallIndex);
   });
 });

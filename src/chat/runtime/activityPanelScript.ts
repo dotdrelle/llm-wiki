@@ -756,6 +756,44 @@ function copyText(text) {
 function runtimeStatusMarkdown(target) {
   const id=String(target||'current run').trim()||'current run';
   if(!runtimeState) return \`No runtime state available for \${id}.\`;
+  const workflow=runtimeState.workflow||{};
+  const nodes=Array.isArray(workflow.nodes)?workflow.nodes:[];
+  // A run target reads from the canonical workflow projection, scoped to that
+  // run. Reading the raw plan+activities instead mixed every historical
+  // "Ingest complete" activity into the report — the summary then announced a
+  // finished ingest and running analyses in the same breath.
+  const runNode=nodes.find(node=>node.type==='run'&&(
+    id==='current run'
+      ? node.status==='running'
+      : node.runId===id||node.id===id||node.id===\`run:\${id}\`
+  ));
+  if(runNode){
+    const runId=String(runNode.runId||'');
+    const line=(label,value)=>\`- \${label}: \${value||'-'}\`;
+    const taskNodes=nodes.filter(node=>node.type==='task'&&String(node.id||'').startsWith(\`task:\${runId}:\`));
+    const taskLines=taskNodes.map((node,index)=>line(\`Task \${node.step||index+1}\`, \`\${node.status||'pending'} - \${node.label||node.description||node.id}\`));
+    const waiting=Array.isArray(workflow.waitingReasons)&&workflow.waitingReasons.length
+      ? ['','Waiting on',...workflow.waitingReasons.map(reason=>\`- \${typeof reason==='string'?reason:(reason.label||reason.reason||'pending')}\`)].join('\\n')
+      : '';
+    const queue=Array.isArray(runtimeState.queue)?runtimeState.queue:[];
+    const queueLines=queue.filter(item=>!runId||String(item.runId??'')===runId||String(item.id??'').startsWith(runId)).slice(0,8)
+      .map((item,index)=>line(item.id||item.jobId||\`Queue \${index+1}\`, \`\${item.status||'waiting'} - \${item.label||item.tool||item.type||'task'}\`));
+    const logs=filteredRuntimeLogs(runtimeState.logs);
+    return [
+      \`Runtime status for \${id}\`,
+      '',
+      line('Run',runNode.status||'idle'),
+      line('Workspace',runNode.workspace||'-'),
+      line('Started',runNode.startedAt||'-'),
+      line('Connection',runtimeConnected?'connected':'disconnected'),
+      '',
+      taskLines.length?['Tasks',...taskLines].join('\\n'):'Tasks\\n- No task visible.',
+      waiting,
+      '',
+      queueLines.length?['Queue',...queueLines].join('\\n'):'Queue\\n- No pending items.',
+      logs.length?['','Recent logs',...logs.map(log=>\`- \${log}\`)].join('\\n'):'',
+    ].filter(Boolean).join('\\n');
+  }
   const plan=Array.isArray(runtimeState.plan)?runtimeState.plan:[];
   const activities=Array.isArray(runtimeState.activities)?runtimeState.activities:[];
   const queue=Array.isArray(runtimeState.queue)?runtimeState.queue:[];
