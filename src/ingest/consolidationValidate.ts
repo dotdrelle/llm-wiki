@@ -10,6 +10,7 @@ import {
   type PageProvenance,
 } from './provenance.ts';
 import { okfTypeForPath } from '../okf/frontmatter.ts';
+import { DEFAULT_FOLDER_SYNONYM_GROUPS, type ConceptSynonymGroups } from './conceptSynonyms.ts';
 
 /*
  Deterministic check of the consolidated plan.
@@ -349,24 +350,9 @@ export type FolderConflict = {
 
 const FOLDER_SINGULAR_SUFFIXES = new Set(['s', 'x']);
 
-/**
- * Curated groups of folder names that are the SAME real category under
- * different vocabulary — "produit" and "solution-logicielle" share no
- * lexical token at all, so no amount of stemming or word-position matching
- * below can ever catch them: that is a synonym, not a spelling variant, and
- * a synonym needs an authored equivalence. Extend a group (or add one) the
- * next time two folders turn out to mean the same thing; this is a small,
- * hand-maintained list on purpose — see foldersAreNearDuplicates for the
- * general (lexical) case this complements, not replaces.
- */
-const FOLDER_SYNONYM_GROUPS: readonly (readonly string[])[] = [
-  ['produit', 'solution', 'solution-logicielle', 'logiciel', 'progiciel', 'application', 'outil',
-    'vendor', 'fournisseur', 'editeur'],
-];
-
-function folderSynonymGroup(key: string): number | null {
-  for (let index = 0; index < FOLDER_SYNONYM_GROUPS.length; index++) {
-    if (FOLDER_SYNONYM_GROUPS[index]!.includes(key)) return index;
+function folderSynonymGroup(key: string, synonymGroups: ConceptSynonymGroups): number | null {
+  for (let index = 0; index < synonymGroups.length; index++) {
+    if (synonymGroups[index]!.includes(key)) return index;
   }
   return null;
 }
@@ -396,14 +382,18 @@ export function folderWords(key: string): string[] {
   });
 }
 
-export function foldersAreNearDuplicates(left: string, right: string): boolean {
+export function foldersAreNearDuplicates(
+  left: string,
+  right: string,
+  synonymGroups: ConceptSynonymGroups = DEFAULT_FOLDER_SYNONYM_GROUPS,
+): boolean {
   const a = folderNearKey(left);
   const b = folderNearKey(right);
   if (!a || !b || a === b) return false;
   // Authored synonym: no shared token to find lexically (see the curated
   // list above for why).
-  const groupA = folderSynonymGroup(a);
-  if (groupA !== null && groupA === folderSynonymGroup(b)) return true;
+  const groupA = folderSynonymGroup(a, synonymGroups);
+  if (groupA !== null && groupA === folderSynonymGroup(b, synonymGroups)) return true;
   // Whole-name singular/plural: "produit" / "produits".
   if (a.length >= 4 && b.length >= 4) {
     const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
@@ -427,7 +417,10 @@ export function foldersAreNearDuplicates(left: string, right: string): boolean {
 
 export function detectNearDuplicateFolders(
   plan: ConsolidationPlan,
-  { existingFolders = [] }: { existingFolders?: string[] } = {},
+  {
+    existingFolders = [],
+    synonymGroups = DEFAULT_FOLDER_SYNONYM_GROUPS,
+  }: { existingFolders?: string[]; synonymGroups?: ConceptSynonymGroups } = {},
 ): FolderConflict[] {
   const conflicts: FolderConflict[] = [];
   const proposedNew = new Set<string>();
@@ -451,12 +444,12 @@ export function detectNearDuplicateFolders(
       // canonical folder itself never triggers a conflict against its own
       // sibling, only the non-canonical one does.
       const sibling = existingFolders.find((candidate) =>
-        candidate !== folder && candidate < folder && foldersAreNearDuplicates(folder, candidate));
+        candidate !== folder && candidate < folder && foldersAreNearDuplicates(folder, candidate, synonymGroups));
       if (sibling) conflictWith(sibling);
       continue;
     }
     const existing = existingFolders.find((candidate) =>
-      foldersAreNearDuplicates(folder, candidate)
+      foldersAreNearDuplicates(folder, candidate, synonymGroups)
       || folderNearKey(folder) === folderNearKey(candidate));
     if (existing) {
       conflictWith(existing);
@@ -465,7 +458,7 @@ export function detectNearDuplicateFolders(
     // Two NEW folders proposed in one plan (or one batch) that are variants
     // of each other: the first one written wins, the second is the duplicate.
     const sibling = [...proposedNew].find((candidate) =>
-      foldersAreNearDuplicates(folder, candidate));
+      foldersAreNearDuplicates(folder, candidate, synonymGroups));
     if (sibling) {
       conflictWith(sibling);
       continue;

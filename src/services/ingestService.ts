@@ -27,6 +27,7 @@ import {
 } from '../ingest/provenance.ts';
 import { CONCEPT_PREFIX, DEFAULT_CONCEPT_BUDGET, detectConceptOverflow, detectConceptSplits, detectDuplicatePaths, detectNearDuplicateFolders, reanchorToPreviousConcepts, validateConsolidation } from '../ingest/consolidationValidate.ts';
 import { parseConceptPagePath } from '../ingest/conceptGrid.ts';
+import { loadConceptSynonymGroups } from '../ingest/conceptSynonyms.ts';
 import { hashText } from '../utils/hash.ts';
 import { resolveInside } from '../utils/path.ts';
 import { normalizeSourceBody } from '../utils/markdown.ts';
@@ -889,7 +890,10 @@ export class IngestService {
         for (let retryAttempt = 0; retryAttempt <= MAX_SPLIT_RETRIES; retryAttempt += 1) {
           const splits = detectConceptSplits(consolidated);
           lastSplits = splits;
-          const folderConflicts = detectNearDuplicateFolders(consolidated, { existingFolders });
+          const folderConflicts = detectNearDuplicateFolders(consolidated, {
+            existingFolders,
+            synonymGroups: loadConceptSynonymGroups(this.workspace.paths.rootDir).groups,
+          });
           lastFolderConflicts = folderConflicts;
           const overflow = detectConceptOverflow(
             consolidated,
