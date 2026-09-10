@@ -33,7 +33,6 @@ import {
 import { pathExists, safeWriteFile } from '../utils/fs.ts';
 import { HistoryService } from '../services/historyService.ts';
 import { applyMissingOkfTypes, applyOkfV02Migration, listBundleFilesMissingType, listBundleFilesV02Migration } from '../okf/scan.ts';
-import { listConceptRegistry } from '../ingest/conceptRegistry.ts';
 import {
   isReportClean,
   readSourceRegistry,
@@ -1642,31 +1641,6 @@ export default async function doctorCmd(
     }
   } catch (error) {
     warn(`OKF check failed: ${error instanceof Error ? error.message : String(error)}`);
-  }
-
-  console.log('\n── Concept folders ─────────────────────────────────────────');
-  try {
-    const registry = listConceptRegistry(config.wikiRoot);
-    row('concept folders:', String(registry.entries.length));
-    const maxTagPreview = 4;
-    for (const entry of registry.entries) {
-      const tags = entry.tags.length > 0 ? `  [${entry.tags.slice(0, maxTagPreview).join(', ')}]` : '';
-      const issues = entry.namingIssues.length > 0 ? `  ⚠ ${entry.namingIssues.join(', ')}` : '';
-      console.log(`  ${entry.folder}  (${entry.leaves} leaves)${tags}${issues}`);
-    }
-    if (registry.nearDuplicates.length > 0) {
-      warn(`${registry.nearDuplicates.length} near-duplicate folder families (reuse one folder, merge the leaves):`);
-      for (const pair of registry.nearDuplicates) console.log(`  - ${pair.left} ~ ${pair.right}`);
-    }
-    if (registry.synonymErrors.length > 0) {
-      for (const error of registry.synonymErrors) warn(error);
-    }
-    if (registry.nearDuplicates.length === 0 && registry.synonymErrors.length === 0
-      && registry.entries.every((entry) => entry.namingIssues.length === 0)) {
-      ok('every concept folder is singular, kebab-case, and has no near-duplicate family');
-    }
-  } catch (error) {
-    warn(`concept registry failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   printDoctorStatus();
