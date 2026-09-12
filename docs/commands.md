@@ -229,7 +229,7 @@ wiki lint --json       # emit results as JSON
 Starts a local HTTP server to browse the wiki, deliverables, and templates in a browser.
 
 - `/` — renders `wiki/index.md` with navigation tiles
-- `/graph` — interactive Canvas map/community/focus explorer with LOD, mini-map and impact analysis; refreshes automatically when graph files change
+- `/graph` — interactive Canvas map/community/focus explorer with LOD, mini-map and impact analysis; its search box is a server-side relation filter (it matches pages by title/subject/tags and relations by their label, rather than finding one document); refreshes automatically when graph files change
 - `/chat` — browser chat UI with OpenAI-compatible tool calling over MCP
 
 ```bash

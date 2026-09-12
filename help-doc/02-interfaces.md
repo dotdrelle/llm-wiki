@@ -79,6 +79,14 @@ from one concept to another.
   Activity panel also offers a representation of running processing.
 - **For whom**: explore and understand the wiki's organization at a glance.
 
+Typing a term there **filters the relations**, it does not find a document: the
+graph narrows to the relations that bear on that term (matching a file name, a
+page title, a tag, a subject or a type), and you keep browsing that filtered
+view. The filter stays when you change the grouping axis (including *Tag*); the
+suggestion list is only a shortcut to jump to one page, and it closes when you
+click away or press Escape. Type `cloud`, for example, to see how the
+cloud-related pages are linked.
+
 ## Which interface to choose
 
 | Need | Interface |

@@ -80,6 +80,15 @@ describe('shared graph canvas foundation', () => {
     expect(RUNTIME_CANVAS_SCRIPT).not.toContain('function glowSprite(');
   });
 
+  it('peint le libellé des nœuds selon le thème, lisible en thème clair', () => {
+    // Le libellé des nœuds non-cartes — run, tâches et sous-agents de la
+    // collective (scout, analyst, critique, redactor, archivist) — était
+    // #f7faff en dur : invisible sur le fond clair du thème clair.
+    expect(RUNTIME_CANVAS_SCRIPT).toContain(
+      "document.documentElement.classList.contains('theme-light')?'#172433':'#f7faff'",
+    );
+  });
+
   it('presents map, community, and focus as one Explore navigation', () => {
     const html = renderWikiGraphV2();
 

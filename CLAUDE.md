@@ -227,6 +227,11 @@ never becomes an extra run. Keep scaffold skills generic and English by default.
   messages. The runtime derives its conversation from the event log, so a
   DOM-only deletion would be merged straight back in by the next poll; the
   runtime answers `409 run_active` while a run is in progress.
+- `POST /api/runtime/conversation/compact` → workspace-scoped runtime
+  `/conversation/compact` (compact: mark everything said so far as forgotten
+  for future turns without deleting the event log, and return the generated
+  summary). Backs the composer's memory gauge. Same workspace-scoped,
+  `409 run_active` shape as truncate.
 - `GET`/`POST /api/runtime/control` → runtime `/control` (status/explain/enqueue
   while a run is active — see `llm-wiki-manager/CLAUDE.md`'s control lane
   section)
@@ -332,6 +337,23 @@ therefore live **outside** that block:
   `selectCommunity` precisely so a filter change can replay the panel; the panel
   head announces `N of M documents` when a filter hides some, because counting
   one thing and listing another is how the three counters came to disagree.
+- The graph search is a **relation filter, not a document finder**
+  (`src/graph/wiki/queryFilter.ts`). A node matches on title, id, `subject`,
+  OKF `type` and every tag, accent- and case-insensitively; an edge is kept
+  when either endpoint matches OR its relation label does, and both endpoints
+  of a kept edge are always pulled back in. It runs **server-side, before the
+  projection** (`createFilteredSnapshot` in `snapshot.ts`, `?q=` on
+  `/api/graph/overview` and `/api/graph/list`), so the leaf edges, the
+  community edges and every axis grouping (subject/type/tag) derive from the
+  same reduced corpus. The client keeps the query in `searchQuery` and
+  re-fetches it debounced (220 ms, sequence-guarded) and on every revision;
+  type filters and grouping changes re-apply it in place, without a second
+  fetch. Enter keeps the filtered view, the dropdown's first entry is "Filter
+  the graph for …" (the list also closes on outside click or Escape, and
+  clicking a leaf still focuses that document), and `filtersScript.ts`'s
+  `visible()` remains the single chokepoint for the index, the canvas and the
+  inspector. The search input and its dropdown render at 12 px, not the 14 px
+  body size.
 - Chat context accepts `wiki/`, `raw/untracked/` **and** `raw/ingested/`. That
   list must match what the graph offers a "Send to Donna" button on, otherwise
   the button is offered on pages the shell silently refuses. The graph waits for
@@ -383,6 +405,9 @@ manager's `state.concurrency` / `workflow.timingByTask` — see
   (`workflow.usage.byTask`). Filled `task_group` rectangles render white text
   without the halo stroke (`.runtime-graph-node.task_group text`). Aggregator
   status glyphs are `[✓]`/`[✗]`/`[⏸]`, aligned with the Shell PlanPanel.
+  Node labels are theme-aware (`#172433` in the light theme, `#f7faff` in the
+  dark) — a fixed light fill made them invisible on the light canvas
+  (`runtimeCanvasScript.ts`).
 
 The Activity list is split into `Plan`, `Chain`, `Local activity`,
 `Runtime activity`, and `Logs`, in that order. Each tab owns a `Clear` action;
@@ -405,6 +430,31 @@ adds an optimistic copy the moment the POST leaves (`addPendingUploadRow` in
 record leaves the in-flight filter, the optimistic row is removed and the
 refresh reconciles — the file disappears from Pending, while the chat Activity
 card keeps its `Retry` (the manifest record survives).
+
+**Conversation compact** (`compactConversationMemory`, `#memory-gauge-btn`):
+the composer ring counts only the visible thread since the last compact
+(`gaugedConversationCount`, threshold 40) — purely cosmetic, it truncates or
+refuses nothing. Compacting **keeps the same conversation**: it marks the
+boundary, persists it as `compactedCount` on the conversation payload
+(`buildConversationPayload`/`loadConversation`) and resets the gauge, so the
+messages stay on screen and the tooltip reads `compacted (thread kept)`.
+Runtime side, `conversation_reset` sets `conversationSeedStart` — the displayed
+thread is kept everywhere, only what Donna is told resets — and
+`conversationSeed` slices from that boundary.
+
+**Sidebar launch buttons** (`wireSidebarLaunchButtons` in
+`src/serve/html/wikiLayoutScript.ts`): Pending's Ingest and the wiki row's
+Rebuild-from-the-archive button are server-rendered hidden and revealed here.
+The function is defined at **script scope**, not inside either IIFE that calls
+it (`refreshSidebar` and `initShellMessaging`): nested inside one, the other
+threw `ReferenceError` and the button stayed hidden. Rebuild posts the
+`llmwiki:rebuild` message, which routes `/wiki-rebuild` through Donna to the
+production `knowledge.rebuild` capability — `wiki ingest --from-ingested` plus
+`lint` in ONE job, never build/export/polish (a fuzzy match otherwise picked
+`document.build`). In the tree, the wiki root reads `WIKI` and the reserved
+`Answers`/`Concepts`/`Sources` folders take a leading capital (`navNodeLabel`
+in `wikiHtml.ts`); the embedded Explorer panel is scaled to the shell chrome by
+`html.sidebar-panel { font-size: 13.5px }` (`wikiLayoutCss.ts`).
 
 **Connector cards** (`src/chat/runtime/mcpConnectorScript.ts`,
 `config/configScript.ts`, `chatHtml.ts`). A card now has an identity in the

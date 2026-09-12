@@ -88,10 +88,11 @@ Everything below is a **UI panel**, not something you type:
   height. In the Files view each collection's root reads in capitals and its
   contents with a leading capital. Deliverables carry a small icon per
   production type — a hammer for built documents, an export arrow, a sparkle
-  for polished ones. The **wiki row** carries the history glyph: it relaunches
-  the rebuild of the concept pages (folders and leaves) from the archived
-  sources, then checks the wiki's links and OKF frontmatter — the same
-  operation as `/wiki-rebuild`, run through Donna with the normal approval.
+  for polished ones. The **wiki row** carries the history glyph: it re-files
+  the **archived** sources into their concept folders, then verifies the wiki's
+  links and OKF front-matter — the same operation as `/wiki-rebuild`, run
+  through Donna with the normal approval. It does **not** build, export or
+  publish deliverables.
   The Pending tree shows only folders that hold at least one document
   directly — empty ancestor chains are collapsed away. Wiki pages read by
   their title (first `#` heading) rather than their filename, and downloaded

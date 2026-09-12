@@ -67,6 +67,14 @@ You do not have to name an agent or a technical operation. You describe a
 identifies the required **capability** and routes the task to the agent able to
 carry it out.
 
+## Conversation memory
+
+The ring around the composer counts the visible conversation — it is your handle
+on what DONNA remembers of it. Clicking it **compacts the memory**: DONNA
+forgets what was said before that point, but the visible thread is not deleted
+and you do not switch conversation. The compact is kept when you reopen the
+conversation from history.
+
 ## In summary
 
 | You want to… | Mode | Example |

@@ -265,7 +265,7 @@ function createRuntimeCanvasRenderer(host){
       context.strokeStyle=selectedNode?'#fff':rgba(color,1);context.lineWidth=selectedNode?2.5:1.2;
       context.setLineDash(pending?[4,4]:[]);
       context.beginPath();context.arc(point.x,point.y,r,0,Math.PI*2);context.fill();context.stroke();context.setLineDash([]);
-      context.textAlign='center';context.fillStyle='#f7faff';context.font='700 10px ui-sans-serif,system-ui';
+      context.textAlign='center';context.fillStyle=document.documentElement.classList.contains('theme-light')?'#172433':'#f7faff';context.font='700 10px ui-sans-serif,system-ui';
       context.fillText(shortText(node.label,18),point.x,point.y+(node.type==='run'?44:26));
     }
     if(transition.fresh>0||transition.flash>0){
