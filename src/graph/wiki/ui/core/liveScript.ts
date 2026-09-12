@@ -88,7 +88,7 @@ function onGraphRevision(revision){
     try{
       while(graphWanted>graphRevision){
         const target=graphWanted;
-        const next=await json('/api/graph/overview');
+        const next=await json('/api/graph/overview'+graphQuerySuffix());
         // A response sent before a newer revision has no right to overwrite a
         // more up-to-date scene: we re-read rather than apply.
         if(next.taxonomyRevision<target)throw new Error('graph snapshot behind announced revision');

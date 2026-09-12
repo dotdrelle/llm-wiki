@@ -28,6 +28,37 @@ it('keeps the graph document preview viewport-sized and scrolls its content', ()
   expect(source).toContain('.document-preview-content{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain');
 });
 
+it('turns the graph search into a reactive relation filter, not a document finder', () => {
+  const source = renderWikiGraphV2();
+  // The query is sent to the server, which filters the corpus BEFORE the
+  // projection, so leaf edges, community edges and every axis grouping agree.
+  expect(source).toContain("function graphQuerySuffix(){return searchQuery?('?q='+encodeURIComponent(searchQuery)):''}");
+  expect(source).toContain("await json('/api/graph/overview'+graphQuerySuffix())");
+  // A keystroke re-fetches (debounced) and keeps the query on later revisions.
+  expect(source).toContain("searchQuery=event.target.value");
+  expect(source).toContain('searchReloadTimer=setTimeout(()=>{searchReloadTimer=0;reloadForQuery()},220)');
+  // The search is a global filter, never a forced pick: Enter keeps the
+  // filtered view, and typing drops a document focus back to the filtered map.
+  expect(source).toContain("if(view==='focus'){view='map';focusHistory.length=0}");
+  expect(source).toContain("if(event.key==='Enter'){event.preventDefault();closeSearchOptions()}else if(event.key==='Escape'){closeSearchOptions()}");
+  // The suggestion list offers a "filter the graph" entry (stay global) and
+  // closes on outside-click instead of covering the graph.
+  expect(source).toContain('data-search-filter="1"');
+  expect(source).toContain("if(event.target.closest('[data-search-filter]')){closeSearchOptions();return}");
+  expect(source).toContain("if(!event.target.closest('.graph-search'))closeSearchOptions()");
+  // The List view reads the already-filtered snapshot: filtering again by
+  // title/id would hide a page that matched through a tag or its subject.
+  expect(source).not.toContain(".filter(node=>(node.title+' '+node.id)");
+});
+
+it('keeps the graph search at the chrome font size, not the 14px body size', () => {
+  const source = renderWikiGraphV2();
+  // The input inherited body{font:14px} while every other toolbar control sits
+  // at 11.5-12px, so the search read oversized for the surrounding chrome.
+  expect(source).toContain('border-radius:6px;padding:.58rem .8rem;font-size:12px}');
+  expect(source).toContain('.reset-search{white-space:nowrap;padding:.45rem .65rem;font-size:12px}');
+});
+
 it('renders pending connector sources by frontmatter title without displaying frontmatter as prose', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-pending-'));
   const relative = 'raw/untracked/connectors/google-1/message-id-deadbeef.md';
@@ -377,9 +408,26 @@ describe('serve graph ui', () => {
     expect(source).toContain('title="Ingest pending sources (Donna)"');
     expect(source).toContain('data-ingest-launch');
     // Hidden standalone (no Donna) and only revealed in the embedded sidebar,
-    // where the launch runs through Donna as a /wiki-ingest skill turn.
-    expect(source).toContain('.side-ingest-action[hidden] { display: none; }');
-    expect(source).toContain("window.parent.postMessage({ type: 'llmwiki:ingest' }");
+    // where the launch runs through Donna as a /wiki-ingest skill turn. The
+    // rule is shared with the wiki row's rebuild button (same accent-fill
+    // "agent-launched action" family).
+    expect(source).toContain('.side-ingest-action[hidden],');
+    expect(source).toContain('.side-rebuild-action[hidden] { display: none; }');
+    // Both launch buttons run through the shared helper, re-applied after each
+    // sidebar refresh (otherwise the button vanished after the first refresh).
+    expect(source).toContain("'llmwiki:ingest'");
+    expect(source).toContain('wireSidebarLaunchButtons();');
+  });
+
+  it('offers a Donna archive-rebuild button on the wiki row', async () => {
+    const source = await serveSource();
+    expect(source).toContain('title="Rebuild concept pages from the archive"');
+    expect(source).toContain('data-rebuild-launch');
+    // Only the wiki root row carries it; hidden standalone and revealed by the
+    // layout script, which routes the launch through Donna.
+    expect(source).toContain("depth === 0 && node.name === 'wiki'");
+    expect(source).toContain('.side-rebuild-action[hidden] { display: none; }');
+    expect(source).toContain("'llmwiki:rebuild'");
   });
 
   it('visually distinguishes the primary Wiki tree from output collections', async () => {
@@ -574,7 +622,10 @@ describe('serve deliverables ui', () => {
     expect(source).toContain("if (base.endsWith('.export.polished')) return 'polish';");
     expect(source).toContain("if (base.endsWith('.export')) return 'export';");
     expect(source).toContain("return 'build';");
-    expect(source).toContain('data-deliverable-kind="${deliverableKind(file)}"');
+    // The kind travels on the ROW now (an icon per production type replaced
+    // the colour dot), still one attribute per deliverable file.
+    expect(source).toContain('const kindAttr = kind ? ` data-deliverable-kind="${kind}"` : \'\';');
+    expect(source).toContain('side-deliverable-icon');
     expect(source).toContain("'Cache-Control': 'no-store, no-cache, must-revalidate'");
     expect(source).toContain(
       "return collection === 'templates' || collection === 'build-context';",

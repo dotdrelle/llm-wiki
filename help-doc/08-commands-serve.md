@@ -40,6 +40,7 @@ fall behind them:
 - `/status` — summarize connector health and current or recent jobs.
 - `/wiki-build [template]` — build deliverables from the current wiki for one template or all templates.
 - `/wiki-ingest [files]` — ingest Markdown already waiting in raw/untracked into the wiki.
+- `/wiki-rebuild` — rebuild the concept pages (folders and leaves) from the archived sources, then verify the workspace links and OKF frontmatter.
 - `/wiki-sync` — export all configured Confluence sources into the pending inbox.
 
 <!-- END GENERATED SKILLS -->
@@ -74,14 +75,24 @@ Everything below is a **UI panel**, not something you type:
   running** — when it is down or not configured, the panel says so and takes
   Markdown only. Each conversion appears in the **Activity panel** as it runs,
   one file at a time, exactly like a conversion started from the Upload button;
-  the panel fills in as each file lands. While a run is in progress, a Markdown
+  the panel fills in as each file lands. While the agent works, the file also
+  shows in Pending as a **spinner row that is not clickable** — it becomes an
+  ordinary source once the conversion lands, and if the conversion fails the
+  row simply disappears. While a run is in progress, a Markdown
   drop is refused — the tree is read-only during a run — whereas a PDF or text
   drop goes through and waits for the next ingestion. Its lightning button
   starts the ingestion of everything pending.
 - **Wiki browser sidebar** — three views behind the small icon rail on the
-  left: **Wiki pages** (inbox), **Files** (context / templates / deliverables
+  left: **Wiki pages** (inbox), **Files** (Context / Templates / Deliverables
   tabs) and **Pending** (brain, the default view). Each view owns the full
-  height. The Pending tree shows only folders that hold at least one document
+  height. In the Files view each collection's root reads in capitals and its
+  contents with a leading capital. Deliverables carry a small icon per
+  production type — a hammer for built documents, an export arrow, a sparkle
+  for polished ones. The **wiki row** carries the history glyph: it relaunches
+  the rebuild of the concept pages (folders and leaves) from the archived
+  sources, then checks the wiki's links and OKF frontmatter — the same
+  operation as `/wiki-rebuild`, run through Donna with the normal approval.
+  The Pending tree shows only folders that hold at least one document
   directly — empty ancestor chains are collapsed away. Wiki pages read by
   their title (first `#` heading) rather than their filename, and downloaded
   files   lose their leading transport hash (`8d5e3fe3-report.md` reads

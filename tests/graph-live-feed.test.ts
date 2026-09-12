@@ -76,11 +76,11 @@ describe('réception des révisions du graphe', () => {
       graphAppScript.indexOf('function render()'),
     );
 
-    expect(load).toContain('graphRevision=data.taxonomyRevision||0');
+    expect(load).toContain('graphRevision=next.taxonomyRevision||graphRevision||0');
     expect(load).toContain('startGraphRevisionFeed()');
     // Le premier snapshot fixe la révision de départ : sans lui, la première
     // notification déclencherait une récupération redondante.
-    expect(load.indexOf('graphRevision=data.taxonomyRevision'))
+    expect(load.indexOf('graphRevision=next.taxonomyRevision'))
       .toBeLessThan(load.indexOf('startGraphRevisionFeed()'));
   });
 });

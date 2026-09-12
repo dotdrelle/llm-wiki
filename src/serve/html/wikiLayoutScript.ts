@@ -2,6 +2,29 @@ import { CONFIRM_DIALOG_SCRIPT } from '../../chat/confirmDialog.ts';
 
 export const WIKI_LAYOUT_SCRIPT = `
 ${CONFIRM_DIALOG_SCRIPT}
+/*
+ Sidebar launch buttons (Pending "Ingest", wiki-row "Rebuild from archive"),
+ server-rendered hidden and revealed here. Script scope on purpose: two IIFEs
+ below call them (refreshSidebar and initShellMessaging) — inside either one,
+ the other throws ReferenceError and the buttons stay hidden. refreshSidebar
+ replaces the markup wholesale, so this re-runs after EVERY refresh; the data
+ flag prevents double-binding on an unreplaced node.
+*/
+function wireLaunchButton(selector, options, type) {
+  const button = document.querySelector(selector);
+  if (!button || button.dataset.launchWired) return;
+  button.dataset.launchWired = '1';
+  button.hidden = false;
+  button.addEventListener('click', async function() {
+    if (!(await confirmAction(options))) return;
+    window.parent.postMessage({ type }, window.location.origin);
+  });
+}
+function wireSidebarLaunchButtons() {
+  if (window.self === window.top || !document.documentElement.classList.contains('sidebar-panel')) return;
+  wireLaunchButton('[data-ingest-launch]', { title: 'Ingest pending sources', message: 'Run the ingest agent on every source in Pending?', confirmLabel: 'Ingest' }, 'llmwiki:ingest');
+  wireLaunchButton('[data-rebuild-launch]', { title: 'Rebuild concept pages', message: 'Re-file every archived source into its concept folder, then check links and OKF frontmatter?', confirmLabel: 'Rebuild' }, 'llmwiki:rebuild');
+}
 (() => {
   const THEME_KEY = 'llm-wiki:theme';
   const themeToggle = document.querySelector('[data-theme-toggle]');
@@ -128,6 +151,9 @@ ${CONFIRM_DIALOG_SCRIPT}
     applySideView();
     applySidebarSearch();
     armIngestPolling();
+    // The replaced markup carries the launch buttons hidden again: re-reveal
+    // and re-wire them or they disappear after the first refresh.
+    wireSidebarLaunchButtons();
   }
   // While an ingest is running (the sidebar carries data-active-ingest),
   // refresh the Pending list on a slow tick so the per-file markers follow
@@ -445,6 +471,47 @@ ${CONFIRM_DIALOG_SCRIPT}
     }
     return upload;
   }
+  /*
+   La ligne fantome du panneau Pending pendant une conversion.
+
+   Un fichier convertible n'apparait dans raw/untracked qu'a la fin de la
+   conversion — cinq minutes par fichier au pire — et sans cette ligne le
+   panneau restait muet pendant tout ce temps, comme si le drop n'avait rien
+   fait. La ligne est volontairement inerte : pas de lien, pas de suppression,
+   pas de drag. Le fichier n'est pas encore une source, il n'y a rien a ouvrir
+   ni a deplacer ; elle ne devient cliquable que lorsque la conversion a ecrit
+   le Markdown, et c'est alors la vraie source que le refresh affiche. Le
+   serveur rend la meme ligne (lue dans le manifest des uploads) aux refreshes
+   suivants, donc un refresh en cours de conversion ne la fait pas disparaitre.
+   En cas d'erreur la ligne est retiree ici, et le refresh qui suit la
+   reconcilie avec le serveur — le record en echec ne compte plus comme
+   in-flight, donc le panneau ne la remontre pas.
+  */
+  function addPendingUploadRow(filename) {
+    const list = document.querySelector('[data-untracked-list]');
+    if (!list) return;
+    list.querySelector('.side-untracked-empty')?.remove();
+    const row = document.createElement('div');
+    row.className = 'side-untracked-item side-untracked-uploading';
+    row.dataset.uploadOptimistic = '1';
+    row.dataset.uploadFilename = filename;
+    row.title = 'Converting with the documents agent…';
+    const spinner = document.createElement('span');
+    spinner.className = 'side-upload-spinner';
+    spinner.setAttribute('aria-hidden', 'true');
+    const name = document.createElement('span');
+    name.className = 'side-upload-name';
+    name.textContent = filename;
+    row.append(spinner, name);
+    list.prepend(row);
+    const count = document.querySelector('[data-untracked-count]');
+    if (count) count.textContent = String(Number(count.textContent || 0) + 1);
+  }
+  function removePendingUploadRow(filename) {
+    document.querySelectorAll('[data-upload-optimistic]').forEach((row) => {
+      if (row.getAttribute('data-upload-filename') === filename) row.remove();
+    });
+  }
   renderPendingFormats();
   void refreshPendingCapabilities();
   document.addEventListener('dragover', (event) => {
@@ -490,6 +557,7 @@ ${CONFIRM_DIALOG_SCRIPT}
       const actId = 'pending-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
       try {
         if (isConvertibleFile(file)) {
+          addPendingUploadRow(file.name);
           reportPendingUpload({ id: actId, phase: 'start', filename: file.name, bytes: file.size });
           const upload = await uploadForConversion(file);
           reportPendingUpload({
@@ -520,6 +588,10 @@ ${CONFIRM_DIALOG_SCRIPT}
         const message = err instanceof Error ? err.message : String(err);
         if (isConvertibleFile(file)) {
           reportPendingUpload({ id: actId, phase: 'done', filename: file.name, status: 'failed', error: message });
+          // The placeholder must not linger on an error: it disappears from
+          // the panel and from the serve screen it was displayed on.
+          removePendingUploadRow(file.name);
+          await refreshSidebar().catch(() => {});
         }
         failed.push(file.name + ' — ' + message);
       }
@@ -1050,21 +1122,10 @@ ${CONFIRM_DIALOG_SCRIPT}
 
   // Sidebar panel: reflect the active file when the shell reports navigation.
   if (embedded && isSidebarPanel) {
-    // "Ingest" (⚡) on the Pending panel: only meaningful inside the chat
-    // shell, where Donna owns the launch. Reveal the button and hand the
-    // request to the shell, which routes it as a /wiki-ingest skill turn.
-    const ingestLaunchBtn = document.querySelector('[data-ingest-launch]');
-    if (ingestLaunchBtn) {
-      ingestLaunchBtn.hidden = false;
-      ingestLaunchBtn.addEventListener('click', async function() {
-        if (!(await confirmAction({
-          title: 'Ingest pending sources',
-          message: 'Run the ingest agent on every source in Pending?',
-          confirmLabel: 'Ingest',
-        }))) return;
-        window.parent.postMessage({ type: 'llmwiki:ingest' }, window.location.origin);
-      });
-    }
+    // "Ingest" (⚡) on the Pending panel and "Rebuild from archive" on the wiki
+    // row: only meaningful inside the chat shell, where Donna owns the launch.
+    // Same wiring refreshSidebar re-applies after each sidebar replacement.
+    wireSidebarLaunchButtons();
     // All local links must go through the shell, including pages such as
     // /graph that do not load WIKI_LAYOUT_SCRIPT and therefore cannot report
     // their own navigation after the iframe has loaded.

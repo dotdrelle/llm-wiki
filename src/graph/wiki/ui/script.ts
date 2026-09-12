@@ -24,17 +24,46 @@ ${graphUiContextCardScript()}
 ${graphUiLiveScript()}
 ${graphUiThemeScript()}
 
+function graphQuerySuffix(){return searchQuery?('?q='+encodeURIComponent(searchQuery)):''}
+/*
+ Applying a snapshot, from any source (load, revision, search reload).
+
+ The concept grouping is the top-level communities; the server does not ship it
+ twice, so the browser restores the entry the combobox reads, then re-applies
+ the axis the reader chose — a fresh snapshot always arrives re-rooted at
+ concept, and silently dropping back to the concept map would discard their
+ reading.
+*/
+function ingestGraph(next){
+  data=next;
+  data.groupings={...(data.groupings||{}),concept:{communities:data.communities,communityEdges:data.communityEdges}};
+  if(groupAxis!=='concept'){
+    const grouping=data.groupings?.[groupAxis];
+    if(grouping){data.communities=grouping.communities;data.communityEdges=grouping.communityEdges}}
+  seedCanvasExplorerSlots();renderFilters();renderSearchOptions(document.querySelector('#search')?.value||'');render()}
 async function load(){
   try{
-    data=await json('/api/graph/overview');
-    graphRevision=data.taxonomyRevision||0;
-    // The concept grouping is the top-level communities; the server does not
-    // ship it twice, so the browser restores the entry the combobox reads.
-    data.groupings={...(data.groupings||{}),concept:{communities:data.communities,communityEdges:data.communityEdges}};
-    seedCanvasExplorerSlots();renderFilters();renderSearchOptions();render();
+    const next=await json('/api/graph/overview'+graphQuerySuffix());
+    ingestGraph(next);
+    graphRevision=next.taxonomyRevision||graphRevision||0;
     startGraphRevisionFeed()}
   catch(error){canvas.innerHTML='<div class="loading">Unable to load graph: '+esc(error.message)+'</div>'}
 }
+/*
+ Reactive relation search.
+
+ The query narrows the corpus server-side, so a keystroke that changes it must
+ re-fetch — debounced, and guarded by a sequence so a slow earlier response
+ cannot overwrite the newer scene. Not reframing: the reader keeps their camera.
+*/
+let searchReloadTimer=0,searchFetchSeq=0;
+async function reloadForQuery(){
+  const seq=++searchFetchSeq;
+  try{
+    const next=await json('/api/graph/overview'+graphQuerySuffix());
+    if(seq!==searchFetchSeq)return;
+    ingestGraph(next)}
+  catch(error){/* a dropped keystroke must not blank the canvas */}}
 function render(){
   if(!data)return;
   /*
@@ -82,14 +111,38 @@ function render(){
   renderCanvasExplorer()
 }
 function renderList(){
-  const query=document.querySelector('#search').value.toLowerCase(),rows=visible().nodes.filter(node=>(node.title+' '+node.id).toLowerCase().includes(query));
+  // The snapshot is already narrowed by the search (server-side, before the
+  // projection): re-filtering here by title/id alone would hide a page that
+  // matched through a tag or its subject. Type filters still apply, via visible().
+  const rows=visible().nodes;
   canvas.innerHTML='<div style="overflow:auto;height:100%"><table class="list-table"><thead><tr><th>Document</th><th>Type</th><th>Community</th><th>Relations</th></tr></thead><tbody>'+rows.map(node=>'<tr data-doc="'+esc(node.id)+'"><td><a href="/'+encodeURI(node.id)+'">'+esc(node.title)+'</a><div class="muted">'+esc(node.id)+'</div></td><td>'+esc(node.type)+'</td><td>'+esc(node.community?.communityLabel||'—')+'</td><td>'+node.degree+'</td></tr>').join('')+'</tbody></table></div>'
 }
-document.querySelector('#search').addEventListener('input',event=>{renderSearchOptions(event.target.value);if(view==='list')renderList()});
-document.querySelector('#search').addEventListener('change',()=>activateSearch());
-document.querySelector('#search').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();activateSearch()}});
-document.querySelector('#graph-search-results').addEventListener('click',event=>{const item=event.target.closest('[data-search-id]');if(item)activateSearch(item.dataset.searchId)});
-document.querySelector('#reset-search').addEventListener('click',()=>{selected=null;selectedCommunity=null;view='map';focusHistory.length=0;document.querySelector('#search').value='';document.querySelector('#graph-search-results').hidden=true;inspector.innerHTML='<p>Select a community or document to explore its relations.</p>';renderFilters();render()});
+document.querySelector('#search').addEventListener('input',event=>{
+  renderSearchOptions(event.target.value);
+  searchQuery=event.target.value;
+  // The search is a GLOBAL relation filter: it must never leave the reader
+  // pinned on one document. Typing drops any document selection, and a
+  // document focus returns to the filtered map so the whole neighbourhood is
+  // visible. The community/domain level the reader was on is preserved.
+  if(searchQuery.trim()){
+    if(selected){selected=null;refreshInspector()}
+    if(view==='focus'){view='map';focusHistory.length=0}}
+  if(searchReloadTimer)clearTimeout(searchReloadTimer);
+  searchReloadTimer=setTimeout(()=>{searchReloadTimer=0;reloadForQuery()},220);
+  if(view==='list')renderList()});
+// Enter keeps the filtered view — it does NOT pick a result. The dropdown
+// stays an OPTIONAL shortcut: only an explicit click navigates.
+document.querySelector('#search').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();closeSearchOptions()}else if(event.key==='Escape'){closeSearchOptions()}});
+document.querySelector('#graph-search-results').addEventListener('click',event=>{
+  // "Filter the graph for …": keep the global relation view and just hide the
+  // list. It is the only way to dismiss the suggestions without leaving the
+  // filtered graph for a single document.
+  if(event.target.closest('[data-search-filter]')){closeSearchOptions();return}
+  const item=event.target.closest('[data-search-id]');if(item)activateSearch(item.dataset.searchId)});
+// A click anywhere outside the search closes the suggestions: the list used to
+// stay open and cover the graph and the selection until a leaf was picked.
+document.addEventListener('click',event=>{if(!event.target.closest('.graph-search'))closeSearchOptions()});
+document.querySelector('#reset-search').addEventListener('click',()=>{selected=null;selectedCommunity=null;view='map';focusHistory.length=0;searchQuery='';if(searchReloadTimer){clearTimeout(searchReloadTimer);searchReloadTimer=0}document.querySelector('#search').value='';document.querySelector('#graph-search-results').hidden=true;inspector.innerHTML='<p>Select a community or document to explore its relations.</p>';reloadForQuery()});
 document.addEventListener('click',event=>{
   const viewButton=event.target.closest('[data-view]');
   if(viewButton){view=viewButton.dataset.view==='list'?'list':selected?'focus':selectedCommunity?(graphIsDomain(selectedCommunity)?'domain':'community'):'map';document.querySelectorAll('[data-view]').forEach(button=>button.classList.toggle('active',button===viewButton));render();return}

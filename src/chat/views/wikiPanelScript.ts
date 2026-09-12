@@ -631,6 +631,20 @@ window.addEventListener('message', (event) => {
     if (!input) return;
     input.value = '/wiki-ingest';
     sendMessage();
+  } else if (data.type === 'llmwiki:rebuild') {
+    // The history glyph on the wiki row: rebuild the concept pages from the
+    // archive, then check links and OKF. This is agent work, so force Agent
+    // mode even when the workspace has no /wiki-rebuild scaffold skill: the
+    // objective still resolves to the production knowledge.rebuild capability
+    // (which runs ingest_rebuild + lint in one job). Falling through to chat
+    // mode would answer it read-only, and letting a fuzzy match decide sent it
+    // to document.build ("rebuild the templates") instead.
+    showChatView();
+    const input = $('chat-input');
+    if (!input) return;
+    if (!agentMode) { agentMode = true; updateAgentModeUI(); }
+    input.value = '/wiki-rebuild';
+    sendMessage();
   } else if (data.type === 'llmwiki:close') {
     // A closed graph hands the centre back to the page it replaced — including
     // the wiki root ('/'): excluding it here (as the unrelated split-view

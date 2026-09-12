@@ -373,3 +373,15 @@ environment variables only:
 | `WIKI_SERVE_TLS_CERT_PATH` | TLS certificate path for `wiki serve` |
 | `WIKI_SERVE_TLS_KEY_PATH`  | TLS private key path                  |
 | `WIKI_SERVE_TLS_CA_PATH`   | Optional CA path                      |
+
+### TOTP login gate
+
+When `WIKI_MANAGER_RUNTIME_URL` is set, `serve` asks the runtime whether the
+TOTP gate is on (`GET /login/status`, cached 60 s). When it is, **every**
+route except `/login`, `/api/login` and `/api/logout` requires a valid
+`wiki_session` cookie, validated against the runtime (`GET /session/verify`,
+memoized 30 s) — the TOTP secret never reaches `serve`. Fail-closed: with the
+runtime unreachable, protected routes answer a clear "session service
+unavailable" page. A standalone `serve` without a runtime URL stays open as
+before. See `help-doc/13-login-totp.md` and the manager's
+`docs/configuration.md` (`WIKI_MANAGER_TOTP`, `WIKI_MANAGER_SESSION_TTL_HOURS`).

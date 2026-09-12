@@ -22,6 +22,24 @@ describe('chat html', () => {
     }
   });
 
+  it('compacts the current conversation in place: a persisted boundary, never a new conversation', () => {
+    const script = chatScripts().join('\n');
+    const compact = script.match(/async function compactConversationMemory\(\) \{[\s\S]*?\n\}/)?.[0] ?? '';
+
+    // The old behaviour called newConversation() after the runtime compact:
+    // the thread vanished and the compacted state was left behind in a blank
+    // conversation. The boundary must stay on THIS conversation.
+    expect(compact.length).toBeGreaterThan(0);
+    expect(compact).not.toContain('newConversation()');
+    expect(compact).toContain('memoryCompactedCount=visibleConversationCount()');
+    expect(compact).toContain('await saveCurrentConversation({immediate:true,force:true})');
+    // The boundary travels with the thread and is restored from history…
+    expect(script).toContain('compactedCount: memoryCompactedCount');
+    expect(script).toContain('memoryCompactedCount=Math.max(0,Number(conv.compactedCount)||0)');
+    // …while the gauge counts only what came after it (messages stay on screen).
+    expect(script).toContain('return Math.max(0,visibleConversationCount()-memoryCompactedCount)');
+  });
+
   it('routes skill invocations without compiling or displaying the private body', () => {
     const script = chatScripts().join('\n');
     const matcher = script.match(/async function matchBrowserSkillInvocation\(text\) \{[\s\S]*?\n\}/)?.[0] ?? '';
@@ -178,6 +196,17 @@ describe('chat html', () => {
     expect(script).toContain('Invalid LLM configuration. Check the Base URL in chat settings.');
     expect(script).toContain("const partial=streamDiv.dataset.copy || 'Response stopped.';");
     expect(script).toContain('setStreamContent(streamDiv,finalText);');
+  });
+
+  it('settles a runtime answer to markdown once it stops changing, even during a long run', () => {
+    const script = chatScripts().join('\n');
+    // "A run is active" kept every assistant bubble as plain text, so a status
+    // answer asked during a long run showed raw markdown (tables as pipes)
+    // until the whole run ended. The bubble now self-finalizes after the text
+    // stops changing, independently of the run state.
+    expect(script).toContain('function updateMsgBubble(el,role,content,{force=false}={}) {');
+    expect(script).toContain("if(role==='assistant'&&runtimeIsRunning()&&!force) {");
+    expect(script).toContain("updateMsgBubble(el,role,el.dataset.copy||'',{force:true})");
   });
 
   it('persists clear chat to the active history entry', () => {
@@ -449,6 +478,22 @@ describe('chat html', () => {
     // Donna (skill invocation), never call the execution endpoint directly.
     expect(script).toContain("data.type === 'llmwiki:ingest'");
     expect(script).toContain("input.value = '/wiki-ingest';");
+  });
+
+  it('routes the wiki-row rebuild button through Donna as a /wiki-rebuild skill', () => {
+    const script = chatScripts().join('\n');
+    // The history glyph posts llmwiki:rebuild; the shell must hand the launch
+    // to Donna (skill invocation), never call the execution endpoint directly.
+    expect(script).toContain("data.type === 'llmwiki:rebuild'");
+    expect(script).toContain("input.value = '/wiki-rebuild';");
+    // It is agent work: force Agent mode so a workspace WITHOUT the scaffold
+    // skill still resolves the objective to knowledge.rebuild instead of
+    // falling through to a read-only chat turn.
+    const rebuildBranch = script.slice(
+      script.indexOf("data.type === 'llmwiki:rebuild'"),
+      script.indexOf("data.type === 'llmwiki:close'"),
+    );
+    expect(rebuildBranch).toContain('agentMode = true');
   });
 
 

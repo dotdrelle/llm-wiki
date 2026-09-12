@@ -7,6 +7,7 @@ import {
   type WikiGraphCommunity,
   type WikiGraphCommunityEdge,
 } from './communityProjection.ts';
+import { filterGraphByQuery } from './queryFilter.ts';
 
 export type { WikiGraphCommunity } from './communityProjection.ts';
 
@@ -88,4 +89,22 @@ export function createSnapshot(
     groupings,
     createdAt: Date.now(),
   };
+}
+
+/*
+ A search-filtered view of an existing snapshot.
+
+ Filtering happens BEFORE the projection, so the leaf edges, the community
+ edges and every axis grouping (concept/subject/type/tag) are all derived from
+ the SAME reduced corpus. The alternative — filtering the shipped communities
+ on the client — could only approximate the relation counts and would duplicate
+ the projection the module deliberately keeps in one place.
+ */
+export function createFilteredSnapshot(base: WikiGraphSnapshot, query: string): WikiGraphSnapshot {
+  const filtered = filterGraphByQuery(base.nodes, base.edges, query);
+  // The snapshot drops the rendered payload (raw/html/preview); the projection
+  // never reads it, so restoring the empty fields is enough to re-project the
+  // reduced corpus — and createSnapshot strips them right back off.
+  const nodes = filtered.nodes.map((node) => ({ ...node, raw: '', html: '', preview: '' }));
+  return createSnapshot(base.structureEtag, { nodes, edges: filtered.edges }, { workspace: base.workspace });
 }

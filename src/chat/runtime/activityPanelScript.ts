@@ -526,6 +526,13 @@ function activityPlanSteps(item) {
   }];
   return [];
 }
+function localActivityHTML() {
+  const rev=[..._activities].reverse();
+  const uploads=rev.filter(a=>a.kind==='upload');
+  const mcp=rev.filter(a=>a.kind!=='upload');
+  const section=(title,items)=>items.length?\`<div class="act-section-head"><span class="act-section-title">\${title}</span></div>\${items.map(actCardHTML).join('')}\`:'';
+  return section('Uploads',uploads)+section('MCP',mcp);
+}
 function renderActivities() {
   const el=$('activity-body');
   if(!el) return;
@@ -565,18 +572,18 @@ function renderActivities() {
   el.__graphMode=null;
   const center=$('runtime-graph-center');
   if(center&&!document.body.classList.contains('execution-mode')) center.innerHTML='';
-  const rev=[..._activities].reverse();
-  const uploads=rev.filter(a=>a.kind==='upload');
-  const mcp=rev.filter(a=>a.kind!=='upload');
-  const section=(title,items)=>items.length?\`<div class="act-section-head"><span class="act-section-title">\${title}</span></div>\${items.map(actCardHTML).join('')}\`:'';
-  const localHTML=section('Uploads',uploads)+section('MCP',mcp);
-  const panes={
-    plan:activityTabWasCleared('plan')?'':runtimeTaskPanelHTML('plan'),
-    chain:activityTabWasCleared('chain')?'':runtimeTaskPanelHTML('chain'),
-    runtime:activityTabWasCleared('runtime')?'':runtimeTaskPanelHTML('runtime'),
-    logs:activityTabWasCleared('logs')?'':runtimeTaskPanelHTML('logs'),
-    local:localHTML,
-  };
+  // Only the selected tab's content is ever shown below (activePaneHTML).
+  // This used to build all four (plan/chain/runtime/logs), each behind its own
+  // JSON.stringify fingerprint over runtimeState, and throw three away — on
+  // every SSE burst and once a second for as long as a run stays active. A
+  // long-running job (a large Confluence export, for instance) inflates
+  // runtimeState.logs/activities/workflow.nodes for its whole duration, so
+  // every one of those ticks got proportionally heavier on the main thread —
+  // choppy token-by-token streaming being the most visible symptom, since it
+  // shares that same thread. Compute only the active tab's pane.
+  const activePaneHTML=activityTabWasCleared(activityListTab)?'':(activityListTab==='local'
+    ? localActivityHTML()
+    : runtimeTaskPanelHTML(activityListTab));
   const labels={plan:'Plan',chain:'Chain',local:'Direct agents',runtime:'Runtime activity',logs:'Logs'};
   const localActiveCount=_activities.filter(a=>isActivityActive(a.status)).length;
   const localFailedCount=_activities.filter(a=>a.status==='failed'||a.error).length;
@@ -599,7 +606,7 @@ function renderActivities() {
   const empty=\`<div class="act-empty">No \${labels[activityListTab].toLowerCase()} yet.</div>\`;
   const resetPlan=activityListTab==='plan'?'<button class="activity-subtab-reset" type="button" onclick="resetRuntimePlan()">Reset plan</button>':'';
   const toolbar=\`<div class="activity-subtab-toolbar"><span class="activity-subtab-toolbar-title">\${labels[activityListTab]}</span><span class="activity-subtab-actions">\${resetPlan}<button class="activity-subtab-clear" type="button" onclick="clearActivityTab('\${activityListTab}')">Clear</button></span></div>\`;
-  const html=\`<div class="activity-subtabs" role="tablist" aria-label="Activity list sections">\${tabs}</div><div class="activity-subtab-content activity-subtab-\${activityListTab}">\${toolbar}\${panes[activityListTab]||empty}</div>\`;
+  const html=\`<div class="activity-subtabs" role="tablist" aria-label="Activity list sections">\${tabs}</div><div class="activity-subtab-content activity-subtab-\${activityListTab}">\${toolbar}\${activePaneHTML||empty}</div>\`;
   // The panel re-renders every second while a run is active; replacing
   // innerHTML unconditionally reset the scroll position each tick, making it
   // impossible to scroll through past plan items or events during a run.
@@ -868,6 +875,7 @@ async function retryConvert(uploadId, actId) {
   if(_activities.some(a=>isActivityActive(a.status))&&!_actTimer) _actTimer=setInterval(renderActivities,1000);
   _activities.forEach(scheduleActivityPoll);
   connectRuntimePanel();
+  updateMemoryGauge();
 })();
 // The runtime is a host process that can lag behind the serve container
 // (first boot, manager restart). A 503 on a turn is almost always transient:

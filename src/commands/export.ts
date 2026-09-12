@@ -4,7 +4,7 @@ import { LLMService } from '../services/llmService.ts';
 import { RetrievalService } from '../services/retrievalService.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import { createTraceLogger, printTraceSummary } from '../services/traceLogger.ts';
-import { expandDeliverable, exportOutputPath } from '../services/exportService.ts';
+import { expandDeliverable, exportOutputPath, nextExportVersionNumber, versionedExportPath } from '../services/exportService.ts';
 import { safeWriteFile, pathExists } from '../utils/fs.ts';
 import { normalizeGeneratedMarkdown } from '../utils/markdown.ts';
 import { resolveInside, relativeFrom } from '../utils/path.ts';
@@ -149,14 +149,47 @@ export default async function exportCmd(
     spinner?.update('Writing export…');
     spinner?.updateSub(outputRelative);
 
-    await safeWriteFile(absoluteOutput, normalizeGeneratedMarkdown(expanded));
+    const normalized = normalizeGeneratedMarkdown(expanded);
+    await safeWriteFile(absoluteOutput, normalized);
+    // Keep a version of every export and polish: `<name>_v-YY<kindSuffix>.md`
+    // in the deliverables folder, numbered per kind. The main file stays the
+    // deliverable other things reference; the versions are the kept history
+    // of each run. Only standard export/polish names under deliverables/ are
+    // versioned — a custom `--output` path is a deliberate write, not a
+    // deliverable series.
+    let versionedRelative: string | null = null;
+    if (outputRelative.startsWith('deliverables/')) {
+      // Version siblings live next to the main output: a listing scoped to
+      // that one sub-directory is enough, and cheaper than a full recursive
+      // scan of deliverables/ on every export/polish.
+      const outputDir = path.dirname(relativeFrom(workspace.paths.deliverablesDir, absoluteOutput));
+      const existing = (await workspace.listDeliverablePathsIn(outputDir === '.' ? '' : outputDir))
+        .map((file) => relativeFrom(workspace.paths.rootDir, file));
+      const nextVersion = nextExportVersionNumber(existing, outputRelative);
+      // versionedExportPath re-derives the same naming parts nextExportVersionNumber
+      // already parsed; it cannot return null here since outputRelative already
+      // parsed successfully above.
+      const versionedPath = nextVersion !== null ? versionedExportPath(outputRelative, nextVersion) : null;
+      if (versionedPath !== null) {
+        versionedRelative = versionedPath;
+        await safeWriteFile(
+          resolveInside(workspace.paths.rootDir, versionedRelative),
+          normalized,
+        );
+        await logger.info('export:versioned', {
+          output: outputRelative,
+          versioned: versionedRelative,
+          version: nextVersion,
+        });
+      }
+    }
     spinner?.stop();
     const historyResult = await commitHistorySafely(history, {
       command: options.polish ? 'polish' : 'export',
       message: `${options.polish ? 'polish' : 'export'}: ${outputRelative}`,
       // Export/polish lock scopes are per-deliverable: siblings run in
       // parallel on the same workspace, so stage this deliverable only.
-      scope: [outputRelative],
+      scope: [outputRelative, ...(versionedRelative ? [versionedRelative] : [])],
     }, logger);
     if (historyResult.sha) {
       await logger.info('history:commit', {
@@ -169,6 +202,7 @@ export default async function exportCmd(
       console.warn(`  ⚠ ${warning}`);
     }
     console.log(`Exported → ${outputRelative}`);
+    if (versionedRelative) console.log(`Version kept → ${versionedRelative}`);
   } catch (e) {
     spinner?.stop();
     throw e;

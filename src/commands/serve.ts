@@ -33,6 +33,7 @@ import { handleMcpRoutes } from '../serve/routes/mcpRoutes.ts';
 import { handleRuntimeRoutes } from '../serve/routes/runtimeRoutes.ts';
 import { handleUploadRoutes, type ExternalMcpEndpoint } from '../serve/routes/uploadRoutes.ts';
 import { handleWikiRoutes } from '../serve/routes/wikiRoutes.ts';
+import { totpLoginGuard } from '../serve/routes/loginRoutes.ts';
 
 export { extractIndexTiles, isRawDownloadRequestPath, isRawUntrackedReference, localHref, serveMd };
 
@@ -49,9 +50,6 @@ const connectorsOAuthStartToken = () =>
   process.env.CONNECTORS_OAUTH_START_TOKEN ?? null;
 function resolveDocumentInputDir(rootDir: string): string {
   return process.env.DOCUMENT_INPUT_DIR ?? path.join(rootDir, '.wiki', 'documents', 'input');
-}
-function resolveDocumentUploadsDir(rootDir: string): string {
-  return process.env.DOCUMENT_UPLOADS_DIR ?? path.join(rootDir, '.wiki', 'documents', 'uploads');
 }
 const documentMaxUploadBytes = () => Number(process.env.DOCUMENT_MAX_UPLOAD_BYTES ?? 50 * 1024 * 1024);
 
@@ -94,7 +92,7 @@ const UI_FONT_WOFF2: Record<string, string> = {};
 }
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
-const LLM_WIKI_VERSION = '0.15.93';
+const LLM_WIKI_VERSION = '0.15.94';
 
 type SkillMeta = {
   name: string;
@@ -791,6 +789,16 @@ export default async function serveCmd(
         new URL(req.url ?? '/', `http://localhost`).pathname,
       );
 
+      if (await totpLoginGuard(req, res, urlPath, {
+        runtimeBaseUrl: runtimeUrl,
+        runtimeAuthHeaders: () => runtimeHeaders({ runtimeToken }),
+        sendJson,
+        wantsHtml: (request) => String(request.headers.accept ?? '').includes('text/html'),
+        requestIsTls: (request) => Boolean((request.socket as { encrypted?: boolean }).encrypted || request.headers['x-forwarded-proto'] === 'https'),
+      })) {
+        return;
+      }
+
       if (await handleChatHistoryApi(rootDir, req, res, urlPath, readRequestBody, sendJson)) {
         return;
       }
@@ -804,7 +812,6 @@ export default async function serveCmd(
         externalMcpEndpoints,
         workspaceNameFromEnv,
         documentInputDir: resolveDocumentInputDir,
-        documentUploadsDir: resolveDocumentUploadsDir,
         documentMaxUploadBytes,
         version: LLM_WIKI_VERSION,
         readRequestBuffer,

@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import { generateGraph, renderGraphDocument } from '../html/wikiHtml.ts';
 import { loadWikiGraphSnapshot } from '../../graph/wiki/overview.ts';
+import { createFilteredSnapshot } from '../../graph/wiki/snapshot.ts';
 import { graphDocumentSummary } from '../../graph/wiki/summary.ts';
 import { createGraphEventHub, type GraphEventHub } from '../sse/graphEvents.ts';
 import { sendJsonPayload } from '../http/sendJsonPayload.ts';
@@ -69,6 +70,16 @@ export async function handleGraphRoutes(
       language: deps.language(),
     });
 
+  // The graph search is a relation filter: `?q=` narrows the corpus BEFORE the
+  // projection, so leaf edges, community edges and every axis grouping agree.
+  const queryOf = (req: IncomingMessage) =>
+    new URL(req.url ?? '/', 'http://localhost').searchParams.get('q') ?? '';
+  const snapshotFor = async (req: IncomingMessage) => {
+    const current = await snapshot();
+    const q = queryOf(req);
+    return q.trim() ? createFilteredSnapshot(current, q) : current;
+  };
+
   if (req.method === 'GET' && urlPath === '/api/graph/events') {
     graphEventHub(() => deps.rootDir).subscribe(req, res);
     return true;
@@ -77,7 +88,7 @@ export async function handleGraphRoutes(
   if (req.method === 'GET' && urlPath === '/api/graph/overview') {
     // The only route whose payload is re-sent in full on every revision: it is
     // the one that justifies compression, and the only one that needs it.
-    await sendJsonPayload(req, res, 200, await snapshot());
+    await sendJsonPayload(req, res, 200, await snapshotFor(req));
     return true;
   }
 
@@ -146,8 +157,7 @@ export async function handleGraphRoutes(
   }
 
   if (req.method === 'GET' && urlPath === '/api/graph/list') {
-    const current = await snapshot();
-    deps.sendJson(res, 200, current);
+    deps.sendJson(res, 200, await snapshotFor(req));
     return true;
   }
 

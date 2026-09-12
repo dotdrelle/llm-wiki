@@ -180,6 +180,12 @@ export const CHAT_MARKUP = `<aside id="sidebar">
         <button class="attach-btn" type="button" onclick="openDocumentUpload()" title="Upload document" aria-label="Upload document">
           <svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
         </button>
+        <button id="memory-gauge-btn" class="memory-gauge-btn" type="button" onclick="compactConversationMemory()" title="Conversation memory" aria-label="Conversation memory, click to compact">
+          <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+            <circle class="memory-gauge-track" cx="12" cy="12" r="9" fill="none" stroke-width="3"/>
+            <circle id="memory-gauge-fill" class="memory-gauge-fill" cx="12" cy="12" r="9" fill="none" stroke-width="3" stroke-linecap="round" transform="rotate(-90 12 12)"/>
+          </svg>
+        </button>
         <button id="agent-mode-btn" class="agent-mode-btn" type="button" onclick="toggleAgentMode()" title="Send prompts to the agent runtime">Agent</button>
         <div class="input-actions-spacer"></div>
         <button id="send-btn" onclick="handleSendButton()" title="Send">

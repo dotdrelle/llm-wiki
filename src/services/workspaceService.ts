@@ -1087,6 +1087,22 @@ export class WorkspaceService {
       .sort();
   }
 
+  // Non-recursive sibling of listDeliverablePaths, scoped to one
+  // deliverables sub-directory: every version series lives next to its main
+  // output, so a version-number lookup does not need a full-tree scan.
+  async listDeliverablePathsIn(dirRelative: string): Promise<string[]> {
+    const cwd = dirRelative
+      ? path.join(this.paths.deliverablesDir, dirRelative)
+      : this.paths.deliverablesDir;
+    const files = await fg('*.md', { cwd, absolute: true });
+    return files
+      .filter((file) => {
+        const base = path.basename(file);
+        return !base.startsWith('.tmp.') && !base.startsWith('.changes.');
+      })
+      .sort();
+  }
+
   async readTextFile(absolutePath: string): Promise<string> {
     return readFile(absolutePath, 'utf8');
   }

@@ -20,6 +20,7 @@ import { WIKI_LAYOUT_CSS } from './wikiLayoutCss.ts';
 import { WIKI_LAYOUT_SCRIPT } from './wikiLayoutScript.ts';
 import { CONFIRM_DIALOG_HTML } from '../../chat/confirmDialog.ts';
 import { removeBrokenWikiLinks } from './wikiLinkValidation.ts';
+import { readInFlightDocumentUploads } from '../routes/uploadRoutes.ts';
 
 export { graphEtagForFiles, listGraphFiles, escapeScriptJson };
 
@@ -57,6 +58,10 @@ const REFRESH_ICON =
 // Sparkle/wand — the "reformat this page" launch button, same stroke family.
 const SPARKLE_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 3 11 7l4 1.5L11 10l-1.5 4L8 10 4 8.5 8 7Z"/><path d="M18 4v3"/><path d="M16.5 5.5h3"/><path d="M17.5 15v3"/><path d="M16 16.5h3"/></svg>';
+// History glyph (rotate with a clock hand) — the "rebuild concept pages from
+// the archive" launch button on the wiki row, same stroke family.
+const REBUILD_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>';
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -100,6 +105,14 @@ function capitalizeFirst(value: string): string {
 function isConceptFolderPath(nodePath: string): boolean {
   const parts = toPosix(nodePath).split('/');
   return parts.length === 3 && parts[0] === 'wiki' && parts[1] === 'concepts';
+}
+
+// The reserved taxonomy folders directly under `wiki/` (answers/concepts/
+// sources). Their own root is the wiki node; these take a leading capital.
+const WIKI_TAXONOMY_DIRS = ['answers', 'concepts', 'sources'];
+function isWikiTaxonomyPath(nodePath: string): boolean {
+  const parts = toPosix(nodePath).split('/');
+  return parts.length === 2 && parts[0] === 'wiki' && WIKI_TAXONOMY_DIRS.includes(parts[1]);
 }
 
 // Downloads arrive named like `8d5e3fe3-ACPI_RapportEtudeDonneesAmont_V0.md`:
@@ -164,6 +177,46 @@ function deliverableKind(relativePath: string): 'build' | 'export' | 'polish' {
   if (base.endsWith('.export.polished')) return 'polish';
   if (base.endsWith('.export')) return 'export';
   return 'build';
+}
+
+/*
+ A kept version (`brief_v-01.export.md`) reads as "Brief v-01 export" in the
+ tree — the version format stays readable instead of humanTitle's "brief v 01
+ export" word soup. Returns null for anything that is not a versioned copy.
+ */
+function deliverableVersionTitle(relativePath: string): string | null {
+  const base = path.basename(relativePath, '.md');
+  const match = /^(.+)_v-(\d+)(\.export(?:\.polished)?)$/.exec(base);
+  if (!match) return null;
+  // Which of export/polish this is comes from `deliverableKind` (the single
+  // place that owns the distinction), applied to the path with the `_v-NN`
+  // infix removed rather than re-derived from `match[3]` here.
+  const strippedPath = relativePath.replace(`_v-${match[2]}`, '');
+  const kind = deliverableKind(strippedPath) === 'polish' ? 'polished' : 'export';
+  return `${match[1]!.replace(/[-_]+/g, ' ').trim()} v-${match[2]} ${kind}`;
+}
+
+/*
+ One stroke icon per deliverable production type, in the same icon family as
+ the hammer/zap/export glyphs. A colour dot used to carry the distinction;
+ a colour is a legend the reader must learn, a shape is the tool itself —
+ build (hammer), export (arrow out of a tray), polish (sparkle).
+ */
+const DELIVERABLE_KIND_META: Record<'build' | 'export' | 'polish', { icon: string; title: string }> = {
+  build: { icon: HAMMER_ICON, title: 'Built deliverable' },
+  export: { icon: EXPORT_ICON, title: 'Exported deliverable' },
+  polish: { icon: SPARKLE_ICON, title: 'Polished deliverable' },
+};
+
+// The three file-collection sections (Files view), in display order: context
+// first, then templates, then deliverables. Their master node reads UPPERCASE
+// and every node below it with a leading capital, unlike the wiki taxonomy
+// which keeps its own rule.
+const COLLECTION_DIRS = ['build-context', 'templates', 'deliverables'] as const;
+
+function isCollectionPath(nodePath: string): boolean {
+  const section = toPosix(nodePath).split('/')[0] ?? '';
+  return (COLLECTION_DIRS as readonly string[]).includes(section);
 }
 
 export function localHref(href: string, currentDir = ''): string {
@@ -768,6 +821,18 @@ function countNavFiles(node: NavTreeNode): number {
   return total;
 }
 
+// UPPERCASE for the wiki root, a collection's own root (depth 0) and a
+// concept folder at any depth; a leading capital for the wiki taxonomy folders
+// (answers/concepts/sources) and a collection sub-folder; the raw name
+// otherwise.
+function navNodeLabel(node: NavTreeNode, depth: number): string {
+  if (toPosix(node.path) === 'wiki' || isConceptFolderPath(node.path) || (isCollectionPath(node.path) && depth === 0)) {
+    return humanTitle(node.name).toLocaleUpperCase();
+  }
+  if (isWikiTaxonomyPath(node.path) || isCollectionPath(node.path)) return capitalizeFirst(humanTitle(node.name));
+  return node.name;
+}
+
 function renderNavNode(node: NavTreeNode, depth = 0, titles: Map<string, string> | null = null): string {
   const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name));
   const files = [...node.files].sort((a, b) => a.localeCompare(b));
@@ -775,25 +840,27 @@ function renderNavNode(node: NavTreeNode, depth = 0, titles: Map<string, string>
     ...dirs.map((dir) => renderNavNode(dir, depth + 1, titles)),
     ...files.map((file) => {
       const rawTitle = titles?.get(file) ?? humanTitle(file);
-      const title = toPosix(file).startsWith('wiki/concepts/') ? capitalizeFirst(rawTitle) : rawTitle;
+      const isDeliverable = file.startsWith('deliverables/');
+      const versionTitle = isDeliverable ? deliverableVersionTitle(file) : null;
+      const title = (toPosix(file).startsWith('wiki/concepts/') || isCollectionPath(file))
+        ? capitalizeFirst(versionTitle ?? rawTitle)
+        : rawTitle;
       const safePath = escapeAttr(toPosix(file));
-      const kindAttr = file.startsWith('deliverables/')
-        ? ` data-deliverable-kind="${deliverableKind(file)}"`
+      const kind = isDeliverable ? deliverableKind(file) : null;
+      const kindAttr = kind ? ` data-deliverable-kind="${kind}"` : '';
+      const kindIcon = kind
+        ? `<span class="side-deliverable-icon" title="${DELIVERABLE_KIND_META[kind].title}">${DELIVERABLE_KIND_META[kind].icon}</span>`
         : '';
       // `data-tree-*`: same attributes as Pending, hence the same handlers.
       // Without it each section would have its own set, and five copies of the
       // same drag-and-drop code to keep in sync.
-      return `<div class="side-file-row" draggable="true" data-tree-drag="${safePath}" data-tree-kind="file"><a class="side-file" href="/${safePath}" title="${safePath}" data-side-path="${safePath}"${kindAttr}>${escapeHtml(title)}</a><button class="side-tree-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-tree-delete="${safePath}" data-tree-kind="file">×</button></div>`;
+      return `<div class="side-file-row"${kindAttr} draggable="true" data-tree-drag="${safePath}" data-tree-kind="file">${kindIcon}<a class="side-file" href="/${safePath}" title="${safePath}" data-side-path="${safePath}">${escapeHtml(title)}</a><button class="side-tree-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-tree-delete="${safePath}" data-tree-kind="file">×</button></div>`;
     }),
   ].join('\n');
 
   const collapsedByDefault = new Set(['deliverables', 'templates', 'build-context']);
   const open = depth === 0 && !collapsedByDefault.has(node.name) ? ' open' : '';
-  const label = node.name === 'build-context'
-    ? 'build context'
-    : isConceptFolderPath(node.path)
-      ? humanTitle(node.name).toLocaleUpperCase()
-      : node.name;
+  const label = navNodeLabel(node, depth);
   const createAction =
     depth === 0 && isCreatableCollection(node.name)
       ? `<a class="side-folder-action" href="${escapeHref(newMarkdownHref(node.name))}" title="Create Markdown" aria-label="Create in ${escapeAttr(node.name)}">+</a>`
@@ -829,7 +896,13 @@ function renderNavNode(node: NavTreeNode, depth = 0, titles: Map<string, string>
   // the folder is closed. `.side-folder-row` wraps both so the actions stay
   // visible and clickable regardless of open/closed state, matching the
   // original always-visible icons.
-  const actions = `${newFolderAction}${createAction}${folderActions}`;
+  // The wiki section root carries the archive rebuild launch — Donna re-files
+  // every archived source into its concept folder, then checks links and OKF.
+  // Like the Pending ⚡ button, it is hidden until the layout script unhides it.
+  const rebuildAction = depth === 0 && node.name === 'wiki'
+    ? `<button class="side-folder-action side-rebuild-action" type="button" title="Rebuild concept pages from the archive" aria-label="Rebuild concept pages from archived sources" data-rebuild-launch hidden>${REBUILD_ICON}</button>`
+    : '';
+  const actions = `${newFolderAction}${createAction}${rebuildAction}${folderActions}`;
   const actionsHtml = actions ? `<div class="side-folder-actions">${actions}</div>` : '';
   // The wiki taxonomy (answers/concepts/sources) announces how many documents
   // each section holds — a folded section must still say whether it is empty
@@ -885,28 +958,11 @@ function activeIngestPhases(rootDir: string): Map<string, 'analyze' | 'write'> {
   return phases;
 }
 
-async function renderUntrackedSidebar(rootDir: string): Promise<string> {
-  const [foundFiles, foundDirectories, wikiFiles] = await Promise.all([
-    fg('raw/untracked/**/*.md', { cwd: rootDir, dot: false, onlyFiles: true }),
-    fg('raw/untracked/**', { cwd: rootDir, dot: false, onlyDirectories: true }),
-    fg('wiki/**/*.md', { cwd: rootDir, dot: false, onlyFiles: true }),
-  ]);
-  const files = foundFiles.map(toPosix).sort((a, b) => a.localeCompare(b));
-  const count = files.length;
-  const open = count > 0 ? ' open' : '';
-  const phases = activeIngestPhases(rootDir);
-  // A pending source whose subject already exists in the wiki is an update,
-  // not a newcomer: the tree announces it in colour before the ingest does.
-  // Green = new subject, blue = an existing page that differs.
-  const wikiBySubject = new Map<string, string>();
-  for (const wikiFile of wikiFiles.map(toPosix)) {
-    const subject = path.basename(wikiFile, '.md');
-    if (subject && !wikiBySubject.has(subject)) wikiBySubject.set(subject, wikiFile);
-  }
-  // Orange = the reader modified the file since wiki-sync delivered it. The
-  // flag travels as .wiki/cme-sync.json, written by the CME agent (the only
-  // place that knows the delivered content); the pending panel only reads it.
-  // The reader decides: keep the modified copy or delete it from Pending.
+// Orange = the reader modified the file since wiki-sync delivered it. The
+// flag travels as .wiki/cme-sync.json, written by the CME agent (the only
+// place that knows the delivered content); the pending panel only reads it.
+// The reader decides: keep the modified copy or delete it from Pending.
+async function readLocallyModifiedMarker(rootDir: string): Promise<Set<string>> {
   const locallyModified = new Set<string>();
   try {
     const markerRaw = await readFile(path.join(rootDir, '.wiki', 'cme-sync.json'), 'utf8');
@@ -920,7 +976,39 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
   } catch {
     // No marker = nothing was flagged by a sync; render without it.
   }
+  return locallyModified;
+}
+
+async function renderUntrackedSidebar(rootDir: string): Promise<string> {
+  // Four independent reads: none depends on another's result, so they run
+  // concurrently instead of one after another on every Pending panel render.
+  const [foundFiles, foundDirectories, wikiFiles, locallyModified, inflightUploads] = await Promise.all([
+    fg('raw/untracked/**/*.md', { cwd: rootDir, dot: false, onlyFiles: true }),
+    fg('raw/untracked/**', { cwd: rootDir, dot: false, onlyDirectories: true }),
+    fg('wiki/**/*.md', { cwd: rootDir, dot: false, onlyFiles: true }),
+    readLocallyModifiedMarker(rootDir),
+    // A dropped PDF/text file sits in the documents agent's queue before it
+    // can become a source: while that conversion runs, the panel shows a
+    // placeholder row (spinner, no link, no delete) so the drop is visibly
+    // accounted for — and, on failure, the record leaves this in-flight
+    // list, so the row disappears from Pending on the next render.
+    readInFlightDocumentUploads(rootDir, workspaceNameFromEnv() ?? path.basename(process.env.WIKI_WORKSPACE_PATH ?? process.cwd())),
+  ]);
+  const files = foundFiles.map(toPosix).sort((a, b) => a.localeCompare(b));
+  const phases = activeIngestPhases(rootDir);
+  // A pending source whose subject already exists in the wiki is an update,
+  // not a newcomer: the tree announces it in colour before the ingest does.
+  // Green = new subject, blue = an existing page that differs.
+  const wikiBySubject = new Map<string, string>();
+  for (const wikiFile of wikiFiles.map(toPosix)) {
+    const subject = path.basename(wikiFile, '.md');
+    if (subject && !wikiBySubject.has(subject)) wikiBySubject.set(subject, wikiFile);
+  }
   const statuses = new Map<string, 'new' | 'update' | 'modified'>();
+  const count = files.length + inflightUploads.length;
+  const open = count > 0 ? ' open' : '';
+  const inflightRows = inflightUploads.map((record) =>
+    `<div class="side-untracked-item side-untracked-uploading" data-upload-inflight title="Converting with the documents agent — ${escapeAttr(record.filename)}"><span class="side-upload-spinner" aria-hidden="true"></span><span class="side-upload-name">${escapeHtml(record.filename)}</span></div>`).join('');
   // Pending is the inbox of documents, not of folders: only a folder that has
   // at least one document DIRECTLY below it is shown. Ancestor chains with no
   // document at any level are collapsed away — a source buried six folders
@@ -994,7 +1082,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
         } catch {
           // Unreadable wiki page: leave the source unmarked rather than guess.
         }
-      })).then(() => renderUntrackedNode(root, titles, statuses, phases, true));
+      })).then(() => `${inflightRows}${renderUntrackedNode(root, titles, statuses, phases, true)}`);
       })()
     : '<li class="side-untracked-empty">No pending sources.</li>';
   return `<div class="side-folder-row side-untracked-row"><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span></summary><div class="side-untracked-formats" data-untracked-formats style="padding:.15rem .5rem .3rem;font-size:.72rem;color:var(--muted);text-align:right"></div><div class="side-untracked-list" data-untracked-list data-tree-drop="" title="Drop files here: Markdown is written as is, PDF and text are converted by the documents agent"${phases.size > 0 ? ' data-active-ingest="1"' : ''}>${await items}</div></details><div class="side-folder-actions"><button class="side-folder-action side-ingest-action" type="button" title="Ingest pending sources (Donna)" aria-label="Ingest pending sources" data-ingest-launch hidden>${ZAP_ICON}</button><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending"><span class="side-refresh-glyph">${REFRESH_ICON}</span></button><span class="side-untracked-count" data-untracked-count>${count}</span></div></div>`;
@@ -1073,14 +1161,13 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
   );
   // build-context / templates / deliverables become three tabs of the Files
   // view, in that order: context first, then templates, then deliverables.
-  const collectionOrder = ['build-context', 'templates', 'deliverables'];
-  const collectionDirs = collectionOrder
+  const collectionDirs = COLLECTION_DIRS
     .map((name) => rootDirs.find((dir) => dir.name === name))
     .filter((dir): dir is NonNullable<typeof dir> => Boolean(dir));
   const wikiTree = wikiDir ? renderNavNode(wikiDir, 0, wikiTitles) : '';
   const collectionTabs = collectionDirs
     .map((dir, index) => {
-      const label = dir.name === 'build-context' ? 'context' : dir.name;
+      const label = dir.name === 'build-context' ? 'Context' : capitalizeFirst(dir.name);
       const active = index === 0;
       return `<button class="side-collection-tab${active ? ' active' : ''}" type="button" role="tab" data-collection="${escapeAttr(dir.name)}" aria-selected="${active ? 'true' : 'false'}">${escapeHtml(label)}</button>`;
     })
@@ -1102,7 +1189,19 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>';
   const inboxIcon =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>';
-  const viewBar = `<div class="side-views"><div class="side-view-rail" role="tablist" aria-label="Sidebar views"><button class="side-view-btn" type="button" role="tab" data-side-view="wiki" title="Wiki pages" aria-label="Wiki pages">${brainIcon}</button><button class="side-view-btn" type="button" role="tab" data-side-view="files" title="Context, templates, deliverables" aria-label="Context, templates, deliverables">${fileIcon}</button><button class="side-view-btn" type="button" role="tab" data-side-view="pending" title="Pending sources" aria-label="Pending sources">${inboxIcon}</button></div><div class="side-view-panes"><section class="side-view-pane" data-side-view-pane="wiki" role="tabpanel" aria-label="Wiki pages" hidden><nav class="side-tree" aria-label="Wiki pages">${wikiTree}</nav></section><section class="side-view-pane" data-side-view-pane="files" role="tabpanel" aria-label="Context, templates, deliverables" hidden>${collections}</section><section class="side-view-pane" data-side-view-pane="pending" role="tabpanel" aria-label="Pending sources">${untrackedPanel}</section></div></div>`;
+  // Agent-curate proposals wait on a human decision (merge = approval): the
+  // shortcut carries the pending count so a proposal is never silently waiting.
+  const reviewIcon =
+    '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>';
+  const proposalCount = pendingProposalCount(rootDir);
+  const proposalBadge = proposalCount > 0
+    ? `<span class="side-action-badge">${proposalCount}</span>`
+    : '';
+  // The shortcut sits at the BOTTOM of the view rail — below the Pending tab,
+  // its own section after the three views — and carries the pending count so a
+  // proposal is never silently waiting.
+  const proposalReviewLink = `<a class="side-view-btn side-view-review" href="/agent-proposals" title="Agent proposals — review and merge" aria-label="Agent proposals">${reviewIcon}${proposalBadge}</a>`;
+  const viewBar = `<div class="side-views"><div class="side-view-rail"><div class="side-view-tabs" role="tablist" aria-label="Sidebar views"><button class="side-view-btn" type="button" role="tab" data-side-view="wiki" title="Wiki pages" aria-label="Wiki pages">${brainIcon}</button><button class="side-view-btn" type="button" role="tab" data-side-view="files" title="Context, templates, deliverables" aria-label="Context, templates, deliverables">${fileIcon}</button><button class="side-view-btn" type="button" role="tab" data-side-view="pending" title="Pending sources" aria-label="Pending sources">${inboxIcon}</button></div>${proposalReviewLink}</div><div class="side-view-panes"><section class="side-view-pane" data-side-view-pane="wiki" role="tabpanel" aria-label="Wiki pages" hidden><nav class="side-tree" aria-label="Wiki pages">${wikiTree}</nav></section><section class="side-view-pane" data-side-view-pane="files" role="tabpanel" aria-label="Context, templates, deliverables" hidden>${collections}</section><section class="side-view-pane" data-side-view-pane="pending" role="tabpanel" aria-label="Pending sources">${untrackedPanel}</section></div></div>`;
 
   const wsSwitcher = hubPort()
     ? `<div class="ws-switcher" id="ws-switcher" data-current="${escapeAttr(workspaceNameFromEnv() ?? '')}"><p class="ws-switcher-title">Workspaces</p><p class="ws-name" style="font-size:0.8rem;color:var(--muted);padding:0 0.2rem">Loading...</p></div>`
@@ -1120,16 +1219,8 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
   // link reaches does not exist for whoever is looking for it.
   const historyIcon =
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg>';
-  // Agent-curate proposals wait on a human decision (merge = approval): the
-  // shortcut carries the pending count so a proposal is never silently waiting.
-  const reviewIcon =
-    '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>';
-  const proposalCount = pendingProposalCount(rootDir);
-  const proposalBadge = proposalCount > 0
-    ? `<span class="side-action-badge">${proposalCount}</span>`
-    : '';
 const kbdHint = `<kbd style="font-size:.68rem;font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .35rem;border-radius:4px;color:var(--muted);cursor:pointer" title="Open global search (⌘K)" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}))">⌘K</kbd>`;
-  return `<a class="wiki-help-toggle" href="/help" title="Help" aria-label="Help">?</a><button class="wiki-theme-toggle" type="button" data-theme-toggle title="Switch to dark theme" aria-label="Switch color theme">☾</button><aside class="sidebar"><div class="side-head"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}</a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}</a><a class="side-action" href="/history" title="History" aria-label="History">${historyIcon}</a><a class="side-action side-action-review" href="/agent-proposals" title="Agent proposals — review and merge" aria-label="Agent proposals">${reviewIcon}${proposalBadge}</a><button class="side-action" type="button" title="Refresh sidebar" aria-label="Refresh sidebar" data-sidebar-refresh="wiki"><span class="side-refresh-glyph">${REFRESH_ICON}</span></button></div></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p>${viewBar}${wsSwitcher}</aside><div class="wiki-main-resizer" data-wiki-main-resizer title="Resize sidebar" role="separator" aria-orientation="vertical"></div>`;
+  return `<a class="wiki-help-toggle" href="/help" title="Help" aria-label="Help">?</a><button class="wiki-theme-toggle" type="button" data-theme-toggle title="Switch to dark theme" aria-label="Switch color theme">☾</button><aside class="sidebar"><div class="side-head"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}</a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}</a><a class="side-action" href="/history" title="History" aria-label="History">${historyIcon}</a><button class="side-action" type="button" title="Refresh sidebar" aria-label="Refresh sidebar" data-sidebar-refresh="wiki"><span class="side-refresh-glyph">${REFRESH_ICON}</span></button></div></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p>${viewBar}${wsSwitcher}</aside><div class="wiki-main-resizer" data-wiki-main-resizer title="Resize sidebar" role="separator" aria-orientation="vertical"></div>`;
 }
 
 function pendingProposalCount(rootDir: string): number {

@@ -413,6 +413,15 @@ ${CHAT_ACTIVITY_CSS}
 .attach-btn{background:transparent;border:1px solid var(--border);border-radius:50%;width:34px;height:34px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--muted);transition:border-color .2s,color .2s,background .2s}
 .attach-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--panel)}
 .attach-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+/* Ring gauge: how long the visible conversation is getting, filling clockwise
+   from the top (rotate(-90) on the fill circle). Click compacts the history —
+   see compactConversationMemory(). Track/fill stay the app's muted/accent
+   pair rather than a traffic-light scheme the rest of the composer doesn't use. */
+.memory-gauge-btn{background:transparent;border:0;border-radius:50%;width:34px;height:34px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .2s}
+.memory-gauge-btn:hover{background:var(--panel)}
+.memory-gauge-track{stroke:var(--border)}
+.memory-gauge-fill{stroke:var(--muted);transition:stroke-dashoffset .3s ease,stroke .2s}
+.memory-gauge-btn.memory-gauge-high .memory-gauge-fill{stroke:var(--accent)}
 .agent-mode-btn{border:1px solid var(--border);border-radius:999px;background:transparent;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:7px 9px;cursor:pointer;font-family:var(--font-sans);transition:border-color .2s,color .2s,background .2s}
 .agent-mode-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--panel)}
 .agent-mode-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}

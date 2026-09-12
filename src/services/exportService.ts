@@ -522,3 +522,53 @@ export function exportOutputPath(deliverablePath: string, options: ExportOptions
 
   return `${base}.export${ext}`;
 }
+
+/*
+ Every export and polish keeps a versioned copy of its output:
+ `<name>_v-YY<kindSuffix>.md`, where `name` is the deliverable name, YY a
+ two-digit counter starting at 01, and kindSuffix one of `.export.md` /
+ `.export.polished.md` — the suffix stays on the version, so the sidebar's
+ `deliverableKind` keeps recognising the file's production type, and the two
+ series (exports, polishes) number independently.
+
+ Not every write is versioned: a plain `.md` output (custom `--output`) has no
+ kind to hang a version on, and a deliverable that IS a versioned copy itself
+ is never versioned again — versions of versions. The callers own the
+ "is this under deliverables/" decision; these helpers only speak the naming.
+ */
+
+export type ExportVersionParts = { dir: string; name: string; suffix: string };
+
+export function exportVersionParts(outputRelative: string): ExportVersionParts | null {
+  const posix = outputRelative.replace(/\\/g, '/');
+  const base = posix.slice(posix.lastIndexOf('/') + 1);
+  const match = /^(.+)(\.export(?:\.polished)?\.md)$/.exec(base);
+  if (!match) return null;
+  const name = match[1] ?? '';
+  // A versioned copy re-exported in place must not spawn versions of itself.
+  if (!name || /_v-\d+$/.test(name)) return null;
+  const slash = posix.lastIndexOf('/');
+  return { dir: slash === -1 ? '' : posix.slice(0, slash), name, suffix: match[2] ?? '' };
+}
+
+export function versionedExportPath(outputRelative: string, version: number): string | null {
+  const parts = exportVersionParts(outputRelative);
+  if (!parts) return null;
+  const padded = String(version).padStart(2, '0');
+  return `${parts.dir ? `${parts.dir}/` : ''}${parts.name}_v-${padded}${parts.suffix}`;
+}
+
+export function nextExportVersionNumber(existingRelativePaths: string[], outputRelative: string): number | null {
+  const parts = exportVersionParts(outputRelative);
+  if (!parts) return null;
+  const prefix = `${parts.name}_v-`;
+  let max = 0;
+  for (const existing of existingRelativePaths) {
+    const base = existing.slice(existing.lastIndexOf('/') + 1);
+    if (!base.startsWith(prefix) || !base.endsWith(parts.suffix)) continue;
+    const middle = base.slice(prefix.length, base.length - parts.suffix.length);
+    if (!/^\d+$/.test(middle)) continue;
+    max = Math.max(max, Number(middle));
+  }
+  return max + 1;
+}

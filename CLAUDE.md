@@ -186,7 +186,9 @@ production chain `/wiki-sync` (export all configured Confluence sources into
 ingest) → `/wiki-ingest` (ingest what waits in `raw/untracked/`, whatever staged
 it) → `/wiki-build` (build, optional template) → `/deliver` (export or polish,
 optional deliverable + `polish` flag), with `/pipeline` as the one-shot
-shortcut.
+shortcut and `/wiki-rebuild` (re-file the archived sources into their concept
+folders — `wiki ingest --from-ingested` — then run the content verification;
+launched from the wiki row's history glyph in serve).
 
 Scaffold skill bodies are **business intentions**, not procedures: they state
 the outcome, the guardrails and the reporting, and never name an MCP server, a
@@ -300,6 +302,20 @@ with the history (`pageContexts`, restored by `resetPageContexts` on load), and
 are visible together. A graph closed from its own toolbar hands the centre
 back to the page it replaced.
 
+**TOTP login gate** (`src/serve/routes/loginRoutes.ts`): when
+`WIKI_MANAGER_RUNTIME_URL` is set and the runtime's `/login/status` reports
+`enabled: true` (cached 60 s), every request except `/login`, `/api/login` and
+`/api/logout` must carry a valid `wiki_session` cookie — validated against the
+runtime's `/session/verify` with the manager bearer (30 s memo), never
+verified locally. The TOTP secret never reaches serve. Without a session:
+browsers get a 302 to `/login`, API/fetch get 401. Runtime unreachable: fail
+**closed** with a clear "session service unavailable" page. The login page
+sends the 6-digit code to the runtime's `/login/verify` through
+`/api/login`; `/api/logout` revokes and clears the cookie. Standalone serve
+(no runtime URL) stays open; the whole gate is skipped then. See
+`help-doc/13-login-totp.md`, `docs/configuration.md` § serve, and the
+manager's login modules.
+
 ## Serve — what must survive a change of centre view
 
 The shell has four centre views (chat, wiki, connectors, execution) and hides
@@ -378,6 +394,17 @@ requires browser confirmation and calls `/api/runtime/reset`; it stops active
 work and purges the workspace runtime plan, activities, logs, queue, and
 persisted projection. Upload cards with an `error` always render as failed even
 if storage succeeded.
+
+While a dropped PDF/text file waits on the documents agent, the Pending panel
+shows it as a **non-clickable spinner row**: the server renders it from the
+upload manifest (`readInFlightDocumentUploads` in
+`src/serve/routes/uploadRoutes.ts` — only `converting` and error-less `stored`
+records fresh enough not to be a crash leftover), and the sidebar drop handler
+adds an optimistic copy the moment the POST leaves (`addPendingUploadRow` in
+`wikiLayoutScript.ts`). A failed conversion is terminal for the panel: the
+record leaves the in-flight filter, the optimistic row is removed and the
+refresh reconciles — the file disappears from Pending, while the chat Activity
+card keeps its `Retry` (the manifest record survives).
 
 **Connector cards** (`src/chat/runtime/mcpConnectorScript.ts`,
 `config/configScript.ts`, `chatHtml.ts`). A card now has an identity in the
@@ -551,7 +578,13 @@ ingest`) builds a review per planned operation (`buildReviewOperations`):
 - `exportService.ts`: citation expansion and polish. Each cited source is
   read WHOLE (bounded by `maxSourceChars`) and replaces its chunk fragments —
   the "insufficient source documentation" note only appears when the evidence
-  genuinely lacks the detail.
+  genuinely lacks the detail. Every export/polish also keeps a versioned copy
+  (`exportVersionParts`/`versionedExportPath`/`nextExportVersionNumber`, wired
+  in `commands/export.ts`): `<name>_v-YY.export.md` or
+  `<name>_v-YY.export.polished.md` next to the output, YY two-digit per kind
+  series — exports and polishes number independently, a custom `--output` or
+  a version-of-a-version is never versioned, and the versioned path joins the
+  same history commit scope as the output.
 - `retrievalService.ts`: lexical/vector context assembly. Lexical scoring is
   BM25 (`BM25_K1`/`BM25_B`, `buildBm25Corpus`/`scoreDocument`), not naive
   term-presence counting — `tokenize()` NFKD-normalizes and strips

@@ -18,6 +18,13 @@ export const WIKI_LAYOUT_CSS = `
       font-family: var(--font-serif);
       line-height: 1.65;
     }
+    /* The shell embeds the Explorer as its left panel, beside 12px chat chrome.
+       Its rem scale was sized for a full page, so the tree read ~20% larger
+       than everything next to it (14.4px labels vs 12px). Scaling the panel's
+       root brings the whole tree — labels, tabs, actions, search — down
+       together, instead of chasing each rem value; the standalone reader page
+       (no .sidebar-panel) keeps its full-size typography. */
+    html.sidebar-panel { font-size: 13.5px; }
     a { color: var(--link); text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
     .wiki-theme-toggle, .wiki-help-toggle {
       position: fixed; top: 9px; z-index: 1000;
@@ -144,7 +151,10 @@ export const WIKI_LAYOUT_CSS = `
       appearance: none;
       font-family: inherit;
     }
-    .side-action-review { position: relative; }
+    /* The review shortcut lives at the bottom of the view rail, below the
+       Pending tab: its own section after the three views, carrying the
+       pending proposal count as an amber badge. */
+    .side-view-review { position: relative; margin-top: 0.3rem; }
     .side-action-badge { position: absolute; top: -6px; right: -6px; min-width: 15px; height: 15px; border-radius: 99px; background: #f59e0b; color: #fff; font-size: 9px; font-weight: 800; line-height: 15px; text-align: center; padding: 0 3px; }
     .side-action:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
     .side-action svg { width: 1.05rem; height: 1.05rem; stroke: currentColor; flex-shrink: 0; }
@@ -182,6 +192,7 @@ export const WIKI_LAYOUT_CSS = `
        share its column with the Pending stack. */
     .side-views { flex: 1 1 0; min-height: 0; display: flex; gap: 0.45rem; margin-top: 0.45rem; }
     .side-view-rail { flex: 0 0 auto; display: flex; flex-direction: column; gap: 0.35rem; }
+    .side-view-tabs { display: flex; flex-direction: column; gap: 0.35rem; }
     .side-view-btn {
       width: 2.25rem;
       height: 2.25rem;
@@ -332,13 +343,18 @@ export const WIKI_LAYOUT_CSS = `
     .sidebar .side-collection-tabs > * { cursor: pointer; }
     .sidebar button:disabled { cursor: default; }
     .side-folder-action-icon svg { width: 0.95rem; height: 0.95rem; display: block; }
-    .side-ingest-action svg { width: 0.95rem; height: 0.95rem; display: block; }
+    .side-ingest-action svg,
+    .side-rebuild-action svg { width: 0.95rem; height: 0.95rem; display: block; }
     .side-refresh-action { font-size: 0.82rem; font-weight: 800; }
     /* Solid accent fill: the "agent/LLM-launched action" marker of this
-       sidebar, applied to the Donna-routed ingest button. */
-    .side-ingest-action { font-size: 0.82rem; color: var(--panel); background: var(--accent); border-color: var(--accent); }
-    .side-ingest-action:hover { background: color-mix(in srgb, var(--accent) 82%, black); border-color: color-mix(in srgb, var(--accent) 82%, black); color: var(--panel); }
-    .side-ingest-action[hidden] { display: none; }
+       sidebar, applied to the Donna-routed ingest button and the wiki row's
+       archive rebuild button. */
+    .side-ingest-action,
+    .side-rebuild-action { font-size: 0.82rem; color: var(--panel); background: var(--accent); border-color: var(--accent); }
+    .side-ingest-action:hover,
+    .side-rebuild-action:hover { background: color-mix(in srgb, var(--accent) 82%, black); border-color: color-mix(in srgb, var(--accent) 82%, black); color: var(--panel); }
+    .side-ingest-action[hidden],
+    .side-rebuild-action[hidden] { display: none; }
     .side-folder-actions {
       position: absolute;
       top: 0;
@@ -383,9 +399,22 @@ export const WIKI_LAYOUT_CSS = `
     }
     .side-file.is-active { font-weight: 720; }
     .side-file.is-active::before { background: var(--accent); opacity: 1; }
-    .side-file[data-deliverable-kind="build"]::before { background: #6b7f2a; opacity: 0.8; }
-    .side-file[data-deliverable-kind="export"]::before { background: #176b87; opacity: 0.85; }
-    .side-file[data-deliverable-kind="polish"]::before { background: #8b5cf6; opacity: 0.85; }
+    /* Deliverables carry a stroke icon per production type (build / export /
+       polish) instead of a colour dot: a colour is a legend to learn, a shape
+       is the tool itself. The link's own dot retires on those rows so the
+       icon is the single marker, and the freed padding is reclaimed. */
+    .side-file-row[data-deliverable-kind] .side-file::before { content: none; }
+    .side-file-row[data-deliverable-kind] .side-file { padding-left: 0.45rem; }
+    .side-deliverable-icon {
+      flex: 0 0 auto;
+      width: 1em;
+      height: 1em;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+    }
+    .side-deliverable-icon svg { width: 100%; height: 100%; }
     .side-folder.is-search-hidden, .side-file.is-search-hidden { display: none; }
     /* The search filter toggles .is-search-hidden on the <details> itself
        (queried via [data-tree-id]); the actions box is a sibling outside it
@@ -518,6 +547,34 @@ export const WIKI_LAYOUT_CSS = `
     .side-ingest-phase.analyze { animation: sideIngestPhasePulse 1.2s ease-in-out infinite; }
     .side-ingest-phase.write { color: #f59e0b; }
     @keyframes sideIngestPhasePulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+    /* In-flight document conversion: a placeholder row while the documents
+       agent turns a dropped PDF/text file into a Markdown source. Deliberately
+       not a link, not draggable, not deletable — the file is not a source yet,
+       so there is nothing to open or move; it becomes clickable only once the
+       conversion lands and the real raw/untracked file replaces this row. */
+    .side-untracked-item.side-untracked-uploading {
+      padding: 0.15rem 0.55rem 0.15rem 1rem;
+      gap: 0.45rem;
+      color: var(--muted);
+      font-size: 0.8rem;
+      cursor: default;
+    }
+    .side-untracked-uploading .side-upload-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .side-upload-spinner {
+      flex: 0 0 auto;
+      width: 0.72rem;
+      height: 0.72rem;
+      border: 2px solid color-mix(in srgb, var(--muted) 40%, transparent);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: sideUploadSpin 0.8s linear infinite;
+    }
+    @keyframes sideUploadSpin { to { transform: rotate(360deg); } }
     .side-untracked-link.is-active { font-weight: 720; }
     .side-untracked-link.is-active::before { background: var(--accent); opacity: 1; }
     .side-untracked-link:hover::after {

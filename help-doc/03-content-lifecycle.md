@@ -74,6 +74,12 @@ filling them with the wiki's knowledge:
 - **polish**: improves the form of existing content;
 - **doctor**: diagnoses the state of the workspace and flags problems.
 
+Every export and polish keeps a **versioned copy** of its result next to the
+deliverable, named `<name>_v-YY.export.md` or `<name>_v-YY.export.polished.md`
+(YY is a two-digit counter): the main file stays the one everything else
+references, while each run's output is preserved and listed in the
+Deliverables tab with its icon.
+
 These operations can be chained; DONNA can also run a *pipeline* that combines
 them with the knowledge steps below.
 

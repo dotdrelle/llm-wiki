@@ -186,7 +186,7 @@ describe('sidebar views', () => {
     expect(templates).toBeGreaterThan(context);
     expect(deliverables).toBeGreaterThan(templates);
     // The first tab — context — is the active one.
-    expect(tabs).toContain('>context</button>');
+    expect(tabs).toContain('>Context</button>');
     expect(WIKI_LAYOUT_SCRIPT).toContain("let activeCollection = localStorage.getItem(collectionKey) || 'build-context';");
   });
 
@@ -196,6 +196,94 @@ describe('sidebar views', () => {
     expect(WIKI_LAYOUT_SCRIPT).toContain('const VIEW_ORDER = [\'wiki\', \'files\', \'pending\'];');
     expect(WIKI_LAYOUT_SCRIPT).toContain('[data-side-path]:not(.is-search-hidden)');
     expect(WIKI_LAYOUT_SCRIPT).toContain('activeView = next;');
+  });
+
+  it('puts the agent-proposals shortcut at the bottom of the view rail, below Pending', async () => {
+    const html = await renderSidebar(root);
+
+    // The three tabs form the tablist; the review shortcut is its own entry
+    // AFTER the Pending tab, inside the same rail — not in the head shortcuts.
+    const rail = html.slice(html.indexOf('class="side-view-rail"'));
+    const pendingTab = rail.indexOf('data-side-view="pending"');
+    const review = rail.indexOf('href="/agent-proposals"');
+    expect(pendingTab).toBeGreaterThan(-1);
+    expect(review).toBeGreaterThan(pendingTab);
+    expect(rail.slice(rail.indexOf('class="side-view-tabs"'), review)).toContain('data-side-view="pending"');
+    // The head keeps only the general shortcuts now.
+    const head = html.slice(html.indexOf('side-actions'), html.indexOf('class="side-view-rail"'));
+    expect(head).not.toContain('href="/agent-proposals"');
+    expect(html).toContain('title="Agent proposals — review and merge"');
+    // The badge rides on the rail entry.
+    expect(WIKI_LAYOUT_CSS).toContain('.side-view-review { position: relative;');
+  });
+
+  it('capitalises every tab and the master node of every collection, sub-nodes with a leading capital', async () => {
+    const html = await renderSidebar(root);
+
+    expect(html).toContain('>Context</button>');
+    expect(html).toContain('>Templates</button>');
+    expect(html).toContain('>Deliverables</button>');
+    // Master node of each collection: all uppercase.
+    expect(html).toContain('>BUILD CONTEXT</span>');
+    expect(html).toContain('>TEMPLATES</span>');
+    expect(html).toContain('>DELIVERABLES</span>');
+    // Its children: leading capital. The scaffold files are regles / rapport
+    // / synthese.
+    expect(html).toContain('>Regles</a>');
+    expect(html).toContain('>Rapport</a>');
+    expect(html).toContain('>Synthese</a>');
+    // The wiki section root is announced in capitals, like every other
+    // section root; its taxonomy folders take a leading capital.
+    expect(html).toContain('>WIKI</span>');
+  });
+
+  it('gives each deliverable an icon per production type instead of a colour dot', async () => {
+    const html = await renderSidebar(root);
+
+    expect(html).toContain('side-deliverable-icon');
+    expect(html).toContain('data-deliverable-kind="build"');
+    expect(html).toContain('title="Built deliverable"');
+    // The kind marker rides on the row, and the link keeps no kind of its own.
+    expect(html).not.toContain('<a class="side-file" href="/deliverables/synthese.md" title="deliverables/synthese.md" data-side-path="deliverables/synthese.md" data-deliverable-kind');
+    // No more colour legend: the dot rules are gone, the icon rules exist.
+    expect(WIKI_LAYOUT_CSS).not.toContain('.side-file[data-deliverable-kind="build"]::before');
+    expect(WIKI_LAYOUT_CSS).toContain('.side-file-row[data-deliverable-kind] .side-file::before { content: none; }');
+    expect(WIKI_LAYOUT_CSS).toContain('.side-deliverable-icon');
+  });
+
+  it('puts the archive rebuild button on the wiki row, right-aligned with the folder actions', async () => {
+    const html = await renderSidebar(root);
+
+    expect(html).toContain('data-rebuild-launch');
+    expect(html).toContain('title="Rebuild concept pages from the archive"');
+    // It rides in the row's right-aligned actions box of the wiki root.
+    const wikiRow = html.slice(html.indexOf('side-folder-row side-folder-primary'));
+    const actionsStart = wikiRow.indexOf('data-rebuild-launch');
+    expect(actionsStart).toBeGreaterThan(-1);
+    expect(wikiRow.indexOf('side-folder-actions')).toBeLessThan(actionsStart);
+    // Wired by the shared launch-button helper, which refreshSidebar re-applies
+    // after every markup replacement so the button does not vanish once the
+    // tree is refreshed.
+    expect(WIKI_LAYOUT_SCRIPT).toContain("'llmwiki:rebuild'");
+    expect(WIKI_LAYOUT_SCRIPT).toContain('wireSidebarLaunchButtons();');
+  });
+
+  it('defines the sidebar launch wiring at script scope so BOTH IIFEs can call it', () => {
+    // The helper is called from the sidebar IIFE (refreshSidebar) and from the
+    // app-shell IIFE (initShellMessaging). Defined inside either one, the
+    // other's call threw ReferenceError and the buttons stayed hidden.
+    const definition = WIKI_LAYOUT_SCRIPT.indexOf('function wireSidebarLaunchButtons');
+    const firstIife = WIKI_LAYOUT_SCRIPT.indexOf('(() => {');
+    expect(definition).toBeGreaterThan(-1);
+    expect(definition).toBeLessThan(firstIife);
+  });
+
+  it('scales the embedded Explorer to the shell typography, not the full page', () => {
+    // The tree was sized for the standalone reader (0.9rem = 14.4px), ~20%
+    // larger than the 12px chat chrome it sits beside in serve. The rule is
+    // scoped to the embedded panel so the standalone reader page keeps its
+    // full-size typography.
+    expect(WIKI_LAYOUT_CSS).toContain('html.sidebar-panel { font-size: 13.5px; }');
   });
 
   it('stamps dragged .md rows with the chat context MIME without breaking tree moves', () => {
@@ -276,8 +364,8 @@ describe('titles in the tree', () => {
     expect(html).toContain('<span class="side-folder-label">OFFRE MARCHE</span>');
     expect(html).toContain('>Anaplan platform</a>');
     expect(html).toContain('>S3ns</a>');
-    // The section folder itself is not shouted.
-    expect(html).toContain('<span class="side-folder-label">concepts</span>');
+    // The reserved taxonomy folder takes a leading capital, not capitals.
+    expect(html).toContain('<span class="side-folder-label">Concepts</span>');
     // The path is untouched.
     expect(html).toContain('data-tree-id="wiki/concepts/offre-marche"');
   });
@@ -293,9 +381,9 @@ describe('titles in the tree', () => {
 
     // reseau.md (concepts root, from beforeEach) + anaplan.md in the
     // offre-marche folder = 2.
-    expect(html).toContain('<span class="side-folder-label">concepts</span><span class="side-folder-count" title="2 document(s)">2</span>');
-    expect(html).toContain('<span class="side-folder-label">sources</span><span class="side-folder-count" title="1 document(s)">1</span>');
-    expect(html).toContain('<span class="side-folder-label">answers</span><span class="side-folder-count" title="0 document(s)">0</span>');
+    expect(html).toContain('<span class="side-folder-label">Concepts</span><span class="side-folder-count" title="2 document(s)">2</span>');
+    expect(html).toContain('<span class="side-folder-label">Sources</span><span class="side-folder-count" title="1 document(s)">1</span>');
+    expect(html).toContain('<span class="side-folder-label">Answers</span><span class="side-folder-count" title="0 document(s)">0</span>');
   });
 
   it('strips the leading transport hash of downloaded Pending files', async () => {
@@ -414,5 +502,84 @@ describe('sidebar folder actions', () => {
     expect(html).toContain('side-folder-action side-folder-action-icon');
     expect(html).toContain('title="New folder"');
     expect(html).not.toContain('>+□</button>');
+  });
+});
+
+// A dropped PDF/text file waits on the documents agent before it exists in
+// raw/untracked. The panel must still account for it: a spinner row, and a
+// row that is NOT a link — the file only becomes clickable once the
+// conversion lands and the real source replaces the placeholder. A record
+// whose conversion failed is terminal: it must disappear from Pending.
+describe('in-flight document uploads in Pending', () => {
+  const uploadLine = (overrides: Record<string, unknown>) => JSON.stringify({
+    id: 'abc12345',
+    workspace: 'sidebar-test',
+    filename: 'rapport.pdf',
+    storedPath: '/tmp/rapport.pdf',
+    agentPath: '/tmp/rapport.pdf',
+    status: 'converting',
+    provider: 'documents',
+    outputPath: null,
+    method: null,
+    bytes: 12,
+    error: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  });
+
+  beforeEach(async () => {
+    const dir = path.join(root, '.wiki', 'documents', 'uploads');
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, 'sidebar-test.jsonl'), [
+      uploadLine({}),
+      uploadLine({ id: 'failed01', filename: 'broken.pdf', status: 'failed', error: 'boom' }),
+      uploadLine({ id: 'stored01', filename: 'agent-down.pdf', status: 'stored', error: 'documents MCP endpoint is not configured' }),
+    ].join('\n') + '\n', 'utf8');
+    process.env.WORKSPACE_NAME = 'sidebar-test';
+  });
+
+  afterEach(() => {
+    delete process.env.WORKSPACE_NAME;
+  });
+
+  it('renders a spinner row that is not a link while the conversion runs', async () => {
+    const html = await renderSidebar(root);
+
+    expect(html).toContain('side-untracked-uploading');
+    expect(html).toContain('side-upload-spinner');
+    expect(html).toContain('>rapport.pdf</span>');
+    const rowStart = html.indexOf('data-upload-inflight');
+    const row = html.slice(rowStart, html.indexOf('</div>', rowStart));
+    expect(row).not.toContain('<a ');
+    expect(row).not.toContain('data-tree-drag');
+    expect(row).not.toContain('data-tree-delete');
+    // One real source plus one conversion in flight.
+    expect(html).toContain('data-untracked-count>2<');
+  });
+
+  it('keeps a failed record and a never-taken one out of Pending', async () => {
+    const html = await renderSidebar(root);
+
+    expect(html).not.toContain('>broken.pdf</span>');
+    expect(html).not.toContain('>agent-down.pdf</span>');
+  });
+
+  it('does not render a conversion record a crash left mid-flight', async () => {
+    const dir = path.join(root, '.wiki', 'documents', 'uploads');
+    await writeFile(path.join(dir, 'sidebar-test.jsonl'), [
+      uploadLine({ id: 'stale001', filename: 'stale.pdf', updatedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString() }),
+    ].join('\n') + '\n', 'utf8');
+
+    const html = await renderSidebar(root);
+
+    expect(html).not.toContain('side-untracked-uploading');
+    expect(html).not.toContain('>stale.pdf</span>');
+  });
+
+  it('styles the placeholder and its spinner in the layout css', () => {
+    expect(WIKI_LAYOUT_CSS).toContain('.side-untracked-item.side-untracked-uploading');
+    expect(WIKI_LAYOUT_CSS).toContain('.side-upload-spinner');
+    expect(WIKI_LAYOUT_CSS).toContain('@keyframes sideUploadSpin');
   });
 });

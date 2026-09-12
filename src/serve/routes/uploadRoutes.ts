@@ -44,7 +44,6 @@ type UploadRoutesDeps = {
   externalMcpEndpoints: ExternalMcpEndpoint[];
   workspaceNameFromEnv: () => string | null;
   documentInputDir: (rootDir: string) => string;
-  documentUploadsDir: (rootDir: string) => string;
   documentMaxUploadBytes: () => number;
   version: string;
   readRequestBuffer: (req: IncomingMessage, maxBytes?: number) => Promise<Buffer>;
@@ -151,12 +150,16 @@ function assertDocumentUpload(filename: string, bytes: number, documentMaxUpload
   if (bytes > max) throw new Error(`Document is too large: ${bytes} bytes (max ${max}).`);
 }
 
-function documentManifestPath(rootDir: string, workspaceName: string, documentUploadsDir: (rootDir: string) => string): string {
-  return path.join(documentUploadsDir(rootDir), `${workspaceName}.jsonl`);
+function documentManifestPath(rootDir: string, workspaceName: string): string {
+  return path.join(resolveDocumentUploadsDir(rootDir), `${workspaceName}.jsonl`);
 }
 
-async function readDocumentUploads(rootDir: string, workspaceName: string, deps: Pick<UploadRoutesDeps, 'documentUploadsDir'>): Promise<DocumentUploadRecord[]> {
-  const filePath = documentManifestPath(rootDir, workspaceName, deps.documentUploadsDir);
+export function resolveDocumentUploadsDir(rootDir: string): string {
+  return process.env.DOCUMENT_UPLOADS_DIR ?? path.join(rootDir, '.wiki', 'documents', 'uploads');
+}
+
+async function readDocumentUploads(rootDir: string, workspaceName: string): Promise<DocumentUploadRecord[]> {
+  const filePath = documentManifestPath(rootDir, workspaceName);
   if (!(await pathExists(filePath))) return [];
   const raw = await readFile(filePath, 'utf8');
   return raw.split(/\r?\n/).filter(Boolean).flatMap((line) => {
@@ -172,9 +175,8 @@ async function writeDocumentUploads(
   rootDir: string,
   workspaceName: string,
   records: DocumentUploadRecord[],
-  deps: Pick<UploadRoutesDeps, 'documentUploadsDir'>,
 ): Promise<void> {
-  const filePath = documentManifestPath(rootDir, workspaceName, deps.documentUploadsDir);
+  const filePath = documentManifestPath(rootDir, workspaceName);
   const body = records.map((record) => JSON.stringify(record)).join('\n');
   await safeWriteFile(filePath, body ? `${body}\n` : '');
 }
@@ -182,13 +184,12 @@ async function writeDocumentUploads(
 async function upsertDocumentUpload(
   rootDir: string,
   record: DocumentUploadRecord,
-  deps: Pick<UploadRoutesDeps, 'documentUploadsDir'>,
 ): Promise<DocumentUploadRecord> {
-  const records = await readDocumentUploads(rootDir, record.workspace, deps);
+  const records = await readDocumentUploads(rootDir, record.workspace);
   const index = records.findIndex((item) => item.id === record.id);
   if (index === -1) records.unshift(record);
   else records[index] = { ...records[index], ...record };
-  await writeDocumentUploads(rootDir, record.workspace, records, deps);
+  await writeDocumentUploads(rootDir, record.workspace, records);
   return record;
 }
 
@@ -196,9 +197,8 @@ async function removeDocumentUploadsForFilename(
   rootDir: string,
   workspaceName: string,
   filename: string,
-  deps: Pick<UploadRoutesDeps, 'documentUploadsDir'>,
 ): Promise<void> {
-  const records = await readDocumentUploads(rootDir, workspaceName, deps);
+  const records = await readDocumentUploads(rootDir, workspaceName);
   const removed = records.filter((item) => item.filename === filename);
   if (removed.length === 0) return;
   for (const record of removed) {
@@ -206,7 +206,42 @@ async function removeDocumentUploadsForFilename(
       if (filePath) await rm(filePath, { force: true }).catch(() => {});
     }
   }
-  await writeDocumentUploads(rootDir, workspaceName, records.filter((item) => item.filename !== filename), deps);
+  await writeDocumentUploads(rootDir, workspaceName, records.filter((item) => item.filename !== filename));
+}
+
+/*
+ Which uploads the Pending panel may show as "in flight".
+
+ The panel is the inbox of sources, and a dropped PDF or text file only becomes
+ a source once the documents agent has written its Markdown into raw/untracked.
+ During that wait the file exists nowhere the panel can see, so the sidebar
+ renders a placeholder row — a spinner, no link, no delete — for every record
+ the agent is still working on.
+
+ The filter is deliberately narrow:
+
+ - `converting` (agent took it) and `stored` WITHOUT an error (written, about
+   to convert) are in flight. `stored` WITH an error means the agent never
+   took it — nothing is running, so no spinner. `failed` and `converted` are
+   terminal: the failure must DISAPPEAR from the panel (the drop handler
+   already told the reader), and the converted file is now a real
+   raw/untracked source the tree lists on its own.
+ - a freshness cutoff hides records a crash left mid-flight: a conversion poll
+   runs five minutes at most, so a `converting` record older than the cutoff
+   is not work in progress, it is a process that died. Left rendered, it would
+   spin forever and lie.
+ */
+const IN_FLIGHT_MAX_AGE_MS = 15 * 60 * 1000;
+
+export async function readInFlightDocumentUploads(rootDir: string, workspaceName: string): Promise<DocumentUploadRecord[]> {
+  const records = await readDocumentUploads(rootDir, workspaceName).catch(() => [] as DocumentUploadRecord[]);
+  const cutoff = Date.now() - IN_FLIGHT_MAX_AGE_MS;
+  return records.filter((record) => {
+    const inFlight = record.status === 'converting' || (record.status === 'stored' && !record.error);
+    if (!inFlight) return false;
+    const updated = Date.parse(record.updatedAt ?? '');
+    return Number.isFinite(updated) && updated >= cutoff;
+  });
 }
 
 function parseMultipartUpload(body: Buffer, contentType: string): { filename: string; content: Buffer } {
@@ -347,13 +382,13 @@ async function convertDocumentUpload(rootDir: string, record: DocumentUploadReco
     record.provider = null;
     record.error = 'documents MCP endpoint is not configured';
     record.updatedAt = new Date().toISOString();
-    return upsertDocumentUpload(rootDir, record, deps);
+    return upsertDocumentUpload(rootDir, record);
   }
   record.status = 'converting';
   record.provider = 'documents';
   record.error = null;
   record.updatedAt = new Date().toISOString();
-  await upsertDocumentUpload(rootDir, record, deps);
+  await upsertDocumentUpload(rootDir, record);
   try {
     const stem = record.filename.replace(/\.[^.]+$/, '');
     const sessionEndpoint: ExternalMcpEndpoint & { sessionId?: string } = { ...endpoint };
@@ -387,7 +422,7 @@ async function convertDocumentUpload(rootDir: string, record: DocumentUploadReco
     record.error = err instanceof Error ? err.message : String(err);
   }
   record.updatedAt = new Date().toISOString();
-  return upsertDocumentUpload(rootDir, record, deps);
+  return upsertDocumentUpload(rootDir, record);
 }
 
 export async function handleUploadRoutes(
@@ -398,7 +433,7 @@ export async function handleUploadRoutes(
 ): Promise<boolean> {
   const workspaceName = deps.workspaceNameFromEnv() ?? path.basename(process.env.WIKI_WORKSPACE_PATH ?? process.cwd());
   if (urlPath === '/api/uploads' && req.method === 'GET') {
-    deps.sendJson(res, 200, { ok: true, uploads: await readDocumentUploads(deps.rootDir, workspaceName, deps) });
+    deps.sendJson(res, 200, { ok: true, uploads: await readDocumentUploads(deps.rootDir, workspaceName) });
     return true;
   }
   if (urlPath === '/api/uploads/capabilities' && req.method === 'GET') {
@@ -415,7 +450,7 @@ export async function handleUploadRoutes(
       const { filename: rawFilename, content } = parseMultipartUpload(await deps.readRequestBuffer(req, maxUploadBytes + 1024 * 1024), contentType);
       const filename = sanitizeUploadFilename(rawFilename);
       assertDocumentUpload(filename, content.length, deps.documentMaxUploadBytes);
-      await removeDocumentUploadsForFilename(deps.rootDir, workspaceName, filename, deps);
+      await removeDocumentUploadsForFilename(deps.rootDir, workspaceName, filename);
       const id = randomUUID().slice(0, 8);
       // The input file is stored under its clean filename: the documents agent
       // derives the converted Markdown's frontmatter `title` from the source
@@ -445,7 +480,7 @@ export async function handleUploadRoutes(
         createdAt: now,
         updatedAt: now,
       };
-      await upsertDocumentUpload(deps.rootDir, record, deps);
+      await upsertDocumentUpload(deps.rootDir, record);
       record = await convertDocumentUpload(deps.rootDir, record, deps);
       deps.sendJson(res, 200, { ok: true, upload: record });
     } catch (err) {
@@ -456,7 +491,7 @@ export async function handleUploadRoutes(
   const convertMatch = urlPath.match(/^\/api\/uploads\/([^/]+)\/convert$/);
   if (convertMatch && req.method === 'POST') {
     const id = convertMatch[1];
-    const record = (await readDocumentUploads(deps.rootDir, workspaceName, deps)).find((item) => item.id === id);
+    const record = (await readDocumentUploads(deps.rootDir, workspaceName)).find((item) => item.id === id);
     if (!record) deps.sendJson(res, 404, { ok: false, error: 'upload not found' });
     else deps.sendJson(res, 200, { ok: true, upload: await convertDocumentUpload(deps.rootDir, record, deps) });
     return true;

@@ -40,6 +40,17 @@ let historySaveTimer = null;
 let conversationDirty = false;
 let historyLoadSeq = 0;
 let clearChatSeq = 0;
+// How many entries at the head of the displayed thread are "forgotten": the
+// memory gauge counts only what was said since the last compact, while the
+// thread itself stays visible. Persisted with the conversation so reopening it
+// from history keeps both the full thread and the reset count.
+let memoryCompactedCount = 0;
+// A compact does not just cut the messages before it from what Donna sees —
+// it replaces them with a short rolling summary, so a decision made earlier
+// is condensed, not gone. In runtime mode the manager generates and owns this
+// (see /conversation/compact); in the standalone no-runtime chat path there
+// is no server-side session to do it, so this file does it itself.
+let conversationSummary = '';
 let skillsCache = null;
 let skillAcIdx = -1;
 let skillAcItems = [];
@@ -414,6 +425,7 @@ function applyRuntimeState(state) {
   updateActivityBadge();
   updateApprovalBanner();
   updateAgentModeUI();
+  updateMemoryGauge();
   // Scroll after renderActivities (panel resize reflows width/height).
   if(conversationChanged) scrollMessagesToBottom();
 }
@@ -495,20 +507,23 @@ function connectRuntimePanel() {
 // Returns true when the bubble was left in the cheap plain-text streaming
 // state (still needs a markdown re-render once the run stops), false once it
 // holds the final rendered HTML.
-function updateMsgBubble(el,role,content) {
+function updateMsgBubble(el,role,content,{force=false}={}) {
   el.dataset.copy=content||'';
   const bubble=el.querySelector('.bubble');
   let renderedPlain=false;
   if(bubble) {
-    // This runs on every /state poll while a reply is still streaming in
-    // (see mergeRuntimeConversation) — re-parsing the whole answer as
-    // markdown and replacing the bubble's innerHTML each time is the same
-    // choppy-render cost as the local chat path. While the run is still
-    // active, write plain text; mergeRuntimeConversation forces one more call
-    // once the run stops, even if the content itself did not change on that
-    // poll, so every plain-text bubble always gets its final markdown render.
-    if(role==='assistant'&&runtimeIsRunning()) { bubble.textContent=content||''; renderedPlain=true; }
-    else bubble.innerHTML=role==='assistant'?renderMd(content||''):esc(content||'');
+    // Cheap plain text while the answer is still growing — re-parsing markdown
+    // on every ~200ms poll is choppy. But "a run is active" is too coarse a
+    // gate: a status answer asked during a LONG run is complete and still ran
+    // as plain text, so its tables showed as raw pipes until the whole run
+    // ended. Settle the bubble to markdown 350ms after the text stops changing,
+    // independently of the run state; each new delta reschedules.
+    if(role==='assistant'&&runtimeIsRunning()&&!force) {
+      bubble.textContent=content||'';
+      renderedPlain=true;
+      clearTimeout(el._mdTimer);
+      el._mdTimer=setTimeout(()=>{el._mdTimer=null;updateMsgBubble(el,role,el.dataset.copy||'',{force:true});},350);
+    } else bubble.innerHTML=role==='assistant'?renderMd(content||''):esc(content||'');
   }
   if(content) el.classList.remove('msg-empty');
   return renderedPlain;
@@ -628,7 +643,10 @@ function mergeRuntimeConversation() {
     // merge. Skip the duplicate bubble instead of showing the answer twice.
     const duplicateOfDirectReply=role==='assistant'&&content
       &&lastLocal?.role==='assistant'&&lastLocal.content===content;
-    const el=duplicateOfDirectReply?null:appendMsg(role,content);
+    // skipGauge: this runs in a loop that can append several entries per
+    // call (catching up a backlog); applyRuntimeState updates the gauge once,
+    // after the whole batch, right after this function returns.
+    const el=duplicateOfDirectReply?null:appendMsg(role,content,{skipGauge:true});
     if(role==='assistant'&&!content) el?.classList.add('msg-empty');
     runtimeConversationRefs.push({message,el,own:assistantOwn});
     changed=true;
@@ -1201,6 +1219,8 @@ function buildConversationPayload(snapshot={}) {
     mcpServers: snapshot.mcpServers ?? activeServerSnapshot(),
     messages: sourceMessages,
     pageContexts: typeof activePageContexts==='function' ? activePageContexts() : [],
+    compactedCount: memoryCompactedCount,
+    compactedSummary: snapshot.compactedSummary ?? conversationSummary,
     traceHtml: snapshot.traceHtml ?? [...document.querySelectorAll('.trace-card')].map(el=>el.outerHTML),
     messageHtml: snapshot.messageHtml ?? $('messages')?.innerHTML ?? '',
   };
@@ -1286,6 +1306,8 @@ async function newConversation() {
   if(messages.length) await saveCurrentConversation({immediate:true});
   currentConversationId=null;
   messages=[];
+  memoryCompactedCount=0;
+  conversationSummary='';
   resetRuntimeConversationTracking();
   conversationDirty=false;
   resetProductionState();
@@ -1293,6 +1315,7 @@ async function newConversation() {
   updateAgentModeUI();
   setEmptyChat();
   renderHistory();
+  updateMemoryGauge();
   $('chat-input')?.focus();
 }
 
@@ -1331,6 +1354,10 @@ async function loadConversation(id) {
     if(seq!==historyLoadSeq) return;
     currentConversationId=conv.id;
     messages=Array.isArray(conv.messages) ? conv.messages : [];
+    // The compact boundary follows the conversation: reopening it restores the
+    // full visible thread AND the reset gauge count.
+    memoryCompactedCount=Math.max(0,Number(conv.compactedCount)||0);
+    conversationSummary=String(conv.compactedSummary||'');
     // Attached documents follow the conversation they were attached to.
     if(typeof resetPageContexts==='function') resetPageContexts(conv.pageContexts);
     // Each conversation remembers the mode it was last used in, so a chat that
@@ -1347,6 +1374,7 @@ async function loadConversation(id) {
     if(!$('messages').innerHTML.trim()) setEmptyChat();
     recoverProductionStateFromMessages();
     renderHistory();
+    updateMemoryGauge();
     $('messages').scrollTop=$('messages').scrollHeight;
   } catch(e) {
     notify(\`History: \${e.message}\`,'e');
@@ -1363,6 +1391,7 @@ async function deleteConversation(event, id) {
       messages=[];
       resetRuntimeConversationTracking();
       setEmptyChat();
+      updateMemoryGauge();
     }
     await loadHistory();
   } catch(e) {
@@ -1603,11 +1632,16 @@ async function matchBrowserSkillInvocation(text) {
 }
 
 function requestMessagesForLLM(sourceMessages) {
-  return sourceMessages.flatMap((msg)=>{
+  // Drop everything before the last compact (no-runtime local chat path): the
+  // thread stays on screen, but the model is not sent the pre-compact turns —
+  // it gets the summary of them instead (see conversationSummary), not silence.
+  const cut=sourceMessages.slice(Math.min(memoryCompactedCount,sourceMessages.length)).flatMap((msg)=>{
     if(msg.role==='user') return {role:'user',content:msg.content};
     if(msg.role==='assistant') return {role:'assistant',content:msg.content ?? ''};
     return msg;
   });
+  if(!conversationSummary) return cut;
+  return [{role:'user',content:\`[Summary of earlier conversation, compacted]\\n\${conversationSummary}\`},...cut];
 }
 
 /* ── Message actions ─────────────────────────────────────────────────────
@@ -1645,7 +1679,119 @@ async function copyMessage(btn) {
   }
 }
 
-function appendMsg(role, content, {html=false,plainText=null}={}) {
+// The ring in the composer tracks the VISIBLE conversation's length, not the
+// LLM's own context window: conversationSeed (runtime side) already
+// auto-windows that to the last 12 exchanges, so a gauge on it would sit at
+// ~100% by the 13th message and never visibly move again. This threshold is
+// purely cosmetic — reaching it truncates or refuses nothing by itself, it
+// only fills the ring and switches it to the accent color.
+// Agent/runtime mode tracks the visible conversation separately
+// (runtimeConversationRefs, index-aligned with the runtime's own conversation
+// — see mergeRuntimeConversation) rather than in the local messages array.
+// Only one of the two is ever meaningfully populated in a given loaded
+// conversation (a loaded chat-mode history leaves runtimeConversationRefs at
+// its freshly-reset baseline; a live agent-mode run leaves messages empty),
+// so take whichever is larger rather than picking one source over the other.
+// Shared by the gauge and its own click guard so the two can't disagree on
+// what "nothing to compact" means.
+function visibleConversationCount() {
+  return Math.max(messages.length,runtimeConversationRefs.length);
+}
+// What the gauge actually counts: the thread MINUS everything before the last
+// compact. The messages stay on screen; only the count resets.
+function gaugedConversationCount() {
+  return Math.max(0,visibleConversationCount()-memoryCompactedCount);
+}
+function updateMemoryGauge() {
+  // Kept inside the function on purpose: initActivityPanel (activityPanelScript)
+  // calls this during its own early init, before the assembly reaches these
+  // declarations — a module-scope const here is in the temporal dead zone at
+  // that moment and threw, aborting the whole panel init (no runtime stream,
+  // buttons inert). Function-local consts have no such ordering hazard.
+  const MEMORY_GAUGE_MAX_MESSAGES=40;
+  const MEMORY_GAUGE_CIRCUMFERENCE=2*Math.PI*9;
+  const btn=$('memory-gauge-btn');
+  const fill=$('memory-gauge-fill');
+  if(!btn||!fill) return;
+  const count=gaugedConversationCount();
+  const ratio=Math.max(0,Math.min(1,count/MEMORY_GAUGE_MAX_MESSAGES));
+  fill.setAttribute('stroke-dasharray',String(MEMORY_GAUGE_CIRCUMFERENCE));
+  fill.setAttribute('stroke-dashoffset',String(MEMORY_GAUGE_CIRCUMFERENCE*(1-ratio)));
+  btn.classList.toggle('memory-gauge-high',ratio>=0.75);
+  const label=count
+    ? \`Conversation memory: \${count} message\${count>1?'s':''} since last compact — click to compact\`
+    : (memoryCompactedCount>0
+        ? 'Conversation memory: compacted (thread kept) — click to compact again'
+        : 'Conversation memory: empty');
+  btn.title=label;
+  btn.setAttribute('aria-label',label);
+}
+// Standalone (no-runtime) path only: the manager generates and stores this
+// itself for the runtime path (see /conversation/compact server-side). Reuses
+// fetchStream (onDelta ignored) rather than a second fetch/parse path for one
+// more completion call. Best-effort: any failure keeps the previous summary,
+// same shape as the server-side equivalent.
+async function summarizeLocalConversationForCompact(cutMessages) {
+  const transcript=cutMessages
+    .filter(m=>['user','assistant'].includes(m.role)&&String(m.content||'').trim())
+    .map(m=>\`\${m.role==='user'?'User':'Assistant'}: \${String(m.content).trim()}\`)
+    .join('\\n')
+    .slice(0,8000);
+  if(!transcript) return conversationSummary;
+  const useProxy=!!(window.__WIKI_CONFIG__);
+  if(!useProxy && !$('base-url').value.trim()) return conversationSummary;
+  const model=$('model-name').value.trim()||'gpt-4o';
+  const llmUrl=useProxy ? '/api/chat' : \`\${$('base-url').value.trim().replace(/\\/$/, '')}/v1/chat/completions\`;
+  const llmHeaders=useProxy ? buildProxyLLMHeaders() : buildLLMHeaders();
+  const sys='You maintain a compact working memory for Donna, a workspace assistant. You are shown an optional PREVIOUS SUMMARY and a NEW SEGMENT of conversation about to leave the assistant\\'s context window. Write ONE updated summary that preserves the facts, decisions, open questions and user preferences that still matter for future turns. Be concise: well under 200 words. Return only the summary text — no preamble, no meta-commentary, no headings.';
+  const input=[conversationSummary?\`PREVIOUS SUMMARY:\\n\${conversationSummary}\`:null,\`NEW SEGMENT:\\n\${transcript}\`].filter(Boolean).join('\\n\\n');
+  try {
+    const {content}=await fetchStream(llmUrl,llmHeaders,{model,messages:[{role:'system',content:sys},{role:'user',content:input}]},()=>{});
+    const text=String(content||'').trim();
+    return text||conversationSummary;
+  } catch {
+    return conversationSummary;
+  }
+}
+async function compactConversationMemory() {
+  if(!gaugedConversationCount()) { notify('Nothing to compact yet'); return; }
+  if(!(await confirmAction({title:'Compact conversation memory',message:'Donna will no longer see the raw messages before this point, only a short summary of them. The thread stays visible here and in Chat history.',confirmLabel:'Compact',danger:true}))) return;
+  const previousSummary=conversationSummary;
+  if(runtimeEnabled()) {
+    try {
+      const res=await fetch('/api/runtime/conversation/compact',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
+      if(res.status===409) { notify('Cannot compact while a run is active','e'); return; }
+      if(!res.ok) throw new Error('Compact failed ('+res.status+')');
+      // The manager generates and owns the summary for this path (it has the
+      // full workspace-wide conversation and its own LLM client) — take
+      // whatever it returns rather than re-deriving one from the local view.
+      const payload=await res.json().catch(()=>({}));
+      if(typeof payload?.summary==='string'&&payload.summary.trim()) conversationSummary=payload.summary.trim();
+    } catch(err) {
+      notify(err?.message||String(err),'e');
+      return;
+    }
+  } else {
+    conversationSummary=await summarizeLocalConversationForCompact(messages.slice(memoryCompactedCount,visibleConversationCount()));
+  }
+  // Keep the SAME conversation: mark the boundary, reset the gauge, and persist
+  // it with the thread. Starting a blank conversation here (the old behaviour)
+  // switched away from the compacted thread and stranded the boundary behind it.
+  memoryCompactedCount=visibleConversationCount();
+  updateMemoryGauge();
+  // Re-baseline the runtime merge so turns sent after the compact still append
+  // to this thread: null defers the baseline to the next runtime state, which
+  // works whether the runtime keeps or resets its own conversation array.
+  resetRuntimeConversationTracking();
+  runtimeConversationOffset=null;
+  conversationDirty=true;
+  await saveCurrentConversation({immediate:true,force:true});
+  notify(conversationSummary&&conversationSummary!==previousSummary
+    ? 'Conversation memory compacted — a summary was kept'
+    : 'Conversation memory compacted');
+}
+
+function appendMsg(role, content, {html=false,plainText=null,skipGauge=false}={}) {
   removeEmpty();
   const wrap=$('messages');
   const div=document.createElement('div');
@@ -1657,6 +1803,7 @@ function appendMsg(role, content, {html=false,plainText=null}={}) {
   div.innerHTML=\`\${av}<div class="msg-content"><div class="bubble">\${bodyHtml}</div><div class="msg-actions">\${msgCopyButton()}\${redoBtn}</div></div>\`;
   wrap.appendChild(div);
   wrap.scrollTop=wrap.scrollHeight;
+  if(!skipGauge) updateMemoryGauge();
   return div;
 }
 

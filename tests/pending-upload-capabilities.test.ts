@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import {
   PENDING_CONVERTIBLE_EXTENSIONS,
   PENDING_MARKDOWN_EXTENSIONS,
   pendingUploadCapabilities,
+  readInFlightDocumentUploads,
 } from '../src/serve/routes/uploadRoutes.ts';
 import { WIKI_LAYOUT_SCRIPT } from '../src/serve/html/wikiLayoutScript.ts';
 import { WIKI_PANEL_SCRIPT } from '../src/chat/views/wikiPanelScript.ts';
@@ -184,5 +188,99 @@ describe('Pending drop handler', () => {
     // A conversion the agent left as 'stored' is a failure, not a success:
     // nothing was written to raw/untracked.
     expect(WIKI_LAYOUT_SCRIPT).toContain("upload.status !== 'converted'");
+  });
+
+  it('shows a non-clickable placeholder row during conversion and removes it on error', () => {
+    expect(WIKI_LAYOUT_SCRIPT).toContain('function addPendingUploadRow');
+    expect(WIKI_LAYOUT_SCRIPT).toContain("row.className = 'side-untracked-item side-untracked-uploading'");
+    expect(WIKI_LAYOUT_SCRIPT).toContain('function removePendingUploadRow');
+    const loop = WIKI_LAYOUT_SCRIPT.slice(
+      WIKI_LAYOUT_SCRIPT.indexOf('for (const file of files)'),
+      WIKI_LAYOUT_SCRIPT.indexOf('if (written.length)'),
+    );
+    expect(loop).toContain('addPendingUploadRow(file.name)');
+    expect(loop).toContain('removePendingUploadRow(file.name)');
+    // The failure must not linger in the panel: the optimistic row goes, and
+    // the refresh reconciles with the server, which no longer counts the
+    // failed record as in-flight.
+    expect(loop).toContain("await refreshSidebar().catch(() => {})");
+  });
+});
+
+/*
+ Which records the Pending panel may show as "in flight": only work the
+ documents agent is actually doing right now. A failed record is terminal and
+ must disappear from the panel; a stored-with-error record was never taken by
+ the agent, so no spinner; a stale record is a process that died, not work in
+ progress.
+ */
+describe('In-flight upload filter', () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(path.join(os.tmpdir(), 'in-flight-uploads-'));
+    await mkdir(path.join(root, '.wiki', 'documents', 'uploads'), { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const record = (overrides: Record<string, unknown>) => ({
+    id: 'abc12345',
+    workspace: 'ws',
+    filename: 'rapport.pdf',
+    storedPath: '/tmp/rapport.pdf',
+    agentPath: '/tmp/rapport.pdf',
+    status: 'converting',
+    provider: 'documents',
+    outputPath: null,
+    method: null,
+    bytes: 12,
+    error: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  });
+
+  async function writeManifest(records: Record<string, unknown>[]): Promise<void> {
+    await writeFile(
+      path.join(root, '.wiki', 'documents', 'uploads', 'ws.jsonl'),
+      records.map((entry) => JSON.stringify(entry)).join('\n') + '\n',
+      'utf8',
+    );
+  }
+
+  it('returns nothing when no manifest exists', async () => {
+    await expect(readInFlightDocumentUploads(root, 'ws')).resolves.toEqual([]);
+  });
+
+  it('keeps a conversion in progress and a fresh stored record', async () => {
+    await writeManifest([
+      record({ id: 'c1', filename: 'a.pdf' }),
+      record({ id: 's1', filename: 'b.pdf', status: 'stored', error: null }),
+    ]);
+
+    const inflight = await readInFlightDocumentUploads(root, 'ws');
+
+    expect(inflight.map((item) => item.filename)).toEqual(['a.pdf', 'b.pdf']);
+  });
+
+  it('drops failed, never-taken and terminal records', async () => {
+    await writeManifest([
+      record({ id: 'f1', filename: 'failed.pdf', status: 'failed', error: 'boom' }),
+      record({ id: 's1', filename: 'agent-down.pdf', status: 'stored', error: 'documents MCP endpoint is not configured' }),
+      record({ id: 'd1', filename: 'done.pdf', status: 'converted', outputPath: '/tmp/done.md' }),
+    ]);
+
+    await expect(readInFlightDocumentUploads(root, 'ws')).resolves.toEqual([]);
+  });
+
+  it('hides a record a crash left mid-flight', async () => {
+    await writeManifest([
+      record({ id: 'stale1', filename: 'stale.pdf', updatedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString() }),
+    ]);
+
+    await expect(readInFlightDocumentUploads(root, 'ws')).resolves.toEqual([]);
   });
 });
