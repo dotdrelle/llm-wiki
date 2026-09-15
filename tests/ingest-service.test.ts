@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { IngestService } from '../src/services/ingestService.ts';
+import { IngestService, staleRebuiltLeaves } from '../src/services/ingestService.ts';
 import { IngestCache } from '../src/ingest/extractionCache.ts';
 import { pathExists } from '../src/utils/fs.ts';
 import type { LLMService } from '../src/services/llmService.ts';
@@ -299,6 +299,36 @@ class UnreconciledCitationLLMService extends FakeLLMService {
           content: '# Note\n\nFait documenté. [src: raw/untracked/note.md\n',
         },
       ],
+    };
+  }
+}
+
+class PreservedCitationLLMService extends FakeLLMService {
+  protected async plan(): Promise<IngestPlan & { pages?: unknown[] }> {
+    return {
+      summary: 'Updated a leaf, preserving the other source it already cited.',
+      operations: [
+        {
+          type: 'create',
+          path: this.sourceNotePath,
+          content: '# Source deux\n\n[src: raw/untracked/source-two.md]\n',
+        },
+        {
+          type: 'update',
+          path: 'wiki/concepts/security/souverainete.md',
+          content:
+            '# Souverainete\n\nFait un. [src: raw/ingested/source-one.md]\n\n'
+            + 'Fait deux. [src: raw/untracked/source-two.md]\n',
+        },
+      ],
+      pages: [{
+        path: 'wiki/concepts/security/souverainete.md',
+        subject: 'souverainete',
+        scope: 'product',
+        kind: 'product',
+        tags: [],
+        rationale: null,
+      }],
     };
   }
 }
@@ -724,6 +754,34 @@ describe('ingest service', () => {
     expect(
       logger.entries.some((entry) => entry.event === 'ingest:citation-unreconciled'),
     ).toBe(false);
+  });
+
+  it('keeps another archived source cited while updating a leaf', async () => {
+    // On an update the model preserves the page's earlier citations. Rewriting
+    // those to the source being ingested misattributes the facts they back —
+    // the "the sources associated are often not the right ones" defect.
+    const workspace = new FakeWorkspaceService();
+    workspace.sourcePaths = ['/tmp/wiki/raw/untracked/source-two.md'];
+    const logger = new MemoryTraceLogger();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new PreservedCitationLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+      disabledCache(),
+    );
+
+    await service.ingest([], {});
+
+    const leaf = workspace.appliedOperations.find(
+      (operation) => operation.path === 'wiki/concepts/security/souverainete.md',
+    );
+    expect(leaf?.content).toContain('[src: raw/ingested/source-one.md]');
+    // The pending form of THIS source is normalized to its archive path.
+    expect(leaf?.content).toContain('[src: raw/ingested/source-two.md]');
+    expect(leaf?.content).not.toContain('[src: raw/untracked/source-two.md]');
   });
 
   it('warns when source citations cannot be reconciled', async () => {
@@ -1324,3 +1382,58 @@ describe('ingest service', () => {
 });
 
 
+
+describe('staleRebuiltLeaves', () => {
+  const registry = (sources: Array<{ archivePath: string; producedPages: string[] }>) => ({
+    version: 1,
+    sources: sources.map((source) => ({
+      sourceId: `path:${source.archivePath}`,
+      archivePath: source.archivePath,
+      contentHash: 'sha256:x',
+      status: 'active' as const,
+      firstSeenAt: 't',
+      lastSeenAt: 't',
+      lastIngestedAt: 't',
+      producedPages: source.producedPages,
+    })),
+  });
+
+  it('flags concept leaves a rebuild no longer produces', () => {
+    const previous = registry([
+      { archivePath: 'raw/ingested/s.md', producedPages: ['wiki/concepts/old/x.md', 'wiki/sources/s.md'] },
+    ]);
+    const current = registry([
+      { archivePath: 'raw/ingested/s.md', producedPages: ['wiki/concepts/new/x.md', 'wiki/sources/s.md'] },
+    ]);
+    expect(staleRebuiltLeaves(previous, current, ['raw/ingested/s.md'])).toEqual([
+      'wiki/concepts/old/x.md',
+    ]);
+  });
+
+  it('keeps a leaf another source still produces', () => {
+    const previous = registry([
+      { archivePath: 'raw/ingested/a.md', producedPages: ['wiki/concepts/offre/x.md'] },
+      { archivePath: 'raw/ingested/b.md', producedPages: ['wiki/concepts/offre/x.md'] },
+    ]);
+    const current = registry([
+      { archivePath: 'raw/ingested/a.md', producedPages: [] },
+      { archivePath: 'raw/ingested/b.md', producedPages: ['wiki/concepts/offre/x.md'] },
+    ]);
+    expect(staleRebuiltLeaves(previous, current, ['raw/ingested/a.md'])).toEqual([]);
+  });
+
+  it('never prunes a source note, the index or a page outside the rebuild', () => {
+    const previous = registry([
+      { archivePath: 'raw/ingested/s.md', producedPages: ['wiki/sources/s.md', 'wiki/index.md', 'wiki/concepts/old/x.md'] },
+    ]);
+    const current = registry([{ archivePath: 'raw/ingested/s.md', producedPages: [] }]);
+    expect(staleRebuiltLeaves(previous, current, ['raw/ingested/s.md'])).toEqual([
+      'wiki/concepts/old/x.md',
+    ]);
+  });
+
+  it('returns nothing when there is no previous registry', () => {
+    const current = registry([{ archivePath: 'raw/ingested/s.md', producedPages: [] }]);
+    expect(staleRebuiltLeaves(null, current, ['raw/ingested/s.md'])).toEqual([]);
+  });
+});

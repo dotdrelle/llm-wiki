@@ -633,6 +633,19 @@ ingest`) builds a review per planned operation (`buildReviewOperations`):
   source alone — "one leaf per source" even when the leaf was updated in place.
   `validateConsolidation` also turns a concept `create` into an `update` when
   the path already exists, keeping it out of the concept budget.
+- `enforceSourceCitationPath` **preserves** a citation already anchored to an
+  archived source (`raw/ingested/…`, well-formed) or a workspace page: on an
+  update the model keeps the page's earlier citations, and rewriting those to
+  the source being ingested misattributed the facts they back to it. Only the
+  pending form (`raw/untracked/…`) and a malformed/relative path are normalized
+  to the current archive path. That is what made "the sources associated are
+  often not the right ones" possible.
+- `wiki ingest --from-ingested` **prunes** (`staleRebuiltLeaves`): a concept leaf
+  the rebuilt sources no longer produce, and that no other source claims, is
+  deleted after a failure-free run — otherwise a re-filed subject lingered as a
+  stale duplicate next to its new leaf. Restricted to `wiki/concepts/`; a source
+  note, the index and a hand-written page are never touched, and a partial run
+  prunes nothing (`ingest:rebuild-prune-skipped`).
 - `buildService.ts`: template slot batching and generation. Build retrieval
   runs with `includeRaw: true` — the raw corpus (`raw/ingested/`) is part of
   the evidence, merged with the vector/lexical results, never instead of

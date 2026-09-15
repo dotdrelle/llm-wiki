@@ -207,6 +207,14 @@ function stampSourceProvenance(
   );
 }
 
+// A citation already anchored to an archived source or a workspace page, and
+// path-safe (no whitespace, quote or backslash). Such a path is stable and, on
+// an update, may belong to ANOTHER source the model preserved from the page it
+// merged — see enforceSourceCitationPath. A malformed `raw/ingested/…` the
+// model copied by hand (spaces, accents) is NOT anchored and is normalized to
+// the source being ingested.
+const ANCHORED_CITATION_PATH = /^(?:raw\/ingested|wiki|deliverables|templates|build-context)\/[^\s"'`)\\]*[^\s"'`)\\]$/i;
+
 function enforceSourceCitationPath(
   operations: WikiOperation[],
   archiveCitationPath: string,
@@ -232,13 +240,23 @@ function enforceSourceCitationPath(
           unreconciledCitations += 1;
           return match;
         }
+        // A citation already anchored to an archived source (`raw/ingested/…`)
+        // or a workspace page is LEFT ALONE. Rewriting it to THIS source is
+        // only correct for the pending/mangled form of the source being
+        // ingested; on an update the model preserves the existing page's
+        // citations, and rewriting those misattributed the facts they back to
+        // the source being ingested (the "sources associated are often not the
+        // right ones" defect). Always normalize the spacing, though:
+        // BARE_RAW_PATH_PATTERN below only tolerates a bounded run of
+        // whitespace after "[src:", so an untouched "[src:\n    path]" would
+        // be treated as bare and wrapped a second time.
+        if (ANCHORED_CITATION_PATH.test(cleanCitationPath)) {
+          return `[src: ${cleanCitationPath}]`;
+        }
+        // `raw/untracked/…` is the pending form of the source being ingested,
+        // and anything else is a shortened/relative path the model copied by
+        // hand: both normalize to the archive path.
         if (cleanCitationPath !== archiveCitationPath) rewrittenCitations += 1;
-        // Always normalize to the single-space canonical form, even when the
-        // path already matched: BARE_RAW_PATH_PATTERN below only tolerates a
-        // small, bounded run of whitespace after "[src:" to recognize an
-        // already-bracketed path. An untouched "[src:\n    path]" the model
-        // emitted verbatim would fall outside that bound and get treated as
-        // bare, wrapping the inner path a second time.
         return `[src: ${archiveCitationPath}]`;
       },
     );
@@ -249,11 +267,13 @@ function enforceSourceCitationPath(
     // citation — a header line ("Source: raw/ingested/…") rather than a
     // per-claim [src: …]. Invisible to the citation machinery above and to
     // every downstream link renderer, which only ever looks for the bracket.
-    // A per-source consolidation only ever has one legitimate source to name,
-    // so wrapping it to the canonical archive path is the same repair as the
-    // rewrite above, just for a mention that never carried brackets at all.
-    content = content.replace(BARE_RAW_PATH_PATTERN, () => {
+    // A bare `raw/ingested/…` mentions an archived source (possibly another
+    // one, preserved from the page being updated) and is wrapped as itself; a
+    // bare `raw/untracked/…` is the pending form of THIS source and becomes
+    // its archive path.
+    content = content.replace(BARE_RAW_PATH_PATTERN, (bare: string) => {
       wrappedBarePaths += 1;
+      if (/^raw\/ingested\//i.test(bare)) return `[src: ${bare}]`;
       return `[src: ${archiveCitationPath}]`;
     });
 
@@ -306,6 +326,40 @@ function diffPreview(before: string, after: string): IngestReviewOperation['diff
     removedLines: Math.max(0, beforeLines.length - afterLines.length),
     preview,
   };
+}
+
+/**
+ * Concept leaves a rebuild no longer produces.
+ *
+ * A `--from-ingested` run re-files archived sources: when the classification
+ * changes (another concept or subject slug), the rebuild writes the new leaf
+ * and leaves the old one on disk — the same idea then appears twice, and the
+ * stale copy is the wrong one. The registry is the only place that knows what
+ * the previous run produced; the model has no memory of it, so the engine
+ * reconciles. Restricted to concept leaves: a source note, the index or a
+ * hand-written page is never pruned. A page still produced by ANY source
+ * (rebuilt or not) is kept.
+ */
+export function staleRebuiltLeaves(
+  previousRegistry: SourceRegistryFile | null,
+  currentRegistry: SourceRegistryFile,
+  rebuiltArchivePaths: string[],
+): string[] {
+  if (!previousRegistry) return [];
+  const rebuilt = new Set(rebuiltArchivePaths);
+  if (rebuilt.size === 0) return [];
+  const oldProduced = new Set<string>();
+  for (const record of previousRegistry.sources) {
+    if (!rebuilt.has(record.archivePath)) continue;
+    for (const page of record.producedPages) oldProduced.add(page);
+  }
+  const stillProduced = new Set<string>();
+  for (const record of currentRegistry.sources) {
+    for (const page of record.producedPages) stillProduced.add(page);
+  }
+  return [...oldProduced]
+    .filter((page) => page.startsWith(CONCEPT_PREFIX) && !stillProduced.has(page))
+    .sort();
 }
 
 function buildReviewOperations({
@@ -1307,6 +1361,44 @@ export class IngestService {
     const successfulResults = results.filter((result) => !result.failed);
     const failedResults = results.filter((result) => result.failed);
     const shouldRefresh = options?.refresh === true || this.config.build.refreshOnIngest;
+    // A rebuild that re-files a source under another concept/subject leaves the
+    // previous leaf on disk (the registry only REPORTS it). Reconcile here: with
+    // no source-level failure, delete the concept leaves this rebuild no longer
+    // produces and that no other source claims. A partial run must not read as
+    // "these pages are gone", so it prunes nothing and says so.
+    if (options?.fromIngested && !options?.dryRun) {
+      const registryPath = this.workspace.paths.internalDir
+        ? path.join(this.workspace.paths.internalDir, SOURCE_REGISTRY_FILENAME)
+        : null;
+      try {
+        if (failedResults.length > 0) {
+          await this.logger.warn('ingest:rebuild-prune-skipped', {
+            reason: 'partial failure in the rebuild',
+            failed: failedResults.length,
+          });
+        } else if (registryPath) {
+          const rebuiltArchives = results
+            .filter((result) => !result.skipped && !result.failed)
+            .map((result) => result.source);
+          const currentRegistry = await readSourceRegistry(registryPath);
+          const stale: string[] = [];
+          for (const page of staleRebuiltLeaves(previousRegistry, currentRegistry, rebuiltArchives)) {
+            if (await pathExists(resolveInside(this.workspace.paths.rootDir, page))) stale.push(page);
+          }
+          if (stale.length > 0) {
+            await this.workspace.applyNormalizedWikiOperations(
+              stale.map((page) => ({ type: 'delete', path: page })),
+            );
+            this.retrieval.invalidateCache();
+          }
+          await this.logger.info('ingest:rebuild-prune', { count: stale.length, removed: stale });
+        }
+      } catch (error) {
+        await this.logger.warn('ingest:rebuild-prune-failed', {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     if (!options?.dryRun && successfulResults.length > 0 && shouldRefresh) {
       const refreshStartedAt = Date.now();
       try {

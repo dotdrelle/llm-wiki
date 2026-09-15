@@ -101,7 +101,12 @@ A sync (Confluence) never overwrites local work: a pending file you deleted
 stays deleted, and one you modified is flagged **orange** in the Pending panel
 — keep it or delete it, the sync will not decide for you. To rebuild the
 concept pages from the archived sources without touching Confluence, run
-`wiki ingest --from-ingested` (see `07-commands-shell.md`).
+`wiki ingest --from-ingested` (see `07-commands-shell.md`). A rebuild
+**replaces** the previous classification: a concept leaf the rebuilt sources no
+longer produce, and that no other source claims, is removed — otherwise the
+same subject would linger as a stale duplicate next to its new leaf. A source
+note, the index, a hand-written page and any page another source still supports
+are never touched.
 
 The full default chain is therefore: ingest, build, export, polish.
 
