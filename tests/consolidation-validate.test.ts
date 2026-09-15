@@ -250,3 +250,22 @@ describe('validateConsolidation reconciles a taxo-shaped leaf against its path',
     expect(result.provenanceByPath.get('wiki/concepts/jedox/jedox_tarifs.md')?.subject).toBe('jedox-tarifs');
   });
 });
+
+describe('create vs update (validateConsolidation)', () => {
+  it('turns a concept create into an update when the page already exists', () => {
+    const at = 'wiki/concepts/market-offering/beta.md';
+    const result = validateConsolidation(
+      plan({
+        operations: [
+          { type: 'create', path: 'wiki/sources/s.md', content: '# S\n\nBody. [src: raw/ingested/s.md]' },
+          { type: 'create', path: at, content: '# X\n\nBody. [src: raw/ingested/s.md]' },
+        ],
+        pages: [page()],
+      }),
+      { ...CTX, existingPaths: new Set([at]) },
+    );
+    const operation = result.operations.find((item) => item.path === at);
+    expect(operation?.type).toBe('update');
+    expect(result.warnings.some((w) => w.path === at && /already exists/.test(w.reason))).toBe(true);
+  });
+});

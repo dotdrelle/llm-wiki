@@ -620,6 +620,19 @@ ingest`) builds a review per planned operation (`buildReviewOperations`):
   it is a structural lookup by the `subject` frontmatter field, independent of
   and complementary to relevance ranking, and conflating them would make the
   gap this closes silently reappear the next time retrieval tuning changes.
+  `subjectsAreRelated` matches the leading token **or any significant shared
+  token** ("couts-infra" and "infra" both carry "infra"), ignoring a stoplist of
+  generic words ("solution", "model", "service"…) so a shared generic token
+  never widens the candidate list on its own.
+- A leaf's `sources` (and its first `generated`, its human `status`/`verified`)
+  are **carried forward at write time**: `applyWikiOperationsAtomic` merges the
+  existing file's engine-owned frontmatter onto the update
+  (`carryForwardEngineFrontmatter`, `okf/frontmatter.ts`). The operation content
+  is the model's output for one source and never contains what earlier ingests
+  accumulated, so without this merge every update reset `sources` to the current
+  source alone — "one leaf per source" even when the leaf was updated in place.
+  `validateConsolidation` also turns a concept `create` into an `update` when
+  the path already exists, keeping it out of the concept budget.
 - `buildService.ts`: template slot batching and generation. Build retrieval
   runs with `includeRaw: true` — the raw corpus (`raw/ingested/`) is part of
   the evidence, merged with the vector/lexical results, never instead of

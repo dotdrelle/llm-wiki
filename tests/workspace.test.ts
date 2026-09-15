@@ -532,3 +532,33 @@ describe('workspace safety', () => {
     await expect(workspace.isSourceUnchangedSinceIngest(source)).resolves.toBe(false);
   });
 });
+
+describe('source accumulation across ingests', () => {
+  it('keeps the sources of an existing leaf when the same leaf is ingested again', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-sources-'));
+    const workspace = new WorkspaceService(createConfig(root));
+    await workspace.initWorkspace({});
+    const leaf = 'wiki/concepts/security/souverainete.md';
+    await workspace.applyNormalizedWikiOperations([
+      {
+        type: 'create',
+        path: leaf,
+        content: '---\ntype: concept\nstatus: draft\nsources:\n  - path: raw/ingested/source-one.md\n    usage_count: 1\n---\n\n# Souverainete\n\nUn. [src: raw/ingested/source-one.md]\n',
+      },
+    ]);
+    await workspace.applyNormalizedWikiOperations([
+      {
+        type: 'update',
+        path: leaf,
+        content: '---\ntype: concept\nstatus: draft\nsources:\n  - path: raw/ingested/source-two.md\n    usage_count: 3\n---\n\n# Souverainete\n\nDeux. [src: raw/ingested/source-two.md]\n',
+      },
+    ]);
+
+    const written = await readFile(path.join(root, leaf), 'utf8');
+    expect(written).toContain('raw/ingested/source-one.md');
+    expect(written).toContain('raw/ingested/source-two.md');
+    expect(written).toContain('usage_count: 3');
+    expect(written).toContain('Deux.');
+    expect(written).not.toContain('Un.');
+  });
+});

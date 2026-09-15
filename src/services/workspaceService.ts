@@ -38,7 +38,7 @@ import {
   normalizeGeneratedMarkdown,
   parseTemplateInstructions,
 } from '../utils/markdown.ts';
-import { applyOkfFrontmatter, OKF_TYPE_ANSWER, OKF_TYPE_LOG } from '../okf/frontmatter.ts';
+import { applyOkfFrontmatter, carryForwardEngineFrontmatter, OKF_TYPE_ANSWER, OKF_TYPE_LOG } from '../okf/frontmatter.ts';
 import type {
   AppConfig,
   BuildState,
@@ -786,15 +786,23 @@ export class WorkspaceService {
 
         switch (operation.type) {
           case 'create':
-          case 'update':
+          case 'update': {
+            // The operation content is the model's output for THIS ingest; the
+            // file already on disk carries what earlier ingests accumulated.
+            // Merge the engine-owned keys (sources, generated, status,
+            // verified) so an update never resets a leaf's provenance to the
+            // current source alone.
+            const existing = snapshots.get(absolutePath)?.content;
+            const content = operation.content ?? '';
             await writeIfChanged(
               absolutePath,
               normalizeGeneratedMarkdown(
-                operation.content ?? '',
+                existing ? carryForwardEngineFrontmatter(existing, content) : content,
                 fallbackTitleFromWikiPath(operation.path),
               ),
             );
             break;
+          }
           case 'delete':
             await removeIfExists(absolutePath);
             break;

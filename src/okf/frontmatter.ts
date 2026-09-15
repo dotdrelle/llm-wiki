@@ -120,30 +120,76 @@ export function applyOkfFrontmatter(
     changed = true;
   }
   if (Array.isArray(options.sources) && options.sources.length > 0) {
-    // The raw sources that produced this page, accumulated across ingests —
-    // a source cited twice is listed once, and a fresh usage_count replaces
-    // the previous observation for a path already listed.
-    const existing = Array.isArray(data.sources)
-      ? data.sources.map((entry) => ({ ...(entry as Record<string, unknown>) }))
-      : [];
-    const byPath = new Map<string, Record<string, unknown>>(
-      existing.map((entry) => [String(entry.path ?? ''), entry]),
-    );
-    for (const entry of options.sources) {
-      const pathValue = String(entry?.path ?? '');
-      if (!pathValue) continue;
-      const known = byPath.get(pathValue);
-      if (known) {
-        if (Number.isFinite(Number(entry?.usage_count))) known.usage_count = Number(entry.usage_count);
-        continue;
-      }
-      const added: Record<string, unknown> = { path: pathValue };
-      if (Number.isFinite(Number(entry?.usage_count))) added.usage_count = Number(entry.usage_count);
-      byPath.set(pathValue, added);
-    }
-    data.sources = [...byPath.values()];
+    data.sources = mergeSources(data.sources, options.sources);
     changed = true;
   }
   if (!changed) return content;
   return matter.stringify(parsed.content, data);
+}
+
+/**
+ * Union of two `sources` lists, keyed by path: a source cited twice is listed
+ * once, and the later `usage_count` replaces the earlier observation.
+ */
+export function mergeSources(
+  existing: unknown,
+  incoming: unknown,
+): Array<Record<string, unknown>> {
+  const list = [
+    ...(Array.isArray(existing) ? existing : []),
+    ...(Array.isArray(incoming) ? incoming : []),
+  ];
+  const byPath = new Map<string, Record<string, unknown>>();
+  for (const entry of list) {
+    if (!entry || typeof entry !== 'object') continue;
+    const record = entry as Record<string, unknown>;
+    const path = String(record.path ?? '');
+    if (!path) continue;
+    const known = byPath.get(path) ?? { path };
+    if (Number.isFinite(Number(record.usage_count))) known.usage_count = Number(record.usage_count);
+    byPath.set(path, known);
+  }
+  return [...byPath.values()];
+}
+
+/**
+ * Carries the engine-owned frontmatter of an existing page onto its
+ * replacement.
+ *
+ * A leaf is rewritten whole by the model on every ingest, so the operation
+ * content starts from the model's own frontmatter and never carries what an
+ * earlier ingest accumulated. The existing file is only available here, at
+ * write time: this is what makes `sources` (and the first `generated`, the
+ * human `status`/`verified`) survive an update instead of resetting to the
+ * current source. Keys the operation sets (subject, tags, scope, kind, type,
+ * title) still win; keys only the file had are kept.
+ */
+export function carryForwardEngineFrontmatter(
+  existingContent: string,
+  nextContent: string,
+): string {
+  let existing: ReturnType<typeof matter>;
+  let next: ReturnType<typeof matter>;
+  try {
+    existing = matter(existingContent);
+    next = matter(nextContent);
+  } catch {
+    return nextContent;
+  }
+  const data: Record<string, unknown> = { ...existing.data, ...next.data };
+  // The first `generated` is the creation stamp: a fresh one never replaces it.
+  if (existing.data.generated != null) data.generated = existing.data.generated;
+  // `status` is a lifecycle decision (draft | stable | deprecated): an ingest
+  // must not downgrade a page a human set to stable back to draft.
+  if (existing.data.status != null) data.status = existing.data.status;
+  const sources = mergeSources(existing.data.sources, next.data.sources);
+  if (sources.length > 0) data.sources = sources;
+  else delete data.sources;
+  if (Array.isArray(existing.data.verified) || Array.isArray(next.data.verified)) {
+    data.verified = [
+      ...(Array.isArray(existing.data.verified) ? existing.data.verified : []),
+      ...(Array.isArray(next.data.verified) ? next.data.verified : []),
+    ];
+  }
+  return matter.stringify(next.content, data);
 }

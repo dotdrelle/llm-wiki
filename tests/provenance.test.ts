@@ -28,6 +28,14 @@ describe('subjectsAreRelated', () => {
     expect(subjectsAreRelated('pricing-model', 'security-model')).toBe(false);
   });
 
+  it('matches two compound subjects sharing a significant inner token', () => {
+    // "couts-infra" and "infra" both carry "infra": the source that filed
+    // "couts-infra" must be shown the existing "infra" leaf, or the two are
+    // ingested as two near-duplicates.
+    expect(subjectsAreRelated('couts-infra', 'infra')).toBe(true);
+    expect(subjectsAreRelated('infra-souverainete', 'infra')).toBe(true);
+  });
+
   it('does not match on a short, generic leading token', () => {
     expect(subjectsAreRelated('de-solution', 'de-tool')).toBe(false);
   });

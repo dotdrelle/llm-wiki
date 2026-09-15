@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyOkfFrontmatter,
+  carryForwardEngineFrontmatter,
   isOkfType,
   okfTypeForPath,
   OKF_TYPE_CONCEPT,
@@ -75,5 +76,81 @@ describe('isOkfType', () => {
     expect(isOkfType('random')).toBe(false);
     expect(isOkfType(undefined)).toBe(false);
     expect(isOkfType(42)).toBe(false);
+  });
+});
+
+describe('carryForwardEngineFrontmatter', () => {
+  const existing = [
+    '---',
+    'type: concept',
+    'subject: souverainete',
+    'generated:',
+    '  by: llm-wiki',
+    "  at: '2026-01-01T00:00:00.000Z'",
+    'status: stable',
+    'verified:',
+    '  - by: human:merge',
+    "    at: '2026-01-02T00:00:00.000Z'",
+    'sources:',
+    '  - path: raw/ingested/source-one.md',
+    '    usage_count: 1',
+    '---',
+    '',
+    '# Souverainete',
+    '',
+    'Ancien contenu. [src: raw/ingested/source-one.md]',
+    '',
+  ].join('\n');
+
+  const next = [
+    '---',
+    'type: concept',
+    'subject: souverainete',
+    'generated:',
+    '  by: llm-wiki',
+    "  at: '2026-06-01T00:00:00.000Z'",
+    'status: draft',
+    'sources:',
+    '  - path: raw/ingested/source-two.md',
+    '    usage_count: 4',
+    '---',
+    '',
+    '# Souverainete',
+    '',
+    'Nouveau contenu. [src: raw/ingested/source-two.md]',
+    '',
+  ].join('\n');
+
+  it('accumulates sources across an update instead of resetting them', () => {
+    const out = carryForwardEngineFrontmatter(existing, next);
+    expect(out).toContain('path: raw/ingested/source-one.md');
+    expect(out).toContain('path: raw/ingested/source-two.md');
+    expect(out).toContain('usage_count: 4');
+    // The body is the update's, never the old one.
+    expect(out).toContain('Nouveau contenu.');
+    expect(out).not.toContain('Ancien contenu.');
+  });
+
+  it('keeps the first generated stamp and a human status/verified decision', () => {
+    const out = carryForwardEngineFrontmatter(existing, next);
+    expect(out).toContain("at: '2026-01-01T00:00:00.000Z'");
+    expect(out).not.toContain("at: '2026-06-01T00:00:00.000Z'");
+    expect(out).toContain('status: stable');
+    expect(out).not.toContain('status: draft');
+    expect(out).toContain('human:merge');
+  });
+
+  it('lets the update win on content keys', () => {
+    const a = '---\ntype: concept\nsubject: old-subject\ntags: [old]\n---\n\n# X\n';
+    const b = '---\ntype: concept\nsubject: new-subject\ntags: [new]\n---\n\n# X\n';
+    const out = carryForwardEngineFrontmatter(a, b);
+    expect(out).toContain('subject: new-subject');
+    expect(out).toContain('new');
+    expect(out).not.toContain('old-subject');
+  });
+
+  it('returns the next content unchanged when there is nothing carried', () => {
+    const out = carryForwardEngineFrontmatter('not frontmatter at all', '# X\n');
+    expect(out).toBe('# X\n');
   });
 });

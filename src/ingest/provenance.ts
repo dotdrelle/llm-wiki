@@ -84,20 +84,43 @@ export function normalizeTagValue(value: string): string {
 }
 
 /**
+ * Tokens too generic to prove two subjects are the same thing. Sharing
+ * "solution" or "system" says nothing; sharing "infra" or "jedox" does.
+ */
+const SUBJECT_STOPWORDS = new Set([
+  'solution', 'solutions', 'systeme', 'systemes', 'system', 'systems',
+  'service', 'services', 'produit', 'produits', 'product', 'products',
+  'outil', 'outils', 'tool', 'tools', 'projet', 'projets', 'project', 'projects',
+  'data', 'donnees', 'gestion', 'management', 'note', 'notes',
+  'info', 'information', 'informations', 'general', 'generale', 'autre', 'autres',
+  'model', 'modele', 'models', 'modeles', 'version', 'versions',
+  'plan', 'plans', 'type', 'types', 'niveau', 'niveaux', 'phase', 'phases',
+]);
+
+/**
  * Whether two normalized subjects plausibly identify the same real-world
- * thing, judging only by their leading token ("x" / "x-solution" /
- * "x-certifications" all share "x"). This is deliberately lenient:
- * it only decides whether an existing page is worth SHOWING the model as a
- * reuse candidate during consolidation, never whether to merge anything
- * outright, so a false positive costs one ignored inventory line while a
- * false negative reproduces the concept-homonym defect it exists to catch.
+ * thing: the leading tokens match ("x" / "x-solution" / "x-certifications" all
+ * share "x"), or they share any significant token ("couts-infra" and "infra"
+ * both carry "infra"). Generic tokens are ignored, so "solution-pricing" and
+ * "solution-licence" are not related just because both say "solution".
+ *
+ * This is deliberately lenient: it only decides whether an existing page is
+ * worth SHOWING the model as a reuse candidate during consolidation, never
+ * whether to merge anything outright, so a false positive costs one ignored
+ * inventory line while a false negative reproduces the concept-homonym defect
+ * it exists to catch.
  */
 export function subjectsAreRelated(a: string, b: string): boolean {
   if (!a || !b) return false;
   if (a === b) return true;
   const rootA = a.split('-', 1)[0];
   const rootB = b.split('-', 1)[0];
-  return rootA.length > 2 && rootA === rootB;
+  if (rootA.length > 2 && rootA === rootB) return true;
+  const tokensA = a.split(/[-_]/).filter((token) => token.length >= 3 && !SUBJECT_STOPWORDS.has(token));
+  const tokensB = new Set(
+    b.split(/[-_]/).filter((token) => token.length >= 3 && !SUBJECT_STOPWORDS.has(token)),
+  );
+  return tokensA.some((token) => tokensB.has(token));
 }
 
 export function isExtractionScope(value: unknown): value is ExtractionScope {

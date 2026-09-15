@@ -152,8 +152,17 @@ export function validateConsolidation(
   let newConcepts = 0;
   let derivedAxes = 0;
 
-  for (const operation of plan.operations) {
+  for (let operation of plan.operations) {
     const at = operation.path;
+
+    // A page the plan calls "create" but that already exists is an update: it
+    // is not a new concept (keep it out of the budget), and the write path
+    // merges the existing engine frontmatter (sources, generated, status)
+    // instead of resetting it to this source alone.
+    if (operation.type === 'create' && at.startsWith(CONCEPT_PREFIX) && context.existingPaths.has(at)) {
+      warnings.push({ path: at, reason: 'planned as create but the page already exists — treated as an update' });
+      operation = { ...operation, type: 'update' };
+    }
 
     const previous = seen.get(at);
     if (previous) {
