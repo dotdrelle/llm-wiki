@@ -60,6 +60,9 @@ body.center-wiki #right-rail{padding-top:10px}
 .history-delete{display:none;background:none;border:none;color:var(--muted);cursor:pointer;border-radius:6px;padding:3px 5px;font-size:12px}
 .history-item:hover .history-delete{display:block}
 .history-delete:hover{color:var(--err);background:rgba(240,107,107,.08)}
+.history-rename{display:none;background:none;border:none;color:var(--muted);cursor:pointer;border-radius:6px;padding:3px 5px;font-size:11px}
+.history-item:hover .history-rename{display:block}
+.history-rename:hover{color:var(--accent);background:var(--accent-soft)}
 .api-block{padding:0 12px 4px;display:flex;flex-direction:column;gap:7px}
 .field label{display:block;font-size:10px;color:var(--muted);margin-bottom:4px;font-weight:600;letter-spacing:.5px}
 input,select{width:100%;background:var(--panel-soft);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:7px 10px;outline:none;transition:border-color .2s}

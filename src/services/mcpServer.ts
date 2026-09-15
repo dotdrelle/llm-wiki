@@ -88,22 +88,22 @@ export function templateHardContentViolations(content: string): string[] {
 }
 
 /**
- * `[src: ...]` markers whose target is not a wiki page.
+ * `[src: ...]` markers found in a template body.
  *
- * The authoring contract is `[src: wiki/path.md]` only: a citation is an anchor
- * the build expands into a wiki-backed reference. Citing a raw source
- * (`raw/untracked/...`) puts a volatile path into every deliverable the
- * template produces — the file is archived the moment it is ingested, and the
- * built document then carries a dead link that no refresh can repair. Reusable
- * context belongs in build-context/ (declared through the `build_context`
- * frontmatter), never in a citation.
+ * A template is instruction-only, and citing is the build model's job: the build
+ * prompt already tells it to copy the exact `[src: <path>]` from the context it
+ * was given. A marker written in the template is not inert — the model copies it
+ * into the deliverable, and a placeholder target (`[src: wiki/path.md]`) resolves
+ * to no source while often landing glued to the preceding word
+ * (`onautiques[src: ...]`), so the build cannot expand it. Reusable context
+ * belongs in build-context/ (declared through the `build_context` frontmatter),
+ * never in a citation.
  */
 export function templateCitationViolations(content: string): string[] {
   const parsed = matter(content);
   const violations = new Set<string>();
-  for (const match of parsed.content.matchAll(/\[src:\s*([^\]]+)\]/gi)) {
-    const target = String(match[1] ?? '').trim().replace(/\\/g, '/');
-    if (target && !target.startsWith('wiki/')) violations.add(target);
+  for (const match of parsed.content.matchAll(/\[\s*src\s*:\s*([^\]]*)\]/gi)) {
+    violations.add(String(match[1] ?? '').trim() || '(empty)');
   }
   return [...violations];
 }
@@ -1154,10 +1154,12 @@ const withTitles = async (
               ? {
                   citationViolations,
                   citationRule:
-                    'Citations must point at wiki pages only ([src: wiki/...]). Citing a raw ' +
-                    'source (raw/untracked/...) puts a volatile path into every built deliverable. ' +
-                    'Ingest the source into the wiki and cite the resulting page, or move reusable ' +
-                    'context into build-context/ and declare it in build_context.',
+                    'A template carries no [src: ...] marker at all. Citing is the build ' +
+                    'model\'s job: it copies the exact citation from the context it is given. ' +
+                    'A marker written here is copied verbatim into the deliverable, and a ' +
+                    'placeholder like [src: wiki/path.md] resolves to no source. Remove every ' +
+                    'citation from the template; put reusable context in build-context/ and ' +
+                    'declare it in build_context.',
                 }
               : {}),
             ...(missingBuildContext

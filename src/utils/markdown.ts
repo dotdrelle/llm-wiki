@@ -195,7 +195,13 @@ export function canonicalizeSourceCitations(content: string): string {
         .join(' '),
     )
     .replace(SOURCE_LABEL_PATTERN, (_match, path: string) => `[src: ${path.trim()}]`)
-    .replace(BARE_WORKSPACE_PATH_PATTERN, (_match, path: string) => `[src: ${path.trim()}]`);
+    .replace(BARE_WORKSPACE_PATH_PATTERN, (_match, path: string) => `[src: ${path.trim()}]`)
+    // A marker glued to the preceding word ("onautiques[src: ...]") is what the
+    // model emits when the source fragment ended on a word and it appended the
+    // citation with no separator. Detach it: a citation is a standalone token,
+    // and leaving it fused makes the rendered text unreadable and can hide the
+    // marker from tooling that scans word boundaries.
+    .replace(/([^\s\x5B])\x5Bsrc:/g, '$1 [src:');
 }
 
 /*

@@ -204,11 +204,11 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .stream-cursor::after{content:'▋';animation:blink .8s step-end infinite;color:var(--accent);margin-left:1px}
 /* Progress notes are Donna reporting on the turn in progress, not the answer:
    muted and smaller so the eye keeps separating the account from the result.
-   One feed, not one message per line: the last three entries stay visible
+   One feed, not one message per line: the last four entries stay visible
    (max-height), older ones are reached by scrolling the list. */
 .runtime-progress-feed{display:flex;gap:12px;align-items:flex-start}
 .runtime-progress-feed .feed-logo{width:30px;height:30px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:19px;line-height:1;color:var(--accent);margin-top:2px}
-.runtime-progress-feed .feed-list{max-height:calc(3 * 1.6em + 10px);overflow-y:auto;font-size:12px;line-height:1.6;color:var(--muted);padding:5px 10px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);scrollbar-width:thin}
+.runtime-progress-feed .feed-list{max-height:calc(4 * 1.6em + 10px);overflow-y:auto;font-size:12px;line-height:1.6;color:var(--muted);padding:5px 10px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);scrollbar-width:thin}
 .runtime-progress-feed .feed-entry{white-space:pre-wrap;overflow-wrap:anywhere;padding:1px 0}
 .runtime-progress-feed .feed-entry::before{content:'- ';color:var(--accent)}
 .runtime-progress-note .bubble{background:transparent;border:1px dashed var(--border);color:var(--muted);font-size:12px;padding:5px 9px}`;

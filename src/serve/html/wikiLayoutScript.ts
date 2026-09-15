@@ -104,9 +104,65 @@ function wireSidebarLaunchButtons() {
     });
   }
   markActiveSidebarLinks();
+  // What the reader has already opened, keyed by path to the token (mtime) it
+  // was read at: a page modified after that token becomes unread again. The
+  // rail badges (brain = pages from the last ingest, inbox = files waiting in
+  // Pending) count what is still unread and drop as entries are clicked.
+  const seenKey = storagePrefix + 'seen';
+  function readSeen() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(seenKey) || '{}');
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch { return {}; }
+  }
+  function markSeen(path, token) {
+    if (!path || !token) return;
+    const seen = readSeen();
+    seen[path] = Math.max(Number(seen[path]) || 0, Number(token) || 0);
+    try { localStorage.setItem(seenKey, JSON.stringify(seen)); } catch {}
+  }
+  function setViewBadge(name, count) {
+    const badge = document.querySelector('[data-view-badge="' + name + '"]');
+    if (!badge) return;
+    badge.textContent = String(count);
+    badge.hidden = count <= 0;
+  }
+  function applyUnreadBadges() {
+    const seen = readSeen();
+    const read = (path, token) => token > 0 && (Number(seen[path]) || 0) >= token;
+    let wikiUnread = 0;
+    document.querySelectorAll('.sidebar .side-tree [data-changed-at]').forEach((link) => {
+      const unread = !read(link.getAttribute('data-side-path') || '', Number(link.getAttribute('data-changed-at')) || 0);
+      link.classList.toggle('is-unread', unread);
+      if (unread) wikiUnread += 1;
+    });
+    setViewBadge('wiki', wikiUnread);
+    document.querySelectorAll('[data-changed-dir]').forEach((dot) => {
+      const dir = dot.getAttribute('data-changed-dir') || '';
+      const stillUnread = [...document.querySelectorAll('.sidebar .side-tree [data-changed-at].is-unread')]
+        .some((link) => (link.getAttribute('data-side-path') || '').startsWith(dir + '/'));
+      dot.hidden = !stillUnread;
+    });
+    let pendingUnread = 0;
+    document.querySelectorAll('[data-untracked-list] [data-pending-at]').forEach((link) => {
+      if (!read(link.getAttribute('data-side-path') || '', Number(link.getAttribute('data-pending-at')) || 0)) {
+        pendingUnread += 1;
+      }
+    });
+    setViewBadge('pending', pendingUnread);
+  }
+  applyUnreadBadges();
   document.addEventListener('click', (event) => {
     const link = event.target.closest?.('[data-side-path]');
-    if (link) saveSidebarState();
+    if (!link) return;
+    saveSidebarState();
+    const token = Number(
+      link.getAttribute('data-changed-at') || link.getAttribute('data-pending-at') || 0,
+    );
+    if (token > 0) {
+      markSeen(link.getAttribute('data-side-path') || '', token);
+      applyUnreadBadges();
+    }
   });
   // Re-read the panel from the server instead of pruning the clicked node from
   // the DOM. A delete or a move also prunes the parent folders it empties, and
@@ -151,9 +207,12 @@ function wireSidebarLaunchButtons() {
     applySideView();
     applySidebarSearch();
     armIngestPolling();
+    armDeliverablePolling();
     // The replaced markup carries the launch buttons hidden again: re-reveal
     // and re-wire them or they disappear after the first refresh.
     wireSidebarLaunchButtons();
+    applyUnreadBadges();
+    applyDeliverableFreshness();
   }
   // While an ingest is running (the sidebar carries data-active-ingest),
   // refresh the Pending list on a slow tick so the per-file markers follow
@@ -170,6 +229,47 @@ function wireSidebarLaunchButtons() {
       ingestPollTimer = null;
     }
   }
+  // Same idea as armIngestPolling, for a build/export/polish job writing a
+  // deliverable: [data-deliverable-active] sits on the row itself (inside
+  // .side-collections, which refreshSidebar's innerHTML swap does reach), so
+  // it reflects the live server state on every poll. The row goes from
+  // spinner (is-processing) to green (is-fresh) the moment the lock clears,
+  // with no separate "job finished" signal needed.
+  let deliverablePollTimer = null;
+  function armDeliverablePolling() {
+    const active = Boolean(document.querySelector('[data-deliverable-active]'));
+    if (active && !deliverablePollTimer) {
+      deliverablePollTimer = setInterval(() => {
+        void refreshSidebar().catch(() => {});
+      }, 4000);
+    } else if (!active && deliverablePollTimer) {
+      clearInterval(deliverablePollTimer);
+      deliverablePollTimer = null;
+    }
+  }
+  // A deliverable the reader has already opened stays dismissed even though
+  // the server keeps reporting it fresh for the rest of the freshness window
+  // (it has no "seen" concept of its own — plain mtime) — session-only, on
+  // purpose: reopening the page later while it is still genuinely fresh is
+  // exactly when the flag should still be there.
+  const dismissedDeliverables = new Set();
+  function applyDeliverableFreshness() {
+    document.querySelectorAll('.side-collection-panel[data-collection-panel="deliverables"] [data-deliverable-fresh]').forEach((row) => {
+      const path = row.querySelector('[data-side-path]')?.getAttribute('data-side-path');
+      if (path && dismissedDeliverables.has(path)) {
+        row.classList.remove('is-fresh');
+        row.removeAttribute('data-deliverable-fresh');
+      }
+    });
+  }
+  document.addEventListener('click', (event) => {
+    const row = event.target.closest?.('.side-file-row[data-deliverable-fresh]');
+    const link = event.target.closest?.('[data-side-path]');
+    if (!row || !link) return;
+    dismissedDeliverables.add(link.getAttribute('data-side-path') || '');
+    row.classList.remove('is-fresh');
+    row.removeAttribute('data-deliverable-fresh');
+  });
   document.addEventListener('click', async (event) => {
       const button = event.target.closest?.('[data-tree-delete]');
       if (!button) return;
@@ -720,6 +820,8 @@ function wireSidebarLaunchButtons() {
   applySideView();
   applySidebarSearch();
   armIngestPolling();
+  armDeliverablePolling();
+  applyDeliverableFreshness();
   requestAnimationFrame(() => {
     const savedScroll = Number(localStorage.getItem(scrollKey) || '0');
     if (sideTree && Number.isFinite(savedScroll)) sideTree.scrollTop = savedScroll;

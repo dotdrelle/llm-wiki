@@ -198,15 +198,16 @@ describe('chat html', () => {
     expect(script).toContain('setStreamContent(streamDiv,finalText);');
   });
 
-  it('settles a runtime answer to markdown once it stops changing, even during a long run', () => {
+  it('renders a runtime answer as markdown from its first fragment, without a raw re-display', () => {
     const script = chatScripts().join('\n');
-    // "A run is active" kept every assistant bubble as plain text, so a status
-    // answer asked during a long run showed raw markdown (tables as pipes)
-    // until the whole run ended. The bubble now self-finalizes after the text
-    // stops changing, independently of the run state.
-    expect(script).toContain('function updateMsgBubble(el,role,content,{force=false}={}) {');
-    expect(script).toContain("if(role==='assistant'&&runtimeIsRunning()&&!force) {");
-    expect(script).toContain("updateMsgBubble(el,role,el.dataset.copy||'',{force:true})");
+    // The plain-text fast path showed a status answer as raw markdown (tables
+    // as pipes) while it streamed, then visibly swapped it for HTML at the end
+    // — the re-display reported from the chat. The bubble now renders markdown
+    // on every content change.
+    expect(script).toContain('function updateMsgBubble(el,role,content) {');
+    expect(script).not.toContain('renderedPlain');
+    expect(script).not.toContain('needsFinalRender');
+    expect(script).toContain("bubble.innerHTML=role==='assistant'?renderMd(content||''):esc(content||'');");
   });
 
   it('persists clear chat to the active history entry', () => {
@@ -221,6 +222,16 @@ describe('chat html', () => {
     expect(script).toContain('let runtimeConversationOffset=null;');
     expect(script).toContain('runtimeConversationOffset=Array.isArray(runtimeState?.conversation)');
     expect(script).toContain('const visibleLength=conversation.length-runtimeConversationOffset;');
+  });
+
+  it('renames a conversation and keeps its custom title on later saves', () => {
+    const [script] = chatScripts();
+
+    expect(script).toContain('async function renameConversation(event, id) {');
+    expect(script).toContain("method:'PATCH',");
+    expect(script).toContain('class="history-rename"');
+    expect(script).toContain("title: existing?.customTitle && existing.title ? existing.title : titleFromMessages(sourceMessages),");
+    expect(script).toContain('customTitle: existing?.customTitle === true,');
   });
 
   it('renders a durable assistant error when a runtime LLM turn fails', () => {

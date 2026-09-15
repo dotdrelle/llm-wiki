@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { renderSidebar } from '../src/serve/html/wikiHtml.ts';
+import { generateIndex, renderSidebar } from '../src/serve/html/wikiHtml.ts';
 import { WIKI_LAYOUT_SCRIPT } from '../src/serve/html/wikiLayoutScript.ts';
 import { WIKI_LAYOUT_CSS } from '../src/serve/html/wikiLayoutCss.ts';
 import { WIKI_PANEL_SCRIPT } from '../src/chat/views/wikiPanelScript.ts';
@@ -325,6 +325,62 @@ describe('pending status colours', () => {
     expect(WIKI_LAYOUT_CSS).toContain('.side-untracked-item.side-untracked-new .side-untracked-link');
     expect(WIKI_LAYOUT_CSS).toContain('.side-untracked-item.side-untracked-update .side-untracked-link');
   });
+
+  it('sizes the details content box so the Pending list keeps scrolling', () => {
+    // Chrome wraps a <details>'s non-summary children in ::details-content; without
+    // an explicit flex size the list's own flex:1/min-height:0 stops constraining it
+    // and the rows are clipped instead of scrolled.
+    expect(WIKI_LAYOUT_CSS).toContain('.side-untracked[open]::details-content');
+    expect(WIKI_LAYOUT_CSS).toContain('flex: 1 1 0;');
+  });
+});
+
+describe('the rail badges clear item by item', () => {
+  it('records what was opened in the browser and recomputes both counts', () => {
+    expect(WIKI_LAYOUT_SCRIPT).toContain("storagePrefix + 'seen'");
+    expect(WIKI_LAYOUT_SCRIPT).toContain('function applyUnreadBadges()');
+    expect(WIKI_LAYOUT_SCRIPT).toContain('function setViewBadge(name, count)');
+    expect(WIKI_LAYOUT_SCRIPT).toContain('markSeen(');
+    expect(WIKI_LAYOUT_SCRIPT).toContain('applyUnreadBadges();');
+  });
+});
+
+describe('the index main sections are alphabetical', () => {
+  it('sorts concept subjects and sources by title', async () => {
+    await mkdir(path.join(root, 'wiki/concepts/offre'), { recursive: true });
+    await mkdir(path.join(root, 'wiki/sources'), { recursive: true });
+    await writeFile(path.join(root, 'wiki/concepts/offre/zeta.md'), '---\nsubject: zeta\n---\n# zeta\n', 'utf8');
+    await writeFile(path.join(root, 'wiki/concepts/offre/alpha.md'), '---\nsubject: alpha\n---\n# alpha\n', 'utf8');
+    await writeFile(path.join(root, 'wiki/sources/z-note.md'), '# z\n', 'utf8');
+    await writeFile(path.join(root, 'wiki/sources/a-note.md'), '# a\n', 'utf8');
+    await writeFile(
+      path.join(root, 'wiki/index.md'),
+      [
+        '# Index',
+        '',
+        '## Concepts',
+        '- [zeta](concepts/offre/zeta.md)',
+        '- [alpha](concepts/offre/alpha.md)',
+        '',
+        '## Sources',
+        '- [Z note](sources/z-note.md)',
+        '- [A note](sources/a-note.md)',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const html = await generateIndex(root);
+    // Scope to the aside tiles: the article restates the same links in the
+    // index body's own order.
+    const aside = html.slice(html.indexOf('index-aside'));
+
+    // Both lists were rendered in the order the index body stated them.
+    expect(aside.indexOf('tile-title">Alpha</span>')).toBeGreaterThan(-1);
+    expect(aside.indexOf('tile-title">Alpha</span>')).toBeLessThan(aside.indexOf('tile-title">Zeta</span>'));
+    expect(aside.indexOf('tile-title">A note</span>')).toBeGreaterThan(-1);
+    expect(aside.indexOf('tile-title">A note</span>')).toBeLessThan(aside.indexOf('tile-title">Z note</span>'));
+  });
 });
 
 describe('titles in the tree', () => {
@@ -354,7 +410,32 @@ describe('titles in the tree', () => {
     expect(html).toContain('>Reseau</a>');
   });
 
-  it('shows a concept folder in capitals and its subjects with a leading capital', async () => {
+  it('marks pages from the last ingest and counts them on the brain icon', async () => {
+    await mkdir(path.join(root, 'wiki/concepts/offre'), { recursive: true });
+    await writeFile(path.join(root, 'wiki/concepts/offre/alpha.md'), '---\nsubject: alpha\n---\n# alpha\n', 'utf8');
+    // A run that started before those files were written marks them; its date
+    // lives in the trace file name.
+    await mkdir(path.join(root, '.wiki/logs'), { recursive: true });
+    await writeFile(path.join(root, '.wiki/logs/ingest-2020-01-01T00-00-00-000Z-run.log'), 'trace\n', 'utf8');
+
+    const html = await renderSidebar(root);
+
+    expect(html).toContain('data-changed-at=');
+    expect(html).toContain('data-changed-dir="wiki/concepts/offre"');
+    expect(html).toContain('data-view-badge="wiki"');
+  });
+
+  it('leaves pages older than the last ingest unmarked', async () => {
+    await mkdir(path.join(root, '.wiki/logs'), { recursive: true });
+    await writeFile(path.join(root, '.wiki/logs/ingest-2099-01-01T00-00-00-000Z-run.log'), 'trace\n', 'utf8');
+
+    const html = await renderSidebar(root);
+
+    expect(html).not.toContain('data-changed-at=');
+    expect(html).toContain('<span class="side-view-badge" data-view-badge="wiki" hidden>0</span>');
+  });
+
+  it('shows a concept folder and its leaf subjects in capitals', async () => {
     await mkdir(path.join(root, 'wiki/concepts/offre-marche'), { recursive: true });
     await writeFile(path.join(root, 'wiki/concepts/offre-marche/anaplan.md'), '# anaplan platform\n', 'utf8');
     await writeFile(path.join(root, 'wiki/concepts/offre-marche/s3ns.md'), 'no heading here\n', 'utf8');
@@ -362,12 +443,29 @@ describe('titles in the tree', () => {
     const html = await renderSidebar(root);
 
     expect(html).toContain('<span class="side-folder-label">OFFRE MARCHE</span>');
-    expect(html).toContain('>Anaplan platform</a>');
-    expect(html).toContain('>S3ns</a>');
+    // The leaf reads by its subject (the filename in the folder model), never
+    // by its `#` heading, uppercased with dashes read as spaces.
+    expect(html).toContain('>ANAPLAN</a>');
+    expect(html).toContain('>S3NS</a>');
+    expect(html).not.toContain('>Anaplan platform</a>');
     // The reserved taxonomy folder takes a leading capital, not capitals.
     expect(html).toContain('<span class="side-folder-label">Concepts</span>');
     // The path is untouched.
     expect(html).toContain('data-tree-id="wiki/concepts/offre-marche"');
+  });
+
+  it('reads a concept leaf by its frontmatter subject, dashes to spaces', async () => {
+    await mkdir(path.join(root, 'wiki/concepts/offre-marche'), { recursive: true });
+    await writeFile(
+      path.join(root, 'wiki/concepts/offre-marche/jedox.md'),
+      '---\nsubject: etude-jedox-onpremise\n---\n\n# Etude Jedox on premise\n',
+      'utf8',
+    );
+
+    const html = await renderSidebar(root);
+
+    expect(html).toContain('>ETUDE JEDOX ONPREMISE</a>');
+    expect(html).not.toContain('>Etude Jedox on premise</a>');
   });
 
   it('counts the documents of each wiki section, folders included', async () => {

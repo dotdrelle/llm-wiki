@@ -175,13 +175,16 @@ describe('templateCitationViolations', () => {
     body,
   ].join('\n');
 
-  it('accepts wiki-page citations inside instructions', () => {
+  it('flags a citation marker inside an instruction', () => {
+    // The template is instruction-only: citing is the build model's job. A
+    // marker written here is copied verbatim into the deliverable, and a
+    // placeholder target resolves to no source.
     expect(templateCitationViolations(wrap([
       '# Presentation',
       '[[INSTRUCTION:',
       'Describe the purpose. [src: wiki/concepts/demo.md]',
       ']]',
-    ].join('\n')))).toEqual([]);
+    ].join('\n')))).toEqual(['wiki/concepts/demo.md']);
   });
 
   it('flags a citation pointing at a raw source file', () => {
@@ -194,7 +197,7 @@ describe('templateCitationViolations', () => {
     expect(violations).toContain('raw/untracked/976c34f6-MF_FO_MACSI_Rapport_EAS_ACPI-v0.3.md');
   });
 
-  it('flags every non-wiki target exactly once', () => {
+  it('flags every distinct target exactly once', () => {
     const violations = templateCitationViolations(wrap([
       '# Presentation',
       '[[INSTRUCTION:',

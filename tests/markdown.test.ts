@@ -42,6 +42,17 @@ describe('source citations', () => {
     ).toBe('Voir [src: wiki/a.md] et [src: wiki/b.md] [src: wiki/c.md] et [RFC 6902].');
   });
 
+  it('detaches a citation marker glued to the preceding word', () => {
+    // The model appends the marker to the last word with no separator when the
+    // source fragment ended on one; a fused citation reads as part of the word
+    // and is easy to miss.
+    expect(
+      canonicalizeSourceCitations(
+        'Les solutions électroniques[src: wiki/concepts/offre-marche/anaplan.md].',
+      ),
+    ).toBe('Les solutions électroniques [src: wiki/concepts/offre-marche/anaplan.md].');
+  });
+
   it('repairs labelled and bare-path citations into the canonical [src: path] form', () => {
     expect(
       canonicalizeSourceCitations(

@@ -131,7 +131,7 @@ function createRuntimeThinkingBubble(text='Request received · Donna is preparin
 // composed here: the browser must not synthesize an acknowledgement, and a
 // second phrasing in the browser would be a second source to keep in sync.
 // The notes share ONE feed instead of stacking one message per line: a Donna
-// logo on the left, and the last three entries visible — older ones stay
+// logo on the left, and the last four entries visible — older ones stay
 // reachable by scrolling the list up. Held outside the \`messages\` array —
 // these are not conversation history, the runtime does not persist them, and
 // a reload must not resurrect them.

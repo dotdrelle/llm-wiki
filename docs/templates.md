@@ -26,7 +26,7 @@ description: High-level summary for stakeholders
 
 ## Executive Summary
 
-[[INSTRUCTION: Produce a concise executive summary using only facts documented in the wiki. Cite claims with [src: ...].]]
+[[INSTRUCTION: Produce a concise executive summary using only facts documented in the wiki.]]
 
 ## Scope
 
@@ -43,6 +43,12 @@ The build prompt enforces these constraints:
 - cite factual claims with `[src: wiki/sources/file.md]`
 - if the wiki is missing evidence for a slot, say so explicitly
 - do not fill gaps with speculation
+
+A template body must **not** contain `[src: ...]` markers: citing is the build
+model's job, and a marker written in the template is copied verbatim into the
+deliverable (a placeholder target resolves to no source). `template_write`
+refuses a template that carries one, and reusable context belongs in
+`build-context/`, declared through the `build_context` frontmatter.
 
 ## Build context
 

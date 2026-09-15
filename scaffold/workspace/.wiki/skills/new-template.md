@@ -44,7 +44,7 @@ build_context: [build-context/rules/citations.md, build-context/rules/writing-st
 [[INSTRUCTION:
 Describe precisely what this section must contain.
 Use only the available wiki context.
-Cite every factual claim with [src: wiki/path.md].
+Ground every factual claim in that context; the build attaches the citations.
 ]]
 
 ## NEXT REQUESTED SECTION
@@ -52,7 +52,7 @@ Cite every factual claim with [src: wiki/path.md].
 [[INSTRUCTION:
 Describe precisely what this section must contain.
 Use only the available wiki context.
-Cite every factual claim with [src: wiki/path.md].
+Ground every factual claim in that context; the build attaches the citations.
 ]]
 ```
 
@@ -70,7 +70,7 @@ Every section's prompt must be encapsulated in exactly one `[[INSTRUCTION: ...]]
 
 ## Allowed syntax
 
-The only valid generation slot is `[[INSTRUCTION: ...]]`. The only valid citation marker is `[src: wiki/path.md]`. Never use `{{cite:...}}`, `{{> ...}}`, Handlebars, includes, `> Source: ...`, or another invented syntax.
+The only valid generation slot is `[[INSTRUCTION: ...]]`. Never write a citation marker (`[src: ...]`) in a template — the build model cites from the context it is given, and a marker written here is copied verbatim into the deliverable as a dead or placeholder target. Never use `{{cite:...}}`, `{{> ...}}`, Handlebars, includes, `> Source: ...`, or another invented syntax.
 
 ## Completion
 

@@ -21,6 +21,7 @@ import { WIKI_LAYOUT_SCRIPT } from './wikiLayoutScript.ts';
 import { CONFIRM_DIALOG_HTML } from '../../chat/confirmDialog.ts';
 import { removeBrokenWikiLinks } from './wikiLinkValidation.ts';
 import { readInFlightDocumentUploads } from '../routes/uploadRoutes.ts';
+import { listActiveProductionLocks } from '../../services/productionLocks.ts';
 
 export { graphEtagForFiles, listGraphFiles, escapeScriptJson };
 
@@ -152,9 +153,16 @@ async function firstHeading(rootDir: string, relativePath: string): Promise<stri
   }
 }
 
-// A `<concept>_<resume>.md` leaf: the `subject` (resume) is the display name,
-// the `title` the fallback — dashes to spaces, first letter capitalized.
-async function conceptLeafTitle(rootDir: string, relativePath: string): Promise<string | null> {
+// A concept leaf reads by its `subject` — the canonical identity the path
+// carries — not by the page's `#` heading: the concept is the folder, the
+// subject is the file. UPPERCASE with `-`/`_` read as spaces keeps every leaf
+// aligned with the folder above it. Falls back to the filename (the subject in
+// the folder model, the resume for a `<concept>_<resume>` taxo leaf), then to a
+// dash when nothing is left to show.
+async function conceptLeafSubject(rootDir: string, relativePath: string): Promise<string> {
+  const parts = toPosix(relativePath).split('/');
+  const concept = parts[2] ?? '';
+  let subject: string | null = null;
   try {
     const handle = await open(resolveInside(rootDir, relativePath), 'r');
     const buffer = Buffer.alloc(4096);
@@ -162,14 +170,16 @@ async function conceptLeafTitle(rootDir: string, relativePath: string): Promise<
     await handle.close();
     const raw = buffer.toString('utf8', 0, bytesRead);
     const frontmatter = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1];
-    const subject = frontmatter?.match(/^subject:\s*(.+)$/m)?.[1]?.trim();
-    if (subject) return capitalizeFirst(humanTitle(stripTransportId(subject)));
-    const title = frontmatter?.match(/^title:\s*(.+)$/m)?.[1]?.trim();
-    if (title) return capitalizeFirst(humanTitle(stripTransportId(title)));
-    return null;
+    const declared = frontmatter?.match(/^subject:\s*(.+)$/m)?.[1]?.trim();
+    if (declared) subject = stripTransportId(declared);
   } catch {
-    return null;
+    // Unreadable page: the filename below still names the subject.
   }
+  if (!subject) {
+    const base = path.basename(relativePath, '.md');
+    subject = concept && base.startsWith(`${concept}_`) ? base.slice(concept.length + 1) : base;
+  }
+  return humanTitle(subject).toLocaleUpperCase() || '-';
 }
 
 function deliverableKind(relativePath: string): 'build' | 'export' | 'polish' {
@@ -710,6 +720,11 @@ function renderIndexSectionBrowser(sections: TileSection[]): string {
   if (sections.length === 0) {
     return '<p class="empty">No index sections found.</p>';
   }
+  // The index is read top to bottom, so every list is alphabetical: the concept
+  // groups by group name, the subjects inside each group by subject, and the
+  // ungrouped tiles (sources, answers, …) by title.
+  const byTitle = (tiles: TileSection['tiles']): string =>
+    [...tiles].sort((a, b) => a.title.localeCompare(b.title)).map(renderTile).join('');
 
   return sections
     .map((section) => {
@@ -729,14 +744,14 @@ function renderIndexSectionBrowser(sections: TileSection[]): string {
         .sort(([a], [b]) => a.localeCompare(b))
         .map(
           ([group, tiles]) =>
-            `<details class="section-browser-group"><summary><span>${escapeHtml(group.toLocaleUpperCase())}</span><span>${tiles.length}</span></summary><div class="section-browser-tiles">${tiles.map(renderTile).join('')}</div></details>`,
+            `<details class="section-browser-group"><summary><span>${escapeHtml(group.toLocaleUpperCase())}</span><span>${tiles.length}</span></summary><div class="section-browser-tiles">${byTitle(tiles)}</div></details>`,
         )
         .join('');
       // Sections whose tiles carry no group (sources, deliverables, …) rendered
       // nothing: the <details> opened onto an empty body and the tiles were
       // unreachable. Ungrouped tiles go straight into the body.
       const ungroupedHtml = ungrouped.length
-        ? `<div class="section-browser-tiles">${ungrouped.map(renderTile).join('')}</div>`
+        ? `<div class="section-browser-tiles">${byTitle(ungrouped)}</div>`
         : '';
       const body = groupsHtml + ungroupedHtml;
       return `<details class="section-browser"><summary><span class="section-browser-summary"><span class="section-browser-title">${escapeHtml(section.heading)}</span><span class="section-browser-meta">${count} item${count === 1 ? '' : 's'}</span></span></summary>${body}</details>`;
@@ -833,11 +848,20 @@ function navNodeLabel(node: NavTreeNode, depth: number): string {
   return node.name;
 }
 
-function renderNavNode(node: NavTreeNode, depth = 0, titles: Map<string, string> | null = null): string {
+function renderNavNode(
+  node: NavTreeNode,
+  depth = 0,
+  titles: Map<string, string> | null = null,
+  changed: Map<string, number> | null = null,
+  deliverableStatus: Map<string, DeliverableRowStatus> | null = null,
+): string {
   const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name));
   const files = [...node.files].sort((a, b) => a.localeCompare(b));
+  const changedPaths = changed ?? new Map<string, number>();
+  const changedHere = (prefix: string): boolean =>
+    [...changedPaths.keys()].some((path) => path.startsWith(`${prefix}/`));
   const children = [
-    ...dirs.map((dir) => renderNavNode(dir, depth + 1, titles)),
+    ...dirs.map((dir) => renderNavNode(dir, depth + 1, titles, changed, deliverableStatus)),
     ...files.map((file) => {
       const rawTitle = titles?.get(file) ?? humanTitle(file);
       const isDeliverable = file.startsWith('deliverables/');
@@ -846,15 +870,34 @@ function renderNavNode(node: NavTreeNode, depth = 0, titles: Map<string, string>
         ? capitalizeFirst(versionTitle ?? rawTitle)
         : rawTitle;
       const safePath = escapeAttr(toPosix(file));
+      const changedAt = changedPaths.get(file);
+      const changedAttr = changedAt ? ` data-changed-at="${Math.round(changedAt)}"` : '';
       const kind = isDeliverable ? deliverableKind(file) : null;
       const kindAttr = kind ? ` data-deliverable-kind="${kind}"` : '';
       const kindIcon = kind
         ? `<span class="side-deliverable-icon" title="${DELIVERABLE_KIND_META[kind].title}">${DELIVERABLE_KIND_META[kind].icon}</span>`
         : '';
+      // A build/export/polish job holding this deliverable's lock right now
+      // gets the same in-flight spinner as a Pending conversion; one that
+      // finished writing it in the last few minutes is flagged green until
+      // the reader opens it (wikiLayoutScript.ts clears the class on click —
+      // same seen/token idea as data-changed-at above, kept separate because
+      // it means something different: a job finishing, not an ingest run).
+      const status = isDeliverable ? deliverableStatus?.get(toPosix(file)) : null;
+      const deliverableActiveAttr = status?.active ? ' data-deliverable-active="1"' : '';
+      const deliverableFreshAttr = status?.freshAt && !status.active
+        ? ` data-deliverable-fresh="${Math.round(status.freshAt)}"`
+        : '';
+      const deliverableRowClass = status?.active
+        ? ' is-processing'
+        : (status?.freshAt && !status.active ? ' is-fresh' : '');
+      const deliverableSpinner = status?.active
+        ? `<span class="side-upload-spinner" aria-hidden="true" title="A production job is writing this file"></span>`
+        : '';
       // `data-tree-*`: same attributes as Pending, hence the same handlers.
       // Without it each section would have its own set, and five copies of the
       // same drag-and-drop code to keep in sync.
-      return `<div class="side-file-row"${kindAttr} draggable="true" data-tree-drag="${safePath}" data-tree-kind="file">${kindIcon}<a class="side-file" href="/${safePath}" title="${safePath}" data-side-path="${safePath}">${escapeHtml(title)}</a><button class="side-tree-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-tree-delete="${safePath}" data-tree-kind="file">×</button></div>`;
+      return `<div class="side-file-row${deliverableRowClass}"${kindAttr}${deliverableActiveAttr}${deliverableFreshAttr} draggable="true" data-tree-drag="${safePath}" data-tree-kind="file">${deliverableSpinner}${kindIcon}<a class="side-file" href="/${safePath}" title="${safePath}" data-side-path="${safePath}"${changedAttr}>${escapeHtml(title)}</a><button class="side-tree-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-tree-delete="${safePath}" data-tree-kind="file">×</button></div>`;
     }),
   ].join('\n');
 
@@ -911,7 +954,13 @@ function renderNavNode(node: NavTreeNode, depth = 0, titles: Map<string, string>
   const sectionCount = isWikiSection
     ? `<span class="side-folder-count" title="${countNavFiles(node)} document(s)">${countNavFiles(node)}</span>`
     : '';
-  return `<div class="side-folder-row${rootClass}"><details class="side-folder"${open} data-tree-id="${safeNodePath}"${dragAttrs}${dropAttr}><summary><span class="side-folder-label">${escapeHtml(label)}</span>${sectionCount}</summary><div class="side-folder-children">${children}</div></details>${actionsHtml}</div>`;
+  // A concept whose subtree holds a page produced by the last ingest carries a
+  // dot of its own, so the change is visible without opening every folder. The
+  // browser removes it once every changed leaf under it has been read.
+  const changeDot = changedHere(node.path) && isConceptFolderPath(node.path)
+    ? `<span class="side-folder-change-dot" data-changed-dir="${safeNodePath}" title="Contains pages from the last ingest"></span>`
+    : '';
+  return `<div class="side-folder-row${rootClass}"><details class="side-folder"${open} data-tree-id="${safeNodePath}"${dragAttrs}${dropAttr}><summary><span class="side-folder-label">${escapeHtml(label)}</span>${changeDot}${sectionCount}</summary><div class="side-folder-children">${children}</div></details>${actionsHtml}</div>`;
 }
 
 // Sections whose tree is editable from the panel. Mirror of `TREE_ROOTS`
@@ -958,6 +1007,63 @@ function activeIngestPhases(rootDir: string): Map<string, 'analyze' | 'write'> {
   return phases;
 }
 
+// A build/export/polish job holds a `deliverable:<path>` lock scope for the
+// exact file it is writing (production_mcp_server.py's `_job_lock_scopes` —
+// see productionLocks.ts). Same read-only-view-of-the-agent's-own-state
+// pattern as activeIngestPhases above, just for the deliverables tab instead
+// of Pending: this is a live spinner, not a guess from timestamps.
+async function activeDeliverablePaths(rootDir: string): Promise<Set<string>> {
+  const locks = await listActiveProductionLocks(rootDir);
+  const active = new Set<string>();
+  for (const lock of locks) {
+    for (const scope of lock.scopes) {
+      if (scope.startsWith('deliverable:')) active.add(toPosix(scope.slice('deliverable:'.length)));
+    }
+  }
+  return active;
+}
+
+const DELIVERABLE_FRESH_WINDOW_MS = 3 * 60 * 1000;
+
+// A deliverable a job finished writing in the last few minutes, keyed to the
+// mtime the reader dismisses it at by opening it (see markDeliverableSeen in
+// wikiLayoutScript.ts) — mtime rather than a job record, since build, export
+// and polish all funnel through the same production job shape and this needs
+// no per-kind parsing to stay correct for any of them.
+async function recentlyUpdatedDeliverables(rootDir: string): Promise<Map<string, number>> {
+  const fresh = new Map<string, number>();
+  const files = await fg('deliverables/**/*.md', { cwd: rootDir, dot: false, onlyFiles: true });
+  const now = Date.now();
+  await Promise.all(files.map(async (file) => {
+    try {
+      const info = await stat(path.join(rootDir, file));
+      if (now - info.mtimeMs <= DELIVERABLE_FRESH_WINDOW_MS) fresh.set(toPosix(file), info.mtimeMs);
+    } catch {
+      // Deleted between the glob and the stat: nothing to flag.
+    }
+  }));
+  return fresh;
+}
+
+interface DeliverableRowStatus {
+  active: boolean;
+  freshAt?: number;
+}
+
+function buildDeliverableStatus(
+  activePaths: Set<string>,
+  freshPaths: Map<string, number>,
+): Map<string, DeliverableRowStatus> {
+  const status = new Map<string, DeliverableRowStatus>();
+  for (const path of activePaths) status.set(path, { active: true });
+  for (const [path, freshAt] of freshPaths) {
+    const existing = status.get(path);
+    if (existing) existing.freshAt = freshAt;
+    else status.set(path, { active: false, freshAt });
+  }
+  return status;
+}
+
 // Orange = the reader modified the file since wiki-sync delivered it. The
 // flag travels as .wiki/cme-sync.json, written by the CME agent (the only
 // place that knows the delivered content); the pending panel only reads it.
@@ -979,7 +1085,7 @@ async function readLocallyModifiedMarker(rootDir: string): Promise<Set<string>> 
   return locallyModified;
 }
 
-async function renderUntrackedSidebar(rootDir: string): Promise<string> {
+async function renderUntrackedSidebar(rootDir: string): Promise<{ html: string; count: number }> {
   // Four independent reads: none depends on another's result, so they run
   // concurrently instead of one after another on every Pending panel render.
   const [foundFiles, foundDirectories, wikiFiles, locallyModified, inflightUploads] = await Promise.all([
@@ -1024,6 +1130,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
   const items = count > 0
     ? (() => {
         const titles = new Map<string, string>();
+        const pendingAt = new Map<string, number>();
         const root = createNavNode('pending', '');
         const nodes = new Map<string, NavTreeNode>();
         for (const directory of directories) {
@@ -1064,6 +1171,11 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
           // Keep the filename fallback for an unreadable or malformed source.
         }
         titles.set(file, title);
+        try {
+          pendingAt.set(file, (await stat(resolveInside(rootDir, file))).mtimeMs);
+        } catch {
+          // Unreadable/vanished: the badge falls back to a constant token.
+        }
         if (locallyModified.has(stripPrefix(file))) {
           // Modified by the reader since delivery: orange wins over the
           // new/update heuristic — the decision it announces is the reader's.
@@ -1082,10 +1194,11 @@ async function renderUntrackedSidebar(rootDir: string): Promise<string> {
         } catch {
           // Unreadable wiki page: leave the source unmarked rather than guess.
         }
-      })).then(() => `${inflightRows}${renderUntrackedNode(root, titles, statuses, phases, true)}`);
+      })).then(() => `${inflightRows}${renderUntrackedNode(root, titles, statuses, phases, true, pendingAt)}`);
       })()
     : '<li class="side-untracked-empty">No pending sources.</li>';
-  return `<div class="side-folder-row side-untracked-row"><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span></summary><div class="side-untracked-formats" data-untracked-formats style="padding:.15rem .5rem .3rem;font-size:.72rem;color:var(--muted);text-align:right"></div><div class="side-untracked-list" data-untracked-list data-tree-drop="" title="Drop files here: Markdown is written as is, PDF and text are converted by the documents agent"${phases.size > 0 ? ' data-active-ingest="1"' : ''}>${await items}</div></details><div class="side-folder-actions"><button class="side-folder-action side-ingest-action" type="button" title="Ingest pending sources (Donna)" aria-label="Ingest pending sources" data-ingest-launch hidden>${ZAP_ICON}</button><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending"><span class="side-refresh-glyph">${REFRESH_ICON}</span></button><span class="side-untracked-count" data-untracked-count>${count}</span></div></div>`;
+  const html = `<div class="side-folder-row side-untracked-row"><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span></summary><div class="side-untracked-formats" data-untracked-formats style="padding:.15rem .5rem .3rem;font-size:.72rem;color:var(--muted);text-align:right"></div><div class="side-untracked-list" data-untracked-list data-tree-drop="" title="Drop files here: Markdown is written as is, PDF and text are converted by the documents agent"${phases.size > 0 ? ' data-active-ingest="1"' : ''}>${await items}</div></details><div class="side-folder-actions"><button class="side-folder-action side-ingest-action" type="button" title="Ingest pending sources (Donna)" aria-label="Ingest pending sources" data-ingest-launch hidden>${ZAP_ICON}</button><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending"><span class="side-refresh-glyph">${REFRESH_ICON}</span></button><span class="side-untracked-count" data-untracked-count>${count}</span></div></div>`;
+  return { html, count };
 }
 
 function renderUntrackedNode(
@@ -1094,11 +1207,12 @@ function renderUntrackedNode(
   statuses: Map<string, 'new' | 'update' | 'modified'>,
   phases: Map<string, 'analyze' | 'write'> = new Map(),
   root = false,
+  pendingAt: Map<string, number> = new Map(),
 ): string {
   const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name));
   const files = [...node.files].sort((a, b) => a.localeCompare(b));
   const children = [
-    ...dirs.map((dir) => renderUntrackedNode(dir, titles, statuses, phases)),
+    ...dirs.map((dir) => renderUntrackedNode(dir, titles, statuses, phases, false, pendingAt)),
     ...files.map((file) => {
       const safePath = escapeAttr(file);
       const status = statuses.get(file);
@@ -1113,7 +1227,8 @@ function renderUntrackedNode(
       const phaseMark = phase
         ? `<span class="side-ingest-phase ${phase}" aria-hidden="true" title="${phase === 'analyze' ? 'Analyse en cours' : 'Écriture en cours'}">${phase === 'analyze' ? '◌' : '✎'}</span>`
         : '';
-      return `<div class="side-untracked-item${statusClass}" draggable="true" data-tree-drag="${safePath}" data-tree-kind="file">${phaseMark}<a class="side-untracked-link" href="${escapeHref(`/${file}`)}" title="${safePath}" aria-label="${safePath}" data-side-path="${safePath}">${escapeHtml(titles.get(file) ?? humanTitle(file))}</a><button class="side-tree-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-tree-delete="${safePath}" data-tree-kind="file">×</button></div>`;
+      const pendingToken = Math.round(pendingAt.get(file) ?? 1);
+      return `<div class="side-untracked-item${statusClass}" draggable="true" data-tree-drag="${safePath}" data-tree-kind="file">${phaseMark}<a class="side-untracked-link" href="${escapeHref(`/${file}`)}" title="${safePath}" aria-label="${safePath}" data-side-path="${safePath}" data-pending-at="${pendingToken}">${escapeHtml(titles.get(file) ?? humanTitle(file))}</a><button class="side-tree-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-tree-delete="${safePath}" data-tree-kind="file">×</button></div>`;
     }),
   ].join('\n');
   // The root children live directly in [data-untracked-list], which carries the
@@ -1124,11 +1239,14 @@ function renderUntrackedNode(
 }
 
 export async function renderSidebar(rootDir: string, precomputedNavFiles?: string[]): Promise<string> {
-  const [navFiles, navDirectories, untrackedPanel] = await Promise.all([
+  const [navFiles, navDirectories, untrackedPanel, activeDeliverables, freshDeliverables] = await Promise.all([
     precomputedNavFiles ?? fg(NAV_PATTERNS, { cwd: rootDir, dot: false }),
     fg(NAV_DIRECTORY_PATTERNS, { cwd: rootDir, dot: false, onlyDirectories: true }),
     renderUntrackedSidebar(rootDir),
+    activeDeliverablePaths(rootDir),
+    recentlyUpdatedDeliverables(rootDir),
   ]);
+  const deliverableStatus = buildDeliverableStatus(activeDeliverables, freshDeliverables);
   const root = createNavNode('workspace', '');
   for (const directory of navDirectories.map(toPosix).sort()) {
     addNavDirectory(root, directory);
@@ -1136,25 +1254,21 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
   for (const file of navFiles.map(toPosix).sort()) {
     addNavPath(root, file);
   }
+  const changed = await recentIngestChanges(rootDir, navFiles.map(toPosix));
 
   const rootDirs = [...root.dirs.values()].sort((a, b) => SERVED_DIRS.indexOf(a.name) - SERVED_DIRS.indexOf(b.name));
   const wikiDir = rootDirs.find((dir) => dir.name === 'wiki');
   // In the wiki tree a page reads by its title (first `#` heading), not by
   // its filename — the path stays on the tooltip and on the graph's
-  // secondary label, so the identifier is never lost, only quieter.
+  // secondary label, so the identifier is never lost, only quieter. A concept
+  // leaf is the exception: it reads by its `subject`, uppercased.
   const wikiTitles = new Map<string, string>();
   await Promise.all(
     navFiles.map(toPosix).filter((file) => file.startsWith('wiki/')).map(async (file) => {
-      // A leaf named `<concept>_<resume>.md` repeats its folder in the filename:
-      // display its `subject` first (the resume), the `title` as a fallback —
-      // dashes to spaces, first letter capitalized. Any other page keeps its
-      // first `#` heading, the historical title rule.
       const leaf = toPosix(file).split('/');
-      const isConceptResumeLeaf = leaf.length === 4
-        && leaf[1] === 'concepts'
-        && leaf[3].startsWith(`${leaf[2]}_`);
-      const title = isConceptResumeLeaf
-        ? await conceptLeafTitle(rootDir, file)
+      const isConceptLeaf = leaf.length === 4 && leaf[1] === 'concepts';
+      const title = isConceptLeaf
+        ? await conceptLeafSubject(rootDir, file)
         : await firstHeading(rootDir, file);
       if (title) wikiTitles.set(file, title);
     }),
@@ -1164,7 +1278,7 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
   const collectionDirs = COLLECTION_DIRS
     .map((name) => rootDirs.find((dir) => dir.name === name))
     .filter((dir): dir is NonNullable<typeof dir> => Boolean(dir));
-  const wikiTree = wikiDir ? renderNavNode(wikiDir, 0, wikiTitles) : '';
+  const wikiTree = wikiDir ? renderNavNode(wikiDir, 0, wikiTitles, changed) : '';
   const collectionTabs = collectionDirs
     .map((dir, index) => {
       const label = dir.name === 'build-context' ? 'Context' : capitalizeFirst(dir.name);
@@ -1173,7 +1287,7 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
     })
     .join('');
   const collectionPanels = collectionDirs
-    .map((dir, index) => `<div class="side-collection-panel" role="tabpanel" data-collection-panel="${escapeAttr(dir.name)}"${index === 0 ? '' : ' hidden'}>${renderNavNode(dir)}</div>`)
+    .map((dir, index) => `<div class="side-collection-panel" role="tabpanel" data-collection-panel="${escapeAttr(dir.name)}"${index === 0 ? '' : ' hidden'}>${renderNavNode(dir, 0, null, null, dir.name === 'deliverables' ? deliverableStatus : null)}</div>`)
     .join('');
   const collections = collectionDirs.length
     ? `<div class="side-collections"><div class="side-collection-tabs" role="tablist" aria-label="Collections">${collectionTabs}</div><div class="side-collection-panels">${collectionPanels}</div></div>`
@@ -1201,7 +1315,13 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
   // its own section after the three views — and carries the pending count so a
   // proposal is never silently waiting.
   const proposalReviewLink = `<a class="side-view-btn side-view-review" href="/agent-proposals" title="Agent proposals — review and merge" aria-label="Agent proposals">${reviewIcon}${proposalBadge}</a>`;
-  const viewBar = `<div class="side-views"><div class="side-view-rail"><div class="side-view-tabs" role="tablist" aria-label="Sidebar views"><button class="side-view-btn" type="button" role="tab" data-side-view="wiki" title="Wiki pages" aria-label="Wiki pages">${brainIcon}</button><button class="side-view-btn" type="button" role="tab" data-side-view="files" title="Context, templates, deliverables" aria-label="Context, templates, deliverables">${fileIcon}</button><button class="side-view-btn" type="button" role="tab" data-side-view="pending" title="Pending sources" aria-label="Pending sources">${inboxIcon}</button></div>${proposalReviewLink}</div><div class="side-view-panes"><section class="side-view-pane" data-side-view-pane="wiki" role="tabpanel" aria-label="Wiki pages" hidden><nav class="side-tree" aria-label="Wiki pages">${wikiTree}</nav></section><section class="side-view-pane" data-side-view-pane="files" role="tabpanel" aria-label="Context, templates, deliverables" hidden>${collections}</section><section class="side-view-pane" data-side-view-pane="pending" role="tabpanel" aria-label="Pending sources">${untrackedPanel}</section></div></div>`;
+  // The two inboxes announce their backlog on the rail, not only once opened:
+  // the brain carries what the last ingest produced (the browser subtracts what
+  // has already been read), the inbox the files waiting in Pending.
+  const wikiBadgeCount = changed.size;
+  const wikiBadge = `<span class="side-view-badge" data-view-badge="wiki"${wikiBadgeCount > 0 ? '' : ' hidden'}>${wikiBadgeCount}</span>`;
+  const pendingBadge = `<span class="side-view-badge" data-view-badge="pending"${untrackedPanel.count > 0 ? '' : ' hidden'}>${untrackedPanel.count}</span>`;
+  const viewBar = `<div class="side-views"><div class="side-view-rail"><div class="side-view-tabs" role="tablist" aria-label="Sidebar views"><button class="side-view-btn" type="button" role="tab" data-side-view="wiki" title="Wiki pages" aria-label="Wiki pages">${brainIcon}${wikiBadge}</button><button class="side-view-btn" type="button" role="tab" data-side-view="files" title="Context, templates, deliverables" aria-label="Context, templates, deliverables">${fileIcon}</button><button class="side-view-btn" type="button" role="tab" data-side-view="pending" title="Pending sources" aria-label="Pending sources">${inboxIcon}${pendingBadge}</button></div>${proposalReviewLink}</div><div class="side-view-panes"><section class="side-view-pane" data-side-view-pane="wiki" role="tabpanel" aria-label="Wiki pages" hidden><nav class="side-tree" aria-label="Wiki pages">${wikiTree}</nav></section><section class="side-view-pane" data-side-view-pane="files" role="tabpanel" aria-label="Context, templates, deliverables" hidden>${collections}</section><section class="side-view-pane" data-side-view-pane="pending" role="tabpanel" aria-label="Pending sources">${untrackedPanel.html}</section></div></div>`;
 
   const wsSwitcher = hubPort()
     ? `<div class="ws-switcher" id="ws-switcher" data-current="${escapeAttr(workspaceNameFromEnv() ?? '')}"><p class="ws-switcher-title">Workspaces</p><p class="ws-name" style="font-size:0.8rem;color:var(--muted);padding:0 0.2rem">Loading...</p></div>`
@@ -1316,6 +1436,49 @@ async function getLastIngestTime(rootDir: string): Promise<Date | null> {
   } catch {
     return null;
   }
+}
+
+// Start of the most recent ingest run, parsed from its trace file name
+// (`ingest-<ISO stamp>-<runId>.log`). Comparing a wiki page's mtime to it is how
+// the sidebar tells "produced or modified by the last ingest" from older work,
+// without trusting `generated.at` (stamped once at creation and never refreshed
+// on an update). Returns null when no ingest has run yet.
+async function lastIngestStart(rootDir: string): Promise<number | null> {
+  const logsDir = path.join(rootDir, '.wiki', 'logs');
+  if (!(await pathExists(logsDir))) return null;
+  try {
+    const files = (await readdir(logsDir))
+      .filter((f) => f.startsWith('ingest-') && f.endsWith('.log'))
+      .sort();
+    if (files.length === 0) return null;
+    const match = /^ingest-(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z/.exec(
+      files[files.length - 1] as string,
+    );
+    if (!match) return null;
+    const parsed = Date.parse(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}.${match[7]}Z`);
+    return Number.isFinite(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+// Wiki markdown files whose mtime falls inside the last ingest run, keyed to
+// that mtime (the token the browser uses to decide "already read").
+async function recentIngestChanges(rootDir: string, wikiFiles: string[]): Promise<Map<string, number>> {
+  const changed = new Map<string, number>();
+  const start = await lastIngestStart(rootDir);
+  if (start === null) return changed;
+  await Promise.all(
+    wikiFiles.filter((file) => file.startsWith('wiki/') && file.endsWith('.md')).map(async (file) => {
+      try {
+        const info = await stat(resolveInside(rootDir, file));
+        if (info.mtimeMs >= start) changed.set(file, info.mtimeMs);
+      } catch {
+        // Vanished between the glob and the stat: nothing to announce.
+      }
+    }),
+  );
+  return changed;
 }
 
 function relativeTimeLabel(d: Date | null): string {
@@ -1638,11 +1801,21 @@ export async function serveMd(
   });
   const toc = document.createElement('nav');
   toc.className = 'doc-toc';
+  // The collapse choice belongs to the reader, not to the page: every
+  // navigation re-renders this panel from scratch, so without persisting it the
+  // TOC came back expanded on the page it was deliberately folded on.
+  const TOC_KEY = 'llm-wiki:toc:collapsed';
+  let tocCollapsed = false;
+  try { tocCollapsed = localStorage.getItem(TOC_KEY) === '1'; } catch {}
+  if (tocCollapsed) toc.classList.add('is-collapsed');
   const tocTitle = document.createElement('p');
   tocTitle.className = 'doc-toc-title';
   tocTitle.textContent = 'On this page';
   tocTitle.title = 'Collapse / expand';
-  tocTitle.addEventListener('click', function() { toc.classList.toggle('is-collapsed'); });
+  tocTitle.addEventListener('click', function() {
+    toc.classList.toggle('is-collapsed');
+    try { localStorage.setItem(TOC_KEY, toc.classList.contains('is-collapsed') ? '1' : '0'); } catch {}
+  });
   toc.appendChild(tocTitle);
   headings.forEach(function(h) {
     const link = document.createElement('a');

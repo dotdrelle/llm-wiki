@@ -13,6 +13,8 @@ type ChatHistorySummary = {
   updatedAt: string;
   messageCount: number;
   toolCallCount: number;
+  /** True once the reader renamed it: auto-titling must not overwrite that. */
+  customTitle?: boolean;
 };
 
 type ChatConversation = ChatHistorySummary & Record<string, unknown>;
@@ -44,6 +46,7 @@ function summarizeConversation(conversation: ChatConversation): ChatHistorySumma
     updatedAt: String(conversation.updatedAt || new Date().toISOString()),
     messageCount: Number(conversation.messageCount || 0),
     toolCallCount: Number(conversation.toolCallCount || 0),
+    customTitle: conversation.customTitle === true,
   };
 }
 
@@ -190,6 +193,36 @@ export async function handleChatHistoryApi(
           await readRequestBody(req),
           existing ?? ({ id } as ChatConversation),
         );
+        sendJson(res, 200, summarizeConversation(conversation));
+        return true;
+      }
+      if (req.method === 'PATCH') {
+        // Rename only. A partial PUT would reset messageCount/toolCallCount
+        // (they are derived from the body's `messages`), so the title gets its
+        // own verb that reads the stored conversation and rewrites one field.
+        const existing = await readConversation(rootDir, id);
+        if (!existing) {
+          sendJson(res, 404, { error: 'Conversation not found' });
+          return true;
+        }
+        const parsed = JSON.parse((await readRequestBody(req)) || '{}') as { title?: unknown };
+        const title = String(parsed.title ?? '').trim().slice(0, 120);
+        if (!title) {
+          sendJson(res, 400, { error: 'TITLE_REQUIRED' });
+          return true;
+        }
+        // updatedAt is deliberately untouched: renaming is metadata, not a new
+        // turn, and bumping it would jump the row to the top of the list.
+        const conversation: ChatConversation = { ...existing, title, customTitle: true };
+        await safeWriteFile(
+          chatConversationPath(rootDir, id),
+          `${JSON.stringify(conversation, null, 2)}\n`,
+        );
+        const summaries = await readChatHistoryIndex(rootDir);
+        await writeChatHistoryIndex(rootDir, [
+          summarizeConversation(conversation),
+          ...summaries.filter((item) => item.id !== id),
+        ]);
         sendJson(res, 200, summarizeConversation(conversation));
         return true;
       }

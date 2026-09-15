@@ -196,6 +196,7 @@ export const WIKI_LAYOUT_CSS = `
     .side-view-btn {
       width: 2.25rem;
       height: 2.25rem;
+      position: relative;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -214,6 +215,25 @@ export const WIKI_LAYOUT_CSS = `
       background: var(--accent-soft);
       box-shadow: inset 0 0 0 1px var(--accent);
     }
+    /* Unread backlog of a view (pages from the last ingest, files in Pending):
+       a count on the rail icon so it is visible without opening the view, and
+       cleared item by item as the reader opens them. */
+    .side-view-badge {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      min-width: 15px;
+      height: 15px;
+      border-radius: 99px;
+      background: var(--accent);
+      color: var(--panel);
+      font-size: 9px;
+      font-weight: 800;
+      line-height: 15px;
+      text-align: center;
+      padding: 0 3px;
+    }
+    .side-view-badge[hidden] { display: none; }
     .side-view-panes { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
     .side-view-pane { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
     .side-view-pane[hidden] { display: none; }
@@ -316,6 +336,18 @@ export const WIKI_LAYOUT_CSS = `
       font-weight: 700;
       line-height: 1.25rem;
     }
+    /* A concept holding a page from the last ingest: the dot announces the
+       change above the leaf that carries it, and the browser clears it once
+       every changed leaf under the folder has been read. */
+    .side-folder-change-dot {
+      flex: 0 0 auto;
+      width: 0.45rem;
+      height: 0.45rem;
+      margin-left: 0.15rem;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent);
+    }
     .side-folder-action {
       min-width: 1.45rem;
       height: 1.45rem;
@@ -370,6 +402,12 @@ export const WIKI_LAYOUT_CSS = `
       padding-left: 0.35rem;
       border-left: 1px solid var(--border);
     }
+    /* The deliverables tab is a mostly flat list of generated files: the
+       vertical guide line between a folder and its children added noise
+       without clarifying anything. The other trees keep it. */
+    .side-collection-panel[data-collection-panel="deliverables"] .side-folder-children {
+      border-left: 0;
+    }
     .side-file {
       display: block;
       min-height: 1.85rem;
@@ -399,6 +437,9 @@ export const WIKI_LAYOUT_CSS = `
     }
     .side-file.is-active { font-weight: 720; }
     .side-file.is-active::before { background: var(--accent); opacity: 1; }
+    /* A page the last ingest produced and the reader has not opened yet. */
+    .side-file.is-unread { color: var(--accent); font-weight: 720; }
+    .side-file.is-unread::before { background: var(--accent); opacity: 1; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
     /* Deliverables carry a stroke icon per production type (build / export /
        polish) instead of a colour dot: a colour is a legend to learn, a shape
        is the tool itself. The link's own dot retires on those rows so the
@@ -415,6 +456,15 @@ export const WIKI_LAYOUT_CSS = `
       color: var(--muted);
     }
     .side-deliverable-icon svg { width: 100%; height: 100%; }
+    /* A build/export/polish job writing this deliverable right now: same dim
+       + spinner language as an in-flight Pending conversion (.side-upload-spinner,
+       reused as-is below). Once the file lands, it goes green until opened —
+       distinct from is-unread's accent colour, which means "the last ingest
+       touched this", not "a job just finished writing this". */
+    .side-file-row.is-processing .side-file { color: var(--muted); }
+    .side-file-row.is-processing .side-upload-spinner { margin-right: 0.15rem; }
+    .side-file-row.is-fresh .side-file { color: #34d399; font-weight: 720; }
+    .side-file-row.is-fresh .side-deliverable-icon { color: #34d399; }
     .side-folder.is-search-hidden, .side-file.is-search-hidden { display: none; }
     /* The search filter toggles .is-search-hidden on the <details> itself
        (queried via [data-tree-id]); the actions box is a sibling outside it
@@ -437,6 +487,20 @@ export const WIKI_LAYOUT_CSS = `
     }
     .side-untracked { min-height: 0; }
     .side-untracked[open] { flex: 1 1 0; display: flex; flex-direction: column; overflow: hidden; }
+    /* Chrome 131+ wraps every non-<summary> child of <details> in the
+       ::details-content pseudo-element. It becomes the flex item of
+       .side-untracked[open], so the list's own flex:1/min-height:0 no longer
+       constrains anything and the overflowing rows are clipped by the details'
+       overflow:hidden — the Pending list stopped scrolling. Give the pseudo the
+       sizing the list used to inherit; unknown on older engines, where the rule
+       is simply dropped and the previous behavior stands. */
+    .side-untracked[open]::details-content {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 0;
+      min-height: 0;
+      overflow: hidden;
+    }
     .side-untracked-row > .side-folder-actions { top: 0; height: 2rem; }
     .side-untracked summary {
       display: flex;

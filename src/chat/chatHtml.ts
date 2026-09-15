@@ -504,29 +504,18 @@ function connectRuntimePanel() {
   },2500);
 }
 
-// Returns true when the bubble was left in the cheap plain-text streaming
-// state (still needs a markdown re-render once the run stops), false once it
-// holds the final rendered HTML.
-function updateMsgBubble(el,role,content,{force=false}={}) {
+// Renders the merged runtime entry into its bubble. The reply is markdown
+// from its first fragment: the former "plain text while a run is active, one
+// final markdown render at the end" fast path showed a status answer as raw
+// markdown (tables as pipes) for the whole stream and then visibly swapped it
+// for HTML — the re-display reported from the chat. The merge already only
+// calls this when the content actually changed, so re-parsing stays bounded
+// by the state push cadence.
+function updateMsgBubble(el,role,content) {
   el.dataset.copy=content||'';
   const bubble=el.querySelector('.bubble');
-  let renderedPlain=false;
-  if(bubble) {
-    // Cheap plain text while the answer is still growing — re-parsing markdown
-    // on every ~200ms poll is choppy. But "a run is active" is too coarse a
-    // gate: a status answer asked during a LONG run is complete and still ran
-    // as plain text, so its tables showed as raw pipes until the whole run
-    // ended. Settle the bubble to markdown 350ms after the text stops changing,
-    // independently of the run state; each new delta reschedules.
-    if(role==='assistant'&&runtimeIsRunning()&&!force) {
-      bubble.textContent=content||'';
-      renderedPlain=true;
-      clearTimeout(el._mdTimer);
-      el._mdTimer=setTimeout(()=>{el._mdTimer=null;updateMsgBubble(el,role,el.dataset.copy||'',{force:true});},350);
-    } else bubble.innerHTML=role==='assistant'?renderMd(content||''):esc(content||'');
-  }
+  if(bubble) bubble.innerHTML=role==='assistant'?renderMd(content||''):esc(content||'');
   if(content) el.classList.remove('msg-empty');
-  return renderedPlain;
 }
 
 // Merges Donna's actual replies (and any user turns not already shown, e.g.
@@ -570,12 +559,7 @@ function mergeRuntimeConversation() {
     if(i<runtimeConversationRefs.length) {
       const ref=runtimeConversationRefs[i];
       const contentChanged=ref.message.content!==content;
-      // A bubble left in the cheap plain-text streaming state (see
-      // updateMsgBubble) needs one more render once the run stops, even when
-      // this exact poll's content is unchanged from the last one — otherwise
-      // the final answer is left showing raw markdown source forever.
-      const needsFinalRender=ref.el&&ref.renderedPlain&&role==='assistant'&&!runtimeIsRunning();
-      if(contentChanged||needsFinalRender) {
+      if(contentChanged) {
         // Only the first transition from empty to non-empty content marks a
         // streaming reply actually materializing. Without the wasEmpty guard,
         // every later poll that revisits this same (already-answered) last
@@ -586,8 +570,8 @@ function mergeRuntimeConversation() {
         // Foreign entries (ShellUI / another chat) carry no element: they are
         // tracked only to keep this array 1:1 with the conversation tail.
         if(ref.el) {
-          ref.renderedPlain=updateMsgBubble(ref.el,role,content);
-          changed=changed||contentChanged;
+          updateMsgBubble(ref.el,role,content);
+          changed=true;
           if(role==='assistant'&&content&&wasEmpty&&ref.own&&armedReplyStatusEls.length) {
             clearRuntimeThinkingBubble(armedReplyStatusEls.shift());
           }
@@ -1211,7 +1195,10 @@ function buildConversationPayload(snapshot={}) {
   const existing=historySummaries.find(c=>c.id===id);
   return {
     id,
-    title: titleFromMessages(sourceMessages),
+    // A renamed conversation keeps its title: re-deriving it from the messages
+    // would silently undo the reader's choice on the next save.
+    title: existing?.customTitle && existing.title ? existing.title : titleFromMessages(sourceMessages),
+    customTitle: existing?.customTitle === true,
     createdAt: existing?.createdAt || now,
     updatedAt: now,
     agentMode: !!agentMode,
@@ -1279,6 +1266,7 @@ function renderHistory() {
         <div class="history-title">\${esc(item.title||'New conversation')}</div>
         <div class="history-meta">\${esc(historyMeta(item))}</div>
       </div>
+      <span class="history-rename" onclick="renameConversation(event,'\${esc(item.id)}')" title="Rename">✎</span>
       <span class="history-delete" onclick="deleteConversation(event,'\${esc(item.id)}')" title="Delete">×</span>
     </button>
   \`).join('');
@@ -1396,6 +1384,31 @@ async function deleteConversation(event, id) {
     await loadHistory();
   } catch(e) {
     notify(\`Deletion failed: \${e.message}\`,'e');
+  }
+}
+
+async function renameConversation(event, id) {
+  event.stopPropagation();
+  const item=historySummaries.find(c=>c.id===id);
+  const input=prompt('Rename conversation', item?.title || '');
+  if(input===null) return;
+  const title=input.trim().slice(0,120);
+  if(!title || title===(item?.title||'')) return;
+  // Drop a pending autosave before it can re-send the old auto title, and
+  // reflect the new one locally so the next save already carries customTitle.
+  if(historySaveTimer) { clearTimeout(historySaveTimer); historySaveTimer=null; }
+  if(item) { item.title=title; item.customTitle=true; renderHistory(); }
+  try {
+    const res=await fetch(\`/api/chat/history/\${encodeURIComponent(id)}\`,{
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({title}),
+    });
+    if(!res.ok) throw new Error(\`HTTP \${res.status}\`);
+    await loadHistory();
+  } catch(e) {
+    notify(\`Rename failed: \${e.message}\`,'e');
+    await loadHistory();
   }
 }
 
@@ -1915,6 +1928,14 @@ function applyChatAgentEvent(state, event) {
   }
   if(event.type==='run_done') state.status='done';
   if(event.type==='run_error') state.status='error';
+  if(event.type==='run_done'||event.type==='run_error') {
+    // A finished run may have built/exported/polished a deliverable: the wiki
+    // sidebar iframe has no signal of its own that a run just ended (it only
+    // knows to keep polling once it has already seen a job's lock, which a run
+    // that starts and finishes between two sidebar refreshes never triggers),
+    // so force one refresh here to pick up the final state either way.
+    if(typeof refreshWikiSidebar==='function') refreshWikiSidebar();
+  }
 }
 
 function upsertChatTraceStep(state, rawStep) {

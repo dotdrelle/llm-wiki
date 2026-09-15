@@ -18,12 +18,19 @@ const MAX_LINES = 800;
 // wikiPanelScript outgrew their limits, and the in-flight upload rows grew
 // wikiHtml/wikiLayoutScript/wikiLayoutCss. Ceilings record the shipped
 // reality; they still drop as the extractions land.
+// 0.15.95 note: the sidebar gained concept-subject labels, alphabetical index
+// tiles, the per-view unread badges and the last-ingest markers (wikiHtml,
+// wikiLayoutScript, wikiLayoutCss); chatHtml shrank on the markdown render
+// change but stays over its 0.15.94 ceiling. Ceilings record the reality.
+// Same window, same day: the deliverables tab gained a live job spinner and a
+// green "just written" flag (wikiHtml/wikiLayoutCss/wikiLayoutScript again),
+// and chatHtml grew one more line refreshing the wiki sidebar at run end.
 const LEGACY_LIMITS = new Map([
   ['src/commands/serve.ts', 1100],
-  ['src/serve/html/wikiHtml.ts', 1900],
-  ['src/serve/html/wikiLayoutCss.ts', 1530],
-  ['src/serve/html/wikiLayoutScript.ts', 1210],
-  ['src/chat/chatHtml.ts', 3060],
+  ['src/serve/html/wikiHtml.ts', 2058],
+  ['src/serve/html/wikiLayoutCss.ts', 1573],
+  ['src/serve/html/wikiLayoutScript.ts', 1312],
+  ['src/chat/chatHtml.ts', 3122],
   ['src/chat/styles/chatStyles.ts', 600],
   ['src/chat/runtime/activityPanelScript.ts', 900],
   ['src/chat/views/wikiPanelScript.ts', 840],

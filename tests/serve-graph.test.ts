@@ -340,6 +340,17 @@ describe('serve graph ui', () => {
     expect(source).not.toContain('padding-right:clamp(145px,26vw,240px)');
   });
 
+  it('keeps the document TOC collapsed when the reader folded it', async () => {
+    const source = await serveSource();
+
+    // Every navigation re-renders the page, so the choice has to survive in
+    // localStorage or the panel came back expanded each time.
+    expect(source).toContain("const TOC_KEY = 'llm-wiki:toc:collapsed';");
+    expect(source).toContain("tocCollapsed = localStorage.getItem(TOC_KEY) === '1';");
+    expect(source).toContain("if (tocCollapsed) toc.classList.add('is-collapsed');");
+    expect(source).toContain("localStorage.setItem(TOC_KEY, toc.classList.contains('is-collapsed') ? '1' : '0');");
+  });
+
   it('keeps long breadcrumbs and document actions on one line in the shell', async () => {
     const source = await serveSource();
 
