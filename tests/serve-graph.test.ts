@@ -447,10 +447,10 @@ describe('serve graph ui', () => {
     expect(source).toContain('.side-folder-primary {');
   });
 
-  it('collapses deliverables, templates, and build context by default', async () => {
+  it('renders the collection roots flat — they are tabs, not collapsible folders', async () => {
     const source = await serveSource();
-    expect(source).toContain("new Set(['deliverables', 'templates', 'build-context'])");
-    expect(source).toContain("depth === 0 && !collapsedByDefault.has(node.name) ? ' open' : ''");
+    expect(source).toContain('if (plainRoot && depth === 0) return');
+    expect(source).not.toContain('collapsedByDefault');
   });
 
   it('wraps long document lines and sizes table columns to content', async () => {

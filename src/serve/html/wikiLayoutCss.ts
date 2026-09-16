@@ -388,15 +388,11 @@ export const WIKI_LAYOUT_CSS = `
     .side-ingest-action[hidden],
     .side-rebuild-action[hidden] { display: none; }
     .side-folder-actions {
-      position: absolute;
-      top: 0;
-      right: 0;
-      height: 2rem;
-      display: flex;
-      align-items: center;
-      gap: 0.35rem;
-      padding-right: 0.45rem;
+      position: absolute; top: 0; right: 0; height: 2rem;
+      display: flex; align-items: center; gap: 0.35rem; padding-right: 0.45rem;
     }
+    /* A collection root is a tab already: its actions sit in normal flow above the files. */
+    .side-folder-plain > .side-folder-actions { position: static; justify-content: flex-end; }
     .side-folder-children {
       margin-left: 0.85rem;
       padding-left: 0.35rem;

@@ -851,6 +851,7 @@ function renderNavNode(
   titles: Map<string, string> | null = null,
   changed: Map<string, number> | null = null,
   deliverableStatus: Map<string, DeliverableRowStatus> | null = null,
+  plainRoot = false,
 ): string {
   const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name));
   const files = [...node.files].sort((a, b) => a.localeCompare(b));
@@ -898,8 +899,7 @@ function renderNavNode(
     }),
   ].join('\n');
 
-  const collapsedByDefault = new Set(['deliverables', 'templates', 'build-context']);
-  const open = depth === 0 && !collapsedByDefault.has(node.name) ? ' open' : '';
+  const open = depth === 0 ? ' open' : '';
   const label = navNodeLabel(node, depth);
   const createAction =
     depth === 0 && isCreatableCollection(node.name)
@@ -957,6 +957,9 @@ function renderNavNode(
   const changeDot = changedHere(node.path) && isConceptFolderPath(node.path)
     ? `<span class="side-folder-change-dot" data-changed-dir="${safeNodePath}" title="Contains pages from the last ingest"></span>`
     : '';
+  // A collection root is already a tab of the Files view: no label, no
+  // expand/collapse. Its children render directly; it stays a drop target.
+  if (plainRoot && depth === 0) return `<div class="side-folder-row side-folder-plain"${dropAttr}>${actionsHtml}<div class="side-folder-children">${children}</div></div>`;
   return `<div class="side-folder-row${rootClass}"><details class="side-folder"${open} data-tree-id="${safeNodePath}"${dragAttrs}${dropAttr}><summary><span class="side-folder-label">${escapeHtml(label)}</span>${changeDot}${sectionCount}</summary><div class="side-folder-children">${children}</div></details>${actionsHtml}</div>`;
 }
 
@@ -1284,7 +1287,7 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
     })
     .join('');
   const collectionPanels = collectionDirs
-    .map((dir, index) => `<div class="side-collection-panel" role="tabpanel" data-collection-panel="${escapeAttr(dir.name)}"${index === 0 ? '' : ' hidden'}>${renderNavNode(dir, 0, null, null, dir.name === 'deliverables' ? deliverableStatus : null)}</div>`)
+    .map((dir, index) => `<div class="side-collection-panel" role="tabpanel" data-collection-panel="${escapeAttr(dir.name)}"${index === 0 ? '' : ' hidden'}>${renderNavNode(dir, 0, null, null, dir.name === 'deliverables' ? deliverableStatus : null, true)}</div>`)
     .join('');
   const collections = collectionDirs.length
     ? `<div class="side-collections"><div class="side-collection-tabs" role="tablist" aria-label="Collections">${collectionTabs}</div><div class="side-collection-panels">${collectionPanels}</div></div>`

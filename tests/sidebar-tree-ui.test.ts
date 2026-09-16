@@ -217,16 +217,19 @@ describe('sidebar views', () => {
     expect(WIKI_LAYOUT_CSS).toContain('.side-view-review { position: relative;');
   });
 
-  it('capitalises every tab and the master node of every collection, sub-nodes with a leading capital', async () => {
+  it('capitalises every tab, and renders a collection root as a flat drop target, not a collapsible node', async () => {
     const html = await renderSidebar(root);
 
     expect(html).toContain('>Context</button>');
     expect(html).toContain('>Templates</button>');
     expect(html).toContain('>Deliverables</button>');
-    // Master node of each collection: all uppercase.
-    expect(html).toContain('>BUILD CONTEXT</span>');
-    expect(html).toContain('>TEMPLATES</span>');
-    expect(html).toContain('>DELIVERABLES</span>');
+    // A collection root is its own tab: the uppercase master node and its
+    // expand/collapse are gone, the children render directly while the root
+    // stays a drop target.
+    expect(html).toContain('side-folder-row side-folder-plain');
+    expect(html).not.toContain('>BUILD CONTEXT</span>');
+    expect(html).not.toContain('>TEMPLATES</span>');
+    expect(html).not.toContain('>DELIVERABLES</span>');
     // Its children: leading capital. The scaffold files are regles / rapport
     // / synthese.
     expect(html).toContain('>Regles</a>');
