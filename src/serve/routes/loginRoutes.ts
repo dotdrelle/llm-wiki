@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { escapeHtml } from '../../utils/html.ts';
 
 /*
  Serve-side TOTP gate. The manager runtime is the authority: serve never sees
@@ -128,14 +129,6 @@ function htmlResponse(res: ServerResponse, status: number, html: string): void {
 function redirect(res: ServerResponse, location: string): void {
   res.writeHead(302, { Location: location });
   res.end();
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 export function loginPageHtml({ error = null, tls = false }: { error?: string | null; tls?: boolean } = {}): string {

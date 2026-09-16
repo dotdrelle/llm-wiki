@@ -158,100 +158,10 @@ export class BuildService {
     );
   }
 
-  private extractFocusedQueries(text: string): string[] {
-    const queries: string[] = [];
-    const addQuery = (value: string) => {
-      const clean = value
-        .replace(/\s+/g, ' ')
-        .replace(/^[\s:;,.()[\]-]+|[\s:;,.()[\]-]+$/g, '')
-        .trim();
-      if (
-        clean.length >= 3 &&
-        clean.length <= 80 &&
-        !['INSTRUCTION'].includes(clean.toUpperCase())
-      ) {
-        queries.push(clean);
-      }
-    };
-
-    for (const line of text.split('\n')) {
-      const colonIndex = line.indexOf(':');
-      if (colonIndex < 0) continue;
-      const listedItems = line.slice(colonIndex + 1);
-      for (const item of listedItems.split(/[,;]/u)) {
-        addQuery(item);
-        for (const part of item.split('/')) {
-          addQuery(part);
-        }
-      }
-    }
-
-    for (const match of text.matchAll(/\b[\p{Lu}\d][\p{Lu}\d-]{2,}\b/gu)) {
-      addQuery(match[0]);
-    }
-
-    return [...new Set(queries)];
-  }
-
-  private buildRetrievalQueries(
-    instruction: {
-      instruction: string;
-      headingPath: string[];
-    },
-    templateFocusedQueries: string[],
-  ): string[] {
-    const baseQuery = `${instruction.headingPath.join(' ')} ${instruction.instruction}`;
-    const queries = [
-      baseQuery,
-      ...templateFocusedQueries,
-      ...this.extractFocusedQueries(instruction.instruction),
-    ];
-
-    return [...new Set(queries)];
-  }
-
   private contextLimitForQueryCount(queryCount: number): number {
     const configured = this.config.retrieval.maxContextFiles;
     if (queryCount <= 1) return configured;
     return Math.min(Math.max(configured, queryCount + 1), configured * 3, 12);
-  }
-
-  private async searchInstructionContext(instruction: {
-    instruction: string;
-    headingPath: string[];
-    templateFocusedQueries: string[];
-  }): Promise<SearchResult[]> {
-    const queries = this.buildRetrievalQueries(
-      instruction,
-      instruction.templateFocusedQueries,
-    );
-    const perQueryResults = await Promise.all(
-      queries.map((query) =>
-        this.retrieval.search(query, {
-          limit: this.config.retrieval.maxContextFiles,
-          includeRaw: false,
-          intent: 'build',
-        }),
-      ),
-    );
-    const limit = this.contextLimitForQueryCount(queries.length);
-    const byPath = new Map<string, SearchResult>();
-
-    for (let rank = 0; byPath.size < limit; rank++) {
-      let foundAtRank = false;
-      for (const results of perQueryResults) {
-        const result = results[rank];
-        if (!result) continue;
-        foundAtRank = true;
-        if (!byPath.has(result.page.relativePath)) {
-          byPath.set(result.page.relativePath, result);
-          if (byPath.size >= limit) break;
-        }
-      }
-      if (!foundAtRank) break;
-    }
-
-    return [...byPath.values()];
   }
 
   private searchContextCached(

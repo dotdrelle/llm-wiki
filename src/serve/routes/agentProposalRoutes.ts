@@ -3,18 +3,11 @@ import { execFileSync } from 'node:child_process';
 import { readFile, unlink, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { resolveInside } from '../../utils/path.ts';
+import { escapeHtml } from '../../utils/html.ts';
 import { HistoryService, commitHistorySafely } from '../../services/historyService.ts';
 import { applyOkfFrontmatter } from '../../okf/frontmatter.ts';
 import type { WorkspaceService } from '../../services/workspaceService.ts';
 import { layout } from '../html/wikiHtml.ts';
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 /**
  * The agent-curate review surface (lot 1): proposals written by the manager

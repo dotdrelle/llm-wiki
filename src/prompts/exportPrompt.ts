@@ -1,50 +1,5 @@
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
-export function buildExportPrompt(
-  deliverableContent: string,
-  sources: Array<{ path: string; content: string }>,
-  ctx: PromptContext,
-) {
-  const sourcesText = sources
-    .map((s) => `## ${s.path}\n\n${s.content.trim()}`)
-    .join('\n\n---\n\n');
-
-  return {
-    system: [
-      buildSystemPreamble(ctx),
-      'You expand a deliverable document into a fully self-contained version.',
-      'Rules:',
-      '- Use ONLY information present in the provided source pages. Do not invent.',
-      '- For each section, weave the relevant source details directly into the prose.',
-      '- Remove all [src: ...] citation markers from the output.',
-      '- Preserve the document structure and heading hierarchy. Translate heading text to the configured target language when needed.',
-      '- Write in the configured target language from the system instructions.',
-      '- Do not add new sections or headings not present in the original.',
-      '- Markdown linting rules: keep a single top-level H1, keep one blank line before and after headings, and do not output raw HTML tags.',
-      '- If sources lack enough detail to expand a section, keep the original text and append a blockquote: "> Note: insufficient source documentation to expand this section."',
-    ].join('\n'),
-    user: [
-      '# Source pages',
-      '',
-      sourcesText,
-      '',
-      '---',
-      '',
-      '# Document to expand',
-      '',
-      deliverableContent.trim(),
-      '',
-      '---',
-      '',
-      '# Task',
-      'Rewrite the document above as a fully self-contained version.',
-      'Replace every [src: ...] citation with detailed inline content from the sources.',
-      'Keep the overall structure unchanged and keep the same heading levels.',
-      'Use plain Markdown only: no raw HTML, no extra H1 headings, and blank lines around headings.',
-    ].join('\n'),
-  };
-}
-
 export interface SectionExportInput {
   headingPath: string[];
   headingText: string;

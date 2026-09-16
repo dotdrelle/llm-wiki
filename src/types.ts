@@ -337,11 +337,6 @@ export interface BuildState {
   >;
 }
 
-export interface DeliverableReplacement {
-  id: string;
-  content: string;
-}
-
 export interface DeliverableBuildResult {
   template: string;
   output: string;

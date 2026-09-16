@@ -89,10 +89,6 @@ function setRuntimeLogFilter(value) {
   else renderActivities?.();
   renderRuntimeWorkflowInspector?.();
 }
-function runtimeLogLineHTML(line) {
-  // Colorize the leading HH:MM:SS so entries are scannable.
-  return esc(line).replace(/^(\\d{2}:\\d{2}:\\d{2})/,'<span class="rt-log-time">$1</span>');
-}
 function essentialRuntimeLogEntries(logs) {
   const entries=[];
   const seen=new Set();
@@ -658,17 +654,6 @@ function uploadOutputLabel(outputPath) {
   if(index!==-1) return \`raw/untracked/\${text.slice(index+marker.length)}\`;
   return text;
 }
-function uploadMethodLabel(method) {
-  const labels={
-    'pdf-text': 'PDF text extraction',
-    'pdf-ocr': 'PDF OCR',
-    'image-ocr': 'Image OCR',
-    'docx-xml': 'DOCX text extraction',
-    'libreoffice-pdf': 'Office conversion',
-    'text': 'Text import',
-  };
-  return labels[method]||method||null;
-}
 function uploadDocumentRequest(form,onUploaded) {
   return new Promise((resolve,reject)=>{
     const xhr=new XMLHttpRequest();
@@ -717,11 +702,6 @@ async function uploadSelectedDocument(input) {
     notify(err?.message||String(err),'e');
   }
 }
-function appBack() {
-  if(history.length>1) history.back();
-  else location.assign('/');
-}
-
 function autoResize(ta) {
   ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,180)+'px';
   const val=ta.value;
@@ -1261,14 +1241,14 @@ function renderHistory() {
     return;
   }
   el.innerHTML=historySummaries.map(item=>\`
-    <button class="history-item \${item.id===currentConversationId?'active':''}" onclick="loadConversation('\${esc(item.id)}')">
-      <div class="history-main">
+    <div class="history-item \${item.id===currentConversationId?'active':''}">
+      <div class="history-main" onclick="loadConversation('\${esc(item.id)}')">
         <div class="history-title">\${esc(item.title||'New conversation')}</div>
         <div class="history-meta">\${esc(historyMeta(item))}</div>
       </div>
-      <span class="history-rename" onclick="renameConversation(event,'\${esc(item.id)}')" title="Rename">✎</span>
+      <span class="history-rename" onclick="startRenameConversation(event,'\${esc(item.id)}')" title="Rename">✎</span>
       <span class="history-delete" onclick="deleteConversation(event,'\${esc(item.id)}')" title="Delete">×</span>
-    </button>
+    </div>
   \`).join('');
 }
 
@@ -1387,17 +1367,49 @@ async function deleteConversation(event, id) {
   }
 }
 
-async function renameConversation(event, id) {
+// Rename in place: the title itself becomes an editable field. A modal prompt
+// was a second surface for one word, and it blocked on a browser dialog the
+// rest of the shell never uses. Enter commits, Escape cancels, blur commits.
+function startRenameConversation(event, id) {
   event.stopPropagation();
   const item=historySummaries.find(c=>c.id===id);
-  const input=prompt('Rename conversation', item?.title || '');
-  if(input===null) return;
-  const title=input.trim().slice(0,120);
-  if(!title || title===(item?.title||'')) return;
+  if(!item) return;
+  const row=event.currentTarget?.closest('.history-item');
+  const titleEl=row?.querySelector('.history-title');
+  if(!titleEl || titleEl.dataset.editing) return;
+  const original=item.title||'';
+  const field=document.createElement('input');
+  field.type='text';
+  field.className='history-title-input';
+  field.maxLength=120;
+  field.value=original;
+  titleEl.dataset.editing='1';
+  titleEl.replaceWith(field);
+  field.focus();
+  field.select();
+  let done=false;
+  const finish=(commit)=>{
+    if(done) return;
+    done=true;
+    const value=field.value.trim().slice(0,120);
+    if(commit && value && value!==original) renameConversation(id, value);
+    else renderHistory();
+  };
+  field.addEventListener('keydown',(e)=>{
+    if(e.key==='Enter') { e.preventDefault(); finish(true); }
+    else if(e.key==='Escape') { e.preventDefault(); finish(false); }
+  });
+  field.addEventListener('blur',()=>finish(true));
+  field.addEventListener('click',(e)=>e.stopPropagation());
+}
+
+async function renameConversation(id, title) {
+  const item=historySummaries.find(c=>c.id===id);
+  if(!item || !title || title===(item.title||'')) { renderHistory(); return; }
   // Drop a pending autosave before it can re-send the old auto title, and
   // reflect the new one locally so the next save already carries customTitle.
   if(historySaveTimer) { clearTimeout(historySaveTimer); historySaveTimer=null; }
-  if(item) { item.title=title; item.customTitle=true; renderHistory(); }
+  item.title=title; item.customTitle=true; renderHistory();
   try {
     const res=await fetch(\`/api/chat/history/\${encodeURIComponent(id)}\`,{
       method:'PATCH',
@@ -1832,21 +1844,6 @@ function runtimeChoiceHTML(text, choices=[]) {
   }).join('')}</div></div>\`;
 }
 
-function createTraceCard() {
-  const wrap=$('messages');
-  const div=document.createElement('div');
-  div.className='trace-card empty';
-  const traceId=\`trace-\${nextTraceId++}\`;
-  div.dataset.traceId=traceId;
-  const title='Agent orchestration';
-  div.innerHTML=\`<div class="trace-head" onclick="toggleTrace(this)"><div class="trace-title"><span>\${title}</span><span class="trace-meta">0 call</span></div><span class="trace-chevron">▾</span></div><div class="trace-body"><div class="trace-flow"></div><div class="trace-detail-wrap"></div></div>\`;
-  wrap.appendChild(div);
-  wrap.scrollTop=wrap.scrollHeight;
-  const trace={id:traceId,el:div,steps:[],selectedStepId:null};
-  traceRegistry.set(traceId,trace);
-  return trace;
-}
-
 function createChatAgentProjection() {
   return {chain:[],activities:{},plan:null,status:'idle',summary:null};
 }
@@ -2082,12 +2079,6 @@ function renderTrace(trace) {
     detailWrap.innerHTML=traceDetailHTML(selected);
     restoreTraceOpenDetails(detailWrap, selected?.openDetailIndexes);
   }
-}
-
-function compactTraceKeyForTool(fn, server) {
-  const name=String(fn||'');
-  if(isObserverToolName(name)) return (server?.id || server?.name || 'MCP')+':'+name;
-  return '';
 }
 
 function toggleTraceStep(traceId, stepId) {
@@ -2579,68 +2570,6 @@ function toolResultTraceSummary(result, ok) {
   return shortText(text,70);
 }
 
-function derivedTraceStepsForTool(fn, result, ok, targetId) {
-  if(!ok) return [];
-  const data=parseToolJSON(result);
-  if(fn==='wiki_collect_context' && data?.candidateResults && Array.isArray(data.candidateResults)) {
-    const coverage=data.coverage||{};
-    const pagePaths=(data.readPagePaths || (Array.isArray(data.readPages) ? data.readPages.map(p=>p.path) : [])).filter(Boolean);
-    const steps=[];
-    const readCount=coverage.readPageCount ?? pagePaths.length;
-    if(readCount>0) {
-      steps.push({
-        type:'internal',
-        kind:'Internal',
-        title:'readPages',
-        summary:\`\${readCount} page\${readCount>1?'s':''} read\`,
-        targetId,
-      });
-    }
-    const truncated=coverage.truncatedPageCount ?? 0;
-    if(truncated>0) {
-      steps.push({
-        type:'internal',
-        kind:'Coverage',
-        title:'truncated pages',
-        summary:\`\${truncated} page\${truncated>1?'s':''}\`,
-        targetId,
-        ok:false,
-      });
-    }
-    const rawCount=coverage.notReadRawSourceCount ?? (data.notReadRawSources?.length || 0);
-    if(rawCount>0) {
-      steps.push({
-        type:'internal',
-        kind:'References',
-        title:'unread raw',
-        summary:\`\${rawCount} source\${rawCount>1?'s':''}\`,
-        targetId,
-      });
-    }
-    return steps;
-  }
-  if(fn==='wiki_search_context' && data?.results && Array.isArray(data.results)) {
-    const wikiCount=data.results.filter(r=>String(r.path||'').startsWith('wiki/')).length;
-    return wikiCount ? [{
-      type:'internal',
-      kind:'Candidates',
-      title:'candidate pages',
-      summary:\`\${wikiCount} page\${wikiCount>1?'s':''}\`,
-      targetId,
-    }] : [];
-  }
-  if((fn==='wiki_read_pages' || fn==='wiki_read_page') && data?.pages && Array.isArray(data.pages)) {
-    const found=data.pages.filter(p=>p.found).length;
-    return [{
-      type:'internal',
-      kind:'Reading',
-      title:'opened pages',
-      summary:\`\${found}/\${data.pages.length} found\`,
-      targetId,
-    }];
-  }
-  return [];
-}
 
 function toggleTools(id) {
   const body=$(\`tools-body-\${id}\`), chevron=$(\`tools-chevron-\${id}\`);

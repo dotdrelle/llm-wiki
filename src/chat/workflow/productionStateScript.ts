@@ -84,18 +84,4 @@ function toolCallFunctionName(tc) {
   return String(tc?.function?.name || tc?.name || '');
 }
 
-function toolCallArgsObject(tc) {
-  try { return JSON.parse(tc?.function?.arguments || '{}'); } catch { return {}; }
-}
-
-function stableToolArgsKey(value) {
-  if(Array.isArray(value)) return '['+value.map(stableToolArgsKey).join(',')+']';
-  if(value && typeof value==='object') {
-    return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+stableToolArgsKey(value[k])).join(',')+'}';
-  }
-  return JSON.stringify(value);
-}
-
-function toolCallRepeatKey(tc) {
-  return \`\${toolCallFunctionName(tc)}:\${stableToolArgsKey(toolCallArgsObject(tc))}\`;
-}`;
+`;

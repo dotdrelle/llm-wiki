@@ -54,8 +54,9 @@ body.center-wiki #right-rail{padding-top:10px}
 .history-empty{padding:8px 4px;color:var(--muted);font-size:12px;line-height:1.4}
 .history-item{display:flex;align-items:center;gap:7px;border:1px solid transparent;border-radius:9px;padding:7px 8px;background:transparent;color:var(--text);cursor:pointer;text-align:left;transition:background .2s,border-color .2s}
 .history-item:hover,.history-item.active{background:var(--panel-soft);border-color:var(--border)}
-.history-main{min-width:0;flex:1}
+.history-main{min-width:0;flex:1;cursor:pointer}
 .history-title{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.history-title-input{width:100%;box-sizing:border-box;font-size:12px;font-weight:700;font-family:inherit;color:var(--text);background:var(--panel);border:1px solid var(--accent);border-radius:6px;padding:2px 5px;outline:none}
 .history-meta{margin-top:2px;font-size:10px;color:var(--muted);font-family:var(--font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .history-delete{display:none;background:none;border:none;color:var(--muted);cursor:pointer;border-radius:6px;padding:3px 5px;font-size:12px}
 .history-item:hover .history-delete{display:block}

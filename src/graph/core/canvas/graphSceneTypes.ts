@@ -28,11 +28,3 @@ export interface GraphSceneSnapshot {
   nodes: GraphSceneNode[];
   edges: GraphSceneEdge[];
 }
-
-export interface GraphScenePatch {
-  revision: string;
-  upsertNodes?: GraphSceneNode[];
-  removeNodeIds?: string[];
-  upsertEdges?: GraphSceneEdge[];
-  removeEdgeIds?: string[];
-}

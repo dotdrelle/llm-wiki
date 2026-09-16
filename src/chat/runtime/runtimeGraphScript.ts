@@ -72,43 +72,6 @@ function runtimeWorkflowInspectorHTML() {
 // revision, the activity spam of one task), replace them with one aggregate
 // bubble labelled "N × type". Members stay listed in the inspector; their
 // relations are rewired to the aggregate and deduped.
-function aggregateRuntimeWorkflowNodes(nodes,relations) {
-  const coreTypes=new Set(['run','task','queue','executor','output']);
-  const buckets=new Map();
-  nodes.forEach(node=>{
-    if(coreTypes.has(node.type)) return;
-    const rel=relations.find(item=>item.from===node.id||item.to===node.id);
-    if(!rel) return;
-    const anchor=rel.from===node.id?rel.to:rel.from;
-    const key=anchor+'|'+node.type+'|'+node.status;
-    if(!buckets.has(key)) buckets.set(key,[]);
-    buckets.get(key).push(node);
-  });
-  const replaced=new Map();
-  const aggregates=[];
-  for(const [key,members] of buckets){
-    if(members.length<3) continue;
-    const type=key.split('|')[1];
-    const status=key.split('|')[2];
-    const id='agg:'+key;
-    aggregates.push({id,label:members.length+' × '+type,type,status,members:members.map(member=>({id:member.id,label:member.label,status:member.status}))});
-    members.forEach(member=>replaced.set(member.id,id));
-  }
-  if(!replaced.size) return {nodes,relations};
-  const outNodes=nodes.filter(node=>!replaced.has(node.id)).concat(aggregates);
-  const seen=new Set();
-  const outRelations=[];
-  relations.forEach(rel=>{
-    const from=replaced.get(rel.from)||rel.from;
-    const to=replaced.get(rel.to)||rel.to;
-    if(from===to) return;
-    const dedupe=rel.type+'|'+from+'|'+to;
-    if(seen.has(dedupe)) return;
-    seen.add(dedupe);
-    outRelations.push({...rel,from,to});
-  });
-  return {nodes:outNodes,relations:outRelations};
-}
 function runtimeWorkflowGraphData() {
   const workflow=runtimeState?.workflow||{};
   const graph=workflow.graph||{};

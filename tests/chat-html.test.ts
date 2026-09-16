@@ -224,10 +224,14 @@ describe('chat html', () => {
     expect(script).toContain('const visibleLength=conversation.length-runtimeConversationOffset;');
   });
 
-  it('renames a conversation and keeps its custom title on later saves', () => {
+  it('renames a conversation in place and keeps its custom title on later saves', () => {
     const [script] = chatScripts();
 
-    expect(script).toContain('async function renameConversation(event, id) {');
+    // The title field itself goes into edit mode: no browser prompt.
+    expect(script).not.toContain('prompt(');
+    expect(script).toContain('function startRenameConversation(event, id) {');
+    expect(script).toContain("field.className='history-title-input';");
+    expect(script).toContain('async function renameConversation(id, title) {');
     expect(script).toContain("method:'PATCH',");
     expect(script).toContain('class="history-rename"');
     expect(script).toContain("title: existing?.customTitle && existing.title ? existing.title : titleFromMessages(sourceMessages),");
@@ -426,15 +430,19 @@ describe('chat html', () => {
     expect(panelHeader).not.toContain('act-panel-close');
   });
 
-  it('sends Activity status through Donna while displaying a concise chat prompt', () => {
+  it('shows an Activity status deterministically, with the live progress figures', () => {
     const script = chatScripts().join('\n');
-    expect(script).toContain("input.dataset.displayText=display;");
-    expect(script).toContain("input.dataset.forceChat='1';");
-    expect(script).toContain("input.dataset.hideQuestion='1';");
-    expect(script).toContain('Clearly present the status of the target');
-    expect(script).toContain("sendRuntimeAgentMessage(input,text,{mode:'chat',displayText:displayOverride||text,hideQuestion})");
-    expect(script).toContain("if(hideQuestion) userEl.classList.add('msg-hidden')");
-    expect(script).not.toContain("messages.push({role:'assistant',content:answer})");
+    // Inspect used to route the status through the model: it summarized the
+    // figures away, and a slow/down model ended on the 120s watchdog instead of
+    // a status. The runtime state is local, so it is rendered as-is.
+    expect(script).toContain('function askRuntimeStatus(target) {');
+    expect(script).toContain("appendMsg('assistant',runtimeStatusMarkdown(id));");
+    expect(script).not.toContain('Clearly present the status of the target');
+    expect(script).not.toContain('input.dataset.displayText=display;');
+    // The figures come from the same source as the Activity card.
+    expect(script).toContain('function runtimeProgressBits(progress)');
+    expect(script).toContain("bits.push(progress.instructionCount+' instruction'");
+    expect(script).toContain("'kept '+(progress.stabilizeKept??0)+', merged '+(progress.stabilizeMerged??0)");
   });
 
   it('focuses PLAN and runtime activity status requests on their selected item', () => {
@@ -442,7 +450,6 @@ describe('chat html', () => {
     expect(script).toContain("focusedPlan=plan.find(item=>matches(item,['id','step','description','label']))");
     expect(script).toContain("focusedActivity=activities.find(item=>matches(item,['id','key','label','tool']))");
     expect(script).toContain("focusedKind=focusedPlan?'Plan task':focusedActivity?'Runtime activity'");
-    expect(script).toContain('Start with this specific task or activity');
   });
 
   it('always resets the Activity panel to List when leaving Execution view for Chat', () => {
@@ -707,7 +714,9 @@ describe('chat html', () => {
   it('presents MCP calls as agent orchestration and records activities from agent contracts', () => {
     const [script] = chatScripts();
 
-    expect(script).toContain("const title='Agent orchestration';");
+    // The dead `createTraceCard` builder (unused "Agent orchestration" card)
+    // was removed; the live projection drives the trace.
+    expect(script).not.toContain("const title='Agent orchestration';");
     expect(script).not.toContain('MCP chain');
     expect(script).toContain('upsertActivity(activityFromContract(contract,{...existing,...fallback,id}));');
     const ingestSource = script.match(/function ingestMcpActivityResult\(tool,args,server,result,[\s\S]*?\n\}\nfunction scheduleActivityPoll/)?.[0] ?? '';
@@ -720,8 +729,8 @@ describe('chat html', () => {
     const [script] = chatScripts();
     const sendSource = script.match(/async function sendMessage\(\) \{[\s\S]*?\n\}\n\nasync function sendRuntimeAgentMessage/)?.[0] ?? '';
 
-    expect(script).toContain('function toolResultsFallback(toolResults)');
-    expect(script).toContain('const isProd=toolResults.every(r=>isProductionToolName(r.name));');
+    expect(script).not.toContain('function toolResultsFallback(toolResults)');
+    expect(script).not.toContain('const isProd=toolResults.every(r=>isProductionToolName(r.name));');
     expect(sendSource).toContain("const finalContent=String(content||'').trim() ? content : 'No response.';");
     expect(sendSource).not.toContain('toolResultsFallback(lastToolResults)');
     expect(sendSource).not.toContain('let lastToolResults=[];');
@@ -870,7 +879,7 @@ describe('chat html', () => {
     expect(script).toContain('if(!recover) pollProductionJob({immediate:true});');
     expect(script).toContain('poll:!recover && !productionTerminal(data.job?.status)');
     expect(script).toContain('function isProductionToolName(name)');
-    expect(script).toContain('function shouldStopAfterProductionTools(toolCalls)');
+    expect(script).not.toContain('function shouldStopAfterProductionTools(toolCalls)');
     expect(script).toContain("'production_start_job'");
     expect(script).toContain("'production_job_status'");
     expect(script).not.toContain('function chatLanguageIsFrench()');

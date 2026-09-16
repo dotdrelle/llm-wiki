@@ -80,7 +80,6 @@ function pageContextFileName(path) {
   const decoded=decodeWikiPath(path);
   return decoded.split('/').filter(Boolean).pop()||decoded;
 }
-function openWikiPageForChat() { return validPageContext(currentWikiPath()); }
 function addPageContext(path) {
   const value=validPageContext(path);
   if(!value) return;

@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { safeWriteFile } from '../utils/fs.ts';
+import { hashText as fullHash } from '../utils/hash.ts';
 
 /*
  Cache of extraction and consolidation calls.
@@ -41,8 +41,10 @@ export type ConsolidationCacheKey = {
   schemaVersion: number;
 };
 
-export function hashText(value: string): string {
-  return createHash('sha256').update(value, 'utf8').digest('hex').slice(0, 32);
+// 32 hex chars: enough for a cache filename. The SHA-256 wrapper itself lives
+// in `utils/hash.ts` — one implementation, not two.
+function hashText(value: string): string {
+  return fullHash(value).slice(0, 32);
 }
 
 function keyToName(prefix: string, parts: Array<string | number>): string {

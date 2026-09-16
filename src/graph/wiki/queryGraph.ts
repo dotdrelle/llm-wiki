@@ -37,12 +37,6 @@ export interface QueryGraphNode {
   tags: string[];
 }
 
-export interface QueryGraphEdge {
-  from: string;
-  to: string;
-  type: QueryEdgeType;
-}
-
 export interface QueryGraph {
   nodes: QueryGraphNode[];
   nodeById: Map<string, QueryGraphNode>;

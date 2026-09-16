@@ -1,4 +1,4 @@
-import type { DeliverableReplacement, TemplateInstruction } from '../types.ts';
+import type { TemplateInstruction } from '../types.ts';
 
 export interface MarkdownChunk {
   headingPath: string[];
@@ -274,22 +274,6 @@ export function parseTemplateInstructions(content: string): TemplateInstruction[
   }
 
   return instructions;
-}
-
-export function replaceInstructions(
-  content: string,
-  replacements: DeliverableReplacement[],
-): string {
-  let nextContent = content;
-
-  for (const replacement of replacements) {
-    nextContent = nextContent.replace(
-      new RegExp(`\\[\\[INSTRUCTION:\\s*[\\s\\S]*?\\]\\]`),
-      replacement.content.trim(),
-    );
-  }
-
-  return nextContent;
 }
 
 export function sanitizeFrontmatter(

@@ -82,7 +82,7 @@ describe('runtime waiting bubble', () => {
     // screen indefinitely whenever a turn published no assistant message.
     // The cause was fixed on the runtime side; this is the safety net.
     assert.match(CHAT_SCRIPT, /const RUNTIME_THINKING_TIMEOUT_MS=\d+/);
-    assert.match(CHAT_SCRIPT, /No response received from the runtime after/);
+    assert.match(CHAT_SCRIPT, /No response from the runtime after/);
   });
 
   it('cancels its timer wherever it disappears', () => {

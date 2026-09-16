@@ -13,6 +13,7 @@ import {
 } from '../services/mcpServer.ts';
 import { pruneWindowTimestamps } from '../services/rateLimiter.ts';
 import { resolveInside } from '../utils/path.ts';
+import { escapeHtml } from '../utils/html.ts';
 
 interface McpHttpOptions {
   host?: string;
@@ -184,23 +185,6 @@ function reject(res: ServerResponse, status: number, message: string): void {
     'Content-Type': 'application/json; charset=utf-8',
   });
   res.end(JSON.stringify({ error: message }));
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => {
-    switch (char) {
-      case '&':
-        return '&amp;';
-      case '<':
-        return '&lt;';
-      case '>':
-        return '&gt;';
-      case '"':
-        return '&quot;';
-      default:
-        return '&#39;';
-    }
-  });
 }
 
 function wantsHtml(req: IncomingMessage): boolean {

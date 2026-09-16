@@ -68,16 +68,6 @@ export type WikiGraphProjectionDeps = {
   renderMarkdown: (raw: string, currentDir?: string) => Promise<string>;
 };
 
-/** DAG mode column order for the wiki projection — feeds GraphRenderDeps.dagColumnOrder. */
-export const WIKI_GRAPH_DAG_COLUMN_ORDER: WikiGraphNodeType[] = [
-  'raw-source',
-  'template',
-  'build-context',
-  'wiki-source',
-  'wiki',
-  'deliverable',
-];
-
 /** Relation panel labels for the wiki projection — feeds GraphRenderDeps.relationLabels. */
 export const WIKI_GRAPH_RELATION_LABELS: Record<WikiGraphRelationType, string> = {
   links_to: 'links to',
@@ -136,10 +126,6 @@ export async function wikiGraphEtagForFiles(rootDir: string, files: string[]): P
     // A workspace without build state has no inferred build relations.
   }
   return hash.digest('hex');
-}
-
-export async function wikiGraphEtag(rootDir: string): Promise<string> {
-  return wikiGraphEtagForFiles(rootDir, await listWikiGraphFiles(rootDir));
 }
 
 export async function buildWikiGraph(

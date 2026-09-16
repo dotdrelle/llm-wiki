@@ -61,21 +61,6 @@ function removeStreamBubble(div) {
   div.remove();
 }
 
-function keepOrReplaceStatusBubble(currentDiv, text, statusDiv) {
-  const value=String(text||'').trim();
-  if(!value) {
-    removeStreamBubble(currentDiv);
-    return statusDiv || null;
-  }
-  if(statusDiv && statusDiv!==currentDiv && statusDiv.isConnected) {
-    setStreamContent(statusDiv,value);
-    removeStreamBubble(currentDiv);
-    return statusDiv;
-  }
-  setStreamContent(currentDiv,value);
-  return currentDiv;
-}
-
 function publishAssistantOutput(content, statusDiv, opts={}) {
   if(statusDiv && statusDiv.isConnected) {
     setStreamContent(statusDiv,content,'',opts);
@@ -120,7 +105,10 @@ function createRuntimeThinkingBubble(text='Request received · Donna is preparin
     pendingRuntimeStatusEls=pendingRuntimeStatusEls.filter(el=>el!==div);
     armedReplyStatusEls=armedReplyStatusEls.filter(el=>el!==div);
     div.remove();
-    appendMsg('assistant','No response received from the runtime after '+Math.round(RUNTIME_THINKING_TIMEOUT_MS/1000)+'s. Check the Execution panel, or resend.');
+    // Report the runtime state we already hold instead of a dead-end notice: a
+    // bare "no response" never said what the run was doing or what was queued.
+    const snapshot=runtimeState?runtimeStatusMarkdown('current run'):'No runtime snapshot has been received yet; the runtime may not be connected.';
+    appendMsg('assistant',\`No response from the runtime after \${Math.round(RUNTIME_THINKING_TIMEOUT_MS/1000)}s. Current runtime state:\n\n\${snapshot}\`);
   };
   div._runtimeTimeout=setTimeout(div._runtimeTimeoutFn,RUNTIME_THINKING_TIMEOUT_MS);
   return div;
@@ -760,6 +748,22 @@ function syncActivityViewTabs() {
 function copyText(text) {
   navigator.clipboard?.writeText(text).then(()=>notify('Copied')).catch(()=>notify(text));
 }
+// The figures the Activity card shows, on one line: percent, plan step, build
+// batch, instruction count and the stabilize counters. A status that only said
+// "current step: X" could not tell 5% from 95%, nor what the batch was doing.
+function runtimeProgressBits(progress) {
+  if(!progress||typeof progress!=='object') return [];
+  const bits=[];
+  if(Number.isFinite(Number(progress.percent))) bits.push(Number(progress.percent)+'%');
+  if(progress.stepIndex!=null&&progress.stepTotal!=null) bits.push('step '+progress.stepIndex+'/'+progress.stepTotal);
+  if(progress.batchIndex!=null&&progress.batchCount!=null) bits.push('batch '+(Number(progress.batchIndex)+1)+'/'+progress.batchCount);
+  if(progress.instructionCount!=null) bits.push(progress.instructionCount+' instruction'+(Number(progress.instructionCount)>1?'s':''));
+  const stabilize=[progress.stabilizeKept,progress.stabilizeMerged,progress.stabilizeInserted,progress.stabilizeRemoved];
+  if(stabilize.some(value=>value!=null)) bits.push('kept '+(progress.stabilizeKept??0)+', merged '+(progress.stabilizeMerged??0)+', inserted '+(progress.stabilizeInserted??0)+', removed '+(progress.stabilizeRemoved??0));
+  if(progress.currentStep) bits.push(String(progress.currentStep));
+  return bits;
+}
+const runtimeActivityStatusLine=(label,activity)=>{const p=activity?.progress||{};const bits=runtimeProgressBits(p).filter(bit=>bit!==String(p.detail||''));return \`- \${label}: \${[activity?.status||'-',bits.join(' · '),p.detail,activity?.error].filter(Boolean).join(' · ')}\`;};
 function runtimeStatusMarkdown(target) {
   const id=String(target||'current run').trim()||'current run';
   if(!runtimeState) return \`No runtime state available for \${id}.\`;
@@ -786,6 +790,10 @@ function runtimeStatusMarkdown(target) {
     const queueLines=queue.filter(item=>!runId||String(item.runId??'')===runId||String(item.id??'').startsWith(runId)).slice(0,8)
       .map((item,index)=>line(item.id||item.jobId||\`Queue \${index+1}\`, \`\${item.status||'waiting'} - \${item.label||item.tool||item.type||'task'}\`));
     const logs=filteredRuntimeLogs(runtimeState.logs);
+    // The live batch figures the Activity card shows, so a status is not a bare step name.
+    const liveActivities=(Array.isArray(runtimeState.activities)?runtimeState.activities:[]).filter(activity=>!activity.terminal);
+    const activityLines=liveActivities.slice(0,8).map((activity,index)=>runtimeActivityStatusLine(activity.label||activity.id||\`Activity \${index+1}\`,activity));
+    const progressBits=runtimeProgressBits(liveActivities.find(activity=>activity.progress)?.progress).join(' · ');
     return [
       \`Runtime status for \${id}\`,
       '',
@@ -793,9 +801,11 @@ function runtimeStatusMarkdown(target) {
       line('Workspace',runNode.workspace||'-'),
       line('Started',runNode.startedAt||'-'),
       line('Connection',runtimeConnected?'connected':'disconnected'),
+      progressBits?line('Progress',progressBits):null,
       '',
       taskLines.length?['Tasks',...taskLines].join('\\n'):'Tasks\\n- No task visible.',
       waiting,
+      activityLines.length?['','Activity',...activityLines].join('\\n'):'',
       '',
       queueLines.length?['Queue',...queueLines].join('\\n'):'Queue\\n- No pending items.',
       logs.length?['','Recent logs',...logs.map(log=>\`- \${log}\`)].join('\\n'):'',
@@ -812,9 +822,9 @@ function runtimeStatusMarkdown(target) {
   const focusedQueue=queue.find(item=>matches(item,['id','jobId','label','tool']));
   const focused=focusedPlan||focusedActivity||focusedQueue||null;
   const focusedKind=focusedPlan?'Plan task':focusedActivity?'Runtime activity':focusedQueue?'Queue item':null;
-  const focusLines=focused?[focusedKind,line('Target',id),line('Status',focused.status),line('Label',focused.description||focused.label||focused.tool||focused.id),line('Progress',focused.progress?.detail||focused.progress?.step||focused.progress?.percent),line('Error',focused.error)].join('\\n'):line('Requested target',id+' (no exact structured match)');
+  const focusLines=focused?[focusedKind,line('Target',id),line('Status',focused.status),line('Label',focused.description||focused.label||focused.tool||focused.id),line('Progress',runtimeProgressBits(focused.progress).join(' · ')||focused.progress?.detail||focused.progress?.step||focused.progress?.percent),line('Error',focused.error)].join('\\n'):line('Requested target',id+' (no exact structured match)');
   const planLines=plan.slice(0,8).map((step,index)=>line(\`Plan \${step.step||index+1}\`,\`\${step.status||'pending'} - \${step.description||step.label||step.id||'step'}\`));
-  const activityLines=activities.slice(0,8).map((activity,index)=>line(activity.id||activity.key||\`Activity \${index+1}\`,\`\${activity.status||'-'} - \${activity.label||activity.tool||activity.source||'runtime'}\`));
+  const activityLines=activities.slice(0,8).map((activity,index)=>runtimeActivityStatusLine(activity.label||activity.id||activity.key||\`Activity \${index+1}\`,activity));
   const queueLines=queue.slice(0,8).map((item,index)=>line(item.id||item.jobId||\`Queue \${index+1}\`,\`\${item.status||'waiting'} - \${item.label||item.tool||item.type||'task'}\`));
   return [
     \`Runtime status for \${id}\`,
@@ -834,17 +844,11 @@ function runtimeStatusMarkdown(target) {
 }
 function askRuntimeStatus(target) {
   const id=String(target||'current run').trim()||'current run';
-  const display=\`Status of \${id}\`;
-  const raw=runtimeStatusMarkdown(id);
-  const prompt=\`Clearly present the status of the target « \${id} » to the user. Start with this specific task or activity, then give only the useful global context: progress, dependencies, blockers, pending items and the next recommended action. Do not confuse the target with the other tasks and do not reproduce the raw logs unless they explain a problem.\n\n\${raw}\`;
+  // Deterministic: routing this through the model summarized the figures away,
+  // and a slow/down model ended on the 120s watchdog instead of a status. State
+  // is local, so show it as-is — a status must not depend on an LLM call.
   showChatView();
-  const input=$('chat-input');
-  if(!input||isStreaming) return;
-  input.value=prompt;
-  input.dataset.displayText=display;
-  input.dataset.forceChat='1';
-  input.dataset.hideQuestion='1';
-  sendMessage();
+  appendMsg('assistant',runtimeStatusMarkdown(id));
 }
 async function retryConvert(uploadId, actId) {
   upsertActivity({id:actId,status:'running',phase:'conversion',error:null,outputPath:null,startedAt:Date.now()});
