@@ -105,10 +105,9 @@ function createRuntimeThinkingBubble(text='Request received · Donna is preparin
     pendingRuntimeStatusEls=pendingRuntimeStatusEls.filter(el=>el!==div);
     armedReplyStatusEls=armedReplyStatusEls.filter(el=>el!==div);
     div.remove();
-    // Report the runtime state we already hold instead of a dead-end notice: a
-    // bare "no response" never said what the run was doing or what was queued.
-    const snapshot=runtimeState?runtimeStatusMarkdown('current run'):'No runtime snapshot has been received yet; the runtime may not be connected.';
-    appendMsg('assistant',\`No response from the runtime after \${Math.round(RUNTIME_THINKING_TIMEOUT_MS/1000)}s. Current runtime state:\n\n\${snapshot}\`);
+    // A failure notice, not a status: it must not push a raw system dump into
+    // the thread (the next turn reaches Donna when the runtime answers again).
+    appendMsg('assistant',\`No response from the runtime after \${Math.round(RUNTIME_THINKING_TIMEOUT_MS/1000)}s. The run may still be progressing — check the Execution panel, or resend.\`);
   };
   div._runtimeTimeout=setTimeout(div._runtimeTimeoutFn,RUNTIME_THINKING_TIMEOUT_MS);
   return div;
@@ -748,107 +747,20 @@ function syncActivityViewTabs() {
 function copyText(text) {
   navigator.clipboard?.writeText(text).then(()=>notify('Copied')).catch(()=>notify(text));
 }
-// The figures the Activity card shows, on one line: percent, plan step, build
-// batch, instruction count and the stabilize counters. A status that only said
-// "current step: X" could not tell 5% from 95%, nor what the batch was doing.
-function runtimeProgressBits(progress) {
-  if(!progress||typeof progress!=='object') return [];
-  const bits=[];
-  if(Number.isFinite(Number(progress.percent))) bits.push(Number(progress.percent)+'%');
-  if(progress.stepIndex!=null&&progress.stepTotal!=null) bits.push('step '+progress.stepIndex+'/'+progress.stepTotal);
-  if(progress.batchIndex!=null&&progress.batchCount!=null) bits.push('batch '+(Number(progress.batchIndex)+1)+'/'+progress.batchCount);
-  if(progress.instructionCount!=null) bits.push(progress.instructionCount+' instruction'+(Number(progress.instructionCount)>1?'s':''));
-  const stabilize=[progress.stabilizeKept,progress.stabilizeMerged,progress.stabilizeInserted,progress.stabilizeRemoved];
-  if(stabilize.some(value=>value!=null)) bits.push('kept '+(progress.stabilizeKept??0)+', merged '+(progress.stabilizeMerged??0)+', inserted '+(progress.stabilizeInserted??0)+', removed '+(progress.stabilizeRemoved??0));
-  if(progress.currentStep) bits.push(String(progress.currentStep));
-  return bits;
-}
-const runtimeActivityStatusLine=(label,activity)=>{const p=activity?.progress||{};const bits=runtimeProgressBits(p).filter(bit=>bit!==String(p.detail||''));return \`- \${label}: \${[activity?.status||'-',bits.join(' · '),p.detail,activity?.error].filter(Boolean).join(' · ')}\`;};
-function runtimeStatusMarkdown(target) {
-  const id=String(target||'current run').trim()||'current run';
-  if(!runtimeState) return \`No runtime state available for \${id}.\`;
-  const workflow=runtimeState.workflow||{};
-  const nodes=Array.isArray(workflow.nodes)?workflow.nodes:[];
-  // A run target reads from the canonical workflow projection, scoped to that
-  // run. Reading the raw plan+activities instead mixed every historical
-  // "Ingest complete" activity into the report — the summary then announced a
-  // finished ingest and running analyses in the same breath.
-  const runNode=nodes.find(node=>node.type==='run'&&(
-    id==='current run'
-      ? node.status==='running'
-      : node.runId===id||node.id===id||node.id===\`run:\${id}\`
-  ));
-  if(runNode){
-    const runId=String(runNode.runId||'');
-    const line=(label,value)=>\`- \${label}: \${value||'-'}\`;
-    const taskNodes=nodes.filter(node=>node.type==='task'&&String(node.id||'').startsWith(\`task:\${runId}:\`));
-    const taskLines=taskNodes.map((node,index)=>line(\`Task \${node.step||index+1}\`, \`\${node.status||'pending'} - \${node.label||node.description||node.id}\`));
-    const waiting=Array.isArray(workflow.waitingReasons)&&workflow.waitingReasons.length
-      ? ['','Waiting on',...workflow.waitingReasons.map(reason=>\`- \${typeof reason==='string'?reason:(reason.label||reason.reason||'pending')}\`)].join('\\n')
-      : '';
-    const queue=Array.isArray(runtimeState.queue)?runtimeState.queue:[];
-    const queueLines=queue.filter(item=>!runId||String(item.runId??'')===runId||String(item.id??'').startsWith(runId)).slice(0,8)
-      .map((item,index)=>line(item.id||item.jobId||\`Queue \${index+1}\`, \`\${item.status||'waiting'} - \${item.label||item.tool||item.type||'task'}\`));
-    const logs=filteredRuntimeLogs(runtimeState.logs);
-    // The live batch figures the Activity card shows, so a status is not a bare step name.
-    const liveActivities=(Array.isArray(runtimeState.activities)?runtimeState.activities:[]).filter(activity=>!activity.terminal);
-    const activityLines=liveActivities.slice(0,8).map((activity,index)=>runtimeActivityStatusLine(activity.label||activity.id||\`Activity \${index+1}\`,activity));
-    const progressBits=runtimeProgressBits(liveActivities.find(activity=>activity.progress)?.progress).join(' · ');
-    return [
-      \`Runtime status for \${id}\`,
-      '',
-      line('Run',runNode.status||'idle'),
-      line('Workspace',runNode.workspace||'-'),
-      line('Started',runNode.startedAt||'-'),
-      line('Connection',runtimeConnected?'connected':'disconnected'),
-      progressBits?line('Progress',progressBits):null,
-      '',
-      taskLines.length?['Tasks',...taskLines].join('\\n'):'Tasks\\n- No task visible.',
-      waiting,
-      activityLines.length?['','Activity',...activityLines].join('\\n'):'',
-      '',
-      queueLines.length?['Queue',...queueLines].join('\\n'):'Queue\\n- No pending items.',
-      logs.length?['','Recent logs',...logs.map(log=>\`- \${log}\`)].join('\\n'):'',
-    ].filter(Boolean).join('\\n');
-  }
-  const plan=Array.isArray(runtimeState.plan)?runtimeState.plan:[];
-  const activities=Array.isArray(runtimeState.activities)?runtimeState.activities:[];
-  const queue=Array.isArray(runtimeState.queue)?runtimeState.queue:[];
-  const logs=filteredRuntimeLogs(runtimeState.logs);
-  const line=(label,value)=>\`- \${label}: \${value||'-'}\`;
-  const matches=(item,fields)=>fields.some(field=>String(item?.[field]||'')===id);
-  const focusedPlan=plan.find(item=>matches(item,['id','step','description','label']));
-  const focusedActivity=activities.find(item=>matches(item,['id','key','label','tool']));
-  const focusedQueue=queue.find(item=>matches(item,['id','jobId','label','tool']));
-  const focused=focusedPlan||focusedActivity||focusedQueue||null;
-  const focusedKind=focusedPlan?'Plan task':focusedActivity?'Runtime activity':focusedQueue?'Queue item':null;
-  const focusLines=focused?[focusedKind,line('Target',id),line('Status',focused.status),line('Label',focused.description||focused.label||focused.tool||focused.id),line('Progress',runtimeProgressBits(focused.progress).join(' · ')||focused.progress?.detail||focused.progress?.step||focused.progress?.percent),line('Error',focused.error)].join('\\n'):line('Requested target',id+' (no exact structured match)');
-  const planLines=plan.slice(0,8).map((step,index)=>line(\`Plan \${step.step||index+1}\`,\`\${step.status||'pending'} - \${step.description||step.label||step.id||'step'}\`));
-  const activityLines=activities.slice(0,8).map((activity,index)=>runtimeActivityStatusLine(activity.label||activity.id||activity.key||\`Activity \${index+1}\`,activity));
-  const queueLines=queue.slice(0,8).map((item,index)=>line(item.id||item.jobId||\`Queue \${index+1}\`,\`\${item.status||'waiting'} - \${item.label||item.tool||item.type||'task'}\`));
-  return [
-    \`Runtime status for \${id}\`,
-    '',
-    line('Runtime',runtimeState.status||'idle'),
-    line('Connection',runtimeConnected?'connected':'disconnected'),
-    '',
-    focusLines,
-    '',
-    planLines.length?['Plan',...planLines].join('\\n'):'Plan\\n- No plan visible.',
-    '',
-    activityLines.length?['Activities',...activityLines].join('\\n'):'Activities\\n- No runtime activity visible.',
-    '',
-    queueLines.length?['Queue',...queueLines].join('\\n'):'Queue\\n- No pending items.',
-    logs.length?['','Recent logs',...logs.map(log=>\`- \${log}\`)].join('\\n'):'',
-  ].filter(Boolean).join('\\n');
-}
 function askRuntimeStatus(target) {
   const id=String(target||'current run').trim()||'current run';
-  // Deterministic: routing this through the model summarized the figures away,
-  // and a slow/down model ended on the 120s watchdog instead of a status. State
-  // is local, so show it as-is — a status must not depend on an LLM call.
+  // System facts never reach the thread as raw text: this reaches Donna as a
+  // status question. The runtime collects the figures and hands them to her,
+  // and she synthesizes the answer in the session language (.wikirc). The
+  // question names a run so the runtime's status detection recognizes it.
   showChatView();
-  appendMsg('assistant',runtimeStatusMarkdown(id));
+  const input=$('chat-input');
+  if(!input||isStreaming) return;
+  input.value=\`Status of run \${id}.\`;
+  input.dataset.displayText=\`Status of \${id}\`;
+  input.dataset.forceChat='1';
+  input.dataset.hideQuestion='1';
+  sendMessage();
 }
 async function retryConvert(uploadId, actId) {
   upsertActivity({id:actId,status:'running',phase:'conversion',error:null,outputPath:null,startedAt:Date.now()});

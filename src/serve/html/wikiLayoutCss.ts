@@ -377,7 +377,6 @@ export const WIKI_LAYOUT_CSS = `
     .side-folder-action-icon svg { width: 0.95rem; height: 0.95rem; display: block; }
     .side-ingest-action svg,
     .side-rebuild-action svg { width: 0.95rem; height: 0.95rem; display: block; }
-    .side-refresh-action { font-size: 0.82rem; font-weight: 800; }
     /* Solid accent fill: the "agent/LLM-launched action" marker of this
        sidebar, applied to the Donna-routed ingest button and the wiki row's
        archive rebuild button. */
@@ -1137,6 +1136,11 @@ export const WIKI_LAYOUT_CSS = `
       color: var(--accent);
       background: var(--accent-soft);
     }
+    /* A template's name is edited here, inline (templates/[name].md): renaming rides the same Save. */
+    .edit-name { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0; min-width: 0; }
+    .edit-name-dir, .edit-name-ext { color: var(--muted); }
+    .edit-name-input { width: auto; min-width: 8ch; max-width: 34ch; padding: 0.12rem 0.35rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-soft); color: var(--text); font: inherit; }
+    .edit-name-input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
     .edit-textarea {
       width: 100%;
       min-height: min(66vh, 760px);

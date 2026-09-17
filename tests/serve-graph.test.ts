@@ -388,21 +388,27 @@ describe('serve graph ui', () => {
     expect(source).not.toContain("const PKEY = 'llm-wiki:sidebar:pendingHeight';");
   });
 
-  it('offers explicit refresh actions for Wiki and Pending', async () => {
+  it('offers one explicit refresh action, which also reloads Pending', async () => {
     const source = await serveSource();
     expect(source).toContain('title="Refresh sidebar"');
-    expect(source).toContain('title="Refresh Pending"');
+    // The Pending panel no longer carries its own ↻: refreshSidebar() replaces
+    // [data-untracked-list]/[data-untracked-count] too, so the single sidebar
+    // refresh already covers it — a second button was the same gesture twice.
+    expect(source).not.toContain('title="Refresh Pending"');
+    expect(source).not.toContain('data-sidebar-refresh="pending"');
     expect(source).toContain('data-sidebar-refresh="wiki"');
-    expect(source).toContain('data-sidebar-refresh="pending"');
     expect(source).not.toContain('data-sidebar-refresh="wiki" onclick=');
-    expect(source).not.toContain('data-sidebar-refresh="pending" onclick=');
     expect(source).toContain("fetch('/embed/sidebar', { cache: 'no-store' })");
     expect(source).not.toContain('window.location.reload();');
+    // refreshSidebar() pulls the whole sidebar: the pending list and its count
+    // travel with it.
+    expect(source).toContain("['[data-untracked-list]', 'innerHTML']");
+    expect(source).toContain("['[data-untracked-count]', 'textContent']");
     /*
-     Les deux boutons rechargent l'arbre ENTIER. Le ↻ du Wiki ne remplaçait que
-     les enfants de [data-tree-id="wiki"], donc un fichier créé dans templates/,
-     deliverables/ ou build-context/ n'apparaissait jamais et le bouton passait
-     pour mort. Aucune branche par section ne doit revenir.
+     Le ↻ recharge l'arbre ENTIER. Il ne remplaçait que les enfants de
+     [data-tree-id="wiki"], donc un fichier créé dans templates/, deliverables/
+     ou build-context/ n'apparaissait jamais et le bouton passait pour mort.
+     Aucune branche par section ne doit revenir.
     */
     expect(source).not.toContain("if (target === 'pending')");
     expect(source).not.toContain("if (target === 'wiki')");
@@ -412,6 +418,16 @@ describe('serve graph ui', () => {
     // ré-initialisation, l'ouverture des dossiers cessait d'être mémorisée
     // après le premier rafraîchissement.
     expect(source).toContain("document.querySelectorAll('[data-tree-id]').forEach(initializeFolder);");
+  });
+
+  it('deletes concepts without a confirmation, unlike other pages', async () => {
+    const source = await serveSource();
+    // A concept folder/leaf is re-filed from raw/ingested, and a pending source
+    // already deletes silently: the concept tree follows the same rule. The
+    // section root (wiki/concepts) is not a concept and stays guarded.
+    expect(source).toContain("const isConcept = relativePath.startsWith('wiki/concepts/');");
+    expect(source).toContain('if (!isConcept) {');
+    expect(source).toContain("const mustAsk = kind === 'folder' || citing === null || citing.length > 0;");
   });
 
   it('offers a Donna ingest button on Pending, hidden until embedded in the shell', async () => {
@@ -622,7 +638,11 @@ describe('serve command palette', () => {
     expect(source).toContain('.edit-file-state');
     expect(source).toContain('function fileStateLabel');
     expect(source).toContain("label: `${isNew ? 'new' : 'updated'} ${relativeTimeLabel(updatedAt)}`");
-    expect(source).toContain('<span class="edit-path-label"><span>${escapeHtml(cleanRelativePath)}</span>${fileStateHtml}</span>');
+    // The template name is an editable field of the edit panel, not a topbar
+    // prompt; other pages keep the plain path label.
+    expect(source).toContain('const pathLabel = cleanRelativePath.startsWith(\'templates/\')');
+    expect(source).toContain('<span class="edit-path-label">${pathLabel}</span>');
+    expect(source).toContain('name="name"');
   });
 });
 
@@ -676,9 +696,14 @@ describe('serve missing feature endpoints', () => {
     const chatSource = await chatRoutesSource();
     const wikiSource = await wikiRoutesSource();
 
-    expect(source).toContain('function renameHref(relativePath: string)');
-    expect(wikiSource).toContain("urlPath.startsWith('/rename/')");
-    expect(source).toContain('async function renameTemplate()');
+    // The template name is edited inline in the edit panel; the same Save
+    // renames. The old topbar prompt/button is gone.
+    expect(source).toContain('name="name"');
+    expect(source).toContain('renameTemplateDocument');
+    expect(wikiSource).toContain('urlPath.startsWith(\'/rename/\')');
+    expect(wikiSource).toContain('renameTemplateDocument(rootDir, savedRelative, body)');
+    expect(source).not.toContain('async function renameTemplate()');
+    expect(source).not.toContain('function renameHref(relativePath: string)');
     expect(configSource).toContain("urlPath !== '/api/llm-config'");
     expect(chatSource).toContain("req.headers['x-llm-wiki-llm-base-url']");
   });

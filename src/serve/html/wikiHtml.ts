@@ -292,33 +292,6 @@ function isCreatableCollection(collection: string): boolean {
   return collection === 'templates' || collection === 'build-context';
 }
 
-function templateRenameScript(relativePath: string): string {
-  return `<script>
-async function renameTemplate() {
-  const currentName = ${JSON.stringify(path.basename(relativePath, '.md'))};
-  const nextName = prompt('New template name', currentName);
-  if (!nextName) return;
-  const res = await fetch(${JSON.stringify(renameHref(relativePath))}, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: nextName })
-  });
-  if (!res.ok) {
-    await notifyAction({ title: 'Rename failed', message: 'The page could not be renamed.', danger: true });
-    return;
-  }
-  const payload = await res.json();
-  // Embedded in the chat shell: the sidebar lives in its own iframe and does
-  // not reload with this page — tell the shell to refresh it, otherwise the
-  // renamed template stays listed under its old name in the left panel.
-  if (window.self !== window.top) {
-    window.parent.postMessage({ type: 'llmwiki:refresh-sidebar' }, window.location.origin);
-  }
-  window.location.href = '/' + payload.path;
-}
-</script>`;
-}
-
 function slugifyMarkdownTitle(value: string): string {
   const slug = value
     .normalize('NFD')
@@ -772,10 +745,6 @@ function deleteHref(relativePath: string): string {
   return `/delete/${relativePath}`;
 }
 
-function renameHref(relativePath: string): string {
-  return `/rename/${relativePath}`;
-}
-
 interface NavTreeNode {
   name: string;
   path: string;
@@ -1197,7 +1166,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<{ html: string; 
       })).then(() => `${inflightRows}${renderUntrackedNode(root, titles, statuses, phases, true, pendingAt)}`);
       })()
     : '<li class="side-untracked-empty">No pending sources.</li>';
-  const html = `<div class="side-folder-row side-untracked-row"><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span></summary><div class="side-untracked-formats" data-untracked-formats style="padding:.15rem .5rem .3rem;font-size:.72rem;color:var(--muted);text-align:right"></div><div class="side-untracked-list" data-untracked-list data-tree-drop="" title="Drop files here: Markdown is written as is, PDF and text are converted by the documents agent"${phases.size > 0 ? ' data-active-ingest="1"' : ''}>${await items}</div></details><div class="side-folder-actions"><button class="side-folder-action side-ingest-action" type="button" title="Ingest pending sources (Donna)" aria-label="Ingest pending sources" data-ingest-launch hidden>${ZAP_ICON}</button><button class="side-folder-action side-refresh-action" type="button" title="Refresh Pending" aria-label="Refresh Pending" data-sidebar-refresh="pending"><span class="side-refresh-glyph">${REFRESH_ICON}</span></button><span class="side-untracked-count" data-untracked-count>${count}</span></div></div>`;
+  const html = `<div class="side-folder-row side-untracked-row"><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span></summary><div class="side-untracked-formats" data-untracked-formats style="padding:.15rem .5rem .3rem;font-size:.72rem;color:var(--muted);text-align:right"></div><div class="side-untracked-list" data-untracked-list data-tree-drop="" title="Drop files here: Markdown is written as is, PDF and text are converted by the documents agent"${phases.size > 0 ? ' data-active-ingest="1"' : ''}>${await items}</div></details><div class="side-folder-actions"><button class="side-folder-action side-ingest-action" type="button" title="Ingest pending sources (Donna)" aria-label="Ingest pending sources" data-ingest-launch hidden>${ZAP_ICON}</button><span class="side-untracked-count" data-untracked-count>${count}</span></div></div>`;
   return { html, count };
 }
 
@@ -1750,9 +1719,6 @@ export async function serveMd(
     relativePath.endsWith('.md') && (relativePath.startsWith('wiki/') || relativePath.startsWith('raw/untracked/'))
       ? `<button class="action-button action-donna" type="button" data-chat-context="${escapeAttr(`/${relativePath}`)}" hidden title="Add to Donna" aria-label="Add to Donna"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 19.8 7.5v9L12 21l-7.8-4.5v-9Z"/></svg></button>`
       : '';
-  const renameBtn = relativePath.startsWith('templates/')
-    ? `<button class="action-button" type="button" onclick="renameTemplate()">Rename</button>`
-    : '';
   // Hidden by default: only the chat shell can build (the action runs through
   // Donna), so WIKI_LAYOUT_SCRIPT reveals it inside the shell's central iframe.
   const buildTemplateBtn = relativePath.startsWith('templates/') && relativePath.endsWith('.md')
@@ -1780,7 +1746,6 @@ export async function serveMd(
     deliverBtn,
     reformatBtn,
     exportMenu,
-    renameBtn,
     isEditableRelativePath(relativePath)
       ? `<a class="action-link" href="${escapeHref(editHref(relativePath))}">Edit</a>`
       : '',
@@ -1855,7 +1820,7 @@ export async function serveMd(
 </script>`;
   return layout(
     title,
-    `${sidebar}<main class="content">${renderTopbar(urlPath, actions)}${stabilizeBadge}<article class="article">${html}</article>${tocScript}${renameBtn ? templateRenameScript(relativePath) : ''}</main>`,
+    `${sidebar}<main class="content">${renderTopbar(urlPath, actions)}${stabilizeBadge}<article class="article">${html}</article>${tocScript}</main>`,
   );
 }
 
@@ -1960,7 +1925,13 @@ export async function generateEditPage(rootDir: string, relativePath: string): P
   const cancelHref = `/${cleanRelativePath}`;
   const fileState = fileStateLabel(fileInfo);
   const fileStateHtml = `<span class="edit-file-state ${fileState.state === 'new' ? 'is-new' : ''}" title="${escapeAttr(fileState.title)}">${escapeHtml(fileState.label)}</span>`;
-  const body = `${sidebar}<main class="content"><form class="edit-form" method="post" action="${escapeHref(editHref(cleanRelativePath))}"><div class="hero"><span class="edit-path-label"><span>${escapeHtml(cleanRelativePath)}</span>${fileStateHtml}</span><div class="page-actions"><button class="action-button" type="submit">Save</button><a class="action-link" href="${escapeHref(cancelHref)}">Cancel</a></div></div><textarea class="edit-textarea" name="content" spellcheck="false">${escapeHtml(raw)}</textarea></form></main>`;
+  // A template is renamed HERE, in the panel where it is edited — its name is
+  // just another field of the same Save. The old topbar "Rename" button opened
+  // a browser prompt on a page that could not even change the body.
+  const pathLabel = cleanRelativePath.startsWith('templates/')
+    ? `<span class="edit-name"><span class="edit-name-dir">${escapeHtml(path.posix.dirname(cleanRelativePath))}/</span><input class="edit-name-input" name="name" type="text" value="${escapeAttr(path.basename(cleanRelativePath, '.md'))}" maxlength="120" autocomplete="off" spellcheck="false" aria-label="Template name"><span class="edit-name-ext">.md</span></span>${fileStateHtml}`
+    : `<span>${escapeHtml(cleanRelativePath)}</span>${fileStateHtml}`;
+  const body = `${sidebar}<main class="content"><form class="edit-form" method="post" action="${escapeHref(editHref(cleanRelativePath))}"><div class="hero"><span class="edit-path-label">${pathLabel}</span><div class="page-actions"><button class="action-button" type="submit">Save</button><a class="action-link" href="${escapeHref(cancelHref)}">Cancel</a></div></div><textarea class="edit-textarea" name="content" spellcheck="false">${escapeHtml(raw)}</textarea></form></main>`;
   return layout(`Edit ${path.basename(cleanRelativePath)}`, body);
 }
 
@@ -2035,6 +2006,9 @@ export async function renameTemplateDocument(
     throw new Error('RENAME_SOURCE_NOT_FOUND');
   }
   const targetRelativePath = toPosix(path.posix.join(path.posix.dirname(cleanRelativePath), fileName));
+  // The edit panel always submits the current name: an unchanged name is not a
+  // rename, so it must not trip the "target exists" guard below.
+  if (targetRelativePath === cleanRelativePath) return cleanRelativePath;
   if (!targetRelativePath.startsWith('templates/') || !targetRelativePath.endsWith('.md')) {
     throw new Error('FORBIDDEN_RENAME_TARGET');
   }

@@ -430,26 +430,20 @@ describe('chat html', () => {
     expect(panelHeader).not.toContain('act-panel-close');
   });
 
-  it('shows an Activity status deterministically, with the live progress figures', () => {
+  it('sends an Activity status to Donna instead of dumping raw system text', () => {
     const script = chatScripts().join('\n');
-    // Inspect used to route the status through the model: it summarized the
-    // figures away, and a slow/down model ended on the 120s watchdog instead of
-    // a status. The runtime state is local, so it is rendered as-is.
+    // System facts never reach the thread as raw text: Inspect asks Donna a
+    // scoped status question, the runtime supplies the facts and she
+    // synthesizes them in the session language. The runtime renders its own
+    // fact block server-side.
     expect(script).toContain('function askRuntimeStatus(target) {');
-    expect(script).toContain("appendMsg('assistant',runtimeStatusMarkdown(id));");
-    expect(script).not.toContain('Clearly present the status of the target');
-    expect(script).not.toContain('input.dataset.displayText=display;');
-    // The figures come from the same source as the Activity card.
-    expect(script).toContain('function runtimeProgressBits(progress)');
-    expect(script).toContain("bits.push(progress.instructionCount+' instruction'");
-    expect(script).toContain("'kept '+(progress.stabilizeKept??0)+', merged '+(progress.stabilizeMerged??0)");
-  });
-
-  it('focuses PLAN and runtime activity status requests on their selected item', () => {
-    const script = chatScripts().join('\n');
-    expect(script).toContain("focusedPlan=plan.find(item=>matches(item,['id','step','description','label']))");
-    expect(script).toContain("focusedActivity=activities.find(item=>matches(item,['id','key','label','tool']))");
-    expect(script).toContain("focusedKind=focusedPlan?'Plan task':focusedActivity?'Runtime activity'");
+    expect(script).toContain('input.value=`Status of run ${id}.`;');
+    expect(script).toContain('input.dataset.forceChat=\'1\';');
+    expect(script).toContain('input.dataset.hideQuestion=\'1\';');
+    // The local raw status renderer is gone: the runtime renders the facts
+    // server-side and Donna phrases them.
+    expect(script).not.toContain("appendMsg('assistant',runtimeStatusMarkdown(id));");
+    expect(script).not.toContain('function runtimeStatusMarkdown(target)');
   });
 
   it('always resets the Activity panel to List when leaving Execution view for Chat', () => {

@@ -396,7 +396,6 @@ loadHistory();
 
     if (req.method === 'POST') {
       try {
-        const absolute = resolveEditableMarkdown(rootDir, relative);
         const body = await deps.readRequestBody(req);
         const params = new URLSearchParams(body);
         const content = params.get('content');
@@ -405,9 +404,16 @@ loadHistory();
           res.end('Missing content field');
           return true;
         }
+        // A template is renamed in the edit panel itself, so the name rides the
+        // same Save: rename first (a no-op when unchanged), then write the body
+        // to the resulting path.
+        let savedRelative = toPosix(relative);
+        const requestedName = params.get('name');
+        if (requestedName !== null && requestedName.trim()) {
+          savedRelative = await renameTemplateDocument(rootDir, savedRelative, body);
+        }
         // Manual edits must round-trip exactly; generated Markdown is normalized elsewhere.
-        await writeIfChanged(absolute, content);
-        const savedRelative = toPosix(relative);
+        await writeIfChanged(resolveEditableMarkdown(rootDir, savedRelative), content);
         const redirectAfterSave = isRawUntrackedReference(savedRelative)
           ? escapeHref(`/edit/${savedRelative}`)
           : escapeHref(`/${savedRelative}`);

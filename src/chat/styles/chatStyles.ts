@@ -43,6 +43,13 @@ body.center-wiki #right-rail{padding-top:10px}
 .sb-scroll{flex:1;min-height:0;display:grid;grid-template-rows:minmax(96px,var(--history-pane-height,38%)) 10px minmax(180px,1fr);overflow:hidden}
 .sb-pane{min-height:0;overflow-y:auto;padding-bottom:12px}
 .sb-pane.history-pane{padding-bottom:8px}
+/* The connector/config stack hangs off the bottom of the window: its first
+   child pushes the whole block down, so the last field (Model) stays glued to
+   the bottom edge instead of floating mid-pane with dead space below it. When
+   the content is taller than the pane the auto margin collapses to 0 and the
+   pane scrolls as before. */
+.sb-pane.config-pane{display:flex;flex-direction:column}
+.config-pane > .sec-label:first-child{margin-top:auto}
 .sb-resizer{height:10px;cursor:row-resize;display:flex;align-items:center;justify-content:center;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--panel);touch-action:none}
 .sb-resizer:hover,.sb-resizer.dragging{background:var(--panel-soft)}
 .sb-resizer::before{content:'';width:34px;height:3px;border-radius:99px;background:var(--border)}
