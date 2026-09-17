@@ -160,6 +160,23 @@ in the same release; the production agent's default pipeline is now
 the folder model is the simplification, and the two axes (folder = class,
 file name = subject) are what the split detector and the transverse edges read.
 
+The concept VOCABULARY is not deterministic and must not become so. Plans are
+computed in parallel, each from the folder list as it was before its siblings
+wrote — so a plan can open a folder a sibling just created. `src/ingest/conceptFolders.ts`
+is the single answer: at apply time (serialized), when a plan proposes a folder
+not already on disk, the MODEL is shown every ESTABLISHED folder with a sample of
+its subjects/tags and the NEW folders the plan proposes, and maps each proposed
+folder onto the established vocabulary (or keeps it new) in the session language.
+The established folders are the ANCHOR: the model never renames or merges two of
+them — left free to, it dissolved `solution` into `produit` and moved every leaf
+of an established folder, and the next ingest could move them again. The engine
+only rewrites the plan's proposed paths; a proposed folder has no leaves yet, so
+migration is a safety net, not the normal path. Do NOT reintroduce
+a synonym table, a folder registry, or kind-derived equivalence in code
+(`foldersAreNearDuplicates`, `CANONICAL_FOLDER_BY_KIND`, `KIND_SYNONYMS` as a
+folder oracle) — `4dc4bbf` tried it, `f24f2ad` reverted it, and it cannot see
+a folder a sibling source just created.
+
 ## Workspace Skill Model
 ## Workspace Skill Model
 

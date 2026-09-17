@@ -141,7 +141,7 @@ class PipelineLLMService {
         pages: [
           { path: 'wiki/sources/product-brief.md', subject: 'donna', scope: 'source' },
           {
-            path: 'wiki/concepts/donna-workflow.md', subject: 'donna',
+            path: 'wiki/concepts/donna-workflow.md', subject: 'donna-workflow',
             scope: 'product', rationale: 'Workflow durable du sujet principal.',
           },
         ],
@@ -155,7 +155,7 @@ class PipelineLLMService {
       replacements: (ids.length > 0 ? ids : ['instruction-1']).map((id) => ({
         id,
         content:
-          'Donna propose un moteur de connaissance avec conversion, review, indexation et export. [src: wiki/concepts/donna-workflow.md]',
+          'Donna propose un moteur de connaissance avec conversion, review, indexation et export. [src: wiki/concepts/unclassified/donna-workflow.md]',
       })),
     };
   }
@@ -279,7 +279,7 @@ describe('knowledge engine E2E', () => {
       limit: 3,
     });
     expect(lexicalResults.map((result) => result.page.relativePath)).toContain(
-      'wiki/concepts/donna-workflow.md',
+      'wiki/concepts/unclassified/donna-workflow.md',
     );
 
     const vectorIndex = new VectorIndexService(
@@ -294,7 +294,7 @@ describe('knowledge engine E2E', () => {
       limit: 3,
     });
     expect(vectorResults.map((result) => result.page.relativePath)).toContain(
-      'wiki/concepts/donna-workflow.md',
+      'wiki/concepts/unclassified/donna-workflow.md',
     );
 
     const build = new BuildService(
@@ -311,7 +311,7 @@ describe('knowledge engine E2E', () => {
       'utf8',
     );
     expect(deliverable).toContain('Donna propose un moteur de connaissance');
-    expect(deliverable).toContain('[src: wiki/concepts/donna-workflow.md]');
+    expect(deliverable).toContain('[src: wiki/concepts/unclassified/donna-workflow.md]');
 
     const { content: exported, warnings: exportWarnings } = await expandDeliverable(
       'deliverables/brief.md',
@@ -333,7 +333,7 @@ describe('knowledge engine E2E', () => {
     expect(exportContent).not.toContain('[src:');
     // The original deliverable stays untouched.
     expect(await readFile(path.join(root, 'deliverables', 'brief.md'), 'utf8')).toContain(
-      '[src: wiki/concepts/donna-workflow.md]',
+      '[src: wiki/concepts/unclassified/donna-workflow.md]',
     );
 
     expect(logger.entries.some((entry) => entry.event === 'ingest:review')).toBe(true);

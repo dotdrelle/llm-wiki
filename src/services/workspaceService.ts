@@ -8,6 +8,7 @@ import {
   readFile,
   rename,
   rm,
+  rmdir,
   stat,
   writeFile,
 } from 'node:fs/promises';
@@ -817,6 +818,47 @@ export class WorkspaceService {
         }
       }
       throw error;
+    }
+
+    // A delete that empties a folder must not leave the folder behind: an empty
+    // concept folder still renders as a concept in the sidebar and the graph,
+    // and it is exactly what a folder reconciliation leaves when it moves every
+    // leaf out of a merged or renamed folder. Prune the emptied ancestors after
+    // the apply has succeeded — a rollback would recreate them through
+    // safeWriteFile — stopping below the wiki roots: a section such as
+    // concepts/, sources/ or answers/ is structural and stays even when empty.
+    for (const operation of operations) {
+      if (operation.type !== 'delete') continue;
+      const absolutePath = resolveInside(
+        this.paths.wikiDir,
+        operation.path.slice('wiki/'.length),
+      );
+      await this.pruneEmptyParents(path.dirname(absolutePath));
+    }
+  }
+
+  /**
+   * Removes the directories a delete just emptied, walking up until a non-empty
+   * directory, the wiki root, or a direct child of it (a section). Never touches
+   * a non-empty directory.
+   */
+  private async pruneEmptyParents(startDir: string): Promise<void> {
+    const wikiDir = this.paths.wikiDir;
+    let current = startDir;
+    while (current.startsWith(wikiDir + path.sep) && path.dirname(current) !== wikiDir) {
+      let entries: string[];
+      try {
+        entries = await readdir(current);
+      } catch {
+        break;
+      }
+      if (entries.length > 0) break;
+      try {
+        await rmdir(current);
+      } catch {
+        break;
+      }
+      current = path.dirname(current);
     }
   }
 

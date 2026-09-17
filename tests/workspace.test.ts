@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -379,6 +379,38 @@ describe('workspace safety', () => {
     await expect(readFile(path.join(root, 'wiki', 'index.md'), 'utf8')).resolves.toBe(
       '# Original Index\n',
     );
+  });
+
+  it('prunes a concept folder a delete emptied, but keeps the section root', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-'));
+    const folder = path.join(root, 'wiki', 'concepts', 'solution');
+    await mkdir(folder, { recursive: true });
+    await writeFile(path.join(folder, 'anaplan.md'), '# A\n', 'utf8');
+    const workspace = new WorkspaceService(createConfig(root));
+
+    await workspace.applyWikiOperations([
+      { type: 'delete', path: 'wiki/concepts/solution/anaplan.md' },
+    ]);
+
+    // The emptied concept folder is gone (an empty folder still renders as a
+    // concept); concepts/ itself is structural and stays.
+    await expect(stat(folder)).rejects.toThrow();
+    await expect(stat(path.join(root, 'wiki', 'concepts'))).resolves.toBeTruthy();
+  });
+
+  it('keeps a concept folder that still holds leaves', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-'));
+    const folder = path.join(root, 'wiki', 'concepts', 'solution');
+    await mkdir(folder, { recursive: true });
+    await writeFile(path.join(folder, 'anaplan.md'), '# A\n', 'utf8');
+    await writeFile(path.join(folder, 'jedox.md'), '# J\n', 'utf8');
+    const workspace = new WorkspaceService(createConfig(root));
+
+    await workspace.applyWikiOperations([
+      { type: 'delete', path: 'wiki/concepts/solution/anaplan.md' },
+    ]);
+
+    await expect(stat(path.join(folder, 'jedox.md'))).resolves.toBeTruthy();
   });
 
   it('limits build-context content with maxBuildContextChars', async () => {

@@ -3,6 +3,7 @@ import {
   applyOkfFrontmatter,
   carryForwardEngineFrontmatter,
   isOkfType,
+  mergeSources,
   okfTypeForPath,
   OKF_TYPE_CONCEPT,
   OKF_TYPE_DELIVERABLE,
@@ -152,5 +153,25 @@ describe('carryForwardEngineFrontmatter', () => {
   it('returns the next content unchanged when there is nothing carried', () => {
     const out = carryForwardEngineFrontmatter('not frontmatter at all', '# X\n');
     expect(out).toBe('# X\n');
+  });
+
+  it('does not duplicate a verified entry the update reproduces', () => {
+    // The model rewrites the whole page and often keeps the frontmatter it was
+    // shown; concatenating both lists doubled the human review trail on every
+    // ingest.
+    const out = carryForwardEngineFrontmatter(existing, existing);
+    expect((out.match(/human:merge/g) ?? []).length).toBe(1);
+  });
+});
+
+describe('mergeSources', () => {
+  it('keeps extra fields a human wrote on an existing entry', () => {
+    const out = mergeSources(
+      [{ path: 'raw/ingested/x.md', usage_count: 1, title: 'Rapport EAS' }],
+      [{ path: 'raw/ingested/x.md', usage_count: 3 }],
+    );
+    expect(out).toEqual([
+      { path: 'raw/ingested/x.md', usage_count: 3, title: 'Rapport EAS' },
+    ]);
   });
 });

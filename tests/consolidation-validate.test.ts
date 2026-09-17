@@ -75,135 +75,6 @@ describe('plancher des tags (validateConsolidation)', () => {
   });
 });
 
-import { detectNearDuplicateFolders, folderNearKey, foldersAreNearDuplicates, folderWords } from '../src/ingest/consolidationValidate.ts';
-
-describe('folder near-duplicates (singular/plural and hyphen refinements)', () => {
-  it('flags a trailing-s plural of the same word', () => {
-    expect(foldersAreNearDuplicates('product', 'products')).toBe(true);
-    expect(foldersAreNearDuplicates('requirement', 'requirements')).toBe(true);
-    expect(foldersAreNearDuplicates('serveur', 'serveurs')).toBe(true);
-  });
-  it('flags a hyphenated refinement of an existing folder (same first word)', () => {
-    expect(foldersAreNearDuplicates('requirement', 'requirements-operations')).toBe(true);
-    expect(foldersAreNearDuplicates('product', 'product-zephyr')).toBe(true);
-    expect(foldersAreNearDuplicates('solution-suite', 'solutions-external')).toBe(true);
-  });
-  it('treats underscore spellings like hyphenated ones at the comparison level', () => {
-    // Concept paths themselves reject '_' (isValidProvenanceValue); the
-    // normalization matters for any value that reaches the comparison, so an
-    // underscore twin of a hyphenated folder compares as the same name.
-    expect(folderNearKey('requirements_operations')).toBe(folderNearKey('requirements-operations'));
-    expect(folderWords(folderNearKey('requirements_operations'))).toEqual(
-      folderWords(folderNearKey('requirements-operations')),
-    );
-  });
-  it('leaves genuinely different concepts alone', () => {
-    expect(foldersAreNearDuplicates('market-offering', 'solutions-market')).toBe(false);
-    expect(foldersAreNearDuplicates('budget', 'infrastructure')).toBe(false);
-    expect(foldersAreNearDuplicates('product', 'production')).toBe(false);
-    expect(foldersAreNearDuplicates('projet', 'product')).toBe(false);
-  });
-  it('flags a curated synonym with no shared word at all ("produit" / "solution-logicielle")', () => {
-    expect(foldersAreNearDuplicates('produit', 'solution-logicielle')).toBe(true);
-    expect(foldersAreNearDuplicates('produit', 'solution')).toBe(true);
-    expect(foldersAreNearDuplicates('logiciel', 'outil')).toBe(true);
-    // Not a member of the curated group: stays a lexical-only comparison.
-    expect(foldersAreNearDuplicates('produit', 'infrastructure')).toBe(false);
-  });
-  it('composes the kind-derived synonym match with singular/plural', () => {
-    // A plural spelling of a recognized word must still resolve to its kind.
-    expect(foldersAreNearDuplicates('produits', 'solution-logicielle')).toBe(true);
-    expect(foldersAreNearDuplicates('produit', 'outils')).toBe(true);
-    expect(foldersAreNearDuplicates('fournisseurs', 'editeur')).toBe(true);
-  });
-  it('keeps "vendor" and "produit" separate — a vendor is not its product', () => {
-    // extractionSchema.ts's KIND_SYNONYMS deliberately keeps these two kinds
-    // apart everywhere else in the pipeline; folder-equivalence, now derived
-    // from that same vocabulary, must not contradict it.
-    expect(foldersAreNearDuplicates('vendor', 'produit')).toBe(false);
-    expect(foldersAreNearDuplicates('fournisseur', 'solution-logicielle')).toBe(false);
-  });
-  it('detects the conflict in a plan that would open a near-duplicate folder', () => {
-    const conflicts = detectNearDuplicateFolders(
-      plan({
-        operations: [
-          { type: 'create', path: 'wiki/concepts/product-zephyr/certifications.md', content: '# x' },
-          { type: 'create', path: 'wiki/concepts/requirements/outil.md', content: '# y' },
-        ],
-      }),
-      { existingFolders: ['product', 'requirement', 'budget'] },
-    );
-    expect(conflicts.map((c) => `${c.proposedFolder}~${c.existingFolder}`)).toEqual([
-      'product-zephyr~product',
-      'requirements~requirement',
-    ]);
-  });
-  it('leaves a leaf filed into an existing folder alone', () => {
-    const conflicts = detectNearDuplicateFolders(
-      plan({ operations: [{ type: 'create', path: 'wiki/concepts/product/nouveau.md', content: '# x' }] }),
-      { existingFolders: ['product'] },
-    );
-    expect(conflicts).toEqual([]);
-  });
-  it('flags a NEW folder that near-duplicates an existing kind-derived synonym ("editeur" doubling "vendor")', () => {
-    const conflicts = detectNearDuplicateFolders(
-      plan({ operations: [{ type: 'create', path: 'wiki/concepts/editeur/jedox.md', content: '# x' }] }),
-      { existingFolders: ['vendor', 'exigence'] },
-    );
-    expect(conflicts).toEqual([{ path: 'wiki/concepts/editeur/jedox.md', proposedFolder: 'editeur', existingFolder: 'vendor' }]);
-  });
-  it('does NOT flag "vendor" as a near-duplicate of an existing "produit" — different kinds', () => {
-    const conflicts = detectNearDuplicateFolders(
-      plan({ operations: [{ type: 'create', path: 'wiki/concepts/vendor/jedox.md', content: '# x' }] }),
-      { existingFolders: ['produit', 'exigence'] },
-    );
-    expect(conflicts).toEqual([]);
-  });
-  it('flags an OLD split still on disk: two near-duplicate folders that both already exist', () => {
-    // A workspace ingested before this check existed (or before a synonym
-    // was recognized) can carry both folders already. Picking either looks
-    // correct in isolation, so this must be caught even though the chosen
-    // folder is itself already in existingFolders.
-    const conflicts = detectNearDuplicateFolders(
-      plan({ operations: [{ type: 'create', path: 'wiki/concepts/solution-logicielle/pigment.md', content: '# x' }] }),
-      { existingFolders: ['produit', 'solution-logicielle'] },
-    );
-    expect(conflicts).toEqual([{
-      path: 'wiki/concepts/solution-logicielle/pigment.md',
-      proposedFolder: 'solution-logicielle',
-      existingFolder: 'produit',
-    }]);
-  });
-  it('does not complain when the model picks the canonical (alphabetically-first) side of an old split', () => {
-    const conflicts = detectNearDuplicateFolders(
-      plan({ operations: [{ type: 'create', path: 'wiki/concepts/produit/pigment.md', content: '# x' }] }),
-      { existingFolders: ['produit', 'solution-logicielle'] },
-    );
-    expect(conflicts).toEqual([]);
-  });
-  it('prefers the EXPLICIT canonical name over alphabetical order', () => {
-    // "application" sorts before "produit" — a purely alphabetical tie-break
-    // would wrongly steer towards "application" here. CANONICAL_FOLDER_BY_KIND
-    // says "produit" is the declared canonical for the product kind, and that
-    // must win regardless of string order.
-    const conflicts = detectNearDuplicateFolders(
-      plan({ operations: [{ type: 'create', path: 'wiki/concepts/application/pigment.md', content: '# x' }] }),
-      { existingFolders: ['application', 'produit'] },
-    );
-    expect(conflicts).toEqual([{
-      path: 'wiki/concepts/application/pigment.md',
-      proposedFolder: 'application',
-      existingFolder: 'produit',
-    }]);
-    // And the reverse: picking "produit" (the declared canonical) itself
-    // never triggers a conflict against its own sibling.
-    expect(detectNearDuplicateFolders(
-      plan({ operations: [{ type: 'create', path: 'wiki/concepts/produit/pigment.md', content: '# x' }] }),
-      { existingFolders: ['application', 'produit'] },
-    )).toEqual([]);
-  });
-});
-
 describe('parseConceptPagePath on a taxo leaf (<concept>_<resume>.md)', () => {
   it('parses instead of returning null, normalizing the underscore the same way folder names are', () => {
     expect(parseConceptPagePath('wiki/concepts/jedox/jedox_tarifs.md'))
@@ -248,6 +119,47 @@ describe('validateConsolidation reconciles a taxo-shaped leaf against its path',
     expect(result.warnings.some((w) => w.path === 'wiki/concepts/jedox/jedox_tarifs.md'
       && w.reason.includes('contradicts the path'))).toBe(true);
     expect(result.provenanceByPath.get('wiki/concepts/jedox/jedox_tarifs.md')?.subject).toBe('jedox-tarifs');
+  });
+});
+
+describe('validateConsolidation re-files a concept leaf with no concept folder', () => {
+  it('moves a flat wiki/concepts/<subject>.md into the reserved unclassified/ folder', () => {
+    // A declared subject used to rescue a path the folder model cannot place:
+    // the leaf passed validation and landed at the concepts root, outside every
+    // concept. Rather than reject the whole source, the engine files it where a
+    // subject that fits no concept already waits.
+    const result = validateConsolidation(
+      plan({
+        operations: [
+          { type: 'create', path: 'wiki/sources/s.md', content: '# S\n\nBody. [src: raw/ingested/s.md]' },
+          { type: 'create', path: 'wiki/concepts/acpi.md', content: '# ACPI\n\nBody. [src: raw/ingested/s.md]' },
+        ],
+        pages: [page({ path: 'wiki/concepts/acpi.md', subject: 'acpi' })],
+      }),
+      CTX,
+    );
+    const at = 'wiki/concepts/unclassified/acpi.md';
+    expect(result.errors).toEqual([]);
+    expect(result.operations.some((operation) => operation.path === at)).toBe(true);
+    expect(result.operations.some((operation) => operation.path === 'wiki/concepts/acpi.md')).toBe(false);
+    expect(result.provenanceByPath.get(at)?.subject).toBe('acpi');
+    expect(result.warnings.some((warning) => warning.path === 'wiki/concepts/acpi.md'
+      && warning.reason.includes('re-filed under unclassified/'))).toBe(true);
+  });
+
+  it('derives the subject from the basename and normalizes it', () => {
+    const result = validateConsolidation(
+      plan({
+        operations: [
+          { type: 'create', path: 'wiki/sources/s.md', content: '# S\n\nBody. [src: raw/ingested/s.md]' },
+          { type: 'create', path: 'wiki/concepts/Souveraineté Numérique.md', content: '# S\n\nBody. [src: raw/ingested/s.md]' },
+        ],
+        pages: [],
+      }),
+      CTX,
+    );
+    expect(result.provenanceByPath.get('wiki/concepts/unclassified/souverainete-numerique.md')?.subject)
+      .toBe('souverainete-numerique');
   });
 });
 

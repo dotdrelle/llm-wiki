@@ -44,6 +44,10 @@ function folderPolicy(existingFolders: string[]): string[] {
       + ' wiki/concepts/<concept>/<subject>.md',
     '- the same subject may hold a leaf under several concepts: that is the model, not a'
       + ' duplicate. Each leaf carries only what belongs to ITS concept',
+    '- EVERY folder name is written in the output language. Never open a folder in another'
+      + ' language when one of this family already exists in the list above, and never'
+      + ' translate an existing folder just because its name is in another language: reuse'
+      + ' it exactly as written. A name in the wrong language is a duplicate, not a rename',
     '- an existing concept is ALWAYS an existing folder: REUSE one of the folders listed'
       + ' above whenever a subject plausibly belongs to it. "cost-model" and'
       + ' "pricing-model" are ONE concept — pick one and file the leaf there, never open'
@@ -253,7 +257,6 @@ export function buildConsolidationRetryUser(
     overflow?: { newConcepts: number; budget: number };
     duplicatePaths?: string[];
     folders?: string[];
-    folderConflicts?: Array<{ path: string; proposedFolder: string; existingFolder: string }>;
   },
 ): string {
   const lines: string[] = [
@@ -282,15 +285,6 @@ export function buildConsolidationRetryUser(
       'The plan targets these paths more than once:',
       ...corrections.duplicatePaths.map((path) => `- ${path}`),
       'Merge each into a single operation (a single create per concept, a single update per source note).',
-    );
-  }
-
-  if (corrections.folderConflicts?.length) {
-    lines.push(
-      '',
-      'Your plan opens a folder that near-duplicates an EXISTING concept folder (singular/plural of the same word). Reuse the existing folder and file the leaf there:',
-      ...corrections.folderConflicts.map((conflict) =>
-        `- reuse "${conflict.existingFolder}" instead of opening "${conflict.proposedFolder}" (planned path: ${conflict.path})`),
     );
   }
 

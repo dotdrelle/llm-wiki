@@ -348,6 +348,62 @@ class BareSourcePathLLMService extends FakeLLMService {
   }
 }
 
+class ReconcilingLLMService extends FakeLLMService {
+  async completeJson(request: { label?: string; user?: string }): Promise<unknown> {
+    if (request?.label === 'ingest_concept_folders') {
+      return {
+        folders: [
+          { folder: 'produit', canonical: 'produit' },
+          { folder: 'product', canonical: 'produit' },
+        ],
+      };
+    }
+    return super.completeJson(request);
+  }
+}
+
+class ProductFolderPlanLLMService extends ReconcilingLLMService {
+  protected async plan(): Promise<IngestPlan & { pages?: unknown[] }> {
+    return {
+      summary: 'Planned a product leaf under an English folder.',
+      operations: [
+        {
+          type: 'create',
+          path: this.sourceNotePath,
+          content: '# Note\n\n[src: raw/ingested/note.md]\n',
+        },
+        {
+          type: 'create',
+          path: 'wiki/concepts/product/board-platform.md',
+          content: '# Board\n\n[src: raw/ingested/note.md]\n',
+        },
+      ],
+      pages: [{
+        path: 'wiki/concepts/product/board-platform.md',
+        subject: 'board-platform',
+        scope: 'product',
+        kind: 'product',
+        tags: [],
+      }],
+    };
+  }
+}
+
+class BareArchivedPathWithPeriodLLMService extends FakeLLMService {
+  protected async plan(): Promise<IngestPlan> {
+    return {
+      summary: 'Updated wiki from a source whose header mentions another archived source, with a period.',
+      operations: [
+        {
+          type: 'create',
+          path: 'wiki/sources/note.md',
+          content: '# Note\n\nSource: raw/ingested/other.md.\n\nFait documenté.\n',
+        },
+      ],
+    };
+  }
+}
+
 class WideWhitespaceCitationLLMService extends FakeLLMService {
   protected async plan(): Promise<IngestPlan> {
     return {
@@ -837,6 +893,29 @@ describe('ingest service', () => {
     ).toMatchObject({ wrappedBarePaths: 1 });
   });
 
+  it('keeps the sentence period out of a wrapped archived-source citation', async () => {
+    // BARE_RAW_PATH_PATTERN stops at brackets and quotes, not at the sentence
+    // punctuation that follows the path; wrapping it verbatim produced
+    // "[src: raw/ingested/other.md.]", a path no renderer can resolve.
+    const workspace = new FakeWorkspaceService();
+    const logger = new MemoryTraceLogger();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new BareArchivedPathWithPeriodLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+      disabledCache(),
+    );
+
+    await service.ingest([], {});
+
+    const content = workspace.appliedOperations[0].content;
+    expect(content).toContain('[src: raw/ingested/other.md]');
+    expect(content).not.toContain('raw/ingested/other.md.]');
+  });
+
   it('normalizes an already-correct citation with multi-line whitespace instead of leaving it for the bare-path pass to double-wrap', async () => {
     // Regression: the bracket-normalization pass used to return an
     // already-matching "[src: ...]" marker untouched, preserving whatever
@@ -1261,6 +1340,60 @@ describe('ingest service', () => {
     expect(registry.sources[0].lastIngestedAt).toBeTruthy();
   });
 
+  it('reconciles a cached plan folder against the live vocabulary on the orchestrated apply', async () => {
+    // The orchestrated apply replays a plan built before its siblings wrote:
+    // the model decides the canonical folder on the live corpus, and the
+    // engine rewrites the leaf path here too.
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-reconcile-apply-'));
+    const workspace = new FakeWorkspaceService();
+    workspace.paths = { rootDir, internalDir: path.join(rootDir, '.wiki') };
+    const planPath = path.join(rootDir, '.wiki', 'ingest-plans', 'plan.json');
+    await mkdir(path.dirname(planPath), { recursive: true });
+    await writeFile(
+      planPath,
+      JSON.stringify({
+        generatedAt: new Date().toISOString(),
+        sources: [
+          {
+            source: 'raw/untracked/note.md',
+            summary: 'Planned a product leaf under an English folder.',
+            operations: [
+              { type: 'create', path: 'wiki/sources/note.md', content: '# Note\n\n[src: raw/ingested/note.md]\n' },
+              { type: 'create', path: 'wiki/concepts/product/board-platform.md', content: '# Board\n\n[src: raw/ingested/note.md]\n' },
+            ],
+            review: [],
+          },
+        ],
+      }),
+      'utf8',
+    );
+    const retrieval = new FakeRetrievalService([
+      {
+        absolutePath: '/tmp/wiki/concepts/produit/acpi.md',
+        relativePath: 'wiki/concepts/produit/acpi.md',
+        name: 'acpi.md',
+        type: 'concept',
+        content: '---\nsubject: acpi\ntags: [outil]\n---\n# ACPI\n',
+      },
+    ]);
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new ReconcilingLLMService() as unknown as LLMService,
+      retrieval as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      new MemoryTraceLogger(),
+      disabledCache(),
+    );
+
+    const results = await service.applyPlannedIngest(['.wiki/ingest-plans/plan.json']);
+
+    expect(results[0].failed).toBeUndefined();
+    const applied = workspace.appliedBatches.flat();
+    expect(applied.some((operation) => operation.path === 'wiki/concepts/produit/board-platform.md')).toBe(true);
+    expect(applied.some((operation) => operation.path.startsWith('wiki/concepts/product/'))).toBe(false);
+  });
+
   it('does not archive or observe a planned source whose every operation is rejected', async () => {
     const rootDir = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-reject-'));
     const workspace = new FakeWorkspaceService();
@@ -1378,6 +1511,44 @@ describe('ingest service', () => {
 
     expect(llm.lastPlanPrompt).toContain('wiki/concepts/sujet-historique.md');
     expect(llm.lastPlanPrompt).toContain('[existing page for a closely related subject]');
+  });
+
+  it('reconciles a plan-time synonym folder onto the model-chosen canonical folder', async () => {
+    // The plan is often built before a sibling created the folder it
+    // duplicates. The LLM decides the canonical folder on the live corpus;
+    // the engine rewrites the leaf path. No synonym table.
+    const workspace = new FakeWorkspaceService();
+    const logger = new MemoryTraceLogger();
+    const retrieval = new FakeRetrievalService([
+      {
+        absolutePath: '/tmp/wiki/concepts/produit/acpi.md',
+        relativePath: 'wiki/concepts/produit/acpi.md',
+        name: 'acpi.md',
+        type: 'concept',
+        content: '---\nsubject: acpi\ntags: [outil]\n---\n# ACPI\n',
+      },
+    ]);
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new ProductFolderPlanLLMService() as unknown as LLMService,
+      retrieval as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+      disabledCache(),
+    );
+
+    await service.ingest([], {});
+
+    expect(workspace.appliedOperations.some(
+      (operation) => operation.path === 'wiki/concepts/produit/board-platform.md',
+    )).toBe(true);
+    expect(workspace.appliedOperations.some(
+      (operation) => operation.path.startsWith('wiki/concepts/product/'),
+    )).toBe(false);
+    expect(
+      logger.entries.find((entry) => entry.event === 'ingest:concept-folders')?.data,
+    ).toMatchObject({ changed: ['product~produit'] });
   });
 });
 

@@ -40,6 +40,14 @@ describe('subjectsAreRelated', () => {
     expect(subjectsAreRelated('de-solution', 'de-tool')).toBe(false);
   });
 
+  it('ignores a generic leading token even when both subjects share it', () => {
+    // The stoplist must apply to the leading-token check too: sharing only
+    // "solution", "service" or "phase" says nothing about the identity.
+    expect(subjectsAreRelated('solution-pricing', 'solution-licence')).toBe(false);
+    expect(subjectsAreRelated('service-alpha', 'service-beta')).toBe(false);
+    expect(subjectsAreRelated('plan-alpha', 'plan-beta')).toBe(false);
+  });
+
   it('rejects empty input', () => {
     expect(subjectsAreRelated('', '')).toBe(false);
     expect(subjectsAreRelated('a', '')).toBe(false);

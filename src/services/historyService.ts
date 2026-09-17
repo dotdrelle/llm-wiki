@@ -358,8 +358,13 @@ export class HistoryService {
     }
     // Restricted to the staged scope: a sibling task may have staged nothing
     // here, but concurrent writes elsewhere must not leak into this commit.
+    // `--no-renames`: with rename detection, `--name-only` lists only the NEW
+    // path of a moved file, and `git commit -- <new path>` then commits the
+    // addition while leaving the old path's deletion staged — a concept-folder
+    // reconciliation that moves leaves would half-commit. Listing both sides
+    // of a move keeps the commit whole.
     const changed = paths.length > 0
-      ? await this.git(['diff', '--cached', '--name-only', '--', ...paths])
+      ? await this.git(['diff', '--cached', '--name-only', '--no-renames', '--', ...paths])
       : '';
     const files = changed ? changed.split('\n').filter(Boolean) : [];
     if (files.length === 0) {

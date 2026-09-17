@@ -145,9 +145,14 @@ export function mergeSources(
     const record = entry as Record<string, unknown>;
     const path = String(record.path ?? '');
     if (!path) continue;
-    const known = byPath.get(path) ?? { path };
-    if (Number.isFinite(Number(record.usage_count))) known.usage_count = Number(record.usage_count);
-    byPath.set(path, known);
+    const known = byPath.get(path);
+    if (known) {
+      // The existing entry (listed first) owns the record: a later occurrence
+      // only refreshes the observation, it never drops keys a human wrote.
+      if (Number.isFinite(Number(record.usage_count))) known.usage_count = Number(record.usage_count);
+      continue;
+    }
+    byPath.set(path, { ...record, path });
   }
   return [...byPath.values()];
 }
@@ -186,10 +191,21 @@ export function carryForwardEngineFrontmatter(
   if (sources.length > 0) data.sources = sources;
   else delete data.sources;
   if (Array.isArray(existing.data.verified) || Array.isArray(next.data.verified)) {
-    data.verified = [
+    // An update whose model output reproduces the page's own `verified` entries
+    // would otherwise double the human review trail on every ingest. Union by
+    // value, existing first, exactly like `sources`.
+    const seen = new Set<string>();
+    const verified: unknown[] = [];
+    for (const entry of [
       ...(Array.isArray(existing.data.verified) ? existing.data.verified : []),
       ...(Array.isArray(next.data.verified) ? next.data.verified : []),
-    ];
+    ]) {
+      const key = JSON.stringify(entry ?? null);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      verified.push(entry);
+    }
+    data.verified = verified;
   }
   return matter.stringify(next.content, data);
 }

@@ -25,7 +25,8 @@ import {
   readProvenance,
   subjectsAreRelated,
 } from '../ingest/provenance.ts';
-import { CONCEPT_PREFIX, DEFAULT_CONCEPT_BUDGET, detectConceptOverflow, detectConceptSplits, detectDuplicatePaths, detectNearDuplicateFolders, reanchorToPreviousConcepts, validateConsolidation } from '../ingest/consolidationValidate.ts';
+import { CONCEPT_PREFIX, DEFAULT_CONCEPT_BUDGET, detectConceptOverflow, detectConceptSplits, detectDuplicatePaths, reanchorToPreviousConcepts, validateConsolidation } from '../ingest/consolidationValidate.ts';
+import { collectConceptFolderEntries, conceptFolderMigrationOperations, reconcileConceptFolders } from '../ingest/conceptFolders.ts';
 import { parseConceptPagePath } from '../ingest/conceptGrid.ts';
 import {
   buildTaxoSectionUser,
@@ -250,8 +251,12 @@ function enforceSourceCitationPath(
         // BARE_RAW_PATH_PATTERN below only tolerates a bounded run of
         // whitespace after "[src:", so an untouched "[src:\n    path]" would
         // be treated as bare and wrapped a second time.
-        if (ANCHORED_CITATION_PATH.test(cleanCitationPath)) {
-          return `[src: ${cleanCitationPath}]`;
+        // A path never ends on sentence punctuation; a model that wrote the
+        // period inside the bracket would otherwise produce a dead citation
+        // ("…/report.md.").
+        const anchoredPath = cleanCitationPath.replace(/[.,;:!?]+$/, '');
+        if (ANCHORED_CITATION_PATH.test(anchoredPath)) {
+          return `[src: ${anchoredPath}]`;
         }
         // `raw/untracked/…` is the pending form of the source being ingested,
         // and anything else is a shortened/relative path the model copied by
@@ -273,7 +278,12 @@ function enforceSourceCitationPath(
     // its archive path.
     content = content.replace(BARE_RAW_PATH_PATTERN, (bare: string) => {
       wrappedBarePaths += 1;
-      if (/^raw\/ingested\//i.test(bare)) return `[src: ${bare}]`;
+      // BARE_RAW_PATH_PATTERN stops at `]`, quotes and brackets but not at
+      // sentence punctuation, so a header line ending on the path ("Source:
+      // raw/ingested/report.md.") would wrap the period into the citation and
+      // make it a dead link.
+      const cleanBare = bare.replace(/[.,;:!?]+$/, '');
+      if (/^raw\/ingested\//i.test(cleanBare)) return `[src: ${cleanBare}]`;
       return `[src: ${archiveCitationPath}]`;
     });
 
@@ -604,7 +614,6 @@ export class IngestService {
         const sourcePagePath = path.posix.join('wiki', 'sources', `${source.slug}.md`);
         let consolidated: ConsolidationPlan | null = null;
         let lastSplits: ReturnType<typeof detectConceptSplits> = [];
-        let lastFolderConflicts: ReturnType<typeof detectNearDuplicateFolders> = [];
         let sections: string[] = [];
         let knownPaths: Set<string> = new Set();
         let sectionResults: Array<{ extraction: SourceExtraction; retry?: IngestRetryInfo }> = [];
@@ -991,21 +1000,18 @@ export class IngestService {
         for (let retryAttempt = 0; retryAttempt <= MAX_SPLIT_RETRIES; retryAttempt += 1) {
           const splits = detectConceptSplits(consolidated);
           lastSplits = splits;
-          const folderConflicts = detectNearDuplicateFolders(consolidated, { existingFolders });
-          lastFolderConflicts = folderConflicts;
           const overflow = detectConceptOverflow(
             consolidated,
             knownPaths,
             DEFAULT_CONCEPT_BUDGET,
           );
           const duplicatePaths = detectDuplicatePaths(consolidated);
-          if (splits.length === 0 && folderConflicts.length === 0 && !overflow && duplicatePaths.length === 0) break;
+          if (splits.length === 0 && !overflow && duplicatePaths.length === 0) break;
           if (retryAttempt === MAX_SPLIT_RETRIES) break;
           await this.logger.warn('ingest:consolidate-retry', {
             source: source.relativePath,
             attempt: retryAttempt + 1,
             splits: splits.map((split) => `${split.subject}~${split.duplicateOfSubject}`),
-            folderConflicts: folderConflicts.map((conflict) => `${conflict.proposedFolder}~${conflict.existingFolder}`),
             overflow: overflow ? { newConcepts: overflow.newConcepts, budget: overflow.budget } : null,
             duplicatePaths,
           });
@@ -1016,7 +1022,6 @@ export class IngestService {
               overflow: overflow ? { newConcepts: overflow.newConcepts, budget: overflow.budget } : undefined,
               duplicatePaths,
               folders: existingFolders,
-              folderConflicts,
             }),
           };
           const { value } = await withRetry(
@@ -1073,20 +1078,7 @@ export class IngestService {
           );
           const warmPages = await this.retrieval.warmCache();
           knownPaths = new Set(warmPages.map((page) => page.relativePath));
-          // The classic path's split/near-duplicate-folder detection is
-          // deterministic and plan-shaped, not classic-pipeline-specific —
-          // run it here too. Without this, a taxo plan that opens a folder
-          // near-duplicating an existing one (exactly the produit /
-          // solution-logicielle case FOLDER_SYNONYM_GROUPS exists to catch)
-          // got zero warning, because these checks used to run only inside
-          // the classic branch above.
-          const existingFolders = [...new Set(
-            warmPages
-              .map((page) => parseConceptPagePath(page.relativePath)?.class)
-              .filter((folder): folder is string => Boolean(folder)),
-          )].sort();
           lastSplits = detectConceptSplits(consolidated);
-          lastFolderConflicts = detectNearDuplicateFolders(consolidated, { existingFolders });
           // `sections` is read only for its .length in the ingest:apply log
           // below; taxo's real per-source section count lives in
           // taxoPre.sectionCounts (computed once, in the pre-pass).
@@ -1106,6 +1098,14 @@ export class IngestService {
         const normalizedOperations = await this.workspace.normalizeWikiOperations(
           consolidated.operations,
         );
+        // Plan-time folder names are not authoritative: the plan may have been
+        // built in another process, before a sibling created the folder it
+        // duplicates. Reconcile against the LIVE vocabulary at apply time
+        // (serialized), and defer the leaf migration until the plan is
+        // validated and actually applied (a rejected plan must not move files).
+        const conceptFolderMigrations = options?.dryRun
+          ? []
+          : await this.reconcileConceptVocabulary(normalizedOperations);
         // `pages[].path` designates the same operations, but lived until now
         // before the canonicalization of the paths. A model proposing an accent
         // or a space therefore received a normalized operation and lost its
@@ -1127,10 +1127,6 @@ export class IngestService {
           ...split,
           path: normalizedPathByOriginal.get(split.path) ?? split.path,
           duplicateOfPath: normalizedPathByOriginal.get(split.duplicateOfPath) ?? split.duplicateOfPath,
-        }));
-        const normalizedFolderConflicts = lastFolderConflicts.map((conflict) => ({
-          ...conflict,
-          path: normalizedPathByOriginal.get(conflict.path) ?? conflict.path,
         }));
         const {
           operations: citationSafeOperations,
@@ -1179,7 +1175,6 @@ export class IngestService {
             citationPath: source.archiveCitationPath,
             existingPaths: knownPaths,
             precomputedSplits: normalizedSplits,
-            precomputedFolderConflicts: normalizedFolderConflicts,
           },
         );
         await this.logger.info('ingest:consolidate', {
@@ -1286,6 +1281,12 @@ export class IngestService {
             path: source.archiveCitationPath,
             usageCount,
           });
+          // Move the leaves of a folder the model merged or renamed BEFORE the
+          // plan writes, so a plan update at the canonical path unions with the
+          // migrated content instead of colliding with it.
+          if (conceptFolderMigrations.length > 0) {
+            await this.workspace.applyNormalizedWikiOperations(conceptFolderMigrations);
+          }
           await this.workspace.applyNormalizedWikiOperations(stampedOperations);
           this.retrieval.invalidateCache();
           await this.logger.info('ingest:apply', {
@@ -1457,6 +1458,67 @@ export class IngestService {
    * is conservatively kept in, so the main loop's own per-source try/catch
    * is what reports a genuine failure, never this optimization.
    */
+  /**
+   * Concept-vocabulary reconciliation, on the live corpus, per apply.
+   *
+   * A plan is often computed in another process, in parallel with its
+   * siblings, from a folder list that predates their writes: the NEW folder it
+   * proposes can duplicate one a sibling just created. The established folders
+   * are the anchor — the model is asked only about the folders the plan wants
+   * to OPEN, maps each onto an established concept or keeps it new, and never
+   * renames or merges two established folders: a vocabulary that could be
+   * dissolved from one ingest to the next never settles. The engine then
+   * rewrites the plan's paths. No synonym table, no registry.
+   */
+  private async reconcileConceptVocabulary(operations: WikiOperation[]): Promise<WikiOperation[]> {
+    const conceptOperations = operations.filter(
+      (operation) => operation.type !== 'delete' && operation.path.startsWith(CONCEPT_PREFIX),
+    );
+    if (conceptOperations.length === 0) return [];
+
+    const pages = await this.retrieval.warmCache();
+    const entries = collectConceptFolderEntries(pages);
+    const existingFolders = new Set(entries.map((entry) => entry.folder));
+    const proposed = [...new Set(
+      conceptOperations
+        .map((operation) => parseConceptPagePath(operation.path)?.class)
+        .filter((folder): folder is string => Boolean(folder)),
+    )];
+    // A plan that stays entirely inside the folders already on disk cannot
+    // open a duplicate, so it needs no arbitration. Only a genuinely NEW
+    // folder triggers the call, which resolves it against the established
+    // vocabulary — never the other way around.
+    if (proposed.every((folder) => existingFolders.has(folder))) return [];
+    const mapping = await reconcileConceptFolders({
+      llm: this.llm,
+      entries,
+      proposed,
+      ctx: buildPromptContext(this.config, { date: new Date() }),
+      logger: this.logger,
+    });
+    const changed = [...mapping.entries()].filter(([from, to]) => from !== to);
+    if (changed.length === 0) return [];
+
+    const migrations = conceptFolderMigrationOperations(pages, mapping);
+    for (const operation of operations) {
+      if (!operation.path.startsWith(CONCEPT_PREFIX)) continue;
+      const parsed = parseConceptPagePath(operation.path);
+      if (!parsed) continue;
+      const canonical = mapping.get(parsed.class);
+      if (!canonical || canonical === parsed.class) continue;
+      const base = operation.path.split('/').pop() ?? '';
+      const rebased = base.startsWith(`${parsed.class}_`)
+        ? `${canonical}_${base.slice(parsed.class.length + 1)}`
+        : base;
+      operation.path = `wiki/concepts/${canonical}/${rebased}`;
+    }
+    await this.logger.info('ingest:concept-folders', {
+      changed: changed.map(([from, to]) => `${from}~${to}`),
+      migrated: migrations.filter((operation) => operation.type === 'delete').length,
+    });
+    return migrations;
+  }
+
   private async filterSourcesNeedingTaxoPrePass(
     sourcePaths: string[],
     previousRegistry: SourceRegistryFile | null,
@@ -1793,6 +1855,11 @@ export class IngestService {
         const operations = await this.workspace.normalizeWikiOperations(
           planned.operations ?? [],
         );
+        // The cached plan was built before its siblings wrote, so its folder
+        // names are not authoritative. Reconcile against the LIVE vocabulary
+        // here (this path is serialized), then rewrite the operations' paths;
+        // the leaf migration waits until the plan is actually applied.
+        const conceptFolderMigrations = await this.reconcileConceptVocabulary(operations);
         const applyOperations = operations.filter(
           (operation) => !rejectedPaths.has(operation.path),
         );
@@ -1833,6 +1900,9 @@ export class IngestService {
             path: plannedSource.archiveCitationPath,
             usageCount: registryRecord?.producedPages?.length ?? 0,
           });
+          if (conceptFolderMigrations.length > 0) {
+            await this.workspace.applyNormalizedWikiOperations(conceptFolderMigrations);
+          }
           await this.workspace.applyNormalizedWikiOperations(stampedOperations);
           this.retrieval.invalidateCache();
           await this.logger.info('ingest:apply', {

@@ -115,7 +115,11 @@ export function subjectsAreRelated(a: string, b: string): boolean {
   if (a === b) return true;
   const rootA = a.split('-', 1)[0];
   const rootB = b.split('-', 1)[0];
-  if (rootA.length > 2 && rootA === rootB) return true;
+  // A shared leading token is only evidence when the token is significant.
+  // Without the stopword guard, "solution-pricing" and "solution-licence" (or
+  // "phase-1-…" and "phase-2-…") matched on the generic word alone — the very
+  // false positive SUBJECT_STOPWORDS exists to prevent.
+  if (rootA.length > 2 && rootA === rootB && !SUBJECT_STOPWORDS.has(rootA)) return true;
   const tokensA = a.split(/[-_]/).filter((token) => token.length >= 3 && !SUBJECT_STOPWORDS.has(token));
   const tokensB = new Set(
     b.split(/[-_]/).filter((token) => token.length >= 3 && !SUBJECT_STOPWORDS.has(token)),
