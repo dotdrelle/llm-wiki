@@ -296,6 +296,15 @@ describe('serve graph ui', () => {
       // standalone and revealed only inside the chat shell.
       expect(page).toContain('action-button action-donna action-agent');
 
+      // Not on an already-exported/polished artifact: re-running it there
+      // re-exported the export and spawned a second version.
+      await writeFile(path.join(root, 'deliverables', 'brief.export.md'), '# Brief\n', 'utf8');
+      await writeFile(path.join(root, 'deliverables', 'brief.export.polished.md'), '# Brief\n', 'utf8');
+      const exportPage = await serveMd(root, path.join(root, 'deliverables', 'brief.export.md'), '/deliverables/brief.export.md');
+      const polishedPage = await serveMd(root, path.join(root, 'deliverables', 'brief.export.polished.md'), '/deliverables/brief.export.polished.md');
+      expect(exportPage).not.toContain('data-deliver=');
+      expect(polishedPage).not.toContain('data-deliver=');
+
       const source = await serveSource();
       expect(source).toContain("querySelector('[data-deliver]')");
       expect(source).toContain("type: 'llmwiki:deliver'");
@@ -465,7 +474,8 @@ describe('serve graph ui', () => {
 
   it('renders the collection roots flat — they are tabs, not collapsible folders', async () => {
     const source = await serveSource();
-    expect(source).toContain('if (plainRoot && depth === 0) return');
+    expect(source).toContain('if (plainRoot && depth === 0) {');
+    expect(source).toContain('side-folder-plain-label');
     expect(source).not.toContain('collapsedByDefault');
   });
 

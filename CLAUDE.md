@@ -145,6 +145,29 @@ concept, and a subject that fits none waits under the reserved
 `unclassified` folder. The path carries the identity — the `subject` frontmatter
 is reconciled FROM the path at apply time, never the reverse.
 
+**The concept is a DOMAIN, never a kind.** The folder names the domain or
+cross-cutting theme the knowledge belongs to (security, sovereignty, cost,
+open-source, saas, integration…), in the session language. It is never the
+subject's nature: `produit`, `fournisseur`, `exigence`, `dimension`, `scenario`,
+`projet`, `outil`, `application`, `solution` are KINDS, already carried by the
+`kind` frontmatter field — using one as the folder discards the only useful
+axis and drops every subject into a single bucket. The same subject therefore
+holds one leaf per domain it serves (`saas/jedox`, `souverainete/jedox`,
+`cout/jedox`). The prompts own this judgement (`prompts/consolidationPrompt.ts`'s
+`folderPolicy`, `ingest/conceptFolders.ts` for the arbiter) — a closed
+vocabulary in code was removed and stays removed.
+
+**A leaf accumulates across sources.** A concept leaf is the THEME, not one
+source's take on it: an update keeps what the page already states and adds the
+new source, so the same leaf carries several sources (`sources` frontmatter and
+the body). A citation may name a section of its source,
+`[src: raw/ingested/x.md#Heading]`; the export reads only that section
+(`sliceCitedSection`, `services/exportService.ts`) while everything that
+resolves files (graph, lint, retrieval, vector index) uses the path alone —
+`extractSourceCitations` strips the anchor, `extractSourceCitationsWithAnchors`
+keeps it. A citation with no anchor is the whole source, and an anchor that no
+heading matches degrades to the whole source, never an error.
+
 The graph derives communities deterministically from the folders
 (`src/graph/wiki/communityProjection.ts`: a node's community is its concept
 folder, or a fixed group per node type for the non-concept surfaces); the
@@ -443,12 +466,16 @@ only in the Plan tab, requires browser confirmation and calls
 plan, activities, logs, queue, and persisted projection. Upload cards with an
 `error` always render as failed even if storage succeeded.
 
-A fixed **run-status strip** sits above the composer (a sibling of
+A fixed **run-status strip** is pinned to the base of the window (a sibling of
 `#approval-banner`, same reason: it survives the three views that hide
-`#input-wrap`). It shows the run's business line and resolved percentage and
-**disappears once the run is over** — the Plan tab keeps the outcome, so the
-strip is not a second history. The `assistant_progress` notes never enter the
-thread: they feed this strip's liveness and the Logs tab only.
+`#input-wrap`). It shows **two business lines** like the ShellUI's strip — the
+run's aggregated activity line and the concrete step under it (an ingest
+target, a plan step), each with its own percentage — and the composer takes a
+bottom padding while it is visible (`body.run-active #input-wrap`), so it never
+covers the chat bar or its buttons. It **disappears once the run is over** — the
+Plan tab keeps the outcome, so the strip is not a second history. The
+`assistant_progress` notes never enter the thread: they feed this strip's
+liveness and the Logs tab only.
 
 While a dropped PDF/text file waits on the documents agent, the Pending panel
 shows it as a **non-clickable spinner row**: the server renders it from the
@@ -683,13 +710,19 @@ ingest`) builds a review per planned operation (`buildReviewOperations`):
 - `exportService.ts`: citation expansion and polish. Each cited source is
   read WHOLE (bounded by `maxSourceChars`) and replaces its chunk fragments —
   the "insufficient source documentation" note only appears when the evidence
-  genuinely lacks the detail. Every export/polish also keeps a versioned copy
+  genuinely lacks the detail. The final export passes through
+  `stripCitationMarkers`, so a section kept unchanged (unresolved source or
+  failed validation) cannot leak its `[src: …]` markers into the output.
+  A versioned copy is kept only when the output ALREADY exists: the first run
+  leaves a single `<name>.export.md`, a later run archives the PREVIOUS content
+  as `<name>_v-YY.export.md` (or `.export.polished.md`) before overwriting
   (`exportVersionParts`/`versionedExportPath`/`nextExportVersionNumber`, wired
-  in `commands/export.ts`): `<name>_v-YY.export.md` or
-  `<name>_v-YY.export.polished.md` next to the output, YY two-digit per kind
-  series — exports and polishes number independently, a custom `--output` or
-  a version-of-a-version is never versioned, and the versioned path joins the
-  same history commit scope as the output.
+  in `commands/export.ts`). YY is two-digit per kind series — exports and
+  polishes number independently, a custom `--output` or a version-of-a-version
+  is never versioned, and the versioned path joins the same history commit
+  scope as the output. The serve export/polish button is not offered on an
+  `*.export(\.polished)?\.md` artifact: the action belongs on the source
+  deliverable.
 - `retrievalService.ts`: lexical/vector context assembly. Lexical scoring is
   BM25 (`BM25_K1`/`BM25_B`, `buildBm25Corpus`/`scoreDocument`), not naive
   term-presence counting — `tokenize()` NFKD-normalizes and strips

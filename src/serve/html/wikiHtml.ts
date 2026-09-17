@@ -307,9 +307,15 @@ function linkSourceCitations(raw: string, currentDir = ''): string {
   return raw.replace(/\[src:\s*([^\]]+)\]/g, (match, citationPath: string) => {
     const cleanPath = citationPath.trim();
     if (!cleanPath) return '[src:]';
-    if (!cleanPath.endsWith('.md')) return match;
-    const href = localHref(cleanPath, currentDir);
-    if (isRawUntrackedReference(cleanPath) || isRawUntrackedReference(href)) {
+    // A citation may name only a section of its source (`path#Heading`): the
+    // link targets the file with the heading as fragment, the label keeps the
+    // full marker. A citation without an anchor is the whole source.
+    const [basePath, anchor] = cleanPath.split('#');
+    const path = (basePath ?? '').trim();
+    if (!path.endsWith('.md')) return match;
+    const anchorSuffix = anchor && anchor.trim() ? `#${encodeURIComponent(anchor.trim())}` : '';
+    const href = localHref(path, currentDir) + anchorSuffix;
+    if (isRawUntrackedReference(path) || isRawUntrackedReference(href)) {
       return `<span class="source-citation source-citation-stale" title="Raw source archived or moved">[src: ${escapeHtml(cleanPath)}]</span>`;
     }
     return `<a class="source-citation" href="${escapeHref(href)}" title="${escapeAttr(cleanPath)}">[src: ${escapeHtml(cleanPath)}]</a>`;
@@ -926,9 +932,13 @@ function renderNavNode(
   const changeDot = changedHere(node.path) && isConceptFolderPath(node.path)
     ? `<span class="side-folder-change-dot" data-changed-dir="${safeNodePath}" title="Contains pages from the last ingest"></span>`
     : '';
-  // A collection root is already a tab of the Files view: no label, no
-  // expand/collapse. Its children render directly; it stays a drop target.
-  if (plainRoot && depth === 0) return `<div class="side-folder-row side-folder-plain"${dropAttr}>${actionsHtml}<div class="side-folder-children">${children}</div></div>`;
+  // A collection/WIKI root is already a tab or a fixed section: it keeps its
+  // UPPERCASE title but has no expand/collapse (the nested concept folders
+  // still fold). Its children render directly; it stays a drop target, and its
+  // actions — the wiki rebuild button — travel with it.
+  if (plainRoot && depth === 0) {
+    return `<div class="side-folder-row side-folder-plain${rootClass}"${dropAttr}><div class="side-folder-plain-label">${escapeHtml(label)}</div>${actionsHtml}<div class="side-folder-children">${children}</div></div>`;
+  }
   return `<div class="side-folder-row${rootClass}"><details class="side-folder"${open} data-tree-id="${safeNodePath}"${dragAttrs}${dropAttr}><summary><span class="side-folder-label">${escapeHtml(label)}</span>${changeDot}${sectionCount}</summary><div class="side-folder-children">${children}</div></details>${actionsHtml}</div>`;
 }
 
@@ -1081,7 +1091,6 @@ async function renderUntrackedSidebar(rootDir: string): Promise<{ html: string; 
   }
   const statuses = new Map<string, 'new' | 'update' | 'modified'>();
   const count = files.length + inflightUploads.length;
-  const open = count > 0 ? ' open' : '';
   const inflightRows = inflightUploads.map((record) =>
     `<div class="side-untracked-item side-untracked-uploading" data-upload-inflight title="Converting with the documents agent — ${escapeAttr(record.filename)}"><span class="side-upload-spinner" aria-hidden="true"></span><span class="side-upload-name">${escapeHtml(record.filename)}</span></div>`).join('');
   // Pending is the inbox of documents, not of folders: only a folder that has
@@ -1166,7 +1175,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<{ html: string; 
       })).then(() => `${inflightRows}${renderUntrackedNode(root, titles, statuses, phases, true, pendingAt)}`);
       })()
     : '<li class="side-untracked-empty">No pending sources.</li>';
-  const html = `<div class="side-folder-row side-untracked-row"><details class="side-untracked"${open} data-untracked-panel><summary><span>Pending</span></summary><div class="side-untracked-formats" data-untracked-formats style="padding:.15rem .5rem .3rem;font-size:.72rem;color:var(--muted);text-align:right"></div><div class="side-untracked-list" data-untracked-list data-tree-drop="" title="Drop files here: Markdown is written as is, PDF and text are converted by the documents agent"${phases.size > 0 ? ' data-active-ingest="1"' : ''}>${await items}</div></details><div class="side-folder-actions"><button class="side-folder-action side-ingest-action" type="button" title="Ingest pending sources (Donna)" aria-label="Ingest pending sources" data-ingest-launch hidden>${ZAP_ICON}</button><span class="side-untracked-count" data-untracked-count>${count}</span></div></div>`;
+  const html = `<div class="side-folder-row side-untracked-row"><div class="side-untracked" data-untracked-panel><div class="side-untracked-label">Pending</div><div class="side-untracked-formats" data-untracked-formats style="padding:.15rem .5rem .3rem;font-size:.72rem;color:var(--muted);text-align:right"></div><div class="side-untracked-list" data-untracked-list data-tree-drop="" title="Drop files here: Markdown is written as is, PDF and text are converted by the documents agent"${phases.size > 0 ? ' data-active-ingest="1"' : ''}>${await items}</div></div><div class="side-folder-actions"><button class="side-folder-action side-ingest-action" type="button" title="Ingest pending sources (Donna)" aria-label="Ingest pending sources" data-ingest-launch hidden>${ZAP_ICON}</button><span class="side-untracked-count" data-untracked-count>${count}</span></div></div>`;
   return { html, count };
 }
 
@@ -1247,7 +1256,7 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
   const collectionDirs = COLLECTION_DIRS
     .map((name) => rootDirs.find((dir) => dir.name === name))
     .filter((dir): dir is NonNullable<typeof dir> => Boolean(dir));
-  const wikiTree = wikiDir ? renderNavNode(wikiDir, 0, wikiTitles, changed) : '';
+  const wikiTree = wikiDir ? renderNavNode(wikiDir, 0, wikiTitles, changed, null, true) : '';
   const collectionTabs = collectionDirs
     .map((dir, index) => {
       const label = dir.name === 'build-context' ? 'Context' : capitalizeFirst(dir.name);
@@ -1726,8 +1735,12 @@ export async function serveMd(
     : '';
   // Hidden by default: only the chat shell can deliver (the export/polish runs
   // through Donna), so WIKI_LAYOUT_SCRIPT reveals it inside the shell's central
-  // iframe, exactly like the template "Build" button above.
-  const deliverBtn = relativePath.startsWith('deliverables/') && relativePath.endsWith('.md')
+  // iframe, exactly like the template "Build" button above. Not offered on an
+  // export/polished artifact: re-running it there re-exported the export and
+  // spawned a second version — the action belongs on the SOURCE deliverable.
+  const deliverBtn = relativePath.startsWith('deliverables/')
+    && relativePath.endsWith('.md')
+    && !/\.export(?:\.polished)?\.md$/.test(relativePath)
     ? `<button class="action-button action-donna action-agent" type="button" data-deliver="${escapeAttr(relativePath)}" hidden title="Export / polish" aria-label="Export / polish">${EXPORT_ICON}</button>`
     : '';
   // "Reformat" on an ingested wiki page: a Donna-run LLM pass that re-normalizes

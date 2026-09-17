@@ -202,18 +202,24 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .bubble a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .bubble .instruction-ref{color:var(--warn);font-family:var(--font-mono);font-size:.92em;background:rgba(199,168,0,.08);border:1px solid rgba(199,168,0,.22);border-radius:5px;padding:1px 5px;white-space:normal;overflow-wrap:anywhere}
 .stream-cursor::after{content:'▋';animation:blink .8s step-end infinite;color:var(--accent);margin-left:1px}
-/* RUN STATUS STRIP — the run's business line, next to the composer. A raw tool
-   id never appears here: it is diagnostic and lives in the Logs tab. */
-#run-strip{position:fixed;bottom:50px;left:50%;transform:translateX(-50%);z-index:59;width:min(760px,calc(100vw - 120px));box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--border);border-radius:12px;background:var(--panel);backdrop-filter:blur(var(--glass-blur));-webkit-backdrop-filter:blur(var(--glass-blur));box-shadow:var(--shadow);color:var(--text);font-size:13px}
+/* RUN STATUS STRIP — the run's business lines, pinned to the window base. A raw
+   tool id never appears here: it is diagnostic and lives in the Logs tab. */
+#run-strip{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);z-index:59;width:min(760px,calc(100vw - 120px));box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--border);border-radius:12px;background:var(--panel);backdrop-filter:blur(var(--glass-blur));-webkit-backdrop-filter:blur(var(--glass-blur));box-shadow:var(--shadow);color:var(--text);font-size:13px}
 #run-strip[hidden]{display:none}
 .run-strip-spinner{width:12px;height:12px;flex-shrink:0;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:runStripSpin .8s linear infinite}
 @keyframes runStripSpin{to{transform:rotate(360deg)}}
-.run-strip-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.run-strip-percent{flex-shrink:0;font-family:var(--font-mono);font-size:11px;color:var(--muted)}
+.run-strip-lines{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.run-strip-line{display:flex;align-items:center;gap:8px;min-width:0}
+.run-strip-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.run-strip-sub-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--muted);font-family:var(--font-mono)}
+#run-strip-sub-line[hidden]{display:none}
+.run-strip-percent,.run-strip-sub-percent{flex-shrink:0;font-family:var(--font-mono);font-size:11px;color:var(--muted)}
 .run-strip-open{flex-shrink:0;background:none;border:1px solid var(--border);border-radius:7px;color:var(--muted2);font-size:11px;padding:2px 8px;cursor:pointer}
 .run-strip-open:hover{border-color:var(--accent);color:var(--accent)}
+/* Make room so the strip never covers the composer or its buttons. */
+body.run-active #input-wrap{padding-bottom:66px}
 /* Both fixed overlays: the approval banner sits above the run strip. */
-body.run-active #approval-banner{bottom:112px}
+body.run-active #approval-banner{bottom:74px}
 /* Business activity lines inside the Plan tab (they replaced the raw cards). */
 .act-line{display:flex;align-items:center;gap:8px;padding:5px 12px;font-size:12px}
 .act-line-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:var(--muted)}

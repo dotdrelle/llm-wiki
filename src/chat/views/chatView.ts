@@ -199,20 +199,23 @@ export const CHAT_MARKUP = `<aside id="sidebar">
 </div>
 
 <!--
-  Run status strip: the chat-side twin of the ShellUI's 4-row Activity strip.
-  It carries the run's BUSINESS line next to the composer — never a raw tool id.
-  The assistant_progress notes (which name internal tools) no longer enter the
-  thread; they feed this strip's liveness and the Logs tab.
+  Run status strip: the chat-side twin of the ShellUI's Activity strip.
+  Two lines, like the ShellUI: the run's current BUSINESS activity and the
+  concrete step under it (an ingest target, a plan step), each with its own
+  percentage. It carries no raw tool id — those are the Logs tab's job.
 
-  A fixed overlay like #approval-banner, for the same reason: it must survive
-  the three center views that hide #input-wrap. It disappears once the run is
-  over — the Plan tab then carries the outcome (task statuses, skipped chain
-  steps), so the strip is not a second history.
+  Pinned to the BASE of the window and given room by a composer bottom padding
+  (body.run-active #input-wrap), so it never covers the chat bar or its
+  buttons. A fixed overlay, like #approval-banner, so it survives the three
+  center views that hide #input-wrap. It disappears once the run is over — the
+  Plan tab then carries the outcome (task statuses, skipped chain steps).
 -->
 <div id="run-strip" hidden aria-live="polite">
   <span class="run-strip-spinner" aria-hidden="true"></span>
-  <span class="run-strip-text" id="run-strip-text">Working…</span>
-  <span class="run-strip-percent" id="run-strip-percent" hidden></span>
+  <span class="run-strip-lines">
+    <span class="run-strip-line"><span class="run-strip-text" id="run-strip-text">Working…</span><span class="run-strip-percent" id="run-strip-percent" hidden></span></span>
+    <span class="run-strip-line" id="run-strip-sub-line" hidden><span class="run-strip-sub-text" id="run-strip-sub-text"></span><span class="run-strip-sub-percent" id="run-strip-sub-percent" hidden></span></span>
+  </span>
   <button class="run-strip-open" type="button" onclick="showExecutionView(event)">Details</button>
 </div>
 

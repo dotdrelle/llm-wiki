@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   canonicalizeSourceCitations,
   extractSourceCitations,
+  extractSourceCitationsWithAnchors,
   extractWikiLinks,
   normalizeGeneratedMarkdown,
   normalizeHeadingPathKey,
   normalizeSourceBody,
   parseTemplateInstructions,
+  splitCitationAnchor,
   splitMarkdownSections,
   splitSourceSections,
 } from '../src/utils/markdown.ts';
@@ -24,6 +26,19 @@ describe('source citations', () => {
       'wiki/d.md',
       'wiki/e.md',
     ]);
+  });
+
+  it('splits a section anchor off the citation and exposes it separately', () => {
+    const content = 'A [src: raw/ingested/x.md#Sécurité] et B [src: raw/ingested/y.md].';
+    // Paths only: the anchor is a build/export hint, not part of the file the
+    // graph, lint, retrieval and vector index must resolve.
+    expect(extractSourceCitations(content)).toEqual(['raw/ingested/x.md', 'raw/ingested/y.md']);
+    expect(extractSourceCitationsWithAnchors(content)).toEqual([
+      { path: 'raw/ingested/x.md', anchor: 'Sécurité' },
+      { path: 'raw/ingested/y.md', anchor: null },
+    ]);
+    expect(splitCitationAnchor('wiki/a.md#Part 2')).toEqual({ path: 'wiki/a.md', anchor: 'Part 2' });
+    expect(splitCitationAnchor('wiki/a.md')).toEqual({ path: 'wiki/a.md', anchor: null });
   });
 
   it('recognises and canonicalizes full-width bracket markers', () => {

@@ -372,7 +372,9 @@ function extractGraphTargets(
   }
 
   for (const match of markdown.matchAll(citationPattern)) {
-    const citationPath = match[1]?.trim();
+    // `path#Section` cites a section of a source; the graph edge targets the
+    // file, never the anchor.
+    const citationPath = match[1]?.trim().split('#')[0].trim();
     if (citationPath) add(graphTargetPath(citationPath, currentDir, nodeIds, deps), 'citation');
   }
 

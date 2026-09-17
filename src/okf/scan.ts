@@ -140,7 +140,11 @@ export function migrateOkfV02(content: string): { content: string; reasons: stri
     const sectionLines = lines.slice(0, end);
     const sectionText = sectionLines.join('\n');
     if (end === lines.length) {
-      citations = [...sectionText.matchAll(SRC_MARKER)].map((entry) => entry[1].trim()).filter(Boolean);
+      citations = [...sectionText.matchAll(SRC_MARKER)]
+        // `path#Section` is a section citation; the frontmatter `sources` list
+        // carries file paths only.
+        .map((entry) => entry[1].trim().split('#')[0].trim())
+        .filter(Boolean);
       body = body.slice(0, sectionStart).replace(/\n+$/, '\n');
       reasons.push(`Citations section → sources (${citations.length} source(s))`);
     } else {

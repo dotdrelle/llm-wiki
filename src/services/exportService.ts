@@ -6,7 +6,7 @@ import {
 import { buildPromptContext } from '../prompts/systemPreamble.ts';
 import { reasoningAwareOutputCap } from '../config/engineCapabilities.ts';
 import { pathExists } from '../utils/fs.ts';
-import { extractSourceCitations, splitMarkdownSections } from '../utils/markdown.ts';
+import { extractSourceCitations, extractSourceCitationsWithAnchors, splitMarkdownSections } from '../utils/markdown.ts';
 import { resolveInside } from '../utils/path.ts';
 import type { TraceLogger } from './traceLogger.ts';
 import type { AppConfig } from '../types.ts';
@@ -154,6 +154,28 @@ function citedSourceCandidates(cited: string): string[] {
   return candidates;
 }
 
+/**
+ * The content of the section a citation named with `#Heading`, or null when no
+ * heading matches. Matching is accent/case-insensitive on the heading text,
+ * then on any ancestor heading of the section's path. A miss is never fatal:
+ * the caller falls back to the whole source, which is what a citation without
+ * an anchor already means.
+ */
+export function sliceCitedSection(raw: string, anchor: string): string | null {
+  const key = (value: string): string => value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+  const target = key(anchor);
+  if (!target) return null;
+  const sections = splitMarkdownSections(raw).sections;
+  const match = sections.find((section) => key(section.headingText) === target)
+    ?? sections.find((section) => section.headingPath.some((part) => key(part) === target));
+  return match ? match.markdown : null;
+}
+
 export async function expandDeliverable(
   deliverablePath: string,
   config: AppConfig,
@@ -222,7 +244,19 @@ export async function expandDeliverable(
   for (const section of sectionsWithCitations) {
     index += 1;
     const sectionLabel = section.headingText || '(preamble)';
-    const citedPaths = [...new Set(extractSourceCitations(section.markdown))];
+    const citedCitations = [...new Map(
+      extractSourceCitationsWithAnchors(section.markdown)
+        .map((entry) => [`${entry.path}\0${entry.anchor ?? ''}`, entry]),
+    ).values()];
+    const citedPaths = [...new Set(citedCitations.map((entry) => entry.path))];
+    // A citation may name only a section of its source (`path#Heading`): the
+    // claim it backs lives there, and reading the whole file for it dilutes the
+    // evidence. Group the anchors per path; a path with no anchor stays whole.
+    const anchorsByPath = new Map<string, string[]>();
+    for (const entry of citedCitations) {
+      if (!entry.anchor) continue;
+      anchorsByPath.set(entry.path, [...(anchorsByPath.get(entry.path) ?? []), entry.anchor]);
+    }
     onProgress?.({
       phase: 'source',
       path: deliverablePath,
@@ -279,7 +313,14 @@ export async function expandDeliverable(
         continue;
       }
       if (!(await pathExists(sourceAbsolute))) continue;
-      const raw = stripCitationMarkers(await workspace.readTextFile(sourceAbsolute));
+      let raw = stripCitationMarkers(await workspace.readTextFile(sourceAbsolute));
+      const anchors = anchorsByPath.get(cited);
+      if (anchors?.length) {
+        const slices = anchors
+          .map((anchor) => sliceCitedSection(raw, anchor))
+          .filter((value): value is string => Boolean(value));
+        if (slices.length) raw = slices.join('\n\n');
+      }
       directReads.push({
         path: cited,
         content:
@@ -315,7 +356,14 @@ export async function expandDeliverable(
           warnings.push(`source not found: ${cited} (section "${sectionLabel}")`);
           continue;
         }
-        const raw = stripCitationMarkers(await workspace.readTextFile(sourceAbsolute));
+        let raw = stripCitationMarkers(await workspace.readTextFile(sourceAbsolute));
+        const anchors = anchorsByPath.get(cited);
+        if (anchors?.length) {
+          const slices = anchors
+            .map((anchor) => sliceCitedSection(raw, anchor))
+            .filter((value): value is string => Boolean(value));
+          if (slices.length) raw = slices.join('\n\n');
+        }
         fragments.push({
           path: cited,
           content:
@@ -487,7 +535,7 @@ export async function expandDeliverable(
     ...sections.map((section) => rendered.get(section) ?? section.markdown),
   ].filter((part) => part.length > 0);
 
-  const result = `${parts.join('\n\n')}\n`;
+  const result = `${stripCitationMarkers(parts.join('\n\n'))}\n`;
   await logger.info('export:done', {
     outputChars: result.length,
     regeneratedSections: regenerated.size,

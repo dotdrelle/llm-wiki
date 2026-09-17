@@ -37,32 +37,35 @@ export type ConsolidationInventoryPage = {
  */
 function folderPolicy(existingFolders: string[]): string[] {
   return [
-    'Filing policy — the concept is the FOLDER a page lives in.',
+    'Filing policy — the concept is the DOMAIN the knowledge belongs to, and it is the FOLDER a page lives in.',
     `Existing concept folders: ${existingFolders.join(', ') || '(none yet)'}.`,
     '',
-    '- a concept page is a LEAF: one subject seen under one concept. Its path is exactly'
+    '- a concept is a DOMAIN or a cross-cutting THEME the document is about (security, sovereignty,'
+      + ' cost, integration, migration, open-source, saas, internal-development, hosting, licensing…),'
+      + ' named in the output language. It is NEVER the NATURE of a subject and NEVER a generic type'
+      + ' word: "produit"/"product", "fournisseur"/"vendor", "exigence"/"requirement",'
+      + ' "reglementation"/"regulation", "dimension", "scenario", "projet"/"project", "outil"/"tool",'
+      + ' "application", "logiciel"/"software", "solution", "document" are KINDS. That nature is'
+      + ' already carried by the `kind` field; using it as the folder discards the only useful axis'
+      + ' and drops every subject into one bucket',
+    '- a concept page is a LEAF: one theme seen under one domain. Its path is exactly'
       + ' wiki/concepts/<concept>/<subject>.md',
-    '- the same subject may hold a leaf under several concepts: that is the model, not a'
-      + ' duplicate. Each leaf carries only what belongs to ITS concept',
+    '- one subject appears under EVERY concept it serves: the same product may hold a leaf under'
+      + ' "saas", another under "souverainete", another under "cout". Each leaf carries only what'
+      + ' belongs to ITS concept — that is the model, not a duplicate',
     '- EVERY folder name is written in the output language. Never open a folder in another'
       + ' language when one of this family already exists in the list above, and never'
       + ' translate an existing folder just because its name is in another language: reuse'
       + ' it exactly as written. A name in the wrong language is a duplicate, not a rename',
     '- an existing concept is ALWAYS an existing folder: REUSE one of the folders listed'
-      + ' above whenever a subject plausibly belongs to it. "cost-model" and'
-      + ' "pricing-model" are ONE concept — pick one and file the leaf there, never open'
-      + ' a near-duplicate folder. This is a MEANING check, not a spelling check: "produit"'
-      + ' and "solution-logicielle" (or "solution", "logiciel", "application", "outil") are'
-      + ' ALSO one concept despite sharing no word at all — if the existing list already has'
-      + ' one of that family, reuse it instead of opening another',
+      + ' above whenever the document touches that domain, rather than opening a near-duplicate.'
+      + ' But a domain the list does not have yet — its own use case, its cost axis, its'
+      + ' sovereignty axis — is a GENUINE new concept, never a duplicate of a kind folder',
     '- name folders in the SINGULAR: write "product", never "products"; "server", never'
       + ' "servers". Reuse the existing folder even when its number differs from the one'
       + ' you would have picked',
-    '- open a NEW folder only when a subject fits NONE of the existing folders; name it a'
-      + ' short kebab-case common noun phrase, IN THE OUTPUT LANGUAGE. The tags rule below'
-      + ' already says so for tags; folder names had no language rule at all and only'
-      + ' English examples, so they came out English in a French workspace while the tags'
-      + ' beside them were French',
+    '- open a NEW folder only when a theme fits NONE of the existing folders; name it a'
+      + ' short kebab-case common noun phrase, IN THE OUTPUT LANGUAGE',
     '- create a leaf only when this source gives that (concept, subject) pair at least two'
       + ' distinct things to say. A single passing mention stays in the source note',
     '- if a subject fits NO concept, file its leaf under the reserved folder'
@@ -70,12 +73,21 @@ function folderPolicy(existingFolders: string[]): string[] {
       + ' Never force it into the nearest folder',
     '- a leaf that already exists is UPDATED at its existing path, never recreated under'
       + ' another name',
+    '- never create two leaves of one concept whose subjects are the same theme under a'
+      + ' longer or shorter wording ("progiciel-saas" vs "progiciel-saas-secnumcloud",'
+      + ' "prophix" vs "prophix-one", "certifications" vs "certifications-anaplan"): keep ONE'
+      + ' canonical subject and update it. Extend an existing subject rather than appending a'
+      + ' qualifier to it',
     '',
-    'Leaf content: what this source establishes about this subject under this concept,'
-      + ' with its citations. Not a copy of the source note.',
+    'Leaf content: the page is the THEME, and it ACCUMULATES every source that speaks to it.'
+      + ' Write the COMPLETE final content: keep what the page already states (its excerpt is in'
+      + ' the inventory) and add what THIS source establishes — never drop an earlier statement or'
+      + ' its citation when adding this source.',
+    '- every claim carries its own citation [src: ...], copied from the user message. A citation'
+      + ' MAY name a section of the source, as [src: <path>#<Section>], when only that section backs'
+      + ' the claim; without a # it is the whole source',
     '- STRUCTURE it: short `##` headings grouping the claims by theme as soon as there are'
-      + ' more than three, and a one-line summary before them. A flat bullet list is what'
-      + ' "a few lines" used to produce, and it reads as a scrap rather than a page',
+      + ' more than three, and a one-line summary before them',
     '- cover what the extracted facts actually contain for this pair. Being brief is not a'
       + ' goal: a page that drops half of what was extracted is a worse page, not a'
       + ' tighter one. Say each thing once, in the section where it belongs',
@@ -134,7 +146,7 @@ function operationContract(): string[] {
       '',
       'For every created or updated page, also return an entry in "pages" with its provenance:',
       '- subject: the canonical identity the page belongs to, lowercase, words separated by dashes — NEVER glue the words together ("twowordidentity" instead of "two-word-identity" is wrong), never use spaces',
-      '- subject word order: the FIRST word is always the entity\'s own name (the product, vendor, requirement or regulation this leaf is about), NEVER a descriptive prefix such as "etude", "analyse", "comparatif", "projet" or "solution" — write "jedox-etude-onpremise", never "etude-jedox-onpremise". The engine matches an existing page to reuse by comparing the first word of "subject" only; a document-shaped prefix instead of the entity name is why the same real subject keeps reappearing as several near-duplicate pages across separate sources.',
+      '- subject word order: the FIRST word is the name of the leaf\'s own theme (the entity or the topic this leaf is about — the concept is already the folder), NEVER a document-shaped prefix such as "etude", "analyse", "comparatif", "synthese", "projet" or "solution" — write "jedox-onpremise", never "etude-jedox-onpremise"; "souverainete", never "etude-souverainete". The engine matches an existing page to reuse by comparing the first word of "subject" only; a document-shaped prefix is why the same real subject keeps reappearing as several near-duplicate pages across separate sources. Never name the subject after the source document\'s filename.',
       '- scope: source | product | transverse | workspace',
       `- kind: vendor | product | requirement | regulation | dimension | scenario — the NATURE of the subject (a vendor is not its product, a dimension is not a product)`,
       '- tags: 2 to 4 words linking this leaf — its entity AND the cross-cutting themes it speaks to (security, sovereignty, cost, integration…). Each tag is a SINGLE word, in the SINGULAR, in the output language — never a plural (write "requirement", not "requirements"; "solution", not "solutions"). REUSE an existing tag from the "Existing tags" list in the user message when one is close, rather than inventing a near-synonym. At most 4 tags.',

@@ -174,12 +174,50 @@ function normalizeCitationBrackets(content: string): string {
   return content.replace(/【/g, '[').replace(/】/g, ']');
 }
 
+/**
+ * Splits a citation into its file path and an optional section anchor.
+ *
+ * The model may write `path#Heading` to say "only that section backs this
+ * claim"; a bare `path` means the whole source. A `#` is not a filename
+ * character here, so the split is unambiguous.
+ */
+export function splitCitationAnchor(citation: string): { path: string; anchor: string | null } {
+  const raw = String(citation ?? '').trim();
+  const hash = raw.indexOf('#');
+  if (hash < 0) return { path: raw, anchor: null };
+  const path = raw.slice(0, hash).trim();
+  const anchor = raw.slice(hash + 1).trim();
+  return { path, anchor: anchor || null };
+}
+
 export function extractSourceCitations(content: string): string[] {
   return [...normalizeCitationBrackets(content).matchAll(SOURCE_CITATION_PATTERN)].flatMap((match) =>
     (match[1] ?? '')
       .split(';')
       .map((part) => part.trim().replace(/^src\s*:\s*/i, ''))
+      .filter(Boolean)
+      // Path only: the anchor is a build/export hint, not part of the file the
+      // graph, lint, retrieval and vector index must resolve.
+      .map((value) => splitCitationAnchor(value).path)
       .filter(Boolean),
+  );
+}
+
+/**
+ * The same citations, each kept with its optional `#section` anchor. Use this
+ * where the anchor matters (the export reads only that section of the source);
+ * everywhere else `extractSourceCitations` (paths only) is what you want.
+ */
+export function extractSourceCitationsWithAnchors(
+  content: string,
+): Array<{ path: string; anchor: string | null }> {
+  return [...normalizeCitationBrackets(content).matchAll(SOURCE_CITATION_PATTERN)].flatMap((match) =>
+    (match[1] ?? '')
+      .split(';')
+      .map((part) => part.trim().replace(/^src\s*:\s*/i, ''))
+      .filter(Boolean)
+      .map((value) => splitCitationAnchor(value))
+      .filter((entry) => Boolean(entry.path)),
   );
 }
 

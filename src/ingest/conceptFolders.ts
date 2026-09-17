@@ -103,7 +103,7 @@ export function buildConceptFolderReconcilePrompt(args: {
 }): { system: string; user: string } {
   const lines: string[] = [
     'You are the guarantor of this wiki\'s concept vocabulary.',
-    'A concept IS the folder a leaf lives in. One concept must have exactly ONE folder, however the subject is worded.',
+    'A concept IS the folder a leaf lives in — a DOMAIN or cross-cutting THEME (security, sovereignty, cost, open-source, saas, integration…), never the KIND of a subject. One concept must have exactly ONE folder, however the subject is worded.',
     `Workspace language: ${args.ctx.language}. Every canonical folder name MUST be in that language.`,
     '',
     'ESTABLISHED concept folders — the vocabulary in force (with a sample of the subjects and tags they hold):',
@@ -125,8 +125,10 @@ export function buildConceptFolderReconcilePrompt(args: {
     'The established folders are the reference: reuse them EXACTLY as written. Never rename one, never merge two of them.',
     'For EVERY proposed folder, name the established folder it duplicates, or its own name when it is a genuinely new concept.',
     '- Two proposed folders that cover the SAME concept must resolve to the same name.',
-    '- When an established folder covers the concept, reuse its exact name — even if its wording differs from the proposal.',
-    '- When no established folder covers the concept, choose a short kebab-case common noun (singular) in the workspace language.',
+    '- When an established folder covers the SAME domain, reuse its exact name — even if its wording differs from the proposal.',
+    '- When no established folder covers that domain, choose a short kebab-case common noun (singular) in the workspace language.',
+    '- A concept is a DOMAIN or cross-cutting THEME, never a KIND: "produit"/"product", "fournisseur"/"vendor", "exigence"/"requirement", "dimension", "scenario", "projet"/"project", "outil"/"tool", "application", "solution" are kinds, not concepts.',
+    '- An established KIND folder does NOT cover a proposed DOMAIN: a proposed "saas" or "souverainete" is a genuinely new concept even when an established "produit" or "solution" exists — keep it as its own folder.',
     '- Never invent a name that duplicates an established folder.',
     '',
     'Return strict JSON: { "folders": [ { "folder": "<proposed>", "canonical": "<chosen>", "reason": "<short>" } ] } with one entry per PROPOSED folder, and nothing else.',

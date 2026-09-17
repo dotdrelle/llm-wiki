@@ -6,6 +6,7 @@ import {
   extractNumericTokens,
   nextExportVersionNumber,
   sectionValidationIssue,
+  sliceCitedSection,
   stripCitationMarkers,
   versionedExportPath,
 } from '../src/services/exportService.ts';
@@ -45,6 +46,39 @@ describe('citation marker stripping', () => {
     expect(stripCitationMarkers('See [appendix A] and [RFC 6902].')).toBe(
       'See [appendix A] and [RFC 6902].',
     );
+  });
+});
+
+describe('section-anchored citations', () => {
+  const source = [
+    '---',
+    'title: Rapport',
+    '---',
+    '',
+    '# Rapport',
+    '',
+    '## Sécurité',
+    '',
+    'Chiffrement au repos et en transit.',
+    '',
+    '## Tarifs',
+    '',
+    'Le coût annuel est de 12 k€.',
+  ].join('\n');
+
+  it('reads only the section a citation names', () => {
+    // `path#Sécurité` means only that section backs the claim: the export must
+    // not dilute it with the whole source.
+    const section = sliceCitedSection(source, 'Sécurité');
+    expect(section).toContain('Chiffrement au repos');
+    expect(section).not.toContain('coût annuel');
+  });
+
+  it('matches a heading case- and accent-insensitively, and never blocks on a miss', () => {
+    expect(sliceCitedSection(source, 'securite')).toContain('Chiffrement');
+    expect(sliceCitedSection(source, 'SÉCURITÉ')).toContain('Chiffrement');
+    // An unknown anchor returns null: the caller falls back to the whole source.
+    expect(sliceCitedSection(source, 'Chapitre absent')).toBeNull();
   });
 });
 
@@ -129,10 +163,11 @@ describe('export service', () => {
 });
 
 /*
- Every export and polish keeps a versioned copy: `<name>_v-YY<kindSuffix>.md`.
- The suffix stays on the version so the kind stays recognisable, exports and
- polishes number independently, and a custom output or a version-of-a-version
- is never versioned.
+ A version (`<name>_v-YY<kindSuffix>.md`) is kept only when the output ALREADY
+ exists: the first run leaves a single `x.export.md`, a later run archives the
+ previous content before overwriting. The suffix stays on the version so the
+ kind stays recognisable, exports and polishes number independently, and a
+ custom output or a version-of-a-version is never versioned.
  */
 describe('export versioning', () => {
   it('names the first version with a two-digit counter', () => {

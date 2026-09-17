@@ -390,8 +390,8 @@ export const WIKI_LAYOUT_CSS = `
       position: absolute; top: 0; right: 0; height: 2rem;
       display: flex; align-items: center; gap: 0.35rem; padding-right: 0.45rem;
     }
-    /* A collection root is a tab already: its actions sit in normal flow above the files. */
-    .side-folder-plain > .side-folder-actions { position: static; justify-content: flex-end; }
+    /* A collection root is a tab already: its actions sit in normal flow, and its UPPERCASE title (CONTEXT / TEMPLATES / DELIVERABLES) is a static header — no fold, only the wiki tree folds. */
+    .side-folder-plain > .side-folder-actions { position: static; justify-content: flex-end; } .side-folder-plain-label { display: block; padding: 0.28rem 0.45rem; color: var(--text); font-size: 0.8rem; font-weight: 680; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .side-folder-children {
       margin-left: 0.85rem;
       padding-left: 0.35rem;
@@ -480,46 +480,20 @@ export const WIKI_LAYOUT_CSS = `
       display: flex;
       flex-direction: column;
     }
-    .side-untracked { min-height: 0; }
-    .side-untracked[open] { flex: 1 1 0; display: flex; flex-direction: column; overflow: hidden; }
-    /* Chrome 131+ wraps every non-<summary> child of <details> in the
-       ::details-content pseudo-element. It becomes the flex item of
-       .side-untracked[open], so the list's own flex:1/min-height:0 no longer
-       constrains anything and the overflowing rows are clipped by the details'
-       overflow:hidden — the Pending list stopped scrolling. Give the pseudo the
-       sizing the list used to inherit; unknown on older engines, where the rule
-       is simply dropped and the previous behavior stands. */
-    .side-untracked[open]::details-content {
-      display: flex;
-      flex-direction: column;
-      flex: 1 1 0;
-      min-height: 0;
-      overflow: hidden;
-    }
-    .side-untracked-row > .side-folder-actions { top: 0; height: 2rem; }
-    .side-untracked summary {
+    .side-untracked { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+    /* Pending is a fixed section, not a collapsible one: its title is a static
+       header. Only the wiki's nested concept folders fold. */
+    .side-untracked-label {
       display: flex;
       align-items: center;
       gap: 0.45rem;
       min-height: 2rem;
       padding: 0.28rem 3.8rem 0.28rem 0.45rem;
-      border-radius: 6px;
       color: var(--text);
-      cursor: pointer;
-      list-style: none;
-      user-select: none;
       font-weight: 760;
     }
-    .side-untracked summary::-webkit-details-marker { display: none; }
-    .side-untracked summary::before {
-      content: "▸";
-      width: 0.8rem;
-      color: var(--muted);
-      font-size: 0.74rem;
-      transition: transform 120ms ease;
-    }
-    .side-untracked[open] > summary::before { transform: rotate(90deg); }
-    .side-untracked summary:hover { background: var(--panel-soft); color: var(--accent); }
+    .side-untracked-row > .side-folder-actions { top: 0; height: 2rem; }
+    .side-folder-row.side-folder-primary .side-folder-plain-label { color: var(--accent); background: var(--accent-soft); font-weight: 800; }
     .side-untracked-count {
       min-width: 1.45rem;
       height: 1.45rem;
@@ -532,7 +506,6 @@ export const WIKI_LAYOUT_CSS = `
       font-size: 0.76rem;
       font-weight: 820;
     }
-    .side-untracked summary > span:first-child { margin-right: auto; }
     .side-untracked-list {
       overflow-y: auto;
       scrollbar-width: thin;

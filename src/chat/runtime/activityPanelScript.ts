@@ -131,19 +131,35 @@ function agentProgressEntries() {
     .filter(line=>runtimeLogMatchesFilter(line,runtimeLogFilter))
     .map(line=>({time:'',text:'Agent: '+line,tone:'info'}));
 }
-// The strip shows the run's BUSINESS line: the aggregated activity label first,
-// then the running plan step. A raw tool id is never used as the label — if
-// there is no business line the strip says "Working…", honestly generic.
-function runtimeBusinessLine() {
+// The strip shows the run's BUSINESS lines, two at most like the ShellUI:
+// the aggregated activity label(s), never a raw tool id. When no aggregated
+// line exists, the running plan step stands in; otherwise "Working…".
+function runtimeStripLines() {
   const lines=runtimeState?.workflow?.activity?.lines;
-  if(Array.isArray(lines)) {
-    const active=lines.find(line=>isActivityActive(normalizeActivityStatus(line.status,false)));
-    if(active) return String(active.label||active.id||'');
+  if(Array.isArray(lines)&&lines.length) {
+    const active=lines.filter(line=>isActivityActive(normalizeActivityStatus(line.status,false)));
+    return (active.length?active:lines).slice(-2).map((line)=>({
+      label: String(line.label||line.id||''),
+      percent: line.progress?.percent,
+    }));
   }
   const plan=Array.isArray(runtimeState?.plan)?runtimeState.plan:[];
   const running=plan.find(step=>String(step.status||'').toLowerCase()==='running');
-  if(running) return String(running.description||running.label||'');
-  return '';
+  if(running) return [{label:String(running.description||running.label||running.status||''), percent:null}];
+  return [];
+}
+function runStripPercent(value) {
+  const percent=Number(value);
+  return Number.isFinite(percent)?Math.round(percent)+'%':'';
+}
+function setRunStripLine(lineId,percentId,label,percent) {
+  const line=$(lineId), badge=$(percentId);
+  if(line) line.textContent=label||'';
+  if(badge) {
+    const value=runStripPercent(percent);
+    badge.textContent=value;
+    badge.hidden=!value;
+  }
 }
 function runIsActive() {
   if(isStreaming||pendingRuntimeStatusEls.length>0) return true;
@@ -162,13 +178,19 @@ function updateRunStrip() {
   document.body.classList.toggle('run-active',active);
   if(!active) { strip.hidden=true; return; }
   strip.hidden=false;
-  const text=$('run-strip-text');
-  if(text) text.textContent=runtimeBusinessLine()||'Working…';
-  const percentEl=$('run-strip-percent');
-  if(percentEl) {
-    const percent=Number(runtimeState?.workflow?.progress?.percent);
-    if(Number.isFinite(percent)) { percentEl.textContent=Math.round(percent)+'%'; percentEl.hidden=false; }
-    else percentEl.hidden=true;
+  const lines=runtimeStripLines();
+  const first=lines[0]||{};
+  const overall=runtimeState?.workflow?.progress?.percent;
+  setRunStripLine(
+    'run-strip-text','run-strip-percent',
+    first.label||'Working…',
+    first.percent!=null?first.percent:(lines.length?'':overall),
+  );
+  const second=lines[1];
+  const subLine=$('run-strip-sub-line');
+  if(subLine) {
+    subLine.hidden=!second;
+    if(second) setRunStripLine('run-strip-sub-text','run-strip-sub-percent', second.label||'', second.percent);
   }
 }
 

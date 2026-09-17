@@ -217,16 +217,20 @@ describe('sidebar views', () => {
     expect(WIKI_LAYOUT_CSS).toContain('.side-view-review { position: relative;');
   });
 
-  it('capitalises every tab, and renders a collection root as a flat drop target, not a collapsible node', async () => {
+  it('capitalises every tab, and renders a collection root as a flat titled drop target', async () => {
     const html = await renderSidebar(root);
 
     expect(html).toContain('>Context</button>');
     expect(html).toContain('>Templates</button>');
     expect(html).toContain('>Deliverables</button>');
-    // A collection root is its own tab: the uppercase master node and its
-    // expand/collapse are gone, the children render directly while the root
-    // stays a drop target.
+    // A collection root keeps its UPPERCASE section title but has no
+    // expand/collapse: the children render directly while the root stays a
+    // drop target.
     expect(html).toContain('side-folder-row side-folder-plain');
+    expect(html).toContain('side-folder-plain-label">BUILD CONTEXT</div>');
+    expect(html).toContain('side-folder-plain-label">TEMPLATES</div>');
+    expect(html).toContain('side-folder-plain-label">DELIVERABLES</div>');
+    // The title is a static header, never a <summary> (that would fold).
     expect(html).not.toContain('>BUILD CONTEXT</span>');
     expect(html).not.toContain('>TEMPLATES</span>');
     expect(html).not.toContain('>DELIVERABLES</span>');
@@ -236,8 +240,10 @@ describe('sidebar views', () => {
     expect(html).toContain('>Rapport</a>');
     expect(html).toContain('>Synthese</a>');
     // The wiki section root is announced in capitals, like every other
-    // section root; its taxonomy folders take a leading capital.
-    expect(html).toContain('>WIKI</span>');
+    // section root, but it is a static header too (only its nested concept
+    // folders fold); its taxonomy folders take a leading capital.
+    expect(html).toContain('side-folder-plain-label">WIKI</div>');
+    expect(html).toContain('<span class="side-folder-label">Concepts</span>');
   });
 
   it('gives each deliverable an icon per production type instead of a colour dot', async () => {
@@ -259,8 +265,9 @@ describe('sidebar views', () => {
 
     expect(html).toContain('data-rebuild-launch');
     expect(html).toContain('title="Rebuild concept pages from the archive"');
-    // It rides in the row's right-aligned actions box of the wiki root.
-    const wikiRow = html.slice(html.indexOf('side-folder-row side-folder-primary'));
+    // It rides in the row's right-aligned actions box of the wiki root, which
+    // is now a static header (side-folder-plain) rather than a collapsible.
+    const wikiRow = html.slice(html.indexOf('side-folder-row side-folder-plain side-folder-primary'));
     const actionsStart = wikiRow.indexOf('data-rebuild-launch');
     expect(actionsStart).toBeGreaterThan(-1);
     expect(wikiRow.indexOf('side-folder-actions')).toBeLessThan(actionsStart);
@@ -329,12 +336,13 @@ describe('pending status colours', () => {
     expect(WIKI_LAYOUT_CSS).toContain('.side-untracked-item.side-untracked-update .side-untracked-link');
   });
 
-  it('sizes the details content box so the Pending list keeps scrolling', () => {
-    // Chrome wraps a <details>'s non-summary children in ::details-content; without
-    // an explicit flex size the list's own flex:1/min-height:0 stops constraining it
-    // and the rows are clipped instead of scrolled.
-    expect(WIKI_LAYOUT_CSS).toContain('.side-untracked[open]::details-content');
-    expect(WIKI_LAYOUT_CSS).toContain('flex: 1 1 0;');
+  it('keeps the Pending list a flex column so it scrolls (no <details> anymore)', () => {
+    // Pending is a fixed section, not a collapsible one: the panel itself must
+    // be the flex column, or the list's own flex:1/min-height:0 stops
+    // constraining it and the rows are clipped instead of scrolled.
+    expect(WIKI_LAYOUT_CSS).toContain('.side-untracked { flex: 1 1 0;');
+    expect(WIKI_LAYOUT_CSS).not.toContain('.side-untracked[open]');
+    expect(WIKI_LAYOUT_CSS).toContain('.side-untracked-label {');
   });
 });
 

@@ -150,15 +150,16 @@ export default async function exportCmd(
     spinner?.updateSub(outputRelative);
 
     const normalized = normalizeGeneratedMarkdown(expanded);
-    await safeWriteFile(absoluteOutput, normalized);
-    // Keep a version of every export and polish: `<name>_v-YY<kindSuffix>.md`
-    // in the deliverables folder, numbered per kind. The main file stays the
-    // deliverable other things reference; the versions are the kept history
-    // of each run. Only standard export/polish names under deliverables/ are
-    // versioned — a custom `--output` path is a deliberate write, not a
-    // deliverable series.
+    // A version appears only when there was ALREADY an output to keep. The
+    // first run leaves a single `x.export.md`; a later run archives the
+    // PREVIOUS content as `x_v-01.export.md` before overwriting the current
+    // file, `x_v-02` the run after, and so on. Versioning on the first run
+    // produced a duplicate of the very file it had just written. Only standard
+    // export/polish names under deliverables/ are versioned — a custom
+    // `--output` path is a deliberate write, not a deliverable series.
     let versionedRelative: string | null = null;
-    if (outputRelative.startsWith('deliverables/')) {
+    if (outputRelative.startsWith('deliverables/') && await pathExists(absoluteOutput)) {
+      const previous = await workspace.readTextFile(absoluteOutput);
       // Version siblings live next to the main output: a listing scoped to
       // that one sub-directory is enough, and cheaper than a full recursive
       // scan of deliverables/ on every export/polish.
@@ -174,7 +175,7 @@ export default async function exportCmd(
         versionedRelative = versionedPath;
         await safeWriteFile(
           resolveInside(workspace.paths.rootDir, versionedRelative),
-          normalized,
+          previous,
         );
         await logger.info('export:versioned', {
           output: outputRelative,
@@ -183,6 +184,7 @@ export default async function exportCmd(
         });
       }
     }
+    await safeWriteFile(absoluteOutput, normalized);
     spinner?.stop();
     const historyResult = await commitHistorySafely(history, {
       command: options.polish ? 'polish' : 'export',
