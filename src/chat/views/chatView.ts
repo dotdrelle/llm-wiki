@@ -199,6 +199,24 @@ export const CHAT_MARKUP = `<aside id="sidebar">
 </div>
 
 <!--
+  Run status strip: the chat-side twin of the ShellUI's 4-row Activity strip.
+  It carries the run's BUSINESS line next to the composer — never a raw tool id.
+  The assistant_progress notes (which name internal tools) no longer enter the
+  thread; they feed this strip's liveness and the Logs tab.
+
+  A fixed overlay like #approval-banner, for the same reason: it must survive
+  the three center views that hide #input-wrap. It disappears once the run is
+  over — the Plan tab then carries the outcome (task statuses, skipped chain
+  steps), so the strip is not a second history.
+-->
+<div id="run-strip" hidden aria-live="polite">
+  <span class="run-strip-spinner" aria-hidden="true"></span>
+  <span class="run-strip-text" id="run-strip-text">Working…</span>
+  <span class="run-strip-percent" id="run-strip-percent" hidden></span>
+  <button class="run-strip-open" type="button" onclick="showExecutionView(event)">Details</button>
+</div>
+
+<!--
   Approval is a WORKSPACE-level demand, not a chat message.
 
   This banner used to live inside #input-wrap, which the layout hides in three

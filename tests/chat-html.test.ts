@@ -352,7 +352,11 @@ describe('chat html', () => {
     expect(script).toContain('function renderRuntimeWorkflowInspector()');
     expect(script).toContain('function showExecutionView(event)');
     expect(script).toContain("if(activityView==='graph')");
-    expect(script).toContain("if(view==='runtime') {");
+    // Runtime activity is no longer its own view: the aggregated business lines
+    // and the skill chain are folded into Plan.
+    expect(script).not.toContain("if(view==='runtime') {");
+    expect(script).toContain('const activityHtml=activityLines.length');
+    expect(script).toContain('const chainHtml=skillChainsHTML();');
     expect(script).not.toContain("if(view==='runtime') return activityCards?`<div class=\"act-section-head\"");
   });
 
@@ -376,20 +380,20 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('.act-body{flex:1;overflow-y:auto;');
   });
 
-  it('splits Activity List into five internally scrollable sub-tabs', () => {
-    expect(CHAT_HTML).toContain("const labels={plan:'Plan',chain:'Chain',local:'Direct agents',runtime:'Runtime activity',logs:'Logs'}");
+  it('splits Activity List into three internally scrollable sub-tabs', () => {
+    expect(CHAT_HTML).toContain("const labels={plan:'Plan',local:'Files',logs:'Logs'}");
     expect(CHAT_HTML).toContain('.activity-subtab-content{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain');
     expect(CHAT_HTML).toContain("function setActivityListTab(tab)");
     expect(CHAT_HTML).toContain('.activity-subtab-logs .runtime-log{flex:1;min-height:0;max-height:none}');
     expect(CHAT_HTML).not.toContain('runtime-section-toggle');
     expect(CHAT_HTML).toContain('onclick="clearActivityTab(\'${activityListTab}\')">Clear</button>');
     expect(CHAT_HTML).toContain('onclick="clearAllActivityTabs()"');
-    expect(CHAT_HTML).toContain("['plan','chain','local','runtime','logs'].forEach(tab=>clearActivityTab(tab,{render:false}))");
+    expect(CHAT_HTML).toContain("['plan','local','logs'].forEach(tab=>clearActivityTab(tab,{render:false}))");
     expect(CHAT_HTML).toContain('onclick="resetRuntimePlan()">Reset plan</button>');
     expect(CHAT_HTML).toContain("fetch('/api/runtime/reset',{method:'POST'})");
     expect(CHAT_HTML).toContain('.activity-subtabs{display:flex;flex-wrap:wrap;gap:4px;flex:none;margin-bottom:8px}');
     expect(CHAT_HTML).toContain('const tabStates={');
-    expect(CHAT_HTML).toContain('const tabCounts={local:localActiveCount,runtime:runtimeActiveCount}');
+    expect(CHAT_HTML).toContain('const tabCounts={local:localActiveCount}');
     expect(CHAT_HTML).toContain('function autoSelectActivityTab()');
     expect(CHAT_HTML).toContain("const suffix=count>0?` · ${count}`:''");
   });
@@ -795,23 +799,26 @@ describe('chat html', () => {
     expect(label(null)).toBe('');
   });
 
-  it('renders Donna progress notes in the thread from the runtime text alone', () => {
+  it('routes Donna progress notes to the Logs tab, never into the thread', () => {
     const [script] = chatScripts();
 
     // The sentence must come from the event: the browser must never synthesize
     // an acknowledgement of its own.
     expect(script).toContain(
-      "if(parsed&&parsed.type==='assistant_progress') appendRuntimeProgressNote(parsed.payload&&parsed.payload.message);",
+      "if(parsed&&parsed.type==='assistant_progress') noteRuntimeProgress(parsed.payload&&parsed.payload.message);",
     );
-    expect(script).toContain('function appendRuntimeProgressNote(text) {');
-    // Notes are DOM-only: they are not runtime history and must not join the
-    // conversation array, or a reload would resurrect them as real messages.
-    const source = script.match(/function appendRuntimeProgressNote\(text\) \{[\s\S]*?\n\}/)?.[0];
+    expect(script).toContain('function noteRuntimeProgress(text) {');
+    // The note names an internal tool, so it is diagnostic: it feeds the Logs
+    // tab (prefixed like the ShellUI's Agent status tab) and the run strip's
+    // liveness — it never becomes a chat message.
+    expect(script).not.toContain('function appendRuntimeProgressNote');
+    expect(script).not.toContain('runtime-progress-feed');
+    const source = script.match(/function noteRuntimeProgress\(text\) \{[\s\S]*?\n\}/)?.[0];
     expect(source).toBeTruthy();
     expect(source).not.toContain('messages.push');
-    expect(source).toContain("feed.className='msg assistant runtime-progress-feed'");
-    expect(source).toContain('⬡');
-    expect(source).toContain("list.scrollTop=list.scrollHeight");
+    expect(source).toContain('agentProgressLog=');
+    expect(script).toContain("text:'Agent: '+line");
+    expect(script).toContain('function updateRunStrip() {');
   });
 
   it('accepts JSON returned directly, in a markdown fence or inside an MCP envelope', () => {
@@ -1063,10 +1070,11 @@ describe('chat html', () => {
     // not only the read-only chat turn.
     expect(script).toContain("const openWikiPages=activePageContexts();");
     // Live-write highlight: runtime events pulse the Activity rail button and
-    // the Runtime tab, and the pulse expires once the update finishes.
+    // the Plan tab (where the run now lives), and the pulse expires once the
+    // update finishes.
     expect(script).toContain("noteRuntimeEvent();");
     expect(script).toContain("function noteRuntimeEvent() { lastRuntimeEventAt=Date.now(); }");
-    expect(script).toContain("runtime:[runtimeActiveCount>0?'has-running':'',runtimeWritingNow()?'writing':''].filter(Boolean).join(' ')");
+    expect(script).toContain("plan:runtimeWritingNow()?'writing':''");
     expect(script).toContain("railBtn.classList.toggle('writing',runtimeWritingNow());");
     // OS file drops on the chat route to the same upload flow as the paperclip
     // button; only wiki-graph context drops use the custom MIME.

@@ -132,9 +132,9 @@ function essentialRuntimeLogHTML() {
   return \`<div class="runtime-journal">\${entries.map(entry=>\`<div class="runtime-journal-entry \${entry.tone}"><time>\${esc(entry.time||'—')}</time><span>\${esc(entry.text)}</span></div>\`).join('')}</div>\`;
 }
 function runtimeLogListHTML() {
-  const entries=essentialRuntimeLogEntries(filteredRuntimeLogs(runtimeState.logs)).slice(-100).reverse();
-  return entries.length
-    ? \`<div class="runtime-journal" id="runtime-log-list">\${entries.map(entry=>\`<div class="runtime-journal-entry \${entry.tone}"><time>\${esc(entry.time||'—')}</time><span>\${esc(entry.text)}</span></div>\`).join('')}</div>\`
+  const rows=[...agentProgressEntries().reverse(), ...essentialRuntimeLogEntries(filteredRuntimeLogs(runtimeState.logs)).slice(-100).reverse()];
+  return rows.length
+    ? \`<div class="runtime-journal" id="runtime-log-list">\${rows.map(entry=>\`<div class="runtime-journal-entry \${entry.tone}"><time>\${esc(entry.time||'—')}</time><span>\${esc(entry.text)}</span></div>\`).join('')}</div>\`
     : '<div class="runtime-journal empty" id="runtime-log-list">No matching essential run events.</div>';
 }
 function scrollRuntimeLogToEnd() {
@@ -244,10 +244,9 @@ function runtimeTaskPanelHTML(view='plan') {
     if(window.__WIKI_CONFIG__?.runtime?.enabled) return '<div class="runtime-status">Runtime connecting...</div>';
     return '';
   }
-  // Chain reads only the skill-chain projection: return before building any
-  // per-view block, so a reader parked on Chain during a live run does not pay
-  // the plan/queue/activity .map(...).join('') work on every SSE refresh.
-  if(view==='chain') return skillChainsHTML();
+  // Chain and runtime activity are no longer tabs: the skill chain and the
+  // aggregated business activity lines are rendered INSIDE the Plan tab (see
+  // below). A view name that no longer exists falls through to Plan.
   const workflowNodes=Array.isArray(runtimeState.workflow?.nodes)?runtimeState.workflow.nodes:null;
   const workflowTasks=workflowNodes?.filter(node=>node.type==='task')||null;
   const workflowActivities=workflowNodes?.filter(node=>node.type==='activity')||null;
@@ -277,21 +276,6 @@ function runtimeTaskPanelHTML(view='plan') {
   const initialSynthesis=Array.isArray(activitySummary?.initialSynthesis)?activitySummary.initialSynthesis:[];
   const runStartedAt=runtimeTime(runtimeState.startedAt||runtimeState.createdAt||runtimeState.updatedAt);
   const runUpdatedAt=runtimeTime(runtimeState.finishedAt||runtimeState.completedAt||runtimeState.updatedAt,runStartedAt);
-  if(view==='runtime') {
-    const activityCards=(activityLines.length?[...activityLines].reverse().map((line,index)=>({
-      id:'runtime-agg-'+(line.id||index),
-      kind:'runtime-activity',
-      source:'runtime',
-      statusTarget:line.id||line.label||\`activity \${index+1}\`,
-      label:line.label||'Runtime activity',
-      detail:'',
-      status:normalizeActivityStatus(line.status||'running',false),
-      progress:line.progress||null,
-      startedAt:runStartedAt,
-      updatedAt:runUpdatedAt,
-    })):[...activities].reverse().map((activity,index)=>runtimeActivityToCard(activity,index,runStartedAt,runUpdatedAt))).map(actCardHTML).join('');
-    return activityCards;
-  }
   if(view==='logs') {
     const logFilters=\`<div class="runtime-log-filters"><input id="runtime-log-filter" aria-label="Filter run events" value="\${esc(runtimeLogFilter)}" oninput="setRuntimeLogFilter(this.value)" placeholder="Filter essential run events…"></div>\`;
     return logFilters+runtimeLogListHTML();
@@ -332,7 +316,16 @@ function runtimeTaskPanelHTML(view='plan') {
   // garde que le filet de separation avec le bloc precedent.
   const planHTML=planCards?\`<div class="act-section-rule"></div>\${planCards}\`:'';
   const queueHTML=queueCards?\`<div class="act-section-head"><span class="act-section-title">Queue</span></div>\${queueCards}\`:'';
-  return status+runSummary+runCard+synthesisHtml+planHTML+queueHTML;
+  // The single Activity section: the aggregated BUSINESS lines (they replace
+  // the raw activity cards, whose title was a tool id) followed by the skill
+  // chain. Folding them into Plan is what lets the run strip disappear at the
+  // end of a run without losing the outcome — including the steps a chain
+  // skipped, which used to live only in the removed Chain tab.
+  const activityHtml=activityLines.length
+    ? \`<div class="act-section-head"><span class="act-section-title">Activity</span></div>\${[...activityLines].reverse().map(runtimeActivityLineHTML).join('')}\`
+    : '';
+  const chainHtml=skillChainsHTML();
+  return status+runSummary+runCard+synthesisHtml+activityHtml+chainHtml+planHTML+queueHTML;
 }
 
 ${SKILL_CHAINS_SCRIPT}
@@ -360,37 +353,6 @@ function runtimeRunCardHTML(plan,activities,progress=null) {
     ? \`<span class="run-elapsed" id="run-elapsed" data-started-at="\${runStartedAt}">–</span>\`
     : '';
   return \`<div class="act-card running" data-run-id="\${esc(runId)}" data-turn-id="\${esc(turnId)}" data-workspace="\${esc(workspace)}"><div class="act-card-head"><span class="act-card-icon">▶</span><div class="act-card-info"><div class="act-card-name">Run — \${esc(title)}</div><div class="act-card-meta"><span class="run-progress">\${esc(progressLabel)}</span>\${elapsedHtml?' · '+elapsedHtml:''}\${meta?' · '+esc(meta):''}</div></div><span class="act-badge running">Running</span></div><div class="act-actions"><button class="act-btn" type="button" onclick="askRuntimeStatus(\${jsArg(runId||title)})">Inspect</button><button class="act-btn del" type="button" onclick="cancelRuntimeRun()">Cancel</button></div></div>\`;
-}
-
-function runtimeActivityToCard(activity,index=0,runStartedAt=Date.now(),runUpdatedAt=runStartedAt) {
-  const started=runtimeTime(activity.startedAt||activity.createdAt||activity.updatedAt,runStartedAt);
-  const updated=runtimeTime(activity.finishedAt||activity.completedAt||activity.endedAt||activity.updatedAt,runUpdatedAt);
-  const progress=activity.progress||{};
-  const structuredDetail=[
-    progress.detail,
-    progress.batch?.total&&!/batch/i.test(String(progress.detail||''))?\`Batch \${progress.batch.index}/\${progress.batch.total}\`:null,
-    progress.throttling?.active?(progress.throttling.retryAt?\`Throttled · retry \${progress.throttling.retryAt}\`:progress.throttling.waitMs?\`Throttled · wait \${progress.throttling.waitMs}ms\`:'Throttled'):null,
-    progress.processing?.instructionCount!=null?\`\${progress.processing.instructionCount} instructions\`:null,
-  ].filter(Boolean).join(' · ');
-  return {
-    id:'runtime-act-'+(activity.key||activity.id||index),
-    remoteId:activity.id||activity.key||'',
-    statusTarget:activity.id||activity.key||activity.label||\`runtime activity \${index+1}\`,
-    kind:'runtime',
-    source:activity.source||'runtime',
-    sourceLabel:activity.source||'Runtime',
-    tool:activity.tool||activity.poll?.tool||'runtime',
-    label:activity.label||activity.id||'Runtime activity',
-    detail:structuredDetail||activity.status||'',
-    status:normalizeActivityStatus(activity.status,activity.terminal),
-    progress:activity.progress||null,
-    plan:activity.plan||null,
-    poll:null,
-    error:activity.error||null,
-    terminal:Boolean(activity.terminal),
-    startedAt:started,
-    updatedAt:updated,
-  };
 }
 
 function scrollMessagesToBottom() {
@@ -444,8 +406,8 @@ function runtimeProgressLabel(event) {
   const type=event&&event.type;
   const p=(event&&event.payload)||{};
   // Tool steps are not handled here: they arrive as assistant_progress and go
-  // to the thread, where they persist. Showing them here too would print the
-  // same sentence twice on screen at once.
+  // to the Logs tab as diagnostics, never to the thread. The run strip carries
+  // the business line instead.
   if(type==='assistant_message') return 'Writing the answer…';
   if(type==='runtime_log') {
     const msg=String(p.message||'').replace(/\\s+/g,' ').trim();
@@ -473,7 +435,7 @@ function connectRuntimePanel() {
     try {
       noteRuntimeEvent();
       const parsed=JSON.parse(event.data);
-      if(parsed&&parsed.type==='assistant_progress') appendRuntimeProgressNote(parsed.payload&&parsed.payload.message);
+      if(parsed&&parsed.type==='assistant_progress') noteRuntimeProgress(parsed.payload&&parsed.payload.message);
       const label=runtimeProgressLabel(parsed);
       if(label) pendingRuntimeStatusEls.forEach(el=>updateRuntimeThinkingBubble(el,label));
     } catch {}

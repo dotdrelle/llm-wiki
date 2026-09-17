@@ -113,35 +113,63 @@ function createRuntimeThinkingBubble(text='Request received · Donna is preparin
   return div;
 }
 
-// Donna's own account of the turn, kept in the thread rather than in a panel.
-// The text always comes from the runtime (\`assistant_progress\`) and is never
-// composed here: the browser must not synthesize an acknowledgement, and a
-// second phrasing in the browser would be a second source to keep in sync.
-// The notes share ONE feed instead of stacking one message per line: a Donna
-// logo on the left, and the last four entries visible — older ones stay
-// reachable by scrolling the list up. Held outside the \`messages\` array —
-// these are not conversation history, the runtime does not persist them, and
-// a reload must not resurrect them.
-function appendRuntimeProgressNote(text) {
-  if(!text) return;
-  const wrap=$('messages');
-  if(!wrap) return;
-  let feed=wrap.querySelector('.runtime-progress-feed');
-  if(!feed) {
-    feed=document.createElement('div');
-    feed.className='msg assistant runtime-progress-feed';
-    feed.innerHTML=\`<div class="feed-logo" aria-hidden="true">⬡</div><div class="msg-content"><div class="feed-list"></div></div>\`;
-    const pending=pendingRuntimeStatusEls[pendingRuntimeStatusEls.length-1];
-    if(pending&&pending.isConnected&&pending.parentNode===wrap) wrap.insertBefore(feed,pending);
-    else wrap.appendChild(feed);
+// A progress note is a DIAGNOSTIC line (it names an internal tool), never a
+// chat message: the thread keeps the conversation, the Logs tab keeps the
+// trail. The note also proves the runtime is alive, which is what the run
+// strip needs. The ShellUI routes the same events to its Agent status tab —
+// this is the same rule, different surface.
+const AGENT_PROGRESS_LOG_LIMIT=100;
+let agentProgressLog=[];
+function noteRuntimeProgress(text) {
+  const message=String(text||'').trim();
+  if(!message) return;
+  agentProgressLog=[...agentProgressLog,message].slice(-AGENT_PROGRESS_LOG_LIMIT);
+  updateRunStrip();
+}
+function agentProgressEntries() {
+  return agentProgressLog
+    .filter(line=>runtimeLogMatchesFilter(line,runtimeLogFilter))
+    .map(line=>({time:'',text:'Agent: '+line,tone:'info'}));
+}
+// The strip shows the run's BUSINESS line: the aggregated activity label first,
+// then the running plan step. A raw tool id is never used as the label — if
+// there is no business line the strip says "Working…", honestly generic.
+function runtimeBusinessLine() {
+  const lines=runtimeState?.workflow?.activity?.lines;
+  if(Array.isArray(lines)) {
+    const active=lines.find(line=>isActivityActive(normalizeActivityStatus(line.status,false)));
+    if(active) return String(active.label||active.id||'');
   }
-  const list=feed.querySelector('.feed-list');
-  const entry=document.createElement('div');
-  entry.className='feed-entry';
-  entry.textContent=text;
-  list.appendChild(entry);
-  list.scrollTop=list.scrollHeight;
-  wrap.scrollTop=wrap.scrollHeight;
+  const plan=Array.isArray(runtimeState?.plan)?runtimeState.plan:[];
+  const running=plan.find(step=>String(step.status||'').toLowerCase()==='running');
+  if(running) return String(running.description||running.label||'');
+  return '';
+}
+function runIsActive() {
+  if(isStreaming||pendingRuntimeStatusEls.length>0) return true;
+  if(!runtimeState) return false;
+  const status=String(runtimeState.status||'').toLowerCase();
+  if(status==='running'||status==='pending_approval') return true;
+  const activities=Array.isArray(runtimeState.activities)?runtimeState.activities:[];
+  if(activities.some(activity=>isActivityActive(normalizeActivityStatus(activity.status,activity.terminal)))) return true;
+  const chains=Array.isArray(runtimeState.skillChains)?runtimeState.skillChains:[];
+  return chains.some(chain=>chain.status==='running'||chain.status==='queued');
+}
+function updateRunStrip() {
+  const strip=$('run-strip');
+  if(!strip) return;
+  const active=runIsActive();
+  document.body.classList.toggle('run-active',active);
+  if(!active) { strip.hidden=true; return; }
+  strip.hidden=false;
+  const text=$('run-strip-text');
+  if(text) text.textContent=runtimeBusinessLine()||'Working…';
+  const percentEl=$('run-strip-percent');
+  if(percentEl) {
+    const percent=Number(runtimeState?.workflow?.progress?.percent);
+    if(Number.isFinite(percent)) { percentEl.textContent=Math.round(percent)+'%'; percentEl.hidden=false; }
+    else percentEl.hidden=true;
+  }
 }
 
 // An agent-mode turn runs on an ephemeral runtime session whose events never
@@ -193,7 +221,7 @@ let agentMode=false;
 // which read as broken rather than a deliberate default.
 let activityView='list';
 let activityListTab='plan';
-const activityClearedFingerprints={plan:null,chain:null,runtime:null,logs:null};
+const activityClearedFingerprints={plan:null,logs:null};
 let selectedWorkflowNodeId=null;
 const _activityPollTimers=new Map();
 function isActivityActive(status){return status==='running'||status==='queued';}
@@ -367,9 +395,9 @@ function dismissActivity(id) {
 }
 function activityTabFingerprint(tab) {
   if(!runtimeState) return 'empty';
-  if(tab==='plan') return JSON.stringify([runtimeState.runId,runtimeState.currentRunId,runtimeState.plan,runtimeState.queue,runtimeState.workflow?.nodes?.filter(node=>node.type==='task'||node.type==='queue')]);
-  if(tab==='chain') return JSON.stringify(runtimeState.skillChains||[]);
-  if(tab==='runtime') return JSON.stringify([runtimeState.runId,runtimeState.currentRunId,runtimeState.activities,runtimeState.workflow?.activity,runtimeState.workflow?.nodes?.filter(node=>node.type==='activity')]);
+  // Plan now carries the skill chain and the aggregated activity lines too, so
+  // its fingerprint must cover them: a Clear on Plan has to hide the whole tab.
+  if(tab==='plan') return JSON.stringify([runtimeState.runId,runtimeState.currentRunId,runtimeState.plan,runtimeState.queue,runtimeState.skillChains,runtimeState.workflow?.activity,runtimeState.workflow?.nodes?.filter(node=>node.type==='task'||node.type==='queue'||node.type==='activity')]);
   if(tab==='logs') return JSON.stringify(runtimeState.logs||[]);
   return '';
 }
@@ -382,13 +410,13 @@ function clearActivityTab(tab,{render=true}={}) {
     _activities.forEach(item=>clearPollTimer(item.id));
     _activities=[];
     saveActivities();
-  } else if(['plan','chain','runtime','logs'].includes(tab)) {
+  } else if(['plan','logs'].includes(tab)) {
     activityClearedFingerprints[tab]=activityTabFingerprint(tab);
   }
   if(render) { renderActivities(); updateActivityBadge(); }
 }
 function clearAllActivityTabs() {
-  ['plan','chain','local','runtime','logs'].forEach(tab=>clearActivityTab(tab,{render:false}));
+  ['plan','local','logs'].forEach(tab=>clearActivityTab(tab,{render:false}));
   renderActivities(); updateActivityBadge();
 }
 async function resetRuntimePlan() {
@@ -399,8 +427,6 @@ async function resetRuntimePlan() {
     const data=await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(data.error||'Runtime plan reset failed');
     activityClearedFingerprints.plan=null;
-    activityClearedFingerprints.chain=null;
-    activityClearedFingerprints.runtime=null;
     activityClearedFingerprints.logs=null;
     await fetchRuntimeState();
     notify('Runtime plan reset');
@@ -513,6 +539,27 @@ function activityPlanSteps(item) {
   }];
   return [];
 }
+// One aggregated business activity line (workflow.activity.lines). This is the
+// comprehensible replacement for the raw activity card, whose title was a tool
+// name and whose meta was "runtime · DONE". The label is the business sentence
+// the agent published; the meta keeps the status and the live figures.
+function runtimeActivityLineHTML(line) {
+  const status=normalizeActivityStatus(line.status||'running',false);
+  const progress=line.progress||{};
+  const percent=Number(progress.percent);
+  const bits=[
+    progress.detail,
+    progress.batch?.total?\`batch \${(Number(progress.batch.index)||0)+1}/\${progress.batch.total}\`:null,
+    progress.throttling?.active?(progress.throttling.retryAt?\`throttled · retry \${progress.throttling.retryAt}\`:'throttled'):null,
+    progress.processing?.instructionCount!=null?\`\${progress.processing.instructionCount} instruction\${Number(progress.processing.instructionCount)>1?'s':''}\`:null,
+    progress.stabilizeKept!=null||progress.stabilizeMerged!=null
+      ? \`kept \${progress.stabilizeKept??0}, merged \${progress.stabilizeMerged??0}, inserted \${progress.stabilizeInserted??0}, removed \${progress.stabilizeRemoved??0}\`
+      : null,
+    Number.isFinite(percent)?Math.round(percent)+'%':null,
+  ].filter(Boolean);
+  const meta=[status,...bits].join(' · ');
+  return \`<div class="act-line \${status}"><span class="act-line-dot"></span><span class="act-line-label">\${esc(line.label||line.id||'Activity')}</span><span class="act-line-meta">\${esc(meta)}</span></div>\`;
+}
 function localActivityHTML() {
   const rev=[..._activities].reverse();
   const uploads=rev.filter(a=>a.kind==='upload');
@@ -571,20 +618,20 @@ function renderActivities() {
   const activePaneHTML=activityTabWasCleared(activityListTab)?'':(activityListTab==='local'
     ? localActivityHTML()
     : runtimeTaskPanelHTML(activityListTab));
-  const labels={plan:'Plan',chain:'Chain',local:'Direct agents',runtime:'Runtime activity',logs:'Logs'};
+  // Three tabs, not five: the run's plan, activity lines and skill chain all
+  // live in Plan (the Chain and Runtime activity tabs only ever duplicated it),
+  // and "Direct agents" was really the local upload/conversion feed.
+  const labels={plan:'Plan',local:'Files',logs:'Logs'};
   const localActiveCount=_activities.filter(a=>isActivityActive(a.status)).length;
   const localFailedCount=_activities.filter(a=>a.status==='failed'||a.error).length;
-  const runtimeActiveCount=Array.isArray(runtimeState?.activities)
-    ? runtimeState.activities.filter(a=>isActivityActive(normalizeActivityStatus(a.status,a.terminal))).length
-    : 0;
   const tabStates={
+    plan:runtimeWritingNow()?'writing':'',
     local:localFailedCount>0?'has-error':localActiveCount>0?'has-running':'',
-    runtime:[runtimeActiveCount>0?'has-running':'',runtimeWritingNow()?'writing':''].filter(Boolean).join(' '),
   };
   // Counts and highlights follow ACTIVE items only: once a conversion is done
   // the tab returns to a plain label — a finished card must not leave a
   // permanent "· 1" residue. Failures stay flagged until dismissed.
-  const tabCounts={local:localActiveCount,runtime:runtimeActiveCount};
+  const tabCounts={local:localActiveCount};
   const tabs=Object.entries(labels).map(([key,label])=>{
     const count=tabCounts[key]||0;
     const suffix=count>0?\` · \${count}\`:'';
@@ -627,6 +674,9 @@ function finishActivityRender() {
   if(anyRunning&&!_actTimer) _actTimer=setInterval(renderActivities,1000);
   if(!anyRunning&&_actTimer){clearInterval(_actTimer);_actTimer=null;}
   updateRunElapsed();
+  // The strip must follow the same tick: it disappears when the run ends, and
+  // its percentage/elapsed come from the live state.
+  updateRunStrip();
   // The tick is also what expires the live-write pulse: 4s after the last
   // runtime event the writing highlight fades, and the terminal render clears
   // it for good — the marker never outlives the update it announced.
@@ -665,7 +715,7 @@ function updateRunElapsed() {
   el.textContent=formatRunElapsed(Date.now()-started);
 }
 function setActivityListTab(tab) {
-  if(!['plan','chain','runtime','logs','local'].includes(tab)) return;
+  if(!['plan','logs','local'].includes(tab)) return;
   activityListTab=tab;
   renderActivities();
 }
@@ -694,8 +744,8 @@ function closePanelsBesideActivity() {
   if(typeof disableSplitWiki==='function') disableSplitWiki();
 }
 // Opening the panel is the moment to answer "where do I look": a running
-// local conversion (upload or direct MCP card) switches the list to the
-// Direct agents tab instead of leaving the reader on an empty Plan tab. Only
+// local conversion (upload or direct MCP card) switches the list to the Files
+// tab instead of leaving the reader on an empty Plan tab. Only
 // runs on open — never while the reader is already looking at something else.
 function autoSelectActivityTab() {
   const localActive=_activities.some(a=>isActivityActive(a.status));

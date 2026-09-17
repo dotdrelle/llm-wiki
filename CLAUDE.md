@@ -426,16 +426,29 @@ manager's `state.concurrency` / `workflow.timingByTask` — see
   dark) — a fixed light fill made them invisible on the light canvas
   (`runtimeCanvasScript.ts`).
 
-The Activity list is split into `Plan`, `Chain`, `Local activity`,
-`Runtime activity`, and `Logs`, in that order. Each tab owns a `Clear` action;
-`Clear all` beside the List/Graph switch applies all five. Local clearing
-removes browser-owned upload/MCP cards, while clearing the other tabs hides the
-current runtime snapshot until new state changes its fingerprint. This is
-deliberately not a runtime deletion. `Reset plan`, shown only in the Plan tab,
-requires browser confirmation and calls `/api/runtime/reset`; it stops active
-work and purges the workspace runtime plan, activities, logs, queue, and
-persisted projection. Upload cards with an `error` always render as failed even
-if storage succeeded.
+The Activity list is split into `Plan`, `Files`, and `Logs`. Plan carries the
+run: tasks, queue, the aggregated **business** activity lines
+(`workflow.activity.lines`, never a raw tool id) and the skill chain
+(`skillChains`), so a Plan tab alone holds the outcome — including the steps a
+chain skipped. Files is the local upload/conversion feed (former "Direct
+agents"); Logs keeps the essential run events plus the `assistant_progress`
+notes, prefixed `Agent:` like the ShellUI's Agent status tab. The former
+`Chain` and `Runtime activity` tabs were removed — they only duplicated Plan.
+Each tab owns a `Clear` action; `Clear all` beside the List/Graph switch applies
+all three. Local clearing removes browser-owned upload/MCP cards, while clearing
+the other tabs hides the current runtime snapshot until new state changes its
+fingerprint. This is deliberately not a runtime deletion. `Reset plan`, shown
+only in the Plan tab, requires browser confirmation and calls
+`/api/runtime/reset`; it stops active work and purges the workspace runtime
+plan, activities, logs, queue, and persisted projection. Upload cards with an
+`error` always render as failed even if storage succeeded.
+
+A fixed **run-status strip** sits above the composer (a sibling of
+`#approval-banner`, same reason: it survives the three views that hide
+`#input-wrap`). It shows the run's business line and resolved percentage and
+**disappears once the run is over** — the Plan tab keeps the outcome, so the
+strip is not a second history. The `assistant_progress` notes never enter the
+thread: they feed this strip's liveness and the Logs tab only.
 
 While a dropped PDF/text file waits on the documents agent, the Pending panel
 shows it as a **non-clickable spinner row**: the server renders it from the
@@ -545,13 +558,12 @@ prose and informational questions still reach Donna without this interception.
 sides, and the two lists must be changed together. An explicit `forceChat` wins
 over the switch.
 
-The Activity panel renders a dedicated **Chain** tab from
-`runtimeState.skillChains`, the projection the runtime publishes over the
-control queue, with one line per step (`✓ ● × –`), its status and its
-`skipReason`. A chain disappears once it is fully `done`; it stays visible when
-it was cancelled or left incomplete, which is exactly when the user needs to
-see which steps were skipped. Styles live in `styles/chatActivityStyles.ts`
-under `.chain-*`.
+The Plan tab renders the **skill chain** from `runtimeState.skillChains`, the
+projection the runtime publishes over the control queue, with one line per step
+(`✓ ● × –`), its status and its `skipReason`. A chain disappears once it is
+fully `done`; it stays visible when it was cancelled or left incomplete, which
+is exactly when the user needs to see which steps were skipped. Styles live in
+`styles/chatActivityStyles.ts` under `.chain-*`.
 
 The empty chat's first tile and the empty Activity panel's button both open
 the Help panel (`toggleHelpPanel()`) — a slide-out reader over the bundled,
