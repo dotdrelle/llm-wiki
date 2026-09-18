@@ -210,6 +210,8 @@ function applyWorkspaceTitle() {
   if (navTitle) navTitle.textContent = label;
   const logoText = document.querySelector('.sb-logo-text');
   if (logoText) logoText.textContent = label;
+  const wcoBrand = document.getElementById('wco-titlebar-brand');
+  if (wcoBrand) wcoBrand.textContent = '⬡ ' + label;
 }
 
 function loadConfig() {

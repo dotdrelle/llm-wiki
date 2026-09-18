@@ -97,34 +97,74 @@ const SUBJECT_STOPWORDS = new Set([
   'plan', 'plans', 'type', 'types', 'niveau', 'niveaux', 'phase', 'phases',
 ]);
 
+function significantTokens(value: string): string[] {
+  return value
+    .split(/[-_]/)
+    // A bare number is never evidence of identity. "budget-2024" and
+    // "roadmap-2024" share nothing but a year, and years are exactly the kind
+    // of token a folder-naming convention sprinkles over every subject.
+    .filter((token) => token.length >= 3 && !/^\d+$/.test(token) && !SUBJECT_STOPWORDS.has(token));
+}
+
+/**
+ * Whether two normalized subjects name the same ENTITY: their leading tokens
+ * match, or one subject is a prefix run of the other.
+ *
+ * Subjects are written entity-name-first (`jedox-etude-onpremise`, never
+ * `etude-jedox-…` — the `operationContract` enforces it), so the leading token
+ * IS the entity. This is the STRICT predicate: it decides whether two leaves
+ * in one concept folder are a duplicate of each other, which costs LLM retry
+ * rounds and pressures the model into collapsing two genuinely different
+ * things. `jedox-cloud` and `anaplan-cloud` are two products, not one.
+ */
+export function subjectsShareEntityRoot(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const rootA = a.split('-', 1)[0] ?? '';
+  const rootB = b.split('-', 1)[0] ?? '';
+  return rootA.length > 2 && rootA === rootB && !SUBJECT_STOPWORDS.has(rootA);
+}
+
+/**
+ * How strongly two normalized subjects plausibly identify the same real-world
+ * thing: 0 = unrelated, higher = better evidence.
+ *
+ * This is the LENIENT predicate, and the score exists because its consumer
+ * keeps only the best few matches. `subjectMatchInventory` shows the model at
+ * most five same-subject candidates; taken in corpus order, five pages sharing
+ * nothing but "etude" crowded out the one genuine match and reopened the
+ * concept-homonym defect (B17) this inventory exists to close.
+ */
+export function subjectMatchStrength(a: string, b: string): number {
+  if (!a || !b) return 0;
+  if (a === b) return 100;
+  if (subjectsShareEntityRoot(a, b)) return 50;
+  const tokensA = significantTokens(a);
+  const tokensB = new Set(significantTokens(b));
+  const shared = tokensA.filter((token) => tokensB.has(token));
+  if (shared.length === 0) return 0;
+  // A rarer token is better evidence, and so is sharing several of them.
+  return shared.length * 10 + Math.max(...shared.map((token) => Math.min(token.length, 9)));
+}
+
 /**
  * Whether two normalized subjects plausibly identify the same real-world
  * thing: the leading tokens match ("x" / "x-solution" / "x-certifications" all
  * share "x"), or they share any significant token ("couts-infra" and "infra"
- * both carry "infra"). Generic tokens are ignored, so "solution-pricing" and
- * "solution-licence" are not related just because both say "solution".
+ * both carry "infra"). Generic tokens and bare numbers are ignored, so
+ * "solution-pricing" and "solution-licence" are not related just because both
+ * say "solution".
  *
  * This is deliberately lenient: it only decides whether an existing page is
  * worth SHOWING the model as a reuse candidate during consolidation, never
- * whether to merge anything outright, so a false positive costs one ignored
- * inventory line while a false negative reproduces the concept-homonym defect
- * it exists to catch.
+ * whether to merge anything outright, so a false positive costs one inventory
+ * line (ranked by `subjectMatchStrength`, so it is the first to be dropped)
+ * while a false negative reproduces the concept-homonym defect it exists to
+ * catch. Anything that DECIDES rather than shows must use
+ * `subjectsShareEntityRoot` instead.
  */
 export function subjectsAreRelated(a: string, b: string): boolean {
-  if (!a || !b) return false;
-  if (a === b) return true;
-  const rootA = a.split('-', 1)[0];
-  const rootB = b.split('-', 1)[0];
-  // A shared leading token is only evidence when the token is significant.
-  // Without the stopword guard, "solution-pricing" and "solution-licence" (or
-  // "phase-1-…" and "phase-2-…") matched on the generic word alone — the very
-  // false positive SUBJECT_STOPWORDS exists to prevent.
-  if (rootA.length > 2 && rootA === rootB && !SUBJECT_STOPWORDS.has(rootA)) return true;
-  const tokensA = a.split(/[-_]/).filter((token) => token.length >= 3 && !SUBJECT_STOPWORDS.has(token));
-  const tokensB = new Set(
-    b.split(/[-_]/).filter((token) => token.length >= 3 && !SUBJECT_STOPWORDS.has(token)),
-  );
-  return tokensA.some((token) => tokensB.has(token));
+  return subjectMatchStrength(a, b) > 0;
 }
 
 export function isExtractionScope(value: unknown): value is ExtractionScope {

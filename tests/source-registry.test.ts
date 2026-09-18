@@ -228,23 +228,19 @@ describe('réconciliation', () => {
   });
 });
 
-describe('provenance des affirmations — état constaté', () => {
-  it('documente que les marqueurs d’autres sources sont réattribués', async () => {
+describe('provenance des affirmations', () => {
+  it('épargne un marqueur déjà ancré, ancre de section comprise', async () => {
     /*
-     Ce test ne protège pas un comportement souhaitable : il FIGE un défaut
-     connu, pour que sa correction (T32.5) soit un changement visible et non
-     un effet de bord.
+     Ce test figeait un défaut connu (T32.5) : `enforceSourceCitationPath`
+     réécrivait TOUT marqueur `[src: …]` ne désignant pas la source courante,
+     alors qu'un `update` porte le contenu COMPLET de la page — les marqueurs
+     hérités d'autres sources étaient donc réattribués à la source en cours.
 
-     `enforceSourceCitationPath` (ingestService.ts) réécrit tout marqueur
-     `[src: …]` qui ne désigne pas la source courante. L'intention est
-     d'empêcher un modèle d'inventer un chemin d'archive. Mais un `update`
-     porte le contenu COMPLET de la page : les marqueurs hérités d'autres
-     sources sont donc réattribués à la source en cours, et la provenance
-     multi-source est détruite dès la deuxième ingestion touchant une page.
-
-     Tant que ce test passe, aucun retrait partiel n'est possible : on ne peut
-     pas retirer « les affirmations soutenues uniquement par la source X » si
-     toutes les affirmations finissent attribuées à la dernière source vue.
+     Le défaut est corrigé : `ANCHORED_CITATION_PATH` épargne un chemin
+     d'archive ou de page bien formé. Le test pin désormais le contrat en
+     vigueur, y compris le point qui l'avait cassé une seconde fois — le test
+     porte sur le CHEMIN seul, jamais sur `chemin#Section`, car un titre de
+     section porte des espaces et des apostrophes par nature.
     */
     const source = await readFile(
       new URL('../src/services/ingestService.ts', import.meta.url),
@@ -255,10 +251,14 @@ describe('provenance des affirmations — état constaté', () => {
       source.indexOf('function diffPreview'),
     );
 
-    expect(fn).toContain('if (cleanCitationPath !== archiveCitationPath) rewrittenCitations += 1;');
-    expect(fn).toContain('return `[src: ${archiveCitationPath}]`;');
-    // La correction consistera à épargner un marqueur qui désigne une archive
-    // EXISTANTE. Le jour où cette vérification apparaît, ce test doit changer.
-    expect(fn).not.toContain('archiveExists');
+    // Le chemin est séparé de son ancre AVANT le test de forme…
+    expect(fn).toContain('const { path: citedPath, anchor } = splitCitationAnchor(cleanCitationPath);');
+    expect(fn).toContain('if (ANCHORED_CITATION_PATH.test(anchoredPath)) {');
+    // …et l'ancre survit, dans les deux branches.
+    expect(fn).toContain('return `[src: ${anchoredPath}${anchor ? `#${anchor}` : \'\'}]`;');
+    expect(fn).toContain('return `[src: ${archiveCitationPath}${anchor ? `#${anchor}` : \'\'}]`;');
+    // La comparaison de réécriture porte sur le chemin, pas sur la citation
+    // entière : sinon toute citation ancrée était comptée comme réécrite.
+    expect(fn).toContain('if (citedPath !== archiveCitationPath) rewrittenCitations += 1;');
   });
 });

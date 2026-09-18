@@ -821,6 +821,68 @@ describe('chat html', () => {
     expect(script).toContain('function updateRunStrip() {');
   });
 
+  it('paints the scrollbar track transparent so it never reads white in dark mode', () => {
+    // A custom ::-webkit-scrollbar opts out of the native dark appearance, so
+    // an uncoloured track fell back to the system control colour: a full-height
+    // white bar in dark mode. The track must be explicitly transparent.
+    expect(CHAT_HTML).toContain(
+      '::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}',
+    );
+    expect(CHAT_HTML).toContain(
+      'html{scrollbar-color:var(--border) transparent;scrollbar-width:thin}',
+    );
+  });
+
+  it('reads the central area on the plain theme ground, without the body grid', () => {
+    // The shell's centre is a solid theme colour in every view; the body's
+    // wash + 48px grid is left to the two glass rails, not the conversation.
+    expect(CHAT_HTML).toContain(
+      '#main{flex:1;height:100vh;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}',
+    );
+  });
+
+  it('shows the running document, its counters and tokens in the run strip', () => {
+    const script = chatScripts().join('\n');
+
+    // The primary label is the activity's own document/step (the same
+    // `progress.label` the ShellUI shows for an aggregated line), not the
+    // capability name.
+    expect(script).toContain("const document=String(progress.label||'').trim();");
+    // The sub-line carries the live figures the direct wiki CLI already
+    // exports — counters, detail and tokens.
+    const tokens = script.slice(
+      script.indexOf('function runStripTokenText'),
+      script.indexOf('function runStripDetail'),
+    );
+    const detail = script.slice(
+      script.indexOf('function runStripDetail'),
+      script.indexOf('function runtimeStripLines'),
+    );
+    expect(tokens).toBeTruthy();
+    expect(detail).toBeTruthy();
+
+    const context: Record<string, unknown> = {};
+    vm.runInNewContext(`${tokens}\n${detail};this.runStripDetail=runStripDetail;`, context);
+    const runStripDetail = context.runStripDetail as (
+      progress: Record<string, unknown>,
+      usage?: Record<string, unknown>,
+    ) => string;
+    expect(
+      runStripDetail({
+        stepIndex: 1,
+        stepTotal: 3,
+        sourceIndex: 0,
+        sourceCount: 2,
+        detail: 'LLM running',
+        currentStep: 'ingest',
+        inputTokens: 1200,
+        outputTokens: 300,
+      }),
+    ).toBe('Step 1/3 · Source 1/2 · LLM running · ingest · 1,200 in · 300 out');
+    // No progress figures, no fabricated line.
+    expect(runStripDetail({ percent: 5 })).toBe('');
+  });
+
   it('accepts JSON returned directly, in a markdown fence or inside an MCP envelope', () => {
     const [script] = chatScripts();
 

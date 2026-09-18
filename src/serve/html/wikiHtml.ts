@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import fg from 'fast-glob';
@@ -21,13 +21,24 @@ import { WIKI_LAYOUT_CSS } from './wikiLayoutCss.ts';
 import { WIKI_LAYOUT_SCRIPT } from './wikiLayoutScript.ts';
 import { CONFIRM_DIALOG_HTML } from '../../chat/confirmDialog.ts';
 import { removeBrokenWikiLinks } from './wikiLinkValidation.ts';
+import { appFaviconHref } from './appIdentity.ts';
+import { WIKI_BG_DARK, WIKI_BG_LIGHT } from '../../chat/theme.ts';
 import { readInFlightDocumentUploads } from '../routes/uploadRoutes.ts';
 import { listActiveProductionLocks } from '../../services/productionLocks.ts';
+import {
+  conceptBasenameSubject,
+  conceptFolderOf,
+  foldersWithChanges,
+  isConceptLeafPath,
+  readFileHead,
+  recentIngestChanges,
+  wikiFileMtimes,
+  wikiPageTitle,
+} from './sidebarFreshness.ts';
 
 export { graphEtagForFiles, listGraphFiles, escapeScriptJson };
 
 const serveTitle = () => process.env.WIKI_SERVE_TITLE ?? null;
-const serveLogo = () => process.env.WIKI_SERVE_LOGO ?? '🧠';
 const hubPort = () => process.env.HUB_PORT ?? null;
 const workspaceNameFromEnv = () => process.env.WORKSPACE_NAME ?? null;
 const SERVED_DIRS = ['wiki', 'deliverables', 'templates', 'build-context', 'raw/untracked'];
@@ -131,23 +142,17 @@ function pendingDisplayTitle(file: string): string {
 }
 
 // The first `#` heading of a wiki page is its title, not its filename. Reads
-// only the head of the file and skips the frontmatter block, so the sidebar
-// and the graph never pay for a full page load per node.
+// only the head of the file (see sidebarFreshness.ts) so the sidebar and the
+// graph never pay for a full page load per node.
 async function firstHeading(rootDir: string, relativePath: string): Promise<string | null> {
-  try {
-    const handle = await open(resolveInside(rootDir, relativePath), 'r');
-    const buffer = Buffer.alloc(4096);
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-    await handle.close();
-    // Anchored to the very start of the file (no `/m`): frontmatter only exists
-    // there. With `/m`, `^---` also matched a mid-document thematic break and
-    // deleted the region up to the next `---` — the page title with it.
-    const body = buffer.toString('utf8', 0, bytesRead).replace(/^---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/, '');
-    const match = body.match(/^#[ \t]+([^\r\n]+)/m);
-    return match ? match[1].trim() : null;
-  } catch {
-    return null;
-  }
+  const head = await readFileHead(rootDir, relativePath);
+  if (head === null) return null;
+  // Anchored to the very start of the file (no `/m`): frontmatter only exists
+  // there. With `/m`, `^---` also matched a mid-document thematic break and
+  // deleted the region up to the next `---` — the page title with it.
+  const body = head.replace(/^---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/, '');
+  const match = body.match(/^#[ \t]+([^\r\n]+)/m);
+  return match ? match[1].trim() : null;
 }
 
 // A concept leaf reads by its `subject` — the canonical identity the path
@@ -157,25 +162,14 @@ async function firstHeading(rootDir: string, relativePath: string): Promise<stri
 // the folder model, the resume for a `<concept>_<resume>` taxo leaf), then to a
 // dash when nothing is left to show.
 async function conceptLeafSubject(rootDir: string, relativePath: string): Promise<string> {
-  const parts = toPosix(relativePath).split('/');
-  const concept = parts[2] ?? '';
-  let subject: string | null = null;
-  try {
-    const handle = await open(resolveInside(rootDir, relativePath), 'r');
-    const buffer = Buffer.alloc(4096);
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-    await handle.close();
-    const raw = buffer.toString('utf8', 0, bytesRead);
-    const frontmatter = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1];
-    const declared = frontmatter?.match(/^subject:\s*(.+)$/m)?.[1]?.trim();
-    if (declared) subject = stripTransportId(declared);
-  } catch {
-    // Unreadable page: the filename below still names the subject.
-  }
-  if (!subject) {
-    const base = path.basename(relativePath, '.md');
-    subject = concept && base.startsWith(`${concept}_`) ? base.slice(concept.length + 1) : base;
-  }
+  const concept = conceptFolderOf(relativePath);
+  // Unreadable page: the filename below still names the subject.
+  const raw = await readFileHead(rootDir, relativePath);
+  const frontmatter = raw?.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1];
+  const declared = frontmatter?.match(/^subject:\s*(.+)$/m)?.[1]?.trim();
+  const subject = declared
+    ? stripTransportId(declared)
+    : conceptBasenameSubject(relativePath, concept);
   return humanTitle(subject).toLocaleUpperCase() || '-';
 }
 
@@ -443,10 +437,6 @@ type LayoutOptions = {
 export function layout(title: string, body: string, options: LayoutOptions = {}): string {
   const displayName = serveTitle() ?? workspaceNameFromEnv() ?? null;
   const pageTitle = displayName ? `${displayName} · ${title}` : title;
-  const faviconLabel = (serveLogo().trim() || (serveTitle() ?? workspaceNameFromEnv() ?? 'W'))
-    .slice(0, 2)
-    .toUpperCase();
-  const faviconHref = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23176b87'/><text x='16' y='22.5' font-size='17' font-family='system-ui,sans-serif' font-weight='900' text-anchor='middle' fill='white'>${encodeURIComponent(faviconLabel)}</text></svg>`;
   const htmlClassAttr = options.htmlClass ? ` class="${escapeAttr(options.htmlClass)}"` : '';
   const baseTag = options.baseTarget ? `\n  <base target="${escapeAttr(options.baseTarget)}">` : '';
   return `<!DOCTYPE html>
@@ -455,10 +445,17 @@ export function layout(title: string, body: string, options: LayoutOptions = {})
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">${baseTag}
   <title>${escapeHtml(pageTitle)}</title>
-  <link rel="icon" type="image/svg+xml" href="${faviconHref}">
+  <link rel="icon" type="image/svg+xml" href="${appFaviconHref()}">
+  <link rel="apple-touch-icon" href="${appFaviconHref()}">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" id="theme-color-meta" content="${WIKI_BG_LIGHT}">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="${escapeAttr(displayName ?? 'Donna')}">
   <meta property="og:title" content="${escapeAttr(pageTitle)}">
   <meta property="og:type" content="website">
-  <script>try{const t=localStorage.getItem('llm-wiki:theme')||localStorage.getItem('llm-wiki:graph:theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.classList.add('theme-'+(t==='dark'?'dark':'light'))}catch{}</script>
+  <script>try{const t=localStorage.getItem('llm-wiki:theme')||localStorage.getItem('llm-wiki:graph:theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.classList.add('theme-'+(t==='dark'?'dark':'light'));const tc=document.getElementById('theme-color-meta');if(tc)tc.content=t==='dark'?'${WIKI_BG_DARK}':'${WIKI_BG_LIGHT}';}catch{}</script>
   <style>${WIKI_LAYOUT_CSS}</style>
   <script>
   // Shell embed detection: when a wiki page is hosted inside the app shell
@@ -832,7 +829,7 @@ function renderNavNode(
   const files = [...node.files].sort((a, b) => a.localeCompare(b));
   const changedPaths = changed ?? new Map<string, number>();
   const changedHere = (prefix: string): boolean =>
-    [...changedPaths.keys()].some((path) => path.startsWith(`${prefix}/`));
+    changed ? foldersWithChanges(changed).has(prefix) : false;
   const children = [
     ...dirs.map((dir) => renderNavNode(dir, depth + 1, titles, changed, deliverableStatus)),
     ...files.map((file) => {
@@ -937,7 +934,7 @@ function renderNavNode(
   // still fold). Its children render directly; it stays a drop target, and its
   // actions — the wiki rebuild button — travel with it.
   if (plainRoot && depth === 0) {
-    return `<div class="side-folder-row side-folder-plain${rootClass}"${dropAttr}><div class="side-folder-plain-label">${escapeHtml(label)}</div>${actionsHtml}<div class="side-folder-children">${children}</div></div>`;
+    return `<div class="side-folder-row side-folder-plain${rootClass}"${dropAttr}><div class="side-folder-plain-head"><div class="side-folder-plain-label">${escapeHtml(label)}</div>${actionsHtml}</div><div class="side-folder-children">${children}</div></div>`;
   }
   return `<div class="side-folder-row${rootClass}"><details class="side-folder"${open} data-tree-id="${safeNodePath}"${dragAttrs}${dropAttr}><summary><span class="side-folder-label">${escapeHtml(label)}</span>${changeDot}${sectionCount}</summary><div class="side-folder-children">${children}</div></details>${actionsHtml}</div>`;
 }
@@ -1232,7 +1229,8 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
   for (const file of navFiles.map(toPosix).sort()) {
     addNavPath(root, file);
   }
-  const changed = await recentIngestChanges(rootDir, navFiles.map(toPosix));
+  const wikiMtimes = await wikiFileMtimes(rootDir, navFiles.map(toPosix));
+  const changed = recentIngestChanges(wikiMtimes, await lastIngestStart(rootDir));
 
   const rootDirs = [...root.dirs.values()].sort((a, b) => SERVED_DIRS.indexOf(a.name) - SERVED_DIRS.indexOf(b.name));
   const wikiDir = rootDirs.find((dir) => dir.name === 'wiki');
@@ -1243,11 +1241,12 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
   const wikiTitles = new Map<string, string>();
   await Promise.all(
     navFiles.map(toPosix).filter((file) => file.startsWith('wiki/')).map(async (file) => {
-      const leaf = toPosix(file).split('/');
-      const isConceptLeaf = leaf.length === 4 && leaf[1] === 'concepts';
-      const title = isConceptLeaf
-        ? await conceptLeafSubject(rootDir, file)
-        : await firstHeading(rootDir, file);
+      const title = await wikiPageTitle(
+        rootDir,
+        file,
+        wikiMtimes.get(file),
+        isConceptLeafPath(file) ? conceptLeafSubject : firstHeading,
+      );
       if (title) wikiTitles.set(file, title);
     }),
   );
@@ -1442,23 +1441,6 @@ async function lastIngestStart(rootDir: string): Promise<number | null> {
 
 // Wiki markdown files whose mtime falls inside the last ingest run, keyed to
 // that mtime (the token the browser uses to decide "already read").
-async function recentIngestChanges(rootDir: string, wikiFiles: string[]): Promise<Map<string, number>> {
-  const changed = new Map<string, number>();
-  const start = await lastIngestStart(rootDir);
-  if (start === null) return changed;
-  await Promise.all(
-    wikiFiles.filter((file) => file.startsWith('wiki/') && file.endsWith('.md')).map(async (file) => {
-      try {
-        const info = await stat(resolveInside(rootDir, file));
-        if (info.mtimeMs >= start) changed.set(file, info.mtimeMs);
-      } catch {
-        // Vanished between the glob and the stat: nothing to announce.
-      }
-    }),
-  );
-  return changed;
-}
-
 function relativeTimeLabel(d: Date | null): string {
   if (!d) return 'Never';
   const diffMs = Date.now() - d.getTime();
@@ -1999,17 +1981,24 @@ export async function deleteMarkdownDocument(
   return cleanRelativePath.split('/')[0] ?? '';
 }
 
+/**
+ * Renames a template to `requestedName`, returning the resulting path.
+ *
+ * Takes the NAME, never a request body: the two callers speak different
+ * encodings — `/rename/` PATCH sends JSON, the `/edit/` Save form sends
+ * `application/x-www-form-urlencoded` — and parsing one of them here made
+ * every template save throw and answer 404 with the edit discarded.
+ */
 export async function renameTemplateDocument(
   rootDir: string,
   relativePath: string,
-  rawBody: string,
+  requestedName: string,
 ): Promise<string> {
   const cleanRelativePath = toPosix(relativePath).replace(/^\/+/, '').replace(/\/+$/, '');
   if (!cleanRelativePath.startsWith('templates/') || !cleanRelativePath.endsWith('.md')) {
     throw new Error('FORBIDDEN_RENAME_PATH');
   }
-  const payload = JSON.parse(rawBody || '{}') as { name?: string };
-  const rawName = String(payload.name ?? '').trim();
+  const rawName = String(requestedName ?? '').trim();
   const fileName = rawName.endsWith('.md') ? rawName : `${rawName}.md`;
   if (!fileName || fileName.includes('/') || fileName.includes('\\')) {
     throw new Error('INVALID_RENAME_TARGET');

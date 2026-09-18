@@ -48,9 +48,16 @@ export const WIKI_FONT_FACES = `
 //   --card-grad    top-lit gradient laid over cards so they catch the light.
 //   --bg-image     ground washes + grid; body paints `var(--bg)` under it.
 //   --font-display the serif above.
+// Shared with the PWA manifest and the <meta name="theme-color"> tags
+// (`appIdentity.ts`): the installed-app window chrome and splash background
+// must match the CSS ground color exactly, in both themes — one constant
+// each instead of the same hex repeated in CSS, JSON and HTML.
+export const WIKI_BG_LIGHT = '#e9eef5';
+export const WIKI_BG_DARK = '#070b12';
+
 const GLASS_LIGHT = `
   color-scheme: light;
-  --bg: #e9eef5;
+  --bg: ${WIKI_BG_LIGHT};
   --bg-image:
     radial-gradient(1100px 560px at 80% -12%, rgba(120, 190, 235, .34), transparent 62%),
     radial-gradient(760px 480px at 6% 108%, rgba(90, 150, 210, .22), transparent 62%),
@@ -78,7 +85,7 @@ const GLASS_LIGHT = `
 
 const GLASS_DARK = `
   color-scheme: dark;
-  --bg: #070b12;
+  --bg: ${WIKI_BG_DARK};
   --bg-image:
     radial-gradient(1200px 600px at 78% -10%, rgba(40, 110, 170, .28), transparent 60%),
     radial-gradient(800px 500px at 8% 110%, rgba(20, 70, 120, .25), transparent 60%),
@@ -127,3 +134,20 @@ ${GLASS_LIGHT}
     --glass-blur: 0px; --panel: var(--panel-solid); --panel-soft: var(--panel-solid);
   }
 }`;
+
+/*
+ * The scrollbar policy, shared by the chat shell and the wiki reader.
+ *
+ * A custom ::-webkit-scrollbar opts out of the native dark appearance, so an
+ * uncoloured track falls back to the system control colour — a full-height
+ * white bar in dark mode. The track must be explicitly transparent;
+ * scrollbar-color gives Firefox the same themed pair (Chromium ignores it,
+ * having the ::-webkit rules). Size is a var so the shell keeps its slimmer
+ * 4px bars while the reader uses the 8px default.
+ */
+export const SCROLLBAR_CSS = `
+::-webkit-scrollbar{width:var(--scrollbar-size,8px);height:var(--scrollbar-size,8px);background:transparent}
+::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:var(--scrollbar-radius,4px)}
+::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+html{scrollbar-color:var(--border) transparent;scrollbar-width:thin}`;

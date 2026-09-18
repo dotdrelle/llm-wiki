@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { applyProvenance, subjectsAreRelated, type PageProvenance } from '../src/ingest/provenance.ts';
+import {
+  applyProvenance,
+  subjectMatchStrength,
+  subjectsAreRelated,
+  subjectsShareEntityRoot,
+  type PageProvenance,
+} from '../src/ingest/provenance.ts';
 
 /*
  Concept-homonym gap (B17): "gamma", "gamma-solution", "gamma-certifications"
@@ -51,6 +57,31 @@ describe('subjectsAreRelated', () => {
   it('rejects empty input', () => {
     expect(subjectsAreRelated('', '')).toBe(false);
     expect(subjectsAreRelated('a', '')).toBe(false);
+  });
+});
+
+describe('subjectsShareEntityRoot', () => {
+  // Subjects are written entity-name-first, so the leading token IS the
+  // entity. Two products sharing a qualifier are two products.
+  it('refuses two different entities that share a qualifier', () => {
+    expect(subjectsShareEntityRoot('jedox-cloud', 'anaplan-cloud')).toBe(false);
+    expect(subjectsShareEntityRoot('jedox-etude-onpremise', 'jedox-tarifs')).toBe(true);
+  });
+});
+
+describe('subjectMatchStrength', () => {
+  it('ranks an exact subject above a shared root above a shared qualifier', () => {
+    expect(subjectMatchStrength('jedox', 'jedox')).toBeGreaterThan(
+      subjectMatchStrength('jedox', 'jedox-tarifs'),
+    );
+    expect(subjectMatchStrength('jedox', 'jedox-tarifs')).toBeGreaterThan(
+      subjectMatchStrength('jedox-cloud', 'anaplan-cloud'),
+    );
+  });
+
+  it('ignores a shared bare year', () => {
+    expect(subjectMatchStrength('budget-2024', 'roadmap-2024')).toBe(0);
+    expect(subjectsAreRelated('budget-2024', 'roadmap-2024')).toBe(false);
   });
 });
 

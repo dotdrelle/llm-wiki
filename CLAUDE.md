@@ -193,8 +193,14 @@ folder onto the established vocabulary (or keeps it new) in the session language
 The established folders are the ANCHOR: the model never renames or merges two of
 them — left free to, it dissolved `solution` into `produit` and moved every leaf
 of an established folder, and the next ingest could move them again. The engine
-only rewrites the plan's proposed paths; a proposed folder has no leaves yet, so
-migration is a safety net, not the normal path. Do NOT reintroduce
+only rewrites the PLAN's proposed paths, never a leaf on disk: a proposed folder
+has no leaves yet, and an established one is never a rename source, so no page
+can be moved by this reconciliation. The leaf-migration pass that used to sit
+here could not emit a single operation and logged `migrated: 0` forever —
+removed, with the impossible-input tests that kept it green. The rewrites it
+DOES make are returned to the caller (`rejectionsAfterRewrites`), so a
+`--reject` naming the path a dry-run printed still matches the operation the
+reconciliation moved. Do NOT reintroduce
 a synonym table, a folder registry, or kind-derived equivalence in code
 (`foldersAreNearDuplicates`, `CANONICAL_FOLDER_BY_KIND`, `KIND_SYNONYMS` as a
 folder oracle) — `4dc4bbf` tried it, `f24f2ad` reverted it, and it cannot see
@@ -468,11 +474,15 @@ plan, activities, logs, queue, and persisted projection. Upload cards with an
 
 A fixed **run-status strip** is pinned to the base of the window (a sibling of
 `#approval-banner`, same reason: it survives the three views that hide
-`#input-wrap`). It shows **two business lines** like the ShellUI's strip — the
-run's aggregated activity line and the concrete step under it (an ingest
-target, a plan step), each with its own percentage — and the composer takes a
-bottom padding while it is visible (`body.run-active #input-wrap`), so it never
-covers the chat bar or its buttons. It **disappears once the run is over** — the
+`#input-wrap`). It shows **two business lines** like the ShellUI's Activity
+panel: its primary line is the document/step the run is on today — the
+activity's own `progress.label`, exactly what the ShellUI shows for an
+aggregated line — with its percentage; its sub-line carries the live figures
+the direct wiki CLI already exports (step/source/task/batch counters, the
+detail, and the tokens), falling back to a second concurrent activity or the
+running plan step. The composer takes a bottom padding while it is visible
+(`body.run-active #input-wrap`), so it never covers the chat bar or its
+buttons. It **disappears once the run is over** — the
 Plan tab keeps the outcome, so the strip is not a second history. The
 `assistant_progress` notes never enter the thread: they feed this strip's
 liveness and the Logs tab only.
@@ -511,7 +521,11 @@ production `knowledge.rebuild` capability — `wiki ingest --from-ingested` plus
 `document.build`). In the tree, the wiki root reads `WIKI` and the reserved
 `Answers`/`Concepts`/`Sources` folders take a leading capital (`navNodeLabel`
 in `wikiHtml.ts`); the embedded Explorer panel is scaled to the shell chrome by
-`html.sidebar-panel { font-size: 13.5px }` (`wikiLayoutCss.ts`).
+`html.sidebar-panel { font-size: 13.5px }` (`wikiLayoutCss.ts`). A plain root
+(the wiki root, a collection) wraps its label and actions in one
+`side-folder-plain-head` row, so the primary row's `--accent-soft` background
+runs the whole title line — under the right-aligned rebuild button — instead of
+stopping at the label. Label and actions must stay in that head row.
 
 **Connector cards** (`src/chat/runtime/mcpConnectorScript.ts`,
 `config/configScript.ts`, `chatHtml.ts`). A card now has an identity in the
@@ -676,17 +690,29 @@ ingest`) builds a review per planned operation (`buildReviewOperations`):
   it is a structural lookup by the `subject` frontmatter field, independent of
   and complementary to relevance ranking, and conflating them would make the
   gap this closes silently reappear the next time retrieval tuning changes.
-  `subjectsAreRelated` matches the leading token **or any significant shared
-  token** ("couts-infra" and "infra" both carry "infra"), ignoring a stoplist of
-  generic words ("solution", "model", "service"…) so a shared generic token
-  never widens the candidate list on its own.
-- A leaf's `sources` (and its first `generated`, its human `status`/`verified`)
-  are **carried forward at write time**: `applyWikiOperationsAtomic` merges the
-  existing file's engine-owned frontmatter onto the update
-  (`carryForwardEngineFrontmatter`, `okf/frontmatter.ts`). The operation content
-  is the model's output for one source and never contains what earlier ingests
-  accumulated, so without this merge every update reset `sources` to the current
-  source alone — "one leaf per source" even when the leaf was updated in place.
+  There are two predicates and they must not be swapped. `subjectsAreRelated`
+  (lenient) matches the leading token **or any significant shared token**
+  ("couts-infra" and "infra" both carry "infra"), ignoring a stoplist of generic
+  words ("solution", "model", "service"…) and bare numbers, so a shared year or
+  a shared generic token never widens the candidate list on its own; it only
+  SHOWS a candidate, and `subjectMatchStrength` ranks the matches before the
+  5-slot cap so a weak one can never crowd out the genuine page.
+  `subjectsShareEntityRoot` (strict) requires the leading token — the entity,
+  since subjects are written entity-name-first — and is what `detectConceptSplits`
+  uses: a split DECLARES a duplicate, costs retry rounds and tells the model to
+  merge, so `jedox-cloud` and `anaplan-cloud` must stay two products.
+- A leaf's `sources` and its first `generated` are **carried forward at write
+  time**: `applyWikiOperationsAtomic` merges the existing file's engine-owned
+  frontmatter onto the update (`carryForwardEngineFrontmatter`,
+  `okf/frontmatter.ts`). The operation content is the model's output for one
+  source and never contains what earlier ingests accumulated, so without this
+  merge every update reset `sources` to the current source alone — "one leaf per
+  source" even when the leaf was updated in place. The HUMAN review trail is the
+  exception: `verified` attests one TEXT and `status: stable` vouches for it, so
+  when the ingest rewrites the body they do not survive — the trail is dropped
+  and a `stable` page returns to `draft`. An idempotent re-apply (identical
+  body) keeps both. Carrying them across a rewrite left pages asserting human
+  verification for content nobody reviewed.
   `validateConsolidation` also turns a concept `create` into an `update` when
   the path already exists, keeping it out of the concept budget.
 - `enforceSourceCitationPath` **preserves** a citation already anchored to an
@@ -695,13 +721,26 @@ ingest`) builds a review per planned operation (`buildReviewOperations`):
   the source being ingested misattributed the facts they back to it. Only the
   pending form (`raw/untracked/…`) and a malformed/relative path are normalized
   to the current archive path. That is what made "the sources associated are
-  often not the right ones" possible.
-- `wiki ingest --from-ingested` **prunes** (`staleRebuiltLeaves`): a concept leaf
-  the rebuilt sources no longer produce, and that no other source claims, is
-  deleted after a failure-free run — otherwise a re-filed subject lingered as a
-  stale duplicate next to its new leaf. Restricted to `wiki/concepts/`; a source
-  note, the index and a hand-written page are never touched, and a partial run
-  prunes nothing (`ingest:rebuild-prune-skipped`).
+  often not the right ones" possible. The well-formedness test applies to the
+  PATH alone, never to `path#Section`: a heading carries spaces and apostrophes
+  by nature, and testing the whole citation rejected every real anchored
+  citation — destroying the anchor and reattributing the claim. The anchor
+  rides along on both branches.
+- `wiki ingest --from-ingested` **rebuilds the concept tree from scratch.** A
+  full rebuild (no input paths) deletes EVERY leaf under `wiki/concepts/`
+  before re-filing the archive (`purgeConceptTreeForRebuild` →
+  `listConceptLeafPaths`, logged `ingest:rebuild-purge`), then the command's
+  normal end-of-run vector index rebuild reindexes the new content. Pruning only
+  the leaves the run no longer produces was not enough: the model, shown the
+  existing pages, may keep an old projection AND add a new one, so the
+  accumulated set only grew — concepts and leaves doubled on every rebuild.
+  The purge owns the `wiki/concepts/` subtree, including pages a human wrote
+  there; it stops at the section root (the empty `concepts/` folder survives).
+  A partial rebuild (input paths given) keeps the rest of the tree and the
+  stale-leaf safety net (`staleRebuiltLeaves`): a leaf the rebuilt sources no
+  longer produce, that no other source claims, is deleted after a failure-free
+  run (`ingest:rebuild-prune`), while a partial failure prunes nothing
+  (`ingest:rebuild-prune-skipped`).
 - `buildService.ts`: template slot batching and generation. Build retrieval
   runs with `includeRaw: true` — the raw corpus (`raw/ingested/`) is part of
   the evidence, merged with the vector/lexical results, never instead of

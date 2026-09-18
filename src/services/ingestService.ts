@@ -23,10 +23,10 @@ import {
 import {
   normalizeProvenanceValue,
   readProvenance,
-  subjectsAreRelated,
+  subjectMatchStrength,
 } from '../ingest/provenance.ts';
 import { CONCEPT_PREFIX, DEFAULT_CONCEPT_BUDGET, detectConceptOverflow, detectConceptSplits, detectDuplicatePaths, reanchorToPreviousConcepts, validateConsolidation } from '../ingest/consolidationValidate.ts';
-import { collectConceptFolderEntries, conceptFolderMigrationOperations, reconcileConceptFolders } from '../ingest/conceptFolders.ts';
+import { collectConceptFolderEntries, reconcileConceptFolders } from '../ingest/conceptFolders.ts';
 import { parseConceptPagePath } from '../ingest/conceptGrid.ts';
 import {
   buildTaxoSectionUser,
@@ -41,7 +41,7 @@ import {
 import { z } from 'zod';
 import { hashText } from '../utils/hash.ts';
 import { resolveInside } from '../utils/path.ts';
-import { normalizeSourceBody } from '../utils/markdown.ts';
+import { normalizeSourceBody, splitCitationAnchor } from '../utils/markdown.ts';
 import { planSourcePacks } from '../utils/sourcePacking.ts';
 import { mapWithConcurrency } from '../utils/concurrency.ts';
 import { pathExists, withFileLock } from '../utils/fs.ts';
@@ -214,6 +214,11 @@ function stampSourceProvenance(
 // merged — see enforceSourceCitationPath. A malformed `raw/ingested/…` the
 // model copied by hand (spaces, accents) is NOT anchored and is normalized to
 // the source being ingested.
+//
+// Tested against the PATH ALONE, never `path#Section`: a section anchor is a
+// heading, so it carries spaces and apostrophes by nature, and testing the
+// whole citation rejected every real anchored citation — destroying the anchor
+// AND reattributing another source's claim to the one being ingested.
 const ANCHORED_CITATION_PATH = /^(?:raw\/ingested|wiki|deliverables|templates|build-context)\/[^\s"'`)\\]*[^\s"'`)\\]$/i;
 
 function enforceSourceCitationPath(
@@ -254,15 +259,23 @@ function enforceSourceCitationPath(
         // A path never ends on sentence punctuation; a model that wrote the
         // period inside the bracket would otherwise produce a dead citation
         // ("…/report.md.").
-        const anchoredPath = cleanCitationPath.replace(/[.,;:!?]+$/, '');
+        const { path: citedPath, anchor } = splitCitationAnchor(cleanCitationPath);
+        // The trailing-punctuation strip applies to the PATH only. With an
+        // anchor the `#` already bounds the path, and a heading may legitimately
+        // end on `?` or `!`.
+        const anchoredPath = anchor === null ? citedPath.replace(/[.,;:!?]+$/, '') : citedPath;
         if (ANCHORED_CITATION_PATH.test(anchoredPath)) {
-          return `[src: ${anchoredPath}]`;
+          return `[src: ${anchoredPath}${anchor ? `#${anchor}` : ''}]`;
         }
         // `raw/untracked/…` is the pending form of the source being ingested,
         // and anything else is a shortened/relative path the model copied by
-        // hand: both normalize to the archive path.
-        if (cleanCitationPath !== archiveCitationPath) rewrittenCitations += 1;
-        return `[src: ${archiveCitationPath}]`;
+        // hand: both normalize to the archive path. The section anchor rides
+        // along — this branch already assumes the citation names THIS source,
+        // and a section of it is still a section of it. A stale anchor costs
+        // nothing: `sliceCitedSection` finds no such heading and the export
+        // reads the file whole.
+        if (citedPath !== archiveCitationPath) rewrittenCitations += 1;
+        return `[src: ${archiveCitationPath}${anchor ? `#${anchor}` : ''}]`;
       },
     );
     const sourceMarkers = operation.content.match(/\[src:/gi)?.length ?? 0;
@@ -370,6 +383,27 @@ export function staleRebuiltLeaves(
   return [...oldProduced]
     .filter((page) => page.startsWith(CONCEPT_PREFIX) && !stillProduced.has(page))
     .sort();
+}
+
+/**
+ * The rejection set, seen through the path rewrites an apply-time concept
+ * reconciliation just made.
+ *
+ * A reviewer rejects the path a dry-run showed. The reconciliation is skipped
+ * in dry-run and can move that very operation before the rejection filter
+ * runs, so matching on the new path alone let an explicitly refused page be
+ * written. Both spellings are refused.
+ */
+export function rejectionsAfterRewrites(
+  rejectedPaths: Set<string>,
+  rewrites: Map<string, string>,
+): Set<string> {
+  if (rejectedPaths.size === 0 || rewrites.size === 0) return rejectedPaths;
+  const effective = new Set(rejectedPaths);
+  for (const [from, to] of rewrites) {
+    if (rejectedPaths.has(from)) effective.add(to);
+  }
+  return effective;
 }
 
 function buildReviewOperations({
@@ -488,6 +522,24 @@ export class IngestService {
       durationMs: Date.now() - selectionStartedAt,
     });
 
+    /*
+     A full rebuild starts from a clean concept tree.
+
+     The rebuild re-files EVERY archived source, so the leaves already on disk
+     are the previous run's output. Pruning only the ones this run no longer
+     produces was not enough: the model, shown the existing pages, may keep an
+     old projection AND add a new one, so its produced-pages set keeps growing
+     and every leaf survives — the number of concepts and leaves doubled on
+     each rebuild. Delete first, then let the run write the new tree; the
+     per-source inventory reads the (now empty) tree and rebuilds from the
+     archive. Scoped to the full rebuild (`inputs.length === 0`): a rebuild
+     limited to a few archives keeps the rest of the tree.
+     */
+    if (options?.fromIngested && !options?.dryRun && inputs.length === 0 && sourcePaths.length > 0) {
+      const purged = await this.purgeConceptTreeForRebuild();
+      await this.logger.info('ingest:rebuild-purge', { removed: purged });
+    }
+
     const results: IngestResult[] = [];
     const rejectedPaths = new Set(options?.reject ?? []);
     /*
@@ -576,6 +628,7 @@ export class IngestService {
               });
               results.push({
                 source: source.relativePath,
+                archivePath: source.archiveCitationPath,
                 plan: { summary: 'unchanged since last ingest', operations: [] },
                 skipped: true,
               });
@@ -864,12 +917,27 @@ export class IngestService {
           .filter(Boolean);
         const alreadyListed = new Set([...inventory, ...previousInventory].map((page) => page.path));
         const MAX_SUBJECT_MATCHES = 5;
+        // Ranked, then capped — never capped in corpus order. Five pages
+        // matched only on a shared qualifier used to fill the five slots and
+        // hide the one page that genuinely covers the subject, which is the
+        // whole point of this inventory.
         const subjectMatchInventory = candidateRoots.length
           ? warmPages
               .filter((page) => page.relativePath.startsWith(CONCEPT_PREFIX) && !alreadyListed.has(page.relativePath))
               .map((page) => ({ page, provenance: readProvenance(page.content) }))
-              .filter(({ provenance }) => provenance.subject != null
-                && candidateRoots.some((root) => subjectsAreRelated(root, provenance.subject as string)))
+              .map(({ page, provenance }) => ({
+                page,
+                provenance,
+                strength: provenance.subject == null
+                  ? 0
+                  : Math.max(
+                      0,
+                      ...candidateRoots.map((root) => subjectMatchStrength(root, provenance.subject as string)),
+                    ),
+              }))
+              .filter(({ strength }) => strength > 0)
+              .sort((a, b) => b.strength - a.strength
+                || a.page.relativePath.localeCompare(b.page.relativePath))
               .slice(0, MAX_SUBJECT_MATCHES)
               .map(({ page, provenance }) => ({
                 path: page.relativePath,
@@ -1103,9 +1171,16 @@ export class IngestService {
         // duplicates. Reconcile against the LIVE vocabulary at apply time
         // (serialized), and defer the leaf migration until the plan is
         // validated and actually applied (a rejected plan must not move files).
-        const conceptFolderMigrations = options?.dryRun
-          ? []
+        const conceptReconciliation = options?.dryRun
+          ? { rewrites: new Map<string, string>() }
           : await this.reconcileConceptVocabulary(normalizedOperations);
+        // A `--reject` names the path the dry-run PRINTED, which predates the
+        // reconciliation above: without this the moved operation no longer
+        // matched its rejection and was applied anyway.
+        const effectiveRejectedPaths = rejectionsAfterRewrites(
+          rejectedPaths,
+          conceptReconciliation.rewrites,
+        );
         // `pages[].path` designates the same operations, but lived until now
         // before the canonicalization of the paths. A model proposing an accent
         // or a space therefore received a normalized operation and lost its
@@ -1225,11 +1300,11 @@ export class IngestService {
           existingPages,
           source: source.relativePath,
           archivePath: source.archiveCitationPath,
-          rejectedPaths,
+          rejectedPaths: effectiveRejectedPaths,
           applied: !options?.dryRun,
         });
         const applyOperations = allOperations.filter(
-          (operation) => !rejectedPaths.has(operation.path),
+          (operation) => !effectiveRejectedPaths.has(operation.path),
         );
         const rejectedCount = allOperations.length - applyOperations.length;
         if (rejectedCount > 0) {
@@ -1237,7 +1312,7 @@ export class IngestService {
             source: source.relativePath,
             rejected: rejectedCount,
             paths: allOperations
-              .filter((operation) => rejectedPaths.has(operation.path))
+              .filter((operation) => effectiveRejectedPaths.has(operation.path))
               .map((operation) => operation.path),
           });
         }
@@ -1281,12 +1356,6 @@ export class IngestService {
             path: source.archiveCitationPath,
             usageCount,
           });
-          // Move the leaves of a folder the model merged or renamed BEFORE the
-          // plan writes, so a plan update at the canonical path unions with the
-          // migrated content instead of colliding with it.
-          if (conceptFolderMigrations.length > 0) {
-            await this.workspace.applyNormalizedWikiOperations(conceptFolderMigrations);
-          }
           await this.workspace.applyNormalizedWikiOperations(stampedOperations);
           this.retrieval.invalidateCache();
           await this.logger.info('ingest:apply', {
@@ -1334,6 +1403,7 @@ export class IngestService {
 
         results.push({
           source: source.relativePath,
+          archivePath: source.archiveCitationPath,
           plan: { summary: lastSummary, operations: applyOperations },
           review,
           ...(sourceRetry && { retry: sourceRetry }),
@@ -1378,9 +1448,14 @@ export class IngestService {
             failed: failedResults.length,
           });
         } else if (registryPath) {
+          // The registry keys on the ARCHIVE path, so the rebuilt set must
+          // too. Feeding it `result.source` (the on-disk relative path)
+          // matched no record at all for any file whose name is not already
+          // slug-identical, and the prune logged a clean `count: 0`.
           const rebuiltArchives = results
             .filter((result) => !result.skipped && !result.failed)
-            .map((result) => result.source);
+            .map((result) => result.archivePath)
+            .filter((archivePath): archivePath is string => Boolean(archivePath));
           const currentRegistry = await readSourceRegistry(registryPath);
           const stale: string[] = [];
           for (const page of staleRebuiltLeaves(previousRegistry, currentRegistry, rebuiltArchives)) {
@@ -1470,11 +1545,14 @@ export class IngestService {
    * dissolved from one ingest to the next never settles. The engine then
    * rewrites the plan's paths. No synonym table, no registry.
    */
-  private async reconcileConceptVocabulary(operations: WikiOperation[]): Promise<WikiOperation[]> {
+  private async reconcileConceptVocabulary(
+    operations: WikiOperation[],
+  ): Promise<{ rewrites: Map<string, string> }> {
+    const nothing = { rewrites: new Map<string, string>() };
     const conceptOperations = operations.filter(
       (operation) => operation.type !== 'delete' && operation.path.startsWith(CONCEPT_PREFIX),
     );
-    if (conceptOperations.length === 0) return [];
+    if (conceptOperations.length === 0) return nothing;
 
     const pages = await this.retrieval.warmCache();
     const entries = collectConceptFolderEntries(pages);
@@ -1488,7 +1566,7 @@ export class IngestService {
     // open a duplicate, so it needs no arbitration. Only a genuinely NEW
     // folder triggers the call, which resolves it against the established
     // vocabulary — never the other way around.
-    if (proposed.every((folder) => existingFolders.has(folder))) return [];
+    if (proposed.every((folder) => existingFolders.has(folder))) return nothing;
     const mapping = await reconcileConceptFolders({
       llm: this.llm,
       entries,
@@ -1497,9 +1575,13 @@ export class IngestService {
       logger: this.logger,
     });
     const changed = [...mapping.entries()].filter(([from, to]) => from !== to);
-    if (changed.length === 0) return [];
+    if (changed.length === 0) return nothing;
 
-    const migrations = conceptFolderMigrationOperations(pages, mapping);
+    // The rewrites are reported, never left implicit: a caller holding a path
+    // from BEFORE this call (a reviewer's `--reject`, a dry-run preview) would
+    // otherwise no longer match the operation it named, and an explicitly
+    // rejected page would be written anyway.
+    const rewrites = new Map<string, string>();
     for (const operation of operations) {
       if (!operation.path.startsWith(CONCEPT_PREFIX)) continue;
       const parsed = parseConceptPagePath(operation.path);
@@ -1510,14 +1592,17 @@ export class IngestService {
       const rebased = base.startsWith(`${parsed.class}_`)
         ? `${canonical}_${base.slice(parsed.class.length + 1)}`
         : base;
-      operation.path = `wiki/concepts/${canonical}/${rebased}`;
+      const target = `wiki/concepts/${canonical}/${rebased}`;
+      rewrites.set(operation.path, target);
+      operation.path = target;
     }
     await this.logger.info('ingest:concept-folders', {
       changed: changed.map(([from, to]) => `${from}~${to}`),
-      migrated: migrations.filter((operation) => operation.type === 'delete').length,
+      rewritten: rewrites.size,
     });
-    return migrations;
+    return { rewrites };
   }
+
 
   private async filterSourcesNeedingTaxoPrePass(
     sourcePaths: string[],
@@ -1841,6 +1926,7 @@ export class IngestService {
           await this.observeSource(plannedSource, null);
           results.push({
             source: planned.source,
+            archivePath: plannedSource.archiveCitationPath,
             plan: { summary: planned.summary ?? 'unchanged since last ingest', operations: [] },
             skipped: true,
           });
@@ -1859,9 +1945,15 @@ export class IngestService {
         // names are not authoritative. Reconcile against the LIVE vocabulary
         // here (this path is serialized), then rewrite the operations' paths;
         // the leaf migration waits until the plan is actually applied.
-        const conceptFolderMigrations = await this.reconcileConceptVocabulary(operations);
+        const conceptReconciliation = await this.reconcileConceptVocabulary(operations);
+        // Same rule as the live path: a rejection names the pre-reconciliation
+        // path, so it must follow the operation the reconciliation moved.
+        const effectiveRejectedPaths = rejectionsAfterRewrites(
+          rejectedPaths,
+          conceptReconciliation.rewrites,
+        );
         const applyOperations = operations.filter(
-          (operation) => !rejectedPaths.has(operation.path),
+          (operation) => !effectiveRejectedPaths.has(operation.path),
         );
         const rejectedCount = operations.length - applyOperations.length;
         await this.logger.info('ingest:review', {
@@ -1900,9 +1992,6 @@ export class IngestService {
             path: plannedSource.archiveCitationPath,
             usageCount: registryRecord?.producedPages?.length ?? 0,
           });
-          if (conceptFolderMigrations.length > 0) {
-            await this.workspace.applyNormalizedWikiOperations(conceptFolderMigrations);
-          }
           await this.workspace.applyNormalizedWikiOperations(stampedOperations);
           this.retrieval.invalidateCache();
           await this.logger.info('ingest:apply', {
@@ -1940,6 +2029,7 @@ export class IngestService {
         }
         results.push({
           source: planned.source,
+          archivePath: plannedSource.archiveCitationPath,
           plan: { summary: planned.summary ?? '', operations: applyOperations },
           review: planned.review,
         });
@@ -2123,6 +2213,24 @@ export class IngestService {
       ? path.join(this.workspace.paths.internalDir, SOURCE_REGISTRY_FILENAME)
       : null;
     return registryPath ? readSourceRegistry(registryPath) : null;
+  }
+
+  /**
+   * Deletes every concept leaf before a full `--from-ingested` rebuild.
+   *
+   * The apply prunes an emptied concept folder, but stops below the section
+   * roots, so `wiki/concepts/` itself survives as the empty section it is. The
+   * retrieval cache is dropped so the first source's inventory reads the empty
+   * tree rather than the pages this purge just removed.
+   */
+  private async purgeConceptTreeForRebuild(): Promise<number> {
+    const leaves = await this.workspace.listConceptLeafPaths();
+    if (leaves.length === 0) return 0;
+    await this.workspace.applyNormalizedWikiOperations(
+      leaves.map((page) => ({ type: 'delete', path: page })),
+    );
+    this.retrieval.invalidateCache();
+    return leaves.length;
   }
 
   private async observeSource(

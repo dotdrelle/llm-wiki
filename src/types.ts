@@ -268,6 +268,13 @@ export interface IngestRetryInfo {
 
 export interface IngestResult {
   source: string;
+  /**
+   * The ARCHIVE identity of that source (`raw/ingested/<slug>.md`) — what the
+   * source registry keys on. `source` is the on-disk relative path, which is
+   * NOT the same string as soon as the file name carries an accent, a space or
+   * a capital: comparing the two silently matched nothing.
+   */
+  archivePath?: string;
   plan?: IngestPlan;
   review?: IngestReviewOperation[];
   retry?: IngestRetryInfo;

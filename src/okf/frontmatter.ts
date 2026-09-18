@@ -168,6 +168,17 @@ export function mergeSources(
  * human `status`/`verified`) survive an update instead of resetting to the
  * current source. Keys the operation sets (subject, tags, scope, kind, type,
  * title) still win; keys only the file had are kept.
+ *
+ * The HUMAN review trail is the exception, and it is deliberately not carried
+ * across a rewritten body. `verified` attests that someone read THIS text and
+ * `status: stable` says it can be relied on; both are written by the curation
+ * merge. An ingest that replaces the body leaves them attesting content nobody
+ * reviewed — a page claiming human verification for text a model just wrote.
+ * So when the body actually changes, the trail is dropped and a `stable` page
+ * returns to `draft`, which is visible on the page itself and on the
+ * /agent-proposals surface that reads it. An idempotent re-apply (same body)
+ * changes nothing, and `deprecated` is a decision about the subject rather
+ * than about one text, so it is kept.
  */
 export function carryForwardEngineFrontmatter(
   existingContent: string,
@@ -182,15 +193,29 @@ export function carryForwardEngineFrontmatter(
     return nextContent;
   }
   const data: Record<string, unknown> = { ...existing.data, ...next.data };
+  const bodyRewritten = existing.content.trim() !== next.content.trim();
   // The first `generated` is the creation stamp: a fresh one never replaces it.
   if (existing.data.generated != null) data.generated = existing.data.generated;
   // `status` is a lifecycle decision (draft | stable | deprecated): an ingest
-  // must not downgrade a page a human set to stable back to draft.
-  if (existing.data.status != null) data.status = existing.data.status;
+  // must not downgrade a page a human set to stable back to draft — unless it
+  // just rewrote the very text that `stable` vouched for.
+  if (existing.data.status != null) {
+    data.status = bodyRewritten && existing.data.status === 'stable'
+      ? (next.data.status ?? 'draft')
+      : existing.data.status;
+  }
   const sources = mergeSources(existing.data.sources, next.data.sources);
   if (sources.length > 0) data.sources = sources;
   else delete data.sources;
-  if (Array.isArray(existing.data.verified) || Array.isArray(next.data.verified)) {
+  if (bodyRewritten) {
+    // The attestation does not outlive the text it attested. Only what this
+    // very operation declares survives.
+    if (Array.isArray(next.data.verified) && next.data.verified.length > 0) {
+      data.verified = next.data.verified;
+    } else {
+      delete data.verified;
+    }
+  } else if (Array.isArray(existing.data.verified) || Array.isArray(next.data.verified)) {
     // An update whose model output reproduces the page's own `verified` entries
     // would otherwise double the human review trail on every ingest. Union by
     // value, existing first, exactly like `sources`.

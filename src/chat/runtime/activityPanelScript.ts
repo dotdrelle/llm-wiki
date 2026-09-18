@@ -131,68 +131,6 @@ function agentProgressEntries() {
     .filter(line=>runtimeLogMatchesFilter(line,runtimeLogFilter))
     .map(line=>({time:'',text:'Agent: '+line,tone:'info'}));
 }
-// The strip shows the run's BUSINESS lines, two at most like the ShellUI:
-// the aggregated activity label(s), never a raw tool id. When no aggregated
-// line exists, the running plan step stands in; otherwise "Working…".
-function runtimeStripLines() {
-  const lines=runtimeState?.workflow?.activity?.lines;
-  if(Array.isArray(lines)&&lines.length) {
-    const active=lines.filter(line=>isActivityActive(normalizeActivityStatus(line.status,false)));
-    return (active.length?active:lines).slice(-2).map((line)=>({
-      label: String(line.label||line.id||''),
-      percent: line.progress?.percent,
-    }));
-  }
-  const plan=Array.isArray(runtimeState?.plan)?runtimeState.plan:[];
-  const running=plan.find(step=>String(step.status||'').toLowerCase()==='running');
-  if(running) return [{label:String(running.description||running.label||running.status||''), percent:null}];
-  return [];
-}
-function runStripPercent(value) {
-  const percent=Number(value);
-  return Number.isFinite(percent)?Math.round(percent)+'%':'';
-}
-function setRunStripLine(lineId,percentId,label,percent) {
-  const line=$(lineId), badge=$(percentId);
-  if(line) line.textContent=label||'';
-  if(badge) {
-    const value=runStripPercent(percent);
-    badge.textContent=value;
-    badge.hidden=!value;
-  }
-}
-function runIsActive() {
-  if(isStreaming||pendingRuntimeStatusEls.length>0) return true;
-  if(!runtimeState) return false;
-  const status=String(runtimeState.status||'').toLowerCase();
-  if(status==='running'||status==='pending_approval') return true;
-  const activities=Array.isArray(runtimeState.activities)?runtimeState.activities:[];
-  if(activities.some(activity=>isActivityActive(normalizeActivityStatus(activity.status,activity.terminal)))) return true;
-  const chains=Array.isArray(runtimeState.skillChains)?runtimeState.skillChains:[];
-  return chains.some(chain=>chain.status==='running'||chain.status==='queued');
-}
-function updateRunStrip() {
-  const strip=$('run-strip');
-  if(!strip) return;
-  const active=runIsActive();
-  document.body.classList.toggle('run-active',active);
-  if(!active) { strip.hidden=true; return; }
-  strip.hidden=false;
-  const lines=runtimeStripLines();
-  const first=lines[0]||{};
-  const overall=runtimeState?.workflow?.progress?.percent;
-  setRunStripLine(
-    'run-strip-text','run-strip-percent',
-    first.label||'Working…',
-    first.percent!=null?first.percent:(lines.length?'':overall),
-  );
-  const second=lines[1];
-  const subLine=$('run-strip-sub-line');
-  if(subLine) {
-    subLine.hidden=!second;
-    if(second) setRunStripLine('run-strip-sub-text','run-strip-sub-percent', second.label||'', second.percent);
-  }
-}
 
 // An agent-mode turn runs on an ephemeral runtime session whose events never
 // reach /state, and it buffers its text until validation — so the panels and

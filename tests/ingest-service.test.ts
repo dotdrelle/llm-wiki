@@ -170,6 +170,18 @@ class FakeWorkspaceService {
   async appendLog(): Promise<void> {}
 }
 
+class RebuildWorkspaceService extends FakeWorkspaceService {
+  conceptLeaves: string[] = [];
+
+  async resolveIngestedSourceInputs(): Promise<string[]> {
+    return this.sourcePaths;
+  }
+
+  async listConceptLeafPaths(): Promise<string[]> {
+    return this.conceptLeaves;
+  }
+}
+
 /*
  Double de LLM à DEUX phases, comme le contrat du Lot 2.
 
@@ -579,6 +591,44 @@ describe('ingest service', () => {
       true,
     );
     expect(logger.entries.some((entry) => entry.event === 'ingest:run-done')).toBe(true);
+  });
+
+  it('clears the concept tree before a full --from-ingested rebuild writes the new one', async () => {
+    const workspace = new RebuildWorkspaceService();
+    workspace.sourcePaths = ['/tmp/wiki/raw/ingested/note.md'];
+    workspace.conceptLeaves = [
+      'wiki/concepts/old/note.md',
+      'wiki/concepts/other/thing.md',
+    ];
+    const logger = new MemoryTraceLogger();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new FakeLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      new CountingRefreshService() as unknown as RefreshService,
+      logger,
+      disabledCache(),
+    );
+
+    await service.ingest([], { fromIngested: true });
+
+    // The purge is applied FIRST, as its own batch: every concept leaf the
+    // previous rebuild left is deleted before the archive is re-filed.
+    expect(workspace.appliedBatches[0]).toEqual([
+      { type: 'delete', path: 'wiki/concepts/old/note.md' },
+      { type: 'delete', path: 'wiki/concepts/other/thing.md' },
+    ]);
+    expect(
+      logger.entries.some(
+        (entry) =>
+          entry.event === 'ingest:rebuild-purge'
+          && (entry.data as { removed?: number } | undefined)?.removed === 2,
+      ),
+    ).toBe(true);
+    // The new leaves are written after, in a later non-delete batch.
+    expect(workspace.appliedBatches.length).toBeGreaterThan(1);
+    expect(workspace.appliedBatches.at(-1)?.every((op) => op.type !== 'delete')).toBe(true);
   });
 
   it('re-ingests an unchanged source whose produced pages have vanished', async () => {

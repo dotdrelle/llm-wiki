@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   collectConceptFolderEntries,
-  conceptFolderMigrationOperations,
   normalizeConceptFolderName,
   reconcileConceptFolders,
 } from '../src/ingest/conceptFolders.ts';
@@ -147,51 +146,29 @@ describe('reconcileConceptFolders', () => {
   });
 });
 
-describe('conceptFolderMigrationOperations', () => {
-  it('merges two same-subject leaves into the canonical folder and unions their sources', () => {
-    const operations = conceptFolderMigrationOperations(
-      [
-        page('wiki/concepts/source-a/jedox.md', '---\nsubject: jedox\nsources:\n  - path: raw/ingested/one.md\n---\n# Jedox\n'),
-        page('wiki/concepts/source-b/jedox.md', '---\nsubject: jedox\nsources:\n  - path: raw/ingested/two.md\n---\n# Jedox (sécurité)\n'),
+// The migration pass that used to live here could not fire: an established
+// folder is never a rename source, and every page on disk is by definition in
+// an established folder. The tests that covered it hand-built a mapping the
+// reconciliation cannot produce, so they were green on an impossible state.
+// This is the invariant that made it dead code, pinned directly.
+describe('reconcileConceptFolders leaves the leaves on disk alone', () => {
+  it('maps every established folder onto itself, whatever the model answers', async () => {
+    const mapping = await reconcileConceptFolders({
+      llm: fakeLlm([
+        { folder: 'saas', canonical: 'produit' },
+        // The model tries to dissolve an established folder: refused.
+        { folder: 'solution-logicielle', canonical: 'produit' },
+      ]),
+      entries: [
+        { folder: 'produit', subjects: ['jedox'], tags: [] },
+        { folder: 'solution-logicielle', subjects: ['anaplan'], tags: [] },
       ],
-      new Map([['source-a', 'produit'], ['source-b', 'produit']]),
-    );
-    const update = operations.find((operation) => operation.type === 'update' && operation.path === 'wiki/concepts/produit/jedox.md');
-    expect(update).toBeTruthy();
-    const content = (update as { content: string }).content;
-    expect(content).toContain('raw/ingested/one.md');
-    expect(content).toContain('raw/ingested/two.md');
-    // Both bodies survive the merge — a re-file must not drop knowledge.
-    expect(content).toContain('# Jedox');
-    expect(content).toContain('# Jedox (sécurité)');
-    expect(operations).toContainEqual({ type: 'delete', path: 'wiki/concepts/source-a/jedox.md' });
-    expect(operations).toContainEqual({ type: 'delete', path: 'wiki/concepts/source-b/jedox.md' });
-  });
-
-  it('merges a migrating leaf with the leaf already at the target', () => {
-    const operations = conceptFolderMigrationOperations(
-      [
-        page('wiki/concepts/produit/jedox.md', '---\nsubject: jedox\n---\n# Jedox (prix)\n'),
-        page('wiki/concepts/solutions-externes/jedox.md', '---\nsubject: jedox\n---\n# Jedox (sécurité)\n'),
-      ],
-      new Map([['produit', 'produit'], ['solutions-externes', 'produit']]),
-    );
-    const update = operations.find((operation) => operation.type === 'update' && operation.path === 'wiki/concepts/produit/jedox.md');
-    expect((update as { content: string }).content).toContain('# Jedox (prix)');
-    expect((update as { content: string }).content).toContain('# Jedox (sécurité)');
-    expect(operations).toContainEqual({ type: 'delete', path: 'wiki/concepts/solutions-externes/jedox.md' });
-  });
-
-  it('rebases the concept prefix of a taxo leaf (<concept>_<resume>.md)', () => {
-    const operations = conceptFolderMigrationOperations(
-      [page('wiki/concepts/old/old_tarifs.md', '---\nsubject: old-tarifs\n---\n# Tarifs\n')],
-      new Map([['old', 'new']]),
-    );
-    expect(operations).toContainEqual({
-      type: 'update',
-      path: 'wiki/concepts/new/new_tarifs.md',
-      content: '---\nsubject: old-tarifs\n---\n# Tarifs\n',
+      proposed: ['saas'],
+      ctx,
+      logger: logger(),
     });
-    expect(operations).toContainEqual({ type: 'delete', path: 'wiki/concepts/old/old_tarifs.md' });
+    expect(mapping.get('saas')).toBe('produit');
+    expect(mapping.get('produit')).toBe('produit');
+    expect(mapping.get('solution-logicielle')).toBe('solution-logicielle');
   });
 });

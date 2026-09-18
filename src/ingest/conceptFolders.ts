@@ -1,12 +1,10 @@
 import { z } from 'zod';
-import matter from 'gray-matter';
 import { buildSystemPreamble, type PromptContext } from '../prompts/systemPreamble.ts';
 import { parseConceptPagePath } from './conceptGrid.ts';
 import { readProvenance } from './provenance.ts';
-import { carryForwardEngineFrontmatter } from '../okf/frontmatter.ts';
 import type { LLMService } from '../services/llmService.ts';
 import type { TraceLogger } from '../services/traceLogger.ts';
-import type { WikiOperation, WikiPage } from '../types.ts';
+import type { WikiPage } from '../types.ts';
 
 /*
  The concept vocabulary is the LLM's responsibility, never a table in the code.
@@ -22,8 +20,15 @@ import type { WikiOperation, WikiPage } from '../types.ts';
  This module owns ONE thing: given the concept folders that exist on disk and
  the folders a plan wants to open, ask the model for the single canonical
  folder each one belongs to, in the session language. The engine then rewrites
- the plan's paths and migrates the leaves. Equality (same string, accents/case
- aside) is the only mechanical shortcut, because it needs no judgement.
+ the PLAN's paths — never the leaves already on disk. Equality (same string,
+ accents/case aside) is the only mechanical shortcut, because it needs no
+ judgement.
+
+ There is deliberately no leaf migration here. An established folder is never a
+ rename source (see reconcileConceptFolders), so no page on disk can ever be
+ moved by this reconciliation: the migration pass that used to sit here could
+ not produce a single operation, and the `migrated:` figure it logged was
+ always 0 — a silent false report of a safety net that did not exist.
 */
 
 export type ConceptFolderEntry = {
@@ -158,62 +163,6 @@ function resolveCanonicalChains(mapping: Map<string, string>): Map<string, strin
     }
   };
   return new Map([...mapping.keys()].map((start) => [start, resolve(start)]));
-}
-
-/**
- * The write operations that move every leaf of a non-canonical folder into its
- * canonical folder. A collision (two leaves that become the same
- * `concept/subject`) is merged through `carryForwardEngineFrontmatter`, so the
- * `sources` union survives; the body is the last leaf's, matching how an
- * ordinary re-ingest update behaves. Taxo leaves (`<concept>_<resume>.md`)
- * rename their concept prefix too.
- */
-/**
- * Merges two leaves that become the same `concept/subject`: the engine-owned
- * frontmatter is unioned (`sources`, `verified`), and the two BODIES are
- * concatenated rather than one winning — a re-file is a filing decision, not a
- * reason to drop what one of the two pages documented.
- */
-function mergeConceptLeaf(base: string, incoming: string): string {
-  const baseParsed = matter(base);
-  const incomingParsed = matter(incoming);
-  const body = [baseParsed.content.trim(), incomingParsed.content.trim()]
-    .filter(Boolean)
-    .join('\n\n');
-  const combined = matter.stringify(body, incomingParsed.data);
-  return carryForwardEngineFrontmatter(base, combined);
-}
-
-export function conceptFolderMigrationOperations(
-  pages: WikiPage[],
-  mapping: Map<string, string>,
-): WikiOperation[] {
-  const contentByPath = new Map(pages.map((page) => [page.relativePath, page.content]));
-  const byTarget = new Map<string, string>();
-  const deletes: string[] = [];
-  for (const page of pages) {
-    const from = parseConceptPagePath(page.relativePath)?.class;
-    if (!from) continue;
-    const to = mapping.get(from);
-    if (!to || to === from) continue;
-    const base = page.relativePath.split('/').pop() ?? '';
-    const rebased = base.startsWith(`${from}_`) ? `${to}_${base.slice(from.length + 1)}` : base;
-    const target = `wiki/concepts/${to}/${rebased}`;
-    if (target === page.relativePath) continue;
-    // A leaf already at the target, or a sibling migrated earlier in this
-    // pass, is merged with this one so nothing is overwritten.
-    const prior = byTarget.get(target) ?? contentByPath.get(target) ?? null;
-    byTarget.set(target, prior ? mergeConceptLeaf(prior, page.content) : page.content);
-    deletes.push(page.relativePath);
-  }
-  return [
-    ...[...byTarget.entries()].map(([target, content]) => ({
-      type: 'update' as const,
-      path: target,
-      content,
-    })),
-    ...deletes.map((path) => ({ type: 'delete' as const, path })),
-  ];
 }
 
 /**

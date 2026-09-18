@@ -1,4 +1,4 @@
-import { WIKI_CSS_VARS } from '../../chat/theme.ts';
+import { WIKI_CSS_VARS, SCROLLBAR_CSS } from '../../chat/theme.ts';
 import { CONFIRM_DIALOG_CSS } from '../../chat/confirmDialog.ts';
 
 // The self-hosted Newsreader @font-face rules ride inside WIKI_CSS_VARS, so the
@@ -18,6 +18,13 @@ export const WIKI_LAYOUT_CSS = `
       font-family: var(--font-serif);
       line-height: 1.65;
     }
+    /* Embedded in the shell, the reader fills the central zone, which reads on
+       the plain theme ground: the shell's two rails keep the ground wash behind
+       their glass, the reader must not paint a second grid in the middle. The
+       standalone /wiki reader keeps its decorative backdrop. */
+    html.is-embedded:not(.sidebar-panel) body { background-image: none; }
+    /* Themed scrollbars (shared with the chat shell): see SCROLLBAR_CSS. */
+    ${SCROLLBAR_CSS}
     /* The shell embeds the Explorer as its left panel, beside 12px chat chrome.
        Its rem scale was sized for a full page, so the tree read ~20% larger
        than everything next to it (14.4px labels vs 12px). Scaling the panel's
@@ -74,6 +81,19 @@ export const WIKI_LAYOUT_CSS = `
       color: var(--muted);
       font-size: 0.72em;
       font-weight: 680;
+    }
+    /* Window Controls Overlay safety net: this page is normally embedded in
+       the chat shell's iframe, which already reserves and draws the titlebar
+       strip in its own document — env(titlebar-area-*) is only non-empty here
+       when this page is genuinely top-level (a direct nav, a page opened in
+       its own window) and would otherwise sit under the OS overlay buttons.
+       :not(.is-embedded) keeps this off the common iframe case. No drag
+       region is declared here on purpose — this page isn't the installed
+       app's primary window, so it only needs to not clip, not a custom titlebar. */
+    @media (display-mode: window-controls-overlay) {
+      html:not(.is-embedded) body { padding-top: env(titlebar-area-height, 0px); }
+      html:not(.is-embedded) .sidebar,
+      html:not(.is-embedded) .wiki-main-resizer { height: calc(100vh - env(titlebar-area-height, 0px)); }
     }
     .app-shell { min-height: 100vh; display: grid; grid-template-columns: var(--wiki-sidebar-w, 280px) 6px minmax(0, 1fr); }
     .sidebar {
@@ -391,7 +411,11 @@ export const WIKI_LAYOUT_CSS = `
       display: flex; align-items: center; gap: 0.35rem; padding-right: 0.45rem;
     }
     /* A collection root is a tab already: its actions sit in normal flow, and its UPPERCASE title (CONTEXT / TEMPLATES / DELIVERABLES) is a static header — no fold, only the wiki tree folds. */
-    .side-folder-plain > .side-folder-actions { position: static; justify-content: flex-end; } .side-folder-plain-label { display: block; padding: 0.28rem 0.45rem; color: var(--text); font-size: 0.8rem; font-weight: 680; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* The title line — label then actions — is a head row, so the accent
+       background of the primary WIKI row runs under the rebuild button too. */
+    .side-folder-plain-head { display: flex; align-items: center; min-height: 2rem; border-radius: 6px; }
+    .side-folder-plain-head > .side-folder-actions { position: static; justify-content: flex-end; flex: 0 0 auto; }
+    .side-folder-plain-label { flex: 1 1 auto; min-width: 0; padding: 0.28rem 0.45rem; color: var(--text); font-size: 0.8rem; font-weight: 680; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .side-folder-children {
       margin-left: 0.85rem;
       padding-left: 0.35rem;
@@ -493,7 +517,8 @@ export const WIKI_LAYOUT_CSS = `
       font-weight: 760;
     }
     .side-untracked-row > .side-folder-actions { top: 0; height: 2rem; }
-    .side-folder-row.side-folder-primary .side-folder-plain-label { color: var(--accent); background: var(--accent-soft); font-weight: 800; }
+    .side-folder-row.side-folder-primary .side-folder-plain-head { background: var(--accent-soft); }
+    .side-folder-row.side-folder-primary .side-folder-plain-label { color: var(--accent); font-weight: 800; }
     .side-untracked-count {
       min-width: 1.45rem;
       height: 1.45rem;

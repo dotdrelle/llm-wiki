@@ -1,7 +1,6 @@
 import type { WikiOperation } from '../types.ts';
 import type { ConsolidationPlan, ConsolidatedPage } from './consolidationSchema.ts';
 import {
-  conceptFolderFromId,
   conceptPagePath,
   parseConceptPagePath,
   CONCEPT_PATH_PREFIX,
@@ -12,7 +11,7 @@ import {
   isValidProvenanceValue,
   normalizeProvenanceValue,
   normalizeTagValue,
-  subjectsAreRelated,
+  subjectsShareEntityRoot,
   type PageProvenance,
 } from './provenance.ts';
 import { okfTypeForPath } from '../okf/frontmatter.ts';
@@ -53,6 +52,18 @@ function isSourceNote(path: string, sourcePagePath: string): boolean {
 }
 
 /**
+ * The raw `<concept>/<subject>` split of a concept path, before any validation.
+ * `parseConceptPagePath` returns null for an unusable value and cannot say
+ * WHICH half was unusable; this can.
+ */
+function conceptPathAxesFor(at: string): { class: string; subject: string } | null {
+  if (!at.startsWith(CONCEPT_PATH_PREFIX) || !at.endsWith('.md')) return null;
+  const parts = at.slice(CONCEPT_PATH_PREFIX.length, -'.md'.length).split('/');
+  if (parts.length !== 2) return null;
+  return { class: parts[0] as string, subject: parts[1] as string };
+}
+
+/**
  * Makes a leaf's declared subject agree with its path, before judging it.
  *
  * The path `wiki/concepts/<concept>/<subject>.md` carries the identity in its
@@ -74,18 +85,26 @@ function reconcileConceptSubject(
   const warnings: ConsolidationIssue[] = [];
   const fromPath = parseConceptPagePath(at);
   if (!fromPath) {
-    // The concept IS the folder, so a leaf with no folder to live in has no
-    // concept axis at all. A `subject` the model declared must not paper over
-    // it — the path, not the declaration, carries the identity — so a flat
-    // `wiki/concepts/<subject>.md` (or an unusable folder/subject) is rejected
+    // The concept IS the folder, so a leaf with no usable folder has no concept
+    // axis at all. A `subject` the model declared must not paper over it — the
+    // path, not the declaration, carries the identity — so this is rejected
     // exactly like a missing subject, never silently accepted.
+    //
+    // `refileMisfiledConceptLeaves` has already rescued every path that only
+    // had the wrong DEPTH, so what reaches here is a value neither
+    // normalization nor re-filing could make usable. The message names which
+    // half, because "no concept folder" about a path that clearly has one sent
+    // the reader looking for the wrong defect.
+    const parsedAxes = conceptPathAxesFor(at);
     return {
       provenance: declared,
       issues: [{
         path: at,
-        reason: conceptFolderFromId(at)
-          ? 'concept page without a usable subject'
-          : 'concept page without a concept folder; expected wiki/concepts/<concept>/<subject>.md',
+        reason: parsedAxes === null
+          ? 'concept page outside wiki/concepts/<concept>/<subject>.md'
+          : !isValidProvenanceValue(parsedAxes.class)
+            ? `concept page without a usable concept folder (« ${parsedAxes.class} »)`
+            : `concept page without a usable subject (« ${parsedAxes.subject} »)`,
       }],
       warnings,
       derived: false,
@@ -121,29 +140,46 @@ function conceptSubjectIssues(at: string, provenance: PageProvenance): Consolida
 }
 
 /**
- * Re-files a concept leaf the plan wrote directly under `wiki/concepts/` (no
- * concept folder) into the reserved `unclassified/` folder.
+ * Re-files a concept leaf whose path has the wrong DEPTH into one the folder
+ * model accepts.
  *
- * The concept IS the folder, so a flat leaf carries no concept axis. Rejecting
- * the whole source over it would drop a document because of one malformed path,
- * when the engine already has an answer for "this subject belongs to no concept
- * yet": `unclassified/`. The subject comes from the basename (normalized); when
- * even that is unusable the leaf is left for `reconcileConceptSubject` to reject.
+ * The concept IS the folder, so a leaf lives at exactly
+ * `wiki/concepts/<concept>/<subject>.md`. Two shapes miss it:
+ * - too flat (`wiki/concepts/<subject>.md`) — no concept axis at all, so the
+ *   leaf waits under the reserved `unclassified/` folder;
+ * - too deep (`wiki/concepts/<concept>/<sub>/<subject>.md`) — the model
+ *   invented a sub-concept. The FIRST segment is the concept it chose and the
+ *   rest is the subject, joined: both pieces of its judgement survive.
+ *
+ * Rejecting the whole source over one malformed path would drop a document the
+ * engine already knows how to file — and it did, because a nested path was the
+ * one shape nothing rescued. When even the normalized subject is unusable the
+ * leaf is left for `reconcileConceptSubject` to reject.
  *
  * BOTH the operations and their `pages[]` provenance entries are rewritten, so
  * the refiled leaf keeps its declared scope/kind/tags. Deletes are never
- * rewritten: removing a legacy flat leaf stays possible.
+ * rewritten: removing a legacy malformed leaf stays possible.
  */
-function refileFlatConceptLeaves(
+function refileMisfiledConceptLeaves(
   operations: WikiOperation[],
   pages: ConsolidatedPage[],
 ): { operations: WikiOperation[]; pages: ConsolidatedPage[]; warnings: ConsolidationIssue[] } {
-  const refile = (pathValue: string): string | null => {
+  const refile = (pathValue: string): { path: string; subject: string; flat: boolean } | null => {
     if (!pathValue.startsWith(CONCEPT_PATH_PREFIX) || !pathValue.endsWith('.md')) return null;
     const rest = pathValue.slice(CONCEPT_PATH_PREFIX.length, -'.md'.length);
-    if (!rest || rest.includes('/')) return null;
-    const subject = normalizeProvenanceValue(rest);
-    return isValidProvenanceValue(subject) ? conceptPagePath(UNCLASSIFIED_CLASS, subject) : null;
+    if (!rest) return null;
+    const parts = rest.split('/').filter(Boolean);
+    if (parts.length === 2) return null;
+    if (parts.length === 1) {
+      const subject = normalizeProvenanceValue(parts[0] as string);
+      return isValidProvenanceValue(subject)
+        ? { path: conceptPagePath(UNCLASSIFIED_CLASS, subject), subject, flat: true }
+        : null;
+    }
+    const concept = normalizeProvenanceValue(parts[0] as string);
+    const subject = normalizeProvenanceValue(parts.slice(1).join('-'));
+    if (!isValidProvenanceValue(concept) || !isValidProvenanceValue(subject)) return null;
+    return { path: conceptPagePath(concept, subject), subject, flat: false };
   };
   const warnings: ConsolidationIssue[] = [];
   const announced = new Set<string>();
@@ -155,18 +191,17 @@ function refileFlatConceptLeaves(
       announced.add(operation.path);
       warnings.push({
         path: operation.path,
-        reason: `concept leaf with no concept folder; re-filed under ${UNCLASSIFIED_CLASS}/`,
+        reason: target.flat
+          ? `concept leaf with no concept folder; re-filed under ${UNCLASSIFIED_CLASS}/`
+          : `concept leaf nested below its concept folder; re-filed as ${target.path}`,
       });
     }
-    return { ...operation, path: target };
+    return { ...operation, path: target.path };
   });
   const refiledPages = pages.map((page) => {
     const target = refile(page.path);
     if (!target) return page;
-    const subject = normalizeProvenanceValue(
-      page.path.slice(CONCEPT_PATH_PREFIX.length, -'.md'.length),
-    );
-    return { ...page, path: target, subject: page.subject ?? subject };
+    return { ...page, path: target.path, subject: page.subject ?? target.subject };
   });
   return { operations: refiledOperations, pages: refiledPages, warnings };
 }
@@ -188,7 +223,7 @@ export function validateConsolidation(
   const warnings: ConsolidationIssue[] = [];
   const budget = context.conceptBudget ?? DEFAULT_CONCEPT_BUDGET;
 
-  const refiled = refileFlatConceptLeaves(plan.operations ?? [], plan.pages ?? []);
+  const refiled = refileMisfiledConceptLeaves(plan.operations ?? [], plan.pages ?? []);
   warnings.push(...refiled.warnings);
   const planOperations = refiled.operations;
   const declaredPages = refiled.pages;
@@ -376,7 +411,13 @@ export function detectConceptSplits(plan: ConsolidationPlan): ConceptSplit[] {
       if (pageFolder && otherFolder && pageFolder !== otherFolder) {
         continue;
       }
-      if (subjectsAreRelated(subject, otherSubject) || sharesRawPrefix(subject, otherSubject)) {
+      /*
+       The STRICT predicate, deliberately: this does not show a candidate, it
+       DECLARES a duplicate — and a declared split costs retry rounds and tells
+       the model to merge. The lenient `subjectsAreRelated` made two products
+       sharing any qualifier ("jedox-cloud" / "anaplan-cloud") a split.
+      */
+      if (subjectsShareEntityRoot(subject, otherSubject) || sharesRawPrefix(subject, otherSubject)) {
         splits.push({
           path: other.path,
           subject: otherSubject,

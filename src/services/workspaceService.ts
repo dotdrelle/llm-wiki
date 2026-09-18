@@ -673,6 +673,24 @@ export class WorkspaceService {
     return pages;
   }
 
+  /**
+   * Concept leaves currently on disk (`wiki/concepts/**\/*.md`).
+   *
+   * A full `--from-ingested` rebuild clears this tree before re-filing the
+   * archive: the previous leaves are the output of an older run, and a model
+   * that re-projects a source under a new subject slug (or keeps an old
+   * projection while adding one) would otherwise accumulate leaves on every
+   * run. Manually written pages under `wiki/concepts/` are wiped too — the
+   * rebuild owns that subtree.
+   */
+  async listConceptLeafPaths(): Promise<string[]> {
+    const files = await fg('**/*.md', {
+      cwd: this.paths.wikiConceptsDir,
+      absolute: true,
+    });
+    return files.sort().map((absolutePath) => relativeFrom(this.paths.rootDir, absolutePath));
+  }
+
   async listIngestedSourcePages(): Promise<WikiPage[]> {
     const files = await fg('**/*.md', {
       cwd: this.paths.rawIngestedDir,

@@ -361,10 +361,14 @@ loadHistory();
     const relative = urlPath.replace(/^\/rename\//, '').replace(/\/+$/, '');
     if (req.method === 'PATCH') {
       try {
+        // This route speaks JSON; the `/edit/` Save form speaks
+        // form-urlencoded. Each caller extracts the name in its own encoding
+        // and hands renameTemplateDocument the name itself.
+        const payload = JSON.parse((await deps.readRequestBody(req)) || '{}') as { name?: string };
         const renamedPath = await renameTemplateDocument(
           rootDir,
           relative,
-          await deps.readRequestBody(req),
+          String(payload.name ?? ''),
         );
         deps.sendJson(res, 200, { ok: true, path: renamedPath });
       } catch (err) {
@@ -410,7 +414,7 @@ loadHistory();
         let savedRelative = toPosix(relative);
         const requestedName = params.get('name');
         if (requestedName !== null && requestedName.trim()) {
-          savedRelative = await renameTemplateDocument(rootDir, savedRelative, body);
+          savedRelative = await renameTemplateDocument(rootDir, savedRelative, requestedName);
         }
         // Manual edits must round-trip exactly; generated Markdown is normalized elsewhere.
         await writeIfChanged(resolveEditableMarkdown(rootDir, savedRelative), content);
@@ -421,6 +425,14 @@ loadHistory();
         res.end();
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        // A refused rename is not a missing page: answering 404 for it told
+        // the reader the document did not exist while their edit was quietly
+        // dropped. Name the reason instead.
+        if (/RENAME/.test(message)) {
+          res.writeHead(409, { 'Content-Type': 'text/plain' });
+          res.end(message);
+          return true;
+        }
         const status = message.startsWith('FORBIDDEN_EDIT_PATH') ? 403 : 404;
         res.writeHead(status, { 'Content-Type': 'text/plain' });
         res.end(status === 403 ? 'Forbidden' : 'Not found');

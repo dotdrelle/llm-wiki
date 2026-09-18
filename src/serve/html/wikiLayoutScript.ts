@@ -1,4 +1,5 @@
 import { CONFIRM_DIALOG_SCRIPT } from '../../chat/confirmDialog.ts';
+import { WIKI_BG_DARK, WIKI_BG_LIGHT } from '../../chat/theme.ts';
 
 export const WIKI_LAYOUT_SCRIPT = `
 ${CONFIRM_DIALOG_SCRIPT}
@@ -36,6 +37,8 @@ function wireSidebarLaunchButtons() {
       themeToggle.textContent = selected === 'light' ? '☾' : '☀';
       themeToggle.title = selected === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
     }
+    const themeColorMeta = document.getElementById('theme-color-meta');
+    if (themeColorMeta) themeColorMeta.content = selected === 'dark' ? '${WIKI_BG_DARK}' : '${WIKI_BG_LIGHT}';
     if (persist) localStorage.setItem(THEME_KEY, selected);
   }
   applyTheme(localStorage.getItem(THEME_KEY) || localStorage.getItem('llm-wiki:graph:theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
@@ -279,14 +282,14 @@ function wireSidebarLaunchButtons() {
       const kind = button.getAttribute('data-tree-kind') || 'file';
       if (!relativePath) return;
       /*
-       The count decides whether we ask: a folder always, a lone uncited file
-       never, a cited one names what it would break. The CONCEPT tree is the
-       exception — a concept folder/leaf re-files from raw/ingested and a
-       pending source deletes without a word; its section root stays guarded.
+       The count decides whether we ask: a FOLDER always, a lone uncited file
+       never, a cited one names what it would break. A concept LEAF is the
+       exception — it re-files from raw/ingested, so it deletes without a word.
+       A FOLDER never: keyed on the prefix alone, one click took a whole subtree.
       */
-      const isConcept = relativePath.startsWith('wiki/concepts/');
+      const isConceptLeaf = kind !== 'folder' && relativePath.startsWith('wiki/concepts/');
       button.disabled = true;
-      if (!isConcept) {
+      if (!isConceptLeaf) {
         let citing = [];
         try {
           const found = await fetch('/api/tree/references?path=' + encodeURIComponent(relativePath));

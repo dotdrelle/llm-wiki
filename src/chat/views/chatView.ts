@@ -16,7 +16,8 @@ export const EMPTY_CHAT_HTML = `<div id="empty">
   </div>
 </div>`;
 
-export const CHAT_MARKUP = `<aside id="sidebar">
+export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="wco-titlebar-brand">⬡ Donna</span></div>
+<aside id="sidebar">
   <div class="shell-tabs" role="tablist" aria-label="Left panel">
     <button id="shell-tab-wiki" class="shell-tab" type="button" role="tab" onclick="setLeftTab('wiki')"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Wiki</button>
     <button id="shell-tab-chat" class="shell-tab active" type="button" role="tab" onclick="setLeftTab('chat')"><span class="shell-tab-glyph" aria-hidden="true">⬡</span>Donna</button>
@@ -200,9 +201,11 @@ export const CHAT_MARKUP = `<aside id="sidebar">
 
 <!--
   Run status strip: the chat-side twin of the ShellUI's Activity strip.
-  Two lines, like the ShellUI: the run's current BUSINESS activity and the
-  concrete step under it (an ingest target, a plan step), each with its own
-  percentage. It carries no raw tool id — those are the Logs tab's job.
+  Two lines, like the ShellUI: the document/step the run is on TODAY (the
+  activity's own progress.label, what the Shell shows for an aggregated line)
+  with its percentage, then the live figures the direct wiki CLI already
+  exports — step/source/task/batch counters, the detail and the tokens. It
+  carries no raw tool id — those are the Logs tab's job.
 
   Pinned to the BASE of the window and given room by a composer bottom padding
   (body.run-active #input-wrap), so it never covers the chat bar or its

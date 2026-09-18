@@ -252,11 +252,36 @@ export async function expandDeliverable(
     // A citation may name only a section of its source (`path#Heading`): the
     // claim it backs lives there, and reading the whole file for it dilutes the
     // evidence. Group the anchors per path; a path with no anchor stays whole.
+    //
+    // "Stays whole" is a property of the PATH, not of the one citation: a
+    // source cited BOTH ways in the same section is read whole, because the
+    // un-anchored citation asked for the whole document and narrowing it drops
+    // the evidence it pointed at.
+    const wholeSourcePaths = new Set(
+      citedCitations.filter((entry) => !entry.anchor).map((entry) => entry.path),
+    );
     const anchorsByPath = new Map<string, string[]>();
     for (const entry of citedCitations) {
-      if (!entry.anchor) continue;
+      if (!entry.anchor || wholeSourcePaths.has(entry.path)) continue;
       anchorsByPath.set(entry.path, [...(anchorsByPath.get(entry.path) ?? []), entry.anchor]);
     }
+    // One definition for both read paths (direct reads and the raw fallback):
+    // they narrowed identically, and an anchor that matched no heading fell
+    // back to the whole file in silence.
+    const narrowToCitedSections = (raw: string, cited: string, label: string): string => {
+      const anchors = anchorsByPath.get(cited);
+      if (!anchors?.length) return raw;
+      const slices = anchors
+        .map((anchor) => sliceCitedSection(raw, anchor))
+        .filter((value): value is string => Boolean(value));
+      if (slices.length === anchors.length) return slices.join('\n\n');
+      const missing = anchors.filter((anchor) => sliceCitedSection(raw, anchor) === null);
+      warnings.push(
+        `cited section not found in ${cited}: ${missing.join(', ')} (section "${label}")`
+        + (slices.length ? '' : ' — read whole'),
+      );
+      return slices.length ? slices.join('\n\n') : raw;
+    };
     onProgress?.({
       phase: 'source',
       path: deliverablePath,
@@ -313,14 +338,11 @@ export async function expandDeliverable(
         continue;
       }
       if (!(await pathExists(sourceAbsolute))) continue;
-      let raw = stripCitationMarkers(await workspace.readTextFile(sourceAbsolute));
-      const anchors = anchorsByPath.get(cited);
-      if (anchors?.length) {
-        const slices = anchors
-          .map((anchor) => sliceCitedSection(raw, anchor))
-          .filter((value): value is string => Boolean(value));
-        if (slices.length) raw = slices.join('\n\n');
-      }
+      const raw = narrowToCitedSections(
+        stripCitationMarkers(await workspace.readTextFile(sourceAbsolute)),
+        cited,
+        sectionLabel,
+      );
       directReads.push({
         path: cited,
         content:
@@ -356,14 +378,11 @@ export async function expandDeliverable(
           warnings.push(`source not found: ${cited} (section "${sectionLabel}")`);
           continue;
         }
-        let raw = stripCitationMarkers(await workspace.readTextFile(sourceAbsolute));
-        const anchors = anchorsByPath.get(cited);
-        if (anchors?.length) {
-          const slices = anchors
-            .map((anchor) => sliceCitedSection(raw, anchor))
-            .filter((value): value is string => Boolean(value));
-          if (slices.length) raw = slices.join('\n\n');
-        }
+        const raw = narrowToCitedSections(
+          stripCitationMarkers(await workspace.readTextFile(sourceAbsolute)),
+          cited,
+          sectionLabel,
+        );
         fragments.push({
           path: cited,
           content:

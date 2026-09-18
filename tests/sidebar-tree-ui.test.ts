@@ -271,6 +271,10 @@ describe('sidebar views', () => {
     const actionsStart = wikiRow.indexOf('data-rebuild-launch');
     expect(actionsStart).toBeGreaterThan(-1);
     expect(wikiRow.indexOf('side-folder-actions')).toBeLessThan(actionsStart);
+    // Label and actions share one head row so the accent background can span
+    // both — the bar must not stop before the button.
+    expect(wikiRow.indexOf('side-folder-plain-head')).toBeGreaterThan(-1);
+    expect(wikiRow.indexOf('side-folder-plain-head')).toBeLessThan(wikiRow.indexOf('side-folder-actions'));
     // Wired by the shared launch-button helper, which refreshSidebar re-applies
     // after every markup replacement so the button does not vanish once the
     // tree is refreshed.
@@ -533,6 +537,21 @@ describe('wiki tree chrome', () => {
     );
     expect(rule).not.toContain('border: 1px solid');
     expect(rule).toContain('.side-folder-row.side-folder-primary summary { color: var(--accent); background: var(--accent-soft); }');
+  });
+
+  it('gives the whole WIKI title line its accent background, rebuild button included', () => {
+    // The background used to sit on the label alone, so the bar stopped before
+    // the right-aligned rebuild button. It now rides the head row (label +
+    // actions), and the label keeps only the colour and weight.
+    expect(WIKI_LAYOUT_CSS).toContain(
+      '.side-folder-row.side-folder-primary .side-folder-plain-head { background: var(--accent-soft); }',
+    );
+    expect(WIKI_LAYOUT_CSS).toContain(
+      '.side-folder-row.side-folder-primary .side-folder-plain-label { color: var(--accent); font-weight: 800; }',
+    );
+    expect(WIKI_LAYOUT_CSS).not.toContain(
+      '.side-folder-primary .side-folder-plain-label { color: var(--accent); background',
+    );
   });
 });
 

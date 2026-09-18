@@ -1,11 +1,24 @@
-import { WIKI_CSS_VARS } from '../theme.ts';
+import { WIKI_CSS_VARS, SCROLLBAR_CSS } from '../theme.ts';
 import { CONFIRM_DIALOG_CSS } from '../confirmDialog.ts';
 import { CHAT_ACTIVITY_CSS } from './chatActivityStyles.ts'; const CHAT_COMPONENT_CSS = `*{box-sizing:border-box;margin:0;padding:0}
 body{font-family:var(--font-sans);background:var(--bg);background-image:var(--bg-image);background-size:var(--bg-size);background-attachment:fixed;color:var(--text);height:100vh;display:flex;overflow:hidden}
-::-webkit-scrollbar{width:4px;height:4px}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+/* Themed scrollbars (shared with the wiki reader): see SCROLLBAR_CSS. */
+${SCROLLBAR_CSS}
 
-/* SHELL: left tabs + right rail (no top bar) */
+/* Window Controls Overlay (installed, Chromium desktop only): a fixed strip
+   fills the OS-reserved titlebar rect instead of leaving it empty, carrying
+   the workspace brand and doubling as the drag handle. env(titlebar-area-*)
+   is only populated in that mode, so everywhere else (browser tab, Safari,
+   plain "standalone" install) this whole block is inert and the layout is
+   byte-for-byte what it was before. */
+#wco-titlebar{display:none}
+@media (display-mode: window-controls-overlay){
+  #wco-titlebar{display:flex;align-items:center;position:fixed;left:env(titlebar-area-x,0);top:env(titlebar-area-y,0);width:env(titlebar-area-width,100%);height:env(titlebar-area-height,38px);padding:0 0 0 12px;background:var(--panel);border-bottom:1px solid var(--border);-webkit-app-region:drag;z-index:1000;font-family:var(--font-display);font-weight:600;font-size:14px;color:var(--text)}
+  body{padding-top:env(titlebar-area-height,38px)}
+  #sidebar,.main-resizer,#main,#right-rail{height:calc(100vh - env(titlebar-area-height,38px))}
+}
+
+/* SHELL: left tabs + right rail (top bar only in the WCO strip above) */
 .shell-tabs{display:flex;align-items:center;gap:6px;height:54px;padding:0 12px;border-bottom:1px solid var(--border);flex-shrink:0}
 .shell-tab{flex:1;height:30px;display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--border);border-radius:8px;background:var(--panel-soft);color:var(--muted);cursor:pointer;font-family:var(--font-sans);font-size:12px;font-weight:800;transition:border-color .2s,color .2s,background .2s}
 .shell-tab svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
@@ -40,17 +53,16 @@ body.center-wiki #right-rail{padding-top:10px}
 .sb-logo-main{min-width:0;flex:1}
 .sb-logo-text{font-family:var(--font-display);font-size:21px;font-weight:600;letter-spacing:.01em;line-height:1}
 .sb-logo-sub{font-size:10px;color:var(--muted);font-family:var(--font-mono);margin-top:1px}
-.sb-scroll{flex:1;min-height:0;display:grid;grid-template-rows:minmax(96px,var(--history-pane-height,38%)) 10px minmax(180px,1fr);overflow:hidden}
+.sb-scroll{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .sb-pane{min-height:0;overflow-y:auto;padding-bottom:12px}
-.sb-pane.history-pane{padding-bottom:8px}
-/* The connector/config stack hangs off the bottom of the window: its first
-   child pushes the whole block down, so the last field (Model) stays glued to
-   the bottom edge instead of floating mid-pane with dead space below it. When
-   the content is taller than the pane the auto margin collapses to 0 and the
-   pane scrolls as before. */
-.sb-pane.config-pane{display:flex;flex-direction:column}
-.config-pane > .sec-label:first-child{margin-top:auto}
-.sb-resizer{height:10px;cursor:row-resize;display:flex;align-items:center;justify-content:center;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--panel);touch-action:none}
+.sb-pane.history-pane{padding-bottom:8px;flex:1 1 auto}
+/* The connector/config stack hugs its own content and sits at the bottom of
+   the panel: the horizontal split lands exactly on the stack's first line
+   instead of floating above a dead gap. The history pane takes all the space
+   left over; a stack taller than the panel scrolls, capped so the history
+   keeps its minimum. */
+.sb-pane.config-pane{flex:0 0 auto;max-height:calc(100% - 106px)}
+.sb-resizer{flex:0 0 10px;height:10px;cursor:row-resize;display:flex;align-items:center;justify-content:center;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--panel);touch-action:none}
 .sb-resizer:hover,.sb-resizer.dragging{background:var(--panel-soft)}
 .sb-resizer::before{content:'';width:34px;height:3px;border-radius:99px;background:var(--border)}
 .sb-resizer:hover::before,.sb-resizer.dragging::before{background:var(--muted)}
@@ -128,7 +140,11 @@ input[type=password]{letter-spacing:3px}
 .tool-desc-t{color:var(--muted);font-size:10px;margin-top:1px}
 
 /* MAIN */
-#main{flex:1;height:100vh;display:flex;flex-direction:column;overflow:hidden;background:transparent}
+/* The centre reads on the plain theme ground in every view: the body's wash +
+   grid is page chrome (the two rails blur it through their glass), not a
+   backdrop for the conversation or the reader. The embedded reader paints its
+   own body, so it drops the grid too when embedded (wikiLayoutCss.ts). */
+#main{flex:1;height:100vh;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
 #wiki-view{flex:1;min-height:0;display:none;position:relative}
 #wiki-view iframe{display:block;width:100%;height:100%;border:0;background:var(--bg)}
 /* The close-document control is rendered by the embedded page itself, in its
@@ -555,6 +571,8 @@ ${CONFIRM_DIALOG_CSS}`; export const CHAT_STYLE = `<style>
 ${WIKI_CSS_VARS}
 :root {
   /* --font-sans / --font-serif / --font-mono come from WIKI_CSS_VARS */
+  --scrollbar-size: 4px;
+  --scrollbar-radius: 2px;
   --panel-deep: rgba(20, 110, 160, .09);
   --accent2: var(--link);
   --muted2: var(--muted);

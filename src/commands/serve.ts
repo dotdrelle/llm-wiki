@@ -34,6 +34,7 @@ import { handleRuntimeRoutes } from '../serve/routes/runtimeRoutes.ts';
 import { handleUploadRoutes, type ExternalMcpEndpoint } from '../serve/routes/uploadRoutes.ts';
 import { handleWikiRoutes } from '../serve/routes/wikiRoutes.ts';
 import { totpLoginGuard } from '../serve/routes/loginRoutes.ts';
+import { appDisplayName, appIconSvgMarkup, buildWebManifest } from '../serve/html/appIdentity.ts';
 
 export { extractIndexTiles, isRawDownloadRequestPath, isRawUntrackedReference, localHref, serveMd };
 
@@ -92,7 +93,7 @@ const UI_FONT_WOFF2: Record<string, string> = {};
 }
 const SKILLS_DIR = path.join('.wiki', 'skills');
 const SKILL_NAME_RE = /^[a-zA-Z0-9_-]{1,60}$/;
-const LLM_WIKI_VERSION = '0.15.97';
+const LLM_WIKI_VERSION = '0.15.98';
 
 type SkillMeta = {
   name: string;
@@ -992,6 +993,30 @@ export default async function serveCmd(
           'Cache-Control': 'public, max-age=31536000, immutable',
         });
         res.end(font);
+        return;
+      }
+
+      // PWA manifest + icon: what lets Chrome/Edge/Safari install `serve` as
+      // a chromeless desktop app window instead of a browser tab. One vector
+      // icon (appIconSvgMarkup) backs both the favicon (inlined per-page,
+      // see appIdentity.ts) and this file, so the tab, the taskbar/Dock icon
+      // and the installed window always agree.
+      if (urlPath === '/manifest.webmanifest') {
+        const manifest = buildWebManifest(appDisplayName(path.basename(rootDir)));
+        res.writeHead(200, {
+          'Content-Type': 'application/manifest+json; charset=utf-8',
+          'Cache-Control': 'public, max-age=3600',
+        });
+        res.end(JSON.stringify(manifest));
+        return;
+      }
+
+      if (urlPath === '/assets/icon.svg') {
+        res.writeHead(200, {
+          'Content-Type': 'image/svg+xml; charset=utf-8',
+          'Cache-Control': 'public, max-age=3600',
+        });
+        res.end(appIconSvgMarkup());
         return;
       }
 

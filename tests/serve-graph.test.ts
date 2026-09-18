@@ -4,9 +4,10 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { renderWikiGraphV2 } from '../src/graph/wiki/graphApp.ts';
 import { graphUiContextCardScript } from '../src/graph/wiki/ui/core/contextCardScript.ts';
-import { renderSidebar, serveMd } from '../src/serve/html/wikiHtml.ts';
+import { renameTemplateDocument, renderSidebar, serveMd } from '../src/serve/html/wikiHtml.ts';
 import { generateSkillsPage } from '../src/serve/html/wikiSkillsPage.ts';
 import { WIKI_PANEL_SCRIPT } from '../src/chat/views/wikiPanelScript.ts';
+import { WIKI_LAYOUT_CSS } from '../src/serve/html/wikiLayoutCss.ts';
 
 it('renders skill execution mode and an expandable body editor', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-skills-page-'));
@@ -368,6 +369,23 @@ describe('serve graph ui', () => {
     expect(source).toContain('html.is-embedded:not(.sidebar-panel) .topbar{display:flex;flex-wrap:nowrap}');
   });
 
+  it('reads the central zone on the plain ground, not the body grid, when embedded', async () => {
+    const source = await serveSource();
+
+    // The reader fills the shell's central zone: it must not paint the body
+    // wash + 48px grid a second time in the middle. The two rails keep the
+    // backdrop behind their glass, and the standalone /wiki reader keeps its
+    // decorative backdrop.
+    expect(source).toContain('html.is-embedded:not(.sidebar-panel) body { background-image: none; }');
+  });
+
+  it('paints the reader scrollbar track transparent too, so it never reads white in dark mode', () => {
+    // The reader interpolates the shared SCROLLBAR_CSS: assert on the rendered
+    // stylesheet, not the source, where the rules only appear as a placeholder.
+    expect(WIKI_LAYOUT_CSS).toContain('::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}');
+    expect(WIKI_LAYOUT_CSS).toContain('html{scrollbar-color:var(--border) transparent;scrollbar-width:thin}');
+  });
+
   it('keeps Main sections always visible and collapses each section by default', async () => {
     const source = await serveSource();
 
@@ -429,13 +447,16 @@ describe('serve graph ui', () => {
     expect(source).toContain("document.querySelectorAll('[data-tree-id]').forEach(initializeFolder);");
   });
 
-  it('deletes concepts without a confirmation, unlike other pages', async () => {
+  it('deletes a concept LEAF without a confirmation, but never a concept folder', async () => {
     const source = await serveSource();
-    // A concept folder/leaf is re-filed from raw/ingested, and a pending source
-    // already deletes silently: the concept tree follows the same rule. The
-    // section root (wiki/concepts) is not a concept and stays guarded.
-    expect(source).toContain("const isConcept = relativePath.startsWith('wiki/concepts/');");
-    expect(source).toContain('if (!isConcept) {');
+    // A concept leaf is re-filed from raw/ingested, and a pending source
+    // already deletes silently: a leaf follows the same rule. A FOLDER never
+    // does — it takes its whole subtree with it, so it keeps the prompt and
+    // the dead-link count like any other folder.
+    expect(source).toContain(
+      "const isConceptLeaf = kind !== 'folder' && relativePath.startsWith('wiki/concepts/');",
+    );
+    expect(source).toContain('if (!isConceptLeaf) {');
     expect(source).toContain("const mustAsk = kind === 'folder' || citing === null || citing.length > 0;");
   });
 
@@ -711,11 +732,39 @@ describe('serve missing feature endpoints', () => {
     expect(source).toContain('name="name"');
     expect(source).toContain('renameTemplateDocument');
     expect(wikiSource).toContain('urlPath.startsWith(\'/rename/\')');
-    expect(wikiSource).toContain('renameTemplateDocument(rootDir, savedRelative, body)');
+    expect(wikiSource).toContain('renameTemplateDocument(rootDir, savedRelative, requestedName)');
     expect(source).not.toContain('async function renameTemplate()');
     expect(source).not.toContain('function renameHref(relativePath: string)');
     expect(configSource).toContain("urlPath !== '/api/llm-config'");
     expect(chatSource).toContain("req.headers['x-llm-wiki-llm-base-url']");
+  });
+
+  // The Save form is `application/x-www-form-urlencoded`, the /rename/ route is
+  // JSON: renameTemplateDocument takes the NAME so neither encoding can reach
+  // it. It used to JSON.parse the request body, which made every template save
+  // throw and answer 404 with the edit dropped.
+  it('renames a template from a plain name, whatever the caller encoding', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-template-rename-'));
+    try {
+      await mkdir(path.join(root, 'templates'), { recursive: true });
+      await writeFile(path.join(root, 'templates', 'brief.md'), '# Brief\n', 'utf8');
+
+      // Unchanged name: a no-op, not a "target exists" refusal.
+      expect(await renameTemplateDocument(root, 'templates/brief.md', 'brief')).toBe(
+        'templates/brief.md',
+      );
+
+      expect(await renameTemplateDocument(root, 'templates/brief.md', 'quarterly')).toBe(
+        'templates/quarterly.md',
+      );
+      expect(await readFile(path.join(root, 'templates', 'quarterly.md'), 'utf8')).toBe('# Brief\n');
+
+      await expect(
+        renameTemplateDocument(root, 'templates/quarterly.md', 'a/b'),
+      ).rejects.toThrow('INVALID_RENAME_TARGET');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('explains pending raw sources in the dashboard', async () => {

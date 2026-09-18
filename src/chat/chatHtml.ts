@@ -1,4 +1,5 @@
 import { CHAT_STYLE } from './styles/chatStyles.ts';
+import { WIKI_BG_DARK, WIKI_BG_LIGHT } from './theme.ts';
 import { CONFIRM_DIALOG_SCRIPT } from './confirmDialog.ts';
 import { PRODUCTION_STATE_SCRIPT } from './workflow/productionStateScript.ts';
 import { PRODUCTION_TRACE_SCRIPT } from './workflow/productionTraceScript.ts';
@@ -6,6 +7,7 @@ import { OBSERVER_TOOLS_SCRIPT } from './views/observerToolsScript.ts';
 import { MCP_CONNECTOR_SCRIPT } from './runtime/mcpConnectorScript.ts';
 import { CONFIG_SCRIPT } from './config/configScript.ts';
 import { ACTIVITY_PANEL_SCRIPT } from './runtime/activityPanelScript.ts';
+import { RUN_STRIP_SCRIPT } from './runtime/runStripScript.ts';
 import { SPLITTERS_SCRIPT } from './layout/splittersScript.ts';
 import { REDO_SCRIPT } from './runtime/redoScript.ts';
 import { RUNTIME_GRAPH_SCRIPT } from './runtime/runtimeGraphScript.ts';
@@ -30,6 +32,8 @@ function applyTheme(theme,persist=true) {
     button.textContent=selected==='light'?'☾':'☀';
     button.title=selected==='light'?'Switch to dark theme':'Switch to light theme';
   }
+  const themeColorMeta=document.getElementById('theme-color-meta');
+  if(themeColorMeta) themeColorMeta.content=selected==='dark'?'${WIKI_BG_DARK}':'${WIKI_BG_LIGHT}';
   if(persist) localStorage.setItem(THEME_KEY,selected);
 }
 function toggleTheme() { applyTheme(document.documentElement.classList.contains('theme-dark')?'light':'dark'); }
@@ -220,6 +224,7 @@ function notify(msg, type='s') {
   clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3200);
 }
 ${ACTIVITY_PANEL_SCRIPT}
+${RUN_STRIP_SCRIPT}
 ${SPLITTERS_SCRIPT}
 ${REDO_SCRIPT}
 ${RUNTIME_GRAPH_SCRIPT}
@@ -889,6 +894,12 @@ function setSidebarSplitHeight(height, persist=false) {
   if(!split) return;
   const clamped=clampSidebarSplit(height);
   split.style.setProperty('--history-pane-height', clamped+'px');
+  // The split is manual from here on: freeze the history pane and let the
+  // config pane take (and scroll through) the rest. Without a drag the config
+  // pane hugs its content, so the split sits on the connector stack.
+  const history=$('history-pane'), config=$('config-pane');
+  if(history) history.style.flex='0 0 '+Math.round(clamped)+'px';
+  if(config) config.style.flex='1 1 auto';
   if(persist) localStorage.setItem(SIDEBAR_SPLIT_KEY, String(Math.round(clamped)));
 }
 
@@ -3002,7 +3013,11 @@ export const CHAT_HTML = `<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Donna</title>
-<script>try{const t=localStorage.getItem('llm-wiki:theme')||localStorage.getItem('llm-wiki:graph:theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.classList.add('theme-'+(t==='dark'?'dark':'light'))}catch{}</script>
+<meta name="theme-color" id="theme-color-meta" content="${WIKI_BG_LIGHT}">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<script>try{const t=localStorage.getItem('llm-wiki:theme')||localStorage.getItem('llm-wiki:graph:theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.classList.add('theme-'+(t==='dark'?'dark':'light'));const tc=document.getElementById('theme-color-meta');if(tc)tc.content=t==='dark'?'${WIKI_BG_DARK}':'${WIKI_BG_LIGHT}';}catch{}</script>
 ${CHAT_STYLE}
 <script src="/assets/marked.min.js"></script>
 </head>

@@ -132,13 +132,31 @@ describe('carryForwardEngineFrontmatter', () => {
     expect(out).not.toContain('Ancien contenu.');
   });
 
-  it('keeps the first generated stamp and a human status/verified decision', () => {
+  it('keeps the first generated stamp', () => {
     const out = carryForwardEngineFrontmatter(existing, next);
     expect(out).toContain("at: '2026-01-01T00:00:00.000Z'");
     expect(out).not.toContain("at: '2026-06-01T00:00:00.000Z'");
-    expect(out).toContain('status: stable');
-    expect(out).not.toContain('status: draft');
+  });
+
+  // A human `verified` entry attests THIS text. An ingest that replaces the
+  // body leaves it attesting content nobody reviewed — the page would claim
+  // human verification for what a model just wrote.
+  it('drops the human review trail when the body is rewritten', () => {
+    const out = carryForwardEngineFrontmatter(existing, next);
+    expect(out).not.toContain('human:merge');
+    expect(out).not.toContain('verified:');
+    expect(out).toContain('status: draft');
+    expect(out).not.toContain('status: stable');
+  });
+
+  it('keeps the human review trail when the body is unchanged', () => {
+    const sameBody = existing.replace(
+      'sources:\n  - path: raw/ingested/source-one.md\n    usage_count: 2',
+      'sources:\n  - path: raw/ingested/source-two.md\n    usage_count: 4',
+    );
+    const out = carryForwardEngineFrontmatter(existing, sameBody);
     expect(out).toContain('human:merge');
+    expect(out).toContain('status: stable');
   });
 
   it('lets the update win on content keys', () => {

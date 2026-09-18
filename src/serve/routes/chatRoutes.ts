@@ -6,7 +6,9 @@ import path from 'node:path';
 import { CHAT_HTML } from '../../chat/chatHtml.ts';
 import type { AppConfig } from '../../types.ts';
 import { pathExists } from '../../utils/fs.ts';
+import { escapeHtml } from '../../utils/html.ts';
 import { escapeScriptJson } from '../html/wikiHtml.ts';
+import { appDisplayName, appFaviconHref } from '../html/appIdentity.ts';
 import { resolveMcpTargets, type ExternalMcpEndpoint } from './uploadRoutes.ts';
 
 type ChatWorkspace = {
@@ -370,6 +372,19 @@ export async function handleChatRoutes(
     ],
   };
   const cfgScript = `<script>window.__WIKI_CONFIG__=${escapeScriptJson(JSON.stringify(chatConfig))};</script>`;
-  await deps.sendGzippedHtml(req, res, CHAT_HTML.replace('</head>', `${cfgScript}</head>`));
+  // The tab/window title, favicon and manifest link all name this workspace,
+  // not just "Donna" — one installed PWA per workspace should be
+  // distinguishable in a taskbar or Dock full of them.
+  const displayName = appDisplayName(chatConfig.workspaceName);
+  const pageTitle = `Donna — ${displayName}`;
+  const headExtras = `<link rel="icon" type="image/svg+xml" href="${appFaviconHref()}">
+<link rel="apple-touch-icon" href="${appFaviconHref()}">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="apple-mobile-web-app-title" content="${escapeHtml(displayName)}">
+${cfgScript}`;
+  const html = CHAT_HTML
+    .replace('<title>Donna</title>', `<title>${escapeHtml(pageTitle)}</title>`)
+    .replace('</head>', `${headExtras}</head>`);
+  await deps.sendGzippedHtml(req, res, html);
   return true;
 }
