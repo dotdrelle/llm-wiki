@@ -841,6 +841,25 @@ describe('chat html', () => {
     );
   });
 
+  it('offers a curation entry point that selects agent mode, not the read-only chat', () => {
+    // A curation is an action: the tile must switch to agent mode, or the chat
+    // loop would only describe what it cannot do. The objective carries the
+    // "curate" alias the runtime resolves deterministically.
+    expect(CHAT_HTML).toContain('onclick="startCuration()"');
+    expect(CHAT_HTML).toContain('function startCuration() {');
+    const source = CHAT_HTML.slice(CHAT_HTML.indexOf('function startCuration()'));
+    expect(source.slice(0, 400)).toContain('agentMode=true');
+    expect(source.slice(0, 400)).toContain('Curate the wiki');
+  });
+
+  it('pins the run-status strip to the top of the window, clear of the composer', () => {
+    // It used to stick at the base and push the composer up with a padding;
+    // at the top it needs neither.
+    expect(CHAT_HTML).toContain('#run-strip{position:fixed;top:10px;');
+    expect(CHAT_HTML).not.toContain('body.run-active #input-wrap{padding-bottom:66px}');
+    expect(CHAT_HTML).not.toContain('body.run-active #approval-banner{bottom:74px}');
+  });
+
   it('shows the running document, its counters and tokens in the run strip', () => {
     const script = chatScripts().join('\n');
 

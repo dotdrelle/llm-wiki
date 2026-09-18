@@ -33,6 +33,7 @@ fall behind them:
 
 <!-- BEGIN GENERATED SKILLS -- run `npm run generate:help-skills`, do not edit by hand -->
 
+- `/curate` — curate the wiki — find duplicate, disagreeing, outdated or unsourced pages and propose corrections on a branch a human merges or discards.
 - `/deliver [deliverable] [polish]` — publish existing deliverables, with or without polishing.
 - `/diagnose` — diagnose workspace configuration and prioritize concrete remedies.
 - `/new-template [family] [intent]` — author one instruction-only deliverable template — never build, export or publish it.

@@ -766,6 +766,16 @@ function submitSuggestion(text) {
   sendMessage();
 }
 
+// The empty-chat curation tile. A curation is an ACTION, not a chat answer:
+// select agent mode first, or the read-only chat loop would only describe what
+// it cannot do. The objective carries the "curate" alias, which the runtime
+// resolves deterministically to the curation capability (a branch proposal a
+// human merges or discards — never a direct wiki write).
+function startCuration() {
+  if(!agentMode) { agentMode=true; updateAgentModeUI(); }
+  submitSuggestion('Curate the wiki: find duplicate pages, pages that disagree or repeat each other, outdated or superseded pages, and claims with no cited source, then write the corrections on a dedicated branch.');
+}
+
 function renderSkillsManager() {
   const el=$('skills-manager-list');
   if(!el) return;

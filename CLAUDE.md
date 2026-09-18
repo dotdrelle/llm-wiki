@@ -173,8 +173,13 @@ The graph derives communities deterministically from the folders
 folder, or a fixed group per node type for the non-concept surfaces); the
 transverse edges (shared `subject`, shared `tags`) are computed there too,
 never materialized. Hand-moving a leaf goes through the same filing steps as
-any re-file (`src/serve/tree/conceptMove.ts`) — "move the file" is a filing
-decision, never a silent rename.
+any re-file (`src/serve/tree/conceptMove.ts`) — "move the file" files it under
+its name, never a silent rename. The one exception is a name collision: when
+the physical name is already taken in the destination concept folder, a classic
+leaf lands under its own `subject` (`subjectRefileTarget`, `<subject>.md`)
+instead of a bare 409 — identity first, label second. If that identity is filed
+there too, the move is still refused. Taxo leaves keep their
+`<concept>_<resume>.md` shape and are never renamed by that fallback.
 
 The retired commands (`concepts`, `reclassify-concepts`, `taxonomy`,
 `group-concepts`) and the whole `src/graph/wiki/taxonomy/` module were removed
@@ -234,7 +239,12 @@ it) → `/wiki-build` (build, optional template) → `/deliver` (export or polis
 optional deliverable + `polish` flag), with `/pipeline` as the one-shot
 shortcut and `/wiki-rebuild` (re-file the archived sources into their concept
 folders — `wiki ingest --from-ingested` — then run the content verification;
-launched from the wiki row's history glyph in serve).
+launched from the wiki row's history glyph in serve). `/curate` is the curation
+entry point: it delegates `agent.curate` (the external runtime's confined-hands
+capability — a reviewable branch, never a direct wiki write), and the empty
+chat offers a **Curate the wiki** tile (`startCuration` in `chatHtml.ts`) that
+selects agent mode before sending the same objective — a curation is an action,
+so the read-only chat loop would only describe what it cannot do.
 
 Scaffold skill bodies are **business intentions**, not procedures: they state
 the outcome, the guardrails and the reporting, and never name an MCP server, a
@@ -472,7 +482,7 @@ only in the Plan tab, requires browser confirmation and calls
 plan, activities, logs, queue, and persisted projection. Upload cards with an
 `error` always render as failed even if storage succeeded.
 
-A fixed **run-status strip** is pinned to the base of the window (a sibling of
+A fixed **run-status strip** is pinned to the TOP of the window (a sibling of
 `#approval-banner`, same reason: it survives the three views that hide
 `#input-wrap`). It shows **two business lines** like the ShellUI's Activity
 panel: its primary line is the document/step the run is on today — the
@@ -480,9 +490,9 @@ activity's own `progress.label`, exactly what the ShellUI shows for an
 aggregated line — with its percentage; its sub-line carries the live figures
 the direct wiki CLI already exports (step/source/task/batch counters, the
 detail, and the tokens), falling back to a second concurrent activity or the
-running plan step. The composer takes a bottom padding while it is visible
-(`body.run-active #input-wrap`), so it never covers the chat bar or its
-buttons. It **disappears once the run is over** — the
+running plan step. Being at the top, it needs no composer padding and never
+covers the chat bar or its buttons; the approval banner keeps its own base
+position. It **disappears once the run is over** — the
 Plan tab keeps the outcome, so the strip is not a second history. The
 `assistant_progress` notes never enter the thread: they feed this strip's
 liveness and the Logs tab only.

@@ -95,7 +95,11 @@ concept; a subject that fits no concept yet waits under the reserved
 
 Filing a page by hand works too: move a page into a concept folder and it is
 re-filed for real — its axes are rewritten and every link pointing at it is
-repointed. A move is a filing decision, never a silent rename.
+repointed. A move keeps the page's own file name rather than renaming it
+silently; the one exception is a file name already taken in the destination
+folder: the moved page then lands under its **subject** (`<subject>.md`) —
+its identity rather than its label — and only if that identity is filed there
+too is the move refused.
 
 A sync (Confluence) never overwrites local work: a pending file you deleted
 stays deleted, and one you modified is flagged **orange** in the Pending panel

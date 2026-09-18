@@ -13,6 +13,10 @@ export const EMPTY_CHAT_HTML = `<div id="empty">
       <span class="empty-tile-title">Fill workspace profile</span>
       <span class="empty-tile-desc">Describe your context so answers and deliverables fit this workspace.</span>
     </button>
+    <button class="empty-tile" type="button" onclick="startCuration()">
+      <span class="empty-tile-title">Curate the wiki</span>
+      <span class="empty-tile-desc">Find duplicates, disagreements, outdated pages and unsourced claims; the corrections land on a branch you merge or discard.</span>
+    </button>
   </div>
 </div>`;
 
@@ -207,11 +211,11 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
   exports — step/source/task/batch counters, the detail and the tokens. It
   carries no raw tool id — those are the Logs tab's job.
 
-  Pinned to the BASE of the window and given room by a composer bottom padding
-  (body.run-active #input-wrap), so it never covers the chat bar or its
-  buttons. A fixed overlay, like #approval-banner, so it survives the three
-  center views that hide #input-wrap. It disappears once the run is over — the
-  Plan tab then carries the outcome (task statuses, skipped chain steps).
+  Pinned to the TOP of the window, so it never covers the chat bar or its
+  buttons (no composer padding needed). A fixed overlay, like #approval-banner,
+  so it survives the three center views that hide #input-wrap. It disappears
+  once the run is over — the Plan tab then carries the outcome (task statuses,
+  skipped chain steps).
 -->
 <div id="run-strip" hidden aria-live="polite">
   <span class="run-strip-spinner" aria-hidden="true"></span>
