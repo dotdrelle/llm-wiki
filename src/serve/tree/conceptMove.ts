@@ -12,7 +12,7 @@ import {
   parseConceptPagePath,
 } from '../../ingest/conceptGrid.ts';
 import { resolveInside } from '../../utils/path.ts';
-import { safeWriteFile } from '../../utils/fs.ts';
+import { pathExists, safeWriteFile } from '../../utils/fs.ts';
 
 /*
  Filing a concept leaf by hand, from the tree.
@@ -89,6 +89,38 @@ export function decideConceptMove(input: {
     };
   }
   return { kind: 'refile', className: axes.class, subject: axes.subject, target: input.to, isTaxoRefile: false };
+}
+
+/**
+ * The identity-named fallback for a classic concept leaf whose PHYSICAL name is
+ * already taken in the destination folder.
+ *
+ * A manual re-file must not be refused just because two folders happen to hold
+ * a same-named file: the `subject` is the leaf's identity, the file name is
+ * only its label. When the destination basename collides, the move lands under
+ * `<subject>.md` instead. Returns null when there is no usable subject, when
+ * the subject names the same file (renaming would not help), or when that
+ * identity is itself already filed there — the caller then keeps the hard 409.
+ *
+ * Taxo leaves (`<concept>_<resume>.md`) do NOT use it: their name carries the
+ * concept by convention, so a fallback would break that shape.
+ */
+export async function subjectRefileTarget(input: {
+  rootDir: string;
+  source: string;
+  toDir: string;
+  currentTarget: string;
+}): Promise<{ target: string; subject: string } | null> {
+  const content = await readFile(resolveInside(input.rootDir, input.source), 'utf8').catch(() => null);
+  if (!content) return null;
+  const raw = matter(content).data?.subject;
+  if (typeof raw !== 'string') return null;
+  const subject = normalizeProvenanceValue(raw);
+  if (!isValidProvenanceValue(subject)) return null;
+  const target = `${input.toDir}/${subject}.md`;
+  if (target === input.currentTarget) return null;
+  if (await pathExists(resolveInside(input.rootDir, target))) return null;
+  return { target, subject };
 }
 
 /**

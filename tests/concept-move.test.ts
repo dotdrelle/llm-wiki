@@ -158,6 +158,57 @@ describe('moveEntry on a concept leaf', () => {
     }]);
   });
 
+  it('refiles a leaf onto a taken physical name under its own subject', async () => {
+    // Two folders may legitimately hold a same-named file: the subject is the
+    // identity, the file name only its label. The move must land as <subject>.md
+    // instead of being refused.
+    await writeFile(path.join(root, 'wiki/concepts/unclassified/note.md'),
+      '---\nsubject: zephyr\n---\n\n# Note\n');
+    await writeFile(path.join(root, 'wiki/concepts/market-offering/note.md'),
+      '---\nsubject: anaplan\n---\n\n# Note\n');
+    const seen: Array<{ source: string; target: string }> = [];
+
+    const result = await moveEntry(root, 'wiki/concepts/unclassified/note.md', 'wiki/concepts/market-offering', {
+      rewriteLinks: async (moves) => { seen.push(...moves); },
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.body.to).toBe('wiki/concepts/market-offering/zephyr.md');
+    expect(await readFile(path.join(root, 'wiki/concepts/market-offering/zephyr.md'), 'utf8'))
+      .toContain('subject: zephyr');
+    // The leaf that already owned the name is untouched.
+    expect(await readFile(path.join(root, 'wiki/concepts/market-offering/note.md'), 'utf8'))
+      .toContain('subject: anaplan');
+    expect(seen).toEqual([{
+      source: 'wiki/concepts/unclassified/note.md',
+      target: 'wiki/concepts/market-offering/zephyr.md',
+    }]);
+  });
+
+  it('still refuses when the subject identity is already filed in the destination', async () => {
+    await writeFile(path.join(root, 'wiki/concepts/unclassified/note.md'),
+      '---\nsubject: zephyr\n---\n\n# Note\n');
+    await writeFile(path.join(root, 'wiki/concepts/market-offering/note.md'),
+      '---\nsubject: anaplan\n---\n\n# Note\n');
+    await writeFile(path.join(root, 'wiki/concepts/market-offering/zephyr.md'),
+      '---\nsubject: zephyr\n---\n\n# Zephyr\n');
+
+    const result = await moveEntry(root, 'wiki/concepts/unclassified/note.md', 'wiki/concepts/market-offering');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.status).toBe(409);
+    // Nothing moved: the collision belongs to whoever moves.
+    expect(await readFile(path.join(root, 'wiki/concepts/unclassified/note.md'), 'utf8'))
+      .toContain('subject: zephyr');
+  });
+
+  it('keeps the 409 when the leaf name already is its subject', async () => {
+    await writeFile(path.join(root, 'wiki/concepts/market-offering/zephyr.md'),
+      '---\nsubject: zephyr\n---\n\n# Zephyr\n');
+    const result = await moveEntry(root, 'wiki/concepts/unclassified/zephyr.md', 'wiki/concepts/market-offering');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.status).toBe(409);
+  });
+
   it('does not false-positive on a stale file sitting at the pre-rename path', async () => {
     await mkdir(path.join(root, 'wiki/concepts/jedox'), { recursive: true });
     await writeFile(path.join(root, 'wiki/concepts/jedox/jedox_tarifs.md'),

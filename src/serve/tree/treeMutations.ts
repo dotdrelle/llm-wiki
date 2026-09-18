@@ -2,7 +2,7 @@ import { mkdir, readdir, rename, rm, rmdir, stat, writeFile } from 'node:fs/prom
 import path from 'node:path';
 
 import { resolveInside } from '../../utils/path.ts';
-import { applyConceptAxes, decideConceptMove } from './conceptMove.ts';
+import { applyConceptAxes, decideConceptMove, subjectRefileTarget } from './conceptMove.ts';
 
 /**
  * Left-panel tree mutations, for ALL of its sections.
@@ -191,18 +191,31 @@ export async function moveEntry(
     // `target` (the pre-rename path, old basename under the new folder)
     // first used to false-positive a 409 whenever an unrelated stale file
     // happened to already sit at a path nothing was actually about to write.
-    const finalTarget = concept.kind === 'refile' ? concept.target : target;
-    const destination = resolveInside(rootDir, finalTarget);
+    const plannedTarget = concept.kind === 'refile' ? concept.target : target;
+    const existsAt = (relativePath: string) =>
+      stat(resolveInside(rootDir, relativePath)).then(() => true, () => false);
+    let finalTarget = plannedTarget;
+    let axesSubject = concept.kind === 'refile' ? concept.subject : null;
     // Never overwrite: rename() would replace the file silently. The collision
-    // belongs to whoever moves.
-    if (await stat(destination).then(() => true, () => false)) {
-      return fail(`already exists: ${finalTarget}`, 409);
+    // normally belongs to whoever moves — EXCEPT for a classic concept leaf
+    // whose physical name is not its identity. Two folders may legitimately
+    // hold a same-named file; the `subject` is the identity, the file name only
+    // its label, so a manual re-file onto a taken name lands under
+    // `<subject>.md` instead of a bare 409. When that identity is taken too,
+    // the move is refused as before.
+    if (await existsAt(finalTarget)) {
+      const renamed = concept.kind === 'refile' && !concept.isTaxoRefile
+        ? await subjectRefileTarget({ rootDir, source: from, toDir, currentTarget: plannedTarget })
+        : null;
+      if (!renamed) return fail(`already exists: ${plannedTarget}`, 409);
+      finalTarget = renamed.target;
+      axesSubject = renamed.subject;
     }
-    await rename(source, destination);
+    await rename(source, resolveInside(rootDir, finalTarget));
     if (concept.kind === 'refile') {
       await applyConceptAxes(rootDir, finalTarget, {
         className: concept.className,
-        subject: concept.subject,
+        subject: axesSubject ?? concept.subject,
         isTaxoRefile: concept.isTaxoRefile,
       });
       // The links last: the page must already be at its destination, with the
