@@ -229,6 +229,7 @@ export async function workspaceStatusPayload(workspace: WorkspaceService) {
     wikiPages,
     templates,
     buildContext,
+    buildContextPaths,
     deliverables,
   ] = await Promise.all([
     workspace.listUntrackedSourcePaths(),
@@ -236,6 +237,7 @@ export async function workspaceStatusPayload(workspace: WorkspaceService) {
     workspace.listWikiPages(),
     workspace.listTemplatePaths(),
     workspace.readBuildContext(),
+    workspace.listBuildContextPaths(),
     workspace.listDeliverablePaths(),
   ]);
   return {
@@ -259,6 +261,7 @@ export async function workspaceStatusPayload(workspace: WorkspaceService) {
     buildContext: {
       fileCount: buildContext.fileCount,
       truncated: buildContext.truncated,
+      files: relativeWorkspacePaths(workspace, buildContextPaths),
     },
     deliverables: {
       count: deliverables.length,

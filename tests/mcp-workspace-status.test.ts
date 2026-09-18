@@ -16,6 +16,10 @@ describe('wiki_workspace_status', () => {
       listWikiPages: async () => [{ relativePath: 'wiki/index.md' }],
       listTemplatePaths: async () => [path.join(root, 'templates/report.md')],
       readBuildContext: async () => ({ fileCount: 2, truncated: false }),
+      listBuildContextPaths: async () => [
+        path.join(root, 'build-context/rules/citations.md'),
+        path.join(root, 'build-context/quality/gaps-and-review.md'),
+      ],
       listDeliverablePaths: async () => [path.join(root, 'deliverables/report.md')],
     } as unknown as WorkspaceService;
 
@@ -28,7 +32,14 @@ describe('wiki_workspace_status', () => {
       ingestedSources: { count: 1, files: ['raw/ingested/old.md'] },
       wikiPages: { count: 1, files: ['wiki/index.md'] },
       templates: { count: 1, files: ['templates/report.md'] },
-      buildContext: { fileCount: 2, truncated: false },
+      buildContext: {
+        fileCount: 2,
+        truncated: false,
+        files: [
+          'build-context/rules/citations.md',
+          'build-context/quality/gaps-and-review.md',
+        ],
+      },
       deliverables: { count: 1, files: ['deliverables/report.md'] },
     });
   });

@@ -97,14 +97,20 @@ and to the lock footprint of every subsequent full build.
 ## Generating a template
 
 The `new-template` skill drafts a template from what the wiki actually holds,
-rather than from a blank page. It runs in agent mode and uses four tools:
+rather than from a blank page. It runs in agent mode and uses these tools:
 
-| Tool                  | Role                                                        |
-| --------------------- | ----------------------------------------------------------- |
-| `wiki_outline`        | communities, their size and most connected pages — no content |
-| `template_read`       | list templates, or read one with its build_context report    |
-| `template_write`      | write a template, preview first                              |
-| `build_context_write` | write a shared rule, preview first                           |
+| Tool                   | Role                                                        |
+| ---------------------- | ----------------------------------------------------------- |
+| `wiki_outline`         | communities, their size and most connected pages — no content |
+| `wiki_workspace_status`| workspace inventory, including the available build-context files |
+| `template_read`        | list templates, or read one with its build_context report    |
+| `template_write`       | write a template, preview first                              |
+| `build_context_write`  | write a shared rule, preview first                           |
+
+The `build_context` list must select the most representative of the files
+actually present under the workspace's `build-context/` — the paths
+`wiki_workspace_status` reports in `buildContext.files` — never a copy of the
+skeleton's example list, which may name files this workspace does not have.
 
 The flow is: frame (outline + targeted reads) → present a plan in chat →
 approve → write. The skill never starts a build; run `wiki build` yourself

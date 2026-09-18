@@ -28,6 +28,14 @@ Incorrect path: `wiki/templates/overview/example.md`.
 
 If writing under `templates/` is unavailable, stop and report that the template could not be created, without falling back to a wiki page.
 
+## Build context
+
+`build_context` selects, for THIS template, the shared rules the build injects — the template's own choice, never the directory's. Do not copy the example list in the skeleton: it may name files this workspace does not have.
+
+`build-context/` holds the shared rules available in this workspace; inspect those actually present and declare the ones most representative for the requested family and intent — the writing, citation and review rules that apply to this deliverable, not every file and not rules written for another family. Each declared entry is a real path, whether workspace-root-relative or relative to that directory.
+
+`build_context` is required and explicit: the write is refused without it, and `[]` is the correct value when no rule applies. Never invent a path; a preview reports unresolved entries, so correct the list before writing.
+
 ## Empty template to copy and adapt
 
 ```markdown

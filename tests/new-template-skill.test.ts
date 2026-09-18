@@ -48,4 +48,16 @@ describe('new-template skill body', () => {
     expect(skill).toContain('its path must start exactly with `templates/`');
     expect(skill).toContain('Incorrect path: `wiki/templates/overview/example.md`');
   });
+
+  it('asks for the most representative build-context files the workspace actually has', () => {
+    // The skeleton's example list was copyable verbatim, so a workspace with a
+    // different build-context/ got dead references. The selection must be made
+    // from the files present on disk, and declared explicitly.
+    expect(skill).toContain('## Build context');
+    expect(skill).toContain('most representative for the requested family and intent');
+    expect(skill).toContain('holds the shared rules available in this workspace');
+    expect(skill).toContain('Do not copy the example list in the skeleton');
+    expect(skill).toContain('is required and explicit');
+    expect(skill).toContain('Never invent a path');
+  });
 });

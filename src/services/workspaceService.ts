@@ -896,6 +896,15 @@ export class WorkspaceService {
     return files.sort();
   }
 
+  async listBuildContextPaths(): Promise<string[]> {
+    const files = await fg('**/*.md', {
+      cwd: this.paths.buildContextDir,
+      absolute: true,
+      onlyFiles: true,
+    });
+    return files.sort();
+  }
+
   async resolveTemplateInputs(inputs: string[]): Promise<string[]> {
     if (inputs.length === 0) {
       return this.listTemplatePaths();
