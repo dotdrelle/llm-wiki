@@ -118,7 +118,6 @@ docs/                   User-facing references
 ## Commands
 
 - `init`: copy `scaffold/workspace`.
-- `add-skill`: install one workspace skill package.
 - `doctor`: validate provider, retrieval, build planning, and config.
 - `ingest`: read `raw/untracked/`, update wiki pages, archive sources.
   `--from-ingested` rebuilds concept pages from the ARCHIVED sources
@@ -212,9 +211,8 @@ folder oracle) — `4dc4bbf` tried it, `f24f2ad` reverted it, and it cannot see
 a folder a sibling source just created.
 
 ## Workspace Skill Model
-## Workspace Skill Model
 
-A workspace skill package uses this layout:
+A workspace skill uses this layout:
 
 ```text
 templates/
@@ -225,11 +223,9 @@ CLAUDE.md
 ```
 
 The fixed required directories are the package entry point; there is no root
-manifest. `wiki add-skill` validates before writing, rejects traversal and symlinks,
-backs up replaced files under `.wiki/tmp/add-skill-*/backup`, replaces only
-standard package paths, writes `.wiki/skill-install.json`, and appends a log
-entry. This is intentionally one-skill-per-workspace; do not add multi-skill
-merging without redesigning the model.
+manifest and no installer: the paths above are written directly in the
+workspace. This is intentionally one-skill-per-workspace; do not add
+multi-skill merging without redesigning the model.
 
 The default scaffold includes small UI skills: `/status`, `/diagnose`, and the
 production chain `/wiki-sync` (export all configured Confluence sources into
@@ -623,7 +619,7 @@ global `help-doc/` chapters (`src/utils/helpDoc.ts`), also reachable at
 `/help`/`/help/:id` and through the `help_list`/`help_read` MCP tools. This is
 static, workspace-independent documentation, not a workspace skill: it never
 auto-starts and has no per-workspace customization (unlike `.wiki/skills/`
-entries, which are per-workspace and can be edited via `wiki add-skill`).
+entries, which are per-workspace and live under `.wiki/skills/`).
 
 Documentation has three trees with three readers: `help-doc/` is shipped and
 read at runtime by the **user**; each repo's `docs/` is repo-only and read by
@@ -891,7 +887,6 @@ Focused checks:
 
 ```bash
 pnpm exec vitest run tests/chat-html.test.ts
-pnpm dev add-skill ./path/to/skill
 pnpm dev build --plan
 ```
 

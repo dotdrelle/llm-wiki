@@ -20,7 +20,6 @@ import doctorCmd from '../src/commands/doctor.ts';
 import mcpCmd from '../src/commands/mcp.ts';
 import mcpHttpCmd from '../src/commands/mcpHttp.ts';
 import exportCmd from '../src/commands/export.ts';
-import addSkillCmd from '../src/commands/addSkill.ts';
 import configCmd from '../src/commands/config.ts';
 import historyCmd from '../src/commands/history.ts';
 import restoreCmd from '../src/commands/restore.ts';
@@ -174,14 +173,6 @@ async function main() {
     .description('Initialize a local wiki workspace')
     .option('-f, --force', 'Force overwrite existing directories')
     .action((options) => initCmd(config, options));
-
-  program
-    .command('add-skill')
-    .description(
-      'Install a workspace method from a directory, .zip file, or HTTP(S) .zip URL',
-    )
-    .argument('<source>', 'Skill directory, .zip file, or HTTP(S) .zip URL')
-    .action((source) => addSkillCmd(config, source));
 
   program
     .command('ingest')

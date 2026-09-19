@@ -162,12 +162,6 @@ export interface IngestCommandOptions {
   taxo?: boolean;
 }
 
-export interface AddSkillResult {
-  source: string;
-  backupDir: string;
-  installed: string[];
-}
-
 export interface WorkspacePaths {
   rootDir: string;
   configPath: string;

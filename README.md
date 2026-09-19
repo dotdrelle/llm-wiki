@@ -55,8 +55,7 @@ Main capabilities:
 - show a build runtime/provider summary and compare it with the previous build;
 - export deliverables with inline source detail;
 - serve a local web UI and MCP endpoint, including the agent-proposals review
-  queue where curation diffs are merged or rejected;
-- install a complete workspace skill with `wiki add-skill`.
+  queue where curation diffs are merged or rejected.
 
 ## Extraction contract
 
@@ -172,44 +171,20 @@ wiki export note/basic-note.md --polish
 
 ## Workspace Skills
 
-A workspace skill is a complete installable method for one workspace. It may
-define templates, build rules, chat/shell skills, a system prompt, and operator
-instructions.
-
-Install a skill from a directory, local zip file, or HTTP(S) zip URL:
-
-```bash
-wiki add-skill ./my-skill
-wiki add-skill ./my-skill.zip
-wiki add-skill https://example.test/my-skill.zip
-```
-
-Required package layout (this fixed structure is also the package entry point):
+A workspace skill is a method for one workspace: templates, build rules,
+chat/shell skills, a system prompt and operator instructions, laid out in the
+workspace itself. The layout is the package entry point:
 
 ```text
 templates/
 build-context/
-.wiki/skills/
+.wiki/skills/            # slash/chat skills, edited in place
+.wiki/system-prompt.md   # optional
+CLAUDE.md                # optional
 ```
 
-Optional package paths:
-
-```text
-.wiki/system-prompt.md
-CLAUDE.md
-```
-
-Install behavior:
-
-- the package is validated before modifying the workspace;
-- path traversal and symlinks are rejected;
-- each standard path present in the package replaces the same workspace path;
-- the previous workspace path is backed up first under
-  `.wiki/tmp/add-skill-*/backup`;
-- old files from the previous skill do not remain mixed with the new one.
-
-This is intentionally one-skill-per-workspace. Installing a skill changes the
-workspace method.
+The suite is one-skill-per-workspace: editing a skill changes the workspace
+method, and skills are written directly under the paths above.
 
 The default scaffold is a basic workspace method: English, small, and suitable for a
 demo ingest/build cycle. It includes one demo source in `raw/untracked/`.
@@ -336,7 +311,6 @@ leaves the wiki untouched. Nothing reaches the wiki unless a human merges it.
 
 ```bash
 wiki init
-wiki add-skill <directory-or-zip-or-url>
 wiki doctor                 # reports missing OKF keys; --apply writes them and migrates older pages to OKF v0.2
 wiki ingest [files...]
 wiki ingest --from-ingested [files...]   # rebuild concept pages from the archived sources
@@ -459,7 +433,6 @@ Useful commands:
 
 ```bash
 pnpm dev doctor
-pnpm dev add-skill ./path/to/skill
 pnpm typecheck
 pnpm lint
 pnpm test

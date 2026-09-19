@@ -9,38 +9,6 @@ wiki init
 wiki init --force
 ```
 
-## `wiki add-skill <source>`
-
-Installs a workspace skill from a directory, a local `.zip` file, or an HTTP(S) `.zip` URL.
-
-```bash
-wiki add-skill ./depot-skills/REAS
-wiki add-skill /tmp/reas-skill.zip
-wiki add-skill https://example.com/reas-skill.zip
-```
-
-A skill is a complete installable method that carries its own templates, build context, and agent workflow. Its root (or the single top-level directory of a zip archive) is recognized by the fixed required structure below.
-
-The following paths are installed from the skill package when present:
-
-```
-templates/
-build-context/
-.wiki/skills/
-.wiki/system-prompt.md
-CLAUDE.md
-```
-
-Before writing, `add-skill`:
-
-- validates the package (rejects path traversal and symlinks);
-- backs up every path it will replace under `.wiki/tmp/add-skill-<timestamp>/backup/`;
-- replaces only the paths listed above that are present in the package.
-
-After installation, `.wiki/skill-install.json` records the source, installed paths, and backup location. A log entry is appended to `.wiki/wiki.log`.
-
-This is one-skill-per-workspace. Running `add-skill` again replaces the current skill.
-
 ## `wiki ingest [files...]`
 
 Reads markdown files from `raw/untracked/`, asks the LLM for wiki update operations, writes them into `wiki/`, then archives the raw files into `raw/ingested/`.
