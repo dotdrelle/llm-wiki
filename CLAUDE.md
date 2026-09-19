@@ -408,8 +408,9 @@ therefore live **outside** that block:
   the graph for …" (the list also closes on outside click or Escape, and
   clicking a leaf still focuses that document), and `filtersScript.ts`'s
   `visible()` remains the single chokepoint for the index, the canvas and the
-  inspector. The search input and its dropdown render at 12 px, not the 14 px
-  body size.
+  inspector. The header chrome — search input, Reset, the Explore/List tabs and
+  the close button — renders at 12 px, not the 14 px body size, so the bar is
+  not the one oversized control beside its own neighbours.
 - Chat context accepts `wiki/`, `raw/untracked/` **and** `raw/ingested/`. That
   list must match what the graph offers a "Send to Donna" button on, otherwise
   the button is offered on pages the shell silently refuses. The graph waits for

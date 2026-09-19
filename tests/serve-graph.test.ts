@@ -54,10 +54,13 @@ it('turns the graph search into a reactive relation filter, not a document finde
 
 it('keeps the graph search at the chrome font size, not the 14px body size', () => {
   const source = renderWikiGraphV2();
-  // The input inherited body{font:14px} while every other toolbar control sits
-  // at 11.5-12px, so the search read oversized for the surrounding chrome.
+  // The chrome sits at 12px, not the 14px body size: the input inherited
+  // body{font:14px} and read oversized beside the search, so the whole header
+  // — field, Reset, Explore/List tabs, close — is pinned to the same size.
   expect(source).toContain('border-radius:6px;padding:.58rem .8rem;font-size:12px}');
   expect(source).toContain('.reset-search{white-space:nowrap;padding:.45rem .65rem;font-size:12px}');
+  expect(source).toContain('header nav button{border-radius:4px;padding:.45rem .7rem;font-size:12px}');
+  expect(source).toContain('#graph-shell-close{margin-left:8px;font-size:12px;line-height:1}');
 });
 
 it('renders pending connector sources by frontmatter title without displaying frontmatter as prose', async () => {
@@ -114,14 +117,18 @@ it('keeps pending deletion bounded, now through the shared tree module', async (
   expect(source).not.toContain('removeEmptyUntrackedParents');
 });
 
+// The served wiki surface, as source. Every module the layout script
+// interpolates belongs here: a file extracted out of wikiLayoutScript.ts but
+// left out of this list silently stops being covered by every assertion below.
 async function serveSource(): Promise<string> {
-  const [serve, html, css, script] = await Promise.all([
-    readFile(path.resolve(import.meta.dirname, '../src/commands/serve.ts'), 'utf8'),
-    readFile(path.resolve(import.meta.dirname, '../src/serve/html/wikiHtml.ts'), 'utf8'),
-    readFile(path.resolve(import.meta.dirname, '../src/serve/html/wikiLayoutCss.ts'), 'utf8'),
-    readFile(path.resolve(import.meta.dirname, '../src/serve/html/wikiLayoutScript.ts'), 'utf8'),
-  ]);
-  return `${serve}\n${html}\n${css}\n${script}`;
+  const parts = await Promise.all([
+    '../src/commands/serve.ts',
+    '../src/serve/html/wikiHtml.ts',
+    '../src/serve/html/wikiLayoutCss.ts',
+    '../src/serve/html/wikiLayoutScript.ts',
+    '../src/serve/html/themeToggleScript.ts',
+  ].map((relative) => readFile(path.resolve(import.meta.dirname, relative), 'utf8')));
+  return parts.join('\n');
 }
 
 it('follows the shared serve theme without rendering a redundant graph toggle', () => {
