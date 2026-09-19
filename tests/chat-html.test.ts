@@ -902,6 +902,20 @@ describe('chat html', () => {
     expect(runStripDetail({ percent: 5 })).toBe('');
   });
 
+  it('consumes the external runtime heartbeat as liveness, not as a log line', () => {
+    const script = chatScripts().join('\n');
+    // A bare beat restarts the in-flight watchdog(s) and refreshes the strip,
+    // without adding a Logs entry: a heartbeat is not a tool step.
+    expect(script).toContain("if(parsed&&parsed.type==='runtime_heartbeat') noteRuntimeHeartbeat();");
+    expect(script).toContain('function noteRuntimeHeartbeat() {');
+    const source = script.match(/function noteRuntimeHeartbeat\(\) \{[\s\S]*?\n\}/)?.[0];
+    expect(source).toBeTruthy();
+    expect(source).not.toContain('agentProgressLog');
+    expect(source).not.toContain('messages.push');
+    // The strip reads the beat, so a tool-less phase does not read as frozen.
+    expect(script).toContain('runtimeState?.lastHeartbeatAt');
+  });
+
   it('accepts JSON returned directly, in a markdown fence or inside an MCP envelope', () => {
     const [script] = chatScripts();
 

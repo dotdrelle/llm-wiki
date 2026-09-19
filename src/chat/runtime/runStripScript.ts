@@ -113,9 +113,13 @@ function updateRunStrip() {
   );
   // The sub-line carries the current activity's live figures (counters,
   // detail, tokens). With no such detail it falls back to a second concurrent
-  // activity, then to nothing.
+  // activity, then to nothing. It also carries the external runtime's
+  // heartbeat: a run whose model is thinking without calling a tool otherwise
+  // reads as frozen, and the beat is the only thing that proves it is not.
   const second=lines[1];
-  const detail=first.detail||second?.label||'';
+  const beatAt=Date.parse(String(runtimeState?.lastHeartbeatAt||''))||0;
+  const beat=beatAt?('alive '+Math.max(0,Math.round((Date.now()-beatAt)/1000))+'s ago'):'';
+  const detail=[first.detail||second?.label||'',beat].filter(Boolean).join(' · ');
   const subLine=$('run-strip-sub-line');
   if(subLine) {
     subLine.hidden=!detail;

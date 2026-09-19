@@ -441,6 +441,7 @@ function connectRuntimePanel() {
       noteRuntimeEvent();
       const parsed=JSON.parse(event.data);
       if(parsed&&parsed.type==='assistant_progress') noteRuntimeProgress(parsed.payload&&parsed.payload.message);
+      if(parsed&&parsed.type==='runtime_heartbeat') noteRuntimeHeartbeat();
       const label=runtimeProgressLabel(parsed);
       if(label) pendingRuntimeStatusEls.forEach(el=>updateRuntimeThinkingBubble(el,label));
     } catch {}

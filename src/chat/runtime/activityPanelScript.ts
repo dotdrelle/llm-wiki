@@ -140,13 +140,26 @@ function agentProgressEntries() {
 // Each event is also proof the runtime is alive, so it restarts the watchdog:
 // a slow-but-working turn must not be reported as lost after 120s.
 function updateRuntimeThinkingBubble(div,text) {
-  if(!div||!div.isConnected||!text) return;
-  const span=div.querySelector('.runtime-thinking span');
-  if(span) span.textContent=text;
+  if(!div||!div.isConnected) return;
+  if(text) {
+    const span=div.querySelector('.runtime-thinking span');
+    if(span) span.textContent=text;
+  }
+  // Any call restarts the watchdog: a labelled progress AND a bare heartbeat
+  // are both proof of life, so a long tool-less phase is never reported lost.
   if(div._runtimeTimeoutFn) {
     clearTimeout(div._runtimeTimeout);
     div._runtimeTimeout=setTimeout(div._runtimeTimeoutFn,RUNTIME_THINKING_TIMEOUT_MS);
   }
+}
+
+// The external runtime's heartbeat: no label to show, only proof of life. It
+// restarts the in-flight watchdog(s) and refreshes the run strip — the same
+// consumption as a progress note, minus the Logs line (a beat is not a step).
+function noteRuntimeHeartbeat() {
+  lastRuntimeEventAt=Date.now();
+  pendingRuntimeStatusEls.forEach(el=>updateRuntimeThinkingBubble(el));
+  updateRunStrip();
 }
 
 // Every bubble removal goes through here, so the safety net never outlives
