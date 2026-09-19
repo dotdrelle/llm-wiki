@@ -386,6 +386,25 @@ export function staleRebuiltLeaves(
 }
 
 /**
+ * The best match between a page's subject and any candidate subject of this
+ * extraction.
+ *
+ * A plain loop rather than `Math.max(0, ...roots.map(...))`: this runs once per
+ * concept page in the corpus, and the spread allocated an array per page for a
+ * single number. Do not short-circuit at 100: the fuzzy scorer awards ten
+ * points per shared significant token and long subjects can legitimately
+ * score above the exact-match sentinel.
+ */
+function bestSubjectMatchStrength(candidateRoots: string[], subject: string): number {
+  let best = 0;
+  for (const root of candidateRoots) {
+    const strength = subjectMatchStrength(root, subject);
+    if (strength > best) best = strength;
+  }
+  return best;
+}
+
+/**
  * The rejection set, seen through the path rewrites an apply-time concept
  * reconciliation just made.
  *
@@ -930,10 +949,7 @@ export class IngestService {
                 provenance,
                 strength: provenance.subject == null
                   ? 0
-                  : Math.max(
-                      0,
-                      ...candidateRoots.map((root) => subjectMatchStrength(root, provenance.subject as string)),
-                    ),
+                  : bestSubjectMatchStrength(candidateRoots, provenance.subject),
               }))
               .filter(({ strength }) => strength > 0)
               .sort((a, b) => b.strength - a.strength
@@ -1171,16 +1187,13 @@ export class IngestService {
         // duplicates. Reconcile against the LIVE vocabulary at apply time
         // (serialized), and defer the leaf migration until the plan is
         // validated and actually applied (a rejected plan must not move files).
-        const conceptReconciliation = options?.dryRun
-          ? { rewrites: new Map<string, string>() }
+        const conceptRewrites = options?.dryRun
+          ? new Map<string, string>()
           : await this.reconcileConceptVocabulary(normalizedOperations);
         // A `--reject` names the path the dry-run PRINTED, which predates the
         // reconciliation above: without this the moved operation no longer
         // matched its rejection and was applied anyway.
-        const effectiveRejectedPaths = rejectionsAfterRewrites(
-          rejectedPaths,
-          conceptReconciliation.rewrites,
-        );
+        const effectiveRejectedPaths = rejectionsAfterRewrites(rejectedPaths, conceptRewrites);
         // `pages[].path` designates the same operations, but lived until now
         // before the canonicalization of the paths. A model proposing an accent
         // or a space therefore received a normalized operation and lost its
@@ -1547,8 +1560,8 @@ export class IngestService {
    */
   private async reconcileConceptVocabulary(
     operations: WikiOperation[],
-  ): Promise<{ rewrites: Map<string, string> }> {
-    const nothing = { rewrites: new Map<string, string>() };
+  ): Promise<Map<string, string>> {
+    const nothing = new Map<string, string>();
     const conceptOperations = operations.filter(
       (operation) => operation.type !== 'delete' && operation.path.startsWith(CONCEPT_PREFIX),
     );
@@ -1600,7 +1613,7 @@ export class IngestService {
       changed: changed.map(([from, to]) => `${from}~${to}`),
       rewritten: rewrites.size,
     });
-    return { rewrites };
+    return rewrites;
   }
 
 
@@ -1945,12 +1958,11 @@ export class IngestService {
         // names are not authoritative. Reconcile against the LIVE vocabulary
         // here (this path is serialized), then rewrite the operations' paths;
         // the leaf migration waits until the plan is actually applied.
-        const conceptReconciliation = await this.reconcileConceptVocabulary(operations);
         // Same rule as the live path: a rejection names the pre-reconciliation
         // path, so it must follow the operation the reconciliation moved.
         const effectiveRejectedPaths = rejectionsAfterRewrites(
           rejectedPaths,
-          conceptReconciliation.rewrites,
+          await this.reconcileConceptVocabulary(operations),
         );
         const applyOperations = operations.filter(
           (operation) => !effectiveRejectedPaths.has(operation.path),

@@ -287,9 +287,14 @@ describe('sidebar views', () => {
     // app-shell IIFE (initShellMessaging). Defined inside either one, the
     // other's call threw ReferenceError and the buttons stayed hidden.
     const definition = WIKI_LAYOUT_SCRIPT.indexOf('function wireSidebarLaunchButtons');
-    const firstIife = WIKI_LAYOUT_SCRIPT.indexOf('(() => {');
+    const firstCall = WIKI_LAYOUT_SCRIPT.indexOf('wireSidebarLaunchButtons();');
+    // The IIFE that makes that first call, not simply the first one in the
+    // script: themeToggleScript.ts is interpolated ahead of this one and
+    // shares nothing with it.
+    const callingIife = WIKI_LAYOUT_SCRIPT.lastIndexOf('(() => {', firstCall);
     expect(definition).toBeGreaterThan(-1);
-    expect(definition).toBeLessThan(firstIife);
+    expect(firstCall).toBeGreaterThan(-1);
+    expect(definition).toBeLessThan(callingIife);
   });
 
   it('scales the embedded Explorer to the shell typography, not the full page', () => {

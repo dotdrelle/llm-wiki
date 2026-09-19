@@ -83,6 +83,12 @@ describe('subjectMatchStrength', () => {
     expect(subjectMatchStrength('budget-2024', 'roadmap-2024')).toBe(0);
     expect(subjectsAreRelated('budget-2024', 'roadmap-2024')).toBe(false);
   });
+
+  it('can score a long fuzzy match above the exact-match sentinel', () => {
+    const subject = 'target-alpha-beta-gamma-delta-epsilon-zeta-eta-theta-iota-kappa-lambda';
+    const longMatch = 'other-alpha-beta-gamma-delta-epsilon-zeta-eta-theta-iota-kappa-lambda';
+    expect(subjectMatchStrength(longMatch, subject)).toBeGreaterThan(100);
+  });
 });
 
 describe('applyProvenance — OKF type', () => {

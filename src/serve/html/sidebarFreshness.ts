@@ -25,7 +25,9 @@ export async function readFileHead(rootDir: string, relativePath: string): Promi
   let handle;
   try {
     handle = await open(resolveInside(rootDir, relativePath), 'r');
-    const buffer = Buffer.alloc(FILE_HEAD_BYTES);
+    // allocUnsafe: only the `bytesRead` prefix is ever decoded, so zeroing the
+    // 4 KB first is pure cost — and this runs once per wiki page per render.
+    const buffer = Buffer.allocUnsafe(FILE_HEAD_BYTES);
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
     return buffer.toString('utf8', 0, bytesRead);
   } catch {

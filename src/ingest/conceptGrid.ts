@@ -45,12 +45,24 @@ export function conceptFolderFromId(nodeId: string): string | undefined {
 
 export type ConceptPathAxes = { class: string; subject: string };
 
-export function parseConceptPagePath(pagePath: string): ConceptPathAxes | null {
+/**
+ * The raw `<concept>/<subject>` split of a concept path, before ANY validation.
+ *
+ * `parseConceptPagePath` returns null for a value it refuses and cannot say
+ * WHICH half it refused; a caller that has to name the defect to the operator
+ * needs the segments themselves.
+ */
+export function conceptPathSegments(pagePath: string): { class: string; subject: string } | null {
   if (!pagePath.startsWith(CONCEPT_PATH_PREFIX) || !pagePath.endsWith('.md')) return null;
-  const rest = pagePath.slice(CONCEPT_PATH_PREFIX.length, -'.md'.length);
-  const parts = rest.split('/');
+  const parts = pagePath.slice(CONCEPT_PATH_PREFIX.length, -'.md'.length).split('/');
   if (parts.length !== 2) return null;
-  const [className, rawSubject] = parts as [string, string];
+  return { class: parts[0] as string, subject: parts[1] as string };
+}
+
+export function parseConceptPagePath(pagePath: string): ConceptPathAxes | null {
+  const segments = conceptPathSegments(pagePath);
+  if (!segments) return null;
+  const { class: className, subject: rawSubject } = segments;
   if (!isValidProvenanceValue(className)) return null;
   // A taxo leaf's basename is `<concept>_<resume>` — the underscore is the
   // taxo naming convention, not a literal character the subject is meant to

@@ -1,8 +1,9 @@
 import { CONFIRM_DIALOG_SCRIPT } from '../../chat/confirmDialog.ts';
-import { WIKI_BG_DARK, WIKI_BG_LIGHT } from '../../chat/theme.ts';
+import { THEME_TOGGLE_SCRIPT } from './themeToggleScript.ts';
 
 export const WIKI_LAYOUT_SCRIPT = `
 ${CONFIRM_DIALOG_SCRIPT}
+${THEME_TOGGLE_SCRIPT}
 /*
  Sidebar launch buttons (Pending "Ingest", wiki-row "Rebuild from archive"),
  server-rendered hidden and revealed here. Script scope on purpose: two IIFEs
@@ -27,25 +28,6 @@ function wireSidebarLaunchButtons() {
   wireLaunchButton('[data-rebuild-launch]', { title: 'Rebuild concept pages', message: 'Re-file every archived source into its concept folder, then check links and OKF frontmatter?', confirmLabel: 'Rebuild' }, 'llmwiki:rebuild');
 }
 (() => {
-  const THEME_KEY = 'llm-wiki:theme';
-  const themeToggle = document.querySelector('[data-theme-toggle]');
-  function applyTheme(theme, persist = true) {
-    const selected = theme === 'dark' ? 'dark' : 'light';
-    document.documentElement.classList.toggle('theme-dark', selected === 'dark');
-    document.documentElement.classList.toggle('theme-light', selected === 'light');
-    if (themeToggle) {
-      themeToggle.textContent = selected === 'light' ? '☾' : '☀';
-      themeToggle.title = selected === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
-    }
-    const themeColorMeta = document.getElementById('theme-color-meta');
-    if (themeColorMeta) themeColorMeta.content = selected === 'dark' ? '${WIKI_BG_DARK}' : '${WIKI_BG_LIGHT}';
-    if (persist) localStorage.setItem(THEME_KEY, selected);
-  }
-  applyTheme(localStorage.getItem(THEME_KEY) || localStorage.getItem('llm-wiki:graph:theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
-  themeToggle?.addEventListener('click', () => applyTheme(document.documentElement.classList.contains('theme-dark') ? 'light' : 'dark'));
-  window.addEventListener('storage', (event) => {
-    if (event.key === THEME_KEY && event.newValue) applyTheme(event.newValue, false);
-  });
   const storagePrefix = 'llm-wiki:sidebar:';
   const searchKey = storagePrefix + 'search';
   const scrollKey = storagePrefix + 'scrollTop';

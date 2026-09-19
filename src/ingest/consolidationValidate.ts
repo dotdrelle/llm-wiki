@@ -2,6 +2,7 @@ import type { WikiOperation } from '../types.ts';
 import type { ConsolidationPlan, ConsolidatedPage } from './consolidationSchema.ts';
 import {
   conceptPagePath,
+  conceptPathSegments,
   parseConceptPagePath,
   CONCEPT_PATH_PREFIX,
   UNCLASSIFIED_CLASS,
@@ -52,18 +53,6 @@ function isSourceNote(path: string, sourcePagePath: string): boolean {
 }
 
 /**
- * The raw `<concept>/<subject>` split of a concept path, before any validation.
- * `parseConceptPagePath` returns null for an unusable value and cannot say
- * WHICH half was unusable; this can.
- */
-function conceptPathAxesFor(at: string): { class: string; subject: string } | null {
-  if (!at.startsWith(CONCEPT_PATH_PREFIX) || !at.endsWith('.md')) return null;
-  const parts = at.slice(CONCEPT_PATH_PREFIX.length, -'.md'.length).split('/');
-  if (parts.length !== 2) return null;
-  return { class: parts[0] as string, subject: parts[1] as string };
-}
-
-/**
  * Makes a leaf's declared subject agree with its path, before judging it.
  *
  * The path `wiki/concepts/<concept>/<subject>.md` carries the identity in its
@@ -95,7 +84,7 @@ function reconcileConceptSubject(
     // normalization nor re-filing could make usable. The message names which
     // half, because "no concept folder" about a path that clearly has one sent
     // the reader looking for the wrong defect.
-    const parsedAxes = conceptPathAxesFor(at);
+    const parsedAxes = conceptPathSegments(at);
     return {
       provenance: declared,
       issues: [{

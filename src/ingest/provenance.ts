@@ -143,7 +143,8 @@ export function subjectMatchStrength(a: string, b: string): number {
   const tokensB = new Set(significantTokens(b));
   const shared = tokensA.filter((token) => tokensB.has(token));
   if (shared.length === 0) return 0;
-  // A rarer token is better evidence, and so is sharing several of them.
+  // Sharing several tokens beats sharing one, and a longer token is the more
+  // specific of two — length stands in for rarity, which would need a corpus.
   return shared.length * 10 + Math.max(...shared.map((token) => Math.min(token.length, 9)));
 }
 

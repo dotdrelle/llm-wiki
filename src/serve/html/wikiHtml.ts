@@ -1214,12 +1214,15 @@ function renderUntrackedNode(
 }
 
 export async function renderSidebar(rootDir: string, precomputedNavFiles?: string[]): Promise<string> {
-  const [navFiles, navDirectories, untrackedPanel, activeDeliverables, freshDeliverables] = await Promise.all([
+  // `lastIngestStart` depends on nothing the others produce, so it rides the
+  // same batch instead of costing its own round trip on a hot path.
+  const [navFiles, navDirectories, untrackedPanel, activeDeliverables, freshDeliverables, ingestStart] = await Promise.all([
     precomputedNavFiles ?? fg(NAV_PATTERNS, { cwd: rootDir, dot: false }),
     fg(NAV_DIRECTORY_PATTERNS, { cwd: rootDir, dot: false, onlyDirectories: true }),
     renderUntrackedSidebar(rootDir),
     activeDeliverablePaths(rootDir),
     recentlyUpdatedDeliverables(rootDir),
+    lastIngestStart(rootDir),
   ]);
   const deliverableStatus = buildDeliverableStatus(activeDeliverables, freshDeliverables);
   const root = createNavNode('workspace', '');
@@ -1230,7 +1233,7 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
     addNavPath(root, file);
   }
   const wikiMtimes = await wikiFileMtimes(rootDir, navFiles.map(toPosix));
-  const changed = recentIngestChanges(wikiMtimes, await lastIngestStart(rootDir));
+  const changed = recentIngestChanges(wikiMtimes, ingestStart);
 
   const rootDirs = [...root.dirs.values()].sort((a, b) => SERVED_DIRS.indexOf(a.name) - SERVED_DIRS.indexOf(b.name));
   const wikiDir = rootDirs.find((dir) => dir.name === 'wiki');

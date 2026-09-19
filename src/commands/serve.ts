@@ -34,7 +34,7 @@ import { handleRuntimeRoutes } from '../serve/routes/runtimeRoutes.ts';
 import { handleUploadRoutes, type ExternalMcpEndpoint } from '../serve/routes/uploadRoutes.ts';
 import { handleWikiRoutes } from '../serve/routes/wikiRoutes.ts';
 import { totpLoginGuard } from '../serve/routes/loginRoutes.ts';
-import { appDisplayName, appIconSvgMarkup, buildWebManifest } from '../serve/html/appIdentity.ts';
+import { handleAppIdentityRoutes } from '../serve/routes/appIdentityRoutes.ts';
 
 export { extractIndexTiles, isRawDownloadRequestPath, isRawUntrackedReference, localHref, serveMd };
 
@@ -996,29 +996,9 @@ export default async function serveCmd(
         return;
       }
 
-      // PWA manifest + icon: what lets Chrome/Edge/Safari install `serve` as
-      // a chromeless desktop app window instead of a browser tab. One vector
-      // icon (appIconSvgMarkup) backs both the favicon (inlined per-page,
-      // see appIdentity.ts) and this file, so the tab, the taskbar/Dock icon
-      // and the installed window always agree.
-      if (urlPath === '/manifest.webmanifest') {
-        const manifest = buildWebManifest(appDisplayName(path.basename(rootDir)));
-        res.writeHead(200, {
-          'Content-Type': 'application/manifest+json; charset=utf-8',
-          'Cache-Control': 'public, max-age=3600',
-        });
-        res.end(JSON.stringify(manifest));
-        return;
-      }
-
-      if (urlPath === '/assets/icon.svg') {
-        res.writeHead(200, {
-          'Content-Type': 'image/svg+xml; charset=utf-8',
-          'Cache-Control': 'public, max-age=3600',
-        });
-        res.end(appIconSvgMarkup());
-        return;
-      }
+      // PWA manifest + icon — what lets a browser install `serve` as a
+      // chromeless desktop app window (appIdentityRoutes.ts).
+      if (handleAppIdentityRoutes(res, urlPath, { rootDir })) return;
 
       if (await handleGraphRoutes(req, res, urlPath, {
         rootDir,

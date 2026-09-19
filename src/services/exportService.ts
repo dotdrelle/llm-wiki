@@ -271,11 +271,17 @@ export async function expandDeliverable(
     const narrowToCitedSections = (raw: string, cited: string, label: string): string => {
       const anchors = anchorsByPath.get(cited);
       if (!anchors?.length) return raw;
-      const slices = anchors
-        .map((anchor) => sliceCitedSection(raw, anchor))
-        .filter((value): value is string => Boolean(value));
-      if (slices.length === anchors.length) return slices.join('\n\n');
-      const missing = anchors.filter((anchor) => sliceCitedSection(raw, anchor) === null);
+      // One pass: `sliceCitedSection` re-splits the whole document on every
+      // call, so asking it twice per anchor (once for the slice, once to name
+      // the misses) parsed the source 2N times.
+      const slices: string[] = [];
+      const missing: string[] = [];
+      for (const anchor of anchors) {
+        const slice = sliceCitedSection(raw, anchor);
+        if (slice) slices.push(slice);
+        else missing.push(anchor);
+      }
+      if (missing.length === 0) return slices.join('\n\n');
       warnings.push(
         `cited section not found in ${cited}: ${missing.join(', ')} (section "${label}")`
         + (slices.length ? '' : ' — read whole'),
