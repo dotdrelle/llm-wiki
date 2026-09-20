@@ -659,7 +659,7 @@ runner or the CLI.
   first — it landed in `%H`, and every `sha` below the top row was unusable for
   expanding or restoring. Strip the leading newline per record, never by trimming
   the whole output.
-- `workspaceService.ts`: path safety, workspace IO, skill installation.
+- `workspaceService.ts`: path safety, workspace IO.
 - `ingestService.ts`: source-to-wiki LLM pipeline. `--dry-run` (`wiki
 ingest`) builds a review per planned operation (`buildReviewOperations`):
   before/after existence, SHA-256 hashes, and a compact unified-diff preview
@@ -870,8 +870,10 @@ must be supplied together. Keep TLS in env/Compose, not `.wikirc.yaml`.
   state, content hashes; never full content).
 - Preserve MCP bearer-token behavior: browser clients must not receive
   workspace MCP tokens.
-- Keep skill install constrained to standard paths and reject symlinks.
 - Keep Docker one-shot CLI usage separate from long-running `serve`.
+- There is no skill installer: `.wiki/skills/` is written directly (operator
+  copy, scaffold or workspace method). Do not reintroduce a fetch-and-extract
+  path or a skill registry.
 
 ## Validation
 
