@@ -10,6 +10,7 @@ import {
 } from '../provenance/promptLocators.ts';
 import { validateSourcePage } from '../provenance/sourcePage.ts';
 import { validateAnchoredCitations } from '../provenance/validate.ts';
+import { anchorCitations } from '../provenance/anchor.ts';
 import { buildExtractionPrompt, EXTRACTION_PROMPT_VERSION } from '../prompts/extractionPrompt.ts';
 import { buildPromptContext } from '../prompts/systemPreamble.ts';
 import {
@@ -1291,12 +1292,43 @@ export class IngestService {
                   },
             )
           : normalizedOperations;
+        // The model does not anchor on its own: the engine ties each remaining
+        // bare citation to the source section that actually backs the claim.
+        let anchoredOperations = tokenSafeOperations;
+        if (provenanceModeEnabled()) {
+          const loadRaw = (documentPath: string): string | null => {
+            if (documentPath === source.archiveCitationPath) return rawBody;
+            try {
+              const absolute = resolveInside(this.workspace.paths.rootDir, documentPath);
+              return existsSync(absolute) ? readFileSync(absolute, 'utf8') : null;
+            } catch {
+              return null;
+            }
+          };
+          let totalAnchored = 0;
+          const unresolvedAnchors: string[] = [];
+          anchoredOperations = tokenSafeOperations.map((operation) => {
+            if (operation.type === 'delete' || typeof operation.content !== 'string') return operation;
+            const result = anchorCitations(operation.content, loadRaw);
+            totalAnchored += result.anchored;
+            unresolvedAnchors.push(...result.unresolved);
+            return { ...operation, content: result.content };
+          });
+          if (totalAnchored > 0 || unresolvedAnchors.length > 0) {
+            await this.logger.info('ingest:anchoring', {
+              source: source.relativePath,
+              anchored: totalAnchored,
+              unresolved: unresolvedAnchors.slice(0, 20),
+              unresolvedTotal: unresolvedAnchors.length,
+            });
+          }
+        }
         const {
           operations: citationSafeOperations,
           rewrittenCitations,
           unreconciledCitations,
           wrappedBarePaths,
-        } = enforceSourceCitationPath(tokenSafeOperations, source.archiveCitationPath);
+        } = enforceSourceCitationPath(anchoredOperations, source.archiveCitationPath);
         await this.logger.info('ingest:normalize', {
           source: source.relativePath,
           operations: citationSafeOperations.length,
