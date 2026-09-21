@@ -9,6 +9,7 @@ import {
   renderLocatorCatalogueSection,
 } from '../provenance/promptLocators.ts';
 import { validateSourcePage } from '../provenance/sourcePage.ts';
+import { validateAnchoredCitations } from '../provenance/validate.ts';
 import { buildExtractionPrompt, EXTRACTION_PROMPT_VERSION } from '../prompts/extractionPrompt.ts';
 import { buildPromptContext } from '../prompts/systemPreamble.ts';
 import {
@@ -48,6 +49,7 @@ import {
 import { z } from 'zod';
 import { hashText } from '../utils/hash.ts';
 import { resolveInside } from '../utils/path.ts';
+import { existsSync, readFileSync } from 'node:fs';
 import matter from 'gray-matter';
 import { normalizeSourceBody, splitCitationAnchor } from '../utils/markdown.ts';
 import { planSourcePacks } from '../utils/sourcePacking.ts';
@@ -1319,6 +1321,27 @@ export class IngestService {
             await this.logger.warn('ingest:source-page-contract', {
               source: source.relativePath,
               issues: sourcePageIssues,
+            });
+          }
+          // The model does not reliably anchor its citations, so an unanchored
+          // or unresolvable one is ANNOUNCED rather than silently accepted.
+          const loadDocument = (documentPath: string): string | null => {
+            try {
+              const absolute = resolveInside(this.workspace.paths.rootDir, documentPath);
+              return existsSync(absolute) ? readFileSync(absolute, 'utf8') : null;
+            } catch {
+              return null;
+            }
+          };
+          const anchorIssues = citationSafeOperations
+            .filter((operation) => operation.type !== 'delete' && /^wiki\/(concepts|sources)\//.test(operation.path))
+            .flatMap((operation) => validateAnchoredCitations(operation.content ?? '', loadDocument)
+              .map((issue) => ({ path: operation.path, ...issue })));
+          if (anchorIssues.length > 0) {
+            await this.logger.warn('ingest:provenance-anchors', {
+              source: source.relativePath,
+              issues: anchorIssues.slice(0, 20),
+              total: anchorIssues.length,
             });
           }
         }
