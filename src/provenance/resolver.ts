@@ -124,7 +124,7 @@ export interface EvidenceManifestEntry {
 }
 
 export interface EvidenceManifest {
-  schemaVersion: 1;
+  schemaVersion: 2;
   buildId: string;
   createdAt: string;
   fragments: EvidenceManifestEntry[];
@@ -136,7 +136,7 @@ export function createEvidenceManifest(
   now: string = new Date().toISOString(),
 ): EvidenceManifest {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     buildId,
     createdAt: now,
     fragments: fragments.map((fragment) => ({
@@ -233,7 +233,10 @@ export async function readEvidenceManifest(rootDir: string, buildId: string): Pr
   try {
     const raw = await readFile(evidenceManifestPath(rootDir, buildId), 'utf8');
     const parsed = JSON.parse(raw) as EvidenceManifest;
-    return parsed && parsed.schemaVersion === 1 && Array.isArray(parsed.fragments) ? parsed : null;
+    // v1 stored `chain` as path strings and cannot preserve section
+    // granularity. Refuse it explicitly so export emits evidence-missing and
+    // falls back visibly instead of pretending the old manifest is precise.
+    return parsed && parsed.schemaVersion === 2 && Array.isArray(parsed.fragments) ? parsed : null;
   } catch {
     return null;
   }

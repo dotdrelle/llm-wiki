@@ -167,7 +167,15 @@ function preview(text: string, maxChars: number): string {
  */
 export function buildLocatorCatalogue(
   markdown: string,
-  options: { maxEntries?: number; maxFragmentChars?: number; previewChars?: number } = {},
+  options: {
+    maxEntries?: number;
+    maxFragmentChars?: number;
+    previewChars?: number;
+    /** Filter candidates while scanning, before the retained-entry ceiling. */
+    query?: string;
+    /** Tokens retained ahead of ordinary matches (for already-cited sections). */
+    preferredTokens?: ReadonlySet<string>;
+  } = {},
 ): LocatorCatalogue {
   const maxEntries = options.maxEntries ?? LOCATOR_DEFAULT_MAX_ENTRIES;
   const maxFragmentChars = options.maxFragmentChars ?? LOCATOR_DEFAULT_MAX_FRAGMENT_CHARS;
@@ -181,28 +189,35 @@ export function buildLocatorCatalogue(
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
 
-  const locators: ProvenanceLocator[] = [];
-  let truncated = false;
-  const push = (locator: ProvenanceLocator): boolean => {
-    if (locators.length >= maxEntries) {
-      truncated = true;
-      return false;
+  const query = normalizeHeadingText(options.query ?? '');
+  const preferred: ProvenanceLocator[] = [];
+  const ordinary: ProvenanceLocator[] = [];
+  let matchingEntries = 0;
+  const consider = (locator: ProvenanceLocator): void => {
+    if (query) {
+      const searchable = normalizeHeadingText(
+        `${locator.token} ${locator.headingPath.join(' ')} ${locator.preview}`,
+      );
+      if (!searchable.includes(query)) return;
     }
-    locators.push(locator);
-    return true;
+    matchingEntries += 1;
+    const target = options.preferredTokens?.has(locator.token) ? preferred : ordinary;
+    // Scan the complete document so a late matching/preferred section remains
+    // discoverable, but retain only bounded candidates in memory.
+    if (target.length < maxEntries) target.push(locator);
   };
 
   for (const section of sections) {
     if (!section.headingText) continue;
     const key = normalizeHeadingPath(section.headingPath);
     if ((counts.get(key) ?? 0) > 1) continue; // ambiguous path -> fragments only
-    if (!push({
+    consider({
       token: `section:${serializeHeadingPath(section.headingPath)}`,
       kind: 'section',
       headingPath: section.headingPath,
       preview: preview(section.markdown, previewChars),
       size: section.markdown.length,
-    })) break;
+    });
   }
 
   // A headingless document, or one whose full paths repeat, must still be
@@ -211,17 +226,18 @@ export function buildLocatorCatalogue(
   if (sections.length === 0 || hasAmbiguousPath) {
     const { body, bodyStartLine } = splitFrontmatter(markdown);
     for (const fragment of splitFragments(bodyStartLine, body, maxFragmentChars)) {
-      if (!push({
+      consider({
         token: `fragment:${fragment.id}`,
         kind: 'fragment',
         headingPath: [],
         preview: preview(fragment.text, previewChars),
         size: fragment.text.length,
-      })) break;
+      });
     }
   }
 
-  return { locators, truncated };
+  const locators = [...preferred, ...ordinary].slice(0, maxEntries);
+  return { locators, truncated: matchingEntries > maxEntries };
 }
 
 /** Recompute the terminal address of a catalogue token. */

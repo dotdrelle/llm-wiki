@@ -29,8 +29,12 @@ function fakeRes() {
   };
 }
 
-function fakeReq(method: string, urlPath: string): IncomingMessage {
-  return { method, url: urlPath } as unknown as IncomingMessage;
+function fakeReq(method: string, urlPath: string, accept?: string): IncomingMessage {
+  return {
+    method,
+    url: urlPath,
+    headers: accept ? { accept } : {},
+  } as unknown as IncomingMessage;
 }
 
 function writeProposal(rootDir: string, record: Record<string, unknown>): void {
@@ -257,6 +261,47 @@ describe('agent proposal review routes', () => {
       expect(body().error).toBe('provenance_invalid');
       expect(deps.workspace.applyWikiOperations).not.toHaveBeenCalled();
       expect(existsSync(path.join(rootDir, '.wiki', 'agent-proposals', 't-prov.json'))).toBe(true);
+    } finally {
+      delete process.env.WIKI_PROVENANCE_MODE;
+    }
+  });
+
+  it('renders structured HTML diagnostics when a page-form merge is refused', async () => {
+    process.env.WIKI_PROVENANCE_MODE = '1';
+    try {
+      writeProposal(rootDir, {
+        id: 't-prov-html',
+        workspace: 'demo',
+        branch: 'agent/gateway-html',
+        worktreeRelativePath: '.wiki/agent-worktrees/gateway-html',
+        createdAt: '2026-09-09T10:00:00.000Z',
+        changedFiles: [{ status: 'M', path: 'wiki/concepts/demo/a.md' }],
+        changes: [{
+          path: 'wiki/concepts/demo/a.md',
+          status: 'M',
+          content: '# A\n\n[src: raw/ingested/missing.md#section:Missing > Heading]\n',
+        }],
+        diff: 'x',
+      });
+      const deps = makeDeps(rootDir);
+      const { res } = fakeRes();
+
+      await handleAgentProposalRoutes(
+        fakeReq('POST', '/agent-proposals/t-prov-html/merge', 'text/html'),
+        res,
+        '/agent-proposals/t-prov-html/merge',
+        deps,
+      );
+
+      expect(deps.sendGzippedHtml).toHaveBeenCalledTimes(1);
+      const call = (deps.sendGzippedHtml as ReturnType<typeof vi.fn>).mock.calls[0];
+      const html = String(call[2]);
+      expect(call[4]).toBe(422);
+      expect(html).toContain('Provenance diagnostics');
+      expect(html).toContain('Unresolved locator tokens');
+      expect(html).toContain('section:Missing &gt; Heading');
+      expect(html).not.toContain('&quot;ok&quot;');
+      expect(deps.workspace.applyWikiOperations).not.toHaveBeenCalled();
     } finally {
       delete process.env.WIKI_PROVENANCE_MODE;
     }

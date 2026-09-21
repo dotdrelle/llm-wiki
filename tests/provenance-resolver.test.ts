@@ -1,7 +1,7 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   createEvidenceManifest,
   evidenceBuildIdFor,
@@ -10,6 +10,51 @@ import {
   resolveEvidence,
   writeEvidenceManifest,
 } from '../src/provenance/resolver.ts';
+import { expandDeliverable } from '../src/services/exportService.ts';
+import { WorkspaceService } from '../src/services/workspaceService.ts';
+import type { AppConfig } from '../src/types.ts';
+
+function createConfig(root: string): AppConfig {
+  return {
+    wikiRoot: root,
+    language: 'fr',
+    mcp: {},
+    limits: {
+      requestsPerMinute: 10,
+      maxInputTokensPerCall: 50000,
+      targetInputTokensPerCall: 40000,
+      maxProfileChars: 4000,
+    },
+    build: { refreshOnIngest: true, slotBatchSize: 5, maxBuildContextChars: 12000 },
+    retrieval: {
+      maxContextFiles: 5,
+      maxChunksPerPage: 2,
+      maxChunkChars: 3000,
+      maxSourceChars: 8000,
+      buildStrategy: 'bm25',
+      vector: {
+        enabled: false,
+        baseUrl: 'https://example.invalid',
+        timeoutMs: 600000,
+        embeddingModel: 'embedding',
+        rerankEnabled: false,
+        rerankerModel: 'rerank',
+        topK: 20,
+        rerankTopK: 10,
+        maxResults: 5,
+      },
+    },
+    llm: {
+      provider: 'openai-compatible',
+      engine: 'generic',
+      baseUrl: 'https://example.invalid',
+      apiKey: 'test',
+      model: 'model',
+      timeoutMs: 600000,
+      temperature: 0,
+    },
+  };
+}
 
 const DOCS = new Map<string, string>([
   ['wiki/sources/a.md', '# A\n\n## Coûts\n\n[src: raw/ingested/detailed.md#Coûts]\n'],
@@ -78,6 +123,20 @@ describe('evidence manifest storage (lot 4)', () => {
     expect(read?.fragments[0].text).toContain('90 k€');
     expect(evidenceBuildIdFor('deliverables/architecture/out.md')).toBe(buildId);
   });
+
+  it('rejects a schema v1 manifest whose chain cannot preserve anchors', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-manifest-v1-'));
+    const buildId = 'legacy';
+    const directory = path.join(root, '.wiki', 'builds', buildId);
+    await mkdir(directory, { recursive: true });
+    await writeFile(
+      path.join(directory, 'evidence.json'),
+      JSON.stringify({ schemaVersion: 1, buildId, createdAt: '2026-01-01T00:00:00.000Z', fragments: [] }),
+      'utf8',
+    );
+
+    await expect(readEvidenceManifest(root, buildId)).resolves.toBeNull();
+  });
 });
 
 describe('manifest build ids (defect 3)', () => {
@@ -93,7 +152,7 @@ describe('frozen fragment map (defect 3)', () => {
   it('keys a fragment by every page in its chain, not only the terminal path', async () => {
     const { frozenFragmentMap } = await import('../src/provenance/resolver.ts');
     const manifest = {
-      schemaVersion: 1 as const,
+      schemaVersion: 2 as const,
       buildId: 'b',
       createdAt: '2026-01-01T00:00:00.000Z',
       fragments: [{
@@ -116,7 +175,11 @@ describe('frozen fragment map (defect 3)', () => {
 });
 
 describe('two builds, two manifests, two exports (release review)', () => {
-  it('keeps both manifests and exports the first explicitly after A-v2', async () => {
+  afterEach(() => {
+    delete process.env.WIKI_PROVENANCE_MODE;
+  });
+
+  it('keeps both manifests and makes expandDeliverable use the explicitly selected build', async () => {
     const { hashText } = await import('../src/utils/hash.ts');
     const { writeEvidenceManifest, evidenceBuildIdFor, listEvidenceBuilds, frozenFragmentMap, readEvidenceManifest } =
       await import('../src/provenance/resolver.ts');
@@ -144,5 +207,48 @@ describe('two builds, two manifests, two exports (release review)', () => {
     expect(frozenFragmentMap(first!).get('wiki/sources/a.md#Coûts')).toContain('90 k€');
     const second = await readEvidenceManifest(root, id2);
     expect(frozenFragmentMap(second!).get('wiki/sources/a.md#Coûts')).toContain('120 k€');
+
+    process.env.WIKI_PROVENANCE_MODE = '1';
+    await mkdir(path.join(root, 'deliverables'), { recursive: true });
+    await writeFile(path.join(root, 'deliverables', 'd.md'), content2, 'utf8');
+    const workspace = new WorkspaceService(createConfig(root));
+    const prompts: string[] = [];
+    const llm = {
+      completeText: async (request: { user: string }): Promise<string> => {
+        prompts.push(request.user);
+        return 'Analyse détaillée fondée sur la preuve sélectionnée.';
+      },
+    };
+    const retrieval = { search: async (): Promise<never[]> => [] };
+    const logger = {
+      info: async (): Promise<void> => undefined,
+      warn: async (): Promise<void> => undefined,
+    };
+
+    await expandDeliverable(
+      'deliverables/d.md',
+      createConfig(root),
+      workspace,
+      retrieval as never,
+      llm as never,
+      logger as never,
+      undefined,
+      { evidenceBuildId: id1 },
+    );
+    expect(prompts.at(-1)).toContain('90 k€');
+    expect(prompts.at(-1)).not.toContain('120 k€');
+
+    await expandDeliverable(
+      'deliverables/d.md',
+      createConfig(root),
+      workspace,
+      retrieval as never,
+      llm as never,
+      logger as never,
+      undefined,
+      { evidenceBuildId: id2 },
+    );
+    expect(prompts.at(-1)).toContain('120 k€');
+    expect(prompts.at(-1)).not.toContain('90 k€');
   });
 });

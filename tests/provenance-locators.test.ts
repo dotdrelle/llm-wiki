@@ -73,6 +73,36 @@ describe('provenance locators (lot 1)', () => {
     expect(locators.length).toBe(5);
     expect(truncated).toBe(true);
   });
+
+  it('finds a queried section after the retention ceiling without retaining the full catalogue', () => {
+    const doc = Array.from(
+      { length: 350 },
+      (_, index) => `## Section ${index}\n\ntext ${index}\n`,
+    ).join('\n');
+    const { locators, truncated } = buildLocatorCatalogue(doc, {
+      maxEntries: 5,
+      query: 'Section 349',
+    });
+
+    expect(locators).toHaveLength(1);
+    expect(locators[0].token).toBe('section:Section 349');
+    expect(truncated).toBe(false);
+  });
+
+  it('prioritises a cited section discovered after the retention ceiling', () => {
+    const doc = Array.from(
+      { length: 350 },
+      (_, index) => `## Section ${index}\n\ntext ${index}\n`,
+    ).join('\n');
+    const { locators, truncated } = buildLocatorCatalogue(doc, {
+      maxEntries: 5,
+      preferredTokens: new Set(['section:Section 349']),
+    });
+
+    expect(locators).toHaveLength(5);
+    expect(locators[0].token).toBe('section:Section 349');
+    expect(truncated).toBe(true);
+  });
 });
 
 describe('fragment anchors (defect 2)', () => {

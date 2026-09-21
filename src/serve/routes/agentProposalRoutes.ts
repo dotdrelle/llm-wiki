@@ -221,6 +221,10 @@ function prevalidateProposal(rootDir: string, record: ProposalRecord): ProposalP
     if (issues.length > 0 || materialized.unresolved.length > 0) {
       results.push({ path: change.path, issues, tokens: materialized.unresolved.length });
     }
+    if (Date.now() - startedAt > TIME_BUDGET_MS) {
+      truncated = true;
+      break;
+    }
   }
   if (truncated) {
     results.push({
@@ -336,14 +340,22 @@ export async function handleAgentProposalRoutes(
     const payload = data as {
       error?: unknown;
       validation_incomplete?: boolean;
-      diagnostics?: Array<{ path: string; tokens?: number; issues?: Array<{ code: string; citation: string; message: string }> }>;
+      diagnostics?: Array<{
+        path: string;
+        tokens?: string[];
+        unresolved?: string[];
+        cycles?: string[][];
+        issues?: Array<{ code: string; citation: string; message: string }>;
+      }>;
     };
     const detail = Array.isArray(payload.diagnostics) && payload.diagnostics.length > 0
       ? `<h2>Provenance diagnostics</h2>`
         + (payload.validation_incomplete ? '<p class="proposal-lede">Validation was incomplete (budget reached) — nothing was written.</p>' : '')
         + `<ul class="proposal-objections">${payload.diagnostics.map((entry) =>
             `<li class="proposal-objection proposal-objection-blocking"><span class="proposal-objection-severity">${escapeHtml(entry.path)}</span>`
-            + `${(entry.tokens ?? 0) > 0 ? `${entry.tokens} unresolved locator token(s)<br>` : ''}`
+            + `${(entry.tokens ?? []).length > 0 ? `Unresolved locator tokens: ${(entry.tokens ?? []).map((token) => escapeHtml(token)).join(', ')}<br>` : ''}`
+            + `${(entry.unresolved ?? []).length > 0 ? `Unresolved targets: ${(entry.unresolved ?? []).map((target) => escapeHtml(target)).join(', ')}<br>` : ''}`
+            + `${(entry.cycles ?? []).length > 0 ? `Cycles: ${(entry.cycles ?? []).map((cycle) => escapeHtml(cycle.join(' → '))).join('; ')}<br>` : ''}`
             + `${(entry.issues ?? []).map((issue) => `${escapeHtml(issue.code)}: ${escapeHtml(issue.citation)} — ${escapeHtml(issue.message)}`).join('<br>')}</li>`).join('')}</ul>`
       : `<pre class="proposal-diff">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
     const body = `<main class="content"><article class="article"><h1>Request refused</h1><p class="proposal-lede">${escapeHtml(String(payload.error ?? 'request refused'))}</p>${detail}<p><a href="/agent-proposals">Back to agent proposals</a></p></article></main>`;
@@ -458,9 +470,13 @@ export async function handleAgentProposalRoutes(
             issues,
             tokens: materialized.unresolved,
           });
-          continue;
+        } else {
+          operation.content = derived.content;
         }
-        operation.content = derived.content;
+        if (Date.now() - mergeStartedAt > MERGE_TIME_BUDGET_MS) {
+          incomplete = true;
+          break;
+        }
       }
       if (diagnostics.length > 0 || incomplete) {
         return fail(422, { ok: false, error: 'provenance_invalid', validation_incomplete: incomplete, diagnostics });

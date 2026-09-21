@@ -54,7 +54,10 @@ The concept remains the folder; the path remains the leaf's identity. No new
   frozen map is keyed by `path#anchor`, so a section receives only the fragments
   it used. `export --evidence-build <id>` selects a build explicitly (the ids are
   the directories under `.wiki/builds/`); without it the export derives the id
-  from the content it is exporting.
+  from the content it is exporting. The current manifest format is schema v2:
+  every hop in `chain` carries both `path` and `anchor`. A v1 manifest is refused
+  and announced as missing evidence at export rather than silently widening a
+  section-level citation.
 
 ## Modules
 

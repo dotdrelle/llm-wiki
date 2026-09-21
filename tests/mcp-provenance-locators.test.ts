@@ -116,6 +116,27 @@ describe('wiki_list_provenance_locators MCP tool', () => {
         }),
       );
       expect((paged.locators as unknown[]).length).toBe(1);
+
+      // Filtering happens while the whole document is scanned: the retention
+      // ceiling must not make a late section undiscoverable.
+      const largeDoc = Array.from(
+        { length: 350 },
+        (_, index) => `## Section ${index}\n\ntext ${index}\n`,
+      ).join('\n');
+      await writeFile(path.join(root, 'raw', 'ingested', 'large.md'), largeDoc, 'utf8');
+      const late = textPayload(
+        await client.callTool({
+          name: 'wiki_list_provenance_locators',
+          arguments: {
+            path: 'raw/ingested/large.md',
+            query: 'Section 349',
+            maxEntries: 5,
+          },
+        }),
+      );
+      expect((late.locators as Array<{ token: string }>).map((entry) => entry.token)).toEqual([
+        'section:Section 349',
+      ]);
     } finally {
       await client.close();
       await server.close();
