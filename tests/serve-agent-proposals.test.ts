@@ -235,6 +235,60 @@ describe('agent proposal review routes', () => {
     expect(body().proposals[0].diff).toBeUndefined();
   });
 
+  it('refuses a merge with an unresolved citation in provenance mode, keeping the proposal', async () => {
+    process.env.WIKI_PROVENANCE_MODE = '1';
+    try {
+      writeProposal(rootDir, {
+        id: 't-prov',
+        workspace: 'demo',
+        branch: 'agent/gateway-9',
+        worktreeRelativePath: '.wiki/agent-worktrees/gateway-9',
+        createdAt: '2026-09-09T10:00:00.000Z',
+        changedFiles: [{ status: 'M', path: 'wiki/concepts/demo/a.md' }],
+        changes: [{ path: 'wiki/concepts/demo/a.md', status: 'M', content: '---\ntype: product\nsources: []\n---\n\n# A\n\n[src: wiki/sources/missing.md]\n' }],
+        diff: 'x',
+      });
+      const deps = makeDeps(rootDir);
+      const { res, body, status } = fakeRes();
+
+      await handleAgentProposalRoutes(fakeReq('POST', '/api/agent-proposals/t-prov/merge'), res, '/api/agent-proposals/t-prov/merge', deps);
+
+      expect(status()).toBe(422);
+      expect(body().error).toBe('provenance_invalid');
+      expect(deps.workspace.applyWikiOperations).not.toHaveBeenCalled();
+      expect(existsSync(path.join(rootDir, '.wiki', 'agent-proposals', 't-prov.json'))).toBe(true);
+    } finally {
+      delete process.env.WIKI_PROVENANCE_MODE;
+    }
+  });
+
+  it('recomputes sources: on merge, dropping a declared source the body never reaches', async () => {
+    process.env.WIKI_PROVENANCE_MODE = '1';
+    try {
+      writeProposal(rootDir, {
+        id: 't-derive',
+        workspace: 'demo',
+        branch: 'agent/gateway-10',
+        worktreeRelativePath: '.wiki/agent-worktrees/gateway-10',
+        createdAt: '2026-09-09T10:00:00.000Z',
+        changedFiles: [{ status: 'M', path: 'wiki/concepts/demo/a.md' }],
+        changes: [{ path: 'wiki/concepts/demo/a.md', status: 'M', content: '---\ntype: product\nsources:\n  - path: raw/ingested/x.md\n  - path: raw/ingested/phantom.md\n---\n\n# A\n\n[src: raw/ingested/x.md#Coûts]\n' }],
+        diff: 'x',
+      });
+      const deps = makeDeps(rootDir);
+      const { res, body } = fakeRes();
+
+      await handleAgentProposalRoutes(fakeReq('POST', '/api/agent-proposals/t-derive/merge'), res, '/api/agent-proposals/t-derive/merge', deps);
+
+      expect(body().ok).toBe(true);
+      const applied = (deps.workspace.applyWikiOperations as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(applied[0].content).toContain('raw/ingested/x.md');
+      expect(applied[0].content).not.toContain('phantom.md');
+    } finally {
+      delete process.env.WIKI_PROVENANCE_MODE;
+    }
+  });
+
   it('is routed before handleWikiRoutes, whose fallback treats any unmatched path as a wiki document and 404s it', async () => {
     const source = await readFile(
       path.resolve(import.meta.dirname, '../src/commands/serve.ts'),

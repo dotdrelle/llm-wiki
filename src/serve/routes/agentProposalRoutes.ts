@@ -1,11 +1,14 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { readFile, unlink, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { resolveInside } from '../../utils/path.ts';
 import { escapeHtml } from '../../utils/html.ts';
 import { HistoryService, commitHistorySafely } from '../../services/historyService.ts';
 import { applyOkfFrontmatter } from '../../okf/frontmatter.ts';
+import { provenanceModeEnabled } from '../../provenance/mode.ts';
+import { applyDerivedSources } from '../../provenance/write.ts';
 import type { WorkspaceService } from '../../services/workspaceService.ts';
 import { layout } from '../html/wikiHtml.ts';
 
@@ -299,6 +302,38 @@ export async function handleAgentProposalRoutes(
     if (operations.length === 0) {
       sendJson(res, 400, { ok: false, error: 'the proposal carries no mergeable wiki change' });
       return true;
+    }
+
+    // Provenance mode: a curation merge is a writer like any other. Its pages
+    // are prevalidated here, the `sources:` inventory is recomputed from the
+    // body closure, and an unresolved citation REFUSES the merge instead of
+    // writing a page whose provenance nobody can resolve. The proposal and the
+    // wiki are left untouched so the proposal stays correctable.
+    if (provenanceModeEnabled()) {
+      const proposed = new Map(record.changes.map((change) => [change.path, change.content ?? '']));
+      const resolvePage = (pagePath: string): string | null => {
+        if (proposed.has(pagePath)) return proposed.get(pagePath) ?? null;
+        try {
+          const absolute = resolveInside(rootDir, pagePath);
+          return existsSync(absolute) ? readFileSync(absolute, 'utf8') : null;
+        } catch {
+          return null;
+        }
+      };
+      const diagnostics: Array<{ path: string; unresolved: string[]; cycles: string[][] }> = [];
+      for (const operation of operations) {
+        if (operation.type === 'delete' || !/^wiki\/(concepts|sources)\//.test(operation.path)) continue;
+        const derived = applyDerivedSources(operation.content, { resolvePage });
+        if (!derived.clean) {
+          diagnostics.push({ path: operation.path, unresolved: derived.unresolved, cycles: derived.cycles });
+          continue;
+        }
+        operation.content = derived.content;
+      }
+      if (diagnostics.length > 0) {
+        sendJson(res, 422, { ok: false, error: 'provenance_invalid', diagnostics });
+        return true;
+      }
     }
     try {
       await deps.workspace.applyWikiOperations(operations);

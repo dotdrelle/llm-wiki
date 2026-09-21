@@ -12,6 +12,7 @@ import { checkProductionIdle } from './productionLocks.ts';
 import { loadWikiGraphSnapshot, summarizeWikiGraph } from '../graph/wiki/overview.ts';
 import { pathExists } from '../utils/fs.ts';
 import { resolveInside, relativeFrom } from '../utils/path.ts';
+import { buildLocatorCatalogue } from '../provenance/locators.ts';
 import { extractSourceCitations, extractWikiLinks, parseTemplateInstructions } from '../utils/markdown.ts';
 import {
   buildQueryGraph,
@@ -133,6 +134,11 @@ export const WIKI_MCP_TOOLS = [
     name: 'wiki_read_pages',
     description:
       'Read multiple llm-wiki markdown pages (wiki/, raw/ingested/, or raw/untracked/) by relative path in one call. Use after wiki_search_context, or after wiki_collect_context when additional pages are needed. Each entry carries path, content, found, allowed, truncated, citations (the [src: ...] paths of the page) and links (its [[...]] wiki targets) — follow them with this same tool or wiki_read_ingested_source, and do not re-read a path already returned.',
+  },
+  {
+    name: 'wiki_list_provenance_locators',
+    description:
+      'List the citable locator tokens (section:… / fragment:…) of one document under wiki/sources/ or raw/ingested/. Copy a token verbatim into [src: <path>#<token>]; never write a line number, offset or hash yourself — the engine materializes the address.',
   },
   {
     name: 'wiki_write_page',
@@ -696,6 +702,37 @@ export async function createWikiMcpServer(
       ),
     );
     return textResult(JSON.stringify({ pages }, null, 2));
+  };
+
+  // Provenance (plan-provenance-feuilles.md, lot 5): the citation catalogue a
+  // curation run may copy from. The gateway never reimplements markdown
+  // splitting — it consumes these tokens, and the engine materializes the
+  // address. Offsets and digests are deliberately NOT returned.
+  const listProvenanceLocators = async ({
+    path: documentPath,
+    maxEntries,
+  }: {
+    path: string;
+    maxEntries?: number;
+  }) => {
+    try {
+      const normalized = String(documentPath ?? '').replace(/\\/g, '/').replace(/^\.\//, '');
+      if (!/^wiki\/sources\//.test(normalized) && !/^raw\/ingested\//.test(normalized)) {
+        return textResult(
+          'Access denied: provenance locators are offered for wiki/sources/ and raw/ingested/ only.',
+          { isError: true },
+        );
+      }
+      const absolute = resolveReadableWorkspacePath(workspace, normalized);
+      const content = await workspace.readTextFile(absolute);
+      const bounded = Number.isFinite(Number(maxEntries))
+        ? Math.min(Math.max(Number(maxEntries), 1), 500)
+        : undefined;
+      const catalogue = buildLocatorCatalogue(content, bounded ? { maxEntries: bounded } : {});
+      return textResult(JSON.stringify({ document: normalized, ...catalogue }, null, 2));
+    } catch (error) {
+      return textResult(error instanceof Error ? error.message : String(error), { isError: true });
+    }
   };
 
   const writeWikiPage = async ({
@@ -1793,6 +1830,26 @@ const withTitles = async (
     readWikiPagesInput,
     READ_ONLY,
     (input) => loggedTool('wiki_read_pages', input, readWikiPages),
+  );
+
+  const listProvenanceLocatorsInput = {
+    path: z
+      .string()
+      .describe('Relative path under wiki/sources/ or raw/ingested/ whose locators are requested'),
+    maxEntries: z
+      .number()
+      .int()
+      .min(1)
+      .max(500)
+      .optional()
+      .describe('Maximum locators returned. Omit for the default ceiling.'),
+  };
+  server.tool(
+    'wiki_list_provenance_locators',
+    'List the citable locator tokens (section:… / fragment:…) of one document under wiki/sources/ or raw/ingested/. Copy a token into [src: <path>#<token>]; never invent a line number, offset or hash — the engine materializes the address.',
+    listProvenanceLocatorsInput,
+    READ_ONLY,
+    (input) => loggedTool('wiki_list_provenance_locators', input, listProvenanceLocators),
   );
 
   const writeWikiPageInput = {
