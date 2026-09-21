@@ -523,3 +523,52 @@ describe('source accumulation across ingests', () => {
     expect(written).not.toContain('Un.');
   });
 });
+
+describe('provenance mode (opt-in)', () => {
+  afterEach(() => {
+    delete process.env.WIKI_PROVENANCE_MODE;
+  });
+
+  it('derives sources: from the body closure and drops a declared-but-unreached source', async () => {
+    process.env.WIKI_PROVENANCE_MODE = '1';
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-provenance-'));
+    const workspace = new WorkspaceService(createConfig(root));
+    await workspace.initWorkspace({});
+    const leaf = 'wiki/concepts/produit/anaplan.md';
+
+    await workspace.applyNormalizedWikiOperations([
+      {
+        type: 'create',
+        path: leaf,
+        content: '---\ntype: product\nstatus: draft\nsources:\n  - path: raw/ingested/detailed.md\n  - path: raw/ingested/other.md\n---\n\n# Anaplan\n\n## Coûts\n\nSynthèse.\n\n[src: raw/ingested/detailed.md#Coûts]\n',
+      },
+    ]);
+
+    const written = await readFile(path.join(root, leaf), 'utf8');
+    expect(written).toContain('raw/ingested/detailed.md');
+    expect(written).not.toContain('raw/ingested/other.md');
+  });
+
+  it('follows a source page written in the same batch to its archive', async () => {
+    process.env.WIKI_PROVENANCE_MODE = '1';
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-provenance-chain-'));
+    const workspace = new WorkspaceService(createConfig(root));
+    await workspace.initWorkspace({});
+
+    await workspace.applyNormalizedWikiOperations([
+      {
+        type: 'create',
+        path: 'wiki/sources/detailed-note.md',
+        content: '---\ntype: source\nsubject: detailed\nsources:\n  - path: raw/ingested/detailed.md\n---\n\n# Detailed\n\n## Coûts\n\n90 k€.\n\n[src: raw/ingested/detailed.md#Coûts]\n',
+      },
+      {
+        type: 'create',
+        path: 'wiki/concepts/produit/jedox.md',
+        content: '---\ntype: product\nstatus: draft\nsources: []\n---\n\n# Jedox\n\n## Coûts\n\nSynthèse.\n\n[src: wiki/sources/detailed-note.md#Coûts]\n',
+      },
+    ]);
+
+    const written = await readFile(path.join(root, 'wiki/concepts/produit/jedox.md'), 'utf8');
+    expect(written).toContain('raw/ingested/detailed.md');
+  });
+});
