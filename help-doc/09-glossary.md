@@ -42,6 +42,16 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
 - **Knowledge graph** — the wiki's materialized adjacency: which pages cite
   which sources, which pages share a subject or a tag. DONNA queries it with
   the `wiki_graph_query` / `wiki_graph_path` tools.
+- **Provenance** — where a statement comes from, down to the section of the
+  original document. In provenance mode a page's `sources` list is computed
+  from its own text, and a citation names a precise section
+  (`[src: raw/ingested/doc.md#Costs > Licence]`); a citation the engine cannot
+  resolve is reported, never shown as precise.
+- **Source note vs proof** — the source note (`wiki/sources/`) is the reading
+  sheet of one document; the proof is the archived original (`raw/ingested/`).
+- **Evidence manifest** — the frozen snippets a build used, so exporting an
+  already-built deliverable after a source changed still uses the version it was
+  built from.
 - **OKF (Open Knowledge Format)** — the page-metadata convention: `type`,
   `generated` (who produced the page and when), `status` (draft / stable) and
   `sources` (the raw sources the page was filed from). Written additively by

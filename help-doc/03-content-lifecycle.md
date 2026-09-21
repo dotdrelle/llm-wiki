@@ -54,6 +54,27 @@ A page merged from a curation proposal is recorded as **verified and stable**.
 `wiki doctor` reports the pages missing these keys and `--apply` writes them —
 idempotently, never overwriting a value you wrote by hand.
 
+## 4 bis. Sources and provenance
+
+Each page keeps its own **source list** in the `sources` frontmatter. When
+provenance mode is on, that list is **computed from the page's own text**: only
+the sources an assertion actually points to appear, so the list never drifts
+from what the page says, and a source nothing is drawn from is not claimed.
+
+Inside the text, a citation names the precise part of the source it comes from:
+
+    [src: raw/ingested/my-document.md#Costs > Licence]
+
+The part after `#` is a section of the original document (or a line range for a
+document without headings). The engine checks that the section exists and
+reports any citation it cannot resolve instead of showing a vague one; a page
+whose citations cannot be resolved is not published.
+
+When a deliverable is built, the engine freezes the exact snippets it used. If
+you later replace a source with a newer version, exporting the already-built
+deliverable still uses the version it was built from — the document does not
+change under you.
+
 ## 5. Search
 
 The wiki content is indexed for **semantic search**: you can find information by
