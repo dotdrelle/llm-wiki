@@ -211,11 +211,13 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
   exports — step/source/task/batch counters, the detail and the tokens. It
   carries no raw tool id — those are the Logs tab's job.
 
-  Pinned to the TOP of the window, so it never covers the chat bar or its
-  buttons (no composer padding needed). A fixed overlay, like #approval-banner,
-  so it survives the three center views that hide #input-wrap. It disappears
-  once the run is over — the Plan tab then carries the outcome (task statuses,
-  skipped chain steps).
+  Pinned to the TOP of the window by default, so it never covers the chat bar
+  or its buttons (no composer padding needed). A fixed overlay, like
+  #approval-banner, so it survives the three center views that hide #input-wrap.
+  The reader may DRAG it anywhere (initRunStripDrag in runStripScript.ts): the
+  centering transform is dropped on first grab and the box is clamped to the
+  viewport. It disappears once the run is over — the Plan tab then carries the
+  outcome (task statuses, skipped chain steps).
 -->
 <div id="run-strip" hidden aria-live="polite">
   <span class="run-strip-spinner" aria-hidden="true"></span>

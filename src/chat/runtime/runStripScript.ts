@@ -126,4 +126,53 @@ function updateRunStrip() {
     if(detail) setRunStripLine('run-strip-sub-text','run-strip-sub-percent', detail, first.detail?null:second?.percent);
   }
 }
+// The strip is an overlay pinned to the top by default, but the reader decides
+// where it lives: a pointer drag moves it. The centering transform is dropped
+// on first grab (left/top become px) and the box is clamped to the viewport so
+// it can never be dragged off-screen. Buttons keep their own click: the drag
+// starts only outside them.
+function initRunStripDrag() {
+  const strip=$('run-strip');
+  if(!strip||strip.__dragReady) return;
+  strip.__dragReady=true;
+  let drag=null;
+  const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
+  strip.addEventListener('pointerdown',(event)=>{
+    if(event.button!==0) return;
+    if(event.target.closest('button')) return;
+    const rect=strip.getBoundingClientRect();
+    strip.style.transform='none';
+    strip.style.left=Math.round(rect.left)+'px';
+    strip.style.top=Math.round(rect.top)+'px';
+    drag={dx:event.clientX-rect.left,dy:event.clientY-rect.top};
+    strip.classList.add('dragging');
+    try{strip.setPointerCapture(event.pointerId);}catch{}
+    event.preventDefault();
+  });
+  strip.addEventListener('pointermove',(event)=>{
+    if(!drag) return;
+    const rect=strip.getBoundingClientRect();
+    const maxX=Math.max(0,window.innerWidth-rect.width);
+    const maxY=Math.max(0,window.innerHeight-rect.height);
+    strip.style.left=clamp(event.clientX-drag.dx,0,maxX)+'px';
+    strip.style.top=clamp(event.clientY-drag.dy,0,maxY)+'px';
+  });
+  const release=(event)=>{
+    if(!drag) return;
+    drag=null;
+    strip.classList.remove('dragging');
+    try{strip.releasePointerCapture(event.pointerId);}catch{}
+  };
+  strip.addEventListener('pointerup',release);
+  strip.addEventListener('pointercancel',release);
+  // A window resize can leave the strip out of reach after it was dragged.
+  window.addEventListener('resize',()=>{
+    if(!strip.style.left) return;
+    const rect=strip.getBoundingClientRect();
+    strip.style.left=clamp(rect.left,0,Math.max(0,window.innerWidth-rect.width))+'px';
+    strip.style.top=clamp(rect.top,0,Math.max(0,window.innerHeight-rect.height))+'px';
+  });
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',initRunStripDrag);
+else initRunStripDrag();
 `;

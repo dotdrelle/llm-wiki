@@ -860,6 +860,20 @@ describe('chat html', () => {
     expect(CHAT_HTML).not.toContain('body.run-active #approval-banner{bottom:74px}');
   });
 
+  it('lets the reader drag the run-status strip anywhere in the viewport', () => {
+    const script = chatScripts().join('\n');
+    expect(CHAT_HTML).toContain('cursor:grab;touch-action:none;user-select:none');
+    expect(script).toContain('function initRunStripDrag()');
+    expect(script).toContain("strip.addEventListener('pointerdown'");
+    // First grab drops the centering transform and hands the box over to px.
+    expect(script).toContain("strip.style.transform='none'");
+    // The Details button keeps its own click: a grab on it must not drag.
+    expect(script).toContain("if(event.target.closest('button')) return;");
+    // The strip can never be dragged off-screen, resize included.
+    expect(script).toContain('Math.max(0,window.innerWidth-rect.width)');
+    expect(script).toContain("window.addEventListener('resize'");
+  });
+
   it('shows the running document, its counters and tokens in the run strip', () => {
     const script = chatScripts().join('\n');
 
