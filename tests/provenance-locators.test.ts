@@ -60,6 +60,13 @@ describe('provenance locators (lot 1)', () => {
     expect(resolveAnchor(repeated, 'Coûts').status).toBe('ambiguous');
   });
 
+  it('materializes a percent-encoded section token (the model URL-encodes it)', () => {
+    const doc = '# Detailed\n\n## Sécurité\n\n### Chiffrement\n\nAES.\n';
+    const token = `section:${encodeURIComponent('Detailed > Sécurité > Chiffrement')}`;
+    const materialized = materializeLocator(doc, token);
+    expect(materialized?.anchor).toBe('Detailed > Sécurité > Chiffrement');
+  });
+
   it('bounds the catalogue and announces truncation', () => {
     const doc = Array.from({ length: 30 }, (_, index) => `## Section ${index}\n\ntext ${index}\n`).join('\n');
     const { locators, truncated } = buildLocatorCatalogue(doc, { maxEntries: 5 });

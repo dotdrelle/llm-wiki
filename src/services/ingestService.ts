@@ -1348,7 +1348,15 @@ export class IngestService {
         if (provenanceModeEnabled()) {
           const sourcePageIssues = citationSafeOperations
             .filter((operation) => operation.type !== 'delete' && /^wiki\/sources\/[^/]+\.md$/.test(operation.path))
-            .flatMap((operation) => validateSourcePage(operation.content ?? '').issues.map((issue) => ({ path: operation.path, code: issue.code, message: issue.message })));
+            .flatMap((operation) => {
+              // The engine adds `type` and the archive `sources` at write time,
+              // so validate the page it WILL write, not the model's raw output.
+              const candidate = applyOkfFrontmatter(operation.content ?? '', {
+                type: 'source',
+                sources: [{ path: source.archiveCitationPath }],
+              });
+              return validateSourcePage(candidate).issues.map((issue) => ({ path: operation.path, code: issue.code, message: issue.message }));
+            });
           if (sourcePageIssues.length > 0) {
             await this.logger.warn('ingest:source-page-contract', {
               source: source.relativePath,

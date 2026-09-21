@@ -225,6 +225,19 @@ export function buildLocatorCatalogue(
 }
 
 /** Recompute the terminal address of a catalogue token. */
+/**
+ * A model may percent-encode the token it copies (spaces as `%20`, `>` as
+ * `%3E`). Decode tolerantly: a malformed `%` sequence is kept literal rather
+ * than throwing.
+ */
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 export function materializeLocator(
   markdown: string,
   token: string,
@@ -234,7 +247,7 @@ export function materializeLocator(
   const value = String(token ?? '');
   if (value.startsWith('section:')) {
     const serialized = value.slice('section:'.length);
-    const parts = parseHeadingPath(serialized);
+    const parts = parseHeadingPath(safeDecode(serialized));
     if (parts.length === 0) return null;
     const wanted = normalizeHeadingPath(parts);
     const { sections } = splitMarkdownSections(markdown);
