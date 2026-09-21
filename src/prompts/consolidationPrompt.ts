@@ -120,6 +120,8 @@ export function buildConsolidationPrompt(args: {
   locatorSection?: string;
   /** Provenance mode: add the harmonized source-page contract. */
   sourcePageContract?: boolean;
+  /** Provenance mode: add the multi-source composition contract. */
+  compositionContract?: boolean;
   ctx: PromptContext;
 }): { system: string; user: string } {
   return {
@@ -138,6 +140,7 @@ export function buildConsolidationPrompt(args: {
       '',
       ...operationContract(),
       ...(args.sourcePageContract ? ['', ...sourcePageContract()] : []),
+      ...(args.compositionContract ? ['', ...compositionContract()] : []),
     ].join('\n'),
     user: buildConsolidationUser(args),
   };
@@ -187,6 +190,26 @@ function sourcePageContract(): string[] {
     '  each ending with an ANCHORED citation to its archive (`[src: <archive path>#<locator>]`);',
     '- its `subject` identifies the DOCUMENT, never a vendor, product or theme;',
     '- announce any part of the document you could not address.',
+  ];
+}
+
+/**
+ * Provenance-mode composition contract. A leaf is the THEME for a subject:
+ * when an existing leaf already cites other sources, this source's statements
+ * are FOLDED into the relevant existing sections, not appended as a parallel
+ * section, and no section repeats a source it draws nothing from.
+ */
+function compositionContract(): string[] {
+  return [
+    'LEAF COMPOSITION — provenance mode:',
+    '- a leaf is the THEME for its subject across ALL sources: when the inventory shows',
+    '  an existing page for this subject, extend its sections with what THIS source adds;',
+    '  do not append a parallel section for the same theme, and do not create a second',
+    '  leaf for a subject an existing page already covers;',
+    '- a section ends with EVERY source that backs it (one anchored citation each), and',
+    '  with no source it does not draw from;',
+    '- a diff that adds a section repeating an already-covered theme for the same subject',
+    '  is a worse page, not a richer one.',
   ];
 }
 

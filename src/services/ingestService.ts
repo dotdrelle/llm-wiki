@@ -1045,7 +1045,7 @@ export class IngestService {
           existingFolders,
           existingTags,
           ...(locatorSection ? { locatorSection } : {}),
-          ...(provenanceModeEnabled() ? { sourcePageContract: true } : {}),
+          ...(provenanceModeEnabled() ? { sourcePageContract: true, compositionContract: true } : {}),
           ctx: buildPromptContext(this.config, { profileSection }),
         });
         const consolidationCacheKey = consolidationCacheName({
