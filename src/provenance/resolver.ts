@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { hashText } from '../utils/hash.ts';
 import { extractBodyCitations, isRawIngestedPath, isWikiPagePath } from './derive.ts';
@@ -24,8 +24,13 @@ export interface EvidenceFragment {
   anchor: string;
   hash: string;
   text: string;
-  /** Wiki pages followed to reach this fragment, in order. */
-  chain: string[];
+  /**
+   * Wiki pages followed, in order, WITH the anchor used at each hop. The
+   * anchor is what preserves section granularity: a deliverable citing
+   * `wiki/concepts/x.md#Costs` must only receive the fragments that section
+   * actually used, not the whole page's closure.
+   */
+  chain: Array<{ path: string; anchor: string | null }>;
 }
 
 export interface EvidenceResolution {
@@ -46,7 +51,7 @@ export function resolveEvidence(options: ResolveEvidenceOptions): EvidenceResolu
   const degradations = new Set<string>();
   const stack: string[] = [];
 
-  const visit = (content: string, chain: string[], depth: number): void => {
+  const visit = (content: string, chain: Array<{ path: string; anchor: string | null }>, depth: number): void => {
     for (const citation of extractBodyCitations(content)) {
       const documentPath = citation.path;
       const document = options.loadDocument(documentPath);
@@ -97,7 +102,7 @@ export function resolveEvidence(options: ResolveEvidenceOptions): EvidenceResolu
           sectionText = resolution.text;
         }
         stack.push(documentPath);
-        visit(sectionText, [...chain, documentPath], depth + 1);
+        visit(sectionText, [...chain, { path: documentPath, anchor: citation.anchor }], depth + 1);
         stack.pop();
         continue;
       }
@@ -115,7 +120,7 @@ export interface EvidenceManifestEntry {
   anchor: string;
   hash: string;
   text: string;
-  chain: string[];
+  chain: Array<{ path: string; anchor: string | null }>;
 }
 
 export interface EvidenceManifest {
@@ -139,7 +144,7 @@ export function createEvidenceManifest(
       anchor: fragment.anchor,
       hash: fragment.hash,
       text: fragment.text,
-      chain: [...fragment.chain],
+      chain: fragment.chain.map((hop) => ({ ...hop })),
     })),
   };
 }
@@ -156,11 +161,15 @@ export function manifestFragment(
   return manifest.fragments.find((fragment) => fragment.path === documentPath && fragment.anchor === anchor) ?? null;
 }
 
+export function fragmentKey(documentPath: string, anchor: string | null): string {
+  return `${documentPath}#${anchor ?? ''}`;
+}
+
 /**
- * A deliverable cites `wiki/concepts/...` (or `wiki/sources/...`) sections, but
- * a fragment's terminal `path` is `raw/ingested/...`. Index every page in the
- * fragment's chain as well as its terminal path, or an export lookup on the
- * cited path misses and silently re-reads the live file.
+ * A deliverable cites `wiki/concepts/x.md#Costs`, a fragment's terminal path is
+ * `raw/ingested/a.md`. Index each hop by `path#anchor`, NOT by path alone: two
+ * sections of the same concept can rest on different proofs, and a path-only
+ * key would hand every section the whole page's closure.
  */
 export function frozenFragmentMap(manifest: EvidenceManifest): Map<string, string> {
   const map = new Map<string, string>();
@@ -169,8 +178,8 @@ export function frozenFragmentMap(manifest: EvidenceManifest): Map<string, strin
     map.set(key, previous ? `${previous}\n\n${text}` : text);
   };
   for (const fragment of manifest.fragments) {
-    append(fragment.path, fragment.text);
-    for (const page of fragment.chain) append(page, fragment.text);
+    append(fragmentKey(fragment.path, fragment.anchor), fragment.text);
+    for (const hop of fragment.chain) append(fragmentKey(hop.path, hop.anchor), fragment.text);
   }
   return map;
 }
@@ -200,6 +209,24 @@ export async function writeEvidenceManifest(rootDir: string, manifest: EvidenceM
   await mkdir(path.dirname(target), { recursive: true });
   await writeFile(target, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
   return target;
+}
+
+/**
+ * The manifests available for a deliverable, newest-agnostic and explicit:
+ * `export --evidence-build <id>` picks one instead of the content-derived id.
+ * This is what lets a reader export "the first build" after a second exists.
+ */
+export async function listEvidenceBuilds(rootDir: string, documentRelativePath: string): Promise<string[]> {
+  const base = evidenceBuildIdFor(documentRelativePath);
+  try {
+    const entries = await readdir(path.join(rootDir, '.wiki', 'builds'), { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory() && (entry.name === base || entry.name.startsWith(`${base}-`)))
+      .map((entry) => entry.name)
+      .sort();
+  } catch {
+    return [];
+  }
 }
 
 export async function readEvidenceManifest(rootDir: string, buildId: string): Promise<EvidenceManifest | null> {

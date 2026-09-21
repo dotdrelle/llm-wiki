@@ -10,7 +10,7 @@ import { hashText } from '../utils/hash.ts';
 import { extractSourceCitations, extractSourceCitationsWithAnchors, splitMarkdownSections } from '../utils/markdown.ts';
 import { resolveInside } from '../utils/path.ts';
 import { provenanceModeEnabled } from '../provenance/mode.ts';
-import { evidenceBuildIdFor, frozenFragmentMap, readEvidenceManifest } from '../provenance/resolver.ts';
+import { evidenceBuildIdFor, fragmentKey, frozenFragmentMap, readEvidenceManifest } from '../provenance/resolver.ts';
 import type { TraceLogger } from './traceLogger.ts';
 import type { AppConfig } from '../types.ts';
 import type { LLMService } from './llmService.ts';
@@ -29,6 +29,8 @@ export interface ExportProgress {
 
 export interface ExportOptions {
   polish?: boolean;
+  /** Explicit frozen-evidence manifest to resolve against (else derived from content). */
+  evidenceBuildId?: string;
 }
 
 export interface ExportResult {
@@ -204,7 +206,11 @@ export async function expandDeliverable(
     // content being exported. A rebuild that changed the deliverable produced a
     // different manifest, so this export reads the one for the exact version it
     // prolongs — never a newer build's.
-    const manifest = await readEvidenceManifest(workspace.paths.rootDir, evidenceBuildIdFor(deliverablePath, hashText(content)));
+    const buildId = options.evidenceBuildId ?? evidenceBuildIdFor(deliverablePath, hashText(content));
+    const manifest = await readEvidenceManifest(workspace.paths.rootDir, buildId);
+    if (!manifest) {
+      await logger.warn('export:evidence-missing', { deliverable: deliverablePath, buildId, requested: Boolean(options.evidenceBuildId) });
+    }
     // Index the terminal path AND every page the chain went through, or a
     // citation to wiki/concepts/… misses the raw/ingested terminal fragment.
     if (manifest) {
@@ -358,9 +364,14 @@ export async function expandDeliverable(
     // maxSourceChars) and let it replace the chunk fragments of the same path.
     const directReads: Array<{ path: string; content: string }> = [];
     for (const cited of citedPaths) {
-      const frozen = frozenByPath.get(cited);
-      if (frozen !== undefined) {
-        directReads.push({ path: cited, content: frozen });
+      // Section granularity: only the anchors THIS section cites are served
+      // from the frozen manifest, not every fragment of the page.
+      const anchors = anchorsByPath.get(cited) ?? [];
+      const frozenParts = (wholeSourcePaths.has(cited) ? [null] : anchors)
+        .map((anchor) => frozenByPath.get(fragmentKey(cited, anchor)))
+        .filter((value): value is string => typeof value === 'string');
+      if (frozenParts.length > 0) {
+        directReads.push({ path: cited, content: frozenParts.join('\n\n') });
         continue;
       }
       let sourceAbsolute: string;

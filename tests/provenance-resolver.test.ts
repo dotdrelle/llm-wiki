@@ -30,7 +30,7 @@ describe('evidence resolver (lot 4)', () => {
     expect(degradations).toEqual([]);
 
     const chained = fragments.find((fragment) => fragment.path.endsWith('detailed.md'));
-    expect(chained?.chain).toEqual(['wiki/sources/a.md']);
+    expect(chained?.chain).toEqual([{ path: 'wiki/sources/a.md', anchor: 'Coûts' }]);
     expect(chained?.text).toContain('90 k€');
   });
 
@@ -101,12 +101,48 @@ describe('frozen fragment map (defect 3)', () => {
         anchor: 'Coûts',
         hash: 'x',
         text: 'FROZEN A-v1',
-        chain: ['wiki/concepts/produit/x.md', 'wiki/sources/a.md'],
+        chain: [
+          { path: 'wiki/concepts/produit/x.md', anchor: 'Coûts' },
+          { path: 'wiki/sources/a.md', anchor: null },
+        ],
       }],
     };
     const map = frozenFragmentMap(manifest);
-    expect(map.get('raw/ingested/a.md')).toContain('FROZEN A-v1');
-    expect(map.get('wiki/concepts/produit/x.md')).toContain('FROZEN A-v1');
-    expect(map.get('wiki/sources/a.md')).toContain('FROZEN A-v1');
+    // Keyed by path#anchor, so a section only receives the fragments it used.
+    expect(map.get('raw/ingested/a.md#Coûts')).toContain('FROZEN A-v1');
+    expect(map.get('wiki/concepts/produit/x.md#Coûts')).toContain('FROZEN A-v1');
+    expect(map.get('wiki/sources/a.md#')).toContain('FROZEN A-v1');
+  });
+});
+
+describe('two builds, two manifests, two exports (release review)', () => {
+  it('keeps both manifests and exports the first explicitly after A-v2', async () => {
+    const { hashText } = await import('../src/utils/hash.ts');
+    const { writeEvidenceManifest, evidenceBuildIdFor, listEvidenceBuilds, frozenFragmentMap, readEvidenceManifest } =
+      await import('../src/provenance/resolver.ts');
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-two-builds-'));
+    const docs = new Map(DOCS);
+
+    const content1 = '# Deliverable\n\n[src: wiki/sources/a.md#Coûts]\n';
+    const frag1 = resolveEvidence({ content: content1, loadDocument: load(docs) }).fragments;
+    const id1 = evidenceBuildIdFor('deliverables/d.md', hashText(content1));
+    await writeEvidenceManifest(root, createEvidenceManifest(id1, frag1));
+
+    // A-v2 replaces A-v1 before the second build.
+    docs.set('raw/ingested/detailed.md', '# Detailed\n\n## Coûts\n\n120 k€.\n');
+    const content2 = '# Deliverable\n\n[src: wiki/sources/a.md#Coûts] second\n';
+    const frag2 = resolveEvidence({ content: content2, loadDocument: load(docs) }).fragments;
+    const id2 = evidenceBuildIdFor('deliverables/d.md', hashText(content2));
+    await writeEvidenceManifest(root, createEvidenceManifest(id2, frag2));
+
+    expect(id1).not.toBe(id2);
+    const builds = await listEvidenceBuilds(root, 'deliverables/d.md');
+    expect([...builds].sort()).toEqual([id1, id2].sort());
+
+    // Exporting the first build still resolves A-v1 from its own manifest.
+    const first = await readEvidenceManifest(root, id1);
+    expect(frozenFragmentMap(first!).get('wiki/sources/a.md#Coûts')).toContain('90 k€');
+    const second = await readEvidenceManifest(root, id2);
+    expect(frozenFragmentMap(second!).get('wiki/sources/a.md#Coûts')).toContain('120 k€');
   });
 });

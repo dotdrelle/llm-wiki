@@ -14,6 +14,7 @@ import { HistoryService, commitHistorySafely, prepareHistorySafely } from '../se
 interface ExportOptions {
   output?: string;
   polish?: boolean;
+  evidenceBuild?: string;
   verbose?: boolean;
   debug?: boolean;
   traceFile?: string;
@@ -143,7 +144,10 @@ export default async function exportCmd(
           });
         }
       },
-      { polish: options.polish },
+      {
+        polish: options.polish,
+        ...(options.evidenceBuild ? { evidenceBuildId: options.evidenceBuild } : {}),
+      },
     );
 
     spinner?.update('Writing export…');

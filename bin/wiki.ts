@@ -320,6 +320,7 @@ async function main() {
       'Output path relative to workspace root (default: <name>.export.md)',
     )
     .option('--polish', 'Run an editorial polish pass after expansion')
+    .option('--evidence-build <id>', 'Resolve citations against a specific frozen evidence manifest (see .wiki/builds/)')
     .option('-v, --verbose', 'Print export step traces')
     .option('--debug', 'Print detailed traces')
     .option('--trace-file <path>', 'Write traces to a specific file')

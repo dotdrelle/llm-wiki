@@ -205,11 +205,15 @@ function prevalidateProposal(rootDir: string, record: ProposalRecord): ProposalP
     .filter((change) => change.status !== 'D' && /^wiki\/(concepts|sources)\//.test(change.path));
   const results: ProposalPrevalidation = [];
   let truncated = false;
+  let processed = 0;
   for (const change of candidates) {
-    if (results.length >= MAX_PREVALIDATION_FILES || Date.now() - startedAt > TIME_BUDGET_MS) {
+    // Count FILES EXAMINED, not issues found: 50 valid files must still hit the
+    // ceiling (counting issues left results.length at 0 and never bound it).
+    if (processed >= MAX_PREVALIDATION_FILES || Date.now() - startedAt > TIME_BUDGET_MS) {
       truncated = true;
       break;
     }
+    processed += 1;
     // Materialize first: a curation token that never resolves is a blocking
     // prevalidation issue, not something the merge should discover later.
     const materialized = materializeAllLocatorTokens(change.content ?? '', loadDocument);
@@ -220,7 +224,7 @@ function prevalidateProposal(rootDir: string, record: ProposalRecord): ProposalP
   }
   if (truncated) {
     results.push({
-      path: `(${candidates.length - results.length} more file(s) not prevalidated)`,
+      path: `(${candidates.length - processed} more file(s) not prevalidated)`,
       issues: [{ code: 'truncated', citation: '', message: 'prevalidation stopped at the file/time budget; the merge revalidates in full' }],
       tokens: 0,
     });
@@ -329,8 +333,20 @@ export async function handleAgentProposalRoutes(
       sendJson(res, status, data);
       return true;
     }
-    const error = String((data as { error?: unknown })?.error ?? 'request refused');
-    const body = `<main class="content"><article class="article"><h1>Request refused</h1><p class="proposal-lede">${escapeHtml(error)}</p><pre class="proposal-diff">${escapeHtml(JSON.stringify(data, null, 2))}</pre><p><a href="/agent-proposals">Back to agent proposals</a></p></article></main>`;
+    const payload = data as {
+      error?: unknown;
+      validation_incomplete?: boolean;
+      diagnostics?: Array<{ path: string; tokens?: number; issues?: Array<{ code: string; citation: string; message: string }> }>;
+    };
+    const detail = Array.isArray(payload.diagnostics) && payload.diagnostics.length > 0
+      ? `<h2>Provenance diagnostics</h2>`
+        + (payload.validation_incomplete ? '<p class="proposal-lede">Validation was incomplete (budget reached) — nothing was written.</p>' : '')
+        + `<ul class="proposal-objections">${payload.diagnostics.map((entry) =>
+            `<li class="proposal-objection proposal-objection-blocking"><span class="proposal-objection-severity">${escapeHtml(entry.path)}</span>`
+            + `${(entry.tokens ?? 0) > 0 ? `${entry.tokens} unresolved locator token(s)<br>` : ''}`
+            + `${(entry.issues ?? []).map((issue) => `${escapeHtml(issue.code)}: ${escapeHtml(issue.citation)} — ${escapeHtml(issue.message)}`).join('<br>')}</li>`).join('')}</ul>`
+      : `<pre class="proposal-diff">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+    const body = `<main class="content"><article class="article"><h1>Request refused</h1><p class="proposal-lede">${escapeHtml(String(payload.error ?? 'request refused'))}</p>${detail}<p><a href="/agent-proposals">Back to agent proposals</a></p></article></main>`;
     await sendGzippedHtml(req, res, layout('Request refused', body + proposalPageCss()), { 'content-type': 'text/html; charset=utf-8' }, status);
     return true;
   };
@@ -412,8 +428,21 @@ export async function handleAgentProposalRoutes(
         issues: Array<{ code: string; citation: string; message: string }>;
         tokens: string[];
       }> = [];
+      // The merge is exhaustive by design but still bounded: past the file/time
+      // budget the validation is INCOMPLETE and the merge is refused, never
+      // silently partial.
+      let mergeProcessed = 0;
+      let incomplete = false;
+      const mergeStartedAt = Date.now();
+      const MAX_MERGE_FILES = 200;
+      const MERGE_TIME_BUDGET_MS = 15000;
       for (const operation of operations) {
         if (operation.type === 'delete' || !/^wiki\/(concepts|sources)\//.test(operation.path)) continue;
+        if (mergeProcessed >= MAX_MERGE_FILES || Date.now() - mergeStartedAt > MERGE_TIME_BUDGET_MS) {
+          incomplete = true;
+          break;
+        }
+        mergeProcessed += 1;
         // 1) A curation run writes catalogue tokens (`#section:…`); materialize
         //    them, or the raw token would land in the wiki. 2) Then derive
         //    `sources:`. 3) Then VALIDATE the anchors — a clean closure is not
@@ -433,8 +462,8 @@ export async function handleAgentProposalRoutes(
         }
         operation.content = derived.content;
       }
-      if (diagnostics.length > 0) {
-        return fail(422, { ok: false, error: 'provenance_invalid', diagnostics });
+      if (diagnostics.length > 0 || incomplete) {
+        return fail(422, { ok: false, error: 'provenance_invalid', validation_incomplete: incomplete, diagnostics });
       }
     }
     try {
