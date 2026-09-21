@@ -49,7 +49,12 @@ The concept remains the folder; the path remains the leaf's identity. No new
 - **A build freezes its evidence.** `build` writes
   `.wiki/builds/<buildId>/evidence.json` with the exact fragment text each
   citation resolved to; `export` prefers that frozen text, so replacing A-v1 by
-  A-v2 after the build does not change the export.
+  A-v2 after the build does not change the export. The id carries the deliverable
+  path **and the content hash**, so a second build is a distinct manifest; the
+  frozen map is keyed by `path#anchor`, so a section receives only the fragments
+  it used. `export --evidence-build <id>` selects a build explicitly (the ids are
+  the directories under `.wiki/builds/`); without it the export derives the id
+  from the content it is exporting.
 
 ## Modules
 
