@@ -194,6 +194,14 @@ function formatRuntimeDuration(ms) {
   const minutes=n/60000;
   return (minutes<10?Math.max(.1,minutes).toFixed(1):Math.round(minutes))+' min';
 }
+// Subagent timestamps are ISO strings (event.ts in agentEvents.js), not epoch
+// milliseconds. new Date(Number(iso)) is a NaN date, which the inspector
+// rendered as "Invalid Date" for every role.
+function runtimeSubagentTime(value) {
+  if(value==null||value==='')return '—';
+  const date=new Date(value);
+  return Number.isNaN(date.getTime())?'—':date.toLocaleTimeString();
+}
 function fitRuntimeWorkflowGraph(){runtimeCanvasRenderer?.fit()}
 function zoomRuntimeWorkflowGraph(factor){runtimeCanvasRenderer?.zoom(factor)}
 // "Reset" also hands the view back to automatic framing: without it, a manual
@@ -235,7 +243,7 @@ function renderRuntimeWorkflowInspector() {
   const details=phase
     ? [['Status',node.status],['Tasks',node.done+' / '+node.total],['Agents',node.agents?.join(', ')||'Not reported'],['Parallelism',(node.currentParallel||0)+' active / max ×'+node.parallelism],['Tokens',formatRuntimeTokens(node.usage)]]
     : subagent
-      ? [['Status',node.status],['Started',node.startedAt?new Date(Number(node.startedAt)).toLocaleTimeString():'—'],['Finished',node.finishedAt?new Date(Number(node.finishedAt)).toLocaleTimeString():'—']]
+      ? [['Status',node.status],['Started',runtimeSubagentTime(node.startedAt)],['Finished',runtimeSubagentTime(node.finishedAt)]]
       : [['Status',node.status],['Phases',node.phaseCount||0],['Tasks',node.taskCount||0],['Agents',node.agents?.length||0],
         ...(Number.isFinite(Number(runtimeState?.concurrency?.limit))?[['Parallelism','max ×'+Number(runtimeState.concurrency.limit)+(runtimeState.concurrency.cappedByCeiling?' (ceiling)':'')]]:[]),
         ['Tokens',formatRuntimeTokens(node.usage)]];

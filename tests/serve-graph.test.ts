@@ -636,6 +636,18 @@ describe('serve graph ui', () => {
     expect(runtimeSource).toContain('renderRuntimeWorkflowCanvas()');
     expect(runtimeSource).not.toContain('d3.forceSimulation');
   });
+
+  it('renders subagent start/finish from ISO timestamps, not epoch numbers', async () => {
+    const runtimeSource = await runtimeGraphSource();
+    // The collective's subagent nodes carry ISO strings (event.ts). Parsing
+    // them with Number() produced a NaN date and "Invalid Date" in the
+    // inspector's Started/Finished rows.
+    expect(runtimeSource).toContain('function runtimeSubagentTime(value)');
+    expect(runtimeSource).toContain("['Started',runtimeSubagentTime(node.startedAt)]");
+    expect(runtimeSource).toContain("['Finished',runtimeSubagentTime(node.finishedAt)]");
+    expect(runtimeSource).not.toContain('new Date(Number(node.startedAt))');
+    expect(runtimeSource).not.toContain('new Date(Number(node.finishedAt))');
+  });
 });
 
 describe('serve command palette', () => {

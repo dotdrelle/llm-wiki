@@ -36,7 +36,10 @@ function fakeReq(method: string, urlPath: string): IncomingMessage {
 function writeProposal(rootDir: string, record: Record<string, unknown>): void {
   const dir = path.join(rootDir, '.wiki', 'agent-proposals');
   mkdirSync(dir, { recursive: true });
-  writeFileSync(path.join(dir, `${String(record.id)}.json`), JSON.stringify(record, null, 2));
+  // The manager persists under a sanitized file name (':' → '_'), so the test
+  // writes the same shape a real taskId produces.
+  const file = String(record.id).replace(/[^a-zA-Z0-9._-]/g, '_');
+  writeFileSync(path.join(dir, `${file}.json`), JSON.stringify(record, null, 2));
 }
 
 function makeDeps(rootDir: string) {
@@ -117,6 +120,59 @@ describe('agent proposal review routes', () => {
     expect(body().ok).toBe(true);
     expect(deps.workspace.applyWikiOperations).not.toHaveBeenCalled();
     expect(existsSync(path.join(rootDir, '.wiki', 'agent-proposals', 't2.json'))).toBe(false);
+  });
+
+  it('opens and merges a real taskId proposal, whose id carries ":"', async () => {
+    // A proposal id is `<runId>:<slug>`; the file is stored sanitized. Reading
+    // the id as a SAFE_ID without ':' made every real proposal a 404 — the
+    // review page opened on `{"ok":false,"error":"proposal not found"}` and no
+    // merge or reject could ever find its record.
+    const id = '21ad9866-6805-4b06-95a4-942f93ec5c64:run-80c13bad-1404-412e-9fd1-11c8aa3af8a4';
+    writeProposal(rootDir, {
+      id,
+      runId: '21ad9866-6805-4b06-95a4-942f93ec5c64',
+      workspace: 'acpi',
+      branch: 'agent/gateway-1',
+      worktreeRelativePath: '.wiki/agent-worktrees/gateway-1',
+      createdAt: '2026-09-21T14:17:55.783Z',
+      changedFiles: [{ status: 'M', path: 'wiki/concepts/produit/a.md' }],
+      changes: [{ path: 'wiki/concepts/produit/a.md', status: 'M', content: '# A\n' }],
+      diff: 'x',
+    });
+    const deps = makeDeps(rootDir);
+    const detail = fakeRes();
+    await handleAgentProposalRoutes(
+      fakeReq('GET', `/agent-proposals/${encodeURIComponent(id)}`),
+      detail.res,
+      `/agent-proposals/${id}`,
+      deps,
+    );
+    expect(deps.sendGzippedHtml).toHaveBeenCalledTimes(1);
+
+    const merge = fakeRes();
+    await handleAgentProposalRoutes(
+      fakeReq('POST', `/api/agent-proposals/${encodeURIComponent(id)}/merge`),
+      merge.res,
+      `/api/agent-proposals/${id}/merge`,
+      deps,
+    );
+    expect(merge.status()).toBe(200);
+    expect(merge.body().ok).toBe(true);
+    expect(deps.workspace.applyWikiOperations).toHaveBeenCalledTimes(1);
+    const safeFile = id.replace(/[^a-zA-Z0-9._-]/g, '_');
+    expect(existsSync(path.join(rootDir, '.wiki', 'agent-proposals', `${safeFile}.json`))).toBe(false);
+  });
+
+  it('renders an HTML not-found page for a missing proposal, never raw JSON', async () => {
+    const deps = makeDeps(rootDir);
+    const { res } = fakeRes();
+
+    await handleAgentProposalRoutes(fakeReq('GET', '/agent-proposals/gone'), res, '/agent-proposals/gone', deps);
+
+    expect(deps.sendGzippedHtml).toHaveBeenCalledTimes(1);
+    const call = (deps.sendGzippedHtml as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(String(call[2])).toContain('Proposal not found');
+    expect(call[4]).toBe(404);
   });
 
   it('refuses to merge a proposal whose changes escape wiki/', async () => {

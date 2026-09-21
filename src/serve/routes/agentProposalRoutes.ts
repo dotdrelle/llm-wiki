@@ -40,7 +40,15 @@ export type AgentProposalRoutesDeps = {
 };
 
 const PROPOSALS_DIRNAME = '.wiki/agent-proposals';
-const SAFE_ID = /^[a-zA-Z0-9._-]+$/;
+// A proposal id IS a taskId (`<runId>:<slug>`), so ':' is legitimate — refusing
+// it made every real proposal unreadable, hence unmergeable. The file on disk
+// is the id with any character outside this set replaced by '_', the same rule
+// the manager applies when it persists the record. A path separator stays
+// refused, so no id can escape the proposals directory.
+const SAFE_ID = /^[a-zA-Z0-9._:-]+$/;
+function proposalFileId(id: string): string {
+  return String(id).replace(/[^a-zA-Z0-9._-]/g, '_');
+}
 
 function proposalsDir(rootDir: string): string {
   return path.join(rootDir, PROPOSALS_DIRNAME);
@@ -83,11 +91,14 @@ async function listProposals(rootDir: string): Promise<Array<{ record: ProposalR
 }
 
 async function readProposal(rootDir: string, id: string): Promise<ProposalRecord | null> {
-  if (!SAFE_ID.test(id)) return null;
+  const value = String(id ?? '');
+  if (!SAFE_ID.test(value) || value.includes('..')) return null;
   try {
-    const raw = await readFile(path.join(proposalsDir(rootDir), `${id}.json`), 'utf8');
+    const raw = await readFile(path.join(proposalsDir(rootDir), `${proposalFileId(value)}.json`), 'utf8');
     const record = JSON.parse(raw) as ProposalRecord;
-    return record && typeof record.id === 'string' ? record : null;
+    // The file name is sanitized; confirm the STORED id is the one asked for,
+    // so two ids that sanitize to the same name cannot serve each other.
+    return record && record.id === value ? record : null;
   } catch {
     return null;
   }
@@ -115,28 +126,35 @@ function cleanupWorktree(rootDir: string, record: ProposalRecord): void {
   const branch = String(record.branch ?? '');
   const worktreeAbsolute = path.join(rootDir, relativePath);
   if (!worktreeAbsolute.startsWith(path.join(rootDir, '.wiki', 'agent-worktrees'))) return;
+  // The workspace bind mount can carry a different owner than this process
+  // (Docker Desktop / WSL2), and git refuses a repo it considers foreign. The
+  // engine's HistoryService already declares the workspace safe on every call;
+  // the same declaration is required here or a merge/reject cleanup dies on
+  // "dubious ownership".
+  const safe = ['-c', `safe.directory=${rootDir}`];
   try {
-    execFileSync('git', ['worktree', 'remove', '--force', worktreeAbsolute], { cwd: rootDir, stdio: 'ignore' });
+    execFileSync('git', [...safe, 'worktree', 'remove', '--force', worktreeAbsolute], { cwd: rootDir, stdio: 'ignore' });
   } catch {
     // The worktree may already be gone (hand cleanup, crashed run).
   }
   if (/^agent\/[a-zA-Z0-9._-]+$/.test(branch)) {
     try {
-      execFileSync('git', ['branch', '-D', branch], { cwd: rootDir, stdio: 'ignore' });
+      execFileSync('git', [...safe, 'branch', '-D', branch], { cwd: rootDir, stdio: 'ignore' });
     } catch {
       // A merged or never-pushed branch is not an error here.
     }
   }
   try {
-    execFileSync('git', ['worktree', 'prune'], { cwd: rootDir, stdio: 'ignore' });
+    execFileSync('git', [...safe, 'worktree', 'prune'], { cwd: rootDir, stdio: 'ignore' });
   } catch {
     // Pruning is bookkeeping, never the operation itself.
   }
 }
 
 async function removeProposalFile(rootDir: string, id: string): Promise<void> {
-  if (!SAFE_ID.test(id)) return;
-  await unlink(path.join(proposalsDir(rootDir), `${id}.json`)).catch(() => {});
+  const value = String(id ?? '');
+  if (!SAFE_ID.test(value)) return;
+  await unlink(path.join(proposalsDir(rootDir), `${proposalFileId(value)}.json`)).catch(() => {});
 }
 
 function renderProposalList(records: Array<{ record: ProposalRecord }>): string {
@@ -212,8 +230,16 @@ export async function handleAgentProposalRoutes(
   if (detailMatch && req.method === 'GET') {
     const record = await readProposal(rootDir, detailMatch[1] ?? '');
     if (!record) {
-      sendJson(res, 404, { ok: false, error: 'proposal not found' });
-      return true;
+      // This is a BROWSER route: a bare JSON 404 would paint `{"ok":false,…}`
+      // across the page (a merged or rejected proposal, or a stale link). An
+      // API error belongs on the API routes, not in the page the reader opens.
+      return sendGzippedHtml(
+        req,
+        res,
+        layout('Proposal not found', `<main class="content"><article class="article"><h1>Proposal not found</h1><p class="proposal-lede">This proposal no longer exists — it was merged or rejected, or the link is stale. <a href="/agent-proposals">Back to agent proposals</a>.</p></article></main>` + proposalPageCss()),
+        { 'content-type': 'text/html; charset=utf-8' },
+        404,
+      ).then(() => true);
     }
     return sendGzippedHtml(
       req,
