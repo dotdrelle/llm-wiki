@@ -156,16 +156,38 @@ export function manifestFragment(
   return manifest.fragments.find((fragment) => fragment.path === documentPath && fragment.anchor === anchor) ?? null;
 }
 
+/**
+ * A deliverable cites `wiki/concepts/...` (or `wiki/sources/...`) sections, but
+ * a fragment's terminal `path` is `raw/ingested/...`. Index every page in the
+ * fragment's chain as well as its terminal path, or an export lookup on the
+ * cited path misses and silently re-reads the live file.
+ */
+export function frozenFragmentMap(manifest: EvidenceManifest): Map<string, string> {
+  const map = new Map<string, string>();
+  const append = (key: string, text: string): void => {
+    const previous = map.get(key);
+    map.set(key, previous ? `${previous}\n\n${text}` : text);
+  };
+  for (const fragment of manifest.fragments) {
+    append(fragment.path, fragment.text);
+    for (const page of fragment.chain) append(page, fragment.text);
+  }
+  return map;
+}
+
 const SAFE_BUILD_ID = /^[a-zA-Z0-9._-]+$/;
 
 /**
- * The manifest id of a deliverable: its workspace-relative path, sanitized.
- * Build and export derive the same id from the same path, so no index is
- * needed to find a build's manifest.
+ * The manifest id of a deliverable: its sanitized workspace-relative path,
+ * suffixed with the content hash when known. The hash is what makes a rebuild
+ * a DIFFERENT manifest: without it a second build would overwrite the first,
+ * and the first build's export would lose A-v1. Build writes with the hash of
+ * the content it wrote; export derives the same id from the content it reads.
  */
-export function evidenceBuildIdFor(documentRelativePath: string): string {
-  const value = String(documentRelativePath).replace(/\\/g, '/').replace(/[^a-zA-Z0-9._-]/g, '_');
-  return value || 'deliverable';
+export function evidenceBuildIdFor(documentRelativePath: string, contentHash?: string | null): string {
+  const value = String(documentRelativePath).replace(/\\/g, '/').replace(/[^a-zA-Z0-9._-]/g, '_') || 'deliverable';
+  const suffix = contentHash ? `-${String(contentHash).slice(0, 12)}` : '';
+  return `${value}${suffix}`;
 }
 
 export function evidenceManifestPath(rootDir: string, buildId: string): string {

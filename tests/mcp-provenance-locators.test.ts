@@ -93,6 +93,29 @@ describe('wiki_list_provenance_locators MCP tool', () => {
         arguments: { path: 'wiki/concepts/demo/a.md' },
       });
       expect(refused.isError).toBe(true);
+
+      // The catalogue is queryable and paged, not paged blind.
+      const filtered = textPayload(
+        await client.callTool({
+          name: 'wiki_list_provenance_locators',
+          arguments: { path: 'raw/ingested/doc.md', query: 'Coûts' },
+        }),
+      );
+      expect(filtered.total).toBe(1);
+      const none = textPayload(
+        await client.callTool({
+          name: 'wiki_list_provenance_locators',
+          arguments: { path: 'raw/ingested/doc.md', query: 'Absent' },
+        }),
+      );
+      expect(none.total).toBe(0);
+      const paged = textPayload(
+        await client.callTool({
+          name: 'wiki_list_provenance_locators',
+          arguments: { path: 'raw/ingested/doc.md', limit: 1 },
+        }),
+      );
+      expect((paged.locators as unknown[]).length).toBe(1);
     } finally {
       await client.close();
       await server.close();

@@ -74,3 +74,16 @@ describe('provenance locators (lot 1)', () => {
     expect(truncated).toBe(true);
   });
 });
+
+describe('fragment anchors (defect 2)', () => {
+  it('resolves a synthetic #L…@sha256 anchor it produced', () => {
+    const doc = 'Un document sans titre, juste un paragraphe.\n\nEt un second.\n';
+    const { locators } = buildLocatorCatalogue(doc);
+    const fragment = locators.find((entry) => entry.kind === 'fragment');
+    const materialized = materializeLocator(doc, fragment!.token);
+    expect(materialized?.anchor).toMatch(/@sha256=/);
+    expect(resolveAnchor(doc, materialized!.anchor).status).toBe('resolved');
+    // A hash that does not match the recomputed fragment is missing.
+    expect(resolveAnchor(doc, materialized!.anchor.replace(/=.*/, '=0'.repeat(64))).status).toBe('missing');
+  });
+});

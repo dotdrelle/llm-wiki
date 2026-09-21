@@ -976,7 +976,9 @@ export class BuildService {
       }
     };
     const { fragments, degradations } = resolveEvidence({ content: rendered, loadDocument });
-    const buildId = evidenceBuildIdFor(template.outputRelativePath);
+    // Key the manifest by the content hash so a later rebuild is a DIFFERENT
+    // manifest and cannot overwrite the one this content's export will read.
+    const buildId = evidenceBuildIdFor(template.outputRelativePath, hashText(rendered));
     await writeEvidenceManifest(rootDir, createEvidenceManifest(buildId, fragments));
     if (this.logger) {
       const data = { template: template.relativePath, buildId, fragments: fragments.length };

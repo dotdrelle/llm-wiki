@@ -79,3 +79,34 @@ describe('evidence manifest storage (lot 4)', () => {
     expect(evidenceBuildIdFor('deliverables/architecture/out.md')).toBe(buildId);
   });
 });
+
+describe('manifest build ids (defect 3)', () => {
+  it('separates two builds of the same deliverable by content hash', () => {
+    const a = evidenceBuildIdFor('deliverables/x.md', 'a'.repeat(64));
+    const b = evidenceBuildIdFor('deliverables/x.md', 'b'.repeat(64));
+    expect(a).not.toBe(b);
+    expect(a.startsWith(evidenceBuildIdFor('deliverables/x.md'))).toBe(true);
+  });
+});
+
+describe('frozen fragment map (defect 3)', () => {
+  it('keys a fragment by every page in its chain, not only the terminal path', async () => {
+    const { frozenFragmentMap } = await import('../src/provenance/resolver.ts');
+    const manifest = {
+      schemaVersion: 1 as const,
+      buildId: 'b',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      fragments: [{
+        path: 'raw/ingested/a.md',
+        anchor: 'Coûts',
+        hash: 'x',
+        text: 'FROZEN A-v1',
+        chain: ['wiki/concepts/produit/x.md', 'wiki/sources/a.md'],
+      }],
+    };
+    const map = frozenFragmentMap(manifest);
+    expect(map.get('raw/ingested/a.md')).toContain('FROZEN A-v1');
+    expect(map.get('wiki/concepts/produit/x.md')).toContain('FROZEN A-v1');
+    expect(map.get('wiki/sources/a.md')).toContain('FROZEN A-v1');
+  });
+});

@@ -265,6 +265,10 @@ describe('agent proposal review routes', () => {
   it('recomputes sources: on merge, dropping a declared source the body never reaches', async () => {
     process.env.WIKI_PROVENANCE_MODE = '1';
     try {
+      // The cited archive must exist for the anchor to resolve — the merge now
+      // validates anchors, not just the closure.
+      mkdirSync(path.join(rootDir, 'raw', 'ingested'), { recursive: true });
+      writeFileSync(path.join(rootDir, 'raw', 'ingested', 'x.md'), '# X\n\n## Coûts\n\nA.\n');
       writeProposal(rootDir, {
         id: 't-derive',
         workspace: 'demo',
@@ -284,6 +288,35 @@ describe('agent proposal review routes', () => {
       const applied = (deps.workspace.applyWikiOperations as ReturnType<typeof vi.fn>).mock.calls[0][0];
       expect(applied[0].content).toContain('raw/ingested/x.md');
       expect(applied[0].content).not.toContain('phantom.md');
+    } finally {
+      delete process.env.WIKI_PROVENANCE_MODE;
+    }
+  });
+
+  it('materializes a catalogue token on merge instead of writing it raw', async () => {
+    process.env.WIKI_PROVENANCE_MODE = '1';
+    try {
+      mkdirSync(path.join(rootDir, 'raw', 'ingested'), { recursive: true });
+      writeFileSync(path.join(rootDir, 'raw', 'ingested', 'x.md'), '# X\n\n## Coûts\n\nA.\n');
+      writeProposal(rootDir, {
+        id: 't-token',
+        workspace: 'demo',
+        branch: 'agent/gateway-12',
+        worktreeRelativePath: '.wiki/agent-worktrees/gateway-12',
+        createdAt: '2026-09-09T10:00:00.000Z',
+        changedFiles: [{ status: 'M', path: 'wiki/concepts/demo/a.md' }],
+        changes: [{ path: 'wiki/concepts/demo/a.md', status: 'M', content: '---\ntype: product\nsources: []\n---\n\n# A\n\n[src: raw/ingested/x.md#section:X > Coûts]\n' }],
+        diff: 'x',
+      });
+      const deps = makeDeps(rootDir);
+      const { res, body } = fakeRes();
+
+      await handleAgentProposalRoutes(fakeReq('POST', '/api/agent-proposals/t-token/merge'), res, '/api/agent-proposals/t-token/merge', deps);
+
+      expect(body().ok).toBe(true);
+      const applied = (deps.workspace.applyWikiOperations as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(applied[0].content).toContain('[src: raw/ingested/x.md#X > Coûts]');
+      expect(applied[0].content).not.toContain('section:');
     } finally {
       delete process.env.WIKI_PROVENANCE_MODE;
     }

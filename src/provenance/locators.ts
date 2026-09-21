@@ -269,12 +269,37 @@ export function materializeLocator(
   return null;
 }
 
+const FRAGMENT_ANCHOR = /^L(\d+)-(\d+)@sha256=([0-9a-f]{64})$/;
+
 /**
- * Read-side resolution. A single-component anchor matches a heading TEXT and is
- * resolved only when unique; a multi-component anchor matches a full path. An
- * ambiguous or missing anchor is reported, never silently widened.
+ * Resolve a synthetic fragment anchor (`L42-L57@sha256=…`) by recomputing the
+ * document's fragments with the SAME rule that materialized it, and matching
+ * the address. A fragment that cannot be recomputed identically is missing —
+ * never silently widened.
+ */
+function resolveFragmentAnchor(markdown: string, anchor: string): AnchorResolution {
+  const match = FRAGMENT_ANCHOR.exec(anchor.trim());
+  if (!match) return { status: 'missing' };
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  const { body, bodyStartLine } = splitFrontmatter(markdown);
+  const fragment = splitFragments(bodyStartLine, body, LOCATOR_DEFAULT_MAX_FRAGMENT_CHARS)
+    .find((entry) => entry.startLine === start && entry.endLine === end);
+  if (!fragment) return { status: 'missing' };
+  if (hashText(fragment.text) !== match[3]) return { status: 'missing' };
+  return { status: 'resolved', text: fragment.text, headingPath: [] };
+}
+
+/**
+ * Read-side resolution. A synthetic fragment (`L…@sha256=…`) is recomputed; a
+ * single-component anchor matches a heading TEXT and is resolved only when
+ * unique; a multi-component anchor matches a full path. An ambiguous or missing
+ * anchor is reported, never silently widened.
  */
 export function resolveAnchor(markdown: string, anchor: string): AnchorResolution {
+  if (FRAGMENT_ANCHOR.test(String(anchor ?? '').trim())) {
+    return resolveFragmentAnchor(markdown, anchor);
+  }
   const parts = parseHeadingPath(anchor);
   if (parts.length === 0) return { status: 'missing' };
   const { sections } = splitMarkdownSections(markdown);

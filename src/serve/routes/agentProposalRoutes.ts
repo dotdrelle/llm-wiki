@@ -10,6 +10,7 @@ import { applyOkfFrontmatter } from '../../okf/frontmatter.ts';
 import { provenanceModeEnabled } from '../../provenance/mode.ts';
 import { applyDerivedSources } from '../../provenance/write.ts';
 import { validateAnchoredCitations } from '../../provenance/validate.ts';
+import { materializeAllLocatorTokens } from '../../provenance/promptLocators.ts';
 import type { WorkspaceService } from '../../services/workspaceService.ts';
 import { layout } from '../html/wikiHtml.ts';
 
@@ -172,7 +173,11 @@ function renderProposalList(records: Array<{ record: ProposalRecord }>): string 
   return `<main class="content"><article class="article"><h1>Agent proposals</h1><p class="proposal-lede">Each proposal is a git branch an agent edited. Merging writes the changes into the wiki and commits them; rejecting discards the branch. Nothing else touches the workspace.</p><ul class="proposal-list">${items}</ul></article></main>`;
 }
 
-type ProposalPrevalidation = Array<{ path: string; issues: Array<{ code: string; citation: string; message: string }> }>;
+type ProposalPrevalidation = Array<{
+  path: string;
+  issues: Array<{ code: string; citation: string; message: string }>;
+  tokens: number;
+}>;
 
 /**
  * Prevalidate a proposal at display time, in provenance mode only: the human
@@ -191,10 +196,36 @@ function prevalidateProposal(rootDir: string, record: ProposalRecord): ProposalP
       return null;
     }
   };
-  return record.changes
-    .filter((change) => change.status !== 'D' && /^wiki\/(concepts|sources)\//.test(change.path))
-    .map((change) => ({ path: change.path, issues: validateAnchoredCitations(change.content ?? '', loadDocument) }))
-    .filter((entry) => entry.issues.length > 0);
+  // Bounded: a huge proposal must not stall the review page. Past the cap the
+  // prevalidation is announced as PARTIAL rather than silently incomplete.
+  const MAX_PREVALIDATION_FILES = 50;
+  const startedAt = Date.now();
+  const TIME_BUDGET_MS = 5000;
+  const candidates = record.changes
+    .filter((change) => change.status !== 'D' && /^wiki\/(concepts|sources)\//.test(change.path));
+  const results: ProposalPrevalidation = [];
+  let truncated = false;
+  for (const change of candidates) {
+    if (results.length >= MAX_PREVALIDATION_FILES || Date.now() - startedAt > TIME_BUDGET_MS) {
+      truncated = true;
+      break;
+    }
+    // Materialize first: a curation token that never resolves is a blocking
+    // prevalidation issue, not something the merge should discover later.
+    const materialized = materializeAllLocatorTokens(change.content ?? '', loadDocument);
+    const issues = validateAnchoredCitations(materialized.content, loadDocument);
+    if (issues.length > 0 || materialized.unresolved.length > 0) {
+      results.push({ path: change.path, issues, tokens: materialized.unresolved.length });
+    }
+  }
+  if (truncated) {
+    results.push({
+      path: `(${candidates.length - results.length} more file(s) not prevalidated)`,
+      issues: [{ code: 'truncated', citation: '', message: 'prevalidation stopped at the file/time budget; the merge revalidates in full' }],
+      tokens: 0,
+    });
+  }
+  return results;
 }
 
 function renderProposalDetail(record: ProposalRecord, prevalidation: ProposalPrevalidation = []): string {
@@ -203,7 +234,7 @@ function renderProposalDetail(record: ProposalRecord, prevalidation: ProposalPre
     .join('\n');
   const prevalidationHtml = prevalidation.length
     ? `<h2>Provenance prevalidation</h2><ul class="proposal-objections">${prevalidation
-        .map((entry) => `<li class="proposal-objection proposal-objection-blocking"><span class="proposal-objection-severity">${escapeHtml(entry.path)}</span>${entry.issues
+        .map((entry) => `<li class="proposal-objection proposal-objection-blocking"><span class="proposal-objection-severity">${escapeHtml(entry.path)}</span>${entry.tokens > 0 ? `${entry.tokens} unresolved locator token(s)<br>` : ''}${entry.issues
           .map((issue) => `${escapeHtml(issue.code)}: ${escapeHtml(issue.citation)} — ${escapeHtml(issue.message)}`)
           .join('<br>')}</li>`)
         .join('\n')}</ul>`
@@ -217,7 +248,7 @@ function renderProposalDetail(record: ProposalRecord, prevalidation: ProposalPre
         .join('\n')}</ul>`
     : '';
   const diff = escapeHtml(record.diff || '(no diff)');
-  const actions = `<form class="proposal-actions" method="post" action="/api/agent-proposals/${encodeURIComponent(record.id)}/merge"><button class="action-button" type="submit">Merge into the wiki</button></form><form class="proposal-actions" method="post" action="/api/agent-proposals/${encodeURIComponent(record.id)}/reject"><button class="action-link" type="submit">Reject &amp; discard the branch</button></form>`;
+  const actions = `<form class="proposal-actions" method="post" action="/agent-proposals/${encodeURIComponent(record.id)}/merge"><button class="action-button" type="submit">Merge into the wiki</button></form><form class="proposal-actions" method="post" action="/agent-proposals/${encodeURIComponent(record.id)}/reject"><button class="action-link" type="submit">Reject &amp; discard the branch</button></form>`;
   return `<main class="content"><article class="article"><h1>Proposal ${escapeHtml(record.id)}</h1><p class="proposal-lede">${escapeHtml(record.createdAt ?? '')} · branch ${escapeHtml(record.branch)} · workspace ${escapeHtml(record.workspace)}</p>${actions}${justification}${objections}${prevalidationHtml}<h2>Changed files</h2><ul class="proposal-files">${files}</ul><h2>Diff</h2><pre class="proposal-diff">${diff}</pre>${actions}</article></main>`;
 }
 
@@ -285,9 +316,33 @@ export async function handleAgentProposalRoutes(
   }
 
   const apiMatch = /^\/api\/agent-proposals\/([^/]+)(\/(merge|reject))?$/.exec(urlPath);
-  if (!apiMatch && urlPath !== '/api/agent-proposals') return false;
-  const id = apiMatch?.[1] ?? '';
-  const action = apiMatch?.[2]?.replace(/^\//, '') ?? '';
+  // The review page's forms post to the PAGE route, not the JSON API: a 409/422
+  // must render as HTML in the browser, never as raw JSON.
+  const pageAction = /^\/agent-proposals\/([^/]+)\/(merge|reject)$/.exec(urlPath);
+  if (!apiMatch && !pageAction && urlPath !== '/api/agent-proposals') return false;
+  const id = apiMatch?.[1] ?? pageAction?.[1] ?? '';
+  const action = apiMatch?.[2]?.replace(/^\//, '') ?? pageAction?.[2] ?? '';
+
+  const wantsHtml = Boolean(pageAction) && String(req.headers?.accept ?? '').includes('text/html');
+  const fail = async (status: number, data: unknown): Promise<boolean> => {
+    if (!wantsHtml) {
+      sendJson(res, status, data);
+      return true;
+    }
+    const error = String((data as { error?: unknown })?.error ?? 'request refused');
+    const body = `<main class="content"><article class="article"><h1>Request refused</h1><p class="proposal-lede">${escapeHtml(error)}</p><pre class="proposal-diff">${escapeHtml(JSON.stringify(data, null, 2))}</pre><p><a href="/agent-proposals">Back to agent proposals</a></p></article></main>`;
+    await sendGzippedHtml(req, res, layout('Request refused', body + proposalPageCss()), { 'content-type': 'text/html; charset=utf-8' }, status);
+    return true;
+  };
+  const succeed = async (data: unknown): Promise<boolean> => {
+    if (!wantsHtml) {
+      sendJson(res, 200, data);
+      return true;
+    }
+    res.writeHead(303, { location: '/agent-proposals' });
+    res.end('');
+    return true;
+  };
 
   if (!id) {
     const records = await listProposals(rootDir);
@@ -305,13 +360,11 @@ export async function handleAgentProposalRoutes(
 
   if (action === 'merge' && req.method === 'POST') {
     if (await isRunActive?.()) {
-      sendJson(res, 409, { ok: false, error: 'a run is active — try again once it finishes' });
-      return true;
+      return fail(409, { ok: false, error: 'a run is active — try again once it finishes' });
     }
     const record = await readProposal(rootDir, id);
     if (!record) {
-      sendJson(res, 404, { ok: false, error: 'proposal not found' });
-      return true;
+      return fail(404, { ok: false, error: 'proposal not found' });
     }
     // The merge IS the approval, and it is what OKF v0.2 records: every
     // merged page gains a `verified` decision and moves to `stable` —
@@ -333,8 +386,7 @@ export async function handleAgentProposalRoutes(
         };
       });
     if (operations.length === 0) {
-      sendJson(res, 400, { ok: false, error: 'the proposal carries no mergeable wiki change' });
-      return true;
+      return fail(400, { ok: false, error: 'the proposal carries no mergeable wiki change' });
     }
 
     // Provenance mode: a curation merge is a writer like any other. Its pages
@@ -353,19 +405,36 @@ export async function handleAgentProposalRoutes(
           return null;
         }
       };
-      const diagnostics: Array<{ path: string; unresolved: string[]; cycles: string[][] }> = [];
+      const diagnostics: Array<{
+        path: string;
+        unresolved: string[];
+        cycles: string[][];
+        issues: Array<{ code: string; citation: string; message: string }>;
+        tokens: string[];
+      }> = [];
       for (const operation of operations) {
         if (operation.type === 'delete' || !/^wiki\/(concepts|sources)\//.test(operation.path)) continue;
-        const derived = applyDerivedSources(operation.content, { resolvePage });
-        if (!derived.clean) {
-          diagnostics.push({ path: operation.path, unresolved: derived.unresolved, cycles: derived.cycles });
+        // 1) A curation run writes catalogue tokens (`#section:…`); materialize
+        //    them, or the raw token would land in the wiki. 2) Then derive
+        //    `sources:`. 3) Then VALIDATE the anchors — a clean closure is not
+        //    proof the anchors resolve.
+        const materialized = materializeAllLocatorTokens(operation.content, resolvePage);
+        const derived = applyDerivedSources(materialized.content, { resolvePage });
+        const issues = validateAnchoredCitations(derived.content, resolvePage);
+        if (!derived.clean || issues.length > 0 || materialized.unresolved.length > 0) {
+          diagnostics.push({
+            path: operation.path,
+            unresolved: derived.unresolved,
+            cycles: derived.cycles,
+            issues,
+            tokens: materialized.unresolved,
+          });
           continue;
         }
         operation.content = derived.content;
       }
       if (diagnostics.length > 0) {
-        sendJson(res, 422, { ok: false, error: 'provenance_invalid', diagnostics });
-        return true;
+        return fail(422, { ok: false, error: 'provenance_invalid', diagnostics });
       }
     }
     try {
@@ -378,27 +447,24 @@ export async function handleAgentProposalRoutes(
       });
       cleanupWorktree(rootDir, record);
       await removeProposalFile(rootDir, id);
-      sendJson(res, 200, { ok: true, merged: operations.length, files: operations.map((operation) => operation.path) });
+      await succeed({ ok: true, merged: operations.length, files: operations.map((operation) => operation.path) });
     } catch (error) {
-      sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+      await fail(500, { ok: false, error: error instanceof Error ? error.message : String(error) });
     }
     return true;
   }
 
   if (action === 'reject' && req.method === 'POST') {
     if (await isRunActive?.()) {
-      sendJson(res, 409, { ok: false, error: 'a run is active — try again once it finishes' });
-      return true;
+      return fail(409, { ok: false, error: 'a run is active — try again once it finishes' });
     }
     const record = await readProposal(rootDir, id);
     if (!record) {
-      sendJson(res, 404, { ok: false, error: 'proposal not found' });
-      return true;
+      return fail(404, { ok: false, error: 'proposal not found' });
     }
     cleanupWorktree(rootDir, record);
     await removeProposalFile(rootDir, id);
-    sendJson(res, 200, { ok: true, rejected: id });
-    return true;
+    return succeed({ ok: true, rejected: id });
   }
 
   sendJson(res, 404, { ok: false, error: 'not found' });

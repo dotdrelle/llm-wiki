@@ -33,6 +33,37 @@ export interface MaterializeResult {
 const TOKEN_PATTERN = /\[src:\s*([^\]#\s]+)#((?:section|fragment):[^\]]+)\]/g;
 
 /**
+ * Materialize catalogue tokens for ANY cited document, using a resolver the
+ * caller provides. This is what a writer that is not the ingest — a curation
+ * merge, `wiki_write_page` — must call, or the raw `#section:…` token would be
+ * written into the wiki. Token-free citations are left untouched.
+ */
+export function materializeAllLocatorTokens(
+  content: string,
+  loadDocument: (documentPath: string) => string | null,
+): MaterializeResult {
+  const cache = new Map<string, string | null>();
+  const unresolved: string[] = [];
+  let materialized = 0;
+  const next = String(content ?? '').replace(TOKEN_PATTERN, (match, path: string, token: string) => {
+    if (!cache.has(path)) cache.set(path, loadDocument(path));
+    const document = cache.get(path) ?? null;
+    if (document === null) {
+      unresolved.push(token);
+      return match;
+    }
+    const address = materializeLocator(document, token);
+    if (!address) {
+      unresolved.push(token);
+      return match;
+    }
+    materialized += 1;
+    return `[src: ${path}#${address.anchor}]`;
+  });
+  return { content: next, materialized, unresolved };
+}
+
+/**
  * Replace `#section:…` / `#fragment:…` tokens with their terminal address, but
  * only for the document being ingested. Any other citation is left untouched,
  * so a legacy citation is never rewritten here.
