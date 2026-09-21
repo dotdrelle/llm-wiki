@@ -8,6 +8,8 @@ import { reasoningAwareOutputCap } from '../config/engineCapabilities.ts';
 import { pathExists } from '../utils/fs.ts';
 import { extractSourceCitations, extractSourceCitationsWithAnchors, splitMarkdownSections } from '../utils/markdown.ts';
 import { resolveInside } from '../utils/path.ts';
+import { provenanceModeEnabled } from '../provenance/mode.ts';
+import { evidenceBuildIdFor, readEvidenceManifest } from '../provenance/resolver.ts';
 import type { TraceLogger } from './traceLogger.ts';
 import type { AppConfig } from '../types.ts';
 import type { LLMService } from './llmService.ts';
@@ -193,6 +195,20 @@ export async function expandDeliverable(
   const promptCtx = buildPromptContext(config, { profileSection });
   const warnings: string[] = [];
 
+  // Provenance mode: the build froze the exact fragments it used. Prefer that
+  // text, so replacing A-v1 by A-v2 after the build does not change the export.
+  const frozenByPath = new Map<string, string>();
+  if (provenanceModeEnabled()) {
+    const manifest = await readEvidenceManifest(workspace.paths.rootDir, evidenceBuildIdFor(deliverablePath));
+    for (const fragment of manifest?.fragments ?? []) {
+      const previous = frozenByPath.get(fragment.path);
+      frozenByPath.set(fragment.path, previous ? `${previous}\n\n${fragment.text}` : fragment.text);
+    }
+    if (frozenByPath.size > 0) {
+      await logger.info('export:evidence-manifest', { deliverable: deliverablePath, paths: [...frozenByPath.keys()] });
+    }
+  }
+
   const document = splitMarkdownSections(content);
   const sections: ExportSection[] = [
     ...(document.preamble
@@ -336,6 +352,11 @@ export async function expandDeliverable(
     // maxSourceChars) and let it replace the chunk fragments of the same path.
     const directReads: Array<{ path: string; content: string }> = [];
     for (const cited of citedPaths) {
+      const frozen = frozenByPath.get(cited);
+      if (frozen !== undefined) {
+        directReads.push({ path: cited, content: frozen });
+        continue;
+      }
       let sourceAbsolute: string;
       try {
         sourceAbsolute = resolveInside(workspace.paths.rootDir, cited);

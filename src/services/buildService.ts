@@ -1,6 +1,15 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
+import { resolveInside } from '../utils/path.ts';
+import { provenanceModeEnabled } from '../provenance/mode.ts';
+import {
+  createEvidenceManifest,
+  evidenceBuildIdFor,
+  resolveEvidence,
+  writeEvidenceManifest,
+} from '../provenance/resolver.ts';
 import { deliverableResponseSchema } from '../config/schema.ts';
 import {
   buildDeliverablePrompt,
@@ -953,6 +962,32 @@ export class BuildService {
     }
   }
 
+  private async writeEvidenceManifestFor(
+    template: TemplateDocument,
+    rendered: string,
+  ): Promise<void> {
+    const rootDir = this.workspace.paths.rootDir;
+    const loadDocument = (documentPath: string): string | null => {
+      try {
+        const absolute = resolveInside(rootDir, documentPath);
+        return existsSync(absolute) ? readFileSync(absolute, 'utf8') : null;
+      } catch {
+        return null;
+      }
+    };
+    const { fragments, degradations } = resolveEvidence({ content: rendered, loadDocument });
+    const buildId = evidenceBuildIdFor(template.outputRelativePath);
+    await writeEvidenceManifest(rootDir, createEvidenceManifest(buildId, fragments));
+    if (this.logger) {
+      const data = { template: template.relativePath, buildId, fragments: fragments.length };
+      if (degradations.length > 0) {
+        await this.logger.warn('build:evidence-degraded', { ...data, degradations });
+      } else {
+        await this.logger.info('build:evidence-manifest', data);
+      }
+    }
+  }
+
   private async logBuildContextResolution(
     template: TemplateDocument,
     resolution: TemplateBuildContextResolution,
@@ -1166,6 +1201,12 @@ export class BuildService {
         }
 
         await this.reportMissingCitations(template.relativePath, rendered);
+
+        // Provenance mode: freeze the exact fragments this build used, so a
+        // later export resolves A-v1 even after the archive became A-v2.
+        if (provenanceModeEnabled()) {
+          await this.writeEvidenceManifestFor(template, rendered);
+        }
 
         stateUpdates[template.relativePath] = {
           templateHash,

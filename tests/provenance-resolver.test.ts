@@ -1,5 +1,15 @@
+import { mkdtemp } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createEvidenceManifest, manifestFragment, resolveEvidence } from '../src/provenance/resolver.ts';
+import {
+  createEvidenceManifest,
+  evidenceBuildIdFor,
+  manifestFragment,
+  readEvidenceManifest,
+  resolveEvidence,
+  writeEvidenceManifest,
+} from '../src/provenance/resolver.ts';
 
 const DOCS = new Map<string, string>([
   ['wiki/sources/a.md', '# A\n\n## Coûts\n\n[src: raw/ingested/detailed.md#Coûts]\n'],
@@ -51,5 +61,21 @@ describe('evidence resolver (lot 4)', () => {
     expect(second.fragments[0].text).toContain('120 k€');
     // The first build still answers with A-v1.
     expect(manifestFragment(manifest, 'raw/ingested/detailed.md', 'Coûts')?.text).toContain('90 k€');
+  });
+});
+
+describe('evidence manifest storage (lot 4)', () => {
+  it('writes and reads a manifest under .wiki/builds/<id>', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-manifest-'));
+    const content = '# Leaf\n\n[src: raw/ingested/detailed.md#Coûts]\n';
+    const { fragments } = resolveEvidence({ content, loadDocument: load(DOCS) });
+    const buildId = evidenceBuildIdFor('deliverables/architecture/out.md');
+    const target = await writeEvidenceManifest(root, createEvidenceManifest(buildId, fragments));
+
+    expect(target).toContain(path.join('.wiki', 'builds'));
+    const read = await readEvidenceManifest(root, buildId);
+    expect(read?.fragments).toHaveLength(1);
+    expect(read?.fragments[0].text).toContain('90 k€');
+    expect(evidenceBuildIdFor('deliverables/architecture/out.md')).toBe(buildId);
   });
 });

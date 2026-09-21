@@ -158,6 +158,16 @@ export function manifestFragment(
 
 const SAFE_BUILD_ID = /^[a-zA-Z0-9._-]+$/;
 
+/**
+ * The manifest id of a deliverable: its workspace-relative path, sanitized.
+ * Build and export derive the same id from the same path, so no index is
+ * needed to find a build's manifest.
+ */
+export function evidenceBuildIdFor(documentRelativePath: string): string {
+  const value = String(documentRelativePath).replace(/\\/g, '/').replace(/[^a-zA-Z0-9._-]/g, '_');
+  return value || 'deliverable';
+}
+
 export function evidenceManifestPath(rootDir: string, buildId: string): string {
   if (!SAFE_BUILD_ID.test(buildId)) throw new Error(`invalid build id: ${JSON.stringify(buildId)}`);
   return path.join(rootDir, '.wiki', 'builds', buildId, 'evidence.json');
