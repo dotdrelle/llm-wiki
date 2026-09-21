@@ -108,6 +108,8 @@ export function buildConsolidationPrompt(args: {
   indexContent: string;
   existingFolders: string[];
   existingTags: string[];
+  /** Rendered locator catalogue, present only in provenance mode. */
+  locatorSection?: string;
   ctx: PromptContext;
 }): { system: string; user: string } {
   return {
@@ -182,6 +184,7 @@ function buildConsolidationUser(args: {
   indexContent: string;
   existingFolders: string[];
   existingTags: string[];
+  locatorSection?: string;
 }): string {
   return [
       '# Source document',
@@ -251,6 +254,7 @@ function buildConsolidationUser(args: {
         ? `Reuse one of these when it matches, rather than inventing a near-synonym: ${args.existingTags.join(', ')}.`
         : '(none yet)',
       '',
+      ...(args.locatorSection ? [args.locatorSection, ''] : []),
       '# Current wiki index',
       args.indexContent,
     ]

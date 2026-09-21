@@ -37,6 +37,7 @@ import {
 } from '../utils/markdown.ts';
 import { applyOkfFrontmatter, carryForwardEngineFrontmatter, OKF_TYPE_ANSWER, OKF_TYPE_LOG } from '../okf/frontmatter.ts';
 import { applyDerivedSources } from '../provenance/write.ts';
+import { provenanceModeEnabled } from '../provenance/mode.ts';
 import type {
   AppConfig,
   BuildState,
@@ -60,16 +61,6 @@ function decodeBuffer(buffer: Buffer): { text: string; encoding?: 'latin-1' } {
   } catch {
     return { text: LATIN1_DECODER.decode(buffer), encoding: 'latin-1' };
   }
-}
-
-/**
- * Opt-in provenance mode (`WIKI_PROVENANCE_MODE=1`). When on, a concept/source
- * page's `sources:` is DERIVED from its body's citation closure at write time
- * instead of unioned blindly. Off by default: the active corpus must not
- * migrate in silence.
- */
-function provenanceModeEnabled(): boolean {
-  return /^(1|true|on|yes)$/i.test(String(process.env.WIKI_PROVENANCE_MODE ?? '').trim());
 }
 
 function fallbackTitleFromWikiPath(wikiPath: string): string {

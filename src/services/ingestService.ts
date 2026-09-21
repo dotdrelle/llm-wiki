@@ -2,6 +2,12 @@ import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { applyOkfFrontmatter } from '../okf/frontmatter.ts';
 import { buildConsolidationPrompt, buildConsolidationRetryUser, CONSOLIDATION_PROMPT_VERSION } from '../prompts/consolidationPrompt.ts';
+import { provenanceModeEnabled } from '../provenance/mode.ts';
+import {
+  buildLocatorCatalogue,
+  materializeLocatorTokens,
+  renderLocatorCatalogueSection,
+} from '../provenance/promptLocators.ts';
 import { buildExtractionPrompt, EXTRACTION_PROMPT_VERSION } from '../prompts/extractionPrompt.ts';
 import { buildPromptContext } from '../prompts/systemPreamble.ts';
 import {
@@ -976,6 +982,11 @@ export class IngestService {
         const existingTags = [...new Set(
           warmPages.flatMap((page) => readProvenance(page.content).tags),
         )].sort();
+        // Provenance mode shows the model a bounded catalogue of locator tokens
+        // it may copy (never invent); the write path materializes them after.
+        const locatorSection = provenanceModeEnabled()
+          ? renderLocatorCatalogueSection(buildLocatorCatalogue(rawBody))
+          : undefined;
         const consolidationPrompt = buildConsolidationPrompt({
           source,
           extraction: merged,
@@ -985,6 +996,7 @@ export class IngestService {
           indexContent,
           existingFolders,
           existingTags,
+          ...(locatorSection ? { locatorSection } : {}),
           ctx: buildPromptContext(this.config, { profileSection }),
         });
         const consolidationCacheKey = consolidationCacheName({
@@ -1216,12 +1228,27 @@ export class IngestService {
           path: normalizedPathByOriginal.get(split.path) ?? split.path,
           duplicateOfPath: normalizedPathByOriginal.get(split.duplicateOfPath) ?? split.duplicateOfPath,
         }));
+        // Materialize the catalogue tokens the model copied into terminal
+        // addresses BEFORE the citation-path normalization runs.
+        const tokenSafeOperations = provenanceModeEnabled()
+          ? normalizedOperations.map((operation) =>
+              operation.type === 'delete' || typeof operation.content !== 'string'
+                ? operation
+                : {
+                    ...operation,
+                    content: materializeLocatorTokens(operation.content, {
+                      documentPath: source.archiveCitationPath,
+                      documentContent: rawBody,
+                    }).content,
+                  },
+            )
+          : normalizedOperations;
         const {
           operations: citationSafeOperations,
           rewrittenCitations,
           unreconciledCitations,
           wrappedBarePaths,
-        } = enforceSourceCitationPath(normalizedOperations, source.archiveCitationPath);
+        } = enforceSourceCitationPath(tokenSafeOperations, source.archiveCitationPath);
         await this.logger.info('ingest:normalize', {
           source: source.relativePath,
           operations: citationSafeOperations.length,
