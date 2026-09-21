@@ -35,4 +35,19 @@ describe('engine-side anchoring', () => {
     expect(result.content).toBe(content);
     expect(result.anchored).toBe(0);
   });
+
+  it('re-anchors a fabricated anchor that does not resolve', () => {
+    const content = '## Coûts\n\nLa licence coûte 90 k€ par an. [src: raw/ingested/x.md#Fantome > Faux]\n';
+    const result = anchorCitations(content, load);
+    expect(result.content).toBe('## Coûts\n\nLa licence coûte 90 k€ par an. [src: raw/ingested/x.md#X > Coûts]\n');
+    expect(result.anchored).toBe(1);
+  });
+
+  it('strips a fabricated anchor when no section matches confidently', () => {
+    const content = '## Divers\n\nUn propos sans rapport avec les sections. [src: raw/ingested/x.md#Fantome]\n';
+    const result = anchorCitations(content, load);
+    expect(result.content).toBe('## Divers\n\nUn propos sans rapport avec les sections. [src: raw/ingested/x.md]\n');
+    expect(result.anchored).toBe(0);
+    expect(result.unresolved).toEqual(['raw/ingested/x.md']);
+  });
 });

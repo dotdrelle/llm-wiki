@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { applyDerivedSources } from './write.ts';
+import { anchorCitations } from './anchor.ts';
 
 /*
  * Lot 6 (deterministic half): rebuild the `sources:` inventory of an existing
@@ -22,6 +23,12 @@ export interface RebuildFileResult {
   missing: string[];
   undeclared: string[];
   unresolved: string[];
+  /** Citations (re)anchored by the deterministic pass. */
+  anchoredCitations: number;
+  /** Fabricated anchors dropped to a bare citation. */
+  strippedAnchors: number;
+  /** Citations left bare because no section matched confidently. */
+  unresolvedAnchors: number;
 }
 
 export interface RebuildReport {
@@ -30,6 +37,8 @@ export interface RebuildReport {
   degraded: number;
   phantomEntriesRemoved: number;
   undeclaredAdded: number;
+  anchoredCitations: number;
+  strippedAnchors: number;
   files: RebuildFileResult[];
 }
 
@@ -82,11 +91,23 @@ export async function rebuildProvenance(options: { rootDir: string; apply?: bool
     }
   };
 
+  const loadRaw = (documentPath: string): string | null => {
+    try {
+      const absolute = path.join(rootDir, documentPath);
+      return existsSync(absolute) ? readFileSync(absolute, 'utf8') : null;
+    } catch {
+      return null;
+    }
+  };
+
   const files: RebuildFileResult[] = [];
   for (const rel of pages) {
     const before = contents.get(rel);
     if (before == null) continue;
-    const result = applyDerivedSources(before, { resolvePage });
+    // Re-anchor bare or fabricated citations first, then derive `sources:` from
+    // the (possibly re-anchored) body.
+    const anchored = anchorCitations(before, loadRaw);
+    const result = applyDerivedSources(anchored.content, { resolvePage });
     const changed = result.clean && result.content !== before;
     if (changed && options.apply) {
       await writeFile(path.join(rootDir, rel), result.content, 'utf8');
@@ -99,6 +120,9 @@ export async function rebuildProvenance(options: { rootDir: string; apply?: bool
       missing: result.integrity.missing,
       undeclared: result.integrity.undeclared,
       unresolved: result.unresolved,
+      anchoredCitations: anchored.anchored,
+      strippedAnchors: anchored.stripped,
+      unresolvedAnchors: anchored.unresolved.length,
     });
   }
 
@@ -108,6 +132,8 @@ export async function rebuildProvenance(options: { rootDir: string; apply?: bool
     degraded: files.filter((file) => !file.clean).length,
     phantomEntriesRemoved: files.reduce((sum, file) => sum + file.missing.length, 0),
     undeclaredAdded: files.reduce((sum, file) => sum + file.undeclared.length, 0),
+    anchoredCitations: files.reduce((sum, file) => sum + file.anchoredCitations, 0),
+    strippedAnchors: files.reduce((sum, file) => sum + file.strippedAnchors, 0),
     files,
   };
 }
