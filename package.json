@@ -25,7 +25,8 @@
     "check-help-skills": "node scripts/generate-help-skills.js --check",
     "test": "vitest run",
     "test:watch": "vitest",
-    "audit:provenance": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/provenance-audit.mjs"
+    "audit:provenance": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/provenance-audit.mjs",
+    "rebuild:provenance": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/provenance-rebuild.mjs"
   },
   "keywords": [
     "llm",
