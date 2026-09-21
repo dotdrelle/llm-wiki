@@ -9,6 +9,7 @@ import { HistoryService, commitHistorySafely } from '../../services/historyServi
 import { applyOkfFrontmatter } from '../../okf/frontmatter.ts';
 import { provenanceModeEnabled } from '../../provenance/mode.ts';
 import { applyDerivedSources } from '../../provenance/write.ts';
+import { validateAnchoredCitations } from '../../provenance/validate.ts';
 import type { WorkspaceService } from '../../services/workspaceService.ts';
 import { layout } from '../html/wikiHtml.ts';
 
@@ -171,10 +172,42 @@ function renderProposalList(records: Array<{ record: ProposalRecord }>): string 
   return `<main class="content"><article class="article"><h1>Agent proposals</h1><p class="proposal-lede">Each proposal is a git branch an agent edited. Merging writes the changes into the wiki and commits them; rejecting discards the branch. Nothing else touches the workspace.</p><ul class="proposal-list">${items}</ul></article></main>`;
 }
 
-function renderProposalDetail(record: ProposalRecord): string {
+type ProposalPrevalidation = Array<{ path: string; issues: Array<{ code: string; citation: string; message: string }> }>;
+
+/**
+ * Prevalidate a proposal at display time, in provenance mode only: the human
+ * sees which citations cannot resolve BEFORE deciding to merge. The merge
+ * revalidates atomically (the corpus may have changed since).
+ */
+function prevalidateProposal(rootDir: string, record: ProposalRecord): ProposalPrevalidation {
+  if (!provenanceModeEnabled()) return [];
+  const proposed = new Map(record.changes.map((change) => [change.path, change.content ?? '']));
+  const loadDocument = (documentPath: string): string | null => {
+    if (proposed.has(documentPath)) return proposed.get(documentPath) ?? null;
+    try {
+      const absolute = resolveInside(rootDir, documentPath);
+      return existsSync(absolute) ? readFileSync(absolute, 'utf8') : null;
+    } catch {
+      return null;
+    }
+  };
+  return record.changes
+    .filter((change) => change.status !== 'D' && /^wiki\/(concepts|sources)\//.test(change.path))
+    .map((change) => ({ path: change.path, issues: validateAnchoredCitations(change.content ?? '', loadDocument) }))
+    .filter((entry) => entry.issues.length > 0);
+}
+
+function renderProposalDetail(record: ProposalRecord, prevalidation: ProposalPrevalidation = []): string {
   const files = record.changedFiles
     .map((entry) => `<li class="proposal-file"><span class="proposal-status proposal-status-${escapeHtml(entry.status)}">${escapeHtml(entry.status)}</span>${escapeHtml(entry.path)}</li>`)
     .join('\n');
+  const prevalidationHtml = prevalidation.length
+    ? `<h2>Provenance prevalidation</h2><ul class="proposal-objections">${prevalidation
+        .map((entry) => `<li class="proposal-objection proposal-objection-blocking"><span class="proposal-objection-severity">${escapeHtml(entry.path)}</span>${entry.issues
+          .map((issue) => `${escapeHtml(issue.code)}: ${escapeHtml(issue.citation)} — ${escapeHtml(issue.message)}`)
+          .join('<br>')}</li>`)
+        .join('\n')}</ul>`
+    : '';
   const justification = record.justification
     ? `<h2>Why</h2><p class="proposal-why">${escapeHtml(record.justification)}</p>`
     : '';
@@ -185,7 +218,7 @@ function renderProposalDetail(record: ProposalRecord): string {
     : '';
   const diff = escapeHtml(record.diff || '(no diff)');
   const actions = `<form class="proposal-actions" method="post" action="/api/agent-proposals/${encodeURIComponent(record.id)}/merge"><button class="action-button" type="submit">Merge into the wiki</button></form><form class="proposal-actions" method="post" action="/api/agent-proposals/${encodeURIComponent(record.id)}/reject"><button class="action-link" type="submit">Reject &amp; discard the branch</button></form>`;
-  return `<main class="content"><article class="article"><h1>Proposal ${escapeHtml(record.id)}</h1><p class="proposal-lede">${escapeHtml(record.createdAt ?? '')} · branch ${escapeHtml(record.branch)} · workspace ${escapeHtml(record.workspace)}</p>${actions}${justification}${objections}<h2>Changed files</h2><ul class="proposal-files">${files}</ul><h2>Diff</h2><pre class="proposal-diff">${diff}</pre>${actions}</article></main>`;
+  return `<main class="content"><article class="article"><h1>Proposal ${escapeHtml(record.id)}</h1><p class="proposal-lede">${escapeHtml(record.createdAt ?? '')} · branch ${escapeHtml(record.branch)} · workspace ${escapeHtml(record.workspace)}</p>${actions}${justification}${objections}${prevalidationHtml}<h2>Changed files</h2><ul class="proposal-files">${files}</ul><h2>Diff</h2><pre class="proposal-diff">${diff}</pre>${actions}</article></main>`;
 }
 
 function proposalPageCss(): string {
@@ -247,7 +280,7 @@ export async function handleAgentProposalRoutes(
     return sendGzippedHtml(
       req,
       res,
-      layout(`Proposal ${record.id}`, renderProposalDetail(record) + proposalPageCss()),
+      layout(`Proposal ${record.id}`, renderProposalDetail(record, prevalidateProposal(rootDir, record)) + proposalPageCss()),
     ).then(() => true);
   }
 

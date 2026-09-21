@@ -8,6 +8,7 @@ import {
   materializeLocatorTokens,
   renderLocatorCatalogueSection,
 } from '../provenance/promptLocators.ts';
+import { validateSourcePage } from '../provenance/sourcePage.ts';
 import { buildExtractionPrompt, EXTRACTION_PROMPT_VERSION } from '../prompts/extractionPrompt.ts';
 import { buildPromptContext } from '../prompts/systemPreamble.ts';
 import {
@@ -47,6 +48,7 @@ import {
 import { z } from 'zod';
 import { hashText } from '../utils/hash.ts';
 import { resolveInside } from '../utils/path.ts';
+import matter from 'gray-matter';
 import { normalizeSourceBody, splitCitationAnchor } from '../utils/markdown.ts';
 import { planSourcePacks } from '../utils/sourcePacking.ts';
 import { mapWithConcurrency } from '../utils/concurrency.ts';
@@ -971,7 +973,50 @@ export class IngestService {
                 subjectMatch: true,
               }))
           : [];
-        const fullInventory = [...inventory, ...previousInventory, ...subjectMatchInventory];
+        let fullInventory = [...inventory, ...previousInventory, ...subjectMatchInventory];
+
+        // §3.4 (provenance mode): give the model the FULL existing body of each
+        // candidate page and bounded excerpts of the archives that page already
+        // cites, so an update preserves every earlier statement. Without this
+        // the model only sees a truncated, whitespace-collapsed excerpt and can
+        // neither keep nor re-cite the earlier sources — the root cause of the
+        // mono-source leaf.
+        if (provenanceModeEnabled()) {
+          const contentByPath = new Map(warmPages.map((page) => [page.relativePath, page.content]));
+          const bodyCap = this.config.retrieval.maxSourceChars;
+          fullInventory = await Promise.all(fullInventory.map(async (page) => {
+            const content = contentByPath.get(page.path);
+            if (!content) return page;
+            let declared: string[] = [];
+            try {
+              const data = matter(content).data as Record<string, unknown>;
+              declared = Array.isArray(data.sources)
+                ? data.sources
+                    .map((entry) => (typeof entry === 'string' ? entry : (entry as { path?: unknown })?.path))
+                    .filter((value): value is string => typeof value === 'string' && /^raw\/ingested\//.test(value.replace(/\\/g, '/')))
+                    .map((value) => value.replace(/\\/g, '/'))
+                : [];
+            } catch {
+              declared = [];
+            }
+            const sourceExcerpts: Array<{ path: string; excerpt: string }> = [];
+            for (const sourcePath of declared.slice(0, 5)) {
+              try {
+                const absolute = resolveInside(this.workspace.paths.rootDir, sourcePath);
+                if (!(await pathExists(absolute))) continue;
+                const body = await this.workspace.readTextFile(absolute);
+                sourceExcerpts.push({ path: sourcePath, excerpt: body.replace(/\s+/g, ' ').trim().slice(0, maxChunkChars) });
+              } catch {
+                // An unreadable archive simply does not contribute an excerpt.
+              }
+            }
+            return {
+              ...page,
+              existingBody: content.slice(0, bodyCap),
+              ...(sourceExcerpts.length > 0 ? { sourceExcerpts } : {}),
+            };
+          }));
+        }
 
         const indexContent = await this.workspace.readIndex();
         const existingFolders = [...new Set(
@@ -997,6 +1042,7 @@ export class IngestService {
           existingFolders,
           existingTags,
           ...(locatorSection ? { locatorSection } : {}),
+          ...(provenanceModeEnabled() ? { sourcePageContract: true } : {}),
           ctx: buildPromptContext(this.config, { profileSection }),
         });
         const consolidationCacheKey = consolidationCacheName({
@@ -1262,6 +1308,19 @@ export class IngestService {
             archivePath: source.archiveCitationPath,
             rewrittenCitations,
           });
+        }
+        // Provenance mode: the harmonized source-page contract is checked, not
+        // trusted. A violation is announced and rides the run report.
+        if (provenanceModeEnabled()) {
+          const sourcePageIssues = citationSafeOperations
+            .filter((operation) => operation.type !== 'delete' && /^wiki\/sources\/[^/]+\.md$/.test(operation.path))
+            .flatMap((operation) => validateSourcePage(operation.content ?? '').issues.map((issue) => ({ path: operation.path, code: issue.code, message: issue.message })));
+          if (sourcePageIssues.length > 0) {
+            await this.logger.warn('ingest:source-page-contract', {
+              source: source.relativePath,
+              issues: sourcePageIssues,
+            });
+          }
         }
         if (unreconciledCitations > 0) {
           await this.logger.warn('ingest:citation-unreconciled', {

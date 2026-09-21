@@ -21,6 +21,14 @@ export type ConsolidationInventoryPage = {
    * THIS extraction, even though a different source produced the page.
    */
   subjectMatch?: boolean;
+  /**
+   * Provenance mode (§3.4): the page's FULL existing body, so an update
+   * preserves every earlier statement instead of reconstructing it from a
+   * truncated, whitespace-collapsed excerpt.
+   */
+  existingBody?: string;
+  /** Provenance mode: bounded excerpts of the archives the page already cites. */
+  sourceExcerpts?: Array<{ path: string; excerpt: string }>;
 };
 
 /*
@@ -110,6 +118,8 @@ export function buildConsolidationPrompt(args: {
   existingTags: string[];
   /** Rendered locator catalogue, present only in provenance mode. */
   locatorSection?: string;
+  /** Provenance mode: add the harmonized source-page contract. */
+  sourcePageContract?: boolean;
   ctx: PromptContext;
 }): { system: string; user: string } {
   return {
@@ -127,6 +137,7 @@ export function buildConsolidationPrompt(args: {
       ...folderPolicy(args.existingFolders),
       '',
       ...operationContract(),
+      ...(args.sourcePageContract ? ['', ...sourcePageContract()] : []),
     ].join('\n'),
     user: buildConsolidationUser(args),
   };
@@ -161,6 +172,24 @@ function operationContract(): string[] {
   ];
 }
 
+/**
+ * Provenance-mode source-page contract (§2.2): one document, a common
+ * template, and only what the document itself states — the weakly
+ * interpretive reading sheet the resolver can trust.
+ */
+function sourcePageContract(): string[] {
+  return [
+    'SOURCE PAGE — provenance mode. The source note represents exactly ONE document:',
+    '- report what THIS document says, and nothing else: no cross-document comparison,',
+    '  recommendation or conclusion absent from the document;',
+    '- keep numbers, dates, qualifications, reservations and contradictions verbatim;',
+    '- structure it as a short `## Résumé`, then `## <thème réellement présent>` sections,',
+    '  each ending with an ANCHORED citation to its archive (`[src: <archive path>#<locator>]`);',
+    '- its `subject` identifies the DOCUMENT, never a vendor, product or theme;',
+    '- announce any part of the document you could not address.',
+  ];
+}
+
 
 // Bounded on purpose: the whole document would drown the facts it is meant to
 // illustrate, and consolidation is called once per source. The tail is dropped
@@ -175,7 +204,7 @@ function sourceExcerpt(body: string): string {
     : text;
 }
 
-function buildConsolidationUser(args: {
+export function buildConsolidationUser(args: {
   source: SourceDocument;
   extraction: SourceExtraction;
   sourcePagePath: string;
@@ -240,7 +269,14 @@ function buildConsolidationUser(args: {
               + `${page.scope ? ` [scope=${page.scope}]` : ''}`
               + `${page.previousForSource ? ' [previously produced by THIS source]' : ''}`
               + `${page.subjectMatch ? ' [existing page for a closely related subject]' : ''}`
-              + `\n  ${page.excerpt}`)
+              + `\n  ${page.excerpt}`
+              + (page.sourceExcerpts && page.sourceExcerpts.length
+                ? '\n  already-cited sources — preserve the statements they back, with their citations:'
+                  + page.sourceExcerpts.map((entry) => `\n  - ${entry.path}\n    ${entry.excerpt}`).join('')
+                : '')
+              + (page.existingBody
+                ? `\n  FULL existing body to keep and extend:\n${page.existingBody.split('\n').map((line) => `    ${line}`).join('\n')}`
+                : ''))
             .join('\n')
         : '(none)',
       '',

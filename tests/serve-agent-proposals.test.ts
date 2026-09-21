@@ -289,6 +289,32 @@ describe('agent proposal review routes', () => {
     }
   });
 
+  it('shows the provenance prevalidation on the review page', async () => {
+    process.env.WIKI_PROVENANCE_MODE = '1';
+    try {
+      writeProposal(rootDir, {
+        id: 't-prev',
+        workspace: 'demo',
+        branch: 'agent/gateway-11',
+        worktreeRelativePath: '.wiki/agent-worktrees/gateway-11',
+        createdAt: '2026-09-09T10:00:00.000Z',
+        changedFiles: [{ status: 'M', path: 'wiki/concepts/demo/a.md' }],
+        changes: [{ path: 'wiki/concepts/demo/a.md', status: 'M', content: '---\ntype: product\nsources: []\n---\n\n# A\n\n[src: raw/ingested/x.md]\n' }],
+        diff: 'x',
+      });
+      const deps = makeDeps(rootDir);
+      const { res } = fakeRes();
+
+      await handleAgentProposalRoutes(fakeReq('GET', '/agent-proposals/t-prev'), res, '/agent-proposals/t-prev', deps);
+
+      const html = String((deps.sendGzippedHtml as ReturnType<typeof vi.fn>).mock.calls[0][2]);
+      expect(html).toContain('Provenance prevalidation');
+      expect(html).toContain('unanchored');
+    } finally {
+      delete process.env.WIKI_PROVENANCE_MODE;
+    }
+  });
+
   it('is routed before handleWikiRoutes, whose fallback treats any unmatched path as a wiki document and 404s it', async () => {
     const source = await readFile(
       path.resolve(import.meta.dirname, '../src/commands/serve.ts'),
