@@ -3,7 +3,6 @@ import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
 import { splitMarkdownSections } from '../utils/markdown.ts';
-import { subjectsShareEntityRoot } from '../ingest/provenance.ts';
 import { applyDerivedSources } from './write.ts';
 
 /*
@@ -92,8 +91,10 @@ export function planMergeGroups(leaves: Array<{ path: string; concept: string; s
     const used = new Set<string>();
     for (const entry of entries) {
       if (used.has(entry.path)) continue;
-      // Canonical: the subject that IS the root, else the shortest.
-      const family = entries.filter((other) => !used.has(other.path) && subjectsShareEntityRoot(entry.subject, other.subject));
+      // Prefix near-duplicate only: `prophix` / `prophix-one` merge, but
+      // `jedox-dicp` / `jedox-certifications` do not (distinct concerns).
+      const isNearDuplicate = (a: string, b: string): boolean => a === b || b.startsWith(`${a}-`) || a.startsWith(`${b}-`);
+      const family = entries.filter((other) => !used.has(other.path) && isNearDuplicate(entry.subject, other.subject));
       if (family.length < 2) continue;
       family.sort((a, b) => a.subject.length - b.subject.length || a.path.localeCompare(b.path));
       const canonical = family[0];
