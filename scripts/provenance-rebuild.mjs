@@ -12,12 +12,18 @@ import path from 'node:path';
 
 const args = process.argv.slice(2);
 const apply = args.includes('--apply');
+const mergeSplits = args.includes('--merge-splits');
 const root = args.find((value) => !value.startsWith('--'));
 if (!root) {
-  process.stderr.write('usage: provenance-rebuild <workspace-root> [--apply]\n');
+  process.stderr.write('usage: provenance-rebuild <workspace-root> [--apply] [--merge-splits]\n');
   process.exit(2);
 }
 
 const { rebuildProvenance } = await import('../src/provenance/rebuild.ts');
 const report = await rebuildProvenance({ rootDir: path.resolve(root), apply });
-process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+let merge = null;
+if (mergeSplits) {
+  const { mergeDuplicateLeaves } = await import('../src/provenance/merge.ts');
+  merge = await mergeDuplicateLeaves({ rootDir: path.resolve(root), apply });
+}
+process.stdout.write(`${JSON.stringify({ ...report, merge }, null, 2)}\n`);

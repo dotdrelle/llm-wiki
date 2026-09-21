@@ -85,7 +85,13 @@ export interface WorkspaceProvenanceAudit {
     anchorUnresolved: number;
     leavesWithUnrepresentedSources: number;
     phantomSourceEntries: number;
-    leavesRepeatingOneCitationEverywhere: number;
+    /**
+     * A leaf citing its ONE source in every section. It is a mono-source
+     * property, NOT a defect: a leaf drawing from a single document is right to
+     * cite it per section. The real defect (declaring several sources, reaching
+     * one) is `phantomSourceEntries`.
+     */
+    monoSourceRepeats: number;
     monoSourceLeaves: number;
     multiSourceLeaves: number;
     /** Citations without an anchor: each implies a whole-file read at export. */
@@ -413,7 +419,7 @@ export async function auditWorkspace(options: { rootDir: string; workspace?: str
         + leaves.reduce((sum, page) => sum + page.anchorUnresolved, 0),
       leavesWithUnrepresentedSources: leaves.filter((leaf) => leaf.unrepresentedSources.length > 0).length,
       phantomSourceEntries,
-      leavesRepeatingOneCitationEverywhere: leaves.filter((leaf) => leaf.repeatsOneCitationEverywhere).length,
+      monoSourceRepeats: leaves.filter((leaf) => leaf.repeatsOneCitationEverywhere).length,
       monoSourceLeaves: leaves.filter((leaf) => leaf.monoSource).length,
       multiSourceLeaves: leaves.filter((leaf) => !leaf.monoSource).length,
       wholeFileReadsImplied: sourcePages.reduce((sum, page) => sum + page.unanchored, 0)

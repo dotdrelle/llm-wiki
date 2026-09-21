@@ -10,9 +10,13 @@ import { RetrievalService } from './retrievalService.ts';
 import { HistoryService, commitHistorySafely } from './historyService.ts';
 import { checkProductionIdle } from './productionLocks.ts';
 import { loadWikiGraphSnapshot, summarizeWikiGraph } from '../graph/wiki/overview.ts';
+import { existsSync, readFileSync } from 'node:fs';
 import { pathExists } from '../utils/fs.ts';
 import { resolveInside, relativeFrom } from '../utils/path.ts';
 import { buildLocatorCatalogue } from '../provenance/locators.ts';
+import { provenanceModeEnabled } from '../provenance/mode.ts';
+import { applyDerivedSources } from '../provenance/write.ts';
+import { validateAnchoredCitations } from '../provenance/validate.ts';
 import { extractSourceCitations, extractWikiLinks, parseTemplateInstructions } from '../utils/markdown.ts';
 import {
   buildQueryGraph,
@@ -781,7 +785,31 @@ export async function createWikiMcpServer(
         ),
       );
     }
-    await workspace.applyWikiOperations([{ type: 'update', path: pagePath, content }]);
+    // Provenance mode: a concept/source page is written only with a resolved
+    // citation closure and a freshly derived `sources:` — the same contract as
+    // ingest and the curation merge. Invalid provenance is refused, not stored.
+    let finalContent = content;
+    if (provenanceModeEnabled() && /^wiki\/(concepts|sources)\//.test(pagePath)) {
+      const rootDir = workspace.paths.rootDir;
+      const readSync = (documentPath: string): string | null => {
+        try {
+          const absolute = resolveInside(rootDir, documentPath);
+          return existsSync(absolute) ? readFileSync(absolute, 'utf8') : null;
+        } catch {
+          return null;
+        }
+      };
+      const derived = applyDerivedSources(content, { resolvePage: readSync });
+      const issues = validateAnchoredCitations(derived.content, readSync);
+      if (!derived.clean || issues.length > 0) {
+        return textResult(
+          JSON.stringify({ ok: false, error: 'provenance_invalid', unresolved: derived.unresolved, cycles: derived.cycles, issues }, null, 2),
+          { isError: true },
+        );
+      }
+      finalContent = derived.content;
+    }
+    await workspace.applyWikiOperations([{ type: 'update', path: pagePath, content: finalContent }]);
     retrieval.invalidateCache();
     await appendAuditRecord(workspace, {
       tool: 'wiki_write_page',

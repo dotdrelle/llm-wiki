@@ -18,7 +18,7 @@ describe('provenance audit (lot 0)', () => {
     expect(report.summary.anchorUnresolved).toBe(0);
     expect(report.summary.leavesWithUnrepresentedSources).toBe(1);
     expect(report.summary.phantomSourceEntries).toBe(1);
-    expect(report.summary.leavesRepeatingOneCitationEverywhere).toBe(1);
+    expect(report.summary.monoSourceRepeats).toBe(1);
     expect(report.summary.monoSourceLeaves).toBe(3);
     expect(report.summary.multiSourceLeaves).toBe(1);
     expect(report.summary.wholeFileReadsImplied).toBe(6);
