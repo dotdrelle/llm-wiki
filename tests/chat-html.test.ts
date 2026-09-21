@@ -874,6 +874,19 @@ describe('chat html', () => {
     expect(script).toContain("window.addEventListener('resize'");
   });
 
+  it('renders a plan step as Markdown and keeps its dot and value on the first line', () => {
+    const script = chatScripts().join('\n');
+    // A plan step label may be the compiled objective — multi-line Markdown.
+    // Rendering it escaped dumped "# Boundaries" / "## Notification" as raw text.
+    expect(script).toContain('function actStepLabelHTML(label)');
+    expect(script).toContain('return looksMarkdown?renderMd(text):esc(text);');
+    expect(script).toContain('${actStepLabelHTML(s.label)}');
+    // The status dot and the value stick to the FIRST line of a multi-line
+    // label, never to the vertical centre of the block.
+    expect(CHAT_HTML).toContain('.act-step{display:flex;align-items:flex-start;gap:6px;font-size:11px}');
+    expect(CHAT_HTML).toContain('.act-step-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:4px}');
+  });
+
   it('shows the running document, its counters and tokens in the run strip', () => {
     const script = chatScripts().join('\n');
 

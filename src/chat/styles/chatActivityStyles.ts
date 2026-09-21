@@ -79,16 +79,28 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .act-badge.failed{background:color-mix(in srgb,var(--err) 14%,transparent);color:var(--err)}
 .act-badge.cancelled{background:color-mix(in srgb,var(--muted) 14%,transparent);color:var(--muted)}
 .act-steps{display:flex;flex-direction:column;gap:3px}
-.act-step{display:flex;align-items:center;gap:6px;font-size:11px}
-.act-step-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+/* A step label can be a multi-line Markdown objective: the dot and the value
+   stick to the FIRST line, never to the vertical centre of the whole block. */
+.act-step{display:flex;align-items:flex-start;gap:6px;font-size:11px}
+.act-step-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:4px}
 .act-step.done .act-step-dot{background:#22c55e}
 .act-step.running .act-step-dot{background:var(--accent);animation:upload-pulse 1.2s ease-in-out infinite}
 .act-step.pending .act-step-dot,.act-step.failed .act-step-dot{background:var(--border)}
 .act-step.failed .act-step-dot{background:var(--err)}
-.act-step-label{flex:1;color:var(--text)}
+.act-step-label{flex:1;min-width:0;color:var(--text)}
 .act-step.pending .act-step-label{color:var(--muted)}
 .act-step.failed .act-step-label{color:var(--err)}
-.act-step-val{font-size:10px;color:var(--muted);font-family:var(--font-mono)}
+/* Rendered Markdown (the plan objective) inside a step: keep it compact, at
+   the same scale as the card, instead of the prose sizes of a chat reply. */
+.act-step-label p{margin:0 0 4px}
+.act-step-label p:last-child,.act-step-label>*:last-child{margin-bottom:0}
+.act-step-label h1,.act-step-label h2,.act-step-label h3,.act-step-label h4{font-size:11px;font-weight:800;margin:6px 0 3px}
+.act-step-label h1:first-child,.act-step-label h2:first-child,.act-step-label h3:first-child,.act-step-label h4:first-child{margin-top:0}
+.act-step-label ul,.act-step-label ol{margin:2px 0 4px;padding-left:16px}
+.act-step-label li{margin:1px 0}
+.act-step-label code{font-family:var(--font-mono);font-size:10px}
+.act-step-label blockquote{margin:2px 0 4px;padding-left:8px;border-left:2px solid var(--border);color:var(--muted)}
+.act-step-val{font-size:10px;color:var(--muted);font-family:var(--font-mono);margin-top:1px}
 .act-step.done .act-step-val{color:#16a34a}
 .act-step.running .act-step-val{color:var(--accent)}
 .act-output{font-size:10px;color:var(--muted);font-family:var(--font-mono);background:var(--panel-deep);border-radius:5px;padding:4px 7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;title:attr(title)}

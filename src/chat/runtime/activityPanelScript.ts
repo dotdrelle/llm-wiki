@@ -449,6 +449,14 @@ function actSourceIcon(item) {
   if(item.source==='cme') return '<svg '+attrs+'><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>';
   return '<svg '+attrs+'><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a6 6 0 0 1-12 0V8z"/></svg>';
 }
+// A plan step's label may be the compiled objective — multi-line Markdown,
+// not a step name. Render it as Markdown when it carries some; a plain one-line
+// label stays escaped text so the parser does not wrap and re-space it.
+function actStepLabelHTML(label) {
+  const text=String(label||'');
+  const looksMarkdown=/\\n|^\\s{0,3}#{1,6}\\s|^\\s{0,3}[-*+]\\s|^\\s{0,3}>\\s/m.test(text);
+  return looksMarkdown?renderMd(text):esc(text);
+}
 function actCardHTML(item) {
   const running=isActivityActive(item.status);
   const converted=item.status==='converted';
@@ -460,7 +468,7 @@ function actCardHTML(item) {
   const badge=item.error?'failed':running?'running':(converted||done)?'done':stored?'stored':item.status==='cancelled'?'cancelled':'failed';
   const badgeLabel=ACT_CARD_BADGES[badge];
   const steps=item.kind==='upload'?actUploadSteps(item):activityPlanSteps(item);
-  const stepsHtml=steps.map(s=>\`<div class="act-step \${s.state}"><span class="act-step-dot"></span><span class="act-step-label">\${esc(s.label)}</span><span class="act-step-val">\${esc(s.val)}</span></div>\`).join('');
+  const stepsHtml=steps.map(s=>\`<div class="act-step \${s.state}"><span class="act-step-dot"></span><span class="act-step-label">\${actStepLabelHTML(s.label)}</span><span class="act-step-val">\${esc(s.val)}</span></div>\`).join('');
   const output=item.outputPath?uploadOutputLabel(item.outputPath):(item.resultSummary||null);
   const outputHtml=output?\`<div class="act-output" title="\${esc(output)}" onclick="copyText(\${esc(JSON.stringify(output))})">\${esc(output)}</div>\`:'';
   const errorHtml=item.error?\`<div class="act-error">\${esc(item.error)}</div>\`:'';
