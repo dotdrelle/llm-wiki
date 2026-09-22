@@ -1,7 +1,9 @@
 # Provenance — anchored sources, derived `sources:`, evidence manifest
 
 This is the engine/deployer record for the provenance work implemented from
-`plan-provenance-feuilles.md` (lots 0–5). The user-facing view is
+`plan-provenance-feuilles.md`. It is always on — the two-level citation shape,
+the derived `sources:`, the deterministic loss guard and the evidence manifest
+are the only writer, with no environment flag. The user-facing view is
 `help-doc/03-content-lifecycle.md`.
 
 ## The problem
@@ -41,7 +43,10 @@ The concept remains the folder; the path remains the leaf's identity. No new
   the terminal address. The model never writes an offset or a hash.
 - **`sources:` is derived, not accumulated.** It is recomputed from the body's
   citation closure (`provenance/derive.ts`); a declared-but-unreached entry is a
-  phantom and is dropped.
+  phantom and is dropped. A citation that names a SECTION follows only that
+  section of the intermediate page — walking the whole page would attribute
+  every other section's proofs to the caller and make the guard blind to a
+  section-level change.
 - **Anchoring is engine-side.** The model does not anchor reliably, so
   `provenance/anchor.ts` ties a bare citation — or re-ties a **fabricated**
   anchor — to the section whose significant tokens best match the claim
@@ -52,12 +57,19 @@ The concept remains the folder; the path remains the leaf's identity. No new
   A-v2 after the build does not change the export. The id carries the deliverable
   path **and the content hash**, so a second build is a distinct manifest; the
   frozen map is keyed by `path#anchor`, so a section receives only the fragments
-  it used. `export --evidence-build <id>` selects a build explicitly (the ids are
-  the directories under `.wiki/builds/`); without it the export derives the id
-  from the content it is exporting. The current manifest format is schema v2:
-  every hop in `chain` carries both `path` and `anchor`. A v1 manifest is refused
-  and announced as missing evidence at export rather than silently widening a
-  section-level citation.
+  it used. A fragment reached by SEVERAL chains keeps them all (`extraChains`),
+  or the second leaf would vanish from the frozen map and its export would fall
+  back to the live file. When a second build renders the SAME text but rests on
+  different evidence, `writeEvidenceManifest` writes `<base>-<evidenceHash>`
+  instead of overwriting the base. The evidence hash includes the fragment text
+  and all citation chains, so a routing change also preserves the older manifest. `export --evidence-build
+  <id>` selects a build explicitly (the ids are the directories under
+  `.wiki/builds/`); without it the export reads `evidence_build_id` from the
+  deliverable frontmatter. Build writes this field before publishing the file.
+  Legacy deliverables without the field retain content-hash lookup. The current manifest format is schema v2: every hop in `chain`
+  carries both `path` and `anchor` (`extraChains` is additive). A v1 manifest is
+  refused and announced as missing evidence at export rather than silently
+  widening a section-level citation.
 
 ## Modules
 
@@ -73,31 +85,77 @@ The concept remains the folder; the path remains the leaf's identity. No new
 | `src/provenance/merge.ts` | deterministic prefix near-duplicate leaf merge |
 | `src/provenance/audit.ts` | read-only corpus audit (lot 0) |
 | `src/provenance/rebuild.ts` | no-LLM repair: anchoring + `sources:` + merge |
-| `src/provenance/mode.ts` | the `WIKI_PROVENANCE_MODE` switch |
+| `src/provenance/retarget.ts` | two-level shape: leaf archive citation → source note |
 
 Diagnostics: `pnpm audit:provenance <workspace>` and
-`pnpm rebuild:provenance <workspace> [--apply] [--merge-splits]`.
+`pnpm rebuild:provenance <workspace> [--apply] [--merge-splits]`. The audit
+compares each page's declared `sources:` to its **terminal citation closure**, so
+a two-level leaf (declaring the archive, citing the source note) is not reported
+as a phantom.
 
-## Enabling it — opt-in
+## Always on
 
-`WIKI_PROVENANCE_MODE=1` turns on:
-- the locator catalogue in the consolidation prompt and token materialization;
-- `sources:` derivation at write time (`applyWikiOperationsAtomic`);
-- the §3.4 update context (full existing body + the excerpts of the sources a
-  page already cites);
-- engine-side anchoring and the source-page / anchored-citation validation;
-- the build evidence manifest and its use by `export`.
+Anchored provenance is the only writer; there is no switch. On every ingest,
+build and export the engine:
+- renders the locator catalogue in the consolidation prompt and materializes
+  the tokens;
+- derives `sources:` at write time (`applyWikiOperationsAtomic`);
+- supplies the §3.4 update context (full existing body + the excerpts of the
+  sources a page already cites);
+- anchors citations engine-side and validates the source page / anchored
+  citations;
+- applies the deterministic loss guard (below);
+- writes the build evidence manifest and makes `export` consume it.
 
-Off by default: the active corpus is never migrated in silence.
+The reference corpus was migrated by validating on a COPY first (the plan's
+rule) rather than by flipping a default later — the writer was already correct,
+so the flag no longer bought anything.
 
 The MCP tool `wiki_list_provenance_locators` (read-only, `wiki/sources/` +
 `raw/ingested/`, no offsets/hashes) is what a curation run cites from; it is on
 the manager's wiki read-only allow-list, and the gateway Redactor is told to copy
 a token rather than invent an address.
 
-## Migration & rollback (lot 6)
+## The two-level shape
 
-A corpus can be moved deterministically, without an LLM:
+The target is `livrable → section d'une feuille → section d'une page source →
+fragment brut`. The prompt asks a concept leaf to cite the source note (never
+`raw/ingested/…` directly); because the model does not always comply,
+`provenance/retarget.ts` moves the leaf's section-precise archive citations onto
+the source note, but only when the note's same-named section PROVES the very
+fragment the leaf cited (same archive, same section, or the whole file). A
+same-named heading that cites another fragment is not equivalent and is refused.
+A citation the previous page already carried is left verbatim: the mere
+existence of a source note must not rewrite a legacy `concept → raw` citation.
+A citation without a resolvable anchor keeps its archive form — an honest
+archive path beats a source-note path whose proof is not the one claimed.
+
+## The multi-source guard
+
+A leaf is the THEME: an update keeps what the page already states and adds the
+new source. The model does not always do so, so the engine checks it
+deterministically (`provenance/derive.ts`'s `detectSourceLoss`): the terminal
+fragments reachable from the previous body's citation closure must all remain
+reachable from the candidate's. A lost fragment refuses that operation — the
+previous page is kept, the degradation is logged (`ingest:provenance-loss`) and
+the rest of the ingest proceeds. A candidate that cites a whole file still
+covers an earlier section of it; the loss is only ever a precise section whose
+file remains cited by other sections.
+
+An unresolvable citation refuses its operation too: a `missing` or `ambiguous`
+anchor, an unusable source-page declaration, or an operation citing a page so
+refused, is dropped (logged `ingest:provenance-refused`) while the source note
+and the rest of the plan land. A bare, readable citation is allowed through —
+it is the legacy whole-file form, anchored engine-side when the claim matches a
+section.
+
+These are refusals, not repairs: the model must re-compose the page. The prefix
+merge (`--merge-splits`) repairs split duplicates; the loss guard stops a
+composition from silently dropping a proof.
+
+## Migration & rollback
+
+A corpus can be re-normalized deterministically, without an LLM:
 
 ```bash
 # on a COPY first
@@ -108,22 +166,13 @@ pnpm audit:provenance   /path/to/copy
 
 `rebuild:provenance` re-anchors citations, derives `sources:` and (with
 `--merge-splits`) merges prefix near-duplicate leaves. It never calls the model.
-
 Rollback: the workspace is git (revert-forward); `git revert <ingest-commit>`
 restores the previous pages. `.wiki/builds/` manifests are local, unversioned
 state and can be removed to force a live resolution.
 
-The default writer is **not** flipped: the deterministic layers are validated,
-but multi-source composition is model-dependent and the two-level citation shape
-(leaves citing `wiki/sources/` instead of `raw/`) is not produced by the ingest
-pipeline yet. The feature stays opt-in and is announced as such.
-
 ## Not shipped yet
 
-- Leaves citing `wiki/sources/…` (the two-level shape) — the model still cites
-  `raw/ingested/…` directly.
-- Deterministic multi-source composition: the model composes only sometimes
-  (measured 8 then 2 multi-source over two identical runs); the prefix merge
-  repairs split duplicates but finds none on the reference corpus.
 - `evidence_revision` from git objects (retention / long-term rebuild) — the
   per-build manifest is the shipped mechanism.
+- The Red Team / curation collective remains read-only on the workspace; it
+  proposes a worktree branch a human merges, never a direct write.

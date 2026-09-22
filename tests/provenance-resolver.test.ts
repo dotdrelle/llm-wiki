@@ -1,10 +1,14 @@
+import matter from 'gray-matter';
+import { BuildService } from '../src/services/buildService.ts';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   createEvidenceManifest,
   evidenceBuildIdFor,
+  frozenFragmentMap,
+  listEvidenceBuilds,
   manifestFragment,
   readEvidenceManifest,
   resolveEvidence,
@@ -172,13 +176,45 @@ describe('frozen fragment map (defect 3)', () => {
     expect(map.get('wiki/concepts/produit/x.md#Coûts')).toContain('FROZEN A-v1');
     expect(map.get('wiki/sources/a.md#')).toContain('FROZEN A-v1');
   });
+
+  it('keeps a frozen entry for every chain that reached the same fragment', () => {
+    const docs = new Map<string, string>([
+      ['wiki/sources/a.md', '# A\n\n## Coûts\n\n[src: raw/ingested/detailed.md#Coûts]\n'],
+      ['wiki/concepts/one.md', '# One\n\n[src: wiki/sources/a.md#Coûts]\n'],
+      ['wiki/concepts/two.md', '# Two\n\n[src: wiki/sources/a.md#Coûts]\n'],
+      ['raw/ingested/detailed.md', '# Detailed\n\n## Coûts\n\n90 k€.\n'],
+    ]);
+    const content = '# D\n\n[src: wiki/concepts/one.md#One]\n[src: wiki/concepts/two.md#Two]\n';
+    const { fragments } = resolveEvidence({ content, loadDocument: (p) => docs.get(p) ?? null });
+    const map = frozenFragmentMap(createEvidenceManifest('b', fragments));
+    expect(map.get('wiki/concepts/one.md#One')).toContain('90 k€');
+    expect(map.get('wiki/concepts/two.md#Two')).toContain('90 k€');
+  });
+});
+
+describe('evidence build ids (defect 4)', () => {
+  it('does not overwrite the first build when identical text rests on different evidence', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-clobber-'));
+    const base = evidenceBuildIdFor('deliverables/d.md', 'samecontenthash');
+    const fragment = (text: string, hash: string) => ({
+      path: 'raw/ingested/a.md',
+      anchor: 'Coûts',
+      hash,
+      text,
+      chain: [],
+      extraChains: [],
+    });
+    await writeEvidenceManifest(root, createEvidenceManifest(base, [fragment('A-v1', 'h1')]));
+    await writeEvidenceManifest(root, createEvidenceManifest(base, [fragment('A-v2', 'h2')]));
+
+    const first = await readEvidenceManifest(root, base);
+    expect(frozenFragmentMap(first!).get('raw/ingested/a.md#Coûts')).toContain('A-v1');
+    const builds = await listEvidenceBuilds(root, 'deliverables/d.md');
+    expect(builds.length).toBe(2);
+  });
 });
 
 describe('two builds, two manifests, two exports (release review)', () => {
-  afterEach(() => {
-    delete process.env.WIKI_PROVENANCE_MODE;
-  });
-
   it('keeps both manifests and makes expandDeliverable use the explicitly selected build', async () => {
     const { hashText } = await import('../src/utils/hash.ts');
     const { writeEvidenceManifest, evidenceBuildIdFor, listEvidenceBuilds, frozenFragmentMap, readEvidenceManifest } =
@@ -208,7 +244,6 @@ describe('two builds, two manifests, two exports (release review)', () => {
     const second = await readEvidenceManifest(root, id2);
     expect(frozenFragmentMap(second!).get('wiki/sources/a.md#Coûts')).toContain('120 k€');
 
-    process.env.WIKI_PROVENANCE_MODE = '1';
     await mkdir(path.join(root, 'deliverables'), { recursive: true });
     await writeFile(path.join(root, 'deliverables', 'd.md'), content2, 'utf8');
     const workspace = new WorkspaceService(createConfig(root));
@@ -250,5 +285,60 @@ describe('two builds, two manifests, two exports (release review)', () => {
     );
     expect(prompts.at(-1)).toContain('120 k€');
     expect(prompts.at(-1)).not.toContain('90 k€');
+  });
+});
+
+
+describe('build evidence regression coverage', () => {
+  it('preserves manifests when only primary or additional citation chains change', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-chain-history-'));
+    const fragments = resolveEvidence({ content: '[src: wiki/sources/a.md#Coûts]', loadDocument: load(new Map(DOCS)) }).fragments;
+    const first = createEvidenceManifest('base', fragments);
+    const firstPath = await writeEvidenceManifest(root, first);
+    const second = structuredClone(first);
+    second.fragments[0].chain = [{ path: 'wiki/concepts/other.md', anchor: 'Costs' }];
+    const secondPath = await writeEvidenceManifest(root, second);
+    const third = structuredClone(second);
+    third.fragments[0].extraChains = [[{ path: 'wiki/concepts/third.md', anchor: 'Costs' }]];
+    const thirdPath = await writeEvidenceManifest(root, third);
+    expect(new Set([firstPath, secondPath, thirdPath]).size).toBe(3);
+    expect((await readEvidenceManifest(root, 'base'))?.fragments).toEqual(first.fragments);
+    expect(await writeEvidenceManifest(root, third)).toBe(thirdPath);
+  });
+
+  it('automatically exports the matching evidence for two builds with identical prose', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-build-evidence-'));
+    const config = createConfig(root);
+    const workspace = new WorkspaceService(config);
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'templates'), { recursive: true });
+    await writeFile(path.join(root, 'wiki/index.md'), '# Wiki');
+    await mkdir(path.join(root, 'raw/ingested'), { recursive: true });
+    await mkdir(path.join(root, 'wiki/sources'), { recursive: true });
+    await writeFile(path.join(root, 'templates/test.md'), '# Test\n\n[src: wiki/sources/a.md#Coûts]\n');
+    await writeFile(path.join(root, 'wiki/sources/a.md'), '## Coûts\n[src: raw/ingested/a.md#Coûts]');
+    const prompts: string[] = [];
+    const llm = { completeText: async (request: { user: string }) => {
+      prompts.push(request.user);
+      return 'Analyse détaillée fondée sur la preuve sélectionnée.';
+    } };
+    const retrieval = { search: async () => [], warmCache: async () => [] };
+    const logger = { info: async () => undefined, warn: async () => undefined };
+    const builder = new BuildService(config, workspace, llm as never, retrieval as never);
+    const contents: string[] = [];
+    for (const amount of ['90 k€', '120 k€']) {
+      await writeFile(path.join(root, 'raw/ingested/a.md'), `## Coûts\n${amount}`);
+      const results = await builder.build({ templates: ['templates/test.md'], force: true });
+      expect(results[0].output).toBe('deliverables/test.md');
+      contents.push(await workspace.readTextFile(path.join(root, 'deliverables/test.md')));
+    }
+    expect(matter(contents[0]).content).toBe(matter(contents[1]).content);
+    expect(matter(contents[0]).data.evidence_build_id).not.toBe(matter(contents[1]).data.evidence_build_id);
+    for (const [index, amount] of ['90 k€', '120 k€'].entries()) {
+      await writeFile(path.join(root, 'deliverables/test.md'), contents[index]);
+      await expandDeliverable('deliverables/test.md', config, workspace, retrieval as never, llm as never, logger as never);
+      expect(prompts.at(-1)).toContain(amount);
+      expect(prompts.at(-1)).not.toContain(index === 0 ? '120 k€' : '90 k€');
+    }
   });
 });

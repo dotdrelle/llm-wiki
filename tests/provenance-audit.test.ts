@@ -1,3 +1,5 @@
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { auditWorkspace } from '../src/provenance/audit.ts';
@@ -42,6 +44,28 @@ describe('provenance audit (lot 0)', () => {
     expect(detailedNote?.anchorResolved).toBe(1);
     const repeatedNote = report.sourcePages.find((page) => page.path.endsWith('/repeated-note.md'));
     expect(repeatedNote?.anchorAmbiguous).toBe(1);
+  });
+
+  it('does not flag a two-level leaf as a phantom source', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-audit-two-level-'));
+    await mkdir(path.join(root, 'wiki', 'sources'), { recursive: true });
+    await mkdir(path.join(root, 'wiki', 'concepts', 'demo'), { recursive: true });
+    await writeFile(
+      path.join(root, 'wiki', 'sources', 'a.md'),
+      '---\ntype: source\nsources:\n  - path: raw/ingested/a.md\n---\n\n# A\n\n## Coûts\n\n[src: raw/ingested/a.md#Coûts]\n',
+      'utf8',
+    );
+    await writeFile(
+      path.join(root, 'wiki', 'concepts', 'demo', 'leaf.md'),
+      '---\ntype: product\nsources:\n  - path: raw/ingested/a.md\n---\n\n# Leaf\n\n## Coûts\n\n[src: wiki/sources/a.md#Coûts]\n',
+      'utf8',
+    );
+
+    const report = await auditWorkspace({ rootDir: root, workspace: 'two-level' });
+    const leaf = report.leaves.find((entry) => entry.path.endsWith('/leaf.md'));
+    expect(leaf?.unrepresentedSources).toEqual([]);
+    expect(leaf?.citedNotDeclared).toEqual([]);
+    expect(report.summary.phantomSourceEntries).toBe(0);
   });
 
   it('detects a citation cycle and its depth', async () => {

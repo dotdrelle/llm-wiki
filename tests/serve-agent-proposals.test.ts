@@ -239,9 +239,7 @@ describe('agent proposal review routes', () => {
     expect(body().proposals[0].diff).toBeUndefined();
   });
 
-  it('refuses a merge with an unresolved citation in provenance mode, keeping the proposal', async () => {
-    process.env.WIKI_PROVENANCE_MODE = '1';
-    try {
+  it('refuses a merge with an unresolved citation, keeping the proposal', async () => {
       writeProposal(rootDir, {
         id: 't-prov',
         workspace: 'demo',
@@ -261,14 +259,9 @@ describe('agent proposal review routes', () => {
       expect(body().error).toBe('provenance_invalid');
       expect(deps.workspace.applyWikiOperations).not.toHaveBeenCalled();
       expect(existsSync(path.join(rootDir, '.wiki', 'agent-proposals', 't-prov.json'))).toBe(true);
-    } finally {
-      delete process.env.WIKI_PROVENANCE_MODE;
-    }
   });
 
   it('renders structured HTML diagnostics when a page-form merge is refused', async () => {
-    process.env.WIKI_PROVENANCE_MODE = '1';
-    try {
       writeProposal(rootDir, {
         id: 't-prov-html',
         workspace: 'demo',
@@ -302,14 +295,9 @@ describe('agent proposal review routes', () => {
       expect(html).toContain('section:Missing &gt; Heading');
       expect(html).not.toContain('&quot;ok&quot;');
       expect(deps.workspace.applyWikiOperations).not.toHaveBeenCalled();
-    } finally {
-      delete process.env.WIKI_PROVENANCE_MODE;
-    }
   });
 
   it('recomputes sources: on merge, dropping a declared source the body never reaches', async () => {
-    process.env.WIKI_PROVENANCE_MODE = '1';
-    try {
       // The cited archive must exist for the anchor to resolve — the merge now
       // validates anchors, not just the closure.
       mkdirSync(path.join(rootDir, 'raw', 'ingested'), { recursive: true });
@@ -333,14 +321,9 @@ describe('agent proposal review routes', () => {
       const applied = (deps.workspace.applyWikiOperations as ReturnType<typeof vi.fn>).mock.calls[0][0];
       expect(applied[0].content).toContain('raw/ingested/x.md');
       expect(applied[0].content).not.toContain('phantom.md');
-    } finally {
-      delete process.env.WIKI_PROVENANCE_MODE;
-    }
   });
 
   it('materializes a catalogue token on merge instead of writing it raw', async () => {
-    process.env.WIKI_PROVENANCE_MODE = '1';
-    try {
       mkdirSync(path.join(rootDir, 'raw', 'ingested'), { recursive: true });
       writeFileSync(path.join(rootDir, 'raw', 'ingested', 'x.md'), '# X\n\n## Coûts\n\nA.\n');
       writeProposal(rootDir, {
@@ -362,14 +345,9 @@ describe('agent proposal review routes', () => {
       const applied = (deps.workspace.applyWikiOperations as ReturnType<typeof vi.fn>).mock.calls[0][0];
       expect(applied[0].content).toContain('[src: raw/ingested/x.md#X > Coûts]');
       expect(applied[0].content).not.toContain('section:');
-    } finally {
-      delete process.env.WIKI_PROVENANCE_MODE;
-    }
   });
 
   it('shows the provenance prevalidation on the review page', async () => {
-    process.env.WIKI_PROVENANCE_MODE = '1';
-    try {
       writeProposal(rootDir, {
         id: 't-prev',
         workspace: 'demo',
@@ -387,10 +365,7 @@ describe('agent proposal review routes', () => {
 
       const html = String((deps.sendGzippedHtml as ReturnType<typeof vi.fn>).mock.calls[0][2]);
       expect(html).toContain('Provenance prevalidation');
-      expect(html).toContain('unanchored');
-    } finally {
-      delete process.env.WIKI_PROVENANCE_MODE;
-    }
+      expect(html).toContain('missing');
   });
 
   it('is routed before handleWikiRoutes, whose fallback treats any unmatched path as a wiki document and 404s it', async () => {

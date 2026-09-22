@@ -386,14 +386,13 @@ unavailable" page. A standalone `serve` without a runtime URL stays open as
 before. See `help-doc/13-login-totp.md` and the manager's
 `docs/configuration.md` (`WIKI_MANAGER_TOTP`, `WIKI_MANAGER_SESSION_TTL_HOURS`).
 
-## Provenance (opt-in)
+## Provenance (always on)
 
-Provenance mode is enabled with one environment variable. Off by default; the
-active corpus is never migrated in silence.
-
-| Env var                 | Description                                                                 |
-| ----------------------- | --------------------------------------------------------------------------- |
-| `WIKI_PROVENANCE_MODE`  | `1`/`true`/`on` enables anchored provenance: locator catalogue in the consolidation prompt, token materialization, derived `sources:`, engine-side anchoring, source-page/anchored-citation validation, and the build evidence manifest consumed by `export`. |
+Anchored provenance is not an option: the locator catalogue in the
+consolidation prompt, token materialization, derived `sources:`, engine-side
+anchoring, source-page/anchored-citation validation, the deterministic loss
+guard and the build evidence manifest consumed by `export` run on every ingest,
+build and export. There is no environment variable to toggle.
 
 The model, contracts, modules, migration and rollback are in
 `docs/provenance.md`. The user-facing view is `help-doc/03-content-lifecycle.md`.

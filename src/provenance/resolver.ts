@@ -31,6 +31,17 @@ export interface EvidenceFragment {
    * actually used, not the whole page's closure.
    */
   chain: Array<{ path: string; anchor: string | null }>;
+  /**
+   * Every OTHER chain that reached the same terminal fragment. Two leaves can
+   * cite the same proof; keying the manifest on the first chain alone dropped
+   * the second leaf from the frozen map, so its export fell back to the live
+   * file. Additive: a manifest written before this key simply has none.
+   */
+  extraChains: Array<Array<{ path: string; anchor: string | null }>>;
+}
+
+function chainKey(chain: Array<{ path: string; anchor: string | null }>): string {
+  return chain.map((hop) => `${hop.path}#${hop.anchor ?? ''}`).join('>');
 }
 
 export interface EvidenceResolution {
@@ -77,8 +88,14 @@ export function resolveEvidence(options: ResolveEvidenceOptions): EvidenceResolu
           degradations.add(`unanchored citation (whole file): ${documentPath}`);
         }
         const key = `${documentPath}#${anchor}`;
-        if (!fragments.has(key)) {
-          fragments.set(key, { path: documentPath, anchor, hash: hashText(text), text, chain });
+        const existing = fragments.get(key);
+        if (!existing) {
+          fragments.set(key, { path: documentPath, anchor, hash: hashText(text), text, chain, extraChains: [] });
+        } else if (
+          chainKey(existing.chain) !== chainKey(chain)
+          && !existing.extraChains.some((known) => chainKey(known) === chainKey(chain))
+        ) {
+          existing.extraChains.push(chain);
         }
         continue;
       }
@@ -121,6 +138,8 @@ export interface EvidenceManifestEntry {
   hash: string;
   text: string;
   chain: Array<{ path: string; anchor: string | null }>;
+  /** Other chains that reached the same terminal fragment (additive). */
+  extraChains?: Array<Array<{ path: string; anchor: string | null }>>;
 }
 
 export interface EvidenceManifest {
@@ -145,6 +164,9 @@ export function createEvidenceManifest(
       hash: fragment.hash,
       text: fragment.text,
       chain: fragment.chain.map((hop) => ({ ...hop })),
+      ...(fragment.extraChains.length > 0
+        ? { extraChains: fragment.extraChains.map((chain) => chain.map((hop) => ({ ...hop }))) }
+        : {}),
     })),
   };
 }
@@ -173,13 +195,21 @@ export function fragmentKey(documentPath: string, anchor: string | null): string
  */
 export function frozenFragmentMap(manifest: EvidenceManifest): Map<string, string> {
   const map = new Map<string, string>();
+  // Two chains can reach the same proof: dedupe on (key, text), or the same
+  // frozen text would be appended twice under a shared hop.
+  const seen = new Set<string>();
   const append = (key: string, text: string): void => {
+    const signature = `${key}\u0000${text}`;
+    if (seen.has(signature)) return;
+    seen.add(signature);
     const previous = map.get(key);
     map.set(key, previous ? `${previous}\n\n${text}` : text);
   };
   for (const fragment of manifest.fragments) {
     append(fragmentKey(fragment.path, fragment.anchor), fragment.text);
-    for (const hop of fragment.chain) append(fragmentKey(hop.path, hop.anchor), fragment.text);
+    for (const chain of [fragment.chain, ...(fragment.extraChains ?? [])]) {
+      for (const hop of chain) append(fragmentKey(hop.path, hop.anchor), fragment.text);
+    }
   }
   return map;
 }
@@ -191,7 +221,7 @@ const SAFE_BUILD_ID = /^[a-zA-Z0-9._-]+$/;
  * suffixed with the content hash when known. The hash is what makes a rebuild
  * a DIFFERENT manifest: without it a second build would overwrite the first,
  * and the first build's export would lose A-v1. Build writes with the hash of
- * the content it wrote; export derives the same id from the content it reads.
+ * the unstamped content; export reads the final id stored in the deliverable.
  */
 export function evidenceBuildIdFor(documentRelativePath: string, contentHash?: string | null): string {
   const value = String(documentRelativePath).replace(/\\/g, '/').replace(/[^a-zA-Z0-9._-]/g, '_') || 'deliverable';
@@ -205,10 +235,54 @@ export function evidenceManifestPath(rootDir: string, buildId: string): string {
 }
 
 export async function writeEvidenceManifest(rootDir: string, manifest: EvidenceManifest): Promise<string> {
-  const target = evidenceManifestPath(rootDir, manifest.buildId);
+  const buildId = await resolveEvidenceBuildId(rootDir, manifest);
+  const finalManifest: EvidenceManifest = buildId === manifest.buildId ? manifest : { ...manifest, buildId };
+  const target = evidenceManifestPath(rootDir, buildId);
   await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  await writeFile(target, `${JSON.stringify(finalManifest, null, 2)}\n`, 'utf8');
   return target;
+}
+
+/**
+ * The id a manifest is written under. The content-derived base id is the one an
+ * export re-derives, so it must keep pointing at the FIRST build: when a second
+ * build renders the SAME text but rests on DIFFERENT evidence, writing the base
+ * would destroy the first build's frozen proof. The second lands under
+ * `<base>-<evidenceHash>` instead, discoverable through `listEvidenceBuilds`
+ * and recorded in the deliverable as `evidence_build_id` for automatic export.
+ */
+async function resolveEvidenceBuildId(rootDir: string, manifest: EvidenceManifest): Promise<string> {
+  const base = await readEvidenceManifestFile(evidenceManifestPath(rootDir, manifest.buildId));
+  if (base === null || sameFragments(base, manifest)) return manifest.buildId;
+  const evidenceHash = hashText(
+    evidenceSignature(manifest),
+  ).slice(0, 12);
+  return `${manifest.buildId}-${evidenceHash}`;
+}
+
+async function readEvidenceManifestFile(filePath: string): Promise<EvidenceManifest | null> {
+  try {
+    const raw = await readFile(filePath, 'utf8');
+    const parsed = JSON.parse(raw) as EvidenceManifest;
+    return parsed && parsed.schemaVersion === 2 && Array.isArray(parsed.fragments) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function evidenceSignature(manifest: EvidenceManifest): string {
+  return JSON.stringify(manifest.fragments.map((fragment) => JSON.stringify({
+    path: fragment.path,
+    anchor: fragment.anchor,
+    hash: fragment.hash,
+    text: fragment.text,
+    chains: [...new Set([fragment.chain, ...(fragment.extraChains ?? [])]
+      .map((chain) => JSON.stringify(chain)))].sort(),
+  })).sort());
+}
+
+function sameFragments(a: EvidenceManifest, b: EvidenceManifest): boolean {
+  return evidenceSignature(a) === evidenceSignature(b);
 }
 
 /**

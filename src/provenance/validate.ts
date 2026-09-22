@@ -3,7 +3,7 @@ import { resolveAnchor } from './locators.ts';
 
 /*
  * Lot 1/5 enforcement: the model does not reliably anchor its citations, so a
- * prompt instruction is not enough. In provenance mode every citation is
+ * prompt instruction is not enough. Every citation is
  * checked against the document it names: an unanchored citation is a
  * degradation, and an anchor that resolves nowhere or ambiguously is refused —
  * never silently widened.
@@ -24,15 +24,15 @@ export function validateAnchoredCitations(
   const issues: CitationIssue[] = [];
   for (const citation of extractBodyCitations(content)) {
     const label = citation.anchor ? `${citation.path}#${citation.anchor}` : citation.path;
+    const document = loadDocument(citation.path);
+    if (document === null) {
+      issues.push({ citation: label, code: 'missing', message: `cited document is unreadable: ${citation.path}` });
+      continue;
+    }
     if (citation.anchor === null) {
       // A legacy whole-file citation is readable but cannot carry a precise
       // proof; the new mode must say so rather than accept it silently.
       issues.push({ citation: label, code: 'unanchored', message: 'citation carries no #section anchor' });
-      continue;
-    }
-    const document = loadDocument(citation.path);
-    if (document === null) {
-      issues.push({ citation: label, code: 'missing', message: `cited document is unreadable: ${citation.path}` });
       continue;
     }
     const resolution = resolveAnchor(document, citation.anchor);

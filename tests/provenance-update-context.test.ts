@@ -55,4 +55,10 @@ describe('§3.4 update context (lot 3)', () => {
     expect(user).toContain('plain excerpt');
     expect(user).not.toContain('FULL existing body');
   });
+
+  it('names the two citation levels: the source note cites the archive, a leaf cites the source note', () => {
+    const user = buildConsolidationUser(args([]));
+    expect(user).toContain('archive citation path (the SOURCE NOTE cites this exact archive path): raw/ingested/a.md');
+    expect(user).toContain('leaf citation path (a concept LEAF cites the source note, never the archive directly): wiki/sources/a.md');
+  });
 });

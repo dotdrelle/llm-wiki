@@ -158,14 +158,26 @@ vocabulary in code was removed and stays removed.
 
 **A leaf accumulates across sources.** A concept leaf is the THEME, not one
 source's take on it: an update keeps what the page already states and adds the
-new source, so the same leaf carries several sources (`sources` frontmatter and
-the body). A citation may name a section of its source,
-`[src: raw/ingested/x.md#Heading]`; the export reads only that section
+new source. The frontmatter `sources` is not a union — it is **derived from the
+body's citation closure** (`provenance/derive.ts`, `provenance/write.ts`), so it
+names only the proofs the text actually reaches, and it follows only the cited
+section of an intermediate page. The two-level shape is the target
+(`livrable → feuille → page source → raw/ingested`) and is applied
+deterministically: the prompt asks a leaf to cite the source note, and
+`provenance/retarget.ts` moves a section-precise archive citation onto the
+source note only when the note's same-named section proves the same fragment —
+never a legacy citation the page already carried. A citation may name a section
+of its source, `[src: wiki/sources/x.md#Heading]`; the export reads only that section
 (`sliceCitedSection`, `services/exportService.ts`) while everything that
 resolves files (graph, lint, retrieval, vector index) uses the path alone —
 `extractSourceCitations` strips the anchor, `extractSourceCitationsWithAnchors`
 keeps it. A citation with no anchor is the whole source, and an anchor that no
-heading matches degrades to the whole source, never an error.
+heading matches degrades to the whole source, never an error. A composition that
+would silently drop a terminal proof the previous body reached is refused by the
+deterministic loss guard (`detectSourceLoss`, logged `ingest:provenance-loss`),
+and a citation that does not resolve refuses its operation (logged
+`ingest:provenance-refused`); the previous page is kept and the rest of the
+ingest continues.
 
 The graph derives communities deterministically from the folders
 (`src/graph/wiki/communityProjection.ts`: a node's community is its concept
@@ -708,20 +720,21 @@ ingest`) builds a review per planned operation (`buildReviewOperations`):
   since subjects are written entity-name-first — and is what `detectConceptSplits`
   uses: a split DECLARES a duplicate, costs retry rounds and tells the model to
   merge, so `jedox-cloud` and `anaplan-cloud` must stay two products.
-- A leaf's `sources` and its first `generated` are **carried forward at write
-  time**: `applyWikiOperationsAtomic` merges the existing file's engine-owned
-  frontmatter onto the update (`carryForwardEngineFrontmatter`,
-  `okf/frontmatter.ts`). The operation content is the model's output for one
-  source and never contains what earlier ingests accumulated, so without this
-  merge every update reset `sources` to the current source alone — "one leaf per
-  source" even when the leaf was updated in place. The HUMAN review trail is the
-  exception: `verified` attests one TEXT and `status: stable` vouches for it, so
-  when the ingest rewrites the body they do not survive — the trail is dropped
-  and a `stable` page returns to `draft`. An idempotent re-apply (identical
-  body) keeps both. Carrying them across a rewrite left pages asserting human
-  verification for content nobody reviewed.
-  `validateConsolidation` also turns a concept `create` into an `update` when
-  the path already exists, keeping it out of the concept budget.
+- A leaf's first `generated` and its human review trail are **carried at write
+  time**; its `sources` is **derived**. `applyWikiOperationsAtomic` first merges
+  the existing file's engine-owned frontmatter (`carryForwardEngineFrontmatter`,
+  `okf/frontmatter.ts`) — the operation content is the model's output for one
+  source and never contains what earlier ingests accumulated — then, for
+  `wiki/concepts/**` and `wiki/sources/**`, `applyDerivedSources`
+  (`provenance/write.ts`) recomputes `sources` from the body's citation closure
+  and overwrites the unioned list. The HUMAN review trail is the exception:
+  `verified` attests one TEXT and `status: stable` vouches for it, so when the
+  ingest rewrites the body they do not survive — the trail is dropped and a
+  `stable` page returns to `draft`. An idempotent re-apply (identical body) keeps
+  both. Carrying them across a rewrite left pages asserting human verification
+  for content nobody reviewed. `validateConsolidation` also turns a concept
+  `create` into an `update` when the path already exists, keeping it out of the
+  concept budget.
 - `enforceSourceCitationPath` **preserves** a citation already anchored to an
   archived source (`raw/ingested/…`, well-formed) or a workspace page: on an
   update the model keeps the page's earlier citations, and rewriting those to

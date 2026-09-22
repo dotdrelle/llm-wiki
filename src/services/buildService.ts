@@ -3,7 +3,6 @@ import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
 import { resolveInside } from '../utils/path.ts';
-import { provenanceModeEnabled } from '../provenance/mode.ts';
 import {
   createEvidenceManifest,
   evidenceBuildIdFor,
@@ -962,10 +961,13 @@ export class BuildService {
     }
   }
 
-  private async writeEvidenceManifestFor(
+  private async freezeDeliverableEvidence(
     template: TemplateDocument,
     rendered: string,
-  ): Promise<void> {
+  ): Promise<string> {
+    const parsed = matter(rendered);
+    delete parsed.data.evidence_build_id;
+    rendered = matter.stringify(parsed.content, parsed.data);
     const rootDir = this.workspace.paths.rootDir;
     const loadDocument = (documentPath: string): string | null => {
       try {
@@ -977,9 +979,12 @@ export class BuildService {
     };
     const { fragments, degradations } = resolveEvidence({ content: rendered, loadDocument });
     // Key the manifest by the content hash so a later rebuild is a DIFFERENT
-    // manifest and cannot overwrite the one this content's export will read.
-    const buildId = evidenceBuildIdFor(template.outputRelativePath, hashText(rendered));
-    await writeEvidenceManifest(rootDir, createEvidenceManifest(buildId, fragments));
+    // manifest; when the rendered text is identical but the evidence changed,
+    // `writeEvidenceManifest` suffixes the id instead of clobbering the first
+    // build's frozen proof. The deliverable carries the exact resulting id.
+    const baseBuildId = evidenceBuildIdFor(template.outputRelativePath, hashText(rendered));
+    const target = await writeEvidenceManifest(rootDir, createEvidenceManifest(baseBuildId, fragments));
+    const buildId = path.basename(path.dirname(target));
     if (this.logger) {
       const data = { template: template.relativePath, buildId, fragments: fragments.length };
       if (degradations.length > 0) {
@@ -988,6 +993,7 @@ export class BuildService {
         await this.logger.info('build:evidence-manifest', data);
       }
     }
+    return matter.stringify(parsed.content, { ...parsed.data, evidence_build_id: buildId });
   }
 
   private async logBuildContextResolution(
@@ -1166,6 +1172,7 @@ export class BuildService {
               ).stabilize(existing, rendered);
               rendered = result.markdown;
               stabilized = result.diff;
+              rendered = await this.freezeDeliverableEvidence(template, rendered);
               changed = await this.workspace.writeDeliverable(
                 template.outputAbsolutePath,
                 rendered,
@@ -1175,6 +1182,7 @@ export class BuildService {
                 result.diff,
               );
             } else {
+              rendered = await this.freezeDeliverableEvidence(template, rendered);
               changed = await this.workspace.writeDeliverable(
                 template.outputAbsolutePath,
                 rendered,
@@ -1195,6 +1203,7 @@ export class BuildService {
             await rm(tmpPath, { force: true });
           }
         } else {
+          rendered = await this.freezeDeliverableEvidence(template, rendered);
           changed = await this.workspace.writeDeliverable(
             template.outputAbsolutePath,
             rendered,
@@ -1203,12 +1212,6 @@ export class BuildService {
         }
 
         await this.reportMissingCitations(template.relativePath, rendered);
-
-        // Provenance mode: freeze the exact fragments this build used, so a
-        // later export resolves A-v1 even after the archive became A-v2.
-        if (provenanceModeEnabled()) {
-          await this.writeEvidenceManifestFor(template, rendered);
-        }
 
         stateUpdates[template.relativePath] = {
           templateHash,

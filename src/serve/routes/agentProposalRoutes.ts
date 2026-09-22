@@ -7,7 +7,6 @@ import { resolveInside } from '../../utils/path.ts';
 import { escapeHtml } from '../../utils/html.ts';
 import { HistoryService, commitHistorySafely } from '../../services/historyService.ts';
 import { applyOkfFrontmatter } from '../../okf/frontmatter.ts';
-import { provenanceModeEnabled } from '../../provenance/mode.ts';
 import { applyDerivedSources } from '../../provenance/write.ts';
 import { validateAnchoredCitations } from '../../provenance/validate.ts';
 import { materializeAllLocatorTokens } from '../../provenance/promptLocators.ts';
@@ -180,12 +179,11 @@ type ProposalPrevalidation = Array<{
 }>;
 
 /**
- * Prevalidate a proposal at display time, in provenance mode only: the human
- * sees which citations cannot resolve BEFORE deciding to merge. The merge
- * revalidates atomically (the corpus may have changed since).
+ * Prevalidate a proposal at display time: the human sees which citations
+ * cannot resolve BEFORE deciding to merge. The merge revalidates atomically
+ * (the corpus may have changed since).
  */
 function prevalidateProposal(rootDir: string, record: ProposalRecord): ProposalPrevalidation {
-  if (!provenanceModeEnabled()) return [];
   const proposed = new Map(record.changes.map((change) => [change.path, change.content ?? '']));
   const loadDocument = (documentPath: string): string | null => {
     if (proposed.has(documentPath)) return proposed.get(documentPath) ?? null;
@@ -417,70 +415,68 @@ export async function handleAgentProposalRoutes(
       return fail(400, { ok: false, error: 'the proposal carries no mergeable wiki change' });
     }
 
-    // Provenance mode: a curation merge is a writer like any other. Its pages
-    // are prevalidated here, the `sources:` inventory is recomputed from the
-    // body closure, and an unresolved citation REFUSES the merge instead of
-    // writing a page whose provenance nobody can resolve. The proposal and the
-    // wiki are left untouched so the proposal stays correctable.
-    if (provenanceModeEnabled()) {
-      const proposed = new Map(record.changes.map((change) => [change.path, change.content ?? '']));
-      const resolvePage = (pagePath: string): string | null => {
-        if (proposed.has(pagePath)) return proposed.get(pagePath) ?? null;
-        try {
-          const absolute = resolveInside(rootDir, pagePath);
-          return existsSync(absolute) ? readFileSync(absolute, 'utf8') : null;
-        } catch {
-          return null;
-        }
-      };
-      const diagnostics: Array<{
-        path: string;
-        unresolved: string[];
-        cycles: string[][];
-        issues: Array<{ code: string; citation: string; message: string }>;
-        tokens: string[];
-      }> = [];
-      // The merge is exhaustive by design but still bounded: past the file/time
-      // budget the validation is INCOMPLETE and the merge is refused, never
-      // silently partial.
-      let mergeProcessed = 0;
-      let incomplete = false;
-      const mergeStartedAt = Date.now();
-      const MAX_MERGE_FILES = 200;
-      const MERGE_TIME_BUDGET_MS = 15000;
-      for (const operation of operations) {
-        if (operation.type === 'delete' || !/^wiki\/(concepts|sources)\//.test(operation.path)) continue;
-        if (mergeProcessed >= MAX_MERGE_FILES || Date.now() - mergeStartedAt > MERGE_TIME_BUDGET_MS) {
-          incomplete = true;
-          break;
-        }
-        mergeProcessed += 1;
-        // 1) A curation run writes catalogue tokens (`#section:…`); materialize
-        //    them, or the raw token would land in the wiki. 2) Then derive
-        //    `sources:`. 3) Then VALIDATE the anchors — a clean closure is not
-        //    proof the anchors resolve.
-        const materialized = materializeAllLocatorTokens(operation.content, resolvePage);
-        const derived = applyDerivedSources(materialized.content, { resolvePage });
-        const issues = validateAnchoredCitations(derived.content, resolvePage);
-        if (!derived.clean || issues.length > 0 || materialized.unresolved.length > 0) {
-          diagnostics.push({
-            path: operation.path,
-            unresolved: derived.unresolved,
-            cycles: derived.cycles,
-            issues,
-            tokens: materialized.unresolved,
-          });
-        } else {
-          operation.content = derived.content;
-        }
-        if (Date.now() - mergeStartedAt > MERGE_TIME_BUDGET_MS) {
-          incomplete = true;
-          break;
-        }
+    // A curation merge is a writer like any other. Its pages are prevalidated
+    // here, the `sources:` inventory is recomputed from the body closure, and
+    // an unresolved citation REFUSES the merge instead of writing a page whose
+    // provenance nobody can resolve. The proposal and the wiki are left
+    // untouched so the proposal stays correctable.
+    const proposed = new Map(record.changes.map((change) => [change.path, change.content ?? '']));
+    const resolvePage = (pagePath: string): string | null => {
+      if (proposed.has(pagePath)) return proposed.get(pagePath) ?? null;
+      try {
+        const absolute = resolveInside(rootDir, pagePath);
+        return existsSync(absolute) ? readFileSync(absolute, 'utf8') : null;
+      } catch {
+        return null;
       }
-      if (diagnostics.length > 0 || incomplete) {
-        return fail(422, { ok: false, error: 'provenance_invalid', validation_incomplete: incomplete, diagnostics });
+    };
+    const diagnostics: Array<{
+      path: string;
+      unresolved: string[];
+      cycles: string[][];
+      issues: Array<{ code: string; citation: string; message: string }>;
+      tokens: string[];
+    }> = [];
+    // The merge is exhaustive by design but still bounded: past the file/time
+    // budget the validation is INCOMPLETE and the merge is refused, never
+    // silently partial.
+    let mergeProcessed = 0;
+    let incomplete = false;
+    const mergeStartedAt = Date.now();
+    const MAX_MERGE_FILES = 200;
+    const MERGE_TIME_BUDGET_MS = 15000;
+    for (const operation of operations) {
+      if (operation.type === 'delete' || !/^wiki\/(concepts|sources)\//.test(operation.path)) continue;
+      if (mergeProcessed >= MAX_MERGE_FILES || Date.now() - mergeStartedAt > MERGE_TIME_BUDGET_MS) {
+        incomplete = true;
+        break;
       }
+      mergeProcessed += 1;
+      // 1) A curation run writes catalogue tokens (`#section:…`); materialize
+      //    them, or the raw token would land in the wiki. 2) Then derive
+      //    `sources:`. 3) Then VALIDATE the anchors — a clean closure is not
+      //    proof the anchors resolve.
+      const materialized = materializeAllLocatorTokens(operation.content, resolvePage);
+      const derived = applyDerivedSources(materialized.content, { resolvePage });
+      const issues = validateAnchoredCitations(derived.content, resolvePage);
+      if (!derived.clean || issues.length > 0 || materialized.unresolved.length > 0) {
+        diagnostics.push({
+          path: operation.path,
+          unresolved: derived.unresolved,
+          cycles: derived.cycles,
+          issues,
+          tokens: materialized.unresolved,
+        });
+      } else {
+        operation.content = derived.content;
+      }
+      if (Date.now() - mergeStartedAt > MERGE_TIME_BUDGET_MS) {
+        incomplete = true;
+        break;
+      }
+    }
+    if (diagnostics.length > 0 || incomplete) {
+      return fail(422, { ok: false, error: 'provenance_invalid', validation_incomplete: incomplete, diagnostics });
     }
     try {
       await deps.workspace.applyWikiOperations(operations);

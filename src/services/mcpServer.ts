@@ -14,7 +14,6 @@ import { existsSync, readFileSync } from 'node:fs';
 import { pathExists } from '../utils/fs.ts';
 import { resolveInside, relativeFrom } from '../utils/path.ts';
 import { buildLocatorCatalogue } from '../provenance/locators.ts';
-import { provenanceModeEnabled } from '../provenance/mode.ts';
 import { applyDerivedSources } from '../provenance/write.ts';
 import { validateAnchoredCitations } from '../provenance/validate.ts';
 import { materializeAllLocatorTokens } from '../provenance/promptLocators.ts';
@@ -29,7 +28,7 @@ import {
 import { listHelpChapters, readHelpChapter, searchHelpChapters } from '../utils/helpDoc.ts';
 import type { AppConfig } from '../types.ts';
 
-const LLM_WIKI_VERSION = '0.15.100';
+const LLM_WIKI_VERSION = '0.15.101';
 const MAX_SOURCE_NAME_CHARS = 200;
 const MAX_SOURCE_SUBDIR_CHARS = 300;
 const MAX_SOURCE_CONTENT_CHARS = 1_000_000;
@@ -835,7 +834,7 @@ export async function createWikiMcpServer(
     // citation closure and a freshly derived `sources:` — the same contract as
     // ingest and the curation merge. Invalid provenance is refused, not stored.
     let finalContent = content;
-    if (provenanceModeEnabled() && /^wiki\/(concepts|sources)\//.test(pagePath)) {
+    if (/^wiki\/(concepts|sources)\//.test(pagePath)) {
       const rootDir = workspace.paths.rootDir;
       const readSync = (documentPath: string): string | null => {
         try {

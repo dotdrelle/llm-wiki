@@ -253,7 +253,7 @@ class FailingOnceLLMService extends FakeLLMService {
         {
           type: 'create',
           path: this.sourceNotePath,
-          content: '# Second\n\n[src: raw/ingested/second.md]\n',
+          content: '# Second\n\n[src: raw/ingested/note.md]\n',
         },
       ],
     };
@@ -631,6 +631,115 @@ describe('ingest service', () => {
     expect(workspace.appliedBatches.at(-1)?.every((op) => op.type !== 'delete')).toBe(true);
   });
 
+  it('refuses a concept update that drops a terminal proof of the previous body', async () => {
+    class DroppingSourceLLMService extends FakeLLMService {
+      protected async plan(): Promise<IngestPlan & { pages?: unknown[] }> {
+        return {
+          summary: 'Update the leaf but drop an earlier source.',
+          operations: [
+            {
+              type: 'update',
+              path: this.sourceNotePath,
+              content: '# Note\n\n[src: raw/ingested/note.md]\n',
+            },
+            {
+              type: 'update',
+              path: 'wiki/concepts/product/board-platform.md',
+              content: '# Board\n\nOnly the new statement. [src: raw/ingested/note.md]\n',
+            },
+          ],
+          pages: [{
+            path: 'wiki/concepts/product/board-platform.md',
+            subject: 'board-platform',
+            scope: 'product',
+            kind: 'product',
+            tags: [],
+          }],
+        };
+      }
+    }
+    const workspace = new FakeWorkspaceService();
+    const logger = new MemoryTraceLogger();
+    const retrieval = new FakeRetrievalService([
+      {
+        absolutePath: '/tmp/wiki/concepts/product/board-platform.md',
+        relativePath: 'wiki/concepts/product/board-platform.md',
+        name: 'board-platform',
+        type: 'concept',
+        content: '---\nsubject: board-platform\n---\n\n# Board\n\nEarlier fact. [src: raw/ingested/older.md#Coûts]\n',
+      },
+    ]);
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new DroppingSourceLLMService() as unknown as LLMService,
+      retrieval as unknown as RetrievalService,
+      new CountingRefreshService() as unknown as RefreshService,
+      logger,
+      disabledCache(),
+    );
+
+    await service.ingest([], {});
+
+    expect(logger.entries.some((entry) => entry.event === 'ingest:provenance-loss')).toBe(true);
+    const applied = workspace.appliedBatches.flat();
+    // The lossy leaf update is dropped; the source note still lands.
+    expect(applied.some((operation) => operation.path === 'wiki/concepts/product/board-platform.md')).toBe(false);
+    expect(applied.some((operation) => operation.path === 'wiki/sources/note.md')).toBe(true);
+  });
+
+  it.each(['#Section', ''])('refuses a concept update whose citation does not resolve (%s)', async (anchor) => {
+    class DanglingCitationLLMService extends FakeLLMService {
+      protected async plan(): Promise<IngestPlan & { pages?: unknown[] }> {
+        return {
+          summary: 'Cite a page that does not exist.',
+          operations: [
+            {
+              type: 'update',
+              path: this.sourceNotePath,
+              content: '# Note\n\n[src: raw/ingested/note.md]\n',
+            },
+            {
+              type: 'create',
+              path: 'wiki/concepts/product/board-platform.md',
+              content: `# Board\n\nClaim. [src: wiki/sources/ghost.md${anchor}]\n`,
+            },
+          ],
+          pages: [{
+            path: 'wiki/concepts/product/board-platform.md',
+            subject: 'board-platform',
+            scope: 'product',
+            kind: 'product',
+            tags: [],
+          }],
+        };
+      }
+    }
+    const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-refuse-'));
+    const workspace = new FakeWorkspaceService();
+    workspace.paths.rootDir = root;
+    workspace.paths.internalDir = path.join(root, '.wiki', 'internal');
+    await mkdir(workspace.paths.internalDir, { recursive: true });
+    const logger = new MemoryTraceLogger();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new DanglingCitationLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      new CountingRefreshService() as unknown as RefreshService,
+      logger,
+      disabledCache(),
+    );
+
+    await service.ingest([], {});
+
+    expect(logger.entries.some((entry) => entry.event === 'ingest:provenance-refused')).toBe(true);
+    const applied = workspace.appliedBatches.flat();
+    // The unresolvable branch is dropped; the source note still lands.
+    expect(applied.some((operation) => operation.path === 'wiki/concepts/product/board-platform.md')).toBe(false);
+    expect(applied.some((operation) => operation.path === 'wiki/sources/note.md')).toBe(true);
+  });
+
   it('re-ingests an unchanged source whose produced pages have vanished', async () => {
     const workspace = new FakeWorkspaceService();
     workspace.sourceUnchanged = true;
@@ -867,6 +976,10 @@ describe('ingest service', () => {
     // those to the source being ingested misattributes the facts they back —
     // the "the sources associated are often not the right ones" defect.
     const workspace = new FakeWorkspaceService();
+    const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-existing-proof-'));
+    workspace.paths.rootDir = root;
+    await mkdir(path.join(root, 'raw/ingested'), { recursive: true });
+    await writeFile(path.join(root, 'raw/ingested/source-one.md'), 'Existing evidence.');
     workspace.sourcePaths = ['/tmp/wiki/raw/untracked/source-two.md'];
     const logger = new MemoryTraceLogger();
     const service = new IngestService(
@@ -948,6 +1061,10 @@ describe('ingest service', () => {
     // punctuation that follows the path; wrapping it verbatim produced
     // "[src: raw/ingested/other.md.]", a path no renderer can resolve.
     const workspace = new FakeWorkspaceService();
+    const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-existing-proof-'));
+    workspace.paths.rootDir = root;
+    await mkdir(path.join(root, 'raw/ingested'), { recursive: true });
+    await writeFile(path.join(root, 'raw/ingested/other.md'), 'Existing evidence.');
     const logger = new MemoryTraceLogger();
     const service = new IngestService(
       createConfig(),
@@ -1442,6 +1559,60 @@ describe('ingest service', () => {
     const applied = workspace.appliedBatches.flat();
     expect(applied.some((operation) => operation.path === 'wiki/concepts/produit/board-platform.md')).toBe(true);
     expect(applied.some((operation) => operation.path.startsWith('wiki/concepts/product/'))).toBe(false);
+  });
+
+  it('runs the provenance pipeline on the orchestrated apply and refuses an unresolvable citation', async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-prov-apply-'));
+    const workspace = new FakeWorkspaceService();
+    workspace.paths = { rootDir, internalDir: path.join(rootDir, '.wiki') };
+    const planPath = path.join(rootDir, '.wiki', 'ingest-plans', 'plan.json');
+    await mkdir(path.dirname(planPath), { recursive: true });
+    await writeFile(
+      planPath,
+      JSON.stringify({
+        generatedAt: new Date().toISOString(),
+        sources: [
+          {
+            source: 'raw/untracked/note.md',
+            summary: 'Cites a page that does not exist.',
+            operations: [
+              { type: 'create', path: 'wiki/sources/note.md', content: '# Note\n\n[src: raw/ingested/note.md]\n' },
+              { type: 'create', path: 'wiki/concepts/product/board-platform.md', content: '# Board\n\nClaim. [src: wiki/sources/ghost.md#Section]\n' },
+            ],
+            review: [],
+          },
+        ],
+      }),
+      'utf8',
+    );
+    // `product` is already established, so no folder arbitration runs and the
+    // only provenance work exercised here is the pipeline itself.
+    const retrieval = new FakeRetrievalService([
+      {
+        absolutePath: '/tmp/wiki/concepts/product/existing.md',
+        relativePath: 'wiki/concepts/product/existing.md',
+        name: 'existing',
+        type: 'concept',
+        content: '# Existing\n',
+      },
+    ]);
+    const logger = new MemoryTraceLogger();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new FakeLLMService() as unknown as LLMService,
+      retrieval as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+      disabledCache(),
+    );
+
+    await service.applyPlannedIngest(['.wiki/ingest-plans/plan.json']);
+
+    expect(logger.entries.some((entry) => entry.event === 'ingest:provenance-refused')).toBe(true);
+    const applied = workspace.appliedBatches.flat();
+    expect(applied.some((operation) => operation.path === 'wiki/concepts/product/board-platform.md')).toBe(false);
+    expect(applied.some((operation) => operation.path === 'wiki/sources/note.md')).toBe(true);
   });
 
   it('does not archive or observe a planned source whose every operation is rejected', async () => {

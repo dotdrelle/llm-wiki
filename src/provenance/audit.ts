@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
@@ -7,6 +7,7 @@ import {
   normalizeHeadingPathKey,
   splitMarkdownSections,
 } from '../utils/markdown.ts';
+import { deriveTerminalSources } from './derive.ts';
 
 /*
  * Lot 0 of `plan-provenance-feuilles.md`: a READ-ONLY audit of the corpus, not
@@ -196,6 +197,7 @@ function classifyAnchor(
 
 interface PageParse {
   data: Record<string, unknown>;
+  content: string;
   sections: ReturnType<typeof splitMarkdownSections>['sections'];
   citations: AuditCitation[];
 }
@@ -220,18 +222,26 @@ async function parsePage(rootDir: string, relPath: string, rawCache: Map<string,
   for (const citation of citations) {
     if (citation.anchor) await loadRawIndex(rootDir, citation.path, rawCache);
   }
-  return { data: (parsed.data ?? {}) as Record<string, unknown>, sections, citations };
+  return { data: (parsed.data ?? {}) as Record<string, unknown>, content, sections, citations };
 }
 
 function pageAuditCommon(
   relPath: string,
   parse: PageParse,
   rawCache: Map<string, RawSectionIndex | null>,
+  resolvePage: (pagePath: string) => string | null,
 ): PageAudit {
   const citations = parse.citations;
   const declared = declaredSourcePaths(parse.data);
   const declaredSet = new Set(declared);
   const citedSet = new Set(citations.map((entry) => entry.path));
+  // The proof a page reaches is the TERMINAL closure, not its direct citations:
+  // a two-level leaf cites its source note, which cites the archive. Comparing
+  // `sources:` to the direct citations would report every correct leaf as a
+  // phantom and every source note as undeclared.
+  const terminalSet = new Set(
+    deriveTerminalSources({ content: parse.content, resolvePage }).terminal,
+  );
 
   let anchored = 0;
   let unanchored = 0;
@@ -279,9 +289,9 @@ function pageAuditCommon(
     anchorAmbiguous,
     anchorUnresolved,
     declaredSources: declared,
-    representedSources: [...declaredSet].filter((entry) => citedSet.has(entry)),
-    unrepresentedSources: [...declaredSet].filter((entry) => !citedSet.has(entry)),
-    citedNotDeclared: [...citedSet].filter((entry) => !declaredSet.has(entry)),
+    representedSources: [...declaredSet].filter((entry) => terminalSet.has(entry)),
+    unrepresentedSources: [...declaredSet].filter((entry) => !terminalSet.has(entry)),
+    citedNotDeclared: [...terminalSet].filter((entry) => !declaredSet.has(entry)),
     distinctCitedSources: citedSet.size,
     repeatsOneCitationEverywhere,
   };
@@ -380,8 +390,21 @@ export async function auditWorkspace(options: { rootDir: string; workspace?: str
   // Two passes: every page path must be known before edges are resolved, or a
   // citation to a page read later in the walk is dropped and a cycle vanishes.
   const knownPaths = new Set(parsedPages.map((page) => page.relPath));
+  // Resolve a cited wiki page from the already-parsed content, never by a second
+  // disk read: the closure and the audit must read the same bytes.
+  const pageContents = new Map(parsedPages.map((page) => [page.relPath, page.parse.content]));
+  const resolvePage = (pagePath: string): string | null => {
+    const known = pageContents.get(pagePath);
+    if (known != null) return known;
+    try {
+      const absolute = path.join(rootDir, pagePath);
+      return existsSync(absolute) ? readFileSync(absolute, 'utf8') : null;
+    } catch {
+      return null;
+    }
+  };
   for (const { relPath, isSource, parse } of parsedPages) {
-    const common = pageAuditCommon(relPath, parse, rawCache);
+    const common = pageAuditCommon(relPath, parse, rawCache, resolvePage);
     updateChain(chainPages, knownPaths, relPath, parse.citations);
     if (isSource) {
       sourcePages.push({

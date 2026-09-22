@@ -78,7 +78,7 @@ export function anchorCitations(
   const next = String(content ?? '').replace(
     /\[src:\s*([^\]#\s]+)(?:#([^\]]+))?\]/g,
     (match, path: string, anchor: string | undefined, offset: number) => {
-      if (!/^raw\/ingested\//.test(path)) return match;
+      if (!/^(raw\/ingested|wiki\/sources)\//.test(path)) return match;
       const document = documentOf(path);
       if (document === null) return match;
       // An already-resolvable anchor is left exactly as written.

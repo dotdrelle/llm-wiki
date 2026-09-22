@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   createEvidenceManifest,
   manifestFragment,
@@ -49,12 +49,7 @@ function createConfig(root: string): AppConfig {
 }
 
 describe('provenance end-to-end gate (lot 5)', () => {
-  afterEach(() => {
-    delete process.env.WIKI_PROVENANCE_MODE;
-  });
-
   it('A + B + C compose one leaf, A-v2 keeps the frozen proof', async () => {
-    process.env.WIKI_PROVENANCE_MODE = '1';
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-gate-'));
     const workspace = new WorkspaceService(createConfig(root));
     await workspace.initWorkspace({});

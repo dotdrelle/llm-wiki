@@ -2,12 +2,13 @@ import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { applyOkfFrontmatter } from '../okf/frontmatter.ts';
 import { buildConsolidationPrompt, buildConsolidationRetryUser, CONSOLIDATION_PROMPT_VERSION } from '../prompts/consolidationPrompt.ts';
-import { provenanceModeEnabled } from '../provenance/mode.ts';
 import {
   buildLocatorCatalogue,
   materializeLocatorTokens,
   renderLocatorCatalogueSection,
 } from '../provenance/promptLocators.ts';
+import { detectSourceLoss, extractBodyCitations } from '../provenance/derive.ts';
+import { retargetLeafCitationsToSourceNote } from '../provenance/retarget.ts';
 import { validateSourcePage } from '../provenance/sourcePage.ts';
 import { validateAnchoredCitations } from '../provenance/validate.ts';
 import { anchorCitations } from '../provenance/anchor.ts';
@@ -316,6 +317,198 @@ function enforceSourceCitationPath(
 
   return {
     operations: operationsWithCitations,
+    rewrittenCitations,
+    unreconciledCitations,
+    wrappedBarePaths,
+  };
+}
+
+interface ProvenancePipelineOptions {
+  operations: WikiOperation[];
+  sourcePagePath: string;
+  archiveCitationPath: string;
+  rawBody: string;
+  /** Reads a workspace-relative file from DISK, or null. */
+  readDisk: (documentPath: string) => string | null;
+  /** The page as it exists before this write (disk content), for the loss guard. */
+  existingContentOf: (pagePath: string) => string | null;
+}
+
+interface ProvenanceAnchorIssue {
+  path: string;
+  citation: string;
+  code: string;
+  message: string;
+}
+
+interface ProvenanceSourcePageIssue {
+  path: string;
+  code: string;
+  message: string;
+}
+
+interface ProvenancePipelineResult {
+  /** Operations after token materialization, anchoring and path enforcement. */
+  operations: WikiOperation[];
+  /** Pages refused by the proof contracts, with their reasons. */
+  refused: Map<string, string[]>;
+  /** Concept updates that would drop a terminal proof of the previous body. */
+  lost: Array<{ path: string; lost: string[] }>;
+  sourcePageIssues: ProvenanceSourcePageIssue[];
+  anchorIssues: ProvenanceAnchorIssue[];
+  retargeted: number;
+  anchored: number;
+  unresolvedAnchors: string[];
+  rewrittenCitations: number;
+  unreconciledCitations: number;
+  wrappedBarePaths: number;
+}
+
+/**
+ * The provenance post-processing every writer runs on a source's operations,
+ * shared by the live ingest and the planned (`--plan-only`/`--apply`) path so
+ * the orchestrator cannot bypass it: token materialization, engine-side
+ * anchoring, the two-level retarget, citation-path enforcement, the source-page
+ * and anchored-citation contracts, the refusal of unresolvable proofs, and the
+ * deterministic loss guard. It reads text only — no LLM, no log side effects;
+ * the caller logs the returned diagnostics.
+ */
+function runProvenancePipeline(options: ProvenancePipelineOptions): ProvenancePipelineResult {
+  const tokenSafeOperations = options.operations.map((operation) =>
+    operation.type === 'delete' || typeof operation.content !== 'string'
+      ? operation
+      : {
+          ...operation,
+          content: materializeLocatorTokens(operation.content, {
+            documentPath: options.archiveCitationPath,
+            documentContent: options.rawBody,
+          }).content,
+        },
+  );
+  // Pages this plan writes are not on disk yet: a leaf citing the source note
+  // composed in the SAME batch must still resolve, so read the batch first,
+  // then the archive body, then the workspace.
+  const batchDocuments = new Map<string, string>();
+  for (const operation of tokenSafeOperations) {
+    if (operation.type !== 'delete' && typeof operation.content === 'string') {
+      batchDocuments.set(operation.path, operation.content);
+    }
+  }
+  const loadDocument = (documentPath: string): string | null => {
+    const fromBatch = batchDocuments.get(documentPath);
+    if (fromBatch != null) return fromBatch;
+    if (documentPath === options.archiveCitationPath) return options.rawBody;
+    return options.readDisk(documentPath);
+  };
+  let anchored = 0;
+  const unresolvedAnchors: string[] = [];
+  const anchoredOperations = tokenSafeOperations.map((operation) => {
+    if (operation.type === 'delete' || typeof operation.content !== 'string') return operation;
+    const result = anchorCitations(operation.content, loadDocument);
+    anchored += result.anchored;
+    unresolvedAnchors.push(...result.unresolved);
+    return { ...operation, content: result.content };
+  });
+  const sourceNoteContent = tokenSafeOperations.find(
+    (operation) => operation.path === options.sourcePagePath && typeof operation.content === 'string',
+  )?.content ?? null;
+  const { operations: twoLevelOperations, retargeted } = retargetLeafCitationsToSourceNote(
+    anchoredOperations,
+    {
+      sourcePagePath: options.sourcePagePath,
+      archiveCitationPath: options.archiveCitationPath,
+      sourceNoteContent,
+      previousContentOf: options.readDisk,
+      resolvePage: loadDocument,
+    },
+  );
+  const {
+    operations: citationSafeOperations,
+    rewrittenCitations,
+    unreconciledCitations,
+    wrappedBarePaths,
+  } = enforceSourceCitationPath(twoLevelOperations, options.archiveCitationPath);
+
+  const sourcePageIssues: ProvenanceSourcePageIssue[] = citationSafeOperations
+    .filter((operation) => operation.type !== 'delete' && /^wiki\/sources\/[^/]+\.md$/.test(operation.path))
+    .flatMap((operation) => {
+      // The engine adds `type` and the archive `sources` at write time, so
+      // validate the page it WILL write, not the model's raw output.
+      const candidate = applyOkfFrontmatter(operation.content ?? '', {
+        type: 'source',
+        sources: [{ path: options.archiveCitationPath }],
+      });
+      return validateSourcePage(candidate).issues.map((issue) => ({
+        path: operation.path,
+        code: issue.code,
+        message: issue.message,
+      }));
+    });
+
+  const anchorIssues: ProvenanceAnchorIssue[] = citationSafeOperations
+    .filter((operation) => operation.type !== 'delete' && /^wiki\/(concepts|sources)\//.test(operation.path))
+    .flatMap((operation) => validateAnchoredCitations(operation.content ?? '', loadDocument)
+      .map((issue) => ({ path: operation.path, ...issue })));
+
+  const refused = new Map<string, string[]>();
+  const refuse = (pagePath: string, reason: string): void => {
+    refused.set(pagePath, [...(refused.get(pagePath) ?? []), reason]);
+  };
+  for (const issue of sourcePageIssues) {
+    // Only an identity breach that makes the page's proof unusable refuses
+    // here. `anchored-citation`/`uncited-section` are quality signals the
+    // engine anchoring repairs or announces, and a `foreign-citation` is a
+    // citation the wrapping/enforcement already handles.
+    if (issue.code === 'raw-source' || issue.code === 'single-source') {
+      refuse(issue.path, `${issue.code}: ${issue.message}`);
+    }
+  }
+  for (const issue of anchorIssues) {
+    if (issue.code === 'missing' || issue.code === 'ambiguous') {
+      refuse(issue.path, `${issue.code}: ${issue.message}`);
+    }
+  }
+  // A page that cites a refused page can no longer resolve through it.
+  for (let pass = 0; pass <= citationSafeOperations.length; pass += 1) {
+    let grew = false;
+    for (const operation of citationSafeOperations) {
+      if (operation.type === 'delete' || refused.has(operation.path)) continue;
+      const citesRefused = extractBodyCitations(operation.content ?? '')
+        .find((citation) => refused.has(citation.path));
+      if (citesRefused) {
+        refuse(operation.path, `cites a refused page: ${citesRefused.path}`);
+        grew = true;
+      }
+    }
+    if (!grew) break;
+  }
+
+  // Deterministic loss guard (§3.3): an update must not silently drop a
+  // terminal proof the previous body reached. The comparison is the citation
+  // closure, never a model judgement.
+  const lost: Array<{ path: string; lost: string[] }> = [];
+  for (const operation of citationSafeOperations) {
+    if (operation.type !== 'update' || typeof operation.content !== 'string') continue;
+    if (!/^wiki\/concepts\//.test(operation.path) || refused.has(operation.path)) continue;
+    const previous = options.existingContentOf(operation.path);
+    if (!previous) continue;
+    const loss = detectSourceLoss(previous, operation.content, { resolvePage: loadDocument });
+    if (loss.length === 0) continue;
+    lost.push({
+      path: operation.path,
+      lost: loss.map((fragment) => `${fragment.path}#${fragment.anchor ?? ''}`),
+    });
+  }
+
+  return {
+    operations: citationSafeOperations,
+    refused,
+    lost,
+    sourcePageIssues,
+    anchorIssues,
+    retargeted,
+    anchored,
+    unresolvedAnchors,
     rewrittenCitations,
     unreconciledCitations,
     wrappedBarePaths,
@@ -984,42 +1177,40 @@ export class IngestService {
         // the model only sees a truncated, whitespace-collapsed excerpt and can
         // neither keep nor re-cite the earlier sources — the root cause of the
         // mono-source leaf.
-        if (provenanceModeEnabled()) {
-          const contentByPath = new Map(warmPages.map((page) => [page.relativePath, page.content]));
-          const bodyCap = this.config.retrieval.maxSourceChars;
-          fullInventory = await Promise.all(fullInventory.map(async (page) => {
-            const content = contentByPath.get(page.path);
-            if (!content) return page;
-            let declared: string[] = [];
+        const contentByPath = new Map(warmPages.map((page) => [page.relativePath, page.content]));
+        const bodyCap = this.config.retrieval.maxSourceChars;
+        fullInventory = await Promise.all(fullInventory.map(async (page) => {
+          const content = contentByPath.get(page.path);
+          if (!content) return page;
+          let declared: string[] = [];
+          try {
+            const data = matter(content).data as Record<string, unknown>;
+            declared = Array.isArray(data.sources)
+              ? data.sources
+                  .map((entry) => (typeof entry === 'string' ? entry : (entry as { path?: unknown })?.path))
+                  .filter((value): value is string => typeof value === 'string' && /^raw\/ingested\//.test(value.replace(/\\/g, '/')))
+                  .map((value) => value.replace(/\\/g, '/'))
+              : [];
+          } catch {
+            declared = [];
+          }
+          const sourceExcerpts: Array<{ path: string; excerpt: string }> = [];
+          for (const sourcePath of declared.slice(0, 5)) {
             try {
-              const data = matter(content).data as Record<string, unknown>;
-              declared = Array.isArray(data.sources)
-                ? data.sources
-                    .map((entry) => (typeof entry === 'string' ? entry : (entry as { path?: unknown })?.path))
-                    .filter((value): value is string => typeof value === 'string' && /^raw\/ingested\//.test(value.replace(/\\/g, '/')))
-                    .map((value) => value.replace(/\\/g, '/'))
-                : [];
+              const absolute = resolveInside(this.workspace.paths.rootDir, sourcePath);
+              if (!(await pathExists(absolute))) continue;
+              const body = await this.workspace.readTextFile(absolute);
+              sourceExcerpts.push({ path: sourcePath, excerpt: body.replace(/\s+/g, ' ').trim().slice(0, maxChunkChars) });
             } catch {
-              declared = [];
+              // An unreadable archive simply does not contribute an excerpt.
             }
-            const sourceExcerpts: Array<{ path: string; excerpt: string }> = [];
-            for (const sourcePath of declared.slice(0, 5)) {
-              try {
-                const absolute = resolveInside(this.workspace.paths.rootDir, sourcePath);
-                if (!(await pathExists(absolute))) continue;
-                const body = await this.workspace.readTextFile(absolute);
-                sourceExcerpts.push({ path: sourcePath, excerpt: body.replace(/\s+/g, ' ').trim().slice(0, maxChunkChars) });
-              } catch {
-                // An unreadable archive simply does not contribute an excerpt.
-              }
-            }
-            return {
-              ...page,
-              existingBody: content.slice(0, bodyCap),
-              ...(sourceExcerpts.length > 0 ? { sourceExcerpts } : {}),
-            };
-          }));
-        }
+          }
+          return {
+            ...page,
+            existingBody: content.slice(0, bodyCap),
+            ...(sourceExcerpts.length > 0 ? { sourceExcerpts } : {}),
+          };
+        }));
 
         const indexContent = await this.workspace.readIndex();
         const existingFolders = [...new Set(
@@ -1030,11 +1221,9 @@ export class IngestService {
         const existingTags = [...new Set(
           warmPages.flatMap((page) => readProvenance(page.content).tags),
         )].sort();
-        // Provenance mode shows the model a bounded catalogue of locator tokens
-        // it may copy (never invent); the write path materializes them after.
-        const locatorSection = provenanceModeEnabled()
-          ? renderLocatorCatalogueSection(buildLocatorCatalogue(rawBody))
-          : undefined;
+        // The engine shows the model a bounded catalogue of locator tokens it
+        // may copy (never invent); the write path materializes them after.
+        const locatorSection = renderLocatorCatalogueSection(buildLocatorCatalogue(rawBody));
         const consolidationPrompt = buildConsolidationPrompt({
           source,
           extraction: merged,
@@ -1045,7 +1234,8 @@ export class IngestService {
           existingFolders,
           existingTags,
           ...(locatorSection ? { locatorSection } : {}),
-          ...(provenanceModeEnabled() ? { sourcePageContract: true, compositionContract: true } : {}),
+          sourcePageContract: true,
+          compositionContract: true,
           ctx: buildPromptContext(this.config, { profileSection }),
         });
         const consolidationCacheKey = consolidationCacheName({
@@ -1277,122 +1467,87 @@ export class IngestService {
           path: normalizedPathByOriginal.get(split.path) ?? split.path,
           duplicateOfPath: normalizedPathByOriginal.get(split.duplicateOfPath) ?? split.duplicateOfPath,
         }));
-        // Materialize the catalogue tokens the model copied into terminal
-        // addresses BEFORE the citation-path normalization runs.
-        const tokenSafeOperations = provenanceModeEnabled()
-          ? normalizedOperations.map((operation) =>
-              operation.type === 'delete' || typeof operation.content !== 'string'
-                ? operation
-                : {
-                    ...operation,
-                    content: materializeLocatorTokens(operation.content, {
-                      documentPath: source.archiveCitationPath,
-                      documentContent: rawBody,
-                    }).content,
-                  },
-            )
-          : normalizedOperations;
-        // The model does not anchor on its own: the engine ties each remaining
-        // bare citation to the source section that actually backs the claim.
-        let anchoredOperations = tokenSafeOperations;
-        if (provenanceModeEnabled()) {
-          const loadRaw = (documentPath: string): string | null => {
-            if (documentPath === source.archiveCitationPath) return rawBody;
-            try {
-              const absolute = resolveInside(this.workspace.paths.rootDir, documentPath);
-              return existsSync(absolute) ? readFileSync(absolute, 'utf8') : null;
-            } catch {
-              return null;
-            }
-          };
-          let totalAnchored = 0;
-          const unresolvedAnchors: string[] = [];
-          anchoredOperations = tokenSafeOperations.map((operation) => {
-            if (operation.type === 'delete' || typeof operation.content !== 'string') return operation;
-            const result = anchorCitations(operation.content, loadRaw);
-            totalAnchored += result.anchored;
-            unresolvedAnchors.push(...result.unresolved);
-            return { ...operation, content: result.content };
-          });
-          if (totalAnchored > 0 || unresolvedAnchors.length > 0) {
-            await this.logger.info('ingest:anchoring', {
-              source: source.relativePath,
-              anchored: totalAnchored,
-              unresolved: unresolvedAnchors.slice(0, 20),
-              unresolvedTotal: unresolvedAnchors.length,
-            });
+        // The full provenance pipeline (materialization, anchoring, two-level
+        // retarget, path enforcement, source-page/anchor contracts, refusal and
+        // the loss guard) is shared with the planned apply path, so the two can
+        // never drift and the orchestrator cannot bypass it.
+        const existingPages = new Map(
+          (await this.retrieval.warmCache()).map((page) => [page.relativePath, page]),
+        );
+        const readDisk = (documentPath: string): string | null => {
+          try {
+            const absolute = resolveInside(this.workspace.paths.rootDir, documentPath);
+            return existsSync(absolute) ? readFileSync(absolute, 'utf8') : null;
+          } catch {
+            return null;
           }
+        };
+        const provenance = runProvenancePipeline({
+          operations: normalizedOperations,
+          sourcePagePath,
+          archiveCitationPath: source.archiveCitationPath,
+          rawBody,
+          readDisk,
+          existingContentOf: (pagePath) => existingPages.get(pagePath)?.content ?? null,
+        });
+        const citationSafeOperations = provenance.operations;
+        if (provenance.anchored > 0 || provenance.unresolvedAnchors.length > 0) {
+          await this.logger.info('ingest:anchoring', {
+            source: source.relativePath,
+            anchored: provenance.anchored,
+            unresolved: provenance.unresolvedAnchors.slice(0, 20),
+            unresolvedTotal: provenance.unresolvedAnchors.length,
+          });
         }
-        const {
-          operations: citationSafeOperations,
-          rewrittenCitations,
-          unreconciledCitations,
-          wrappedBarePaths,
-        } = enforceSourceCitationPath(anchoredOperations, source.archiveCitationPath);
+        if (provenance.retargeted > 0) {
+          await this.logger.info('ingest:two-level-citations', {
+            source: source.relativePath,
+            sourceNote: sourcePagePath,
+            retargeted: provenance.retargeted,
+          });
+        }
         await this.logger.info('ingest:normalize', {
           source: source.relativePath,
           operations: citationSafeOperations.length,
-          rewrittenCitations,
-          unreconciledCitations,
-          wrappedBarePaths,
+          rewrittenCitations: provenance.rewrittenCitations,
+          unreconciledCitations: provenance.unreconciledCitations,
+          wrappedBarePaths: provenance.wrappedBarePaths,
         });
-        if (rewrittenCitations > 0) {
+        if (provenance.rewrittenCitations > 0) {
           await this.logger.info('ingest:citation-path-rewrite', {
             source: source.relativePath,
             archivePath: source.archiveCitationPath,
-            rewrittenCitations,
+            rewrittenCitations: provenance.rewrittenCitations,
           });
         }
-        // Provenance mode: the harmonized source-page contract is checked, not
-        // trusted. A violation is announced and rides the run report.
-        if (provenanceModeEnabled()) {
-          const sourcePageIssues = citationSafeOperations
-            .filter((operation) => operation.type !== 'delete' && /^wiki\/sources\/[^/]+\.md$/.test(operation.path))
-            .flatMap((operation) => {
-              // The engine adds `type` and the archive `sources` at write time,
-              // so validate the page it WILL write, not the model's raw output.
-              const candidate = applyOkfFrontmatter(operation.content ?? '', {
-                type: 'source',
-                sources: [{ path: source.archiveCitationPath }],
-              });
-              return validateSourcePage(candidate).issues.map((issue) => ({ path: operation.path, code: issue.code, message: issue.message }));
-            });
-          if (sourcePageIssues.length > 0) {
-            await this.logger.warn('ingest:source-page-contract', {
-              source: source.relativePath,
-              issues: sourcePageIssues,
-            });
-          }
-          // The model does not reliably anchor its citations, so an unanchored
-          // or unresolvable one is ANNOUNCED rather than silently accepted.
-          const loadDocument = (documentPath: string): string | null => {
-            try {
-              const absolute = resolveInside(this.workspace.paths.rootDir, documentPath);
-              return existsSync(absolute) ? readFileSync(absolute, 'utf8') : null;
-            } catch {
-              return null;
-            }
-          };
-          const anchorIssues = citationSafeOperations
-            .filter((operation) => operation.type !== 'delete' && /^wiki\/(concepts|sources)\//.test(operation.path))
-            .flatMap((operation) => validateAnchoredCitations(operation.content ?? '', loadDocument)
-              .map((issue) => ({ path: operation.path, ...issue })));
-          if (anchorIssues.length > 0) {
-            await this.logger.warn('ingest:provenance-anchors', {
-              source: source.relativePath,
-              issues: anchorIssues.slice(0, 20),
-              total: anchorIssues.length,
-            });
-          }
+        if (provenance.sourcePageIssues.length > 0) {
+          await this.logger.warn('ingest:source-page-contract', {
+            source: source.relativePath,
+            issues: provenance.sourcePageIssues,
+          });
         }
-        if (unreconciledCitations > 0) {
+        if (provenance.anchorIssues.length > 0) {
+          await this.logger.warn('ingest:provenance-anchors', {
+            source: source.relativePath,
+            issues: provenance.anchorIssues.slice(0, 20),
+            total: provenance.anchorIssues.length,
+          });
+        }
+        if (provenance.refused.size > 0) {
+          await this.logger.warn('ingest:provenance-refused', {
+            source: source.relativePath,
+            pages: [...provenance.refused.entries()].map(([path, reasons]) => ({ path, reasons })),
+          });
+          for (const path of provenance.refused.keys()) effectiveRejectedPaths.add(path);
+        }
+        if (provenance.unreconciledCitations > 0) {
           await this.logger.warn('ingest:citation-unreconciled', {
             source: source.relativePath,
             archivePath: source.archiveCitationPath,
-            unreconciledCitations,
+            unreconciledCitations: provenance.unreconciledCitations,
           });
         }
-        if (wrappedBarePaths > 0) {
+        if (provenance.wrappedBarePaths > 0) {
           // The model named its source as bare text instead of a citation —
           // invisible to the link renderer until wrapped. Not an error (the
           // content is still correct and now linkable), but worth surfacing:
@@ -1401,7 +1556,7 @@ export class IngestService {
           await this.logger.info('ingest:citation-bare-path-wrapped', {
             source: source.relativePath,
             archivePath: source.archiveCitationPath,
-            wrappedBarePaths,
+            wrappedBarePaths: provenance.wrappedBarePaths,
           });
         }
 
@@ -1454,9 +1609,6 @@ export class IngestService {
         const lastSummary = consolidated.summary;
         sourceRetry = sourceRetry ?? sectionResults.findLast((result) => result.retry)?.retry;
 
-        const existingPages = new Map(
-          (await this.retrieval.warmCache()).map((page) => [page.relativePath, page]),
-        );
         const review = buildReviewOperations({
           operations: allOperations,
           existingPages,
@@ -1465,7 +1617,7 @@ export class IngestService {
           rejectedPaths: effectiveRejectedPaths,
           applied: !options?.dryRun,
         });
-        const applyOperations = allOperations.filter(
+        let applyOperations = allOperations.filter(
           (operation) => !effectiveRejectedPaths.has(operation.path),
         );
         const rejectedCount = allOperations.length - applyOperations.length;
@@ -1484,6 +1636,19 @@ export class IngestService {
           rejected: rejectedCount,
           dryRun: Boolean(options?.dryRun),
         });
+
+        // Deterministic loss guard (§3.3): an update must not silently drop a
+        // terminal proof the previous body reached. The pipeline computed the
+        // loss; here the offending operations are dropped and announced while
+        // the rest of the ingest continues.
+        if (provenance.lost.length > 0) {
+          await this.logger.warn('ingest:provenance-loss', {
+            source: source.relativePath,
+            pages: provenance.lost,
+          });
+          const lostPaths = new Set(provenance.lost.map((entry) => entry.path));
+          applyOperations = applyOperations.filter((operation) => !lostPaths.has(operation.path));
+        }
 
         const allOperationsRejected =
           allOperations.length > 0 && applyOperations.length === 0;
@@ -2113,9 +2278,76 @@ export class IngestService {
           rejectedPaths,
           await this.reconcileConceptVocabulary(operations),
         );
-        const applyOperations = operations.filter(
+        // The cached plan's operations were never materialized, anchored or
+        // validated: run the SAME provenance pipeline as the live ingest so the
+        // orchestrated path cannot produce an unanchored, unresolvable or
+        // loss-bearing page. Without this a `--plan-only`/`--apply` run wrote
+        // the model's raw citations and skipped every proof contract.
+        const readDisk = (documentPath: string): string | null => {
+          try {
+            const absolute = resolveInside(this.workspace.paths.rootDir, documentPath);
+            return existsSync(absolute) ? readFileSync(absolute, 'utf8') : null;
+          } catch {
+            return null;
+          }
+        };
+        const existingPages = new Map(
+          (await this.retrieval.warmCache()).map((page) => [page.relativePath, page]),
+        );
+        const provenance = runProvenancePipeline({
+          operations,
+          sourcePagePath: path.posix.join('wiki', 'sources', `${plannedSource.slug}.md`),
+          archiveCitationPath: plannedSource.archiveCitationPath,
+          rawBody: normalizeSourceBody(plannedSource.body ?? ''),
+          readDisk,
+          existingContentOf: (pagePath) => existingPages.get(pagePath)?.content ?? null,
+        });
+        if (provenance.anchored > 0 || provenance.unresolvedAnchors.length > 0) {
+          await this.logger.info('ingest:anchoring', {
+            source: planned.source,
+            anchored: provenance.anchored,
+            unresolved: provenance.unresolvedAnchors.slice(0, 20),
+            unresolvedTotal: provenance.unresolvedAnchors.length,
+          });
+        }
+        if (provenance.retargeted > 0) {
+          await this.logger.info('ingest:two-level-citations', {
+            source: planned.source,
+            sourceNote: path.posix.join('wiki', 'sources', `${plannedSource.slug}.md`),
+            retargeted: provenance.retargeted,
+          });
+        }
+        if (provenance.sourcePageIssues.length > 0) {
+          await this.logger.warn('ingest:source-page-contract', {
+            source: planned.source,
+            issues: provenance.sourcePageIssues,
+          });
+        }
+        if (provenance.anchorIssues.length > 0) {
+          await this.logger.warn('ingest:provenance-anchors', {
+            source: planned.source,
+            issues: provenance.anchorIssues.slice(0, 20),
+            total: provenance.anchorIssues.length,
+          });
+        }
+        if (provenance.refused.size > 0) {
+          await this.logger.warn('ingest:provenance-refused', {
+            source: planned.source,
+            pages: [...provenance.refused.entries()].map(([path, reasons]) => ({ path, reasons })),
+          });
+          for (const pagePath of provenance.refused.keys()) effectiveRejectedPaths.add(pagePath);
+        }
+        if (provenance.lost.length > 0) {
+          await this.logger.warn('ingest:provenance-loss', {
+            source: planned.source,
+            pages: provenance.lost,
+          });
+        }
+        let applyOperations = provenance.operations.filter(
           (operation) => !effectiveRejectedPaths.has(operation.path),
         );
+        const lostPaths = new Set(provenance.lost.map((entry) => entry.path));
+        applyOperations = applyOperations.filter((operation) => !lostPaths.has(operation.path));
         const rejectedCount = operations.length - applyOperations.length;
         await this.logger.info('ingest:review', {
           source: planned.source,

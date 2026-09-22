@@ -37,7 +37,6 @@ import {
 } from '../utils/markdown.ts';
 import { applyOkfFrontmatter, carryForwardEngineFrontmatter, OKF_TYPE_ANSWER, OKF_TYPE_LOG } from '../okf/frontmatter.ts';
 import { applyDerivedSources } from '../provenance/write.ts';
-import { provenanceModeEnabled } from '../provenance/mode.ts';
 import type {
   AppConfig,
   BuildState,
@@ -625,7 +624,7 @@ export class WorkspaceService {
             const existing = snapshots.get(absolutePath)?.content;
             const content = operation.content ?? '';
             let finalContent = existing ? carryForwardEngineFrontmatter(existing, content) : content;
-            if (provenanceModeEnabled() && /^wiki\/(concepts|sources)\//.test(operation.path)) {
+            if (/^wiki\/(concepts|sources)\//.test(operation.path)) {
               // Derive from the closure, preferring the pages written in THIS
               // batch (a source page and the leaf that cites it land together).
               const batch = new Map(

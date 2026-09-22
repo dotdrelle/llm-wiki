@@ -494,8 +494,8 @@ describe('workspace safety', () => {
   });
 });
 
-describe('source accumulation across ingests', () => {
-  it('keeps the sources of an existing leaf when the same leaf is ingested again', async () => {
+describe('derived sources across ingests', () => {
+  it('keeps a source the updated body still reaches, drops one it no longer cites', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-workspace-sources-'));
     const workspace = new WorkspaceService(createConfig(root));
     await workspace.initWorkspace({});
@@ -511,7 +511,7 @@ describe('source accumulation across ingests', () => {
       {
         type: 'update',
         path: leaf,
-        content: '---\ntype: concept\nstatus: draft\nsources:\n  - path: raw/ingested/source-two.md\n    usage_count: 3\n---\n\n# Souverainete\n\nDeux. [src: raw/ingested/source-two.md]\n',
+        content: '---\ntype: concept\nstatus: draft\nsources:\n  - path: raw/ingested/source-two.md\n    usage_count: 3\n---\n\n# Souverainete\n\nUn. [src: raw/ingested/source-one.md]\n\nDeux. [src: raw/ingested/source-two.md]\n',
       },
     ]);
 
@@ -520,17 +520,12 @@ describe('source accumulation across ingests', () => {
     expect(written).toContain('raw/ingested/source-two.md');
     expect(written).toContain('usage_count: 3');
     expect(written).toContain('Deux.');
-    expect(written).not.toContain('Un.');
+    expect(written).toContain('Un.');
   });
 });
 
-describe('provenance mode (opt-in)', () => {
-  afterEach(() => {
-    delete process.env.WIKI_PROVENANCE_MODE;
-  });
-
+describe('anchored provenance (always on)', () => {
   it('derives sources: from the body closure and drops a declared-but-unreached source', async () => {
-    process.env.WIKI_PROVENANCE_MODE = '1';
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-provenance-'));
     const workspace = new WorkspaceService(createConfig(root));
     await workspace.initWorkspace({});
@@ -550,7 +545,6 @@ describe('provenance mode (opt-in)', () => {
   });
 
   it('follows a source page written in the same batch to its archive', async () => {
-    process.env.WIKI_PROVENANCE_MODE = '1';
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-provenance-chain-'));
     const workspace = new WorkspaceService(createConfig(root));
     await workspace.initWorkspace({});

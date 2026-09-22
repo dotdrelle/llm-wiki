@@ -1,3 +1,4 @@
+import matter from 'gray-matter';
 import {
   buildPolishPrompt,
   buildSectionExportPrompt,
@@ -9,7 +10,6 @@ import { pathExists } from '../utils/fs.ts';
 import { hashText } from '../utils/hash.ts';
 import { extractSourceCitations, extractSourceCitationsWithAnchors, splitMarkdownSections } from '../utils/markdown.ts';
 import { resolveInside } from '../utils/path.ts';
-import { provenanceModeEnabled } from '../provenance/mode.ts';
 import { evidenceBuildIdFor, fragmentKey, frozenFragmentMap, readEvidenceManifest } from '../provenance/resolver.ts';
 import type { TraceLogger } from './traceLogger.ts';
 import type { AppConfig } from '../types.ts';
@@ -29,7 +29,7 @@ export interface ExportProgress {
 
 export interface ExportOptions {
   polish?: boolean;
-  /** Explicit frozen-evidence manifest to resolve against (else derived from content). */
+  /** Explicit frozen-evidence manifest to resolve against (else read from the deliverable, with legacy content lookup). */
   evidenceBuildId?: string;
 }
 
@@ -198,27 +198,26 @@ export async function expandDeliverable(
   const promptCtx = buildPromptContext(config, { profileSection });
   const warnings: string[] = [];
 
-  // Provenance mode: the build froze the exact fragments it used. Prefer that
-  // text, so replacing A-v1 by A-v2 after the build does not change the export.
+  // The build froze the exact fragments it used. Prefer that text, so replacing
+  // A-v1 by A-v2 after the build does not change the export.
   const frozenByPath = new Map<string, string>();
-  if (provenanceModeEnabled()) {
-    // Same id derivation as the build: the deliverable's path + the hash of the
-    // content being exported. A rebuild that changed the deliverable produced a
-    // different manifest, so this export reads the one for the exact version it
-    // prolongs — never a newer build's.
-    const buildId = options.evidenceBuildId ?? evidenceBuildIdFor(deliverablePath, hashText(content));
-    const manifest = await readEvidenceManifest(workspace.paths.rootDir, buildId);
-    if (!manifest) {
-      await logger.warn('export:evidence-missing', { deliverable: deliverablePath, buildId, requested: Boolean(options.evidenceBuildId) });
-    }
-    // Index the terminal path AND every page the chain went through, or a
-    // citation to wiki/concepts/… misses the raw/ingested terminal fragment.
-    if (manifest) {
-      for (const [key, text] of frozenFragmentMap(manifest)) frozenByPath.set(key, text);
-    }
-    if (frozenByPath.size > 0) {
-      await logger.info('export:evidence-manifest', { deliverable: deliverablePath, paths: [...frozenByPath.keys()] });
-    }
+  // New builds carry their exact manifest id. Content-derived lookup remains
+  // for legacy deliverables; an explicit selection always takes precedence.
+  const storedBuildId: unknown = matter(content).data.evidence_build_id;
+  const buildId = options.evidenceBuildId
+    ?? (typeof storedBuildId === 'string' && storedBuildId.length > 0 ? storedBuildId : undefined)
+    ?? evidenceBuildIdFor(deliverablePath, hashText(content));
+  const manifest = await readEvidenceManifest(workspace.paths.rootDir, buildId);
+  if (!manifest) {
+    await logger.warn('export:evidence-missing', { deliverable: deliverablePath, buildId, requested: Boolean(options.evidenceBuildId) });
+  }
+  // Index the terminal path AND every page the chain went through, or a
+  // citation to wiki/concepts/… misses the raw/ingested terminal fragment.
+  if (manifest) {
+    for (const [key, text] of frozenFragmentMap(manifest)) frozenByPath.set(key, text);
+  }
+  if (frozenByPath.size > 0) {
+    await logger.info('export:evidence-manifest', { deliverable: deliverablePath, paths: [...frozenByPath.keys()] });
   }
 
   const document = splitMarkdownSections(content);

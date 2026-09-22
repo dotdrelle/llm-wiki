@@ -17,6 +17,10 @@ describe('anchored citation validation (lot 1/5)', () => {
     expect(issues.map((issue) => issue.code)).toEqual(['unanchored']);
   });
 
+  it('rejects a missing document even without an anchor', () => {
+    expect(validateAnchoredCitations('[src: raw/ingested/gone.md]', load).map((i) => i.code)).toEqual(['missing']);
+  });
+
   it('flags an ambiguous anchor', () => {
     const issues = validateAnchoredCitations('[src: raw/ingested/x.md#Coûts]', load);
     expect(issues.map((issue) => issue.code)).toEqual(['ambiguous']);

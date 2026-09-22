@@ -4,7 +4,7 @@ import { UNCLASSIFIED_CLASS } from '../ingest/conceptGrid.ts';
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
 /** Prompt version, carried by the consolidation cache key. */
-export const CONSOLIDATION_PROMPT_VERSION = 21;
+export const CONSOLIDATION_PROMPT_VERSION = 22;
 
 export type ConsolidationInventoryPage = {
   path: string;
@@ -116,11 +116,11 @@ export function buildConsolidationPrompt(args: {
   indexContent: string;
   existingFolders: string[];
   existingTags: string[];
-  /** Rendered locator catalogue, present only in provenance mode. */
+  /** Rendered locator catalogue the model copies tokens from. */
   locatorSection?: string;
-  /** Provenance mode: add the harmonized source-page contract. */
+  /** Add the harmonized source-page contract. */
   sourcePageContract?: boolean;
-  /** Provenance mode: add the multi-source composition contract. */
+  /** Add the multi-source composition contract. */
   compositionContract?: boolean;
   ctx: PromptContext;
 }): { system: string; user: string } {
@@ -206,8 +206,13 @@ function compositionContract(): string[] {
     '  an existing page for this subject, extend its sections with what THIS source adds;',
     '  do not append a parallel section for the same theme, and do not create a second',
     '  leaf for a subject an existing page already covers;',
-    '- a section ends with EVERY source that backs it (one anchored citation each), and',
-    '  with no source it does not draw from;',
+    '- TWO LEVELS: the source note cites its archive; a concept LEAF cites the SOURCE NOTE',
+    '  (`[src: <source note path>]`, or `#<one of its section headings>` when only that',
+    '  section backs the claim). A leaf NEVER cites raw/ingested/… directly — the archive',
+    '  proof is reached through the source note. A bare source-note citation is accepted',
+    '  and the engine anchors it to the source note section that backs the claim;',
+    '- a section ends with EVERY source that backs it (one citation each), and with no',
+    '  source it does not draw from;',
     '- a diff that adds a section repeating an already-covered theme for the same subject',
     '  is a worse page, not a richer one.',
   ];
@@ -240,7 +245,8 @@ export function buildConsolidationUser(args: {
 }): string {
   return [
       '# Source document',
-      `[src: ...] citation path (exact — copy verbatim into every citation): ${args.source.archiveCitationPath}`,
+      `[src: ...] archive citation path (the SOURCE NOTE cites this exact archive path): ${args.source.archiveCitationPath}`,
+      `[src: ...] leaf citation path (a concept LEAF cites the source note, never the archive directly): ${args.sourcePagePath}`,
       `Title: ${args.source.title}`,
       `Source note path: ${args.sourcePagePath}`,
       '',
