@@ -70,6 +70,7 @@ const GLASS_LIGHT = `
   --panel: rgba(255, 255, 255, .9);
   --panel-soft: rgba(255, 255, 255, .82);
   --panel-solid: #f7f9fc;
+  --run-strip-bg: rgba(255, 255, 255, .92);
   --text: #12202e;
   --muted: #5b6d82;
   --border: rgba(20, 110, 160, .2);
@@ -94,6 +95,10 @@ const GLASS_DARK = `
   --panel: rgba(14, 22, 36, .9);
   --panel-soft: rgba(20, 32, 50, .82);
   --panel-solid: #0e1624;
+  /* The run-status strip floats over the chat: on the near-black dark ground it
+     needs a lifted surface to stay legible, not the same --panel used by
+     in-flow cards. */
+  --run-strip-bg: rgba(38, 54, 78, .94);
   --text: #e6eef7;
   --muted: #8fa3b8;
   --border: rgba(120, 190, 230, .18);

@@ -1,7 +1,9 @@
 # Provenance — anchored sources, derived `sources:`, evidence manifest
 
 This is the engine/deployer record for the provenance work implemented from
-`plan-provenance-feuilles.md`. It is always on — the two-level citation shape,
+`plan-provenance-feuilles.md` (lots 0–5, released in 0.15.100–0.15.101; the
+plan is archived outside this repo, at the wikiLLM root's `_tmp/done/`). It is
+always on — the two-level citation shape,
 the derived `sources:`, the deterministic loss guard and the evidence manifest
 are the only writer, with no environment flag. The user-facing view is
 `help-doc/03-content-lifecycle.md`.
@@ -25,9 +27,20 @@ build / livrable
 1. **`raw/ingested/` is the original proof.** Its `#`/`##` are the anchors; a
    locator targets a section, materialized as `[src: <path>#<Heading > Sub>]` or
    `[src: <path>#L42-L57@sha256=<digest>]`.
-2. **`wiki/sources/` is the harmonized reading sheet of ONE document**: a
-   `## Résumé`, then `## <theme>` sections, each ending with an anchored
-   citation. It stays weakly interpretive — it reports what the document says
+2. **`wiki/sources/` is the harmonized reading sheet of ONE document**: the
+   document title as H1 and frontmatter `title`, a `## Résumé`, then
+   `## <theme>` sections, each ending with an anchored citation. The title is
+   the ENGINE's, not the model's: `normalizeGeneratedMarkdown` promotes a
+   leading `## Résumé` to the page's first H1, and the tree, the graph and the
+   index all read that H1 — every source note read "Résumé".
+   `stampSourcePageTitle` (`provenance/sourcePage.ts`, called from
+   `stampSourceProvenance` on both apply paths of `ingestService.ts`) seeds
+   `title` and the H1 from the ingested document's title, demotes a structural
+   `Résumé`/`Summary` heading to a section under it, replaces the taxo
+   placeholder `# Source note`, and leaves a real H1 the model chose in place
+   (completing only the frontmatter). Idempotent. It runs at ingest only: an
+   older note titled "Résumé" is corrected by its next ingest or by
+   `wiki ingest --from-ingested`, not by `rebuild:provenance`. It stays weakly interpretive — it reports what the document says
    and nothing else (`validateSourcePage`).
 3. **`wiki/concepts/<domain>/<subject>.md` is the theme**, composed across
    sources. A section ends with every source that backs it and no source it does

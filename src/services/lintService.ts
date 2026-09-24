@@ -98,8 +98,16 @@ export class LintService {
     const conceptGroups = new Map<string, Set<string>>();
     for (const page of pages.filter((candidate) => candidate.type === 'concept')) {
       const withinConcepts = page.relativePath.replace(/^wiki\/concepts\//, '');
-      const parsed = matter(page.content);
-      const group = typeof parsed.data.group === 'string' ? parsed.data.group.trim() : '';
+      // A single malformed frontmatter used to throw out of the whole lint —
+      // and, because `ingest_rebuild` bundles `lint` in one job, out of the
+      // rebuild it verifies. An unreadable group is no group, never a crash.
+      let group = '';
+      try {
+        const parsed = matter(page.content);
+        group = typeof parsed.data.group === 'string' ? parsed.data.group.trim() : '';
+      } catch {
+        group = '';
+      }
       if (!withinConcepts.includes('/')) {
         flatConceptPages.push(page.relativePath);
       }

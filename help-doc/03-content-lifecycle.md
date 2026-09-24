@@ -40,7 +40,8 @@ The wiki is the set of durable knowledge pages. It is organized into:
 - **concepts**: reusable knowledge (a system, an actor, a rule, an
   architecture);
 - **sources**: source notes that trace where each piece of information comes
-  from;
+  from — one note per document, titled with the document's own title, opening
+  on a short *Résumé* then one section per theme the document covers;
 - **index**: the canonical map that links and references the pages;
 - **log**: the chronological journal of ingestions and updates.
 

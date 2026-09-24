@@ -110,10 +110,16 @@ Everything below is a **UI panel**, not something you type:
   document and the chat sit side by side; the **×** on the document column
   closes it and hands the full width to the chat; the split button reopens the
   pair.
+- **Run-status strip** — while a run is active, a floating bar near the top of
+  the window shows the document or step it is on, its percentage, the live
+  counters and how long ago the agent last showed a sign of life. Drag it
+  anywhere; it stays inside the window and reappears where you left it, even
+  after a reload. It disappears once the run is over — the Activity panel keeps
+  the outcome.
 - **Activity panel** — live tracking of runs, with *List* and *Graph* views.
-  Each of its five tabs (Plan, Chain, Local activity, Runtime activity, Logs)
-  has its own `Clear`; `Clear all` clears all five. `Reset plan` (Plan tab
-  only) stops active work and purges the run — ask for confirmation first.
+  Each of its three tabs (Plan, Files, Logs) has its own `Clear`; `Clear all`
+  clears all three. `Reset plan` (Plan tab only) stops active work and purges
+  the run — ask for confirmation first.
 - **Execution view** — the same Run/Task graph as the Activity panel's *Graph*
   view, opened full-page. A curation run's subagents (Scout, Analyst, Critique,
   Redactor, Archivist) appear as child nodes of the run.

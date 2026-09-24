@@ -186,8 +186,10 @@ function sourcePageContract(): string[] {
     '- report what THIS document says, and nothing else: no cross-document comparison,',
     '  recommendation or conclusion absent from the document;',
     '- keep numbers, dates, qualifications, reservations and contradictions verbatim;',
-    '- structure it as a short `## Résumé`, then `## <thème réellement présent>` sections,',
-    '  each ending with an ANCHORED citation to its archive (`[src: <archive path>#<locator>]`);',
+    '- open on the DOCUMENT TITLE as the page H1 (`# <title>`, the `Title:` value above),',
+    '  never a generic `# Résumé` or `# Source note`; then a short `## Résumé`, then',
+    '  `## <thème réellement présent>` sections, each ending with an ANCHORED citation to',
+    '  its archive (`[src: <archive path>#<locator>]`);',
     '- its `subject` identifies the DOCUMENT, never a vendor, product or theme;',
     '- announce any part of the document you could not address.',
   ];

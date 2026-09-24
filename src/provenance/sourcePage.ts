@@ -35,6 +35,83 @@ export const SOURCE_PAGE_TEMPLATE = [
   '[src: raw/ingested/.../<document>.md#<adresse précise>]',
 ].join('\n');
 
+/** A `Résumé` section is kept as a section under the document title. */
+const SUMMARY_HEADING = /^(r[ée]sum[ée]|summary)$/i;
+/** The taxo pipeline's placeholder H1 — replaced outright by the title. */
+const PLACEHOLDER_HEADING = /^source note$/i;
+
+function isStructuralTitle(value: string): boolean {
+  return SUMMARY_HEADING.test(value.trim()) || PLACEHOLDER_HEADING.test(value.trim());
+}
+
+/**
+ * Seeds the source note's displayed title from the ingested document's title.
+ *
+ * The writer prompt opens the source note on a `## Résumé`, which
+ * `normalizeGeneratedMarkdown` promotes to the page's first H1; the tree, the
+ * graph and the wiki index all read that H1, so every source note read
+ * "Résumé" whatever document it described. The document's real title is known
+ * at ingest time, so the engine writes it: frontmatter `title` and body H1 both
+ * carry it, and a structural summary heading is demoted to a section under it
+ * (the taxo placeholder `# Source note` is dropped). A true, non-structural H1
+ * the model chose as the page title is left in place; only the frontmatter is
+ * completed. Idempotent.
+ */
+export function stampSourcePageTitle(content: string, title: string): string {
+  const wanted = (title ?? '').trim();
+  if (!wanted) return content;
+  const parsed = matter(content);
+  const data: Record<string, unknown> = { ...parsed.data };
+  const existingTitle = typeof data.title === 'string' ? data.title.trim() : '';
+  if (!existingTitle || isStructuralTitle(existingTitle)) {
+    data.title = wanted;
+  }
+
+  const source = parsed.content.replace(/\r\n?/g, '\n');
+  const lines = source.split('\n');
+  let inFence = false;
+  let firstIndex = -1;
+  let firstMarks = '';
+  let firstText = '';
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (/^`{3,}/.test(line.trim())) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    const match = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
+    if (match) {
+      firstIndex = index;
+      firstMarks = match[1];
+      firstText = match[2].trim();
+      break;
+    }
+  }
+
+  let body: string;
+  if (firstIndex < 0) {
+    body = `# ${wanted}\n\n${source.trim()}`.trimEnd();
+  } else if (SUMMARY_HEADING.test(firstText)) {
+    const preamble = lines.slice(0, firstIndex).join('\n').trim();
+    const rest = lines.slice(firstIndex + 1).join('\n').replace(/^\n+/, '').trimEnd();
+    const parts = [`# ${wanted}`];
+    if (preamble) parts.push(preamble);
+    parts.push(`## ${firstText}`);
+    if (rest) parts.push(rest);
+    body = parts.join('\n\n');
+  } else if (PLACEHOLDER_HEADING.test(firstText)) {
+    const rest = lines.slice(firstIndex + 1).join('\n').replace(/^\n+/, '').trimEnd();
+    body = [`# ${wanted}`, rest].filter(Boolean).join('\n\n');
+  } else if (firstMarks.length === 1) {
+    body = source.trim();
+  } else {
+    body = `# ${wanted}\n\n${source.trim()}`.trimEnd();
+  }
+
+  return matter.stringify(body, data);
+}
+
 export interface SourcePageIssue {
   code:
     | 'type'

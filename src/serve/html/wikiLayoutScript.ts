@@ -199,6 +199,16 @@ function wireSidebarLaunchButtons() {
     applyUnreadBadges();
     applyDeliverableFreshness();
   }
+  // The shell drives an in-place refresh at every runtime run boundary (launch,
+  // task change, completion): the sidebar must show the Pending job markers and
+  // the deliverable spinners without the reader reloading the tab. A full iframe
+  // reload would reset scroll and open folders, which refreshSidebar preserves.
+  window.addEventListener('message', function(event) {
+    if (event.origin !== window.location.origin) return;
+    if (event.data && event.data.type === 'llmwiki:refresh') {
+      void refreshSidebar().catch(() => {});
+    }
+  });
   // While an ingest is running (the sidebar carries data-active-ingest),
   // refresh the Pending list on a slow tick so the per-file markers follow
   // the jobs. The loop stops by itself when the marker disappears.

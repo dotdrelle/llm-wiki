@@ -103,6 +103,7 @@ function updateRunStrip() {
   document.body.classList.toggle('run-active',active);
   if(!active) { strip.hidden=true; return; }
   strip.hidden=false;
+  restoreRunStripPosition();
   const lines=runtimeStripLines();
   const first=lines[0]||{};
   const overall=runtimeState?.workflow?.progress?.percent;
@@ -130,7 +131,33 @@ function updateRunStrip() {
 // where it lives: a pointer drag moves it. The centering transform is dropped
 // on first grab (left/top become px) and the box is clamped to the viewport so
 // it can never be dragged off-screen. Buttons keep their own click: the drag
-// starts only outside them.
+// starts only outside them. The position is persisted, so a view switch or a
+// fresh document load puts the strip back where the reader left it instead of
+// silently snapping back to the top-left.
+function saveRunStripPosition(strip) {
+  if(!strip||!strip.style.left) return;
+  const left=parseFloat(strip.style.left);
+  const top=parseFloat(strip.style.top);
+  if(!Number.isFinite(left)||!Number.isFinite(top)) return;
+  try { localStorage.setItem('run-strip-position',JSON.stringify({left,top})); } catch {}
+}
+function restoreRunStripPosition() {
+  const strip=$('run-strip');
+  if(!strip||strip.__posRestored) return;
+  strip.__posRestored=true;
+  let pos=null;
+  try {
+    const raw=localStorage.getItem('run-strip-position');
+    if(raw) pos=JSON.parse(raw);
+  } catch {}
+  if(!pos||typeof pos.left!=='number'||typeof pos.top!=='number') return;
+  const rect=strip.getBoundingClientRect();
+  const maxX=Math.max(0,window.innerWidth-rect.width);
+  const maxY=Math.max(0,window.innerHeight-rect.height);
+  strip.style.transform='none';
+  strip.style.left=Math.max(0,Math.min(maxX,pos.left))+'px';
+  strip.style.top=Math.max(0,Math.min(maxY,pos.top))+'px';
+}
 function initRunStripDrag() {
   const strip=$('run-strip');
   if(!strip||strip.__dragReady) return;
@@ -162,6 +189,7 @@ function initRunStripDrag() {
     drag=null;
     strip.classList.remove('dragging');
     try{strip.releasePointerCapture(event.pointerId);}catch{}
+    saveRunStripPosition(strip);
   };
   strip.addEventListener('pointerup',release);
   strip.addEventListener('pointercancel',release);
@@ -171,6 +199,7 @@ function initRunStripDrag() {
     const rect=strip.getBoundingClientRect();
     strip.style.left=clamp(rect.left,0,Math.max(0,window.innerWidth-rect.width))+'px';
     strip.style.top=clamp(rect.top,0,Math.max(0,window.innerHeight-rect.height))+'px';
+    saveRunStripPosition(strip);
   });
 }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',initRunStripDrag);

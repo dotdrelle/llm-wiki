@@ -7,6 +7,7 @@ import { CHAT_HTML } from '../../chat/chatHtml.ts';
 import type { AppConfig } from '../../types.ts';
 import { pathExists } from '../../utils/fs.ts';
 import { escapeHtml } from '../../utils/html.ts';
+import { promptSafeBaseUrl } from '../../utils/promptSafeUrl.ts';
 import { escapeScriptJson } from '../html/wikiHtml.ts';
 import { appDisplayName, appFaviconHref } from '../html/appIdentity.ts';
 import { resolveMcpTargets, type ExternalMcpEndpoint } from './uploadRoutes.ts';
@@ -334,7 +335,10 @@ export async function handleChatRoutes(
     ? (await readFile(systemPromptPath, 'utf8')).trim()
     : undefined;
   const profileSection = await deps.workspace.loadProfileSection(deps.config.limits.maxProfileChars);
-  const systemPrompt = [systemPromptBase, profileSection].filter(Boolean).join('\n\n') || undefined;
+  // The model is told its own provider/engine/model here: asked "what is your
+  // LLM config?", it otherwise answers from memory and invents one.
+  const llmFact = `Active LLM configuration (what YOU run on — answer questions about your own config from here, never from memory): provider=${deps.config.llm.provider ?? 'unset'}, engine=${deps.config.llm.engine ?? 'unspecified'}, model=${deps.config.llm.model ?? 'unset'}, baseUrl=${promptSafeBaseUrl(deps.config.llm.baseUrl)}, temperature=${deps.config.llm.temperature ?? 'unset'}. The vector/embedding model is configured separately and may differ from this chat model.`;
+  const systemPrompt = [systemPromptBase, llmFact, profileSection].filter(Boolean).join('\n\n') || undefined;
   const llmConfigured = Boolean(
     deps.config.llm.provider &&
     deps.config.llm.baseUrl &&

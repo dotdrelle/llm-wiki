@@ -35,7 +35,16 @@ export async function listBundleFilesMissingType(rootDir: string): Promise<strin
       // problem, the next one will simply not see it either.
       continue;
     }
-    const { data } = matter(content);
+    // Malformed YAML must not throw out of the scan: a file whose frontmatter
+    // cannot be parsed has no usable `type`, so it is reported missing like any
+    // other, and the lint/doctor that read this can finish their job.
+    let data: Record<string, unknown> = {};
+    try {
+      data = (matter(content).data ?? {}) as Record<string, unknown>;
+    } catch {
+      missing.push(file);
+      continue;
+    }
     if (typeof data.type !== 'string' || !data.type.trim()) missing.push(file);
   }
   return missing;

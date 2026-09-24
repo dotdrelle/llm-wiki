@@ -421,6 +421,32 @@ function runtimeProgressLabel(event) {
   return '';
 }
 
+// The wiki sidebar is server-rendered and only knows to poll while a job's
+// marker is already in its DOM, so a run that starts and finishes between two
+// of its refreshes never arms it. The shell owns the runtime stream, so it tells
+// the sidebar to re-fetch at every run boundary and keeps it fresh while the run
+// lasts. A lightweight in-place refresh (llmwiki:refresh) is preferred over
+// reloading the iframe: it preserves the reader's scroll and open folders.
+let runSidebarRefreshTimer=null;
+function refreshRunSidebar() {
+  const frame=document.getElementById('wiki-side-frame');
+  try { frame?.contentWindow?.postMessage({type:'llmwiki:refresh'},location.origin); } catch {}
+}
+function noteRunSidebarEvent(type) {
+  if(type==='run_started') {
+    refreshRunSidebar();
+    if(!runSidebarRefreshTimer) runSidebarRefreshTimer=setInterval(refreshRunSidebar,4000);
+    return;
+  }
+  if(type==='run_done'||type==='run_error'||type==='run_cancelled') {
+    if(runSidebarRefreshTimer){clearInterval(runSidebarRefreshTimer);runSidebarRefreshTimer=null;}
+    refreshRunSidebar();
+    return;
+  }
+  if(type==='task.started'||type==='task.completed'||type==='run_pending_approval') {
+    refreshRunSidebar();
+  }
+}
 function connectRuntimePanel() {
   if(!window.__WIKI_CONFIG__?.runtime?.enabled) return;
   fetchRuntimeState().catch(()=>{runtimeConnected=false;renderActivities();});
@@ -440,6 +466,7 @@ function connectRuntimePanel() {
     try {
       noteRuntimeEvent();
       const parsed=JSON.parse(event.data);
+      if(parsed&&parsed.type) noteRunSidebarEvent(parsed.type);
       if(parsed&&parsed.type==='assistant_progress') noteRuntimeProgress(parsed.payload&&parsed.payload.message);
       if(parsed&&parsed.type==='runtime_heartbeat') noteRuntimeHeartbeat();
       const label=runtimeProgressLabel(parsed);

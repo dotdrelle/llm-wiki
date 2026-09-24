@@ -9,7 +9,7 @@ import {
 } from '../provenance/promptLocators.ts';
 import { detectSourceLoss, extractBodyCitations } from '../provenance/derive.ts';
 import { retargetLeafCitationsToSourceNote } from '../provenance/retarget.ts';
-import { validateSourcePage } from '../provenance/sourcePage.ts';
+import { stampSourcePageTitle, validateSourcePage } from '../provenance/sourcePage.ts';
 import { validateAnchoredCitations } from '../provenance/validate.ts';
 import { anchorCitations } from '../provenance/anchor.ts';
 import { buildExtractionPrompt, EXTRACTION_PROMPT_VERSION } from '../prompts/extractionPrompt.ts';
@@ -207,17 +207,21 @@ function conceptBasenameIdentity(basename: string): string {
 function stampSourceProvenance(
   operations: WikiOperation[],
   source: { path: string; usageCount?: number },
+  sourcePage?: { path: string; title?: string },
 ): WikiOperation[] {
-  return operations.map((operation) =>
-    operation.type === 'delete'
-      ? operation
-      : {
-          ...operation,
-          content: applyOkfFrontmatter(operation.content ?? '', {
-            sources: [{ path: source.path, usage_count: source.usageCount }],
-          }),
-        },
-  );
+  return operations.map((operation) => {
+    if (operation.type === 'delete') return operation;
+    let content = applyOkfFrontmatter(operation.content ?? '', {
+      sources: [{ path: source.path, usage_count: source.usageCount }],
+    });
+    // The source note's displayed title is its first H1 (tree, graph, index):
+    // seed it from the document title so a plan that opened on `## Résumé`
+    // cannot make every source note read "Résumé".
+    if (sourcePage?.title && operation.path === sourcePage.path) {
+      content = stampSourcePageTitle(content, sourcePage.title);
+    }
+    return { ...operation, content };
+  });
 }
 
 // A citation already anchored to an archived source or a workspace page, and
@@ -1679,10 +1683,14 @@ export class IngestService {
             (record) => record.sourceId === sourceIdFromArchivePath(source.archiveCitationPath),
           );
           const usageCount = registryRecord?.producedPages?.length ?? 0;
-          const stampedOperations = stampSourceProvenance(applyOperations, {
-            path: source.archiveCitationPath,
-            usageCount,
-          });
+          const stampedOperations = stampSourceProvenance(
+            applyOperations,
+            {
+              path: source.archiveCitationPath,
+              usageCount,
+            },
+            { path: sourcePagePath, title: source.title },
+          );
           await this.workspace.applyNormalizedWikiOperations(stampedOperations);
           this.retrieval.invalidateCache();
           await this.logger.info('ingest:apply', {
@@ -2381,10 +2389,17 @@ export class IngestService {
           const registryRecord = previousRegistry?.sources?.find(
             (record) => record.sourceId === sourceIdFromArchivePath(plannedSource.archiveCitationPath),
           );
-          const stampedOperations = stampSourceProvenance(applyOperations, {
-            path: plannedSource.archiveCitationPath,
-            usageCount: registryRecord?.producedPages?.length ?? 0,
-          });
+          const stampedOperations = stampSourceProvenance(
+            applyOperations,
+            {
+              path: plannedSource.archiveCitationPath,
+              usageCount: registryRecord?.producedPages?.length ?? 0,
+            },
+            {
+              path: path.posix.join('wiki', 'sources', `${plannedSource.slug}.md`),
+              title: plannedSource.title,
+            },
+          );
           await this.workspace.applyNormalizedWikiOperations(stampedOperations);
           this.retrieval.invalidateCache();
           await this.logger.info('ingest:apply', {

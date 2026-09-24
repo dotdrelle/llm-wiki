@@ -217,7 +217,7 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 /* RUN STATUS STRIP — the run's business lines, pinned to the TOP of the window
    so it never covers the composer. A raw tool id never appears here: it is
    diagnostic and lives in the Logs tab. */
-#run-strip{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:59;width:min(760px,calc(100vw - 120px));box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--border);border-radius:12px;background:var(--panel);backdrop-filter:blur(var(--glass-blur));-webkit-backdrop-filter:blur(var(--glass-blur));box-shadow:var(--shadow);color:var(--text);font-size:13px;cursor:grab;touch-action:none;user-select:none}
+#run-strip{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:59;width:min(608px,calc(100vw - 120px));box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--border);border-radius:12px;background:var(--run-strip-bg);backdrop-filter:blur(var(--glass-blur));-webkit-backdrop-filter:blur(var(--glass-blur));box-shadow:var(--shadow);color:var(--text);font-size:13px;cursor:grab;touch-action:none;user-select:none}
 #run-strip[hidden]{display:none}
 #run-strip.dragging{cursor:grabbing}
 .run-strip-spinner{width:12px;height:12px;flex-shrink:0;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:runStripSpin .8s linear infinite}

@@ -171,13 +171,21 @@ of its source, `[src: wiki/sources/x.md#Heading]`; the export reads only that se
 (`sliceCitedSection`, `services/exportService.ts`) while everything that
 resolves files (graph, lint, retrieval, vector index) uses the path alone —
 `extractSourceCitations` strips the anchor, `extractSourceCitationsWithAnchors`
-keeps it. A citation with no anchor is the whole source, and an anchor that no
-heading matches degrades to the whole source, never an error. A composition that
+keeps it. A citation with no anchor is the whole source; at export, an anchor
+that no heading matches degrades to the whole source with a warning — never an
+error, never in silence. A composition that
 would silently drop a terminal proof the previous body reached is refused by the
 deterministic loss guard (`detectSourceLoss`, logged `ingest:provenance-loss`),
 and a citation that does not resolve refuses its operation (logged
 `ingest:provenance-refused`); the previous page is kept and the rest of the
 ingest continues.
+
+The whole provenance model — locator catalogue (the model copies a
+`section:…`/`fragment:…` token, the engine materializes the address), the
+source-page contract, the shared validator (ingest, `wiki_write_page`, the
+curation merge), the build evidence manifest and the
+`wiki_list_provenance_locators` MCP tool — lives in `src/provenance/` and is
+recorded in `docs/provenance.md`. It is always on; there is no flag.
 
 The graph derives communities deterministically from the folders
 (`src/graph/wiki/communityProjection.ts`: a node's community is its concept
@@ -491,9 +499,16 @@ only in the Plan tab, requires browser confirmation and calls
 plan, activities, logs, queue, and persisted projection. Upload cards with an
 `error` always render as failed even if storage succeeded.
 
-A fixed **run-status strip** is pinned to the TOP of the window (a sibling of
+A floating **run-status strip** (`position: fixed`, a sibling of
 `#approval-banner`, same reason: it survives the three views that hide
-`#input-wrap`). It shows **two business lines** like the ShellUI's Activity
+`#input-wrap`) opens at the TOP of the window, centred, `min(608px, …)` wide.
+The reader can drag it (`initRunStripDrag` in `runStripScript.ts`; the drag
+starts outside its buttons); the position is persisted in `localStorage`
+(`run-strip-position`, wrapped in try/catch) and restored, clamped to the
+viewport, when the strip becomes visible again — a view switch or a reload no
+longer snaps it back. Its background is its own theme token, `--run-strip-bg`
+(`theme.ts`): in the dark theme the shared `--panel` was too close to the
+near-black ground for a bar floating over the chat. It shows **two business lines** like the ShellUI's Activity
 panel: its primary line is the document/step the run is on today — the
 activity's own `progress.label`, exactly what the ShellUI shows for an
 aggregated line — with its percentage; its sub-line carries the live figures
@@ -766,10 +781,16 @@ ingest`) builds a review per planned operation (`buildReviewOperations`):
   the evidence, merged with the vector/lexical results, never instead of
   them.
 - `refreshService.ts`: stale deliverable detection.
-- `exportService.ts`: citation expansion and polish. Each cited source is
-  read WHOLE (bounded by `maxSourceChars`) and replaces its chunk fragments —
-  the "insufficient source documentation" note only appears when the evidence
-  genuinely lacks the detail. The final export passes through
+- `exportService.ts`: citation expansion and polish. A section's evidence is
+  first the frozen fragment text from the build's evidence manifest
+  (`.wiki/builds/<buildId>/evidence.json`, selected by the deliverable's
+  `evidence_build_id` or `--evidence-build`; a missing manifest is logged
+  `export:evidence-missing` and falls back to live reads). A live read narrows
+  an anchored citation to its cited sections (`sliceCitedSection`); only an
+  un-anchored citation — or an anchor matching no heading, announced as a
+  warning — reads the source whole (bounded by `maxSourceChars`), replacing its
+  chunk fragments. The "insufficient source documentation" note only appears
+  when the evidence genuinely lacks the detail. The final export passes through
   `stripCitationMarkers`, so a section kept unchanged (unresolved source or
   failed validation) cannot leak its `[src: …]` markers into the output.
   A versioned copy is kept only when the output ALREADY exists: the first run
@@ -863,8 +884,9 @@ must be supplied together. Keep TLS in env/Compose, not `.wikirc.yaml`.
   missing ones, and `lint` reports `pagesMissingOkfType`.
 
   OKF v0.2 keys are additive everywhere, never overwriting a hand-set value:
-  ingest writes `generated {by, at}` + `status: draft` and stamps `sources`
-  (the raw archive paths, with `usage_count` from `source-registry.json`);
+  ingest writes `generated {by, at}` + `status: draft`, and `sources` is
+  derived from the body's citation closure (`provenance/write.ts`), not stamped
+  or unioned;
   the agent-proposals merge writes `verified` + `status: stable`. `wiki doctor
   --apply` also runs the v0.2 catch-up (`timestamp` → `generated`, a trailing
   `## Citations` section → `sources`, missing `status` → `draft`) — one line
