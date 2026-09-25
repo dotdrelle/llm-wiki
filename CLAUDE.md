@@ -903,6 +903,18 @@ must be supplied together. Keep TLS in env/Compose, not `.wikirc.yaml`.
   Every attempt — preview, dry-run, rejected, or real write — appends one
   JSONL record to `.wiki/logs/audit.log` (tool, target, action, confirmation
   state, content hashes; never full content).
+- **Direct writes during a production job** (`checkProductionAllowsWrite`,
+  `src/services/productionLocks.ts`): the guard reads the agent's lock files
+  AND what each active job does (its `type` and step names). A
+  `wiki_write_page` is refused while a job writes the wiki (ingest,
+  ingest_apply, ingest_rebuild, restore, doctor_apply, pipeline, copy) — it
+  used to be refused by nothing, so a page could be written in the middle of
+  `ingest_apply`. `template_write`/`build_context_write` are refused only
+  while a job builds from them (build, pipeline, restore) — the former "any
+  active job" rule also refused a template written during a plain ingest. A
+  lock whose job record is not flushed yet still refuses both. Refusals return
+  `PRODUCTION_JOB_ACTIVE` with the job and its operations, and are audited
+  `rejected_production_busy`; the preview path is never guarded.
 - Preserve MCP bearer-token behavior: browser clients must not receive
   workspace MCP tokens.
 - Keep Docker one-shot CLI usage separate from long-running `serve`.

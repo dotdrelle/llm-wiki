@@ -8,7 +8,7 @@ import matter from 'gray-matter';
 import { WorkspaceService } from './workspaceService.ts';
 import { RetrievalService } from './retrievalService.ts';
 import { HistoryService, commitHistorySafely } from './historyService.ts';
-import { checkProductionIdle } from './productionLocks.ts';
+import { checkProductionAllowsWrite, type ProductionBusyReport } from './productionLocks.ts';
 import { loadWikiGraphSnapshot, summarizeWikiGraph } from '../graph/wiki/overview.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import { pathExists } from '../utils/fs.ts';
@@ -784,6 +784,37 @@ export async function createWikiMcpServer(
     }
   };
 
+  const productionBusyResult = async (
+    tool: string,
+    target: string,
+    busy: ProductionBusyReport,
+    confirmed: boolean,
+    contentChars: number,
+  ): Promise<CallToolResult> => {
+    await appendAuditRecord(workspace, {
+      tool,
+      target,
+      action: 'rejected_production_busy',
+      confirmed,
+      contentChars,
+      jobs: [...new Set(busy.locks.map((lock) => lock.jobId))],
+    });
+    return textResult(
+      JSON.stringify(
+        {
+          error: 'PRODUCTION_JOB_ACTIVE',
+          message: busy.message,
+          target,
+          written: false,
+          activeJobs: busy.locks.map((lock) => ({ jobId: lock.jobId, scopes: lock.scopes, operations: lock.operations })),
+        },
+        null,
+        2,
+      ),
+      { isError: true },
+    );
+  };
+
   const writeWikiPage = async ({
     path: pagePath,
     content,
@@ -830,6 +861,11 @@ export async function createWikiMcpServer(
         ),
       );
     }
+    // A page written while a production job writes the wiki races with it
+    // (ingest_apply rewrites the same concept tree). Checked after the preview,
+    // like the templates/ guard: a preview stays useful during a run.
+    const busy = await checkProductionAllowsWrite(workspace.paths.rootDir, 'wiki');
+    if (busy.busy) return productionBusyResult('wiki_write_page', pagePath, busy, confirmed, content.length);
     // Provenance mode: a concept/source page is written only with a resolved
     // citation closure and a freshly derived `sources:` — the same contract as
     // ingest and the curation merge. Invalid provenance is refused, not stored.
@@ -948,35 +984,10 @@ export async function createWikiMcpServer(
     }
 
     // Checked as late as possible, and never on the preview path: a preview is
-    // read-only and stays useful while a job runs.
-    const busy = await checkProductionIdle(workspace.paths.rootDir);
-    if (busy.busy) {
-      await appendAuditRecord(workspace, {
-        tool: options.tool,
-        target: relativePath,
-        action: 'rejected_production_busy',
-        confirmed,
-        contentChars: options.content.length,
-        jobs: [...new Set(busy.locks.map((lock) => lock.jobId))],
-      });
-      return textResult(
-        JSON.stringify(
-          {
-            error: 'PRODUCTION_JOB_ACTIVE',
-            message: busy.message,
-            target: relativePath,
-            written: false,
-            activeJobs: busy.locks.map((lock) => ({
-              jobId: lock.jobId,
-              scopes: lock.scopes,
-            })),
-          },
-          null,
-          2,
-        ),
-        { isError: true },
-      );
-    }
+    // read-only and stays useful while a job runs. Only a job that BUILDS
+    // conflicts — a template written during an ingest is fine.
+    const busy = await checkProductionAllowsWrite(workspace.paths.rootDir, 'assets');
+    if (busy.busy) return productionBusyResult(options.tool, relativePath, busy, confirmed, options.content.length);
 
     await mkdir(path.dirname(absolutePath), { recursive: true });
     await writeFile(absolutePath, options.content, 'utf8');

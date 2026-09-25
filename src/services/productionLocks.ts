@@ -33,6 +33,12 @@ export interface ProductionLock {
   scopes: string[];
   createdAt?: string;
   lockFile: string;
+  /**
+   * What the job does: its type plus its step names, from the job record.
+   * Empty when the record is not flushed yet — callers treat that as
+   * "could be anything" and refuse.
+   */
+  operations: string[];
 }
 
 async function readJson(filePath: string): Promise<Record<string, unknown> | null> {
@@ -74,11 +80,22 @@ export async function listActiveProductionLocks(rootDir: string): Promise<Produc
     if (status && !ACTIVE_JOB_STATUSES.has(status)) continue;
 
     const rawScopes = Array.isArray(lock?.scopes) ? lock.scopes : [lock?.scope];
+    const steps = Array.isArray(job?.steps) ? job.steps : [];
+    const operations = [
+      typeof job?.type === 'string' ? job.type : '',
+      ...steps.map((step) =>
+        typeof step === 'string'
+          ? step
+          : typeof (step as { name?: unknown })?.name === 'string'
+            ? String((step as { name: string }).name)
+            : ''),
+    ].map((item) => item.trim().toLowerCase()).filter(Boolean);
     locks.push({
       jobId,
       scopes: rawScopes.filter((item): item is string => typeof item === 'string'),
       createdAt: typeof lock?.createdAt === 'string' ? lock.createdAt : undefined,
       lockFile,
+      operations: [...new Set(operations)],
     });
   }
   return locks;
@@ -110,5 +127,52 @@ export async function checkProductionIdle(rootDir: string): Promise<ProductionBu
       `scope ${scopes.join(', ') || 'workspace-write'}). Writing to templates/ or ` +
       'build-context/ during a run can make the job build content it never locked. ' +
       'Wait for the job to finish, or cancel it, then retry.',
+  };
+}
+
+/**
+ * Which active jobs conflict with a direct write, by what the job DOES rather
+ * than "any job at all" (plan-demandes-pendant-run.md, lot 3).
+ *
+ * - `wiki`: a page under wiki/. Refused while a job writes the wiki — ingest,
+ *   rebuild, restore, a doctor that applies, a pipeline. It used to be
+ *   refused by nothing: a page could be written in the middle of ingest_apply.
+ * - `assets`: templates/ and build-context/. Refused while a job reads them to
+ *   build — build, pipeline, restore. The coarse "any active job" rule it
+ *   replaces also refused a template written during a plain ingest, which
+ *   never reads templates.
+ *
+ * A job whose record is not flushed yet has no known operations and still
+ * refuses: erring toward refusing a write is recoverable, the reverse is not.
+ */
+export type ProductionWriteTarget = 'wiki' | 'assets';
+
+const CONFLICTING_OPERATIONS: Record<ProductionWriteTarget, Set<string>> = {
+  wiki: new Set(['copy', 'ingest', 'ingest_apply', 'ingest_rebuild', 'restore', 'doctor_apply', 'pipeline']),
+  assets: new Set(['build', 'pipeline', 'restore']),
+};
+
+export async function checkProductionAllowsWrite(
+  rootDir: string,
+  target: ProductionWriteTarget,
+): Promise<ProductionBusyReport> {
+  const conflicting = (await listActiveProductionLocks(rootDir)).filter((lock) =>
+    lock.operations.length === 0
+    || lock.operations.some((operation) => CONFLICTING_OPERATIONS[target].has(operation)));
+  if (conflicting.length === 0) return { busy: false, locks: [] };
+  const jobs = [...new Set(conflicting.map((lock) => lock.jobId))];
+  const operations = [...new Set(conflicting.flatMap((lock) => lock.operations))];
+  const doing = operations.length ? operations.join(', ') : 'starting';
+  return {
+    busy: true,
+    locks: conflicting,
+    message: target === 'wiki'
+      ? `Refused: a production job is writing the wiki (job ${jobs.join(', ')}: ${doing}). ` +
+        'Writing a wiki page now would race with it. Wait for the job to finish, ' +
+        'or queue this edit after the run.'
+      : `Refused: a production job is building from templates/ and build-context/ ` +
+        `(job ${jobs.join(', ')}: ${doing}). Writing there during the build can make ` +
+        'it build content it never locked. Wait for the job to finish, or queue this ' +
+        'write after the run.',
   };
 }
