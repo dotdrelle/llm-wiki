@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   demoteMarkdownHeadings,
+  exportArtifactTargetError,
   exportOutputPath,
   exportVersionParts,
   extractNumericTokens,
@@ -10,6 +11,31 @@ import {
   stripCitationMarkers,
   versionedExportPath,
 } from '../src/services/exportService.ts';
+
+describe('export/polish refuse an export artifact as input', () => {
+  it('refuses an .export.md and points at the source deliverable', () => {
+    const message = exportArtifactTargetError('deliverables/reas/TechSections.export.md', true);
+    expect(message).toContain('Refusing to polish an export artifact');
+    expect(message).toContain('deliverables/reas/TechSections.md');
+  });
+
+  it('refuses a polished artifact', () => {
+    const message = exportArtifactTargetError('deliverables/reas/TechSections.export.polished.md', false);
+    expect(message).toContain('Refusing to export an export artifact');
+    expect(message).toContain('deliverables/reas/TechSections.md');
+  });
+
+  it('refuses a versioned artifact and strips the version from the suggestion', () => {
+    const message = exportArtifactTargetError('deliverables/reas/TechSections_v-02.export.md', true);
+    expect(message).toContain('target deliverables/reas/TechSections.md instead');
+  });
+
+  it('accepts a real source deliverable', () => {
+    expect(exportArtifactTargetError('deliverables/reas/TechSections.md', true)).toBeNull();
+    // A name that merely contains "export" is not an export artifact.
+    expect(exportArtifactTargetError('deliverables/reas/export-strategy.md', false)).toBeNull();
+  });
+});
 
 describe('heading demotion', () => {
   it('converts headings to bold text outside code fences', () => {

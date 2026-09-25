@@ -610,6 +610,22 @@ export async function expandDeliverable(
   return { content: result, warnings };
 }
 
+/**
+ * Refuses an export/polish whose input is already an export artifact
+ * (`*.export.md` / `*.export.polished.md`, versioned included). The action
+ * belongs to the source deliverable: re-running it on the artifact re-exported
+ * the export. Returns the actionable error message, or null when the input is a
+ * legitimate source.
+ */
+export function exportArtifactTargetError(input: string, polish: boolean): string | null {
+  const posix = String(input ?? '').replace(/\\/g, '/');
+  if (!/\.export(?:\.polished)?\.md$/i.test(posix)) return null;
+  const suggested = posix
+    .replace(/\.export(?:\.polished)?\.md$/i, '.md')
+    .replace(/_v-\d+(\.md)$/i, '$1');
+  return `Refusing to ${polish ? 'polish' : 'export'} an export artifact: ${input}. Export and polish act on the source deliverable, not on their own output — target ${suggested} instead.`;
+}
+
 export function exportOutputPath(deliverablePath: string, options: ExportOptions = {}): string {
   const ext = path.extname(deliverablePath);
   const base = deliverablePath.slice(0, deliverablePath.length - ext.length);

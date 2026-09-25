@@ -4,7 +4,7 @@ import { LLMService } from '../services/llmService.ts';
 import { RetrievalService } from '../services/retrievalService.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import { createTraceLogger, printTraceSummary } from '../services/traceLogger.ts';
-import { expandDeliverable, exportOutputPath, nextExportVersionNumber, versionedExportPath } from '../services/exportService.ts';
+import { expandDeliverable, exportArtifactTargetError, exportOutputPath, nextExportVersionNumber, versionedExportPath } from '../services/exportService.ts';
 import { safeWriteFile, pathExists } from '../utils/fs.ts';
 import { normalizeGeneratedMarkdown } from '../utils/markdown.ts';
 import { resolveInside, relativeFrom } from '../utils/path.ts';
@@ -94,6 +94,12 @@ export default async function exportCmd(
     }
 
     const relativeInput = relativeFrom(workspace.paths.rootDir, absoluteInput);
+    // Export and polish act on the SOURCE deliverable, never on their own
+    // output. A `*.export(.polished).md` is the artifact, not the input: re-running
+    // there re-exported the export (the served UI hides the action for exactly
+    // this reason), so the engine refuses it with the deliverable to target.
+    const artifactError = exportArtifactTargetError(relativeInput, Boolean(options.polish));
+    if (artifactError) throw new Error(artifactError);
     const outputRelative =
       options.output ?? exportOutputPath(relativeInput, { polish: options.polish });
     const absoluteOutput = resolveInside(workspace.paths.rootDir, outputRelative);
