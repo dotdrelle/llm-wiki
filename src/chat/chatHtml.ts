@@ -130,15 +130,21 @@ function essentialRuntimeLogEntries(logs) {
   }
   return entries;
 }
+// A journal line is Markdown written by an agent (a phase summary, a finding,
+// a role's objection): shown as raw text it read as \`**Scout**\` noise. The
+// HTML is escaped FIRST — a log line is untrusted — then the Markdown applied.
+function runtimeLogTextHTML(text) {
+  return \`<div class="runtime-journal-text md">\${renderMd(esc(text||''))}</div>\`;
+}
 function essentialRuntimeLogHTML() {
   const entries=essentialRuntimeLogEntries(runtimeState?.logs).slice(-60).reverse();
   if(!entries.length) return '<div class="runtime-journal empty">No essential run event yet.</div>';
-  return \`<div class="runtime-journal">\${entries.map(entry=>\`<div class="runtime-journal-entry \${entry.tone}"><time>\${esc(entry.time||'—')}</time><span>\${esc(entry.text)}</span></div>\`).join('')}</div>\`;
+  return \`<div class="runtime-journal">\${entries.map(entry=>\`<div class="runtime-journal-entry \${entry.tone}"><time>\${esc(entry.time||'—')}</time>\${runtimeLogTextHTML(entry.text)}</div>\`).join('')}</div>\`;
 }
 function runtimeLogListHTML() {
   const rows=[...agentProgressEntries().reverse(), ...essentialRuntimeLogEntries(filteredRuntimeLogs(runtimeState.logs)).slice(-100).reverse()];
   return rows.length
-    ? \`<div class="runtime-journal" id="runtime-log-list">\${rows.map(entry=>\`<div class="runtime-journal-entry \${entry.tone}"><time>\${esc(entry.time||'—')}</time><span>\${esc(entry.text)}</span></div>\`).join('')}</div>\`
+    ? \`<div class="runtime-journal" id="runtime-log-list">\${rows.map(entry=>\`<div class="runtime-journal-entry \${entry.tone}"><time>\${esc(entry.time||'—')}</time>\${runtimeLogTextHTML(entry.text)}</div>\`).join('')}</div>\`
     : '<div class="runtime-journal empty" id="runtime-log-list">No matching essential run events.</div>';
 }
 function scrollRuntimeLogToEnd() {
@@ -1791,7 +1797,7 @@ async function summarizeLocalConversationForCompact(cutMessages) {
 }
 async function compactConversationMemory() {
   if(!gaugedConversationCount()) { notify('Nothing to compact yet'); return; }
-  if(!(await confirmAction({title:'Compact conversation memory',message:'Donna will no longer see the raw messages before this point, only a short summary of them. The thread stays visible here and in Chat history.',confirmLabel:'Compact',danger:true}))) return;
+  if(!(await confirmAction({title:'Compact conversation memory',message:'Donna will no longer see the raw messages before this point, only a short summary of them. The thread stays visible here and in Chat history.',confirmLabel:'Compact'}))) return;
   const previousSummary=conversationSummary;
   if(runtimeEnabled()) {
     try {
