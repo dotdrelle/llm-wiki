@@ -75,6 +75,19 @@ forgets what was said before that point, but the visible thread is not deleted
 and you do not switch conversation. The compact is kept when you reopen the
 conversation from history.
 
+DONNA also compacts on her own when the conversation grows past what she keeps
+in mind (her last dozen messages, or a quarter of what the active model accepts
+in one request): the oldest part is condensed into a summary, the last three
+exchanges stay word for word — so "add the list" still refers to her previous
+answer — and she tells you so in one sentence of her reply. Nothing is dropped
+without that summary; if it cannot be written, nothing is compacted.
+
+Within one question, when the pages she reads outgrow what the model accepts in
+one request (`limits.maxInputTokensPerCall` in the workspace `.wikirc.yaml`,
+set per model), she condenses what she has read once and keeps reading; she
+says so at the end of her answer. The chat reads, it never writes: a request to
+change a template, a page or a file is agent-mode work (`/agent`).
+
 ## In summary
 
 | You want to… | Mode | Example |

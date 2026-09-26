@@ -289,7 +289,7 @@ These keys describe operational and prompt budgets used by `wiki build --plan`, 
 | `maxInFlightRequests`      | Maximum concurrent in-job provider calls for section/batch generation                       | `3`     |
 | `dailyInputTokens`         | Optional daily input-token budget, printed by `wiki build --plan` when set                  | —       |
 | `targetInputTokensPerCall` | Preferred input-token budget per build call. The builder starts a new batch above this size | `40000` |
-| `maxInputTokensPerCall`    | Hard input-token budget per build call. The builder trims retrieved context above this size | `50000` |
+| `maxInputTokensPerCall`    | Hard input-token budget per build call. The builder trims retrieved context above this size. The manager's read-only chat also reads it as its per-request input budget (see `llm-wiki-manager/CLAUDE.md`, read-only chat loop) — set it per profile to what the model accepts | `50000` |
 | `maxProfileChars`          | Maximum workspace profile characters loaded into prompts before summary fallback            | `4000`  |
 
 `targetInputTokensPerCall` must be less than or equal to `maxInputTokensPerCall`.
