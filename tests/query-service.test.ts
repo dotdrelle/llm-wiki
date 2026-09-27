@@ -50,25 +50,40 @@ function createConfig(): AppConfig {
 }
 
 describe('query service', () => {
-  it('queries wiki pages without raw/ingested fallback', async () => {
+  it('includes archived originals in the user question context', async () => {
     let includeRaw: boolean | undefined;
+    let promptUser = '';
     const service = new QueryService(
       createConfig(),
       {
         ensureInitialized: async () => undefined,
         loadProfileSection: async () => '',
       } as any,
-      { completeText: async () => 'answer' } as any,
+      { completeText: async (prompt: { user: string }) => {
+        promptUser = prompt.user;
+        return 'answer';
+      } } as any,
       {
         search: async (_question: string, options: { includeRaw?: boolean }) => {
           includeRaw = options.includeRaw;
-          return [] satisfies SearchResult[];
+          return [{
+            page: {
+              absolutePath: '/tmp/wiki/raw/ingested/original.md',
+              relativePath: 'raw/ingested/original.md',
+              name: 'original',
+              type: 'source',
+              content: '# Original\n\nDistinctive archived detail.\n',
+            },
+            score: 1,
+          }] satisfies SearchResult[];
         },
       } as any,
     );
 
     await service.query('question');
 
-    expect(includeRaw).toBe(false);
+    expect(includeRaw).toBe(true);
+    expect(promptUser).toContain('raw/ingested/original.md');
+    expect(promptUser).toContain('Distinctive archived detail.');
   });
 });

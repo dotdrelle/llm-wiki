@@ -103,7 +103,7 @@ export function buildPolishPrompt(markdown: string, ctx: PromptContext) {
       '- Replace semicolons with periods or coordinating words when that improves readability.',
       '- Avoid overusing em dashes; prefer commas, periods, parentheses, or clearer sentence breaks.',
       '- Do not add personal opinions; the document must remain factual and source-grounded.',
-      '- For English text only, use common contractions when they sound natural in context.',
+      '- Use language-specific forms only when they are idiomatic in the configured target language and appropriate to the document type.',
     ].join('\n'),
     user: [
       '# Markdown document to polish',

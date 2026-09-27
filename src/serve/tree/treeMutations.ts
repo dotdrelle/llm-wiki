@@ -2,7 +2,12 @@ import { mkdir, readdir, rename, rm, rmdir, stat, writeFile } from 'node:fs/prom
 import path from 'node:path';
 
 import { resolveInside } from '../../utils/path.ts';
-import { applyConceptAxes, decideConceptMove, subjectRefileTarget } from './conceptMove.ts';
+import {
+  applyConceptAxes,
+  conceptFolderIdentityIssue,
+  decideConceptMove,
+  subjectRefileTarget,
+} from './conceptMove.ts';
 
 /**
  * Left-panel tree mutations, for ALL of its sections.
@@ -184,6 +189,10 @@ export async function moveEntry(
       isFile: sourceInfo.isFile(),
     });
     if (concept.kind === 'reject') return fail(concept.reason);
+    if (concept.kind === 'refile') {
+      const identityIssue = await conceptFolderIdentityIssue(rootDir, from, concept.className);
+      if (identityIssue) return fail(identityIssue, 409);
+    }
     // A `<concept>_<resume>.md` leaf renames to the new concept on the move:
     // the file name carries the concept, so it must follow the folder.
     // `finalTarget` is the ONLY path this move ever writes to — checked for
@@ -197,12 +206,10 @@ export async function moveEntry(
     let finalTarget = plannedTarget;
     let axesSubject = concept.kind === 'refile' ? concept.subject : null;
     // Never overwrite: rename() would replace the file silently. The collision
-    // normally belongs to whoever moves — EXCEPT for a classic concept leaf
-    // whose physical name is not its identity. Two folders may legitimately
-    // hold a same-named file; the `subject` is the identity, the file name only
-    // its label, so a manual re-file onto a taken name lands under
-    // `<subject>.md` instead of a bare 409. When that identity is taken too,
-    // the move is refused as before.
+    // normally belongs to whoever moves — EXCEPT for a classic concept leaf.
+    // Two folders may legitimately hold the same physical name, so a manual
+    // re-file onto a taken name can use the subject display label as a readable
+    // fallback. When that filename is taken too, the move is refused as before.
     if (await existsAt(finalTarget)) {
       const renamed = concept.kind === 'refile' && !concept.isTaxoRefile
         ? await subjectRefileTarget({ rootDir, source: from, toDir, currentTarget: plannedTarget })
@@ -214,6 +221,7 @@ export async function moveEntry(
     await rename(source, resolveInside(rootDir, finalTarget));
     if (concept.kind === 'refile') {
       await applyConceptAxes(rootDir, finalTarget, {
+        sourcePath: from,
         className: concept.className,
         subject: axesSubject ?? concept.subject,
         isTaxoRefile: concept.isTaxoRefile,

@@ -1,4 +1,4 @@
-import { access, mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -112,7 +112,7 @@ class ThrowingRerankService {
 }
 
 describe('vector index service', () => {
-  it('indexes wiki pages only and reuses unchanged chunk embeddings', async () => {
+  it('indexes wiki pages and archived originals, with a searchable legacy index fallback', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-vector-'));
     await mkdir(path.join(root, 'wiki', 'concepts'), { recursive: true });
     await mkdir(path.join(root, 'wiki', 'answers'), { recursive: true });
@@ -142,14 +142,91 @@ describe('vector index service', () => {
 
     expect(first.metadata.embeddingModel).toBe('BAAI/bge-m3');
     expect(first.metadata.dimension).toBe(3);
-    expect(first.indexedPages).toBe(1);
-    expect(first.indexedChunks).toBe(1);
+    expect(first.indexedPages).toBe(3);
+    expect(first.indexedChunks).toBe(3);
+    expect(first.warnings.some((warning) => warning.includes('full legacy wiki/index.md'))).toBe(true);
     expect(second.embeddedChunks).toBe(0);
-    expect(second.reusedChunks).toBe(1);
+    expect(second.reusedChunks).toBe(3);
     expect(results[0]?.page.relativePath).toBe('wiki/concepts/fonctionnel.md');
     expect(results.map((result) => result.page.relativePath)).not.toContain(
       'wiki/answers/old.md',
     );
+  });
+
+  it('re-embeds changed archive chunks and removes chunks for deleted originals', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-vector-archive-lifecycle-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'raw', 'ingested'), { recursive: true });
+    const archivePath = path.join(root, 'raw', 'ingested', 'archive.md');
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Index\n', 'utf8');
+    await writeFile(archivePath, '# Archive\n\nInitial archive evidence.\n', 'utf8');
+
+    const config = createConfig(root);
+    const workspace = new WorkspaceService(config);
+    const service = new VectorIndexService(
+      config,
+      workspace,
+      new FakeEmbeddingService() as any,
+      new EmptyRerankService() as any,
+    );
+    const initial = await service.buildIndex();
+    expect(initial.indexedPages).toBe(2);
+    expect(initial.indexedChunks).toBe(2);
+
+    await writeFile(archivePath, '# Archive\n\nRevised archive evidence.\n', 'utf8');
+    const revised = await service.buildIndex();
+    expect(revised.embeddedChunks).toBe(1);
+    expect(revised.reusedChunks).toBe(1);
+    const revisedResults = await service.search('Revised archive evidence', {
+      includeRaw: true,
+      rerank: false,
+    });
+    expect(revisedResults.some((result) => result.page.relativePath === 'raw/ingested/archive.md')).toBe(true);
+
+    await rm(archivePath);
+    const removed = await service.buildIndex();
+    expect(removed.indexedPages).toBe(1);
+    expect(removed.indexedChunks).toBe(1);
+    expect(removed.reusedChunks).toBe(1);
+    const removedResults = await service.search('Revised archive evidence', {
+      includeRaw: true,
+      rerank: false,
+    });
+    expect(removedResults.some((result) => result.page.relativePath === 'raw/ingested/archive.md')).toBe(false);
+  });
+
+  it('filters archived vectors before the top-K limit for wiki-only searches', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-vector-layer-filter-'));
+    await mkdir(path.join(root, 'wiki', 'concepts'), { recursive: true });
+    await mkdir(path.join(root, 'raw', 'ingested'), { recursive: true });
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Index\n', 'utf8');
+    await writeFile(
+      path.join(root, 'wiki', 'concepts', 'knowledge.md'),
+      '# Knowledge\n\nExpertise is documented here.\n',
+      'utf8',
+    );
+    await writeFile(
+      path.join(root, 'raw', 'ingested', 'original.md'),
+      '# Original\n\ndocker archive evidence is here.\n',
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    config.retrieval.vector.topK = 1;
+    const workspace = new WorkspaceService(config);
+    const service = new VectorIndexService(
+      config,
+      workspace,
+      new FakeEmbeddingService() as any,
+      new EmptyRerankService() as any,
+    );
+    await service.buildIndex();
+
+    const wikiOnly = await service.search('docker', { limit: 1, includeRaw: false, rerank: false });
+    const withArchives = await service.search('docker', { limit: 1, includeRaw: true, rerank: false });
+    expect(wikiOnly).toHaveLength(1);
+    expect(wikiOnly[0]?.page.relativePath.startsWith('wiki/')).toBe(true);
+    expect(withArchives[0]?.page.relativePath).toBe('raw/ingested/original.md');
   });
 
   it('rejects searches when the configured embedding model no longer matches the index', async () => {

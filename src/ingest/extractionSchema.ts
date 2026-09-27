@@ -17,62 +17,19 @@ import { z } from 'zod';
 */
 
 /** Version of the contract, carried by the cache: a change invalidates the entries. */
-export const EXTRACTION_SCHEMA_VERSION = 1;
+export const EXTRACTION_SCHEMA_VERSION = 2;
 
-/**
- * Scope of a candidate subject.
- *
- * `source` stays within the source note; `product` belongs to a compared
- * subject; `transverse` spans several subjects; `workspace` applies to the
- * whole workspace. It is this scope, and not the volume of text, that decides
- * later whether a candidate deserves its own page.
- */
-export const EXTRACTION_SCOPES = ['source', 'product', 'transverse', 'workspace'] as const;
-export type ExtractionScope = (typeof EXTRACTION_SCOPES)[number];
-
-/**
- * Kind of a candidate subject.
- *
- * `scope` says WHERE a subject's knowledge lives (one document, one product,
- * several, the whole workspace); `kind` says WHAT the subject IS. The two are
- * orthogonal: a named tool is a `product` whose `scope` is `product`, while
- * "Certifications cloud" is a `dimension` whose `scope` is `transverse`.
- *
- * `kind` exists because a taxonomy groups by identity, and identity has a
- * nature. Without it, the consolidation cannot tell a product from the vendor
- * that publishes it under a near-identical name — two near-duplicate pages for
- * one real-world thing — nor a `dimension` from the `product` it qualifies.
- */
-export const EXTRACTION_KINDS = [
-  'vendor',
-  'product',
-  'requirement',
-  'regulation',
-  'dimension',
-  'scenario',
-] as const;
-export type ExtractionKind = (typeof EXTRACTION_KINDS)[number];
-
-/**
- * Declared importance, with its justification.
- *
- * Asking for the justification is not decorative: it is what lets the
- * consolidation refuse a candidate without having to reread the fragment, and
- * lets the log explain afterwards why a concept was kept.
- */
-export const EXTRACTION_IMPORTANCE = ['core', 'supporting', 'incidental'] as const;
+/** Descriptive metadata retained for older workspaces; neither is an identity key. */
+export type ExtractionScope = string;
+export type ExtractionKind = string;
 
 const nonEmpty = z.string().trim().min(1);
 
 /**
  * First non-blank candidate, or `undefined` when none qualifies.
  *
- * `rationale` is a short prose justification the extraction model is asked to
- * provide. When it (and its observed synonyms) are absent or blank, fall back
- * to a deterministic default derived from the subject's own declared scope and
- * importance instead of rejecting the whole source. The rationale is advisory
- * only — it feeds the consolidation prompt's `why:` line, never a published
- * page — so a synthesized fallback cannot invent content.
+ * `rationale` is an optional short explanation. It is advisory and never
+ * determines identity, filing, or whether facts are retained.
  */
 function firstNonBlank(...candidates: unknown[]): unknown {
   for (const candidate of candidates) {
@@ -81,96 +38,12 @@ function firstNonBlank(...candidates: unknown[]): unknown {
   return undefined;
 }
 
-function defaultSubjectRationale(importance: string, scope: string): string {
-  return `Declared as a ${importance} ${scope} subject; the model provided no rationale.`;
-}
-
-/*
- * Closed vocabularies must degrade, never reject.
-
- * `scope` and `importance` are closed vocabularies the model is asked to write
- * verbatim, and a long multi-pack source makes it write one of them wrong (a
- * capitalised form, a near-synonym, a French word) on one subject in ten.
- * Rejecting the whole source for that costs a full re-ingest for a field the
- * consolidation re-evaluates from content anyway. Normalize case, map the
- * near-synonyms observed, and coerce anything else to a safe fallback.
- */
-function normalizeClosedVocabulary(
-  value: unknown,
-  allowed: readonly string[],
-  synonyms: Record<string, string>,
-  fallback: string,
-): string {
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if ((allowed as readonly string[]).includes(normalized)) return normalized;
-    const mapped = synonyms[normalized];
-    if (mapped) return mapped;
-  }
-  return fallback;
-}
-
-const IMPORTANCE_SYNONYMS: Record<string, string> = {
-  primary: 'core', principal: 'core', principale: 'core',
-  critical: 'core', essential: 'core', high: 'core', major: 'core', majeur: 'core', majeure: 'core',
-  secondary: 'supporting', secondaire: 'supporting', medium: 'supporting', normal: 'supporting',
-  minor: 'incidental', low: 'incidental', faible: 'incidental', annexe: 'incidental', accessoire: 'incidental',
-};
-
-const SCOPE_SYNONYMS: Record<string, string> = {
-  transversal: 'transverse', shared: 'transverse', cross: 'transverse',
-  global: 'workspace', general: 'workspace',
-  document: 'source', doc: 'source', note: 'source',
-};
-
-const KIND_SYNONYMS: Record<string, string> = {
-  editor: 'vendor', vendor: 'vendor', supplier: 'vendor', publisher: 'vendor',
-  company: 'vendor', organisation: 'vendor', organization: 'vendor', editeur: 'vendor',
-  fournisseur: 'vendor', societe: 'vendor', société: 'vendor',
-  solution: 'product', tool: 'product', software: 'product', platform: 'product',
-  application: 'product', app: 'product', produit: 'product', logiciel: 'product',
-  progiciel: 'product', outil: 'product',
-  requirement: 'requirement', constraint: 'requirement', criterion: 'requirement',
-  exigence: 'requirement', contrainte: 'requirement',
-  regulation: 'regulation', compliance: 'regulation', legal: 'regulation',
-  obligation: 'regulation', réglementation: 'regulation', conformite: 'regulation',
-  dimension: 'dimension', aspect: 'dimension', concern: 'dimension',
-  characteristic: 'dimension', caracteristique: 'dimension', security: 'dimension',
-  securite: 'dimension', hosting: 'dimension', sovereignty: 'dimension',
-  souverainete: 'dimension',
-  scenario: 'scenario', option: 'scenario', alternative: 'scenario',
-  scenari: 'scenario', variant: 'scenario',
-};
-
-function normalizeImportance(value: unknown): string {
-  return normalizeClosedVocabulary(value, EXTRACTION_IMPORTANCE, IMPORTANCE_SYNONYMS, 'supporting');
-}
-
 export function normalizeScope(value: unknown): string {
-  return normalizeClosedVocabulary(value, EXTRACTION_SCOPES, SCOPE_SYNONYMS, 'product');
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 export function normalizeKind(value: unknown): string {
-  return normalizeClosedVocabulary(value, EXTRACTION_KINDS, KIND_SYNONYMS, 'product');
-}
-
-/**
- * The canonical kind a raw word denotes, when the vocabulary actually
- * recognizes it — unlike `normalizeKind`, there is NO fallback: an
- * unrecognized word returns `null` rather than silently landing on
- * `'product'`. `normalizeKind`'s fallback exists so extraction always has a
- * kind to write; a caller that instead wants to ask "do these two words mean
- * the SAME kind" (consolidationValidate.ts's folder-equivalence check) needs
- * exactly the opposite — two unrelated, unrecognized words must never both
- * silently resolve to `'product'` and compare as equal.
- */
-export function strictKindOf(value: string): ExtractionKind | null {
-  const normalized = value.trim().toLowerCase();
-  if ((EXTRACTION_KINDS as readonly string[]).includes(normalized)) {
-    return normalized as ExtractionKind;
-  }
-  const mapped = KIND_SYNONYMS[normalized];
-  return mapped ? (mapped as ExtractionKind) : null;
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 /** Local identifier within the document: `s1`, `s2`… Never a path. */
@@ -210,24 +83,21 @@ export const extractedFactSchema = z.preprocess((value) => {
 export const extractedSubjectSchema = z.preprocess((value) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const subject = value as Record<string, unknown>;
-  const importance = normalizeImportance(subject.importance);
   const scope = normalizeScope(subject.scope);
   const kind = normalizeKind(subject.kind);
   return {
     ...subject,
-    // Some engines omit the label but provide id + scope + justification. The
+    // Some engines omit the label but provide an id and justification. The
     // id then stays a PRIVATE marker for the consolidation, never a page name
     // nor a published identity.
     label: subject.label ?? subject.name ?? subject.title ?? subject.id,
-    scope,
-    kind,
-    importance,
+    scope: scope || null,
+    kind: kind || null,
     rationale: firstNonBlank(
       subject.rationale,
       subject.justification,
       subject.reason,
       subject.why,
-      defaultSubjectRationale(importance, scope),
     ),
     relatedExistingPages:
       subject.relatedExistingPages ?? subject.existingPages ?? subject.related_pages ?? [],
@@ -235,10 +105,9 @@ export const extractedSubjectSchema = z.preprocess((value) => {
 }, z.object({
   id: localId,
   label: nonEmpty,
-  scope: z.enum(EXTRACTION_SCOPES),
-  kind: z.enum(EXTRACTION_KINDS),
-  importance: z.enum(EXTRACTION_IMPORTANCE),
-  rationale: nonEmpty,
+  scope: z.string().trim().nullish().transform((value) => value ?? null),
+  kind: z.string().trim().nullish().transform((value) => value ?? null),
+  rationale: z.string().trim().nullish().transform((value) => value ?? null),
   /**
    * Existing pages this candidate could extend.
    *

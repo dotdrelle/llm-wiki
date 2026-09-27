@@ -3,10 +3,9 @@ import { isValidProvenanceValue } from './provenance.ts';
 /*
  Path convention of a concept leaf.
 
- One leaf per (concept × subject): a subject cited under three concepts yields
- three leaves, each carrying only what belongs to its concept. The path carries
- the two axes — the concept is the folder, the subject is the file name — which
- makes reuse deterministic and the transverse edge of the graph computable.
+ One leaf per (concept × subject): a subject cited under several concepts
+ yields one projection in each. The path carries the current folder and subject
+ labels; opaque frontmatter IDs provide durable identity and graph joins.
 
  That only holds while the path and the declared axes cannot disagree, which is
  what `conceptPathMismatch` enforces.

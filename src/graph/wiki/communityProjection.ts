@@ -56,7 +56,7 @@ export function communityId(label: string): string {
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
     .replace(/^-|-$/g, '') || UNCLASSIFIED_ID;
 }
 
@@ -85,7 +85,15 @@ export function assignGraphCommunities(
 ): WikiGraphNode[] {
   return nodes.map((node) => {
     const folder = conceptFolderFromId(node.id);
-    if (folder) return { ...node, community: assigned(title(folder), 'seed') };
+    if (folder) {
+      const label = title(folder);
+      return {
+        ...node,
+        community: node.conceptId
+          ? { communityId: `concept:${node.conceptId}`, communityLabel: label, assignment: 'seed' }
+          : assigned(label, 'seed'),
+      };
+    }
     const typeLabel = TYPE_LABELS[node.type];
     if (typeLabel) return { ...node, community: assigned(typeLabel, 'seed') };
     return {
@@ -163,10 +171,11 @@ export function createCommunityProjection(
   const conceptNodes = nodes.filter(isConcept);
   const bySubject = new Map<string, string[]>();
   for (const node of conceptNodes) {
-    if (!node.subject) continue;
-    const list = bySubject.get(node.subject) ?? [];
+    const subjectKey = node.subjectId ? `subject:${node.subjectId}` : node.subject;
+    if (!subjectKey) continue;
+    const list = bySubject.get(subjectKey) ?? [];
     list.push(node.id);
-    bySubject.set(node.subject, list);
+    bySubject.set(subjectKey, list);
   }
   for (const ids of bySubject.values()) {
     for (let i = 0; i < ids.length; i++) {

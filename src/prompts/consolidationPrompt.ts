@@ -4,12 +4,14 @@ import { UNCLASSIFIED_CLASS } from '../ingest/conceptGrid.ts';
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
 /** Prompt version, carried by the consolidation cache key. */
-export const CONSOLIDATION_PROMPT_VERSION = 22;
+export const CONSOLIDATION_PROMPT_VERSION = 24;
 
 export type ConsolidationInventoryPage = {
   path: string;
   title: string;
   subject: string | null;
+  conceptId?: string | null;
+  subjectId?: string | null;
   scope: string | null;
   /** The concept folder the leaf lives in (its path's first segment under wiki/concepts/). */
   folder: string | null;
@@ -34,10 +36,10 @@ export type ConsolidationInventoryPage = {
 /*
  Consolidation prompt: one call, one source, one plan.
 
- The concept is the FOLDER the leaf lives in; `subject` is its canonical
- identity; `tags` are its multivalued links. There is no closed grid: the model
- files into an existing folder when the concept already exists (reuse before
- create), or proposes a new folder when the document genuinely introduces one.
+ The folder is a readable storage label and `concept_id` carries concept
+ identity. `subject` is a display label and `subject_id` carries subject
+ identity; tags are descriptive links. There is no closed vocabulary: the model
+ reuses a relevant existing concept or proposes a distinct new grouping.
 */
 
 /**
@@ -45,47 +47,16 @@ export type ConsolidationInventoryPage = {
  */
 function folderPolicy(existingFolders: string[]): string[] {
   return [
-    'Filing policy — the concept is the DOMAIN the knowledge belongs to, and it is the FOLDER a page lives in.',
-    `Existing concept folders: ${existingFolders.join(', ') || '(none yet)'}.`,
+    'Filing policy — a concept is a reusable knowledge grouping. Its folder name is a display label; the engine stores a separate opaque concept identity.',
+    `Existing concept labels: ${existingFolders.join(', ') || '(none yet)'}.`,
     '',
-    '- a concept is a DOMAIN or a cross-cutting THEME the document is about (security, sovereignty,'
-      + ' cost, integration, migration, open-source, saas, internal-development, hosting, licensing…),'
-      + ' named in the output language. It is NEVER the NATURE of a subject and NEVER a generic type'
-      + ' word: "produit"/"product", "fournisseur"/"vendor", "exigence"/"requirement",'
-      + ' "reglementation"/"regulation", "dimension", "scenario", "projet"/"project", "outil"/"tool",'
-      + ' "application", "logiciel"/"software", "solution", "document" are KINDS. That nature is'
-      + ' already carried by the `kind` field; using it as the folder discards the only useful axis'
-      + ' and drops every subject into one bucket',
-    '- a concept page is a LEAF: one theme seen under one domain. Its path is exactly'
-      + ' wiki/concepts/<concept>/<subject>.md',
-    '- one subject appears under EVERY concept it serves: the same product may hold a leaf under'
-      + ' "saas", another under "souverainete", another under "cout". Each leaf carries only what'
-      + ' belongs to ITS concept — that is the model, not a duplicate',
-    '- EVERY folder name is written in the output language. Never open a folder in another'
-      + ' language when one of this family already exists in the list above, and never'
-      + ' translate an existing folder just because its name is in another language: reuse'
-      + ' it exactly as written. A name in the wrong language is a duplicate, not a rename',
-    '- an existing concept is ALWAYS an existing folder: REUSE one of the folders listed'
-      + ' above whenever the document touches that domain, rather than opening a near-duplicate.'
-      + ' But a domain the list does not have yet — its own use case, its cost axis, its'
-      + ' sovereignty axis — is a GENUINE new concept, never a duplicate of a kind folder',
-    '- name folders in the SINGULAR: write "product", never "products"; "server", never'
-      + ' "servers". Reuse the existing folder even when its number differs from the one'
-      + ' you would have picked',
-    '- open a NEW folder only when a theme fits NONE of the existing folders; name it a'
-      + ' short kebab-case common noun phrase, IN THE OUTPUT LANGUAGE',
-    '- create a leaf only when this source gives that (concept, subject) pair at least two'
-      + ' distinct things to say. A single passing mention stays in the source note',
-    '- if a subject fits NO concept, file its leaf under the reserved folder'
-      + ` \`${UNCLASSIFIED_CLASS}\` (path wiki/concepts/${UNCLASSIFIED_CLASS}/<subject>.md).`
-      + ' Never force it into the nearest folder',
-    '- a leaf that already exists is UPDATED at its existing path, never recreated under'
-      + ' another name',
-    '- never create two leaves of one concept whose subjects are the same theme under a'
-      + ' longer or shorter wording ("progiciel-saas" vs "progiciel-saas-secnumcloud",'
-      + ' "prophix" vs "prophix-one", "certifications" vs "certifications-anaplan"): keep ONE'
-      + ' canonical subject and update it. Extend an existing subject rather than appending a'
-      + ' qualifier to it',
+    '- Reuse an existing concept when its meaning matches; compare the supplied page inventory and labels, not label spelling alone.',
+    '- Labels may be written in any language and may be revised or translated. A label is not an identity and must not be used as a permanent key.',
+    '- Propose a concise folder label only for a genuinely distinct grouping. Do not create a new grouping merely to restate a subject kind or a source-document structure.',
+    '- A concept page describes the intersection of one subject and one concept. The same subject may have pages under multiple concepts when the source supports each relationship.',
+    '- Create a leaf only when the source provides durable information worth retrieving later; keep incidental mentions in the source note.',
+    `- If no suitable grouping exists, use the reserved folder \`${UNCLASSIFIED_CLASS}\` until a suitable concept is established.`,
+    '- Reuse an existing page when it describes the same subject and concept, even if its display label differs. Preserve all existing supported content and citations.',
     '',
     'Leaf content: the page is the THEME, and it ACCUMULATES every source that speaks to it.'
       + ' Write the COMPLETE final content: keep what the page already states (its excerpt is in'
@@ -161,15 +132,13 @@ function operationContract(): string[] {
       'Never use placeholders such as "...", "(existing content)", or omission markers.',
       '',
       'For every created or updated page, also return an entry in "pages" with its provenance:',
-      '- subject: the canonical identity the page belongs to, lowercase, words separated by dashes — NEVER glue the words together ("twowordidentity" instead of "two-word-identity" is wrong), never use spaces',
-      '- subject word order: the FIRST word is the name of the leaf\'s own theme (the entity or the topic this leaf is about — the concept is already the folder), NEVER a document-shaped prefix such as "etude", "analyse", "comparatif", "synthese", "projet" or "solution" — write "jedox-onpremise", never "etude-jedox-onpremise"; "souverainete", never "etude-souverainete". The engine matches an existing page to reuse by comparing the first word of "subject" only; a document-shaped prefix is why the same real subject keeps reappearing as several near-duplicate pages across separate sources. Never name the subject after the source document\'s filename.',
-      '- scope: source | product | transverse | workspace',
-      `- kind: vendor | product | requirement | regulation | dimension | scenario — the NATURE of the subject (a vendor is not its product, a dimension is not a product)`,
-      '- tags: 2 to 4 words linking this leaf — its entity AND the cross-cutting themes it speaks to (security, sovereignty, cost, integration…). Each tag is a SINGLE word, in the SINGULAR, in the output language — never a plural (write "requirement", not "requirements"; "solution", not "solutions"). REUSE an existing tag from the "Existing tags" list in the user message when one is close, rather than inventing a near-synonym. At most 4 tags.',
+      '- subject: a concise display label. The engine stores a separate opaque identity; choose wording that is natural for the workspace readers.',
+      '- concept_id and subject_id: copy the corresponding UUID from the best matching inventory page when it represents the same concept or subject; otherwise return null. Never invent an identity. The engine assigns identities to new concepts and subjects.',
+      '- scope and kind are optional descriptive metadata. Do not treat these labels as concept identity or as a fixed vocabulary.',
+      '- tags: a small set of useful retrieval labels linking this leaf to related knowledge. Reuse an existing tag when its meaning matches; tags are descriptive metadata, not identity.',
       '- subject MUST match the page path: wiki/concepts/<concept>/<subject>.md',
       'Do NOT write these fields inside the page content; the engine writes them.',
-      'Do not copy the free-form "group" field into "subject": a group is a shelf, a subject is an identity.',
-      'A vendor and its product are DIFFERENT pages only when each carries durable, distinct knowledge; otherwise keep the vendor inside the product page. Never create a second product page for a product\'s sub-modules.',
+      'Return concise display labels. Do not treat labels as identities; copy only UUIDs already present in the inventory.',
       '',
       'Return a strict JSON object with { "summary": string, "operations": WikiOperation[], "pages": [] } and no extra text.',
   ];
@@ -190,7 +159,7 @@ function sourcePageContract(): string[] {
     '  never a generic `# Résumé` or `# Source note`; then a short `## Résumé`, then',
     '  `## <thème réellement présent>` sections, each ending with an ANCHORED citation to',
     '  its archive (`[src: <archive path>#<locator>]`);',
-    '- its `subject` identifies the DOCUMENT, never a vendor, product or theme;',
+    '- its `subject` identifies the DOCUMENT rather than a concept-page subject;',
     '- announce any part of the document you could not address.',
   ];
 }
@@ -273,8 +242,8 @@ export function buildConsolidationUser(args: {
       args.extraction.subjects.length
         ? args.extraction.subjects
             .map((subject) =>
-              `- ${subject.id} :: ${subject.label} [scope=${subject.scope} | kind=${subject.kind} | importance=${subject.importance}]`
-              + `\n  why: ${subject.rationale}`
+              `- ${subject.id} :: ${subject.label}`
+              + (subject.rationale ? `\n  source rationale: ${subject.rationale}` : '')
               + (subject.relatedExistingPages?.length
                 ? `\n  may extend: ${subject.relatedExistingPages.join(', ')}`
                 : ''))
@@ -297,6 +266,8 @@ export function buildConsolidationUser(args: {
               `- ${page.path} :: ${page.title}`
               + `${page.subject ? ` [subject=${page.subject}]` : ''}`
               + `${page.folder ? ` [concept=${page.folder}]` : ''}`
+              + `${page.conceptId ? ` [concept_id=${page.conceptId}]` : ''}`
+              + `${page.subjectId ? ` [subject_id=${page.subjectId}]` : ''}`
               + `${page.scope ? ` [scope=${page.scope}]` : ''}`
               + `${page.previousForSource ? ' [previously produced by THIS source]' : ''}`
               + `${page.subjectMatch ? ' [existing page for a closely related subject]' : ''}`
@@ -358,7 +329,7 @@ export function buildConsolidationRetryUser(
   if (corrections.overflow) {
     lines.push(
       '',
-      `You created ${corrections.overflow.newConcepts} new concept pages for a budget of ${corrections.overflow.budget}. Merge related concepts so that at most ${corrections.overflow.budget} remain — several requirements of the same product belong in ONE page about that product, several sub-accounts belong in ONE page about the structure.`,
+      `You created ${corrections.overflow.newConcepts} new concept pages for a budget of ${corrections.overflow.budget}. Reuse matching established concepts and merge only pages with the same stable subject and concept identities. Keep distinct supported knowledge separate.`,
     );
   }
 

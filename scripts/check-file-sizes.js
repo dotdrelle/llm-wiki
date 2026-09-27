@@ -25,10 +25,13 @@ const MAX_LINES = 800;
 // Same window, same day: the deliverables tab gained a live job spinner and a
 // green "just written" flag (wikiHtml/wikiLayoutCss/wikiLayoutScript again),
 // and chatHtml grew one more line refreshing the wiki sidebar at run end.
+// 0.16.01 note: the knowledge recentrage renamed the tree surfaces (archived
+// documents, reading notes, project knowledge, project overview) and added the
+// overview/identity affordances (wikiHtml, wikiLayoutCss).
 const LEGACY_LIMITS = new Map([
   ['src/commands/serve.ts', 1100],
-  ['src/serve/html/wikiHtml.ts', 2058],
-  ['src/serve/html/wikiLayoutCss.ts', 1573],
+  ['src/serve/html/wikiHtml.ts', 2090],
+  ['src/serve/html/wikiLayoutCss.ts', 1597],
   ['src/serve/html/wikiLayoutScript.ts', 1312],
   ['src/chat/chatHtml.ts', 3122],
   ['src/chat/styles/chatStyles.ts', 600],

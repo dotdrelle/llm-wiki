@@ -37,16 +37,39 @@ discuss this with DONNA before applying. Each ingestion updates the **index**
 
 The wiki is the set of durable knowledge pages. It is organized into:
 
-- **concepts**: reusable knowledge (a system, an actor, a rule, an
-  architecture);
-- **sources**: source notes that trace where each piece of information comes
-  from — one note per document, titled with the document's own title, opening
-  on a short *Résumé* then one section per theme the document covers;
+- **concepts**: reusable knowledge organized around the groupings found in the
+  workspace's source material;
+- **source notes** (`wiki/sources/`): concise reading notes, one per document,
+  titled with the document's own title, opening on a short *Résumé* then one
+  section per theme the document covers;
+- **archived documents** (`raw/ingested/`): the original documents, preserved
+  as the complete evidence behind those notes;
 - **index**: the canonical map that links and references the pages;
 - **log**: the chronological journal of ingestions and updates.
 
 Pages are linked to one another by internal links, so you can navigate from one
 concept to the next.
+
+The generated index separates **Project knowledge**, **Reading notes**, and
+**Archived documents**. Reading notes summarize individual documents; archived
+documents are the complete original evidence. The archive list links directly
+to each ingested original, and search can return both a note and its original.
+
+The overview section near the top of `wiki/index.md` is yours to review and
+write. Edit between its overview markers; the engine preserves that text while
+rebuilding the generated lists of project knowledge, reading notes, and
+archived documents below it. A
+generated draft includes exact evidence quotes that are checked again when you
+apply it.
+If an older index has no markers, regeneration keeps the file intact. To adopt
+the canonical index, run `wiki index --overview`, review or edit
+`.wiki/workspace-overview.draft.md`, then run `wiki index --apply-overview`.
+The old index is preserved at `.wiki/index-legacy.md` before the overview and
+generated lists are written. If that backup already contains different
+content, adoption stops without changing `wiki/index.md`.
+The engine checks that the draft citations still point to workspace pages and
+that its evidence quotes still match their source text before replacing the
+marked overview.
 
 Every page also carries **OKF frontmatter**: its `type`, who generated it and
 when (`generated`), its lifecycle status (`status`: draft / stable) and the raw
@@ -79,6 +102,11 @@ this deterministically — if an update would silently drop a fact a previous
 source backed, that page update is refused and reported, and the rest of the
 ingestion continues.
 
+The source note is a summary, not a complete copy. Search includes archived
+documents so details omitted from the note can still be found. Open the archived
+document when you need to check exact wording or a specific detail; the source
+note remains the quicker overview.
+
 When a deliverable is built, the engine freezes the exact snippets it used. If
 you later replace a source with a newer version, exporting the already-built
 deliverable still uses the version it was built from — the document does not
@@ -86,9 +114,11 @@ change under you.
 
 ## 5. Search
 
-The wiki content is indexed for **semantic search**: you can find information by
-its meaning, not just by keyword. DONNA relies on this index to answer your
-questions about your domain. The knowledge **graph** is queryable too: how
+Wiki pages and archived originals are indexed for **semantic search**: you can
+find information by its meaning, not just by keyword. Search results distinguish
+the reading note from its original document, even when they share a title.
+DONNA relies on these results to answer your questions about the workspace. The
+knowledge **graph** is queryable too: how
 pages cite their sources, which pages share a subject or a tag, and what path
 links two documents — DONNA uses it to explain relationships without reading
 every page.
@@ -117,10 +147,11 @@ them with the knowledge steps below.
 
 The knowledge is organized as it is ingested — there is no separate step.
 Every source is filed as a **concept leaf** under
-`wiki/concepts/<concept>/<subject>.md`: the **concept is the folder**, and the
-`/graph` view derives its communities and its taxonomy directly from that
-folder structure. A subject cited under several concepts gets one leaf per
-concept; a subject that fits no concept yet waits under the reserved
+`wiki/concepts/<label>/<subject>.md`: the folder and file names are readable
+storage labels, while opaque IDs carry concept and subject identity across
+label changes. The `/graph` view derives its communities from those identities.
+A subject cited under several concepts gets one leaf per concept; a subject
+that fits no concept yet waits under the reserved
 `wiki/concepts/unclassified/` folder.
 
 Filing a page by hand works too: move a page into a concept folder and it is

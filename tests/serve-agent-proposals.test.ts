@@ -49,7 +49,10 @@ function writeProposal(rootDir: string, record: Record<string, unknown>): void {
 function makeDeps(rootDir: string) {
   const deps = {
     rootDir,
-    workspace: { applyWikiOperations: vi.fn(async () => undefined) } as unknown as WorkspaceService,
+    workspace: {
+      applyWikiOperations: vi.fn(async () => undefined),
+      listWikiPages: vi.fn(async () => []),
+    } as unknown as WorkspaceService,
     historyConfig: null,
     isRunActive: vi.fn(async () => false),
     sendJson: (res: unknown, status: number, data: unknown) => {

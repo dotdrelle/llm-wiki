@@ -1,63 +1,64 @@
 import matter from 'gray-matter';
-import {
-  EXTRACTION_KINDS,
-  EXTRACTION_SCOPES,
-  type ExtractionKind,
-  type ExtractionScope,
-} from './extractionSchema.ts';
+import { randomUUID } from 'node:crypto';
+import type { ExtractionKind, ExtractionScope } from './extractionSchema.ts';
 
 /*
  Canonical provenance of a page: subject, scope, kind and tags.
 
- Classification used to rely on `class:` — a filing class written in the
- frontmatter and checked against a closed grid — and on `group:`, a free-form
- string. Both were copies of a decision the file's own PATH already carries:
- the concept folder a leaf lives in (`wiki/concepts/<concept>/<subject>.md`).
-
- The folder is the concept. `subject` is the canonical identity (normalized,
- controlled — the join key for the entity node). `scope` and `kind` describe the
- NATURE of the subject — the signal the consolidation uses to decide
- granularity, never a taxonomy level. `tags` are the multivalued links.
+ Filing labels live in the page path; opaque `concept_id` and `subject_id`
+ values carry concept and subject identity independently of those labels.
+ `subject`, `scope`, and `kind` are descriptive metadata, never identity keys.
+ `tags` are free-vocabulary links between pages.
 */
 
 export type PageProvenance = {
   subject: string | null;
+  /** Stable, opaque identities; labels and paths may change or be translated. */
+  concept_id?: string | null;
+  subject_id?: string | null;
   scope: ExtractionScope | null;
   kind: ExtractionKind | null;
   /** Multivalued links: entity tags and theme tags, normalized + deduplicated. */
   tags: string[];
 };
 
+export function newKnowledgeIdentity(): string {
+  return randomUUID();
+}
+
+export function isKnowledgeIdentity(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 /**
  * Canonical form of a provenance value.
  *
- * Lowercased, accents removed, separators unified: `Name`, `name` and
- * `Name ` must designate the same subject, otherwise the identity we have
- * just introduced would suffer exactly the same flaw as `group:`.
+ * Unicode-normalized, lowercased, separators unified: canonically equivalent
+ * spellings must designate the same subject without stripping marks that are
+ * meaningful in many writing systems.
  */
 export function normalizeProvenanceValue(value: string): string {
-  return value
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
+  const normalized = value
+    .normalize('NFC')
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 64);
+    .replace(/-+/g, '-');
+  return [...normalized].slice(0, 64).join('').replace(/-+$/g, '');
 }
 
 export function isValidProvenanceValue(value: string): boolean {
-  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value) && value.length <= 64;
+  return /^[\p{L}\p{N}][\p{L}\p{M}\p{N}]*(?:-[\p{L}\p{N}][\p{L}\p{M}\p{N}]*)*$/u.test(value)
+    && [...value].length <= 64;
 }
 
 /**
  * Normalizes a list of tags: each is canonicalized, dropped when empty or
  * invalid, and duplicates (by normalized form) are removed in order.
  *
- * A tag is a SINGLE word: the compound value is reduced to its first term
- * (`bande-passante` → `bande`). The singular is the model's job, asked in the
- * prompt — depluralizing here would mangle acronyms (`saas` → `saa`, `eas` →
- * `ea`), so the engine never drops a trailing letter.
+ * Tags are normalized labels. The engine does not apply language-specific
+ * stemming or singularization; display vocabulary remains corpus-owned.
  */
 export function normalizeTags(values: unknown): string[] {
   const list = Array.isArray(values) ? values : typeof values === 'string' ? [values] : [];
@@ -73,56 +74,30 @@ export function normalizeTags(values: unknown): string[] {
   return out;
 }
 
-/**
- * The canonical form of a tag value: normalized, then reduced to its first
- * term.
- */
+/** The canonical form of a tag value; preserve the complete normalized label. */
 export function normalizeTagValue(value: string): string {
-  const normalized = normalizeProvenanceValue(value);
-  if (!normalized) return '';
-  return normalized.split(/[-_]/)[0] ?? '';
+  return normalizeProvenanceValue(value);
 }
-
-/**
- * Tokens too generic to prove two subjects are the same thing. Sharing
- * "solution" or "system" says nothing; sharing "infra" or "jedox" does.
- */
-const SUBJECT_STOPWORDS = new Set([
-  'solution', 'solutions', 'systeme', 'systemes', 'system', 'systems',
-  'service', 'services', 'produit', 'produits', 'product', 'products',
-  'outil', 'outils', 'tool', 'tools', 'projet', 'projets', 'project', 'projects',
-  'data', 'donnees', 'gestion', 'management', 'note', 'notes',
-  'info', 'information', 'informations', 'general', 'generale', 'autre', 'autres',
-  'model', 'modele', 'models', 'modeles', 'version', 'versions',
-  'plan', 'plans', 'type', 'types', 'niveau', 'niveaux', 'phase', 'phases',
-]);
 
 function significantTokens(value: string): string[] {
   return value
     .split(/[-_]/)
-    // A bare number is never evidence of identity. "budget-2024" and
-    // "roadmap-2024" share nothing but a year, and years are exactly the kind
-    // of token a folder-naming convention sprinkles over every subject.
-    .filter((token) => token.length >= 3 && !/^\d+$/.test(token) && !SUBJECT_STOPWORDS.has(token));
+    .filter((token) => [...token].length >= 3 && !/^\d+$/.test(token));
 }
 
 /**
  * Whether two normalized subjects name the same ENTITY: their leading tokens
  * match, or one subject is a prefix run of the other.
  *
- * Subjects are written entity-name-first (`jedox-etude-onpremise`, never
- * `etude-jedox-…` — the `operationContract` enforces it), so the leading token
- * IS the entity. This is the STRICT predicate: it decides whether two leaves
- * in one concept folder are a duplicate of each other, which costs LLM retry
- * rounds and pressures the model into collapsing two genuinely different
- * things. `jedox-cloud` and `anaplan-cloud` are two products, not one.
+ * This legacy predicate is only a candidate hint. Stable subject identity is
+ * carried by subject_id; normalized labels are not authoritative keys.
  */
 export function subjectsShareEntityRoot(a: string, b: string): boolean {
   if (!a || !b) return false;
   if (a === b) return true;
   const rootA = a.split('-', 1)[0] ?? '';
   const rootB = b.split('-', 1)[0] ?? '';
-  return rootA.length > 2 && rootA === rootB && !SUBJECT_STOPWORDS.has(rootA);
+  return [...rootA].length > 2 && rootA === rootB;
 }
 
 /**
@@ -150,11 +125,8 @@ export function subjectMatchStrength(a: string, b: string): number {
 
 /**
  * Whether two normalized subjects plausibly identify the same real-world
- * thing: the leading tokens match ("x" / "x-solution" / "x-certifications" all
- * share "x"), or they share any significant token ("couts-infra" and "infra"
- * both carry "infra"). Generic tokens and bare numbers are ignored, so
- * "solution-pricing" and "solution-licence" are not related just because both
- * say "solution".
+ * thing according to normalized label overlap. This is only for candidate
+ * display; it never establishes identity or authorizes a merge.
  *
  * This is deliberately lenient: it only decides whether an existing page is
  * worth SHOWING the model as a reuse candidate during consolidation, never
@@ -169,11 +141,11 @@ export function subjectsAreRelated(a: string, b: string): boolean {
 }
 
 export function isExtractionScope(value: unknown): value is ExtractionScope {
-  return typeof value === 'string' && (EXTRACTION_SCOPES as readonly string[]).includes(value);
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 export function isExtractionKind(value: unknown): value is ExtractionKind {
-  return typeof value === 'string' && (EXTRACTION_KINDS as readonly string[]).includes(value);
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 /**
@@ -223,6 +195,8 @@ export function readProvenance(content: string): PageProvenance {
   const subject = data.subject;
   return {
     subject: typeof subject === 'string' && isValidProvenanceValue(subject) ? subject : null,
+    concept_id: isKnowledgeIdentity(data.concept_id) ? data.concept_id : null,
+    subject_id: isKnowledgeIdentity(data.subject_id) ? data.subject_id : null,
     scope: isExtractionScope(data.scope) ? data.scope : null,
     kind: isExtractionKind(data.kind) ? data.kind : null,
     tags: normalizeTags(data.tags),

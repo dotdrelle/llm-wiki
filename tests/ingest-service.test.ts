@@ -365,8 +365,8 @@ class ReconcilingLLMService extends FakeLLMService {
     if (request?.label === 'ingest_concept_folders') {
       return {
         folders: [
-          { folder: 'produit', canonical: 'produit' },
-          { folder: 'product', canonical: 'produit' },
+          { folder: 'produit', canonical: 'produit', concept_id: '123e4567-e89b-42d3-a456-426614174000' },
+          { folder: 'product', canonical: 'produit', concept_id: '123e4567-e89b-42d3-a456-426614174000' },
         ],
       };
     }
@@ -437,10 +437,12 @@ class WideWhitespaceCitationLLMService extends FakeLLMService {
 class FakeRetrievalService {
   invalidateCalls = 0;
 
-  constructor(private wikiPages: WikiPage[] = []) {}
+  constructor(private wikiPages: WikiPage[] = [], private returnSearchCandidates = false) {}
 
   async search(): Promise<SearchResult[]> {
-    return [];
+    return this.returnSearchCandidates
+      ? this.wikiPages.map((page) => ({ page, score: 1, relatedPaths: [] }))
+      : [];
   }
   async warmCache(): Promise<WikiPage[]> {
     return this.wikiPages;
@@ -666,7 +668,7 @@ describe('ingest service', () => {
         relativePath: 'wiki/concepts/product/board-platform.md',
         name: 'board-platform',
         type: 'concept',
-        content: '---\nsubject: board-platform\n---\n\n# Board\n\nEarlier fact. [src: raw/ingested/older.md#Coûts]\n',
+        content: '---\nconcept_id: 123e4567-e89b-42d3-a456-426614174000\nsubject: board-platform\nsubject_id: 223e4567-e89b-42d3-a456-426614174000\n---\n\n# Board\n\nEarlier fact. [src: raw/ingested/older.md#Coûts]\n',
       },
     ]);
     const service = new IngestService(
@@ -1540,9 +1542,9 @@ describe('ingest service', () => {
         relativePath: 'wiki/concepts/produit/acpi.md',
         name: 'acpi.md',
         type: 'concept',
-        content: '---\nsubject: acpi\ntags: [outil]\n---\n# ACPI\n',
+        content: '---\nconcept_id: 123e4567-e89b-42d3-a456-426614174000\nsubject: acpi\ntags: [outil]\n---\n# ACPI\n',
       },
-    ]);
+    ], true);
     const service = new IngestService(
       createConfig(),
       workspace as unknown as WorkspaceService,
@@ -1593,7 +1595,7 @@ describe('ingest service', () => {
         relativePath: 'wiki/concepts/product/existing.md',
         name: 'existing',
         type: 'concept',
-        content: '# Existing\n',
+        content: '---\nconcept_id: 123e4567-e89b-42d3-a456-426614174000\n---\n\n# Existing\n',
       },
     ]);
     const logger = new MemoryTraceLogger();
@@ -1746,9 +1748,9 @@ describe('ingest service', () => {
         relativePath: 'wiki/concepts/produit/acpi.md',
         name: 'acpi.md',
         type: 'concept',
-        content: '---\nsubject: acpi\ntags: [outil]\n---\n# ACPI\n',
+        content: '---\nconcept_id: 123e4567-e89b-42d3-a456-426614174000\nsubject: acpi\ntags: [outil]\n---\n# ACPI\n',
       },
-    ]);
+    ], true);
     const service = new IngestService(
       createConfig(),
       workspace as unknown as WorkspaceService,

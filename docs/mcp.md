@@ -20,8 +20,8 @@ Two transports are available:
 | `wiki_add_source`            | Stage Markdown content in the workspace ingestion inbox; writes directly unless `dryRun=true`                                         |
 | `wiki_list_ingested_sources` | List ingested source documents in `raw/ingested/`                                                                                     |
 | `wiki_read_ingested_source`  | Read an ingested source by relative path when raw source inspection is needed                                                         |
-| `wiki_search_context`        | Search wiki pages (excluding `wiki/answers/`) and return ranked paths, excerpts, and `relatedPaths`. Uses vector search when enabled. |
-| `wiki_collect_context`       | Search wiki pages, read up to 10 returned pages by default, and report coverage in one call                                           |
+| `wiki_search_context`        | Search wiki pages and archived originals (excluding `wiki/answers/`) and return ranked paths, excerpts, and `relatedPaths`. Archived originals are included by default; pass `includeRaw=false` to omit them. Uses vector search when enabled. |
+| `wiki_collect_context`       | Search wiki pages and archived originals, read up to 10 returned wiki pages by default, and report coverage in one call              |
 | `wiki_graph_query`           | Query the knowledge graph: the neighbors of a page (citations, produces, wiki links, shared subject/tags), or the pages of a concept or tag |
 | `wiki_graph_path`            | Shortest path between two pages in the knowledge graph, with the edge type of every hop                                                   |
 | `wiki_outline`               | Structural map of the wiki: communities, sizes, most connected pages — no content                                                       |
@@ -39,6 +39,11 @@ Write operations use workspace-owned path guards. `wiki_add_source` resolves its
 3. Call `wiki_read_page` or `wiki_read_pages` for the pages you want to read in full.
 4. Produce the answer from that context.
 
+Search results may include both a `wiki/sources/` reading note and its
+`raw/ingested/` original. They are intentionally separate results: the note is
+a concise overview, while the archive preserves complete evidence. Read the
+archived original when a specific detail is missing from the note excerpt.
+
 **Relationship questions (what connects A to B, what shares a subject):**
 
 1. Call `wiki_graph_query` (a node's neighbors, a concept or tag's pages) or
@@ -54,6 +59,11 @@ Write operations use workspace-owned path guards. `wiki_add_source` resolves its
 4. Treat `candidateResults.excerpt` as search trace only: it explains why pages were selected but is not the main evidence.
 5. If coverage is insufficient, call `wiki_search_context`, `wiki_read_page`, `wiki_read_pages`, or `wiki_read_ingested_source` to gather the missing evidence.
 6. End with a short coverage note that distinguishes pages read in full, pages truncated, and `raw/ingested/` sources cited but not read.
+
+`wiki_collect_context` searches archived originals too, but opens only wiki
+pages automatically. Check `notReadRawSources` and use
+`wiki_read_ingested_source` before relying on an archived document's full
+content.
 
 Manual equivalent:
 

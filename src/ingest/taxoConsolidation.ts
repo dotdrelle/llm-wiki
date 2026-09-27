@@ -1,7 +1,6 @@
 import type { WikiOperation } from '../types.ts';
 import type { ConsolidatedPage, ConsolidationPlan } from './consolidationSchema.ts';
 import { normalizeProvenanceValue, normalizeTags } from './provenance.ts';
-import { EXTRACTION_KINDS, EXTRACTION_SCOPES } from './extractionSchema.ts';
 import { createFenceTracker } from '../utils/sourcePacking.ts';
 
 /*
@@ -87,12 +86,13 @@ export type TaxoConcept = {
 };
 
 export const TAXO_SECTION_SYSTEM = [
-  'You extract domain concepts from ONE section of a document.',
+  'You extract reusable knowledge candidates from ONE section of a document.',
   'Return strict JSON only: {"concept": string, "resume": string, "facts": string}.',
-  '- The user message gives you the DOCUMENT title first: use it. If the document is about a specific product, vendor or tool, and the section speaks about that product, then concept = THAT product/vendor/tool name (kebab-case) — never a generic theme when the document is a product study.',
-  '- concept: the ONE domain concept this section is about, kebab-case, SINGULAR. If the section is a pure table of contents or an index with no concept of its own, return {"concept": "", "resume": "", "facts": ""}.',
-  '- resume: one or two words, kebab-case, summarizing the IDEA of this section about that concept. Never reuse the concept name alone.',
-  '- facts: 1-3 sentences, what this section establishes about the concept. In French.',
+  '- Identify the referent or theme needed to connect the section facts to related knowledge. Use the words and language of the source as display labels; they are not identity keys.',
+  '- Do not create a separate candidate merely because the document has a heading, row, or sub-part. Preserve distinct referents when the source gives them distinct facts.',
+  '- If the section contains no reusable information, return empty strings for all three fields.',
+  '- Keep names, codes, dates, and other identifiers exactly as written.',
+  '- facts: a concise, faithful statement of the information in this section, in the source language.',
 ].join('\n');
 
 export function buildTaxoSectionUser(docTitle: string, section: TaxoSection): string {
@@ -100,18 +100,16 @@ export function buildTaxoSectionUser(docTitle: string, section: TaxoSection): st
 }
 
 export const TAXO_DEDUP_SYSTEM = [
-  'You receive a table of candidate concepts extracted section by section from a document corpus.',
-  'Your job: output the list of UNIQUE, NON-REDUNDANT concepts, aligned with the OKF conventions below.',
+  'You receive a table of candidates extracted from document sections.',
+  'Group rows only when their content supports the same reusable subject or theme. Do not impose a fixed vocabulary or merge distinct referents because they share a label.',
   'Return strict JSON only: {"concepts": [{"name": string, "label": string, "kind": string, "scope": string, "definition": string, "tags": string[], "covers": number[]}]}.',
-  '- name: the canonical concept name, kebab-case, SINGULAR, short common-noun phrase. REFUSE generic names that describe a document part, not a concept: "source", "divers", "general", "introduction", "annexe", "sommaire", "index".',
-  '- A PRODUCT, VENDOR or TOOL that rows mention MUST remain its own concept — never absorb it into a theme concept.',
-  '- label: the human-readable name of the concept (prefLabel), in French, capitalized.',
-  '- kind: the NATURE of the subject, exactly one of: vendor | product | requirement | regulation | dimension | scenario | domain | decision | tool. Prefer the most specific that fits.',
-  '- scope: source | product | transverse | workspace.',
-  '- definition: 2-3 sentences, self-contained, built ONLY from the facts of the covered rows. In French.',
-  '- tags: THEME words only — cross-cutting topics that LINK several concepts together for a graph (e.g. securite, souverainete, cout, donnees, integration, certification, tracabilite, reporting). Rules: 2 to 4 tags per concept; a tag MUST apply to at least TWO concepts in your answer; NEVER use a concept name (or another concept name) as a tag; French, singular, kebab-case.',
-  '- covers: the numbers of ALL rows that belong to this concept (merge synonyms, near-duplicates, singular/plural, same family).',
-  '- every row must be covered exactly once; do not invent concepts absent from the table.',
+  '- name: a concise storage label for the grouping. The engine stores a separate opaque identity; the label may be revised or translated.',
+  '- label: a readable display label suitable for the workspace. Keep names and codes as written in the sources.',
+  '- kind and scope: optional descriptive metadata drawn from the corpus. They are not fixed vocabularies and do not define identity.',
+  '- definition: a concise synthesis supported only by the covered rows, in the source language.',
+  '- tags: useful retrieval labels grounded in the rows. Do not apply a fixed tag list or language-specific normalization.',
+  '- covers: the numbers of all rows represented by this grouping.',
+  '- Every row must be covered exactly once; do not invent content absent from the table.',
 ].join('\n');
 
 export function buildTaxoTable(rows: TaxoRow[]): string {
@@ -120,36 +118,24 @@ export function buildTaxoTable(rows: TaxoRow[]): string {
     .join('\n');
 }
 
-/**
- * The closed `kind` vocabulary of the extraction contract, with the taxo
- * pipeline's wider vocabulary clamped onto it. `tool` folds into `product`
- * (a tool is a product page); `domain` and `decision` carry no subject
- * nature — their leaves keep the generic OKF `type: concept`.
- */
 export function taxoKindForSchema(kind: string): ConsolidatedPage['kind'] {
   const raw = String(kind ?? '').trim();
-  if (raw === 'tool') return 'product';
-  return (EXTRACTION_KINDS as readonly string[]).includes(raw)
-    ? (raw as ConsolidatedPage['kind'])
-    : null;
+  return raw || null;
 }
 
 export function taxoScopeForSchema(scope: string): ConsolidatedPage['scope'] {
   const raw = String(scope ?? '').trim();
-  return (EXTRACTION_SCOPES as readonly string[]).includes(raw)
-    ? (raw as ConsolidatedPage['scope'])
-    : 'product';
+  return raw || null;
 }
 
 /**
  * The shared "resume" slug both a leaf's path and its own frontmatter/title
  * derive from — one implementation instead of two independent ones, so they
- * can never disagree. Also picks up normalizeProvenanceValue's NFKD accent
- * stripping, which the previous ad hoc regex lacked (a French "sécurité"
- * resume used to mangle into the raw byte sequence instead of "securite").
+ * can never disagree. It uses shared Unicode-aware provenance normalization,
+ * without language-specific slug rules.
  */
 function taxoResumeSlug(resume: string): string {
-  return normalizeProvenanceValue(resume || 'note') || 'note';
+  return normalizeProvenanceValue(resume) || '0';
 }
 
 /** Escapes a value for a YAML double-quoted flow scalar — backslashes FIRST,
@@ -245,6 +231,8 @@ export function taxoPlanForSource(
     pages.push({
       path,
       subject: path.split('/').pop()?.replace(/\.md$/, '') ?? null,
+      concept_id: null,
+      subject_id: null,
       scope: taxoScopeForSchema(concept.scope),
       kind: taxoKindForSchema(concept.kind),
       tags: normalizeTags(concept.tags),
@@ -280,7 +268,9 @@ export function taxoPlanForSource(
   pages.push({
     path: sourcePagePath,
     subject: sourcePagePath.split('/').pop()?.replace(/\.md$/, '') ?? null,
-    scope: 'source',
+    concept_id: null,
+    subject_id: null,
+    scope: null,
     kind: null,
     tags: [],
     rationale: null,

@@ -12,7 +12,8 @@ import {
   isValidProvenanceValue,
   normalizeProvenanceValue,
   normalizeTagValue,
-  subjectsShareEntityRoot,
+  newKnowledgeIdentity,
+  readProvenance,
   type PageProvenance,
 } from './provenance.ts';
 import { okfTypeForPath } from '../okf/frontmatter.ts';
@@ -55,9 +56,9 @@ function isSourceNote(path: string, sourcePagePath: string): boolean {
 /**
  * Makes a leaf's declared subject agree with its path, before judging it.
  *
- * The path `wiki/concepts/<concept>/<subject>.md` carries the identity in its
- * last segment; the concept is the folder, which is never restated in the
- * frontmatter. So only `subject` is reconciled:
+ * The path `wiki/concepts/<label>/<subject>.md` carries the current filing
+ * labels; stable concept and subject identities live in frontmatter. The
+ * subject display label is reconciled:
  * - subject absent  ⇒ derived from the path, silently;
  * - subject present and diverging ⇒ the PATH wins, with a warning naming both;
  * - path malformed ⇒ nothing is derived, and the checks below reject it.
@@ -74,10 +75,9 @@ function reconcileConceptSubject(
   const warnings: ConsolidationIssue[] = [];
   const fromPath = parseConceptPagePath(at);
   if (!fromPath) {
-    // The concept IS the folder, so a leaf with no usable folder has no concept
-    // axis at all. A `subject` the model declared must not paper over it — the
-    // path, not the declaration, carries the identity — so this is rejected
-    // exactly like a missing subject, never silently accepted.
+    // The folder path is the filing location, so a leaf with no usable folder
+    // cannot be filed. A declared subject must not paper over a malformed path;
+    // identity metadata is kept separate from this structural validation.
     //
     // `refileMisfiledConceptLeaves` has already rescued every path that only
     // had the wrong DEPTH, so what reaches here is a value neither
@@ -132,8 +132,8 @@ function conceptSubjectIssues(at: string, provenance: PageProvenance): Consolida
  * Re-files a concept leaf whose path has the wrong DEPTH into one the folder
  * model accepts.
  *
- * The concept IS the folder, so a leaf lives at exactly
- * `wiki/concepts/<concept>/<subject>.md`. Two shapes miss it:
+ * The folder is a storage label, and a leaf lives at exactly
+ * `wiki/concepts/<label>/<subject>.md`. Two shapes miss it:
  * - too flat (`wiki/concepts/<subject>.md`) — no concept axis at all, so the
  *   leaf waits under the reserved `unclassified/` folder;
  * - too deep (`wiki/concepts/<concept>/<sub>/<subject>.md`) — the model
@@ -204,6 +204,7 @@ export function validateConsolidation(
     sourcePagePath: string;
     citationPath: string;
     existingPaths: Set<string>;
+    existingPages?: ReadonlyMap<string, string>;
     conceptBudget?: number;
     precomputedSplits?: ConceptSplit[];
   },
@@ -218,6 +219,47 @@ export function validateConsolidation(
   const declaredPages = refiled.pages;
   const provenanceInput = new Map(declaredPages.map((page) => [page.path, page]));
   const provenanceByPath = new Map<string, PageProvenance>();
+  const conceptIdentityByFolder = new Map<string, string>();
+  const subjectIdentityByLabel = new Map<string, string>();
+  const conceptIdsByFolder = new Map<string, Set<string>>();
+  const subjectIdsByLabel = new Map<string, Set<string>>();
+  const foldersMissingIdentity = new Set<string>();
+  const subjectsMissingIdentity = new Set<string>();
+  const knownConceptIdentities = new Set<string>();
+  const knownSubjectIdentities = new Set<string>();
+  for (const [pagePath, content] of context.existingPages ?? []) {
+    if (!pagePath.startsWith(CONCEPT_PREFIX)) continue;
+    const axes = parseConceptPagePath(pagePath);
+    if (!axes) continue;
+    const existing = readProvenance(content);
+    if (existing.concept_id) {
+      const ids = conceptIdsByFolder.get(axes.class) ?? new Set<string>();
+      ids.add(existing.concept_id);
+      conceptIdsByFolder.set(axes.class, ids);
+      knownConceptIdentities.add(existing.concept_id);
+    } else foldersMissingIdentity.add(axes.class);
+    if (!existing.subject) continue;
+    if (existing.subject_id) {
+      const ids = subjectIdsByLabel.get(existing.subject) ?? new Set<string>();
+      ids.add(existing.subject_id);
+      subjectIdsByLabel.set(existing.subject, ids);
+      knownSubjectIdentities.add(existing.subject_id);
+    } else subjectsMissingIdentity.add(existing.subject);
+  }
+  const conflictingFolders = new Set([...conceptIdsByFolder]
+    .filter(([, ids]) => ids.size > 1).map(([folder]) => folder));
+  const conflictingSubjects = new Set([...subjectIdsByLabel]
+    .filter(([, ids]) => ids.size > 1).map(([subject]) => subject));
+  for (const [folder, ids] of conceptIdsByFolder) {
+    if (ids.size === 1 && !foldersMissingIdentity.has(folder)) {
+      conceptIdentityByFolder.set(folder, [...ids][0]!);
+    }
+  }
+  for (const [subject, ids] of subjectIdsByLabel) {
+    if (ids.size === 1 && !subjectsMissingIdentity.has(subject)) {
+      subjectIdentityByLabel.set(subject, [...ids][0]!);
+    }
+  }
 
   /*
    A source produces ONE source note.
@@ -290,8 +332,51 @@ export function validateConsolidation(
         warnings.push({ path: at, reason: 'undeclared provenance' });
       }
       const subject = declared?.subject ? normalizeProvenanceValue(declared.subject) : null;
+      const conceptAxes = at.startsWith(CONCEPT_PREFIX) ? parseConceptPagePath(at) : null;
+      const previousPageContent = context.existingPages?.get(at);
+      const previousPageIdentity = previousPageContent ? readProvenance(previousPageContent) : null;
+      const declaredConceptId = declared?.concept_id;
+      const declaredSubjectId = declared?.subject_id;
+      let conceptId: string | null = null;
+      let subjectId: string | null = null;
+      if (conceptAxes) {
+        const conceptIdentityUnsafe = !previousPageIdentity?.concept_id
+          && (conflictingFolders.has(conceptAxes.class) || foldersMissingIdentity.has(conceptAxes.class));
+        if (conceptIdentityUnsafe) {
+          errors.push({
+            path: at,
+            reason: 'existing pages in this concept folder have missing or conflicting concept_id values; review or backfill identities before adding pages',
+          });
+        } else {
+          conceptId = previousPageIdentity?.concept_id
+            ?? conceptIdentityByFolder.get(conceptAxes.class)
+            ?? (declaredConceptId && knownConceptIdentities.has(declaredConceptId) ? declaredConceptId : null)
+            ?? newKnowledgeIdentity();
+          conceptIdentityByFolder.set(conceptAxes.class, conceptId);
+          knownConceptIdentities.add(conceptId);
+        }
+        if (subject) {
+          const subjectIdentityUnsafe = !previousPageIdentity?.subject_id
+            && (conflictingSubjects.has(subject) || subjectsMissingIdentity.has(subject));
+          if (subjectIdentityUnsafe) {
+            errors.push({
+              path: at,
+              reason: 'existing pages for this subject have missing or conflicting subject_id values; review or backfill identities before adding pages',
+            });
+          } else {
+            subjectId = previousPageIdentity?.subject_id
+              ?? (declaredSubjectId && knownSubjectIdentities.has(declaredSubjectId) ? declaredSubjectId : null)
+              ?? subjectIdentityByLabel.get(subject)
+              ?? newKnowledgeIdentity();
+            subjectIdentityByLabel.set(subject, subjectId);
+            knownSubjectIdentities.add(subjectId);
+          }
+        }
+      }
       const provenance: PageProvenance = {
         subject: subject && isValidProvenanceValue(subject) ? subject : null,
+        concept_id: conceptId,
+        subject_id: subjectId,
         scope: declared?.scope ?? null,
         kind: declared?.kind ?? null,
         tags: declared?.tags ?? [],
@@ -307,15 +392,13 @@ export function validateConsolidation(
         warnings.push(...reconciled.warnings);
         errors.push(...reconciled.issues);
       }
-      // A leaf must never be orphaned: fewer than two tags, and the subject —
-      // possibly just derived from the path above — and its OKF type become tags
-      // so the entity link and its nature are always present. Both go through the
-      // same tag normalization as the model's tags: split on the first term.
+      // A leaf must never be orphaned: when it has fewer than two tags, add its
+      // subject and descriptive kind. The storage type ("concept") is structural
+      // metadata, not a useful content tag.
       if (finalProvenance.tags.length < 2) {
-        const okfType = okfTypeForPath(at, finalProvenance);
         const additions: string[] = [];
         const subjectTag = finalProvenance.subject ? normalizeTagValue(finalProvenance.subject) : null;
-        const typeTag = okfType ? normalizeTagValue(okfType) : null;
+        const typeTag = finalProvenance.kind ? normalizeTagValue(finalProvenance.kind) : null;
         if (subjectTag && !finalProvenance.tags.includes(subjectTag)) {
           additions.push(subjectTag);
         }
@@ -329,7 +412,7 @@ export function validateConsolidation(
       provenanceByPath.set(at, finalProvenance);
       operations.push({
         ...operation,
-        content: applyProvenance(operation.content ?? '', finalProvenance, okfTypeForPath(at, finalProvenance)),
+        content: applyProvenance(operation.content ?? '', finalProvenance, okfTypeForPath(at)),
       });
       continue;
     }
@@ -349,10 +432,10 @@ export function validateConsolidation(
   }
 
   for (const split of context.precomputedSplits
-    ?? detectConceptSplits({ ...plan, operations: planOperations, pages: declaredPages })) {
+    ?? detectConceptSplits({ ...plan, operations: planOperations, pages: declaredPages }, knownSubjectIdentities)) {
     warnings.push({
       path: split.path,
-      reason: `concept split: subject "${split.subject}" shares an identity with "${split.duplicateOfSubject}" (${split.duplicateOfPath}) — one product should be one concept`,
+      reason: `concept split: subject "${split.subject}" duplicates "${split.duplicateOfSubject}" (${split.duplicateOfPath})`,
     });
   }
 
@@ -373,21 +456,21 @@ export type ConceptSplit = {
 /**
  * Concept pages of a plan that split ONE identity into several.
  */
-export function detectConceptSplits(plan: ConsolidationPlan): ConceptSplit[] {
+export function detectConceptSplits(
+  plan: ConsolidationPlan,
+  knownSubjectIdentities: ReadonlySet<string> = new Set(),
+): ConceptSplit[] {
   const declaredPages = plan.pages ?? [];
-  const declaredProductSubjects = declaredPages.filter(
-    (page) => page.path.startsWith(CONCEPT_PREFIX)
-      && (page.kind === 'product' || page.kind === 'vendor'),
-  );
+  const conceptPages = declaredPages.filter((page) => page.path.startsWith(CONCEPT_PREFIX));
   const splits: ConceptSplit[] = [];
-  for (let i = 0; i < declaredProductSubjects.length; i++) {
-    const page = declaredProductSubjects[i]!;
+  for (let i = 0; i < conceptPages.length; i++) {
+    const page = conceptPages[i]!;
     const subject = (page.subject ? normalizeProvenanceValue(page.subject) : null)
       ?? (parseConceptPagePath(page.path)?.subject ?? null);
     if (!subject) continue;
     const pageFolder = parseConceptPagePath(page.path)?.class ?? null;
-    for (let j = i + 1; j < declaredProductSubjects.length; j++) {
-      const other = declaredProductSubjects[j]!;
+    for (let j = i + 1; j < conceptPages.length; j++) {
+      const other = conceptPages[j]!;
       const otherSubject = (other.subject ? normalizeProvenanceValue(other.subject) : null)
         ?? (parseConceptPagePath(other.path)?.subject ?? null);
       if (!otherSubject) continue;
@@ -400,13 +483,11 @@ export function detectConceptSplits(plan: ConsolidationPlan): ConceptSplit[] {
       if (pageFolder && otherFolder && pageFolder !== otherFolder) {
         continue;
       }
-      /*
-       The STRICT predicate, deliberately: this does not show a candidate, it
-       DECLARES a duplicate — and a declared split costs retry rounds and tells
-       the model to merge. The lenient `subjectsAreRelated` made two products
-       sharing any qualifier ("jedox-cloud" / "anaplan-cloud") a split.
-      */
-      if (subjectsShareEntityRoot(subject, otherSubject) || sharesRawPrefix(subject, otherSubject)) {
+      const sameKnownIdentity = page.subject_id != null
+        && page.subject_id === other.subject_id
+        && knownSubjectIdentities.has(page.subject_id);
+      const sameExactLabel = subject === otherSubject;
+      if (sameKnownIdentity || sameExactLabel) {
         splits.push({
           path: other.path,
           subject: otherSubject,
@@ -417,12 +498,6 @@ export function detectConceptSplits(plan: ConsolidationPlan): ConceptSplit[] {
     }
   }
   return splits;
-}
-
-function sharesRawPrefix(a: string, b: string): boolean {
-  const short = a.length <= b.length ? a : b;
-  const long = a.length <= b.length ? b : a;
-  return short.length >= 4 && long.startsWith(short) && long !== short;
 }
 
 export type ConceptOverflow = {
@@ -546,12 +621,11 @@ export const REANCHOR_MIN_OVERLAP = 0.5;
 
 function contentTokens(content: string): Set<string> {
   const normalized = content
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .normalize('NFC')
     .toLowerCase()
     .replace(/\[src: [^\]]+\]/g, ' ')
-    .replace(/[^a-z0-9]+/g, ' ');
-  return new Set(normalized.split(' ').filter((token) => token.length >= 3));
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, ' ');
+  return new Set(normalized.split(' ').filter((token) => [...token].length >= 2));
 }
 
 function tokenOverlap(left: Set<string>, right: Set<string>): number {

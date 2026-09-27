@@ -21,9 +21,8 @@ function neutralizeEmbeddingText(value: string): string {
 
 function plainEmbeddingText(value: string): string {
   return value
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^\w\s.,;:()-]/g, ' ')
+    .normalize('NFC')
+    .replace(/[^\p{L}\p{M}\p{N}\s.,;:()-]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }

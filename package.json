@@ -26,7 +26,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "audit:provenance": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/provenance-audit.mjs",
-    "rebuild:provenance": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/provenance-rebuild.mjs"
+    "rebuild:provenance": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/provenance-rebuild.mjs",
+    "concepts:identities": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/concept-identities.mjs",
+    "concepts:relabel": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/concept-relabel.mjs",
+    "eval:retrieval": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/retrieval-eval.mjs"
   },
   "keywords": [
     "llm",

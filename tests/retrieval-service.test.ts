@@ -132,6 +132,22 @@ describe('retrieval service', () => {
 
     expect(french[0].page.relativePath).toBe('wiki/concepts/paiement-resilience.md');
     expect(turkish[0].page.relativePath).toBe('wiki/concepts/odeme-deneyimi.md');
+    expect(retrieval.getLastSearchDiagnostics()).toEqual({ mode: 'lexical', reason: 'disabled' });
+  });
+
+  it('does not treat a query token inside a page title as an exact lexical match', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-retrieval-substring-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'raw', 'ingested'), { recursive: true });
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Index\n', 'utf8');
+    await writeFile(path.join(root, 'raw', 'ingested', 'other.md'), '# Other\n\nTarif : 12 k€ par an.\n', 'utf8');
+
+    const config = createConfig(root);
+    config.retrieval.vector.enabled = false;
+    const retrieval = new RetrievalService(new WorkspaceService(config), config);
+    const results = await retrieval.search('What is the annual price?', { includeRaw: true });
+
+    expect(results.map((result) => result.page.relativePath)).not.toContain('raw/ingested/other.md');
   });
 
   it('includes raw/ingested files only when explicitly requested', async () => {
@@ -190,6 +206,7 @@ describe('retrieval service', () => {
       reason: 'missing-index',
       fallback: 'lexical',
     });
+    expect(retrieval.getLastSearchDiagnostics()).toEqual({ mode: 'lexical-fallback', reason: 'missing-index' });
   });
 
   it('uses lexical BM25 directly for build context by default', async () => {
@@ -261,6 +278,7 @@ describe('retrieval service', () => {
       consecutiveErrors: 3,
       fallback: 'lexical',
     });
+    expect(retrieval.getLastSearchDiagnostics()).toEqual({ mode: 'lexical-fallback', reason: 'vector-error' });
   });
 
   it('disables vector retrieval immediately on index config mismatch', async () => {
@@ -307,5 +325,6 @@ describe('retrieval service', () => {
       disabled: true,
       fallback: 'lexical',
     });
+    expect(retrieval.getLastSearchDiagnostics()).toEqual({ mode: 'lexical-fallback', reason: 'index-mismatch' });
   });
 });

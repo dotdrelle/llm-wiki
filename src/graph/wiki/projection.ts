@@ -40,9 +40,11 @@ export interface WikiGraphNode {
   group?: string;
   /** Structured provenance injected by the engine, when present. */
   subject?: string | null;
+  conceptId?: string | null;
+  subjectId?: string | null;
   /** Multivalued links: entity and theme tags. */
   tags?: string[];
-  /** The OKF `type` frontmatter value, when present (product, vendor, source…). */
+  /** The optional descriptive OKF `type` frontmatter value, when present. */
   okfType?: string | null;
   community: CommunityAssignment;
   degree: number;
@@ -148,6 +150,8 @@ export async function buildWikiGraph(
   const rawContents = new Map<string, string>();
   const htmlContents = new Map<string, string>();
   const subjects = new Map<string, string>();
+  const conceptIds = new Map<string, string>();
+  const subjectIds = new Map<string, string>();
   const tags = new Map<string, string[]>();
   const okfTypes = new Map<string, string | null>();
   const pageTitles = new Map<string, string>();
@@ -181,6 +185,8 @@ export async function buildWikiGraph(
     }
     const provenance = readProvenance(raw);
     if (provenance.subject) subjects.set(file, provenance.subject);
+    if (provenance.concept_id) conceptIds.set(file, provenance.concept_id);
+    if (provenance.subject_id) subjectIds.set(file, provenance.subject_id);
     if (provenance.tags.length) tags.set(file, provenance.tags);
     const { data: frontmatterData } = matter(raw);
     okfTypes.set(file, typeof frontmatterData.type === 'string' ? frontmatterData.type : null);
@@ -264,6 +270,8 @@ export async function buildWikiGraph(
       raw: rawContents.get(file) ?? '',
       html: htmlContents.get(file) ?? '',
       subject: subjects.get(file) ?? null,
+      conceptId: conceptIds.get(file) ?? null,
+      subjectId: subjectIds.get(file) ?? null,
       tags: tags.get(file) ?? [],
       okfType: okfTypes.get(file) ?? null,
       community: {

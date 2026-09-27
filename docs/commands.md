@@ -48,12 +48,37 @@ Every ingestion run also writes a persistent trace under `.wiki/logs/`, e.g. `.w
 
 ## `wiki index`
 
-Creates or updates the local vector index for `wiki/**/*.md` (excluding `wiki/answers/**`). The index is stored under `.wiki/vector-index`.
+Refreshes the generated **Project knowledge**, **Reading notes**, and
+**Archived documents** lists in `wiki/index.md`, and creates or updates the
+local vector index for wiki pages and archived documents under
+`raw/ingested/` (excluding `wiki/answers/**`). The marked workspace overview
+in `wiki/index.md` is preserved. The vector index is stored under
+`.wiki/vector-index`.
+An existing index without overview markers is left untouched by regeneration.
+To adopt one, draft and review an overview, then apply it: the current index is
+preserved at `.wiki/index-legacy.md` before the canonical index and generated
+inventories are written. If that backup path already holds different content,
+the adoption is refused.
 
 ```bash
 wiki index
+wiki index --overview
+# Review and edit .wiki/workspace-overview.draft.md, then:
+wiki index --apply-overview
 docker compose --profile cli run --rm wiki index
 ```
+
+`--overview` drafts a concise, cited workspace summary from sampled source
+notes, concept pages, and archived originals, prints it, and saves it to
+`.wiki/workspace-overview.draft.md`. Each paragraph also has a sidecar record
+of exact evidence quotes. It does not change the overview in `wiki/index.md`.
+Review or edit the draft, then run `--apply-overview`; the engine checks that
+the citations still resolve and the quotes still match the current workspace
+before replacing the marked overview section. For an older unmarked index,
+applying the reviewed overview adopts the canonical index format and preserves
+the old file as `.wiki/index-legacy.md`. The workspace's language and subject matter come from its
+own evidence. If the draft exceeds the context limit, omitted pages are
+reported.
 
 Unchanged chunks reuse their stored embeddings. New, modified, or deleted chunks are reconciled on each run. See [vector-search.md](./vector-search.md) for setup and configuration.
 

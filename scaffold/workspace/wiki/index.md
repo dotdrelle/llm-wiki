@@ -2,17 +2,27 @@
 
 This file is the canonical map of the local wiki.
 
-## Concepts
+<!-- Edit between these markers; this content survives index regeneration. -->
+<!-- wiki-index-overview:start -->
+<!-- wiki-index-overview:end -->
 
-Durable wiki knowledge extracted from sources: systems, actors, requirements, decisions, rules, risks, workflows, and reusable domain concepts.
+## Project knowledge
 
-- No concepts yet.
+Reusable knowledge about this workspace, organized around the concepts found in its material.
 
-## Sources
+- No project knowledge pages yet.
 
-Source notes summarize individual ingested documents and cite their archived raw source.
+## Reading notes
 
-- No source notes yet.
+Reading notes summarize individual documents; each note cites its complete archived original.
+
+- No reading notes yet.
+
+## Archived documents
+
+Original ingested documents, preserved as evidence and searchable when a detail is missing from a reading note.
+
+- No archived documents yet.
 
 ## Deliverables
 

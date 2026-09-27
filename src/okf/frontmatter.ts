@@ -46,16 +46,13 @@ export function isOkfType(value: unknown): value is string {
  * The OKF `type` a bundle path carries, or null when the path is not in the
  * bundle (raw inputs, templates, build context and `.wiki` state stay out).
  *
- * For `wiki/concepts/**` the type is the page's `kind` when it has one —
- * `kind` is the structured vocabulary the extraction already validated, and it
- * fits OKF's `type` exactly — otherwise the generic `concept`.
+ * For `wiki/concepts/**`, descriptive metadata such as `kind` is not an OKF
+ * resource type. The engine uses the structural `concept` type; any explicit
+ * user-authored `type` remains preserved by additive frontmatter writes.
  */
-export function okfTypeForPath(
-  relativePath: string,
-  provenance?: { kind?: string | null },
-): string | null {
+export function okfTypeForPath(relativePath: string): string | null {
   const path = String(relativePath ?? '').replace(/\\/g, '/');
-  if (path.startsWith('wiki/concepts/')) return provenance?.kind ?? OKF_TYPE_CONCEPT;
+  if (path.startsWith('wiki/concepts/')) return OKF_TYPE_CONCEPT;
   if (path.startsWith('wiki/sources/')) return OKF_TYPE_SOURCE;
   if (path.startsWith('wiki/answers/')) return OKF_TYPE_ANSWER;
   if (path === 'wiki/index.md') return OKF_TYPE_INDEX;

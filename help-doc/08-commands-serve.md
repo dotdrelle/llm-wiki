@@ -50,10 +50,9 @@ fall behind them:
 workspace and asks for approval before it does.
 
 For the knowledge lifecycle, `/wiki-ingest` is the narrowest rerun: it ingests
-what already waits in `raw/untracked/` and, as each source goes in, files it
-as a concept leaf under its concept folder. There is no separate concept or
-taxonomy step — the concept is the folder, and the graph derives its taxonomy
-from the folders.
+what already waits in `raw/untracked/` and, as each source goes in, adds or
+updates concept pages. Their folder and file names are readable labels; opaque
+identities live in frontmatter. There is no separate concept-building step.
 
 You can also describe the goal in ordinary language — "run the deliver skill
 with the quarterly template" — instead of typing the command. See
@@ -62,6 +61,12 @@ with the quarterly template" — instead of typing the command. See
 ## What's a panel, not a command
 
 Everything below is a **UI panel**, not something you type:
+
+- **Workspace home** — the home page (`/`) summarizes the wiki, deliverables,
+  templates and pending sources. Its counts open the matching section. The
+  priority card links to a pending run approval, a curation proposal, sources
+  waiting for ingestion, or wiki exploration. Runtime approval status is checked
+  when the page opens; if it cannot be checked, the page points you to Activity.
 
 - **Connectors panel** — add, edit, remove, and reconnect MCP servers; this is
   Serve's equivalent of the Shell's `/mcp status`/`/mcp endpoints`. It also has

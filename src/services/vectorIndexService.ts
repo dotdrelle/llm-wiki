@@ -13,12 +13,14 @@ import type { AppConfig, SearchResult, WikiPage } from '../types.ts';
 import type { EmbeddingService } from './embeddingService.ts';
 import type { RerankService } from './rerankService.ts';
 import type { WorkspaceService } from './workspaceService.ts';
+import { readWorkspaceOverview } from './wikiIndexService.ts';
 
 const TABLE_NAME = 'wiki_chunks';
 const META_TABLE_NAME = '_meta';
 export const EMBED_BATCH_SIZE = 16;
 export const EMBED_BATCH_MAX_CHARS = 24_000;
 const RERANK_MAX_CHARS = 1200;
+const VECTOR_INDEX_SCHEMA_VERSION = 2;
 
 interface VectorRow {
   id: string;
@@ -58,7 +60,7 @@ export interface VectorIndex {
   buildIndex(): Promise<VectorIndexBuildResult>;
   search(
     query: string,
-    options?: { limit?: number; rerank?: boolean },
+    options?: { limit?: number; rerank?: boolean; includeRaw?: boolean },
   ): Promise<SearchResult[]>;
 }
 
@@ -174,7 +176,7 @@ function providerKey(config: AppConfig): string {
 
 function expectedMetadata(config: AppConfig, dimension: number): VectorIndexMetadata {
   return {
-    schemaVersion: 1,
+    schemaVersion: VECTOR_INDEX_SCHEMA_VERSION,
     provider: providerKey(config),
     embeddingModel: config.retrieval.vector.embeddingModel,
     dimension,
@@ -189,6 +191,7 @@ function metadataMatchesConfig(
 ): boolean {
   return (
     Boolean(metadata) &&
+    metadata?.schemaVersion === VECTOR_INDEX_SCHEMA_VERSION &&
     metadata?.provider === providerKey(config) &&
     metadata.embeddingModel === config.retrieval.vector.embeddingModel &&
     metadata.dimension === dimension
@@ -292,6 +295,9 @@ export class VectorIndexService implements VectorIndex {
     const expectedProvider = providerKey(this.config);
     const expectedModel = this.config.retrieval.vector.embeddingModel;
     const mismatches = [
+      metadata.schemaVersion !== VECTOR_INDEX_SCHEMA_VERSION
+        ? `schema ${metadata.schemaVersion || '(unknown)'} -> ${VECTOR_INDEX_SCHEMA_VERSION}`
+        : null,
       metadata.provider !== expectedProvider
         ? `provider ${metadata.provider || '(unknown)'} -> ${expectedProvider}`
         : null,
@@ -314,7 +320,6 @@ export class VectorIndexService implements VectorIndex {
     for (const page of pages.filter(
       (candidate) =>
         candidate.type !== 'answer' &&
-        candidate.relativePath !== 'wiki/index.md' &&
         candidate.relativePath !== 'wiki/log.md',
     )) {
       const chunks = splitByHeadings(page.content);
@@ -363,11 +368,31 @@ export class VectorIndexService implements VectorIndex {
   }
 
   async buildIndex(): Promise<VectorIndexBuildResult> {
-    const pages = await this.workspace.listWikiPages();
+    const wikiPages = await this.workspace.listWikiPages();
+    const indexPage = wikiPages.find((page) => page.relativePath === 'wiki/index.md');
+    const warnings: string[] = [];
+    let overview = '';
+    if (indexPage) {
+      try {
+        overview = readWorkspaceOverview(indexPage.content);
+      } catch (error) {
+        // Keep legacy or malformed index content searchable without rewriting
+        // it. `wiki index` separately reports the marker problem and preserves
+        // the file until its overview is explicitly repaired.
+        overview = indexPage.content;
+        warnings.push(
+          `Embedded the full legacy wiki/index.md because its overview markers could not be read: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    const pages = [
+      ...wikiPages.filter((page) => page.relativePath !== 'wiki/index.md'),
+      ...(indexPage && overview.trim() ? [{ ...indexPage, content: overview }] : []),
+      ...(await this.workspace.listIngestedSourcePages()),
+    ];
     const rowsWithoutVectors = this.buildRowsWithoutVectors(pages);
     const skippedRows = new Set<string>();
     const skippedPages = new Set<string>();
-    const warnings: string[] = [];
     const skipRow = (row: Omit<VectorRow, 'vector'>, error: unknown) => {
       skippedRows.add(row.id);
       skippedPages.add(row.path);
@@ -501,7 +526,7 @@ export class VectorIndexService implements VectorIndex {
 
   async search(
     query: string,
-    options?: { limit?: number; rerank?: boolean },
+    options?: { limit?: number; rerank?: boolean; includeRaw?: boolean },
   ): Promise<SearchResult[]> {
     const table = await this.openTable();
     if (!table) {
@@ -515,8 +540,14 @@ export class VectorIndexService implements VectorIndex {
     // keeps the title/intro and conclusion, which carry most of the signal.
     const [queryVector] = await this.embeddings.embed([boundEmbeddingQuery(query)]);
     await this.assertCompatibleMetadata(queryVector.length);
-    const vectorRows = (await table
-      .vectorSearch(queryVector)
+    const vectorQuery = table.vectorSearch(queryVector);
+    if (!options?.includeRaw) {
+      // Apply the layer filter before top-K. Filtering after nearest-neighbor
+      // selection lets archive chunks crowd every wiki result out of the
+      // candidate window for callers that explicitly request wiki-only search.
+      vectorQuery.where("path NOT LIKE 'raw/ingested/%'");
+    }
+    const vectorRows = (await vectorQuery
       .limit(this.config.retrieval.vector.topK)
       .toArray()) as VectorRow[];
 
@@ -545,7 +576,10 @@ export class VectorIndexService implements VectorIndex {
       }
     }
 
-    const pages = await this.workspace.listWikiPages();
+    const pages = [
+      ...(await this.workspace.listWikiPages()),
+      ...(options?.includeRaw ? await this.workspace.listIngestedSourcePages() : []),
+    ];
     const pageByPath = new Map(pages.map((page) => [page.relativePath, page]));
     const limit = options?.limit ?? this.config.retrieval.vector.maxResults;
     const selected: SearchResult[] = [];
@@ -553,6 +587,7 @@ export class VectorIndexService implements VectorIndex {
 
     for (const row of rankedRows as Array<VectorRow & { rerankScore?: number }>) {
       if (seenPaths.has(row.path)) continue;
+      if (!options?.includeRaw && row.path.startsWith('raw/ingested/')) continue;
       const page = pageByPath.get(row.path);
       if (!page || page.type === 'answer') continue;
       seenPaths.add(row.path);

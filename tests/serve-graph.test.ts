@@ -393,13 +393,11 @@ describe('serve graph ui', () => {
     expect(WIKI_LAYOUT_CSS).toContain('html{scrollbar-color:var(--border) transparent;scrollbar-width:thin}');
   });
 
-  it('keeps Main sections always visible and collapses each section by default', async () => {
+  it('renders the wiki explorer and collapses each section by default', async () => {
     const source = await serveSource();
 
-    // Main sections is a plain block — no expand/collapse on the whole
-    // aside. The collapse happens per section: each section browser ships
-    // WITHOUT `open`, so concepts, sources, deliverables… start folded.
-    expect(source).toContain('<aside class="index-aside"><h2 class="index-aside-title">Main sections</h2>');
+    // The aside is always visible. Each section browser ships WITHOUT `open`.
+    expect(source).toContain('<aside class="index-aside"><h2 class="index-aside-title">Explore the wiki</h2>');
     expect(source).not.toContain('<details class="index-aside">');
     expect(source).toContain('<details class="section-browser">');
     expect(source).not.toContain('<details class="section-browser" open');

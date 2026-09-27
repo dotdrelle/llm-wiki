@@ -31,12 +31,14 @@ import {
   type SourceExtraction,
 } from '../ingest/extractionSchema.ts';
 import {
+  applyProvenance,
   normalizeProvenanceValue,
   readProvenance,
   subjectMatchStrength,
 } from '../ingest/provenance.ts';
+import { stampConceptPageIdentities } from '../ingest/identity.ts';
 import { CONCEPT_PREFIX, DEFAULT_CONCEPT_BUDGET, detectConceptOverflow, detectConceptSplits, detectDuplicatePaths, reanchorToPreviousConcepts, validateConsolidation } from '../ingest/consolidationValidate.ts';
-import { collectConceptFolderEntries, reconcileConceptFolders } from '../ingest/conceptFolders.ts';
+import { collectConceptFolderEntries, collectProposedConceptEntries, reconcileConceptFolders } from '../ingest/conceptFolders.ts';
 import { parseConceptPagePath } from '../ingest/conceptGrid.ts';
 import {
   buildTaxoSectionUser,
@@ -736,9 +738,9 @@ export class IngestService {
     });
 
     /*
-     The concept is the folder a leaf lives in. There is no grid: the set of
-     concept folders is read from the files already on disk, per source, so a
-     folder the model creates mid-run is visible to the next source.
+     Folder names are storage labels, not concept identities. The current
+     identities and labels are read from pages already on disk, and each apply
+     reconciles new labels against that live state before writing.
     */
     const selectionStartedAt = Date.now();
     const sourcePaths = options?.fromIngested
@@ -1103,6 +1105,8 @@ export class IngestService {
             path: result.page.relativePath,
             title: result.page.name,
             subject: provenance.subject,
+            conceptId: provenance.concept_id,
+            subjectId: provenance.subject_id,
             scope: provenance.scope,
             folder: parseConceptPagePath(result.page.relativePath)?.class ?? null,
             excerpt: (result.chunk?.content ?? result.page.content)
@@ -1123,6 +1127,8 @@ export class IngestService {
               path: concept.path,
               title: page?.name ?? concept.path.split('/').pop() ?? concept.path,
               subject: provenance?.subject ?? concept.subject ?? null,
+              conceptId: provenance?.concept_id ?? null,
+              subjectId: provenance?.subject_id ?? null,
               scope: provenance?.scope ?? null,
               folder: parseConceptPagePath(concept.path)?.class ?? null,
               excerpt: (page?.content ?? '').replace(/\s+/g, ' ').slice(0, maxChunkChars),
@@ -1133,10 +1139,7 @@ export class IngestService {
         // subject from THIS extraction, regardless of which source produced
         // them. `inventory` above (retrieval relevance) does not reliably
         // surface a same-subject page when the wording differs across
-        // sources — this is the concept-homonym gap: "<product> certifications"
-        // and "<product> solution" each ingested separately, neither seeing the
-        // other's "<product>" page in its top-N, each inventing its own
-        // near-duplicate. `previousInventory` only covers this source's OWN
+        // sources. `previousInventory` only covers this source's OWN
         // prior pages, not ones another source already created for the same
         // subject.
         const candidateRoots = merged.subjects
@@ -1167,6 +1170,8 @@ export class IngestService {
                 path: page.relativePath,
                 title: page.name,
                 subject: provenance.subject,
+                conceptId: provenance.concept_id,
+                subjectId: provenance.subject_id,
                 scope: provenance.scope,
                 folder: parseConceptPagePath(page.relativePath)?.class ?? null,
                 excerpt: page.content.replace(/\s+/g, ' ').slice(0, maxChunkChars),
@@ -1309,16 +1314,19 @@ export class IngestService {
 
          The consolidation is one stateless call per source. Two failures of
          granularity survive the prompt wording reliably enough to warrant a
-         re-ask: a product split into several concept pages (a product and its
-         national arm, a product and its modules), and a source that
-         creates more concepts than its budget. The engine detects both, re-asks
-         with the exact subjects to merge, bounded. The cached plan is never
+         re-ask: one real-world subject split across several concept pages, or
+         a source that creates more concepts than its budget. The engine detects
+         both, re-asks with the exact subjects to merge, bounded. The cached plan is never
          written here: a plan that needed correction must not be re-served
          verbatim on a resume.
          */
         // Reused below (validateConsolidation's existingPaths): warmPages is
         // not mutated between the two uses, so one Set covers both.
         knownPaths = new Set(warmPages.map((page) => page.relativePath));
+        const knownSubjectIdentities = new Set(
+          warmPages.map((page) => readProvenance(page.content).subject_id)
+            .filter((identity): identity is string => Boolean(identity)),
+        );
         // The correction asks the model to merge concepts, but a retry must not
         // lose the source note: a plan without one is rejected outright, and the
         // model, once focused on merging, drops it. Capture it once from the
@@ -1337,7 +1345,7 @@ export class IngestService {
         // leave `lastSplits` one correction stale relative to the plan
         // `validateConsolidation` actually receives.
         for (let retryAttempt = 0; retryAttempt <= MAX_SPLIT_RETRIES; retryAttempt += 1) {
-          const splits = detectConceptSplits(consolidated);
+          const splits = detectConceptSplits(consolidated, knownSubjectIdentities);
           lastSplits = splits;
           const overflow = detectConceptOverflow(
             consolidated,
@@ -1417,7 +1425,10 @@ export class IngestService {
           );
           const warmPages = await this.retrieval.warmCache();
           knownPaths = new Set(warmPages.map((page) => page.relativePath));
-          lastSplits = detectConceptSplits(consolidated);
+          lastSplits = detectConceptSplits(consolidated, new Set(
+            warmPages.map((page) => readProvenance(page.content).subject_id)
+              .filter((identity): identity is string => Boolean(identity)),
+          ));
           // `sections` is read only for its .length in the ingest:apply log
           // below; taxo's real per-source section count lives in
           // taxoPre.sectionCounts (computed once, in the pre-pass).
@@ -1437,18 +1448,6 @@ export class IngestService {
         const normalizedOperations = await this.workspace.normalizeWikiOperations(
           consolidated.operations,
         );
-        // Plan-time folder names are not authoritative: the plan may have been
-        // built in another process, before a sibling created the folder it
-        // duplicates. Reconcile against the LIVE vocabulary at apply time
-        // (serialized), and defer the leaf migration until the plan is
-        // validated and actually applied (a rejected plan must not move files).
-        const conceptRewrites = options?.dryRun
-          ? new Map<string, string>()
-          : await this.reconcileConceptVocabulary(normalizedOperations);
-        // A `--reject` names the path the dry-run PRINTED, which predates the
-        // reconciliation above: without this the moved operation no longer
-        // matched its rejection and was applied anyway.
-        const effectiveRejectedPaths = rejectionsAfterRewrites(rejectedPaths, conceptRewrites);
         // `pages[].path` designates the same operations, but lived until now
         // before the canonicalization of the paths. A model proposing an accent
         // or a space therefore received a normalized operation and lost its
@@ -1463,13 +1462,29 @@ export class IngestService {
           ...page,
           path: normalizedPathByOriginal.get(page.path) ?? page.path,
         }));
+        // Plan-time folder names are not authoritative: the plan may have been
+        // built before a sibling created a matching concept. Reconcile against
+        // the live corpus using schema-validated page metadata and bounded page
+        // evidence, then keep each provenance entry aligned with its operation.
+        const conceptRewrites = options?.dryRun
+          ? new Map<string, string>()
+          : await this.reconcileConceptVocabulary(normalizedOperations, normalizedPages);
+        const effectiveRejectedPaths = rejectionsAfterRewrites(rejectedPaths, conceptRewrites);
+        const reconciledPages = normalizedPages.map((page) => ({
+          ...page,
+          path: conceptRewrites.get(page.path) ?? page.path,
+        }));
         // `lastSplits` was computed against pre-normalization paths; remap
-        // them the same way normalizedPages was, so a warning reported below
-        // names the actual page path, not the model's pre-normalized one.
+        // them the same way the pages and operations were remapped, so
+        // warnings name the actual path, not the model's pre-normalized one.
+        const reconcilePath = (value: string): string => {
+          const normalized = normalizedPathByOriginal.get(value) ?? value;
+          return conceptRewrites.get(normalized) ?? normalized;
+        };
         const normalizedSplits = lastSplits.map((split) => ({
           ...split,
-          path: normalizedPathByOriginal.get(split.path) ?? split.path,
-          duplicateOfPath: normalizedPathByOriginal.get(split.duplicateOfPath) ?? split.duplicateOfPath,
+          path: reconcilePath(split.path),
+          duplicateOfPath: reconcilePath(split.duplicateOfPath),
         }));
         // The full provenance pipeline (materialization, anchoring, two-level
         // retarget, path enforcement, source-page/anchor contracts, refusal and
@@ -1565,11 +1580,12 @@ export class IngestService {
         }
 
         const validation = validateConsolidation(
-          { ...consolidated, operations: citationSafeOperations, pages: normalizedPages },
+          { ...consolidated, operations: citationSafeOperations, pages: reconciledPages },
           {
             sourcePagePath,
             citationPath: source.archiveCitationPath,
             existingPaths: knownPaths,
+            existingPages: new Map([...existingPages].map(([pagePath, page]) => [pagePath, page.content])),
             precomputedSplits: normalizedSplits,
           },
         );
@@ -1872,16 +1888,17 @@ export class IngestService {
    * Concept-vocabulary reconciliation, on the live corpus, per apply.
    *
    * A plan is often computed in another process, in parallel with its
-   * siblings, from a folder list that predates their writes: the NEW folder it
-   * proposes can duplicate one a sibling just created. The established folders
-   * are the anchor — the model is asked only about the folders the plan wants
-   * to OPEN, maps each onto an established concept or keeps it new, and never
+   * siblings, from a folder list that predates their writes: a NEW folder can
+   * duplicate one a sibling just created. Established identities are the
+   * anchor — the model is asked only about newly proposed folders, maps each
+   * onto a retrieved established concept or another proposal, and never
    * renames or merges two established folders: a vocabulary that could be
    * dissolved from one ingest to the next never settles. The engine then
-   * rewrites the plan's paths. No synonym table, no registry.
+   * rewrites the plan's paths. No synonym table or concept-folder registry.
    */
   private async reconcileConceptVocabulary(
     operations: WikiOperation[],
+    declaredPages: ConsolidationPlan['pages'] = [],
   ): Promise<Map<string, string>> {
     const nothing = new Map<string, string>();
     const conceptOperations = operations.filter(
@@ -1890,8 +1907,8 @@ export class IngestService {
     if (conceptOperations.length === 0) return nothing;
 
     const pages = await this.retrieval.warmCache();
-    const entries = collectConceptFolderEntries(pages);
-    const existingFolders = new Set(entries.map((entry) => entry.folder));
+    const allEntries = collectConceptFolderEntries(pages);
+    const existingFolders = new Set(allEntries.map((entry) => entry.folder));
     const proposed = [...new Set(
       conceptOperations
         .map((operation) => parseConceptPagePath(operation.path)?.class)
@@ -1902,9 +1919,50 @@ export class IngestService {
     // folder triggers the call, which resolves it against the established
     // vocabulary — never the other way around.
     if (proposed.every((folder) => existingFolders.has(folder))) return nothing;
+    const knownConceptIds = new Set(allEntries
+      .map((entry) => entry.conceptId)
+      .filter((identity): identity is string => Boolean(identity)));
+    const proposedEntries = collectProposedConceptEntries(
+      conceptOperations,
+      declaredPages,
+      knownConceptIds,
+    );
+    const conceptPaths = pages
+      .filter((page) => page.relativePath.startsWith(CONCEPT_PREFIX))
+      .map((page) => page.relativePath);
+    const candidateQuery = proposedEntries
+      .flatMap((entry) => [entry.folder, ...entry.subjects, ...entry.tags, ...(entry.samples ?? [])])
+      .join('\n')
+      .slice(0, 6000);
+    const candidateResults = conceptPaths.length && candidateQuery.trim()
+      ? await this.retrieval.search(candidateQuery, {
+          limit: 12,
+          includeRaw: false,
+          allowedSources: conceptPaths,
+        })
+      : [];
+    const candidateFolders = new Set(candidateResults.flatMap((result) => {
+      const folder = parseConceptPagePath(result.page.relativePath)?.class;
+      return folder ? [folder] : [];
+    }));
+    const declaredExistingIds = new Set(proposedEntries
+      .map((entry) => entry.conceptId)
+      .filter((identity): identity is string => Boolean(identity)));
+    for (const entry of allEntries) {
+      if (entry.conceptId && declaredExistingIds.has(entry.conceptId)) candidateFolders.add(entry.folder);
+    }
+    const entries = allEntries.filter((entry) => candidateFolders.has(entry.folder));
+    await this.logger.info('ingest:concept-folder-candidates', {
+      proposedFolders: proposed.length,
+      establishedFolders: allEntries.length,
+      candidateFolders: entries.map((entry) => entry.folder),
+      candidateLimit: 12,
+    });
     const mapping = await reconcileConceptFolders({
       llm: this.llm,
       entries,
+      existingFolders: [...existingFolders],
+      proposedEntries,
       proposed,
       ctx: buildPromptContext(this.config, { date: new Date() }),
       logger: this.logger,
@@ -1917,12 +1975,29 @@ export class IngestService {
     // otherwise no longer match the operation it named, and an explicitly
     // rejected page would be written anyway.
     const rewrites = new Map<string, string>();
+    const conceptIdentityByFolder = new Map<string, string>();
+    for (const entry of entries) {
+      if (entry.conceptId) conceptIdentityByFolder.set(entry.folder, entry.conceptId);
+    }
+    for (const entry of proposedEntries) {
+      if (entry.conceptId && !conceptIdentityByFolder.has(entry.folder)) {
+        conceptIdentityByFolder.set(entry.folder, entry.conceptId);
+      }
+    }
     for (const operation of operations) {
       if (!operation.path.startsWith(CONCEPT_PREFIX)) continue;
       const parsed = parseConceptPagePath(operation.path);
       if (!parsed) continue;
       const canonical = mapping.get(parsed.class);
       if (!canonical || canonical === parsed.class) continue;
+      const canonicalConceptId = conceptIdentityByFolder.get(canonical);
+      if (canonicalConceptId && operation.type !== 'delete' && typeof operation.content === 'string') {
+        const provenance = readProvenance(operation.content);
+        operation.content = applyProvenance(operation.content, {
+          ...provenance,
+          concept_id: canonicalConceptId,
+        });
+      }
       const base = operation.path.split('/').pop() ?? '';
       const rebased = base.startsWith(`${parsed.class}_`)
         ? `${canonical}_${base.slice(parsed.class.length + 1)}`
@@ -2003,14 +2078,14 @@ export class IngestService {
       concepts: z.array(z.object({
         name: z.string(),
         label: z.string().default(''),
-        kind: z.string().default('concept'),
-        scope: z.string().default('product'),
+        kind: z.string().nullish().transform((value) => value ?? ''),
+        scope: z.string().nullish().transform((value) => value ?? ''),
         definition: z.string().default(''),
         tags: z.array(z.string()).default([]),
         covers: z.array(z.number()),
       })),
     });
-    const TAXO_PROMPT_VERSION = 1;
+    const TAXO_PROMPT_VERSION = 2;
     const modelId = this.config.llm.model;
     const rowsBySource = new Map<string, TaxoRow[]>();
     const sectionCounts = new Map<string, number>();
@@ -2055,7 +2130,7 @@ export class IngestService {
               packHash: hashText(section.body),
               model: modelId,
               promptVersion: TAXO_PROMPT_VERSION,
-              schemaVersion: 1,
+              schemaVersion: 2,
             });
             let extraction: { concept: string; resume: string; facts: string } | null = null;
             const cached = await cache.read<unknown>(cacheName);
@@ -2302,8 +2377,12 @@ export class IngestService {
         const existingPages = new Map(
           (await this.retrieval.warmCache()).map((page) => [page.relativePath, page]),
         );
-        const provenance = runProvenancePipeline({
+        const identityStampedOperations = stampConceptPageIdentities(
           operations,
+          new Map([...existingPages].map(([pagePath, page]) => [pagePath, page.content])),
+        );
+        const provenance = runProvenancePipeline({
+          operations: identityStampedOperations,
           sourcePagePath: path.posix.join('wiki', 'sources', `${plannedSource.slug}.md`),
           archiveCitationPath: plannedSource.archiveCitationPath,
           rawBody: normalizeSourceBody(plannedSource.body ?? ''),
@@ -2423,14 +2502,9 @@ export class IngestService {
           'ingest',
           `${planned.source} (${planned.summary ?? 'planned ingest applied'})`,
         );
-        // Same discipline as the sequential ingest path: the taxonomy barrier
-        // freezes a knowledge fingerprint and compares it against the marker at
-        // publication. `applyPlannedIngest` used to skip both of these, so the
-        // marker stayed on the previous corpus and the very next `taxonomy`
-        // aborted with 'stale' (compare-and-swap sees a marker that no other
-        // step advanced). Regenerate the index BEFORE publishing — wiki/index.md
-        // is itself part of the knowledge corpus, so publishing first would
-        // freeze a corpus the index rewrite immediately invalidates again.
+        // Regenerate the index before publishing the graph revision, so the
+        // snapshot includes the final generated map as well as the applied
+        // knowledge pages.
         if (applyOperations.length > 0) {
           await this.regenerateIndex(planned.source);
           await this.publishGraphRevision(planned.source);

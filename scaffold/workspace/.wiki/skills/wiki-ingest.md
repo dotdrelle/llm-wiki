@@ -4,7 +4,7 @@ description: Ingest Markdown already waiting in raw/untracked into the wiki
 params:
   - files
 ---
-Ingest the requested staged Markdown files, or everything pending when no files are specified, into the wiki. Validate the pending inputs before mutation, obtain the normal approval, preserve the production capability's internal execution plan, and report the moved sources, changed wiki pages and any remaining inputs. During the ingest every source is filed as a concept leaf under `wiki/concepts/<concept>/<subject>.md` — the concept is the folder, so the concept map updates with the ingestion itself.
+Ingest the requested staged Markdown files, or everything pending when no files are specified, into the wiki. Validate the pending inputs before mutation, obtain the normal approval, preserve the production capability's internal execution plan, and report the moved sources, changed wiki pages and any remaining inputs. During ingestion, each source adds or updates concept pages at `wiki/concepts/<label>/<subject>.md`; these readable path labels are separate from the opaque concept and subject identities in frontmatter.
 
 ## Boundaries
 

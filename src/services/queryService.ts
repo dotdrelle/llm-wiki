@@ -27,7 +27,7 @@ export class QueryService {
     await this.workspace.ensureInitialized();
     const context = await this.retrieval.search(question, {
       limit: this.config.retrieval.maxContextFiles,
-      includeRaw: false,
+      includeRaw: true,
     });
     const profileSection = await this.workspace.loadProfileSection(
       this.config.limits.maxProfileChars,

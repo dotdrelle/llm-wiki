@@ -1,6 +1,6 @@
 export function graphUiSearchScript(): string {
   return String.raw`
-function searchMatches(query=''){const q=query.trim().toLocaleLowerCase();return data.nodes.filter(n=>n.type!=='raw-source'&&(!q||(n.title+' '+n.id+' '+(n.group||'')+' '+(n.community?.communityLabel||'')+' '+(n.subject||'')+' '+(n.okfType||'')+' '+((n.tags||[]).join(' '))).toLocaleLowerCase().includes(q))).slice(0,10)}
+function searchMatches(query=''){const q=query.trim().toLowerCase();return data.nodes.filter(n=>n.type!=='raw-source'&&(!q||(n.title+' '+n.id+' '+(n.group||'')+' '+(n.community?.communityLabel||'')+' '+(n.subject||'')+' '+(n.okfType||'')+' '+((n.tags||[]).join(' '))).toLowerCase().includes(q))).slice(0,10)}
 /*
 The dropdown offers TWO things: keep the global filtered view, or jump to one
 document. Without the first entry, the only way to dismiss the list was to pick

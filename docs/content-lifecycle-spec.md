@@ -160,14 +160,15 @@ an identifier. **History is not rewritten**; we simply stop creating more of it.
 
 ### 4.2 Identity of a concept page
 
-A concept page is identified by its **path inside `wiki/`**, and that path is
-stable. Renaming a concept is an explicit operation (`move`), never a side effect
-of an ingestion.
+A concept's durable identity is its opaque **`concept_id`**, carried in page
+frontmatter. The folder and file path are its current storage and display
+labels. A label or language change therefore requires a reviewed path and link
+migration; it does not create a new identity. The subject identity is carried
+separately by `subject_id` across concept projections.
 
-Corollary for T33: two pages describing the same thing are a defect to fix by
-merging, not a state to tolerate. Detection relies first on **shared provenance**
-(§ 4.4), and only then on title similarity — which produces false positives on
-homonyms (ticket B17).
+Two pages that claim one identity must be reconciled without silently dropping
+their source evidence. Candidate similarity can surface pages for review, but
+labels alone do not authorize a merge.
 
 ### 4.3 States of a source, and transitions
 
@@ -220,16 +221,21 @@ That requires fixing `enforceSourceCitationPath`:
 
 Without this change, none of the retraction rules in this document is applicable.
 
-### 4.5 Categories
+### 4.5 Concept folders
 
-- A category is a **folder under `wiki/`**, and its identity is its path.
+- A concept folder is the current storage label under `wiki/concepts/`; its
+  durable identity is the opaque `concept_id`, not its path or language.
 - Depth is **bounded to two levels** under `wiki/concepts/`. Beyond that the tree
   stops helping the reader and the sorting becomes unreadable.
-- Taxonomy is **open but convergent**: the model may propose a new category, a
-  merge pass then runs and brings them together. A closed list would be simpler
-  but does not survive an unknown corpus.
-- A page belongs to **one** category — its file path. Multi-membership will come
-  through labels if the need is confirmed, not through duplication.
+- New labels are reconciled against a bounded set of relevant established
+  concepts and the other proposals in the current plan. The engine validates
+  selected identities and rewrites proposed paths; it does not maintain a
+  business vocabulary or synonym table.
+- A page belongs to **one** concept folder. A subject cited under distinct
+  concepts may have one projection in each, connected by its stable
+  `subject_id`.
+- Changing a concept label or translating it requires a reviewed migration of
+  the folder paths and inbound links. The identity remains unchanged.
 - An **emptied** category is reported, never deleted automatically: it is a
   filing intention.
 

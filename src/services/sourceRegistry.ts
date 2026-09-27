@@ -5,12 +5,11 @@ import path from 'node:path';
 /**
  * Source provenance registry.
  *
- * **Write-only at this stage.** Nothing reads it, nothing relies on it, and its
- * absence or corruption cannot fail an ingestion. This is deliberate: it is the
- * T32.2 step of the lifecycle (`docs/content-lifecycle-spec.md`), which makes the
- * problem observable before trying to solve it. A reconciliation pass cannot be
- * written without data to reconcile, and fabricating the data and the decision
- * in the same batch would make each of them unverifiable.
+ * The registry records the pages each archived source actually produced. Ingest
+ * reads it to re-anchor a source's previous pages and to stamp usage counts;
+ * doctor uses it to report orphaned pages. Its absence or corruption degrades
+ * those observations but does not fail ingestion. Reviewed page moves update
+ * its produced-page paths under the same cross-process lock used by ingest.
  *
  * What it answers, once populated: which sources exist, when each was last seen,
  * and **which pages it really produced** — not what the model proposed, but what

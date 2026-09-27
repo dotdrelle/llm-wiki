@@ -37,8 +37,9 @@ on its own, and each takes optional positional arguments:
   `.md` extension.
 - `/pipeline` — the whole chain in one job (ingest, build, export, polish);
   `/status` and `/diagnose` are read-only checks. There is no separate concept
-  or taxonomy step: the concept is the folder, and each ingested source is
-  filed as a leaf under `wiki/concepts/<concept>/<subject>.md` as it goes in.
+  or taxonomy step: each ingested source is filed under
+  `wiki/concepts/<label>/<subject>.md`; the path is a readable storage layout,
+  while opaque IDs carry concept and subject identity.
 
 Every production skill above starts a **mutating** job and therefore belongs to
 agent mode: chat mode is read-only and must hand off (`/agent`) rather than

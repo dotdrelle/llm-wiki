@@ -80,6 +80,7 @@ describe('decideConceptMove', () => {
 });
 
 describe('moveEntry on a concept leaf', () => {
+  const destinationConceptId = '123e4567-e89b-42d3-a456-426614174000';
   let root = '';
 
   beforeEach(async () => {
@@ -165,7 +166,7 @@ describe('moveEntry on a concept leaf', () => {
     await writeFile(path.join(root, 'wiki/concepts/unclassified/note.md'),
       '---\nsubject: zephyr\n---\n\n# Note\n');
     await writeFile(path.join(root, 'wiki/concepts/market-offering/note.md'),
-      '---\nsubject: anaplan\n---\n\n# Note\n');
+      `---\nconcept_id: ${destinationConceptId}\nsubject: anaplan\nsubject_id: 223e4567-e89b-42d3-a456-426614174000\n---\n\n# Note\n`);
     const seen: Array<{ source: string; target: string }> = [];
 
     const result = await moveEntry(root, 'wiki/concepts/unclassified/note.md', 'wiki/concepts/market-offering', {
@@ -217,7 +218,8 @@ describe('moveEntry on a concept leaf', () => {
     // NEW folder — nothing is actually about to write there (the taxo rename
     // targets market-offering_tarifs.md instead), so this must not block the
     // move.
-    await writeFile(path.join(root, 'wiki/concepts/market-offering/jedox_tarifs.md'), '# stale leftover\n');
+    await writeFile(path.join(root, 'wiki/concepts/market-offering/jedox_tarifs.md'),
+      `---\nconcept_id: ${destinationConceptId}\nsubject: stale-leftover\nsubject_id: 323e4567-e89b-42d3-a456-426614174000\n---\n# stale leftover\n`);
 
     const result = await moveEntry(root, 'wiki/concepts/jedox/jedox_tarifs.md', 'wiki/concepts/market-offering');
     expect(result.ok).toBe(true);

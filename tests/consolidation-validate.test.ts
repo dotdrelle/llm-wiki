@@ -53,10 +53,10 @@ describe('plancher des tags (validateConsolidation)', () => {
   });
 
   it('utilise « concept » comme type quand la feuille n’a pas de kind', () => {
-    expect(tagsFor([page({ kind: null })])).toEqual(['beta', 'concept']);
+    expect(tagsFor([page({ kind: null })])).toEqual(['beta']);
   });
 
-  it('tronque le subject ajouté à son premier terme (split)', () => {
+  it('preserves the complete subject label as a tag', () => {
     const result = validateConsolidation(
       plan({
         operations: [
@@ -67,7 +67,7 @@ describe('plancher des tags (validateConsolidation)', () => {
       }),
       CTX,
     );
-    expect(result.provenanceByPath.get('wiki/concepts/market-offering/beta-saas.md')?.tags).toEqual(['beta', 'product']);
+    expect(result.provenanceByPath.get('wiki/concepts/market-offering/beta-saas.md')?.tags).toEqual(['beta-saas', 'product']);
   });
 
   it('n’ajoute rien quand il y a déjà au moins deux tags', () => {
@@ -132,18 +132,18 @@ describe('validateConsolidation re-files a concept leaf with no concept folder',
       plan({
         operations: [
           { type: 'create', path: 'wiki/sources/s.md', content: '# S\n\nBody. [src: raw/ingested/s.md]' },
-          { type: 'create', path: 'wiki/concepts/acpi.md', content: '# ACPI\n\nBody. [src: raw/ingested/s.md]' },
+          { type: 'create', path: 'wiki/concepts/example-project.md', content: '# Example project\n\nBody. [src: raw/ingested/s.md]' },
         ],
-        pages: [page({ path: 'wiki/concepts/acpi.md', subject: 'acpi' })],
+        pages: [page({ path: 'wiki/concepts/example-project.md', subject: 'example-project' })],
       }),
       CTX,
     );
-    const at = 'wiki/concepts/unclassified/acpi.md';
+    const at = 'wiki/concepts/unclassified/example-project.md';
     expect(result.errors).toEqual([]);
     expect(result.operations.some((operation) => operation.path === at)).toBe(true);
-    expect(result.operations.some((operation) => operation.path === 'wiki/concepts/acpi.md')).toBe(false);
-    expect(result.provenanceByPath.get(at)?.subject).toBe('acpi');
-    expect(result.warnings.some((warning) => warning.path === 'wiki/concepts/acpi.md'
+    expect(result.operations.some((operation) => operation.path === 'wiki/concepts/example-project.md')).toBe(false);
+    expect(result.provenanceByPath.get(at)?.subject).toBe('example-project');
+    expect(result.warnings.some((warning) => warning.path === 'wiki/concepts/example-project.md'
       && warning.reason.includes('re-filed under unclassified/'))).toBe(true);
   });
 
@@ -158,8 +158,8 @@ describe('validateConsolidation re-files a concept leaf with no concept folder',
       }),
       CTX,
     );
-    expect(result.provenanceByPath.get('wiki/concepts/unclassified/souverainete-numerique.md')?.subject)
-      .toBe('souverainete-numerique');
+    expect(result.provenanceByPath.get('wiki/concepts/unclassified/souveraineté-numérique.md')?.subject)
+      .toBe('souveraineté-numérique');
   });
 });
 
@@ -179,5 +179,38 @@ describe('create vs update (validateConsolidation)', () => {
     const operation = result.operations.find((item) => item.path === at);
     expect(operation?.type).toBe('update');
     expect(result.warnings.some((w) => w.path === at && /already exists/.test(w.reason))).toBe(true);
+  });
+});
+
+describe('concept budget stays advisory (validateConsolidation)', () => {
+  it('preserves all proposed leaves and announces a budget overrun', () => {
+    const leaves = ['alpha', 'beta', 'gamma', 'delta'].map((subject) => ({
+      path: `wiki/concepts/group-${subject}/${subject}.md`,
+      subject,
+      scope: null,
+      kind: null,
+      tags: [],
+      rationale: null,
+    }));
+    const result = validateConsolidation(
+      plan({
+        operations: [
+          { type: 'create', path: CTX.sourcePagePath, content: '# Source\n\n[src: raw/ingested/s.md]' },
+          ...leaves.map((leaf) => ({
+            type: 'create' as const,
+            path: leaf.path,
+            content: `# ${leaf.subject}\n\nA distinct fact. [src: raw/ingested/s.md]`,
+          })),
+        ],
+        pages: leaves,
+      }),
+      CTX,
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.operations.filter((operation) => operation.path.startsWith('wiki/concepts/')))
+      .toHaveLength(leaves.length);
+    expect(result.warnings.some((warning) => warning.path === 'plan'
+      && warning.reason.includes('4 new concepts for a budget of 3'))).toBe(true);
   });
 });

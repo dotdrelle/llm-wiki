@@ -64,7 +64,7 @@ describe('taxo plan mapping', () => {
     expect(plan.pages[0]!.tags).toEqual(['solution', 'cout']);
     expect(plan.pages[0]!.rationale).toBe('Progiciel EPM.');
     expect(plan.pages[2]!.path).toBe('wiki/sources/a.md');
-    expect(plan.pages[2]!.scope).toBe('source');
+    expect(plan.pages[2]!.scope).toBeNull();
   });
 
   it('disambiguates two rows that would collide on the same leaf path', () => {
@@ -110,12 +110,12 @@ describe('taxo plan mapping', () => {
     const emptyResumeRow: TaxoRow = { ...rows[0]!, resume: '' };
     const path = taxoLeafPath('jedox', emptyResumeRow.resume);
     const content = taxoLeafContent(emptyResumeRow, concepts[0]!, '2026-01-01T00:00:00.000Z');
-    expect(path).toBe('wiki/concepts/jedox/jedox_note.md');
-    expect(content).toContain('subject: note');
+    expect(path).toBe('wiki/concepts/jedox/jedox_0.md');
+    expect(content).toContain('subject: 0');
   });
 
-  it('strips accents from the resume the same way normalizeProvenanceValue does elsewhere', () => {
-    expect(taxoLeafPath('jedox', 'Sécurité renforcée')).toBe('wiki/concepts/jedox/jedox_securite-renforcee.md');
+  it('preserves Unicode in the resume label', () => {
+    expect(taxoLeafPath('jedox', 'Sécurité renforcée')).toBe('wiki/concepts/jedox/jedox_sécurité-renforcée.md');
   });
 
   it('escapes a backslash in the heading before the closing quote, keeping the YAML valid', () => {
@@ -124,10 +124,10 @@ describe('taxo plan mapping', () => {
     expect(content).toContain('locator: { heading: "C:\\\\Program Files\\\\", lines: "6-9" }');
   });
 
-  it('clamps the wide taxo kind vocabulary onto the closed extraction contract', () => {
-    expect(taxoKindForSchema('tool')).toBe('product');
-    expect(taxoKindForSchema('domain')).toBeNull();
-    expect(taxoKindForSchema('decision')).toBeNull();
+  it('preserves free-form descriptive kinds', () => {
+    expect(taxoKindForSchema('tool')).toBe('tool');
+    expect(taxoKindForSchema('domain')).toBe('domain');
+    expect(taxoKindForSchema('decision')).toBe('decision');
     expect(taxoKindForSchema('dimension')).toBe('dimension');
   });
 });

@@ -221,8 +221,10 @@ async function main() {
 
   program
     .command('index')
-    .description('Create or update the local vector index for wiki markdown pages')
-    .action(() => indexCmd(config));
+    .description('Refresh the wiki map and local vector index')
+    .option('--overview', 'Draft a cited workspace overview from this workspace evidence')
+    .option('--apply-overview', 'Apply the reviewed .wiki/workspace-overview.draft.md to wiki/index.md')
+    .action((options) => indexCmd(config, options));
 
   program
     .command('lint')

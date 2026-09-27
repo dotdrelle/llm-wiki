@@ -31,7 +31,7 @@ describe('subjectsAreRelated', () => {
 
   it('does not match unrelated subjects', () => {
     expect(subjectsAreRelated('gamma', 'alpha')).toBe(false);
-    expect(subjectsAreRelated('pricing-model', 'security-model')).toBe(false);
+    expect(subjectsAreRelated('pricing-cost', 'security-policy')).toBe(false);
   });
 
   it('matches two compound subjects sharing a significant inner token', () => {
@@ -42,16 +42,16 @@ describe('subjectsAreRelated', () => {
     expect(subjectsAreRelated('infra-souverainete', 'infra')).toBe(true);
   });
 
-  it('does not match on a short, generic leading token', () => {
+  it('does not match when the only shared token is a connector', () => {
     expect(subjectsAreRelated('de-solution', 'de-tool')).toBe(false);
   });
 
-  it('ignores a generic leading token even when both subjects share it', () => {
-    // The stoplist must apply to the leading-token check too: sharing only
-    // "solution", "service" or "phase" says nothing about the identity.
-    expect(subjectsAreRelated('solution-pricing', 'solution-licence')).toBe(false);
-    expect(subjectsAreRelated('service-alpha', 'service-beta')).toBe(false);
-    expect(subjectsAreRelated('plan-alpha', 'plan-beta')).toBe(false);
+  it('treats shared labels as candidate signals, without claiming entity identity', () => {
+    // This broad lexical match only surfaces candidates to the model; the
+    // identity decision is made separately and never by a fixed stopword list.
+    expect(subjectsAreRelated('solution-pricing', 'solution-licence')).toBe(true);
+    expect(subjectsAreRelated('service-alpha', 'service-beta')).toBe(true);
+    expect(subjectsAreRelated('plan-alpha', 'plan-beta')).toBe(true);
   });
 
   it('rejects empty input', () => {

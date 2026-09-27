@@ -19,10 +19,10 @@ Detection is deterministic and costs nothing — none of it calls the LLM:
   was built from, and of its build context. `wiki refresh` compares these and
   rebuilds only what changed; `wiki lint` lists the deliverables that no longer
   match their inputs.
-- **Taxonomy.** Publishing the taxonomy freezes a **knowledge fingerprint** of
-  the corpus. If the corpus moves afterwards, the `/graph` view flags the
-  taxonomy as stale, and the coverage counts show which pages are unclassified
-  or still pending.
+- **Project knowledge.** Ingestion files pages under the concept groupings
+  already present in the workspace, creating a new grouping only when the
+  source supports one. The graph derives its communities from those folders;
+  there is no separate taxonomy publication or stale-taxonomy step.
 - **Sources.** A source whose produced pages have disappeared is re-ingested on
   the next sync instead of being skipped as "unchanged".
 

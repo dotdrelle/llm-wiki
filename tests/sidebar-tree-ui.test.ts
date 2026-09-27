@@ -243,7 +243,7 @@ describe('sidebar views', () => {
     // section root, but it is a static header too (only its nested concept
     // folders fold); its taxonomy folders take a leading capital.
     expect(html).toContain('side-folder-plain-label">WIKI</div>');
-    expect(html).toContain('<span class="side-folder-label">Concepts</span>');
+    expect(html).toContain('<span class="side-folder-label">Project knowledge</span>');
   });
 
   it('gives each deliverable an icon per production type instead of a colour dot', async () => {
@@ -366,13 +366,15 @@ describe('the rail badges clear item by item', () => {
 });
 
 describe('the index main sections are alphabetical', () => {
-  it('sorts concept subjects and sources by title', async () => {
+  it('sorts knowledge and reading-note tiles and exposes archived originals from legacy indexes', async () => {
     await mkdir(path.join(root, 'wiki/concepts/offre'), { recursive: true });
     await mkdir(path.join(root, 'wiki/sources'), { recursive: true });
     await writeFile(path.join(root, 'wiki/concepts/offre/zeta.md'), '---\nsubject: zeta\n---\n# zeta\n', 'utf8');
     await writeFile(path.join(root, 'wiki/concepts/offre/alpha.md'), '---\nsubject: alpha\n---\n# alpha\n', 'utf8');
     await writeFile(path.join(root, 'wiki/sources/z-note.md'), '# z\n', 'utf8');
     await writeFile(path.join(root, 'wiki/sources/a-note.md'), '# a\n', 'utf8');
+    await mkdir(path.join(root, 'raw/ingested'), { recursive: true });
+    await writeFile(path.join(root, 'raw/ingested/original.md'), '# Original document\n', 'utf8');
     await writeFile(
       path.join(root, 'wiki/index.md'),
       [
@@ -391,6 +393,10 @@ describe('the index main sections are alphabetical', () => {
     );
 
     const html = await generateIndex(root);
+    expect(html).toContain('Project knowledge</h2>');
+    expect(html).toContain('Reading notes</h2>');
+    expect(html).not.toContain('>Concepts</h2>');
+    expect(html).not.toContain('>Sources</h2>');
     // Scope to the aside tiles: the article restates the same links in the
     // index body's own order.
     const aside = html.slice(html.indexOf('index-aside'));
@@ -400,6 +406,8 @@ describe('the index main sections are alphabetical', () => {
     expect(aside.indexOf('tile-title">Alpha</span>')).toBeLessThan(aside.indexOf('tile-title">Zeta</span>'));
     expect(aside.indexOf('tile-title">A note</span>')).toBeGreaterThan(-1);
     expect(aside.indexOf('tile-title">A note</span>')).toBeLessThan(aside.indexOf('tile-title">Z note</span>'));
+    expect(aside).toContain('tile-title">Original document</span>');
+    expect(aside).toContain('href="/raw/ingested/original.md"');
   });
 });
 
@@ -469,7 +477,7 @@ describe('titles in the tree', () => {
     expect(html).toContain('>S3NS</a>');
     expect(html).not.toContain('>Anaplan platform</a>');
     // The reserved taxonomy folder takes a leading capital, not capitals.
-    expect(html).toContain('<span class="side-folder-label">Concepts</span>');
+    expect(html).toContain('<span class="side-folder-label">Project knowledge</span>');
     // The path is untouched.
     expect(html).toContain('data-tree-id="wiki/concepts/offre-marche"');
   });
@@ -499,8 +507,8 @@ describe('titles in the tree', () => {
 
     // reseau.md (concepts root, from beforeEach) + anaplan.md in the
     // offre-marche folder = 2.
-    expect(html).toContain('<span class="side-folder-label">Concepts</span><span class="side-folder-count" title="2 document(s)">2</span>');
-    expect(html).toContain('<span class="side-folder-label">Sources</span><span class="side-folder-count" title="1 document(s)">1</span>');
+    expect(html).toContain('<span class="side-folder-label">Project knowledge</span><span class="side-folder-count" title="2 document(s)">2</span>');
+    expect(html).toContain('<span class="side-folder-label">Reading notes</span><span class="side-folder-count" title="1 document(s)">1</span>');
     expect(html).toContain('<span class="side-folder-label">Answers</span><span class="side-folder-count" title="0 document(s)">0</span>');
   });
 

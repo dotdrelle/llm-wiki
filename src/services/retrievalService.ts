@@ -1,4 +1,3 @@
-import { canonicalizeName } from '../utils/path.ts';
 import { pathExists } from '../utils/fs.ts';
 import {
   extractSourceCitations,
@@ -16,63 +15,15 @@ import {
   type VectorIndex,
 } from './vectorIndexService.ts';
 import type { TraceLogger } from './traceLogger.ts';
+import { tokenizeSearchText } from '../utils/searchText.ts';
 
-const STOP_WORDS = new Set([
-  'the',
-  'and',
-  'for',
-  'with',
-  'that',
-  'this',
-  'from',
-  'dans',
-  'avec',
-  'pour',
-  'de',
-  'du',
-  'la',
-  'le',
-  'un',
-  'en',
-  'ou',
-  'il',
-  'elle',
-  'on',
-  'into',
-  'have',
-  'will',
-  'sur',
-  'une',
-  'des',
-  'les',
-  'est',
-  'are',
-  'you',
-  'your',
-  'not',
-  'pas',
-  'peux',
-  'peut',
-  'tu',
-  'me',
-  'moi',
-  'donner',
-  'resume',
-]);
 const RERANK_RESULT_MAX_CHARS = 1200;
 const VECTOR_DISABLE_AFTER_CONSECUTIVE_ERRORS = 3;
 const BM25_K1 = 1.35;
 const BM25_B = 0.72;
 
 function tokenize(text: string): string[] {
-  return (
-    text
-      .toLowerCase()
-      .normalize('NFKD')
-      .replace(/\p{M}/gu, '')
-      .replace(/[’']/g, ' ')
-      .match(/[\p{L}\p{N}]{2,}/gu) ?? []
-  ).filter((token) => !STOP_WORDS.has(token));
+  return tokenizeSearchText(text);
 }
 
 interface LexicalDocument {
@@ -104,6 +55,11 @@ export interface RetrievalSearchOptions {
    */
   allowedSources?: string[];
 }
+
+export type RetrievalSearchDiagnostics = {
+  mode: 'hybrid' | 'lexical' | 'lexical-fallback';
+  reason: 'missing-index' | 'index-mismatch' | 'vector-error' | 'disabled' | null;
+};
 
 function countTokens(tokens: string[]): Map<string, number> {
   const counts = new Map<string, number>();
@@ -186,8 +142,6 @@ function scoreDocument(
     if (document.headingTokens.includes(token)) score += 1.8;
     if (document.nameTokens.includes(token)) score += 3.6;
     if (document.pathTokens.includes(token)) score += 1.4;
-    if (canonicalizeName(document.page.name).includes(canonicalizeName(token)))
-      score += 0.8;
   }
 
   return score;
@@ -261,20 +215,8 @@ function extractIndexRelatedPaths(queryTokens: string[], indexPage: WikiPage): s
 
 function mergeResults(results: SearchResult[]): SearchResult[] {
   const bestByPath = new Map<string, SearchResult>();
-  const wikiSourceNames = new Set(
-    results
-      .filter((result) => result.page.relativePath.startsWith('wiki/sources/'))
-      .map((result) => result.page.name),
-  );
 
   for (const result of results) {
-    if (
-      result.page.relativePath.startsWith('raw/ingested/') &&
-      wikiSourceNames.has(result.page.name)
-    ) {
-      continue;
-    }
-
     const existing = bestByPath.get(result.page.relativePath);
     if (!existing || result.score > existing.score) {
       bestByPath.set(result.page.relativePath, {
@@ -296,6 +238,37 @@ function mergeResults(results: SearchResult[]): SearchResult[] {
   return [...bestByPath.values()].sort((a, b) => b.score - a.score);
 }
 
+/** Fuse independently scaled vector and BM25 rankings without comparing their raw scores. */
+function fuseRankedResults(...rankedLists: SearchResult[][]): SearchResult[] {
+  const rankConstant = 60;
+  const byPath = new Map<string, { result: SearchResult; score: number }>();
+
+  for (const ranked of rankedLists) {
+    ranked.forEach((result, index) => {
+      const existing = byPath.get(result.page.relativePath);
+      const score = 1 / (rankConstant + index + 1);
+      if (existing) {
+        existing.score += score;
+        existing.result.relatedPaths = [
+          ...new Set([
+            ...(existing.result.relatedPaths ?? []),
+            ...(result.relatedPaths ?? []),
+          ]),
+        ];
+      } else {
+        byPath.set(result.page.relativePath, {
+          result: { ...result, relatedPaths: [...(result.relatedPaths ?? [])] },
+          score,
+        });
+      }
+    });
+  }
+
+  return [...byPath.values()]
+    .sort((left, right) => right.score - left.score)
+    .map(({ result, score }) => ({ ...result, score }));
+}
+
 export class RetrievalService {
   private readonly workspace: WorkspaceService;
   private readonly config: AppConfig;
@@ -304,7 +277,9 @@ export class RetrievalService {
   private vectorIndex: VectorIndex | undefined;
   private readonly loggedVectorFallbacks = new Set<string>();
   private vectorDisabledAfterError = false;
+  private vectorDisableReason: 'index-mismatch' | 'vector-error' | null = null;
   private consecutiveVectorErrors = 0;
+  private lastSearchDiagnostics: RetrievalSearchDiagnostics = { mode: 'lexical', reason: 'disabled' };
 
   constructor(workspace: WorkspaceService, config: AppConfig, logger?: TraceLogger) {
     this.workspace = workspace;
@@ -314,6 +289,10 @@ export class RetrievalService {
 
   invalidateCache(): void {
     this.wikiPagesCache = undefined;
+  }
+
+  getLastSearchDiagnostics(): RetrievalSearchDiagnostics {
+    return { ...this.lastSearchDiagnostics };
   }
 
   private getVectorIndex(): VectorIndex {
@@ -366,12 +345,17 @@ export class RetrievalService {
   ): Promise<SearchResult[]> {
     const buildBm25Only =
       options?.intent === 'build' && this.config.retrieval.buildStrategy === 'bm25';
+    this.lastSearchDiagnostics = {
+      mode: 'lexical',
+      reason: buildBm25Only || !this.config.retrieval.vector.enabled ? 'disabled' : null,
+    };
     if (
       !buildBm25Only &&
       this.config.retrieval.vector.enabled &&
       !this.vectorDisabledAfterError
     ) {
       if (!(await pathExists(this.workspace.paths.vectorIndexDir))) {
+        this.lastSearchDiagnostics = { mode: 'lexical-fallback', reason: 'missing-index' };
         await this.logVectorFallback('missing-index', query);
         return this.searchLexical(query, options);
       }
@@ -380,6 +364,7 @@ export class RetrievalService {
         const vectorResults = await this.getVectorIndex().search(query, {
           limit: options?.limit,
           rerank: options?.rerank,
+          includeRaw: options?.includeRaw,
         });
         this.consecutiveVectorErrors = 0;
         const lexicalResults = await this.searchLexical(query, {
@@ -391,22 +376,27 @@ export class RetrievalService {
               this.config.retrieval.vector.maxResults,
             ),
         });
-        return mergeResults([...vectorResults, ...lexicalResults]).slice(
+        this.lastSearchDiagnostics = { mode: 'hybrid', reason: null };
+        return fuseRankedResults(vectorResults, lexicalResults).slice(
           0,
           options?.limit ?? this.config.retrieval.vector.maxResults,
         );
       } catch (error) {
         if (error instanceof VectorIndexConfigMismatchError) {
           this.vectorDisabledAfterError = true;
+          this.vectorDisableReason = 'index-mismatch';
+          this.lastSearchDiagnostics = { mode: 'lexical-fallback', reason: 'index-mismatch' };
           const message = error.message;
           await this.logVectorFallback('vector-index-mismatch', query, error, {
             disabled: true,
           });
           console.warn(`Warning: vector retrieval disabled — ${message}`);
         } else {
+          this.lastSearchDiagnostics = { mode: 'lexical-fallback', reason: 'vector-error' };
           this.consecutiveVectorErrors += 1;
           if (this.consecutiveVectorErrors >= VECTOR_DISABLE_AFTER_CONSECUTIVE_ERRORS) {
             this.vectorDisabledAfterError = true;
+            this.vectorDisableReason = 'vector-error';
           }
           await this.logVectorFallback('vector-error', query, error, {
             consecutiveErrors: this.consecutiveVectorErrors,
@@ -422,6 +412,13 @@ export class RetrievalService {
         // Keep retrieval robust for ingest/build/query/MCP: vector search is an
         // optimization, while lexical search is the compatibility fallback.
       }
+    }
+
+    if (this.vectorDisabledAfterError && this.lastSearchDiagnostics.reason == null) {
+      this.lastSearchDiagnostics = {
+        mode: 'lexical-fallback',
+        reason: this.vectorDisableReason ?? 'vector-error',
+      };
     }
 
     return this.searchLexical(query, options);

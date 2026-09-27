@@ -17,6 +17,7 @@ import { buildLocatorCatalogue } from '../provenance/locators.ts';
 import { applyDerivedSources } from '../provenance/write.ts';
 import { validateAnchoredCitations } from '../provenance/validate.ts';
 import { materializeAllLocatorTokens } from '../provenance/promptLocators.ts';
+import { stampConceptPageIdentities } from '../ingest/identity.ts';
 import { extractSourceCitations, extractSourceCitationsWithAnchors, extractWikiLinks, parseTemplateInstructions } from '../utils/markdown.ts';
 import {
   buildQueryGraph,
@@ -192,12 +193,12 @@ export const WIKI_MCP_TOOLS = [
   {
     name: 'wiki_search_context',
     description:
-      'Search llm-wiki for a question. Returns ranked candidate paths with excerpts, citations, and relatedPaths only; excerpts are for triage, not full evidence. Prefer wiki_collect_context for synthesis, architecture, audit, functional analysis, or comparison questions, but call this again if coverage is insufficient.',
+      'Search wiki pages and archived originals for a question. Archived originals are included by default and remain distinct from their wiki source notes. Returns ranked candidate paths with excerpts, citations, and relatedPaths only; excerpts are for triage, not full evidence. Prefer wiki_collect_context for synthesis, architecture, audit, functional analysis, or comparison questions, but call this again if coverage is insufficient.',
   },
   {
     name: 'wiki_collect_context',
     description:
-      'Search llm-wiki, read up to 10 returned wiki pages by default, and report coverage in one call. Prefer this first for synthesis, architecture, audit, functional analysis, or comparison questions.',
+      'Search wiki pages and archived originals, read up to 10 returned wiki pages by default, and report coverage in one call. Archived originals are returned as candidates but must be opened with wiki_read_ingested_source when needed. Prefer this first for synthesis, architecture, audit, functional analysis, or comparison questions.',
   },
   {
     name: 'profile_read',
@@ -891,6 +892,16 @@ export async function createWikiMcpServer(
       }
       finalContent = derived.content;
     }
+    if (pagePath.startsWith('wiki/concepts/')) {
+      const existingPages = new Map(
+        (await workspace.listWikiPages())
+          .map((page) => [page.relativePath, page.content] as const),
+      );
+      finalContent = stampConceptPageIdentities(
+        [{ type: 'update', path: pagePath, content: finalContent }],
+        existingPages,
+      )[0]?.content ?? finalContent;
+    }
     await workspace.applyWikiOperations([{ type: 'update', path: pagePath, content: finalContent }]);
     retrieval.invalidateCache();
     await appendAuditRecord(workspace, {
@@ -1579,7 +1590,7 @@ const withTitles = async (
       .boolean()
       .optional()
       .describe(
-        'Whether to include raw/ingested source files in addition to wiki pages. Default false; prefer wiki/sources and wiki/concepts unless the raw archived source is explicitly needed.',
+        'Whether to include archived raw/ingested documents in addition to wiki pages. Default true so details omitted from a source note remain searchable.',
       ),
     maxExcerptChars: z
       .number()
@@ -1606,7 +1617,7 @@ const withTitles = async (
         (config.retrieval.vector.enabled
           ? config.retrieval.vector.maxResults
           : config.retrieval.maxContextFiles),
-      includeRaw: includeRaw ?? false,
+      includeRaw: includeRaw ?? true,
     });
     const excerptLimit = maxExcerptChars ?? config.retrieval.maxChunkChars;
     const payload = {
@@ -1646,7 +1657,7 @@ const withTitles = async (
     );
     const results = await retrieval.search(question, {
       limit: resultLimit,
-      includeRaw: false,
+      includeRaw: true,
     });
     const excerptLimit = config.retrieval.maxChunkChars;
     const candidateResults = results.map((result) => {
@@ -1676,7 +1687,11 @@ const withTitles = async (
       .map((page) => page.path);
     const notReadRawSources = uniqueValues(
       candidateResults.flatMap((result) =>
-        [...result.citations, ...result.relatedPaths].filter((sourcePath) =>
+        [
+          ...(result.path.startsWith('raw/ingested/') ? [result.path] : []),
+          ...result.citations,
+          ...result.relatedPaths,
+        ].filter((sourcePath) =>
           sourcePath.startsWith('raw/ingested/'),
         ),
       ),
@@ -1691,7 +1706,7 @@ const withTitles = async (
         followUpPolicy:
           'If readPages do not provide enough evidence, the client may call wiki_search_context, wiki_read_page, wiki_read_pages, or wiki_read_ingested_source to improve coverage.',
         rawSourcesPolicy:
-          'notReadRawSources are traceability references only; they were not opened and should not be treated as read evidence.',
+          'notReadRawSources lists archived candidates or citations; none was opened by this call, so read a listed source with wiki_read_ingested_source before treating its complete content as evidence.',
       },
       question,
       candidateResults,
@@ -2113,7 +2128,7 @@ const withTitles = async (
 
   server.tool(
     'wiki_search_context',
-    'Search llm-wiki for a question. Returns ranked candidate paths with excerpts, citations, and relatedPaths only; excerpts are for triage, not full evidence. Prefer wiki_collect_context for synthesis, architecture, audit, functional analysis, or comparison questions, but call this again if coverage is insufficient.',
+    'Search wiki pages and archived originals for a question. Archived originals are included by default and remain distinct from their wiki source notes. Returns ranked candidate paths with excerpts, citations, and relatedPaths only; excerpts are for triage, not full evidence. Prefer wiki_collect_context for synthesis, architecture, audit, functional analysis, or comparison questions, but call this again if coverage is insufficient.',
     searchWikiContextInput,
     READ_ONLY,
     (input) => loggedTool('wiki_search_context', input, searchWikiContext),
@@ -2142,7 +2157,7 @@ const withTitles = async (
   };
   server.tool(
     'wiki_collect_context',
-    'Search llm-wiki, read up to 10 returned wiki pages by default, and report coverage in one call. Prefer this first for synthesis, architecture, audit, functional analysis, or comparison questions.',
+    'Search wiki pages and archived originals, read up to 10 returned wiki pages by default, and report coverage in one call. Archived originals are returned as candidates but must be opened with wiki_read_ingested_source when needed. Prefer this first for synthesis, architecture, audit, functional analysis, or comparison questions.',
     collectWikiContextInput,
     READ_ONLY,
     (input) => loggedTool('wiki_collect_context', input, collectWikiContext),

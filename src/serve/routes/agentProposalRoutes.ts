@@ -10,7 +10,9 @@ import { applyOkfFrontmatter } from '../../okf/frontmatter.ts';
 import { applyDerivedSources } from '../../provenance/write.ts';
 import { validateAnchoredCitations } from '../../provenance/validate.ts';
 import { materializeAllLocatorTokens } from '../../provenance/promptLocators.ts';
+import { stampConceptPageIdentities } from '../../ingest/identity.ts';
 import type { WorkspaceService } from '../../services/workspaceService.ts';
+import type { WikiOperation } from '../../types.ts';
 import { layout } from '../html/wikiHtml.ts';
 
 /**
@@ -396,7 +398,7 @@ export async function handleAgentProposalRoutes(
     // merged page gains a `verified` decision and moves to `stable` —
     // additively, a hand-set key always wins.
     const mergedAt = new Date().toISOString();
-    const operations = record.changes
+    let operations: WikiOperation[] = record.changes
       .filter((change) => mergeableChange(rootDir, change))
       .map((change) => {
         if (change.status === 'D') {
@@ -411,6 +413,11 @@ export async function handleAgentProposalRoutes(
           }),
         };
       });
+    const existingPages = new Map(
+      (await deps.workspace.listWikiPages())
+        .map((page) => [page.relativePath, page.content] as const),
+    );
+    operations = stampConceptPageIdentities(operations, existingPages);
     if (operations.length === 0) {
       return fail(400, { ok: false, error: 'the proposal carries no mergeable wiki change' });
     }
@@ -456,7 +463,7 @@ export async function handleAgentProposalRoutes(
       //    them, or the raw token would land in the wiki. 2) Then derive
       //    `sources:`. 3) Then VALIDATE the anchors — a clean closure is not
       //    proof the anchors resolve.
-      const materialized = materializeAllLocatorTokens(operation.content, resolvePage);
+      const materialized = materializeAllLocatorTokens(operation.content ?? '', resolvePage);
       const derived = applyDerivedSources(materialized.content, { resolvePage });
       const issues = validateAnchoredCitations(derived.content, resolvePage);
       if (!derived.clean || issues.length > 0 || materialized.unresolved.length > 0) {

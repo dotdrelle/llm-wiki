@@ -22,15 +22,18 @@ function page(relativePath: string, content: string): WikiPage {
   };
 }
 
-function fakeLlm(folders: Array<{ folder: string; canonical: string }>) {
+const conceptIdOne = '123e4567-e89b-42d3-a456-426614174000';
+const conceptIdTwo = '223e4567-e89b-42d3-a456-426614174000';
+
+function fakeLlm(folders: Array<{ folder: string; canonical: string; concept_id?: string }>) {
   return {
     completeJson: async () => ({ folders }),
   } as never;
 }
 
 describe('normalizeConceptFolderName', () => {
-  it('slugifies to lowercase ASCII kebab-case', () => {
-    expect(normalizeConceptFolderName('Produit Écrit')).toBe('produit-ecrit');
+  it('normalizes Unicode labels without transliterating them', () => {
+    expect(normalizeConceptFolderName('Produit Écrit')).toBe('produit-écrit');
     expect(normalizeConceptFolderName('  Solution / Logicielle ')).toBe('solution-logicielle');
   });
 
@@ -53,46 +56,42 @@ describe('collectConceptFolderEntries', () => {
 });
 
 describe('reconcileConceptFolders', () => {
-  it('maps a proposed folder onto the established vocabulary', async () => {
+  it('maps proposed labels by stable identity rather than a vocabulary table', async () => {
     const mapping = await reconcileConceptFolders({
       llm: fakeLlm([
-        { folder: 'product', canonical: 'produit' },
-        { folder: 'requirement', canonical: 'exigence' },
+        { folder: 'new-label-one', canonical: 'ignored-label', concept_id: conceptIdOne },
+        { folder: 'new-label-two', canonical: 'ignored-label', concept_id: conceptIdTwo },
       ]),
       entries: [
-        { folder: 'produit', subjects: ['acpi'], tags: ['outil'] },
-        { folder: 'exigence', subjects: ['secnum'], tags: [] },
+        { folder: 'established-label-one', conceptId: conceptIdOne, subjects: ['subject-one'], tags: ['tag-one'] },
+        { folder: 'established-label-two', conceptId: conceptIdTwo, subjects: ['subject-two'], tags: [] },
       ],
-      proposed: ['product', 'requirement'],
+      proposed: ['new-label-one', 'new-label-two'],
       ctx,
       logger: logger(),
     });
-    expect(mapping.get('product')).toBe('produit');
-    expect(mapping.get('requirement')).toBe('exigence');
-    expect(mapping.get('produit')).toBe('produit');
-    expect(mapping.get('exigence')).toBe('exigence');
+    expect(mapping.get('new-label-one')).toBe('established-label-one');
+    expect(mapping.get('new-label-two')).toBe('established-label-two');
+    expect(mapping.get('established-label-one')).toBe('established-label-one');
   });
 
   it('never dissolves an established folder, even when the model says to', async () => {
-    // The ACPI collapse: the model returned `solution -> produit`, and the
-    // engine moved every leaf of an established folder. An established folder
-    // is the anchor — a proposed new folder may join it, it may not absorb it.
     const mapping = await reconcileConceptFolders({
       llm: fakeLlm([
-        { folder: 'solution', canonical: 'produit' },
-        { folder: 'nouveau', canonical: 'produit' },
+        { folder: 'established-two', canonical: 'established-one', concept_id: conceptIdOne },
+        { folder: 'new-label', canonical: 'established-one', concept_id: conceptIdOne },
       ]),
       entries: [
-        { folder: 'produit', subjects: [], tags: [] },
-        { folder: 'solution', subjects: ['anaplan'], tags: [] },
+        { folder: 'established-one', conceptId: conceptIdOne, subjects: [], tags: [] },
+        { folder: 'established-two', conceptId: conceptIdTwo, subjects: ['subject-two'], tags: [] },
       ],
-      // `solution` is established AND written into by this plan: still anchored.
-      proposed: ['solution', 'nouveau'],
+      // `established-two` is established AND written into by this plan: still anchored.
+      proposed: ['established-two', 'new-label'],
       ctx,
       logger: logger(),
     });
-    expect(mapping.get('solution')).toBe('solution');
-    expect(mapping.get('nouveau')).toBe('produit');
+    expect(mapping.get('established-two')).toBe('established-two');
+    expect(mapping.get('new-label')).toBe('established-one');
   });
 
   it('resolves a chain of renames to its fixpoint', async () => {
@@ -155,20 +154,20 @@ describe('reconcileConceptFolders leaves the leaves on disk alone', () => {
   it('maps every established folder onto itself, whatever the model answers', async () => {
     const mapping = await reconcileConceptFolders({
       llm: fakeLlm([
-        { folder: 'saas', canonical: 'produit' },
+        { folder: 'new-label', canonical: 'ignored-label', concept_id: conceptIdOne },
         // The model tries to dissolve an established folder: refused.
-        { folder: 'solution-logicielle', canonical: 'produit' },
+        { folder: 'established-two', canonical: 'established-one', concept_id: conceptIdOne },
       ]),
       entries: [
-        { folder: 'produit', subjects: ['jedox'], tags: [] },
-        { folder: 'solution-logicielle', subjects: ['anaplan'], tags: [] },
+        { folder: 'established-one', conceptId: conceptIdOne, subjects: ['subject-one'], tags: [] },
+        { folder: 'established-two', conceptId: conceptIdTwo, subjects: ['subject-two'], tags: [] },
       ],
-      proposed: ['saas'],
+      proposed: ['new-label'],
       ctx,
       logger: logger(),
     });
-    expect(mapping.get('saas')).toBe('produit');
-    expect(mapping.get('produit')).toBe('produit');
-    expect(mapping.get('solution-logicielle')).toBe('solution-logicielle');
+    expect(mapping.get('new-label')).toBe('established-one');
+    expect(mapping.get('established-one')).toBe('established-one');
+    expect(mapping.get('established-two')).toBe('established-two');
   });
 });

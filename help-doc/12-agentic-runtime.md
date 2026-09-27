@@ -17,7 +17,7 @@ workspace**.
 - **Mouth** — it can say something out loud — for example send a report by
   email — but only after your approval.
 
-The **hands** are the deterministic plan (ingestion, build, export, taxonomy),
+The **hands** are the deterministic plan (ingestion, build, export, and polish),
 and there is exactly **one pair of hands per workspace**. The runtime never
 holds them. When it wants something done — "this file did not pass, re-sync
 it" — it does not launch anything: it **proposes**, DONNA integrates the

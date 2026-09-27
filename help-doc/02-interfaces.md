@@ -30,6 +30,9 @@ Serve cannot start or stop containers, list workspaces or run the raw CLI.
 - **What you find there**:
   - **Chat / Agent** — the dialogue with DONNA (page `/`), with shortcuts on the
     empty screen (help, fill the workspace profile).
+  - **Workspace home** — a short overview with clickable counts and the next
+    action to take: a run approval, a curation proposal, pending sources, or
+    wiki exploration. If runtime status cannot be checked, the page says so.
   - **Activity** — live tracking of imports, ingestions, exports and jobs, with
     two views: *List* and *Graph*.
   - **Wiki browser** — browse the pages produced. Its sidebar holds three views

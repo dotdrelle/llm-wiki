@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { wikiOperationSchema } from '../config/schema.ts';
-import { EXTRACTION_KINDS, EXTRACTION_SCOPES, normalizeKind, normalizeScope } from './extractionSchema.ts';
+import { normalizeKind, normalizeScope } from './extractionSchema.ts';
 import { normalizeTags } from './provenance.ts';
 
 /*
@@ -12,7 +12,7 @@ import { normalizeTags } from './provenance.ts';
  pages to stop following the number of batches.
 */
 
-export const CONSOLIDATION_SCHEMA_VERSION = 1;
+export const CONSOLIDATION_SCHEMA_VERSION = 2;
 
 const nonEmpty = z.string().trim().min(1);
 const optionalValue = z.preprocess(
@@ -30,19 +30,10 @@ const optionalValue = z.preprocess(
 export const consolidatedPageSchema = z.object({
   path: nonEmpty,
   subject: optionalValue,
-  scope: z.preprocess(
-    (value) => (value == null || (typeof value === 'string' && value.trim() === '')
-      ? null
-      : normalizeScope(value)),
-    z.enum(EXTRACTION_SCOPES).nullish().transform((value) => value ?? null),
-  ),
-  /** Nature of the subject: `vendor`, `product`, `requirement`, `regulation`, `dimension`, `scenario`. */
-  kind: z.preprocess(
-    (value) => (value == null || (typeof value === 'string' && value.trim() === '')
-      ? null
-      : normalizeKind(value)),
-    z.enum(EXTRACTION_KINDS).nullish().transform((value) => value ?? null),
-  ),
+  concept_id: z.preprocess((value) => value == null || value === '' ? null : value, z.string().uuid().nullable()).optional(),
+  subject_id: z.preprocess((value) => value == null || value === '' ? null : value, z.string().uuid().nullable()).optional(),
+  scope: z.preprocess((value) => normalizeScope(value) || null, optionalValue),
+  kind: z.preprocess((value) => normalizeKind(value) || null, optionalValue),
   /*
    Multivalued links. The folder the leaf lives in is its concept; `subject` is
    its identity; `tags` are its relations — an entity tag re-links leaves of the

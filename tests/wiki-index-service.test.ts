@@ -9,7 +9,7 @@ import { regenerateWikiIndex } from '../src/services/wikiIndexService.ts';
  written by the consolidation LLM per source. On a real workspace the bullet
  count oscillated 4-7 across 13 consecutive ingests instead of growing, and
  ended up listing 2 of 22 real concept pages. This module replaces that with
- a deterministic scan of wiki/concepts/** and wiki/sources/*.
+ a deterministic scan of project knowledge, reading notes, and archived documents.
 */
 
 let root: string;
@@ -26,10 +26,11 @@ afterEach(async () => {
 describe('regenerateWikiIndex', () => {
   it('writes the empty-workspace placeholders when nothing exists yet', async () => {
     const outcome = await regenerateWikiIndex(root);
-    expect(outcome).toEqual({ status: 'written', concepts: 0, sources: 0 });
+    expect(outcome).toEqual({ status: 'written', concepts: 0, sources: 0, archives: 0 });
     const content = await readFile(path.join(root, 'wiki', 'index.md'), 'utf8');
-    expect(content).toContain('- No concepts yet.');
-    expect(content).toContain('- No source notes yet.');
+    expect(content).toContain('- No project knowledge pages yet.');
+    expect(content).toContain('- No reading notes yet.');
+    expect(content).toContain('- No archived documents yet.');
     expect(content).toContain('type: index');
   });
 
@@ -50,7 +51,7 @@ describe('regenerateWikiIndex', () => {
     await writeFile(path.join(root, 'wiki', 'concepts', 'legacy.md'), '# Legacy concept\n', 'utf8');
 
     const outcome = await regenerateWikiIndex(root);
-    expect(outcome).toEqual({ status: 'written', concepts: 3, sources: 0 });
+    expect(outcome).toEqual({ status: 'written', concepts: 3, sources: 0, archives: 0 });
     const content = await readFile(path.join(root, 'wiki', 'index.md'), 'utf8');
     expect(content).toContain('- [Quartz](concepts/market-offering/quartz.md)');
     expect(content).toContain('- [Orphan concept](concepts/unclassified/orphan.md)');
@@ -63,10 +64,22 @@ describe('regenerateWikiIndex', () => {
     await writeFile(path.join(root, 'wiki', 'sources', 'note.md'), '# A source note\n', 'utf8');
 
     const outcome = await regenerateWikiIndex(root);
-    expect(outcome).toEqual({ status: 'written', concepts: 0, sources: 1 });
+    expect(outcome).toEqual({ status: 'written', concepts: 0, sources: 1, archives: 0 });
     const content = await readFile(path.join(root, 'wiki', 'index.md'), 'utf8');
     expect(content).toContain('- [A source note](sources/note.md)');
     expect(content).not.toContain('concepts-grid');
+  });
+
+  it('lists original archived documents separately and links them from wiki/index.md', async () => {
+    await mkdir(path.join(root, 'raw/ingested'), { recursive: true });
+    await writeFile(path.join(root, 'raw/ingested/original.md'), '# Original title\n\nFull evidence.\n', 'utf8');
+
+    const outcome = await regenerateWikiIndex(root);
+    expect(outcome).toEqual({ status: 'written', concepts: 0, sources: 0, archives: 1 });
+    const content = await readFile(path.join(root, 'wiki/index.md'), 'utf8');
+    expect(content).toContain('## Archived documents');
+    expect(content).toContain('- [Original title](../raw/ingested/original.md)');
+    expect(content).toContain('complete archived original');
   });
 
   it('falls back to the filename when a page has neither frontmatter title/subject nor a heading', async () => {

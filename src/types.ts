@@ -28,12 +28,6 @@ export interface LlmConfig {
   provider: LlmProvider;
   engine: LlmEngine;
   model: string;
-  /**
-   * Model for the graph taxonomy synthesis only. When absent, `model` applies.
-   */
-  taxonomyModel?: string;
-  /** Overrides `model` for `wiki concepts` only: the grid is the one open-ended synthesis of the chain. */
-  conceptsModel?: string;
   apiKey?: string;
   baseUrl: string;
   temperature: number;

@@ -22,18 +22,16 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
   anything.
 - **Rejected page** — a page an ingestion sets aside (irrelevant or redundant).
 - **Wiki** — the set of durable knowledge pages produced by ingestion.
-- **Concept** — the folder a knowledge page is filed under, naming a piece of
-  reusable knowledge (a system, an actor, a rule, an architecture) rather than a
-  raw document. One leaf per (concept × subject) lives at
-  `wiki/concepts/<concept>/<subject>.md`: the concept **is** the folder,
-  produced by the ingestion itself. There is no separate step that builds,
-  rebuilds or reclassifies it — re-running an ingestion is how concepts change.
+- **Concept** — a reusable grouping of knowledge drawn from the workspace.
+  `wiki/concepts/<label>/<subject>.md` is its current storage path; opaque IDs
+  carry its identity when labels or language change. Ingestion proposes how new
+  knowledge connects to the concepts already present.
 - **Unclassified** — a leaf that fits no concept folder yet; it waits under
   the reserved `wiki/concepts/unclassified` folder until someone files it by
   hand.
-- **Taxonomy** — the classification of the wiki used by the `/graph` view and
-  by navigation. It is derived from the concept folders themselves — there is
-  no separate step to publish it.
+- **Concept grouping** — the reusable project-knowledge folders shown in the
+  wiki and graph. Graph communities are derived from the current folders; there
+  is no separate publication step.
 - **Source note** — a page that traces the origin of a piece of information.
 - **Index** — the canonical map that links and references the wiki's pages.
 - **Log** — the chronological journal of ingestions and updates.

@@ -1,9 +1,8 @@
 import type { SourceDocument } from '../types.ts';
-import { EXTRACTION_IMPORTANCE, EXTRACTION_KINDS, EXTRACTION_SCOPES } from '../ingest/extractionSchema.ts';
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
 /** Prompt version, carried by the extraction cache. */
-export const EXTRACTION_PROMPT_VERSION = 7;
+export const EXTRACTION_PROMPT_VERSION = 8;
 
 /*
  Extraction prompt: read, do not write.
@@ -23,10 +22,6 @@ export function buildExtractionPrompt(args: {
   packTotal: number;
   ctx: PromptContext;
 }): { system: string; user: string } {
-  const scopes = EXTRACTION_SCOPES.join(' | ');
-  const importance = EXTRACTION_IMPORTANCE.join(' | ');
-  const kinds = EXTRACTION_KINDS.join(' | ');
-
   return {
     system: [
       buildSystemPreamble(args.ctx),
@@ -46,28 +41,12 @@ export function buildExtractionPrompt(args: {
       'Each fact has exactly this shape: {"statement": "the claim as prose", "subject": "s1", "citation": "<the exact citation path>"}. Use statement, not predicate/object/claim. If a fact cannot produce a prose statement, drop the fact.',
       'facts[].subject and mainSubject must also be subject ids declared in subjects[], never a fact id, a label, or a path.',
       'If a relation cannot point at a declared subject id, omit that relation instead of inventing a target.',
-      'Declare every subject you will reference in subjects[], even where its page will live later.',
-      `The "scope" of every subject is exactly one of: ${scopes}. Write the value verbatim, lowercase, no variant — not a paraphrase, not a category name, not a sentence.`,
-      `The "importance" of every subject is exactly one of: ${importance}. Write the value verbatim, lowercase, no variant.`,
-      `Every subject declares a scope (${scopes}) and an importance (${importance}) with a short rationale.`,
-      `The "kind" of every subject is exactly one of: ${kinds}. Write the value verbatim, lowercase.`,
-      'Kind guidance — it names the NATURE of the subject, not its scope:',
-      '- vendor: the organisation that makes a solution',
-      '- product: the solution/tool itself',
-      '- requirement: an imperative the compared solutions must satisfy',
-      '- regulation: a legal or contractual obligation',
-      '- dimension: a shared characteristic studied ACROSS subjects',
-      '- scenario: a genuine alternative OPTION under comparison (an alternative path, a variant of the solution)',
-      'A vendor and its product are TWO DIFFERENT subjects with two different kinds: never fold a vendor into its product, and never declare a vendor as a product.',
-      'A product and its sub-modules are ONE subject of kind product: do not split one product into one subject per module.',
-      'A deployment mode is NOT a scenario: it is a characteristic of the product, so it is a dimension, or it stays inside the product subject. Reserve scenario for a genuine alternative OPTION under comparison.',
-      'Do not declare a dimension as a product, nor a requirement as a vendor. When in doubt, prefer the kind that says what the thing IS, not what it belongs to.',
-      'Scope guidance:',
-      '- source: only meaningful inside a note about this specific document',
-      '- product: belongs to the specific subject this document is about',
-      '- transverse: a TOP-LEVEL shared theme. Declare it ONLY for a genuine cross-cutting theme, never for a structural sub-element of the document\'s own product — a list entry, a referential entry, a sub-account, a section are parts of the product, not dimensions',
-      '- workspace: applies to the whole workspace regardless of subject',
-      'Prefer few, well-justified subjects over many thin ones. A heading is not a subject, and neither is a sub-element of a single product: several sub-accounts or referential entries of the same structure are ONE subject, not several dimensions.',
+      'Declare only referents needed to attach facts and relations. A subject label describes something the document actually discusses; it does not assign a wiki folder or a permanent identity.',
+      'Group facts about the same referent under one subject across the fragment, including when they appear in different sections. Do not create a subject for every heading, row, property, or mention.',
+      'Keep distinct referents separate when the document gives them distinct information. Do not merge them based only on a shared word or their position in the document.',
+      'Preserve names, codes, dates, and identifiers exactly as written. Subject labels are display metadata and may follow the wording of the source; they are not identity keys.',
+      'There is no target number of subjects. Include every distinct referent needed to preserve the facts, and avoid candidates that have no attached fact or relation.',
+      'A short rationale is optional and should explain the source evidence for the candidate, not classify it into a fixed vocabulary.',
       'Every fact carries the exact citation path given in the user message, copied verbatim.',
       'If a fragment states no durable knowledge, return empty arrays. That is a valid answer.',
       'Return a strict JSON object with { "facts": [], "subjects": [], "relations": [], "mainSubject": string|null } and no extra text.',

@@ -15,18 +15,14 @@ import { splitMarkdownSections } from '../utils/markdown.ts';
  * precision. No confident match -> reported, never anchored at random.
  */
 
-const STOPWORDS = new Set([
-  'les', 'des', 'une', 'aux', 'sur', 'dans', 'avec', 'pour', 'par', 'est', 'sont', 'que', 'qui', 'dont',
-  'the', 'and', 'for', 'with', 'that', 'this', 'from', 'are', 'was', 'were', 'its', 'leur', 'leurs',
-  'platform', 'plateforme', 'solution', 'propose', 'permet', 'peut', 'ainsi',
-]);
-
 function significantTokens(text: string): Set<string> {
-  const out = new Set<string>();
-  for (const raw of String(text ?? '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').split(/[^a-z0-9]+/)) {
-    if (raw.length >= 3 && !STOPWORDS.has(raw) && !/^\d+$/.test(raw)) out.add(raw);
-  }
-  return out;
+  return new Set(
+    String(text ?? '')
+      .normalize('NFC')
+      .toLowerCase()
+      .match(/[\p{L}\p{M}\p{N}]{2,}/gu)
+      ?.filter((token) => !/^\p{N}+$/u.test(token)) ?? [],
+  );
 }
 
 export interface AnchorResult {

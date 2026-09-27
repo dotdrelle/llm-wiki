@@ -1,8 +1,9 @@
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import matter from 'gray-matter';
 import {
   applyProvenance,
   isValidProvenanceValue,
+  newKnowledgeIdentity,
   normalizeProvenanceValue,
   readProvenance,
 } from '../../ingest/provenance.ts';
@@ -17,11 +18,11 @@ import { pathExists, safeWriteFile } from '../../utils/fs.ts';
 /*
  Filing a concept leaf by hand, from the tree.
 
- The concept is the FOLDER, never a frontmatter field. A move under
- `wiki/concepts/` is therefore a filing decision — drag a leaf into another
- concept folder and it is re-filed — and it rewrites two things: the leaf's
- `subject` (when the file name changed) and the inbound `[src: …]` links that
- pointed at the old path. The OKF frontmatter is applied on the way.
+ Folder names are current labels; `concept_id` is the durable identity. A move
+ under `wiki/concepts/` is a filing decision — drag a leaf into another
+ concept folder and it is re-filed — and it rewrites the leaf's subject label
+ when needed, assigns the destination concept identity, and repoints inbound
+ links. The OKF frontmatter is applied on the way.
 */
 
 export type ConceptMoveDecision =
@@ -92,15 +93,43 @@ export function decideConceptMove(input: {
 }
 
 /**
- * The identity-named fallback for a classic concept leaf whose PHYSICAL name is
+ * Refuse a manual re-file into a destination whose pages do not establish one
+ * unambiguous concept identity. Mixing identities would make the folder cease
+ * to be a usable concept candidate for later ingestion.
+ */
+export async function conceptFolderIdentityIssue(
+  rootDir: string,
+  sourcePath: string,
+  destinationFolder: string,
+): Promise<string | null> {
+  if (parseConceptPagePath(sourcePath)?.class === destinationFolder) return null;
+  const targetFolder = resolveInside(rootDir, `${CONCEPT_PATH_PREFIX}${destinationFolder}`);
+  const children = await readdir(targetFolder, { withFileTypes: true }).catch(() => []);
+  const pages = children.filter((entry) => entry.isFile() && entry.name.endsWith('.md'));
+  if (pages.length === 0) return null;
+  const identities = new Set<string>();
+  let missingIdentity = false;
+  for (const page of pages) {
+    const content = await readFile(resolveInside(rootDir, `${CONCEPT_PATH_PREFIX}${destinationFolder}/${page.name}`), 'utf8').catch(() => '');
+    const identity = content ? readProvenance(content).concept_id : null;
+    if (identity) identities.add(identity);
+    else missingIdentity = true;
+  }
+  if (identities.size > 1 || missingIdentity || identities.size === 0) {
+    return 'Destination concept pages have missing or conflicting identities; review or backfill their identities before refiling.';
+  }
+  return null;
+}
+
+/**
+ * A readable fallback for a classic concept leaf whose physical name is
  * already taken in the destination folder.
  *
  * A manual re-file must not be refused just because two folders happen to hold
- * a same-named file: the `subject` is the leaf's identity, the file name is
- * only its label. When the destination basename collides, the move lands under
- * `<subject>.md` instead. Returns null when there is no usable subject, when
- * the subject names the same file (renaming would not help), or when that
- * identity is itself already filed there — the caller then keeps the hard 409.
+ * a same-named file. When the destination basename collides, the move lands
+ * under the subject display label's normalized filename. Returns null when
+ * there is no usable label, when it names the same file, or when that filename
+ * is already filed there — the caller then keeps the hard 409.
  *
  * Taxo leaves (`<concept>_<resume>.md`) do NOT use it: their name carries the
  * concept by convention, so a fallback would break that shape.
@@ -126,13 +155,13 @@ export async function subjectRefileTarget(input: {
 /**
  * Rewrites the leaf's provenance after it has just been renamed into `target`.
  *
- * `subject` follows the file name when it is missing; the concept is the
- * folder, so nothing else changes. The OKF frontmatter is applied.
+ * `subject` follows the file name when it is missing; `concept_id` follows the
+ * destination folder's stable identity. The OKF frontmatter is applied.
  */
 export async function applyConceptAxes(
   rootDir: string,
   target: string,
-  axes: { className: string; subject: string; isTaxoRefile: boolean },
+  axes: { sourcePath: string; className: string; subject: string; isTaxoRefile: boolean },
 ): Promise<void> {
   const absolute = resolveInside(rootDir, target);
   const content = await readFile(absolute, 'utf8');
@@ -146,6 +175,21 @@ export async function applyConceptAxes(
     ? matter.stringify(parsed.content, { ...parsed.data, concept: axes.className })
     : content;
   const current = readProvenance(withConcept);
+  const sourceFolder = parseConceptPagePath(axes.sourcePath)?.class ?? null;
+  const targetFolder = resolveInside(rootDir, `${CONCEPT_PATH_PREFIX}${axes.className}`);
+  const targetIdentities = new Set<string>();
+  const targetFiles = await readdir(targetFolder, { withFileTypes: true }).catch(() => []);
+  for (const entry of targetFiles) {
+    if (!entry.isFile() || !entry.name.endsWith('.md') || entry.name === target.split('/').pop()) continue;
+    const sibling = await readFile(resolveInside(rootDir, `${CONCEPT_PATH_PREFIX}${axes.className}/${entry.name}`), 'utf8').catch(() => '');
+    const id = readProvenance(sibling).concept_id;
+    if (id) targetIdentities.add(id);
+  }
+  const targetConceptId = targetIdentities.size === 1
+    ? [...targetIdentities][0]!
+    : sourceFolder === axes.className
+      ? current.concept_id ?? newKnowledgeIdentity()
+      : newKnowledgeIdentity();
   const rewritten = applyProvenance(
     withConcept,
     {
@@ -161,11 +205,13 @@ export async function applyConceptAxes(
       subject: axes.isTaxoRefile
         ? normalizeProvenanceValue(target.split('/').pop()?.replace(/\.md$/, '') ?? '')
         : (current.subject ? null : axes.subject),
+      concept_id: targetConceptId,
+      subject_id: current.subject_id ?? newKnowledgeIdentity(),
       scope: null,
       kind: null,
       tags: [],
     },
-    okfTypeForPath(target, { kind: current.kind }),
+    okfTypeForPath(target),
   );
   if (rewritten !== withConcept || withConcept !== content) await safeWriteFile(absolute, rewritten);
 }

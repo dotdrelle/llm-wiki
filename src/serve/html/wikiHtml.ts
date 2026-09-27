@@ -4,6 +4,7 @@ import path from 'node:path';
 import fg from 'fast-glob';
 import matter from 'gray-matter';
 import { marked } from 'marked';
+import { pageTitle } from '../../utils/pageTitle.ts';
 import { escapeHtml } from '../../utils/html.ts';
 import { renderWikiGraphV2 } from '../../graph/wiki/graphApp.ts';
 import {
@@ -109,8 +110,8 @@ function capitalizeFirst(value: string): string {
   return value ? value.charAt(0).toLocaleUpperCase() + value.slice(1) : value;
 }
 
-// A concept is the folder directly under `wiki/concepts/` — its name is shown
-// in capitals, its subjects (the leaves inside it) with a leading capital.
+// The current concept folder label is shown in capitals, with each leaf's
+// subject label beneath it. Opaque IDs carry identity independently.
 function isConceptFolderPath(nodePath: string): boolean {
   const parts = toPosix(nodePath).split('/');
   return parts.length === 3 && parts[0] === 'wiki' && parts[1] === 'concepts';
@@ -124,8 +125,8 @@ function isWikiTaxonomyPath(nodePath: string): boolean {
   return parts.length === 2 && parts[0] === 'wiki' && WIKI_TAXONOMY_DIRS.includes(parts[1]);
 }
 
-// Downloads arrive named like `8d5e3fe3-ACPI_RapportEtudeDonneesAmont_V0.md`:
-// the leading hash/token is a transport id, not part of the title the reader
+// Downloads can arrive with a leading hash/token that is a transport id, not
+// part of the title the reader
 // should see. Strips a UUID or a 8+ hex token (with at least one letter) that
 // opens the name — a plain date like `20240115-` is not a hash and stays.
 // The documents agent derives the converted Markdown's frontmatter `title`
@@ -155,10 +156,9 @@ async function firstHeading(rootDir: string, relativePath: string): Promise<stri
   return match ? match[1].trim() : null;
 }
 
-// A concept leaf reads by its `subject` — the canonical identity the path
-// carries — not by the page's `#` heading: the concept is the folder, the
-// subject is the file. UPPERCASE with `-`/`_` read as spaces keeps every leaf
-// aligned with the folder above it. Falls back to the filename (the subject in
+// A concept leaf reads by its `subject` display label, not by the page's `#`
+// heading. UPPERCASE with `-`/`_` read as spaces keeps every leaf aligned with
+// the folder above it. Falls back to the filename (the subject in
 // the folder model, the resume for a `<concept>_<resume>` taxo leaf), then to a
 // dash when nothing is left to show.
 async function conceptLeafSubject(rootDir: string, relativePath: string): Promise<string> {
@@ -672,8 +672,8 @@ async function hydrateConceptTileGroups(
     fallback: string;
   }> = [];
   for (const section of sections) {
-    const isConceptSection = section.heading.toLowerCase().includes('concept');
-    const fallback = isConceptSection ? 'Concepts' : section.heading;
+    const isConceptSection = /concept|project knowledge/i.test(section.heading);
+    const fallback = isConceptSection ? 'Project knowledge' : section.heading;
     for (const tile of section.tiles) {
       if (!tile.href?.startsWith('/wiki/concepts/')) continue;
       targets.push({ tile, href: tile.href, fallback });
@@ -813,6 +813,8 @@ function navNodeLabel(node: NavTreeNode, depth: number): string {
   if (toPosix(node.path) === 'wiki' || isConceptFolderPath(node.path) || (isCollectionPath(node.path) && depth === 0)) {
     return humanTitle(node.name).toLocaleUpperCase();
   }
+  if (toPosix(node.path) === 'wiki/concepts') return 'Project knowledge';
+  if (toPosix(node.path) === 'wiki/sources') return 'Reading notes';
   if (isWikiTaxonomyPath(node.path) || isCollectionPath(node.path)) return capitalizeFirst(humanTitle(node.name));
   return node.name;
 }
@@ -1464,34 +1466,56 @@ function renderWsStats(opts: {
   untracked: number;
   lastIngest: Date | null;
 }): string {
-  const items: Array<{ n: string; l: string; cls: string; title?: string }> = [
-    { n: String(opts.wikiPages), l: 'Wiki pages', cls: '' },
-    { n: String(opts.deliverables), l: 'Deliverables', cls: '' },
-    { n: String(opts.templates), l: 'Templates', cls: '' },
+  const items: Array<{ n: string; l: string; cls: string; title?: string; href?: string }> = [
+    { n: String(opts.wikiPages), l: 'Wiki pages', cls: '', href: '/wiki' },
+    { n: String(opts.deliverables), l: 'Deliverables', cls: '', href: '/deliverables' },
+    { n: String(opts.templates), l: 'Templates', cls: '', href: '/templates' },
   ];
   if (opts.untracked > 0)
     items.push({
       n: String(opts.untracked),
       l: 'Pending',
       cls: ' ws-stat-warn',
+      href: '/raw/untracked',
       title: 'Sources in raw/untracked — run wiki ingest to integrate them into the wiki.',
     });
   items.push({ n: relativeTimeLabel(opts.lastIngest), l: 'Last ingest', cls: ' ws-stat-muted' });
   return `<div class="ws-stats">${items
     .map(
-      (s) =>
-        `<div class="ws-stat${s.cls}"${s.title ? ` title="${escapeAttr(s.title)}"` : ''}><span class="ws-stat-n">${escapeHtml(s.n)}</span><span class="ws-stat-l">${escapeHtml(s.l)}</span></div>`,
+      (s) => {
+        const tag = s.href ? 'a' : 'div';
+        return `<${tag} class="ws-stat${s.cls}"${s.href ? ` href="${escapeAttr(s.href)}"` : ''}${s.title ? ` title="${escapeAttr(s.title)}"` : ''}><span class="ws-stat-n">${escapeHtml(s.n)}</span><span class="ws-stat-l">${escapeHtml(s.l)}</span></${tag}>`;
+      },
     )
     .join('')}</div>`;
 }
 
-function renderOnboarding(title: string): string {
-  return `<section class="onboarding"><div class="hero"><h1>${escapeHtml(title)}</h1><p>The wiki is empty. Follow these four steps to get started.</p></div><div class="onboarding-steps">
-<div class="onboarding-step"><div class="onboarding-step-num">1</div><div class="onboarding-step-body"><div class="onboarding-step-title">Configure the LLM provider</div><div class="onboarding-step-desc">Edit <code class="onboarding-step-code">.wikirc.yaml</code> to set your provider (Ollama, OpenAI, Anthropic...), then validate with <code class="onboarding-step-code">wiki doctor</code>.</div></div></div>
-<div class="onboarding-step"><div class="onboarding-step-num">2</div><div class="onboarding-step-body"><div class="onboarding-step-title">Add sources</div><div class="onboarding-step-desc">Copy your Markdown files into <code class="onboarding-step-code">raw/untracked/</code>. Confluence exports, notes, converted PDFs: all are accepted.</div></div></div>
-<div class="onboarding-step"><div class="onboarding-step-num">3</div><div class="onboarding-step-body"><div class="onboarding-step-title">Ingest sources</div><div class="onboarding-step-desc">Run <code class="onboarding-step-code">wiki ingest</code>. The LLM reads each source and populates <code class="onboarding-step-code">wiki/</code> automatically.</div></div></div>
-<div class="onboarding-step"><div class="onboarding-step-num">4</div><div class="onboarding-step-body"><div class="onboarding-step-title">Generate deliverables</div><div class="onboarding-step-desc">Create a template in <code class="onboarding-step-code">templates/</code>, then run <code class="onboarding-step-code">wiki build</code> to produce documents from the wiki.</div></div></div>
-</div></section>`;
+async function countPendingProposals(rootDir: string): Promise<number> {
+  try {
+    const dir = path.join(rootDir, '.wiki', 'agent-proposals');
+    const files = (await readdir(dir)).filter((name) => name.endsWith('.json'));
+    const records = await Promise.all(files.map(async (name) => {
+      try {
+        const record = JSON.parse(await readFile(path.join(dir, name), 'utf8'));
+        return typeof record?.id === 'string' && Array.isArray(record?.changes);
+      } catch { return false; }
+    }));
+    return records.filter(Boolean).length;
+  } catch { return 0; }
+}
+
+function renderDashboard(title: string, pending: number, proposals: number, empty: boolean): string {
+  const priority = proposals > 0
+    ? `<a class="dashboard-action dashboard-action-warn" href="/agent-proposals"><span class="dashboard-action-kicker">Review needed</span><strong>${proposals} curation proposal${proposals === 1 ? '' : 's'} waiting for your decision</strong><span>Read the changes before merging them into the wiki.</span><b>Review proposals →</b></a>`
+    : pending > 0
+      ? `<a class="dashboard-action dashboard-action-warn" href="/raw/untracked"><span class="dashboard-action-kicker">Next step</span><strong>${pending} source${pending === 1 ? '' : 's'} waiting in Pending</strong><span>Review the source files, then ask Donna to ingest them.</span><b>Review pending sources →</b></a>`
+      : empty
+        ? `<a class="dashboard-action" href="/chat"><span class="dashboard-action-kicker">Get started</span><strong>Add your first source</strong><span>Upload a document from the chat or drop it in the Pending panel.</span><b>Open chat →</b></a>`
+        : `<a class="dashboard-action" href="/graph"><span class="dashboard-action-kicker">Explore</span><strong>Your wiki is ready to browse</strong><span>Follow concepts and their connections in the knowledge graph.</span><b>Explore the graph →</b></a>`;
+  const attention = proposals > 0 || pending > 0
+    ? `<p class="dashboard-attention">${proposals > 0 ? `<a href="/agent-proposals">${proposals} proposal${proposals === 1 ? '' : 's'} to review</a>` : ''}${proposals > 0 && pending > 0 ? ' · ' : ''}${pending > 0 ? `<a href="/raw/untracked">${pending} pending source${pending === 1 ? '' : 's'}</a>` : ''}</p>`
+    : `<p class="dashboard-attention dashboard-clear">No pending proposals or source files.</p>`;
+  return `<section class="workspace-dashboard"><div class="dashboard-heading"><div><p class="dashboard-eyebrow">Workspace overview</p><h1>${escapeHtml(title)}</h1></div><a class="dashboard-ask" href="/chat">Ask Donna</a></div><div class="dashboard-grid"><a class="dashboard-action dashboard-approval" id="dashboard-approval" href="/chat" hidden><span class="dashboard-action-kicker">Approval needed</span><strong id="dashboard-approval-title">A run is waiting for your approval</strong><span>Open Donna to review the requested action before it continues.</span><b>Review in Activity →</b></a>${priority}<section class="dashboard-watch"><h2>To keep an eye on</h2>${attention}<p class="dashboard-runtime-check" id="dashboard-runtime-check" aria-live="polite">Checking run approvals…</p><a class="dashboard-status-link" href="/chat">Open Activity and workspace status →</a></section></div>${empty ? '<p class="dashboard-empty-note">Once your sources are integrated, this page will also show the wiki index.</p>' : ''}<script>(()=>{const approval=document.getElementById('dashboard-approval');const check=document.getElementById('dashboard-runtime-check');fetch('/api/runtime/state',{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('runtime unavailable');return r.json()}).then(state=>{const pending=Array.isArray(state.approvals)?state.approvals.filter(item=>item.status==='pending_approval'):[];check.textContent=pending.length?'Run approval is also waiting in Activity.':'';if(pending.length){document.getElementById('dashboard-approval-title').textContent=pending.length===1?'A run is waiting for your approval':pending.length+' run actions are waiting for your approval';approval.hidden=false;approval.parentElement.insertBefore(approval,approval.parentElement.firstChild)}}).catch(()=>{check.textContent='Run approvals could not be checked. Open Activity to inspect the current run.';check.classList.add('dashboard-runtime-warning')})})();</script></section>`;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1501,12 +1525,22 @@ export async function generateGraph(rootDir: string): Promise<string> {
   return renderWikiGraphV2();
 }
 
+function clarifyLegacyIndexHeadings(markdown: string): string {
+  const endMarker = '<!-- wiki-index-overview:end -->';
+  const markerIndex = markdown.indexOf(endMarker);
+  const boundary = markerIndex < 0 ? 0 : markerIndex + endMarker.length;
+  return markdown.slice(0, boundary) + markdown.slice(boundary)
+    .replace(/^##\s+Concepts\s*$/gim, '## Project knowledge')
+    .replace(/^##\s+Sources\s*$/gim, '## Reading notes');
+}
+
 export async function generateIndex(rootDir: string): Promise<string> {
   // ── Stats ──────────────────────────────────────────────────────────────────
-  const [navFiles, untrackedFiles, lastIngest] = await Promise.all([
+  const [navFiles, untrackedFiles, lastIngest, pendingProposals] = await Promise.all([
     fg(NAV_PATTERNS, { cwd: rootDir, dot: false }),
     fg('raw/untracked/**/*.md', { cwd: rootDir, dot: false, onlyFiles: true }),
     getLastIngestTime(rootDir),
+    countPendingProposals(rootDir),
   ]);
   const wikiFiles = navFiles.filter((file) => file.startsWith('wiki/'));
   const delivFiles = navFiles.filter((file) => file.startsWith('deliverables/'));
@@ -1525,23 +1559,24 @@ export async function generateIndex(rootDir: string): Promise<string> {
   const indexPath = path.join(rootDir, 'wiki', 'index.md');
   if (wikiFiles.length === 0) {
     const title = serveTitle() ?? workspaceNameFromEnv() ?? 'Wiki';
-    const body = `${sidebar}<main class="content">${statsBar}${renderOnboarding(title)}</main>`;
+    const dashboard = renderDashboard(title, untrackedFiles.length, pendingProposals, true);
+    const body = `${sidebar}<main class="content">${statsBar}${dashboard}</main>`;
     return layout('Getting Started', body);
   }
 
   const raw = (await pathExists(indexPath))
     ? await readFile(indexPath, 'utf8')
     : '# Wiki Index\n\n- wiki/index.md not found.';
-  const html = await renderMarkdown(raw, 'wiki', rootDir);
+  const html = await renderMarkdown(clarifyLegacyIndexHeadings(raw), 'wiki', rootDir);
 
   const indexTiles = extractIndexTiles(raw);
-  const wikiTypeDirs: Array<{ heading: string; glob: string }> = [
-    { heading: 'Sources', glob: 'wiki/sources/**/*.md' },
+  const wikiTypeDirs: Array<{ heading: string; glob: string; aliases?: string[] }> = [
+    { heading: 'Reading notes', glob: 'wiki/sources/**/*.md', aliases: ['Sources'] },
     { heading: 'Answers', glob: 'wiki/answers/**/*.md' },
   ];
-  for (const { heading, glob } of wikiTypeDirs) {
+  for (const { heading, glob, aliases = [] } of wikiTypeDirs) {
     const alreadyListed = indexTiles.some((s) =>
-      s.heading.toLowerCase().includes(heading.toLowerCase()),
+      [heading, ...aliases].some((label) => s.heading.toLowerCase().includes(label.toLowerCase())),
     );
     if (!alreadyListed) {
       const files = (await fg(glob, { cwd: rootDir, dot: false })).map(toPosix).sort();
@@ -1553,10 +1588,26 @@ export async function generateIndex(rootDir: string): Promise<string> {
       }
     }
   }
+  const hasArchiveSection = indexTiles.some((section) => /archived documents/i.test(section.heading));
+  if (!hasArchiveSection) {
+    const archives = (await fg('raw/ingested/**/*.md', { cwd: rootDir, dot: false })).map(toPosix).sort();
+    if (archives.length > 0) {
+      indexTiles.push({
+        heading: 'Archived documents',
+        tiles: await Promise.all(archives.map(async (file) => {
+          let title = humanTitle(file);
+          try {
+            title = pageTitle(matter(await readFile(resolveInside(rootDir, file), 'utf8'))) || title;
+          } catch { /* A file removed mid-render is still represented by its path. */ }
+          return { title, href: `/${file}`, meta: file };
+        })),
+      });
+    }
+  }
 
   await hydrateConceptTileGroups(rootDir, indexTiles);
 
-  const SECTION_RANK = ['concept', 'source', 'answer'];
+  const SECTION_RANK = ['project knowledge', 'concept', 'reading notes', 'source', 'archived documents', 'answer'];
   indexTiles.sort((a, b) => {
     const ah = a.heading.toLowerCase();
     const bh = b.heading.toLowerCase();
@@ -1568,7 +1619,9 @@ export async function generateIndex(rootDir: string): Promise<string> {
   });
 
   const tiles = renderIndexSectionBrowser(indexTiles);
-  const body = `${sidebar}<main class="content">${statsBar}<div class="index-layout"><article class="article">${html}</article><aside class="index-aside"><h2 class="index-aside-title">Main sections</h2>${tiles}</aside></div></main>`;
+  const title = serveTitle() ?? workspaceNameFromEnv() ?? 'Wiki';
+  const dashboard = renderDashboard(title, untrackedFiles.length, pendingProposals, false);
+  const body = `${sidebar}<main class="content">${statsBar}${dashboard}<div class="index-layout"><article class="article">${html}</article><aside class="index-aside"><h2 class="index-aside-title">Explore the wiki</h2>${tiles}</aside></div></main>`;
   return layout('wiki', body);
 }
 

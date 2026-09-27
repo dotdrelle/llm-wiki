@@ -46,8 +46,81 @@ build / livrable
    sources. A section ends with every source that backs it and no source it does
    not draw from.
 
-The concept remains the folder; the path remains the leaf's identity. No new
-`leafId`, no concept registry, no global taxonomy.
+Folders remain the current storage layout, while `concept_id` and `subject_id`
+are opaque UUID identities stored in page frontmatter. Labels and paths are
+mutable presentation/storage details; graph grouping and cross-folder subject
+links prefer the stable IDs and fall back to legacy labels when IDs are absent.
+Subject labels and tags are normalized with Unicode NFC and case folding while
+preserving combining marks, so canonical spelling differences do not make
+scripts with combining characters unreadable or collapse their labels.
+New ingestion writes IDs lazily and carries them forward on updates. Existing
+workspaces still need an explicit preview/apply backfill before labels or paths
+can be migrated safely; that migration is part of the multi-workspace
+knowledge-recentering work at the workspace root.
+
+The first migration command is available as
+`pnpm concepts:identities <workspace-copy>` (preview) and the same command with
+`--apply`. It gives current folder groups and unambiguous subject groups stable
+UUIDs without moving pages. A matching subject label inside one concept group
+can share an ID; when that label appears under multiple concept identities,
+the command leaves missing `subject_id` values unassigned and reports the pages
+for review instead of assuming they are the same entity. Conflicting IDs are
+also reported and left untouched, including a `concept_id` reused under
+multiple folder labels. This is a safe identity backfill, not the semantic
+concept cleanup; that still needs a reviewed map based on each workspace's
+corpus. Its `concepts` inventory groups pages by current folder and reports
+identity completeness, subjects, cited sources, and up to four short page
+excerpts per folder. Subject and citation lists are capped at 24 per folder;
+their total counts make the preview boundary visible. Use that corpus-derived map to review the current axes
+before preparing a relabel mapping. UUID values in preview output are
+provisional; `--apply` assigns opaque IDs to unambiguous display-label groups
+without deriving them from those labels.
+
+Reviewed concept-map changes use `pnpm concepts:relabel <workspace-copy>
+<mapping.json>` (preview) and `--apply` after review. The JSON can rename a
+concept folder by `concept_id`, or explicitly refile a page path under another
+existing `concept_id`. It does not merge identities or infer semantic moves.
+Flat legacy pages directly under `wiki/concepts/` are inventoried separately;
+they remain untouched until an operator explicitly lists each page in a
+`legacyGroups` entry. A group creates one fresh opaque concept identity and
+moves only those listed pages into the named folder. Preview IDs are
+provisional; inspect the paths and grouping, then apply. No model or built-in
+vocabulary chooses the grouping or label.
+The command checks that affected pages and target concepts have unique
+identities, rejects path collisions, preserves `subject_id` and citations,
+rewrites inbound wiki references, and regenerates `wiki/index.md`. Its report
+marks the vector index stale so `wiki index` can rebuild it. A mapping has this
+shape:
+
+```json
+{
+  "schemaVersion": 1,
+  "concepts": [
+    { "concept_id": "<UUID from the workspace>", "label": "<new folder label>" }
+  ],
+  "pages": [
+    { "path": "wiki/concepts/<current-label>/<page>.md", "concept_id": "<existing target UUID>" }
+  ],
+  "legacyGroups": [
+    { "label": "<reviewed folder label>", "pages": ["wiki/concepts/<legacy-page>.md"] }
+  ]
+}
+```
+
+The `pages` array is optional. Each entry is an explicit reviewed decision;
+preview reports the source and destination paths and both concept identities.
+The target identity must already exist in one unambiguous folder. For a
+taxonomic leaf, the engine updates its folder metadata and filename prefix;
+ordinary leaves keep their filename. The original archive and source notes are
+not rewritten. When `.wiki/source-registry.json` exists, its produced-page
+references are updated under the registry lock as part of the migration, so a
+later ingest can still re-anchor the source's pages. An invalid registry
+refuses the migration rather than silently dropping ownership references.
+`legacyGroups` is optional and each listed path must be a flat legacy page.
+Each group label must be unique and must not collide with an existing folder.
+The migration assigns the group's concept identity and derives each page's
+`subject` from its new filename; existing `subject_id` values and citations are
+preserved.
 
 ## Contracts
 

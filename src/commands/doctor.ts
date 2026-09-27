@@ -1367,7 +1367,7 @@ export default async function doctorCmd(
 
   console.log('\n── Build plan ──────────────────────────────────────────────');
   row('source:', 'templates/ + wiki/ + build-context/');
-  row('raw/ingested:', 'ignored here; already represented by wiki/sources');
+  row('raw/ingested:', 'not a build input; archived originals remain searchable via wiki context');
   row('planner:', 'same batching logic with fast local context approximation');
   console.log('  … simulating build batches and provider budget');
   try {
