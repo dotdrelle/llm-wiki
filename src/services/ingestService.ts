@@ -9,7 +9,7 @@ import {
 } from '../provenance/promptLocators.ts';
 import { detectSourceLoss, extractBodyCitations } from '../provenance/derive.ts';
 import { retargetLeafCitationsToSourceNote } from '../provenance/retarget.ts';
-import { stampSourcePageTitle, validateSourcePage } from '../provenance/sourcePage.ts';
+import { findUncitedFactualSections, stampSourcePageTitle, validateSourcePage } from '../provenance/sourcePage.ts';
 import { validateAnchoredCitations } from '../provenance/validate.ts';
 import { anchorCitations } from '../provenance/anchor.ts';
 import { buildExtractionPrompt, EXTRACTION_PROMPT_VERSION } from '../prompts/extractionPrompt.ts';
@@ -391,11 +391,19 @@ function runProvenancePipeline(options: ProvenancePipelineOptions): ProvenancePi
           }).content,
         },
   );
+  const {
+    operations: pathSafeOperations,
+    rewrittenCitations,
+    unreconciledCitations,
+    wrappedBarePaths,
+  } = enforceSourceCitationPath(tokenSafeOperations, options.archiveCitationPath);
   // Pages this plan writes are not on disk yet: a leaf citing the source note
   // composed in the SAME batch must still resolve, so read the batch first,
-  // then the archive body, then the workspace.
+  // then the archive body, then the workspace. Paths are canonicalized before
+  // lookup so a malformed model path cannot turn a valid citation into a
+  // false missing-document error.
   const batchDocuments = new Map<string, string>();
-  for (const operation of tokenSafeOperations) {
+  for (const operation of pathSafeOperations) {
     if (operation.type !== 'delete' && typeof operation.content === 'string') {
       batchDocuments.set(operation.path, operation.content);
     }
@@ -408,14 +416,14 @@ function runProvenancePipeline(options: ProvenancePipelineOptions): ProvenancePi
   };
   let anchored = 0;
   const unresolvedAnchors: string[] = [];
-  const anchoredOperations = tokenSafeOperations.map((operation) => {
+  const anchoredOperations = pathSafeOperations.map((operation) => {
     if (operation.type === 'delete' || typeof operation.content !== 'string') return operation;
     const result = anchorCitations(operation.content, loadDocument);
     anchored += result.anchored;
     unresolvedAnchors.push(...result.unresolved);
     return { ...operation, content: result.content };
   });
-  const sourceNoteContent = tokenSafeOperations.find(
+  const sourceNoteContent = anchoredOperations.find(
     (operation) => operation.path === options.sourcePagePath && typeof operation.content === 'string',
   )?.content ?? null;
   const { operations: twoLevelOperations, retargeted } = retargetLeafCitationsToSourceNote(
@@ -428,19 +436,22 @@ function runProvenancePipeline(options: ProvenancePipelineOptions): ProvenancePi
       resolvePage: loadDocument,
     },
   );
-  const {
-    operations: citationSafeOperations,
-    rewrittenCitations,
-    unreconciledCitations,
-    wrappedBarePaths,
-  } = enforceSourceCitationPath(twoLevelOperations, options.archiveCitationPath);
+  const citationSafeOperations = twoLevelOperations;
 
   const sourcePageIssues: ProvenanceSourcePageIssue[] = citationSafeOperations
-    .filter((operation) => operation.type !== 'delete' && /^wiki\/sources\/[^/]+\.md$/.test(operation.path))
+    .filter((operation) => operation.type !== 'delete' && /^wiki\/(?:concepts\/|sources\/[^/]+\.md$)/.test(operation.path))
     .flatMap((operation) => {
+      const content = operation.content ?? '';
+      if (operation.path.startsWith('wiki/concepts/')) {
+        return findUncitedFactualSections(content).map((heading) => ({
+          path: operation.path,
+          code: 'uncited-section',
+          message: `section "${heading}" has no anchored citation`,
+        }));
+      }
       // The engine adds `type` and the archive `sources` at write time, so
       // validate the page it WILL write, not the model's raw output.
-      const candidate = applyOkfFrontmatter(operation.content ?? '', {
+      const candidate = applyOkfFrontmatter(content, {
         type: 'source',
         sources: [{ path: options.archiveCitationPath }],
       });
@@ -461,11 +472,11 @@ function runProvenancePipeline(options: ProvenancePipelineOptions): ProvenancePi
     refused.set(pagePath, [...(refused.get(pagePath) ?? []), reason]);
   };
   for (const issue of sourcePageIssues) {
-    // Only an identity breach that makes the page's proof unusable refuses
-    // here. `anchored-citation`/`uncited-section` are quality signals the
-    // engine anchoring repairs or announces, and a `foreign-citation` is a
-    // citation the wrapping/enforcement already handles.
-    if (issue.code === 'raw-source' || issue.code === 'single-source') {
+    // Structural identity failures and factual sections without their own
+    // evidence refuse the page. Citation address issues are handled below by
+    // anchor validation and path enforcement.
+    if (issue.code === 'raw-source' || issue.code === 'single-source'
+      || issue.code === 'subject' || issue.code === 'uncited-section') {
       refuse(issue.path, `${issue.code}: ${issue.message}`);
     }
   }
@@ -495,7 +506,7 @@ function runProvenancePipeline(options: ProvenancePipelineOptions): ProvenancePi
   const lost: Array<{ path: string; lost: string[] }> = [];
   for (const operation of citationSafeOperations) {
     if (operation.type !== 'update' || typeof operation.content !== 'string') continue;
-    if (!/^wiki\/concepts\//.test(operation.path) || refused.has(operation.path)) continue;
+    if (!/^wiki\/concepts\//.test(operation.path)) continue;
     const previous = options.existingContentOf(operation.path);
     if (!previous) continue;
     const loss = detectSourceLoss(previous, operation.content, { resolvePage: loadDocument });
@@ -1501,8 +1512,13 @@ export class IngestService {
             return null;
           }
         };
+        const identityStampedOperations = normalizedOperations.map((operation) => (
+          operation.path === sourcePagePath && operation.type !== 'delete' && source.title
+            ? { ...operation, content: stampSourcePageTitle(operation.content ?? '', source.title) }
+            : operation
+        ));
         const provenance = runProvenancePipeline({
-          operations: normalizedOperations,
+          operations: identityStampedOperations,
           sourcePagePath,
           archiveCitationPath: source.archiveCitationPath,
           rawBody,
@@ -2374,6 +2390,7 @@ export class IngestService {
             return null;
           }
         };
+        const sourcePagePath = path.posix.join('wiki', 'sources', `${plannedSource.slug}.md`);
         const existingPages = new Map(
           (await this.retrieval.warmCache()).map((page) => [page.relativePath, page]),
         );
@@ -2381,9 +2398,14 @@ export class IngestService {
           operations,
           new Map([...existingPages].map(([pagePath, page]) => [pagePath, page.content])),
         );
+        const titledOperations = identityStampedOperations.map((operation) => (
+          operation.path === sourcePagePath && operation.type !== 'delete' && plannedSource.title
+            ? { ...operation, content: stampSourcePageTitle(operation.content ?? '', plannedSource.title) }
+            : operation
+        ));
         const provenance = runProvenancePipeline({
-          operations: identityStampedOperations,
-          sourcePagePath: path.posix.join('wiki', 'sources', `${plannedSource.slug}.md`),
+          operations: titledOperations,
+          sourcePagePath,
           archiveCitationPath: plannedSource.archiveCitationPath,
           rawBody: normalizeSourceBody(plannedSource.body ?? ''),
           readDisk,

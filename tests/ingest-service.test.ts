@@ -89,7 +89,7 @@ class FakeWorkspaceService {
     rootDir: path.join(os.tmpdir(), `wiki-ingest-${Math.random().toString(36).slice(2)}`),
   };
   sourcePaths = ['/tmp/wiki/raw/untracked/note.md'];
-  sourceBody = 'Body.';
+  sourceBody = '## Contexte\n\nInformations de contexte.\n\n## Fait documenté\n\nFait documenté.';
   detectedEncoding?: SourceDocument['detectedEncoding'];
   readIndexAppliedCounts: number[] = [];
   wikiPages: WikiPage[] = [];
@@ -234,7 +234,7 @@ class FakeLLMService {
         {
           type: 'create',
           path: this.sourceNotePath,
-          content: '# Note\n\n[src: raw/ingested/note.md]\n',
+          content: '# Note\n\nFait documenté. [src: raw/ingested/note.md]\n',
         },
       ],
       pages: [{ path: this.sourceNotePath, subject: 'note', scope: 'source' }],
@@ -595,6 +595,52 @@ describe('ingest service', () => {
     expect(logger.entries.some((entry) => entry.event === 'ingest:run-done')).toBe(true);
   });
 
+  it('refuses an uncited factual concept section while preserving the cited source note', async () => {
+    class UncitedConceptLLMService extends FakeLLMService {
+      protected async plan(): Promise<IngestPlan & { pages?: unknown[] }> {
+        return {
+          summary: 'A source note and an unsupported concept claim.',
+          operations: [
+            {
+              type: 'create',
+              path: this.sourceNotePath,
+              content: '# Note\n\nFait documenté. [src: raw/ingested/note.md]\n',
+            },
+            {
+              type: 'create',
+              path: 'wiki/concepts/product/board-platform.md',
+              content: '# Board\n\n## Facts\n\nClaim without evidence.',
+            },
+          ],
+          pages: [{
+            path: 'wiki/concepts/product/board-platform.md',
+            subject: 'board-platform',
+            scope: 'product',
+            kind: 'product',
+            tags: [],
+          }],
+        };
+      }
+    }
+    const workspace = new FakeWorkspaceService();
+    const logger = new MemoryTraceLogger();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new UncitedConceptLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      new CountingRefreshService() as unknown as RefreshService,
+      logger,
+      disabledCache(),
+    );
+
+    await service.ingest([], {});
+
+    expect(workspace.appliedOperations.some((operation) => operation.path === 'wiki/sources/note.md')).toBe(true);
+    expect(workspace.appliedOperations.some((operation) => operation.path === 'wiki/concepts/product/board-platform.md')).toBe(false);
+    expect(logger.entries.some((entry) => entry.event === 'ingest:provenance-refused')).toBe(true);
+  });
+
   it('clears the concept tree before a full --from-ingested rebuild writes the new one', async () => {
     const workspace = new RebuildWorkspaceService();
     workspace.sourcePaths = ['/tmp/wiki/raw/ingested/note.md'];
@@ -952,10 +998,10 @@ describe('ingest service', () => {
     const results = await service.ingest([], {});
 
     expect(results[0].plan?.operations[0].content).toContain(
-      '[src: raw/ingested/constituer-lequipe-davant-projet.md]',
+      '[src: raw/ingested/constituer-lequipe-davant-projet.md#',
     );
     expect(workspace.appliedOperations[0].content).toContain(
-      '[src: raw/ingested/constituer-lequipe-davant-projet.md]',
+      '[src: raw/ingested/constituer-lequipe-davant-projet.md#',
     );
     expect(workspace.appliedOperations[0].content).not.toContain(
       "Constituer l'équipe d_avant-projet.md",
@@ -981,7 +1027,7 @@ describe('ingest service', () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-existing-proof-'));
     workspace.paths.rootDir = root;
     await mkdir(path.join(root, 'raw/ingested'), { recursive: true });
-    await writeFile(path.join(root, 'raw/ingested/source-one.md'), 'Existing evidence.');
+    await writeFile(path.join(root, 'raw/ingested/source-one.md'), '# Existing evidence\n\nVerified fact.');
     workspace.sourcePaths = ['/tmp/wiki/raw/untracked/source-two.md'];
     const logger = new MemoryTraceLogger();
     const service = new IngestService(
@@ -1107,7 +1153,7 @@ describe('ingest service', () => {
 
     await service.ingest([], {});
 
-    expect(workspace.appliedOperations[0].content).toContain('[src: raw/ingested/note.md]');
+    expect(workspace.appliedOperations[0].content).toContain('[src: raw/ingested/note.md#');
     expect(workspace.appliedOperations[0].content).not.toMatch(/\[src:[^\]]*\[src:/);
     expect(
       logger.entries.find((entry) => entry.event === 'ingest:citation-bare-path-wrapped'),
@@ -1484,16 +1530,16 @@ describe('ingest service', () => {
     expect(results).toHaveLength(1);
     expect(results[0].source).toBe('raw/untracked/note.md');
     expect(results[0].failed).toBeUndefined();
-    expect(workspace.appliedBatches).toEqual([
-      [
-        {
-          type: 'create',
-          path: 'wiki/sources/note.md',
-          content:
-            '---\nsources:\n  - path: raw/ingested/note.md\n    usage_count: 0\ntitle: note\n---\n# Note\n\n[src: raw/ingested/note.md]\n',
-        },
-      ],
-    ]);
+    expect(workspace.appliedBatches).toHaveLength(1);
+    expect(workspace.appliedBatches[0]).toHaveLength(1);
+    expect(workspace.appliedBatches[0][0]).toMatchObject({
+      type: 'create',
+      path: 'wiki/sources/note.md',
+    });
+    expect(workspace.appliedBatches[0][0].content).toContain('subject: note');
+    expect(workspace.appliedBatches[0][0].content).toContain('title: note');
+    expect(workspace.appliedBatches[0][0].content).toContain('path: raw/ingested/note.md');
+    expect(workspace.appliedBatches[0][0].content).toContain('[src: raw/ingested/note.md]');
     expect(workspace.archivedSources).toEqual(['raw/untracked/note.md']);
     expect(logger.entries.some((entry) => entry.event === 'ingest:apply')).toBe(true);
     // The registry write-back (the defect this guards): the orchestrated

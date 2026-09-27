@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import matter from 'gray-matter';
 import { describe, expect, it } from 'vitest';
-import { stampSourcePageTitle, validateSourcePage } from '../src/provenance/sourcePage.ts';
+import { findUncitedFactualSections, stampSourcePageTitle, validateSourcePage } from '../src/provenance/sourcePage.ts';
 
 const FIXTURE = path.resolve(import.meta.dirname, 'fixtures/provenance-audit/wiki/sources');
 
@@ -59,6 +59,7 @@ describe('source page contract (lot 2)', () => {
     const stamped = stampSourcePageTitle(content, 'Rapport annuel 2025');
     const { data, content: body } = matter(stamped);
     expect(data.title).toBe('Rapport annuel 2025');
+    expect(data.subject).toBe('rapport-annuel-2025');
     expect(body).toContain('# Rapport annuel 2025');
     expect(body).toContain('## Résumé');
     expect(body).not.toMatch(/^# Résumé/m);
@@ -95,6 +96,21 @@ describe('source page contract (lot 2)', () => {
     expect(stampSourcePageTitle(once, 'Doc')).toBe(once);
   });
 
+  it('replaces a model-guessed source subject with the document identity', () => {
+    const content = [
+      '---',
+      'subject: modele-comptable',
+      'type: source',
+      '---',
+      '',
+      '# Résumé',
+      '',
+      'Portée.',
+    ].join('\n');
+    const stamped = stampSourcePageTitle(content, 'Synthèse de la demande fonctionnelle');
+    expect(matter(stamped).data.subject).toBe('synthèse-de-la-demande-fonctionnelle');
+  });
+
   it('rejects a factual section with no citation', () => {
     const content = [
       '---',
@@ -114,5 +130,24 @@ describe('source page contract (lot 2)', () => {
     const result = validateSourcePage(content);
     expect(result.ok).toBe(false);
     expect(result.issues.some((issue) => issue.code === 'uncited-section')).toBe(true);
+  });
+
+  it('detects uncited concept sections even when another section has a citation', () => {
+    const content = [
+      '# Concept',
+      '',
+      '## Appuyé',
+      '',
+      'Fait documenté. [src: raw/ingested/a.md#preuve]',
+      '',
+      '## Sans preuve',
+      '',
+      'Affirmation non citée.',
+    ].join('\n');
+    expect(findUncitedFactualSections(content)).toEqual(['Sans preuve']);
+  });
+
+  it('does not allow a factual concept body without headings to bypass citation checks', () => {
+    expect(findUncitedFactualSections('Un fait sans titre ni citation.')).toEqual(['(document body)']);
   });
 });

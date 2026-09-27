@@ -1,6 +1,7 @@
 import matter from 'gray-matter';
 import { splitMarkdownSections } from '../utils/markdown.ts';
 import { extractBodyCitations } from './derive.ts';
+import { normalizeProvenanceValue } from '../ingest/provenance.ts';
 
 /*
  * Lot 2 of `plan-provenance-feuilles.md`: the source page is the harmonized,
@@ -62,6 +63,11 @@ export function stampSourcePageTitle(content: string, title: string): string {
   if (!wanted) return content;
   const parsed = matter(content);
   const data: Record<string, unknown> = { ...parsed.data };
+  // The source page represents this document, so its identity comes from the
+  // engine-known document title rather than a model's guessed subject axis.
+  const documentIdentity = normalizeProvenanceValue(wanted);
+  if (documentIdentity) data.subject = documentIdentity;
+  else delete data.subject;
   const existingTitle = typeof data.title === 'string' ? data.title.trim() : '';
   if (!existingTitle || isStructuralTitle(existingTitle)) {
     data.title = wanted;
@@ -134,6 +140,20 @@ function isStructuralHeading(heading: string): boolean {
   return /^(r[ée]sum[ée]|summary)$/i.test(heading.trim());
 }
 
+/** Factual sections need their own evidence; a citation elsewhere is not enough. */
+export function findUncitedFactualSections(content: string): string[] {
+  const { preamble, sections } = splitMarkdownSections(content);
+  if (sections.length === 0) {
+    return preamble.trim() && extractBodyCitations(preamble).length === 0 ? ['(document body)'] : [];
+  }
+  return sections.flatMap((section) => {
+    if (isStructuralHeading(section.headingText)) return [];
+    const body = section.markdown.replace(/^#{1,6}\s+.*$/m, '').trim();
+    if (body === '' || extractBodyCitations(section.markdown).length > 0) return [];
+    return [section.headingText];
+  });
+}
+
 function declaredSourcePaths(data: Record<string, unknown>): string[] {
   const raw = data.sources;
   if (!Array.isArray(raw)) return [];
@@ -182,15 +202,8 @@ export function validateSourcePage(content: string): SourcePageValidation {
     }
   }
 
-  const { sections } = splitMarkdownSections(content);
-  for (const section of sections) {
-    if (isStructuralHeading(section.headingText)) continue;
-    // Strip the heading line itself; only a section with a real body is factual.
-    const body = section.markdown.replace(/^#{1,6}\s+.*$/m, '').trim();
-    if (body === '') continue;
-    if (extractBodyCitations(section.markdown).length === 0) {
-      issues.push({ code: 'uncited-section', message: `section "${section.headingText}" has no anchored citation` });
-    }
+  for (const heading of findUncitedFactualSections(content)) {
+    issues.push({ code: 'uncited-section', message: `section "${heading}" has no anchored citation` });
   }
 
   return { ok: issues.length === 0, issues };
