@@ -11,7 +11,7 @@ import type { LlmConfig } from '../types.ts';
  * - `engine` says **how** the server in front behaves.
  *
  * Behind a gateway (`provider: 'ai-gateway'`), there is not one engine but one
- * per model: the same endpoint routes to gpt-5 (which refuses `temperature`)
+ * per model: the same endpoint routes to reasoning models (which may refuse `temperature`)
  * and to claude (which accepts it). No static decision is possible, so **no
  * workaround is applied**: we assume clean OpenAI semantics and delegate
  * parameter normalization to the gateway (`drop_params: true` on LiteLLM —
@@ -56,7 +56,8 @@ function isManagedOpenAiCompatible(llm: LlmConfig): boolean {
 }
 
 /**
- * `temperature` is refused by OpenAI gpt-5 models.
+ * The configured OpenAI reasoning model families may refuse non-default
+ * `temperature` values (confirmed for gpt-5 and gpt-6-luna).
  *
  * The test targets the final segment of the model name: behind a gateway a
  * model is called `openai/gpt-5-mini`, and the old regex anchored at the start
@@ -69,9 +70,9 @@ export function bareModelName(model: string): string {
 }
 
 export function supportsTemperature(llm: LlmConfig): boolean {
-  const isGpt5 = /^gpt-5(?:[.-]|$)/i.test(bareModelName(llm.model));
-  if (!isGpt5) return true;
-  // A gpt-5 served by OpenAI, directly or behind a gateway.
+  const isReasoningModel = /^gpt-(?:5|6)(?:[.-]|$)/i.test(bareModelName(llm.model));
+  if (!isReasoningModel) return true;
+  // These model families, served by OpenAI directly or behind a gateway.
   return !(isGateway(llm) || llm.engine === 'openai');
 }
 

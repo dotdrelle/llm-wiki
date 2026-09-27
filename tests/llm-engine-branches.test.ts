@@ -154,6 +154,13 @@ describe('contournements par moteur (caractérisation)', () => {
     expect(params()).not.toHaveProperty('temperature');
   });
 
+  it('#1 omet temperature pour gpt-6-luna derrière la gateway', async () => {
+    const service = new LLMService(gatewayFor('gpt-6-luna'));
+    const params = captureParams(service);
+    await run(service);
+    expect(params()).not.toHaveProperty('temperature');
+  });
+
   it('#1 envoie temperature pour engine openai + modèle non gpt-5', async () => {
     const service = new LLMService(engineFor('openai', 'gpt-4.1-mini'));
     const params = captureParams(service);
