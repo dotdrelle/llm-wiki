@@ -270,8 +270,8 @@ workspace. Three ways to reach them:
 
 The MCP server can be used without starting ShellUI or `serve`. Claude Desktop
 can launch the local stdio connector for one selected workspace. The shipped
-desktop plugin and extension target Claude only; no ChatGPT Desktop plugin or
-HTTPS/tunnel connector is shipped. The `wiki_graph_view` tool returns
+desktop plugin and extension provide the local Claude Desktop integration. The
+`wiki_graph_view` tool returns
 structured graph data and a portable SVG image, so Claude can display the graph
 when the client supports it. Workspace selection remains explicit and bound to
 the connection; an assistant cannot switch workspaces through the text of a
