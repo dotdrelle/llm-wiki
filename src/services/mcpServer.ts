@@ -26,6 +26,8 @@ import {
   graphNodesByTag,
   graphShortestPath,
 } from '../graph/wiki/queryGraph.ts';import { hashText } from '../utils/hash.ts';
+import { renderPortableGraphSvg } from '../graph/wiki/portableSvg.ts';
+import type { QueryEdgeType } from '../graph/wiki/queryGraph.ts';
 import { listHelpChapters, readHelpChapter, searchHelpChapters } from '../utils/helpDoc.ts';
 import type { AppConfig } from '../types.ts';
 
@@ -310,15 +312,6 @@ function textResult(text: string, options?: { isError?: boolean }): CallToolResu
     content: [{ type: 'text', text }],
     ...(options?.isError ? { isError: true } : {}),
   };
-}
-
-function escapeSvgText(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&apos;');
 }
 
 function graphViewResult(payload: unknown, svg: string): CallToolResult {
@@ -1926,7 +1919,7 @@ const withTitles = async (
 
     const nodes = graph.nodes.filter((node) => selected.has(node.id));
     const allowed = input.edgeTypes ? new Set(input.edgeTypes) : null;
-    const edges: Array<{ from: string; to: string; type: string }> = [];
+    const edges: Array<{ from: string; to: string; type: QueryEdgeType }> = [];
     for (const from of selected) {
       for (const edge of graph.adjacency.get(from) ?? []) {
         if (!selected.has(edge.to) || (allowed && !allowed.has(edge.type))) continue;
@@ -1935,46 +1928,10 @@ const withTitles = async (
       }
     }
 
-    const width = 1100;
-    const height = 720;
-    const centerX = width / 2;
-    const centerY = height / 2;
-    const radius = Math.max(90, Math.min(270, 34 * Math.max(1, nodes.length)));
-    const positions = new Map<string, { x: number; y: number }>();
-    nodes.forEach((node, index) => {
-      const angle = nodes.length === 1 ? 0 : (index / nodes.length) * Math.PI * 2 - Math.PI / 2;
-      positions.set(node.id, {
-        x: centerX + Math.cos(angle) * Math.min(radius, width / 2 - 100),
-        y: centerY + Math.sin(angle) * Math.min(radius, height / 2 - 90),
-      });
+    const svg = renderPortableGraphSvg(nodes, edges, {
+      selector: selector ? String(selector) : null,
+      focusNode: input.node ? String(input.node).replace(/\.md$/, '') : null,
     });
-    const colors: Record<string, string> = {
-      concept: '#4f9cf9',
-      source: '#f59e0b',
-      'raw-source': '#f59e0b',
-      template: '#a78bfa',
-      deliverable: '#34d399',
-    };
-    const edgeColors: Record<string, string> = {
-      citation: '#f59e0b',
-      produces: '#f59e0b',
-      wiki_link: '#60a5fa',
-      shared_subject: '#c084fc',
-      shared_tag: '#34d399',
-    };
-    const lines = edges.map((edge) => {
-      const from = positions.get(edge.from)!;
-      const to = positions.get(edge.to)!;
-      const color = edgeColors[edge.type] ?? '#94a3b8';
-      return `<line x1="${from.x.toFixed(1)}" y1="${from.y.toFixed(1)}" x2="${to.x.toFixed(1)}" y2="${to.y.toFixed(1)}" stroke="${color}" stroke-width="2" stroke-opacity=".65" /><text x="${((from.x + to.x) / 2).toFixed(1)}" y="${((from.y + to.y) / 2 - 4).toFixed(1)}" fill="${color}" font-size="10" text-anchor="middle">${escapeSvgText(edge.type)}</text>`;
-    }).join('');
-    const circles = nodes.map((node) => {
-      const point = positions.get(node.id)!;
-      const color = colors[node.type] ?? '#94a3b8';
-      const label = node.label.length > 34 ? `${node.label.slice(0, 31)}…` : node.label;
-      return `<g><circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="32" fill="${color}" fill-opacity=".22" stroke="${color}" stroke-width="2" /><text x="${point.x.toFixed(1)}" y="${(point.y + 4).toFixed(1)}" fill="#f8fafc" font-size="12" text-anchor="middle">${escapeSvgText(label)}</text><text x="${point.x.toFixed(1)}" y="${(point.y + 52).toFixed(1)}" fill="#94a3b8" font-size="10" text-anchor="middle">${escapeSvgText(node.id)}</text></g>`;
-    }).join('');
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="llm-wiki knowledge graph"><rect width="100%" height="100%" fill="#0b1220"/><text x="24" y="34" fill="#f8fafc" font-family="system-ui,sans-serif" font-size="18" font-weight="700">llm-wiki knowledge graph</text><text x="24" y="56" fill="#94a3b8" font-family="system-ui,sans-serif" font-size="12">${escapeSvgText(selector ? String(selector) : 'workspace overview')} · ${nodes.length} nodes · ${edges.length} edges</text>${lines}${circles}</svg>`;
     return graphViewResult({
       selector: selector ?? null,
       nodes: nodes.map(graphNodeSummary),

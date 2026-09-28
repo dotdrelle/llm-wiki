@@ -39,7 +39,8 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
   index of the wiki.
 - **Knowledge graph** — the wiki's materialized adjacency: which pages cite
   which sources, which pages share a subject or a tag. DONNA queries it with
-  the `wiki_graph_query` / `wiki_graph_path` tools.
+  `wiki_graph_query` / `wiki_graph_path`, and `wiki_graph_view` returns a
+  portable visual rendering when the client can display images.
 - **Provenance** — where a statement comes from, down to the section of the
   original document. A page's `sources` list is computed from its own text, and
   a citation names a precise section
@@ -79,8 +80,9 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
   command reference is `07-commands-shell.md`.
 - **Serve** — the web interface of a workspace (chat, Activity, wiki browser).
   What you can do there is in `08-commands-serve.md`.
-- **Graph** — the visual view of the wiki (page `/graph`) and the Graph view of
-  the Activity panel.
+- **Graph** — the visual view of the wiki (page `/graph`), the Graph view of
+  the Activity panel, or the portable SVG returned by `wiki_graph_view` in an
+  MCP-capable desktop assistant.
 - **Activity** — the panel that shows processing live and its progress (Serve).
 
 ## Orchestration

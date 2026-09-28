@@ -49,8 +49,9 @@ Main capabilities:
 - expose internal ingest planning/apply phases for orchestrated parallel ingest;
 - maintain durable wiki pages under `wiki/`;
 - query the wiki with lexical and optional vector retrieval;
-- query the **knowledge graph** (citations, wiki links, shared subjects/tags)
-  through the `wiki_graph_query` / `wiki_graph_path` MCP tools;
+- query and render the **knowledge graph** (citations, wiki links, shared
+  subjects/tags) through the `wiki_graph_query`, `wiki_graph_view` and
+  `wiki_graph_path` MCP tools;
 - generate deliverables from `templates/` and `build-context/`;
 - show a build runtime/provider summary and compare it with the previous build;
 - export deliverables with inline source detail;
@@ -264,6 +265,23 @@ workspace. Three ways to reach them:
 - **Through DONNA** — the `help_list`/`help_read` MCP tools let Donna answer
   questions about the application itself (what it is, chat vs agent mode,
   getting started, troubleshooting) directly in chat, in the user's language.
+
+### Desktop assistants
+
+The MCP server can be used without starting ShellUI or `serve`. Claude Desktop
+can launch the local stdio connector for one selected workspace. The shipped
+desktop plugin and extension target Claude only; no ChatGPT Desktop plugin or
+HTTPS/tunnel connector is shipped. The `wiki_graph_view` tool returns
+structured graph data and a portable SVG image, so Claude can display the graph
+when the client supports it. Workspace selection remains explicit and bound to
+the connection; an assistant cannot switch workspaces through the text of a
+prompt. See [MCP integration](docs/mcp.md).
+
+The Claude plugin can also run workspace skills headlessly through
+`wiki-manager`, without an MCP extension. It resolves the requested workspace
+from the manager registry, asks for a workspace when several are available,
+and preserves the exact skill name. See the plugin documentation for the
+installation and usage details.
 
 The empty chat also offers a quick-start tile:
 
