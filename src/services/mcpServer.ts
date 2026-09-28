@@ -156,6 +156,11 @@ export const WIKI_MCP_TOOLS = [
       'Structural map of the wiki: communities, their size and their most connected pages, without page content. Use first when designing a template, to anchor sections on parts of the wiki that hold material.',
   },
   {
+    name: 'wiki_graph_view',
+    description:
+      'Render a portable SVG knowledge graph with structured nodes and edges; focus it on a page, concept, or tag.',
+  },
+  {
     name: 'template_read',
     description:
       'Read one template under templates/ with its output path and build_context report, or list every template when no path is given.',
@@ -304,6 +309,24 @@ function textResult(text: string, options?: { isError?: boolean }): CallToolResu
   return {
     content: [{ type: 'text', text }],
     ...(options?.isError ? { isError: true } : {}),
+  };
+}
+
+function escapeSvgText(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
+}
+
+function graphViewResult(payload: unknown, svg: string): CallToolResult {
+  return {
+    content: [
+      { type: 'text', text: JSON.stringify(payload, null, 2) },
+      { type: 'image', data: Buffer.from(svg, 'utf8').toString('base64'), mimeType: 'image/svg+xml' },
+    ],
   };
 }
 
@@ -1867,6 +1890,113 @@ const withTitles = async (
     },
     READ_ONLY,
     (input) => loggedTool('wiki_graph_query', input, readGraphQuery),
+  );
+
+  const readGraphView = async (input: {
+    node?: string;
+    concept?: string;
+    tag?: string;
+    edgeTypes?: string[];
+    maxDepth?: number;
+    limit?: number;
+  }) => {
+    const graph = await queryGraphContext();
+    const limit = input.limit ?? 40;
+    const selected = new Set<string>();
+    const selector = input.node ?? input.concept ?? input.tag;
+
+    if (input.node) {
+      const normalized = String(input.node).replace(/\.md$/, '');
+      if (!graph.nodeById.has(normalized)) {
+        return textResult(`Graph node not found: ${input.node}`, { isError: true });
+      }
+      selected.add(normalized);
+      for (const entry of graphNeighbors(graph, normalized, {
+        edgeTypes: input.edgeTypes as never,
+        maxDepth: input.maxDepth ?? 1,
+        limit,
+      })) selected.add(entry.node.id);
+    } else if (input.concept) {
+      for (const node of graphNodesByConcept(graph, String(input.concept)).slice(0, limit)) selected.add(node.id);
+    } else if (input.tag) {
+      for (const node of graphNodesByTag(graph, String(input.tag)).slice(0, limit)) selected.add(node.id);
+    } else {
+      for (const node of graph.nodes.slice(0, limit)) selected.add(node.id);
+    }
+
+    const nodes = graph.nodes.filter((node) => selected.has(node.id));
+    const allowed = input.edgeTypes ? new Set(input.edgeTypes) : null;
+    const edges: Array<{ from: string; to: string; type: string }> = [];
+    for (const from of selected) {
+      for (const edge of graph.adjacency.get(from) ?? []) {
+        if (!selected.has(edge.to) || (allowed && !allowed.has(edge.type))) continue;
+        if (edges.some((item) => item.from === from && item.to === edge.to && item.type === edge.type)) continue;
+        edges.push({ from, to: edge.to, type: edge.type });
+      }
+    }
+
+    const width = 1100;
+    const height = 720;
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const radius = Math.max(90, Math.min(270, 34 * Math.max(1, nodes.length)));
+    const positions = new Map<string, { x: number; y: number }>();
+    nodes.forEach((node, index) => {
+      const angle = nodes.length === 1 ? 0 : (index / nodes.length) * Math.PI * 2 - Math.PI / 2;
+      positions.set(node.id, {
+        x: centerX + Math.cos(angle) * Math.min(radius, width / 2 - 100),
+        y: centerY + Math.sin(angle) * Math.min(radius, height / 2 - 90),
+      });
+    });
+    const colors: Record<string, string> = {
+      concept: '#4f9cf9',
+      source: '#f59e0b',
+      'raw-source': '#f59e0b',
+      template: '#a78bfa',
+      deliverable: '#34d399',
+    };
+    const edgeColors: Record<string, string> = {
+      citation: '#f59e0b',
+      produces: '#f59e0b',
+      wiki_link: '#60a5fa',
+      shared_subject: '#c084fc',
+      shared_tag: '#34d399',
+    };
+    const lines = edges.map((edge) => {
+      const from = positions.get(edge.from)!;
+      const to = positions.get(edge.to)!;
+      const color = edgeColors[edge.type] ?? '#94a3b8';
+      return `<line x1="${from.x.toFixed(1)}" y1="${from.y.toFixed(1)}" x2="${to.x.toFixed(1)}" y2="${to.y.toFixed(1)}" stroke="${color}" stroke-width="2" stroke-opacity=".65" /><text x="${((from.x + to.x) / 2).toFixed(1)}" y="${((from.y + to.y) / 2 - 4).toFixed(1)}" fill="${color}" font-size="10" text-anchor="middle">${escapeSvgText(edge.type)}</text>`;
+    }).join('');
+    const circles = nodes.map((node) => {
+      const point = positions.get(node.id)!;
+      const color = colors[node.type] ?? '#94a3b8';
+      const label = node.label.length > 34 ? `${node.label.slice(0, 31)}…` : node.label;
+      return `<g><circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="32" fill="${color}" fill-opacity=".22" stroke="${color}" stroke-width="2" /><text x="${point.x.toFixed(1)}" y="${(point.y + 4).toFixed(1)}" fill="#f8fafc" font-size="12" text-anchor="middle">${escapeSvgText(label)}</text><text x="${point.x.toFixed(1)}" y="${(point.y + 52).toFixed(1)}" fill="#94a3b8" font-size="10" text-anchor="middle">${escapeSvgText(node.id)}</text></g>`;
+    }).join('');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="llm-wiki knowledge graph"><rect width="100%" height="100%" fill="#0b1220"/><text x="24" y="34" fill="#f8fafc" font-family="system-ui,sans-serif" font-size="18" font-weight="700">llm-wiki knowledge graph</text><text x="24" y="56" fill="#94a3b8" font-family="system-ui,sans-serif" font-size="12">${escapeSvgText(selector ? String(selector) : 'workspace overview')} · ${nodes.length} nodes · ${edges.length} edges</text>${lines}${circles}</svg>`;
+    return graphViewResult({
+      selector: selector ?? null,
+      nodes: nodes.map(graphNodeSummary),
+      edges,
+      truncated: graph.nodes.length > nodes.length,
+      note: 'The SVG is a portable rendering. Use wiki_graph_query for more data or wiki_read_page to inspect a node.',
+    }, svg);
+  };
+
+  server.tool(
+    'wiki_graph_view',
+    'Render a portable visual knowledge graph for the workspace. Returns structured nodes and edges plus an SVG image that compatible desktop clients can display. Use node, concept, or tag to focus the view; use wiki_graph_query for exhaustive traversal.',
+    {
+      node: z.string().optional().describe('Relative page path to center on, e.g. wiki/concepts/product.md'),
+      concept: z.string().optional().describe('Concept folder name to visualize'),
+      tag: z.string().optional().describe('Tag value to visualize'),
+      edgeTypes: z.array(z.string()).optional().describe('Restrict edges: citation, produces, wiki_link, shared_subject, shared_tag'),
+      maxDepth: z.number().int().min(1).max(3).optional().describe('Neighbor depth when node is provided, default 1'),
+      limit: z.number().int().min(1).max(100).optional().describe('Maximum visible nodes, default 40'),
+    },
+    READ_ONLY,
+    (input) => loggedTool('wiki_graph_view', input, readGraphView),
   );
 
   server.tool(

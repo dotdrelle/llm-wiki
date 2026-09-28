@@ -23,6 +23,7 @@ Two transports are available:
 | `wiki_search_context`        | Search wiki pages and archived originals (excluding `wiki/answers/`) and return ranked paths, excerpts, and `relatedPaths`. Archived originals are included by default; pass `includeRaw=false` to omit them. Uses vector search when enabled. |
 | `wiki_collect_context`       | Search wiki pages and archived originals, read up to 10 returned wiki pages by default, and report coverage in one call              |
 | `wiki_graph_query`           | Query the knowledge graph: the neighbors of a page (citations, produces, wiki links, shared subject/tags), or the pages of a concept or tag |
+| `wiki_graph_view`            | Render a portable SVG knowledge graph plus structured nodes and edges; focus it on a page, concept, or tag |
 | `wiki_graph_path`            | Shortest path between two pages in the knowledge graph, with the edge type of every hop                                                   |
 | `wiki_outline`               | Structural map of the wiki: communities, sizes, most connected pages — no content                                                       |
 | `template_read`              | Read a template (listing carries frontmatter titles; a missing path falls back to a basename search)                                   |
@@ -50,6 +51,11 @@ archived original when a specific detail is missing from the note excerpt.
    `wiki_graph_path` (the shortest path between two pages).
 2. Read only the pages the traversal named that matter for the answer — the
    graph answers the topology, the reads answer the content.
+
+For a visual graph, call `wiki_graph_view`. It returns the bounded graph as
+structured JSON and a portable SVG image, so clients that support images can
+display it without starting `serve`; clients without image rendering can still
+use the JSON result.
 
 **Recommended search flow for synthesis, architecture, audit, functional analysis, or comparison:**
 
