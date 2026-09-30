@@ -14,6 +14,7 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack 
   /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/pnpm /usr/local/bin/pnpx && \
   apt-get update && \
   apt-get install -y --no-install-recommends git && \
+  apt-get upgrade -y && \
   rm -rf /var/lib/apt/lists/*
 COPY --from=builder --chown=node:node /build/node_modules ./node_modules
 COPY --from=builder --chown=node:node /build/dist ./
