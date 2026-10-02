@@ -170,8 +170,19 @@ function renderProposalList(records: Array<{ record: ProposalRecord }>): string 
         const label = record.changedFiles.slice(0, 3).map((entry) => entry.path).join(', ');
         return `<li class="proposal-card"><a class="proposal-link" href="/agent-proposals/${encodeURIComponent(record.id)}"><span class="proposal-id">${escapeHtml(record.id)}</span><span class="proposal-meta">${files} file(s) · ${escapeHtml(record.createdAt ?? '')}</span><span class="proposal-files">${escapeHtml(label)}${files > 3 ? ' …' : ''}</span></a></li>`;
       }).join('\n')
-    : '<li class="proposal-empty">No pending agent proposals. When a curation run (agent.curate) completes, its diff waits here for a merge or a reject.</li>';
-  return `<main class="content"><article class="article"><h1>Agent proposals</h1><p class="proposal-lede">Each proposal is a git branch an agent edited. Merging writes the changes into the wiki and commits them; rejecting discards the branch. Nothing else touches the workspace.</p><ul class="proposal-list">${items}</ul></article></main>`;
+    : '<li class="proposal-empty">No proposal is waiting for review. A curation run (agent.curate) writes its corrections on a separate branch; its diff lands here — nothing touches the wiki until you merge it.</li>';
+  return `<main class="content"><article class="article"><h1>Agent proposals</h1>`
+    + '<p class="proposal-lede">A proposal is a set of wiki corrections an agent wrote on a separate git branch. It is a draft: the wiki itself has not been changed.</p>'
+    + '<p class="proposal-lede">Curation reviews the workspace for duplicates, pages that disagree or repeat each other, outdated or superseded pages, and claims with no cited source, then proposes the fixes for a human to review.</p>'
+    + '<ul class="proposal-legend">'
+    + '<li><strong>Merge into the wiki</strong> — revalidates the citations and the derived <code>sources:</code>, writes the pages atomically, commits them to history and marks them <code>status: stable</code> / <code>verified</code>. Merging is the approval; the branch is discarded afterwards.</li>'
+    + '<li><strong>Reject &amp; discard the branch</strong> — deletes the proposal and leaves the wiki exactly as it was.</li>'
+    + '</ul>'
+    // Hidden standalone: only the chat shell can start a run (through Donna).
+    // The wiki layout reveals it and turns the click into an llmwiki:curate
+    // message; the page itself never calls the runtime.
+    + '<div class="proposal-curate" data-curate-row hidden><button type="button" class="action-button" data-curate-launch>Start a curation</button><span class="proposal-lede">Runs the curation agent on this workspace. Its diff appears here when it is ready.</span></div>'
+    + `<ul class="proposal-list">${items}</ul></article></main>`;
 }
 
 type ProposalPrevalidation = Array<{
@@ -268,6 +279,12 @@ function proposalPageCss(): string {
 .proposal-id{font-weight:780;color:var(--accent);font-family:var(--font-mono);font-size:.82rem}
 .proposal-meta,.proposal-files{font-size:.78rem;color:var(--muted)}
 .proposal-lede{color:var(--muted);font-size:.9rem}
+.proposal-legend{margin:.2rem 0 .8rem;padding-left:1.1rem;display:grid;gap:.3rem;font-size:.86rem;color:var(--muted)}
+.proposal-legend strong{color:var(--text)}
+.proposal-legend code{font-family:var(--font-mono);font-size:.78rem}
+.proposal-curate{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;margin:.8rem 0 1rem}
+.proposal-curate .proposal-lede{margin:0}
+.proposal-curate[hidden]{display:none}
 .proposal-why{white-space:pre-wrap;font-size:.9rem;line-height:1.6;border-left:3px solid var(--accent);padding:.3rem .8rem;background:var(--panel-soft);border-radius:0 8px 8px 0}
 .proposal-objections{list-style:none;margin:0;padding:0;display:grid;gap:.3rem}
 .proposal-objection{display:flex;gap:.5rem;align-items:baseline;font-size:.85rem;padding:.35rem .6rem;border:1px solid var(--border);border-radius:8px;background:var(--panel-soft)}

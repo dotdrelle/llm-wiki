@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { WorkspaceService } from '../src/services/workspaceService.ts';
+import { WIKI_LAYOUT_SCRIPT } from '../src/serve/html/wikiLayoutScript.ts';
 
 vi.mock('../src/services/historyService.ts', () => ({
   HistoryService: class { rootDir = ''; },
@@ -369,6 +370,27 @@ describe('agent proposal review routes', () => {
       const html = String((deps.sendGzippedHtml as ReturnType<typeof vi.fn>).mock.calls[0][2]);
       expect(html).toContain('Provenance prevalidation');
       expect(html).toContain('missing');
+  });
+
+  it('explains what the page is for and offers a curation launch the shell routes', async () => {
+    const deps = makeDeps(rootDir);
+    const { res } = fakeRes();
+
+    await handleAgentProposalRoutes(fakeReq('GET', '/agent-proposals'), res, '/agent-proposals', deps);
+
+    const html = String((deps.sendGzippedHtml as ReturnType<typeof vi.fn>).mock.calls[0][2]);
+    // What a proposal is, what curation looks for, and what each decision does.
+    expect(html).toContain('separate git branch');
+    expect(html).toContain('duplicates');
+    expect(html).toContain('Merge into the wiki');
+    expect(html).toContain('Reject');
+    expect(html).toContain('nothing touches the wiki until you merge it');
+    // The launch button ships hidden and is revealed by the wiki layout inside
+    // the chat shell; the page itself never calls the runtime.
+    expect(html).toContain('data-curate-row hidden');
+    expect(html).toContain('data-curate-launch');
+    expect(WIKI_LAYOUT_SCRIPT).toContain("document.querySelector('[data-curate-launch]')");
+    expect(WIKI_LAYOUT_SCRIPT).toContain("type: 'llmwiki:curate'");
   });
 
   it('is routed before handleWikiRoutes, whose fallback treats any unmatched path as a wiki document and 404s it', async () => {

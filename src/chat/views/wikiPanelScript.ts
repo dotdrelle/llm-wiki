@@ -645,6 +645,12 @@ window.addEventListener('message', (event) => {
     if (!agentMode) { agentMode = true; updateAgentModeUI(); }
     input.value = '/wiki-rebuild';
     sendMessage();
+  } else if (data.type === 'llmwiki:curate') {
+    // "Start a curation" on the Agent proposals page: the same entry point as
+    // the empty-chat tile. startCuration() selects Agent mode and submits the
+    // curation objective as a Donna turn — the page never calls the runtime
+    // itself (the general conversational-action rule).
+    startCuration();
   } else if (data.type === 'llmwiki:close') {
     // A closed graph hands the centre back to the page it replaced — including
     // the wiki root ('/'): excluding it here (as the unrelated split-view

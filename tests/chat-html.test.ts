@@ -844,6 +844,17 @@ describe('chat html', () => {
     );
   });
 
+  it('routes the Agent-proposals curation launch through the chat entry point', () => {
+    const script = chatScripts().join('\n');
+    // The proposals page asks the shell; the shell's own startCuration()
+    // selects Agent mode and submits the objective as a Donna turn. The page
+    // must never post to the execution endpoint itself.
+    expect(script).toContain("data.type === 'llmwiki:curate'");
+    const handler = script.match(/data\.type === 'llmwiki:curate'[\s\S]{0,260}/)?.[0] ?? '';
+    expect(handler).toContain('startCuration()');
+    expect(handler).not.toContain('/api/runtime/run');
+  });
+
   it('offers a curation entry point that selects agent mode, not the read-only chat', () => {
     // A curation is an action: the tile must switch to agent mode, or the chat
     // loop would only describe what it cannot do. The objective carries the

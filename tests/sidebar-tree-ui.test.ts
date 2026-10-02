@@ -773,3 +773,27 @@ describe('reading notes depth', () => {
     expect(html).not.toContain('<span class="side-folder-label">eas-avant-projet</span>');
   });
 });
+
+describe('agent proposals shortcut', () => {
+  it('takes the active state exactly while its page is displayed', async () => {
+    const { REVIEW_SHORTCUT_SCRIPT } = await import('../src/serve/html/reviewShortcutScript.ts');
+    const classes = new Set<string>();
+    const attrs = new Map<string, string>();
+    const link = {
+      classList: { toggle: (name: string, on: boolean) => (on ? classes.add(name) : classes.delete(name)) },
+      setAttribute: (name: string, value: string) => attrs.set(name, value),
+      removeAttribute: (name: string) => attrs.delete(name),
+    };
+    const { markReviewShortcut } = new Function('document', `${REVIEW_SHORTCUT_SCRIPT}\nreturn { markReviewShortcut };`)({
+      querySelectorAll: () => [link],
+    }) as { markReviewShortcut: (path: string) => void };
+    markReviewShortcut('agent-proposals');
+    expect(classes.has('active')).toBe(true);
+    expect(attrs.get('aria-current')).toBe('page');
+    markReviewShortcut('wiki/index.md');
+    expect(classes.has('active')).toBe(false);
+    expect(attrs.has('aria-current')).toBe(false);
+    // Wired on both the page's own path and the shell's llmwiki:active.
+    expect(WIKI_LAYOUT_SCRIPT.match(/markReviewShortcut\(currentPath\)/g)).toHaveLength(2);
+  });
+});

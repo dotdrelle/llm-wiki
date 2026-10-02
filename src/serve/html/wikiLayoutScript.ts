@@ -1,9 +1,10 @@
 import { CONFIRM_DIALOG_SCRIPT } from '../../chat/confirmDialog.ts';
 import { THEME_TOGGLE_SCRIPT } from './themeToggleScript.ts';
+import { REVIEW_SHORTCUT_SCRIPT } from './reviewShortcutScript.ts';
 
 export const WIKI_LAYOUT_SCRIPT = `
 ${CONFIRM_DIALOG_SCRIPT}
-${THEME_TOGGLE_SCRIPT}
+${THEME_TOGGLE_SCRIPT}${REVIEW_SHORTCUT_SCRIPT}
 /*
  Sidebar launch buttons (Pending "Ingest", wiki-row "Rebuild from archive"),
  server-rendered hidden and revealed here. Script scope on purpose: two IIFEs
@@ -86,7 +87,7 @@ function wireSidebarLaunchButtons() {
   function markActiveSidebarLinks() {
     document.querySelectorAll('[data-side-path]').forEach((link) => {
       link.classList.toggle('is-active', link.getAttribute('data-side-path') === currentPath);
-    });
+    }); markReviewShortcut(currentPath);
   }
   markActiveSidebarLinks();
   // What the reader has already opened, keyed by path to the token (mtime) it
@@ -1215,6 +1216,23 @@ function wireSidebarLaunchButtons() {
         );
       });
     }
+    // "Start a curation" on the Agent proposals page: an agent run (LLM budget,
+    // worktree branch), so the same reveal-on-embed + confirmation + shell-routed
+    // launch as the page actions above. The page only asks; the chat's own
+    // curation entry point (startCuration) owns the objective and the mode.
+    const curateRow = document.querySelector('[data-curate-row]');
+    const curateLaunch = document.querySelector('[data-curate-launch]');
+    if (curateRow && curateLaunch) {
+      curateRow.hidden = false;
+      curateLaunch.addEventListener('click', async () => {
+        if (!(await confirmAction({
+          title: 'Curate the wiki',
+          message: 'Run the curation agent on this workspace? It reads the wiki and proposes corrections on a separate branch; nothing is written until you merge the proposal.',
+          confirmLabel: 'Curate',
+        }))) return;
+        window.parent.postMessage({ type: 'llmwiki:curate' }, window.location.origin);
+      });
+    }
   }
 
   // Sidebar panel: reflect the active file when the shell reports navigation.
@@ -1288,7 +1306,7 @@ function wireSidebarLaunchButtons() {
       if (event.origin !== window.location.origin) return;
       const data = event.data;
       if (!data || data.type !== 'llmwiki:active') return;
-      const currentPath = decodeURIComponent(String(data.path || '')).replace(/^\\//, '');
+      const currentPath = decodeURIComponent(String(data.path || '')).replace(/^\\//, ''); markReviewShortcut(currentPath);
       document.querySelectorAll('[data-side-path]').forEach(function(link) {
         const isActive = link.getAttribute('data-side-path') === currentPath;
         link.classList.toggle('is-active', isActive);
