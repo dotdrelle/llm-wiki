@@ -12,22 +12,32 @@ import {
   versionedExportPath,
 } from '../src/services/exportService.ts';
 
-describe('export/polish refuse an export artifact as input', () => {
-  it('refuses an .export.md and points at the source deliverable', () => {
-    const message = exportArtifactTargetError('deliverables/reas/TechSections.export.md', true);
-    expect(message).toContain('Refusing to polish an export artifact');
-    expect(message).toContain('deliverables/reas/TechSections.md');
+describe('export and polish and export artifacts', () => {
+  it('lets a polish target an exported deliverable: the second step of the chain', () => {
+    // The export has no [src:] marker left, so expandDeliverable runs its
+    // polish-only pass and writes <name>.export.polished.md — no re-export.
+    expect(exportArtifactTargetError('deliverables/reas/TechSections.export.md', true)).toBeNull();
+    expect(exportArtifactTargetError('deliverables/reas/TechSections_v-02.export.md', true)).toBeNull();
   });
 
-  it('refuses a polished artifact', () => {
-    const message = exportArtifactTargetError('deliverables/reas/TechSections.export.polished.md', false);
+  it('refuses to export an export artifact and points at the source deliverable', () => {
+    const message = exportArtifactTargetError('deliverables/reas/TechSections.export.md', false);
     expect(message).toContain('Refusing to export an export artifact');
-    expect(message).toContain('deliverables/reas/TechSections.md');
+    expect(message).toContain('target deliverables/reas/TechSections.md instead');
   });
 
-  it('refuses a versioned artifact and strips the version from the suggestion', () => {
-    const message = exportArtifactTargetError('deliverables/reas/TechSections_v-02.export.md', true);
-    expect(message).toContain('target deliverables/reas/TechSections.md instead');
+  it('refuses to export a polished or versioned artifact, stripping the version from the suggestion', () => {
+    const polished = exportArtifactTargetError('deliverables/reas/TechSections.export.polished.md', false);
+    expect(polished).toContain('Refusing to export an export artifact');
+    expect(polished).toContain('target deliverables/reas/TechSections.md instead');
+    const versioned = exportArtifactTargetError('deliverables/reas/TechSections_v-02.export.md', false);
+    expect(versioned).toContain('target deliverables/reas/TechSections.md instead');
+  });
+
+  it('refuses to polish an already-polished artifact, naming its export', () => {
+    const message = exportArtifactTargetError('deliverables/reas/TechSections.export.polished.md', true);
+    expect(message).toContain('Refusing to polish an already-polished artifact');
+    expect(message).toContain('deliverables/reas/TechSections.export.md');
   });
 
   it('accepts a real source deliverable', () => {

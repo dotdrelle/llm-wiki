@@ -748,9 +748,15 @@ ingest`) builds a review per planned operation (`buildReviewOperations`):
   in `commands/export.ts`). YY is two-digit per kind series — exports and
   polishes number independently, a custom `--output` or a version-of-a-version
   is never versioned, and the versioned path joins the same history commit
-  scope as the output. The serve export/polish button is not offered on an
-  `*.export(\.polished)?\.md` artifact: the action belongs on the source
-  deliverable.
+  scope as the output. `polish` is the second step of the `export → polish`
+  chain: an export artifact carries no `[src:]` marker left
+  (`stripCitationMarkers`), so it takes `expandDeliverable`'s polish-only pass
+  and writes `<name>.export.polished.md` without re-exporting; only an
+  already-polished artifact is refused, naming its export.
+  `exportArtifactTargetError` refuses an artifact as EXPORT input and names the
+  source deliverable — re-running the expansion on its own output wrote the
+  artifact onto itself. The serve export/polish button is still not offered on
+  an `*.export(\.polished)?\.md` artifact.
 - `retrievalService.ts`: lexical/vector context assembly. Lexical scoring is
   BM25 (`BM25_K1`/`BM25_B`, `buildBm25Corpus`/`scoreDocument`), not naive
   term-presence counting — `tokenize()` NFKD-normalizes and strips

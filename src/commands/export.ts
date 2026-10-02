@@ -94,10 +94,11 @@ export default async function exportCmd(
     }
 
     const relativeInput = relativeFrom(workspace.paths.rootDir, absoluteInput);
-    // Export and polish act on the SOURCE deliverable, never on their own
-    // output. A `*.export(.polished).md` is the artifact, not the input: re-running
-    // there re-exported the export (the served UI hides the action for exactly
-    // this reason), so the engine refuses it with the deliverable to target.
+    // Export refuses its own output: re-running the expansion on a
+    // `*.export(.polished).md` wrote the artifact onto itself, so the engine
+    // names the source deliverable instead. A polish of an export artifact is
+    // allowed — the artifact carries no citation left, so the polish-only pass
+    // runs and writes `<name>.export.polished.md` without re-exporting.
     const artifactError = exportArtifactTargetError(relativeInput, Boolean(options.polish));
     if (artifactError) throw new Error(artifactError);
     const outputRelative =

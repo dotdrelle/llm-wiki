@@ -621,19 +621,30 @@ export async function expandDeliverable(
 }
 
 /**
- * Refuses an export/polish whose input is already an export artifact
- * (`*.export.md` / `*.export.polished.md`, versioned included). The action
- * belongs to the source deliverable: re-running it on the artifact re-exported
- * the export. Returns the actionable error message, or null when the input is a
- * legitimate source.
+ * Refuses an EXPORT whose input is already an export artifact
+ * (`*.export.md` / `*.export.polished.md`, versioned included): re-running the
+ * expansion on its own output wrote the artifact onto itself.
+ *
+ * A POLISH of an export artifact is legitimate — it is the second step of the
+ * documented `export → polish` chain. The export carries no `[src:]` marker
+ * left (`stripCitationMarkers`), so `expandDeliverable` runs its polish-only
+ * pass and writes `<name>.export.polished.md` without re-exporting. Refusing it
+ * forced a polish of the SOURCE, which re-ran the whole export: a job already
+ * done. Polishing an already-polished artifact is refused in turn, naming the
+ * export to use as input.
  */
 export function exportArtifactTargetError(input: string, polish: boolean): string | null {
   const posix = String(input ?? '').replace(/\\/g, '/');
   if (!/\.export(?:\.polished)?\.md$/i.test(posix)) return null;
+  if (polish) {
+    if (!/\.export\.polished\.md$/i.test(posix)) return null;
+    const exportPath = posix.replace(/\.export\.polished\.md$/i, '.export.md');
+    return `Refusing to polish an already-polished artifact: ${input}. Polish its export (${exportPath}) or the source deliverable instead.`;
+  }
   const suggested = posix
     .replace(/\.export(?:\.polished)?\.md$/i, '.md')
     .replace(/_v-\d+(\.md)$/i, '$1');
-  return `Refusing to ${polish ? 'polish' : 'export'} an export artifact: ${input}. Export and polish act on the source deliverable, not on their own output — target ${suggested} instead.`;
+  return `Refusing to export an export artifact: ${input}. Export acts on the source deliverable, not on its own output — target ${suggested} instead.`;
 }
 
 export function exportOutputPath(deliverablePath: string, options: ExportOptions = {}): string {
