@@ -855,6 +855,16 @@ describe('chat html', () => {
     expect(handler).not.toContain('/api/runtime/run');
   });
 
+  it('returns a dead remembered wiki page to Home instead of freezing on the error page', () => {
+    const script = chatScripts().join('\n');
+    // Boot restores the remembered wiki path; an ingest may have renamed or
+    // pruned it, and the centre then froze on "Document not found".
+    expect(script).toContain("data.type === 'llmwiki:notfound'");
+    const handler = script.match(/llmwiki:notfound'[\s\S]*?\n {2}\} else if/)?.[0] ?? '';
+    expect(handler).toContain("shellStore(SHELL_WIKI_PATH_KEY, '/')");
+    expect(handler).toContain("setCenterWiki('/')");
+  });
+
   it('offers a curation entry point that selects agent mode, not the read-only chat', () => {
     // A curation is an action: the tile must switch to agent mode, or the chat
     // loop would only describe what it cannot do. The objective carries the

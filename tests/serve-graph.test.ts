@@ -6,7 +6,7 @@ import { renderWikiGraphV2 } from '../src/graph/wiki/graphApp.ts';
 import { graphUiContextCardScript } from '../src/graph/wiki/ui/core/contextCardScript.ts';
 import { renameTemplateDocument, renderSidebar, serveMd } from '../src/serve/html/wikiHtml.ts';
 import { generateSkillsPage } from '../src/serve/html/wikiSkillsPage.ts';
-import { WIKI_PANEL_SCRIPT } from '../src/chat/views/wikiPanelScript.ts';
+import { WIKI_AGENT_LAUNCH_SCRIPT } from '../src/chat/views/wikiAgentLaunchScript.ts';
 import { WIKI_LAYOUT_CSS } from '../src/serve/html/wikiLayoutCss.ts';
 
 it('renders skill execution mode and an expandable body editor', async () => {
@@ -86,6 +86,7 @@ async function serveSource(): Promise<string> {
     '../src/serve/html/wikiHtml.ts',
     '../src/serve/html/wikiLayoutCss.ts',
     '../src/serve/html/wikiLayoutScript.ts',
+    '../src/serve/html/pageActionsScript.ts',
     '../src/serve/html/themeToggleScript.ts',
   ].map((relative) => readFile(path.resolve(import.meta.dirname, relative), 'utf8')));
   return parts.join('\n');
@@ -219,9 +220,9 @@ describe('serve graph ui', () => {
   });
 
   it('routes the deliverable export through the /deliver skill turn', () => {
-    expect(WIKI_PANEL_SCRIPT).toContain("data.type === 'llmwiki:deliver'");
-    expect(WIKI_PANEL_SCRIPT).toContain("'/deliver ' + deliverablePath");
-    expect(WIKI_PANEL_SCRIPT).toContain("'Cannot deliver: not a deliverable file'");
+    expect(WIKI_AGENT_LAUNCH_SCRIPT).toContain("data.type === 'llmwiki:deliver'");
+    expect(WIKI_AGENT_LAUNCH_SCRIPT).toContain("'/deliver ' + deliverablePath");
+    expect(WIKI_AGENT_LAUNCH_SCRIPT).toContain("'Cannot deliver: not a deliverable file'");
   });
 
   it('renders a persistent draggable main sidebar resizer', async () => {

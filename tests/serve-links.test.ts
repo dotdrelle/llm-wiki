@@ -9,7 +9,7 @@ import {
   localHref,
   serveMd,
 } from '../src/commands/serve.ts';
-import { generateEditPage } from '../src/serve/html/wikiHtml.ts';
+import { generateEditPage, generateNotFoundPage } from '../src/serve/html/wikiHtml.ts';
 import { handleWikiRoutes } from '../src/serve/routes/wikiRoutes.ts';
 
 describe('serve link handling', () => {
@@ -39,6 +39,22 @@ describe('serve link handling', () => {
     expect(isRawDownloadRequestPath('/raw/untracked')).toBe(false);
     expect(isRawDownloadRequestPath('/raw/untracked/')).toBe(false);
     expect(isRawDownloadRequestPath('/raw/wiki/concepts/customer-journey.md')).toBe(true);
+  });
+
+  it('hands a dead embedded page back to the shell so a stale boot path opens Home', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-notfound-'));
+    try {
+      await mkdir(path.join(root, 'wiki'), { recursive: true });
+      const html = await generateNotFoundPage(root, '/wiki/concepts/budget/acpi-version-3.md');
+      // The page keeps its Back/Home buttons for a standalone reader, and
+      // tells the shell when it is embedded, so a remembered path that no
+      // longer exists is forgotten instead of freezing the centre frame.
+      expect(html).toContain('Document not found');
+      expect(html).toContain("type:'llmwiki:notfound'");
+      expect(html).toContain('wiki/concepts/budget/acpi-version-3.md');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('serves the pending root as a directory instead of treating it as a raw download', async () => {

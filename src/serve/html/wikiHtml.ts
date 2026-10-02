@@ -2084,6 +2084,6 @@ export async function generateNotFoundPage(rootDir: string, urlPath: string): Pr
   const rawUntrackedHint = isRawUntrackedReference(cleanPath)
     ? '<p>This URL points to <code>raw/untracked</code>. These files are temporary sources and may be archived or moved after ingestion.</p>'
     : '<p>The requested page does not exist in this workspace, or the file was moved.</p>';
-  const body = `${sidebar}<main class="content"><section class="not-found-panel"><h1>Document not found</h1>${rawUntrackedHint}<code class="not-found-path">${escapeHtml(cleanPath)}</code><div class="page-actions"><button class="action-button" type="button" onclick="history.length > 1 ? history.back() : location.assign('/')">Back</button><a class="action-link" href="/">Home</a></div></section></main>`;
+  const body = `${sidebar}<main class="content"><section class="not-found-panel"><h1>Document not found</h1>${rawUntrackedHint}<code class="not-found-path">${escapeHtml(cleanPath)}</code><div class="page-actions"><button class="action-button" type="button" onclick="history.length > 1 ? history.back() : location.assign('/')">Back</button><a class="action-link" href="/">Home</a></div></section></main><script>if(window.self!==window.top){window.parent.postMessage({type:'llmwiki:notfound',path:${JSON.stringify(cleanPath).replace(/</g, '\\u003c')}},window.location.origin);}</script>`;
   return layout('Document not found', body);
 }

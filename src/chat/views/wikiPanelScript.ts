@@ -550,6 +550,18 @@ window.addEventListener('message', (event) => {
     const href = sanitizeWikiPath(data.href);
     if (!href) return;
     setCenterWiki(href);
+  } else if (data.type === 'llmwiki:notfound') {
+    // The centre was asked for a page that no longer exists — typically a
+    // stored path restored at boot after an ingest renamed or pruned it. The
+    // shell forgets it and opens Home instead of freezing on "Document not
+    // found" (the standalone page keeps its Back/Home buttons). Only when the
+    // dead page is still the centre's target, so a late message from an
+    // outdated frame cannot yank the reader elsewhere.
+    const dead = sanitizeWikiPath(data.path);
+    if (dead && wikiHashPath() === dead) {
+      shellStore(SHELL_WIKI_PATH_KEY, '/');
+      setCenterWiki('/');
+    }
   } else if (data.type === 'llmwiki:addContext') {
     // "+ Context" clicked inside the central wiki page iframe or the tree menu.
     const contextPath = validPageContext(data.path);
@@ -574,53 +586,9 @@ window.addEventListener('message', (event) => {
     // Bring the chat alongside the document (split) so the context chip is visible.
     if (!splitWikiEnabled()) toggleSplitWiki();
     event.source?.postMessage({ type: 'llmwiki:addContext:result', path: data.path, ok: true }, location.origin);
-  } else if (data.type === 'llmwiki:buildTemplate') {
-    // "Build" clicked on a template page in the central wiki frame. The launch
-    // runs through Donna, so route it as a /wiki-build skill invocation: switch
-    // to the chat, fill the composer with the exact template path and submit.
-    const templatePath = decodeWikiPath(data.path).replace(/^\\//, '');
-    if (!/^templates\\/.+\\.md$/.test(templatePath)) {
-      if (typeof notify === 'function') notify('Cannot build: not a template file');
-      return;
-    }
-    showChatView();
-    const input = $('chat-input');
-    if (!input) return;
-    input.value = '/wiki-build ' + templatePath;
-    sendMessage();
-  } else if (data.type === 'llmwiki:deliver') {
-    // "Export / polish" clicked on a deliverable page in the central wiki frame.
-    // Same Donna-routed launch as Build-template: switch to the chat, fill the
-    // composer with the exact deliverable path and submit as a /deliver turn.
-    const deliverablePath = decodeWikiPath(data.path).replace(/^\\//, '');
-    if (!/^deliverables\\/.+\\.md$/.test(deliverablePath)) {
-      if (typeof notify === 'function') notify('Cannot deliver: not a deliverable file');
-      return;
-    }
-    showChatView();
-    const input = $('chat-input');
-    if (!input) return;
-    input.value = '/deliver ' + deliverablePath;
-    sendMessage();
-  } else if (data.type === 'llmwiki:reformat') {
-    // Agent mode + a plain conversational request in the session language,
-    // never a raw English instruction body.
-    const pagePath = decodeWikiPath(data.path).replace(/^\\//, '');
-    if (!/^wiki\\/(concepts|sources|answers)\\/.+\\.md$/.test(pagePath)) {
-      if (typeof notify === 'function') notify('Cannot reformat: not an ingested wiki page');
-      return;
-    }
-    const contextPath = validPageContext(data.path);
-    if (contextPath) addPageContext(contextPath);
-    showChatView();
-    const input = $('chat-input');
-    if (!input) return;
-    if (!agentMode) { agentMode = true; updateAgentModeUI(); }
-    const french = window.__WIKI_CONFIG__?.language === 'fr';
-    input.value = french
-      ? 'Reformate la page ' + pagePath + ' sur place, sans la déplacer ni la re-filer : mets le corps en Markdown propre (titres, listes et tableaux bien formés) en conservant tous les faits et sections ; répare les liens et citations mal formés (note « Broken links » pour les irréparables) ; complète le frontmatter OKF (type, title, clés manquantes) ; écris le résultat avec wiki_write_page et confirm=true.'
-      : 'Reformat the page ' + pagePath + ' in place, without moving or re-filing it: rewrite the body as clean Markdown (headings, lists and tables) while preserving every fact and section; fix malformed links and citations ("Broken links" note for the unresolvable ones); complete the OKF frontmatter (type, title, missing keys); write the result back with wiki_write_page and confirm=true.';
-    sendMessage();
+  } else if (handleWikiAgentLaunch(data)) {
+    // Build / Export-polish / Reformat: the wiki page asks the shell to launch
+    // a Donna turn; the handler validates the path and fills the composer.
   } else if (data.type === 'llmwiki:ingest') {
     // ⚡ "Ingest" clicked on the Pending panel of the wiki sidebar. The launch
     // runs through Donna, so route it as a /wiki-ingest skill invocation:
@@ -646,10 +614,6 @@ window.addEventListener('message', (event) => {
     input.value = '/wiki-rebuild';
     sendMessage();
   } else if (data.type === 'llmwiki:curate') {
-    // "Start a curation" on the Agent proposals page: the same entry point as
-    // the empty-chat tile. startCuration() selects Agent mode and submits the
-    // curation objective as a Donna turn — the page never calls the runtime
-    // itself (the general conversational-action rule).
     startCuration();
   } else if (data.type === 'llmwiki:close') {
     // A closed graph hands the centre back to the page it replaced — including

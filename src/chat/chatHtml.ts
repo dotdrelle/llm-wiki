@@ -15,6 +15,7 @@ import { SKILL_CHAINS_SCRIPT } from './runtime/skillChainsScript.ts';
 import { CHAT_MARKUP, EMPTY_CHAT_HTML } from './views/chatView.ts';
 import { HELP_PANEL_SCRIPT } from './views/helpPanelScript.ts';
 import { WIKI_PANEL_SCRIPT } from './views/wikiPanelScript.ts';
+import { WIKI_AGENT_LAUNCH_SCRIPT } from './views/wikiAgentLaunchScript.ts';
 const CHAT_BODY = `${CHAT_MARKUP}\n\n<script>\nlet servers = [];
 let messages = [];
 let isStreaming = false;
@@ -800,11 +801,13 @@ function submitSuggestion(text) {
   sendMessage();
 }
 
-// The empty-chat curation tile. A curation is an ACTION, not a chat answer:
-// select agent mode first, or the read-only chat loop would only describe what
-// it cannot do. The objective carries the "curate" alias, which the runtime
-// resolves deterministically to the curation capability (a branch proposal a
-// human merges or discards — never a direct wiki write).
+// The empty-chat curation tile — and the Agent proposals page's "Start a
+// curation" button, which routes here through llmwiki:curate. A curation is
+// an ACTION, not a chat answer: select agent mode first, or the read-only
+// chat loop would only describe what it cannot do. The objective carries the
+// "curate" alias, which the runtime resolves deterministically to the
+// curation capability (a branch proposal a human merges or discards — never a
+// direct wiki write).
 function startCuration() {
   if(!agentMode) { agentMode=true; updateAgentModeUI(); }
   submitSuggestion('Curate the wiki: find duplicate pages, pages that disagree or repeat each other, outdated or superseded pages, and claims with no cited source, then write the corrections on a dedicated branch.');
@@ -3029,6 +3032,8 @@ async function sendRuntimeControlChoice(intent,text) {
 ${CONFIG_SCRIPT}
 
 ${WIKI_PANEL_SCRIPT}
+
+${WIKI_AGENT_LAUNCH_SCRIPT}
 
 // ── Init ────────────────────────────────────────────────────────────────────
 async function initChat() {
