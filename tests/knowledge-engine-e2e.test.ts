@@ -45,7 +45,6 @@ function createConfig(root: string): AppConfig {
       maxChunksPerPage: 2,
       maxChunkChars: 3000,
       maxSourceChars: 8000,
-      buildStrategy: 'bm25',
       vector: {
         enabled: true,
         baseUrl: 'http://127.0.0.1:7997/v1',

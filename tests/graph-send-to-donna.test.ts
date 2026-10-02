@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { WIKI_PANEL_SCRIPT } from '../src/chat/views/wikiPanelScript.ts';
-import { graphUiSelectionScript } from '../src/graph/wiki/ui/core/selectionScript.ts';
+import { documentActionsScript as graphUiSelectionScript } from '../src/graph/wiki/ui/taxo/documentActionsScript.ts';
 
 /*
  « Send to Donna », des deux côtés de la frontière postMessage.

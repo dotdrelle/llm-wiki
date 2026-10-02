@@ -1,8 +1,11 @@
-import { graphAppCss } from './ui/styles.ts';
-import { graphAppScript } from './ui/script.ts';
-import { canvasExplorerStyles } from './ui/canvas/canvasExplorerStyles.ts';
-import { CONFIRM_DIALOG_CSS, CONFIRM_DIALOG_HTML, CONFIRM_DIALOG_SCRIPT } from '../../chat/confirmDialog.ts';
-import { WIKI_CSS_VARS } from '../../chat/theme.ts';
+import { graphCanvasScript } from '../core/canvas/graphCanvasScript.ts';
+import { graphUiContextCardScript } from './ui/core/contextCardScript.ts';
+import { graphUiThemeScript } from './ui/core/themeScript.ts';
+import { documentActionsScript } from './ui/taxo/documentActionsScript.ts';
+import { taxoPanelScript } from './ui/taxo/taxoPanelScript.ts';
+import { taxoRendererScript } from './ui/taxo/taxoRendererScript.ts';
+import { taxoStateScript } from './ui/taxo/taxoStateScript.ts';
+import { taxoStyles } from './ui/taxo/taxoStyles.ts';
 
 // The graph's own mark — the same three connected circles as the sidebar's
 // "Graph" action — so the page header and the left-panel entry read as one
@@ -10,76 +13,51 @@ import { WIKI_CSS_VARS } from '../../chat/theme.ts';
 const GRAPH_BRAND_MARK =
   '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="M8.6 8.1 10.8 15"/><path d="m15.4 8.1-2.2 6.9"/><path d="M9 6h6"/></svg>';
 
+/**
+ * The /graph page: the TAXO reading of the wiki.
+ *
+ * Four views of one payload (`/api/graph/taxo`) — Families, Concepts, Concept
+ * focus, Concepts + sources — with family/source filters, a frosted inspector,
+ * the engine's hybrid search (`/api/graph/search`) and the context card of a
+ * fiche (LLM summary, preview, "Add to Donna"). Canvas only, on the shared
+ * camera and frame scheduler; the force layouts are settled server-side.
+ */
 export function renderWikiGraphV2(): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Wiki Graph</title><style>${WIKI_CSS_VARS}${graphAppCss}${canvasExplorerStyles}${CONFIRM_DIALOG_CSS}
-.map-community{cursor:pointer;transition:opacity .2s}.map-halo{fill-opacity:.16;stroke:#b9d9ff;stroke-opacity:.38;transform:scale(.78)}.map-center{r:8px}.map-doc{r:2.5px}.map-center,.map-doc{stroke:#d8eaff;stroke-width:.7}.map-label,.map-count,.map-community-link text{text-anchor:middle;fill:#eef5ff;paint-order:stroke;stroke:#08111d;stroke-width:3px}.map-label{font-weight:700;font-size:13px}.map-count{font-size:10px;fill:#9fb0c3}.map-community-link line{stroke:#93a9c2;stroke-opacity:.58;stroke-width:1px}.map-community-link text{font-size:10px}.is-dimmed{opacity:.06!important}.is-highlighted{opacity:1!important}.node.is-highlighted circle{stroke:#fff;stroke-width:3px;filter:drop-shadow(0 0 7px #75aff5)}.link.is-highlighted{stroke-opacity:1;stroke-width:3px}.list-table .is-highlighted{background:#1d4775;color:#fff}.map-community.is-highlighted .map-halo{fill-opacity:.4;stroke-opacity:1;stroke-width:3px}.focus-column-title,.focus-community-caption{text-anchor:middle;fill:#b9c8d9;font-size:11px;text-transform:uppercase}.focus-community-caption{fill:#75aff5}.focus-card{cursor:pointer}.focus-card rect{fill:#111f2d;stroke:#34485e}.focus-card.member rect{fill:#2b1850;stroke:#a75ee8;stroke-width:2px}.focus-card:hover rect{stroke:#fff}.focus-title{fill:#f1f6fc;font-size:12px}.focus-type{fill:#8294a8;font-size:10px}.focus-link{fill:none;stroke:#72a7e8;stroke-width:1.5;stroke-opacity:.75}.focus-link.external{stroke-dasharray:5 4;stroke:#74c365}
-.map-selected-document-label{fill:var(--text);font-size:11px;font-weight:800;text-anchor:start;paint-order:stroke;stroke:var(--bg);stroke-width:4px;pointer-events:none}
-.spacing-control{display:flex;align-items:center;gap:7px;color:#9fb0c3;font-size:11px}.spacing-control[hidden]{display:none}.spacing-control input{width:120px;accent-color:#4d9cff}.spacing-control output{min-width:36px;color:#dce9f8}.group-axis-control{display:flex;align-items:center;gap:6px;color:#9fb0c3;font-size:11px}.group-axis-control select{padding:.28rem .42rem;font-size:11.5px;border-radius:999px;background:#ffffff0d;border:1px solid #ffffff24;color:#dce9f8;cursor:pointer}.group-axis-control select:focus{outline:none;border-color:#4d9cff}.inspector .community-item{display:block;width:100%;text-align:left!important;justify-content:flex-start;align-items:flex-start;padding-left:6px}
-.graph-search{position:relative;margin-left:auto;width:min(520px,38vw);display:grid;grid-template-columns:minmax(180px,1fr) auto;gap:6px}header .graph-search input{width:100%;margin:0}.reset-search{white-space:nowrap;padding:.45rem .65rem;font-size:12px}.graph-search-results{position:absolute;z-index:20;left:0;right:92px;top:calc(100% + 4px);background:#0d1825;border:1px solid #34485e;border-radius:7px;padding:4px;box-shadow:0 12px 30px #0009}.graph-search-item{display:block;width:100%;border:0;background:transparent;text-align:left;padding:7px 9px;font-size:12px}.graph-search-item.graph-search-filter{border-bottom:1px solid #34485e;font-weight:700}.graph-search-item:hover,.graph-search-item.active{background:#1d4775}.graph-search-item small{display:block;color:#8fa1b5;margin-top:2px;font-size:10.5px}.community-doc.selected{color:#fff;background:#245a9e;border-left:3px solid #75aff5;font-weight:700}.focus-caption-overlay{position:absolute;z-index:5;left:50%;bottom:12px;transform:translateX(-50%);max-width:80%;padding:7px 12px;border:1px solid #34485e;border-radius:6px;background:#08131ee8;color:#75aff5;font-size:11px;text-align:center;white-space:nowrap;pointer-events:none}
-.focus-name-index{position:absolute;z-index:6;right:12px;top:12px;width:min(330px,38%);max-height:42%;overflow:auto;border:1px solid #34485e;border-radius:7px;background:#08131ef2;box-shadow:0 10px 28px #0008}.focus-name-index summary{position:sticky;top:0;z-index:1;display:flex;justify-content:space-between;gap:10px;padding:8px 10px;background:inherit;color:#75aff5;font-size:11px;font-weight:800;text-transform:uppercase;cursor:pointer}.focus-name-index>div{display:flex;flex-direction:column;gap:4px;padding:0 7px 7px}.focus-name-index button{display:flex;flex-direction:column;align-items:flex-start;width:100%;gap:2px;padding:6px 8px;text-align:left;background:var(--soft);border-color:transparent}.focus-name-index button:hover,.focus-name-index button.selected{border-color:#75aff5;background:#1d4775}.focus-name-index button span{width:100%;overflow-wrap:anywhere;line-height:1.25}.focus-name-index button small{color:var(--muted);font-size:9px;text-transform:uppercase}
-.group-link{stroke-dasharray:5 5}.group-link.is-highlighted{stroke-dasharray:5 5}
-.document-preview-overlay{position:fixed;z-index:50;right:8px;top:56px;width:50vw;height:calc(100vh - 64px);max-height:calc(100vh - 64px);display:flex;min-height:0;flex-direction:column;overflow:hidden;background:#0b1622f7;border:1px solid #3c536c;border-radius:8px;box-shadow:0 18px 50px #000c}.document-preview-overlay[hidden]{display:none}.document-preview-head{display:flex;flex:none;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #34485e}.document-preview-content{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:18px 22px}.document-preview-content img{max-width:100%}.show-document-preview{width:100%;margin-top:10px;background:#245a9e}
-.community-relation-legend{position:absolute;z-index:4;left:10px;bottom:10px;display:flex;gap:10px;flex-wrap:wrap;padding:7px 9px;background:#08131ee8;border:1px solid #34485e;border-radius:6px;color:#9fb0c3;font-size:10px}.community-relation-legend span:before{content:'';display:inline-block;width:14px;height:2px;margin:0 5px 3px 0;background:var(--c)}.community-relation-legend .dotted:before{height:0;border-top:2px dashed #93a9c2;background:transparent}
-.inspector{position:relative}.inspector-collapsed #inspector{display:none!important}.inspector-collapsed .inspector-title::after{content:'+'}.stage:fullscreen{width:100vw;height:100vh;border:0;border-radius:0;background:#08111d}.stage:fullscreen #canvas{min-height:0}
-.relation-breakdown-item{padding:6px 7px;margin:2px 0;border-radius:5px;cursor:pointer;transition:background .15s,color .15s}.relation-breakdown-item:hover{background:#1d4775;color:#fff}.relation-breakdown-item.locked{background:#245a9e;color:#fff;box-shadow:inset 3px 0 #75aff5}
-.relation-breakdown-item.relation-filtered{opacity:.48;border-left:2px dashed var(--muted)}.relation-breakdown-item.relation-active{border-left:2px solid #74c365}
-.stage-head>div:last-child{display:flex;flex-wrap:nowrap;align-items:center;gap:4px;white-space:nowrap;flex:none}.stage-head>div:last-child button{flex:0 0 auto;white-space:nowrap}.stage-head>div:first-child{min-width:0}.stage-head .spacing-control{flex:0 1 auto;min-width:150px}
-.map-label{font-size:17px!important}.map-count{font-size:13px!important}.inspector{display:flex;flex-direction:column;overflow:hidden!important}.inspector #inspector{display:flex;flex:1;min-height:0;flex-direction:column;overflow:hidden}.inspector .relation-breakdown{flex:1;min-height:90px;overflow-y:auto;overscroll-behavior:contain}.inspector .show-document-preview{flex:none}.inspector .card:not(.relation-breakdown){flex:none}
-.theme-toggle{flex:none;width:38px;height:34px;padding:0;font-size:17px}:root.theme-light body{background:#ffffff;color:var(--text)}:root.theme-light body header{background:#f8fbfddd;border-color:#b8c6d5}:root.theme-light body .brand{color:#172433}:root.theme-light body .filters,:root.theme-light body .inspector,:root.theme-light body .stage{background:#ffffffeb}:root.theme-light body button,:root.theme-light body input{color:#172433;background:#edf3f8;border-color:#b8c6d5}:root.theme-light body button:hover,:root.theme-light body button.active{background:#cfe3fb;border-color:#5d91cc}:root.theme-light body .graph-search-results,:root.theme-light body .document-preview-overlay{background:#fff;color:#172433}:root.theme-light body .map-label,:root.theme-light body .map-count,:root.theme-light body .map-community-link text,:root.theme-light body .node text{fill:#172433;stroke:#f7fafc}:root.theme-light body .focus-title{fill:#172433}:root.theme-light body .focus-card rect{fill:#f5f8fb;stroke:#8fa3b8}:root.theme-light body .focus-card.member rect{fill:#eadcff;stroke:#8354bf}:root.theme-light body .community-relation-legend,:root.theme-light body .focus-caption-overlay,:root.theme-light body .focus-name-index,:root.theme-light body .relation-legend{background:#fffffff0;color:#40556a}
-.community-doc:before{content:'– ';color:var(--muted);font-weight:400}.community-doc.selected:before{color:#fff}
-.community-head{display:flex;align-items:center;justify-content:space-between;gap:8px}.community-head h3{margin:0;flex:1}.community-actions{display:flex;align-items:center;gap:5px}.community-actions button{padding:.2rem .5rem;font-size:10.5px;border-radius:6px;background:#ffffff0d;border-color:#ffffff24;color:#9fb0c3}.community-actions button:hover{background:#ffffff1a;color:#dfe5ef}.community-actions button:disabled{opacity:.45;cursor:default}
-:root.theme-light body .community-actions button{background:#ffffffc4;border-color:#00000024;color:#40556a}
-/* "Build"/agent-launched actions: a solid accent fill marks a button that
-   calls the LLM, distinct from the plain outline buttons around it (Refresh,
-   view toggles) which are instant and local. */
-.inspector-title{flex:none;margin:0;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;font-weight:500;letter-spacing:.02em;color:#dfe5ef;cursor:pointer;user-select:none}.inspector-title::after{content:'−';flex:none;font-size:14px;line-height:1;font-weight:600;color:#8d96a8}.inspector-title:hover::after{color:#dfe5ef}
-/* ── Full-frame scene ────────────────────────────────────────────────────
-   The graph used to occupy a column between a bordered title bar and a fixed
-   274 px side panel. The three fought over the width while two of them carry
-   only a few lines of text. They now float ABOVE the canvas, which takes
-   everything: it is the surface where one reads something, the others merely
-   comment on it. */
-main{grid-template-columns:var(--left-w) 5px minmax(500px,1fr)}
-.stage{position:relative;overflow:hidden}
-#canvas{position:absolute;inset:0;flex:none}
-.stage-title{position:absolute;z-index:5;left:18px;top:14px;display:flex;flex-direction:column;gap:2px;pointer-events:none;text-shadow:0 1px 10px #000a}
-.stage-title .graph-breadcrumb{pointer-events:auto}
-.stage-title #view-title{font-size:15px;font-weight:500;color:#eef1f6;letter-spacing:.1px}
-.stage-title #summary{font-size:11.5px;color:#7c879a}
-.stage-tools{position:absolute;z-index:6;right:14px;top:14px;display:flex;align-items:center;gap:5px}
-.stage-tools button{padding:.28rem .62rem;font-size:11.5px;border-radius:999px;background:#ffffff0d;border-color:#ffffff24}
-.stage-tools button:hover{background:#ffffff1a}
-main.list-view .stage-tools,main.list-view .inspector{display:none!important}
-/* Selection panel in a layer, in place of the right column. The frosted glass
-   lets the links passing behind show through: it sits on the graph instead of
-   cutting it in two. */
-.inspector{position:absolute;z-index:5;right:14px;top:52px;width:250px;max-height:calc(100% - 72px);padding:9px 10px;display:flex;flex-direction:column;gap:6px;overflow:hidden;border:1px solid #ffffff1c;border-radius:11px;background:#0b0d13d1;backdrop-filter:blur(12px);box-shadow:0 18px 44px #000a}
-.inspector h3{margin:0;font-size:11px;font-weight:500;letter-spacing:.02em;color:#dfe5ef}
-.inspector p{margin:0;font-size:11.5px;line-height:1.5;color:#8d96a8}
-main.inspector-collapsed{grid-template-columns:var(--left-w) 5px minmax(500px,1fr)}
-main.inspector-collapsed .inspector{width:auto;padding:6px 8px;background:#0b0d13b8}
-:root.theme-light body .stage-title #view-title{color:#132132}
-:root.theme-light body .stage-title{text-shadow:0 1px 8px #fff9}
-:root.theme-light body .inspector{background:#ffffffd9;border-color:#0000001f}
-:root.theme-light body .inspector h3{color:#1c2b3d}
-:root.theme-light body .stage-tools button{background:#ffffffc4;border-color:#00000024}:root.theme-light body .group-axis-control select{background:#ffffffc4;color:#172433;border-color:#00000024}
-/* The panel now receives the document list, at every level. */
-.inspector .document-focus-list{min-height:0;flex:1;overflow:auto;padding:0;margin:0 -2px}
-.inspector .focus-document-row{border-bottom:1px solid #ffffff0f;padding:1px 0}
-.inspector .focus-document-name{padding:5px 6px}
-.inspector .focus-document-name span{font-size:11.5px;color:#e6eaf2}
-.inspector .focus-document-name small{font-size:10px}
-.inspector .focus-document-actions button{width:26px;height:26px;padding:5px;background:transparent;border-color:transparent}
-.inspector .focus-document-actions button:hover{background:#ffffff14}
-:root.theme-light body .panel-head{border-color:#0000001a}
-:root.theme-light body .inspector .focus-document-row{border-color:#00000012}
-:root.theme-light body .inspector .focus-document-name span{color:#172433}
-/* Marker of the current domain in the left index. */
-.community-group summary.is-current{background:#ffffff12;border-radius:5px}
-.community-group summary.is-current span:nth-child(2){color:#75aff5;font-weight:500}
-:root.theme-light body .community-group summary.is-current{background:#0000000d}
-</style></head><body>
-<header><a class="brand" href="/"><span class="brand-logo">${GRAPH_BRAND_MARK}</span>LLM-WIKI</a><div class="graph-search"><input id="search" type="search" autocomplete="off" placeholder="Search documents, topics, or tags…"><button id="reset-search" class="reset-search" type="button" title="Reset search, filters, and selection">Reset</button><div id="graph-search-results" class="graph-search-results" hidden></div></div><nav><button data-view="explore" class="active">Explore</button><button data-view="list">List</button><button id="graph-shell-close" type="button" hidden title="Close graph" aria-label="Close graph">✕</button></nav></header>
-<main><aside class="filters"><h3>Filters</h3><div id="filters"></div><div class="community-head"><h3>Communities</h3><div class="community-actions"><button id="community-refresh" type="button" title="Refresh the community display">↻</button></div></div><div id="community-list"></div></aside><div class="left-resizer" role="separator" aria-orientation="vertical" title="Resize filters"></div><section class="stage"><div id="canvas"><div class="relation-legend"><span style="--c:#72a7e8">Link</span><span style="--c:#9f7aea">Citation</span><span style="--c:#74c365">Generated from</span><span style="--c:#e4b44c">Template</span><span style="--c:#44c2c7">Context</span><span style="--c:#ed7d4d">Produces</span></div><div class="loading">Computing communities…</div></div><div class="stage-title"><div id="graph-breadcrumb" class="graph-breadcrumb" aria-label="Graph navigation"><button type="button" data-graph-level="map" aria-current="page">Map</button></div><b id="view-title">Global map view</b><small id="summary">Loading graph…</small></div><div class="stage-tools"><label class="group-axis-control">Group <select id="group-axis" title="Group the map halos by concept folder, subject, OKF type, or tag"><option value="concept">Concept</option><option value="subject">Subject</option><option value="type">Type</option><option value="tag">Tag</option></select></label><label class="spacing-control" id="spacing-control">Spacing <input id="map-spacing" type="range" min="70" max="300" value="150"><output id="map-spacing-value">150%</output></label><button id="focus-back" hidden>← Back</button><button id="zoom-out">−</button><button id="zoom-in">+</button><button id="fit">Fit</button><button id="fullscreen" title="Fullscreen">⛶</button></div><aside class="inspector"><h3 class="inspector-title" id="inspector-toggle" title="Collapse panel">Selection</h3><div id="inspector"><p>Select a community or document to explore its relations.</p></div></aside></section></main>
-<div id="document-preview-overlay" class="document-preview-overlay" hidden><div class="document-preview-head"><strong id="document-preview-title">Document preview</strong><button id="close-document-preview" type="button">Close</button></div><div id="document-preview-content" class="document-preview-content"></div></div>${CONFIRM_DIALOG_HTML}<script>${CONFIRM_DIALOG_SCRIPT}</script><script>${graphAppScript}</script></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Wiki Graph</title><style>${taxoStyles}</style></head><body>
+<header><a class="brand" href="/">${GRAPH_BRAND_MARK}Wiki graph</a>
+<nav aria-label="View"><button type="button" id="v-family" aria-pressed="true">Families</button><button type="button" id="v-concepts" aria-pressed="false">Concepts</button><button type="button" id="v-focus" aria-pressed="false">Concept focus</button><button type="button" id="v-full" aria-pressed="false">Concepts + sources</button></nav>
+<div class="search-wrap" id="search-wrap"><input class="search" id="q" type="search" autocomplete="off" placeholder="Search the wiki (semantic when the vector index is built)…" aria-label="Search the graph"><span class="search-spinner" aria-hidden="true"></span><span class="search-mode" id="search-mode" hidden></span></div>
+<button id="graph-shell-close" class="shell-close" type="button" hidden title="Close graph" aria-label="Close graph">✕</button></header>
+<main>
+<aside class="filters"><section><h3>Families</h3><div class="filter-list" id="fam-filters"></div></section><section><h3>Documents</h3><div class="filter-list" id="src-filter"></div></section><p class="about" id="about"></p></aside>
+<section class="stage" id="stage">
+<canvas id="cv" tabindex="0" role="application" aria-label="Graph of concepts and sources. Wheel to zoom, drag to pan."></canvas>
+<div class="stage-empty" id="empty" hidden>No concept in the wiki yet. Add sources to Pending, then run an ingest.</div>
+<div class="stage-title"><b id="view-title">Families</b><small id="summary"></small></div>
+<div class="stage-tools"><select id="pick" aria-label="Concept in the centre" hidden></select><button type="button" id="labels" hidden>Source labels</button><button type="button" id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button><button type="button" id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button><button type="button" id="reset">Recenter</button></div>
+<div class="legend" id="legend"></div>
+<div class="inspector" id="inspector"><button type="button" class="inspector-title" id="insp-toggle" aria-expanded="true">Selection</button><div id="panel"></div></div>
+</section>
+</main>
+<div id="document-preview-overlay" class="document-preview-overlay" hidden><div class="document-preview-head"><strong id="document-preview-title">Document preview</strong><button id="close-document-preview" type="button">Close</button></div><div id="document-preview-content" class="document-preview-content"></div></div>
+<script>
+(()=>{
+${graphCanvasScript()}
+${taxoStateScript()}
+${documentActionsScript()}
+${taxoRendererScript()}
+${graphUiContextCardScript()}
+${taxoPanelScript()}
+${graphUiThemeScript()}
+// Close button: only when the graph runs inside the chat shell's centre frame.
+if(window.parent&&window.parent!==window){
+  const close=document.querySelector('#graph-shell-close');
+  close.hidden=false;
+  close.addEventListener('click',()=>{try{window.parent.postMessage({type:'llmwiki:close',from:'graph'},location.origin)}catch(error){}});
+}
+window.addEventListener('pagehide',()=>scheduler.destroy());
+startRevisionFeed();
+loadTaxo(true);
+})();
+</script></body></html>`;
 }

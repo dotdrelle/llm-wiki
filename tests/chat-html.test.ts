@@ -678,7 +678,10 @@ describe('chat html', () => {
     expect(script).toContain('const seenMeta=new Set([cardTitle.trim().toLowerCase()]);');
     expect(script).toContain('if(!normalized||seenMeta.has(normalized)) return false;');
     expect(script).toContain("progress.throttling?.active?");
-    expect(script).toContain("progress.processing?.instructionCount!=null");
+    // The Activity line reads the run strip's own detail: one formatter, so
+    // the two surfaces cannot disagree ("Batch 1/1" beside "batch 2/1").
+    expect(script).toContain("runStripDetail(progress,null)");
+    expect(script).toContain("Number(p.instructionCount??p.processing?.instructionCount)");
   });
 
   it('keeps local chat conversational without sending MCP tools to the browser LLM loop', () => {

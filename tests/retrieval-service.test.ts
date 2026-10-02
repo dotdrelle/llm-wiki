@@ -41,7 +41,6 @@ function createConfig(root: string): AppConfig {
       maxChunksPerPage: 2,
       maxChunkChars: 3000,
       maxSourceChars: 8000,
-      buildStrategy: 'bm25',
       vector: {
         enabled: true,
         baseUrl: 'http://127.0.0.1:11434/v1',
@@ -209,7 +208,7 @@ describe('retrieval service', () => {
     expect(retrieval.getLastSearchDiagnostics()).toEqual({ mode: 'lexical-fallback', reason: 'missing-index' });
   });
 
-  it('uses lexical BM25 directly for build context by default', async () => {
+  it('searches the build context with the hybrid retrieval, announcing a missing index', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-retrieval-build-'));
     await mkdir(path.join(root, 'wiki'), { recursive: true });
     await writeFile(
@@ -220,7 +219,6 @@ describe('retrieval service', () => {
 
     const config = createConfig(root);
     config.retrieval.vector.enabled = true;
-    config.retrieval.buildStrategy = 'bm25';
     const logger = new MemoryTraceLogger();
     const retrieval = new RetrievalService(new WorkspaceService(config), config, logger);
 
@@ -230,9 +228,12 @@ describe('retrieval service', () => {
     });
 
     expect(results.map((result) => result.page.relativePath)).toContain('wiki/index.md');
+    // The build no longer skips the vectors: without an index it falls back
+    // to lexical, and says so.
     expect(
       logger.entries.find((entry) => entry.event === 'retrieval:vector-fallback'),
-    ).toBeUndefined();
+    ).toBeDefined();
+    expect(retrieval.getLastSearchDiagnostics()).toEqual({ mode: 'lexical-fallback', reason: 'missing-index' });
   });
 
   it('disables vector retrieval after repeated consecutive vector errors', async () => {

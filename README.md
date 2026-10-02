@@ -381,7 +381,6 @@ retrieval:
   maxChunksPerPage: 2 # max vector chunks per page
   maxChunkChars: 3000 # max chars per chunk
   maxSourceChars: 8000 # max chars per source citation
-  buildStrategy: bm25 # bm25 for build context; hybrid re-enables vector/rerank in build
   vector:
     enabled: false # set true to enable vector search
     baseUrl: http://127.0.0.1:7997/v1 # OpenAI-compatible embeddings endpoint

@@ -29,10 +29,17 @@ function runStripDetail(progress, usage) {
   const stepCounter=counter(p.stepIndex,p.stepTotal,'Step');
   const taskCounter=counter(p.taskIndex,p.taskTotal,'Task');
   const sourceCounter=counter(p.sourceIndex,p.sourceCount,'Source');
-  const batchCounter=counter(p.batchIndex,p.batchCount,'Batch')
-    || counter(Number(p.batchIndex)+1,p.batchCount,'Batch');
-  const batchDetail=/^batch\\s+\\d+\\/\\d+/i.test(String(p.detail||''))?null:p.detail;
-  const instructions=Number(p.instructionCount);
+  // One batch counter, never two. The agent's batch.index is already 1-based;
+  // the trace's batchIndex is 0-based. A detail that already says "Batch N/M"
+  // (the agent's own sentence, e.g. "Batch 1/2 · LLM running") is kept whole
+  // and no counter is added beside it — the strip used to drop that detail and
+  // the Activity panel to add "batch 2/1" next to it.
+  const detailHasBatch=/\\bbatch\\s+\\d+\\/\\d+/i.test(String(p.detail||''));
+  const batchCounter=detailHasBatch?null:(p.batch?.total
+    ? counter(p.batch.index,p.batch.total,'Batch')
+    : counter(Number(p.batchIndex)+1,p.batchCount,'Batch'));
+  const batchDetail=p.detail;
+  const instructions=Number(p.instructionCount??p.processing?.instructionCount);
   const stabilize=(p.stabilizeKept!=null||p.stabilizeMerged!=null)
     ? \`kept \${p.stabilizeKept??0}, merged \${p.stabilizeMerged??0}, inserted \${p.stabilizeInserted??0}, removed \${p.stabilizeRemoved??0}\`
     : null;

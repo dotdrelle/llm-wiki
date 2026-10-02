@@ -23,46 +23,6 @@ it('renders skill execution mode and an expandable body editor', async () => {
   }
 });
 
-it('keeps the graph document preview viewport-sized and scrolls its content', () => {
-  const source = renderWikiGraphV2();
-  expect(source).toContain('max-height:calc(100vh - 64px)');
-  expect(source).toContain('.document-preview-content{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain');
-});
-
-it('turns the graph search into a reactive relation filter, not a document finder', () => {
-  const source = renderWikiGraphV2();
-  // The query is sent to the server, which filters the corpus BEFORE the
-  // projection, so leaf edges, community edges and every axis grouping agree.
-  expect(source).toContain("function graphQuerySuffix(){return searchQuery?('?q='+encodeURIComponent(searchQuery)):''}");
-  expect(source).toContain("await json('/api/graph/overview'+graphQuerySuffix())");
-  // A keystroke re-fetches (debounced) and keeps the query on later revisions.
-  expect(source).toContain("searchQuery=event.target.value");
-  expect(source).toContain('searchReloadTimer=setTimeout(()=>{searchReloadTimer=0;reloadForQuery()},220)');
-  // The search is a global filter, never a forced pick: Enter keeps the
-  // filtered view, and typing drops a document focus back to the filtered map.
-  expect(source).toContain("if(view==='focus'){view='map';focusHistory.length=0}");
-  expect(source).toContain("if(event.key==='Enter'){event.preventDefault();closeSearchOptions()}else if(event.key==='Escape'){closeSearchOptions()}");
-  // The suggestion list offers a "filter the graph" entry (stay global) and
-  // closes on outside-click instead of covering the graph.
-  expect(source).toContain('data-search-filter="1"');
-  expect(source).toContain("if(event.target.closest('[data-search-filter]')){closeSearchOptions();return}");
-  expect(source).toContain("if(!event.target.closest('.graph-search'))closeSearchOptions()");
-  // The List view reads the already-filtered snapshot: filtering again by
-  // title/id would hide a page that matched through a tag or its subject.
-  expect(source).not.toContain(".filter(node=>(node.title+' '+node.id)");
-});
-
-it('keeps the graph search at the chrome font size, not the 14px body size', () => {
-  const source = renderWikiGraphV2();
-  // The chrome sits at 12px, not the 14px body size: the input inherited
-  // body{font:14px} and read oversized beside the search, so the whole header
-  // — field, Reset, Explore/List tabs, close — is pinned to the same size.
-  expect(source).toContain('border-radius:6px;padding:.58rem .8rem;font-size:12px}');
-  expect(source).toContain('.reset-search{white-space:nowrap;padding:.45rem .65rem;font-size:12px}');
-  expect(source).toContain('header nav button{border-radius:4px;padding:.45rem .7rem;font-size:12px}');
-  expect(source).toContain('#graph-shell-close{margin-left:8px;font-size:12px;line-height:1}');
-});
-
 it('renders pending connector sources by frontmatter title without displaying frontmatter as prose', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-pending-'));
   const relative = 'raw/untracked/connectors/google-1/message-id-deadbeef.md';
@@ -140,16 +100,6 @@ it('follows the shared serve theme without rendering a redundant graph toggle', 
   expect(html).not.toContain("localStorage.setItem(THEME_KEY,theme)");
 });
 
-it('shows community document titles without a filename extension', () => {
-  const html = renderWikiGraphV2();
-
-  // The Communities index appended ".md" to every document name, so a title
-  // read like a filename. The name is the title; the path stays in the
-  // tooltip.
-  expect(html).not.toContain("esc(n?.title||id)+'.md</button>'");
-  expect(html).toContain('graphLeafDisplay(n?.title||id)');
-});
-
 it('displays domain and document names capitalized, never all-caps', () => {
   const html = renderWikiGraphV2();
 
@@ -158,17 +108,6 @@ it('displays domain and document names capitalized, never all-caps', () => {
   expect(html).not.toContain("function graphDomainDisplay(label){return String(label??'').toUpperCase()}");
   expect(html).toContain("heading.textContent=graphLeafDisplay(documentData.title)");
   expect(html).not.toContain('#document-preview-title{text-transform:uppercase}');
-});
-
-it('collapses the Selection panel with a +/− toggle on its title', () => {
-  const html = renderWikiGraphV2();
-  expect(html).toContain('.inspector-title::after{content:\'−\';');
-  expect(html).toContain('.inspector-collapsed .inspector-title::after{content:\'+\'}');
-  expect(html).toContain('.inspector-collapsed #inspector{display:none!important}');
-  // The corner collapse button (with its two SVG glyphs) is gone: the title
-  // itself is the toggle now.
-  expect(html).not.toContain('icon-collapse');
-  expect(html).not.toContain('icon-expand');
 });
 
 it('shares the selected color theme with wiki home', async () => {
@@ -190,10 +129,6 @@ async function runtimeEventsSource(): Promise<string> {
 
 async function runtimeRoutesSource(): Promise<string> {
   return readFile(path.resolve(import.meta.dirname, '../src/serve/routes/runtimeRoutes.ts'), 'utf8');
-}
-
-async function graphRoutesSource(): Promise<string> {
-  return readFile(path.resolve(import.meta.dirname, '../src/serve/routes/graphRoutes.ts'), 'utf8');
 }
 
 async function uploadRoutesSource(): Promise<string> {
@@ -221,25 +156,6 @@ async function runtimeGraphSource(): Promise<string> {
 }
 
 describe('serve graph ui', () => {
-  it('fits the graph content to the page on the initial map render', () => {
-    const html = renderWikiGraphV2();
-    // Le cadrage résout l'échelle à partir des débords réels de chaque
-    // constellation. Le facteur 1.35 qui figurait ici compensait une formule
-    // qui traitait un halo — proportionnel au zoom — comme une marge fixe ;
-    // il masquait le défaut sur un format, et débordait sur les autres.
-    expect(html).not.toContain('target.scale*1.35');
-    expect(html).toContain('function communityRadius');
-    /*
-     La division est devenue un point fixe. Elle supposait que le nœud le plus
-     large occupait les deux extrémités du cadre à la fois : une majoration qui
-     n'arrive jamais et qui laissait, mesurée sur une vue de domaine réelle,
-     25 % du cadre inutilisé en largeur et 33 % en hauteur.
-    */
-    expect(html).not.toContain('const scale=Math.min((inner-fixedX*2)');
-    expect(html).toContain('const envelope=scale=>{');
-    expect(html).toContain('function overflow(node,scale)');
-    expect(html).toContain("document.querySelector('#fit').addEventListener('click',()=>canvasExplorer?.fit())");
-  });
 
   it('renders sidebar chat and graph actions as icon-only buttons', async () => {
     const source = await serveSource();
@@ -270,25 +186,6 @@ describe('serve graph ui', () => {
     expect(source).not.toContain('html.sidebar-panel .side-head .side-actions{width:calc(50% - .25rem)}');
     expect(source).not.toContain('html.sidebar-panel .side-head .side-action{width:100%}');
     expect(source).toContain('html.sidebar-panel .side-head .brand{flex:1;min-width:0}');
-  });
-
-  it('brands the graph page with the same mark as the sidebar Graph action, not a stray ⌘', () => {
-    const html = renderWikiGraphV2();
-    expect(html).toContain('<a class="brand" href="/"><span class="brand-logo">');
-    expect(html).toContain('<circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/>');
-    expect(html).not.toContain('<a class="brand" href="/">⌘');
-  });
-
-  it('hides the map toolbar and selection panel in list view', () => {
-    const html = renderWikiGraphV2();
-    expect(html).toContain("document.querySelector('main').classList.toggle('list-view',view==='list')");
-    expect(html).toContain('main.list-view .stage-tools,main.list-view .inspector{display:none!important}');
-  });
-
-  it('checks only the wiki type by default, not wiki-source', () => {
-    const html = renderWikiGraphV2();
-    expect(html).toContain("const defaults=new Set(['wiki'])");
-    expect(html).not.toContain("const defaults=new Set(['wiki','wiki-source','deliverable'])");
   });
 
   it('offers an export/polish agent button on deliverable pages', async () => {
@@ -545,84 +442,11 @@ describe('serve graph ui', () => {
     expect(source).toContain('generated_from');
   });
 
-  it('routes the lightweight graph v2 APIs through the extracted graph route module', async () => {
-    const source = await serveSource();
-    const routesSource = await graphRoutesSource();
-    const graphHtml = renderWikiGraphV2();
-
-    expect(source).toContain('handleGraphRoutes(req, res, urlPath');
-    expect(source).toContain('buildWikiGraph(rootDir');
-    expect(source).toContain('renderWikiGraphV2(');
-    expect(source).toContain('buildGraphOverview');
-    // Le snapshot ne transporte jamais le contenu des pages : c'est ce qui le
-    // garde transférable à chaque révision.
-    expect(source).toContain('includeContent: false');
-    expect(source).toContain('concurrency: 8');
-    expect(source).toContain('buildWikiGraph(rootDir');
-    expect(routesSource).not.toContain("urlPath === '/api/graph-etag'");
-    expect(routesSource).not.toContain("urlPath === '/api/graph-data'");
-    expect(routesSource).toContain("urlPath === '/api/graph/overview'");
-    expect(routesSource).toContain("urlPath === '/api/graph/community'");
-    expect(routesSource).toContain("urlPath === '/api/graph/document'");
-    expect(routesSource).not.toContain("urlPath === '/api/graph/dag'");
-    expect(routesSource).toContain("urlPath === '/api/graph/list'");
-    expect(routesSource).toContain("urlPath === '/graph'");
-    expect(routesSource).toContain('structureEtag: current.structureEtag');
-    expect(routesSource).toContain('topologyEtag: current.topologyEtag');
-    expect(routesSource).toContain('workspaceNameFromEnv');
-    expect(source).toContain('language: () => config.language');
-    expect(routesSource).toContain('language: deps.language()');
-    expect(graphHtml).toContain("node.community?.communityLabel||'—'");
-    expect(graphHtml).toContain("function nodePositionKey(id){return 'llm-wiki:graph:node:'+encodeURIComponent(data?.workspace||'wiki')+':'+id}");
-    expect(graphHtml).not.toContain("localStorage.setItem('llm-wiki:graph:node:'+n.id");
-  });
-
-  it('exposes the refresh control under the Communities index, and no rebuild button', async () => {
-    const graphHtml = renderWikiGraphV2();
-    const routesSource = await graphRoutesSource();
-    expect(graphHtml).toContain('id="community-refresh"');
-    // 0.15.66: the taxonomy synthesis is gone — communities derive from the
-    // concept folders, so there is no rebuild button and no taxonomy route.
-    expect(graphHtml).not.toContain('id="community-rebuild"');
-    expect(graphHtml).not.toContain('llmwiki:runTaxonomy');
-    expect(routesSource).not.toContain('/api/graph/taxonomy');
-  });
-
-  it('renders Document Focus in the selection panel without embedding document content', () => {
-    const graphHtml = renderWikiGraphV2();
-    // Le focus document ouvrait une fenêtre distincte, superposée à
-    // l'inspecteur qui listait déjà les mêmes documents. Un seul panneau
-    // désormais, dont l'en-tête change avec le niveau.
-    expect(graphHtml).not.toContain('document-focus-window');
-    expect(graphHtml).toContain('<small>DOCUMENT</small>');
-    expect(graphHtml).toContain("data-preview-doc");
-    expect(graphHtml).toContain("data-send-doc");
-    expect(graphHtml).not.toContain('function graphImpactFor');
-    expect(graphHtml).not.toContain('Analyze impact');
-    expect(graphHtml).not.toContain("'<div class=\"card doc-html\">'+documentData.html");
-  });
-
   /*
    Back climbs ONE level. It jumped straight from focus to the map as soon as
    the level in between was a domain rather than a leaf community, undoing the
    whole descent for a single click.
   */
-  it('returns Focus to Community, Community to its Domain, Domain to the Map', () => {
-    const graphHtml = renderWikiGraphV2();
-    expect(graphHtml).toContain("if(view==='focus'&&selectedCommunity&&!graphIsDomain(selectedCommunity))navigateGraphLevel('community')");
-    expect(graphHtml).toContain("else if(view==='focus'||view==='community')navigateGraphLevel('domain')");
-    expect(graphHtml).toContain("else if(level==='domain'){");
-    expect(graphHtml).toContain("if(level==='map'){view='map';selected=null;selectedCommunity=null;focusHistory.length=0}");
-    expect(graphHtml).toContain("document.querySelector('#focus-back').hidden=view==='map'||view==='list'");
-  });
-
-  it('opens previews from file icons and sends the selected file to Donna', () => {
-    const graphHtml = renderWikiGraphV2();
-    expect(graphHtml).toContain('function previewGraphDocument(id)');
-    expect(graphHtml).toContain("type:'llmwiki:addContext'");
-    expect(graphHtml).toContain("class=\"community-doc-action\" data-preview-doc");
-    expect(graphHtml).toContain("class=\"community-doc-action\" data-send-doc");
-  });
 
 
 

@@ -39,7 +39,6 @@ const CONFIG_PRESETS: Record<ConfigPresetName, PlainObject> = {
       maxBuildContextChars: 24000,
     },
     retrieval: {
-      buildStrategy: 'bm25',
       vector: {
         enabled: true,
         baseUrl: ALBERT_BASE_URL,
@@ -60,7 +59,6 @@ const CONFIG_PRESETS: Record<ConfigPresetName, PlainObject> = {
       baseUrl: DEFAULT_OPENAI_BASE_URL,
     },
     retrieval: {
-      buildStrategy: 'bm25',
       vector: {
         enabled: false,
         baseUrl: DEFAULT_OPENAI_BASE_URL,
@@ -82,7 +80,6 @@ const CONFIG_PRESETS: Record<ConfigPresetName, PlainObject> = {
       targetInputTokensPerCall: 40000,
     },
     retrieval: {
-      buildStrategy: 'bm25',
       vector: {
         enabled: false,
         baseUrl: DEFAULT_OLLAMA_BASE_URL,
@@ -103,7 +100,6 @@ const CONFIG_PRESETS: Record<ConfigPresetName, PlainObject> = {
       targetInputTokensPerCall: 40000,
     },
     retrieval: {
-      buildStrategy: 'bm25',
       vector: {
         enabled: false,
         baseUrl: NVIDIA_BASE_URL,
@@ -436,7 +432,6 @@ const retrievalSchema = z
     maxChunksPerPage: z.number().int().min(1).max(10).default(2),
     maxChunkChars: z.number().int().min(200).default(3000),
     maxSourceChars: z.number().int().min(500).default(8000),
-    buildStrategy: z.enum(['bm25', 'hybrid']).default('bm25'),
     vector: z
       .object({
         enabled: z.boolean().default(false),
@@ -473,7 +468,6 @@ const retrievalSchema = z
     maxChunksPerPage: 2,
     maxChunkChars: 3000,
     maxSourceChars: 8000,
-    buildStrategy: 'bm25',
     vector: {
       enabled: false,
       baseUrl: DEFAULT_OPENAI_BASE_URL,
@@ -812,7 +806,6 @@ export function resolveConfigDetails(
       maxChunksPerPage: parsed.retrieval?.maxChunksPerPage ?? 2,
       maxChunkChars: parsed.retrieval?.maxChunkChars ?? 3000,
       maxSourceChars: parsed.retrieval?.maxSourceChars ?? 8000,
-      buildStrategy: parsed.retrieval?.buildStrategy ?? 'bm25',
       vector: {
         enabled: parsed.retrieval?.vector?.enabled ?? false,
         provider: vectorProvider,
@@ -859,7 +852,6 @@ export function resolveConfigDetails(
       'build.refreshOnIngest': sourceForPath(rawInput, presetInput, presetName, 'build.refreshOnIngest'),
       'build.slotBatchSize': sourceForPath(rawInput, presetInput, presetName, 'build.slotBatchSize'),
       'build.maxBuildContextChars': sourceForPath(rawInput, presetInput, presetName, 'build.maxBuildContextChars'),
-      'retrieval.buildStrategy': sourceForPath(rawInput, presetInput, presetName, 'retrieval.buildStrategy'),
       'retrieval.maxContextFiles': sourceForPath(rawInput, presetInput, presetName, 'retrieval.maxContextFiles'),
       'retrieval.maxChunksPerPage': sourceForPath(rawInput, presetInput, presetName, 'retrieval.maxChunksPerPage'),
       'retrieval.maxChunkChars': sourceForPath(rawInput, presetInput, presetName, 'retrieval.maxChunkChars'),

@@ -121,10 +121,9 @@ describe('config resolution', () => {
       rerankTopK: 24,
       maxResults: 6,
     });
-    expect(config.retrieval.buildStrategy).toBe('bm25');
   });
 
-  it('parses hybrid build retrieval strategy', () => {
+  it('ignores the retired retrieval.buildStrategy key', () => {
     const config = resolveConfig(
       {
         retrieval: {
@@ -134,7 +133,7 @@ describe('config resolution', () => {
       '/tmp/wiki',
     );
 
-    expect(config.retrieval.buildStrategy).toBe('hybrid');
+    expect('buildStrategy' in config.retrieval).toBe(false);
     expect(config.retrieval.vector.topK).toBe(48);
     expect(config.retrieval.vector.rerankTopK).toBe(24);
   });
@@ -267,7 +266,6 @@ describe('config resolution', () => {
     expect(config.limits.requestsPerMinute).toBe(100);
     expect(config.retrieval.vector.baseUrl).toBe('http://infinity.local:7997/v1');
     expect(config.retrieval.vector.requestsPerMinute).toBe(1000);
-    expect(config.retrieval.buildStrategy).toBe('bm25');
   });
 
   it('keeps complete openai-compatible configs valid without presets', () => {

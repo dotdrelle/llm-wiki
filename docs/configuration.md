@@ -75,7 +75,6 @@ retrieval:
   maxChunksPerPage: 2
   maxChunkChars: 3000
   maxSourceChars: 8000
-  buildStrategy: bm25
   vector:
     enabled: false
     baseUrl: http://127.0.0.1:7997/v1
@@ -335,7 +334,6 @@ they do not alter existing pages until it is run.
 | `maxChunksPerPage` | Maximum matching chunks returned from the same wiki page | `2`     |
 | `maxChunkChars`    | Maximum characters kept from a retrieved wiki chunk      | `3000`  |
 | `maxSourceChars`   | Maximum characters read from a raw source during ingest  | `8000`  |
-| `buildStrategy`    | Build-context retrieval strategy: `bm25` or `hybrid`     | `bm25`  |
 
 Vector retrieval options are documented in [vector-search.md](./vector-search.md).
 
@@ -358,7 +356,7 @@ Vector retrieval options are documented in [vector-search.md](./vector-search.md
 Vector API key resolution is direct: `retrieval.vector.apiKey` is used when set;
 otherwise vector calls reuse the resolved `llm.apiKey`.
 
-> **Context budget** — `wiki build` now plans batches using the same logic as `wiki build --plan`: it groups slots up to `limits.targetInputTokensPerCall`, uses `build.slotBatchSize` only as an optional compatibility ceiling, and trims retrieved context if a batch exceeds `limits.maxInputTokensPerCall`. Build context uses BM25 lexical retrieval by default; set `retrieval.buildStrategy: hybrid` to re-enable vector/rerank for build on a quota-free provider. Run `wiki doctor` and `wiki build --plan` after changing these values.
+> **Context budget** — `wiki build` now plans batches using the same logic as `wiki build --plan`: it groups slots up to `limits.targetInputTokensPerCall`, uses `build.slotBatchSize` only as an optional compatibility ceiling, and trims retrieved context if a batch exceeds `limits.maxInputTokensPerCall`. Build context searches the section fiches (`wiki/sources/`) with the same hybrid retrieval as everything else (vectors when the index exists, announced lexical fallback otherwise), without a per-slot rerank; an archived original (`raw/ingested/`) enters only when no fiche covers a slot (`build:raw-fallback`), and no single document fills a slot's context (at most 3 of its pages). `retrieval.buildStrategy` is retired: `wiki doctor` reports a leftover key and `--apply` removes it. Run `wiki doctor` and `wiki build --plan` after changing these values.
 
 ## `mcp`
 

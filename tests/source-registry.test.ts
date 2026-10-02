@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   SOURCE_REGISTRY_VERSION,
   hashContent,
+  isEngineOwnedWikiPage,
   isReportClean,
   markMissingSourceRecords,
   orphanPages,
@@ -243,6 +244,32 @@ describe('réconciliation', () => {
     reconcileRegistry(before, { archives: [], wikiPages: [] });
 
     expect(before).toEqual(snapshot);
+  });
+});
+
+describe('pages possédées par le moteur', () => {
+  it('ne questionne jamais l’index, le journal ni un pivot TAXO généré', () => {
+    // La réconciliation demande à l'opérateur quelles pages n'ont pas de
+    // source vivante. Ces pages-là ne peuvent pas en avoir : les compter était
+    // un faux positif du passage à TAXO (59 pivots + index + log sur ACPI).
+    expect(isEngineOwnedWikiPage({ relativePath: 'wiki/index.md' })).toBe(true);
+    expect(isEngineOwnedWikiPage({ relativePath: 'wiki/log.md' })).toBe(true);
+    expect(isEngineOwnedWikiPage({
+      relativePath: 'wiki/concepts/exigences/audit.md',
+      content: '---\ntype: concept\nfamily: Exigences\ngenerated:\n  by: llm-wiki-tags\n---\n# Audit\n',
+    })).toBe(true);
+  });
+
+  it('laisse une fiche et une page non générée à l’opérateur', () => {
+    expect(isEngineOwnedWikiPage({ relativePath: 'wiki/sources/archi/audit.md', content: 'x' })).toBe(false);
+    expect(isEngineOwnedWikiPage({
+      relativePath: 'wiki/concepts/exigences/ecrit-a-la-main.md',
+      content: '# Écrit à la main\n',
+    })).toBe(false);
+    expect(isEngineOwnedWikiPage({
+      relativePath: 'wiki/concepts/exigences/audit.md',
+      content: '---\ntype: concept\ngenerated:\n  by: llm-wiki\n---\n# Audit\n',
+    })).toBe(false);
   });
 });
 

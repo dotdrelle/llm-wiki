@@ -48,7 +48,6 @@ function createConfig(root: string, overrides: Partial<AppConfig> = {}): AppConf
       maxChunksPerPage: 2,
       maxChunkChars: 3000,
       maxSourceChars: 8000,
-      buildStrategy: 'bm25',
       vector: {
         enabled: false,
         baseUrl: 'https://vector.test/v1',
@@ -225,7 +224,7 @@ describe('doctor qualitative diagnostics', () => {
     expect(output).toContain('⚠ 0 error(s)');
   });
 
-  it('recommends bm25 build strategy with quantified rerank savings', async () => {
+  it('announces and removes the retired retrieval.buildStrategy key', async () => {
     const root = await createWorkspace();
     await writeFile(
       path.join(root, 'templates', 'brief.md'),
@@ -255,14 +254,14 @@ describe('doctor qualitative diagnostics', () => {
     );
     const config = createConfig(root);
     config.retrieval.vector.enabled = true;
-    config.retrieval.buildStrategy = 'hybrid';
+    // An earlier `doctor --apply` wrote this key into many workspaces.
+    await writeFile(path.join(root, '.wikirc.yaml'), 'retrieval:\n  buildStrategy: bm25\n', 'utf8');
 
     const output = await captureDoctor(config);
 
-    expect(output).toContain('rerank active on build context: ~1 rerank call(s)');
-    expect(output).toContain('buildStrategy: bm25');
-    expect(output).toContain('estimated gain:');
-    expect(output).toContain('would avoid ~1 rerank call(s)');
+    expect(output).toContain('retrieval.buildStrategy is no longer read');
+    expect(output).toContain('run `wiki doctor --apply` to remove it');
+    expect(output).not.toContain('rerank active on build context');
   });
 
   it('reports unresolved template build-context entries without failing', async () => {

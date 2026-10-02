@@ -11,6 +11,7 @@ import path from 'node:path';
 import type { AppConfig } from '../types.ts';
 import { loadConfig } from '../config/loadConfig.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
+import { createGraphSearch } from '../serve/graphSearch.ts';
 import { pathExists, safeWriteFile } from '../utils/fs.ts';
 import { resolveInside, toPosix } from '../utils/path.ts';
 import {
@@ -1007,6 +1008,7 @@ export default async function serveCmd(
         sendJson,
         sendGzippedHtml,
         completeText: graphSummaryCompletion(config),
+        searchWiki: createGraphSearch(workspace, config, rootDir),
       })) return;
 
       // Must run before handleWikiRoutes: that handler's fallback treats any

@@ -32,7 +32,6 @@ function effectiveConfigObject(details: EffectiveConfigDetails): Record<string, 
       maxChunksPerPage: config.retrieval.maxChunksPerPage,
       maxChunkChars: config.retrieval.maxChunkChars,
       maxSourceChars: config.retrieval.maxSourceChars,
-      buildStrategy: config.retrieval.buildStrategy,
       vector: {
         enabled: config.retrieval.vector.enabled,
         baseUrl: config.retrieval.vector.baseUrl,

@@ -4,8 +4,17 @@ import { generateGraph, renderGraphDocument } from '../html/wikiHtml.ts';
 import { loadWikiGraphSnapshot } from '../../graph/wiki/overview.ts';
 import { createFilteredSnapshot } from '../../graph/wiki/snapshot.ts';
 import { graphDocumentSummary } from '../../graph/wiki/summary.ts';
+import { loadTaxoGraph } from '../../graph/wiki/taxoGraph.ts';
 import { createGraphEventHub, type GraphEventHub } from '../sse/graphEvents.ts';
 import { sendJsonPayload } from '../http/sendJsonPayload.ts';
+
+export type GraphSearchAnswer = {
+  mode: 'hybrid' | 'lexical' | 'lexical-fallback';
+  reason: string | null;
+  /** Nothing scored as relevant: these are the closest hits, not matches. */
+  weak?: boolean;
+  results: Array<{ path: string; score: number }>;
+};
 
 export type GraphRoutesDeps = {
   rootDir: string;
@@ -17,6 +26,12 @@ export type GraphRoutesDeps = {
    * rather than nothing.
    */
   completeText?: (request: { system: string; user: string }) => Promise<string>;
+  /**
+   * The engine's own retrieval (BM25, plus vectors when `retrieval.vector` is
+   * configured), injected by `serve` like `completeText`. Absent, the graph
+   * search answers 503 and the page says so instead of matching nothing.
+   */
+  searchWiki?: (query: string) => Promise<GraphSearchAnswer>;
   sendJson: (
     res: {
       writeHead: (s: number, h: Record<string, string>) => void;
@@ -117,10 +132,35 @@ export async function handleGraphRoutes(
     return true;
   }
 
+  // The TAXO page draws concept pivots and fiches: a node it shows must open
+  // its summary and preview even where the community snapshot left it out.
+  const knownNode = async (id: string | null) => Boolean(id) && (
+    (await snapshot()).nodes.some((node) => node.id === id)
+    || (await loadTaxoGraph(deps.rootDir)).nodes.some((node) => node.id === id));
+
+  if (req.method === 'GET' && urlPath === '/api/graph/taxo') {
+    await sendJsonPayload(req, res, 200, await loadTaxoGraph(deps.rootDir));
+    return true;
+  }
+
+  if (req.method === 'GET' && urlPath === '/api/graph/search') {
+    const q = queryOf(req).trim();
+    if (!q) deps.sendJson(res, 200, { mode: 'lexical', reason: null, results: [] });
+    else if (!deps.searchWiki) deps.sendJson(res, 503, { error: 'SEARCH_UNAVAILABLE' });
+    else {
+      try {
+        deps.sendJson(res, 200, await deps.searchWiki(q));
+      } catch (error) {
+        deps.sendJson(res, 500, { error: 'SEARCH_FAILED', message: (error as Error).message });
+      }
+    }
+    return true;
+  }
+
   if (req.method === 'GET' && urlPath === '/api/graph/document') {
     const id = new URL(req.url ?? '/', 'http://localhost').searchParams.get('id');
     const current = await snapshot();
-    if (!id || !current.nodes.some((node) => node.id === id)) {
+    if (!id || !(await knownNode(id))) {
       deps.sendJson(res, 404, { error: 'DOCUMENT_NOT_FOUND' });
     } else {
       const document = await renderGraphDocument(deps.rootDir, id);
@@ -135,8 +175,7 @@ export async function handleGraphRoutes(
 
   if (req.method === 'GET' && urlPath === '/api/graph/summary') {
     const id = new URL(req.url ?? '/', 'http://localhost').searchParams.get('id');
-    const current = await snapshot();
-    if (!id || !current.nodes.some((node) => node.id === id)) {
+    if (!id || !(await knownNode(id))) {
       deps.sendJson(res, 404, { error: 'DOCUMENT_NOT_FOUND' });
       return true;
     }

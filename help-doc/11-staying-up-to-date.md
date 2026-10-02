@@ -21,7 +21,7 @@ Detection is deterministic and costs nothing — none of it calls the LLM:
   match their inputs.
 - **Project knowledge.** Ingestion files pages under the concept groupings
   already present in the workspace, creating a new grouping only when the
-  source supports one. The graph derives its communities from those folders;
+  source supports one. The graph draws its families and concepts from those folders;
   there is no separate taxonomy publication or stale-taxonomy step.
 - **Sources.** A source whose produced pages have disappeared is re-ingested on
   the next sync instead of being skipped as "unchanged".

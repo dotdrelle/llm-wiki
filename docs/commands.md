@@ -123,7 +123,7 @@ deliverable. Unchanged sections are preserved verbatim, a hidden
 sections, and temporary `.tmp.*` candidates are deleted after the run. A normal
 `wiki build` removes any previous stabilization sidecar for the deliverable.
 
-Slots are grouped by `limits.targetInputTokensPerCall`; `build.slotBatchSize` is only an optional compatibility ceiling. If a batch is still above `limits.maxInputTokensPerCall`, retrieved context is trimmed before the LLM call. Build context uses BM25 by default; set `retrieval.buildStrategy: hybrid` to use vector/rerank during builds.
+Slots are grouped by `limits.targetInputTokensPerCall`; `build.slotBatchSize` is only an optional compatibility ceiling. If a batch is still above `limits.maxInputTokensPerCall`, retrieved context is trimmed before the LLM call. Build context searches the section fiches (`wiki/sources/`) with the same hybrid retrieval as everything else (vectors when the index exists, announced lexical fallback otherwise), without a per-slot rerank; an archived original (`raw/ingested/`) enters only when no fiche covers a slot (`build:raw-fallback`), and no single document fills a slot's context (at most 3 of its pages).
 
 ## `wiki refresh [templates...]`
 

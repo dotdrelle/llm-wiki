@@ -55,7 +55,6 @@ function configFor(provider: LlmProvider, engine: LlmEngine): AppConfig {
       maxChunksPerPage: 2,
       maxChunkChars: 3000,
       maxSourceChars: 8000,
-      buildStrategy: 'bm25',
       vector: {
         enabled: false,
         baseUrl: 'https://x.test/v1',

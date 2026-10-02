@@ -50,6 +50,8 @@ import type { TraceLogger } from './traceLogger.ts';
 import type { WorkspaceService } from './workspaceService.ts';
 
 const FINAL_CONTEXT_EXCLUDED_PATHS = new Set(['wiki/index.md', 'wiki/log.md']);
+/** At most this many pages of one document in a slot's context. */
+const MAX_CONTEXT_PAGES_PER_DOCUMENT = 3;
 
 function isGeneratedTaxoTagPage(page: WikiPage): boolean {
   return page.relativePath.startsWith('wiki/concepts/')
@@ -352,7 +354,7 @@ export class BuildService {
               focus,
               await this.searchContextCached(focus, {
                 limit: 15,
-                includeRaw: true,
+                includeRaw: false,
                 rerank: false,
                 intent: 'build',
               }),
@@ -368,7 +370,7 @@ export class BuildService {
           `${instruction.headingPath.join(' ')} ${instruction.instruction}`,
           {
             limit: Math.max(24, this.config.retrieval.vector.maxResults),
-            includeRaw: true,
+            includeRaw: false,
             rerank: false,
             intent: 'build',
           },
@@ -380,23 +382,43 @@ export class BuildService {
           instructionFocusQueries.slice(0, 6).map((focus) =>
             this.searchContextCached(`${instruction.headingPath.join(' ')} ${focus}`, {
               limit: 15,
-              includeRaw: true,
+              includeRaw: false,
               rerank: false,
               intent: 'build',
             }),
           ),
         );
-        const rerankQuery = `${instruction.headingPath.join(' ')} ${instruction.instruction}`;
-        const mergedContext = this.mergeContextResults(
+        const fichesContext = this.mergeContextResults(
           [primaryContext, ...templateFocusContexts.values(), ...focusContexts].flat(),
         );
-        const rankedContext =
-          this.config.retrieval.buildStrategy === 'hybrid' &&
-          typeof this.retrieval.rerankResults === 'function'
-            ? await this.retrieval.rerankResults(rerankQuery, mergedContext, {
-                limit: Math.max(24, this.config.retrieval.vector.maxResults),
-              })
-            : mergedContext;
+        // The fiches are the evidence-bearing entry points: a deliverable
+        // cites a fiche, and the fiche's anchored citation reaches the
+        // archived original (frozen by the build's evidence manifest). An
+        // archived document is searched only when no fiche covers the slot,
+        // and that fallback is announced — citing the raw document directly
+        // skipped the consolidation and let one long source answer a question
+        // several sources cover.
+        const coveredByFiches = fichesContext.some((result) => result.page.relativePath.startsWith('wiki/sources/'));
+        const mergedContext = coveredByFiches
+          ? fichesContext
+          : this.mergeContextResults([
+              ...fichesContext,
+              ...(await this.searchContextCached(
+                `${instruction.headingPath.join(' ')} ${instruction.instruction}`,
+                { limit: 15, includeRaw: true, rerank: false, intent: 'build' },
+              )),
+            ]);
+        if (!coveredByFiches && this.logger) {
+          await this.logger.warn('build:raw-fallback', {
+            template: template.relativePath,
+            instruction: instruction.id,
+            heading: instruction.headingPath.join(' > '),
+          });
+        }
+        // No per-slot rerank: the hybrid retrieval already ranks by meaning,
+        // and one reranker call per slot made a long template slower for
+        // nothing but references.
+        const rankedContext = mergedContext;
         // Cap the per-slot context to the configured budget. Reranking may
         // consider up to 24 candidates for quality, but only the top chunks
         // are sent to the model: without this cap a 40-instruction template
@@ -496,8 +518,25 @@ export class BuildService {
     return [...bestByPath.values()].sort((a, b) => b.score - a.score);
   }
 
+  /*
+   No single document may fill a slot's context. A fiche's document is its
+   folder (wiki/sources/<document>/<section>.md); an archived source is its own
+   document. Past the cap, a document's further sections give way to other
+   documents, so a question several sources answer is answered by several.
+   */
+  private capPerDocument(results: SearchResult[]): SearchResult[] {
+    const perDocument = new Map<string, number>();
+    return results.filter((result) => {
+      const page = result.page.relativePath;
+      const document = page.startsWith('wiki/sources/') ? path.posix.dirname(page) : page;
+      const count = (perDocument.get(document) ?? 0) + 1;
+      perDocument.set(document, count);
+      return count <= MAX_CONTEXT_PAGES_PER_DOCUMENT;
+    });
+  }
+
   private prepareFinalContext(results: SearchResult[]): SearchResult[] {
-    return results
+    return this.capPerDocument(results
       .filter((result) => !FINAL_CONTEXT_EXCLUDED_PATHS.has(result.page.relativePath)
         && !isGeneratedTaxoTagPage(result.page))
       .sort((a, b) => {
@@ -509,7 +548,7 @@ export class BuildService {
         if (aDate !== undefined && bDate === undefined) return -1;
         if (aDate === undefined && bDate !== undefined) return 1;
         return b.score - a.score;
-      });
+      }));
   }
 
   private expandRelatedContext(

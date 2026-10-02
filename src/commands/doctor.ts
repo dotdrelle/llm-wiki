@@ -34,6 +34,7 @@ import { pathExists, safeWriteFile } from '../utils/fs.ts';
 import { HistoryService } from '../services/historyService.ts';
 import { applyMissingOkfTypes, applyOkfV02Migration, listBundleFilesMissingType, listBundleFilesV02Migration } from '../okf/scan.ts';
 import {
+  isEngineOwnedWikiPage,
   isReportClean,
   readSourceRegistry,
   reconcileRegistry,
@@ -187,7 +188,7 @@ function listSample(items: string[]): string {
  */
 async function reportSourceReconciliation(
   workspace: WorkspaceService,
-  wikiPages: Array<{ relativePath: string }>,
+  wikiPages: Array<{ relativePath: string; content?: string }>,
   ingestedPages: Array<{ relativePath: string }>,
 ): Promise<void> {
   const registryPath = path.join(workspace.paths.internalDir, SOURCE_REGISTRY_FILENAME);
@@ -199,7 +200,12 @@ async function reportSourceReconciliation(
 
   const report = reconcileRegistry(registry, {
     archives: ingestedPages.map((page) => page.relativePath),
-    wikiPages: wikiPages.map((page) => page.relativePath),
+    // The index, the journal and generated TAXO pivots are engine-owned: a
+    // source can never have produced them, so they are not orphans. Asking the
+    // operator about them was a TAXO false positive, not a finding.
+    wikiPages: wikiPages
+      .filter((page) => !isEngineOwnedWikiPage(page))
+      .map((page) => page.relativePath),
   });
   row('sources tracked:', String(registry.sources.length));
 
@@ -1105,6 +1111,18 @@ export default async function doctorCmd(
     }
   }
 
+  // `retrieval.buildStrategy` is retired: the build always uses the hybrid
+  // retrieval (vectors when the index exists). The schema no longer reads it,
+  // and an earlier `doctor --apply` wrote it into many files — say so and
+  // remove it rather than let a dead key look like a setting.
+  const rawRetrievalConfig = rawConfigForTemperatureCheck?.retrieval;
+  if (rawRetrievalConfig != null && typeof rawRetrievalConfig === 'object'
+    && 'buildStrategy' in (rawRetrievalConfig as Record<string, unknown>)) {
+    warn('retrieval.buildStrategy is no longer read — the build always uses the hybrid retrieval; remove it from the config');
+    row('action:', options.apply ? 'removing retrieval.buildStrategy from .wikirc.yaml' : 'run `wiki doctor --apply` to remove it');
+    if (options.apply) await applyRecommendedConfig(config, { retrieval: { buildStrategy: null } });
+  }
+
   if (isOllamaEngine(config.llm) && ollamaInfo) {
     printOllamaHardware(
       config,
@@ -1404,26 +1422,11 @@ export default async function doctorCmd(
       buildPlan.estimatedRequests,
       measurements.provider?.latencyMs,
     );
-    const totalBuildSlots = buildPlan.templates.reduce(
-      (sum, templatePlan) => sum + templatePlan.instructions,
-      0,
-    );
     const estimatedBuildMs = Math.max(throttleFloorMs, measuredProviderLatencyMs);
     row(
       'estimated build:',
       `${formatDuration(estimatedBuildMs)} minimum (${buildPlan.estimatedRequests} LLM call(s), measured provider preflight ${measurements.provider?.latencyMs !== undefined ? formatDuration(measurements.provider.latencyMs) : 'unavailable'})`,
     );
-    if (config.retrieval.buildStrategy === 'hybrid') {
-      const avoidableRerankMs = estimateProviderCallsMs(
-        totalBuildSlots,
-        measurements.rerankLatencyMs,
-      );
-      warn(
-        `rerank active on build context: ~${totalBuildSlots} rerank call(s)${measurements.rerankLatencyMs !== undefined ? `, ~${formatDuration(avoidableRerankMs)} measured latency` : ''} — retrieval.buildStrategy: bm25 would remove them`,
-      );
-    } else {
-      ok('buildStrategy bm25: build context avoids rerank calls');
-    }
     if (config.limits.dailyInputTokens) {
       const percent = Math.round(
         (buildPlan.estimatedInputTokens / config.limits.dailyInputTokens) * 100,
@@ -1544,7 +1547,6 @@ export default async function doctorCmd(
         maxBuildContextChars: recommendedBuildContextChars,
       },
       retrieval: {
-        buildStrategy: 'bm25',
         maxContextFiles: Math.max(config.retrieval.maxContextFiles, 8),
         maxChunkChars: recommendedChunkChars,
         maxSourceChars: recommendedSourceChars,
@@ -1555,7 +1557,6 @@ export default async function doctorCmd(
       limits: config.limits,
       build: config.build,
       retrieval: {
-        buildStrategy: config.retrieval.buildStrategy,
         maxContextFiles: config.retrieval.maxContextFiles,
         maxChunkChars: config.retrieval.maxChunkChars,
         maxSourceChars: config.retrieval.maxSourceChars,
@@ -1581,17 +1582,6 @@ export default async function doctorCmd(
     );
     if (Object.keys(recommendedPatch).length > 0) {
       printYamlBlock(recommendedPatch);
-      if (config.retrieval.buildStrategy === 'hybrid') {
-        const avoidableRerankCalls = totalBuildSlots;
-        const avoidableRerankMs = estimateProviderCallsMs(
-          avoidableRerankCalls,
-          measurements.rerankLatencyMs,
-        );
-        row(
-          'estimated gain:',
-          `retrieval.buildStrategy: bm25 would avoid ~${avoidableRerankCalls} rerank call(s)${measurements.rerankLatencyMs !== undefined ? ` (~${formatDuration(avoidableRerankMs)})` : ''}`,
-        );
-      }
     } else {
       ok('No config changes recommended');
     }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { graphCanvasScript } from '../src/graph/core/canvas/graphCanvasScript.ts';
-import { canvasExplorerScript } from '../src/graph/wiki/ui/canvas/canvasExplorerScript.ts';
+import { taxoRendererScript } from '../src/graph/wiki/ui/taxo/taxoRendererScript.ts';
 import { renderWikiGraphV2 } from '../src/graph/wiki/graphApp.ts';
 import { RUNTIME_GRAPH_SCRIPT } from '../src/chat/runtime/runtimeGraphScript.ts';
 import { RUNTIME_CANVAS_SCRIPT } from '../src/chat/runtime/runtimeCanvasScript.ts';
@@ -42,14 +42,14 @@ describe('shared graph canvas foundation', () => {
     expect(source).toContain('if(timer)clearTimeout(timer)');
   });
 
-  it('réserve la pleine cadence au halo et garde l’ambiance à cadence réduite', () => {
-    const source = canvasExplorerScript();
+  it('garde l’ambiance du graphe TAXO à cadence réduite, la pleine cadence à la caméra', () => {
+    const source = taxoRendererScript();
 
-    // Une convergence de fusion rejoint le halo au même régime : brève,
-    // regardée, et rendant la scène au repos en s'achevant.
-    expect(source).toContain('if(hasFreshGraphNodes()||hasGraphMerges())scheduler.animate(260)');
-    expect(source).toContain('scheduler.idle(Number.POSITIVE_INFINITY,80)');
-    expect(source).not.toContain('GRAPH_IDLE_FRAME_MS');
+    // Le scintillement et les particules des liens n'ont pas de fin : ils
+    // passent par la cadence réduite du planificateur, jamais 60 i/s permanents.
+    expect(source).toContain('if(camera.moving)scheduler.animate(60);else scheduler.idle(1000,80)');
+    expect(source).toContain('createGraphFrameScheduler(draw)');
+    expect(source).toContain('createGraphCamera(scheduler');
   });
 
   it('provides interruptible camera transitions and bounded cursor zoom', () => {
@@ -74,9 +74,9 @@ describe('shared graph canvas foundation', () => {
     expect(shared).toContain('function createGraphGlow');
     expect(shared).toContain('function glowSprite(');
     // Aucun appel direct à roundRect ni duplication du halo hors du module partagé.
-    expect(canvasExplorerScript()).not.toContain('context.roundRect(');
+    expect(taxoRendererScript()).not.toContain('ctx.roundRect(');
     expect(RUNTIME_CANVAS_SCRIPT).not.toContain('context.roundRect(');
-    expect(canvasExplorerScript()).not.toContain('function glowSprite(');
+    expect(taxoRendererScript()).not.toContain('function glowSprite(');
     expect(RUNTIME_CANVAS_SCRIPT).not.toContain('function glowSprite(');
   });
 
@@ -89,14 +89,15 @@ describe('shared graph canvas foundation', () => {
     );
   });
 
-  it('presents map, community, and focus as one Explore navigation', () => {
+  it('presents the four TAXO readings without D3 in the browser', () => {
     const html = renderWikiGraphV2();
 
-    expect(html).toContain('data-view="explore" class="active"');
-    expect(html).toContain('id="graph-breadcrumb"');
-    expect(html).toContain('function navigateGraphLevel(level)');
-    expect(html).toContain("selectedCommunity=id;view='community'");
-    expect(html).toContain("selected=node;selectedCommunity=node.communityId;view='focus'");
+    for (const view of ['family', 'concepts', 'focus', 'full']) expect(html).toContain(`id="v-${view}"`);
+    // The force layouts are settled server-side; the page never loads D3.
+    expect(html).not.toContain('d3.min.js');
+    expect(html).not.toMatch(/\bd3\./);
+    expect(html).toContain("json('/api/graph/taxo')");
+    expect(html).toContain("'/api/graph/search?q='");
   });
 
   it('patches Activity/Execution Canvas state without refitting unchanged topology', () => {
@@ -124,37 +125,5 @@ describe('shared graph canvas foundation', () => {
     );
     expect(RUNTIME_GRAPH_SCRIPT).toContain('const claimCamera=()=>{state.userAdjusted=true;state.fitted=true}');
     expect(RUNTIME_GRAPH_SCRIPT).toContain('runtimeCanvasPositions.set');
-  });
-});
-
-describe('fiche de contexte et tuiles', () => {
-  const source = canvasExplorerScript();
-
-  it('écarte les tuiles à la projection, jamais dans le modèle', () => {
-    /*
-     La tuile cliquée changeait de place pour laisser tenir la fiche. Ce sont
-     les tuiles GÊNÉES qui doivent s'écarter, et seulement le temps de la
-     lecture : le décalage s'applique donc à la projection. Les positions
-     normalisées et celles mémorisées dans localStorage restent intactes, les
-     arêtes suivent puisqu'elles projettent les mêmes centres, et fermer la
-     fiche suffit à tout remettre en place.
-    */
-    expect(source).toContain('function shiftOutOfObstacle(projected,point)');
-    expect(source).toContain('state.obstacle?shiftOutOfObstacle(projected,point):projected');
-    // Aucune écriture dans le modèle depuis la fonction de décalage.
-    const shift = source.slice(source.indexOf('function shiftOutOfObstacle'));
-    const body = shift.slice(0, shift.indexOf('\n  function '));
-    expect(body).not.toMatch(/point\.(x|y)\s*[-+]?=/);
-    expect(body).not.toContain('saveCanvasExplorerPosition');
-  });
-
-  it('laisse en place la tuile que la fiche décrit', () => {
-    // Écarter le nœud ancré reproduirait exactement le défaut d'origine.
-    expect(source).toContain("point.id&&point.id===state.anchor?.id");
-  });
-
-  it('libère les tuiles dès que la fiche se ferme', () => {
-    expect(source).toContain('anchor(id,notify){state.anchor=id?{id,notify}:null;if(!id)state.obstacle=null;');
-    expect(source).toContain('avoid(zone){');
   });
 });

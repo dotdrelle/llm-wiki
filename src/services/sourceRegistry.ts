@@ -189,11 +189,31 @@ export function markMissingSourceRecords(
 }
 
 /**
+ * Pages the engine maintains itself, which no source can ever own.
+ *
+ * `wiki/index.md` and `wiki/log.md` are deterministic engine output, and a
+ * generated TAXO pivot (`wiki/concepts/<family>/<tag>.md`, `by: llm-wiki-tags`)
+ * aggregates fiches from many sources: the registry records per-source output,
+ * so a pivot can never appear in any source's `producedPages`. Reporting them
+ * as "no live source" was a false positive of the TAXO migration — 59 pivots
+ * plus the index and the log on a 16-source workspace — because the check was
+ * written when every page came from one source note. A later TAXO cycle
+ * regenerates or purges these pages on its own; they are never a question for
+ * the operator.
+ */
+export function isEngineOwnedWikiPage(page: { relativePath: string; content?: string }): boolean {
+  if (page.relativePath === 'wiki/index.md' || page.relativePath === 'wiki/log.md') return true;
+  return page.relativePath.startsWith('wiki/concepts/')
+    && /^\s*by:\s*llm-wiki-tags\s*$/m.test(page.content ?? '');
+}
+
+/**
  * Wiki pages that no living source backs.
  *
  * An orphan page is not necessarily wrong: it may have been written by hand, or
  * produced before the registry existed. It is a question asked to the operator,
- * never a deletion.
+ * never a deletion. Engine-owned pages are filtered by the caller (doctor) —
+ * this function answers about the pages a source COULD have produced.
  */
 export function orphanPages(registry: SourceRegistryFile, wikiPages: string[]): string[] {
   const supported = new Set(

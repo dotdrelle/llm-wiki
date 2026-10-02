@@ -35,7 +35,6 @@ function gatewayConfig(overrides: Partial<AppConfig['retrieval']['vector']> = {}
       maxChunksPerPage: 2,
       maxChunkChars: 3000,
       maxSourceChars: 8000,
-      buildStrategy: 'bm25',
       vector: {
         enabled: true,
         baseUrl: 'http://gateway:4000/v1',

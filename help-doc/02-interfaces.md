@@ -74,21 +74,40 @@ reconnect it, using the circular arrow on the card.
 
 ## The Graph (knowledge map)
 
-A **visual** view of the wiki: pages (concepts) and their links, as a navigable
-graph. Useful to explore the structure of the knowledge, spot clusters and move
-from one concept to another.
+A **visual** view of the wiki's taxonomy: the concept families, their concepts
+and the source sheets (fiches) that back them. Useful to see how the knowledge
+is organized, which families overlap, and which sources a concept rests on.
 
 - **Entry point**: page `/graph` of the Serve interface. The *Graph* view of the
   Activity panel also offers a representation of running processing.
 - **For whom**: explore and understand the wiki's organization at a glance.
 
-Typing a term there **filters the relations**, it does not find a document: the
-graph narrows to the relations that bear on that term (matching a file name, a
-page title, a tag, a subject or a type), and you keep browsing that filtered
-view. The filter stays when you change the grouping axis (including *Tag*); the
-suggestion list is only a shortcut to jump to one page, and it closes when you
-click away or press Escape. Type `cloud`, for example, to see how the
-cloud-related pages are linked.
+Four views, from the widest to the most detailed:
+
+- **Families** — each family radiates its concepts; two families are linked
+  when they share sources, and the number on the link counts them.
+- **Concepts** — two concepts are linked when one source cites both; the
+  stroke thickens with the number of shared sources.
+- **Concept focus** — one concept in the centre, its sources on the first ring,
+  then the other concepts those sources cite. Click an outer concept to move
+  there; pick another one from the list.
+- **Concepts + sources** — every concept and every source sheet, each source
+  linked to the concepts it tags.
+
+The left column hides or shows a family, or the sources. The *Selection* panel
+on the right describes what you clicked — a family, a concept or a source —
+and lists its neighbours. Clicking a **source** also opens its summary card:
+a short summary, *Open page* to read it in place, and *Add to Donna* to put it
+in the chat's context.
+
+The search box uses the same search as Donna: semantic (vector) when the
+workspace's vector index is built, otherwise lexical. A spinner turns in the
+field while it searches; a chip beside it then says which one answered —
+*semantic + lexical*, or in amber *lexical only* when the vector index was not
+used, and *weak matches* when nothing scored as truly relevant (the closest
+pages are shown anyway). It highlights the matching concepts and sources (on the
+Families and Concepts views, the concepts the matching sources tag) and lists
+them, best match first, in the Selection panel.
 
 ## Which interface to choose
 

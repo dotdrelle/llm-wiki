@@ -377,14 +377,13 @@ export class RetrievalService {
     query: string,
     options?: RetrievalSearchOptions,
   ): Promise<SearchResult[]> {
-    const buildBm25Only =
-      options?.intent === 'build' && this.config.retrieval.buildStrategy === 'bm25';
+    // The build uses the same hybrid retrieval as everything else: the vector
+    // index exists precisely to rank its context by meaning.
     this.lastSearchDiagnostics = {
       mode: 'lexical',
-      reason: buildBm25Only || !this.config.retrieval.vector.enabled ? 'disabled' : null,
+      reason: !this.config.retrieval.vector.enabled ? 'disabled' : null,
     };
     if (
-      !buildBm25Only &&
       this.config.retrieval.vector.enabled &&
       !this.vectorDisabledAfterError
     ) {

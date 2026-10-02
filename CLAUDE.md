@@ -3,7 +3,10 @@
 The Wiki browser graph is Canvas-only: keep Wiki UI code under
 `src/graph/wiki`, share the camera/frame scheduler from `src/graph/core/canvas/`
 with Run/Task, and do not restore the removed D3/SVG renderers or legacy graph
-endpoints.
+endpoints. The `/graph` page is the TAXO reading (Families, Concepts, Concept
+focus, Concepts + sources — `src/graph/wiki/ui/taxo/`); its force layouts are
+settled **server-side** with `d3-force` (`taxoLayout.ts`), so the browser still
+never loads D3.
 
 ## Purpose
 
@@ -153,9 +156,9 @@ citation closure; anchoring, validation and the multi-source loss guard remain
 deterministic engine responsibilities. Builds freeze the resolved evidence in
 their per-build manifest. See `docs/provenance.md` for the data contracts.
 
-Graph communities are derived from the generated family folders; cross-cutting
-edges are computed from shared tags and citations, not stored as a second
-taxonomy. Retrieval, vector indexing, build, export and lint resolve a fiche as
+The `/graph` page draws families and concepts from the generated family
+folders and their citations to fiches; cross-cutting edges are computed from
+shared citations, not stored as a second taxonomy. Retrieval, vector indexing, build, export and lint resolve a fiche as
 the evidence-bearing page and a pivot as a navigation page. Stable/verified
 pages are protected during automatic pivot regeneration. Re-ingesting a source
 prunes only obsolete registry-owned generated pages for that source; it does
@@ -342,29 +345,29 @@ therefore live **outside** that block:
   from `/history` waited on an approval nobody could see. It is kept out of
   `#main` too: `#main` is a flex column normally and an explicitly-placed grid in
   split mode, so a new child there needs a placement in both.
-- The type filters of the wiki graph govern **three** surfaces: the left index,
-  the canvas and the right inspector. `renderCommunityInspector` is split from
-  `selectCommunity` precisely so a filter change can replay the panel; the panel
-  head announces `N of M documents` when a filter hides some, because counting
-  one thing and listing another is how the three counters came to disagree.
-- The graph search is a **relation filter, not a document finder**
-  (`src/graph/wiki/queryFilter.ts`). A node matches on title, id, `subject`,
-  OKF `type` and every tag, accent- and case-insensitively; an edge is kept
-  when either endpoint matches OR its relation label does, and both endpoints
-  of a kept edge are always pulled back in. It runs **server-side, before the
-  projection** (`createFilteredSnapshot` in `snapshot.ts`, `?q=` on
-  `/api/graph/overview` and `/api/graph/list`), so the leaf edges, the
-  community edges and every axis grouping (subject/type/tag) derive from the
-  same reduced corpus. The client keeps the query in `searchQuery` and
-  re-fetches it debounced (220 ms, sequence-guarded) and on every revision;
-  type filters and grouping changes re-apply it in place, without a second
-  fetch. Enter keeps the filtered view, the dropdown's first entry is "Filter
-  the graph for …" (the list also closes on outside click or Escape, and
-  clicking a leaf still focuses that document), and `filtersScript.ts`'s
-  `visible()` remains the single chokepoint for the index, the canvas and the
-  inspector. The header chrome — search input, Reset, the Explore/List tabs and
-  the close button — renders at 12 px, not the 14 px body size, so the bar is
-  not the one oversized control beside its own neighbours.
+- The `/graph` page reads ONE payload, `/api/graph/taxo` (`taxoGraph.ts`):
+  concept pivots with their `family`, the fiches under `wiki/sources/`, the
+  concept→fiche `[src: …]` links and the settled positions of the three force
+  views, cached on the same file etag. Co-citation, shared-source family links
+  and membership are derived in the browser (`taxoStateScript.ts`), exactly as
+  the TAXO prototype did. A click on a fiche opens the context card
+  (`contextCardScript.ts`: LLM summary, preview, "Add to Donna"); summary and
+  preview accept any node the TAXO payload draws. The family/source filters of
+  the left column govern what is drawn and framed (the single `visible()`
+  predicate); the inspector keeps listing a node's full neighbourhood.
+- The graph search is the **engine's retrieval**, not a second matcher:
+  `/api/graph/search` → `createGraphSearch` (`src/serve/graphSearch.ts`) →
+  `RetrievalService.search` (hybrid BM25 + vectors when the index exists),
+  reranked by the configured reranker because the fused scores are flat, then
+  cut at half the best score (max 25). When the reranker scores every hit
+  under 0.05 (nothing relevant), the 5 best fused hits come back flagged
+  `weak` instead of lighting the whole graph. The answer names its mode and the
+  page shows it — a spinner in the field while the engine answers, then a chip
+  (`semantic + lexical`, or amber `lexical only` / `weak matches`): a
+  `lexical-fallback` is announced, never passed off as semantic.
+  Without the injected search the route answers 503. The old relation filter
+  (`queryFilter.ts`, `?q=` on `/api/graph/overview`) still serves the MCP and
+  list routes, not this page.
 - Chat context accepts `wiki/`, `raw/untracked/` **and** `raw/ingested/`. That
   list must match what the graph offers a "Send to Donna" button on, otherwise
   the button is offered on pages the shell silently refuses. The graph waits for
@@ -714,10 +717,17 @@ ingest`) builds a review per planned operation (`buildReviewOperations`):
   longer produce, that no other source claims, is deleted after a failure-free
   run (`ingest:rebuild-prune`), while a partial failure prunes nothing
   (`ingest:rebuild-prune-skipped`).
-- `buildService.ts`: template slot batching and generation. Build retrieval
-  runs with `includeRaw: true` — the raw corpus (`raw/ingested/`) is part of
-  the evidence, merged with the vector/lexical results, never instead of
-  them.
+- `buildService.ts`: template slot batching and generation. Build context is
+  **fiches first**: it searches `wiki/sources/` with the same hybrid retrieval
+  as everything else (there is no `buildStrategy` any more — the vector index
+  exists to rank this context; `doctor` announces and `--apply` removes a
+  leftover key) and no per-slot rerank. An archived original enters only when
+  no fiche covers a slot, logged `build:raw-fallback`: citing it directly
+  skipped the consolidation and let one long source answer a question several
+  sources cover. `capPerDocument` keeps at most 3 pages of one document
+  (a fiche's document is its folder) in a slot's context. The provenance still
+  reaches the archive through the fiche's anchored citation, frozen by the
+  build's evidence manifest.
 - `refreshService.ts`: stale deliverable detection.
 - `exportService.ts`: citation expansion and polish. A section's evidence is
   first the frozen fragment text from the build's evidence manifest

@@ -527,19 +527,12 @@ function activityPlanSteps(item) {
 function runtimeActivityLineHTML(line) {
   const status=normalizeActivityStatus(line.status||'running',false);
   const progress=line.progress||{};
-  const percent=Number(progress.percent);
-  const bits=[
-    progress.detail,
-    progress.batch?.total?\`batch \${(Number(progress.batch.index)||0)+1}/\${progress.batch.total}\`:null,
-    progress.throttling?.active?(progress.throttling.retryAt?\`throttled · retry \${progress.throttling.retryAt}\`:'throttled'):null,
-    progress.processing?.instructionCount!=null?\`\${progress.processing.instructionCount} instruction\${Number(progress.processing.instructionCount)>1?'s':''}\`:null,
-    progress.stabilizeKept!=null||progress.stabilizeMerged!=null
-      ? \`kept \${progress.stabilizeKept??0}, merged \${progress.stabilizeMerged??0}, inserted \${progress.stabilizeInserted??0}, removed \${progress.stabilizeRemoved??0}\`
-      : null,
-    Number.isFinite(percent)?Math.round(percent)+'%':null,
-  ].filter(Boolean);
-  const meta=[status,...bits].join(' · ');
-  return \`<div class="act-line \${status}"><span class="act-line-dot"></span><span class="act-line-label">\${esc(line.label||line.id||'Activity')}</span><span class="act-line-meta">\${esc(meta)}</span></div>\`;
+  // The same document label and the same live figures as the run strip
+  // (runStripDetail): two surfaces describing one run must not disagree.
+  const label=String(progress.label||'').trim()||line.label||line.id||'Activity';
+  const throttled=progress.throttling?.active?(progress.throttling.retryAt?\`throttled · retry \${progress.throttling.retryAt}\`:'throttled'):null;
+  const meta=[status,runStripDetail(progress,null),throttled,runStripPercent(progress.percent)].filter(Boolean).join(' · ');
+  return \`<div class="act-line \${status}"><span class="act-line-dot"></span><span class="act-line-text"><span class="act-line-label">\${esc(label)}</span><span class="act-line-meta">\${esc(meta)}</span></span></div>\`;
 }
 function localActivityHTML() {
   const rev=[..._activities].reverse();

@@ -233,10 +233,11 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 /* The strip lives at the top now, so the composer needs no bottom padding and
    the approval banner keeps its own base position (it stays at the bottom). */
 /* Business activity lines inside the Plan tab (they replaced the raw cards). */
-.act-line{display:flex;align-items:center;gap:8px;padding:5px 12px;font-size:12px}
-.act-line-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:var(--muted)}
+.act-line{display:flex;align-items:flex-start;gap:8px;padding:5px 12px;font-size:12px}
+.act-line-text{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.act-line-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:5px;background:var(--muted)}
 .act-line.running .act-line-dot{background:var(--accent)}
 .act-line.done .act-line-dot{background:var(--ok,#3fb950)}
 .act-line.failed .act-line-dot,.act-line.cancelled .act-line-dot{background:var(--err)}
-.act-line-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.act-line-meta{flex-shrink:0;font-family:var(--font-mono);font-size:10px;color:var(--muted)}`;
+.act-line-label{min-width:0;overflow-wrap:anywhere}
+.act-line-meta{font-family:var(--font-mono);font-size:10px;color:var(--muted);overflow-wrap:anywhere}`;

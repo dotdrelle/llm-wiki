@@ -39,7 +39,6 @@ function createConfig(root: string): AppConfig {
       maxChunksPerPage: 2,
       maxChunkChars: 3000,
       maxSourceChars: 8000,
-      buildStrategy: 'bm25',
       vector: {
         enabled: false,
         baseUrl: 'http://127.0.0.1:11434/v1',
@@ -681,7 +680,6 @@ describe('build service', () => {
     );
 
     const config = createConfig(root);
-    config.retrieval.buildStrategy = 'hybrid';
     const retrieval = new CountingRetrievalService();
     const service = new BuildService(
       config,
@@ -696,14 +694,14 @@ describe('build service', () => {
       (query) => query === 'Alpha' || query === 'Beta',
     );
     expect(focusQueries).toHaveLength(2);
-    expect(retrieval.rerankQueries).toHaveLength(3);
+    expect(retrieval.rerankQueries).toHaveLength(0);
     expect(new Set(retrieval.intents)).toEqual(new Set(['build']));
     expect(focusQueries.some((query) => query.startsWith('One '))).toBe(false);
     expect(focusQueries.some((query) => query.startsWith('Two '))).toBe(false);
     expect(focusQueries.some((query) => query.startsWith('Three '))).toBe(false);
   });
 
-  it('uses BM25-only build context by default without final rerank', async () => {
+  it('never reranks the build context slot by slot', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-bm25-'));
     await mkdir(path.join(root, 'wiki'), { recursive: true });
     await mkdir(path.join(root, 'templates'), { recursive: true });
@@ -731,7 +729,6 @@ describe('build service', () => {
 
     await service.build();
 
-    expect(config.retrieval.buildStrategy).toBe('bm25');
     expect(retrieval.rerankQueries).toHaveLength(0);
     expect(new Set(retrieval.intents)).toEqual(new Set(['build']));
   });
@@ -1081,5 +1078,81 @@ describe('build service', () => {
     expect(maxActiveFinalizers).toBe(1);
     const commits = await history.log({ limit: 10 });
     expect(commits.filter((commit) => commit.subject.startsWith('build: '))).toHaveLength(2);
+  });
+});
+
+// Answers per includeRaw, so a test can see which corpus each search reached.
+class CorpusRetrievalService {
+  readonly rawSearches: number[] = [];
+  constructor(private readonly fiches: SearchResult[], private readonly raw: SearchResult[]) {}
+  async search(_query: string, options?: { includeRaw?: boolean }): Promise<SearchResult[]> {
+    if (options?.includeRaw) {
+      this.rawSearches.push(1);
+      return [...this.fiches, ...this.raw];
+    }
+    return this.fiches;
+  }
+  async warmCache(): Promise<WikiPage[]> {
+    return [];
+  }
+  async rerankResults(_query: string, results: SearchResult[]): Promise<SearchResult[]> {
+    return results;
+  }
+}
+
+describe('build context: fiches first', () => {
+  async function buildWith(retrieval: CorpusRetrievalService) {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-fiches-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'templates'), { recursive: true });
+    await mkdir(path.join(root, 'deliverables'), { recursive: true });
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n', 'utf8');
+    await writeFile(path.join(root, 'templates', 'brief.md'), ['# Brief', '', '[[INSTRUCTION: Compare the solutions.]]'].join('\n'), 'utf8');
+    const config = createConfig(root);
+    const llm = new FakeLLMService();
+    const warnings: Array<{ event: string }> = [];
+    const logger = {
+      info: async () => {},
+      warn: async (event: string) => { warnings.push({ event }); },
+      error: async () => {},
+      debug: async () => {},
+    };
+    const service = new BuildService(
+      config, new WorkspaceService(config), llm as unknown as LLMService,
+      retrieval as unknown as RetrievalService, logger as never,
+    );
+    await service.build();
+    return { prompt: llm.lastJsonRequest?.user ?? '', warnings };
+  }
+  const page = (p: string, score: number) => ({ page: wikiPage(p, `# ${p}\n\nFacts.`), score });
+
+  it('cites fiches and never searches the archived originals when fiches cover the slot', async () => {
+    const retrieval = new CorpusRetrievalService(
+      [page('wiki/sources/board/pricing.md', 9)],
+      [page('raw/ingested/board.md', 99)],
+    );
+    const { prompt, warnings } = await buildWith(retrieval);
+    expect(prompt).toContain('wiki/sources/board/pricing.md');
+    expect(prompt).not.toContain('raw/ingested/board.md');
+    expect(retrieval.rawSearches).toHaveLength(0);
+    expect(warnings.map((w) => w.event)).not.toContain('build:raw-fallback');
+  });
+
+  it('falls back to the archived originals only when no fiche covers the slot, and says so', async () => {
+    const retrieval = new CorpusRetrievalService([], [page('raw/ingested/board.md', 9)]);
+    const { prompt, warnings } = await buildWith(retrieval);
+    expect(prompt).toContain('raw/ingested/board.md');
+    expect(warnings.map((w) => w.event)).toContain('build:raw-fallback');
+  });
+
+  it('lets no single document fill the slot context', async () => {
+    const retrieval = new CorpusRetrievalService([
+      page('wiki/sources/board/a.md', 9), page('wiki/sources/board/b.md', 8),
+      page('wiki/sources/board/c.md', 7), page('wiki/sources/board/d.md', 6),
+      page('wiki/sources/prophix/a.md', 1),
+    ], []);
+    const { prompt } = await buildWith(retrieval);
+    expect(prompt).toContain('wiki/sources/prophix/a.md');
+    expect(prompt).not.toContain('wiki/sources/board/d.md');
   });
 });
