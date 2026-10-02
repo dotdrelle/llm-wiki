@@ -1,6 +1,8 @@
 ---
 name: wiki-rebuild
 description: Rebuild TAXO fiches and tag-family pivots from archived sources, then verify links and OKF frontmatter
+capability: knowledge.rebuild
+operation: ingest_rebuild
 ---
 Re-run the single TAXO operation over every archived source without touching the archives. Recreate or update evidence-bearing section fiches under `wiki/sources/`, regenerate tag-family pivots under `wiki/concepts/`, then run workspace verification and report what changed and what it found. Do not split analysis, writes and regrouping into separate tasks. If part of the operation or verification fails or degrades, say so rather than skipping silently.
 
