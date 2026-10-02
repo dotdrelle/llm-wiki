@@ -518,6 +518,30 @@ const historySchema = z
   )
   .default({ enabled: true, authorName: 'llm-wiki', authorEmail: 'llm-wiki@localhost' });
 
+const ingestSchema = z.object({
+  sheets: z.object({
+    minSectionChars: z.number().int().min(1).default(40),
+    minContentChars: z.number().int().min(1).default(40),
+    maxSectionChars: z.number().int().min(1).default(8000),
+    maxTags: z.number().int().min(1).max(20).default(3),
+  }).default({ minSectionChars: 40, minContentChars: 40, maxSectionChars: 8000, maxTags: 3 }),
+  families: z.object({
+    min: z.number().int().min(1).max(50).default(3),
+    max: z.number().int().min(1).max(50).default(10),
+  }).default({ min: 3, max: 10 }).superRefine((families, ctx) => {
+    if (families.min > families.max) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['min'], message: 'ingest.families.min must be <= ingest.families.max' });
+    }
+  }),
+  tagPages: z.object({
+    sourcePreviewLimit: z.number().int().min(0).max(1000).default(50),
+  }).default({ sourcePreviewLimit: 50 }),
+}).default({
+  sheets: { minSectionChars: 40, minContentChars: 40, maxSectionChars: 8000, maxTags: 3 },
+  families: { min: 3, max: 10 },
+  tagPages: { sourcePreviewLimit: 50 },
+});
+
 export const rawConfigSchema = z.object({
   preset: z.enum(['albert', 'openai', 'ollama', 'nvidia']).optional(),
   wikiRoot: z.string().optional(),
@@ -529,6 +553,7 @@ export const rawConfigSchema = z.object({
   mcp: mcpSchema.optional(),
   serve: serveSchema.optional(),
   history: historySchema.optional(),
+  ingest: ingestSchema,
 });
 
 export const wikiOperationSchema = z.preprocess(
@@ -781,6 +806,7 @@ export function resolveConfigDetails(
       authorName: parsed.history?.authorName ?? 'llm-wiki',
       authorEmail: parsed.history?.authorEmail ?? 'llm-wiki@localhost',
     },
+    ingest: parsed.ingest,
     retrieval: {
       maxContextFiles: parsed.retrieval?.maxContextFiles ?? 5,
       maxChunksPerPage: parsed.retrieval?.maxChunksPerPage ?? 2,

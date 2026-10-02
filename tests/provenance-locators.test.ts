@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildLocatorCatalogue,
+  materializeLineAnchor,
   materializeLocator,
   parseHeadingPath,
   resolveAnchor,
@@ -8,6 +9,15 @@ import {
 } from '../src/provenance/locators.ts';
 
 describe('provenance locators (lot 1)', () => {
+  it('materializes and resolves exact archived line spans with a content digest', () => {
+    const source = '---\ntitle: Guide\n---\n# Réseau\nLe réseau permet les échanges.';
+    const anchor = materializeLineAnchor(source, 4, 5)!;
+    expect(anchor).toMatch(/^L4-5@sha256=[0-9a-f]{64}$/);
+    expect(resolveAnchor(source, anchor)).toEqual({
+      status: 'resolved', text: '# Réseau\nLe réseau permet les échanges.', headingPath: [],
+    });
+    expect(resolveAnchor(`${source}!`, anchor).status).toBe('missing');
+  });
   it('round-trips reserved characters through the heading codec', () => {
     const parts = ['Sécurité', 'Chiffrement > #1', '100 % sûr'];
     const serialized = serializeHeadingPath(parts);

@@ -582,7 +582,13 @@ function renderActivities() {
       refreshRuntimeWorkflowSummary();
     }
     requestAnimationFrame(renderRuntimeWorkflowGraph);
-    return;
+    // The graph view owns the DOM, not the run strip: skipping
+    // finishActivityRender() here left the floating strip frozen on its last
+    // update — a run that ended while the Execution view was open kept showing
+    // its mid-run progress (and never disappeared) because no state refresh
+    // reached updateRunStrip(). The strip, the elapsed tick and the rail badge
+    // must follow the same state whatever the views render.
+    return finishActivityRender();
   }
   el.__graphMode=null;
   const center=$('runtime-graph-center');

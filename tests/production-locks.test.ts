@@ -96,19 +96,19 @@ describe('checkProductionAllowsWrite', () => {
   it('lets a template be written during a plain ingest', async () => {
     const root = await makeWorkspace();
     await writeLock(root, 'job-ingest', ['workspace-write']);
-    await writeTypedJob(root, 'job-ingest', 'ingest_apply', ['ingest_apply']);
+    await writeTypedJob(root, 'job-ingest', 'ingest', ['ingest']);
     await expect(checkProductionAllowsWrite(root, 'assets')).resolves.toMatchObject({ busy: false });
   });
 
   it('refuses a wiki page while the ingest writes the wiki, naming the job and what it does', async () => {
     const root = await makeWorkspace();
     await writeLock(root, 'job-ingest', ['workspace-write']);
-    await writeTypedJob(root, 'job-ingest', 'ingest_apply', ['ingest_apply']);
+    await writeTypedJob(root, 'job-ingest', 'ingest', ['ingest']);
     const report = await checkProductionAllowsWrite(root, 'wiki');
     expect(report.busy).toBe(true);
     expect(report.message).toContain('job-ingest');
-    expect(report.message).toContain('ingest_apply');
-    expect(report.locks[0]?.operations).toEqual(['ingest_apply']);
+    expect(report.message).toContain('ingest');
+    expect(report.locks[0]?.operations).toEqual(['ingest']);
   });
 
   it('refuses a template while a build or a pipeline reads them, and allows a wiki page during a build', async () => {

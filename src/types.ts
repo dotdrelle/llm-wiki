@@ -111,6 +111,12 @@ export interface HistoryConfig {
   authorEmail: string;
 }
 
+export interface IngestConfig {
+  sheets: { minSectionChars: number; minContentChars: number; maxTags: number };
+  families: { min: number; max: number };
+  tagPages: { sourcePreviewLimit: number };
+}
+
 export interface AppConfig {
   wikiRoot: string;
   configPath?: string;
@@ -122,6 +128,7 @@ export interface AppConfig {
   retrieval: RetrievalConfig;
   mcp: McpConfig;
   history?: HistoryConfig;
+  ingest?: IngestConfig;
   serve?: ServeConfig;
 }
 
@@ -143,17 +150,15 @@ export interface RefreshCommandOptions {
 
 export interface IngestCommandOptions {
   dryRun?: boolean;
-  planOnly?: boolean;
-  apply?: string[];
   refresh?: boolean;
   force?: boolean;
   fromIngested?: boolean;
+  migrateSheets?: boolean;
+  apply?: boolean;
   reject?: string[];
   verbose?: boolean;
   debug?: boolean;
   traceFile?: string;
-  /** Use the taxo pipeline: section-level extraction + global dedup pass. */
-  taxo?: boolean;
 }
 
 export interface WorkspacePaths {
@@ -398,6 +403,8 @@ export interface LintReport {
   unresolvedInstructions: string[];
   flatConceptPages: string[];
   conceptPagesMissingGroup: string[];
+  fichePagesMissingAnchor: string[];
+  tagPagesMissingFiches: string[];
   duplicateConceptGroups: Array<{ key: string; groups: string[] }>;
   pagesMissingOkfType: string[];
   semantic?: SemanticLintReport;

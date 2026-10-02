@@ -4,7 +4,7 @@ description: Ingest Markdown already waiting in raw/untracked into the wiki
 params:
   - files
 ---
-Ingest the requested staged Markdown files, or everything pending when no files are specified, into the wiki. Validate the pending inputs before mutation, obtain the normal approval, preserve the production capability's internal execution plan, and report the moved sources, changed wiki pages and any remaining inputs. During ingestion, each source adds or updates concept pages at `wiki/concepts/<label>/<subject>.md`; these readable path labels are separate from the opaque concept and subject identities in frontmatter.
+Ingest the requested staged Markdown files, or everything pending when no files are specified, through the single TAXO operation. It splits each source into evidence-bearing section fiches under `wiki/sources/`, assigns tags and regenerates tag-family pivots under `wiki/concepts/`. Obtain the normal approval once for the complete operation and report the sources, fiches and pivots written, skipped sections, warnings and any remaining inputs. Do not create separate analysis, write, regroup or taxonomy tasks.
 
 ## Boundaries
 

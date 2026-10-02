@@ -230,7 +230,7 @@ export async function draftWorkspaceOverview(args: {
     : contentOutputBudget;
   const evidence = buildEvidence(pages, contextBudgetChars);
   if (!evidence.text || evidence.paths.size === 0) {
-    throw new Error('No source notes or concept pages are available to draft a workspace overview.');
+    throw new Error('No source fiches or tag-family pivots are available to draft a workspace overview.');
   }
   const response = await args.llm.completeJson({
     system: [

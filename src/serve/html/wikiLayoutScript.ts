@@ -25,7 +25,7 @@ function wireLaunchButton(selector, options, type) {
 function wireSidebarLaunchButtons() {
   if (window.self === window.top || !document.documentElement.classList.contains('sidebar-panel')) return;
   wireLaunchButton('[data-ingest-launch]', { title: 'Ingest pending sources', message: 'Run the ingest agent on every source in Pending?', confirmLabel: 'Ingest' }, 'llmwiki:ingest');
-  wireLaunchButton('[data-rebuild-launch]', { title: 'Rebuild concept pages', message: 'Re-file every archived source into its concept folder, then check links and OKF frontmatter?', confirmLabel: 'Rebuild' }, 'llmwiki:rebuild');
+  wireLaunchButton('[data-rebuild-launch]', { title: 'Rebuild TAXO knowledge', message: 'Re-run TAXO over every archived source to rebuild section fiches and tag-family pivots, then check links and OKF frontmatter?', confirmLabel: 'Rebuild' }, 'llmwiki:rebuild');
 }
 (() => {
   const storagePrefix = 'llm-wiki:sidebar:';

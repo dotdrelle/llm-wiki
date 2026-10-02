@@ -1,11 +1,11 @@
 import { isValidProvenanceValue } from './provenance.ts';
 
 /*
- Path convention of a concept leaf.
+ Path convention for TAXO tag concepts.
 
- One leaf per (concept × subject): a subject cited under several concepts
- yields one projection in each. The path carries the current folder and subject
- labels; opaque frontmatter IDs provide durable identity and graph joins.
+ Each normalized tag has one concept page under a family folder. The folder is
+ an organizational label, not an identity: independent tag pages in one family
+ have independent concept IDs, while paths and labels may change.
 
  That only holds while the path and the declared axes cannot disagree, which is
  what `conceptPathMismatch` enforces.
@@ -13,12 +13,10 @@ import { isValidProvenanceValue } from './provenance.ts';
 export const CONCEPT_PATH_PREFIX = 'wiki/concepts/';
 
 /**
- * The reserved concept a leaf falls into when it matches no folder yet.
+ * A legacy/manual holding folder for a page not yet assigned to a family.
  *
- * It is never part of a closed set: it is the ENGINE's answer to "this subject
- * does not belong to any concept yet". A leaf waits at
- * `wiki/concepts/unclassified/<subject>.md` until someone files it into a real
- * concept folder.
+ * TAXO does not materialize unfiled tags here; it announces them and creates no
+ * pivot. Existing or hand-authored pages may still be filed here temporarily.
  */
 export const UNCLASSIFIED_CLASS = 'unclassified';
 export const UNCLASSIFIED_ID = UNCLASSIFIED_CLASS;
@@ -63,18 +61,8 @@ export function parseConceptPagePath(pagePath: string): ConceptPathAxes | null {
   if (!segments) return null;
   const { class: className, subject: rawSubject } = segments;
   if (!isValidProvenanceValue(className)) return null;
-  // A taxo leaf's basename is `<concept>_<resume>` — the underscore is the
-  // taxo naming convention, not a literal character the subject is meant to
-  // carry. Tolerating ONLY that one substitution (not a full
-  // normalizeProvenanceValue, which would also rescue spaces/accents/casing
-  // and blur a genuinely malformed path with a taxo one) — and only when the
-  // raw value doesn't already validate, so a classic path is completely
-  // unchanged — lets this parse instead of unconditionally returning null
-  // for every taxo leaf, which used to disable reconcileConceptSubject's
-  // path-wins-over-declared-subject guarantee for the whole pipeline.
-  const subject = isValidProvenanceValue(rawSubject) ? rawSubject : rawSubject.replace(/_/g, '-');
-  if (!isValidProvenanceValue(subject)) return null;
-  return { class: className, subject };
+  if (!isValidProvenanceValue(rawSubject)) return null;
+  return { class: className, subject: rawSubject };
 }
 
 /**

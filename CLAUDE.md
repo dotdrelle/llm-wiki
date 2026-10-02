@@ -73,7 +73,7 @@ review/dry-run/reject and classified retry (see Important Services). 0.9.5,
 are released. 0.11.4 keeps the workspace config path intentionally direct:
 provider keys live in `.wikirc.yaml` under `llm.apiKey` and
 `retrieval.vector.apiKey` (no `apiKeyEnv`, no `WIKI_LLM_API_KEY` /
-`WIKI_VECTOR_API_KEY` default path), exposes internal `wiki ingest --plan-only`
+`WIKI_VECTOR_API_KEY` default path), exposes internal `wiki ingest`
 / `--apply` plumbing for orchestrated parallel ingest, and writes
 `.wiki/last-run.json` so `wiki build` can compare the current runtime/provider
 summary with the previous build.
@@ -134,101 +134,39 @@ docs/                   User-facing references
   revert-forward, so older commits are folded out of the `/history` list and stay
   fully restorable.
 
-## Concepts & taxonomy — the deterministic model
+## Concepts & taxonomy — the TAXO model
 
-Since 0.15.66 there is no registry, no grid synthesis and no LLM taxonomy
-pass. The concept IS the folder: ingest files each leaf under
-`wiki/concepts/<concept>/<subject>.md` (`src/ingest/conceptGrid.ts` carries the
-path convention), a subject cited under several concepts gets one leaf per
-concept, and a subject that fits none waits under the reserved
-`unclassified` folder. The path carries the identity — the `subject` frontmatter
-is reconciled FROM the path at apply time, never the reverse.
+TAXO is the sole ingestion workflow; there is no user-facing analysis/apply
+split or separate regroup job. For each source, the engine divides meaningful
+sections, asks the model to faithfully reshape each section, and writes one
+evidence-bearing fiche under `wiki/sources/<document>/<section>.md`. Each fiche
+keeps its source locator, tags and citation to `raw/ingested/`. A deterministic
+engine stage then harmonizes tag spelling and the model assigns tags to semantic
+families. Generated pivots live under `wiki/concepts/<family>/<tag>.md`; they
+link to fiches and are navigation, not evidence. The family vocabulary comes
+from the corpus and workspace, not a closed business taxonomy in engine code.
 
-**The concept is a DOMAIN, never a kind.** The folder names the domain or
-cross-cutting theme the knowledge belongs to (security, sovereignty, cost,
-open-source, saas, integration…), in the session language. It is never the
-subject's nature: `produit`, `fournisseur`, `exigence`, `dimension`, `scenario`,
-`projet`, `outil`, `application`, `solution` are KINDS, already carried by the
-`kind` frontmatter field — using one as the folder discards the only useful
-axis and drops every subject into a single bucket. The same subject therefore
-holds one leaf per domain it serves (`saas/jedox`, `souverainete/jedox`,
-`cout/jedox`). The prompts own this judgement (`prompts/consolidationPrompt.ts`'s
-`folderPolicy`, `ingest/conceptFolders.ts` for the arbiter) — a closed
-vocabulary in code was removed and stays removed.
+The provenance chain is `livrable → optional family/tag pivot → fiche → exact
+fragment of raw/ingested`. Citation tokens are selected from the bounded
+catalogue and materialized by the engine. `sources:` is derived from the
+citation closure; anchoring, validation and the multi-source loss guard remain
+deterministic engine responsibilities. Builds freeze the resolved evidence in
+their per-build manifest. See `docs/provenance.md` for the data contracts.
 
-**A leaf accumulates across sources.** A concept leaf is the THEME, not one
-source's take on it: an update keeps what the page already states and adds the
-new source. The frontmatter `sources` is not a union — it is **derived from the
-body's citation closure** (`provenance/derive.ts`, `provenance/write.ts`), so it
-names only the proofs the text actually reaches, and it follows only the cited
-section of an intermediate page. The two-level shape is the target
-(`livrable → feuille → page source → raw/ingested`) and is applied
-deterministically: the prompt asks a leaf to cite the source note, and
-`provenance/retarget.ts` moves a section-precise archive citation onto the
-source note only when the note's same-named section proves the same fragment —
-never a legacy citation the page already carried. A citation may name a section
-of its source, `[src: wiki/sources/x.md#Heading]`; the export reads only that section
-(`sliceCitedSection`, `services/exportService.ts`) while everything that
-resolves files (graph, lint, retrieval, vector index) uses the path alone —
-`extractSourceCitations` strips the anchor, `extractSourceCitationsWithAnchors`
-keeps it. A citation with no anchor is the whole source; at export, an anchor
-that no heading matches degrades to the whole source with a warning — never an
-error, never in silence. A composition that
-would silently drop a terminal proof the previous body reached is refused by the
-deterministic loss guard (`detectSourceLoss`, logged `ingest:provenance-loss`),
-and a citation that does not resolve refuses its operation (logged
-`ingest:provenance-refused`); the previous page is kept and the rest of the
-ingest continues.
+Graph communities are derived from the generated family folders; cross-cutting
+edges are computed from shared tags and citations, not stored as a second
+taxonomy. Retrieval, vector indexing, build, export and lint resolve a fiche as
+the evidence-bearing page and a pivot as a navigation page. Stable/verified
+pages are protected during automatic pivot regeneration. Re-ingesting a source
+prunes only obsolete registry-owned generated pages for that source; it does
+not purge the concept tree or unowned human pages.
 
-The whole provenance model — locator catalogue (the model copies a
-`section:…`/`fragment:…` token, the engine materializes the address), the
-source-page contract, the shared validator (ingest, `wiki_write_page`, the
-curation merge), the build evidence manifest and the
-`wiki_list_provenance_locators` MCP tool — lives in `src/provenance/` and is
-recorded in `docs/provenance.md`. It is always on; there is no flag.
-
-The graph derives communities deterministically from the folders
-(`src/graph/wiki/communityProjection.ts`: a node's community is its concept
-folder, or a fixed group per node type for the non-concept surfaces); the
-transverse edges (shared `subject`, shared `tags`) are computed there too,
-never materialized. Hand-moving a leaf goes through the same filing steps as
-any re-file (`src/serve/tree/conceptMove.ts`) — "move the file" files it under
-its name, never a silent rename. The one exception is a name collision: when
-the physical name is already taken in the destination concept folder, a classic
-leaf lands under its own `subject` (`subjectRefileTarget`, `<subject>.md`)
-instead of a bare 409 — identity first, label second. If that identity is filed
-there too, the move is still refused. Taxo leaves keep their
-`<concept>_<resume>.md` shape and are never renamed by that fallback.
-
-The retired commands (`concepts`, `reclassify-concepts`, `taxonomy`,
-`group-concepts`) and the whole `src/graph/wiki/taxonomy/` module were removed
-in the same release; the production agent's default pipeline is now
-`ingest, build, export, polish`. Do not reintroduce a separate synthesis pass:
-the folder model is the simplification, and the two axes (folder = class,
-file name = subject) are what the split detector and the transverse edges read.
-
-The concept VOCABULARY is not deterministic and must not become so. Plans are
-computed in parallel, each from the folder list as it was before its siblings
-wrote — so a plan can open a folder a sibling just created. `src/ingest/conceptFolders.ts`
-is the single answer: at apply time (serialized), when a plan proposes a folder
-not already on disk, the MODEL is shown every ESTABLISHED folder with a sample of
-its subjects/tags and the NEW folders the plan proposes, and maps each proposed
-folder onto the established vocabulary (or keeps it new) in the session language.
-The established folders are the ANCHOR: the model never renames or merges two of
-them — left free to, it dissolved `solution` into `produit` and moved every leaf
-of an established folder, and the next ingest could move them again. The engine
-only rewrites the PLAN's proposed paths, never a leaf on disk: a proposed folder
-has no leaves yet, and an established one is never a rename source, so no page
-can be moved by this reconciliation. The leaf-migration pass that used to sit
-here could not emit a single operation and logged `migrated: 0` forever —
-removed, with the impossible-input tests that kept it green. The rewrites it
-DOES make are returned to the caller (`rejectionsAfterRewrites`), so a
-`--reject` naming the path a dry-run printed still matches the operation the
-reconciliation moved. Do NOT reintroduce
-a synonym table, a folder registry, or kind-derived equivalence in code
-(`foldersAreNearDuplicates`, `CANONICAL_FOLDER_BY_KIND`, `KIND_SYNONYMS` as a
-folder oracle) — `4dc4bbf` tried it, `f24f2ad` reverted it, and it cannot see
-a folder a sibling source just created.
+The retired `concepts`, `reclassify-concepts`, `taxonomy`, and `group-concepts`
+commands remain retired. Do not reintroduce a separate product step: section
+extraction, fiche writes and tag-family projection are one approved,
+workspace-locked operation. Section calls may be concurrent within the engine,
+subject to the configured request limit; that internal concurrency is not a
+second workflow.
 
 ## Workspace Skill Model
 
@@ -907,9 +845,9 @@ must be supplied together. Keep TLS in env/Compose, not `.wikirc.yaml`.
   `src/services/productionLocks.ts`): the guard reads the agent's lock files
   AND what each active job does (its `type` and step names). A
   `wiki_write_page` is refused while a job writes the wiki (ingest,
-  ingest_apply, ingest_rebuild, restore, doctor_apply, pipeline, copy) — it
+  ingest_rebuild, restore, doctor_apply, pipeline, copy) — it
   used to be refused by nothing, so a page could be written in the middle of
-  `ingest_apply`. `template_write`/`build_context_write` are refused only
+  `ingest`. `template_write`/`build_context_write` are refused only
   while a job builds from them (build, pipeline, restore) — the former "any
   active job" rule also refused a template written during a plain ingest. A
   lock whose job record is not flushed yet still refuses both. Refusals return

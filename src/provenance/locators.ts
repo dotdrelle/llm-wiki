@@ -285,6 +285,13 @@ export function materializeLocator(
   return null;
 }
 
+/** Materialize an exact source line span using the same digest codec as locators. */
+export function materializeLineAnchor(markdown: string, startLine: number, endLine: number): string | null {
+  const lines = String(markdown ?? '').replace(/\r\n?/g, '\n').split('\n');
+  if (!Number.isInteger(startLine) || !Number.isInteger(endLine) || startLine < 1 || endLine < startLine || endLine > lines.length) return null;
+  return `L${startLine}-${endLine}@sha256=${hashText(lines.slice(startLine - 1, endLine).join('\n'))}`;
+}
+
 const FRAGMENT_ANCHOR = /^L(\d+)-(\d+)@sha256=([0-9a-f]{64})$/;
 
 /**
@@ -301,9 +308,15 @@ function resolveFragmentAnchor(markdown: string, anchor: string): AnchorResoluti
   const { body, bodyStartLine } = splitFrontmatter(markdown);
   const fragment = splitFragments(bodyStartLine, body, LOCATOR_DEFAULT_MAX_FRAGMENT_CHARS)
     .find((entry) => entry.startLine === start && entry.endLine === end);
-  if (!fragment) return { status: 'missing' };
-  if (hashText(fragment.text) !== match[3]) return { status: 'missing' };
-  return { status: 'resolved', text: fragment.text, headingPath: [] };
+  if (fragment && hashText(fragment.text) === match[3]) return { status: 'resolved', text: fragment.text, headingPath: [] };
+  // Exact line spans are also emitted for section sheets. Their line numbers
+  // are absolute in the archived file, so verify the addressed text directly.
+  const lines = markdown.replace(/\r\n?/g, '\n').split('\n');
+  const exact = lines.slice(start - 1, end).join('\n');
+  if (lines.length >= end && hashText(exact) === match[3]) {
+    return { status: 'resolved', text: exact, headingPath: [] };
+  }
+  return { status: 'missing' };
 }
 
 /**

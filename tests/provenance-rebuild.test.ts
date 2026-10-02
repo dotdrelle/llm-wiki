@@ -43,4 +43,31 @@ describe('provenance rebuild (lot 6, deterministic half)', () => {
     expect(report.degraded).toBe(1);
     expect(await readFile(path.join(root, 'wiki/concepts/demo/x.md'), 'utf8')).toBe(bad);
   });
+
+  it('rebuilds provenance across nested TAXO fiches and tag pivots', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-rebuild-taxo-'));
+    await writePage(root, 'raw/ingested/acpi/guide.md', '# Guide\n\n## Costs\n\nEvidence text.\n');
+    await writePage(
+      root,
+      'wiki/sources/acpi/guide/costs.md',
+      '---\ntype: source\nsubject: guide-costs\nsources: []\n---\n\n# Costs\n\nEvidence text.\n\n[src: raw/ingested/acpi/guide.md#Costs]\n',
+    );
+    await writePage(
+      root,
+      'wiki/concepts/infrastructure/costs.md',
+      '---\ntype: concept\nsubject: costs\nsources: []\n---\n\n# Costs\n\n[src: wiki/sources/acpi/guide/costs.md]\n',
+    );
+
+    const report = await rebuildProvenance({ rootDir: root, apply: true });
+    expect(report.scanned).toBe(2);
+    expect(report.files.map((file) => file.path)).toEqual([
+      'wiki/concepts/infrastructure/costs.md',
+      'wiki/sources/acpi/guide/costs.md',
+    ]);
+    expect(report.files.every((file) => file.clean)).toBe(true);
+    expect(await readFile(path.join(root, 'wiki/sources/acpi/guide/costs.md'), 'utf8'))
+      .toContain('path: raw/ingested/acpi/guide.md');
+    expect(await readFile(path.join(root, 'wiki/concepts/infrastructure/costs.md'), 'utf8'))
+      .toContain('path: raw/ingested/acpi/guide.md');
+  });
 });

@@ -101,4 +101,29 @@ describe('regenerateWikiIndex', () => {
     const second = await readFile(path.join(root, 'wiki', 'index.md'), 'utf8');
     expect(second).toBe(first);
   });
+
+  it('migrates a legacy generated index instead of failing forever on missing markers', async () => {
+    await writeFile(path.join(root, 'wiki', 'index.md'), [
+      '---', 'type: index', 'title: Wiki Index', '---', '# Wiki Index', '',
+      '## Concepts', '',
+      '- [Old concept](concepts/old/old.md)', '',
+    ].join('\n'), 'utf8');
+
+    const outcome = await regenerateWikiIndex(root);
+    expect(outcome).toMatchObject({ status: 'written', migrated: true });
+    const content = await readFile(path.join(root, 'wiki', 'index.md'), 'utf8');
+    expect(content).toContain('<!-- wiki-index-overview:start -->');
+    expect(content).toContain('## Project knowledge');
+    expect(content).not.toContain('Old concept');
+  });
+
+  it('adopts a marker-less hand-written body as the initial overview instead of dropping it', async () => {
+    const prose = 'Ce workspace couvre le chiffrage ACPI.';
+    await writeFile(path.join(root, 'wiki', 'index.md'), `# Wiki Index\n\n${prose}\n`, 'utf8');
+
+    const outcome = await regenerateWikiIndex(root);
+    expect(outcome).not.toMatchObject({ migrated: true });
+    const content = await readFile(path.join(root, 'wiki', 'index.md'), 'utf8');
+    expect(content).toContain(prose);
+  });
 });

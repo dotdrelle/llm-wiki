@@ -132,6 +132,35 @@ describe('source page contract (lot 2)', () => {
     expect(result.issues.some((issue) => issue.code === 'uncited-section')).toBe(true);
   });
 
+  it('accepts a TAXO fiche with merged subsections covered by its final anchored citation', () => {
+    const content = [
+      '---',
+      'title: Raccordement réseau',
+      'subject: guide-msi-réseau',
+      'type: source',
+      'input_hash: abc123',
+      'generated:',
+      '  by: llm-wiki',
+      'sources:',
+      '  - path: raw/ingested/msi/guide.md',
+      '---',
+      '',
+      '# Raccordement réseau',
+      '',
+      '## A',
+      '',
+      'Première partie factuelle de la fiche.',
+      '',
+      '## B',
+      '',
+      'Deuxième partie factuelle de la même fiche.',
+      '',
+      '[src: raw/ingested/msi/guide.md#L4-12@sha256=' + 'a'.repeat(64) + ']',
+    ].join('\n');
+    expect(validateSourcePage(content)).toEqual({ ok: true, issues: [] });
+    expect(matter(stampSourcePageTitle(content, 'Guide MSI')).data.subject).toBe('guide-msi-réseau');
+  });
+
   it('detects uncited concept sections even when another section has a citation', () => {
     const content = [
       '# Concept',

@@ -16,23 +16,18 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
 
 ## The wiki
 
-- **Ingestion (ingest)** — the operation that reads the sources and extracts wiki
-  pages. Done as a dry-run (*plan*) then an apply.
-- **Dry-run** — a simulated ingestion: the plan of pages, without writing
-  anything.
+- **Ingestion (ingest)** — the TAXO operation that splits sources into fiches,
+  assigns tags and regenerates navigation pivots in one workspace cycle.
+- **Fiche** — a source-section reading sheet under `wiki/sources/`, directly
+  backed by an archived source fragment.
 - **Rejected page** — a page an ingestion sets aside (irrelevant or redundant).
 - **Wiki** — the set of durable knowledge pages produced by ingestion.
-- **Concept** — a reusable grouping of knowledge drawn from the workspace.
-  `wiki/concepts/<label>/<subject>.md` is its current storage path; opaque IDs
-  carry its identity when labels or language change. Ingestion proposes how new
-  knowledge connects to the concepts already present.
-- **Unclassified** — a leaf that fits no concept folder yet; it waits under
-  the reserved `wiki/concepts/unclassified` folder until someone files it by
-  hand.
-- **Concept grouping** — the reusable project-knowledge folders shown in the
-  wiki and graph. Graph communities are derived from the current folders; there
-  is no separate publication step.
-- **Source note** — a page that traces the origin of a piece of information.
+- **Tag page** — a generated navigation pivot under `wiki/concepts/`; it links
+  fiches sharing a tag and is not itself proof.
+- **Family** — the grouping that organizes tag pages. A protected tag page is
+  not rewritten by automatic regrouping.
+- **Source note** — legacy wording for the former one-page-per-document model;
+  new TAXO output uses fiches.
 - **Index** — the canonical map that links and references the wiki's pages.
 - **Log** — the chronological journal of ingestions and updates.
 - **Semantic search** — search by meaning (not just keyword), backed by a vector
@@ -46,8 +41,8 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
   a citation names a precise section
   (`[src: wiki/sources/doc.md#Costs > Licence]`); a citation the engine cannot
   resolve is reported, never shown as precise.
-- **Source note vs proof** — the source note (`wiki/sources/`) is the reading
-  sheet of one document; the proof is the archived original (`raw/ingested/`).
+- **Fiche vs proof** — the fiche (`wiki/sources/`) is a section reading sheet;
+  the proof is the archived original (`raw/ingested/`).
 - **Evidence manifest** — the frozen snippets a build used, so exporting an
   already-built deliverable after a source changed still uses the version it was
   built from.

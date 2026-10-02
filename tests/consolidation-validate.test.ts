@@ -75,50 +75,51 @@ describe('plancher des tags (validateConsolidation)', () => {
   });
 });
 
-describe('parseConceptPagePath on a taxo leaf (<concept>_<resume>.md)', () => {
-  it('parses instead of returning null, normalizing the underscore the same way folder names are', () => {
-    expect(parseConceptPagePath('wiki/concepts/jedox/jedox_tarifs.md'))
-      .toEqual({ class: 'jedox', subject: 'jedox-tarifs' });
+describe('parseConceptPagePath on a family/tag page', () => {
+  it('parses the tag slug independently from its family', () => {
+    expect(parseConceptPagePath('wiki/concepts/infrastructure/network.md'))
+      .toEqual({ class: 'infrastructure', subject: 'network' });
   });
   it('still validates a classic path exactly as before (no normalization needed, no change)', () => {
     expect(parseConceptPagePath('wiki/concepts/market-offering/beta-saas.md'))
       .toEqual({ class: 'market-offering', subject: 'beta-saas' });
   });
-  it('still rejects a genuinely malformed path (not just a taxo underscore)', () => {
+  it('rejects malformed paths and the retired concept-prefixed filename', () => {
     expect(parseConceptPagePath('wiki/concepts/jedox/Has Spaces.md')).toBeNull();
+    expect(parseConceptPagePath('wiki/concepts/jedox/jedox_tarifs.md')).toBeNull();
     expect(parseConceptPagePath('wiki/concepts/jedox.md')).toBeNull();
   });
 });
 
-describe('validateConsolidation reconciles a taxo-shaped leaf against its path', () => {
-  it('derives the subject from the path when the plan omits it (no longer skipped for taxo leaves)', () => {
+describe('validateConsolidation reconciles a family/tag page against its path', () => {
+  it('derives the tag subject from the path when the plan omits it', () => {
     const result = validateConsolidation(
       plan({
         operations: [
           { type: 'create', path: 'wiki/sources/s.md', content: '# S\n\nBody. [src: raw/ingested/s.md]' },
-          { type: 'create', path: 'wiki/concepts/jedox/jedox_tarifs.md', content: '# X\n\nBody. [src: raw/ingested/s.md]' },
+          { type: 'create', path: 'wiki/concepts/infrastructure/network.md', content: '# X\n\nBody. [src: raw/ingested/s.md]' },
         ],
         pages: [],
       }),
       CTX,
     );
     expect(result.errors).toEqual([]);
-    expect(result.provenanceByPath.get('wiki/concepts/jedox/jedox_tarifs.md')?.subject).toBe('jedox-tarifs');
+    expect(result.provenanceByPath.get('wiki/concepts/infrastructure/network.md')?.subject).toBe('network');
   });
-  it('flags (and corrects to the path) a declared subject that disagrees with a taxo path', () => {
+  it('flags (and corrects to the path) a declared subject that disagrees with the tag slug', () => {
     const result = validateConsolidation(
       plan({
         operations: [
           { type: 'create', path: 'wiki/sources/s.md', content: '# S\n\nBody. [src: raw/ingested/s.md]' },
-          { type: 'create', path: 'wiki/concepts/jedox/jedox_tarifs.md', content: '# X\n\nBody. [src: raw/ingested/s.md]' },
+          { type: 'create', path: 'wiki/concepts/infrastructure/network.md', content: '# X\n\nBody. [src: raw/ingested/s.md]' },
         ],
-        pages: [page({ path: 'wiki/concepts/jedox/jedox_tarifs.md', subject: 'wrong-subject' })],
+        pages: [page({ path: 'wiki/concepts/infrastructure/network.md', subject: 'wrong-subject' })],
       }),
       CTX,
     );
-    expect(result.warnings.some((w) => w.path === 'wiki/concepts/jedox/jedox_tarifs.md'
+    expect(result.warnings.some((w) => w.path === 'wiki/concepts/infrastructure/network.md'
       && w.reason.includes('contradicts the path'))).toBe(true);
-    expect(result.provenanceByPath.get('wiki/concepts/jedox/jedox_tarifs.md')?.subject).toBe('jedox-tarifs');
+    expect(result.provenanceByPath.get('wiki/concepts/infrastructure/network.md')?.subject).toBe('network');
   });
 });
 

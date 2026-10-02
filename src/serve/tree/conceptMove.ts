@@ -28,7 +28,7 @@ import { pathExists, safeWriteFile } from '../../utils/fs.ts';
 export type ConceptMoveDecision =
   | { kind: 'ignore' }
   | { kind: 'reject'; reason: string }
-  | { kind: 'refile'; className: string; subject: string; target: string; isTaxoRefile: boolean };
+  | { kind: 'refile'; className: string; subject: string; target: string; isTagPage: boolean };
 
 /**
  * Decides what a move touching `wiki/concepts/` means, before anything is
@@ -38,6 +38,7 @@ export function decideConceptMove(input: {
   from: string;
   to: string;
   isFile: boolean;
+  isTagPage?: boolean;
 }): ConceptMoveDecision {
   const touches = input.from.startsWith(CONCEPT_PATH_PREFIX) || input.to.startsWith(CONCEPT_PATH_PREFIX);
   if (!touches) return { kind: 'ignore' };
@@ -59,28 +60,16 @@ export function decideConceptMove(input: {
     };
   }
   const [className, base] = toRest as [string, string];
-  // A `<concept>_<resume>.md` leaf carries its concept in the file name: the
-  // move renames it to the new concept, so the name never lies about where
-  // the leaf lives. Parsed structurally here — the underscore in the name is
-  // the taxo convention, not a provenance value.
   const fromRest = input.from.startsWith(CONCEPT_PATH_PREFIX) && input.from.endsWith('.md')
     ? input.from.slice(CONCEPT_PATH_PREFIX.length, -'.md'.length).split('/')
     : null;
-  if (fromRest && fromRest.length === 2 && base.startsWith(`${fromRest[0]}_`)) {
-    const resume = base.slice(fromRest[0].length + 1);
-    if (!isValidProvenanceValue(className) || !isValidProvenanceValue(resume)) {
-      return {
-        kind: 'reject',
-        reason: 'a concept page can only be refiled inside a concept folder',
-      };
+  if (input.isTagPage) {
+    const subject = normalizeProvenanceValue(base);
+    if (!fromRest || fromRest.length !== 2 || !isValidProvenanceValue(className)
+      || !isValidProvenanceValue(subject) || subject !== base) {
+      return { kind: 'reject', reason: 'a TAXO tag page must keep its tag filename when moved between families' };
     }
-    return {
-      kind: 'refile',
-      className,
-      subject: resume,
-      target: `${CONCEPT_PATH_PREFIX}${className}/${className}_${resume}.md`,
-      isTaxoRefile: true,
-    };
+    return { kind: 'refile', className, subject, target: input.to, isTagPage: true };
   }
   const axes = parseConceptPagePath(input.to);
   if (!axes) {
@@ -89,7 +78,7 @@ export function decideConceptMove(input: {
       reason: 'a concept page can only be refiled inside a concept folder',
     };
   }
-  return { kind: 'refile', className: axes.class, subject: axes.subject, target: input.to, isTaxoRefile: false };
+  return { kind: 'refile', className: axes.class, subject: axes.subject, target: input.to, isTagPage: false };
 }
 
 /**
@@ -101,7 +90,11 @@ export async function conceptFolderIdentityIssue(
   rootDir: string,
   sourcePath: string,
   destinationFolder: string,
+  isTagPage = false,
 ): Promise<string | null> {
+  // Family folders contain independent tag concepts; their page identities
+  // are intentionally distinct and must not be collapsed to a folder ID.
+  if (isTagPage) return null;
   if (parseConceptPagePath(sourcePath)?.class === destinationFolder) return null;
   const targetFolder = resolveInside(rootDir, `${CONCEPT_PATH_PREFIX}${destinationFolder}`);
   const children = await readdir(targetFolder, { withFileTypes: true }).catch(() => []);
@@ -161,7 +154,7 @@ export async function subjectRefileTarget(input: {
 export async function applyConceptAxes(
   rootDir: string,
   target: string,
-  axes: { sourcePath: string; className: string; subject: string; isTaxoRefile: boolean },
+  axes: { sourcePath: string; className: string; subject: string; isTagPage: boolean },
 ): Promise<void> {
   const absolute = resolveInside(rootDir, target);
   const content = await readFile(absolute, 'utf8');
@@ -171,21 +164,34 @@ export async function applyConceptAxes(
   // rewritten through the parsed frontmatter DATA object, never matched
   // against the raw file text, so a body line that happens to start with
   // "concept:" (prose, a bullet list) is never touched.
-  const withConcept = parsed.data.concept != null
-    ? matter.stringify(parsed.content, { ...parsed.data, concept: axes.className })
-    : content;
+  const targetFolder = resolveInside(rootDir, `${CONCEPT_PATH_PREFIX}${axes.className}`);
+  const targetFiles = await readdir(targetFolder, { withFileTypes: true }).catch(() => []);
+  const establishedFamily = axes.isTagPage
+    ? (await Promise.all(targetFiles
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.md') && entry.name !== target.split('/').pop())
+      .map(async (entry) => {
+        const sibling = await readFile(resolveInside(rootDir, `${CONCEPT_PATH_PREFIX}${axes.className}/${entry.name}`), 'utf8').catch(() => '');
+        const family = sibling ? matter(sibling).data?.family : null;
+        return typeof family === 'string' && normalizeProvenanceValue(family) === axes.className ? family : null;
+      }))).find((family): family is string => family !== null)
+    : undefined;
+  const withConcept = axes.isTagPage
+    ? matter.stringify(parsed.content, { ...parsed.data, family: establishedFamily ?? axes.className })
+    : parsed.data.concept != null
+      ? matter.stringify(parsed.content, { ...parsed.data, concept: axes.className })
+      : content;
   const current = readProvenance(withConcept);
   const sourceFolder = parseConceptPagePath(axes.sourcePath)?.class ?? null;
-  const targetFolder = resolveInside(rootDir, `${CONCEPT_PATH_PREFIX}${axes.className}`);
   const targetIdentities = new Set<string>();
-  const targetFiles = await readdir(targetFolder, { withFileTypes: true }).catch(() => []);
   for (const entry of targetFiles) {
     if (!entry.isFile() || !entry.name.endsWith('.md') || entry.name === target.split('/').pop()) continue;
     const sibling = await readFile(resolveInside(rootDir, `${CONCEPT_PATH_PREFIX}${axes.className}/${entry.name}`), 'utf8').catch(() => '');
     const id = readProvenance(sibling).concept_id;
     if (id) targetIdentities.add(id);
   }
-  const targetConceptId = targetIdentities.size === 1
+  const targetConceptId = axes.isTagPage
+    ? current.concept_id ?? newKnowledgeIdentity()
+    : targetIdentities.size === 1
     ? [...targetIdentities][0]!
     : sourceFolder === axes.className
       ? current.concept_id ?? newKnowledgeIdentity()
@@ -193,17 +199,8 @@ export async function applyConceptAxes(
   const rewritten = applyProvenance(
     withConcept,
     {
-      // A taxo leaf's subject is derived from its OWN basename
-      // (<concept>_<resume> normalized, e.g. "jedox-tarifs") — it is
-      // therefore always truthy, so "only fill when absent" would silently
-      // leave it naming the OLD concept forever after a move. Re-derive it
-      // from the file's new basename, the same way ingest does at creation
-      // time. The classic model's subject is independent of the folder
-      // ("cost-model" stays "cost-model" wherever it is filed) and must NOT
-      // be touched on a plain re-file — only the taxo convention ties the
-      // subject to the path this tightly.
-      subject: axes.isTaxoRefile
-        ? normalizeProvenanceValue(target.split('/').pop()?.replace(/\.md$/, '') ?? '')
+      subject: axes.isTagPage
+        ? (current.subject ?? axes.subject)
         : (current.subject ? null : axes.subject),
       concept_id: targetConceptId,
       subject_id: current.subject_id ?? newKnowledgeIdentity(),

@@ -336,7 +336,41 @@ export class RetrievalService {
         .slice(0, limit);
     }
 
-    return this.searchUnscoped(query, options);
+    const results = await this.searchUnscoped(query, options);
+    return this.expandTaxoTagPivots(query, results, options?.limit ?? this.config.retrieval.maxContextFiles);
+  }
+
+  /** Tag pages are navigational pivots: return their relevant fiches instead
+   * of spending a final context slot on a generated link list. */
+  private async expandTaxoTagPivots(
+    query: string,
+    results: SearchResult[],
+    limit: number,
+  ): Promise<SearchResult[]> {
+    const pivots = results.filter((result) =>
+      result.page.relativePath.startsWith('wiki/concepts/')
+      && /^\s*by:\s*llm-wiki-tags\s*$/m.test(result.page.content));
+    if (pivots.length === 0) return results;
+    const pages = await this.warmCache();
+    const byPath = new Map(pages.map((page) => [page.relativePath, page]));
+    const queryTokens = new Set(tokenize(query));
+    const additions: SearchResult[] = [];
+    for (const pivot of pivots) {
+      const fichePaths = [...pivot.page.content.matchAll(/\[src:\s*(wiki\/sources\/[^\]#]+)(?:#[^\]]+)?\]/g)]
+        .map((match) => match[1]!);
+      for (const fichePath of fichePaths) {
+        const fiche = byPath.get(fichePath);
+        if (!fiche) continue;
+        const overlap = [...queryTokens].filter((token) => tokenize(fiche.content).includes(token)).length;
+        additions.push({
+          page: fiche,
+          score: pivot.score + overlap * 0.05,
+          relatedPaths: extractRelatedPaths(fiche.content),
+        });
+      }
+    }
+    const merged = mergeResults([...results.filter((result) => !pivots.includes(result)), ...additions]);
+    return merged.slice(0, limit);
   }
 
   private async searchUnscoped(

@@ -1,0 +1,8 @@
+Oracle: `_tmp/taxo/taxo.mjs` with `--dry-run --all --lang en --no-families`.
+
+🔍 2/2 file(s), 4 concept(s) (dry-run) — output: synthetic/wiki/sources
+  • X/X/guide.md :: Guide synthétique -> wiki/sources/x/guide/guide-synthetique.md
+  • X/X/guide.md :: Contexte -> wiki/sources/x/guide/contexte.md
+  • X/X/guide.md :: Autre parent -> wiki/sources/x/guide/autre-parent.md
+  • X/X/second.md :: Répétition -> wiki/sources/x/second/repetition.md
+📊 4 concept(s) planned, 0 empty or title/link-only section(s) skipped

@@ -1,8 +1,23 @@
-# Content lifecycle — specification
+# Content lifecycle — superseded specification
 
-Status: specification, 2026-08-05. Decides what the engine **must** do when a
-source appears, changes, goes quiet or disappears. Nothing here is implemented
-without being written here first.
+Status: **superseded by the TAXO model**. This historical draft described a
+per-document source note, multi-source concept leaves and a separate
+plan/approval/application retraction cycle. None of those is the current ingest
+contract. Ingestion is one approved, workspace-locked TAXO operation that
+creates evidence-bearing section fiches, assigns tags and regenerates
+tag-family pivots. There is no separate analysis/apply or regroup job. The
+authoritative current contract is [`provenance.md`](provenance.md) plus the
+TAXO sections of `CLAUDE.md` and the shipped help.
+
+The material below is retained only as historical rationale; it must not be
+used to implement or operate the current product.
+
+<details>
+<summary>Historical draft — not current behavior or requirements</summary>
+
+---
+
+Status: draft, 2026-08-05.
 
 This document exists because the wiki knows how to grow and how to correct
 itself, but not yet how to handle a disappearance. Adding code to that subject
@@ -307,3 +322,5 @@ No decision is taken here; they are listed so they are not forgotten.
 - **Should the `sourceId` of a hand-dropped file** survive a change to its
   content? If the fingerprint is part of it, no — and a corrected document
   becomes a new source, which is precisely what we are trying to avoid.
+
+</details>

@@ -105,6 +105,19 @@ describe('buildQueryGraph', () => {
     expect(path![2].edgeType).toBe('wiki_link');
   });
 
+  it('resolves TAXO fiche tags to generated pivots in family folders', async () => {
+    const rootDir = mkdtempSync(path.join(tmpdir(), 'query-graph-taxo-'));
+    const workspace = makeWorkspace(rootDir, {
+      'wiki/sources/msi/guide/reseau.md': '---\ntype: source\ntags: [reseau]\n---\n# Réseau\nFiche.',
+      'wiki/concepts/infrastructure/reseau.md': '---\ntype: concept\nsubject: réseau\nfamily: Infrastructure\ngenerated:\n  by: llm-wiki-tags\n---\n# Réseau',
+    });
+    const graph = await buildQueryGraph(workspace as never);
+    const pathResult = graphShortestPath(graph, 'wiki/sources/msi/guide/reseau', 'wiki/concepts/infrastructure/reseau', { edgeTypes: ['co_cited'] });
+    expect(pathResult?.map((entry) => entry.node.id)).toEqual([
+      'wiki/sources/msi/guide/reseau', 'wiki/concepts/infrastructure/reseau',
+    ]);
+  });
+
   it('restricts traversal by edge type', async () => {
     const { workspace } = workspaceFixture();
     const graph = await buildQueryGraph(workspace as never);

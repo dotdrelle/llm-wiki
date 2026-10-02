@@ -41,7 +41,7 @@ fall behind them:
 - `/status` — summarize connector health and current or recent jobs.
 - `/wiki-build [template]` — build deliverables from the current wiki for one template or all templates.
 - `/wiki-ingest [files]` — ingest Markdown already waiting in raw/untracked into the wiki.
-- `/wiki-rebuild` — rebuild the concept pages (folders and leaves) from the archived sources, then verify the workspace links and OKF frontmatter.
+- `/wiki-rebuild` — rebuild TAXO fiches and tag-family pivots from archived sources, then verify links and OKF frontmatter.
 - `/wiki-sync` — export all configured Confluence sources into the pending inbox.
 
 <!-- END GENERATED SKILLS -->
@@ -50,9 +50,9 @@ fall behind them:
 workspace and asks for approval before it does.
 
 For the knowledge lifecycle, `/wiki-ingest` is the narrowest rerun: it ingests
-what already waits in `raw/untracked/` and, as each source goes in, adds or
-updates concept pages. Their folder and file names are readable labels; opaque
-identities live in frontmatter. There is no separate concept-building step.
+what already waits in `raw/untracked/` and runs the complete TAXO operation —
+section fiches, tags and tag/family pivots — under one approval. It is not split
+into separate analysis or write tasks.
 
 You can also describe the goal in ordinary language — "run the deliver skill
 with the quarterly template" — instead of typing the command. See
@@ -94,9 +94,9 @@ Everything below is a **UI panel**, not something you type:
   height. In the Files view each collection's root reads in capitals and its
   contents with a leading capital. Deliverables carry a small icon per
   production type — a hammer for built documents, an export arrow, a sparkle
-  for polished ones. The **wiki row** carries the history glyph: it re-files
-  the **archived** sources into their concept folders, then verifies the wiki's
-  links and OKF front-matter — the same operation as `/wiki-rebuild`, run
+  for polished ones. The **wiki row** carries the history glyph: it reruns TAXO
+  for the **archived** sources, rebuilding section fiches and tag-family pivots,
+  then verifies the wiki's links and OKF front-matter — the same operation as `/wiki-rebuild`, run
   through Donna with the normal approval. It does **not** build, export or
   publish deliverables.
   The Pending tree shows only folders that hold at least one document

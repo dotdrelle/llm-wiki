@@ -173,6 +173,21 @@ export function recordSourceObservation(
   };
 }
 
+/** Mark previously registered archives absent from a complete inventory. */
+export function markMissingSourceRecords(
+  registry: SourceRegistryFile,
+  activeSourceIds: ReadonlySet<string>,
+): SourceRegistryFile {
+  return {
+    ...registry,
+    sources: registry.sources.map((source) =>
+      !activeSourceIds.has(source.sourceId) && source.status === 'active'
+        ? { ...source, status: 'missing' }
+        : source,
+    ),
+  };
+}
+
 /**
  * Wiki pages that no living source backs.
  *

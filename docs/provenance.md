@@ -3,7 +3,7 @@
 This is the engine/deployer record for the provenance work implemented from
 `plan-provenance-feuilles.md` (lots 0–5, released in 0.15.100–0.15.101; the
 plan is archived outside this repo, at the wikiLLM root's `_tmp/done/`). It is
-always on — the two-level citation shape,
+always on — the fiche/pivot citation shape,
 the derived `sources:`, the deterministic loss guard and the evidence manifest
 are the only writer, with no environment flag. The user-facing view is
 `help-doc/03-content-lifecycle.md`.
@@ -19,32 +19,22 @@ did not match the text, and `export` had to re-read whole files.
 
 ```
 build / livrable
-  → section of a concept leaf
-    → section of one or more source pages
+  → optional tag/family pivot
+    → TAXO fiche (source section)
       → precise fragment of a raw/ingested document
 ```
 
 1. **`raw/ingested/` is the original proof.** Its `#`/`##` are the anchors; a
    locator targets a section, materialized as `[src: <path>#<Heading > Sub>]` or
    `[src: <path>#L42-L57@sha256=<digest>]`.
-2. **`wiki/sources/` is the harmonized reading sheet of ONE document**: the
-   document title as H1 and frontmatter `title`, a `## Résumé`, then
-   `## <theme>` sections, each ending with an anchored citation. The title is
-   the ENGINE's, not the model's: `normalizeGeneratedMarkdown` promotes a
-   leading `## Résumé` to the page's first H1, and the tree, the graph and the
-   index all read that H1 — every source note read "Résumé".
-   `stampSourcePageTitle` (`provenance/sourcePage.ts`, called from
-   `stampSourceProvenance` on both apply paths of `ingestService.ts`) seeds
-   `title` and the H1 from the ingested document's title, demotes a structural
-   `Résumé`/`Summary` heading to a section under it, replaces the taxo
-   placeholder `# Source note`, and leaves a real H1 the model chose in place
-   (completing only the frontmatter). Idempotent. It runs at ingest only: an
-   older note titled "Résumé" is corrected by its next ingest or by
-   `wiki ingest --from-ingested`, not by `rebuild:provenance`. It stays weakly interpretive — it reports what the document says
-   and nothing else (`validateSourcePage`).
-3. **`wiki/concepts/<domain>/<subject>.md` is the theme**, composed across
-   sources. A section ends with every source that backs it and no source it does
-   not draw from.
+2. **`wiki/sources/` contains TAXO fiches**: one nested page per meaningful
+   source section. Each fiche has a section subject, tags, a faithful body and
+   an anchored citation to exactly one archive. `validateSourcePage` is shared
+   by ingest and `wiki_write_page`; the old flat source-note page is retained
+   no flat source-note page is generated.
+3. **`wiki/concepts/<family>/<tag>.md` is a generated pivot**, not a proof. Its
+   links are regenerated from fiches, its derived `sources:` inventory remains
+   complete, and stable/verified pages are protected from automatic replacement.
 
 Folders remain the current storage layout, while `concept_id` and `subject_id`
 are opaque UUID identities stored in page frontmatter. Labels and paths are
@@ -171,12 +161,12 @@ preserved.
 | `src/provenance/merge.ts` | deterministic prefix near-duplicate leaf merge |
 | `src/provenance/audit.ts` | read-only corpus audit (lot 0) |
 | `src/provenance/rebuild.ts` | no-LLM repair: anchoring + `sources:` + merge |
-| `src/provenance/retarget.ts` | two-level shape: leaf archive citation → source note |
+| `src/provenance/retarget.ts` | compatibility retargeting: legacy archive citation → source fiche |
 
 Diagnostics: `pnpm audit:provenance <workspace>` and
 `pnpm rebuild:provenance <workspace> [--apply] [--merge-splits]`. The audit
 compares each page's declared `sources:` to its **terminal citation closure**, so
-a two-level leaf (declaring the archive, citing the source note) is not reported
+a TAXO pivot/fiche chain whose terminal proof is declared is not reported
 as a phantom.
 
 ## Always on
@@ -202,19 +192,15 @@ The MCP tool `wiki_list_provenance_locators` (read-only, `wiki/sources/` +
 the manager's wiki read-only allow-list, and the gateway Redactor is told to copy
 a token rather than invent an address.
 
-## The two-level shape
+## The fiche/pivot shape
 
-The target is `livrable → section d'une feuille → section d'une page source →
-fragment brut`. The prompt asks a concept leaf to cite the source note (never
-`raw/ingested/…` directly); because the model does not always comply,
-`provenance/retarget.ts` moves the leaf's section-precise archive citations onto
-the source note, but only when the note's same-named section PROVES the very
-fragment the leaf cited (same archive, same section, or the whole file). A
-same-named heading that cites another fragment is not equivalent and is refused.
-A citation the previous page already carried is left verbatim: the mere
-existence of a source note must not rewrite a legacy `concept → raw` citation.
-A citation without a resolvable anchor keeps its archive form — an honest
-archive path beats a source-note path whose proof is not the one claimed.
+The target is `livrable → optional tag/family pivot → TAXO fiche → fragment
+brut`. TAXO writes one fiche per meaningful source section, preserving its
+section body, tags and an engine-anchored citation to the raw archive. A
+generated pivot links back to those fiches and is navigation, not proof. Old
+source-note pages and concept leaves are not generated by the new workflow;
+when a source is re-ingested, obsolete registry-owned draft pages are removed,
+while stable/verified and unowned pages are left intact.
 
 ## The multi-source guard
 
@@ -230,8 +216,8 @@ file remains cited by other sections.
 
 An unresolvable citation refuses its operation too: a `missing` or `ambiguous`
 anchor, an unusable source-page declaration, or an operation citing a page so
-refused, is dropped (logged `ingest:provenance-refused`) while the source note
-and the rest of the plan land. A bare, readable citation is allowed through —
+refused, is dropped (logged `ingest:provenance-refused`) while the valid fiches
+and the rest of the ingestion land. A bare, readable citation is allowed through —
 it is the legacy whole-file form, anchored engine-side when the claim matches a
 section.
 

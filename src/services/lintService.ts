@@ -95,6 +95,8 @@ export class LintService {
 
     const flatConceptPages: string[] = [];
     const conceptPagesMissingGroup: string[] = [];
+    const fichePagesMissingAnchor: string[] = [];
+    const tagPagesMissingFiches: string[] = [];
     const conceptGroups = new Map<string, Set<string>>();
     for (const page of pages.filter((candidate) => candidate.type === 'concept')) {
       const withinConcepts = page.relativePath.replace(/^wiki\/concepts\//, '');
@@ -105,19 +107,33 @@ export class LintService {
       try {
         const parsed = matter(page.content);
         group = typeof parsed.data.group === 'string' ? parsed.data.group.trim() : '';
+        const family = typeof parsed.data.family === 'string' ? parsed.data.family.trim() : '';
+        const isTagPage = /^\s*by:\s*llm-wiki-tags\s*$/m.test(page.content);
+        if (isTagPage) {
+          if (!family) conceptPagesMissingGroup.push(page.relativePath);
+          if (!/\[src:\s*wiki\/sources\//.test(page.content)) tagPagesMissingFiches.push(page.relativePath);
+        }
       } catch {
         group = '';
       }
       if (!withinConcepts.includes('/')) {
         flatConceptPages.push(page.relativePath);
       }
-      if (!group) {
+      const isTagPage = /^\s*by:\s*llm-wiki-tags\s*$/m.test(page.content);
+      if (!group && !isTagPage) {
         conceptPagesMissingGroup.push(page.relativePath);
-      } else {
+      } else if (!isTagPage) {
         const key = slugify(group);
         const groups = conceptGroups.get(key) ?? new Set<string>();
         groups.add(group);
         conceptGroups.set(key, groups);
+      }
+    }
+    for (const page of pages.filter((candidate) => candidate.relativePath.startsWith('wiki/sources/'))) {
+      if (!/^type:\s*source\s*$/m.test(page.content)) continue;
+      const citations = extractSourceCitations(page.content);
+      if (citations.length === 0 || citations.every((citation) => !citation.includes('#'))) {
+        fichePagesMissingAnchor.push(page.relativePath);
       }
     }
     const duplicateConceptGroups = [...conceptGroups.entries()]
@@ -134,6 +150,8 @@ export class LintService {
       unresolvedInstructions,
       flatConceptPages,
       conceptPagesMissingGroup,
+      fichePagesMissingAnchor,
+      tagPagesMissingFiches,
       duplicateConceptGroups,
       pagesMissingOkfType,
     };

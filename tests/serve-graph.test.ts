@@ -483,7 +483,7 @@ describe('serve graph ui', () => {
 
   it('offers a Donna archive-rebuild button on the wiki row', async () => {
     const source = await serveSource();
-    expect(source).toContain('title="Rebuild concept pages from the archive"');
+    expect(source).toContain('title="Rebuild TAXO fiches and tag families"');
     expect(source).toContain('data-rebuild-launch');
     // Only the wiki root row carries it; hidden standalone and revealed by the
     // layout script, which routes the launch through Donna.

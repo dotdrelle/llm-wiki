@@ -65,8 +65,14 @@ export function stampSourcePageTitle(content: string, title: string): string {
   const data: Record<string, unknown> = { ...parsed.data };
   // The source page represents this document, so its identity comes from the
   // engine-known document title rather than a model's guessed subject axis.
+  const generated = data.generated && typeof data.generated === 'object'
+    ? data.generated as Record<string, unknown>
+    : null;
+  const isTaxoFiche = generated?.by === 'llm-wiki' && typeof data.input_hash === 'string';
   const documentIdentity = normalizeProvenanceValue(wanted);
-  if (documentIdentity) data.subject = documentIdentity;
+  if (isTaxoFiche) {
+    if (typeof data.subject !== 'string' || !data.subject.trim()) data.subject = documentIdentity;
+  } else if (documentIdentity) data.subject = documentIdentity;
   else delete data.subject;
   const existingTitle = typeof data.title === 'string' ? data.title.trim() : '';
   if (!existingTitle || isStructuralTitle(existingTitle)) {
@@ -141,11 +147,18 @@ function isStructuralHeading(heading: string): boolean {
 }
 
 /** Factual sections need their own evidence; a citation elsewhere is not enough. */
-export function findUncitedFactualSections(content: string): string[] {
+export function findUncitedFactualSections(
+  content: string,
+  options: { finalCitationCoversSections?: boolean } = {},
+): string[] {
   const { preamble, sections } = splitMarkdownSections(content);
   if (sections.length === 0) {
     return preamble.trim() && extractBodyCitations(preamble).length === 0 ? ['(document body)'] : [];
   }
+  const finalSection = sections.at(-1);
+  const hasAnchoredFinalCitation = Boolean(finalSection
+    && extractBodyCitations(finalSection.markdown).some((citation) => citation.anchor !== null));
+  if (options.finalCitationCoversSections && hasAnchoredFinalCitation) return [];
   return sections.flatMap((section) => {
     if (isStructuralHeading(section.headingText)) return [];
     const body = section.markdown.replace(/^#{1,6}\s+.*$/m, '').trim();
@@ -202,7 +215,11 @@ export function validateSourcePage(content: string): SourcePageValidation {
     }
   }
 
-  for (const heading of findUncitedFactualSections(content)) {
+  const generated = frontmatter.generated && typeof frontmatter.generated === 'object'
+    ? frontmatter.generated as Record<string, unknown>
+    : null;
+  const isTaxoFiche = generated?.by === 'llm-wiki' && typeof frontmatter.input_hash === 'string';
+  for (const heading of findUncitedFactualSections(content, { finalCitationCoversSections: isTaxoFiche })) {
     issues.push({ code: 'uncited-section', message: `section "${heading}" has no anchored citation` });
   }
 

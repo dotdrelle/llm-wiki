@@ -22,15 +22,14 @@ The resulting Markdown lands in a working area (`raw/untracked/`) where it forms
 
 ## 3. Ingestion
 
-**Ingestion** reads the sources and extracts wiki pages from them. This is the
-step that turns disorder into a map. It happens in two stages:
+**Ingestion** reads the sources and runs the TAXO cycle: meaningful sections
+become evidence-bearing fiches, tags are assigned, and tag/family pivots are
+regenerated. A section that cannot be processed is preserved or reported as a
+degradation. There is no separate user-facing analysis then write step.
 
-- **Dry-run**: DONNA prepares a *plan* of what would be created or updated,
-  without writing anything. You review it.
-- **Apply**: after your confirmation, pages are actually created or updated.
 
-Some pages may be **rejected** (content judged irrelevant or redundant): you can
-discuss this with DONNA before applying. Each ingestion updates the **index**
+Some short sections may be **skipped**; failures and omissions are reported in
+the run activity. Each ingestion updates the **index**
 (the map of pages) and the **log** (the journal of operations).
 
 ## 4. The wiki
@@ -39,9 +38,10 @@ The wiki is the set of durable knowledge pages. It is organized into:
 
 - **concepts**: reusable knowledge organized around the groupings found in the
   workspace's source material;
-- **source notes** (`wiki/sources/`): concise reading notes, one per document,
-  titled with the document's own title, opening on a short *Résumé* then one
-  section per theme the document covers;
+- **fiches** (`wiki/sources/`): concise section sheets nested below the
+  document path, each with its own tags and citation to the archive;
+- **tag/family pages** (`wiki/concepts/`): generated navigation pivots linking
+  related fiches; they are not proof and are excluded from final build context;
 - **archived documents** (`raw/ingested/`): the original documents, preserved
   as the complete evidence behind those notes;
 - **index**: the canonical map that links and references the pages;
@@ -85,9 +85,9 @@ is **computed from the page's own text**: only the sources an assertion actually
 points to appear, so the list never drifts from what the page says, and a source
 nothing is drawn from is not claimed.
 
-A concept page cites the **source note** for the document it draws from; the
-source note in turn cites the archived original. A citation names the precise
-part it comes from:
+A fiche cites the archived original directly. A tag page may point to several
+fiches, but the fiche remains the evidence-bearing page. A citation names the
+precise part it comes from:
 
     [src: wiki/sources/my-document.md#Costs > Licence]
 
@@ -102,10 +102,8 @@ this deterministically — if an update would silently drop a fact a previous
 source backed, that page update is refused and reported, and the rest of the
 ingestion continues.
 
-The source note is a summary, not a complete copy. Search includes archived
-documents so details omitted from the note can still be found. Open the archived
-document when you need to check exact wording or a specific detail; the source
-note remains the quicker overview.
+The fiche is a faithful reading sheet, not a complete copy. Search includes
+archived documents so details omitted from it can still be found.
 
 When a deliverable is built, the engine freezes the exact snippets it used. If
 you later replace a source with a newer version, exporting the already-built
@@ -145,14 +143,11 @@ them with the knowledge steps below.
 
 ## 5 bis. Organizing the knowledge
 
-The knowledge is organized as it is ingested — there is no separate step.
-Every source is filed as a **concept leaf** under
-`wiki/concepts/<label>/<subject>.md`: the folder and file names are readable
-storage labels, while opaque IDs carry concept and subject identity across
-label changes. The `/graph` view derives its communities from those identities.
-A subject cited under several concepts gets one leaf per concept; a subject
-that fits no concept yet waits under the reserved
-`wiki/concepts/unclassified/` folder.
+The knowledge is organized as it is ingested — there is no separate grouping
+step. Every source section becomes a **fiche** under
+`wiki/sources/<document>/<section>.md`. Tags produce generated pivot pages under
+`wiki/concepts/<family>/<tag>.md`; these pages organize navigation but do not
+replace the fiches as evidence.
 
 Filing a page by hand works too: move a page into a concept folder and it is
 re-filed for real — its axes are rewritten and every link pointing at it is
@@ -164,14 +159,20 @@ too is the move refused.
 
 A sync (Confluence) never overwrites local work: a pending file you deleted
 stays deleted, and one you modified is flagged **orange** in the Pending panel
-— keep it or delete it, the sync will not decide for you. To rebuild the
-concept pages from the archived sources without touching Confluence, run
-`wiki ingest --from-ingested` (see `07-commands-shell.md`). A rebuild
-**replaces** the previous classification: a concept leaf the rebuilt sources no
-longer produce, and that no other source claims, is removed — otherwise the
-same subject would linger as a stale duplicate next to its new leaf. A source
-note, the index, a hand-written page and any page another source still supports
-are never touched.
+— keep it or delete it, the sync will not decide for you. To rebuild TAXO
+fiches from the archived sources without touching Confluence, run
+`wiki ingest --from-ingested` (see `07-commands-shell.md`). Ingestion always
+runs the TAXO pipeline; there is no separate analysis/apply mode. A rebuild
+removes obsolete generated tag pivots only when they are not stable or verified;
+hand-written and protected pages are never touched.
+
+For a workspace that still has the former flat source notes or generated
+concept leaves, migration is explicit. On a **copy** of the workspace, first
+run `wiki ingest --from-ingested --migrate-sheets` to list legacy pages that
+would be removed and protected pages that would stay. After reviewing the
+list, run `wiki ingest --from-ingested --migrate-sheets --apply` on that copy.
+The command rebuilds from the complete archive first and removes legacy pages
+only if every archived source succeeds; `stable` and `verified` pages are kept.
 
 The full default chain is therefore: ingest, build, export, polish.
 
@@ -185,8 +186,8 @@ the whole workspace.
 
 1. You connect a Confluence space as a source.
 2. DONNA exports it to Markdown into the working area.
-3. You run a dry-run ingestion, review the proposed pages, then apply.
-4. The wiki fills up: pages filed under their concept folders, links, index.
+3. You run TAXO ingestion; fiches, tags, pivots and the index are regenerated.
+4. The wiki fills up: section fiches, tag links and archived evidence.
 5. You request a build: the deliverables come out, consistent with the wiki.
 6. A new version of a document? You re-ingest: nothing is duplicated, only what
    is needed is updated.

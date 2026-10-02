@@ -13,7 +13,7 @@ import { VectorIndexService } from '../src/services/vectorIndexService.ts';
 import { WorkspaceService } from '../src/services/workspaceService.ts';
 import { safeWriteFile } from '../src/utils/fs.ts';
 import { normalizeGeneratedMarkdown } from '../src/utils/markdown.ts';
-import type { AppConfig, IngestPlan } from '../src/types.ts';
+import type { AppConfig } from '../src/types.ts';
 
 function createConfig(root: string): AppConfig {
   return {
@@ -95,73 +95,13 @@ class MemoryTraceLogger implements TraceLogger {
 }
 
 class PipelineLLMService {
-  async completeJson(request: { label?: string; user?: string }): Promise<unknown> {
-    if (request.label === 'ingest_extract') {
-      return {
-        facts: [{
-          statement: 'Donna centralise les notes et couvre conversion, ingestion, index, build et export.',
-          subject: 's1',
-          citation: 'raw/ingested/product-brief.md',
-        }],
-        subjects: [{
-          id: 's1', label: 'Donna', scope: 'product', importance: 'core',
-          rationale: 'Le produit est le sujet explicite du document.',
-        }],
-        relations: [],
-        mainSubject: 's1',
-      };
+  async completeText(request: { label?: string }): Promise<string> {
+    if (request.label === 'ingest_taxo_sheet') {
+      return 'Description: Donna workflow knowledge\nTags: donna, workflow\n\nDonna transforme les documents multi-format en connaissance Markdown revue. Le workflow produit un livrable sourcé.';
     }
-    if (request.label === 'ingest_consolidate') {
-      return {
-        summary: 'Ingest converted product brief.',
-        operations: [
-          {
-            type: 'create',
-            path: 'wiki/sources/product-brief.md',
-            content: [
-              '# Product Brief',
-              '',
-              'Le produit Donna centralise les notes projet converties.',
-              'La source décrit un workflow conversion, ingestion, index, build et export.',
-              '[src: raw/ingested/product-brief.md]',
-            ].join('\n'),
-          },
-          {
-            type: 'create',
-            path: 'wiki/concepts/donna-workflow.md',
-            content: [
-              '# Donna Workflow',
-              '',
-              'Donna transforme les documents multi-format en connaissance Markdown revue.',
-              'Le workflow produit un livrable sourcé.',
-              '[src: raw/ingested/product-brief.md]',
-            ].join('\n'),
-          },
-        ],
-        pages: [
-          { path: 'wiki/sources/product-brief.md', subject: 'donna', scope: 'source' },
-          {
-            path: 'wiki/concepts/donna-workflow.md', subject: 'donna-workflow',
-            scope: 'product', rationale: 'Workflow durable du sujet principal.',
-          },
-        ],
-      } satisfies IngestPlan & { pages: unknown[] };
-    }
-
-    const ids = [...(request.user ?? '').matchAll(/^## (instruction-\d+)$/gm)].map(
-      (match) => match[1],
-    );
-    return {
-      replacements: (ids.length > 0 ? ids : ['instruction-1']).map((id) => ({
-        id,
-        content:
-          'Donna propose un moteur de connaissance avec conversion, review, indexation et export. [src: wiki/concepts/unclassified/donna-workflow.md]',
-      })),
-    };
-  }
-
-  async completeText(request?: { label?: string }): Promise<string> {
-    if (request?.label === 'export:section') {
+    if (request.label === 'ingest_taxo_families') return '[{"family":"Product","tags":["donna","workflow"]}]';
+    if (request.label === 'ingest_taxo_sheet_dedup') return 'KEEP';
+    if (request.label === 'export:section') {
       return [
         'Donna propose un moteur de connaissance avec conversion, review, indexation et export.',
         'Export publication : Donna publie un livrable enrichi avec ses sources archivées.',
@@ -169,6 +109,20 @@ class PipelineLLMService {
     }
     return 'Donna publie un livrable poli.';
   }
+
+  async completeJson(request: { label?: string; user?: string }): Promise<unknown> {
+    const ids = [...(request.user ?? '').matchAll(/^## (instruction-\d+)$/gm)].map(
+      (match) => match[1],
+    );
+    return {
+      replacements: (ids.length > 0 ? ids : ['instruction-1']).map((id) => ({
+        id,
+        content:
+          'Donna propose un moteur de connaissance avec conversion, review, indexation et export. [src: wiki/concepts/product/workflow.md]',
+      })),
+    };
+  }
+
 }
 
 class FakeRefreshService {
@@ -259,18 +213,14 @@ describe('knowledge engine E2E', () => {
     );
 
     const review = await ingest.ingest([], { dryRun: true });
-    expect(review[0].review?.map((operation) => operation.status)).toEqual([
-      'pending',
-      'pending',
-    ]);
+    expect(review[0].review?.length).toBeGreaterThan(0);
+    expect(review[0].review?.every((operation) => operation.status === 'pending')).toBe(true);
     expect(review[0].review?.[0].diff.changed).toBe(true);
     expect(await readFile(convertedPath, 'utf8')).toContain('convertedBy: documents');
 
     const applied = await ingest.ingest([], {});
-    expect(applied[0].review?.map((operation) => operation.status)).toEqual([
-      'applied',
-      'applied',
-    ]);
+    expect(applied[0].review?.length).toBe(review[0].review?.length);
+    expect(applied[0].review?.every((operation) => operation.status === 'applied')).toBe(true);
     await expect(
       readFile(path.join(root, 'raw', 'ingested', 'product-brief.md'), 'utf8'),
     ).resolves.toContain('convertedBy: documents');
@@ -279,7 +229,7 @@ describe('knowledge engine E2E', () => {
       limit: 3,
     });
     expect(lexicalResults.map((result) => result.page.relativePath)).toContain(
-      'wiki/concepts/unclassified/donna-workflow.md',
+      'wiki/sources/product-brief/product-brief.md',
     );
 
     const vectorIndex = new VectorIndexService(
@@ -294,7 +244,7 @@ describe('knowledge engine E2E', () => {
       limit: 3,
     });
     expect(vectorResults.map((result) => result.page.relativePath)).toContain(
-      'wiki/concepts/unclassified/donna-workflow.md',
+      'wiki/concepts/product/workflow.md',
     );
 
     const build = new BuildService(
@@ -311,7 +261,7 @@ describe('knowledge engine E2E', () => {
       'utf8',
     );
     expect(deliverable).toContain('Donna propose un moteur de connaissance');
-    expect(deliverable).toContain('[src: wiki/concepts/unclassified/donna-workflow.md]');
+    expect(deliverable).toContain('[src: wiki/concepts/product/workflow.md]');
 
     const { content: exported, warnings: exportWarnings } = await expandDeliverable(
       'deliverables/brief.md',
@@ -333,7 +283,7 @@ describe('knowledge engine E2E', () => {
     expect(exportContent).not.toContain('[src:');
     // The original deliverable stays untouched.
     expect(await readFile(path.join(root, 'deliverables', 'brief.md'), 'utf8')).toContain(
-      '[src: wiki/concepts/unclassified/donna-workflow.md]',
+      '[src: wiki/concepts/product/workflow.md]',
     );
 
     expect(logger.entries.some((entry) => entry.event === 'ingest:review')).toBe(true);

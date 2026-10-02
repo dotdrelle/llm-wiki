@@ -49,6 +49,7 @@ type PageRecord = {
   targetConceptId: string | null;
   legacyFlat: boolean;
   taxo: boolean;
+  tagPage: boolean;
   target: string;
 };
 
@@ -130,9 +131,11 @@ export async function migrateConceptLabels(options: {
     const content = await readFile(resolveInside(rootDir, pagePath), 'utf8');
     let conceptId: string | null = null;
     let taxo = false;
+    let tagPage = false;
     try {
       conceptId = readProvenance(content).concept_id ?? null;
       taxo = typeof matter(content).data?.concept === 'string';
+      tagPage = matter(content).data?.generated?.by === 'llm-wiki-tags';
     } catch {
       skipped.push({ path: pagePath, reason: 'frontmatter could not be parsed' });
       continue;
@@ -141,7 +144,7 @@ export async function migrateConceptLabels(options: {
       skipped.push({ path: pagePath, reason: 'concept_id is missing or invalid; backfill identities first' });
       continue;
     }
-    if (axes && conceptId) {
+    if (axes && conceptId && !tagPage) {
       const ids = idsByFolder.get(axes.class) ?? new Set<string>();
       ids.add(conceptId);
       idsByFolder.set(axes.class, ids);
@@ -158,6 +161,7 @@ export async function migrateConceptLabels(options: {
       targetConceptId: conceptId,
       legacyFlat,
       taxo,
+      tagPage,
       target: pagePath,
     };
     records.push(record);
@@ -170,7 +174,7 @@ export async function migrateConceptLabels(options: {
   }
 
   for (const [folder, identities] of idsByFolder) {
-    if (identities.size > 1) {
+    if (identities.size > 1 && (recordsByFolder.get(folder) ?? []).some((record) => !record.tagPage)) {
       conflicts.push({
         key: folder,
         paths: (recordsByFolder.get(folder) ?? []).map((record) => record.path),
@@ -207,7 +211,7 @@ export async function migrateConceptLabels(options: {
       conflicts.push({ key: identity, paths: [], reason: 'mapping contains the same concept_id more than once' });
       continue;
     }
-    if (!foldersById.has(identity)) {
+    if (!records.some((record) => record.conceptId === identity)) {
       conflicts.push({ key: identity, paths: [], reason: 'concept_id is not present in this workspace' });
       continue;
     }
@@ -271,7 +275,7 @@ export async function migrateConceptLabels(options: {
       conflicts.push({ key: pagePath, paths: [pagePath], reason: 'page already belongs to the requested concept identity' });
       continue;
     }
-    if (!foldersById.has(identity)) {
+    if (!records.some((item) => item.conceptId === identity)) {
       conflicts.push({ key: pagePath, paths: [pagePath], reason: 'target concept_id is not present in this workspace' });
       continue;
     }
@@ -284,16 +288,21 @@ export async function migrateConceptLabels(options: {
   const targetOwner = new Map<string, string>();
   for (const [identity, label] of mappingById) {
     const owner = targetOwner.get(label);
-    if (owner && owner !== identity) {
+    const onlyTagPages = (id: string): boolean => records.some((record) => record.conceptId === id)
+      && records.filter((record) => record.conceptId === id).every((record) => record.tagPage);
+    if (owner && owner !== identity && !(onlyTagPages(owner) && onlyTagPages(identity))) {
       conflicts.push({ key: label, paths: [], reason: 'mapping would merge distinct concept identities; this migration only relabels one identity at a time' });
       continue;
     }
     targetOwner.set(label, identity);
-    const currentFolders = foldersById.get(identity) ?? new Set<string>();
-    for (const sourceFolder of currentFolders) {
-      const sourcePages = (recordsByFolder.get(sourceFolder) ?? [])
-        .filter((record) => record.conceptId === identity);
-      for (const record of sourcePages) {
+    const sourcePages = records.filter((record) => record.conceptId === identity);
+    for (const record of sourcePages) {
+      if (record.tagPage) {
+        record.target = toPosix(path.posix.join('wiki', 'concepts', label, record.base));
+        continue;
+      }
+      const sourceFolder = record.folder;
+      if (!sourceFolder) continue;
         const taxoResume = record.taxo && record.base.startsWith(`${sourceFolder}_`)
           ? record.base.slice(sourceFolder.length + 1, -'.md'.length)
           : record.taxo
@@ -309,19 +318,23 @@ export async function migrateConceptLabels(options: {
         }
         const targetBase = taxoResume == null ? record.base : `${label}_${taxoResume}.md`;
         record.target = toPosix(path.posix.join('wiki', 'concepts', label, targetBase));
-      }
     }
   }
 
   for (const [pagePath, identity] of pageTargets) {
     const record = recordByPath.get(pagePath)!;
-    if (record.legacyFlat && record.targetConceptId === identity && !foldersById.has(identity)) continue;
+    if (record.legacyFlat && record.targetConceptId === identity
+      && !records.some((item) => item.conceptId === identity)) continue;
     record.targetConceptId = identity;
-    const targetFolders = foldersById.get(identity)!;
-    const targetFolder = [...targetFolders][0]!;
+    const targetFolders = foldersById.get(identity) ?? new Set<string>();
+    const targetFolder = [...targetFolders][0] ?? record.folder ?? '';
     const label = mappingById.get(identity) ?? targetFolder;
-    if (targetFolders.size !== 1 && !mappingById.has(identity)) {
+    if (!record.tagPage && targetFolders.size !== 1 && !mappingById.has(identity)) {
       conflicts.push({ key: identity, paths: [pagePath, ...(recordsByFolder.get(targetFolder) ?? []).map((item) => item.path)], reason: 'target concept identity has multiple folder labels; relabel it explicitly before refiling' });
+      continue;
+    }
+    if (record.tagPage) {
+      record.target = toPosix(path.posix.join('wiki', 'concepts', label, record.base));
       continue;
     }
     const taxoResume = record.taxo && record.folder && record.base.startsWith(`${record.folder}_`)
@@ -425,7 +438,9 @@ export async function migrateConceptLabels(options: {
       const movedRecord = movedRecordByTarget.get(file);
       if (movedRecord) {
         const parsed = matter(next);
-        const withConcept = movedRecord.taxo
+        const withConcept = movedRecord.tagPage
+          ? matter.stringify(parsed.content, { ...parsed.data, family: parseConceptPagePath(file)?.class ?? movedRecord.folder })
+          : movedRecord.taxo
           ? matter.stringify(parsed.content, {
             ...parsed.data,
             concept: parseConceptPagePath(file)?.class ?? movedRecord.folder,

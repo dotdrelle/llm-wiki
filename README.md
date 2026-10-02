@@ -80,12 +80,12 @@ structure and deliberately forgiving on references:
   these constraints normatively so the model meets the contract rather than
   the engine loosening it.
 
-Consolidation (`src/prompts/consolidationPrompt.ts`, version 19) then files
-each subject as a concept leaf — the concept IS the folder
-(`wiki/concepts/<concept>/<subject>.md`) — from the extracted facts plus a
-bounded source excerpt, and stamps OKF frontmatter: `type`, `generated`
-(who produced it and when), `status: draft`, and `sources` (the raw sources
-it was filed from, with `usage_count`).
+Ingestion uses the single TAXO cycle: meaningful source sections become
+evidence-bearing fiches under `wiki/sources/<document>/<section>.md`; the engine
+then groups their tags into generated family/tag pivots under `wiki/concepts/`.
+Fiches retain anchored citations to archived source fragments, while pivots are
+navigation pages linking back to fiches. There is no separate analysis/apply or
+regroup job.
 
 
 ## Quick Start

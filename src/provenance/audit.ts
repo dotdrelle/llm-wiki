@@ -375,7 +375,9 @@ export async function auditWorkspace(options: { rootDir: string; workspace?: str
 
   const parsedPages: Array<{ relPath: string; isSource: boolean; parse: PageParse }> = [];
   for (const relPath of allWikiFiles) {
-    const isSource = /^wiki\/sources\/[^/]+\.md$/.test(relPath);
+    // TAXO source sheets are nested by document and section; accept every
+    // Markdown page below sources/, not only the former flat layout.
+    const isSource = /^wiki\/sources\/.+\.md$/.test(relPath);
     const isLeaf = relPath.startsWith('wiki/concepts/') && relPath.endsWith('.md');
     if (!isSource && !isLeaf) continue;
     let parse: PageParse;

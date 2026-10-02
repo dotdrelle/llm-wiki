@@ -1,63 +1,43 @@
 import path from 'node:path';
-import { readFile } from 'node:fs/promises';
 import { applyOkfFrontmatter } from '../okf/frontmatter.ts';
-import { buildConsolidationPrompt, buildConsolidationRetryUser, CONSOLIDATION_PROMPT_VERSION } from '../prompts/consolidationPrompt.ts';
 import {
-  buildLocatorCatalogue,
   materializeLocatorTokens,
-  renderLocatorCatalogueSection,
 } from '../provenance/promptLocators.ts';
 import { detectSourceLoss, extractBodyCitations } from '../provenance/derive.ts';
 import { retargetLeafCitationsToSourceNote } from '../provenance/retarget.ts';
 import { findUncitedFactualSections, stampSourcePageTitle, validateSourcePage } from '../provenance/sourcePage.ts';
 import { validateAnchoredCitations } from '../provenance/validate.ts';
 import { anchorCitations } from '../provenance/anchor.ts';
-import { buildExtractionPrompt, EXTRACTION_PROMPT_VERSION } from '../prompts/extractionPrompt.ts';
-import { buildPromptContext } from '../prompts/systemPreamble.ts';
+import { materializeLineAnchor } from '../provenance/locators.ts';
 import {
-  consolidationPlanSchema,
-  CONSOLIDATION_SCHEMA_VERSION,
-  type ConsolidationPlan,
-} from '../ingest/consolidationSchema.ts';
-import {
-  consolidationCacheName,
   extractionCacheName,
   IngestCache,
 } from '../ingest/extractionCache.ts';
 import {
-  EXTRACTION_SCHEMA_VERSION,
-  mergeExtractions,
-  sourceExtractionSchema,
-  type SourceExtraction,
-} from '../ingest/extractionSchema.ts';
-import {
-  applyProvenance,
+  newKnowledgeIdentity,
   normalizeProvenanceValue,
   readProvenance,
-  subjectMatchStrength,
 } from '../ingest/provenance.ts';
-import { stampConceptPageIdentities } from '../ingest/identity.ts';
-import { CONCEPT_PREFIX, DEFAULT_CONCEPT_BUDGET, detectConceptOverflow, detectConceptSplits, detectDuplicatePaths, reanchorToPreviousConcepts, validateConsolidation } from '../ingest/consolidationValidate.ts';
-import { collectConceptFolderEntries, collectProposedConceptEntries, reconcileConceptFolders } from '../ingest/conceptFolders.ts';
-import { parseConceptPagePath } from '../ingest/conceptGrid.ts';
+import { CONCEPT_PREFIX, validateConsolidation } from '../ingest/consolidationValidate.ts';
 import {
   buildTaxoSectionUser,
-  buildTaxoTable,
-  splitIntoSections,
-  TAXO_DEDUP_SYSTEM,
   TAXO_SECTION_SYSTEM,
   taxoPlanForSource,
-  type TaxoConcept,
+  taxoSheetPath,
+  taxoTagPageContent,
   type TaxoRow,
 } from '../ingest/taxoConsolidation.ts';
+import { extractSectionSheets, parseTaxoSheet } from '../ingest/sectionSheets.ts';
+import { closeSheetCandidates, exactSheetDuplicate, sheetContentHash, sheetInputHash, type SheetIndexEntry } from '../ingest/sheetDedup.ts';
+import { harmonizeTags, loadTagCatalogue } from '../ingest/tagCatalogue.ts';
+import { anchorTagFamilies, missingTagAssignments, parseTagFamilies, parseTagFamilyLabels, restrictTagFamilies, type TagFamily } from '../ingest/tagFamilies.ts';
 import { z } from 'zod';
 import { hashText } from '../utils/hash.ts';
 import { resolveInside } from '../utils/path.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import matter from 'gray-matter';
 import { normalizeSourceBody, splitCitationAnchor } from '../utils/markdown.ts';
-import { planSourcePacks } from '../utils/sourcePacking.ts';
-import { mapWithConcurrency } from '../utils/concurrency.ts';
+import { createSemaphore, mapWithConcurrency, type Semaphore } from '../utils/concurrency.ts';
 import { pathExists, withFileLock } from '../utils/fs.ts';
 import { regenerateWikiIndex } from './wikiIndexService.ts';
 import type { TokenUsage } from './llmService.ts';
@@ -79,6 +59,7 @@ import type { WorkspaceService } from './workspaceService.ts';
 import {
   hashContent,
   readSourceRegistry,
+  markMissingSourceRecords,
   recordSourceObservation,
   SOURCE_REGISTRY_FILENAME,
   sourceIdFromArchivePath,
@@ -86,34 +67,23 @@ import {
   type SourceRegistryFile,
 } from './sourceRegistry.ts';
 
-interface IngestSectionResult {
-  extraction: SourceExtraction;
-  retry?: IngestRetryInfo;
+export interface LegacySheetMigrationPreview {
+  remove: string[];
+  protected: string[];
 }
 
-interface PlannedIngestSource {
-  source: string;
-  summary?: string;
-  operations: WikiOperation[];
-  review?: IngestReviewOperation[];
-  skipped?: boolean;
+// Bumped for the nature + named-entity tag policy: prior cached model output
+// may satisfy the old format while lacking the new semantic axes.
+const TAXO_PROMPT_VERSION = 4;
+const TAXO_FAMILY_BATCH_THRESHOLD = 60;
+const TAXO_FAMILY_BATCH_SIZE = 40;
+const TAXO_FAMILY_BATCH_CONCURRENCY = 3;
+
+function isUnfiledTagPage(page: WikiPage, family: unknown): boolean {
+  const conceptFolder = page.relativePath.split('/')[2] ?? '';
+  return normalizeProvenanceValue(conceptFolder) === 'unfiled'
+    || (typeof family === 'string' && normalizeProvenanceValue(family) === 'unfiled');
 }
-
-interface PlannedIngestFile {
-  schemaVersion?: number;
-  generatedAt?: string;
-  sources?: PlannedIngestSource[];
-}
-
-export const INGEST_PLAN_FILE_VERSION = 2;
-
-/**
- * Ceiling on the consolidation split-fix retries. One is usually enough; the
- * bound exists so a pathological source cannot loop indefinitely on a split the
- * model refuses to merge. After the last attempt, the plan is applied as-is and
- * the split is still reported as a warning.
- */
-const MAX_SPLIT_RETRIES = 2;
 
 function classifyIngestError(error: unknown): IngestRetryInfo['classification'] {
   const message = error instanceof Error ? error.message : String(error);
@@ -185,26 +155,10 @@ async function withRetry<T>(
 // arbitrary text, so a small bound is enough and keeps the regex engine-safe.
 const BARE_RAW_PATH_PATTERN = /(?<!\[src:\s{0,4})\braw\/(?:ingested|untracked)\/[^\s\]"'`)]+/gi;
 
-// OKF v0.2 provenance: every leaf a source produces records that source in
+// OKF v0.2 provenance: every page a source produces records that source in
 // its frontmatter `sources` list — the structured complement of the body's
 // [src: ...] citations, accumulated additively across ingests (a source cited
-// twice is listed once). Shared by the live and planned apply paths so the
-// stamped shape can't drift between them.
-/**
- * The basename's own identity for "did this page move" purposes.
- *
- * A taxo leaf's basename CHANGES on a re-file — `<concept>_<resume>.md`
- * follows its new folder (see `conceptMove.ts`) — so comparing raw basenames
- * missed every taxo move and re-created the page as a fresh duplicate at the
- * new location's expense. A classic subject never contains an underscore
- * (`isValidProvenanceValue` forbids it), so stripping up to the first one is
- * a no-op for every classic leaf and only changes behavior for the taxo
- * convention.
- */
-function conceptBasenameIdentity(basename: string): string {
-  const underscoreIndex = basename.indexOf('_');
-  return underscoreIndex === -1 ? basename : basename.slice(underscoreIndex + 1);
-}
+// twice is listed once).
 
 function stampSourceProvenance(
   operations: WikiOperation[],
@@ -371,9 +325,8 @@ interface ProvenancePipelineResult {
 }
 
 /**
- * The provenance post-processing every writer runs on a source's operations,
- * shared by the live ingest and the planned (`--plan-only`/`--apply`) path so
- * the orchestrator cannot bypass it: token materialization, engine-side
+ * The provenance post-processing every writer runs on a source's operations:
+ * token materialization, engine-side
  * anchoring, the two-level retarget, citation-path enforcement, the source-page
  * and anchored-citation contracts, the refusal of unresolvable proofs, and the
  * deterministic loss guard. It reads text only — no LLM, no log side effects;
@@ -439,7 +392,7 @@ function runProvenancePipeline(options: ProvenancePipelineOptions): ProvenancePi
   const citationSafeOperations = twoLevelOperations;
 
   const sourcePageIssues: ProvenanceSourcePageIssue[] = citationSafeOperations
-    .filter((operation) => operation.type !== 'delete' && /^wiki\/(?:concepts\/|sources\/[^/]+\.md$)/.test(operation.path))
+    .filter((operation) => operation.type !== 'delete' && /^wiki\/(?:concepts\/|sources\/)/.test(operation.path))
     .flatMap((operation) => {
       const content = operation.content ?? '';
       if (operation.path.startsWith('wiki/concepts/')) {
@@ -606,45 +559,6 @@ export function staleRebuiltLeaves(
     .sort();
 }
 
-/**
- * The best match between a page's subject and any candidate subject of this
- * extraction.
- *
- * A plain loop rather than `Math.max(0, ...roots.map(...))`: this runs once per
- * concept page in the corpus, and the spread allocated an array per page for a
- * single number. Do not short-circuit at 100: the fuzzy scorer awards ten
- * points per shared significant token and long subjects can legitimately
- * score above the exact-match sentinel.
- */
-function bestSubjectMatchStrength(candidateRoots: string[], subject: string): number {
-  let best = 0;
-  for (const root of candidateRoots) {
-    const strength = subjectMatchStrength(root, subject);
-    if (strength > best) best = strength;
-  }
-  return best;
-}
-
-/**
- * The rejection set, seen through the path rewrites an apply-time concept
- * reconciliation just made.
- *
- * A reviewer rejects the path a dry-run showed. The reconciliation is skipped
- * in dry-run and can move that very operation before the rejection filter
- * runs, so matching on the new path alone let an explicitly refused page be
- * written. Both spellings are refused.
- */
-export function rejectionsAfterRewrites(
-  rejectedPaths: Set<string>,
-  rewrites: Map<string, string>,
-): Set<string> {
-  if (rejectedPaths.size === 0 || rewrites.size === 0) return rejectedPaths;
-  const effective = new Set(rejectedPaths);
-  for (const [from, to] of rewrites) {
-    if (rejectedPaths.has(from)) effective.add(to);
-  }
-  return effective;
-}
 
 function buildReviewOperations({
   operations,
@@ -683,6 +597,12 @@ function buildReviewOperations({
   });
 }
 
+/** Progress hooks surfaced on the CLI: phase labels and TAXO warnings. */
+type IngestProgressHooks = {
+  onPhase?: (phase: string, detail?: Record<string, unknown>) => void;
+  onWarning?: (event: string, detail?: Record<string, unknown>) => void;
+};
+
 export class IngestService {
   private readonly config: AppConfig;
   private readonly workspace: WorkspaceService;
@@ -718,6 +638,52 @@ export class IngestService {
     this.logger = logger;
   }
 
+  async previewLegacySheetMigration(): Promise<LegacySheetMigrationPreview> {
+    const remove: string[] = [];
+    const protectedPages: string[] = [];
+    for (const page of await this.retrieval.warmCache()) {
+      const isConcept = page.relativePath.startsWith(CONCEPT_PREFIX);
+      const isSource = page.relativePath.startsWith('wiki/sources/')
+        && !page.relativePath.slice('wiki/sources/'.length).includes('/');
+      if (!isConcept && !isSource) continue;
+      const metadata = matter(page.content).data;
+      const generatedBy = metadata?.generated && typeof metadata.generated === 'object'
+        ? metadata.generated.by
+        : undefined;
+      const legacySourceNote = isSource && metadata?.type === 'source'
+        && (generatedBy === 'llm-wiki' || /^## Résumé\s*$/m.test(page.content));
+      const legacyConcept = isConcept && metadata?.type === 'concept'
+        && (generatedBy === 'llm-wiki' || generatedBy === 'taxo-pipeline')
+        && !metadata?.family;
+      if (!legacySourceNote && !legacyConcept) continue;
+      if (metadata?.status === 'stable' || metadata?.verified === true) {
+        protectedPages.push(page.relativePath);
+      } else {
+        remove.push(page.relativePath);
+      }
+    }
+    return { remove: remove.sort(), protected: protectedPages.sort() };
+  }
+
+  async applyLegacySheetMigration(): Promise<string[]> {
+    const preview = await this.previewLegacySheetMigration();
+    const operations: WikiOperation[] = [];
+    const pages = new Map((await this.retrieval.warmCache()).map((page) => [page.relativePath, page]));
+    for (const pagePath of preview.remove) {
+      const page = pages.get(pagePath);
+      if (!page) continue;
+      const metadata = matter(page.content).data;
+      if (metadata?.status === 'stable' || metadata?.verified === true) continue;
+      operations.push({ type: 'delete', path: pagePath });
+    }
+    if (operations.length > 0) {
+      await this.workspace.applyNormalizedWikiOperations(operations);
+      this.retrieval.invalidateCache();
+      await this.regenerateIndex('taxo-migration');
+    }
+    return operations.map((operation) => operation.path);
+  }
+
   async ingest(
     inputs: string[],
     options?: IngestCommandOptions & {
@@ -735,13 +701,10 @@ export class IngestService {
         usage: TokenUsage,
         progress?: { sectionIndex: number; sectionTotal: number },
       ) => void;
-    },
+    } & IngestProgressHooks,
   ): Promise<IngestResult[]> {
     const runStartedAt = Date.now();
     await this.workspace.ensureInitialized();
-    const profileSection = await this.workspace.loadProfileSection(
-      this.config.limits.maxProfileChars,
-    );
     await this.logger.info('ingest:run-start', {
       inputCount: inputs.length,
       dryRun: Boolean(options?.dryRun),
@@ -761,24 +724,6 @@ export class IngestService {
       resolvedCount: sourcePaths.length,
       durationMs: Date.now() - selectionStartedAt,
     });
-
-    /*
-     A full rebuild starts from a clean concept tree.
-
-     The rebuild re-files EVERY archived source, so the leaves already on disk
-     are the previous run's output. Pruning only the ones this run no longer
-     produces was not enough: the model, shown the existing pages, may keep an
-     old projection AND add a new one, so its produced-pages set keeps growing
-     and every leaf survives — the number of concepts and leaves doubled on
-     each rebuild. Delete first, then let the run write the new tree; the
-     per-source inventory reads the (now empty) tree and rebuilds from the
-     archive. Scoped to the full rebuild (`inputs.length === 0`): a rebuild
-     limited to a few archives keeps the rest of the tree.
-     */
-    if (options?.fromIngested && !options?.dryRun && inputs.length === 0 && sourcePaths.length > 0) {
-      const purged = await this.purgeConceptTreeForRebuild();
-      await this.logger.info('ingest:rebuild-purge', { removed: purged });
-    }
 
     const results: IngestResult[] = [];
     const rejectedPaths = new Set(options?.reject ?? []);
@@ -804,12 +749,36 @@ export class IngestService {
      */
     const previousRegistry = await this.previousRegistry();
 
-    const taxoSourcePaths = options?.taxo
-      ? await this.filterSourcesNeedingTaxoPrePass(sourcePaths, previousRegistry, options)
-      : sourcePaths;
-    const taxoPre = options?.taxo
-      ? await this.runTaxoPrePass(taxoSourcePaths, cache, options)
-      : null;
+    const taxoEntries = await this.filterSourcesNeedingTaxoPrePass(sourcePaths, previousRegistry, options);
+    const taxoRelativeByPath = new Map(taxoEntries.map((entry) => [entry.sourcePath, entry.relativePath]));
+    const sheetIndex = await this.loadSheetIndex();
+    /*
+     Lookahead: extract the next sources while the current one is being
+     committed, so writes stay progressive AND the model keeps several calls
+     in flight. The shared gate is the single global budget; a source's
+     sections no longer each open their own limit.
+    */
+    const llmGate = createSemaphore(this.config.limits.maxInFlightRequests ?? 3);
+    const lookahead = Math.max(1, this.config.limits.maxInFlightRequests ?? 3);
+    const extractionPromises = new Map<string, ReturnType<IngestService['extractTaxoSheets']>>();
+    let scheduleCursor = 0;
+    const scheduleExtractions = (): void => {
+      while (extractionPromises.size < lookahead && scheduleCursor < sourcePaths.length) {
+        const candidate = sourcePaths[scheduleCursor];
+        scheduleCursor += 1;
+        if (!taxoRelativeByPath.has(candidate)) continue;
+        extractionPromises.set(candidate, this.extractTaxoSheets(
+          [candidate],
+          cache,
+          options,
+          sheetIndex,
+          scheduleCursor - 1,
+          sourcePaths.length,
+          llmGate,
+        ));
+      }
+    };
+    scheduleExtractions();
 
     for (let i = 0; i < sourcePaths.length; i++) {
       const sourcePath = sourcePaths[i];
@@ -827,16 +796,6 @@ export class IngestService {
           ingested: options?.fromIngested === true,
         });
         sourceLabel = source.relativePath;
-        if (options?.taxo && taxoPre?.failedSources.has(source.relativePath)) {
-          // The taxo pre-pass isolates failures per source (a bad section
-          // extraction no longer aborts the whole batch) — surface that
-          // failure here, through the SAME per-source catch/results shape
-          // every other failure reason already uses, instead of silently
-          // producing zero concepts for this source with nothing in the log.
-          throw new Error(
-            `Taxo pre-pass failed for this source: ${taxoPre.failedSources.get(source.relativePath)}`,
-          );
-        }
         await this.logger.info('ingest:source', {
           source: source.relativePath,
           title: source.title,
@@ -857,7 +816,13 @@ export class IngestService {
         // the command is to regenerate the concept pages, so the
         // unchanged-since-last-ingest skip must not fire on the very archive
         // the comparison would read.
-        if (!options?.force && !options?.fromIngested) {
+        // TAXO must revisit an unchanged archive: the fiche input hash also
+        // includes the prompt/model signature, so a prompt upgrade must
+        // regenerate the fiche instead of being hidden by the archive hash
+        // shortcut. The section cache still makes an unchanged TAXO pass
+        // cheap and idempotent at the write layer.
+        if (!options?.force && !options?.fromIngested
+          && !taxoRelativeByPath.has(sourcePath)) {
           const unchanged = await this.workspace.isSourceUnchangedSinceIngest(source);
           if (unchanged) {
             const vanished = await this.findVanishedProducedPages(source, previousRegistry);
@@ -902,551 +867,35 @@ export class IngestService {
           }
         }
 
-        const { maxChunkChars, maxSourceChars } = this.config.retrieval;
         const rawBody = normalizeSourceBody(source.body ?? '');
         const sourcePagePath = path.posix.join('wiki', 'sources', `${source.slug}.md`);
-        let consolidated: ConsolidationPlan | null = null;
-        let lastSplits: ReturnType<typeof detectConceptSplits> = [];
-        let sections: string[] = [];
-        let knownPaths: Set<string> = new Set();
-        let sectionResults: Array<{ extraction: SourceExtraction; retry?: IngestRetryInfo }> = [];
-        if (!options?.taxo) {
-        /*
-         A single planner, for ingestion as well as `wiki doctor`.
-
-         The previous splitting cut at every title without ever repacking: the
-         number of LLM calls depended on the document's formatting, not on its
-         volume. Two sibling documents received a very different number of
-         decisions, and the resulting gap in concepts then read as a difference
-         in richness.
-        */
-        const plan = planSourcePacks(rawBody, { maxChars: maxSourceChars });
-        sections = plan.packs.map((pack) => pack.text);
-
-        // Logged for EVERY source, even unsplit: this is the measure that lets
-        // us explain afterwards why a source cost N calls.
-        await this.logger.info('ingest:pack', {
-          source: source.relativePath,
-          ...plan.diagnostics,
-        });
-
-        /*
-         The source identity enters the cache key, not just its content.
-
-         Two distinct documents can have an identical body — a record template
-         filled twice, a duplicated export. Without the citation path in the
-         key, one document's consolidated plan would be re-served to the other,
-         with its citations and its source note: a page attributed to the wrong
-         document, and nothing to signal it.
-         */
-        const sourceHash = hashText(`${source.archiveCitationPath}\u0000${rawBody}`);
-        const modelId = this.config.llm.model;
-
-        /*
-         Phase 1 — N concurrent extractions, no writes.
-
-         Each batch reports facts and candidate subjects with local identifiers.
-         None can create, update or delete anything: that is what makes the
-         original flaw impossible, where two fragments wrote two pages of the
-         same concept without seeing each other.
-        */
-        sectionResults = await mapWithConcurrency(
-          plan.packs,
-          this.config.limits.maxInFlightRequests ?? 3,
-          async (pack, sectionIndex): Promise<IngestSectionResult> => {
-            const cacheName = extractionCacheName({
-              sourceHash,
-              packIndex: sectionIndex,
-              packHash: hashText(pack.text),
-              model: modelId,
-              promptVersion: EXTRACTION_PROMPT_VERSION,
-              schemaVersion: EXTRACTION_SCHEMA_VERSION,
-            });
-            const cached = await cache.read<unknown>(cacheName);
-            if (cached) {
-              const parsed = sourceExtractionSchema.safeParse(cached);
-              if (parsed.success) {
-                const extraction = {
-                  ...parsed.data,
-                  facts: parsed.data.facts.map((fact) => ({
-                    ...fact,
-                    citation: source.archiveCitationPath,
-                  })),
-                };
-                await this.logger.info('ingest:extract', {
-                  source: source.relativePath,
-                  pack: `${sectionIndex + 1}/${plan.packs.length}`,
-                  cached: true,
-                  subjects: extraction.subjects.length,
-                  facts: extraction.facts.length,
-                });
-                if (extraction._dangling && (extraction._dangling.orphanedRelations > 0 || extraction._dangling.orphanedFacts > 0)) {
-                  await this.logger.warn('ingest:extract-dangling', {
-                    source: source.relativePath,
-                    cached: true,
-                    ...extraction._dangling,
-                    advice: 'References (relations, fact subjects) to undeclared identifiers were discarded without rejecting the source.',
-                  });
-                }
-                return { extraction };
-              }
-            }
-
-            const prompt = buildExtractionPrompt({
-              source,
-              body: pack.text,
-              headingPath: pack.headingPath,
-              packIndex: sectionIndex,
-              packTotal: plan.packs.length,
-              ctx: buildPromptContext(this.config, { profileSection }),
-            });
-            await this.logger.info('ingest:prompt', {
-              source: source.relativePath,
-              phase: 'extract',
-              promptChars: prompt.system.length + prompt.user.length,
-              pack: `${sectionIndex + 1}/${plan.packs.length}`,
-            });
-
-            const progress = { sectionIndex, sectionTotal: plan.packs.length };
-            options?.onSourceLlm?.(sourcePath, i, sourcePaths.length, progress);
-            /*
-             A failing batch is retried alone.
-
-             `mapWithConcurrency` isolates the batches, and the cache keeps the
-             ones that succeeded: a resume never repays an already-valid call.
-            */
-            const { value: extraction, retry } = await withRetry(
-              () =>
-                this.llm.completeJson(
-                  {
-                    ...prompt,
-                    label: 'ingest_extract',
-                    logger: this.logger,
-                    traceData: { source: source.relativePath },
-                    onUsage: (usage) => {
-                      options?.onSourceUsage?.(sourcePath, i, sourcePaths.length, usage, progress);
-                    },
-                  },
-                  sourceExtractionSchema,
-                ),
-              {
-                onRetry: async (retryInfo) => {
-                  await this.logger.warn('ingest:retry', {
-                    source: source.relativePath,
-                    phase: 'extract',
-                    attempts: retryInfo.attempts,
-                    retries: retryInfo.retries,
-                    classification: retryInfo.classification,
-                    nextDelayMs: retryInfo.nextDelayMs,
-                    message: retryInfo.message,
-                    pack: `${sectionIndex + 1}/${plan.packs.length}`,
-                  });
-                },
-              },
-            );
-
-            const canonicalExtraction: SourceExtraction = {
-              ...extraction,
-              facts: extraction.facts.map((fact) => ({
-                ...fact,
-                citation: source.archiveCitationPath,
-              })),
+        // The extraction of this source was scheduled ahead (lookahead): take
+        // it, free its slot for the next source, and commit now. Pages are
+        // written source by source instead of after a global extraction pass.
+        const extractionPromise = extractionPromises.get(sourcePath);
+        if (extractionPromise) extractionPromises.delete(sourcePath);
+        scheduleExtractions();
+        const extraction = extractionPromise
+          ? await extractionPromise
+          : {
+              rowsBySource: new Map<string, TaxoRow[]>(),
+              duplicatePagesBySource: new Map<string, string[]>(),
+              sectionCounts: new Map<string, number>(),
+              retryBySource: new Map<string, IngestRetryInfo>(),
+              failedSources: new Map<string, string>(),
             };
-
-            await cache.write(cacheName, canonicalExtraction);
-            await this.logger.info('ingest:extract', {
-              source: source.relativePath,
-              pack: `${sectionIndex + 1}/${plan.packs.length}`,
-              cached: false,
-              subjects: canonicalExtraction.subjects.length,
-              facts: canonicalExtraction.facts.length,
-            });
-            if (canonicalExtraction._dangling && (canonicalExtraction._dangling.orphanedRelations > 0 || canonicalExtraction._dangling.orphanedFacts > 0)) {
-              await this.logger.warn('ingest:extract-dangling', {
-                source: source.relativePath,
-                pack: `${sectionIndex + 1}/${plan.packs.length}`,
-                ...canonicalExtraction._dangling,
-                advice: 'References (relations, fact subjects) to undeclared identifiers were discarded without rejecting the source.',
-              });
-            }
-            return { extraction: canonicalExtraction, ...(retry.retries > 0 && { retry }) };
-          },
-        );
-
-        /*
-         Phase 2 — one consolidation, which sees the whole source.
-
-         The completion order of the extractions must not change the result:
-         `mapWithConcurrency` returns results in batch order, and the merge
-         prefixes identifiers by their index. Two different concurrent runs
-         therefore produce the same prompt.
-        */
-        const merged = mergeExtractions(sectionResults.map((result) => result.extraction));
-        const warmPages = await this.retrieval.warmCache();
-        const existingSourceNote = warmPages.find(
-          (page) => page.relativePath === sourcePagePath,
-        )?.content ?? null;
-
-        // Concept pages this source produced in a previous ingest, with their
-        // current provenance. They are the stable reference for re-anchoring.
-        const sourceId = sourceIdFromArchivePath(source.archiveCitationPath);
-        const previousRecord = (previousRegistry?.sources ?? []).find((record) => record.sourceId === sourceId);
-        const previousConcepts = (previousRecord?.producedPages ?? [])
-          .filter((page) => page.startsWith(CONCEPT_PREFIX))
-          .map((page) => {
-            const content = warmPages.find((entry) => entry.relativePath === page)?.content ?? null;
-            const provenance = content ? readProvenance(content) : null;
-            return { path: page, subject: provenance?.subject ?? null, class: parseConceptPagePath(page)?.class ?? null, content };
-          });
-
-        const contextStartedAt = Date.now();
-        const relevantPages = await this.retrieval.search(
-          [source.title, ...merged.subjects.map((subject) => subject.label)].join(' '),
-          { limit: this.config.retrieval.maxContextFiles, includeRaw: false },
-        );
-        await this.logger.info('ingest:context', {
-          source: source.relativePath,
-          pagesFound: relevantPages.length,
-          durationMs: Date.now() - contextStartedAt,
-        });
-
-        const inventory = relevantPages.map((result) => {
-          const provenance = readProvenance(result.page.content);
-          return {
-            path: result.page.relativePath,
-            title: result.page.name,
-            subject: provenance.subject,
-            conceptId: provenance.concept_id,
-            subjectId: provenance.subject_id,
-            scope: provenance.scope,
-            folder: parseConceptPagePath(result.page.relativePath)?.class ?? null,
-            excerpt: (result.chunk?.content ?? result.page.content)
-              .replace(/\s+/g, ' ')
-              .slice(0, maxChunkChars),
-          };
-        });
-
-        // Surface the previous concepts to the model as pages to REUSE, not
-        // just as retrieval hits — the retrieval top-N does not reliably bring
-        // them back, which is exactly why the model re-created them.
-        const previousInventory = previousConcepts
-          .filter((concept) => !inventory.some((page) => page.path === concept.path))
-          .map((concept) => {
-            const page = warmPages.find((entry) => entry.relativePath === concept.path);
-            const provenance = page ? readProvenance(page.content) : null;
-            return {
-              path: concept.path,
-              title: page?.name ?? concept.path.split('/').pop() ?? concept.path,
-              subject: provenance?.subject ?? concept.subject ?? null,
-              conceptId: provenance?.concept_id ?? null,
-              subjectId: provenance?.subject_id ?? null,
-              scope: provenance?.scope ?? null,
-              folder: parseConceptPagePath(concept.path)?.class ?? null,
-              excerpt: (page?.content ?? '').replace(/\s+/g, ' ').slice(0, maxChunkChars),
-              previousForSource: true,
-            };
-          });
-        // Existing concept pages whose subject plausibly matches a candidate
-        // subject from THIS extraction, regardless of which source produced
-        // them. `inventory` above (retrieval relevance) does not reliably
-        // surface a same-subject page when the wording differs across
-        // sources. `previousInventory` only covers this source's OWN
-        // prior pages, not ones another source already created for the same
-        // subject.
-        const candidateRoots = merged.subjects
-          .map((subject) => normalizeProvenanceValue(subject.label))
-          .filter(Boolean);
-        const alreadyListed = new Set([...inventory, ...previousInventory].map((page) => page.path));
-        const MAX_SUBJECT_MATCHES = 5;
-        // Ranked, then capped — never capped in corpus order. Five pages
-        // matched only on a shared qualifier used to fill the five slots and
-        // hide the one page that genuinely covers the subject, which is the
-        // whole point of this inventory.
-        const subjectMatchInventory = candidateRoots.length
-          ? warmPages
-              .filter((page) => page.relativePath.startsWith(CONCEPT_PREFIX) && !alreadyListed.has(page.relativePath))
-              .map((page) => ({ page, provenance: readProvenance(page.content) }))
-              .map(({ page, provenance }) => ({
-                page,
-                provenance,
-                strength: provenance.subject == null
-                  ? 0
-                  : bestSubjectMatchStrength(candidateRoots, provenance.subject),
-              }))
-              .filter(({ strength }) => strength > 0)
-              .sort((a, b) => b.strength - a.strength
-                || a.page.relativePath.localeCompare(b.page.relativePath))
-              .slice(0, MAX_SUBJECT_MATCHES)
-              .map(({ page, provenance }) => ({
-                path: page.relativePath,
-                title: page.name,
-                subject: provenance.subject,
-                conceptId: provenance.concept_id,
-                subjectId: provenance.subject_id,
-                scope: provenance.scope,
-                folder: parseConceptPagePath(page.relativePath)?.class ?? null,
-                excerpt: page.content.replace(/\s+/g, ' ').slice(0, maxChunkChars),
-                subjectMatch: true,
-              }))
-          : [];
-        let fullInventory = [...inventory, ...previousInventory, ...subjectMatchInventory];
-
-        // §3.4 (provenance mode): give the model the FULL existing body of each
-        // candidate page and bounded excerpts of the archives that page already
-        // cites, so an update preserves every earlier statement. Without this
-        // the model only sees a truncated, whitespace-collapsed excerpt and can
-        // neither keep nor re-cite the earlier sources — the root cause of the
-        // mono-source leaf.
-        const contentByPath = new Map(warmPages.map((page) => [page.relativePath, page.content]));
-        const bodyCap = this.config.retrieval.maxSourceChars;
-        fullInventory = await Promise.all(fullInventory.map(async (page) => {
-          const content = contentByPath.get(page.path);
-          if (!content) return page;
-          let declared: string[] = [];
-          try {
-            const data = matter(content).data as Record<string, unknown>;
-            declared = Array.isArray(data.sources)
-              ? data.sources
-                  .map((entry) => (typeof entry === 'string' ? entry : (entry as { path?: unknown })?.path))
-                  .filter((value): value is string => typeof value === 'string' && /^raw\/ingested\//.test(value.replace(/\\/g, '/')))
-                  .map((value) => value.replace(/\\/g, '/'))
-              : [];
-          } catch {
-            declared = [];
-          }
-          const sourceExcerpts: Array<{ path: string; excerpt: string }> = [];
-          for (const sourcePath of declared.slice(0, 5)) {
-            try {
-              const absolute = resolveInside(this.workspace.paths.rootDir, sourcePath);
-              if (!(await pathExists(absolute))) continue;
-              const body = await this.workspace.readTextFile(absolute);
-              sourceExcerpts.push({ path: sourcePath, excerpt: body.replace(/\s+/g, ' ').trim().slice(0, maxChunkChars) });
-            } catch {
-              // An unreadable archive simply does not contribute an excerpt.
-            }
-          }
-          return {
-            ...page,
-            existingBody: content.slice(0, bodyCap),
-            ...(sourceExcerpts.length > 0 ? { sourceExcerpts } : {}),
-          };
-        }));
-
-        const indexContent = await this.workspace.readIndex();
-        const existingFolders = [...new Set(
-          warmPages
-            .map((page) => parseConceptPagePath(page.relativePath)?.class)
-            .filter((folder): folder is string => Boolean(folder)),
-        )].sort();
-        const existingTags = [...new Set(
-          warmPages.flatMap((page) => readProvenance(page.content).tags),
-        )].sort();
-        // The engine shows the model a bounded catalogue of locator tokens it
-        // may copy (never invent); the write path materializes them after.
-        const locatorSection = renderLocatorCatalogueSection(buildLocatorCatalogue(rawBody));
-        const consolidationPrompt = buildConsolidationPrompt({
-          source,
-          extraction: merged,
-          sourcePagePath,
-          existingSourceNote,
-          inventory: fullInventory,
-          indexContent,
-          existingFolders,
-          existingTags,
-          ...(locatorSection ? { locatorSection } : {}),
-          sourcePageContract: true,
-          compositionContract: true,
-          ctx: buildPromptContext(this.config, { profileSection }),
-        });
-        const consolidationCacheKey = consolidationCacheName({
-          sourceHash,
-          extractionsHash: hashText(JSON.stringify(merged)),
-          inventoryHash: hashText(JSON.stringify([
-            fullInventory, indexContent, existingSourceNote, existingFolders, existingTags,
-          ])),
-          model: modelId,
-          promptVersion: CONSOLIDATION_PROMPT_VERSION,
-          schemaVersion: CONSOLIDATION_SCHEMA_VERSION,
-        });
-        await this.logger.info('ingest:prompt', {
-          source: source.relativePath,
-          phase: 'consolidate',
-          promptChars: consolidationPrompt.system.length + consolidationPrompt.user.length,
-          subjects: merged.subjects.length,
-          facts: merged.facts.length,
-          inventory: fullInventory.length,
-        });
-
-        const cachedPlan = await cache.read<unknown>(consolidationCacheKey);
-        if (cachedPlan) {
-          const parsed = consolidationPlanSchema.safeParse(cachedPlan);
-          if (parsed.success) consolidated = parsed.data;
+        const extractionError = extraction.failedSources.get(source.relativePath);
+        if (extractionError) {
+          throw new Error(`TAXO extraction failed for this source: ${extractionError}`);
         }
-        if (!consolidated) {
-          const { value, retry } = await withRetry(
-            () =>
-              this.llm.completeJson(
-                {
-                  ...consolidationPrompt,
-                  label: 'ingest_consolidate',
-                  logger: this.logger,
-                  traceData: { source: source.relativePath },
-                  onUsage: (usage) => {
-                    options?.onSourceUsage?.(sourcePath, i, sourcePaths.length, usage);
-                  },
-                },
-                consolidationPlanSchema,
-              ),
-            {
-              onRetry: async (retryInfo) => {
-                await this.logger.warn('ingest:retry', {
-                  source: source.relativePath,
-                  phase: 'consolidate',
-                  attempts: retryInfo.attempts,
-                  retries: retryInfo.retries,
-                  classification: retryInfo.classification,
-                  nextDelayMs: retryInfo.nextDelayMs,
-                  message: retryInfo.message,
-                });
-              },
-            },
-          );
-          consolidated = value;
-          if (retry.retries > 0) sourceRetry = retry;
-          await cache.write(consolidationCacheKey, value);
-        }
-
-        // Deterministic re-anchor against the previous run's concept pages:
-        // a create whose normalized subject already exists is an update.
-        consolidated = reanchorToPreviousConcepts(consolidated, previousConcepts);
-
-        /*
-         Granularity-fix retry.
-
-         The consolidation is one stateless call per source. Two failures of
-         granularity survive the prompt wording reliably enough to warrant a
-         re-ask: one real-world subject split across several concept pages, or
-         a source that creates more concepts than its budget. The engine detects
-         both, re-asks with the exact subjects to merge, bounded. The cached plan is never
-         written here: a plan that needed correction must not be re-served
-         verbatim on a resume.
-         */
-        // Reused below (validateConsolidation's existingPaths): warmPages is
-        // not mutated between the two uses, so one Set covers both.
-        knownPaths = new Set(warmPages.map((page) => page.relativePath));
-        const knownSubjectIdentities = new Set(
-          warmPages.map((page) => readProvenance(page.content).subject_id)
-            .filter((identity): identity is string => Boolean(identity)),
+        const consolidated = taxoPlanForSource(
+          extraction.rowsBySource.get(source.relativePath) ?? [],
+          new Date().toISOString(),
         );
-        // The correction asks the model to merge concepts, but a retry must not
-        // lose the source note: a plan without one is rejected outright, and the
-        // model, once focused on merging, drops it. Capture it once from the
-        // pre-retry plan and re-inject it into any correction that omits it.
-        const sourceNoteOperations = consolidated.operations.filter(
-          (operation) => operation.path === sourcePagePath && operation.type !== 'delete',
-        );
-        const sourceNotePages = (consolidated.pages ?? []).filter(
-          (page) => page.path === sourcePagePath,
-        );
-        // Threaded into validateConsolidation below so it does not repeat this
-        // same O(n²) subject scan on data the loop already checked clean.
-        // The extra `<= MAX_SPLIT_RETRIES` pass (which never corrects, only
-        // checks) guarantees `lastSplits` is always computed against the
-        // FINAL `consolidated` — without it, exhausting the retries would
-        // leave `lastSplits` one correction stale relative to the plan
-        // `validateConsolidation` actually receives.
-        for (let retryAttempt = 0; retryAttempt <= MAX_SPLIT_RETRIES; retryAttempt += 1) {
-          const splits = detectConceptSplits(consolidated, knownSubjectIdentities);
-          lastSplits = splits;
-          const overflow = detectConceptOverflow(
-            consolidated,
-            knownPaths,
-            DEFAULT_CONCEPT_BUDGET,
-          );
-          const duplicatePaths = detectDuplicatePaths(consolidated);
-          if (splits.length === 0 && !overflow && duplicatePaths.length === 0) break;
-          if (retryAttempt === MAX_SPLIT_RETRIES) break;
-          await this.logger.warn('ingest:consolidate-retry', {
-            source: source.relativePath,
-            attempt: retryAttempt + 1,
-            splits: splits.map((split) => `${split.subject}~${split.duplicateOfSubject}`),
-            overflow: overflow ? { newConcepts: overflow.newConcepts, budget: overflow.budget } : null,
-            duplicatePaths,
-          });
-          const retryPrompt = {
-            ...consolidationPrompt,
-            user: buildConsolidationRetryUser(consolidationPrompt.user, {
-              splits,
-              overflow: overflow ? { newConcepts: overflow.newConcepts, budget: overflow.budget } : undefined,
-              duplicatePaths,
-              folders: existingFolders,
-            }),
-          };
-          const { value } = await withRetry(
-            () =>
-              this.llm.completeJson(
-                {
-                  ...retryPrompt,
-                  label: 'ingest_consolidate_retry',
-                  logger: this.logger,
-                  traceData: { source: source.relativePath },
-                  onUsage: (usage) => {
-                    options?.onSourceUsage?.(sourcePath, i, sourcePaths.length, usage);
-                  },
-                },
-                consolidationPlanSchema,
-              ),
-            {
-              onRetry: async (retryInfo) => {
-                await this.logger.warn('ingest:retry', {
-                  source: source.relativePath,
-                  phase: 'consolidate-retry',
-                  attempts: retryInfo.attempts,
-                  retries: retryInfo.retries,
-                  classification: retryInfo.classification,
-                  nextDelayMs: retryInfo.nextDelayMs,
-                  message: retryInfo.message,
-                });
-              },
-            },
-          );
-          let corrected = reanchorToPreviousConcepts(value, previousConcepts);
-          // Re-inject the source note if the merge dropped it: the correction is
-          // about concepts, the note is invariant.
-          const hasSourceNote = corrected.operations.some(
-            (operation) => operation.path === sourcePagePath && operation.type !== 'delete',
-          );
-          if (!hasSourceNote && sourceNoteOperations.length) {
-            corrected = {
-              ...corrected,
-              operations: [...sourceNoteOperations, ...corrected.operations],
-              pages: [...sourceNotePages, ...(corrected.pages ?? [])],
-            };
-          }
-          consolidated = corrected;
-        }
-        } // end of the classic extraction + consolidation generation
-
-        if (options?.taxo && taxoPre) {
-          consolidated = taxoPlanForSource(
-            taxoPre.rowsBySource.get(source.relativePath) ?? [],
-            taxoPre.conceptByRow,
-            sourcePagePath,
-            new Date().toISOString(),
-          );
-          const warmPages = await this.retrieval.warmCache();
-          knownPaths = new Set(warmPages.map((page) => page.relativePath));
-          lastSplits = detectConceptSplits(consolidated, new Set(
-            warmPages.map((page) => readProvenance(page.content).subject_id)
-              .filter((identity): identity is string => Boolean(identity)),
-          ));
-          // `sections` is read only for its .length in the ingest:apply log
-          // below; taxo's real per-source section count lives in
-          // taxoPre.sectionCounts (computed once, in the pre-pass).
-          sections = new Array(taxoPre.sectionCounts.get(source.relativePath) ?? 0).fill('');
-          sourceRetry = taxoPre.retryBySource.get(source.relativePath);
-        }
-        consolidated ??= { summary: 'No plan produced.', operations: [], pages: [] };
+        const duplicatePageReferences = extraction.duplicatePagesBySource.get(source.relativePath) ?? [];
+        const knownPaths = new Set((await this.retrieval.warmCache()).map((page) => page.relativePath));
+        const sectionCount = extraction.sectionCounts.get(source.relativePath) ?? 0;
+        sourceRetry = extraction.retryBySource.get(source.relativePath);
 
         /*
          Normalize FIRST, validate second.
@@ -1459,6 +908,49 @@ export class IngestService {
         const normalizedOperations = await this.workspace.normalizeWikiOperations(
           consolidated.operations,
         );
+        {
+          const previousRecord = previousRegistry?.sources.find(
+            (record) => record.sourceId === sourceIdFromArchivePath(source.archiveCitationPath),
+          );
+          const ownedByOtherSources = new Set((previousRegistry?.sources ?? [])
+            .filter((record) => record.sourceId !== previousRecord?.sourceId)
+            .flatMap((record) => record.producedPages));
+          const nextPaths = new Set(normalizedOperations
+            .filter((operation) => operation.type !== 'delete')
+            .map((operation) => operation.path));
+          const candidates = new Set([
+            ...(previousRecord?.producedPages ?? []),
+            sourcePagePath,
+          ].filter((page) => page.startsWith('wiki/sources/') || page.startsWith(CONCEPT_PREFIX)));
+          const existing = new Map(
+            (await this.retrieval.warmCache()).map((page) => [page.relativePath, page]),
+          );
+          for (const pagePath of candidates) {
+            if (nextPaths.has(pagePath) || ownedByOtherSources.has(pagePath)) continue;
+            const page = existing.get(pagePath);
+            if (!page) continue;
+            const metadata = matter(page.content).data;
+            if (metadata?.status === 'stable' || metadata?.verified === true) {
+              await this.logger.info('ingest:sheet-prune-skipped', {
+                source: source.relativePath,
+                path: pagePath,
+                reason: 'protected page',
+              });
+              continue;
+            }
+            // Prior ingest ownership makes old source notes and generated
+            // concept leaves migration candidates. The canonical flat source
+            // page is included explicitly for pre-registry TAXO workspaces.
+            if (pagePath === sourcePagePath
+              && !/^\s*by:\s*taxo-pipeline\s*$/m.test(page.content)
+              && !previousRecord?.producedPages.includes(pagePath)) continue;
+            normalizedOperations.push({ type: 'delete', path: pagePath });
+            await this.logger.info('ingest:sheet-pruned', {
+              source: source.relativePath,
+              path: pagePath,
+            });
+          }
+        }
         // `pages[].path` designates the same operations, but lived until now
         // before the canonicalization of the paths. A model proposing an accent
         // or a space therefore received a normalized operation and lost its
@@ -1473,34 +965,12 @@ export class IngestService {
           ...page,
           path: normalizedPathByOriginal.get(page.path) ?? page.path,
         }));
-        // Plan-time folder names are not authoritative: the plan may have been
-        // built before a sibling created a matching concept. Reconcile against
-        // the live corpus using schema-validated page metadata and bounded page
-        // evidence, then keep each provenance entry aligned with its operation.
-        const conceptRewrites = options?.dryRun
-          ? new Map<string, string>()
-          : await this.reconcileConceptVocabulary(normalizedOperations, normalizedPages);
-        const effectiveRejectedPaths = rejectionsAfterRewrites(rejectedPaths, conceptRewrites);
-        const reconciledPages = normalizedPages.map((page) => ({
-          ...page,
-          path: conceptRewrites.get(page.path) ?? page.path,
-        }));
-        // `lastSplits` was computed against pre-normalization paths; remap
-        // them the same way the pages and operations were remapped, so
-        // warnings name the actual path, not the model's pre-normalized one.
-        const reconcilePath = (value: string): string => {
-          const normalized = normalizedPathByOriginal.get(value) ?? value;
-          return conceptRewrites.get(normalized) ?? normalized;
-        };
-        const normalizedSplits = lastSplits.map((split) => ({
-          ...split,
-          path: reconcilePath(split.path),
-          duplicateOfPath: reconcilePath(split.duplicateOfPath),
-        }));
-        // The full provenance pipeline (materialization, anchoring, two-level
-        // retarget, path enforcement, source-page/anchor contracts, refusal and
-        // the loss guard) is shared with the planned apply path, so the two can
-        // never drift and the orchestrator cannot bypass it.
+        const effectiveRejectedPaths = rejectedPaths;
+        const reconciledPages = normalizedPages;
+        const normalizedSplits: [] = [];
+        // The TAXO path passes through the full provenance pipeline:
+        // materialization, anchoring, two-level retarget, path enforcement,
+        // source-page/anchor contracts, refusal and the loss guard.
         const existingPages = new Map(
           (await this.retrieval.warmCache()).map((page) => [page.relativePath, page]),
         );
@@ -1603,6 +1073,7 @@ export class IngestService {
             existingPaths: knownPaths,
             existingPages: new Map([...existingPages].map(([pagePath, page]) => [pagePath, page.content])),
             precomputedSplits: normalizedSplits,
+            taxo: true,
           },
         );
         await this.logger.info('ingest:consolidate', {
@@ -1643,7 +1114,6 @@ export class IngestService {
         // concatenated the decisions of each fragment without confronting them.
         const allOperations = validation.operations;
         const lastSummary = consolidated.summary;
-        sourceRetry = sourceRetry ?? sectionResults.findLast((result) => result.retry)?.retry;
 
         const review = buildReviewOperations({
           operations: allOperations,
@@ -1724,6 +1194,15 @@ export class IngestService {
             { path: sourcePagePath, title: source.title },
           );
           await this.workspace.applyNormalizedWikiOperations(stampedOperations);
+          {
+            for (const operation of stampedOperations) {
+              if (operation.type === 'delete') continue;
+              await this.logger.info('ingest:output', {
+                path: operation.path,
+                source: source.relativePath,
+              });
+            }
+          }
           this.retrieval.invalidateCache();
           await this.logger.info('ingest:apply', {
             source: source.relativePath,
@@ -1732,7 +1211,7 @@ export class IngestService {
             update: operationCounts.update,
             delete: operationCounts.delete,
             atomic: true,
-            sections: sections.length,
+            sections: sectionCount,
           });
 
           const archiveStartedAt = Date.now();
@@ -1750,7 +1229,10 @@ export class IngestService {
             'ingest',
             `${source.relativePath} -> ${source.archiveCitationPath} (${lastSummary})`,
           );
-          await this.observeSource(source, applyOperations);
+          await this.observeSource(source, [
+            ...applyOperations,
+            ...duplicatePageReferences.map((referencedPath) => ({ type: 'update' as const, path: referencedPath })),
+          ]);
           /*
            The visible commit unit is a source applied successfully.
 
@@ -1760,6 +1242,14 @@ export class IngestService {
            the grain that matches what a reader perceives as "something
            happened", and Serve coalesces nearby markers.
           */
+          // The tags this source produced get their navigation page now, so
+          // the concept tree grows with the run. The end-of-run family pass
+          // remains the authority (grouping, moves, purge).
+          const sourceTags = [...new Set((extraction.rowsBySource.get(source.relativePath) ?? [])
+            .flatMap((row) => row.tags ?? []))];
+          if (sourceTags.length > 0) {
+            await this.refreshIncrementalTagPages(sourceTags);
+          }
           // Index first: wiki/index.md is itself part of the knowledge corpus
           // the fingerprint below covers, so publishing before regenerating it
           // would freeze a corpus the index rewrite immediately invalidates
@@ -1793,6 +1283,10 @@ export class IngestService {
           failed: true,
           error: message,
         });
+        // Free the lookahead slot this source may still hold: a failure before
+        // its extraction was consumed must not stall the scheduling of the
+        // next sources.
+        if (extractionPromises.delete(sourcePath)) scheduleExtractions();
       }
     }
 
@@ -1826,7 +1320,19 @@ export class IngestService {
           const currentRegistry = await readSourceRegistry(registryPath);
           const stale: string[] = [];
           for (const page of staleRebuiltLeaves(previousRegistry, currentRegistry, rebuiltArchives)) {
-            if (await pathExists(resolveInside(this.workspace.paths.rootDir, page))) stale.push(page);
+            const absolute = resolveInside(this.workspace.paths.rootDir, page);
+            if (!(await pathExists(absolute))) continue;
+            try {
+              const metadata = matter(readFileSync(absolute, 'utf8')).data;
+              if (metadata?.status === 'stable' || metadata?.verified === true) {
+                await this.logger.info('ingest:rebuild-prune-skipped', { path: page, reason: 'protected page' });
+                continue;
+              }
+            } catch {
+              // A malformed page is still stale output if the registry proves
+              // this rebuild no longer produces it; lint reports its format.
+            }
+            stale.push(page);
           }
           if (stale.length > 0) {
             await this.workspace.applyNormalizedWikiOperations(
@@ -1871,6 +1377,24 @@ export class IngestService {
       });
     }
 
+    const completeArchiveRebuild = Boolean(options?.fromIngested && inputs.length === 0
+      && sourcePaths.length > 0
+      && !options.dryRun && results.length === sourcePaths.length
+      && results.every((result) => !result.failed));
+    if (completeArchiveRebuild) {
+      const activeSourceIds = new Set<string>();
+      for (const sourcePath of sourcePaths) {
+        const source = await this.workspace.readSourceDocument(sourcePath, { ingested: true });
+        activeSourceIds.add(sourceIdFromArchivePath(source.archiveCitationPath));
+      }
+      await this.pruneMissingSourcePages(activeSourceIds);
+    }
+
+    if (!options?.dryRun
+      && (successfulResults.length > 0 || completeArchiveRebuild)) {
+      await this.regenerateTaxoTagPages(options);
+    }
+
     await this.logger.info('ingest:run-done', {
       sourceCount: results.length,
       failed: failedResults.length,
@@ -1912,154 +1436,150 @@ export class IngestService {
    * dissolved from one ingest to the next never settles. The engine then
    * rewrites the plan's paths. No synonym table or concept-folder registry.
    */
-  private async reconcileConceptVocabulary(
-    operations: WikiOperation[],
-    declaredPages: ConsolidationPlan['pages'] = [],
-  ): Promise<Map<string, string>> {
-    const nothing = new Map<string, string>();
-    const conceptOperations = operations.filter(
-      (operation) => operation.type !== 'delete' && operation.path.startsWith(CONCEPT_PREFIX),
-    );
-    if (conceptOperations.length === 0) return nothing;
-
-    const pages = await this.retrieval.warmCache();
-    const allEntries = collectConceptFolderEntries(pages);
-    const existingFolders = new Set(allEntries.map((entry) => entry.folder));
-    const proposed = [...new Set(
-      conceptOperations
-        .map((operation) => parseConceptPagePath(operation.path)?.class)
-        .filter((folder): folder is string => Boolean(folder)),
-    )];
-    // A plan that stays entirely inside the folders already on disk cannot
-    // open a duplicate, so it needs no arbitration. Only a genuinely NEW
-    // folder triggers the call, which resolves it against the established
-    // vocabulary — never the other way around.
-    if (proposed.every((folder) => existingFolders.has(folder))) return nothing;
-    const knownConceptIds = new Set(allEntries
-      .map((entry) => entry.conceptId)
-      .filter((identity): identity is string => Boolean(identity)));
-    const proposedEntries = collectProposedConceptEntries(
-      conceptOperations,
-      declaredPages,
-      knownConceptIds,
-    );
-    const conceptPaths = pages
-      .filter((page) => page.relativePath.startsWith(CONCEPT_PREFIX))
-      .map((page) => page.relativePath);
-    const candidateQuery = proposedEntries
-      .flatMap((entry) => [entry.folder, ...entry.subjects, ...entry.tags, ...(entry.samples ?? [])])
-      .join('\n')
-      .slice(0, 6000);
-    const candidateResults = conceptPaths.length && candidateQuery.trim()
-      ? await this.retrieval.search(candidateQuery, {
-          limit: 12,
-          includeRaw: false,
-          allowedSources: conceptPaths,
-        })
-      : [];
-    const candidateFolders = new Set(candidateResults.flatMap((result) => {
-      const folder = parseConceptPagePath(result.page.relativePath)?.class;
-      return folder ? [folder] : [];
-    }));
-    const declaredExistingIds = new Set(proposedEntries
-      .map((entry) => entry.conceptId)
-      .filter((identity): identity is string => Boolean(identity)));
-    for (const entry of allEntries) {
-      if (entry.conceptId && declaredExistingIds.has(entry.conceptId)) candidateFolders.add(entry.folder);
-    }
-    const entries = allEntries.filter((entry) => candidateFolders.has(entry.folder));
-    await this.logger.info('ingest:concept-folder-candidates', {
-      proposedFolders: proposed.length,
-      establishedFolders: allEntries.length,
-      candidateFolders: entries.map((entry) => entry.folder),
-      candidateLimit: 12,
-    });
-    const mapping = await reconcileConceptFolders({
-      llm: this.llm,
-      entries,
-      existingFolders: [...existingFolders],
-      proposedEntries,
-      proposed,
-      ctx: buildPromptContext(this.config, { date: new Date() }),
-      logger: this.logger,
-    });
-    const changed = [...mapping.entries()].filter(([from, to]) => from !== to);
-    if (changed.length === 0) return nothing;
-
-    // The rewrites are reported, never left implicit: a caller holding a path
-    // from BEFORE this call (a reviewer's `--reject`, a dry-run preview) would
-    // otherwise no longer match the operation it named, and an explicitly
-    // rejected page would be written anyway.
-    const rewrites = new Map<string, string>();
-    const conceptIdentityByFolder = new Map<string, string>();
-    for (const entry of entries) {
-      if (entry.conceptId) conceptIdentityByFolder.set(entry.folder, entry.conceptId);
-    }
-    for (const entry of proposedEntries) {
-      if (entry.conceptId && !conceptIdentityByFolder.has(entry.folder)) {
-        conceptIdentityByFolder.set(entry.folder, entry.conceptId);
-      }
-    }
-    for (const operation of operations) {
-      if (!operation.path.startsWith(CONCEPT_PREFIX)) continue;
-      const parsed = parseConceptPagePath(operation.path);
-      if (!parsed) continue;
-      const canonical = mapping.get(parsed.class);
-      if (!canonical || canonical === parsed.class) continue;
-      const canonicalConceptId = conceptIdentityByFolder.get(canonical);
-      if (canonicalConceptId && operation.type !== 'delete' && typeof operation.content === 'string') {
-        const provenance = readProvenance(operation.content);
-        operation.content = applyProvenance(operation.content, {
-          ...provenance,
-          concept_id: canonicalConceptId,
-        });
-      }
-      const base = operation.path.split('/').pop() ?? '';
-      const rebased = base.startsWith(`${parsed.class}_`)
-        ? `${canonical}_${base.slice(parsed.class.length + 1)}`
-        : base;
-      const target = `wiki/concepts/${canonical}/${rebased}`;
-      rewrites.set(operation.path, target);
-      operation.path = target;
-    }
-    await this.logger.info('ingest:concept-folders', {
-      changed: changed.map(([from, to]) => `${from}~${to}`),
-      rewritten: rewrites.size,
-    });
-    return rewrites;
-  }
 
 
   private async filterSourcesNeedingTaxoPrePass(
     sourcePaths: string[],
     previousRegistry: SourceRegistryFile | null,
     options?: IngestCommandOptions,
-  ): Promise<string[]> {
-    if (options?.force || options?.fromIngested) return sourcePaths;
-    const needed: string[] = [];
+  ): Promise<Array<{ sourcePath: string; relativePath: string }>> {
+    if (options?.force) {
+      return sourcePaths.map((sourcePath) => ({ sourcePath, relativePath: sourcePath }));
+    }
+    const language = this.config.language || 'en';
+    const signature = `${TAXO_PROMPT_VERSION}:${this.config.llm.model}:${language}`;
+    const existingInputHashes = new Set<string>();
+    const existingContentHashes = new Set<string>();
+    try {
+      for (const page of await this.retrieval.warmCache()) {
+        if (!page.relativePath.startsWith('wiki/sources/')) continue;
+        const metadata = matter(page.content).data;
+        const inputHash = metadata?.input_hash;
+        const contentHash = metadata?.content_hash;
+        if (typeof inputHash === 'string' && inputHash) existingInputHashes.add(inputHash);
+        if (typeof contentHash === 'string' && contentHash) existingContentHashes.add(contentHash);
+      }
+    } catch {
+      // A cache failure makes the optimization conservative: process sources.
+    }
+    const needed: Array<{ sourcePath: string; relativePath: string }> = [];
     for (const sourcePath of sourcePaths) {
       try {
         const source = await this.workspace.readSourceDocument(sourcePath, {
           ingested: options?.fromIngested === true,
         });
+        const docTitle = /^#\s+(.+)$/m.exec(source.body ?? '')?.[1]?.trim() ?? source.title;
+        const sections = extractSectionSheets(source.rawContent, docTitle, this.config.ingest?.sheets);
+        const allCurrent = sections.length > 0 && sections.every((section) => {
+          const startLine = section.sourceRanges[0]?.startLine ?? 1;
+          const endLine = section.sourceRanges[section.sourceRanges.length - 1]?.endLine ?? 1;
+          const hash = sheetInputHash(
+            source.archiveCitationPath,
+            startLine,
+            endLine,
+            section.body,
+            signature,
+          );
+          return existingInputHashes.has(hash)
+            && existingContentHashes.has(sheetContentHash(section.body, signature));
+        });
+        if (allCurrent) continue;
         const unchanged = await this.workspace.isSourceUnchangedSinceIngest(source);
         if (unchanged) {
           const vanished = await this.findVanishedProducedPages(source, previousRegistry);
-          if (vanished.length === 0) continue;
+          if (vanished.length === 0 && sections.length === 0) continue;
         }
+        needed.push({ sourcePath, relativePath: source.relativePath });
       } catch {
         // Fall through to keeping it in — the main loop reads the source
         // again and reports the real failure through its own try/catch.
+        needed.push({ sourcePath, relativePath: sourcePath });
       }
-      needed.push(sourcePath);
     }
     return needed;
   }
 
-  private async runTaxoPrePass(
+  private async isCloseSheetDuplicate(
+    row: TaxoRow,
+    candidates: SheetIndexEntry[],
+    sourcePath: string,
+    gate?: Semaphore,
+  ): Promise<SheetIndexEntry | null> {
+    const user = [
+      `Incoming section: ${row.heading}`,
+      row.description ? `Incoming description: ${row.description}` : '',
+      row.facts.slice(0, 1800),
+      '',
+      'Bounded existing candidates:',
+      ...candidates.map((candidate, index) => [
+        `Candidate ${index + 1}: ${candidate.title}`,
+        `Path: ${candidate.path}`,
+        candidate.description ? `Description: ${candidate.description}` : '',
+        candidate.excerpt ?? '',
+      ].filter(Boolean).join('\n')),
+      '',
+      'Return exactly one line: DUPLICATE <candidate number> only if the incoming section contributes no materially new information and is the same subject; otherwise return KEEP.',
+    ].filter(Boolean).join('\n');
+    try {
+      const callModel = () => this.llm.completeText({
+        system: 'You conservatively identify near-duplicate knowledge sections. Similar titles or shared vocabulary alone are never enough to discard a section.',
+        user,
+        label: 'ingest_taxo_sheet_dedup',
+        logger: this.logger,
+        traceData: { source: sourcePath, section: row.heading, candidates: candidates.length },
+      });
+      const response = gate ? await gate.run(callModel) : await callModel();
+      const match = /^\s*DUPLICATE\s+(\d+)\s*$/i.exec(response.trim());
+      const index = match ? Number(match[1]) - 1 : -1;
+      return Number.isInteger(index) && index >= 0 && index < candidates.length
+        ? candidates[index]!
+        : null;
+    } catch (error) {
+      await this.logger.warn('ingest:sheet-dedup-degraded', {
+        source: sourcePath,
+        section: row.heading,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  /**
+   * The on-disk fiche index used for cross-source duplicate detection.
+   *
+   * Seeded once at the start of a run; `extractTaxoSheets` grows it with every
+   * surviving row, so a later source sees the fiches an earlier source just
+   * produced — the ordering the global pre-pass used to provide, without
+   * delaying every write until the whole batch is extracted.
+   */
+  private async loadSheetIndex(): Promise<SheetIndexEntry[]> {
+    const sheetIndex: SheetIndexEntry[] = [];
+    try {
+      for (const page of await this.retrieval.warmCache()) {
+        if (!page.relativePath.startsWith('wiki/sources/')) continue;
+        const metadata = matter(page.content).data;
+        const inputHash = metadata?.input_hash;
+        sheetIndex.push({
+          path: page.relativePath,
+          title: typeof metadata?.title === 'string' ? metadata.title : page.name,
+          ...(typeof metadata?.description === 'string' ? { description: metadata.description } : {}),
+          ...(typeof inputHash === 'string' && inputHash ? { inputHash } : {}),
+          ...(typeof metadata?.content_hash === 'string' && metadata.content_hash ? { contentHash: metadata.content_hash } : {}),
+          excerpt: matter(page.content).content.replace(/\s+/g, ' ').slice(0, 1200),
+        });
+      }
+    } catch {
+      // A cache failure only loses the optional duplicate index; the run still
+      // gets the deterministic per-batch checks.
+    }
+    return sheetIndex;
+  }
+
+  /** Extract the section fiches of one source (or a small batch). */
+  private async extractTaxoSheets(
     sourcePaths: string[],
     cache: IngestCache,
-    options?: IngestCommandOptions & {
+    options: (IngestCommandOptions & {
       onSourceStart?: (sourcePath: string, index: number, total: number) => void;
       onSourceLlm?: (
         sourcePath: string,
@@ -2074,11 +1594,14 @@ export class IngestService {
         usage: TokenUsage,
         progress?: { sectionIndex: number; sectionTotal: number },
       ) => void;
-    },
+    }) | undefined,
+    sheetIndex: SheetIndexEntry[],
+    sourceIndex: number,
+    sourceTotal: number,
+    gate?: Semaphore,
   ): Promise<{
     rowsBySource: Map<string, TaxoRow[]>;
-    conceptByRow: Map<number, TaxoConcept>;
-    concepts: TaxoConcept[];
+    duplicatePagesBySource: Map<string, string[]>;
     sectionCounts: Map<string, number>;
     retryBySource: Map<string, IngestRetryInfo>;
     /** sourcePath -> error message. Surfaced by the main per-source loop as
@@ -2086,24 +1609,17 @@ export class IngestService {
     failedSources: Map<string, string>;
   }> {
     const taxoSectionSchema = z.object({
-      concept: z.string().default(''),
-      resume: z.string().default(''),
-      facts: z.string().default(''),
+      description: z.string().default(''),
+      tags: z.array(z.string()).default([]),
+      body: z.string().default(''),
     });
-    const taxoDedupSchema = z.object({
-      concepts: z.array(z.object({
-        name: z.string(),
-        label: z.string().default(''),
-        kind: z.string().nullish().transform((value) => value ?? ''),
-        scope: z.string().nullish().transform((value) => value ?? ''),
-        definition: z.string().default(''),
-        tags: z.array(z.string()).default([]),
-        covers: z.array(z.number()),
-      })),
-    });
-    const TAXO_PROMPT_VERSION = 2;
-    const modelId = this.config.llm.model;
+    // v3 is the Markdown fiche contract. It must not reuse v2's JSON
+    // extraction cache, otherwise an old {concept,resume,facts} answer would
+    // be interpreted as an empty fiche and silently remove TAXO output.
+    const language = this.config.language || 'en';
+    const modelId = `${this.config.llm.model}:${language}`;
     const rowsBySource = new Map<string, TaxoRow[]>();
+    const duplicatePagesBySource = new Map<string, string[]>();
     const sectionCounts = new Map<string, number>();
     const retryBySource = new Map<string, IngestRetryInfo>();
     const failedSources = new Map<string, string>();
@@ -2121,11 +1637,18 @@ export class IngestService {
           ingested: options?.fromIngested === true,
         });
         const rawBody = normalizeSourceBody(source.body ?? '');
-        const sections = splitIntoSections(rawBody);
-        sectionCounts.set(source.relativePath, sections.length);
-        const sourceHash = hashText(`${source.archiveCitationPath}\u0000${rawBody}`);
         const docTitle = /^#\s+(.+)$/m.exec(source.body ?? '')?.[1]?.trim()
           ?? source.title;
+        const sections = extractSectionSheets(source.rawContent, docTitle, this.config.ingest?.sheets).map((section) => ({
+          heading: section.title,
+          body: section.body,
+          startLine: section.sourceRanges[0]?.startLine ?? 1,
+          endLine: section.sourceRanges[section.sourceRanges.length - 1]?.endLine ?? 1,
+          locator: section.sourceRanges.map((range) => `${range.startLine}-${range.endLine}`).join(','),
+          sourceRanges: section.sourceRanges,
+        }));
+        sectionCounts.set(source.relativePath, sections.length);
+        const sourceHash = hashText(`${source.archiveCitationPath}\u0000${rawBody}`);
 
         /*
          Phase 1 — N concurrent extractions, one per section, no writes.
@@ -2137,7 +1660,7 @@ export class IngestService {
           sections,
           this.config.limits.maxInFlightRequests ?? 3,
           async (section, sectionIndex): Promise<{
-            extraction: { concept: string; resume: string; facts: string };
+            extraction: { description: string; tags: string[]; body: string };
             retry?: IngestRetryInfo;
           }> => {
             const cacheName = extractionCacheName({
@@ -2146,64 +1669,84 @@ export class IngestService {
               packHash: hashText(section.body),
               model: modelId,
               promptVersion: TAXO_PROMPT_VERSION,
-              schemaVersion: 2,
+              schemaVersion: 3,
             });
-            let extraction: { concept: string; resume: string; facts: string } | null = null;
+            let extraction: { description: string; tags: string[]; body: string } | null = null;
             const cached = await cache.read<unknown>(cacheName);
             if (cached) {
               const parsed = taxoSectionSchema.safeParse(cached);
               if (parsed.success) extraction = parsed.data;
             }
+            const cachedHit = extraction !== null;
             let sectionRetry: IngestRetryInfo | undefined;
             if (!extraction) {
-              const { value, retry } = await withRetry(
-                () => this.llm.completeJson(
+              try {
+                const { value, retry } = await withRetry(
+                  async () => {
+                    const callModel = () => this.llm.completeText({
+                    system: TAXO_SECTION_SYSTEM.replace('2 to 3', `2 to ${Math.max(2, this.config.ingest?.sheets.maxTags ?? 3)}`),
+                      user: buildTaxoSectionUser(docTitle, section),
+                      label: 'ingest_taxo_sheet',
+                      logger: this.logger,
+                      traceData: { source: source.relativePath, section: section.heading },
+                      onUsage: (usage) => {
+                        options?.onSourceUsage?.(sourcePath, sourceIndex, sourceTotal, usage, {
+                          sectionIndex,
+                          sectionTotal: sections.length,
+                        });
+                      },
+                    });
+                    const raw = gate ? await gate.run(callModel) : await callModel();
+                    return parseTaxoSheet(raw, this.config.ingest?.sheets.maxTags ?? 3);
+                  },
                   {
-                    system: TAXO_SECTION_SYSTEM,
-                    user: buildTaxoSectionUser(docTitle, section),
-                    label: 'ingest_taxo_extract',
-                    logger: this.logger,
-                    traceData: { source: source.relativePath, section: section.heading },
-                    onUsage: (usage) => {
-                      options?.onSourceUsage?.(sourcePath, i, sourcePaths.length, usage, {
-                        sectionIndex,
-                        sectionTotal: sections.length,
+                    onRetry: async (retryInfo) => {
+                      await this.logger.warn('ingest:retry', {
+                        source: source.relativePath,
+                        phase: 'taxo_extract',
+                        attempts: retryInfo.attempts,
+                        retries: retryInfo.retries,
+                        classification: retryInfo.classification,
+                        message: retryInfo.message,
+                        section: section.heading,
                       });
                     },
                   },
-                  taxoSectionSchema,
-                ),
-                {
-                  onRetry: async (retryInfo) => {
-                    await this.logger.warn('ingest:retry', {
+                );
+                extraction = value;
+                if (retry.retries > 0) {
+                  sectionRetry = retry;
+                  if (options?.verbose) {
+                    await this.logger.info('ingest:extract', {
                       source: source.relativePath,
-                      phase: 'taxo_extract',
-                      attempts: retryInfo.attempts,
-                      retries: retryInfo.retries,
-                      classification: retryInfo.classification,
-                      message: retryInfo.message,
                       section: section.heading,
+                      cached: false,
+                      retries: retry.retries,
                     });
-                  },
-                },
-              );
-              extraction = value;
-              if (retry.retries > 0) {
-                sectionRetry = retry;
-                if (options?.verbose) {
-                  await this.logger.info('ingest:extract', {
-                    source: source.relativePath,
-                    section: section.heading,
-                    cached: false,
-                    retries: retry.retries,
-                  });
+                  }
                 }
+                await cache.write(cacheName, extraction);
+              } catch (error) {
+                // A bad section must not discard the other sections of the
+                // document. Keep its faithful source body and make the
+                // degraded state visible for the activity panel and agents.
+                extraction = { description: '', tags: [], body: section.body };
+                await this.logger.warn('ingest:sheet-fallback', {
+                  source: source.relativePath,
+                  section: section.heading,
+                  message: error instanceof Error ? error.message : String(error),
+                });
               }
-              await cache.write(cacheName, extraction);
             }
-            options?.onSourceLlm?.(sourcePath, i, sourcePaths.length, {
+            options?.onSourceLlm?.(sourcePath, sourceIndex, sourceTotal, {
               sectionIndex,
               sectionTotal: sections.length,
+            });
+            await this.logger.info('ingest:sheet', {
+              source: source.relativePath,
+              sectionIndex,
+              sectionTotal: sections.length,
+              cached: cachedHit,
             });
             return { extraction, retry: sectionRetry };
           },
@@ -2221,18 +1764,96 @@ export class IngestService {
         for (let sectionIndex = 0; sectionIndex < sectionResults.length; sectionIndex++) {
           const { extraction } = sectionResults[sectionIndex]!;
           const section = sections[sectionIndex]!;
-          if (extraction.concept) {
+          if (extraction.body) {
+            const citationAnchors: string[] = [];
+            for (const range of section.sourceRanges ?? [{ startLine: section.startLine, endLine: section.endLine }]) {
+              const anchor = materializeLineAnchor(source.rawContent, range.startLine, range.endLine);
+              if (anchor) citationAnchors.push(anchor);
+              else {
+                await this.logger.warn('ingest:sheet-unanchored', {
+                  source: source.archiveCitationPath,
+                  section: section.heading,
+                  startLine: range.startLine,
+                  endLine: range.endLine,
+                  reason: 'source line range is outside the archived document',
+                });
+              }
+            }
             const row: TaxoRow = {
               row: rows.length + 1,
-              source: source.relativePath,
+              source: source.archiveCitationPath,
+              archivePath: source.archiveCitationPath,
               heading: section.heading,
               locator: section.locator,
-              concept: extraction.concept,
-              resume: extraction.resume,
-              facts: extraction.facts,
+              facts: extraction.body,
+              description: extraction.description,
+              tags: extraction.tags,
+              documentTitle: docTitle,
+              citationAnchors,
+              citationAnchor: citationAnchors[0],
+              sourceRanges: section.sourceRanges,
+              contentHash: sheetContentHash(
+                section.body,
+                `${TAXO_PROMPT_VERSION}:${this.config.llm.model}:${language}`,
+              ),
+              inputHash: sheetInputHash(
+                source.archiveCitationPath,
+                section.startLine,
+                section.endLine,
+                section.body,
+                `${TAXO_PROMPT_VERSION}:${this.config.llm.model}:${language}`,
+              ),
             };
+            const exactDuplicate = exactSheetDuplicate(row.contentHash ?? '', sheetIndex);
+            const targetPath = taxoSheetPath(row);
+            if (exactDuplicate && exactDuplicate.path !== targetPath) {
+              const references = duplicatePagesBySource.get(source.relativePath) ?? [];
+              if (!references.includes(exactDuplicate.path)) references.push(exactDuplicate.path);
+              duplicatePagesBySource.set(source.relativePath, references);
+              await this.logger.info('ingest:sheet-duplicate', {
+                source: source.relativePath,
+                section: section.heading,
+                inputHash: row.inputHash,
+                contentHash: row.contentHash,
+                duplicateOf: exactDuplicate.path,
+              });
+              continue;
+            }
+            const candidates = closeSheetCandidates(
+              row.heading,
+              row.description ?? '',
+              sheetIndex.filter((entry) => entry.path !== targetPath),
+              5,
+            );
+            const closeMatch = candidates.length > 0
+              ? await this.isCloseSheetDuplicate(row, candidates, source.relativePath, gate)
+              : null;
+            if (closeMatch) {
+              await this.logger.info('ingest:sheet-close', {
+                source: source.relativePath,
+                section: section.heading,
+                inputHash: row.inputHash,
+                duplicateOf: closeMatch.path,
+                candidates: candidates.length,
+              });
+              continue;
+            }
+            sheetIndex.push({
+              path: targetPath,
+              title: row.heading,
+              description: row.description,
+              inputHash: row.inputHash,
+              contentHash: row.contentHash,
+              excerpt: row.facts.slice(0, 1200),
+            });
             rows.push(row);
             sourceRows.push(row);
+          } else {
+            await this.logger.info('ingest:sheet-skipped', {
+              source: source.relativePath,
+              sectionIndex,
+              reason: 'empty-model-body',
+            });
           }
         }
         rowsBySource.set(source.relativePath, sourceRows);
@@ -2250,361 +1871,10 @@ export class IngestService {
       }
     }
 
-    if (rows.length === 0) {
-      return { rowsBySource, conceptByRow: new Map(), concepts: [], sectionCounts, retryBySource, failedSources };
-    }
-    await this.logger.info('ingest:taxo-table', { rows: rows.length });
-    const { value: dedup } = await withRetry(
-      () => this.llm.completeJson(
-        {
-          system: TAXO_DEDUP_SYSTEM,
-          user: buildTaxoTable(rows),
-          label: 'ingest_taxo_dedup',
-          logger: this.logger,
-          traceData: { rows: rows.length },
-        },
-        taxoDedupSchema,
-      ),
-      {
-        onRetry: async (retryInfo) => {
-          await this.logger.warn('ingest:retry', {
-            phase: 'taxo_dedup',
-            attempts: retryInfo.attempts,
-            retries: retryInfo.retries,
-            classification: retryInfo.classification,
-            message: retryInfo.message,
-          });
-        },
-      },
-    );
-    const conceptByRow = new Map<number, TaxoConcept>();
-    for (const concept of dedup.concepts) {
-      for (const rowNumber of concept.covers ?? []) conceptByRow.set(Number(rowNumber), concept);
-    }
-    return { rowsBySource, conceptByRow, concepts: dedup.concepts, sectionCounts, retryBySource, failedSources };
+    return { rowsBySource, duplicatePagesBySource, sectionCounts, retryBySource, failedSources };
   }
 
 
-  async applyPlannedIngest(
-    planFiles: string[],
-    options?: Pick<IngestCommandOptions, 'reject' | 'refresh'>,
-  ): Promise<IngestResult[]> {
-    const runStartedAt = Date.now();
-    await this.workspace.ensureInitialized();
-    await this.logger.info('ingest:run-start', {
-      inputCount: planFiles.length,
-      apply: true,
-      refreshEnabled: options?.refresh === true,
-    });
-
-    const rejectedPaths = new Set(options?.reject ?? []);
-    // The registry read mirrors the live ingest path: the previous run's
-    // produced-pages count feeds the stamped usage_count, so a planned apply
-    // and a live ingest of the same source write the same provenance shape.
-    const previousRegistry = await this.previousRegistry();
-    const plannedSources: PlannedIngestSource[] = [];
-    for (const planFile of planFiles) {
-      const absolutePath = this.resolveWorkspacePath(planFile, 'ingest plan file');
-      const raw = await readFile(absolutePath, 'utf8');
-      const parsed = JSON.parse(raw) as PlannedIngestFile | PlannedIngestSource[];
-      if (!Array.isArray(parsed)
-        && parsed.schemaVersion !== undefined
-        && parsed.schemaVersion !== INGEST_PLAN_FILE_VERSION) {
-        throw new Error(
-          `Unsupported ingest plan version ${parsed.schemaVersion}; expected ${INGEST_PLAN_FILE_VERSION}.`,
-        );
-      }
-      const sources = Array.isArray(parsed) ? parsed : parsed.sources;
-      if (!Array.isArray(sources)) {
-        throw new Error(`Invalid ingest plan file: ${planFile}`);
-      }
-      plannedSources.push(...sources);
-    }
-
-    await this.logger.info('ingest:source-selection', {
-      resolvedCount: plannedSources.length,
-    });
-
-    const results: IngestResult[] = [];
-    for (let i = 0; i < plannedSources.length; i++) {
-      const planned = plannedSources[i];
-      const sourceStartedAt = Date.now();
-      await this.logger.info('ingest:source-start', {
-        sourcePath: planned.source,
-      });
-      try {
-        // Read the source document ONCE for the whole branch: the archive
-        // path (and therefore the registry identity) must match what the
-        // planning run computed. A plan built with --from-ingested names
-        // raw/ingested/ paths, and re-reading those WITHOUT the ingested flag
-        // re-derives the archive path through the untracked folder — a
-        // different identity than at plan time, which silently broke the
-        // registry lookup and the citations.
-        const plannedSource = await this.workspace.readSourceDocument(
-          path.resolve(this.workspace.paths.rootDir, planned.source),
-          { ingested: planned.source.startsWith('raw/ingested/') },
-        );
-        if (planned.skipped) {
-          await this.archivePlannedSource(planned, plannedSource);
-          // An unchanged source remains a SEEN source (same rule as the live
-          // ingest path): without this observation it would flip to `missing`
-          // on the first inventory even though it has just been presented.
-          await this.observeSource(plannedSource, null);
-          results.push({
-            source: planned.source,
-            archivePath: plannedSource.archiveCitationPath,
-            plan: { summary: planned.summary ?? 'unchanged since last ingest', operations: [] },
-            skipped: true,
-          });
-          await this.logger.info('ingest:source-done', {
-            source: planned.source,
-            durationMs: Date.now() - sourceStartedAt,
-            status: 'skipped',
-          });
-          continue;
-        }
-
-        const operations = await this.workspace.normalizeWikiOperations(
-          planned.operations ?? [],
-        );
-        // The cached plan was built before its siblings wrote, so its folder
-        // names are not authoritative. Reconcile against the LIVE vocabulary
-        // here (this path is serialized), then rewrite the operations' paths;
-        // the leaf migration waits until the plan is actually applied.
-        // Same rule as the live path: a rejection names the pre-reconciliation
-        // path, so it must follow the operation the reconciliation moved.
-        const effectiveRejectedPaths = rejectionsAfterRewrites(
-          rejectedPaths,
-          await this.reconcileConceptVocabulary(operations),
-        );
-        // The cached plan's operations were never materialized, anchored or
-        // validated: run the SAME provenance pipeline as the live ingest so the
-        // orchestrated path cannot produce an unanchored, unresolvable or
-        // loss-bearing page. Without this a `--plan-only`/`--apply` run wrote
-        // the model's raw citations and skipped every proof contract.
-        const readDisk = (documentPath: string): string | null => {
-          try {
-            const absolute = resolveInside(this.workspace.paths.rootDir, documentPath);
-            return existsSync(absolute) ? readFileSync(absolute, 'utf8') : null;
-          } catch {
-            return null;
-          }
-        };
-        const sourcePagePath = path.posix.join('wiki', 'sources', `${plannedSource.slug}.md`);
-        const existingPages = new Map(
-          (await this.retrieval.warmCache()).map((page) => [page.relativePath, page]),
-        );
-        const identityStampedOperations = stampConceptPageIdentities(
-          operations,
-          new Map([...existingPages].map(([pagePath, page]) => [pagePath, page.content])),
-        );
-        const titledOperations = identityStampedOperations.map((operation) => (
-          operation.path === sourcePagePath && operation.type !== 'delete' && plannedSource.title
-            ? { ...operation, content: stampSourcePageTitle(operation.content ?? '', plannedSource.title) }
-            : operation
-        ));
-        const provenance = runProvenancePipeline({
-          operations: titledOperations,
-          sourcePagePath,
-          archiveCitationPath: plannedSource.archiveCitationPath,
-          rawBody: normalizeSourceBody(plannedSource.body ?? ''),
-          readDisk,
-          existingContentOf: (pagePath) => existingPages.get(pagePath)?.content ?? null,
-        });
-        if (provenance.anchored > 0 || provenance.unresolvedAnchors.length > 0) {
-          await this.logger.info('ingest:anchoring', {
-            source: planned.source,
-            anchored: provenance.anchored,
-            unresolved: provenance.unresolvedAnchors.slice(0, 20),
-            unresolvedTotal: provenance.unresolvedAnchors.length,
-          });
-        }
-        if (provenance.retargeted > 0) {
-          await this.logger.info('ingest:two-level-citations', {
-            source: planned.source,
-            sourceNote: path.posix.join('wiki', 'sources', `${plannedSource.slug}.md`),
-            retargeted: provenance.retargeted,
-          });
-        }
-        if (provenance.sourcePageIssues.length > 0) {
-          await this.logger.warn('ingest:source-page-contract', {
-            source: planned.source,
-            issues: provenance.sourcePageIssues,
-          });
-        }
-        if (provenance.anchorIssues.length > 0) {
-          await this.logger.warn('ingest:provenance-anchors', {
-            source: planned.source,
-            issues: provenance.anchorIssues.slice(0, 20),
-            total: provenance.anchorIssues.length,
-          });
-        }
-        if (provenance.refused.size > 0) {
-          await this.logger.warn('ingest:provenance-refused', {
-            source: planned.source,
-            pages: [...provenance.refused.entries()].map(([path, reasons]) => ({ path, reasons })),
-          });
-          for (const pagePath of provenance.refused.keys()) effectiveRejectedPaths.add(pagePath);
-        }
-        if (provenance.lost.length > 0) {
-          await this.logger.warn('ingest:provenance-loss', {
-            source: planned.source,
-            pages: provenance.lost,
-          });
-        }
-        let applyOperations = provenance.operations.filter(
-          (operation) => !effectiveRejectedPaths.has(operation.path),
-        );
-        const lostPaths = new Set(provenance.lost.map((entry) => entry.path));
-        applyOperations = applyOperations.filter((operation) => !lostPaths.has(operation.path));
-        const rejectedCount = operations.length - applyOperations.length;
-        await this.logger.info('ingest:review', {
-          source: planned.source,
-          operations: operations.length,
-          rejected: rejectedCount,
-          apply: true,
-        });
-
-        const allRejected = operations.length > 0 && applyOperations.length === 0;
-        if (allRejected) {
-          // Same contract as the live ingest path: a source whose every
-          // operation was rejected is NOT archived and NOT observed — it
-          // stays staged for a later decision. (The planned path used to
-          // archive it anyway, which is how a rejected source vanished from
-          // the inbox while its plan claimed it was merely set aside.)
-          await this.logger.info('ingest:apply-skip', {
-            source: planned.source,
-            reason: 'all operations rejected',
-          });
-        } else {
-          const operationCounts = applyOperations.reduce(
-            (counts, operation) => {
-              counts[operation.type] += 1;
-              return counts;
-            },
-            { create: 0, update: 0, delete: 0 },
-          );
-          const applyStartedAt = Date.now();
-          // OKF v0.2 provenance: the previous run's produced-pages count
-          // feeds the stamped usage_count, from the registry read above.
-          const registryRecord = previousRegistry?.sources?.find(
-            (record) => record.sourceId === sourceIdFromArchivePath(plannedSource.archiveCitationPath),
-          );
-          const stampedOperations = stampSourceProvenance(
-            applyOperations,
-            {
-              path: plannedSource.archiveCitationPath,
-              usageCount: registryRecord?.producedPages?.length ?? 0,
-            },
-            {
-              path: path.posix.join('wiki', 'sources', `${plannedSource.slug}.md`),
-              title: plannedSource.title,
-            },
-          );
-          await this.workspace.applyNormalizedWikiOperations(stampedOperations);
-          this.retrieval.invalidateCache();
-          await this.logger.info('ingest:apply', {
-            source: planned.source,
-            durationMs: Date.now() - applyStartedAt,
-            create: operationCounts.create,
-            update: operationCounts.update,
-            delete: operationCounts.delete,
-            atomic: true,
-          });
-        }
-
-        if (!allRejected) {
-          await this.archivePlannedSource(planned, plannedSource);
-          // The registry write-back the live path has always done: without it
-          // usage_count stays 0 forever for orchestrated ingests and the
-          // doctor/lint inventory orphans every page this flow produced.
-          await this.observeSource(plannedSource, applyOperations);
-        }
-        await this.workspace.appendLog(
-          'ingest',
-          `${planned.source} (${planned.summary ?? 'planned ingest applied'})`,
-        );
-        // Regenerate the index before publishing the graph revision, so the
-        // snapshot includes the final generated map as well as the applied
-        // knowledge pages.
-        if (applyOperations.length > 0) {
-          await this.regenerateIndex(planned.source);
-          await this.publishGraphRevision(planned.source);
-        }
-        results.push({
-          source: planned.source,
-          archivePath: plannedSource.archiveCitationPath,
-          plan: { summary: planned.summary ?? '', operations: applyOperations },
-          review: planned.review,
-        });
-        await this.logger.info('ingest:source-done', {
-          source: planned.source,
-          durationMs: Date.now() - sourceStartedAt,
-          status: 'success',
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        await this.logger.error('ingest:source-failed', {
-          sourcePath: planned.source,
-          durationMs: Date.now() - sourceStartedAt,
-          message,
-        });
-        results.push({
-          source: planned.source,
-          failed: true,
-          error: message,
-        });
-      }
-    }
-
-    const successfulResults = results.filter((result) => !result.failed);
-    const failedResults = results.filter((result) => result.failed);
-    const shouldRefresh = options?.refresh === true || this.config.build.refreshOnIngest;
-    if (successfulResults.length > 0 && shouldRefresh) {
-      const refreshStartedAt = Date.now();
-      try {
-        const refreshResults = await this.refresh.refresh();
-        await this.logger.info('ingest:refresh', {
-          durationMs: Date.now() - refreshStartedAt,
-          changed: refreshResults.filter((result) => result.changed).length,
-          skipped: refreshResults.filter((result) => result.skipped).length,
-          unchanged: refreshResults.filter((result) => !result.changed && !result.skipped)
-            .length,
-        });
-      } catch (error) {
-        await this.logger.error('ingest:refresh-failed', {
-          durationMs: Date.now() - refreshStartedAt,
-          message: error instanceof Error ? error.message : String(error),
-          advice: 'Rerun `wiki refresh` later to rebuild stale deliverables.',
-        });
-      }
-    } else {
-      await this.logger.info('ingest:refresh', {
-        skipped: true,
-      });
-    }
-
-    await this.logger.info('ingest:run-done', {
-      sourceCount: results.length,
-      failed: failedResults.length,
-      durationMs: Date.now() - runStartedAt,
-      status: failedResults.length > 0 ? 'partial_failure' : 'success',
-    });
-    return results;
-  }
-
-  /**
-   * Records a source in the provenance registry
-   * (`docs/content-lifecycle-spec.md` § 5).
-   *
-   * **Must not fail an ingestion.** The registry is an observation: it makes
-   * the lifecycle visible, it is not part of it. A write error is logged and
-   * the ingestion continues — the opposite would lose already-paid LLM work
-   * for a side file.
-   *
-   * @param operations operations applied, or `null` for a source seen without
-   *   being re-ingested (`unchanged since last ingest`).
-   */
   /**
    * Makes what has just been written visible to the graph.
    *
@@ -2635,11 +1905,458 @@ export class IngestService {
         concepts: outcome.concepts,
         sources: outcome.sources,
       });
+      if (outcome.migrated) {
+        await this.logger.warn('ingest:index-migrated', {
+          source: sourceLabel,
+          note: 'legacy generated index replaced by the TAXO index; the previous content remains in the workspace history',
+        });
+      }
       return;
     }
     await this.logger.warn('ingest:index-regeneration-failed', {
       source: sourceLabel,
       error: outcome.error instanceof Error ? outcome.error.message : String(outcome.error),
+    });
+  }
+
+  /**
+   * Deterministic early refresh of the navigation pages for the tags a
+   * just-applied source produced. No LLM, no purge: every tag the run has
+   * seen gets its page immediately (under `unfiled/` until the end-of-run
+   * family pass moves it). The final `regenerateTaxoTagPages` stays the
+   * authority; this only makes the pages appear as the run advances.
+   */
+  private async refreshIncrementalTagPages(tags: string[]): Promise<void> {
+    const wanted = new Set(tags.map((tag) => normalizeProvenanceValue(tag)).filter(Boolean));
+    if (wanted.size === 0) return;
+    const pages = await this.retrieval.warmCache();
+    const tagRows = new Map<string, Array<{ title: string; path: string; description?: string }>>();
+    for (const page of pages) {
+      if (!page.relativePath.startsWith('wiki/sources/')) continue;
+      const parsed = matter(page.content);
+      const pageTags = Array.isArray(parsed.data?.tags)
+        ? parsed.data.tags.filter((tag): tag is string => typeof tag === 'string')
+        : [];
+      for (const tag of pageTags) {
+        const normalized = normalizeProvenanceValue(tag);
+        if (!normalized || !wanted.has(normalized)) continue;
+        const entries = tagRows.get(normalized) ?? [];
+        entries.push({
+          title: typeof parsed.data?.title === 'string' ? parsed.data.title : page.relativePath,
+          path: page.relativePath,
+          ...(typeof parsed.data?.description === 'string' ? { description: parsed.data.description } : {}),
+        });
+        tagRows.set(normalized, entries);
+      }
+    }
+    if (tagRows.size === 0) return;
+    const existingTagPages = new Map<string, WikiPage>();
+    for (const page of pages) {
+      if (!page.relativePath.startsWith('wiki/concepts/')) continue;
+      const parsed = matter(page.content);
+      const subject = typeof parsed.data?.subject === 'string'
+        ? normalizeProvenanceValue(parsed.data.subject)
+        : normalizeProvenanceValue(path.posix.basename(page.relativePath, '.md'));
+      if (subject) existingTagPages.set(subject, page);
+    }
+    const operations: WikiOperation[] = [];
+    const generatedAt = new Date().toISOString();
+    for (const [tag, entries] of tagRows) {
+      const prior = existingTagPages.get(tag);
+      const priorMatter = prior ? matter(prior.content) : null;
+      if (priorMatter && (priorMatter.data?.status === 'stable' || priorMatter.data?.verified === true)) continue;
+      const rawFamily = typeof priorMatter?.data?.family === 'string' ? priorMatter.data.family.trim() : '';
+      const family = rawFamily && normalizeProvenanceValue(rawFamily) !== 'unfiled' ? rawFamily : 'unfiled';
+      const targetPath = family === 'unfiled' || !prior
+        ? `wiki/concepts/unfiled/${tag}.md`
+        : prior.relativePath;
+      const existing = pages.find((page) => page.relativePath === targetPath);
+      const identitySource = existing ?? prior;
+      const existingProvenance = identitySource ? readProvenance(identitySource.content) : null;
+      const content = taxoTagPageContent(
+        tag,
+        family,
+        entries,
+        generatedAt,
+        existingProvenance?.concept_id ?? newKnowledgeIdentity(),
+        this.config.ingest?.tagPages.sourcePreviewLimit ?? 50,
+        existingProvenance?.subject_id ?? newKnowledgeIdentity(),
+      );
+      const withoutGeneratedAt = (value: string): string => value.replace(/^( {2}at: ).*$/m, '$1<generated>');
+      if (existing && withoutGeneratedAt(existing.content) === withoutGeneratedAt(content)) continue;
+      operations.push({ type: existing ? 'update' : 'create', path: targetPath, content });
+    }
+    if (operations.length === 0) return;
+    await this.workspace.applyNormalizedWikiOperations(operations);
+    this.retrieval.invalidateCache();
+    await this.logger.info('ingest:tag-pages-refreshed', {
+      tags: tagRows.size,
+      pages: operations.length,
+    });
+  }
+
+  /** Build deterministic tag pivots after all TAXO fiches in the run exist. */
+  private async regenerateTaxoTagPages(options?: IngestProgressHooks): Promise<void> {
+    await this.logger.info('ingest:regroup-start', {});
+    const pages = await this.retrieval.warmCache();
+    const tagCatalogue = loadTagCatalogue(pages
+      .filter((page) => page.relativePath.startsWith('wiki/sources/'))
+      .map((page) => {
+        const parsed = matter(page.content);
+        return Array.isArray(parsed.data?.tags)
+          ? parsed.data.tags.filter((tag): tag is string => typeof tag === 'string')
+          : [];
+      }));
+    const tagRows = new Map<string, Array<{ title: string; path: string; description?: string }>>();
+    for (const page of pages) {
+      if (!page.relativePath.startsWith('wiki/sources/')) continue;
+      const parsed = matter(page.content);
+      const tags = Array.isArray(parsed.data?.tags)
+        ? parsed.data.tags.filter((tag): tag is string => typeof tag === 'string')
+        : [];
+      for (const tag of harmonizeTags(tags, tagCatalogue)) {
+        const normalized = tag;
+        if (!normalized) continue;
+        const entries = tagRows.get(normalized) ?? [];
+        entries.push({
+          title: typeof parsed.data?.title === 'string' ? parsed.data.title : page.relativePath,
+          path: page.relativePath,
+          ...(typeof parsed.data?.description === 'string' ? { description: parsed.data.description } : {}),
+        });
+        tagRows.set(normalized, entries);
+      }
+    }
+
+    const activeTags = [...tagRows.keys()].sort((a, b) => a.localeCompare(b));
+    const existingTagPages = new Map<string, WikiPage>();
+    const establishedFamilies = new Map<string, TagFamily>();
+    for (const page of pages) {
+      if (!page.relativePath.startsWith('wiki/concepts/')) continue;
+      const parsed = matter(page.content);
+      const generatedTag = parsed.data?.generated
+        && typeof parsed.data.generated === 'object'
+        && parsed.data.generated.by === 'llm-wiki-tags';
+      const hasFamily = typeof parsed.data?.family === 'string' && parsed.data.family.trim().length > 0;
+      if (!generatedTag && !hasFamily) continue;
+      const subject = typeof parsed.data?.subject === 'string'
+        ? normalizeProvenanceValue(parsed.data.subject)
+        : normalizeProvenanceValue(path.posix.basename(page.relativePath, '.md'));
+      if (subject) existingTagPages.set(subject, page);
+      if (isUnfiledTagPage(page, parsed.data?.family)) continue;
+      const family = typeof parsed.data?.family === 'string'
+        ? parsed.data.family.trim()
+        : '';
+      if (!family || normalizeProvenanceValue(family) === 'unfiled') continue;
+      const row = establishedFamilies.get(family) ?? { family, tags: [] };
+      const knownTags = Array.isArray(parsed.data?.tags)
+        ? parsed.data.tags.filter((tag): tag is string => typeof tag === 'string')
+        : subject ? [subject] : [];
+      for (const tag of knownTags) {
+        if (!row.tags.some((known) => normalizeProvenanceValue(known) === normalizeProvenanceValue(tag))) {
+          row.tags.push(tag);
+        }
+      }
+      establishedFamilies.set(family, row);
+    }
+
+    const established = [...establishedFamilies.values()];
+    const newTags = activeTags.filter((tag) => {
+      const page = existingTagPages.get(tag);
+      if (!page) return true;
+      const parsed = matter(page.content);
+      const family = typeof parsed.data?.family === 'string'
+        ? parsed.data.family.trim()
+        : '';
+      return isUnfiledTagPage(page, family) || !family;
+    });
+    const initialGrouping = established.length === 0;
+    let llmCalls = 0;
+    let proposedFamilies: TagFamily[] | null = null;
+    if (newTags.length > 0) {
+      await options?.onPhase?.('regroup', {
+        tags: initialGrouping ? activeTags.length : newTags.length,
+        establishedFamilies: established.length,
+      });
+      const taxonomyPrompt = initialGrouping
+        ? [
+            `Group these workspace tags into ${this.config.ingest?.families.min ?? 3} to ${this.config.ingest?.families.max ?? 10} semantic families. Use concise family names in the workspace language.`,
+            'Return only a JSON array: [{"family":"...","tags":["..."]}]. Every tag must occur exactly once and remain unchanged.',
+          ].join('\n')
+        : [
+            'Assign each new workspace tag to one established semantic family. Keep established family names unchanged.',
+            'You may create a new family only when none of the established families fits.',
+            'Return only a JSON array: [{"family":"...","tags":["..."]}]. Every new tag must occur exactly once and remain unchanged.',
+          ].join('\n');
+      const context = initialGrouping
+        ? activeTags.map((tag) => `- ${tag}: ${tagRows.get(tag)?.slice(0, 3).map((row) => row.description || row.title).join('; ')}`).join('\n')
+        : [
+            'Established families:',
+            ...established.map((row) => `- ${row.family}: ${row.tags.join(', ')}`),
+            '',
+            'New tags:',
+            ...newTags.map((tag) => `- ${tag}: ${tagRows.get(tag)?.slice(0, 3).map((row) => row.description || row.title).join('; ')}`),
+          ].join('\n');
+      const requestedTags = initialGrouping ? activeTags : newTags;
+      try {
+        if (initialGrouping && requestedTags.length > TAXO_FAMILY_BATCH_THRESHOLD) {
+          // A monolithic assignment prompt can become enormous and ask one
+          // response to emit hundreds of tag assignments. On the 220-tag ACPI
+          // corpus it consumed the full 10-minute model timeout and fell back
+          // to unfiled pages. Discover a small, workspace-specific catalogue
+          // once, then assign bounded chunks against that shared vocabulary.
+          const minFamilies = this.config.ingest?.families.min ?? 3;
+          const maxFamilies = this.config.ingest?.families.max ?? 10;
+          const inventory = requestedTags.map((tag) => {
+            const example = tagRows.get(tag)?.[0];
+            const context = String(example?.description || example?.title || '').replace(/\s+/g, ' ').slice(0, 120);
+            return context ? `- ${tag}: ${context}` : `- ${tag}`;
+          }).join('\n');
+          llmCalls += 1;
+          const catalogueRaw = await this.llm.completeText({
+            system: [
+              `Propose ${minFamilies} to ${maxFamilies} concise semantic family names for this workspace's complete tag inventory.`,
+              'Use the workspace language. Return only a JSON array of strings; do not assign tags yet.',
+            ].join('\n'),
+            user: `Workspace language: ${this.config.language || 'en'}\n\nTag inventory:\n${inventory}`,
+            label: 'ingest_taxo_family_catalogue',
+            logger: this.logger,
+            traceData: { tags: requestedTags.length, establishedFamilies: 0 },
+          });
+          const familyLabels = parseTagFamilyLabels(catalogueRaw, minFamilies, maxFamilies);
+          if (!familyLabels) {
+            await this.logger.warn('ingest:tag-family-degraded', {
+              reason: 'invalid-family-catalogue',
+              tags: requestedTags.length,
+            });
+            options?.onWarning?.('tag-family-degraded', { reason: 'invalid-family-catalogue', tags: requestedTags.length });
+          } else {
+            const batches: string[][] = [];
+            for (let index = 0; index < requestedTags.length; index += TAXO_FAMILY_BATCH_SIZE) {
+              batches.push(requestedTags.slice(index, index + TAXO_FAMILY_BATCH_SIZE));
+            }
+            const assignments = await mapWithConcurrency(batches, TAXO_FAMILY_BATCH_CONCURRENCY, async (batch, batchIndex) => {
+              options?.onPhase?.('regroup', {
+                tags: requestedTags.length,
+                batchIndex: batchIndex + 1,
+                batchCount: batches.length,
+              });
+              const batchContext = batch.map((tag) => {
+                const example = tagRows.get(tag)?.[0];
+                const detail = String(example?.description || example?.title || '').replace(/\s+/g, ' ').slice(0, 240);
+                return detail ? `- ${tag}: ${detail}` : `- ${tag}`;
+              }).join('\n');
+              llmCalls += 1;
+              try {
+                const raw = await this.llm.completeText({
+                  system: [
+                    'Assign every listed tag to exactly one family from the supplied catalogue.',
+                    'Use the family names exactly as written. Do not invent, rename, omit, or repeat tags.',
+                    'Return only a JSON array: [{"family":"...","tags":["..."]}].',
+                  ].join('\n'),
+                  user: `Workspace language: ${this.config.language || 'en'}\n\nFamilies:\n${familyLabels.map((family) => `- ${family}`).join('\n')}\n\nTags to assign:\n${batchContext}`,
+                  label: 'ingest_taxo_family_batch',
+                  logger: this.logger,
+                  traceData: {
+                    tags: batch.length,
+                    batchIndex: batchIndex + 1,
+                    batchCount: batches.length,
+                    establishedFamilies: familyLabels.length,
+                  },
+                });
+                const parsed = parseTagFamilies(raw, batch);
+                return parsed ? restrictTagFamilies(parsed, familyLabels) : [];
+              } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                await this.logger.warn('ingest:tag-family-batch-failed', {
+                  batch: batchIndex + 1,
+                  batches: batches.length,
+                  tags: batch.length,
+                  message,
+                });
+                options?.onWarning?.('tag-family-degraded', {
+                  reason: 'batch-failed',
+                  batch: batchIndex + 1,
+                  batches: batches.length,
+                  message,
+                });
+                return [];
+              }
+            });
+            const merged = new Map<string, TagFamily>();
+            for (const group of assignments.flat()) {
+              const normalized = normalizeProvenanceValue(group.family);
+              const current = merged.get(normalized) ?? { family: group.family, tags: [] };
+              current.tags.push(...group.tags);
+              merged.set(normalized, current);
+            }
+            proposedFamilies = merged.size > 0 ? [...merged.values()] : null;
+          }
+        } else {
+          llmCalls += 1;
+          const raw = await this.llm.completeText({
+            system: taxonomyPrompt,
+            user: `Workspace language: ${this.config.language || 'en'}\n\n${context}`,
+            label: 'ingest_taxo_families',
+            logger: this.logger,
+            traceData: { tags: requestedTags.length, establishedFamilies: established.length },
+          });
+          proposedFamilies = parseTagFamilies(raw, requestedTags);
+          if (proposedFamilies && !initialGrouping) {
+            proposedFamilies = anchorTagFamilies(proposedFamilies, established);
+          }
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await this.logger.warn('ingest:tag-family-degraded', {
+          reason: 'llm-failed',
+          message,
+        });
+        options?.onWarning?.('tag-family-degraded', { reason: 'llm-failed', message });
+      }
+      if (!proposedFamilies) {
+        await this.logger.warn('ingest:tag-family-degraded', {
+          reason: 'invalid-or-incomplete-family-response',
+          requestedTags,
+        });
+        options?.onWarning?.('tag-family-degraded', {
+          reason: 'invalid-or-incomplete-family-response',
+          tags: requestedTags.length,
+        });
+      } else {
+        const missing = missingTagAssignments(proposedFamilies, requestedTags);
+        if (missing.length > 0) {
+          await this.logger.warn('ingest:tag-family-partial', {
+            missing: missing.length,
+            tags: missing.slice(0, 20),
+          });
+          options?.onWarning?.('tag-family-partial', {
+            missing: missing.length,
+            tags: missing.slice(0, 20),
+          });
+        }
+      }
+    }
+
+    const familyByTag = new Map<string, string>();
+    for (const group of proposedFamilies ?? established) {
+      for (const tag of group.tags) familyByTag.set(normalizeProvenanceValue(tag), group.family);
+    }
+    // Reuse the recorded family for already-classified tags, including their
+    // established spelling; a new grouping call cannot silently rename them.
+    for (const tag of activeTags) {
+      const current = existingTagPages.get(tag);
+      const family = current ? matter(current.content).data?.family : undefined;
+      if (current && typeof family === 'string' && family && !isUnfiledTagPage(current, family)) {
+        familyByTag.set(tag, family.trim());
+      }
+    }
+    const operations: WikiOperation[] = [];
+    const generatedAt = new Date().toISOString();
+    const expectedTagPaths = new Set<string>();
+    for (const [tag, entries] of tagRows) {
+      const priorPage = existingTagPages.get(tag);
+      const priorMatter = priorPage ? matter(priorPage.content) : null;
+      const protectedPage = Boolean(priorMatter && (
+        priorMatter.data?.status === 'stable' || priorMatter.data?.verified === true
+      ));
+      const assignedFamily = familyByTag.get(tag);
+      // First run without a usable family grouping: a tag still gets its
+      // navigation page under `unfiled/` (the prototype behavior). Losing
+      // every concept page to one degraded LLM answer was a silent dead end;
+      // the degradation is warned either way.
+      const unfiledFallback = initialGrouping
+        && (!assignedFamily || normalizeProvenanceValue(assignedFamily) === 'unfiled');
+      if (!protectedPage && !unfiledFallback
+        && (!assignedFamily || normalizeProvenanceValue(assignedFamily) === 'unfiled')) {
+        await this.logger.warn('ingest:tag-unfiled', {
+          tag,
+          ficheCount: entries.length,
+          reason: 'no-family-assignment',
+        });
+        options?.onWarning?.('tag-unfiled', { tag, ficheCount: entries.length });
+        continue;
+      }
+      const family = protectedPage && typeof priorMatter?.data?.family === 'string'
+        ? priorMatter.data.family.trim()
+        : unfiledFallback ? 'unfiled' : assignedFamily!;
+      const tagPath = protectedPage ? priorPage!.relativePath
+        : `wiki/concepts/${normalizeProvenanceValue(family)}/${tag}.md`;
+      expectedTagPaths.add(tagPath);
+      const existing = pages.find((page) => page.relativePath === tagPath);
+      if (protectedPage) continue;
+      const identitySource = existing ?? priorPage;
+      const existingProvenance = identitySource ? readProvenance(identitySource.content) : null;
+      const existingIdentity = existingProvenance?.concept_id ?? undefined;
+      const subjectIdentity = existingProvenance?.subject_id ?? newKnowledgeIdentity();
+      const content = taxoTagPageContent(
+        tag,
+        family,
+        entries,
+        generatedAt,
+        existingIdentity ?? newKnowledgeIdentity(),
+        this.config.ingest?.tagPages.sourcePreviewLimit ?? 50,
+        subjectIdentity,
+      );
+      const withoutGeneratedAt = (value: string): string => value.replace(/^( {2}at: ).*$/m, '$1<generated>');
+      if (existing && withoutGeneratedAt(existing.content) === withoutGeneratedAt(content)) {
+        if (priorPage && priorPage.relativePath !== tagPath
+          && /^\s*by:\s*llm-wiki-tags\s*$/m.test(priorPage.content)) {
+          operations.push({ type: 'delete', path: priorPage.relativePath });
+        }
+        continue;
+      }
+      operations.push({
+        type: existing ? 'update' : 'create',
+        path: tagPath,
+        content,
+      });
+      if (priorPage && priorPage.relativePath !== tagPath
+        && /^\s*by:\s*llm-wiki-tags\s*$/m.test(priorPage.content)) {
+        operations.push({ type: 'delete', path: priorPage.relativePath });
+      }
+    }
+    for (const page of pages) {
+      if (!page.relativePath.startsWith('wiki/concepts/')
+        || expectedTagPaths.has(page.relativePath)
+        || !/^\s*by:\s*llm-wiki-tags\s*$/m.test(page.content)) continue;
+      const metadata = matter(page.content).data;
+      if (metadata?.status === 'stable' || metadata?.verified === true) {
+        await this.logger.info('ingest:tag-page-protected', { path: page.relativePath });
+        options?.onWarning?.('tag-page-protected', { path: page.relativePath });
+        continue;
+      }
+      operations.push({ type: 'delete', path: page.relativePath });
+      await this.logger.info('ingest:tag-page-removed', { path: page.relativePath });
+    }
+    if (operations.length === 0) {
+      await this.logger.info('ingest:regroup-done', {
+        families: new Set(familyByTag.values()).size,
+        tags: activeTags.length,
+        newTags: newTags.length,
+        unfiled: activeTags.filter((tag) => !familyByTag.has(tag) || normalizeProvenanceValue(familyByTag.get(tag)!) === 'unfiled').length,
+        pagesWritten: 0,
+        pagesRemoved: 0,
+        llmCalls,
+      });
+      return;
+    }
+    await this.workspace.applyNormalizedWikiOperations(operations);
+    for (const operation of operations) {
+      if (operation.type === 'delete') continue;
+      await this.logger.info('ingest:output', { path: operation.path, source: 'taxo-tags' });
+    }
+    this.retrieval.invalidateCache();
+    await options?.onPhase?.('index', { pages: operations.length });
+    await this.regenerateIndex('taxo-tags');
+    await this.logger.info('ingest:taxo-tags', { pages: operations.length });
+    await this.logger.info('ingest:regroup-done', {
+      families: new Set(familyByTag.values()).size,
+      tags: activeTags.length,
+      newTags: newTags.length,
+      unfiled: activeTags.filter((tag) => !familyByTag.has(tag) || normalizeProvenanceValue(familyByTag.get(tag)!) === 'unfiled').length,
+      pagesWritten: operations.filter((operation) => operation.type !== 'delete').length,
+      pagesRemoved: operations.filter((operation) => operation.type === 'delete').length,
+      llmCalls,
     });
   }
 
@@ -2662,10 +2379,9 @@ export class IngestService {
    * subject. Before declaring such a page vanished, check whether a page with
    * the same basename still exists elsewhere under `wiki/concepts/` — if so,
    * it moved, and re-ingesting it is exactly the thing to avoid. The
-   * comparison goes through `conceptBasenameIdentity`, not the raw basename:
-   * a taxo leaf's basename itself changes on a move (`jedox_tarifs.md` ->
-   * `produit_tarifs.md`), so matching literally would have missed every taxo
-   * re-file and re-created the exact duplicate this check exists to prevent.
+   * TAXO tag pages keep their tag basename when moved between family folders,
+   * so exact basename matching is sufficient and avoids equating unrelated
+   * underscore names.
    */
   private async findVanishedProducedPages(
     source: SourceDocument,
@@ -2688,12 +2404,12 @@ export class IngestService {
       (await this.retrieval.warmCache())
         .map((page) => page.relativePath)
         .filter((relativePath) => relativePath.startsWith(CONCEPT_PREFIX))
-        .map((relativePath) => conceptBasenameIdentity(relativePath.slice(relativePath.lastIndexOf('/') + 1))),
+        .map((relativePath) => relativePath.slice(relativePath.lastIndexOf('/') + 1)),
     );
     const vanished = missing.filter((page) => {
       if (!page.startsWith(CONCEPT_PREFIX)) return true;
       const basename = page.slice(page.lastIndexOf('/') + 1);
-      return !existingBasenames.has(conceptBasenameIdentity(basename));
+      return !existingBasenames.has(basename);
     });
     if (vanished.length !== missing.length) {
       await this.logger.info('ingest:concept-page-moved', {
@@ -2707,10 +2423,8 @@ export class IngestService {
   /**
    * The previous run's provenance registry, read once for the whole batch.
    *
-   * Shared by `ingest()` and `applyPlannedIngest` — the copy that used to live
-   * in each method is how the planned path lost its write-back: the registry
-   * load and the registry write belong to the same lifecycle, and splitting
-   * the load off invited the write to go missing.
+   * Read once for the whole live ingestion batch so every source reconciles
+   * against the state of the previous run, not a partially updated registry.
    */
   private async previousRegistry(): Promise<SourceRegistryFile | null> {
     const registryPath = this.workspace.paths?.internalDir
@@ -2719,22 +2433,49 @@ export class IngestService {
     return registryPath ? readSourceRegistry(registryPath) : null;
   }
 
-  /**
-   * Deletes every concept leaf before a full `--from-ingested` rebuild.
-   *
-   * The apply prunes an emptied concept folder, but stops below the section
-   * roots, so `wiki/concepts/` itself survives as the empty section it is. The
-   * retrieval cache is dropped so the first source's inventory reads the empty
-   * tree rather than the pages this purge just removed.
-   */
-  private async purgeConceptTreeForRebuild(): Promise<number> {
-    const leaves = await this.workspace.listConceptLeafPaths();
-    if (leaves.length === 0) return 0;
-    await this.workspace.applyNormalizedWikiOperations(
-      leaves.map((page) => ({ type: 'delete', path: page })),
-    );
-    this.retrieval.invalidateCache();
-    return leaves.length;
+  private async pruneMissingSourcePages(activeSourceIds: ReadonlySet<string>): Promise<void> {
+    if (!this.workspace.paths.internalDir) return;
+    const registryPath = path.join(this.workspace.paths.internalDir, SOURCE_REGISTRY_FILENAME);
+    const lockPath = `${registryPath}.lock`;
+    await withFileLock(lockPath, async () => {
+      const registry = await readSourceRegistry(registryPath);
+      const missing = registry.sources.filter((record) => !activeSourceIds.has(record.sourceId));
+      const activeOwnedPages = new Set(registry.sources
+        .filter((record) => activeSourceIds.has(record.sourceId))
+        .flatMap((record) => record.producedPages));
+      const pages = new Map((await this.retrieval.warmCache())
+        .map((page) => [page.relativePath, page]));
+      const operations: WikiOperation[] = [];
+      for (const pagePath of new Set(missing.flatMap((record) => record.producedPages))) {
+        if (activeOwnedPages.has(pagePath)
+          || !(pagePath.startsWith('wiki/sources/') || pagePath.startsWith(CONCEPT_PREFIX))) continue;
+        const page = pages.get(pagePath);
+        if (!page) continue;
+        const metadata = matter(page.content).data;
+        if (metadata?.status === 'stable' || metadata?.verified === true) {
+          await this.logger.info('ingest:sheet-prune-skipped', {
+            path: pagePath,
+            reason: 'protected page from missing source',
+          });
+          continue;
+        }
+        operations.push({ type: 'delete', path: pagePath });
+      }
+      if (operations.length > 0) {
+        await this.workspace.applyNormalizedWikiOperations(operations);
+        this.retrieval.invalidateCache();
+      }
+      for (const operation of operations) {
+        await this.logger.info('ingest:sheet-pruned', {
+          path: operation.path,
+          reason: 'source archive missing from complete rebuild inventory',
+        });
+      }
+      const next = markMissingSourceRecords(registry, activeSourceIds);
+      if (JSON.stringify(next) !== JSON.stringify(registry)) {
+        await writeSourceRegistry(registryPath, next);
+      }
+    });
   }
 
   private async observeSource(
@@ -2743,10 +2484,8 @@ export class IngestService {
   ): Promise<void> {    try {
       const registryPath = path.join(this.workspace.paths.internalDir, SOURCE_REGISTRY_FILENAME);
       const lockPath = `${registryPath}.lock`;
-      // Ingest processes can run concurrently against the same workspace
-      // (`wiki ingest --plan-only`/`--apply` orchestration): the lock makes
-      // the read-modify-write cycle across processes atomic, not just each
-      // write.
+      // The lock makes the registry read-modify-write cycle atomic across
+      // processes, not just each individual file write.
       await withFileLock(lockPath, async () => {
         const registry = await readSourceRegistry(registryPath);
         const next = recordSourceObservation(registry, {
@@ -2771,32 +2510,4 @@ export class IngestService {
     }
   }
 
-  private async archivePlannedSource(
-    planned: PlannedIngestSource,
-    source?: SourceDocument,
-  ): Promise<void> {
-    const sourceDocument = source
-      ?? await this.workspace.readSourceDocument(
-        this.resolveWorkspacePath(planned.source, 'ingest source'),
-        { ingested: planned.source.startsWith('raw/ingested/') },
-      );
-    const archiveStartedAt = Date.now();
-    await this.workspace.archiveSource(sourceDocument);
-    await this.logger.info('ingest:archive', {
-      source: sourceDocument.relativePath,
-      archivePath: sourceDocument.archiveCitationPath,
-      durationMs: Date.now() - archiveStartedAt,
-    });
-  }
-
-  private resolveWorkspacePath(value: string, label: string): string {
-    const absolutePath = path.isAbsolute(value)
-      ? path.resolve(value)
-      : path.resolve(this.workspace.paths.rootDir, value);
-    const relativePath = path.relative(this.workspace.paths.rootDir, absolutePath);
-    if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
-      throw new Error(`Invalid ${label}: path must stay inside the workspace.`);
-    }
-    return absolutePath;
-  }
 }

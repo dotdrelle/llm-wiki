@@ -1,10 +1,11 @@
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { IngestService, staleRebuiltLeaves } from '../src/services/ingestService.ts';
 import { IngestCache } from '../src/ingest/extractionCache.ts';
-import { pathExists } from '../src/utils/fs.ts';
+import { extractSectionSheets } from '../src/ingest/sectionSheets.ts';
+import { sheetContentHash, sheetInputHash } from '../src/ingest/sheetDedup.ts';
 import type { LLMService } from '../src/services/llmService.ts';
 import type { RefreshService } from '../src/services/refreshService.ts';
 import type { RetrievalService } from '../src/services/retrievalService.ts';
@@ -89,7 +90,7 @@ class FakeWorkspaceService {
     rootDir: path.join(os.tmpdir(), `wiki-ingest-${Math.random().toString(36).slice(2)}`),
   };
   sourcePaths = ['/tmp/wiki/raw/untracked/note.md'];
-  sourceBody = '## Contexte\n\nInformations de contexte.\n\n## Fait documenté\n\nFait documenté.';
+  sourceBody = '# Contexte\n\nInformations de contexte.\n\n# Fait documenté\n\nFait documenté.';
   detectedEncoding?: SourceDocument['detectedEncoding'];
   readIndexAppliedCounts: number[] = [];
   wikiPages: WikiPage[] = [];
@@ -204,6 +205,22 @@ class FakeLLMService {
    */
   sourceNotePath = 'wiki/sources/note.md';
 
+  async completeText(request: { label?: string; user?: string }): Promise<string> {
+    this.calls += 1;
+    if (request.label === 'ingest_taxo_sheet') {
+      this.extractionCalls += 1;
+      const body = /# Section\n##[^\n]*\n\n([\s\S]*)/.exec(request.user ?? '')?.[1]?.trim()
+        ?? 'Fait documenté dans la section.';
+      return `Description: Fait documenté.\nTags: #knowledge\n\n${body}`;
+    }
+    if (request.label === 'ingest_taxo_families') {
+      const tags = [...(request.user ?? '').matchAll(/^- ([^:\n]+):/gm)].map((match) => match[1]!.trim());
+      return JSON.stringify([{ family: 'Knowledge', tags: [...new Set(tags)] }]);
+    }
+    if (request.label === 'ingest_taxo_sheet_dedup') return 'KEEP';
+    return 'KEEP';
+  }
+
   async completeJson(request: { label?: string; user?: string }): Promise<unknown> {
     this.calls += 1;
     if (request?.label === 'ingest_extract') {
@@ -243,6 +260,14 @@ class FakeLLMService {
 }
 
 class FailingOnceLLMService extends FakeLLMService {
+  sheetCalls = 0;
+  async completeText(request: { label?: string; user?: string }): Promise<string> {
+    if (request.label === 'ingest_taxo_sheet' && this.sheetCalls++ === 0) {
+      throw new Error('model returned malformed JSON');
+    }
+    return super.completeText(request);
+  }
+
   protected async plan(): Promise<IngestPlan> {
     if (this.planCalls === 1) {
       throw new Error('model returned malformed JSON');
@@ -261,6 +286,15 @@ class FailingOnceLLMService extends FakeLLMService {
 }
 
 class FailingTwiceThenSuccessLLMService extends FakeLLMService {
+  sheetAttempts = 0;
+  async completeText(request: { label?: string; user?: string }): Promise<string> {
+    if (request.label === 'ingest_taxo_sheet' && request.user?.includes('## first')) {
+      this.sheetAttempts += 1;
+      throw new Error('model returned malformed JSON');
+    }
+    return super.completeText(request);
+  }
+
   protected async plan(): Promise<IngestPlan> {
     if (this.planCalls <= 2) {
       throw new Error('model returned malformed JSON');
@@ -279,158 +313,12 @@ class FailingTwiceThenSuccessLLMService extends FakeLLMService {
 }
 
 class ValidationFailingLLMService extends FakeLLMService {
-  protected async plan(): Promise<IngestPlan> {
+  async completeText(): Promise<string> {
     throw new Error('Invalid structured JSON returned by the model.');
   }
-}
 
-class BadCitationLLMService extends FakeLLMService {
   protected async plan(): Promise<IngestPlan> {
-    return {
-      summary: 'Updated wiki from source with malformed citation.',
-      operations: [
-        {
-          type: 'create',
-          path: 'wiki/sources/constituer-lequipe-davant-projet.md',
-          content:
-            "# Constituer l'équipe\n\nFait documenté. [src: raw/ingested/Constituer l'équipe d_avant-projet.md]\n",
-        },
-      ],
-    };
-  }
-}
-
-class UnreconciledCitationLLMService extends FakeLLMService {
-  protected async plan(): Promise<IngestPlan> {
-    return {
-      summary: 'Updated wiki from source with malformed citation marker.',
-      operations: [
-        {
-          type: 'create',
-          path: 'wiki/sources/note.md',
-          content: '# Note\n\nFait documenté. [src: raw/untracked/note.md\n',
-        },
-      ],
-    };
-  }
-}
-
-class PreservedCitationLLMService extends FakeLLMService {
-  protected async plan(): Promise<IngestPlan & { pages?: unknown[] }> {
-    return {
-      summary: 'Updated a leaf, preserving the other source it already cited.',
-      operations: [
-        {
-          type: 'create',
-          path: this.sourceNotePath,
-          content: '# Source deux\n\n[src: raw/untracked/source-two.md]\n',
-        },
-        {
-          type: 'update',
-          path: 'wiki/concepts/security/souverainete.md',
-          content:
-            '# Souverainete\n\nFait un. [src: raw/ingested/source-one.md]\n\n'
-            + 'Fait deux. [src: raw/untracked/source-two.md]\n',
-        },
-      ],
-      pages: [{
-        path: 'wiki/concepts/security/souverainete.md',
-        subject: 'souverainete',
-        scope: 'product',
-        kind: 'product',
-        tags: [],
-        rationale: null,
-      }],
-    };
-  }
-}
-
-class BareSourcePathLLMService extends FakeLLMService {
-  protected async plan(): Promise<IngestPlan> {
-    return {
-      summary: 'Updated wiki from source with a bare (unbracketed) source path.',
-      operations: [
-        {
-          type: 'create',
-          path: 'wiki/sources/note.md',
-          content: '# Note\n\nSource: raw/ingested/note.md\nCollection: demo\n\nFait documenté.\n',
-        },
-      ],
-    };
-  }
-}
-
-class ReconcilingLLMService extends FakeLLMService {
-  async completeJson(request: { label?: string; user?: string }): Promise<unknown> {
-    if (request?.label === 'ingest_concept_folders') {
-      return {
-        folders: [
-          { folder: 'produit', canonical: 'produit', concept_id: '123e4567-e89b-42d3-a456-426614174000' },
-          { folder: 'product', canonical: 'produit', concept_id: '123e4567-e89b-42d3-a456-426614174000' },
-        ],
-      };
-    }
-    return super.completeJson(request);
-  }
-}
-
-class ProductFolderPlanLLMService extends ReconcilingLLMService {
-  protected async plan(): Promise<IngestPlan & { pages?: unknown[] }> {
-    return {
-      summary: 'Planned a product leaf under an English folder.',
-      operations: [
-        {
-          type: 'create',
-          path: this.sourceNotePath,
-          content: '# Note\n\n[src: raw/ingested/note.md]\n',
-        },
-        {
-          type: 'create',
-          path: 'wiki/concepts/product/board-platform.md',
-          content: '# Board\n\n[src: raw/ingested/note.md]\n',
-        },
-      ],
-      pages: [{
-        path: 'wiki/concepts/product/board-platform.md',
-        subject: 'board-platform',
-        scope: 'product',
-        kind: 'product',
-        tags: [],
-      }],
-    };
-  }
-}
-
-class BareArchivedPathWithPeriodLLMService extends FakeLLMService {
-  protected async plan(): Promise<IngestPlan> {
-    return {
-      summary: 'Updated wiki from a source whose header mentions another archived source, with a period.',
-      operations: [
-        {
-          type: 'create',
-          path: 'wiki/sources/note.md',
-          content: '# Note\n\nSource: raw/ingested/other.md.\n\nFait documenté.\n',
-        },
-      ],
-    };
-  }
-}
-
-class WideWhitespaceCitationLLMService extends FakeLLMService {
-  protected async plan(): Promise<IngestPlan> {
-    return {
-      summary: 'Updated wiki from source with an already-correct but oddly wrapped citation.',
-      operations: [
-        {
-          type: 'create',
-          path: 'wiki/sources/note.md',
-          // Already the exact archive path, but with 5+ whitespace characters
-          // (a line break) after "[src:" — more than the bare-path
-          // lookbehind's small bound tolerates if left unnormalized.
-          content: '# Note\n\nFait documenté [src:\n    raw/ingested/note.md].\n',
-        },
-      ],
-    };
+    throw new Error('Invalid structured JSON returned by the model.');
   }
 }
 
@@ -452,55 +340,17 @@ class FakeRetrievalService {
   }
 }
 
-class SectionedLLMService extends FakeLLMService {
-  protected async plan(): Promise<IngestPlan> {
-    return {
-      summary: `Updated section ${this.planCalls}.`,
-      operations: [
-        {
-          type: 'update',
-          path: this.sourceNotePath,
-          content: `# Note\n\nSection ${this.planCalls}. [src: raw/ingested/note.md]\n`,
-        },
-      ],
-    };
-  }
-}
-
 class ConcurrentIngestLLMService extends FakeLLMService {
   active = 0;
   maxActive = 0;
 
-  protected async extract(): Promise<unknown> {
-    const call = this.extractionCalls;
+  async completeText(request: { label?: string; user?: string }): Promise<string> {
+    if (request.label !== 'ingest_taxo_sheet') return super.completeText(request);
     this.active += 1;
     this.maxActive = Math.max(this.maxActive, this.active);
     await new Promise((resolve) => setTimeout(resolve, 15));
     this.active -= 1;
-    return {
-      facts: [{ statement: `Fait ${call}.`, citation: 'raw/ingested/note.md' }],
-      subjects: [],
-      relations: [],
-      mainSubject: null,
-    };
-  }
-
-  protected async plan(): Promise<IngestPlan> {
-    const call = this.planCalls;
-    this.active += 1;
-    this.maxActive = Math.max(this.maxActive, this.active);
-    await new Promise((resolve) => setTimeout(resolve, 15));
-    this.active -= 1;
-    return {
-      summary: `Updated section ${call}.`,
-      operations: [
-        {
-          type: 'update',
-          path: this.sourceNotePath,
-          content: `# Note\n\nSection ${call}. [src: raw/ingested/note.md]\n`,
-        },
-      ],
-    };
+    return super.completeText(request);
   }
 }
 
@@ -551,6 +401,249 @@ class MemoryTraceLogger implements TraceLogger {
 }
 
 describe('ingest service', () => {
+  it('chunks initial family assignment for large tag inventories under one shared family catalogue', async () => {
+    const fichePages: WikiPage[] = Array.from({ length: 61 }, (_, index) => {
+      const tag = `tag-${String(index + 1).padStart(3, '0')}`;
+      return {
+        absolutePath: `/tmp/wiki/wiki/sources/doc/${tag}.md`,
+        relativePath: `wiki/sources/doc/${tag}.md`, name: `${tag}.md`, type: 'source',
+        content: `---\ntitle: Topic ${index + 1}\ntags: [${tag}]\n---\n# Topic ${index + 1}\nEvidence.`,
+      };
+    });
+    const logger = new MemoryTraceLogger();
+    const workspace = new FakeWorkspaceService();
+    const calls: Array<{ label?: string; user?: string }> = [];
+    const llm = Object.assign(new FakeLLMService(), {
+      async completeText(request: { label?: string; user?: string }) {
+        calls.push(request);
+        if (request.label === 'ingest_taxo_family_catalogue') return '["Knowledge", "Operations", "Security"]';
+        if (request.label === 'ingest_taxo_family_batch') {
+          const assignmentBlock = (request.user ?? '').split('Tags to assign:\n')[1] ?? '';
+          const tags = [...assignmentBlock.matchAll(/^- ([^:\n]+)(?::|$)/gm)].map((match) => match[1]!.trim());
+          return JSON.stringify([{ family: 'Knowledge', tags }]);
+        }
+        return 'KEEP';
+      },
+    });
+    const service = new IngestService(
+      createConfig(), workspace as unknown as WorkspaceService,
+      llm as unknown as LLMService,
+      new FakeRetrievalService(fichePages) as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger, disabledCache(),
+    );
+
+    await (service as unknown as { regenerateTaxoTagPages(): Promise<void> }).regenerateTaxoTagPages();
+
+    const batches = calls.filter((call) => call.label === 'ingest_taxo_family_batch');
+    const assignedTags = batches.flatMap((call) => {
+      const assignmentBlock = (call.user ?? '').split('Tags to assign:\n')[1] ?? '';
+      return [...assignmentBlock.matchAll(/^- ([^:\n]+)(?::|$)/gm)].map((match) => match[1]!.trim());
+    });
+    expect(calls.filter((call) => call.label === 'ingest_taxo_family_catalogue')).toHaveLength(1);
+    expect(batches).toHaveLength(2);
+    expect(Math.max(...batches.map((call) => (call.user ?? '').split('Tags to assign:\n')[1]?.split('\n').filter(Boolean).length ?? 0))).toBeLessThanOrEqual(40);
+    expect(assignedTags).toHaveLength(61);
+    expect(new Set(assignedTags).size).toBe(61);
+    expect(workspace.appliedOperations.filter((operation) => operation.path.startsWith('wiki/concepts/knowledge/'))).toHaveLength(61);
+    expect(workspace.appliedOperations.some((operation) => operation.path.includes('/unfiled/'))).toBe(false);
+  });
+
+  it('falls back to an unfiled pivot page when the first family grouping degrades', async () => {
+    const fiche: WikiPage = {
+      absolutePath: '/tmp/wiki/wiki/sources/doc/section.md',
+      relativePath: 'wiki/sources/doc/section.md', name: 'section.md', type: 'source',
+      content: '---\ntitle: Réseau\ntags: [orphelin]\n---\n# Réseau\nFiche.',
+    };
+    const logger = new MemoryTraceLogger();
+    const workspace = new FakeWorkspaceService();
+    const llm = Object.assign(new FakeLLMService(), {
+      async completeText() { return 'not a complete family assignment'; },
+    });
+    const service = new IngestService(
+      createConfig(), workspace as unknown as WorkspaceService,
+      llm as unknown as LLMService,
+      new FakeRetrievalService([fiche]) as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger, disabledCache(),
+    );
+    await (service as unknown as { regenerateTaxoTagPages(): Promise<void> }).regenerateTaxoTagPages();
+    // A degraded first grouping must not leave the wiki without its navigation
+    // pages: the tag lands under unfiled/, and the degradation is announced.
+    expect(workspace.appliedOperations.some((operation) => operation.path === 'wiki/concepts/unfiled/orphelin.md')).toBe(true);
+    expect(logger.entries.some((entry) => entry.event === 'ingest:tag-family-degraded')).toBe(true);
+  });
+
+  it('announces a new tag left unfiled when families are already established', async () => {
+    const fiche: WikiPage = {
+      absolutePath: '/tmp/wiki/wiki/sources/doc/section.md',
+      relativePath: 'wiki/sources/doc/section.md', name: 'section.md', type: 'source',
+      content: '---\ntitle: Réseau\ntags: [orphelin]\n---\n# Réseau\nFiche.',
+    };
+    const established: WikiPage = {
+      absolutePath: '/tmp/wiki/wiki/concepts/reseau/vlan.md',
+      relativePath: 'wiki/concepts/reseau/vlan.md', name: 'vlan.md', type: 'concept',
+      content: '---\ntype: concept\nsubject: vlan\nfamily: Réseau\ntags: [vlan]\ngenerated:\n  by: llm-wiki-tags\n---\n# Vlan\n',
+    };
+    const logger = new MemoryTraceLogger();
+    const workspace = new FakeWorkspaceService();
+    const llm = Object.assign(new FakeLLMService(), {
+      async completeText() { return 'not a complete family assignment'; },
+    });
+    const service = new IngestService(
+      createConfig(), workspace as unknown as WorkspaceService,
+      llm as unknown as LLMService,
+      new FakeRetrievalService([fiche, established]) as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger, disabledCache(),
+    );
+    await (service as unknown as { regenerateTaxoTagPages(): Promise<void> }).regenerateTaxoTagPages();
+    expect(workspace.appliedOperations.some((operation) => operation.path.includes('/unfiled/'))).toBe(false);
+    expect(logger.entries.some((entry) => entry.event === 'ingest:tag-unfiled' && entry.data?.tag === 'orphelin')).toBe(true);
+  });
+
+  it('does not treat the unfiled holding folder as an established family', async () => {
+    const fiche: WikiPage = {
+      absolutePath: '/tmp/wiki/wiki/sources/doc/section.md',
+      relativePath: 'wiki/sources/doc/section.md', name: 'section.md', type: 'source',
+      content: '---\ntitle: Logiciel\ntags: [logiciel]\n---\n# Logiciel\nFiche.',
+    };
+    const provisional: WikiPage = {
+      absolutePath: '/tmp/wiki/wiki/concepts/unfiled/logiciel.md',
+      relativePath: 'wiki/concepts/unfiled/logiciel.md', name: 'logiciel.md', type: 'concept',
+      // Deliberately stale/malformed family metadata: the reserved path alone
+      // must keep this incremental pivot out of the established-family set.
+      content: '---\ntype: concept\nsubject: logiciel\nfamily: Divers\ntags: [logiciel]\ngenerated:\n  by: llm-wiki-tags\n---\n# Logiciel\n',
+    };
+    const logger = new MemoryTraceLogger();
+    const workspace = new FakeWorkspaceService();
+    let familyCalls = 0;
+    const llm = Object.assign(new FakeLLMService(), {
+      async completeText(request: { label?: string }) {
+        if (request.label === 'ingest_taxo_families') {
+          familyCalls += 1;
+          return JSON.stringify([{ family: 'Applications', tags: ['logiciel'] }]);
+        }
+        return 'KEEP';
+      },
+    });
+    const service = new IngestService(
+      createConfig(), workspace as unknown as WorkspaceService,
+      llm as unknown as LLMService,
+      new FakeRetrievalService([fiche, provisional]) as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger, disabledCache(),
+    );
+    await (service as unknown as { regenerateTaxoTagPages(): Promise<void> }).regenerateTaxoTagPages();
+    expect(familyCalls).toBe(1);
+    expect(workspace.appliedOperations.some((operation) => operation.path === 'wiki/concepts/applications/logiciel.md')).toBe(true);
+  });
+
+  it('previews only legacy generated notes and leaves TAXO fiches/pivots plus stable legacy pages alone', async () => {
+    const pages: WikiPage[] = [
+      {
+        absolutePath: '/tmp/wiki/wiki/sources/old-note.md', relativePath: 'wiki/sources/old-note.md',
+        name: 'old-note.md', type: 'source',
+        content: '---\ntype: source\ngenerated:\n  by: llm-wiki\nstatus: draft\n---\n## Résumé\nAncien résumé.\n',
+      },
+      {
+        absolutePath: '/tmp/wiki/wiki/concepts/network.md', relativePath: 'wiki/concepts/network.md',
+        name: 'network.md', type: 'concept',
+        content: '---\ntype: concept\ngenerated:\n  by: llm-wiki\nstatus: draft\n---\n# Network\n',
+      },
+      {
+        absolutePath: '/tmp/wiki/wiki/concepts/old-taxo/old-taxo_tarifs.md', relativePath: 'wiki/concepts/old-taxo/old-taxo_tarifs.md',
+        name: 'old-taxo_tarifs.md', type: 'concept',
+        content: '---\ntype: concept\ngenerated:\n  by: taxo-pipeline\nstatus: draft\n---\n# Old TAXO leaf\n',
+      },
+      {
+        absolutePath: '/tmp/wiki/wiki/concepts/stable.md', relativePath: 'wiki/concepts/stable.md',
+        name: 'stable.md', type: 'concept',
+        content: '---\ntype: concept\ngenerated:\n  by: llm-wiki\nstatus: stable\n---\n# Stable\n',
+      },
+      {
+        absolutePath: '/tmp/wiki/wiki/concepts/family/tag.md', relativePath: 'wiki/concepts/family/tag.md',
+        name: 'tag.md', type: 'concept',
+        content: '---\ntype: concept\ngenerated:\n  by: llm-wiki-tags\nfamily: family\n---\n# Tag\n',
+      },
+      {
+        absolutePath: '/tmp/wiki/wiki/sources/doc/section.md', relativePath: 'wiki/sources/doc/section.md',
+        name: 'section.md', type: 'source',
+        content: '---\ntype: source\ngenerated:\n  by: taxo-pipeline\ninput_hash: abc\n---\n# Section\n',
+      },
+    ];
+    const migrationWorkspace = new FakeWorkspaceService();
+    const service = new IngestService(
+      createConfig(),
+      migrationWorkspace as unknown as WorkspaceService,
+      new FakeLLMService() as unknown as LLMService,
+      new FakeRetrievalService(pages) as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      new MemoryTraceLogger(),
+      disabledCache(),
+    );
+
+    await expect(service.previewLegacySheetMigration()).resolves.toEqual({
+      remove: ['wiki/concepts/network.md', 'wiki/concepts/old-taxo/old-taxo_tarifs.md', 'wiki/sources/old-note.md'],
+      protected: ['wiki/concepts/stable.md'],
+    });
+    expect(migrationWorkspace.appliedOperations).toEqual([]); // preview is read-only
+    Object.defineProperty(service, 'regenerateIndex', { value: async () => undefined });
+    await expect(service.applyLegacySheetMigration()).resolves.toEqual([
+      'wiki/concepts/network.md', 'wiki/concepts/old-taxo/old-taxo_tarifs.md', 'wiki/sources/old-note.md',
+    ]);
+    expect(migrationWorkspace.appliedOperations.map((operation) => operation.path).sort()).toEqual([
+      'wiki/concepts/network.md', 'wiki/concepts/old-taxo/old-taxo_tarifs.md', 'wiki/sources/old-note.md',
+    ]);
+  });
+
+  it('prunes registry-owned pages from vanished archives after a complete inventory, but protects shared/stable pages', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-prune-'));
+    const workspace = new FakeWorkspaceService();
+    workspace.paths.rootDir = root;
+    workspace.paths.internalDir = path.join(root, '.wiki', 'internal');
+    await mkdir(workspace.paths.internalDir, { recursive: true });
+    await writeFile(path.join(workspace.paths.internalDir, 'source-registry.json'), JSON.stringify({
+      version: 1,
+      sources: [
+        { sourceId: 'path:raw/ingested/gone.md', archivePath: 'raw/ingested/gone.md', contentHash: 'x', status: 'active', firstSeenAt: 'x', lastSeenAt: 'x', lastIngestedAt: 'x', producedPages: ['wiki/sources/gone/a.md', 'wiki/sources/shared.md', 'wiki/concepts/team/verified.md'] },
+        { sourceId: 'path:raw/ingested/live.md', archivePath: 'raw/ingested/live.md', contentHash: 'x', status: 'active', firstSeenAt: 'x', lastSeenAt: 'x', lastIngestedAt: 'x', producedPages: ['wiki/sources/shared.md'] },
+      ],
+    }), 'utf8');
+    const pages: WikiPage[] = [
+      { absolutePath: '', relativePath: 'wiki/sources/gone/a.md', name: 'a.md', type: 'source', content: '---\nstatus: draft\n---\n# A\n' },
+      { absolutePath: '', relativePath: 'wiki/sources/shared.md', name: 'shared.md', type: 'source', content: '---\nstatus: draft\n---\n# Shared\n' },
+      { absolutePath: '', relativePath: 'wiki/concepts/team/verified.md', name: 'verified.md', type: 'concept', content: '---\nstatus: stable\n---\n# Verified\n' },
+    ];
+    const logger = new MemoryTraceLogger();
+    const retrieval = new FakeRetrievalService(pages);
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new FakeLLMService() as unknown as LLMService,
+      retrieval as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+      disabledCache(),
+    );
+    const prune = (service as unknown as {
+      pruneMissingSourcePages: (ids: ReadonlySet<string>) => Promise<void>;
+    }).pruneMissingSourcePages.bind(service);
+
+    try {
+      await prune(new Set(['path:raw/ingested/live.md']));
+      expect(workspace.appliedOperations).toEqual([
+        { type: 'delete', path: 'wiki/sources/gone/a.md' },
+      ]);
+      expect(JSON.parse(await readFile(path.join(workspace.paths.internalDir, 'source-registry.json'), 'utf8'))
+        .sources.find((source: { sourceId: string }) => source.sourceId.endsWith('gone.md')).status).toBe('missing');
+      expect(logger.entries.some((entry) => entry.event === 'ingest:sheet-pruned')).toBe(true);
+      expect(logger.entries.some((entry) => entry.event === 'ingest:sheet-prune-skipped')).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('runs automatic refresh when build.refreshOnIngest is enabled', async () => {
     const workspace = new FakeWorkspaceService();
     const logger = new MemoryTraceLogger();
@@ -595,53 +688,8 @@ describe('ingest service', () => {
     expect(logger.entries.some((entry) => entry.event === 'ingest:run-done')).toBe(true);
   });
 
-  it('refuses an uncited factual concept section while preserving the cited source note', async () => {
-    class UncitedConceptLLMService extends FakeLLMService {
-      protected async plan(): Promise<IngestPlan & { pages?: unknown[] }> {
-        return {
-          summary: 'A source note and an unsupported concept claim.',
-          operations: [
-            {
-              type: 'create',
-              path: this.sourceNotePath,
-              content: '# Note\n\nFait documenté. [src: raw/ingested/note.md]\n',
-            },
-            {
-              type: 'create',
-              path: 'wiki/concepts/product/board-platform.md',
-              content: '# Board\n\n## Facts\n\nClaim without evidence.',
-            },
-          ],
-          pages: [{
-            path: 'wiki/concepts/product/board-platform.md',
-            subject: 'board-platform',
-            scope: 'product',
-            kind: 'product',
-            tags: [],
-          }],
-        };
-      }
-    }
-    const workspace = new FakeWorkspaceService();
-    const logger = new MemoryTraceLogger();
-    const service = new IngestService(
-      createConfig(),
-      workspace as unknown as WorkspaceService,
-      new UncitedConceptLLMService() as unknown as LLMService,
-      new FakeRetrievalService() as unknown as RetrievalService,
-      new CountingRefreshService() as unknown as RefreshService,
-      logger,
-      disabledCache(),
-    );
 
-    await service.ingest([], {});
-
-    expect(workspace.appliedOperations.some((operation) => operation.path === 'wiki/sources/note.md')).toBe(true);
-    expect(workspace.appliedOperations.some((operation) => operation.path === 'wiki/concepts/product/board-platform.md')).toBe(false);
-    expect(logger.entries.some((entry) => entry.event === 'ingest:provenance-refused')).toBe(true);
-  });
-
-  it('clears the concept tree before a full --from-ingested rebuild writes the new one', async () => {
+  it('does not purge the concept tree during a --from-ingested rebuild', async () => {
     const workspace = new RebuildWorkspaceService();
     workspace.sourcePaths = ['/tmp/wiki/raw/ingested/note.md'];
     workspace.conceptLeaves = [
@@ -661,132 +709,13 @@ describe('ingest service', () => {
 
     await service.ingest([], { fromIngested: true });
 
-    // The purge is applied FIRST, as its own batch: every concept leaf the
-    // previous rebuild left is deleted before the archive is re-filed.
-    expect(workspace.appliedBatches[0]).toEqual([
-      { type: 'delete', path: 'wiki/concepts/old/note.md' },
-      { type: 'delete', path: 'wiki/concepts/other/thing.md' },
-    ]);
-    expect(
-      logger.entries.some(
-        (entry) =>
-          entry.event === 'ingest:rebuild-purge'
-          && (entry.data as { removed?: number } | undefined)?.removed === 2,
-      ),
-    ).toBe(true);
-    // The new leaves are written after, in a later non-delete batch.
-    expect(workspace.appliedBatches.length).toBeGreaterThan(1);
-    expect(workspace.appliedBatches.at(-1)?.every((op) => op.type !== 'delete')).toBe(true);
+    expect(workspace.appliedBatches.flat().some((operation) => (
+      operation.type === 'delete'
+      && ['wiki/concepts/old/note.md', 'wiki/concepts/other/thing.md'].includes(operation.path)
+    ))).toBe(false);
   });
 
-  it('refuses a concept update that drops a terminal proof of the previous body', async () => {
-    class DroppingSourceLLMService extends FakeLLMService {
-      protected async plan(): Promise<IngestPlan & { pages?: unknown[] }> {
-        return {
-          summary: 'Update the leaf but drop an earlier source.',
-          operations: [
-            {
-              type: 'update',
-              path: this.sourceNotePath,
-              content: '# Note\n\n[src: raw/ingested/note.md]\n',
-            },
-            {
-              type: 'update',
-              path: 'wiki/concepts/product/board-platform.md',
-              content: '# Board\n\nOnly the new statement. [src: raw/ingested/note.md]\n',
-            },
-          ],
-          pages: [{
-            path: 'wiki/concepts/product/board-platform.md',
-            subject: 'board-platform',
-            scope: 'product',
-            kind: 'product',
-            tags: [],
-          }],
-        };
-      }
-    }
-    const workspace = new FakeWorkspaceService();
-    const logger = new MemoryTraceLogger();
-    const retrieval = new FakeRetrievalService([
-      {
-        absolutePath: '/tmp/wiki/concepts/product/board-platform.md',
-        relativePath: 'wiki/concepts/product/board-platform.md',
-        name: 'board-platform',
-        type: 'concept',
-        content: '---\nconcept_id: 123e4567-e89b-42d3-a456-426614174000\nsubject: board-platform\nsubject_id: 223e4567-e89b-42d3-a456-426614174000\n---\n\n# Board\n\nEarlier fact. [src: raw/ingested/older.md#Coûts]\n',
-      },
-    ]);
-    const service = new IngestService(
-      createConfig(),
-      workspace as unknown as WorkspaceService,
-      new DroppingSourceLLMService() as unknown as LLMService,
-      retrieval as unknown as RetrievalService,
-      new CountingRefreshService() as unknown as RefreshService,
-      logger,
-      disabledCache(),
-    );
 
-    await service.ingest([], {});
-
-    expect(logger.entries.some((entry) => entry.event === 'ingest:provenance-loss')).toBe(true);
-    const applied = workspace.appliedBatches.flat();
-    // The lossy leaf update is dropped; the source note still lands.
-    expect(applied.some((operation) => operation.path === 'wiki/concepts/product/board-platform.md')).toBe(false);
-    expect(applied.some((operation) => operation.path === 'wiki/sources/note.md')).toBe(true);
-  });
-
-  it.each(['#Section', ''])('refuses a concept update whose citation does not resolve (%s)', async (anchor) => {
-    class DanglingCitationLLMService extends FakeLLMService {
-      protected async plan(): Promise<IngestPlan & { pages?: unknown[] }> {
-        return {
-          summary: 'Cite a page that does not exist.',
-          operations: [
-            {
-              type: 'update',
-              path: this.sourceNotePath,
-              content: '# Note\n\n[src: raw/ingested/note.md]\n',
-            },
-            {
-              type: 'create',
-              path: 'wiki/concepts/product/board-platform.md',
-              content: `# Board\n\nClaim. [src: wiki/sources/ghost.md${anchor}]\n`,
-            },
-          ],
-          pages: [{
-            path: 'wiki/concepts/product/board-platform.md',
-            subject: 'board-platform',
-            scope: 'product',
-            kind: 'product',
-            tags: [],
-          }],
-        };
-      }
-    }
-    const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-refuse-'));
-    const workspace = new FakeWorkspaceService();
-    workspace.paths.rootDir = root;
-    workspace.paths.internalDir = path.join(root, '.wiki', 'internal');
-    await mkdir(workspace.paths.internalDir, { recursive: true });
-    const logger = new MemoryTraceLogger();
-    const service = new IngestService(
-      createConfig(),
-      workspace as unknown as WorkspaceService,
-      new DanglingCitationLLMService() as unknown as LLMService,
-      new FakeRetrievalService() as unknown as RetrievalService,
-      new CountingRefreshService() as unknown as RefreshService,
-      logger,
-      disabledCache(),
-    );
-
-    await service.ingest([], {});
-
-    expect(logger.entries.some((entry) => entry.event === 'ingest:provenance-refused')).toBe(true);
-    const applied = workspace.appliedBatches.flat();
-    // The unresolvable branch is dropped; the source note still lands.
-    expect(applied.some((operation) => operation.path === 'wiki/concepts/product/board-platform.md')).toBe(false);
-    expect(applied.some((operation) => operation.path === 'wiki/sources/note.md')).toBe(true);
-  });
 
   it('re-ingests an unchanged source whose produced pages have vanished', async () => {
     const workspace = new FakeWorkspaceService();
@@ -823,118 +752,30 @@ describe('ingest service', () => {
     expect(workspace.appliedOperations.length).toBeGreaterThan(0);
     expect(workspace.archivedSources).toEqual(['raw/untracked/note.md']);
     expect(logger.entries.some((entry) => entry.event === 'ingest:source-skip')).toBe(false);
-    expect(logger.entries.some((entry) => entry.event === 'ingest:source-reingest')).toBe(true);
+    expect(workspace.appliedOperations.some((operation) => operation.path === 'wiki/sources/note/contexte.md')).toBe(true);
   });
 
-  it('recognizes a taxo leaf renamed by a manual move as moved, not vanished', async () => {
+
+  it('rebuilds an unchanged archive when its TAXO section input hashes are stale or absent', async () => {
     const workspace = new FakeWorkspaceService();
     workspace.sourceUnchanged = true;
-    const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-taxo-moved-'));
-    workspace.paths.rootDir = root;
-    workspace.paths.internalDir = path.join(root, '.wiki', 'internal');
-    await mkdir(workspace.paths.internalDir, { recursive: true });
-    await mkdir(path.join(root, 'wiki', 'sources'), { recursive: true });
-    await writeFile(path.join(root, 'wiki', 'sources', 'note.md'), '# Note\n', 'utf8');
-    // The registry still names the OLD taxo path (jedox_tarifs.md); a human
-    // moved the leaf to produit/ in the UI, which renames it to
-    // produit_tarifs.md — same "resume" identity, different concept prefix.
-    // Nothing on disk exists at the old path any more.
-    await writeFile(
-      path.join(workspace.paths.internalDir, 'source-registry.json'),
-      `${JSON.stringify({
-        version: 1,
-        sources: [{
-          sourceId: 'path:raw/ingested/note.md',
-          archivePath: 'raw/ingested/note.md',
-          producedPages: ['wiki/sources/note.md', 'wiki/concepts/jedox/jedox_tarifs.md'],
-        }],
-      })}\n`,
-      'utf8',
-    );
-    const logger = new MemoryTraceLogger();
     const service = new IngestService(
       createConfig(),
       workspace as unknown as WorkspaceService,
       new FakeLLMService() as unknown as LLMService,
-      new FakeRetrievalService([{
-        absolutePath: path.join(root, 'wiki', 'concepts', 'produit', 'produit_tarifs.md'),
-        relativePath: 'wiki/concepts/produit/produit_tarifs.md',
-        name: 'produit_tarifs',
-        type: 'concept',
-        content: '',
-      }]) as unknown as RetrievalService,
-      new CountingRefreshService() as unknown as RefreshService,
-      logger,
-      disabledCache(),
-    );
-
-    const results = await service.ingest([], {});
-
-    expect(results[0]?.skipped).toBe(true);
-    expect(logger.entries.some((entry) => entry.event === 'ingest:source-reingest')).toBe(false);
-    expect(logger.entries.some((entry) => entry.event === 'ingest:concept-page-moved')).toBe(true);
-  });
-
-  it('skips the taxo pre-pass LLM calls entirely for an unchanged source', async () => {
-    class TaxoLLMService extends FakeLLMService {
-      taxoExtractCalls = 0;
-      taxoDedupCalls = 0;
-      async completeJson(request: { label?: string; user?: string }): Promise<unknown> {
-        if (request?.label === 'ingest_taxo_extract') {
-          this.taxoExtractCalls += 1;
-          return { concept: 'jedox', resume: 'tarifs', facts: 'Fait.' };
-        }
-        if (request?.label === 'ingest_taxo_dedup') {
-          this.taxoDedupCalls += 1;
-          return {
-            concepts: [{
-              name: 'jedox', label: 'Jedox', kind: 'product', scope: 'product',
-              definition: 'Def.', tags: ['a', 'b'], covers: [1],
-            }],
-          };
-        }
-        return super.completeJson(request);
-      }
-    }
-    const workspace = new FakeWorkspaceService();
-    workspace.sourceUnchanged = true;
-    const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-taxo-skip-'));
-    workspace.paths.rootDir = root;
-    workspace.paths.internalDir = path.join(root, '.wiki', 'internal');
-    await mkdir(workspace.paths.internalDir, { recursive: true });
-    await mkdir(path.join(root, 'wiki', 'sources'), { recursive: true });
-    await mkdir(path.join(root, 'wiki', 'concepts', 'unclassified'), { recursive: true });
-    await writeFile(path.join(root, 'wiki', 'sources', 'note.md'), '# Note\n', 'utf8');
-    await writeFile(path.join(root, 'wiki', 'concepts', 'unclassified', 'foo.md'), '# Foo\n', 'utf8');
-    await writeFile(
-      path.join(workspace.paths.internalDir, 'source-registry.json'),
-      `${JSON.stringify({
-        version: 1,
-        sources: [{
-          sourceId: 'path:raw/ingested/note.md',
-          archivePath: 'raw/ingested/note.md',
-          producedPages: ['wiki/sources/note.md', 'wiki/concepts/unclassified/foo.md'],
-        }],
-      })}\n`,
-      'utf8',
-    );
-    const logger = new MemoryTraceLogger();
-    const llm = new TaxoLLMService();
-    const service = new IngestService(
-      createConfig(),
-      workspace as unknown as WorkspaceService,
-      llm as unknown as LLMService,
       new FakeRetrievalService() as unknown as RetrievalService,
       new CountingRefreshService() as unknown as RefreshService,
-      logger,
+      new MemoryTraceLogger(),
       disabledCache(),
     );
-
-    const results = await service.ingest([], { taxo: true });
-
-    expect(results[0]?.skipped).toBe(true);
-    expect(llm.taxoExtractCalls).toBe(0);
-    expect(llm.taxoDedupCalls).toBe(0);
+    const select = (service as unknown as {
+      filterSourcesNeedingTaxoPrePass: (paths: string[], registry: null, options: object) => Promise<Array<{ sourcePath: string; relativePath: string }>>;
+    }).filterSourcesNeedingTaxoPrePass.bind(service);
+    await expect(select(['/tmp/wiki/raw/ingested/note.md'], null, {}))
+      .resolves.toEqual([{
+        sourcePath: '/tmp/wiki/raw/ingested/note.md',
+        relativePath: 'raw/untracked/note.md',
+      }]);
   });
 
   it('still skips an unchanged source whose produced pages all exist', async () => {
@@ -944,10 +785,35 @@ describe('ingest service', () => {
     workspace.paths.rootDir = root;
     workspace.paths.internalDir = path.join(root, '.wiki', 'internal');
     await mkdir(workspace.paths.internalDir, { recursive: true });
-    await mkdir(path.join(root, 'wiki', 'sources'), { recursive: true });
+    const config = createConfig();
+    const rawContent = `# note\n\n${workspace.sourceBody}\n`;
+    const sheet = extractSectionSheets(rawContent, 'note', config.ingest?.sheets)[0]!;
+    const signature = `4:${config.llm.model}:${config.language}`;
+    const startLine = sheet.sourceRanges[0]!.startLine;
+    const endLine = sheet.sourceRanges[sheet.sourceRanges.length - 1]!.endLine;
+    const sheetPath = 'wiki/sources/note/contexte.md';
+    const tagPath = 'wiki/concepts/knowledge/knowledge.md';
+    await mkdir(path.dirname(path.join(root, sheetPath)), { recursive: true });
+    await mkdir(path.dirname(path.join(root, tagPath)), { recursive: true });
     await mkdir(path.join(root, 'wiki', 'concepts', 'unclassified'), { recursive: true });
-    await writeFile(path.join(root, 'wiki', 'sources', 'note.md'), '# Note\n', 'utf8');
-    await writeFile(path.join(root, 'wiki', 'concepts', 'unclassified', 'foo.md'), '# Foo\n', 'utf8');
+    const sheetContent = [
+      '---', 'type: source', 'title: Note', 'tags:', '  - knowledge',
+      `input_hash: ${sheetInputHash('raw/ingested/note.md', startLine, endLine, sheet.body, signature)}`,
+      `content_hash: ${sheetContentHash(sheet.body, signature)}`,
+      '---', '', '# Contexte', '', 'Information de contexte.',
+    ].join('\n');
+    const tagContent = [
+      '---', 'type: concept', 'subject: "knowledge"',
+      'concept_id: "00000000-0000-4000-8000-000000000001"',
+      'subject_id: "00000000-0000-4000-8000-000000000002"',
+      'title: "Knowledge"', 'family: "Knowledge"', 'sheet_count: 1',
+      'status: draft', 'generated:', '  by: llm-wiki-tags',
+      '  at: 2026-01-01T00:00:00.000Z', 'tags: ["knowledge"]',
+      '---', '', '# Knowledge', '', '## Sources', '',
+      '- **Note** [src: wiki/sources/note/contexte.md]', '',
+    ].join('\n');
+    await writeFile(path.join(root, sheetPath), sheetContent, 'utf8');
+    await writeFile(path.join(root, tagPath), tagContent, 'utf8');
     await writeFile(
       path.join(workspace.paths.internalDir, 'source-registry.json'),
       `${JSON.stringify({
@@ -955,17 +821,21 @@ describe('ingest service', () => {
         sources: [{
           sourceId: 'path:raw/ingested/note.md',
           archivePath: 'raw/ingested/note.md',
-          producedPages: ['wiki/sources/note.md', 'wiki/concepts/unclassified/foo.md'],
+          producedPages: [sheetPath, tagPath],
         }],
       })}\n`,
       'utf8',
     );
+    const retrieval = new FakeRetrievalService([
+      { absolutePath: path.join(root, sheetPath), relativePath: sheetPath, name: 'contexte.md', type: 'source', content: sheetContent },
+      { absolutePath: path.join(root, tagPath), relativePath: tagPath, name: 'knowledge.md', type: 'concept', content: tagContent },
+    ]);
     const logger = new MemoryTraceLogger();
     const service = new IngestService(
-      createConfig(),
+      config,
       workspace as unknown as WorkspaceService,
       new FakeLLMService() as unknown as LLMService,
-      new FakeRetrievalService() as unknown as RetrievalService,
+      retrieval as unknown as RetrievalService,
       new CountingRefreshService() as unknown as RefreshService,
       logger,
       disabledCache(),
@@ -973,192 +843,17 @@ describe('ingest service', () => {
 
     const results = await service.ingest([], {});
 
-    expect(workspace.appliedOperations.length).toBe(0);
+    expect(workspace.appliedOperations).toEqual([]);
     expect(workspace.archivedSources).toEqual(['raw/untracked/note.md']);
     expect(results[0]?.skipped).toBe(true);
     expect(logger.entries.some((entry) => entry.event === 'ingest:source-skip')).toBe(true);
   });
 
-  it('rewrites model-mutated source citations to the exact archived source path', async () => {
-    const workspace = new FakeWorkspaceService();
-    workspace.sourcePaths = [
-      '/tmp/wiki/raw/untracked/Constituer l_équipe d_avant-projet.md',
-    ];
-    const logger = new MemoryTraceLogger();
-    const service = new IngestService(
-      createConfig(),
-      workspace as unknown as WorkspaceService,
-      new BadCitationLLMService() as unknown as LLMService,
-      new FakeRetrievalService() as unknown as RetrievalService,
-      { refresh: async () => [] } as unknown as RefreshService,
-      logger,
-      disabledCache(),
-    );
 
-    const results = await service.ingest([], {});
 
-    expect(results[0].plan?.operations[0].content).toContain(
-      '[src: raw/ingested/constituer-lequipe-davant-projet.md#',
-    );
-    expect(workspace.appliedOperations[0].content).toContain(
-      '[src: raw/ingested/constituer-lequipe-davant-projet.md#',
-    );
-    expect(workspace.appliedOperations[0].content).not.toContain(
-      "Constituer l'équipe d_avant-projet.md",
-    );
-    expect(
-      logger.entries.find((entry) => entry.event === 'ingest:citation-path-rewrite')
-        ?.data,
-    ).toMatchObject({ rewrittenCitations: 1 });
-    expect(
-      logger.entries.find((entry) => entry.event === 'ingest:citation-path-rewrite')
-        ?.level,
-    ).toBe('info');
-    expect(
-      logger.entries.some((entry) => entry.event === 'ingest:citation-unreconciled'),
-    ).toBe(false);
-  });
 
-  it('keeps another archived source cited while updating a leaf', async () => {
-    // On an update the model preserves the page's earlier citations. Rewriting
-    // those to the source being ingested misattributes the facts they back —
-    // the "the sources associated are often not the right ones" defect.
-    const workspace = new FakeWorkspaceService();
-    const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-existing-proof-'));
-    workspace.paths.rootDir = root;
-    await mkdir(path.join(root, 'raw/ingested'), { recursive: true });
-    await writeFile(path.join(root, 'raw/ingested/source-one.md'), '# Existing evidence\n\nVerified fact.');
-    workspace.sourcePaths = ['/tmp/wiki/raw/untracked/source-two.md'];
-    const logger = new MemoryTraceLogger();
-    const service = new IngestService(
-      createConfig(),
-      workspace as unknown as WorkspaceService,
-      new PreservedCitationLLMService() as unknown as LLMService,
-      new FakeRetrievalService() as unknown as RetrievalService,
-      { refresh: async () => [] } as unknown as RefreshService,
-      logger,
-      disabledCache(),
-    );
 
-    await service.ingest([], {});
 
-    const leaf = workspace.appliedOperations.find(
-      (operation) => operation.path === 'wiki/concepts/security/souverainete.md',
-    );
-    expect(leaf?.content).toContain('[src: raw/ingested/source-one.md]');
-    // The pending form of THIS source is normalized to its archive path.
-    expect(leaf?.content).toContain('[src: raw/ingested/source-two.md]');
-    expect(leaf?.content).not.toContain('[src: raw/untracked/source-two.md]');
-  });
-
-  it('warns when source citations cannot be reconciled', async () => {
-    const workspace = new FakeWorkspaceService();
-    const logger = new MemoryTraceLogger();
-    const service = new IngestService(
-      createConfig(),
-      workspace as unknown as WorkspaceService,
-      new UnreconciledCitationLLMService() as unknown as LLMService,
-      new FakeRetrievalService() as unknown as RetrievalService,
-      { refresh: async () => [] } as unknown as RefreshService,
-      logger,
-      disabledCache(),
-    );
-
-    await service.ingest([], {});
-
-    expect(
-      logger.entries.find((entry) => entry.event === 'ingest:citation-unreconciled')
-        ?.level,
-    ).toBe('warn');
-    expect(
-      logger.entries.find((entry) => entry.event === 'ingest:citation-unreconciled')
-        ?.data,
-    ).toMatchObject({ unreconciledCitations: 1 });
-  });
-
-  it('wraps a bare source-path mention (no [src: ] brackets) into a real citation', async () => {
-    // Regression: the model sometimes names its source as a plain "Source:
-    // raw/ingested/…" header line instead of a per-claim [src: …] citation.
-    // Invisible to enforceSourceCitationPath's bracket-matching regex and to
-    // every downstream link renderer — the reference silently never becomes
-    // a link. A per-source consolidation only ever has one legitimate source
-    // to name, so wrapping it to the canonical archive path is safe.
-    const workspace = new FakeWorkspaceService();
-    const logger = new MemoryTraceLogger();
-    const service = new IngestService(
-      createConfig(),
-      workspace as unknown as WorkspaceService,
-      new BareSourcePathLLMService() as unknown as LLMService,
-      new FakeRetrievalService() as unknown as RetrievalService,
-      { refresh: async () => [] } as unknown as RefreshService,
-      logger,
-      disabledCache(),
-    );
-
-    await service.ingest([], {});
-
-    expect(workspace.appliedOperations[0].content).toContain('Source: [src: raw/ingested/note.md]');
-    expect(workspace.appliedOperations[0].content).not.toContain('Source: raw/ingested/note.md\n');
-    expect(
-      logger.entries.find((entry) => entry.event === 'ingest:citation-bare-path-wrapped')?.data,
-    ).toMatchObject({ wrappedBarePaths: 1 });
-  });
-
-  it('keeps the sentence period out of a wrapped archived-source citation', async () => {
-    // BARE_RAW_PATH_PATTERN stops at brackets and quotes, not at the sentence
-    // punctuation that follows the path; wrapping it verbatim produced
-    // "[src: raw/ingested/other.md.]", a path no renderer can resolve.
-    const workspace = new FakeWorkspaceService();
-    const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-existing-proof-'));
-    workspace.paths.rootDir = root;
-    await mkdir(path.join(root, 'raw/ingested'), { recursive: true });
-    await writeFile(path.join(root, 'raw/ingested/other.md'), 'Existing evidence.');
-    const logger = new MemoryTraceLogger();
-    const service = new IngestService(
-      createConfig(),
-      workspace as unknown as WorkspaceService,
-      new BareArchivedPathWithPeriodLLMService() as unknown as LLMService,
-      new FakeRetrievalService() as unknown as RetrievalService,
-      { refresh: async () => [] } as unknown as RefreshService,
-      logger,
-      disabledCache(),
-    );
-
-    await service.ingest([], {});
-
-    const content = workspace.appliedOperations[0].content;
-    expect(content).toContain('[src: raw/ingested/other.md]');
-    expect(content).not.toContain('raw/ingested/other.md.]');
-  });
-
-  it('normalizes an already-correct citation with multi-line whitespace instead of leaving it for the bare-path pass to double-wrap', async () => {
-    // Regression: the bracket-normalization pass used to return an
-    // already-matching "[src: ...]" marker untouched, preserving whatever
-    // whitespace the model used inside the brackets (including a newline,
-    // since \s matches it). BARE_RAW_PATH_PATTERN's lookbehind only tolerates
-    // up to 4 whitespace characters, so a 5+-character gap (a line break)
-    // fell outside it and the inner path got wrapped a second time, producing
-    // "[src:\n    [src: raw/ingested/note.md]]".
-    const workspace = new FakeWorkspaceService();
-    const logger = new MemoryTraceLogger();
-    const service = new IngestService(
-      createConfig(),
-      workspace as unknown as WorkspaceService,
-      new WideWhitespaceCitationLLMService() as unknown as LLMService,
-      new FakeRetrievalService() as unknown as RetrievalService,
-      { refresh: async () => [] } as unknown as RefreshService,
-      logger,
-      disabledCache(),
-    );
-
-    await service.ingest([], {});
-
-    expect(workspace.appliedOperations[0].content).toContain('[src: raw/ingested/note.md#');
-    expect(workspace.appliedOperations[0].content).not.toMatch(/\[src:[^\]]*\[src:/);
-    expect(
-      logger.entries.find((entry) => entry.event === 'ingest:citation-bare-path-wrapped'),
-    ).toBeUndefined();
-  });
 
   it('warns when a source was decoded with the Latin-1 fallback', async () => {
     const workspace = new FakeWorkspaceService();
@@ -1190,82 +885,22 @@ describe('ingest service', () => {
     });
   });
 
-  it('plans oversized sources section by section then applies atomically before archiving once', async () => {
-    const workspace = new FakeWorkspaceService();
-    workspace.sourceBody = [
-      '# Large source',
-      '',
-      '## First section',
-      'A'.repeat(70),
-      '',
-      '## Second section',
-      'B'.repeat(70),
-    ].join('\n');
-    const config = createConfig();
-    config.retrieval.maxSourceChars = 120;
-    const logger = new MemoryTraceLogger();
-    const llm = new SectionedLLMService();
-    const retrieval = new FakeRetrievalService();
-    const service = new IngestService(
-      config,
-      workspace as unknown as WorkspaceService,
-      llm as unknown as LLMService,
-      retrieval as unknown as RetrievalService,
-      { refresh: async () => [] } as unknown as RefreshService,
-      logger,
-      disabledCache(),
-    );
-
-    const results = await service.ingest([], {});
-
-    /*
-     Deux lots d'empaquetage, deux extractions — puis UNE consolidation.
-
-     C'est l'invariant du Lot 2 : un fragment ne décide plus des fichiers. Avant,
-     chaque section produisait ses propres opérations, concaténées sans être
-     confrontées ; deux sections d'un même document pouvaient donc écrire deux
-     notes de source, ou deux pages du même concept.
-    */
-    expect(llm.extractionCalls).toBe(2);
-    expect(llm.planCalls).toBe(1);
-    expect(workspace.appliedBatches).toHaveLength(1);
-    // Une seule note de source, quel que soit le nombre de lots.
-    expect(workspace.appliedBatches[0]).toHaveLength(1);
-    expect(retrieval.invalidateCalls).toBe(1);
-    expect(workspace.archivedSources).toEqual(['raw/untracked/note.md']);
-    expect(results[0].plan?.operations).toHaveLength(1);
-    expect(workspace.readIndexAppliedCounts).toEqual([0]);
-    /*
-     Le plan d'empaquetage est journalisé pour toute source, découpée ou non :
-     c'est ce qui permet d'expliquer après coup pourquoi une source a coûté N
-     appels, au lieu de constater le nombre sans pouvoir le justifier.
-    */
-    const pack = logger.entries.find((entry) => entry.event === 'ingest:pack');
-    expect(pack?.data).toMatchObject({ packs: 2, maxChars: 120, truncatedBlocks: 0 });
-    expect((pack?.data as { packChars: number[] }).packChars).toHaveLength(2);
-    expect(
-      logger.entries.find((entry) => entry.event === 'ingest:consolidate')?.data,
-    ).toMatchObject({ operations: 1, errors: 0 });
-    expect(
-      logger.entries.find((entry) => entry.event === 'ingest:apply')?.data,
-    ).toMatchObject({ atomic: true });
-  });
 
   it('limits concurrent ingest section LLM calls', async () => {
     const workspace = new FakeWorkspaceService();
     workspace.sourceBody = [
       '# Large source',
       '',
-      '## First section',
+      '# First section',
       'A'.repeat(70),
       '',
-      '## Second section',
+      '# Second section',
       'B'.repeat(70),
       '',
-      '## Third section',
+      '# Third section',
       'C'.repeat(70),
       '',
-      '## Fourth section',
+      '# Fourth section',
       'D'.repeat(70),
     ].join('\n');
     const config = createConfig();
@@ -1287,20 +922,19 @@ describe('ingest service', () => {
     const results = await service.ingest([], {});
 
     expect(llm.extractionCalls).toBe(4);
-    expect(llm.planCalls).toBe(1);
     expect(llm.maxActive).toBeLessThanOrEqual(2);
     expect(llm.maxActive).toBeGreaterThan(1);
     expect(workspace.appliedBatches).toHaveLength(1);
-    expect(results[0].plan?.operations).toHaveLength(1);
+    expect(results[0].plan?.operations).toHaveLength(4);
   });
 
   it('returns review diffs for planned wiki operations', async () => {
     const workspace = new FakeWorkspaceService();
     workspace.wikiPages = [
       {
-        absolutePath: '/tmp/wiki/wiki/sources/note.md',
-        relativePath: 'wiki/sources/note.md',
-        name: 'note.md',
+        absolutePath: '/tmp/wiki/wiki/sources/note/contexte.md',
+        relativePath: 'wiki/sources/note/contexte.md',
+        name: 'contexte.md',
         type: 'source',
         content: '# Note\n\nOld content.\n',
       },
@@ -1320,7 +954,7 @@ describe('ingest service', () => {
 
     expect(results[0].review).toHaveLength(1);
     expect(results[0].review?.[0]).toMatchObject({
-      path: 'wiki/sources/note.md',
+      path: 'wiki/sources/note/contexte.md',
       status: 'pending',
       beforeExists: true,
       afterExists: true,
@@ -1344,10 +978,10 @@ describe('ingest service', () => {
       disabledCache(),
     );
 
-    const results = await service.ingest([], { reject: ['wiki/sources/note.md'] });
+    const results = await service.ingest([], { reject: ['wiki/sources/note/contexte.md'] });
 
     expect(results[0].review?.[0]).toMatchObject({
-      path: 'wiki/sources/note.md',
+      path: 'wiki/sources/note/contexte.md',
       status: 'rejected',
     });
     expect(results[0].plan?.operations).toEqual([]);
@@ -1358,7 +992,7 @@ describe('ingest service', () => {
     ).toMatchObject({ reason: 'all operations rejected' });
   });
 
-  it('retries a transient LLM planning failure once before failing the source', async () => {
+  it('retries a transient TAXO section failure once before using the faithful fallback', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       const workspace = new FakeWorkspaceService();
@@ -1375,11 +1009,11 @@ describe('ingest service', () => {
       );
 
       const ingest = service.ingest([], {});
-      await vi.waitFor(() => expect(llm.planCalls).toBe(1));
+      await vi.waitFor(() => expect(llm.sheetCalls).toBe(1));
       await vi.advanceTimersByTimeAsync(3000);
       const results = await ingest;
 
-      expect(llm.planCalls).toBe(2);
+      expect(llm.sheetCalls).toBe(2);
       expect(results).toHaveLength(1);
       expect(results[0].failed).toBeUndefined();
       expect(results[0].retry).toMatchObject({
@@ -1397,7 +1031,7 @@ describe('ingest service', () => {
     }
   });
 
-  it('does not retry ingest validation errors', async () => {
+  it('keeps the original section when TAXO output is malformed', async () => {
     const workspace = new FakeWorkspaceService();
     const logger = new MemoryTraceLogger();
     const llm = new ValidationFailingLLMService();
@@ -1413,22 +1047,32 @@ describe('ingest service', () => {
 
     const results = await service.ingest([], {});
 
-    expect(llm.planCalls).toBe(1);
-    expect(results[0]).toMatchObject({
-      source: 'raw/untracked/note.md',
-      failed: true,
-      error: 'Invalid structured JSON returned by the model.',
-    });
+    expect(results[0]?.source).toBe('raw/untracked/note.md');
+    expect(results[0]?.failed).toBeUndefined();
     expect(logger.entries.some((entry) => entry.event === 'ingest:retry')).toBe(false);
+    expect(logger.entries.some((entry) => entry.event === 'ingest:sheet-fallback')).toBe(true);
   });
 
-  it('continues ingesting remaining sources when one source fails', async () => {
+  it('isolates repeated TAXO section failures and continues with remaining sources', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const workspace = new FakeWorkspaceService();
     workspace.sourcePaths = [
       '/tmp/wiki/raw/untracked/first.md',
       '/tmp/wiki/raw/untracked/second.md',
     ];
+    // Give each document its own H1: the failing fake targets the first one by
+    // its document title (`## first`), and both share the same section bodies.
+    const readSourceDocument = workspace.readSourceDocument.bind(workspace);
+    workspace.readSourceDocument = async (sourcePath = '') => {
+      const doc = await readSourceDocument(sourcePath);
+      const documentSlug = sourcePath.includes('second') ? 'second' : 'first';
+      return {
+        ...doc,
+        title: documentSlug,
+        body: `# ${documentSlug}\n\n${workspace.sourceBody}`,
+        rawContent: `# ${documentSlug}\n\n${workspace.sourceBody}\n`,
+      };
+    };
     const logger = new MemoryTraceLogger();
     const llm = new FailingTwiceThenSuccessLLMService();
     const service = new IngestService(
@@ -1443,274 +1087,24 @@ describe('ingest service', () => {
 
     try {
       const ingest = service.ingest([], {});
-      await vi.waitFor(() => expect(llm.planCalls).toBe(1));
-      await vi.advanceTimersByTimeAsync(3000);
+      await vi.waitFor(() => expect(llm.sheetAttempts).toBe(1));
+      await vi.advanceTimersByTimeAsync(10000);
       const results = await ingest;
 
-      expect(llm.planCalls).toBe(3);
       expect(results).toHaveLength(2);
-      expect(results[0]).toMatchObject({
-        source: 'raw/untracked/first.md',
-        failed: true,
-      });
-      expect(results[1].source).toBe('raw/untracked/second.md');
-      expect(results[1].failed).toBeUndefined();
-      expect(workspace.appliedOperations).toHaveLength(1);
-      expect(workspace.archivedSources).toEqual(['raw/untracked/second.md']);
-      expect(logger.entries.some((entry) => entry.event === 'ingest:source-failed')).toBe(
-        true,
-      );
+      expect(results.every((result) => !result.failed)).toBe(true);
+      expect(workspace.appliedBatches).toHaveLength(2);
+      expect(workspace.archivedSources).toEqual(['raw/untracked/first.md', 'raw/untracked/second.md']);
+      expect(logger.entries.some((entry) => entry.event === 'ingest:sheet-fallback')).toBe(true);
       expect(
         logger.entries.find((entry) => entry.event === 'ingest:run-done')?.data,
       ).toMatchObject({
-        failed: 1,
-        status: 'partial_failure',
+        failed: 0,
+        status: 'success',
       });
     } finally {
       vi.useRealTimers();
     }
-  });
-
-  it('applies a planned ingest file without calling the LLM', async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-plan-'));
-    const workspace = new FakeWorkspaceService();
-    // The internal dir must be real for the registry to be exercised: with
-    // no internalDir the read silently degrades to null and the write-back
-    // gap (the exact defect this test now guards against) stays invisible.
-    workspace.paths = { rootDir, internalDir: path.join(rootDir, '.wiki') };
-    const planPath = path.join(rootDir, '.wiki', 'ingest-plans', 'plan.json');
-    await mkdir(path.dirname(planPath), { recursive: true });
-    await writeFile(
-      planPath,
-      JSON.stringify({
-        generatedAt: new Date().toISOString(),
-        sources: [
-          {
-            source: 'raw/untracked/note.md',
-            summary: 'Planned note.',
-            operations: [
-              {
-                type: 'create',
-                path: 'wiki/sources/note.md',
-                content: '# Note\n\n[src: raw/ingested/note.md]\n',
-              },
-            ],
-            review: [
-              {
-                type: 'create',
-                path: 'wiki/sources/note.md',
-                source: 'raw/untracked/note.md',
-                archivePath: 'raw/ingested/note.md',
-                status: 'pending',
-                beforeExists: false,
-                afterExists: true,
-                diff: { changed: true, addedLines: 1, removedLines: 0, preview: [] },
-              },
-            ],
-          },
-        ],
-      }),
-      'utf8',
-    );
-    const logger = new MemoryTraceLogger();
-    const llm = new FakeLLMService();
-    const service = new IngestService(
-      createConfig(),
-      workspace as unknown as WorkspaceService,
-      llm as unknown as LLMService,
-      new FakeRetrievalService() as unknown as RetrievalService,
-      { refresh: async () => [] } as unknown as RefreshService,
-      logger,
-      disabledCache(),
-    );
-
-    const results = await service.applyPlannedIngest(['.wiki/ingest-plans/plan.json']);
-
-    expect(llm.calls).toBe(0);
-    expect(results).toHaveLength(1);
-    expect(results[0].source).toBe('raw/untracked/note.md');
-    expect(results[0].failed).toBeUndefined();
-    expect(workspace.appliedBatches).toHaveLength(1);
-    expect(workspace.appliedBatches[0]).toHaveLength(1);
-    expect(workspace.appliedBatches[0][0]).toMatchObject({
-      type: 'create',
-      path: 'wiki/sources/note.md',
-    });
-    expect(workspace.appliedBatches[0][0].content).toContain('subject: note');
-    expect(workspace.appliedBatches[0][0].content).toContain('title: note');
-    expect(workspace.appliedBatches[0][0].content).toContain('path: raw/ingested/note.md');
-    expect(workspace.appliedBatches[0][0].content).toContain('[src: raw/ingested/note.md]');
-    expect(workspace.archivedSources).toEqual(['raw/untracked/note.md']);
-    expect(logger.entries.some((entry) => entry.event === 'ingest:apply')).toBe(true);
-    // The registry write-back (the defect this guards): the orchestrated
-    // apply must record what it produced, or usage_count stays 0 forever and
-    // the doctor/lint inventory orphans every page this flow wrote.
-    const registryPath = path.join(rootDir, '.wiki', 'source-registry.json');
-    expect(await pathExists(registryPath)).toBe(true);
-    const registry = JSON.parse(await readFile(registryPath, 'utf8'));
-    expect(registry.sources).toHaveLength(1);
-    expect(registry.sources[0].sourceId).toBe('path:raw/ingested/note.md');
-    expect(registry.sources[0].archivePath).toBe('raw/ingested/note.md');
-    expect(registry.sources[0].producedPages).toEqual(['wiki/sources/note.md']);
-    expect(registry.sources[0].lastIngestedAt).toBeTruthy();
-  });
-
-  it('reconciles a cached plan folder against the live vocabulary on the orchestrated apply', async () => {
-    // The orchestrated apply replays a plan built before its siblings wrote:
-    // the model decides the canonical folder on the live corpus, and the
-    // engine rewrites the leaf path here too.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-reconcile-apply-'));
-    const workspace = new FakeWorkspaceService();
-    workspace.paths = { rootDir, internalDir: path.join(rootDir, '.wiki') };
-    const planPath = path.join(rootDir, '.wiki', 'ingest-plans', 'plan.json');
-    await mkdir(path.dirname(planPath), { recursive: true });
-    await writeFile(
-      planPath,
-      JSON.stringify({
-        generatedAt: new Date().toISOString(),
-        sources: [
-          {
-            source: 'raw/untracked/note.md',
-            summary: 'Planned a product leaf under an English folder.',
-            operations: [
-              { type: 'create', path: 'wiki/sources/note.md', content: '# Note\n\n[src: raw/ingested/note.md]\n' },
-              { type: 'create', path: 'wiki/concepts/product/board-platform.md', content: '# Board\n\n[src: raw/ingested/note.md]\n' },
-            ],
-            review: [],
-          },
-        ],
-      }),
-      'utf8',
-    );
-    const retrieval = new FakeRetrievalService([
-      {
-        absolutePath: '/tmp/wiki/concepts/produit/acpi.md',
-        relativePath: 'wiki/concepts/produit/acpi.md',
-        name: 'acpi.md',
-        type: 'concept',
-        content: '---\nconcept_id: 123e4567-e89b-42d3-a456-426614174000\nsubject: acpi\ntags: [outil]\n---\n# ACPI\n',
-      },
-    ], true);
-    const service = new IngestService(
-      createConfig(),
-      workspace as unknown as WorkspaceService,
-      new ReconcilingLLMService() as unknown as LLMService,
-      retrieval as unknown as RetrievalService,
-      { refresh: async () => [] } as unknown as RefreshService,
-      new MemoryTraceLogger(),
-      disabledCache(),
-    );
-
-    const results = await service.applyPlannedIngest(['.wiki/ingest-plans/plan.json']);
-
-    expect(results[0].failed).toBeUndefined();
-    const applied = workspace.appliedBatches.flat();
-    expect(applied.some((operation) => operation.path === 'wiki/concepts/produit/board-platform.md')).toBe(true);
-    expect(applied.some((operation) => operation.path.startsWith('wiki/concepts/product/'))).toBe(false);
-  });
-
-  it('runs the provenance pipeline on the orchestrated apply and refuses an unresolvable citation', async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-prov-apply-'));
-    const workspace = new FakeWorkspaceService();
-    workspace.paths = { rootDir, internalDir: path.join(rootDir, '.wiki') };
-    const planPath = path.join(rootDir, '.wiki', 'ingest-plans', 'plan.json');
-    await mkdir(path.dirname(planPath), { recursive: true });
-    await writeFile(
-      planPath,
-      JSON.stringify({
-        generatedAt: new Date().toISOString(),
-        sources: [
-          {
-            source: 'raw/untracked/note.md',
-            summary: 'Cites a page that does not exist.',
-            operations: [
-              { type: 'create', path: 'wiki/sources/note.md', content: '# Note\n\n[src: raw/ingested/note.md]\n' },
-              { type: 'create', path: 'wiki/concepts/product/board-platform.md', content: '# Board\n\nClaim. [src: wiki/sources/ghost.md#Section]\n' },
-            ],
-            review: [],
-          },
-        ],
-      }),
-      'utf8',
-    );
-    // `product` is already established, so no folder arbitration runs and the
-    // only provenance work exercised here is the pipeline itself.
-    const retrieval = new FakeRetrievalService([
-      {
-        absolutePath: '/tmp/wiki/concepts/product/existing.md',
-        relativePath: 'wiki/concepts/product/existing.md',
-        name: 'existing',
-        type: 'concept',
-        content: '---\nconcept_id: 123e4567-e89b-42d3-a456-426614174000\n---\n\n# Existing\n',
-      },
-    ]);
-    const logger = new MemoryTraceLogger();
-    const service = new IngestService(
-      createConfig(),
-      workspace as unknown as WorkspaceService,
-      new FakeLLMService() as unknown as LLMService,
-      retrieval as unknown as RetrievalService,
-      { refresh: async () => [] } as unknown as RefreshService,
-      logger,
-      disabledCache(),
-    );
-
-    await service.applyPlannedIngest(['.wiki/ingest-plans/plan.json']);
-
-    expect(logger.entries.some((entry) => entry.event === 'ingest:provenance-refused')).toBe(true);
-    const applied = workspace.appliedBatches.flat();
-    expect(applied.some((operation) => operation.path === 'wiki/concepts/product/board-platform.md')).toBe(false);
-    expect(applied.some((operation) => operation.path === 'wiki/sources/note.md')).toBe(true);
-  });
-
-  it('does not archive or observe a planned source whose every operation is rejected', async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-reject-'));
-    const workspace = new FakeWorkspaceService();
-    workspace.paths = { rootDir, internalDir: path.join(rootDir, '.wiki') };
-    const planPath = path.join(rootDir, '.wiki', 'ingest-plans', 'plan.json');
-    await mkdir(path.dirname(planPath), { recursive: true });
-    await writeFile(
-      planPath,
-      JSON.stringify({
-        generatedAt: new Date().toISOString(),
-        sources: [
-          {
-            source: 'raw/untracked/note.md',
-            summary: 'Planned note.',
-            operations: [
-              {
-                type: 'create',
-                path: 'wiki/sources/note.md',
-                content: '# Note\n\n[src: raw/ingested/note.md]\n',
-              },
-            ],
-            review: [],
-          },
-        ],
-      }),
-      'utf8',
-    );
-    const service = new IngestService(
-      createConfig(),
-      workspace as unknown as WorkspaceService,
-      new FakeLLMService() as unknown as LLMService,
-      new FakeRetrievalService() as unknown as RetrievalService,
-      { refresh: async () => [] } as unknown as RefreshService,
-      new MemoryTraceLogger(),
-      disabledCache(),
-    );
-
-    const results = await service.applyPlannedIngest(
-      ['.wiki/ingest-plans/plan.json'],
-      { reject: ['wiki/sources/note.md'] },
-    );
-
-    expect(results[0].failed).toBeUndefined();
-    expect(workspace.appliedBatches).toHaveLength(0);
-    // Same contract as the live path: a fully rejected source stays staged —
-    // not archived, not observed.
-    expect(workspace.archivedSources).toHaveLength(0);
-    expect(await pathExists(path.join(rootDir, '.wiki', 'source-registry.json'))).toBe(false);
   });
 
   it('does not report a source as successful when applying operations fails', async () => {
@@ -1746,79 +1140,7 @@ describe('ingest service', () => {
    not reliably surface the existing page across sources — so this only
    passes if the subject-based lookup (independent of retrieval) surfaces it.
   */
-  it('surfaces an existing concept page from another source as a reuse candidate by subject', async () => {
-    const workspace = new FakeWorkspaceService();
-    workspace.wikiPages = [
-      {
-        absolutePath: '/tmp/wiki/wiki/concepts/sujet-historique.md',
-        relativePath: 'wiki/concepts/sujet-historique.md',
-        name: 'Sujet historique',
-        type: 'concept',
-        content: '---\nsubject: sujet-historique\nscope: product\n---\n\n# Sujet historique\n\nContenu existant.\n',
-      },
-    ];
-    class CapturingLLMService extends FakeLLMService {
-      lastPlanPrompt: string | null = null;
 
-      async completeJson(request: { label?: string; user?: string }): Promise<unknown> {
-        if (request?.label !== 'ingest_extract') this.lastPlanPrompt = request?.user ?? null;
-        return super.completeJson(request);
-      }
-    }
-    const llm = new CapturingLLMService();
-    const service = new IngestService(
-      createConfig(),
-      workspace as unknown as WorkspaceService,
-      llm as unknown as LLMService,
-      new FakeRetrievalService(workspace.wikiPages) as unknown as RetrievalService,
-      { refresh: async () => [] } as unknown as RefreshService,
-      new MemoryTraceLogger(),
-      disabledCache(),
-    );
-
-    await service.ingest([], {});
-
-    expect(llm.lastPlanPrompt).toContain('wiki/concepts/sujet-historique.md');
-    expect(llm.lastPlanPrompt).toContain('[existing page for a closely related subject]');
-  });
-
-  it('reconciles a plan-time synonym folder onto the model-chosen canonical folder', async () => {
-    // The plan is often built before a sibling created the folder it
-    // duplicates. The LLM decides the canonical folder on the live corpus;
-    // the engine rewrites the leaf path. No synonym table.
-    const workspace = new FakeWorkspaceService();
-    const logger = new MemoryTraceLogger();
-    const retrieval = new FakeRetrievalService([
-      {
-        absolutePath: '/tmp/wiki/concepts/produit/acpi.md',
-        relativePath: 'wiki/concepts/produit/acpi.md',
-        name: 'acpi.md',
-        type: 'concept',
-        content: '---\nconcept_id: 123e4567-e89b-42d3-a456-426614174000\nsubject: acpi\ntags: [outil]\n---\n# ACPI\n',
-      },
-    ], true);
-    const service = new IngestService(
-      createConfig(),
-      workspace as unknown as WorkspaceService,
-      new ProductFolderPlanLLMService() as unknown as LLMService,
-      retrieval as unknown as RetrievalService,
-      { refresh: async () => [] } as unknown as RefreshService,
-      logger,
-      disabledCache(),
-    );
-
-    await service.ingest([], {});
-
-    expect(workspace.appliedOperations.some(
-      (operation) => operation.path === 'wiki/concepts/produit/board-platform.md',
-    )).toBe(true);
-    expect(workspace.appliedOperations.some(
-      (operation) => operation.path.startsWith('wiki/concepts/product/'),
-    )).toBe(false);
-    expect(
-      logger.entries.find((entry) => entry.event === 'ingest:concept-folders')?.data,
-    ).toMatchObject({ changed: ['product~produit'] });
-  });
 });
 
 

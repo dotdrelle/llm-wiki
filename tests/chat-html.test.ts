@@ -852,6 +852,23 @@ describe('chat html', () => {
     expect(source.slice(0, 400)).toContain('Curate the wiki');
   });
 
+  it('keeps the run strip in step with the runtime state in the Execution view', () => {
+    const script = chatScripts().join('\n');
+    // The graph branch used to `return;` before finishActivityRender(), the
+    // only state-render caller of updateRunStrip(). A run that ended while the
+    // Execution view was open therefore never hid the strip: it stayed on
+    // screen with its last mid-run percentage (the TAXO ingest strip stuck on
+    // "Organize section sheets · 5%"). Both branches now share the same tail.
+    const graphBranch = script.slice(
+      script.indexOf("if(activityView==='graph') {"),
+      script.indexOf('el.__graphMode=null;'),
+    );
+    expect(graphBranch).toBeTruthy();
+    expect(graphBranch).toContain('requestAnimationFrame(renderRuntimeWorkflowGraph);');
+    expect(graphBranch).toContain('return finishActivityRender();');
+    expect(graphBranch).not.toMatch(/renderRuntimeWorkflowGraph\);\s*return;\s*\}/);
+  });
+
   it('pins the run-status strip to the top of the window, clear of the composer', () => {
     // It used to stick at the base and push the composer up with a padding;
     // at the top it needs neither.

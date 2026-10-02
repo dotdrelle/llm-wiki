@@ -57,17 +57,17 @@ deliberately asymmetric in *severity* but symmetric in *detection*, and this
 design is what multi-user ownership must preserve, not reinvent:
 
 - **`workspace-write` is exclusive and excludes *everything*** — another write
-  *and* any concurrent read. This serializes `ingest_apply` by design: two
-  applies can never hold the workspace write lock at once, so no write starts
-  while a parallel plan's read locks are still held.
-- **`read` is shared but per-holder**: each read-only job (e.g. a per-file
-  `ingest_plan`) gets its own lock file, so several reads coexist instead of
-  colliding on a single per-scope file. The detection is still symmetric — a
-  write candidate always sees an active read as a conflict.
+  *and* any concurrent read. The complete TAXO ingestion is one such job, so
+  fiche extraction, writes and tag-family generation cannot interleave with a
+  second workspace operation.
+- **`read` is shared but per-holder**: each read-only job gets its own lock
+  file, so several reads coexist instead of colliding on a single per-scope
+  file. The detection is still symmetric — a write candidate always sees an
+  active read as a conflict.
 - **Exclusive scopes are single-file mutexes** created atomically
   (`open(..., "x")`); the second acquirer fails with `target_busy` rather than
-  blocking. `deliverable:*`, `template:*` and `ingest-plan:<file>` are a finer
-  grain below `workspace-write` for the build/export jobs.
+  blocking. `deliverable:*` and `template:*` are a finer grain below
+  `workspace-write` for the build/export jobs.
 - **Isolation is structural and per-workspace**: locks are scoped by
   `_WORKSPACE_NAME` under the agent's state directory, so the agent of one
   workspace never sees, and is never blocked by, the lock of another workspace.

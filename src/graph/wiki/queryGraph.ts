@@ -26,7 +26,8 @@ export type QueryEdgeType =
   | 'produces'
   | 'wiki_link'
   | 'shared_subject'
-  | 'shared_tag';
+  | 'shared_tag'
+  | 'co_cited';
 
 export interface QueryGraphNode {
   id: string;
@@ -58,6 +59,10 @@ function frontmatterOf(page: GraphPage): { subject?: string; tags: string[]; tit
   } catch {
     return { tags: [] };
   }
+}
+
+function taxoKey(value: string): string {
+  return value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '');
 }
 
 function normalizeLinkTarget(target: string): string {
@@ -113,6 +118,8 @@ export async function buildQueryGraph(workspace: WorkspaceService): Promise<Quer
   const byTag = new Map<string, string[]>();
   const byConcept = new Map<string, string[]>();
   const bySubject = new Map<string, string[]>();
+  const coCited = new Map<string, string[]>();
+  const tagPivots = new Map<string, string>();
 
   for (const page of wikiPages) {
     if (page.type === 'answer') continue;
@@ -130,7 +137,27 @@ export async function buildQueryGraph(workspace: WorkspaceService): Promise<Quer
     nodeById.set(node.id, node);
     if (node.concept) byConcept.set(node.concept, [...(byConcept.get(node.concept) ?? []), node.id]);
     if (node.subject) bySubject.set(node.subject, [...(bySubject.get(node.subject) ?? []), node.id]);
-    for (const tag of node.tags) byTag.set(tag, [...(byTag.get(tag) ?? []), node.id]);
+    if (page.relativePath.startsWith('wiki/concepts/') && /by:\s*llm-wiki-tags/.test(page.content)) {
+      const key = taxoKey(node.subject ?? page.name);
+      if (key) tagPivots.set(key, node.id);
+    }
+    // TAXO fiches use tags as a link to generated concept pivots; they are
+    // not a second clique of fiches. Keep shared_tag for legacy concept
+    // pages, and materialize fiche-to-tag relationships as co_cited below.
+    if (!page.relativePath.startsWith('wiki/sources/')) {
+      for (const tag of node.tags) byTag.set(tag, [...(byTag.get(tag) ?? []), node.id]);
+    }
+    if (page.relativePath.startsWith('wiki/sources/') && node.tags.length > 0) {
+      coCited.set(node.id, node.tags.map((tag) => tagPivots.get(taxoKey(tag))).filter((target): target is string => Boolean(target)));
+    }
+  }
+
+  // Resolve fiche tags only after all family-folder pivots have been indexed.
+  for (const page of wikiPages) {
+    if (page.type === 'answer' || !page.relativePath.startsWith('wiki/sources/')) continue;
+    const node = nodeById.get(page.relativePath.replace(/\.md$/, ''));
+    if (!node) continue;
+    coCited.set(node.id, node.tags.map((tag) => tagPivots.get(taxoKey(tag))).filter((target): target is string => Boolean(target)));
   }
 
   for (const source of rawSources) {
@@ -166,6 +193,12 @@ export async function buildQueryGraph(workspace: WorkspaceService): Promise<Quer
   // concepts, or a theme shared through tags.
   addPairwiseEdges(adjacency, bySubject, 'shared_subject');
   addPairwiseEdges(adjacency, byTag, 'shared_tag');
+  for (const [fiche, pivots] of coCited) {
+    for (const pivot of pivots) {
+      addEdge(adjacency, fiche, pivot, 'co_cited');
+      addEdge(adjacency, pivot, fiche, 'co_cited');
+    }
+  }
 
   return { nodes, nodeById, adjacency, byTag, byConcept };
 }

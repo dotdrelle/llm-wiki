@@ -136,7 +136,7 @@ export async function checkProductionIdle(rootDir: string): Promise<ProductionBu
  *
  * - `wiki`: a page under wiki/. Refused while a job writes the wiki — ingest,
  *   rebuild, restore, a doctor that applies, a pipeline. It used to be
- *   refused by nothing: a page could be written in the middle of ingest_apply.
+ *   refused by nothing: a page could be written in the middle of ingestion.
  * - `assets`: templates/ and build-context/. Refused while a job reads them to
  *   build — build, pipeline, restore. The coarse "any active job" rule it
  *   replaces also refused a template written during a plain ingest, which
@@ -148,7 +148,7 @@ export async function checkProductionIdle(rootDir: string): Promise<ProductionBu
 export type ProductionWriteTarget = 'wiki' | 'assets';
 
 const CONFLICTING_OPERATIONS: Record<ProductionWriteTarget, Set<string>> = {
-  wiki: new Set(['copy', 'ingest', 'ingest_apply', 'ingest_rebuild', 'restore', 'doctor_apply', 'pipeline']),
+  wiki: new Set(['copy', 'ingest', 'ingest_rebuild', 'restore', 'doctor_apply', 'pipeline']),
   assets: new Set(['build', 'pipeline', 'restore']),
 };
 

@@ -106,7 +106,7 @@ function essentialRuntimeLogEntries(logs) {
       text=text.replace(/^activity:\\s*/i,'').replace(/^Production:\\s*/i,'');
       text=text.replace(/\\s*·\\s*(?:last stage|trace):.*$/i,'');
       text=text.replace(/\\s*\\([^)]*(?:step|run|ingest)[^)]*\\)/gi,'');
-      text=text.replace(/ingest_apply/gi,'Ingestion').replace(/ingest[-_ ]complete/gi,'Ingestion complete');
+      text=text.replace(/ingest[-_ ]complete/gi,'Ingestion complete');
     }
     text=text
       .replace(/[a-f0-9]{8}-[a-f0-9-]{20,}/gi,'')

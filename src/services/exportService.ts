@@ -150,11 +150,18 @@ export function sectionValidationIssue(
   return undefined;
 }
 
-function citedSourceCandidates(cited: string): string[] {
+export function citedSourceCandidates(cited: string, sourcePages?: string[]): string[] {
   const normalized = cited.replace(/^\.\//, '');
   const candidates = [normalized];
   if (!normalized.startsWith('wiki/')) {
-    candidates.push(`wiki/sources/${path.basename(normalized)}`);
+    const basename = path.basename(normalized);
+    const matches = (sourcePages ?? []).filter((page) =>
+      page.startsWith('wiki/sources/') && path.basename(page) === basename,
+    );
+    if (matches.length > 1) {
+      throw new Error(`Ambiguous source citation "${cited}": ${matches.join(', ')}`);
+    }
+    candidates.push(matches[0] ?? `wiki/sources/${basename}`);
   }
   return candidates;
 }
@@ -324,7 +331,10 @@ export async function expandDeliverable(
       citations: citedPaths.length,
     });
 
-    const allowedSources = [...new Set(citedPaths.flatMap(citedSourceCandidates))];
+    const sourcePages = (await workspace.listWikiPages())
+      .map((page) => page.relativePath);
+    const allowedSources = [...new Set(citedPaths.flatMap((cited) =>
+      citedSourceCandidates(cited, sourcePages)))];
     const originalBody = sectionBody(section);
     const query = [section.headingPath.join(' '), originalBody.slice(0, 300)]
       .join(' ')

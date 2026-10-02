@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 declare const __PKG_VERSION__: string;
 import { readFileSync } from 'node:fs';
-import { Command, Option } from 'commander';
+import { Command } from 'commander';
 import { loadConfig, findWikircPath } from '../src/config/loadConfig.ts';
 import { loadWorkspaceEnv } from '../src/config/loadEnv.ts';
 import {
@@ -182,26 +182,15 @@ async function main() {
       'Specific files relative to the workspace root or raw/untracked',
     )
     .option('--dry-run', 'Show planned wiki operations without writing')
-    .addOption(
-      new Option(
-        '--plan-only',
-        'Write planned ingest operations without applying them',
-      ).hideHelp(),
-    )
-    .addOption(
-      new Option(
-        '--apply <file...>',
-        'Apply planned ingest operation file(s)',
-      ).hideHelp(),
-    )
     .option('--refresh', 'Run deliverable rebuild after ingest')
     .option('--force', 'Re-ingest even if the source is unchanged since last ingest')
     .option(
       '--from-ingested',
       'Rebuild concept pages from the archived raw/ingested sources instead of raw/untracked. No file is moved or archived again; [files...] match against raw/ingested when given.',
     )
-    .option('--reject <path...>', 'Reject planned wiki operation path(s) during review')
-    .option('--taxo', 'Use the taxo pipeline: section-level extraction plus a global dedup pass')
+    .option('--migrate-sheets', 'Preview migration from legacy source notes/concept leaves to TAXO fiches; requires --from-ingested')
+    .option('--apply', 'Apply the migration after a successful full TAXO rebuild (requires --migrate-sheets)')
+    .option('--reject <path...>', 'Reject wiki operation path(s) shown by --dry-run')
     .option('-v, --verbose', 'Print ingestion step traces')
     .option('--debug', 'Print detailed ingestion traces')
     .option(
@@ -212,7 +201,7 @@ async function main() {
 
   program
     .command('query')
-    .description('Query the wiki and its cited source notes')
+    .description('Query the wiki and its cited section fiches')
     .argument('<question...>', 'Question to answer from the wiki')
     .option('--save', 'Save the answer to wiki/answers/')
     .action((questionParts, options) =>

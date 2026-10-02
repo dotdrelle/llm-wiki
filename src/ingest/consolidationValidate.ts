@@ -207,6 +207,7 @@ export function validateConsolidation(
     existingPages?: ReadonlyMap<string, string>;
     conceptBudget?: number;
     precomputedSplits?: ConceptSplit[];
+    taxo?: boolean;
   },
 ): ValidatedConsolidation {
   const errors: ConsolidationIssue[] = [];
@@ -262,21 +263,32 @@ export function validateConsolidation(
   }
 
   /*
-   A source produces ONE source note.
+   Classic ingestion produces one source note. TAXO produces one fiche per
+   section under the source tree; the flat canonical page remains only as a
+   compatibility/index page while that transition is in progress.
   */
   const sourceNotes = planOperations.filter(
     (operation) => isSourceNote(operation.path, context.sourcePagePath) && operation.type !== 'delete',
   );
-  if (sourceNotes.length === 0) {
+  const taxoFiches = planOperations.filter(
+    (operation) => operation.path.startsWith('wiki/sources/')
+      && operation.path !== context.sourcePagePath
+      && operation.type !== 'delete'
+      && /^type:\s*source\s*$/m.test(operation.content ?? '')
+      && (/^tags:\s*(?:\[|$)/m.test(operation.content ?? '')
+        || /^\s*by:\s*llm-wiki\s*$/m.test(operation.content ?? '')),
+  );
+  const isTaxoPlan = context.taxo === true || taxoFiches.length > 0;
+  if (sourceNotes.length === 0 && !isTaxoPlan) {
     errors.push({ path: context.sourcePagePath, reason: 'no source note in the plan' });
-  } else if (sourceNotes.length > 1) {
+  } else if (!isTaxoPlan && sourceNotes.length > 1) {
     errors.push({
       path: context.sourcePagePath,
       reason: `${sourceNotes.length} source notes for a single document`,
     });
   }
   for (const operation of planOperations) {
-    if (operation.path.startsWith('wiki/sources/')
+    if (!isTaxoPlan && operation.path.startsWith('wiki/sources/')
       && operation.path !== context.sourcePagePath
       && operation.type !== 'delete') {
       errors.push({

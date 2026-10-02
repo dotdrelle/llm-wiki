@@ -12,6 +12,46 @@ describe('reviewed concept label migration', () => {
     root = '';
   });
 
+  it('relables a TAXO tag family without changing the tag filename or identity', async () => {
+    root = await mkdtemp(path.join(os.tmpdir(), 'concept-relabel-taxo-tag-'));
+    const dir = path.join(root, 'wiki/concepts/family-old');
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, 'network.md'), [
+      '---',
+      'title: network',
+      'subject: network',
+      'concept_id: 123e4567-e89b-42d3-a456-426614174000',
+      'subject_id: 223e4567-e89b-42d3-a456-426614174000',
+      'family: family-old',
+      'generated:',
+      '  by: llm-wiki-tags',
+      '---',
+      '',
+      '# network',
+      '',
+    ].join('\n'));
+
+    const mapping = {
+      schemaVersion: 1 as const,
+      concepts: [{ concept_id: '123e4567-e89b-42d3-a456-426614174000', label: 'family-new' }],
+    };
+    const preview = await migrateConceptLabels({ rootDir: root, mapping });
+    expect(preview.conflicts).toEqual([]);
+    expect(preview.changes).toEqual([expect.objectContaining({
+      from: 'wiki/concepts/family-old/network.md',
+      to: 'wiki/concepts/family-new/network.md',
+    })]);
+
+    const applied = await migrateConceptLabels({ rootDir: root, mapping, apply: true });
+    expect(applied.applied).toBe(true);
+    const moved = await readFile(path.join(root, 'wiki/concepts/family-new/network.md'), 'utf8');
+    expect(moved).toContain('subject: network');
+    expect(moved).toContain('concept_id: 123e4567-e89b-42d3-a456-426614174000');
+    expect(moved).toContain('subject_id: 223e4567-e89b-42d3-a456-426614174000');
+    expect(moved).toContain('family: family-new');
+    expect(moved).toContain('by: llm-wiki-tags');
+  });
+
   it('previews, then relabels by concept_id and rewrites inbound references', async () => {
     root = await mkdtemp(path.join(os.tmpdir(), 'concept-relabel-'));
     const sourceDir = path.join(root, 'wiki/concepts/label-old');

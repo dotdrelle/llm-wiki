@@ -12,7 +12,7 @@ function runtimeStatusColor(status){return{running:'#4f7eff',done:'#22c55e',comp
 function runtimeIsPending(status){return status==='pending'||status==='queued'||status==='waiting'}
 // Stable z-order per node type: run hub at the back, phases above it, details
 // on top. Lower value draws first.
-function runtimeNodeDepth(node){return node.type==='run'?.9:node.type==='task_group'?1:node.type==='task_detail'?1.2:node.type==='subagent'?1.15:1.1}
+function runtimeNodeDepth(node){return node.type==='run'?.9:node.type==='task_group'?1:node.type==='task_detail'?1.2:node.type==='task_input'?1.25:node.type==='subagent'?1.15:1.1}
 /*
  Layered DAG layout, left → right.
 
@@ -25,7 +25,7 @@ function runtimeNodeDepth(node){return node.type==='run'?.9:node.type==='task_gr
 */
 function runtimeCanvasScene(){
   const projection=runtimeWorkflowGraphData(),nodes=projection.nodes,relations=projection.relations;
-  const isRun=node=>node.type==='run',isPhase=node=>node.type==='task_group',isDetail=node=>node.type==='task_detail',isSub=node=>node.type==='subagent';
+  const isRun=node=>node.type==='run',isPhase=node=>node.type==='task_group',isDetail=node=>node.type==='task_detail',isSub=node=>node.type==='subagent',isInput=node=>node.type==='task_input';
   // phase -> its prerequisites, over depends_on only.
   const deps=new Map();
   relations.forEach(rel=>{if(rel.type==='depends_on'){if(!deps.has(rel.from))deps.set(rel.from,new Set());deps.get(rel.from).add(rel.to)}});
@@ -59,6 +59,9 @@ function runtimeCanvasScene(){
   // The collective's subagents share that fringe column: they hang off the
   // run node by their contains edges, sequenced vertically with the details.
   nodes.filter(isSub).forEach(node=>colOf.set(node.id,column));
+  // A task's input files: one more column to the right of the details,
+  // wrapped like the phases so a 16-file batch does not become a tower.
+  nodes.filter(isInput).forEach((node,index)=>colOf.set(node.id,column+1+Math.floor(index/12)));
   const maxCol=Math.max(0,...[...colOf.values()]);
   const byCol=new Map();
   nodes.forEach(node=>{const c=colOf.get(node.id)??(maxCol+1);if(!byCol.has(c))byCol.set(c,[]);byCol.get(c).push(node)});
@@ -102,6 +105,7 @@ function createRuntimeCanvasRenderer(host){
   function nodeBox(node){
     if(node.type==='task_group')return{w:164,h:68,card:true};
     if(node.type==='task_detail')return{w:132,h:52,card:true};
+    if(node.type==='task_input')return{w:150,h:40,card:true};
     const r=node.type==='run'?28:14;return{w:r*2,h:r*2+(node.type==='run'?36:22),card:false}}
   /*
    Fixed-point framing, ported from the wiki graph.
@@ -309,7 +313,7 @@ function createRuntimeCanvasRenderer(host){
   function endPointerGesture(point){
     if(!state.pointer)return;
     if(!state.dragged&&point){const target=hit(point);
-      if(target){if(target.node.type==='task_detail')selectRuntimeWorkflowTask(target.node.taskId);else selectRuntimeWorkflowNode(target.node.id)}}
+      if(target){if(target.node.type==='task_detail'||target.node.type==='task_input')selectRuntimeWorkflowTask(target.node.taskId);else selectRuntimeWorkflowNode(target.node.id)}}
     const captured=state.pointer.pointerId;
     state.pointer=null;state.dragged=false;
     if(captured!==undefined&&canvas.hasPointerCapture?.(captured))canvas.releasePointerCapture(captured);
@@ -334,7 +338,7 @@ function createRuntimeCanvasRenderer(host){
   window.addEventListener('blur',releaseOutside);
   canvas.addEventListener('wheel',event=>{event.preventDefault();claimCamera();const point=coords(event),size=Math.min(state.width,state.height),worldX=camera.state.x+(point.x-state.width/2)/(size*camera.state.scale),worldY=camera.state.y+(point.y-state.height/2)/(size*camera.state.scale);camera.zoomAt(event.deltaY<0?1.14:1/1.14,worldX,worldY)},{passive:false});
   canvas.addEventListener('keydown',event=>{const step=.06/camera.state.scale;if(event.key!=='Home')claimCamera();if(event.key==='ArrowLeft')camera.pan(-step,0);else if(event.key==='ArrowRight')camera.pan(step,0);else if(event.key==='ArrowUp')camera.pan(0,-step);else if(event.key==='ArrowDown')camera.pan(0,step);else if(event.key==='+'||event.key==='=')camera.zoomAt(1.2,camera.state.x,camera.state.y);else if(event.key==='-')camera.zoomAt(1/1.2,camera.state.x,camera.state.y);else if(event.key==='Home')fit();else return;event.preventDefault()});
-  a11y.addEventListener('click',event=>{const button=event.target.closest('[data-runtime-node]'),node=state.scene.nodes.find(item=>item.id===button?.dataset.runtimeNode);if(node){if(node.type==='task_detail')selectRuntimeWorkflowTask(node.taskId);else selectRuntimeWorkflowNode(node.id)}});
+  a11y.addEventListener('click',event=>{const button=event.target.closest('[data-runtime-node]'),node=state.scene.nodes.find(item=>item.id===button?.dataset.runtimeNode);if(node){if(node.type==='task_detail'||node.type==='task_input')selectRuntimeWorkflowTask(node.taskId);else selectRuntimeWorkflowNode(node.id)}});
   const observer=new ResizeObserver(resize);observer.observe(canvas);
   /*
    A changing topology no longer forces the view to reframe.

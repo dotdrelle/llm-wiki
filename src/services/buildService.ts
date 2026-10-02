@@ -51,6 +51,11 @@ import type { WorkspaceService } from './workspaceService.ts';
 
 const FINAL_CONTEXT_EXCLUDED_PATHS = new Set(['wiki/index.md', 'wiki/log.md']);
 
+function isGeneratedTaxoTagPage(page: WikiPage): boolean {
+  return page.relativePath.startsWith('wiki/concepts/')
+    && /^\s*by:\s*llm-wiki-tags\s*$/m.test(page.content);
+}
+
 function normalizeReplacementContent(content: string): string {
   // canonicalizeSourceCitations enforces the single authorized citation
   // format ([src: path]) as soon as model output enters the document: models
@@ -430,7 +435,9 @@ export class BuildService {
   }> {
     const candidates = wikiPages.filter(
       (page) =>
-        !FINAL_CONTEXT_EXCLUDED_PATHS.has(page.relativePath) && page.type !== 'answer',
+        !FINAL_CONTEXT_EXCLUDED_PATHS.has(page.relativePath)
+        && !isGeneratedTaxoTagPage(page)
+        && page.type !== 'answer',
     );
     const limit = Math.max(1, this.config.retrieval.maxContextFiles);
     return template.instructions.map((instruction) => {
@@ -491,7 +498,8 @@ export class BuildService {
 
   private prepareFinalContext(results: SearchResult[]): SearchResult[] {
     return results
-      .filter((result) => !FINAL_CONTEXT_EXCLUDED_PATHS.has(result.page.relativePath))
+      .filter((result) => !FINAL_CONTEXT_EXCLUDED_PATHS.has(result.page.relativePath)
+        && !isGeneratedTaxoTagPage(result.page))
       .sort((a, b) => {
         const aDate = extractMostRecentDateMs(a);
         const bDate = extractMostRecentDateMs(b);
@@ -520,6 +528,7 @@ export class BuildService {
         if (FINAL_CONTEXT_EXCLUDED_PATHS.has(relatedPath)) continue;
         const page = wikiPageByPath.get(relatedPath);
         if (!page || page.type === 'answer') continue;
+        if (isGeneratedTaxoTagPage(page)) continue;
         seen.add(relatedPath);
         relatedCount += 1;
         expanded.push({

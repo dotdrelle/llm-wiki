@@ -38,8 +38,8 @@ export interface HistoryMetadata {
    * its siblings' in-flight output under its own message, while the siblings
    * find an empty index and produce no commit at all.
    *
-   * Commands serialized by the `workspace-write` lock (ingest, ingest_apply,
-   * restore) may omit it — they are the only writer for their duration.
+   * Commands serialized by the `workspace-write` lock (ingest, restore) may
+   * omit it — they are the only writer for their duration.
    */
   scope?: string[];
 }

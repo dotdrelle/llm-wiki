@@ -26,6 +26,7 @@ import { appFaviconHref } from './appIdentity.ts';
 import { WIKI_BG_DARK, WIKI_BG_LIGHT } from '../../chat/theme.ts';
 import { readInFlightDocumentUploads } from '../routes/uploadRoutes.ts';
 import { listActiveProductionLocks } from '../../services/productionLocks.ts';
+import { collapseDocumentlessFolders } from '../tree/collapseFolders.ts';
 import {
   conceptBasenameSubject,
   conceptFolderOf,
@@ -805,18 +806,27 @@ function countNavFiles(node: NavTreeNode): number {
   return total;
 }
 
+/** Remove wiki-only empty branches before rendering; Pending is file-driven. */
+function pruneEmptyNavDirectories(node: NavTreeNode): void {
+  for (const [name, dir] of node.dirs) {
+    pruneEmptyNavDirectories(dir);
+    if (countNavFiles(dir) === 0) node.dirs.delete(name);
+  }
+}
+
 // UPPERCASE for the wiki root, a collection's own root (depth 0) and a
 // concept folder at any depth; a leading capital for the wiki taxonomy folders
-// (answers/concepts/sources) and a collection sub-folder; the raw name
-// otherwise.
+// (answers/concepts/sources) and a collection sub-folder; other wiki folders as
+// capitalized words (`eas-avant-projet-acpi` → `Eas Avant Projet Acpi`).
 function navNodeLabel(node: NavTreeNode, depth: number): string {
+  if (toPosix(node.path) === 'wiki/concepts/unfiled') return 'Unfiled';
   if (toPosix(node.path) === 'wiki' || isConceptFolderPath(node.path) || (isCollectionPath(node.path) && depth === 0)) {
     return humanTitle(node.name).toLocaleUpperCase();
   }
   if (toPosix(node.path) === 'wiki/concepts') return 'Project knowledge';
   if (toPosix(node.path) === 'wiki/sources') return 'Reading notes';
   if (isWikiTaxonomyPath(node.path) || isCollectionPath(node.path)) return capitalizeFirst(humanTitle(node.name));
-  return node.name;
+  return toPosix(node.path).startsWith('wiki/') ? pendingDisplayTitle(node.name).replace(/(^|\s)(\p{L})/gu, (_m, sep: string, ch: string) => sep + ch.toLocaleUpperCase()) : node.name;
 }
 
 function renderNavNode(
@@ -910,11 +920,11 @@ function renderNavNode(
   // the folder is closed. `.side-folder-row` wraps both so the actions stay
   // visible and clickable regardless of open/closed state, matching the
   // original always-visible icons.
-  // The wiki section root carries the archive rebuild launch — Donna re-files
-  // every archived source into its concept folder, then checks links and OKF.
+  // The wiki section root carries the archive rebuild launch — Donna reruns
+  // TAXO over archived sources, then checks links and OKF.
   // Like the Pending ⚡ button, it is hidden until the layout script unhides it.
   const rebuildAction = depth === 0 && node.name === 'wiki'
-    ? `<button class="side-folder-action side-rebuild-action" type="button" title="Rebuild concept pages from the archive" aria-label="Rebuild concept pages from archived sources" data-rebuild-launch hidden>${REBUILD_ICON}</button>`
+    ? `<button class="side-folder-action side-rebuild-action" type="button" title="Rebuild TAXO fiches and tag families" aria-label="Rebuild TAXO knowledge from archived sources" data-rebuild-launch hidden>${REBUILD_ICON}</button>`
     : '';
   const actions = `${newFolderAction}${createAction}${rebuildAction}${folderActions}`;
   const actionsHtml = actions ? `<div class="side-folder-actions">${actions}</div>` : '';
@@ -949,14 +959,11 @@ function isEditableTreePath(nodePath: string): boolean {
   return ['wiki', 'deliverables', 'templates', 'build-context'].includes(section);
 }
 
-// Which pending sources are being worked on right now, read from the live
-// production jobs the agent writes next to the workspace: an `ingest_plan`
-// job means its inputs are being ANALYZED, an `ingest_apply` job (whose
-// inputs are plan files) means the plan's sources are being WRITTEN. One
-// directory scan, no other state — the sidebar render and each refresh see
-// the same truth the job status pages do.
-function activeIngestPhases(rootDir: string): Map<string, 'analyze' | 'write'> {
-  const phases = new Map<string, 'analyze' | 'write'>();
+// The pending tree reflects the single TAXO ingestion job. It deliberately
+// has no analyze/apply phase split: extraction, fiche writes and tag-family
+// projection are one workspace-locked operation.
+function activeIngestSources(rootDir: string): Map<string, 'taxo'> {
+  const phases = new Map<string, 'taxo'>();
   const jobsDir = path.join(rootDir, '.wiki', 'production-jobs', 'jobs');
   let names: string[] = [];
   try { names = readdirSync(jobsDir); } catch { return phases; }
@@ -965,20 +972,10 @@ function activeIngestPhases(rootDir: string): Map<string, 'analyze' | 'write'> {
     let job: any = null;
     try { job = JSON.parse(readFileSync(path.join(jobsDir, name), 'utf8')); } catch { continue; }
     if (job?.status !== 'running') continue;
-    if (job.type === 'ingest_plan') {
+    if (job.type === 'ingest' || job.type === 'ingest_rebuild') {
       for (const input of Array.isArray(job.inputs) ? job.inputs : []) {
         const posix = toPosix(String(input));
-        if (posix.startsWith('raw/untracked/')) phases.set(posix, 'analyze');
-      }
-    } else if (job.type === 'ingest_apply') {
-      for (const input of Array.isArray(job.inputs) ? job.inputs : []) {
-        try {
-          const plan = JSON.parse(readFileSync(path.join(rootDir, String(input)), 'utf8'));
-          for (const source of Array.isArray(plan?.sources) ? plan.sources : []) {
-            const posix = toPosix(String(source?.source ?? ''));
-            if (posix.startsWith('raw/untracked/')) phases.set(posix, 'write');
-          }
-        } catch { /* unreadable plan: skip */ }
+        if (posix.startsWith('raw/untracked/')) phases.set(posix, 'taxo');
       }
     }
   }
@@ -1079,7 +1076,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<{ html: string; 
     readInFlightDocumentUploads(rootDir, workspaceNameFromEnv() ?? path.basename(process.env.WIKI_WORKSPACE_PATH ?? process.cwd())),
   ]);
   const files = foundFiles.map(toPosix).sort((a, b) => a.localeCompare(b));
-  const phases = activeIngestPhases(rootDir);
+  const phases = activeIngestSources(rootDir);
   // A pending source whose subject already exists in the wiki is an update,
   // not a newcomer: the tree announces it in colour before the ingest does.
   // Green = new subject, blue = an existing page that differs.
@@ -1182,7 +1179,7 @@ function renderUntrackedNode(
   node: NavTreeNode,
   titles: Map<string, string>,
   statuses: Map<string, 'new' | 'update' | 'modified'>,
-  phases: Map<string, 'analyze' | 'write'> = new Map(),
+  phases: Map<string, 'taxo'> = new Map(),
   root = false,
   pendingAt: Map<string, number> = new Map(),
 ): string {
@@ -1202,7 +1199,7 @@ function renderUntrackedNode(
             : '';
       const phase = phases.get(file);
       const phaseMark = phase
-        ? `<span class="side-ingest-phase ${phase}" aria-hidden="true" title="${phase === 'analyze' ? 'Analyse en cours' : 'Écriture en cours'}">${phase === 'analyze' ? '◌' : '✎'}</span>`
+        ? `<span class="side-ingest-phase ${phase}" aria-hidden="true" title="Ingestion TAXO en cours">◌</span>`
         : '';
       const pendingToken = Math.round(pendingAt.get(file) ?? 1);
       return `<div class="side-untracked-item${statusClass}" draggable="true" data-tree-drag="${safePath}" data-tree-kind="file">${phaseMark}<a class="side-untracked-link" href="${escapeHref(`/${file}`)}" title="${safePath}" aria-label="${safePath}" data-side-path="${safePath}" data-pending-at="${pendingToken}">${escapeHtml(titles.get(file) ?? humanTitle(file))}</a><button class="side-tree-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-tree-delete="${safePath}" data-tree-kind="file">×</button></div>`;
@@ -1239,6 +1236,7 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
 
   const rootDirs = [...root.dirs.values()].sort((a, b) => SERVED_DIRS.indexOf(a.name) - SERVED_DIRS.indexOf(b.name));
   const wikiDir = rootDirs.find((dir) => dir.name === 'wiki');
+  if (wikiDir) { pruneEmptyNavDirectories(wikiDir); const notes = wikiDir.dirs.get('sources'); if (notes) collapseDocumentlessFolders(notes); }
   // In the wiki tree a page reads by its title (first `#` heading), not by
   // its filename — the path stays on the tooltip and on the graph's
   // secondary label, so the identifier is never lost, only quieter. A concept
@@ -1923,7 +1921,9 @@ export async function generateHelpChapter(rootDir: string, id: string): Promise<
 }
 
 export function isRawDownloadRequestPath(urlPath: string): boolean {
-  return urlPath.startsWith('/raw/') && !urlPath.startsWith('/raw/ingested/') && !urlPath.startsWith('/raw/untracked/');
+  const pendingRoot = urlPath.replace(/\/+$/, '') === '/raw/untracked';
+  return urlPath.startsWith('/raw/') && !urlPath.startsWith('/raw/ingested/')
+    && !pendingRoot && !urlPath.startsWith('/raw/untracked/');
 }
 
 export function resolveEditableMarkdown(rootDir: string, relativePath: string): string {

@@ -25,11 +25,25 @@ import { applyOkfFrontmatter, OKF_TYPE_INDEX } from '../okf/frontmatter.ts';
 */
 
 const CONCEPTS_GLOB = 'wiki/concepts/**/*.md';
-const SOURCES_GLOB = 'wiki/sources/*.md';
+const SOURCES_GLOB = 'wiki/sources/**/*.md';
 const ARCHIVES_GLOB = 'raw/ingested/**/*.md';
 const INDEX_RELATIVE_PATH = 'wiki/index.md';
 const OVERVIEW_START = '<!-- wiki-index-overview:start -->';
 const OVERVIEW_END = '<!-- wiki-index-overview:end -->';
+
+/*
+ A previous engine generation wrote its own fixed-heading inventory. Such an
+ index carries no overview markers yet, but its body is engine output, not
+ human prose: replacing it is the migration, and the previous content stays in
+ the workspace history. Any OTHER marker-less body is treated as human content
+ and adopted as the initial overview instead of being dropped.
+*/
+const LEGACY_GENERATED_HEADING = /^##\s+(?:Concepts|Project knowledge|Sources|Reading notes|Answers|Archived documents)\b/m;
+
+export function isLegacyGeneratedIndex(currentIndex: string): boolean {
+  if (currentIndex.includes(OVERVIEW_START) || currentIndex.includes(OVERVIEW_END)) return false;
+  return LEGACY_GENERATED_HEADING.test(matter(currentIndex).content.trim());
+}
 
 const HEADER = [
   '# Wiki Index',
@@ -40,7 +54,7 @@ const HEADER = [
 ].join('\n');
 
 const CONCEPTS_INTRO = 'Reusable knowledge about this workspace, organized around the concepts found in its material.';
-const SOURCES_INTRO = 'Reading notes summarize individual documents; each note cites its complete archived original.';
+const SOURCES_INTRO = 'TAXO fiches summarize source sections; each fiche cites its complete archived original.';
 const ARCHIVES_INTRO = 'Original ingested documents, preserved as evidence and searchable when a detail is missing from a reading note.';
 
 const FOOTER = [
@@ -98,12 +112,22 @@ function renderSection(title: string, intro: string, entries: WikiIndexEntry[], 
   return [`## ${title}`, '', intro, '', body, ''].join('\n');
 }
 
-export function readWorkspaceOverview(currentIndex: string): string {
+export function readWorkspaceOverview(
+  currentIndex: string,
+  options: { migrateLegacy?: boolean } = {},
+): string {
   const start = currentIndex.indexOf(OVERVIEW_START);
   const end = currentIndex.indexOf(OVERVIEW_END);
   if (start === -1 && end === -1) {
     const legacyBody = matter(currentIndex).content.trim();
     if (!legacyBody || legacyBody === '# Wiki Index') return '';
+    if (options.migrateLegacy) {
+      // Engine-generated legacy inventory: replaced by the new deterministic
+      // index (the previous content remains reachable in history). Anything
+      // else is preserved as the initial overview — no hand-written text is
+      // ever dropped by a regeneration.
+      return isLegacyGeneratedIndex(currentIndex) ? '' : legacyBody;
+    }
     throw new Error('Workspace overview markers are missing; existing index content was preserved. Add the overview markers before regenerating the index.');
   }
   if (
@@ -172,15 +196,31 @@ export async function buildWikiIndex(rootDir: string, overview: string): Promise
  */
 export async function regenerateWikiIndex(
   rootDir: string,
-): Promise<{ status: 'written'; concepts: number; sources: number; archives: number } | { status: 'failed'; error: unknown }> {
+): Promise<
+  | { status: 'written'; concepts: number; sources: number; archives: number; migrated?: boolean }
+  | { status: 'failed'; error: unknown }
+> {
   try {
     const indexPath = path.join(rootDir, INDEX_RELATIVE_PATH);
-    const workspaceOverview = await pathExists(indexPath)
-      ? readWorkspaceOverview(await readFile(indexPath, 'utf8'))
-      : '';
+    let workspaceOverview = '';
+    let migrated = false;
+    if (await pathExists(indexPath)) {
+      const current = await readFile(indexPath, 'utf8');
+      migrated = isLegacyGeneratedIndex(current);
+      // `migrateLegacy` is only for this write path: a legacy generated index
+      // is replaced (its content stays in history) and any other marker-less
+      // body is adopted as the initial overview instead of blocking forever.
+      workspaceOverview = readWorkspaceOverview(current, { migrateLegacy: true });
+    }
     const generated = await buildWikiIndex(rootDir, workspaceOverview);
     await safeWriteFile(indexPath, generated.content);
-    return { status: 'written', concepts: generated.concepts, sources: generated.sources, archives: generated.archives };
+    return {
+      status: 'written',
+      concepts: generated.concepts,
+      sources: generated.sources,
+      archives: generated.archives,
+      ...(migrated ? { migrated: true } : {}),
+    };
   } catch (error) {
     return { status: 'failed', error };
   }

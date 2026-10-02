@@ -1,148 +1,117 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
-  buildTaxoTable,
-  splitIntoSections,
-  taxoKindForSchema,
-  taxoLeafContent,
-  taxoLeafPath,
   taxoPlanForSource,
-  type TaxoConcept,
+  taxoSheetContent,
+  taxoSheetPath,
+  taxoTagPageContent,
   type TaxoRow,
 } from '../src/ingest/taxoConsolidation.ts';
 
-describe('splitIntoSections', () => {
-  it('splits on # headings only, with line locators, and drops short bodies', () => {
-    const sections = splitIntoSections([
-      '---',
-      'title: x',
-      '---',
-      '# Intro',
-      'intro body long enough to pass the forty character minimum filter applied here.',
-      '# Premier concept',
-      'Le corps de la première section, assez long pour être gardé.',
-      '## Sous-titre ignoré',
-      'Encore du contenu sous un titre de niveau deux.',
-      '# Deuxième',
-      'Second body also long enough to be kept by the filter.',
-    ].join('\n'));
-
-    expect(sections.map((section) => section.heading)).toEqual(['Intro', 'Premier concept', 'Deuxième']);
-    expect(sections[1]!.locator).toBeTruthy();
-    expect(sections[1]!.body).toContain('Sous-titre ignoré');
-  });
-});
+function sheetRow(overrides: Partial<TaxoRow> = {}): TaxoRow {
+  return {
+    row: 1,
+    source: 'raw/ingested/a.md',
+    archivePath: 'raw/ingested/a.md',
+    documentTitle: 'A',
+    heading: 'Premier concept',
+    locator: '1-2',
+    facts: 'Le corps de la fiche.',
+    description: 'Résumé fidèle.',
+    tags: ['solution', 'cout'],
+    inputHash: 'input-digest',
+    citationAnchor: `L1-2@sha256=${'a'.repeat(64)}`,
+    ...overrides,
+  };
+}
 
 describe('taxo plan mapping', () => {
-  const concepts: TaxoConcept[] = [{
-    name: 'jedox',
-    label: 'Jedox',
-    kind: 'product',
-    scope: 'product',
-    definition: 'Progiciel EPM.',
-    tags: ['solution', 'cout'],
-    covers: [1, 2],
-  }];
-  const rows: TaxoRow[] = [
-    { row: 1, source: 'a.md', heading: 'Premier concept', locator: '6-9', concept: 'jedox', resume: 'solution-no-code', facts: 'Jedox permet le no-code.' },
-    { row: 2, source: 'a.md', heading: 'Deuxième', locator: '11-12', concept: 'jedox', resume: 'tarifs', facts: 'Tarifs SaaS.' },
-  ];
-  const conceptByRow = new Map<number, TaxoConcept>();
-  for (const concept of concepts) {
-    for (const rowNumber of concept.covers) conceptByRow.set(rowNumber, concept);
-  }
-
-  it('writes one leaf per row under the concept folder, plus the source note', () => {
-    const plan = taxoPlanForSource(rows, conceptByRow, 'wiki/sources/a.md', '2026-01-01T00:00:00.000Z');
+  it('writes one fiche per section under the source tree, without a compatibility source page', () => {
+    const plan = taxoPlanForSource(
+      [sheetRow(), sheetRow({ row: 2, heading: 'Deuxième' })],
+      '2026-01-01T00:00:00.000Z',
+    );
 
     expect(plan.operations.map((operation) => operation.path)).toEqual([
-      'wiki/concepts/jedox/jedox_solution-no-code.md',
-      'wiki/concepts/jedox/jedox_tarifs.md',
-      'wiki/sources/a.md',
+      'wiki/sources/a/premier-concept.md',
+      'wiki/sources/a/deuxieme.md',
     ]);
-    expect(plan.pages).toHaveLength(3);
-    expect(plan.pages[0]!.kind).toBe('product');
+    expect(plan.operations.some((operation) => operation.path === 'wiki/sources/a.md')).toBe(false);
+    expect(plan.pages).toHaveLength(2);
     expect(plan.pages[0]!.tags).toEqual(['solution', 'cout']);
-    expect(plan.pages[0]!.rationale).toBe('Progiciel EPM.');
-    expect(plan.pages[2]!.path).toBe('wiki/sources/a.md');
-    expect(plan.pages[2]!.scope).toBeNull();
+    expect(plan.pages[0]!.rationale).toBe('Résumé fidèle.');
   });
 
-  it('disambiguates two rows that would collide on the same leaf path', () => {
-    const collidingRows: TaxoRow[] = [
-      { row: 1, source: 'a.md', heading: 'A', locator: '1-2', concept: 'jedox', resume: 'tarifs', facts: 'Premier fait.' },
-      { row: 2, source: 'a.md', heading: 'B', locator: '3-4', concept: 'jedox', resume: 'tarifs', facts: 'Second fait, meme resume.' },
-    ];
-    const collidingByRow = new Map<number, TaxoConcept>([[1, concepts[0]!], [2, concepts[0]!]]);
-    const plan = taxoPlanForSource(collidingRows, collidingByRow, 'wiki/sources/a.md', '2026-01-01T00:00:00.000Z');
-    const leafPaths = plan.operations.map((operation) => operation.path).filter((p) => p !== 'wiki/sources/a.md');
-    expect(leafPaths).toEqual([
-      'wiki/concepts/jedox/jedox_tarifs.md',
-      'wiki/concepts/jedox/jedox_tarifs-2.md',
+  it('canonicalizes archive citations and gives each fiche a document-section subject', () => {
+    const row = sheetRow({
+      source: 'raw/untracked/MSI/MSI/guide.md',
+      archivePath: 'raw/ingested/msi/guide.md',
+      documentTitle: 'Guide MSI',
+      heading: 'Réseau',
+      contentHash: 'section-content-digest',
+    });
+
+    expect(taxoSheetPath(row)).toBe('wiki/sources/msi/guide/reseau.md');
+    const content = taxoSheetContent(row, '2026-01-01T00:00:00.000Z');
+    expect(content).toContain('subject: "guide-msi-réseau"');
+    expect(content).toContain('content_hash: "section-content-digest"');
+    expect(content).toContain(`[src: raw/ingested/msi/guide.md#L1-2@sha256=${'a'.repeat(64)}]`);
+    expect(content).not.toContain('raw/untracked');
+  });
+
+  it('cites each disjoint source range of a fiche separately', () => {
+    const row = sheetRow({
+      source: 'raw/ingested/doc.md',
+      archivePath: 'raw/ingested/doc.md',
+      documentTitle: 'Document',
+      heading: 'Synthèse',
+      sourceRanges: [{ startLine: 4, endLine: 5 }, { startLine: 12, endLine: 13 }],
+      citationAnchor: undefined,
+      citationAnchors: [`L4-5@sha256=${'a'.repeat(64)}`, `L12-13@sha256=${'b'.repeat(64)}`],
+    });
+    const content = taxoSheetContent(row, '2026-01-01T00:00:00.000Z');
+    expect(content).toContain(`[src: raw/ingested/doc.md#${row.citationAnchors![0]}]`);
+    expect(content).toContain(`[src: raw/ingested/doc.md#${row.citationAnchors![1]}]`);
+    expect(content).not.toContain('L4-13@sha256=');
+  });
+
+  it('drops a model-authored citation so only the anchored engine citation remains', () => {
+    const row = sheetRow({ facts: 'Le corps garde [src: raw/ingested/a.md] cette mention.' });
+    const content = taxoSheetContent(row, '2026-01-01T00:00:00.000Z');
+    expect(content.match(/\[src:/g) ?? []).toHaveLength(1);
+    expect(content).not.toContain('[src: raw/ingested/a.md]');
+    expect(content).toContain(`[src: raw/ingested/a.md#L1-2@sha256=${'a'.repeat(64)}]`);
+  });
+
+  it('disambiguates two rows that would collide on the same fiche path', () => {
+    const plan = taxoPlanForSource(
+      [sheetRow(), sheetRow({ row: 2, facts: 'Second fait.' })],
+      '2026-01-01T00:00:00.000Z',
+    );
+    expect(plan.operations.map((operation) => operation.path)).toEqual([
+      'wiki/sources/a/premier-concept.md',
+      'wiki/sources/a/premier-concept-2.md',
     ]);
-    expect(new Set(leafPaths).size).toBe(2);
-  });
-
-  it('cites the source in the source note so the citation check never false-positives', () => {
-    const plan = taxoPlanForSource(rows, conceptByRow, 'wiki/sources/a.md', '2026-01-01T00:00:00.000Z');
-    const note = plan.operations.find((operation) => operation.path === 'wiki/sources/a.md');
-    expect(note?.content).toContain('[src: raw/ingested/a.md]');
-  });
-
-  it('writes the OKF frontmatter with title, subject, locator and shared tags', () => {
-    const content = taxoLeafContent(rows[0]!, concepts[0]!, '2026-01-01T00:00:00.000Z');
-    expect(content).toContain('title: Jedox — solution no code');
-    expect(content).toContain('type: product');
-    expect(content).toContain('subject: solution-no-code');
-    expect(content).toContain('tags: [solution, cout]');
-    expect(content).toContain('status: draft');
-    expect(content).toContain('locator: { heading: "Premier concept", lines: "6-9" }');
-    expect(content).toContain('[src: raw/ingested/a.md]');
-  });
-
-  it('never hand-writes a sources: frontmatter key (IngestService stamps the real one)', () => {
-    // A second, wrongly-shaped `sources:` here used to get spread as a
-    // string by the later OKF merge, corrupting every taxo leaf's frontmatter.
-    const content = taxoLeafContent(rows[0]!, concepts[0]!, '2026-01-01T00:00:00.000Z');
-    expect(content).not.toMatch(/^sources:/m);
-  });
-
-  it('produces the same resume slug for the path and the content, even for an empty resume', () => {
-    const emptyResumeRow: TaxoRow = { ...rows[0]!, resume: '' };
-    const path = taxoLeafPath('jedox', emptyResumeRow.resume);
-    const content = taxoLeafContent(emptyResumeRow, concepts[0]!, '2026-01-01T00:00:00.000Z');
-    expect(path).toBe('wiki/concepts/jedox/jedox_0.md');
-    expect(content).toContain('subject: 0');
-  });
-
-  it('preserves Unicode in the resume label', () => {
-    expect(taxoLeafPath('jedox', 'Sécurité renforcée')).toBe('wiki/concepts/jedox/jedox_sécurité-renforcée.md');
-  });
-
-  it('escapes a backslash in the heading before the closing quote, keeping the YAML valid', () => {
-    const row: TaxoRow = { ...rows[0]!, heading: 'C:\\Program Files\\' };
-    const content = taxoLeafContent(row, concepts[0]!, '2026-01-01T00:00:00.000Z');
-    expect(content).toContain('locator: { heading: "C:\\\\Program Files\\\\", lines: "6-9" }');
-  });
-
-  it('preserves free-form descriptive kinds', () => {
-    expect(taxoKindForSchema('tool')).toBe('tool');
-    expect(taxoKindForSchema('domain')).toBe('domain');
-    expect(taxoKindForSchema('decision')).toBe('decision');
-    expect(taxoKindForSchema('dimension')).toBe('dimension');
   });
 });
 
-describe('taxo leaf path', () => {
-  it('is the concept folder plus <concept>_<resume>.md, normalized', () => {
-    expect(taxoLeafPath('jedox', 'Solution No-Code')).toBe('wiki/concepts/jedox/jedox_solution-no-code.md');
+describe('tag-page source preview', () => {
+  it('matches the synthetic lot-0 oracle for a generated family pivot', () => {
+    const actual = taxoTagPageContent('réseau', 'Infrastructure', [
+      { title: 'Fiche réseau', path: 'wiki/sources/guide/reseau.md', description: 'Gestion des échanges' },
+    ], '2026-01-01T00:00:00.000Z', 'concept-fixture', 50, 'subject-fixture');
+    const expected = readFileSync(new URL('./fixtures/taxo-synthetic/expected/tag-page-infrastructure.md', import.meta.url), 'utf8');
+    expect(actual).toBe(expected);
   });
-});
 
-describe('taxo table', () => {
-  it('numbers the rows and carries the facts', () => {
-    const table = buildTaxoTable([
-      { row: 1, source: 'a.md', heading: 'x', locator: '1-2', concept: 'jedox', resume: 'tarifs', facts: 'Tarifs SaaS.' },
-    ]);
-    expect(table).toContain('1. concept="jedox" resume="tarifs" | Tarifs SaaS.');
+  it('limits visible fiche links without losing citation paths used by provenance derivation', () => {
+    const content = taxoTagPageContent('réseau', 'Infrastructure', [
+      { title: 'Première fiche', path: 'wiki/sources/a/one.md' },
+      { title: 'Deuxième fiche', path: 'wiki/sources/b/two.md' },
+    ], '2026-01-01T00:00:00.000Z', 'concept-1', 1);
+    expect(content).toContain('**Première fiche**');
+    expect(content).not.toContain('**Deuxième fiche**');
+    expect(content).toContain('<!-- Additional generated pivot citations');
+    expect(content).toContain('[src: wiki/sources/b/two.md]');
   });
 });

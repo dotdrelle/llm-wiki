@@ -628,6 +628,7 @@ window.addEventListener('message', (event) => {
     showChatView();
     const input = $('chat-input');
     if (!input) return;
+    if (!agentMode) { agentMode = true; updateAgentModeUI(); }
     input.value = '/wiki-ingest';
     sendMessage();
   } else if (data.type === 'llmwiki:rebuild') {

@@ -178,6 +178,15 @@ describe('Pending drop handler', () => {
     expect(handler).not.toContain('addPageContext');
   });
 
+  it('switches to Agent mode before submitting the sidebar Ingest action', () => {
+    const handlerStart = WIKI_PANEL_SCRIPT.indexOf("data.type === 'llmwiki:ingest'");
+    const handlerEnd = WIKI_PANEL_SCRIPT.indexOf("data.type === 'llmwiki:rebuild'", handlerStart);
+    const handler = WIKI_PANEL_SCRIPT.slice(handlerStart, handlerEnd);
+    expect(handler).toContain('if (!agentMode) { agentMode = true; updateAgentModeUI(); }');
+    expect(handler.indexOf('updateAgentModeUI()')).toBeLessThan(handler.indexOf('sendMessage()'));
+    expect(handler).toContain("input.value = '/wiki-ingest'");
+  });
+
   it('checks the sender origin before acting on a pending-upload message', () => {
     const listener = WIKI_PANEL_SCRIPT.slice(WIKI_PANEL_SCRIPT.indexOf("window.addEventListener('message'"));
     expect(listener.indexOf('event.origin !== location.origin')).toBeLessThan(listener.indexOf('llmwiki:pendingUpload'));

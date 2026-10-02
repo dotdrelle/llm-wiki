@@ -1,8 +1,8 @@
 ---
 name: wiki-rebuild
-description: Rebuild the concept pages (folders and leaves) from the archived sources, then verify the workspace links and OKF frontmatter
+description: Rebuild TAXO fiches and tag-family pivots from archived sources, then verify links and OKF frontmatter
 ---
-File the archived sources into the wiki: put every archived source back into its concept folder as a leaf, one leaf per concept it belongs to, without touching the archive, then run the workspace verification and report what changed and what the verification found. If a part of the verification cannot run, say so rather than skipping silently.
+Re-run the single TAXO operation over every archived source without touching the archives. Recreate or update evidence-bearing section fiches under `wiki/sources/`, regenerate tag-family pivots under `wiki/concepts/`, then run workspace verification and report what changed and what it found. Do not split analysis, writes and regrouping into separate tasks. If part of the operation or verification fails or degrades, say so rather than skipping silently.
 
 ## Boundaries
 

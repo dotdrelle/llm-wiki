@@ -601,7 +601,7 @@ export const WIKI_LAYOUT_CSS = `
     .side-untracked-item.side-untracked-modified .side-untracked-link::before { background: #f59e0b; }
     /* Live ingest marker: ◌ = analysis in progress (pulsing), ✎ = write in progress. */
     .side-ingest-phase { display: inline-block; width: 1.1em; margin-right: 0.35em; font-size: 0.85em; line-height: 1; color: var(--accent); }
-    .side-ingest-phase.analyze { animation: sideIngestPhasePulse 1.2s ease-in-out infinite; }
+    .side-ingest-phase.analyze, .side-ingest-phase.taxo { animation: sideIngestPhasePulse 1.2s ease-in-out infinite; }
     .side-ingest-phase.write { color: #f59e0b; }
     @keyframes sideIngestPhasePulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
     /* In-flight document conversion: a placeholder row while the documents

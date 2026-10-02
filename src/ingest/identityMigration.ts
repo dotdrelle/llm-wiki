@@ -78,6 +78,8 @@ export async function migrateConceptIdentities(options: {
     data: Record<string, unknown>;
     folder: string;
     subject: string;
+    identityKey: string;
+    tagPage: boolean;
     conceptId: string | null;
     subjectId: string | null;
     invalid: string[];
@@ -129,6 +131,8 @@ export async function migrateConceptIdentities(options: {
     const subject = normalizeProvenanceValue(
       typeof data.subject === 'string' && data.subject.trim() ? data.subject : axes.subject,
     );
+    const generated = data.generated && typeof data.generated === 'object' ? data.generated : null;
+    const tagPage = (generated as { by?: unknown } | null)?.by === 'llm-wiki-tags';
     const invalid = (['concept_id', 'subject_id'] as const)
       .filter((key) => data[key] != null && data[key] !== '' && !isKnowledgeIdentity(data[key]));
     rows.push({
@@ -139,6 +143,8 @@ export async function migrateConceptIdentities(options: {
       data,
       folder: axes.class,
       subject,
+      identityKey: tagPage ? `tag:${subject}` : `folder:${axes.class}`,
+      tagPage,
       conceptId: isKnowledgeIdentity(data.concept_id) ? data.concept_id : null,
       subjectId: isKnowledgeIdentity(data.subject_id) ? data.subject_id : null,
       invalid,
@@ -169,6 +175,21 @@ export async function migrateConceptIdentities(options: {
     folders.add(row.folder);
     subjectFolders.set(row.subject, folders);
   }
+  const ambiguousTagSubjects = new Set<string>();
+  for (const subject of new Set(rows.filter((row) => row.tagPage).map((row) => row.subject))) {
+    const members = rows.filter((row) => row.tagPage && row.subject === subject);
+    const folders = new Set(members.map((row) => row.folder));
+    if (folders.size < 2) continue;
+    const key = `tag:${subject}`;
+    ambiguousTagSubjects.add(key);
+    conflicts.push({
+      key,
+      field: 'concept_id',
+      identities: [...new Set(members.map((row) => row.conceptId).filter((id): id is string => id !== null))],
+      paths: members.map((row) => row.path),
+      reason: 'the same TAXO tag appears in multiple family folders; review its family assignment before linking identities',
+    });
+  }
   const foldersByConceptId = new Map<string, Set<string>>();
   for (const row of rows) {
     if (!row.conceptId) continue;
@@ -176,14 +197,12 @@ export async function migrateConceptIdentities(options: {
     folders.add(row.folder);
     foldersByConceptId.set(row.conceptId, folders);
   }
-  const duplicateIdentityFolders = new Set<string>();
   for (const [identity, folders] of foldersByConceptId) {
     if (folders.size <= 1) continue;
     const conflictingRows = rows.filter((row) => row.conceptId === identity);
     for (const folder of folders) {
-      duplicateIdentityFolders.add(folder);
       conflicts.push({
-        key: folder,
+        key: `folder:${folder}`,
         field: 'concept_id',
         identities: [identity],
         paths: conflictingRows.map((row) => row.path),
@@ -191,11 +210,11 @@ export async function migrateConceptIdentities(options: {
       });
     }
   }
-  for (const folder of new Set(rows.map((row) => row.folder))) {
-    if (duplicateIdentityFolders.has(folder)) continue;
-    const members = rows.filter((row) => row.folder === folder);
-    const existing = uniqueExistingId('concept_id', folder, members, (row) => row.conceptId);
-    if (existing) concepts.set(folder, existing);
+  for (const group of new Set(rows.map((row) => row.identityKey))) {
+    if (ambiguousTagSubjects.has(group)) continue;
+    const members = rows.filter((row) => row.identityKey === group);
+    const existing = uniqueExistingId('concept_id', group, members, (row) => row.conceptId);
+    if (existing) concepts.set(group, existing);
   }
   for (const subject of new Set(rows.map((row) => row.subject).filter(Boolean))) {
     const members = rows.filter((row) => row.subject === subject);
@@ -222,16 +241,16 @@ export async function migrateConceptIdentities(options: {
       skipped.push({ path: row.path, reason: `invalid ${row.invalid.join(' and ')} value` });
       continue;
     }
-    if (conflictKeys.has(`concept_id:${row.folder}`)) {
+    if (conflictKeys.has(`concept_id:${row.identityKey}`)) {
       skipped.push({ path: row.path, reason: 'concept identity group contains conflicting existing IDs' });
       continue;
     }
-    const conceptId = row.conceptId ?? concepts.get(row.folder)
+    const conceptId = row.conceptId ?? concepts.get(row.identityKey)
       ?? newKnowledgeIdentity();
     const subjectConflict = conflictKeys.has(`subject_id:${row.subject}`);
     const subjectId = row.subjectId ?? (subjectConflict ? null : subjects.get(row.subject))
       ?? (subjectConflict ? null : newKnowledgeIdentity());
-    concepts.set(row.folder, conceptId);
+    concepts.set(row.identityKey, conceptId);
     if (subjectId) subjects.set(row.subject, subjectId);
     if (row.conceptId === conceptId && row.subjectId === subjectId) continue;
     changes.push({
@@ -252,9 +271,10 @@ export async function migrateConceptIdentities(options: {
     const conceptIds = [...new Set(members.map((row) => row.conceptId).filter((id): id is string => Boolean(id)))].sort();
     const missingIds = members.some((row) => !row.conceptId);
     const hasInvalid = members.some((row) => row.invalid.length > 0);
-    const hasConflict = conceptIds.length > 1
-      || duplicateIdentityFolders.has(folder)
-      || conflictKeys.has(`concept_id:${folder}`);
+    const allTagPages = members.every((row) => row.tagPage);
+    const hasConflict = allTagPages
+      ? members.some((row) => conflictKeys.has(`concept_id:${row.identityKey}`))
+      : conceptIds.length > 1 || conflictKeys.has(`concept_id:folder:${folder}`);
     const identityState: ConceptIdentityMigrationReport['concepts'][number]['identityState'] = hasInvalid
       ? 'invalid'
       : hasConflict

@@ -65,7 +65,7 @@ describe('a single set of attributes for the whole panel', () => {
     expect(html).not.toContain('data-tree-new-folder="raw/untracked"');
   });
 
-  it('keeps empty folders visible and deletable in the wiki tree and collections', async () => {
+  it('hides empty Wiki branches but keeps empty collection folders visible', async () => {
     for (const directory of [
       'wiki/empty-wiki',
       'templates/empty-template',
@@ -77,8 +77,8 @@ describe('a single set of attributes for the whole panel', () => {
 
     const html = await renderSidebar(root);
 
+    expect(html).not.toContain('data-tree-id="wiki/empty-wiki"');
     for (const directory of [
-      'wiki/empty-wiki',
       'templates/empty-template',
       'build-context/empty-context',
       'deliverables/empty-build',
@@ -86,6 +86,32 @@ describe('a single set of attributes for the whole panel', () => {
       expect(html, directory).toContain(`data-tree-id="${directory}"`);
       expect(html, directory).toContain(`data-tree-delete="${directory}"`);
     }
+  });
+
+  it('keeps Wiki folders with descendant pages and drops only branches with no pages', async () => {
+    await mkdir(path.join(root, 'wiki', 'concepts', 'empty-family'), { recursive: true });
+    await mkdir(path.join(root, 'wiki', 'sources', 'document', 'empty-section'), { recursive: true });
+    await mkdir(path.join(root, 'wiki', 'answers'), { recursive: true });
+    await writeFile(path.join(root, 'wiki', 'sources', 'document', 'section.md'), '# Section\n', 'utf8');
+
+    const html = await renderSidebar(root);
+
+    expect(html).toContain('data-tree-id="wiki/concepts"');
+    expect(html).toContain('data-tree-id="wiki/sources/document"');
+    expect(html).not.toContain('data-tree-id="wiki/concepts/empty-family"');
+    expect(html).not.toContain('data-tree-id="wiki/sources/document/empty-section"');
+    expect(html).not.toContain('data-tree-id="wiki/answers"');
+  });
+
+  it('keeps and clearly labels Unfiled when it contains concept pages', async () => {
+    await mkdir(path.join(root, 'wiki', 'concepts', 'unfiled'), { recursive: true });
+    await writeFile(path.join(root, 'wiki', 'concepts', 'unfiled', 'logiciel.md'), '# Logiciel\n', 'utf8');
+
+    const html = await renderSidebar(root);
+
+    expect(html).toContain('data-tree-id="wiki/concepts/unfiled"');
+    expect(html).toContain('<span class="side-folder-label">Unfiled</span>');
+    expect(html).toContain('data-side-path="wiki/concepts/unfiled/logiciel.md"');
   });
 
   it('shows only Pending folders that hold a document directly, and collapses empty ancestor chains', async () => {
@@ -264,7 +290,7 @@ describe('sidebar views', () => {
     const html = await renderSidebar(root);
 
     expect(html).toContain('data-rebuild-launch');
-    expect(html).toContain('title="Rebuild concept pages from the archive"');
+    expect(html).toContain('title="Rebuild TAXO fiches and tag families"');
     // It rides in the row's right-aligned actions box of the wiki root, which
     // is now a static header (side-folder-plain) rather than a collapsible.
     const wikiRow = html.slice(html.indexOf('side-folder-row side-folder-plain side-folder-primary'));
@@ -499,7 +525,6 @@ describe('titles in the tree', () => {
   it('counts the documents of each wiki section, folders included', async () => {
     await mkdir(path.join(root, 'wiki/concepts/offre-marche'), { recursive: true });
     await mkdir(path.join(root, 'wiki/sources'), { recursive: true });
-    await mkdir(path.join(root, 'wiki/answers'), { recursive: true });
     await writeFile(path.join(root, 'wiki/concepts/offre-marche/anaplan.md'), '# x\n', 'utf8');
     await writeFile(path.join(root, 'wiki/sources/note.md'), '# x\n', 'utf8');
 
@@ -509,7 +534,7 @@ describe('titles in the tree', () => {
     // offre-marche folder = 2.
     expect(html).toContain('<span class="side-folder-label">Project knowledge</span><span class="side-folder-count" title="2 document(s)">2</span>');
     expect(html).toContain('<span class="side-folder-label">Reading notes</span><span class="side-folder-count" title="1 document(s)">1</span>');
-    expect(html).toContain('<span class="side-folder-label">Answers</span><span class="side-folder-count" title="0 document(s)">0</span>');
+    expect(html).not.toContain('<span class="side-folder-label">Answers</span>');
   });
 
   it('strips the leading transport hash of downloaded Pending files', async () => {
@@ -722,5 +747,29 @@ describe('in-flight document uploads in Pending', () => {
     expect(WIKI_LAYOUT_CSS).toContain('.side-untracked-item.side-untracked-uploading');
     expect(WIKI_LAYOUT_CSS).toContain('.side-upload-spinner');
     expect(WIKI_LAYOUT_CSS).toContain('@keyframes sideUploadSpin');
+  });
+});
+
+describe('reading notes depth', () => {
+  it('shows only folders holding a fiche directly, like Pending', async () => {
+    for (const file of [
+      'wiki/sources/outils/accueil/apps/acpi/specs/eas-avant-projet/synthese/regles.md',
+      'wiki/sources/outils/accueil/apps/acpi/specs/eas-avant-projet/eas.md',
+    ]) {
+      await mkdir(path.join(root, path.dirname(file)), { recursive: true });
+      await writeFile(path.join(root, file), '# x\n', 'utf8');
+    }
+    const html = await renderSidebar(root);
+    const deep = 'wiki/sources/outils/accueil/apps/acpi/specs/eas-avant-projet';
+    expect(html).toContain(`data-tree-id="${deep}"`);
+    expect(html).toContain(`data-tree-id="${deep}/synthese"`);
+    for (const empty of ['wiki/sources/outils', 'wiki/sources/outils/accueil/apps', 'wiki/sources/outils/accueil/apps/acpi/specs']) {
+      expect(html, empty).not.toContain(`data-tree-id="${empty}"`);
+    }
+    // The section itself stays, with its full document count.
+    expect(html).toContain('data-tree-id="wiki/sources"');
+    // A folder reads as capitalized words, not as its slug.
+    expect(html).toContain('<span class="side-folder-label">Eas Avant Projet</span>');
+    expect(html).not.toContain('<span class="side-folder-label">eas-avant-projet</span>');
   });
 });

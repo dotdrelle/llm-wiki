@@ -18,6 +18,7 @@ const edgeColors: Record<QueryEdgeType, string> = {
   wiki_link: '#72a7e8',
   shared_subject: '#44c2c7',
   shared_tag: '#74c365',
+  co_cited: '#d08cff',
 };
 
 const edgeLabels: Record<QueryEdgeType, string> = {
@@ -26,6 +27,7 @@ const edgeLabels: Record<QueryEdgeType, string> = {
   wiki_link: 'Link',
   shared_subject: 'Context',
   shared_tag: 'Tag',
+  co_cited: 'Co-cited',
 };
 
 function escapeSvg(value: string): string {

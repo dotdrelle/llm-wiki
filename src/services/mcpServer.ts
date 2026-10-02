@@ -200,7 +200,7 @@ export const WIKI_MCP_TOOLS = [
   {
     name: 'wiki_search_context',
     description:
-      'Search wiki pages and archived originals for a question. Archived originals are included by default and remain distinct from their wiki source notes. Returns ranked candidate paths with excerpts, citations, and relatedPaths only; excerpts are for triage, not full evidence. Prefer wiki_collect_context for synthesis, architecture, audit, functional analysis, or comparison questions, but call this again if coverage is insufficient.',
+      'Search wiki pages and archived originals for a question. Archived originals are included by default and remain distinct from TAXO section fiches. Returns ranked candidate paths with excerpts, citations, and relatedPaths only; excerpts are for triage, not full evidence. Prefer wiki_collect_context for synthesis, architecture, audit, functional analysis, or comparison questions, but call this again if coverage is insufficient.',
   },
   {
     name: 'wiki_collect_context',
@@ -879,7 +879,7 @@ export async function createWikiMcpServer(
       );
     }
     // A page written while a production job writes the wiki races with it
-    // (ingest_apply rewrites the same concept tree). Checked after the preview,
+    // (ingest rewrites the same knowledge tree). Checked after the preview,
     // like the templates/ guard: a preview stays useful during a run.
     const busy = await checkProductionAllowsWrite(workspace.paths.rootDir, 'wiki');
     if (busy.busy) return productionBusyResult('wiki_write_page', pagePath, busy, confirmed, content.length);
@@ -1606,7 +1606,7 @@ const withTitles = async (
       .boolean()
       .optional()
       .describe(
-        'Whether to include archived raw/ingested documents in addition to wiki pages. Default true so details omitted from a source note remain searchable.',
+        'Whether to include archived raw/ingested documents in addition to wiki pages. Default true so details omitted from a fiche remain searchable.',
       ),
     maxExcerptChars: z
       .number()
@@ -2215,7 +2215,7 @@ const withTitles = async (
 
   server.tool(
     'wiki_search_context',
-    'Search wiki pages and archived originals for a question. Archived originals are included by default and remain distinct from their wiki source notes. Returns ranked candidate paths with excerpts, citations, and relatedPaths only; excerpts are for triage, not full evidence. Prefer wiki_collect_context for synthesis, architecture, audit, functional analysis, or comparison questions, but call this again if coverage is insufficient.',
+    'Search wiki pages and archived originals for a question. Archived originals are included by default and remain distinct from TAXO section fiches. Returns ranked candidate paths with excerpts, citations, and relatedPaths only; excerpts are for triage, not full evidence. Prefer wiki_collect_context for synthesis, architecture, audit, functional analysis, or comparison questions, but call this again if coverage is insufficient.',
     searchWikiContextInput,
     READ_ONLY,
     (input) => loggedTool('wiki_search_context', input, searchWikiContext),

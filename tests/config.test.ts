@@ -65,6 +65,23 @@ describe('config resolution', () => {
     expect(config.build.maxBuildContextChars).toBe(24000);
   });
 
+  it('applies and validates the TAXO ingestion settings', () => {
+    const defaults = resolveConfig({}, '/tmp/wiki');
+    expect(defaults.ingest).toEqual({
+      sheets: { minSectionChars: 40, minContentChars: 40, maxSectionChars: 8000, maxTags: 3 },
+      families: { min: 3, max: 10 },
+      tagPages: { sourcePreviewLimit: 50 },
+    });
+    expect(resolveConfig({ ingest: { sheets: { minSectionChars: 12, maxTags: 5 } } }, '/tmp/wiki').ingest)
+      .toEqual({
+        sheets: { minSectionChars: 12, minContentChars: 40, maxSectionChars: 8000, maxTags: 5 },
+        families: { min: 3, max: 10 },
+        tagPages: { sourcePreviewLimit: 50 },
+      });
+    expect(() => resolveConfig({ ingest: { families: { min: 5, max: 2 } } }, '/tmp/wiki'))
+      .toThrow('ingest.families.min must be <= ingest.families.max');
+  });
+
   it('exposes no graph section: the unfiled label is engine-owned, never configured', () => {
     // `graph.fallbackCommunityLabel` used to let a workspace rename the
     // fallback bubble, which is how one tree ended up showing `Ungrouped`

@@ -311,6 +311,22 @@ throttle decides when each request is allowed to start.
 | `slotBatchSize`        | Optional maximum number of `[[INSTRUCTION:...]]` slots allowed in one build call; token budget plans batches first | —       |
 | `maxBuildContextChars` | Maximum characters from `build-context/` files included in each build LLM call                                     | `24000` |
 
+## `ingest`
+
+TAXO's section sizing, tag extraction and generated concept pivots are
+configurable here. These settings affect the next ingest or archive rebuild;
+they do not alter existing pages until it is run.
+
+| Key | Description | Default |
+| --- | --- | --- |
+| `sheets.minSectionChars` | Merge shorter heading sections with a neighboring section | `40` |
+| `sheets.minContentChars` | Skip sections with less substantive content | `40` |
+| `sheets.maxSectionChars` | A `#` section larger than this is split at its `##` sub-headings | `8000` |
+| `sheets.maxTags` | Maximum tags retained per section fiche | `3` |
+| `families.min` | Minimum family count requested for an initial taxonomy | `3` |
+| `families.max` | Maximum family count requested for an initial taxonomy | `10` |
+| `tagPages.sourcePreviewLimit` | Visible fiche links on a generated tag page; all citation paths remain in the page body for derived provenance | `50` |
+
 ## `retrieval`
 
 | Key                | Description                                              | Default |

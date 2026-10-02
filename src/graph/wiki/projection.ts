@@ -154,6 +154,7 @@ export async function buildWikiGraph(
   const subjectIds = new Map<string, string>();
   const tags = new Map<string, string[]>();
   const okfTypes = new Map<string, string | null>();
+  const families = new Map<string, string>();
   const pageTitles = new Map<string, string>();
 
   const includeContent = options.includeContent ?? true;
@@ -190,6 +191,9 @@ export async function buildWikiGraph(
     if (provenance.tags.length) tags.set(file, provenance.tags);
     const { data: frontmatterData } = matter(raw);
     okfTypes.set(file, typeof frontmatterData.type === 'string' ? frontmatterData.type : null);
+    if (typeof frontmatterData.family === 'string' && frontmatterData.family.trim()) {
+      families.set(file, frontmatterData.family.trim());
+    }
 
     for (const target of extractGraphTargets(raw, currentDir, nodeIds, deps)) {
       if (!nodeIds.has(target.to) || target.to === file) continue;
@@ -274,6 +278,7 @@ export async function buildWikiGraph(
       subjectId: subjectIds.get(file) ?? null,
       tags: tags.get(file) ?? [],
       okfType: okfTypes.get(file) ?? null,
+      group: families.get(file),
       community: {
         communityId: UNCLASSIFIED_ID,
         communityLabel: UNCLASSIFIED_LABEL,

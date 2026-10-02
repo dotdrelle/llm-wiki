@@ -1,5 +1,6 @@
-import { mkdir, readdir, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import matter from 'gray-matter';
 
 import { resolveInside } from '../../utils/path.ts';
 import {
@@ -183,18 +184,24 @@ export async function moveEntry(
      refused before anything is touched when the destination is not a class of
      the grid, and the leaf's axes and inbound links follow it when it is.
     */
+    const sourceContent = sourceInfo.isFile() && from.startsWith('wiki/concepts/')
+      ? await readFile(source, 'utf8').catch(() => '')
+      : '';
+    const sourceData = sourceContent ? matter(sourceContent).data : null;
+    const isTagPage = sourceData?.generated && typeof sourceData.generated === 'object'
+      && sourceData.generated.by === 'llm-wiki-tags';
     const concept = decideConceptMove({
       from,
       to: target,
       isFile: sourceInfo.isFile(),
+      isTagPage,
     });
     if (concept.kind === 'reject') return fail(concept.reason);
     if (concept.kind === 'refile') {
-      const identityIssue = await conceptFolderIdentityIssue(rootDir, from, concept.className);
+      const identityIssue = await conceptFolderIdentityIssue(rootDir, from, concept.className, concept.isTagPage);
       if (identityIssue) return fail(identityIssue, 409);
     }
-    // A `<concept>_<resume>.md` leaf renames to the new concept on the move:
-    // the file name carries the concept, so it must follow the folder.
+    // TAXO tag pages retain the tag filename while changing family.
     // `finalTarget` is the ONLY path this move ever writes to — checked for
     // collision below exactly once, against that real destination. Checking
     // `target` (the pre-rename path, old basename under the new folder)
@@ -211,7 +218,7 @@ export async function moveEntry(
     // re-file onto a taken name can use the subject display label as a readable
     // fallback. When that filename is taken too, the move is refused as before.
     if (await existsAt(finalTarget)) {
-      const renamed = concept.kind === 'refile' && !concept.isTaxoRefile
+      const renamed = concept.kind === 'refile' && !concept.isTagPage
         ? await subjectRefileTarget({ rootDir, source: from, toDir, currentTarget: plannedTarget })
         : null;
       if (!renamed) return fail(`already exists: ${plannedTarget}`, 409);
@@ -224,7 +231,7 @@ export async function moveEntry(
         sourcePath: from,
         className: concept.className,
         subject: axesSubject ?? concept.subject,
-        isTaxoRefile: concept.isTaxoRefile,
+        isTagPage: concept.isTagPage,
       });
       // The links last: the page must already be at its destination, with the
       // right axes, before anything else is told to point at it.

@@ -46,26 +46,33 @@ describe('provenance audit (lot 0)', () => {
     expect(repeatedNote?.anchorAmbiguous).toBe(1);
   });
 
-  it('does not flag a two-level leaf as a phantom source', async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-audit-two-level-'));
-    await mkdir(path.join(root, 'wiki', 'sources'), { recursive: true });
-    await mkdir(path.join(root, 'wiki', 'concepts', 'demo'), { recursive: true });
+  it('audits a nested TAXO fiche and its tag pivot without phantom terminal sources', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-audit-taxo-'));
+    await mkdir(path.join(root, 'raw', 'ingested'), { recursive: true });
+    await mkdir(path.join(root, 'wiki', 'sources', 'acpi', 'guide'), { recursive: true });
+    await mkdir(path.join(root, 'wiki', 'concepts', 'infrastructure'), { recursive: true });
     await writeFile(
-      path.join(root, 'wiki', 'sources', 'a.md'),
-      '---\ntype: source\nsources:\n  - path: raw/ingested/a.md\n---\n\n# A\n\n## Coûts\n\n[src: raw/ingested/a.md#Coûts]\n',
+      path.join(root, 'raw', 'ingested', 'guide.md'),
+      '# Guide\n\n## Coûts\n\nLe coût documenté.\n',
       'utf8',
     );
     await writeFile(
-      path.join(root, 'wiki', 'concepts', 'demo', 'leaf.md'),
-      '---\ntype: product\nsources:\n  - path: raw/ingested/a.md\n---\n\n# Leaf\n\n## Coûts\n\n[src: wiki/sources/a.md#Coûts]\n',
+      path.join(root, 'wiki', 'sources', 'acpi', 'guide', 'couts.md'),
+      '---\ntype: source\nsubject: guide-couts\ninput_hash: input\ncontent_hash: content\ngenerated:\n  by: llm-wiki\nsources:\n  - path: raw/ingested/guide.md\n---\n\n# Coûts\n\nLe coût documenté.\n\n[src: raw/ingested/guide.md#Coûts]\n',
+      'utf8',
+    );
+    await writeFile(
+      path.join(root, 'wiki', 'concepts', 'infrastructure', 'couts.md'),
+      '---\ntype: concept\nsubject: coûts\nfamily: Infrastructure\ngenerated:\n  by: llm-wiki-tags\nsources:\n  - path: raw/ingested/guide.md\n---\n\n# Coûts\n\n[src: wiki/sources/acpi/guide/couts.md#Coûts]\n',
       'utf8',
     );
 
-    const report = await auditWorkspace({ rootDir: root, workspace: 'two-level' });
-    const leaf = report.leaves.find((entry) => entry.path.endsWith('/leaf.md'));
-    expect(leaf?.unrepresentedSources).toEqual([]);
-    expect(leaf?.citedNotDeclared).toEqual([]);
+    const report = await auditWorkspace({ rootDir: root, workspace: 'taxo' });
+    const fiche = report.sourcePages.find((entry) => entry.path.endsWith('/couts.md'));
+    expect(fiche?.path).toBe('wiki/sources/acpi/guide/couts.md');
+    expect(fiche?.declaredSources).toEqual(['raw/ingested/guide.md']);
     expect(report.summary.phantomSourceEntries).toBe(0);
+    expect(report.summary.sourcePagesWithNoCitation).toBe(0);
   });
 
   it('detects a citation cycle and its depth', async () => {

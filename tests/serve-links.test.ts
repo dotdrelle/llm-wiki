@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -10,6 +10,7 @@ import {
   serveMd,
 } from '../src/commands/serve.ts';
 import { generateEditPage } from '../src/serve/html/wikiHtml.ts';
+import { handleWikiRoutes } from '../src/serve/routes/wikiRoutes.ts';
 
 describe('serve link handling', () => {
   it('keeps wiki index concept and source links clickable', () => {
@@ -35,7 +36,36 @@ describe('serve link handling', () => {
     );
     expect(isRawUntrackedReference('raw/ingested/source.md')).toBe(false);
     expect(isRawDownloadRequestPath('/raw/ingested/source.md')).toBe(false);
+    expect(isRawDownloadRequestPath('/raw/untracked')).toBe(false);
+    expect(isRawDownloadRequestPath('/raw/untracked/')).toBe(false);
     expect(isRawDownloadRequestPath('/raw/wiki/concepts/customer-journey.md')).toBe(true);
+  });
+
+  it('serves the pending root as a directory instead of treating it as a raw download', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-pending-root-'));
+    try {
+      await mkdir(path.join(root, 'raw', 'untracked'), { recursive: true });
+      await mkdir(path.join(root, 'wiki'), { recursive: true });
+      await writeFile(path.join(root, 'raw', 'untracked', 'waiting.md'), '# Waiting\n', 'utf8');
+      let html = '';
+      let status = 200;
+      await handleWikiRoutes({ method: 'GET', url: '/raw/untracked' } as never, {
+        writeHead(code: number) { status = code; },
+        end(body: string) { html = body; },
+      } as never, '/raw/untracked', {
+        rootDir: root,
+        readRequestBody: async () => '',
+        sendJson: () => {},
+        sendGzippedHtml: async (_req: unknown, _res: unknown, body: string, _headers?: unknown, code?: number) => {
+          html = body;
+          if (code) status = code;
+        },
+      } as never);
+      expect(status).toBe(200);
+      expect(html).toContain('waiting.md');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('removes broken local links but preserves labels and source citations', async () => {

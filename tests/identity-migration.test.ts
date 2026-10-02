@@ -116,4 +116,35 @@ describe('concept identity migration', () => {
       expect(provenance.subject_id).toBeNull();
     }
   });
+
+  it('treats distinct TAXO tag identities in one family folder as complete, not conflicting', async () => {
+    root = await mkdtemp(path.join(os.tmpdir(), 'concept-identities-taxo-family-'));
+    const folder = path.join(root, 'wiki/concepts/infrastructure');
+    await mkdir(folder, { recursive: true });
+    for (const [tag, id] of [
+      ['network', '123e4567-e89b-42d3-a456-426614174001'],
+      ['security', '123e4567-e89b-42d3-a456-426614174002'],
+    ]) {
+      await writeFile(path.join(folder, `${tag}.md`), [
+        '---', `subject: ${tag}`, `concept_id: ${id}`,
+        `subject_id: 223e4567-e89b-42d3-a456-42661417400${tag === 'network' ? '1' : '2'}`,
+        'family: Infrastructure', 'generated:', '  by: llm-wiki-tags',
+        '---', '', `# ${tag}`, '',
+      ].join('\n'));
+    }
+
+    const report = await migrateConceptIdentities({ rootDir: root });
+
+    expect(report.conflicts).toEqual([]);
+    expect(report.changed).toBe(0);
+    expect(report.concepts[0]).toMatchObject({
+      folder: 'infrastructure',
+      identityState: 'complete',
+      conceptIds: [
+        '123e4567-e89b-42d3-a456-426614174001',
+        '123e4567-e89b-42d3-a456-426614174002',
+      ],
+      pageCount: 2,
+    });
+  });
 });

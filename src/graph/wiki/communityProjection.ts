@@ -43,7 +43,7 @@ export type WikiGraphCommunityEdge = {
 /** The transverse axes a leaf can be grouped by, and the cross-edge kinds. */
 export type GroupAxis = 'concept' | 'subject' | 'type' | 'tag';
 
-export type SharedRelationKind = 'shared_subject' | 'shared_tag' | 'shared_folder' | 'shared_type' | 'shared_member';
+export type SharedRelationKind = 'shared_subject' | 'shared_tag' | 'co_cited' | 'shared_folder' | 'shared_type' | 'shared_member';
 
 export type CommunityProjection = {
   communities: WikiGraphCommunity[];
@@ -83,16 +83,26 @@ function assigned(label: string, assignment: 'seed' | 'fallback'): CommunityAssi
 export function assignGraphCommunities(
   nodes: WikiGraphNode[],
 ): WikiGraphNode[] {
+  const familyByTag = new Map<string, string>();
+  for (const node of nodes) {
+    if (!node.group || !isConcept(node)) continue;
+    for (const tag of node.tags ?? []) familyByTag.set(tag, node.group);
+    if (node.subject) familyByTag.set(node.subject, node.group);
+  }
   return nodes.map((node) => {
     const folder = conceptFolderFromId(node.id);
     if (folder) {
-      const label = title(folder);
+      const label = node.group ?? title(folder);
       return {
         ...node,
         community: node.conceptId
           ? { communityId: `concept:${node.conceptId}`, communityLabel: label, assignment: 'seed' }
           : assigned(label, 'seed'),
       };
+    }
+    if (node.type === 'wiki-source') {
+      const family = (node.tags ?? []).map((tag) => familyByTag.get(tag)).find(Boolean);
+      if (family) return { ...node, community: assigned(family, 'seed') };
     }
     const typeLabel = TYPE_LABELS[node.type];
     if (typeLabel) return { ...node, community: assigned(typeLabel, 'seed') };
@@ -200,6 +210,27 @@ export function createCommunityProjection(
         const from = communityByNode.get(ids[i]!);
         const to = communityByNode.get(ids[j]!);
         if (from && to && from !== to) record(from, to, 'shared_tag');
+      }
+    }
+  }
+  // TAXO fiche tags point to generated concept/tag pages. A fiche carrying
+  // several tags is the evidence that those concept pages co-occur; model it
+  // as one weighted relation instead of an n² clique between fiches.
+  const conceptByTag = new Map<string, string[]>();
+  for (const node of conceptNodes) {
+    for (const tag of [...(node.tags ?? []), ...(node.subject ? [node.subject] : [])]) {
+      const ids = conceptByTag.get(tag) ?? [];
+      ids.push(node.id);
+      conceptByTag.set(tag, ids);
+    }
+  }
+  for (const fiche of nodes.filter((node) => node.type === 'wiki-source')) {
+    const cited = [...new Set((fiche.tags ?? []).flatMap((tag) => conceptByTag.get(tag) ?? []))];
+    for (let i = 0; i < cited.length; i++) {
+      for (let j = i + 1; j < cited.length; j++) {
+        const from = communityByNode.get(cited[i]!);
+        const to = communityByNode.get(cited[j]!);
+        if (from && to && from !== to) record(from, to, 'co_cited');
       }
     }
   }

@@ -29,7 +29,7 @@ describe('decideConceptMove', () => {
       className: 'market-offering',
       subject: 'zephyr',
       target: 'wiki/concepts/market-offering/zephyr.md',
-      isTaxoRefile: false,
+      isTagPage: false,
     });
   });
 
@@ -51,18 +51,12 @@ describe('decideConceptMove', () => {
     expect(decision.kind).toBe('reject');
   });
 
-  it('renames a <concept>_<resume>.md leaf to the new concept on the move', () => {
+  it('rejects the retired <concept>_<resume>.md concept-leaf format', () => {
     expect(decideConceptMove({
       from: 'wiki/concepts/jedox/jedox_tarifs.md',
       to: 'wiki/concepts/produit/jedox_tarifs.md',
       isFile: true,
-    })).toEqual({
-      kind: 'refile',
-      className: 'produit',
-      subject: 'tarifs',
-      target: 'wiki/concepts/produit/produit_tarifs.md',
-      isTaxoRefile: true,
-    });
+    }).kind).toBe('reject');
   });
 
   it('keeps the plain name for a leaf that does not carry its concept in the file name', () => {
@@ -74,7 +68,7 @@ describe('decideConceptMove', () => {
     expect(decision.kind).toBe('refile');
     if (decision.kind === 'refile') {
       expect(decision.target).toBe('wiki/concepts/market-offering/zephyr.md');
-      expect(decision.isTaxoRefile).toBe(false);
+      expect(decision.isTagPage).toBe(false);
     }
   });
 });
@@ -108,7 +102,7 @@ describe('moveEntry on a concept leaf', () => {
       },
     });
 
-    expect(result.ok).toBe(true);
+    expect(result.ok, JSON.stringify(result)).toBe(true);
     const moved = await readFile(path.join(root, 'wiki/concepts/market-offering/zephyr.md'), 'utf8');
     expect(moved).toContain('subject: zephyr');
     expect(seen).toEqual([{
@@ -133,30 +127,42 @@ describe('moveEntry on a concept leaf', () => {
       .toContain('subject: something-else');
   });
 
-  it('renames a taxo leaf to the new concept and updates its concept AND subject metadata', async () => {
+  it('refuses to refile a retired concept-prefixed leaf', async () => {
     await mkdir(path.join(root, 'wiki/concepts/jedox'), { recursive: true });
     // A real taxo leaf's on-disk subject is concept-prefixed
     // (validateConsolidation derives it from the full basename) — a clean
     // unprefixed fixture here would not exercise the bug this test guards.
     await writeFile(path.join(root, 'wiki/concepts/jedox/jedox_tarifs.md'),
       '---\ntitle: Jedox — tarifs\ntype: product\nsubject: jedox-tarifs\nconcept: jedox\n---\n\n# Jedox — tarifs\n\nSee also concept: pricing in the body — must not be touched.\n');
-    const seen: Array<{ source: string; target: string }> = [];
-    await moveEntry(root, 'wiki/concepts/jedox/jedox_tarifs.md', 'wiki/concepts/market-offering', {
-      rewriteLinks: async (moves) => { seen.push(...moves); },
-    });
+    const result = await moveEntry(root, 'wiki/concepts/jedox/jedox_tarifs.md', 'wiki/concepts/market-offering');
+    expect(result).toMatchObject({ ok: false, status: 400 });
+    await expect(readFile(path.join(root, 'wiki/concepts/jedox/jedox_tarifs.md'), 'utf8'))
+      .resolves.toContain('subject: jedox-tarifs');
+  });
 
-    const moved = await readFile(path.join(root, 'wiki/concepts/market-offering/market-offering_tarifs.md'), 'utf8');
-    expect(moved).toContain('concept: market-offering');
-    // The subject must follow the new concept too — it used to stay
-    // "jedox-tarifs" forever, contradicting the folder the page now lives in.
-    expect(moved).toContain('subject: market-offering-tarifs');
-    // The body line starting with "concept:" is prose, not frontmatter — the
-    // old raw-text regex used to rewrite it too.
-    expect(moved).toContain('See also concept: pricing in the body — must not be touched.');
-    expect(seen).toEqual([{
-      source: 'wiki/concepts/jedox/jedox_tarifs.md',
-      target: 'wiki/concepts/market-offering/market-offering_tarifs.md',
-    }]);
+  it('moves a TAXO tag page between family folders without changing its tag identity or filename', async () => {
+    await mkdir(path.join(root, 'wiki/concepts/unfiled'), { recursive: true });
+    await writeFile(path.join(root, 'wiki/concepts/unfiled/network.md'), [
+      '---', 'type: concept', 'subject: network', 'family: Unfiled',
+      'concept_id: 123e4567-e89b-42d3-a456-426614174010',
+      'subject_id: 123e4567-e89b-42d3-a456-426614174011',
+      'tags: [network, infrastructure]', 'generated:', '  by: llm-wiki-tags',
+      '---', '', '# Network', '',
+    ].join('\n'));
+    await writeFile(path.join(root, 'wiki/concepts/market-offering/saas.md'), [
+      '---', 'family: Market Offering', 'concept_id: 123e4567-e89b-42d3-a456-426614174012', '---', '', '# SaaS', '',
+    ].join('\n'));
+
+    const result = await moveEntry(root, 'wiki/concepts/unfiled/network.md', 'wiki/concepts/market-offering');
+
+    expect(result.ok).toBe(true);
+    const moved = await readFile(path.join(root, 'wiki/concepts/market-offering/network.md'), 'utf8');
+    expect(moved).toContain('subject: network');
+    expect(moved).toContain('family: Market Offering');
+    expect(moved).toContain('concept_id: 123e4567-e89b-42d3-a456-426614174010');
+    expect(moved).toContain('subject_id: 123e4567-e89b-42d3-a456-426614174011');
+    expect(moved).toContain('  - network');
+    expect(moved).toContain('  - infrastructure');
   });
 
   it('refiles a leaf onto a taken physical name under its own subject', async () => {
@@ -208,22 +214,5 @@ describe('moveEntry on a concept leaf', () => {
     const result = await moveEntry(root, 'wiki/concepts/unclassified/zephyr.md', 'wiki/concepts/market-offering');
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.status).toBe(409);
-  });
-
-  it('does not false-positive on a stale file sitting at the pre-rename path', async () => {
-    await mkdir(path.join(root, 'wiki/concepts/jedox'), { recursive: true });
-    await writeFile(path.join(root, 'wiki/concepts/jedox/jedox_tarifs.md'),
-      '---\nsubject: jedox-tarifs\nconcept: jedox\n---\n\n# Jedox — tarifs\n');
-    // An unrelated leftover file happens to sit at the OLD basename under the
-    // NEW folder — nothing is actually about to write there (the taxo rename
-    // targets market-offering_tarifs.md instead), so this must not block the
-    // move.
-    await writeFile(path.join(root, 'wiki/concepts/market-offering/jedox_tarifs.md'),
-      `---\nconcept_id: ${destinationConceptId}\nsubject: stale-leftover\nsubject_id: 323e4567-e89b-42d3-a456-426614174000\n---\n# stale leftover\n`);
-
-    const result = await moveEntry(root, 'wiki/concepts/jedox/jedox_tarifs.md', 'wiki/concepts/market-offering');
-    expect(result.ok).toBe(true);
-    expect(await readFile(path.join(root, 'wiki/concepts/market-offering/market-offering_tarifs.md'), 'utf8'))
-      .toContain('concept: market-offering');
   });
 });

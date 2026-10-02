@@ -7,6 +7,7 @@ import {
   SOURCE_REGISTRY_VERSION,
   hashContent,
   isReportClean,
+  markMissingSourceRecords,
   orphanPages,
   readSourceRegistry,
   reconcileRegistry,
@@ -28,6 +29,23 @@ afterEach(async () => {
 
 const empty = (): SourceRegistryFile => ({ version: SOURCE_REGISTRY_VERSION, sources: [] });
 const at = (day: number) => `2026-08-0${day}T10:00:00.000Z`;
+
+it('marks records absent from a complete archive inventory as missing without deleting their provenance', () => {
+  const present = observe(empty());
+  const absent = recordSourceObservation(present, {
+    sourceId: 'path:raw/ingested/removed.md',
+    archivePath: 'raw/ingested/removed.md',
+    contentHash: hashContent('# removed'),
+    producedPages: ['wiki/sources/removed/section.md'],
+    ingested: true,
+    observedAt: at(1),
+  });
+  const next = markMissingSourceRecords(absent, new Set(['path:raw/ingested/archi.md']));
+  const removed = next.sources.find((source) => source.sourceId.endsWith('removed.md'))!;
+  expect(removed.status).toBe('missing');
+  expect(removed.producedPages).toEqual(['wiki/sources/removed/section.md']);
+  expect(next.sources.find((source) => source.sourceId.endsWith('archi.md'))!.status).toBe('active');
+});
 
 function observe(registry: SourceRegistryFile, over: Partial<Parameters<typeof recordSourceObservation>[1]> = {}) {
   return recordSourceObservation(registry, {
