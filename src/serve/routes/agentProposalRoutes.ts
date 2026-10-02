@@ -5,6 +5,7 @@ import { readFile, unlink, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { resolveInside } from '../../utils/path.ts';
 import { escapeHtml } from '../../utils/html.ts';
+import { marked } from 'marked';
 import { HistoryService, commitHistorySafely } from '../../services/historyService.ts';
 import { applyOkfFrontmatter } from '../../okf/frontmatter.ts';
 import { applyDerivedSources } from '../../provenance/write.ts';
@@ -163,12 +164,40 @@ async function removeProposalFile(rootDir: string, id: string): Promise<void> {
   await unlink(path.join(proposalsDir(rootDir), `${proposalFileId(value)}.json`)).catch(() => {});
 }
 
+function proposalFileLabel(value: string): string {
+  const base = path.posix.basename(String(value ?? '')).replace(/\.[^.]+$/, '');
+  return base.split(/[-_\s]+/).filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toLocaleUpperCase()}${part.slice(1)}`).join(' ') || 'Wiki page';
+}
+
+function proposalSummary(record: ProposalRecord): string {
+  const entries = Array.isArray(record.changedFiles) ? record.changedFiles : [];
+  if (!entries.length) return 'No wiki pages changed';
+  const labels = [...new Set(entries.map((entry) => proposalFileLabel(entry.path)))];
+  const names = labels.slice(0, 3).join(', ') + (labels.length > 3 ? ` and ${labels.length - 3} more` : '');
+  const additions = entries.filter((entry) => entry.status === 'A').length;
+  const removals = entries.filter((entry) => entry.status === 'D').length;
+  const edits = entries.length - additions - removals;
+  const actions = [
+    additions ? `${additions} new` : '',
+    edits ? `${edits} updated` : '',
+    removals ? `${removals} removed` : '',
+  ].filter(Boolean).join(', ');
+  return `${entries.length} ${entries.length === 1 ? 'wiki page' : 'wiki pages'} · ${names} · ${actions || 'changed'}`;
+}
+
+function proposalDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? String(value || 'Date unavailable')
+    : new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+
 function renderProposalList(records: Array<{ record: ProposalRecord }>): string {
   const items = records.length
     ? records.map(({ record }) => {
         const files = record.changedFiles.length;
-        const label = record.changedFiles.slice(0, 3).map((entry) => entry.path).join(', ');
-        return `<li class="proposal-card"><a class="proposal-link" href="/agent-proposals/${encodeURIComponent(record.id)}"><span class="proposal-id">${escapeHtml(record.id)}</span><span class="proposal-meta">${files} file(s) · ${escapeHtml(record.createdAt ?? '')}</span><span class="proposal-files">${escapeHtml(label)}${files > 3 ? ' …' : ''}</span></a></li>`;
+        return `<li class="proposal-card"><a class="proposal-link" href="/agent-proposals/${encodeURIComponent(record.id)}"><span class="proposal-id">${escapeHtml(proposalSummary(record))}</span><span class="proposal-meta">${escapeHtml(record.workspace)} · ${files} ${files === 1 ? 'page' : 'pages'} · ${escapeHtml(proposalDate(record.createdAt))}</span></a></li>`;
       }).join('\n')
     : '<li class="proposal-empty">No proposal is waiting for review. A curation run (agent.curate) writes its corrections on a separate branch; its diff lands here — nothing touches the wiki until you merge it.</li>';
   return `<main class="content"><article class="article"><h1>Agent proposals</h1>`
@@ -249,7 +278,10 @@ function prevalidateProposal(rootDir: string, record: ProposalRecord): ProposalP
 
 function renderProposalDetail(record: ProposalRecord, prevalidation: ProposalPrevalidation = []): string {
   const files = record.changedFiles
-    .map((entry) => `<li class="proposal-file"><span class="proposal-status proposal-status-${escapeHtml(entry.status)}">${escapeHtml(entry.status)}</span>${escapeHtml(entry.path)}</li>`)
+    .map((entry) => {
+      const action = entry.status === 'A' ? 'New' : entry.status === 'D' ? 'Removed' : 'Updated';
+      return `<li class="proposal-file"><span class="proposal-status proposal-status-${escapeHtml(entry.status)}">${action}</span><span>${escapeHtml(proposalFileLabel(entry.path))}</span><code>${escapeHtml(entry.path)}</code></li>`;
+    })
     .join('\n');
   const prevalidationHtml = prevalidation.length
     ? `<h2>Provenance prevalidation</h2><ul class="proposal-objections">${prevalidation
@@ -259,16 +291,56 @@ function renderProposalDetail(record: ProposalRecord, prevalidation: ProposalPre
         .join('\n')}</ul>`
     : '';
   const justification = record.justification
-    ? `<h2>Why</h2><p class="proposal-why">${escapeHtml(record.justification)}</p>`
+    ? `<h2>Why</h2><div class="proposal-why">${renderProposalMarkdown(record.justification)}</div>`
     : '';
   const objections = Array.isArray(record.objections) && record.objections.length > 0
     ? `<h2>Unresolved objections</h2><ul class="proposal-objections">${record.objections
         .map((entry) => `<li class="proposal-objection proposal-objection-${escapeHtml(String(entry?.severity ?? 'non-blocking'))}"><span class="proposal-objection-severity">${escapeHtml(String(entry?.severity ?? 'non-blocking'))}</span>${escapeHtml(String(entry?.statement ?? ''))}</li>`)
         .join('\n')}</ul>`
     : '';
-  const diff = escapeHtml(record.diff || '(no diff)');
+  const diff = renderProposalDiff(record.diff || '(no diff)');
   const actions = `<form class="proposal-actions" method="post" action="/agent-proposals/${encodeURIComponent(record.id)}/merge"><button class="action-button" type="submit">Merge into the wiki</button></form><form class="proposal-actions" method="post" action="/agent-proposals/${encodeURIComponent(record.id)}/reject"><button class="action-link" type="submit">Reject &amp; discard the branch</button></form>`;
-  return `<main class="content"><article class="article"><h1>Proposal ${escapeHtml(record.id)}</h1><p class="proposal-lede">${escapeHtml(record.createdAt ?? '')} · branch ${escapeHtml(record.branch)} · workspace ${escapeHtml(record.workspace)}</p>${actions}${justification}${objections}${prevalidationHtml}<h2>Changed files</h2><ul class="proposal-files">${files}</ul><h2>Diff</h2><pre class="proposal-diff">${diff}</pre>${actions}</article></main>`;
+  const technical = `<details class="proposal-technical"><summary>Technical details</summary><dl><dt>Proposal ID</dt><dd><code>${escapeHtml(record.id)}</code></dd><dt>Branch</dt><dd><code>${escapeHtml(record.branch)}</code></dd><dt>Created</dt><dd>${escapeHtml(record.createdAt)}</dd></dl></details>`;
+  return `<main class="content"><article class="article"><h1>Wiki curation proposal</h1><p class="proposal-summary">${escapeHtml(proposalSummary(record))}</p><p class="proposal-lede">Workspace <strong>${escapeHtml(record.workspace)}</strong> · ${escapeHtml(proposalDate(record.createdAt))}</p>${actions}${technical}${justification}${objections}${prevalidationHtml}<h2>Changed files</h2><ul class="proposal-files">${files}</ul><h2>Diff</h2><pre class="proposal-diff">${diff}</pre>${actions}</article></main>`;
+}
+
+/** Render gateway-authored Markdown as content, never as trusted HTML. */
+function renderProposalMarkdown(raw: string): string {
+  // The gateway sometimes serializes line breaks inside table/code excerpts as
+  // literal `\\n` and uses <br> in Markdown table cells. Normalize the former
+  // while preserving the latter as the only permitted raw HTML element.
+  const source = String(raw ?? '').replace(/\\n/g, '<br>');
+  const renderer = new marked.Renderer();
+  renderer.html = ({ text }) => text
+    .split(/(<br\s*\/?>)/gi)
+    .map((part) => /^<br\s*\/?>$/i.test(part) ? '<br>' : escapeHtml(part))
+    .join('');
+  renderer.link = ({ href, title, text }) => {
+    const target = String(href ?? '').trim();
+    if (!/^(https?:\/\/|mailto:|\/|#)/i.test(target)) return text;
+    const titleAttr = title ? ` title="${escapeHtml(title)}"` : '';
+    const external = /^https?:\/\//i.test(target) ? ' target="_blank" rel="noopener noreferrer"' : '';
+    return `<a href="${escapeHtml(target)}"${titleAttr}${external}>${text}</a>`;
+  };
+  renderer.image = ({ text }) => escapeHtml(text);
+  return marked(source, { async: false, gfm: true, renderer });
+}
+
+function renderProposalDiff(raw: string): string {
+  return String(raw ?? '').split(/\r?\n/).map((line) => {
+    let kind = 'context';
+    let marker = ' ';
+    let content = line;
+    if (line.startsWith('diff --git ')) kind = 'file';
+    else if (line.startsWith('@@')) kind = 'hunk';
+    else if (line.startsWith('+++ ') || line.startsWith('--- ')) kind = 'file-path';
+    else if (line.startsWith('+')) { kind = 'add'; marker = '+'; content = line.slice(1); }
+    else if (line.startsWith('-')) { kind = 'remove'; marker = '−'; content = line.slice(1); }
+    else if (line.startsWith('\\')) kind = 'meta';
+    else if (line.startsWith('index ') || line.startsWith('new file mode ') || line.startsWith('deleted file mode ')) kind = 'meta';
+    const safeContent = escapeHtml(content || ' ');
+    return `<span class="proposal-diff-line proposal-diff-${kind}"><span class="proposal-diff-marker">${marker}</span><span class="proposal-diff-content">${safeContent}</span></span>`;
+  }).join('\n');
 }
 
 function proposalPageCss(): string {
@@ -277,6 +349,11 @@ function proposalPageCss(): string {
 .proposal-card{border:1px solid var(--border);border-radius:10px;background:var(--panel)}
 .proposal-link{display:grid;gap:.15rem;padding:.7rem .9rem;text-decoration:none;color:var(--text)}
 .proposal-id{font-weight:780;color:var(--accent);font-family:var(--font-mono);font-size:.82rem}
+.proposal-summary{font-size:1.05rem;font-weight:650;margin:.2rem 0}
+.proposal-technical{margin:.7rem 0;color:var(--muted);font-size:.82rem}
+.proposal-technical summary{cursor:pointer;font-weight:650}
+.proposal-technical dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:.3rem .7rem;max-width:50rem}
+.proposal-technical dt{font-weight:700}.proposal-technical dd{margin:0;overflow-wrap:anywhere}
 .proposal-meta,.proposal-files{font-size:.78rem;color:var(--muted)}
 .proposal-lede{color:var(--muted);font-size:.9rem}
 .proposal-legend{margin:.2rem 0 .8rem;padding-left:1.1rem;display:grid;gap:.3rem;font-size:.86rem;color:var(--muted)}
@@ -285,7 +362,10 @@ function proposalPageCss(): string {
 .proposal-curate{display:flex;align-items:center;gap:.7rem;flex-wrap:wrap;margin:.8rem 0 1rem}
 .proposal-curate .proposal-lede{margin:0}
 .proposal-curate[hidden]{display:none}
-.proposal-why{white-space:pre-wrap;font-size:.9rem;line-height:1.6;border-left:3px solid var(--accent);padding:.3rem .8rem;background:var(--panel-soft);border-radius:0 8px 8px 0}
+.proposal-why{font-size:.9rem;line-height:1.6;border-left:3px solid var(--accent);padding:.3rem .8rem;background:var(--panel-soft);border-radius:0 8px 8px 0;overflow-x:auto}
+.proposal-why table{display:block;max-width:100%;overflow-x:auto;border-collapse:collapse;font-size:.82rem}
+.proposal-why th,.proposal-why td{border:1px solid var(--border);padding:.35rem .5rem;vertical-align:top;text-align:left}
+.proposal-why pre{max-width:100%;overflow-x:auto;background:var(--panel-deep,#0d1420);padding:.6rem;border-radius:6px}
 .proposal-objections{list-style:none;margin:0;padding:0;display:grid;gap:.3rem}
 .proposal-objection{display:flex;gap:.5rem;align-items:baseline;font-size:.85rem;padding:.35rem .6rem;border:1px solid var(--border);border-radius:8px;background:var(--panel-soft)}
 .proposal-objection-severity{font-family:var(--font-mono);font-size:.7rem;font-weight:800;text-transform:uppercase}
@@ -297,7 +377,18 @@ function proposalPageCss(): string {
 .proposal-status-M{background:var(--accent-soft);color:var(--accent)}
 .proposal-status-A{background:color-mix(in srgb,#22c55e 18%,transparent);color:#22c55e}
 .proposal-status-D{background:color-mix(in srgb,var(--err) 16%,transparent);color:var(--err)}
-.proposal-diff{background:var(--panel-deep,#0d1420);border:1px solid var(--border);border-radius:10px;padding:1rem;overflow-x:auto;font-family:var(--font-mono);font-size:.8rem;line-height:1.45;white-space:pre}
+.proposal-diff{background:var(--panel-deep,#0d1420);border:1px solid var(--border);border-radius:10px;padding:.65rem 0;overflow-x:auto;font-family:var(--font-mono);font-size:.8rem;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.proposal-diff-line{display:block;padding:0 .8rem;min-height:1.5em}
+.proposal-diff-marker{display:inline-block;width:1.2em;color:var(--muted);user-select:none}
+.proposal-diff-content{white-space:pre-wrap}
+.proposal-diff-add{background:color-mix(in srgb,#22c55e 13%,transparent);color:#bbf7d0}
+.proposal-diff-add .proposal-diff-marker{color:#4ade80;font-weight:800}
+.proposal-diff-remove{background:color-mix(in srgb,#ef4444 13%,transparent);color:#fecaca}
+.proposal-diff-remove .proposal-diff-marker{color:#f87171;font-weight:800}
+.proposal-diff-file{background:var(--panel-soft);color:var(--accent);font-weight:750;border-top:1px solid var(--border)}
+.proposal-diff-file-path{color:var(--muted);font-weight:650}
+.proposal-diff-hunk{color:#c4b5fd;background:color-mix(in srgb,#8b5cf6 10%,transparent);font-weight:650}
+.proposal-diff-meta{color:var(--muted);font-size:.74rem}
 .proposal-empty{border:1px dashed var(--border);border-radius:10px;padding:1rem;color:var(--muted);font-size:.85rem}
 </style>`;
 }

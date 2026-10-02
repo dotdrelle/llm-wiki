@@ -372,6 +372,49 @@ describe('agent proposal review routes', () => {
       expect(html).toContain('missing');
   });
 
+  it('renders proposal justification Markdown and serialized line breaks safely', async () => {
+    writeProposal(rootDir, {
+      id: 't-markdown',
+      workspace: 'demo',
+      branch: 'agent/gateway-markdown',
+      worktreeRelativePath: '.wiki/agent-worktrees/gateway-markdown',
+      createdAt: '2026-10-02T10:00:00.000Z',
+      justification: [
+        '## Proposed changes',
+        '',
+        '| File | Detail |',
+        '| --- | --- |',
+        '| `wiki/concepts/a.md` | first\\n- second<br>third |',
+        '',
+        '<script>alert(1)</script>',
+      ].join('\n'),
+      changedFiles: [{ status: 'M', path: 'wiki/concepts/a.md' }],
+      changes: [{ path: 'wiki/concepts/a.md', status: 'M', content: '# A\n' }],
+      diff: 'diff --git a/wiki/concepts/a.md b/wiki/concepts/a.md\n--- a/wiki/concepts/a.md\n+++ b/wiki/concepts/a.md\n@@ -1 +1 @@\n-old\n+new <img src=x onerror=alert(1)>',
+    });
+    const deps = makeDeps(rootDir);
+    const { res } = fakeRes();
+
+    await handleAgentProposalRoutes(fakeReq('GET', '/agent-proposals/t-markdown'), res, '/agent-proposals/t-markdown', deps);
+
+    const html = String((deps.sendGzippedHtml as ReturnType<typeof vi.fn>).mock.calls[0][2]);
+    expect(html).toContain('<h1>Wiki curation proposal</h1>');
+    expect(html).toContain('1 wiki page · A · 1 updated');
+    expect(html).toContain('<summary>Technical details</summary>');
+    expect(html).not.toContain('<h1>Proposal t-markdown</h1>');
+    expect(html).toContain('<h2>Proposed changes</h2>');
+    expect(html).toContain('<table>');
+    expect(html).toContain('first<br>');
+    expect(html).toContain('second<br>third');
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(html).not.toContain('<script>alert(1)</script>');
+    expect(html).toContain('proposal-diff-file');
+    expect(html).toContain('proposal-diff-remove');
+    expect(html).toContain('proposal-diff-add');
+    expect(html).toContain('new &lt;img src=x onerror=alert(1)&gt;');
+    expect(html).not.toContain('<img src=x onerror=alert(1)>');
+  });
+
   it('explains what the page is for and offers a curation launch the shell routes', async () => {
     const deps = makeDeps(rootDir);
     const { res } = fakeRes();
