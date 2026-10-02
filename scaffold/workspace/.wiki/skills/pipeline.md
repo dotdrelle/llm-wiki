@@ -3,7 +3,7 @@ name: pipeline
 description: Run the whole production chain in one go, from ingest to polish
 params: []
 ---
-Execute the complete wiki production pipeline for the requested deliverables: ingest, build, export and polish, in that order. During ingestion, each source adds or updates concept pages at `wiki/concepts/<label>/<subject>.md`; these readable path labels are separate from the opaque concept and subject identities in frontmatter.
+Execute the complete wiki production pipeline for the requested deliverables: ingest, build, export and polish, in that order. During ingestion, the single TAXO operation splits each source into evidence-bearing section fiches under `wiki/sources/`, assigns tags and regenerates tag-family pivots under `wiki/concepts/`; do not create separate analysis, write, regroup or taxonomy tasks.
 
 ## Indivisibility
 

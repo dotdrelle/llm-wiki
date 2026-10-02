@@ -20,6 +20,18 @@ in Serve's chat or in the Shell:
 - `/run cancel` (or `/cancel`) — cancel the active run.
 - `/queue` — show the job queue.
 - `/queue cancel <id>` — cancel a queued or running job.
+- `/remember <fact>` — explicitly save a durable fact for this workspace across
+  conversations. `/memory` lists saved facts; `/memory history <key>` shows
+  versions; `/memory restore <key> <history-id>` restores one; `/forget <key>`
+  removes a fact. These are requests to Donna: the composer switches to agent
+  mode, she performs them with her memory tools and answers in your language
+  (the runtime must be connected). Activity → Memory provides the same inspect, forget and
+  restore controls. Donna may also extract durable facts from user messages;
+  credential-shaped messages are skipped, and each stored fact can be removed
+  or restored. Automatic extraction can be disabled by the workspace operator.
+  Facts remain until forgotten or the workspace is deleted.
+  Facts never cross workspace boundaries. Conversation threads remain separate;
+  Donna searches another thread only when you refer to a previous discussion.
 
 ## Production skills
 
@@ -89,9 +101,9 @@ Everything below is a **UI panel**, not something you type:
   drop goes through and waits for the next ingestion. Its lightning button
   starts the ingestion of everything pending.
 - **Wiki browser sidebar** — three views behind the small icon rail on the
-  left: **Wiki pages** (inbox), **Files** (Context / Templates / Deliverables
-  tabs) and **Pending** (brain, the default view). Each view owns the full
-  height. In the Files view each collection's root reads in capitals and its
+  left, in the order of the work: **Pending** (inbox, the default view),
+  **Wiki pages** (brain) and **Files** (Context / Templates / Deliverables
+  tabs). Each view owns the full height. In the Files view each collection's root reads in capitals and its
   contents with a leading capital. Deliverables carry a small icon per
   production type — a hammer for built documents, an export arrow, a sparkle
   for polished ones. The **wiki row** carries the history glyph: it reruns TAXO
@@ -130,9 +142,12 @@ Everything below is a **UI panel**, not something you type:
   Redactor, Archivist) appear as child nodes of the run.
 - **Redo** — on a past message, truncates the conversation back to that point.
 - **Agent proposals** — the curation review queue: a link with an amber badge
-  in the sidebar opens the pending diffs. *Merge into the wiki* applies a
-  proposal (pages are recorded as verified and stable) and discards the
-  branch; *Reject* discards it and leaves the wiki untouched.
+  in the sidebar opens the pending diffs, each read as a plain-language summary
+  with the changed pages named and a coloured diff. *Merge into the wiki*
+  applies a proposal (pages are recorded as verified and stable) and discards
+  the branch; *Reject* discards it and leaves the wiki untouched. A **Start a
+  curation** button on the page launches a new curation through DONNA (with a
+  confirmation), so you never have to type the objective.
 - **LLM settings** (sidebar) — Base URL, Model, API key, and the active
   `.wikirc` profile picker.
 - **Help panel** — this documentation, read in place, without leaving the chat.

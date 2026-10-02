@@ -27,12 +27,19 @@ wiki ingest --force
 wiki ingest --from-ingested [files...]
 ```
 
-`--from-ingested` rebuilds the concept pages from the ARCHIVED sources
-(`raw/ingested/`) instead of the inbox: the archive identity is preserved
-(citations keep pointing at the real archive paths), nothing is moved or
-archived again, and the unchanged-since-last-ingest skip is bypassed on
-purpose — it is the re-consolidation command, and `[files...]` match against
-`raw/ingested/` when given.
+`--from-ingested` rebuilds the TAXO fiches and tag-family pivots from the
+ARCHIVED sources (`raw/ingested/`) instead of the inbox: the archive identity
+is preserved (citations keep pointing at the real archive paths), nothing is
+moved or archived again, and the unchanged-since-last-ingest skip is bypassed
+on purpose — it is the re-run command, and `[files...]` match against
+`raw/ingested/` when given (a partial list keeps the rest of the concept tree;
+a bare run prunes registry-owned pages no source produces any more).
+
+`--migrate-sheets [--apply]` (with `--from-ingested`) previews then removes a
+legacy workspace's flat source notes and generated concept leaves from before
+TAXO. It requires a complete archive rebuild; protected (`stable`/`verified`)
+pages are kept, and the removal only happens after that rebuild fully
+succeeds. Run it on a copy first.
 
 By default, `wiki ingest` also runs `wiki refresh` so stale deliverables get regenerated. If the follow-up build fails, the wiki updates remain applied and the CLI tells you to rerun `wiki refresh` later.
 
@@ -68,8 +75,8 @@ wiki index --apply-overview
 docker compose --profile cli run --rm wiki index
 ```
 
-`--overview` drafts a concise, cited workspace summary from sampled source
-notes, concept pages, and archived originals, prints it, and saves it to
+`--overview` drafts a concise, cited workspace summary from sampled section
+fiches, tag-family pivots and archived originals, prints it, and saves it to
 `.wiki/workspace-overview.draft.md`. Each paragraph also has a sidecar record
 of exact evidence quotes. It does not change the overview in `wiki/index.md`.
 Review or edit the draft, then run `--apply-overview`; the engine checks that
@@ -150,12 +157,24 @@ wiki export project-brief.md --polish
 ```
 
 The LLM expands each section from the cited sources without inventing facts.
-Each cited source is read WHOLE (bounded by `retrieval.maxSourceChars`) and
-replaces its chunk fragments; the insufficient-source note only appears when
-the evidence genuinely lacks the detail. A bare deliverable name is resolved
-across the `deliverables/` sub-directories (an unambiguous basename wins, an
-ambiguous one lists the candidates), and the export is written **next to its
-deliverable** in the same tree.
+Evidence comes first from the build's frozen manifest
+(`.wiki/builds/<buildId>/evidence.json`, selected by the deliverable's
+`evidence_build_id` or `--evidence-build`); a live read then narrows an
+anchored citation to its cited section (`path#Heading`), and only an
+un-anchored or unmatched anchor reads the source whole (bounded by
+`retrieval.maxSourceChars`) — a missing manifest is announced and falls back
+to live reads. The insufficient-source note only appears when the evidence
+genuinely lacks the detail. A bare deliverable name is resolved across the
+`deliverables/` sub-directories (an unambiguous basename wins, an ambiguous one
+lists the candidates), and the export is written **next to its deliverable** in
+the same tree.
+
+`export` refuses an export artifact (`*.export.md` / `*.export.polished.md`,
+versioned included) as input and names the source deliverable: re-exporting its
+own output would write the artifact onto itself. `--polish` accepts an exported
+deliverable — the artifact carries no citation left, so the polish-only pass
+runs and writes `<name>.export.polished.md` without re-exporting; only an
+already-polished artifact is refused, naming its export.
 
 ## `wiki history`, `wiki restore`, and `wiki release`
 
@@ -222,7 +241,7 @@ wiki lint --json       # emit results as JSON
 Starts a local HTTP server to browse the wiki, deliverables, and templates in a browser.
 
 - `/` — renders `wiki/index.md` with navigation tiles
-- `/graph` — interactive Canvas map/community/focus explorer with LOD, mini-map and impact analysis; its search box is a server-side relation filter (it matches pages by title/subject/tags and relations by their label, rather than finding one document); refreshes automatically when graph files change
+- `/graph` — the TAXO knowledge graph: concept and source nodes, four views (families, concepts, a two-ring concept focus, concepts + sources) laid out in Node and drawn on Canvas; the left column filters by family and source type, and the search box answers through the engine's own retrieval (BM25 plus vectors when the index exists, with the mode named and a "weak" marker when nothing scores well); refreshes automatically when graph files change
 - `/chat` — browser chat UI with OpenAI-compatible tool calling over MCP
 
 ```bash

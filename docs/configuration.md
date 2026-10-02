@@ -104,8 +104,8 @@ Presets reduce typing only; they are never required. The merge order is
 
 | Preset   | Applies                                                                                         |
 | -------- | ----------------------------------------------------------------------------------------------- |
-| `albert` | Etalab Albert base URL, BGE-M3 embeddings/reranker, vector enabled, BM25 build strategy, RPM 100 |
-| `openai` | OpenAI base URL, vector disabled, BM25 build strategy                                          |
+| `albert` | Etalab Albert base URL, BGE-M3 embeddings/reranker, vector enabled, RPM 100                     |
+| `openai` | OpenAI base URL, vector disabled                                                               |
 | `ollama` | Local Ollama base URL, `apiKey: ollama`, `numCtx: 32768`, vector disabled, RPM 50               |
 | `nvidia` | NVIDIA OpenAI-compatible base URL, vector disabled, RPM 40                                      |
 

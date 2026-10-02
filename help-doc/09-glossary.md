@@ -67,6 +67,11 @@ The application's vocabulary, in plain terms. Terms are grouped by theme.
 
 ## Interaction
 
+- **Workspace memory** — durable, evidence-linked facts shared by Donna across
+  conversations in one workspace. It is separate from conversation history and
+  never shared with another workspace; extracted facts have user-message
+  evidence and can be inspected, forgotten or restored.
+
 - **Chat mode** — DONNA reads and answers, read-only. See
   `04-interaction-modes.md`.
 - **Agent mode** — DONNA orchestrates actions (import, ingest, build, export).

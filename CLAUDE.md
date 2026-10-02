@@ -6,13 +6,15 @@ with Run/Task, and do not restore the removed D3/SVG renderers or legacy graph
 endpoints. The `/graph` page is the TAXO reading (Families, Concepts, Concept
 focus, Concepts + sources — `src/graph/wiki/ui/taxo/`); its force layouts are
 settled **server-side** with `d3-force` (`taxoLayout.ts`), so the browser still
-never loads D3. A fifth view, **Provenance** (`?provenance=<deliverable>`,
-`src/graph/wiki/ui/provenance/`), draws one deliverable's evidence chain from
-`/api/graph/provenance` (`provenanceGraph.ts`, a reader of the build's
-evidence manifest — see `docs/provenance.md`); its columns are computed in the
-browser like the Focus rings, on the same Canvas renderer. The deliverable
-page's actions (Export / polish, Provenance) live in
-`src/serve/html/deliverableActions.ts`.
+never loads D3. **One documented exception:** the `/provenance?id=<deliverable>`
+page (`src/graph/wiki/ui/provenance/`) is plain HTML with SVG connectors, not a
+Canvas view. It draws one deliverable's evidence chain — a few dozen nodes —
+whose value is text (titles, paths, anchors, the exact frozen passage, badges,
+warnings); the Canvas renderer truncated all of it, so the approved HTML
+mock-up is what ships, fed by `/api/graph/provenance` (`provenanceGraph.ts`, a
+reader of the build's evidence manifest — see `docs/provenance.md`). Do not
+extend that exception to the TAXO views. The deliverable page's actions
+(Export / polish, Provenance) live in `src/serve/html/deliverableActions.ts`.
 
 ## Purpose
 
@@ -70,8 +72,10 @@ instead (it consumes live `runtimeState.workflow` data via the same in-browser
 script pipeline as the rest of the chat runtime UI, not a static-file
 `buildXGraph()` projection like `graph/wiki/projection.ts` — there was nothing
 Node/build-time to put in `graph/runtime/`). Both surfaces render through
-Canvas, retain positions, use mini-maps and stop scheduling frames when idle.
-Do not reintroduce D3, SVG node creation, or an independent camera/frame loop.
+Canvas, retain positions and stop scheduling frames when idle. Do not
+reintroduce D3 in the browser, SVG node creation, or an independent
+camera/frame loop. (The TAXO wiki graph's force layouts are settled in Node;
+the browser only draws.)
 0.10.3
 adds versioned contracts (`llm-wiki-manager` only) and, in this repo, MCP
 write guards (`mcpServer.ts`, see Safety Rules) and MCP HTTP hardening
@@ -82,10 +86,12 @@ review/dry-run/reject and classified retry (see Important Services). 0.9.5,
 are released. 0.11.4 keeps the workspace config path intentionally direct:
 provider keys live in `.wikirc.yaml` under `llm.apiKey` and
 `retrieval.vector.apiKey` (no `apiKeyEnv`, no `WIKI_LLM_API_KEY` /
-`WIKI_VECTOR_API_KEY` default path), exposes internal `wiki ingest`
-/ `--apply` plumbing for orchestrated parallel ingest, and writes
+`WIKI_VECTOR_API_KEY` default path), and writes
 `.wiki/last-run.json` so `wiki build` can compare the current runtime/provider
-summary with the previous build.
+summary with the previous build. TAXO is now the sole ingest cycle and the
+retired plan/apply plumbing (`--plan-only`, `--apply <file...>`, ingest plan
+files) is gone: `--dry-run`/`--reject` remain, `--apply` now applies
+`--migrate-sheets`, and `--from-ingested` rebuilds from the archive.
 
 ## Layout
 
@@ -266,6 +272,16 @@ never becomes an extra run. Keep scaffold skills generic and English by default.
   without touching the wiki. Both refuse with 409 while a run is active, and
   only `wiki/` paths are mergeable — the proposal travels from another
   process and is treated as untrusted. See `src/serve/routes/agentProposalRoutes.ts`.
+  The page is readable: records read as summaries ("N wiki pages · labels ·
+  N new/updated/removed"), files are named by label with New/Updated/Removed,
+  the justification is rendered Markdown (links and `<br>` only, everything
+  else escaped), the diff is coloured line by line, and id/branch/created
+  travel under a collapsed "Technical details". A "Start a curation" button
+  (revealed once embedded in the shell) confirms, then posts `llmwiki:curate`;
+  the shell's `startCuration()` (`src/chat/chatHtml.ts`) selects agent mode and
+  submits the canonical objective as a Donna turn — the page never calls the
+  runtime. `src/serve/html/reviewShortcutScript.ts` keeps the sidebar's Agent
+  proposals link marked active exactly while its page is displayed.
 
 `proxyRuntimeJson` accepts an optional `extra` object merged into the POST body
 before forwarding. The workspace injection (`{ workspace: workspaceNameFromEnv() }`)
@@ -507,6 +523,20 @@ in `wikiHtml.ts`); the embedded Explorer panel is scaled to the shell chrome by
 `side-folder-plain-head` row, so the primary row's `--accent-soft` background
 runs the whole title line — under the right-aligned rebuild button — instead of
 stopping at the label. Label and actions must stay in that head row.
+
+**Shell-only page actions** (`src/serve/html/pageActionsScript.ts`): a wiki
+content page opened in the chat shell's centre frame reports its navigation
+and reveals/wires Close, + Context, Build, Export/polish, Reformat and Start a
+curation; each launch confirms, then posts its `llmwiki:*` message to the
+shell, which owns the Donna turn. Extracted from `wikiLayoutScript.ts` to hold
+its size ceiling; the wiki-page launches themselves live in
+`src/chat/views/wikiAgentLaunchScript.ts` (`handleWikiAgentLaunch`). A
+not-found page embeds `llmwiki:notfound`: the shell forgets a remembered wiki
+path that no longer exists and opens Home instead of freezing on "Document not
+found" — only while the dead page is still the centre's target, so a late
+message cannot yank the reader elsewhere. Standalone pages keep their
+Back/Home buttons, and the wiki graph's TAXO views are documented under
+`src/graph/wiki/taxoGraph.ts`.
 
 **Connector cards** (`src/chat/runtime/mcpConnectorScript.ts`,
 `config/configScript.ts`, `chatHtml.ts`). A card now has an identity in the
@@ -781,7 +811,8 @@ ingest`) builds a review per planned operation (`buildReviewOperations`):
   page's `citations`/`links` structurally, so callers follow provenance
   without re-parsing markdown), the queryable graph (`wiki_graph_query` /
   `wiki_graph_path` over `src/graph/wiki/queryGraph.ts` — the materialized
-  adjacency incl. the transverse `shared_subject`/`shared_tag` edges, rebuilt
+  adjacency incl. the transverse `shared_subject` edge and, for TAXO fiche↔tag
+  pivots, `co_cited` (`shared_tag` no longer forms a clique between fiches), rebuilt
   per call), templates (listing carries frontmatter titles; a missing path
   falls back to the basename search before refusing) and deliverables (same
   title treatment).

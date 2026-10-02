@@ -96,11 +96,12 @@ citation to the section that actually backs the claim, checks that the section
 exists, and reports any citation it cannot resolve instead of showing a vague
 one; a page whose citations cannot be resolved is not published.
 
-A concept page is the **theme** of its subject across every source: an update
-keeps what the page already said and adds the new source. The engine verifies
-this deterministically — if an update would silently drop a fact a previous
-source backed, that page update is refused and reported, and the rest of the
-ingestion continues.
+A concept page is a **generated navigation pivot**: it lists the fiches that
+carry its tag, and the next TAXO cycle regenerates it — correcting it by hand
+has no lasting effect unless the page is promoted to *stable* (a protected page
+is never rewritten). The engine verifies updates deterministically: if an
+update would silently drop a fact a previous source backed, that page update is
+refused and reported, and the rest of the ingestion continues.
 
 The fiche is a faithful reading sheet, not a complete copy. Search includes
 archived documents so details omitted from it can still be found.
@@ -109,8 +110,8 @@ When a deliverable is built, the engine freezes the exact snippets it used. If
 you later replace a source with a newer version, exporting the already-built
 deliverable still uses the version it was built from — the document does not
 change under you. The **Provenance** link of a deliverable page draws that
-frozen chain in the graph, from each section down to the exact passages, and
-flags the passages whose original has changed since.
+frozen chain, from each section down to the exact passages, and flags the
+passages whose original has changed since.
 
 ## 5. Search
 
@@ -134,11 +135,15 @@ filling them with the wiki's knowledge:
 - **polish**: improves the form of existing content;
 - **doctor**: diagnoses the state of the workspace and flags problems.
 
-Every export and polish keeps a **versioned copy** of its result next to the
-deliverable, named `<name>_v-YY.export.md` or `<name>_v-YY.export.polished.md`
-(YY is a two-digit counter): the main file stays the one everything else
-references, while each run's output is preserved and listed in the
-Deliverables tab with its icon.
+The first export of a deliverable leaves a single `<name>.export.md` (a polish
+leaves `<name>.export.polished.md`). Running again keeps a **versioned copy** of
+the PREVIOUS result next to the deliverable — `<name>_v-YY.export.md` or
+`<name>_v-YY.export.polished.md`, YY a two-digit counter — so the main file
+stays the one everything else references while each earlier version is
+preserved and listed in the Deliverables tab with its icon. Polishing an
+existing `.export.md` is the normal second step (a polish-only pass, no
+re-export); only an already-polished artifact is refused, and the message names
+its export to use instead.
 
 These operations can be chained; DONNA can also run a *pipeline* that combines
 them with the knowledge steps below.

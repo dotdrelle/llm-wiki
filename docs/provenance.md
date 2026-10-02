@@ -29,9 +29,8 @@ build / livrable
    `[src: <path>#L42-L57@sha256=<digest>]`.
 2. **`wiki/sources/` contains TAXO fiches**: one nested page per meaningful
    source section. Each fiche has a section subject, tags, a faithful body and
-   an anchored citation to exactly one archive. `validateSourcePage` is shared
-   by ingest and `wiki_write_page`; the old flat source-note page is retained
-   no flat source-note page is generated.
+   an    anchored citation to exactly one archive. `validateSourcePage` is shared
+   by ingest and `wiki_write_page`; no flat source-note page is generated.
 3. **`wiki/concepts/<family>/<tag>.md` is a generated pivot**, not a proof. Its
    links are regenerated from fiches, its derived `sources:` inventory remains
    complete, and stable/verified pages are protected from automatic replacement.
@@ -162,9 +161,9 @@ preserved.
 | `src/provenance/audit.ts` | read-only corpus audit (lot 0) |
 | `src/provenance/rebuild.ts` | no-LLM repair: anchoring + `sources:` + merge |
 | `src/provenance/retarget.ts` | compatibility retargeting: legacy archive citation → source fiche |
-| `src/graph/wiki/provenanceGraph.ts` | read-only provenance graph of one deliverable, for the graph's Provenance view |
+| `src/graph/wiki/provenanceGraph.ts` | read-only provenance graph of one deliverable, for the `/provenance` page |
 
-The graph's Provenance view (`/graph?provenance=<deliverable>`, served by
+The `/provenance?id=<deliverable>` page (`src/graph/wiki/ui/provenance/`, fed by
 `GET /api/graph/provenance?id=&build=&mode=`) is a **reader** of the manifest,
 not a second resolver. It takes the build named by `evidence_build_id` (or
 `build=`), turns each fragment's `chain`/`extraChains` into node paths, and
@@ -176,7 +175,10 @@ export artifact resolves to its source deliverable (`utils/exportArtifact.ts`,
 shared with the export refusal). `mode=live` re-runs `resolveEvidence` on the
 current files; a missing or v1 manifest falls back to that live reading, and
 every fallback, broken anchor or fragment no longer reached is returned in
-`degradations` for the view to list.
+`degradations` for the page's banner. In live mode the fragments the build used
+and today's files no longer reach are kept as `status: missing` nodes on
+`brokenChains`, drawn dashed; a `changed` fragment carries the other side of the
+comparison in `otherText` (current text when frozen, frozen text when live).
 
 Diagnostics: `pnpm audit:provenance <workspace>` and
 `pnpm rebuild:provenance <workspace> [--apply] [--merge-splits]`. The audit

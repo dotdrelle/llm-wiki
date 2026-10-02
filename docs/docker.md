@@ -67,7 +67,7 @@ packages.
 
 The browser UI includes:
 
-- `/graph` for the source graph, with a collapsible relations panel and automatic refresh when graph files change;
+- `/graph` for the TAXO knowledge graph (concept families, tag/concept pivots and source fiches) with the left-column family/source filter and automatic refresh when graph files change;
 - `/chat` for MCP-aware chat.
 
 In Docker/manager deployments, `wiki serve` can proxy browser requests to MCP

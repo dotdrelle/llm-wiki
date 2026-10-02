@@ -45,8 +45,8 @@ Main capabilities:
 
 - initialize a workspace with `wiki init`;
 - ingest Markdown sources from `raw/untracked/`;
-- rebuild concept pages from the archived sources (`wiki ingest --from-ingested`);
-- expose internal ingest planning/apply phases for orchestrated parallel ingest;
+- rebuild TAXO fiches and tag-family pivots from the archived sources
+  (`wiki ingest --from-ingested`);
 - maintain durable wiki pages under `wiki/`;
 - query the wiki with lexical and optional vector retrieval;
 - query and render the **knowledge graph** (citations, wiki links, shared
@@ -58,34 +58,28 @@ Main capabilities:
 - serve a local web UI and MCP endpoint, including the agent-proposals review
   queue where curation diffs are merged or rejected.
 
-## Extraction contract
+## Ingestion contract — TAXO
 
-Ingest reads a source in packs and extracts structured facts, candidate
-subjects and relations with a single consolidation step per source. The
-contract (`src/ingest/extractionSchema.ts`) is deliberately strict on
-structure and deliberately forgiving on references:
+Ingest is one deterministic cycle over the live corpus. For each archived
+document the engine splits the meaningful `#` sections (an oversized section
+splits at its `##` sub-headings), has the model rewrite each section
+faithfully with a `Description:` and 2–3 `Tags:`, and writes one fiche under
+`wiki/sources/<document>/<section>.md`. The engine — never the model — anchors
+each fiche to the exact archived line range (`#L42-L57@sha256=…`), harmonizes
+tag spelling against the fiches already on disk, and groups tags into semantic
+families with one bounded call; generated pivots live under
+`wiki/concepts/<family>/<tag>.md` and are navigation, not evidence.
 
-- structural fields never bend: a subject id must be a local id (`s1`, ...),
-  `scope` must be one of `source | product | transverse | workspace`,
-  `importance` one of `core | supporting | incidental`, `rationale` is
-  required. A declared subject that violates these rejects the source —
-  surfaced and retried, never silently relaxed.
-- dangling references degrade instead of rejecting the source: a
-  `relations[].from/to`, `facts[].subject` or `mainSubject` that is not a
-  declared subject id is dropped (the fact keeps its statement, `mainSubject`
-  falls back to `null`) and counted in `_dangling` on the parse result, then
-  logged as an `ingest:extract-dangling` warning. A source is never thrown
-  away for a reference no one can resolve.
-- the extraction prompt (`src/prompts/extractionPrompt.ts`, version 7) states
-  these constraints normatively so the model meets the contract rather than
-  the engine loosening it.
-
-Ingestion uses the single TAXO cycle: meaningful source sections become
-evidence-bearing fiches under `wiki/sources/<document>/<section>.md`; the engine
-then groups their tags into generated family/tag pivots under `wiki/concepts/`.
-Fiches retain anchored citations to archived source fragments, while pivots are
-navigation pages linking back to fiches. There is no separate analysis/apply or
-regroup job.
+The pipeline is idempotent: a per-section `input_hash` (source, line range,
+prompt/model/language signature) skips an unchanged section, while a
+`content_hash` catches exact duplicates across documents; a section judged
+close to an existing fiche is skipped and logged with the fiche it matched.
+Stable/verified pages are never rewritten or purged. There is no separate
+analysis/apply mode and no ingest plan file: `--dry-run` reviews the
+operations, `--reject <path…>` drops some, `--migrate-sheets [--apply]`
+migrates a legacy workspace on a copy, and `--from-ingested` rebuilds from
+`raw/ingested/`. See `help-doc/03` for the user view and `docs/provenance.md`
+for the data contracts.
 
 
 ## Quick Start
@@ -198,32 +192,31 @@ and sends the literal invocation to the manager runtime. Serve does not expand
 the skill body or execute mutations through its local chat path.
 
 The runtime parses quoted arguments, compiles the body into delegable business
-objectives, and resolves each objective only when its run starts. Paragraphs do
-not split a complex capability by themselves. The scaffolded `pipeline` remains
-one run and preserves the production capability's internal DAG; `wiki-sync` is
-the deliberate multi-capability case and becomes two sequential runs. The
-Activity panel displays the derived Chain projection (`done`, `running`,
-`cancelled`, `skipped` and its reason) from the shared event-sourced control
-queue.
+objectives, and resolves each objective only when its run starts. Every shipped
+scaffold skill is one intention: `pipeline` remains one run and preserves the
+production capability's internal DAG, and `/wiki-sync`, `/wiki-ingest`,
+`/wiki-build` and `/deliver` are independent, replayable steps. Only a
+user-authored body that opens a paragraph on `Puis` / `Then` / `if available`…
+splits into a sequential run chain. The Activity panel displays the derived
+skill chain (`done`, `running`, `cancelled`, `skipped` and its reason) from the
+shared event-sourced control queue.
 
-The scaffolded `/wiki-sync` skill runs the Confluence-to-wiki path:
+The scaffolded `/wiki-sync` skill runs the Confluence export path:
 
 ```text
 cme_status
 -> cme_sources_list
 -> cme_export_run
 -> cme_export_status
--> production_start_job {"type":"ingest"}
--> production_job_status
 ```
 
 It always exports every configured source and uses the connector's existing
 configuration as-is — it never asks which source to export and never
-reconfigures credentials. It stops before the ingest when the export produced
-nothing new. A pending file modified by hand since its delivery is never
-overwritten: it is flagged orange in the Pending panel, and keeping or
-deleting it is yours to decide. The rest of the chain is split into
-two further scaffold skills so each step can be replayed on its own:
+reconfigures credentials. It stops there: the exported Markdown waits in
+`raw/untracked/` for a separate `/wiki-ingest`. A pending file modified by
+hand since its delivery is never overwritten: it is flagged orange in the
+Pending panel, and keeping or deleting it is yours to decide. Every step of
+the chain is its own scaffold skill, replayable on its own:
 
 - `/wiki-ingest [files]` — ingest what is already staged in `raw/untracked/`,
   without exporting anything first (`production_start_job {"type":"ingest"}`,
@@ -238,7 +231,9 @@ two further scaffold skills so each step can be replayed on its own:
   `{"type":"polish"}`). Deliverable names are accepted with or without their `.md`
   extension, and a bare name is resolved across the `deliverables/`
   sub-directories; the export is written next to its deliverable, in the same
-  tree.
+  tree. Polishing an already-exported `.export.md` is the normal second step
+  (a polish-only pass writing `<name>.export.polished.md`); only an
+  already-polished artifact is refused, naming its export.
 
 `/pipeline` remains the one-shot shortcut for the whole chain.
 
@@ -300,9 +295,11 @@ prompt. The selection is part of the conversation: it is saved with it and
 restored on reload, and "+ Context" on a wiki page opens the split view so the
 document and the chat are visible together.
 
-The Activity list has five scrollable tabs: **Plan**, **Chain**, **Local
-activity**, **Runtime activity**, and **Logs**. `Clear` cleans only the visible
-tab; `Clear all`, beside the List/Graph switch, cleans all five views. These
+The Activity list has three scrollable tabs: **Plan** (tasks, queue, business
+activity lines and the skill chain), **Files** (the local upload/conversion
+feed) and **Logs** (essential run events plus the `assistant_progress` notes).
+`Clear` cleans only the visible tab; `Clear all`, beside the List/Graph switch,
+cleans all three views. These
 actions do not delete the runtime plan. To abandon a failed or unsuitable plan,
 use **Reset plan** in the Plan tab and confirm: active work is stopped and the
 workspace runtime plan, activities, logs, queue, and persisted runtime state
@@ -310,20 +307,33 @@ are purged. The same reset remains available conversationally by explicitly
 asking Donna to delete, reset, abandon, or replace the current plan; asking
 only to stop work performs a non-purging stop.
 
-The execution graph renders the run's collective too: each subagent (Scout,
-Analyst, Critique, Redactor, Archivist) appears as a child node of the run
-node, with its status and start/finish times in the inspector.
+The execution graph renders the run's collective too: each subagent declared by
+the capability's `subagents` list (Scout, Red Team, Analyst, Critique,
+Redactor, Archivist — the Red Team is supported but no packaged runtime
+declares it) appears as a child node of the run node, with its status and
+start/finish times in the inspector. For an external runtime run, the
+collective's roles also drive the activity line: finished roles over the
+declared ones, capped below 100% until the task itself ends.
 
 ### Agent proposals (curation review)
 
 `agent.curate` runs work with confined hands: a git branch per objective, a
 diff, never a direct write. When the run finishes, the proposal waits in the
 review queue — a link with an amber badge in the left sidebar opens
-`/agent-proposals`, showing the agent's reasoning, the unresolved objections,
-the changed files and the full diff. **Merge into the wiki** applies the pages
-through the normal write path (recording `verified` and `status: stable` in
-their OKF frontmatter) and discards the branch; **Reject** discards it and
-leaves the wiki untouched. Nothing reaches the wiki unless a human merges it.
+`/agent-proposals`. The page explains what a proposal is and what each decision
+does; each record reads as a summary ("3 wiki pages · Costs, Network · 1 new,
+2 updated"), names files by label with New/Updated/Removed, renders the
+justification as Markdown (links and `<br>` only, everything else escaped),
+shows a coloured line-by-line diff, and keeps the paths, branch and proposal id
+under a collapsed **Technical details**. A **Start a curation** button (offered
+once the page is opened inside the chat shell) confirms, then starts a
+curation through Donna — agent mode plus the canonical objective, never a
+direct runtime call. **Merge into the wiki** applies the pages through the
+normal write path (recording `verified` and `status: stable` in their OKF
+frontmatter) and discards the branch; **Reject** discards it and leaves the
+wiki untouched. Nothing reaches the wiki unless a human merges it. A curation
+that wrote no file on its branch is a failure, reported with the runtime's
+degradation causes: there is nothing to review.
 
 ## Core Commands
 
@@ -331,7 +341,7 @@ leaves the wiki untouched. Nothing reaches the wiki unless a human merges it.
 wiki init
 wiki doctor                 # reports missing OKF keys; --apply writes them and migrates older pages to OKF v0.2
 wiki ingest [files...]
-wiki ingest --from-ingested [files...]   # rebuild concept pages from the archived sources
+wiki ingest --from-ingested [files...]   # rebuild TAXO fiches and tag-family pivots from the archived sources
 wiki index
 wiki query "question"
 wiki build [templates...]
@@ -352,7 +362,8 @@ Complete `.wikirc.yaml` reference (all fields; only set what you need):
 language: fr # or en, de, … (2-20 chars)
 
 llm:
-  provider: ollama # ollama | openai | openai-compatible | anthropic
+  provider: openai-compatible # openai-compatible | ai-gateway (routing only)
+  engine: ollama # ollama | vllm | mlx | albert | openai | anthropic | generic
   model: YOUR_MODEL_NAME
   apiKey: ollama # optional — leave empty for Ollama
   baseUrl: http://127.0.0.1:11434/v1

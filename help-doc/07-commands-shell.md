@@ -19,6 +19,16 @@ replaced; those in square brackets `[…]` are optional.
 - `/openui` — open the Serve interface in the browser.
 - `/clear` — clear the screen; `/clear --all` also resets run, plan, queue and
   logs.
+- `/remember <fact>` — save a durable fact in the active workspace's shared
+  memory. `/memory` lists facts; `/memory history <key>` shows revisions;
+  `/memory restore <key> <history-id>` restores one; `/forget <key>` removes it.
+  These are requests to Donna, in agent mode whatever the current mode: she
+  performs them with her memory tools and answers in your language. They need
+  the runtime. Donna may also extract durable facts from user messages; credential-shaped
+  messages are skipped, and saved facts are reversible. Automatic extraction
+  can be disabled by the workspace operator. Facts remain workspace-scoped;
+  they remain until forgotten or the workspace is deleted.
+  conversation threads stay separate unless you ask Donna to consult another.
 - `/exit` — quit the cockpit.
 
 ## Workspaces and configuration
@@ -56,9 +66,9 @@ replaced; those in square brackets `[…]` are optional.
 - `/uploads clean` — clean up uploaded documents.
 - `/wiki` — (re)generate the wiki index directly, bypassing the runtime.
 - `/wiki run <args>` — run the raw wiki CLI (advanced). Useful raw examples:
-  `wiki ingest --from-ingested [files…]` (rebuild concept pages from the
-  archived sources), `wiki doctor --apply` (write the missing OKF keys and
-  migrate older pages to the v0.2 format).
+  `wiki ingest --from-ingested [files…]` (rebuild TAXO fiches and tag-family
+  pivots from the archived sources), `wiki doctor --apply` (write the missing
+  OKF keys and migrate older pages to the v0.2 format).
 
 These are direct, synchronous CLI calls. The production skills go through the
 same orchestrated, approved path in both interfaces and are almost always the

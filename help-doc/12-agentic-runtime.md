@@ -64,8 +64,13 @@ obsolete or to re-verify. Each role's progress appears in the Activity panel.
 
 When the run finishes, the proposal waits in the **review queue**: a link with
 an amber badge appears in the left sidebar, opening the `/agent-proposals`
-page. Each proposal shows the agent's reasoning, the unresolved objections,
-the changed files and the full diff.
+page. Each proposal reads as a plain-language summary (how many wiki pages,
+which ones, how many new/updated/removed), with the agent's reasoning rendered
+as formatted text, the unresolved objections, a coloured diff and the
+technical identifiers folded away. A **Start a curation** button on the page
+launches the next curation through DONNA, after a confirmation — no objective
+to type. A curation that wrote no file on its branch is reported as a failure,
+with the reason, instead of opening an empty review.
 
 - **Merge into the wiki** — applies the proposed pages through the normal
   write path (they are recorded as verified and stable, per OKF), commits
