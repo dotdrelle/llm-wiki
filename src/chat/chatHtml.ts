@@ -522,7 +522,7 @@ function updateMsgBubble(el,role,content) {
 // acknowledgment — the real conversation lived in runtimeState.conversation
 // but nothing ever read it.
 function mergeRuntimeConversation() {
-  const conversation=Array.isArray(runtimeState?.conversation)?runtimeState.conversation:[];
+  const conversation=currentRuntimeConversation()||[];
   if(!conversation.length) return false;
   if(runtimeConversationOffset===null) {
     // First runtime state after page load normally contains the complete
@@ -1662,7 +1662,7 @@ function findSkillByName(name) {
 async function matchBrowserSkillInvocation(text) {
   const match=/^\\/([A-Za-z0-9_-]+)(?:\\s+([\\s\\S]*))?$/.exec(String(text||'').trim());
   if(!match) return {displayText:text,sendText:text,skill:null};
-  if(['status','stop','run','queue','skills','help','exit','quit','chat','agent'].includes(String(match[1]).toLowerCase())) return {displayText:text,sendText:text,skill:null};
+  if(['status','stop','run','queue','skills','help','exit','quit','chat','agent','remember','forget','memory'].includes(String(match[1]).toLowerCase())) return {displayText:text,sendText:text,skill:null};
   await fetchSkillsAc();
   const skill=findSkillByName(match[1]);
   if(!skill) return {displayText:text,sendText:text,skill:null};
@@ -1804,7 +1804,7 @@ async function compactConversationMemory() {
   const previousSummary=conversationSummary;
   if(runtimeEnabled()) {
     try {
-      const res=await fetch('/api/runtime/conversation/compact',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
+      const res=await fetch('/api/runtime/conversation/compact',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({conversationId:currentConversationId})});
       if(res.status===409) { notify('Cannot compact while a run is active','e'); return; }
       if(!res.ok) throw new Error('Compact failed ('+res.status+')');
       // The manager generates and owns the summary for this path (it has the
@@ -2779,6 +2779,14 @@ async function sendMessage() {
     await sendRuntimeAgentMessage(input,text,{mode:'skill',displayText:displayOverride||text,hideQuestion});
     return;
   }
+  // /remember, /forget, /memory: Donna performs them with her memory tools and
+  // answers in the session language. The surface only selects agent mode — it
+  // never writes memory, nor an acknowledgement of its own.
+  if(/^\\/(?:remember|forget|memory)(?:\\s|$)/i.test(text)&&runtimeEnabled()&&!forceChat) {
+    if(!agentMode) { agentMode=true; updateAgentModeUI(); }
+    await sendRuntimeAgentMessage(input,text,{displayText:displayOverride||text,hideQuestion});
+    return;
+  }
   if(agentMode&&!forceChat) {
     await sendRuntimeAgentMessage(input,text,{displayText:displayOverride||text,hideQuestion});
     return;
@@ -2938,8 +2946,8 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
     // lane, plain conversation is answered read-only). Posting /control
     // directly is what made the composer feel blocked — its 'converse'
     // answer was a status line, never a reply. Attachments go in every body.
-    const turnBody={input:text,...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})};
-    const doTurnFetch=()=>fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(skillRun?{input:text,mode:'agent'}:turnBody)});
+    const turnBody={input:text,conversationId:currentConversationId,...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})};
+    const doTurnFetch=()=>fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(skillRun?{input:text,mode:'agent',conversationId:currentConversationId}:turnBody)});
     let res=await doTurnFetch();
     // Transient 503 (host runtime booting/restarting): wait, then replay once.
     if(res.status===503&&(notify('Runtime unavailable — waiting for it to come back…','i'),await waitForRuntimeReady(30000))) res=await doTurnFetch();

@@ -9,6 +9,7 @@ import { loadProvenanceGraph, type ProvenanceGraph } from '../src/graph/wiki/pro
 import { createEvidenceManifest, resolveEvidence, writeEvidenceManifest } from '../src/provenance/resolver.ts';
 import { handleGraphRoutes, type GraphRoutesDeps } from '../src/serve/routes/graphRoutes.ts';
 import { exportArtifactSourcePath } from '../src/utils/exportArtifact.ts';
+import { PROVENANCE_SCRIPT } from '../src/graph/wiki/ui/provenance/provenanceScript.ts';
 
 let root: string;
 
@@ -121,12 +122,14 @@ describe('provenance graph of a deliverable', () => {
     const frozenTarifs = frozen.nodes.find((node) => node.id === `fragment:${OFFRE}#Tarifs`)!;
     expect(frozenTarifs).toMatchObject({ status: 'changed' });
     expect(frozenTarifs.text).toContain('18 400');
+    expect(frozenTarifs.otherText).toContain('24 000');
 
     const live = await loadProvenanceGraph(root, DELIVERABLE, { mode: 'live' });
     const liveTarifs = live.nodes.find((node) => node.id === `fragment:${OFFRE}#Tarifs`)!;
     expect(live.source).toBe('live');
     expect(liveTarifs).toMatchObject({ status: 'changed' });
     expect(liveTarifs.text).toContain('24 000');
+    expect(liveTarifs.otherText).toContain('18 400');
   });
 
   it('announces live what no longer resolves since the build', async () => {
@@ -138,6 +141,12 @@ describe('provenance graph of a deliverable', () => {
     expect(live.degradations).toContain(`missing anchor: ${OFFRE}#Localisation`);
     expect(live.degradations).toContain(`no longer reached since the build: ${OFFRE}#Localisation`);
     expect(chainTitles(live).some((chain) => chain.includes('#Localisation'))).toBe(false);
+    // The vanished proof stays drawn, as a broken chain from its section.
+    const lost = live.nodes.find((node) => node.id === `fragment:${OFFRE}#Localisation`)!;
+    expect(lost).toMatchObject({ status: 'missing' });
+    expect(lost.text).toContain('Paris et Lille');
+    expect(live.brokenChains).toHaveLength(1);
+    expect(live.brokenChains[0]!.slice(1)).toEqual([LOCALISATION, `fragment:${OFFRE}#Localisation`]);
   });
 
   it('resolves an export artifact to its source deliverable and its frozen evidence', async () => {
@@ -192,40 +201,133 @@ describe('/api/graph/provenance', () => {
   });
 });
 
-describe('Provenance view in the browser', () => {
-  it('lays the deliverable out in five columns, rows following the chains', async () => {
-    await build();
-    const payload = await loadProvenanceGraph(root, DELIVERABLE);
-    const { provenanceScript } = await import('../src/graph/wiki/ui/provenance/provenanceScript.ts');
-    const element = { addEventListener() {}, classList: { toggle() {} }, hidden: false };
-    const run = new Function('document', 'payload', `let view='provenance',sel=null;const manual={};const esc=s=>String(s);
-      ${provenanceScript()}
-      prov=payload;provById=new Map(prov.nodes.map(n=>[n.id,n]));
-      const D=provenanceData();
-      return {nodes:D.nodes.map(n=>({id:n.id,x:n.x,y:n.y,prov:n.prov})),links:D.links.length,
-        around:provNeighbors('fragment:${OFFRE}#Localisation').sort()};`);
-    const out = run({ querySelector: () => element }, payload) as {
-      nodes: Array<{ id: string; x: number; y: number; prov: boolean }>; links: number; around: string[];
-    };
-    const at = (id: string) => out.nodes.find((node) => node.id === id)!;
+describe('/provenance page', () => {
+  it('is served as an HTML page and reads its data from the API, never hard-coded', async () => {
+    const sent: { html?: string } = {};
+    const req = { method: 'GET', url: '/provenance?id=deliverables%2Fx.md', headers: {} } as unknown as IncomingMessage;
+    await handleGraphRoutes(req, {} as ServerResponse, '/provenance', {
+      rootDir: root,
+      language: () => 'en',
+      workspaceNameFromEnv: () => 'test',
+      sendJson: () => {},
+      sendGzippedHtml: async (_req, _res, html) => { sent.html = html; },
+    });
 
-    expect(out.nodes.every((node) => node.prov)).toBe(true);
-    expect([at('templates/notes/basic-note.md').x, at(DELIVERABLE).x, at(COUT).x, at(TARIFS).x, at(`fragment:${OFFRE}#Tarifs`).x])
-      .toEqual([-570, -285, 0, 285, 570]);
-    // Summary's evidence comes before Key Facts' own, top to bottom.
-    expect(at(`fragment:${OFFRE}#Tarifs`).y).toBeLessThan(at(`fragment:${AUDIT}#Conclusions`).y);
-    expect(out.links).toBe(payload.edges.length);
-    const summary = payload.nodes.find((node) => node.kind === 'section' && node.title === 'Summary')!.id;
-    expect(out.around).toEqual([`fragment:${OFFRE}#Localisation`, LOCALISATION, summary].sort());
+    expect(sent.html).toContain('<title>Provenance</title>');
+    expect(sent.html).toContain("'/api/graph/provenance?id='+encodeURIComponent(target)");
+    for (const column of ['Template &amp; context', 'Deliverable', 'Pivots', 'TAXO fiches', 'Archives']) {
+      expect(sent.html).toContain(column);
+    }
+    expect(sent.html).toContain('id="mode-frozen"');
+    expect(sent.html).toContain('id="mode-live"');
+    // Local-first: no font or script fetched from another host.
+    expect(sent.html).not.toMatch(/https?:\/\//);
   });
 
-  it('offers the view only when the page was opened for a deliverable', async () => {
-    const { renderWikiGraphV2 } = await import('../src/graph/wiki/graphApp.ts');
-    const html = renderWikiGraphV2();
+  it('renders the real payload: cards, rows, badges, banner and the detail of a fragment', async () => {
+    await build();
+    await put(OFFRE, (await readFile(path.join(root, OFFRE), 'utf8')).replace('18 400', '24 000'));
+    const payload = await loadProvenanceGraph(root, DELIVERABLE);
+    const out = runPage(PROVENANCE_SCRIPT, payload, `fragment:${OFFRE}#Tarifs`);
 
-    expect(html).toContain('<button type="button" id="v-provenance" aria-pressed="false" hidden>Provenance</button>');
-    expect(html).toContain('id="prov-mode" hidden');
-    expect(html).toContain("new URLSearchParams(location.search).get('provenance')");
-    expect(html).toContain('initProvenance();\nstartRevisionFeed();\nloadTaxo(true);');
+    expect(out.title).toBe('Basic Note');
+    expect(out.columns[0]).toEqual(['Template · Basic Note', 'Build context · Citation rules']);
+    expect(out.columns[1]).toEqual(['Deliverable · Basic Note']);
+    expect(out.columns[2]).toEqual([`Concept pivot · Coût d'hébergement`]);
+    expect(out.columns[4]).toEqual(['Archive · Offre cloud', 'Archive · Audit SecNum']);
+    expect(out.rows).toContain('§ Summary2 proofs');
+    expect(out.rows).toContain('#Tarifschanged since build');
+    expect(out.banner).toContain('Frozen evidence of build');
+    expect(out.banner).toContain('1 fragment has changed');
+    expect(out.detail).toContain('Forfait annuel 18 400 EUR');
+    expect(out.detail).toContain('The current archive now reads:');
+    expect(out.detail).toContain('Forfait annuel 24 000 EUR');
+    expect(out.detail).toContain('2 chains through here');
+    expect(out.detail).toContain('Add to Donna');
+  });
+});
+
+/** A minimal DOM, enough for the page script to render into. */
+function runPage(script: string, payload: ProvenanceGraph, select: string) {
+  type El = {
+    id?: string; className: string; innerHTML: string; textContent: string; hidden: boolean; disabled: boolean;
+    tabIndex: number; value: string; dataset: Record<string, string>; style: { setProperty(): void };
+    classList: { toggle(): void; add(): void }; children: El[]; parent?: El;
+    appendChild(child: El): El; insertAdjacentHTML(_: string, html: string): void; querySelector(): El | null;
+    querySelectorAll(): El[]; remove(): void; addEventListener(): void; setAttribute(): void;
+    getBoundingClientRect(): { left: number; right: number; top: number; height: number };
+  };
+  const make = (id?: string): El => {
+    const el: El = {
+      id, className: '', innerHTML: '', textContent: '', hidden: false, disabled: false, tabIndex: 0, value: '',
+      dataset: {}, style: { setProperty() {} }, classList: { toggle() {}, add() {} }, children: [],
+      appendChild(child) { child.parent = el; el.children.push(child); return child; },
+      insertAdjacentHTML(_, html) { el.innerHTML += html; },
+      querySelector() { return el.children.find((child) => child.className.startsWith('node')) ?? null; },
+      querySelectorAll() { return []; },
+      remove() {}, addEventListener() {}, setAttribute() {},
+      getBoundingClientRect() { return { left: 0, right: 10, top: 0, height: 10 }; },
+    };
+    return el;
+  };
+  const byId = new Map<string, El>();
+  const document = {
+    title: '',
+    documentElement: { classList: { toggle() {} } },
+    getElementById: (id: string) => { if (!byId.has(id)) byId.set(id, make(id)); return byId.get(id)!; },
+    createElement: () => make(),
+    addEventListener() {},
+  };
+  const window = { parent: null as unknown, addEventListener() {} };
+  window.parent = window;
+  const run = new Function('document', 'window', 'location', 'localStorage', 'matchMedia', 'fetch', 'requestAnimationFrame', 'payload', 'select',
+    `${script.replace(/\nload\(\);\s*$/, '')}
+     data=payload;byId=new Map(data.nodes.map(n=>[n.id,n]));selected=select;render();
+     return true;`);
+  run(document, window, { search: `?id=${encodeURIComponent(DELIVERABLE)}`, origin: 'http://x' },
+    { getItem: () => null }, () => ({ matches: false }), async () => ({}), () => 0, payload, select);
+  const text = (el: El) => el.innerHTML.replace(/<[^>]+>/g, '');
+  const cardLabel = (el: El) => {
+    const kind = /<div class="k">([^<]*)<\/div>/.exec(el.innerHTML)?.[1] ?? '';
+    const title = /<div class="t">([^<]*)<\/div>/.exec(el.innerHTML)?.[1] ?? '';
+    return `${kind} · ${title}`.replace(/&#39;/g, "'");
+  };
+  const columns = [0, 1, 2, 3, 4].map((c) => byId.get(`col-${c}`)!.children.map(cardLabel));
+  const rows = [...byId.values()].flatMap((el) => el.children).flatMap((card) => card.children).flatMap((rows) => rows.children)
+    .map((row) => text(row));
+  return {
+    title: byId.get('title')!.textContent,
+    columns,
+    rows,
+    banner: text(byId.get('banner')!),
+    detail: text(byId.get('detail')!).replace(/&#39;/g, "'"),
+  };
+}
+
+describe('announcements on a frozen build', () => {
+  it('flags a page the build went through that no longer exists, and a whole-file proof', async () => {
+    await build();
+    await rm(path.join(root, LOCALISATION));
+
+    const graph = await loadProvenanceGraph(root, DELIVERABLE);
+
+    expect(graph.source).toBe('frozen');
+    expect(graph.nodes.find((node) => node.id === LOCALISATION)).toMatchObject({ status: 'missing' });
+    expect(graph.degradations).toContain(`page no longer exists since the build: ${LOCALISATION}`);
+    // The frozen proof itself is intact: the archive still holds the passage.
+    expect(graph.nodes.find((node) => node.id === `fragment:${OFFRE}#Localisation`)).toMatchObject({ status: 'unchanged' });
+  });
+});
+
+describe('announcements on a live reading', () => {
+  it('flags a page that vanished since the build on the broken chain it explains', async () => {
+    await build();
+    await rm(path.join(root, LOCALISATION));
+
+    const live = await loadProvenanceGraph(root, DELIVERABLE, { mode: 'live' });
+
+    expect(live.brokenChains.some((chain) => chain.includes(LOCALISATION))).toBe(true);
+    expect(live.nodes.find((node) => node.id === LOCALISATION)).toMatchObject({ status: 'missing' });
+    expect(live.degradations).toContain(`page no longer exists since the build: ${LOCALISATION}`);
   });
 });

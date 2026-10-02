@@ -16,19 +16,16 @@ const ABOUT={
   family:'Each family radiates its concepts. Two families are linked when they share sources; the number on the link counts them.',
   concepts:'Two concepts are linked when one source cites both. The stroke thickens with the number of shared sources.',
   focus:'One concept in the centre, its sources on the first ring, then the concepts those sources also cite. Click an outer concept to move there.',
-  full:'Bipartite graph: each source is linked to the concepts it tags.',
-  provenance:'One deliverable, read left to right: what produced it, its citing sections, the pivots and fiches each citation went through, and the exact archive fragments it rests on.'};
+  full:'Bipartite graph: each source is linked to the concepts it tags.'};
 const LEGEND={
   family:'<span><i class="grad"></i>linked families · shared sources</span><span><i class="dash" style="--c:#8fa3b8"></i>membership</span>',
   concepts:'<span><i style="--c:#7e97b9"></i>shared sources</span><span><i style="--c:#4d9cff"></i>selection</span>',
   focus:'<span><span class="dot" style="--c:'+SRC_COLOR+'"></span>source</span><span><span class="star" style="--c:#4d9cff"></span>concept</span><span><i style="--c:#7e97b9"></i>cites</span>',
-  full:'<span><span class="dot" style="--c:'+SRC_COLOR+'"></span>source</span><span><span class="star" style="--c:#4d9cff"></span>concept</span><span><i style="--c:#7e97b9"></i>tag</span>',
-  provenance:['template','deliverable','pivot','fiche','fragment'].map(k=>'<span><span class="dot" style="--c:'+PROV_COLOR[k]+'"></span>'+PROV_KIND[k].toLowerCase()+'</span>').join('')};
+  full:'<span><span class="dot" style="--c:'+SRC_COLOR+'"></span>source</span><span><span class="star" style="--c:#4d9cff"></span>concept</span><span><i style="--c:#7e97b9"></i>tag</span>'};
 const $=selector=>document.querySelector(selector);
 const panel=$('#panel');
 
 function neighbors(id){
-  if(view==='provenance')return provNeighbors(id);
   if(view==='family')return id.startsWith('f:')?[...(famAdj.get(id)?.keys()||[]),...concepts.filter(c=>'f:'+c.family===id).map(c=>c.id)]:['f:'+byId.get(id)?.family];
   if(view==='concepts')return[...(coAdj.get(id)?.keys()||[])];
   const ids=new Set(nodes.map(n=>n.id));return[...(bip.get(id)||[])].filter(x=>ids.has(x))}
@@ -36,7 +33,6 @@ function neighbors(id){
 // the family and concept views, so it lights the concepts it tags (and, on the
 // family view, their families) instead of vanishing.
 function searchFocus(){
-  if(view==='provenance')return new Set(nodes.filter(n=>searchHits.has(n.path)).map(n=>n.id));
   const matched=[...searchHits].filter(id=>byId.has(id));
   const set=new Set(matched);
   if(view==='family'||view==='concepts')matched.forEach(id=>{if(byId.get(id).type==='source')bip.get(id).forEach(c=>set.add(c))});
@@ -50,15 +46,13 @@ function render(){
 function select(id){sel=id;render()}
 function openFocus(id){if(!byId.has(id))return;focusId=id;view='focus';sel=null;buildScene(true);render()}
 function activateNode(n){
-  if(view==='provenance'){provActivate(n);return}
   if(view==='focus'&&n.type==='concept'&&n.id!==focusId){openFocus(n.id);return}
   select(n.id);
   if(n.type==='source')openGraphContextCard(byId.get(n.id)||n)}
 function setView(next){
   if(next===view)return;
   if(next==='focus'&&sel&&byId.get(sel)?.type==='concept')focusId=sel;
-  view=next;if(view==='focus'||view==='provenance')sel=null;
-  if(view==='provenance'&&!prov)loadProvenance(true);else if(sel&&!viewGraph().nodes.some(n=>n.id===sel))sel=null;
+  view=next;if(view==='focus')sel=null;else if(sel&&!viewGraph().nodes.some(n=>n.id===sel))sel=null;
   buildScene(true);render()}
 
 function searchStatus(){
@@ -83,20 +77,17 @@ function syncSearchChrome(){
   chip.title=chip.textContent}
 function syncChrome(){
   syncSearchChrome();
-  ['family','concepts','focus','full','provenance'].forEach(v=>$('#v-'+v).setAttribute('aria-pressed',String(view===v)));
-  syncProvChrome();
-  $('#view-title').textContent=view==='focus'?'Focus · '+(byId.get(focusId)?.title||''):view==='provenance'?'Provenance · '+(provById.get(prov?.root)?.title||provTarget||''):VIEW_TITLES[view];
+  ['family','concepts','focus','full'].forEach(v=>$('#v-'+v).setAttribute('aria-pressed',String(view===v)));
+  $('#view-title').textContent=view==='focus'?'Focus · '+(byId.get(focusId)?.title||''):VIEW_TITLES[view];
   const nS=nodes.filter(n=>n.type==='source').length;
   $('#summary').textContent=(
     view==='family'?FAMS.length+' families · '+concepts.length+' concepts · '+crossLinks.length+' cross-family links':
     view==='concepts'?concepts.length+' concepts · '+coLinks.length+' links by shared sources':
     view==='focus'?nS+' sources · '+Math.max(0,nodes.length-1-nS)+' neighbouring concepts':
-    view==='provenance'?provSummary():
     concepts.length+' concepts · '+sources.length+' sources · '+links.length+' links')+searchStatus();
   const pick=$('#pick');pick.hidden=view!=='focus';if(focusId)pick.value=focusId;
   $('#labels').hidden=view!=='full';
-  $('#src-filter').closest('section').hidden=view==='family'||view==='concepts'||view==='provenance';
-  $('#fam-filters').closest('section').hidden=view==='provenance';
+  $('#src-filter').closest('section').hidden=view==='family'||view==='concepts';
   $('#about').textContent=ABOUT[view];
   $('#legend').innerHTML=LEGEND[view]}
 function renderFilters(){
@@ -121,7 +112,6 @@ function searchPanel(){
     (ss.length?'<div class="sec">Sources · '+ss.length+'</div><ul class="rows">'+ss.map(s=>row(s,s.nsrc,'','data-src')).join('')+'</ul>':'')+
     (matched.length?'':'<p>No concept or source matches this search.</p>')}
 function renderPanel(){
-  if(view==='provenance'){panel.innerHTML=provPanel();return}
   let h='';
   if(!sel&&query&&searchHits)h=searchPanel();
   else if(view==='focus'&&!sel){
@@ -164,8 +154,7 @@ function renderPanel(){
   panel.innerHTML=h}
 panel.addEventListener('click',event=>{
   const button=event.target.closest('button');if(!button)return;
-  if(button.dataset.prov)select(button.dataset.prov);
-  else if(button.dataset.id)select(button.dataset.id);
+  if(button.dataset.id)select(button.dataset.id);
   else if(button.dataset.focus)openFocus(button.dataset.focus);
   else if(button.dataset.src){
     const id=button.dataset.src;
@@ -173,7 +162,7 @@ panel.addEventListener('click',event=>{
     select(id);openGraphContextCard(byId.get(id))}});
 
 // ---------- controls ----------
-['family','concepts','focus','full','provenance'].forEach(v=>$('#v-'+v).addEventListener('click',()=>setView(v)));
+['family','concepts','focus','full'].forEach(v=>$('#v-'+v).addEventListener('click',()=>setView(v)));
 $('#labels').addEventListener('click',()=>{showSrcLabels=!showSrcLabels;scheduler.invalidate()});
 $('#reset').addEventListener('click',()=>{Object.keys(manual).forEach(key=>{if(key.startsWith(view+'|'))delete manual[key]});buildScene(false);fit(true)});
 $('#pick').addEventListener('change',event=>openFocus(event.target.value));
@@ -217,17 +206,16 @@ async function loadTaxo(first){
     }while(taxoWanted)}
   catch(error){$('#empty').hidden=false;$('#empty').textContent='Unable to load the graph: '+error.message}
   finally{taxoLoading=false}}
-function onGraphRevision(){loadTaxo(false);if(provTarget)loadProvenance(false)}
 function startRevisionFeed(){
   if(window.parent&&window.parent!==window){
     window.addEventListener('message',event=>{
       if(event.origin!==location.origin)return;
-      if(event.data?.type==='llmwiki:graph-revision')onGraphRevision()});
+      if(event.data?.type==='llmwiki:graph-revision')loadTaxo(false)});
     try{window.parent.postMessage({type:'llmwiki:graph-subscribe'},location.origin)}catch(error){}
     return}
   if(typeof EventSource!=='function')return;
   const stream=new EventSource('/api/graph/events');
-  stream.addEventListener('graph.revision',onGraphRevision);
+  stream.addEventListener('graph.revision',()=>loadTaxo(false));
   window.addEventListener('pagehide',()=>stream.close())}
 `;
 }

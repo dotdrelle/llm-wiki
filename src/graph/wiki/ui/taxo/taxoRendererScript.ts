@@ -44,7 +44,6 @@ function focusData(){
 function buildScene(reframe){
   rings=null;
   if(view==='focus'){const F=focusData();nodes=F.nodes;links=F.links;rings=F.rings}
-  else if(view==='provenance'){const D=provenanceData();nodes=D.nodes;links=D.links}
   else{const V=viewGraph(),placed=layout[view]||{};
     nodes=V.nodes.map(n=>{const p=manual[view+'|'+n.id]||placed[n.id]||[0,0];return{...n,x:p[0],y:p[1]}});
     links=V.links.map(l=>({...l}))}
@@ -56,7 +55,7 @@ function buildScene(reframe){
 function fit(animate){
   const vis=nodes.filter(visible);if(!vis.length||!W)return;
   let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
-  vis.forEach(n=>{const r=n.prov?n.w/2+24:R(n)+(n.type==='family'?40:20);x0=Math.min(x0,n.x-r);x1=Math.max(x1,n.x+r);y0=Math.min(y0,n.y-r);y1=Math.max(y1,n.y+r)});
+  vis.forEach(n=>{const r=R(n)+(n.type==='family'?40:20);x0=Math.min(x0,n.x-r);x1=Math.max(x1,n.x+r);y0=Math.min(y0,n.y-r);y1=Math.max(y1,n.y+r)});
   const padL=20,padR=W>820?300:20,padT=90,padB=50;
   const k=Math.max(.35,Math.min(2.2,Math.min((W-padL-padR)/(x1-x0+80),(H-padT-padB)/(y1-y0+30))));
   const ox=(padL-padR)/2,oy=(padT-padB)/2,target={x:(x0+x1)/2-ox/k,y:(y0+y1)/2-oy/k,scale:k};
@@ -79,7 +78,6 @@ const edgeActive=l=>sel&&(l.a.id===sel||l.b.id===sel);
 function edgeDim(l){if(!focusSet)return false;if(sel)return!edgeActive(l);return!(focusSet.has(l.a.id)&&focusSet.has(l.b.id))}
 function curve(a,b,bend){const cx=(a.x+b.x)/2-(b.y-a.y)*bend,cy=(a.y+b.y)/2+(b.x-a.x)*bend;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.quadraticCurveTo(cx,cy,b.x,b.y);return{cx,cy}}
 function drawEdge(l){
-  if(String(l.kind).startsWith('prov-'))return drawProvEdge(l);
   const a=P(l.a),b=P(l.b),on=edgeActive(l);
   ctx.globalAlpha=edgeDim(l)?.12:1;
   if(l.kind==='cross'){
@@ -176,13 +174,13 @@ function draw(now){
   links.forEach(l=>{if(edgeOn(l)&&!edgeActive(l))drawEdge(l)});
   links.forEach(l=>{if(edgeOn(l)&&edgeActive(l))drawEdge(l)});
   const ordered=nodes.filter(visible).sort((a,b)=>(dim(b)?1:0)-(dim(a)?1:0)||(a.id===sel)-(b.id===sel));
-  ordered.forEach((n,i)=>{if(n.prov)drawProvCard(n);else if(n.type==='family')drawFamily(n);else if(n.type==='concept')drawStar(n,i);else if(view==='focus')drawCard(n);else drawSquare(n)});
+  ordered.forEach((n,i)=>{if(n.type==='family')drawFamily(n);else if(n.type==='concept')drawStar(n,i);else if(view==='focus')drawCard(n);else drawSquare(n)});
   placeLabels();
   if(anchorCallback)anchorCallback(locateNode(anchorId));
   // The twinkle and the link particles have no end: they ride the scheduler's
   // reduced cadence, never a permanent sixty frames per second.
   if(camera.moving)scheduler.animate(60);else scheduler.idle(1000,80)}
-function locateNode(id){const n=id&&nodes.find(item=>item.id===id&&visible(item));if(!n)return null;const p=P(n);if(p.x<0||p.y<0||p.x>W||p.y>H)return null;return{x:p.x,y:p.y,r:n.prov?n.w*K()/2:n.type==='source'?12:R(n)*Math.sqrt(K())+4}}
+function locateNode(id){const n=id&&nodes.find(item=>item.id===id&&visible(item));if(!n)return null;const p=P(n);if(p.x<0||p.y<0||p.x>W||p.y>H)return null;return{x:p.x,y:p.y,r:n.type==='source'?12:R(n)*Math.sqrt(K())+4}}
 
 // ---------- interaction ----------
 const offset=e=>{const r=cv.getBoundingClientRect();return[e.clientX-r.left,e.clientY-r.top]};

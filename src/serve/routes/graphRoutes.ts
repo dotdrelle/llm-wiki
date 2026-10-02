@@ -6,6 +6,7 @@ import { createFilteredSnapshot } from '../../graph/wiki/snapshot.ts';
 import { graphDocumentSummary } from '../../graph/wiki/summary.ts';
 import { loadTaxoGraph } from '../../graph/wiki/taxoGraph.ts';
 import { loadProvenanceGraph, ProvenanceGraphError } from '../../graph/wiki/provenanceGraph.ts';
+import { renderProvenancePage } from '../../graph/wiki/ui/provenance/provenancePage.ts';
 import { createGraphEventHub, type GraphEventHub } from '../sse/graphEvents.ts';
 import { sendJsonPayload } from '../http/sendJsonPayload.ts';
 
@@ -144,8 +145,14 @@ export async function handleGraphRoutes(
     return true;
   }
 
-  // The Provenance view: one deliverable, read from its frozen evidence
-  // manifest (or live, announced). Read-only, additive to the TAXO payload.
+  // The Provenance page of one deliverable (an HTML page, not a Canvas view:
+  // see provenancePage.ts) and its data, read from the build's frozen
+  // evidence manifest (or live, announced). Read-only, additive to TAXO.
+  if (req.method === 'GET' && urlPath === '/provenance') {
+    await deps.sendGzippedHtml(req, res, renderProvenancePage());
+    return true;
+  }
+
   if (req.method === 'GET' && urlPath === '/api/graph/provenance') {
     const params = new URL(req.url ?? '/', 'http://localhost').searchParams;
     try {

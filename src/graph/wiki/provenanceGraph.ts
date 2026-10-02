@@ -54,8 +54,13 @@ export interface ProvenanceNode {
   anchor?: string;
   /** Fragment only: the evidence text (frozen or current), bounded. */
   text?: string;
-  /** Fragment only: how the current archive compares with the evidence shown. */
+  /**
+   * Fragment: how the current archive compares with the evidence shown.
+   * Page: `missing` when a page the build went through no longer exists.
+   */
   status?: 'unchanged' | 'changed' | 'missing';
+  /** Fragment only, when `status` is `changed`: the other side of the comparison. */
+  otherText?: string;
 }
 
 export interface ProvenanceEdge {
@@ -76,6 +81,8 @@ export interface ProvenanceGraph {
   edges: ProvenanceEdge[];
   /** Each chain is a node-id path from a section to a fragment. */
   chains: string[][];
+  /** Live reading only: chains the build used that no longer resolve today. */
+  brokenChains: string[][];
   degradations: string[];
 }
 
@@ -89,6 +96,7 @@ export class ProvenanceGraphError extends Error {
 }
 
 const MAX_FRAGMENT_TEXT = 1200;
+const bounded = (text: string): string => (text.length > MAX_FRAGMENT_TEXT ? `${text.slice(0, MAX_FRAGMENT_TEXT)}…` : text);
 type Hop = { path: string; anchor: string | null };
 
 function humanize(value: string): string {
@@ -277,15 +285,19 @@ export async function loadProvenanceGraph(
     const fragmentId = `fragment:${fragmentKey(fragment.path, fragment.anchor)}`;
     const archive = load(fragment.path);
     let status: ProvenanceNode['status'];
+    let otherText: string | undefined;
     if (source === 'frozen') {
       if (archive === null) status = 'missing';
       else {
         const current = fragment.anchor ? resolveAnchor(archive, fragment.anchor) : { status: 'resolved' as const, text: archive };
-        status = current.status !== 'resolved' ? 'missing' : hashText(current.text) === fragment.hash ? 'unchanged' : 'changed';
+        if (current.status !== 'resolved') status = 'missing';
+        else if (hashText(current.text) === fragment.hash) status = 'unchanged';
+        else { status = 'changed'; otherText = bounded(current.text); }
       }
     } else {
       const frozen = manifest?.fragments.find((entry) => entry.path === fragment.path && entry.anchor === fragment.anchor);
       status = frozen && frozen.hash !== fragment.hash ? 'changed' : 'unchanged';
+      if (frozen && status === 'changed') otherText = bounded(frozen.text);
     }
     addNode({
       id: fragmentId,
@@ -294,13 +306,22 @@ export async function loadProvenanceGraph(
       title: titleOf(archive, fragment.path),
       path: fragment.path,
       anchor: fragment.anchor,
-      text: fragment.text.length > MAX_FRAGMENT_TEXT ? `${fragment.text.slice(0, MAX_FRAGMENT_TEXT)}…` : fragment.text,
+      text: bounded(fragment.text),
       status,
+      ...(otherText !== undefined ? { otherText } : {}),
     });
+    if (source === 'frozen' && !fragment.anchor) {
+      degradations.push(`unanchored citation (whole file): ${fragment.path}`);
+    }
     for (const hops of fragment.chains) {
       const hopIds = hops.map((hop) => {
         const { kind, col } = kindOfPage(hop.path);
-        return addNode({ id: hop.path, kind, col, title: titleOf(load(hop.path), hop.path), path: hop.path });
+        const content = load(hop.path);
+        if (content === null && source === 'frozen') degradations.push(`page no longer exists since the build: ${hop.path}`);
+        return addNode({
+          id: hop.path, kind, col, title: titleOf(content, hop.path), path: hop.path,
+          ...(content === null ? { status: 'missing' as const } : {}),
+        });
       });
       const first = hops[0] ? fragmentKey(hops[0].path, hops[0].anchor) : fragmentKey(fragment.path, fragment.anchor);
       const owners = sections.filter((section) => section.citations.has(first)).map((section) => section.id);
@@ -316,6 +337,37 @@ export async function loadProvenanceGraph(
   }
   if (!fragments.length) degradations.push('no evidence fragment: the deliverable cites nothing resolvable');
 
+  // Live reading: what the build used and today's files no longer reach is
+  // drawn too, as broken chains — a vanished proof must stay visible.
+  const brokenChains: string[][] = [];
+  if (source === 'live' && manifest) {
+    const reached = new Set(fragments.map((entry) => fragmentKey(entry.path, entry.anchor)));
+    for (const frozen of manifest.fragments) {
+      if (reached.has(fragmentKey(frozen.path, frozen.anchor))) continue;
+      const fragmentId = `fragment:${fragmentKey(frozen.path, frozen.anchor)}`;
+      addNode({
+        id: fragmentId, kind: 'fragment', col: 4, title: titleOf(load(frozen.path), frozen.path), path: frozen.path,
+        anchor: frozen.anchor, text: bounded(frozen.text), status: 'missing',
+      });
+      for (const hops of [frozen.chain, ...(frozen.extraChains ?? [])]) {
+        const hopIds = hops.map((hop) => {
+          const { kind, col } = kindOfPage(hop.path);
+          // A page gone since the build is usually WHY the chain broke: flag
+          // it here too, as the frozen reading does.
+          const content = load(hop.path);
+          if (content === null) degradations.push(`page no longer exists since the build: ${hop.path}`);
+          return addNode({
+            id: hop.path, kind, col, title: titleOf(content, hop.path), path: hop.path,
+            ...(content === null ? { status: 'missing' as const } : {}),
+          });
+        });
+        const first = hops[0] ? fragmentKey(hops[0].path, hops[0].anchor) : fragmentKey(frozen.path, frozen.anchor);
+        const owners = sections.filter((section) => section.citations.has(first)).map((section) => section.id);
+        for (const start of owners.length ? owners : [root]) brokenChains.push([start, ...hopIds, fragmentId]);
+      }
+    }
+  }
+
   return {
     requested,
     root,
@@ -326,6 +378,7 @@ export async function loadProvenanceGraph(
     nodes: [...nodes.values()],
     edges: [...edges.values()],
     chains,
+    brokenChains,
     degradations: [...new Set(degradations)],
   };
 }

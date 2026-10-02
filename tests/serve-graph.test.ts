@@ -213,8 +213,8 @@ describe('serve graph ui', () => {
 
       // Provenance is read-only: a plain link on every deliverable page,
       // export artifacts included (the view resolves them to their source).
-      expect(page).toContain('href="/graph?provenance=deliverables%2Fbrief.md"');
-      expect(exportPage).toContain('href="/graph?provenance=deliverables%2Fbrief.export.md"');
+      expect(page).toContain('href="/provenance?id=deliverables%2Fbrief.md"');
+      expect(exportPage).toContain('href="/provenance?id=deliverables%2Fbrief.export.md"');
 
       const source = await serveSource();
       expect(source).toContain("querySelector('[data-deliver]')");

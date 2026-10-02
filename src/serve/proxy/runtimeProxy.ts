@@ -41,7 +41,9 @@ export async function proxyRuntimeJson(
     deps.sendJson(res, 503, { ok: false, error: 'runtime not configured' });
     return;
   }
-  let body = req.method === 'POST' ? await deps.readRequestBuffer(req, 1024 * 1024) : null;
+  // DELETE carries a body too (the memory route records which conversation
+  // removed a fact): dropping it lost that attribution.
+  let body = req.method === 'POST' || req.method === 'DELETE' ? await deps.readRequestBuffer(req, 1024 * 1024) : null;
   if (extra && body) {
     try {
       body = Buffer.from(JSON.stringify({ ...JSON.parse(body.toString()), ...extra }));

@@ -19,7 +19,7 @@ async function redoMessage(btn) {
   const refIndex=runtimeConversationRefs.findIndex(ref=>ref.el===msg);
   try {
     if(refIndex>=0) {
-      const res=await fetch('/api/runtime/conversation/truncate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:runtimeConversationOffset+refIndex})});
+      const res=await fetch('/api/runtime/conversation/truncate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:runtimeConversationOffset+refIndex,conversationId:currentConversationId})});
       const payload=await res.json().catch(()=>({}));
       if(payload?.truncated!==true) {
         notify(payload?.reason==='run_active'?'Cancel the running task before redoing':'Redo failed','e');

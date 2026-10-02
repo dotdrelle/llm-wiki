@@ -63,6 +63,20 @@ export async function handleRuntimeRoutes(
     await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/conversation/compact'), deps.proxyDeps);
     return true;
   }
+  if (urlPath === '/api/runtime/memory/facts' && (req.method === 'GET' || req.method === 'POST')) {
+    // The workspace path already carries `?workspace=`: the caller's query
+    // joins it with `&`, never a second `?`.
+    const target = deps.runtimePathForWorkspace('/memory/facts');
+    const query = req.method === 'GET' ? new URL(req.url ?? '/', 'http://localhost').search.replace(/^\?/, '') : '';
+    await proxyRuntimeJson(req, res, query ? `${target}${target.includes('?') ? '&' : '?'}${query}` : target, deps.proxyDeps);
+    return true;
+  }
+  const memoryPath = urlPath.match(/^\/api\/runtime\/memory\/(facts\/[^/]+|history\/[^/]+)$/);
+  if (memoryPath && (req.method === 'GET' || req.method === 'POST' || req.method === 'DELETE')) {
+    const target = deps.runtimePathForWorkspace(`/memory/${memoryPath[1]}`);
+    await proxyRuntimeJson(req, res, target, deps.proxyDeps);
+    return true;
+  }
   if (urlPath === '/api/runtime/control' && (req.method === 'GET' || req.method === 'POST')) {
     await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/control'), deps.proxyDeps);
     return true;

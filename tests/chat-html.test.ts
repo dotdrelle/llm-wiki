@@ -47,7 +47,7 @@ describe('chat html', () => {
     expect(matcher).toContain('sendText:text');
     expect(matcher).not.toContain('skill.body');
     expect(matcher).not.toContain('replaceAll');
-    expect(script).toContain("body:JSON.stringify(skillRun?{input:text,mode:'agent'}:turnBody)");
+    expect(script).toContain("body:JSON.stringify(skillRun?{input:text,mode:'agent',conversationId:currentConversationId}:turnBody)");
   });
 
   it('accepts wiki-tree and Pending drops as page context, like "+ Context"', () => {
@@ -100,9 +100,8 @@ describe('chat html', () => {
     const source = /function isWikiUtilityPath\(value\) \{[\s\S]*?\n\}/.exec(script)?.[0];
     expect(source).toBeTruthy();
     const isWikiUtilityPath = new Function(`${source}; return isWikiUtilityPath;`)() as (path: string) => boolean;
-    // The Provenance view is the graph too: its query string must not turn
-    // it into "the page to return to".
-    for (const path of ['/graph', '/graph?provenance=deliverables%2Fa.md', '/history', '/agent-proposals', '/agent-proposals/p1']) {
+    // The Provenance page is a utility view too, query string included.
+    for (const path of ['/graph', '/provenance?id=deliverables%2Fa.md', '/history', '/agent-proposals', '/agent-proposals/p1']) {
       expect(isWikiUtilityPath(path)).toBe(true);
     }
     for (const path of ['/wiki/index.md', '/deliverables/a.md', '/graphs.md']) {
@@ -228,8 +227,34 @@ describe('chat html', () => {
     expect(script).toContain("messageHtml:'',");
     expect(script).toContain('await persistConversationPayload({');
     expect(script).toContain('let runtimeConversationOffset=null;');
-    expect(script).toContain('runtimeConversationOffset=Array.isArray(runtimeState?.conversation)');
+    expect(script).toContain('runtimeConversationOffset=conversation?conversation.length:null;');
     expect(script).toContain('const visibleLength=conversation.length-runtimeConversationOffset;');
+  });
+
+  it('counts the reply offset on the current thread, not on the whole workspace log', () => {
+    const script = chatScripts().join('\n');
+    const helper = /function currentRuntimeConversation\(\) \{[\s\S]*?\n\}/.exec(script)?.[0];
+    const reset = /function resetRuntimeConversationTracking\(\) \{[\s\S]*?\n\}/.exec(script)?.[0];
+    expect(helper && reset).toBeTruthy();
+    const run = new Function('state', 'current', `let runtimeState=state,currentConversationId=current,runtimeConversationRefs=[1],runtimeConversationOffset=99,
+      pendingRuntimeUserRefs=[],pendingRuntimeStatusEls=[],armedReplyStatusEls=[];const clearRuntimeThinkingBubble=()=>{};
+      ${helper}\n${reset}\nresetRuntimeConversationTracking();return runtimeConversationOffset;`) as (state: unknown, current: string | null) => number;
+    const other = Array.from({ length: 40 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: String(i), conversationId: 'conv-other' }));
+    const mine = [{ role: 'user', content: 'q', conversationId: 'conv-mine' }, { role: 'assistant', content: 'a', conversationId: 'conv-mine' }];
+
+    // Loading a thread: its own two entries are already on screen.
+    expect(run({ conversation: [...other, ...mine] }, 'conv-mine')).toBe(2);
+    // New chat: nothing of this thread yet, so its first reply is merged.
+    expect(run({ conversation: [...other, ...mine] }, null)).toBe(0);
+    expect(run({}, 'conv-mine')).toBeNull();
+  });
+
+  it('hands /remember, /forget and /memory to Donna in agent mode, never answering itself', () => {
+    const script = chatScripts().join('\n');
+    expect(script).toContain("if(/^\\/(?:remember|forget|memory)(?:\\s|$)/i.test(text)&&runtimeEnabled()&&!forceChat) {");
+    expect(script).not.toContain('Saved workspace fact');
+    expect(script).not.toContain("fetch('/api/runtime/memory/facts',{method:'POST'");
+    expect(script).toContain("'remember','forget','memory'].includes(String(match[1]).toLowerCase())");
   });
 
   it('renames a conversation in place and keeps its custom title on later saves', () => {
@@ -388,8 +413,11 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('.act-body{flex:1;overflow-y:auto;');
   });
 
-  it('splits Activity List into three internally scrollable sub-tabs', () => {
-    expect(CHAT_HTML).toContain("const labels={plan:'Plan',local:'Files',logs:'Logs'}");
+  it('splits Activity List into internally scrollable sub-tabs including workspace memory', () => {
+    expect(CHAT_HTML).toContain("const labels={plan:'Plan',local:'Files',logs:'Logs',memory:'Memory'}");
+    expect(CHAT_HTML).toContain('function loadWorkspaceMemory()');
+    expect(CHAT_HTML).toContain('async function forgetWorkspaceMemory');
+    expect(CHAT_HTML).toContain('async function restoreWorkspaceMemory');
     expect(CHAT_HTML).toContain('.activity-subtab-content{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain');
     expect(CHAT_HTML).toContain("function setActivityListTab(tab)");
     expect(CHAT_HTML).toContain('.activity-subtab-logs .runtime-log{flex:1;min-height:0;max-height:none}');
@@ -1234,8 +1262,8 @@ describe('chat html', () => {
     // reply. The runtime now receives every agent-mode message on /turn and
     // classifies it there (control verbs and new tasks → control lane, plain
     // conversation → read-only chat answer).
-    expect(script).toContain("const turnBody={input:text,...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})};");
-    expect(script).toContain("const doTurnFetch=()=>fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(skillRun?{input:text,mode:'agent'}:turnBody)});");
+    expect(script).toContain("const turnBody={input:text,conversationId:currentConversationId,...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})};");
+    expect(script).toContain("const doTurnFetch=()=>fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(skillRun?{input:text,mode:'agent',conversationId:currentConversationId}:turnBody)});");
     expect(script).toContain("const readOnlyChat=mode==='chat'");
     // Selected wiki pages / converted uploads must reach the agent turn too,
     // not only the read-only chat turn.

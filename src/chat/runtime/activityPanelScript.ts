@@ -174,11 +174,17 @@ function clearRuntimeThinkingBubble(div) {
 // conversation boundary (new/load/delete/clear), not just some of them:
 // stale index-aligned refs reused against a fresh messages array is a real
 // bug, not just a style issue, so this must not be re-inlined per call site.
+// The runtime conversation of THIS chat thread only: the workspace log carries
+// every thread, and an offset counted on the whole log skipped this thread's
+// replies until it outgrew all the others together.
+function currentRuntimeConversation() {
+  const all=Array.isArray(runtimeState?.conversation)?runtimeState.conversation:null;
+  return all?all.filter((entry)=>entry?.conversationId===currentConversationId):null;
+}
 function resetRuntimeConversationTracking() {
   runtimeConversationRefs=[];
-  runtimeConversationOffset=Array.isArray(runtimeState?.conversation)
-    ? runtimeState.conversation.length
-    : null;
+  const conversation=currentRuntimeConversation();
+  runtimeConversationOffset=conversation?conversation.length:null;
   pendingRuntimeUserRefs=[];
   pendingRuntimeStatusEls.forEach(el=>clearRuntimeThinkingBubble(el));
   pendingRuntimeStatusEls=[];
@@ -194,6 +200,7 @@ let agentMode=false;
 // which read as broken rather than a deliberate default.
 let activityView='list';
 let activityListTab='plan';
+let memoryFacts=null, memoryLoading=false, memoryError='', memoryHistory={};
 const activityClearedFingerprints={plan:null,logs:null};
 let selectedWorkflowNodeId=null;
 const _activityPollTimers=new Map();
@@ -391,6 +398,49 @@ function clearActivityTab(tab,{render=true}={}) {
 function clearAllActivityTabs() {
   ['plan','local','logs'].forEach(tab=>clearActivityTab(tab,{render:false}));
   renderActivities(); updateActivityBadge();
+}
+async function loadWorkspaceMemory() {
+  if(memoryLoading) return;
+  memoryLoading=true; memoryError=''; renderActivities();
+  try {
+    const response=await fetch('/api/runtime/memory/facts',{cache:'no-store'});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok) throw new Error(data.error||'Workspace memory could not be loaded.');
+    memoryFacts=Array.isArray(data.facts)?data.facts:[];
+  } catch(error) { memoryError=error?.message||String(error); }
+  finally { memoryLoading=false; renderActivities(); }
+}
+function workspaceMemoryHTML() {
+  if(memoryLoading) return '<div class="act-empty">Loading workspace memory…</div>';
+  if(memoryError) return '<div class="act-empty">'+esc(memoryError)+' <button type="button" class="act-btn" onclick="loadWorkspaceMemory()">Retry</button></div>';
+  if(memoryFacts===null) { void loadWorkspaceMemory(); return '<div class="act-empty">Loading workspace memory…</div>'; }
+  if(!memoryFacts.length) return '<div class="act-empty">No saved facts in this workspace yet. Use /remember in chat or ask Donna to remember a specific fact.</div>';
+  return memoryFacts.map(fact=>{
+    const key=encodeURIComponent(fact.key).replace(/'/g,'%27');
+    const history=memoryHistory[fact.key];
+    const historyHtml=history===undefined?'':history.map(version=>version.previous
+      ? '<div class="runtime-log-entry"><span>'+esc(version.createdAt||'')+'</span> '+esc(version.previous.text||'')+' <button class="act-btn" type="button" onclick="restoreWorkspaceMemory(\\''+key+'\\',\\''+encodeURIComponent(version.id).replace(/'/g,'%27')+'\\')">Restore</button></div>'
+      :'').join('');
+    return '<article class="runtime-task-card"><div class="runtime-task-title">'+esc(fact.text)+'</div><div class="runtime-task-meta">'+esc(fact.kind||'fact')+' · updated '+esc(fact.updatedAt||'')+'</div><div class="act-actions"><button class="act-btn" type="button" onclick="showWorkspaceMemoryHistory(\\''+key+'\\')">History</button><button class="act-btn del" type="button" onclick="forgetWorkspaceMemory(\\''+key+'\\')">Forget</button></div>'+historyHtml+'</article>';
+  }).join('');
+}
+async function showWorkspaceMemoryHistory(key) {
+  key=decodeURIComponent(key);
+  try { const r=await fetch('/api/runtime/memory/history/'+encodeURIComponent(key),{cache:'no-store'}); const d=await r.json(); if(!r.ok) throw new Error(d.error||'History unavailable'); memoryHistory[key]=Array.isArray(d.history)?d.history:[]; renderActivities(); }
+  catch(error) { notify(error?.message||String(error),'e'); }
+}
+async function forgetWorkspaceMemory(encodedKey) {
+  const key=decodeURIComponent(encodedKey);
+  if(!(await confirmAction({title:'Forget saved fact',message:'Remove this fact from the current workspace memory? Its history remains available for restoration.',confirmLabel:'Forget',danger:true}))) return;
+  // 404: the fact is already gone (removed elsewhere) — reload the list
+  // rather than reporting a failure for what the reader asked.
+  try { const r=await fetch('/api/runtime/memory/facts/'+encodeURIComponent(key),{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({conversationId:currentConversationId})}); const d=await r.json().catch(()=>({})); if(r.status===404){ notify('That fact was already removed.','i'); memoryFacts=null; memoryHistory={}; await loadWorkspaceMemory(); return; } if(!r.ok) throw new Error(d.error||'Could not remove fact'); memoryFacts=(memoryFacts||[]).filter(f=>f.key!==key); renderActivities(); }
+  catch(error) { notify(error?.message||String(error),'e'); }
+}
+async function restoreWorkspaceMemory(key,historyId) {
+  key=decodeURIComponent(key); historyId=decodeURIComponent(historyId);
+  try { const r=await fetch('/api/runtime/memory/facts/'+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({historyId})}); const d=await r.json(); if(!r.ok) throw new Error(d.error||'Could not restore fact'); memoryFacts=null; memoryHistory={}; await loadWorkspaceMemory(); }
+  catch(error) { notify(error?.message||String(error),'e'); }
 }
 async function resetRuntimePlan() {
   if(!runtimeEnabled()) { notify('Runtime is not configured.','e'); return; }
@@ -595,13 +645,13 @@ function renderActivities() {
   // every one of those ticks got proportionally heavier on the main thread —
   // choppy token-by-token streaming being the most visible symptom, since it
   // shares that same thread. Compute only the active tab's pane.
-  const activePaneHTML=activityTabWasCleared(activityListTab)?'':(activityListTab==='local'
+  const activePaneHTML=activityListTab==='memory' ? workspaceMemoryHTML() : activityTabWasCleared(activityListTab)?'':(activityListTab==='local'
     ? localActivityHTML()
     : runtimeTaskPanelHTML(activityListTab));
   // Three tabs, not five: the run's plan, activity lines and skill chain all
   // live in Plan (the Chain and Runtime activity tabs only ever duplicated it),
   // and "Direct agents" was really the local upload/conversion feed.
-  const labels={plan:'Plan',local:'Files',logs:'Logs'};
+  const labels={plan:'Plan',local:'Files',logs:'Logs',memory:'Memory'};
   const localActiveCount=_activities.filter(a=>isActivityActive(a.status)).length;
   const localFailedCount=_activities.filter(a=>a.status==='failed'||a.error).length;
   const tabStates={
@@ -695,7 +745,7 @@ function updateRunElapsed() {
   el.textContent=formatRunElapsed(Date.now()-started);
 }
 function setActivityListTab(tab) {
-  if(!['plan','logs','local'].includes(tab)) return;
+  if(!['plan','logs','local','memory'].includes(tab)) return;
   activityListTab=tab;
   renderActivities();
 }
@@ -808,6 +858,7 @@ async function retryConvert(uploadId, actId) {
   }
 }
 (function initActivityPanel(){
+  window.addEventListener('llmwiki:memory-updated',()=>{memoryFacts=null;memoryHistory={};if(activityListTab==='memory')void loadWorkspaceMemory()});
   loadActivities();
   renderActivities();
   updateActivityBadge();

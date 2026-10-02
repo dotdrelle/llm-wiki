@@ -27,7 +27,7 @@ function sanitizeWikiPath(value) {
   return value;
 }
 
-// Utility views (graph, history, agent proposals) load into the central
+// Utility views (graph, provenance, history, agent proposals) load into the central
 // wiki-frame like any wiki content page, but they are not a wiki DOCUMENT —
 // remembering one of them as SHELL_WIKI_PATH_KEY corrupted the "page the
 // graph replaced" bookmark: every click on the sidebar Graph icon stored
@@ -36,8 +36,8 @@ function sanitizeWikiPath(value) {
 // just reloaded the graph again — indistinguishable from the close button
 // doing nothing.
 function isWikiUtilityPath(value) {
-  const path = String(value || '').split(/[?#]/)[0]; // '/graph?provenance=…' is still the graph
-  return path === '/graph' || path === '/history'
+  const path = String(value || '').split(/[?#]/)[0]; // '/provenance?id=…' is the utility page itself
+  return path === '/graph' || path === '/provenance' || path === '/history'
     || path === '/agent-proposals' || path.startsWith('/agent-proposals/');
 }
 

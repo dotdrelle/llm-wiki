@@ -161,4 +161,49 @@ describe('runtime routes', () => {
     expect(JSON.parse(String(init.body))).toEqual({ index: 4 });
     expect(JSON.parse(response.body)).toEqual({ truncated: true, index: 4, removedEvents: 7 });
   });
+
+  it('forwards the body of a memory DELETE, so the removal keeps its conversation', async () => {
+    const { fetchMock, call } = memoryHarness();
+    await call('DELETE', '/api/runtime/memory/facts/k1', JSON.stringify({ conversationId: 'conv-abc123' }));
+
+    expect(fetchMock).toHaveBeenCalledWith('http://runtime.test/memory/facts/k1?workspace=docs', expect.objectContaining({ method: 'DELETE' }));
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(init.body))).toEqual({ conversationId: 'conv-abc123' });
+  });
+
+  it('joins a memory search query to the workspace query with "&", never a second "?"', async () => {
+    const { fetchMock, call } = memoryHarness();
+    await call('GET', '/api/runtime/memory/facts', '', '?q=budget&limit=3');
+    await call('GET', '/api/runtime/memory/facts', '');
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('http://runtime.test/memory/facts?workspace=docs&q=budget&limit=3');
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('http://runtime.test/memory/facts?workspace=docs');
+  });
 });
+
+function memoryHarness() {
+  const fetchMock = vi.fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>(async () => new Response(
+    JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } },
+  ));
+  vi.stubGlobal('fetch', fetchMock);
+  const call = async (method: string, path: string, body: string, search = '') => {
+    const req = Readable.from(body ? [body] : []);
+    Object.assign(req, { method, url: `${path}${search}` });
+    const response = { status: 0, body: '', writeHead(status: number) { this.status = status; }, end(text = '') { this.body = text; } };
+    return handleRuntimeRoutes(req as never, response as never, path, {
+      runtimePathForWorkspace: (pathname) => `${pathname}?workspace=docs`,
+      workspaceNameFromEnv: () => 'docs',
+      proxyDeps: {
+        runtimeUrl: () => 'http://runtime.test',
+        runtimeToken: () => 'secret',
+        readRequestBuffer: async (stream) => {
+          const chunks: Buffer[] = [];
+          for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+          return Buffer.concat(chunks);
+        },
+        sendJson(res, status, data) { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); },
+      },
+    });
+  };
+  return { fetchMock, call };
+}
