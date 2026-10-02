@@ -6,7 +6,13 @@ with Run/Task, and do not restore the removed D3/SVG renderers or legacy graph
 endpoints. The `/graph` page is the TAXO reading (Families, Concepts, Concept
 focus, Concepts + sources — `src/graph/wiki/ui/taxo/`); its force layouts are
 settled **server-side** with `d3-force` (`taxoLayout.ts`), so the browser still
-never loads D3.
+never loads D3. A fifth view, **Provenance** (`?provenance=<deliverable>`,
+`src/graph/wiki/ui/provenance/`), draws one deliverable's evidence chain from
+`/api/graph/provenance` (`provenanceGraph.ts`, a reader of the build's
+evidence manifest — see `docs/provenance.md`); its columns are computed in the
+browser like the Focus rings, on the same Canvas renderer. The deliverable
+page's actions (Export / polish, Provenance) live in
+`src/serve/html/deliverableActions.ts`.
 
 ## Purpose
 

@@ -108,7 +108,9 @@ archived documents so details omitted from it can still be found.
 When a deliverable is built, the engine freezes the exact snippets it used. If
 you later replace a source with a newer version, exporting the already-built
 deliverable still uses the version it was built from — the document does not
-change under you.
+change under you. The **Provenance** link of a deliverable page draws that
+frozen chain in the graph, from each section down to the exact passages, and
+flags the passages whose original has changed since.
 
 ## 5. Search
 

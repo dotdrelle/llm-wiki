@@ -55,12 +55,13 @@ function ingestTaxo(payload){
   if(sel&&!byId.has(sel))sel=null;
 }
 const knownFamilies=new Set();
-const VIEW_TITLES={family:'Families',concepts:'Concepts',focus:'Concept focus',full:'Concepts + sources'};
+const VIEW_TITLES={family:'Families',concepts:'Concepts',focus:'Concept focus',full:'Concepts + sources',provenance:'Provenance'};
 function viewGraph(){
   if(view==='family')return{nodes:[...famNodes,...concepts],links:[...crossLinks,...memberLinks]};
   if(view==='concepts')return{nodes:concepts,links:coLinks};
   if(view==='full')return{nodes:base,links:citeLinks};
   return null}
-const visible=n=>n.type==='source'?active.has('__src'):active.has(n.family);
+// Provenance cards are not filtered by family or document: the view is one deliverable.
+const visible=n=>n.prov?true:n.type==='source'?active.has('__src'):active.has(n.family);
 `;
 }

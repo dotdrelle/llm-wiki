@@ -97,9 +97,17 @@ describe('chat html', () => {
     // graph stored '/graph' itself as SHELL_WIKI_PATH_KEY, so the close
     // button just reloaded the graph again — indistinguishable from doing
     // nothing, confirmed end-to-end in a real browser (CDP).
-    expect(script).toContain(
-      "function isWikiUtilityPath(path) {\n  return path === '/graph' || path === '/history'\n    || path === '/agent-proposals' || path.startsWith('/agent-proposals/');\n}",
-    );
+    const source = /function isWikiUtilityPath\(value\) \{[\s\S]*?\n\}/.exec(script)?.[0];
+    expect(source).toBeTruthy();
+    const isWikiUtilityPath = new Function(`${source}; return isWikiUtilityPath;`)() as (path: string) => boolean;
+    // The Provenance view is the graph too: its query string must not turn
+    // it into "the page to return to".
+    for (const path of ['/graph', '/graph?provenance=deliverables%2Fa.md', '/history', '/agent-proposals', '/agent-proposals/p1']) {
+      expect(isWikiUtilityPath(path)).toBe(true);
+    }
+    for (const path of ['/wiki/index.md', '/deliverables/a.md', '/graphs.md']) {
+      expect(isWikiUtilityPath(path)).toBe(false);
+    }
     expect(script).toContain('if (!isWikiUtilityPath(target)) shellStore(SHELL_WIKI_PATH_KEY, target);');
   });
 

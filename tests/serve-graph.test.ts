@@ -211,6 +211,11 @@ describe('serve graph ui', () => {
       expect(exportPage).not.toContain('data-deliver=');
       expect(polishedPage).not.toContain('data-deliver=');
 
+      // Provenance is read-only: a plain link on every deliverable page,
+      // export artifacts included (the view resolves them to their source).
+      expect(page).toContain('href="/graph?provenance=deliverables%2Fbrief.md"');
+      expect(exportPage).toContain('href="/graph?provenance=deliverables%2Fbrief.export.md"');
+
       const source = await serveSource();
       expect(source).toContain("querySelector('[data-deliver]')");
       expect(source).toContain("type: 'llmwiki:deliver'");

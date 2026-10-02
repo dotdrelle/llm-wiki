@@ -94,6 +94,23 @@ Four views, from the widest to the most detailed:
 - **Concepts + sources** — every concept and every source sheet, each source
   linked to the concepts it tags.
 
+A fifth view, **Provenance**, answers a different question: *where does this
+deliverable's evidence come from?* Open it with the **Provenance** link at the
+top of any deliverable page (an exported or polished copy opens its source
+deliverable). It reads left to right: the template and build context that
+produced the deliverable, its sections that cite something, the concept pivots
+and source sheets each citation went through, and the exact passages of the
+archived originals it rests on. Click a section, a page or a passage to light
+every chain through it; the *Selection* panel lists those chains and, for a
+passage, shows its text.
+
+By default the view shows the **frozen evidence** of the build — exactly what
+the deliverable was built on, and what an export uses. An amber dot marks a
+passage whose archive changed since. *Show current files* resolves the chains
+again from today's files instead; anything that no longer resolves is listed
+in the panel rather than silently dropped. When the deliverable was built
+several times, a list picks the build to show.
+
 The left column hides or shows a family, or the sources. The *Selection* panel
 on the right describes what you clicked — a family, a concept or a source —
 and lists its neighbours. Clicking a **source** also opens its summary card:

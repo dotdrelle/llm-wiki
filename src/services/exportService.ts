@@ -11,6 +11,7 @@ import { hashText } from '../utils/hash.ts';
 import { extractSourceCitations, extractSourceCitationsWithAnchors, splitMarkdownSections } from '../utils/markdown.ts';
 import { resolveInside } from '../utils/path.ts';
 import { evidenceBuildIdFor, fragmentKey, frozenFragmentMap, readEvidenceManifest } from '../provenance/resolver.ts';
+import { exportArtifactSourcePath } from '../utils/exportArtifact.ts';
 import type { TraceLogger } from './traceLogger.ts';
 import type { AppConfig } from '../types.ts';
 import type { LLMService } from './llmService.ts';
@@ -641,9 +642,7 @@ export function exportArtifactTargetError(input: string, polish: boolean): strin
     const exportPath = posix.replace(/\.export\.polished\.md$/i, '.export.md');
     return `Refusing to polish an already-polished artifact: ${input}. Polish its export (${exportPath}) or the source deliverable instead.`;
   }
-  const suggested = posix
-    .replace(/\.export(?:\.polished)?\.md$/i, '.md')
-    .replace(/_v-\d+(\.md)$/i, '$1');
+  const suggested = exportArtifactSourcePath(posix);
   return `Refusing to export an export artifact: ${input}. Export acts on the source deliverable, not on its own output — target ${suggested} instead.`;
 }
 

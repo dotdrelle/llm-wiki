@@ -162,6 +162,21 @@ preserved.
 | `src/provenance/audit.ts` | read-only corpus audit (lot 0) |
 | `src/provenance/rebuild.ts` | no-LLM repair: anchoring + `sources:` + merge |
 | `src/provenance/retarget.ts` | compatibility retargeting: legacy archive citation → source fiche |
+| `src/graph/wiki/provenanceGraph.ts` | read-only provenance graph of one deliverable, for the graph's Provenance view |
+
+The graph's Provenance view (`/graph?provenance=<deliverable>`, served by
+`GET /api/graph/provenance?id=&build=&mode=`) is a **reader** of the manifest,
+not a second resolver. It takes the build named by `evidence_build_id` (or
+`build=`), turns each fragment's `chain`/`extraChains` into node paths, and
+compares the frozen `hash` with the current archive (`unchanged` / `changed` /
+`missing`). A manifest `chain` starts at the first wiki page cited, not at the
+deliverable section: the section is recovered by matching each section's own
+`[src:]` citations (`extractBodyCitations`) against the chain's first hop. An
+export artifact resolves to its source deliverable (`utils/exportArtifact.ts`,
+shared with the export refusal). `mode=live` re-runs `resolveEvidence` on the
+current files; a missing or v1 manifest falls back to that live reading, and
+every fallback, broken anchor or fragment no longer reached is returned in
+`degradations` for the view to list.
 
 Diagnostics: `pnpm audit:provenance <workspace>` and
 `pnpm rebuild:provenance <workspace> [--apply] [--merge-splits]`. The audit

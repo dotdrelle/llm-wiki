@@ -35,7 +35,8 @@ function sanitizeWikiPath(value) {
 // interceptor -> llmwiki:navigate -> setCenterWiki), so closing the graph
 // just reloaded the graph again — indistinguishable from the close button
 // doing nothing.
-function isWikiUtilityPath(path) {
+function isWikiUtilityPath(value) {
+  const path = String(value || '').split(/[?#]/)[0]; // '/graph?provenance=…' is still the graph
   return path === '/graph' || path === '/history'
     || path === '/agent-proposals' || path.startsWith('/agent-proposals/');
 }

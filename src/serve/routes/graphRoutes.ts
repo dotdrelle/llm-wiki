@@ -5,6 +5,7 @@ import { loadWikiGraphSnapshot } from '../../graph/wiki/overview.ts';
 import { createFilteredSnapshot } from '../../graph/wiki/snapshot.ts';
 import { graphDocumentSummary } from '../../graph/wiki/summary.ts';
 import { loadTaxoGraph } from '../../graph/wiki/taxoGraph.ts';
+import { loadProvenanceGraph, ProvenanceGraphError } from '../../graph/wiki/provenanceGraph.ts';
 import { createGraphEventHub, type GraphEventHub } from '../sse/graphEvents.ts';
 import { sendJsonPayload } from '../http/sendJsonPayload.ts';
 
@@ -140,6 +141,25 @@ export async function handleGraphRoutes(
 
   if (req.method === 'GET' && urlPath === '/api/graph/taxo') {
     await sendJsonPayload(req, res, 200, await loadTaxoGraph(deps.rootDir));
+    return true;
+  }
+
+  // The Provenance view: one deliverable, read from its frozen evidence
+  // manifest (or live, announced). Read-only, additive to the TAXO payload.
+  if (req.method === 'GET' && urlPath === '/api/graph/provenance') {
+    const params = new URL(req.url ?? '/', 'http://localhost').searchParams;
+    try {
+      deps.sendJson(res, 200, await loadProvenanceGraph(deps.rootDir, params.get('id') ?? '', {
+        build: params.get('build'),
+        mode: params.get('mode') === 'live' ? 'live' : 'frozen',
+      }));
+    } catch (error) {
+      if (error instanceof ProvenanceGraphError) {
+        deps.sendJson(res, error.code === 'INVALID_DELIVERABLE' ? 400 : 404, { error: error.code, message: error.message });
+      } else {
+        deps.sendJson(res, 500, { error: 'PROVENANCE_FAILED', message: (error as Error).message });
+      }
+    }
     return true;
   }
 

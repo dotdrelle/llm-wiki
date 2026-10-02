@@ -23,6 +23,7 @@ import { WIKI_LAYOUT_SCRIPT } from './wikiLayoutScript.ts';
 import { CONFIRM_DIALOG_HTML } from '../../chat/confirmDialog.ts';
 import { removeBrokenWikiLinks } from './wikiLinkValidation.ts';
 import { appFaviconHref } from './appIdentity.ts';
+import { deliverableActions } from './deliverableActions.ts';
 import { WIKI_BG_DARK, WIKI_BG_LIGHT } from '../../chat/theme.ts';
 import { readInFlightDocumentUploads } from '../routes/uploadRoutes.ts';
 import { listActiveProductionLocks } from '../../services/productionLocks.ts';
@@ -1769,16 +1770,6 @@ export async function serveMd(
   const buildTemplateBtn = relativePath.startsWith('templates/') && relativePath.endsWith('.md')
     ? `<button class="action-button action-donna action-agent" type="button" data-build-template="${escapeAttr(relativePath)}" hidden title="Build" aria-label="Build">${HAMMER_ICON}</button>`
     : '';
-  // Hidden by default: only the chat shell can deliver (the export/polish runs
-  // through Donna), so WIKI_LAYOUT_SCRIPT reveals it inside the shell's central
-  // iframe, exactly like the template "Build" button above. Not offered on an
-  // export/polished artifact: re-running it there re-exported the export and
-  // spawned a second version — the action belongs on the SOURCE deliverable.
-  const deliverBtn = relativePath.startsWith('deliverables/')
-    && relativePath.endsWith('.md')
-    && !/\.export(?:\.polished)?\.md$/.test(relativePath)
-    ? `<button class="action-button action-donna action-agent" type="button" data-deliver="${escapeAttr(relativePath)}" hidden title="Export / polish" aria-label="Export / polish">${EXPORT_ICON}</button>`
-    : '';
   // "Reformat" on an ingested wiki page: a Donna-run LLM pass that re-normalizes
   // the Markdown, checks the links and repairs the OKF frontmatter, in place and
   // under approval. Hidden by default — WIKI_LAYOUT_SCRIPT reveals it only in the
@@ -1792,7 +1783,7 @@ export async function serveMd(
   const actions = [
     chatContextBtn,
     buildTemplateBtn,
-    deliverBtn,
+    deliverableActions(relativePath, EXPORT_ICON),
     reformatBtn,
     exportMenu,
     isEditableRelativePath(relativePath)
