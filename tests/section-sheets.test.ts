@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,14 +17,20 @@ describe('TAXO section sheets', () => {
     const root = path.join(here, 'fixtures/taxo-synthetic');
     const markdown = await readFile(path.join(root, 'raw/untracked/X/X/guide.md'), 'utf8');
     const expected = (await readFile(path.join(root, 'expected/prototype-dry-run.txt'), 'utf8'));
+    // The fixture is the synchronized copy of the prototype archive kept at
+    // the workspace root (`_tmp/taxo/`, outside this repository). Compare
+    // against it only where it exists: a fresh clone or CI has the fixture
+    // alone, and its absence is not a test failure.
     const prototypeArchive = path.resolve(here, '../../_tmp/taxo');
-    expect(await readFile(path.join(root, 'raw/untracked/X/X/guide.md'), 'utf8')).toBe(
-      await readFile(path.join(prototypeArchive, 'synthetic/raw/untracked/X/X/guide.md'), 'utf8'),
-    );
-    expect(await readFile(path.join(root, 'raw/untracked/X/X/second.md'), 'utf8')).toBe(
-      await readFile(path.join(prototypeArchive, 'synthetic/raw/untracked/X/X/second.md'), 'utf8'),
-    );
-    expect(expected).toBe(await readFile(path.join(prototypeArchive, 'expected/prototype-dry-run.txt'), 'utf8'));
+    if (existsSync(prototypeArchive)) {
+      expect(await readFile(path.join(root, 'raw/untracked/X/X/guide.md'), 'utf8')).toBe(
+        await readFile(path.join(prototypeArchive, 'synthetic/raw/untracked/X/X/guide.md'), 'utf8'),
+      );
+      expect(await readFile(path.join(root, 'raw/untracked/X/X/second.md'), 'utf8')).toBe(
+        await readFile(path.join(prototypeArchive, 'synthetic/raw/untracked/X/X/second.md'), 'utf8'),
+      );
+      expect(expected).toBe(await readFile(path.join(prototypeArchive, 'expected/prototype-dry-run.txt'), 'utf8'));
+    }
     expect(expected).toContain('2/2 file(s), 4 concept(s)');
     expect(expected).toContain('0 empty or title/link-only section(s) skipped');
 
