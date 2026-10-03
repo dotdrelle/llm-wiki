@@ -56,7 +56,10 @@ Main capabilities:
 - show a build runtime/provider summary and compare it with the previous build;
 - export deliverables with inline source detail;
 - serve a local web UI and MCP endpoint, including the agent-proposals review
-  queue where curation diffs are merged or rejected.
+  queue where curation diffs are merged or rejected, and the per-deliverable
+  **provenance page** (`/provenance`) that reads the build's frozen evidence
+  down to the exact archived passage; when connected to a manager runtime, the
+  whole UI sits behind its TOTP login gate (see `help-doc/13-login-totp.md`).
 
 ## Ingestion contract — TAXO
 

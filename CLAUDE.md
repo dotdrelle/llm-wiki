@@ -350,7 +350,12 @@ runtime's `/session/verify` with the manager bearer (30 s memo), never
 verified locally. The TOTP secret never reaches serve. Without a session:
 browsers get a 302 to `/login`, API/fetch get 401. Runtime unreachable: fail
 **closed** with a clear "session service unavailable" page. The login page
-sends the 6-digit code to the runtime's `/login/verify` through
+(`src/serve/html/loginPage.ts`, re-exported by `loginRoutes.ts`) is also the
+product's front door: what wikiLLM does, what opens after signing in, and a
+public status block (session service reachable, version, up since, enrollment,
+session lifetime, TLS) fed by the runtime's `/login/status` — only those public
+facts, never a workspace, a run, an agent or a path. The page sends the
+6-digit code to the runtime's `/login/verify` through
 `/api/login`; `/api/logout` revokes and clears the cookie. Standalone serve
 (no runtime URL) stays open; the whole gate is skipped then. See
 `help-doc/13-login-totp.md`, `docs/configuration.md` § serve, and the
