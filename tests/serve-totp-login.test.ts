@@ -319,6 +319,45 @@ describe('serve TOTP gate', () => {
     }
   });
 
+  it('serves a front door: what the app does and the runtime\'s public status', async () => {
+    const restore = mockFetch(async (url) => ({
+      ok: true,
+      status: 200,
+      json: async () => (String(url).endsWith('/login/status')
+        ? { ok: true, enabled: true, enrolled: true, about: { version: '9.9.9', startedAt: Date.UTC(2026, 9, 3, 8, 0), sessionTtlHours: 12, workspace: 'secret-ws' } }
+        : {}),
+    }));
+    try {
+      const { res, done } = fakeResponse();
+      await totpLoginGuard(fakeRequest({ path: '/login' }), res, '/login', deps('http://runtime'));
+      const html = done().body;
+      expect(done().status).toBe(200);
+      expect(html).toContain('What it does');
+      expect(html).toContain('aria-label="Service status"');
+      expect(html).toContain('9.9.9');
+      expect(html).toContain('2026-10-03 08:00 UTC');
+      expect(html).toContain('12 h, extended while in use');
+      expect(html).toContain('Authenticator enrolled');
+      expect(html).toContain('Not encrypted');
+      // Only the three public facts are kept, whatever else the runtime sends.
+      expect(html).not.toContain('secret-ws');
+    } finally {
+      restore();
+    }
+  });
+
+  it('says the session service is not answering when the runtime is down', async () => {
+    const restore = mockFetch(async () => { throw new Error('ECONNREFUSED'); });
+    try {
+      const { res, done } = fakeResponse();
+      await totpLoginGuard(fakeRequest({ path: '/login' }), res, '/login', deps('http://runtime'));
+      expect(done().body).toContain('Not answering');
+      expect(done().body).not.toContain('Up since');
+    } finally {
+      restore();
+    }
+  });
+
   it('renders the login page without trusting injected errors', () => {
     const html = loginPageHtml({ error: '<script>alert(1)</script>' });
     expect(html).not.toContain('<script>alert(1)</script>');

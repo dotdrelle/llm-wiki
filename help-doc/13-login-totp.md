@@ -10,6 +10,13 @@ covers **both**: the session is shared.
 - `--headless`/CI runs and a standalone `serve` without the manager runtime
   are not affected.
 
+The login page is also the product's front door: beside the code form it
+says what wikiLLM does, what opens after signing in, and a **Status** block —
+whether the session service answers, the running version, since when, whether
+an authenticator is enrolled, the session lifetime, and whether the connection
+is encrypted. It shows nothing about your workspaces, runs or agents: the page
+is public.
+
 ## First login: enroll your authenticator
 
 Enrollment happens on the machine that runs the manager:

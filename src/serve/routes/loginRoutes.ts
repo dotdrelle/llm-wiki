@@ -1,5 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { escapeHtml } from '../../utils/html.ts';
+import { loginPageHtml, type LoginAbout } from '../html/loginPage.ts';
+
+// Re-exported: the page lives in serve/html/, callers and tests import it here.
+export { loginPageHtml };
 
 /*
  Serve-side TOTP gate. The manager runtime is the authority: serve never sees
@@ -26,7 +29,8 @@ export type TotpGateDeps = {
   sessionTtlMs?: () => number;
 };
 
-let cachedStatus: { enabled: boolean | null; checkedAt: number } | null = null;
+type GateStatus = { enabled: boolean | null; enrolled: boolean | null; about: LoginAbout | null };
+let cachedStatus: (GateStatus & { checkedAt: number }) | null = null;
 const verifyMemo = new Map<string, { ok: boolean; at: number; expiresAt?: number }>();
 
 /*
@@ -55,28 +59,43 @@ export function sessionCookie(req: IncomingMessage): string | null {
   return readCookies(req)[SESSION_COOKIE] || null;
 }
 
-async function fetchStatus(base: string): Promise<{ enabled: boolean | null } | null> {
+async function fetchStatus(base: string): Promise<GateStatus | null> {
   try {
     const response = await fetch(`${base.replace(/\/+$/, '')}/login/status`, {
       signal: AbortSignal.timeout(2500),
     });
     if (!response.ok) return null;
-    const payload = (await response.json()) as { enabled?: unknown };
-    return { enabled: typeof payload.enabled === 'boolean' ? payload.enabled : null };
+    const payload = (await response.json()) as { enabled?: unknown; enrolled?: unknown; about?: unknown };
+    // `about` is the runtime's public facts (version, start, session lifetime);
+    // only those three fields are kept, whatever else a newer runtime sends.
+    const about = payload.about && typeof payload.about === 'object' ? payload.about as Record<string, unknown> : null;
+    return {
+      enabled: typeof payload.enabled === 'boolean' ? payload.enabled : null,
+      enrolled: typeof payload.enrolled === 'boolean' ? payload.enrolled : null,
+      about: about ? {
+        version: typeof about.version === 'string' ? about.version : null,
+        startedAt: typeof about.startedAt === 'number' ? about.startedAt : null,
+        sessionTtlHours: typeof about.sessionTtlHours === 'number' ? about.sessionTtlHours : null,
+      } : null,
+    };
   } catch {
     return null;
   }
 }
 
-async function statusWithCache(base: string): Promise<{ enabled: boolean | null; reachable: boolean }> {
+async function statusWithCache(base: string): Promise<GateStatus & { reachable: boolean }> {
   const now = Date.now();
   if (cachedStatus && now - cachedStatus.checkedAt < STATUS_CACHE_MS) {
-    return { enabled: cachedStatus.enabled, reachable: true };
+    return { enabled: cachedStatus.enabled, enrolled: cachedStatus.enrolled, about: cachedStatus.about, reachable: true };
   }
   const status = await fetchStatus(base);
-  if (!status) return { enabled: null, reachable: false };
-  cachedStatus = { enabled: status.enabled, checkedAt: now };
-  return { enabled: status.enabled, reachable: true };
+  if (!status) return { enabled: null, enrolled: null, about: null, reachable: false };
+  cachedStatus = { ...status, checkedAt: now };
+  return { ...status, reachable: true };
+}
+
+function pageOptions(status: GateStatus & { reachable: boolean }, tls: boolean, error: string | null = null) {
+  return { error, tls, about: status.about, reachable: status.reachable, enrolled: status.enrolled };
 }
 
 async function verifyToken(base: string, token: string): Promise<{ ok: boolean; expiresAt?: number; authBlocked?: boolean }> {
@@ -131,112 +150,6 @@ function redirect(res: ServerResponse, location: string): void {
   res.end();
 }
 
-export function loginPageHtml({ error = null, tls = false }: { error?: string | null; tls?: boolean } = {}): string {
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>wikiLLM — login</title>
-<style>
-  :root { color-scheme: light dark; }
-  body { margin: 0; font-family: ui-sans-serif, system-ui, sans-serif; background: #f4f5f7; color: #1c1f26; display: flex; min-height: 100vh; align-items: center; justify-content: center; }
-  @media (prefers-color-scheme: dark) { body { background: #12141a; color: #e7e9ee; } }
-  .box { width: 100%; max-width: 360px; padding: 1.2rem; }
-  .brand { display: flex; align-items: center; gap: .5rem; margin-bottom: 1rem; }
-  .brand-mark { width: 2rem; height: 2rem; border-radius: 8px; background: #2563eb; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; }
-  .brand-name { font-weight: 700; font-size: 1.05rem; }
-  .card { background: #fff; border: 1px solid #d9dce3; border-radius: 12px; padding: 1.1rem 1.2rem; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
-  @media (prefers-color-scheme: dark) { .card { background: #1b1e26; border-color: #333843; } }
-  h2 { margin: 0 0 .5rem; font-size: 1rem; }
-  p { margin: 0 0 .8rem; font-size: .85rem; line-height: 1.45; }
-  .hint { color: #6b7280; font-size: .78rem; }
-  form { display: flex; gap: .5rem; }
-  input[type="text"] { flex: 1; min-width: 0; font: inherit; font-size: 1.15rem; letter-spacing: .35em; text-align: center; padding: .55rem .4rem; border: 1px solid #c9cdd6; border-radius: 8px; background: #fff; color: inherit; }
-  @media (prefers-color-scheme: dark) { input[type="text"] { background: #12141a; border-color: #3a3f4b; } }
-  input[type="text"]:focus { outline: 2px solid #2563eb; outline-offset: 1px; border-color: #2563eb; }
-  button { font: inherit; font-weight: 700; padding: .55rem 1rem; border: 0; border-radius: 8px; background: #2563eb; color: #fff; cursor: pointer; }
-  button:hover { background: #1d4fd7; }
-  button:disabled { opacity: .55; cursor: default; }
-  .error { color: #dc2626; font-size: .8rem; margin-top: .6rem; }
-</style>
-</head>
-<body>
-<div class="box">
-  <div class="brand"><span class="brand-mark">W</span><span class="brand-name">wikiLLM</span></div>
-  <div class="card">
-    <h2>Two-step login</h2>
-    <p>Enter the 6-digit code from your authenticator app.</p>
-    <p class="hint">First login? Run <code>wiki-manager login</code> on the machine that hosts the manager — it opens the enrollment page with the QR code.</p>
-    <form id="login-form" autocomplete="off">
-      <input id="code" name="code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="000000" aria-label="Verification code" autofocus required>
-      <button type="submit" id="submit">Verify</button>
-    </form>
-    <p class="error" id="error"${error ? '' : ' hidden'}>${escapeHtml(error ?? '')}</p>
-  </div>
-  <p class="hint">Sessions are valid for the ShellUI and serve, ${tls ? '' : 'do not use over an untrusted network without TLS, '}and expire after 12 hours of inactivity.</p>
-</div>
-<script>
-(function () {
-  // Session handoff from the ShellUI's /openui: the token rides in the URL
-  // fragment, which the browser never sends to the server. Exchange it for the
-  // cookie here, then drop it from the address bar before anything else runs.
-  var handoff = (/(?:^|[#&])t=([^&]+)/.exec(window.location.hash || '') || [])[1];
-  if (handoff) {
-    history.replaceState(null, '', window.location.pathname + window.location.search);
-    fetch('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: decodeURIComponent(handoff) })
-    }).then(function (response) {
-      return response.json().catch(function () { return {}; }).then(function (payload) {
-        if (response.ok && payload.ok) window.location.assign('/');
-      });
-    }).catch(function () {
-      // Fall through to the manual code form below.
-    });
-  }
-  var form = document.getElementById('login-form');
-  var input = document.getElementById('code');
-  var submit = document.getElementById('submit');
-  var error = document.getElementById('error');
-  input.addEventListener('input', function () {
-    input.value = input.value.replace(/\\D/g, '').slice(0, 6);
-  });
-  form.addEventListener('submit', async function (event) {
-    event.preventDefault();
-    var code = input.value.replace(/\\D/g, '');
-    if (code.length !== 6) return;
-    submit.disabled = true;
-    error.hidden = true;
-    try {
-      var response = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: code })
-      });
-      var payload = await response.json().catch(function () { return {}; });
-      if (response.ok && payload.ok) {
-        window.location.assign('/');
-      } else {
-        error.textContent = payload.error || 'Verification failed.';
-        error.hidden = false;
-        input.value = '';
-        input.focus();
-      }
-    } catch (err) {
-      error.textContent = 'The login service is not answering.';
-      error.hidden = false;
-    } finally {
-      submit.disabled = false;
-    }
-  });
-})();
-</script>
-</body>
-</html>`;
-}
-
 function setSessionCookie(res: ServerResponse, token: string, expiresAt: number, deps: TotpGateDeps, req: IncomingMessage): void {
   const maxAgeSeconds = Math.max(1, Math.floor((expiresAt - Date.now()) / 1000));
   const secure = deps.requestIsTls(req) ? '; Secure' : '';
@@ -271,7 +184,7 @@ export async function totpLoginGuard(
       redirect(res, '/');
       return true;
     }
-    htmlResponse(res, 200, loginPageHtml({ tls: deps.requestIsTls(req) }));
+    htmlResponse(res, 200, loginPageHtml(pageOptions(status, deps.requestIsTls(req))));
     return true;
   }
 
@@ -356,7 +269,7 @@ export async function totpLoginGuard(
   if (!status.reachable && !hasWarmMemo()) {
     const message = 'The session service is not answering — start the manager runtime and reload.';
     if (deps.wantsHtml(req)) {
-      htmlResponse(res, 503, loginPageHtml({ error: message, tls: deps.requestIsTls(req) }));
+      htmlResponse(res, 503, loginPageHtml(pageOptions(status, deps.requestIsTls(req), message)));
     } else {
       deps.sendJson(res, 503, { ok: false, error: message });
     }
@@ -370,7 +283,7 @@ export async function totpLoginGuard(
     if (check.authBlocked) {
       const message = 'The session check is blocked (the runtime answered 401/403). Check the runtime URL and its authentication setup.';
       if (deps.wantsHtml(req)) {
-        htmlResponse(res, 503, loginPageHtml({ error: message, tls: deps.requestIsTls(req) }));
+        htmlResponse(res, 503, loginPageHtml(pageOptions(status, deps.requestIsTls(req), message)));
       } else {
         deps.sendJson(res, 503, { ok: false, error: message });
       }
