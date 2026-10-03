@@ -1428,3 +1428,26 @@ describe('system prompt drawer', () => {
     expect(script).toContain("preview.innerHTML = renderMd(ta.value || '')");
   });
 });
+
+
+describe('orchestration investigation visibility', () => {
+  it('keeps diagnostics and durable checkpoints in the Serve journal, including agent_status reads', () => {
+    const script = chatScripts().join('\n');
+    const source = script.match(/function essentialRuntimeLogEntries\(logs\) \{[\s\S]*?\n\}/)?.[0];
+    expect(source).toBeTruthy();
+    const context: Record<string, unknown> = {};
+    vm.runInNewContext(`${source};this.entries=essentialRuntimeLogEntries;`, context);
+    const entries = context.entries as (logs: string[]) => Array<{ text: string }>;
+    const rows = entries([
+      '12:00:00 orchestrator: diagnostic production__production_job_logs',
+      '12:00:01 orchestrator: diagnostic connectors__agent_status',
+      '12:00:02 orchestrator: checkpoint 1/3; follow-up; diagnostics=2',
+      '12:00:03 AGENT_STATUS attempt:internal-noise',
+    ]);
+    expect(rows.map((row) => row.text)).toEqual([
+      'orchestrator: diagnostic production__production_job_logs',
+      'orchestrator: diagnostic connectors__agent_status',
+      'orchestrator: checkpoint 1/3; follow-up; diagnostics=2',
+    ]);
+  });
+});

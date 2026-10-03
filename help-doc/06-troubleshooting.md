@@ -162,8 +162,11 @@ simulations and send no message.
 
 ## When an agent task fails
 
-Donna makes one bounded diagnosis from the failure, the arguments sent and the
-agent's input contract. If an agent explicitly refused invalid arguments before
+Donna investigates at a checkpoint using the failure, the arguments sent,
+the published agent contracts and available read-only tools. She can prepare
+an alternative plan over available capabilities or add missing verification
+steps. Finished tasks are preserved. Explicitly declared read-only follow-ups
+can continue; mutations require a fresh approval. If an agent explicitly refused invalid arguments before
 starting a job, Donna can prepare a corrected task. The plan shows it waiting
 for a **new approval**: review the corrected arguments, then use the Approve
 button or `/approve`. Cancelling remains available while approval is pending.
@@ -175,7 +178,16 @@ Donna explains the uncertainty rather than preparing another execution. Missing
 access requires authorization; a rejected OAuth application requires a
 configuration repair. If diagnosis is unavailable or a correction cannot be
 validated, Donna says so and keeps the original error visible. Recovery is
-limited to one correction per run.
+bounded to three investigation checkpoints per run, with one argument
+correction per failed task. Repeated proposals and exhausted task budgets stop
+the run with an explanation.
+
+Donna also retains compact incident hints in the workspace audit: failure
+classes, removed argument names and the capabilities used for a continuation.
+The last five hints can inform another investigation after a restart. They
+contain no email body or argument values, and never replace current checks or
+your approval. This operational history is separate from user facts and
+preferences in workspace memory.
 
 Ask “Why did this fail?” to inspect current runtime failures and the available
 agent contracts. A task reported successful by its agent is not independent

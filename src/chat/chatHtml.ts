@@ -99,7 +99,9 @@ function essentialRuntimeLogEntries(logs) {
   const seen=new Set();
   for(const raw of Array.isArray(logs)?logs:[]) {
     const line=String(raw||'').trim();
-    if(!line||/\\btrace:|AGENT_STATUS|source-path=|idempotency|attempt[-_:]/i.test(line)) continue;
+    if(!line) continue;
+    const orchestrator=/\\borchestrator:/i.test(line);
+    if(!orchestrator&&/\\btrace:|AGENT_STATUS|source-path=|idempotency|attempt[-_:]/i.test(line)) continue;
     const time=line.match(/^(\\d{2}:\\d{2}:\\d{2})/)?.[1]||'';
     let text=line.replace(/^\\d{2}:\\d{2}:\\d{2}\\s*/,'').trim();
     if(/^Task started:\\s*[a-f0-9-]{16,}/i.test(text)) continue;
@@ -117,7 +119,7 @@ function essentialRuntimeLogEntries(logs) {
       .trim();
     if(!text||text.length<3) continue;
     const important=/run\\b|approval|approb|plan\\b|activity|ingest|build|export|polish|done|complete|failed|error|cancel|running|queued|started/i.test(text);
-    if(!important) continue;
+    if(!orchestrator&&!important) continue;
     const key=text.toLowerCase().replace(/\\d+%/g,'%');
     if(seen.has(key)) continue;
     seen.add(key);
