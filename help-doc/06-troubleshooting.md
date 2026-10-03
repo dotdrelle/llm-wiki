@@ -137,3 +137,21 @@ Each case below gives the **symptom**, the **cause** and the **fix**.
 
 Still stuck? Describe to DONNA, in chat, what you are trying to do and what you
 see on screen: it will point you to the next step.
+
+## Gmail authorization and failed sends
+
+Check the current connection with `/connector list`. Authorization belongs to
+one workspace and connector instance: connecting Gmail in another workspace
+does not connect the current one.
+
+If the check reports `google_reauthorization_required`, Google rejected the
+refresh token (`invalid_grant`). Run `/connector auth google` and complete the
+new consent. Stored permissions alone do not prove that a token still works.
+If it reports `google_oauth_client_rejected`, the configured OAuth application
+was rejected; repeating consent cannot repair its client configuration.
+Other connection-check failures are reported as unavailable, with their cause.
+
+Reading a message in the conversation uses Gmail search and full-message read;
+it does not import the message into the wiki. Sending runs in Agent mode and
+waits for the run's approval. A queued or approved send is not a delivery
+receipt: success requires the sending task to finish successfully.
