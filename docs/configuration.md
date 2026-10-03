@@ -217,10 +217,15 @@ rejects them at load time with the exact replacement in the message, and
 | `provider: ollama`              | `provider: openai-compatible` + `engine: ollama`      |
 | `provider: anthropic`           | `provider: openai-compatible` + `engine: generic`     |
 | `provider: openai-compatible`   | unchanged, plus an explicit `engine`                  |
+| `engine: anthropic` (`llm` or `retrieval.vector`) | `engine: generic`                    |
 
 The migration also materializes `baseUrl` when it was implicit, so the migrated
 file targets exactly the same endpoint as before. The native `anthropic` engine
 was removed: its legacy value keeps its endpoint and maps to `engine: generic`.
+A file that already reads `engine: anthropic` — written by the former wizard,
+or by the former migration of `provider: anthropic` — is rejected the same way,
+naming `engine: generic`, and `wiki doctor --apply` rewrites it (the implicit
+`https://api.anthropic.com/v1` endpoint is written explicitly).
 Claude models remain reachable with their gateway model name
 (`anthropic/claude-…`).
 

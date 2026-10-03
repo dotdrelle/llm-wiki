@@ -69,6 +69,56 @@ describe('migration du format llm.provider', () => {
     },
   );
 
+  it.each([
+    ['llm.engine', { llm: { provider: 'openai-compatible', engine: 'anthropic', model: 'm' } }],
+    [
+      'retrieval.vector.engine',
+      {
+        llm: { provider: 'openai-compatible', engine: 'openai', model: 'm' },
+        retrieval: { vector: { engine: 'anthropic' } },
+      },
+    ],
+  ])('rejette un %s anthropic retiré avec un message actionnable', (key, input) => {
+    let caught: unknown;
+    try {
+      resolveConfig(input, '/tmp/wiki');
+    } catch (error) {
+      caught = error;
+    }
+    expect(isLegacyProviderError(caught)).toBe(true);
+    expect((caught as Error).message).toContain(`${key}: "anthropic"`);
+    expect((caught as Error).message).toContain('engine: generic');
+    expect((caught as Error).message).toContain('wiki doctor --apply');
+  });
+
+  it('migre un engine: anthropic déjà sous openai-compatible en gardant son endpoint', () => {
+    const implicit = planLegacyConfigMigration({
+      llm: { provider: 'openai-compatible', engine: 'anthropic', model: 'claude' },
+    });
+    expect(implicit?.migration.providerMigrated).toBe(false);
+    expect(implicit?.migration.replacedEngines).toEqual([
+      { key: 'llm.engine', from: 'anthropic', to: 'generic' },
+    ]);
+    expect(implicit?.migration.materializedBaseUrl).toBe('https://api.anthropic.com/v1');
+    const config = resolveConfig(implicit!.nextConfig, '/tmp/wiki');
+    expect(config.llm.engine).toBe('generic');
+    expect(config.llm.baseUrl).toBe('https://api.anthropic.com/v1');
+
+    const explicit = planLegacyConfigMigration({
+      llm: { provider: 'openai-compatible', engine: 'anthropic', model: 'c', baseUrl: 'http://proxy/v1' },
+      retrieval: { vector: { enabled: true, engine: 'anthropic' } },
+    });
+    expect(explicit?.migration.materializedBaseUrl).toBeUndefined();
+    expect(explicit?.migration.replacedEngines?.map((r) => r.key)).toEqual([
+      'llm.engine',
+      'retrieval.vector.engine',
+    ]);
+    const migrated = resolveConfig(explicit!.nextConfig, '/tmp/wiki');
+    expect(migrated.llm.baseUrl).toBe('http://proxy/v1');
+    expect(migrated.retrieval.vector.engine).toBe('generic');
+    expect(migrated.retrieval.vector.enabled).toBe(true);
+  });
+
   it('conserve une baseUrl explicite', () => {
     const planned = planLegacyConfigMigration({
       llm: { provider: 'ollama', model: 'qwen2.5', baseUrl: 'http://gpu.local:11434/v1' },

@@ -52,26 +52,32 @@ function guessLocalEngine(llm: Record<string, unknown>): LlmEngine {
 export interface LegacyConfigMigration {
   /** Old value of `llm.provider`, as it appeared in the file. */
   from: string;
+  /** True when the provider/engine pair itself was rewritten (not only a removed engine). */
+  providerMigrated: boolean;
   /** New pair, for display. */
   to: { provider: string; engine: LlmEngine };
   /** True if the baseUrl, implicit until now, had to be materialized. */
   materializedBaseUrl?: string;
+  /** Removed engines rewritten in place, e.g. `llm.engine: anthropic → generic`. */
+  replacedEngines?: Array<{ key: string; from: string; to: LlmEngine }>;
 }
 
 /**
- * Detects an old format and computes its rewrite, without writing anything.
- * Returns `undefined` if the file is already in the current format.
+ * Engines removed from the schema. A file can carry one under the CURRENT
+ * provider — the old wizard wrote `engine: anthropic`, and so did the former
+ * migration of `provider: anthropic` — so the provider check alone misses it.
  */
-export function planLegacyConfigMigration(
-  rawConfig: unknown,
-): { nextConfig: Record<string, unknown>; migration: LegacyConfigMigration } | undefined {
-  if (!rawConfig || typeof rawConfig !== 'object' || Array.isArray(rawConfig)) {
-    return undefined;
-  }
-  const root = rawConfig as Record<string, unknown>;
-  const llm = root.llm;
-  if (!llm || typeof llm !== 'object' || Array.isArray(llm)) return undefined;
-  const llmBlock = llm as Record<string, unknown>;
+const REMOVED_ENGINES: Record<string, LegacyMapping> = {
+  anthropic: { engine: 'generic', defaultBaseUrl: 'https://api.anthropic.com/v1' },
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function planProviderMigration(
+  llmBlock: Record<string, unknown>,
+): { llm: Record<string, unknown>; from: string; materializedBaseUrl?: string } | undefined {
   const provider = llmBlock.provider;
   if (typeof provider !== 'string') return undefined;
 
@@ -82,27 +88,79 @@ export function planLegacyConfigMigration(
   }
 
   const mapping = LEGACY_PROVIDERS[provider];
+  if (provider !== 'openai-compatible' && !mapping) return undefined;
   const engine: LlmEngine = mapping?.engine ?? guessLocalEngine(llmBlock);
   const hasBaseUrl = typeof llmBlock.baseUrl === 'string' && llmBlock.baseUrl.length > 0;
   const materializedBaseUrl =
     !hasBaseUrl && mapping ? mapping.defaultBaseUrl : undefined;
+  return {
+    llm: {
+      ...llmBlock,
+      provider: 'openai-compatible',
+      engine,
+      ...(materializedBaseUrl ? { baseUrl: materializedBaseUrl } : {}),
+    },
+    from: provider,
+    ...(materializedBaseUrl ? { materializedBaseUrl } : {}),
+  };
+}
 
-  if (provider !== 'openai-compatible' && !mapping) return undefined;
+/**
+ * Detects an old format and computes its rewrite, without writing anything.
+ * Returns `undefined` if the file is already in the current format.
+ */
+export function planLegacyConfigMigration(
+  rawConfig: unknown,
+): { nextConfig: Record<string, unknown>; migration: LegacyConfigMigration } | undefined {
+  if (!isRecord(rawConfig)) return undefined;
+  const root = rawConfig;
+  if (!isRecord(root.llm)) return undefined;
+
+  const providerStep = planProviderMigration(root.llm);
+  let llm: Record<string, unknown> = providerStep?.llm ?? { ...root.llm };
+  let materializedBaseUrl = providerStep?.materializedBaseUrl;
+  const replacedEngines: NonNullable<LegacyConfigMigration['replacedEngines']> = [];
+
+  const llmEngine = llm.engine;
+  if (typeof llmEngine === 'string' && REMOVED_ENGINES[llmEngine]) {
+    const mapping = REMOVED_ENGINES[llmEngine];
+    const hasBaseUrl = typeof llm.baseUrl === 'string' && llm.baseUrl.length > 0;
+    // The removed engine had a default endpoint; `generic` has none, so an
+    // implicit baseUrl must be written or the file would target nothing.
+    if (!hasBaseUrl) materializedBaseUrl = mapping.defaultBaseUrl;
+    llm = { ...llm, engine: mapping.engine, ...(hasBaseUrl ? {} : { baseUrl: mapping.defaultBaseUrl }) };
+    replacedEngines.push({ key: 'llm.engine', from: llmEngine, to: mapping.engine });
+  }
+
+  // The vector block inherits the llm baseUrl when it has none, so only its
+  // engine needs rewriting.
+  let retrieval = root.retrieval;
+  if (isRecord(retrieval) && isRecord(retrieval.vector)) {
+    const vectorEngine = retrieval.vector.engine;
+    if (typeof vectorEngine === 'string' && REMOVED_ENGINES[vectorEngine]) {
+      const mapping = REMOVED_ENGINES[vectorEngine];
+      retrieval = { ...retrieval, vector: { ...retrieval.vector, engine: mapping.engine } };
+      replacedEngines.push({ key: 'retrieval.vector.engine', from: vectorEngine, to: mapping.engine });
+    }
+  }
+
+  if (!providerStep && replacedEngines.length === 0) return undefined;
 
   return {
     nextConfig: {
       ...root,
-      llm: {
-        ...llmBlock,
-        provider: 'openai-compatible',
-        engine,
-        ...(materializedBaseUrl ? { baseUrl: materializedBaseUrl } : {}),
-      },
+      llm,
+      ...(retrieval !== root.retrieval ? { retrieval } : {}),
     },
     migration: {
-      from: provider,
-      to: { provider: 'openai-compatible', engine },
+      from: providerStep?.from ?? String(root.llm.provider ?? 'openai-compatible'),
+      providerMigrated: Boolean(providerStep),
+      to: {
+        provider: String(llm.provider ?? 'openai-compatible'),
+        engine: (llm.engine as LlmEngine | undefined) ?? 'generic',
+      },
       ...(materializedBaseUrl ? { materializedBaseUrl } : {}),
+      ...(replacedEngines.length ? { replacedEngines } : {}),
     },
   };
 }
@@ -119,9 +177,10 @@ export async function migrateLegacyConfigFile(
   return planned.migration;
 }
 
-/** True if the error comes from rejecting an obsolete `llm.provider`. */
+/** True if the error comes from rejecting an obsolete `llm.provider` or a removed engine. */
 export function isLegacyProviderError(error: unknown): boolean {
   return (
-    error instanceof Error && /llm\.provider: ".*" is no longer recognized/.test(error.message)
+    error instanceof Error &&
+    /(?:llm\.provider|llm\.engine|retrieval\.vector\.engine): ".*" is no longer recognized/.test(error.message)
   );
 }

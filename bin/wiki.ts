@@ -102,9 +102,16 @@ async function loadConfigWithMigration(cwd: string) {
     );
     if (!migration) throw error;
 
-    console.log(
-      `Migrated ${configPath}: llm.provider "${migration.from}" → provider: ${migration.to.provider} / engine: ${migration.to.engine}.`,
-    );
+    if (migration.providerMigrated) {
+      console.log(
+        `Migrated ${configPath}: llm.provider "${migration.from}" → provider: ${migration.to.provider} / engine: ${migration.to.engine}.`,
+      );
+    }
+    for (const replaced of migration.replacedEngines ?? []) {
+      console.log(
+        `Migrated ${configPath}: ${replaced.key} "${replaced.from}" (removed engine) → ${replaced.to}.`,
+      );
+    }
     if (migration.materializedBaseUrl) {
       console.log(
         `  llm.baseUrl was implicit and is now written explicitly: ${migration.materializedBaseUrl}`,

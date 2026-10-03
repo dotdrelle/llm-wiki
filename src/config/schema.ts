@@ -660,18 +660,35 @@ const LEGACY_PROVIDER_MIGRATION: Record<string, string> = {
   anthropic: 'provider: openai-compatible / engine: generic',
 };
 
+/** Engines removed from the schema, mapped to the engine that replaces them. */
+const REMOVED_ENGINE_MIGRATION: Record<string, string> = {
+  anthropic: 'generic',
+};
+
 function assertNoLegacyProvider(input: unknown): void {
   if (!isPlainObject(input)) return;
   const llm = input.llm;
   if (!isPlainObject(llm)) return;
   const provider = llm.provider;
-  if (typeof provider !== 'string') return;
-  const replacement = LEGACY_PROVIDER_MIGRATION[provider];
-  if (!replacement) return;
-
-  throw new Error(
-    `llm.provider: "${provider}" is no longer recognized. Replace it with ${replacement} in .wikirc.yaml — or run \`wiki doctor --apply\` to migrate the file automatically.`,
-  );
+  const replacement = typeof provider === 'string' ? LEGACY_PROVIDER_MIGRATION[provider] : undefined;
+  if (replacement) {
+    throw new Error(
+      `llm.provider: "${provider}" is no longer recognized. Replace it with ${replacement} in .wikirc.yaml — or run \`wiki doctor --apply\` to migrate the file automatically.`,
+    );
+  }
+  // A removed ENGINE, written under the current provider (by the old wizard or
+  // by the former migration of `provider: anthropic`), would otherwise fail on
+  // a bare schema enum error that names no replacement and that `doctor
+  // --apply` could not catch.
+  const vector = isPlainObject(input.retrieval) && isPlainObject(input.retrieval.vector)
+    ? input.retrieval.vector
+    : undefined;
+  for (const [key, engine] of [['llm.engine', llm.engine], ['retrieval.vector.engine', vector?.engine]] as const) {
+    if (typeof engine !== 'string' || !(engine in REMOVED_ENGINE_MIGRATION)) continue;
+    throw new Error(
+      `${key}: "${engine}" is no longer recognized. Replace it with engine: ${REMOVED_ENGINE_MIGRATION[engine]} in .wikirc.yaml (the endpoint is kept) — or run \`wiki doctor --apply\` to migrate the file automatically.`,
+    );
+  }
 }
 
 export function resolveConfig(
