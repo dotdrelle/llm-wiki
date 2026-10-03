@@ -206,18 +206,35 @@ function runtimeActiveProgressText() {
   ].filter(Boolean);
   return progresses.map(p=>[p.label,p.detail,p.currentFile,p.file,p.source].filter(Boolean).join(' ')).join(' | ').toLowerCase();
 }
+// Per-file states the production agent reads from the engine trace
+// (basename -> running/done/failed), merged over the active progresses. A TAXO
+// ingest is one task: this is how finished files turn green and the several
+// sources the engine extracts at once show as running together.
+function runtimeActiveSourceStates() {
+  const lines=runtimeState?.workflow?.activity?.lines;
+  const activities=Array.isArray(runtimeState?.activities)?runtimeState.activities:[];
+  const states=new Map();
+  [...(Array.isArray(lines)?lines.map(line=>line.progress):[]),...activities.map(item=>item.progress)]
+    .forEach(progress=>{
+      const map=progress?.sourceStates;
+      if(map&&typeof map==='object') Object.entries(map).forEach(([name,value])=>states.set(String(name).toLowerCase(),String(value)));
+    });
+  return states;
+}
 function runtimeTaskInputNodes(task) {
   const refs=runtimeTaskInputRefs(task);
   if(!refs.length) return [];
   const status=String(task.status||'pending');
   const live=status==='running'?runtimeActiveProgressText():'';
+  const fileStates=status==='running'?runtimeActiveSourceStates():new Map();
   const nodes=refs.slice(0,RUNTIME_TASK_INPUT_LIMIT).map((ref,index)=>{
     const name=ref.split('/').pop()||ref;
     const stem=name.replace(/\\.[^.]+$/,'').toLowerCase();
-    // Only the file the progress names is known to be in flight; the others are
-    // not reported per file, so they stay pending until the task settles.
+    // The agent's per-file state wins; without it (an older agent), only the
+    // file the progress names is known to be in flight.
+    const reported=fileStates.get(name.toLowerCase());
     const current=live&&(live.includes(name.toLowerCase())||(stem.length>3&&live.includes(stem)));
-    const fileStatus=status==='running'?(current?'running':'pending'):status;
+    const fileStatus=status==='running'?(reported||(current?'running':'pending')):status;
     return {id:'input:'+task.id+':'+index,type:'task_input',taskId:task.taskId,detailId:task.id,label:name,ref,status:fileStatus};
   });
   if(refs.length>RUNTIME_TASK_INPUT_LIMIT) nodes.push({id:'input:'+task.id+':more',type:'task_input',taskId:task.taskId,detailId:task.id,label:'+'+(refs.length-RUNTIME_TASK_INPUT_LIMIT)+' more file(s)',ref:'',status:status==='running'?'pending':status});
@@ -323,7 +340,11 @@ function renderRuntimeWorkflowInspector() {
   // status the graph shows for each.
   const inputsTask=selectedTask?.task||(taskRows.length===1?taskRows[0].task:null);
   const inputNodes=inputsTask?nodes.filter(item=>item.type==='task_input'&&item.taskId===String(inputsTask.stepId||inputsTask.id).replace(/^task:/,'')):[];
-  const inputList=inputNodes.length?\`<div class="runtime-inspector-section"><div class="runtime-inspector-heading">Inputs · \${runtimeTaskInputRefs(inputsTask).length} file(s)</div>\${inputNodes.map(item=>\`<div class="runtime-inspector-rel" title="\${esc(item.ref)}">\${esc(item.label)} · <b class="\${esc(item.status)}">\${esc(item.status)}</b></div>\`).join('')}</div>\`:'';
+  // How many files are finished and how many run at once: the parallelism of
+  // a TAXO ingest lives inside its single task, so the task count says ×1.
+  const inputCounts=inputNodes.reduce((acc,item)=>{ if(item.ref) acc[item.status]=(acc[item.status]||0)+1; return acc; },{});
+  const inputsSummary=['done','running','failed'].filter(key=>inputCounts[key]).map(key=>' · '+inputCounts[key]+' '+key).join('');
+  const inputList=inputNodes.length?\`<div class="runtime-inspector-section"><div class="runtime-inspector-heading">Inputs · \${runtimeTaskInputRefs(inputsTask).length} file(s)\${inputsSummary}</div><div class="runtime-inspector-inputs">\${inputNodes.map(item=>\`<div class="runtime-inspector-input" title="\${esc(item.ref)}"><span>\${esc(item.label)}</span><b class="\${esc(item.status)}">\${esc(item.status)}</b></div>\`).join('')}</div></div>\`:'';
   const html=\`<div class="runtime-inspector-title">\${esc(node.label)}</div><div class="runtime-inspector-meta">\${phase?'phase':run?'run':subagent?'subagent':esc(node.type)} · \${esc(node.status||'-')}</div><dl class="runtime-inspector-dl">\${details.map(([key,value])=>\`<dt>\${esc(key)}</dt><dd>\${esc(value)}</dd>\`).join('')}</dl>\${linked.length?\`<div class="runtime-inspector-section"><div class="runtime-inspector-heading">Sequence</div>\${linked.map(relationLine).join('')}</div>\`:''}\${taskList}\${taskFlow}\${inputList}<div class="runtime-inspector-section"><div class="runtime-inspector-heading">Run journal</div>\${essentialRuntimeLogHTML()}</div>\`;
   // Same reason as for the frame: the inspector is rebuilt on every frame,
   // which reset the journal's scrolling during a run.
@@ -331,8 +352,14 @@ function renderRuntimeWorkflowInspector() {
   inspector.__inspectorHTML=html;
   const journal=inspector.querySelector('.runtime-inspector-section:last-child pre');
   const journalTop=journal?journal.scrollTop:0;
+  const inputsBox=inspector.querySelector('.runtime-inspector-inputs');
+  const inputsTop=inputsBox?inputsBox.scrollTop:0;
+  const inspectorTop=inspector.scrollTop;
   inspector.innerHTML=html;
   const nextJournal=inspector.querySelector('.runtime-inspector-section:last-child pre');
   if(nextJournal&&journalTop>0) nextJournal.scrollTop=journalTop;
+  const nextInputs=inspector.querySelector('.runtime-inspector-inputs');
+  if(nextInputs&&inputsTop>0) nextInputs.scrollTop=inputsTop;
+  if(inspectorTop>0) inspector.scrollTop=inspectorTop;
 }
 /* ── end Runtime Graph ─────────────────────────────────────────────── */`;

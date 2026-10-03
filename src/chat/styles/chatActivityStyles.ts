@@ -172,6 +172,11 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .runtime-inspector-section:last-child{flex:1;display:flex;flex-direction:column;min-height:0}
 .runtime-inspector-heading{font-size:10px;font-weight:850;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;flex-shrink:0}
 .runtime-inspector-rel{font-size:10px;line-height:1.35;color:var(--muted2);overflow-wrap:anywhere}
+.runtime-inspector-inputs{display:flex;flex-direction:column;max-height:260px;overflow-y:auto;overscroll-behavior:contain;border:1px solid var(--border);border-radius:6px;background:var(--panel-deep)}
+.runtime-inspector-input{display:flex;align-items:center;gap:6px;padding:3px 6px;font-size:10px;line-height:1.35;color:var(--muted2);border-bottom:1px solid color-mix(in srgb,var(--border) 50%,transparent)}
+.runtime-inspector-input:last-child{border-bottom:0}
+.runtime-inspector-input span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.runtime-inspector-input b{flex:0 0 auto;font-size:8px;text-transform:uppercase;color:var(--muted)}.runtime-inspector-input b.done{color:#16a34a}.runtime-inspector-input b.running{color:var(--accent)}.runtime-inspector-input b.failed{color:var(--err)}
 .runtime-inspector-task{display:flex;width:100%;flex-direction:column;gap:2px;padding:5px 3px;border:0;border-bottom:1px solid color-mix(in srgb,var(--border) 60%,transparent);border-radius:4px;background:transparent;color:var(--text);font:inherit;font-size:10px;text-align:left;cursor:pointer}
 .runtime-inspector-task:hover{background:color-mix(in srgb,var(--accent) 8%,transparent)}
 .runtime-inspector-task.selected{background:color-mix(in srgb,var(--accent) 14%,var(--panel));box-shadow:inset 3px 0 var(--accent)}

@@ -42,6 +42,14 @@ Locks protect shared resources. In particular, operations that write the same
 workspace or deliverable may be serialized even when the displayed effective
 concurrency is higher.
 
+An ingestion is **one task** over the whole batch, so the run shows
+`Parallel 1` for it whatever the values above. Its parallelism lives inside
+that task: the engine extracts several source files at once, up to
+`limits.maxInFlightRequests` in the workspace `.wikirc.yaml` (default 3,
+at most 16), which is also the number of simultaneous model calls. The run
+graph and the Plan step list each input file as pending, running, done or
+failed. Several files marked running at once show that parallelism.
+
 ## Collection concurrency
 
 **Collection concurrency** applies to connector work, for example reading

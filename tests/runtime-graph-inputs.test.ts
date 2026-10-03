@@ -48,6 +48,24 @@ describe('runtime graph task inputs', () => {
     expect(relations.filter((rel: { from: string; to: string }) => rel.to === detail.id && String(rel.from).startsWith('input:'))).toHaveLength(3);
   });
 
+  it('colours each file from the per-file states the production agent reports', () => {
+    const { nodes } = project({
+      workflow: {
+        nodes: [{ id: 'run:1', type: 'run', status: 'running' }, task('running')],
+        activity: { lines: [{ status: 'running', progress: {
+          label: 'Organize section sheets',
+          sourceStates: { 'Etude open source EPM.md': 'done', 'Comparaison Sécurité.md': 'running', 'Synthèse.md': 'running' },
+        } }] },
+      },
+    });
+    const inputs = nodes.filter((node: { type: string }) => node.type === 'task_input');
+    expect(inputs.map((node: { label: string; status: string }) => [node.label, node.status])).toEqual([
+      ['Etude open source EPM.md', 'done'],
+      ['Comparaison Sécurité.md', 'running'],
+      ['Synthèse.md', 'running'],
+    ]);
+  });
+
   it('gives the files the task status once it settles', () => {
     const { nodes } = project({ workflow: { nodes: [{ id: 'run:1', type: 'run', status: 'done' }, task('done')] } });
     expect(nodes.filter((node: { type: string }) => node.type === 'task_input').every((node: { status: string }) => node.status === 'done')).toBe(true);
