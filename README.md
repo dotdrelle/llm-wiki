@@ -469,6 +469,10 @@ pnpm lint
 pnpm test
 ```
 
+The test suite runs at most four workers to bound CPU and filesystem contention.
+The Git history and knowledge-pipeline integration suites have a 15-second
+per-test deadline; other tests keep Vitest's default deadline.
+
 ## Documentation
 
 | Topic                          | File                        |

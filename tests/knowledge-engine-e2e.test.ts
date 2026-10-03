@@ -175,7 +175,8 @@ async function createWorkspace(root: string): Promise<void> {
   );
 }
 
-describe('knowledge engine E2E', () => {
+// The full pipeline performs filesystem, index and Git history work.
+describe('knowledge engine E2E', { timeout: 15_000 }, () => {
   it('runs conversion review ingest index build and export on local services', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-knowledge-e2e-'));
     await createWorkspace(root);

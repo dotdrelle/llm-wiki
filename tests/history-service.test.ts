@@ -21,7 +21,8 @@ async function workspace(): Promise<string> {
   return root;
 }
 
-describe('history service', () => {
+// Real Git subprocesses need headroom under concurrent release checks.
+describe('history service', { timeout: 15_000 }, () => {
   afterEach(async () => {
     await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
   });

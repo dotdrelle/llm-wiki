@@ -59,7 +59,8 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-describe('page /history autour d’un release', () => {
+// These route tests create real Git commits and annotated releases.
+describe('page /history autour d’un release', { timeout: 15_000 }, () => {
   it('sert un shell immédiat avec un état de chargement, pas l’historique rendu', async () => {
     const root = await workspace();
     const history = new HistoryService(root);
