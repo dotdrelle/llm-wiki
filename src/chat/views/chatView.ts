@@ -211,8 +211,9 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
   exports — step/source/task/batch counters, the detail and the tokens. It
   carries no raw tool id — those are the Logs tab's job.
 
-  Pinned to the TOP of the window by default, so it never covers the chat bar
-  or its buttons (no composer padding needed). A fixed overlay, like
+  At the BOTTOM centre of the window by default, lifted above the chat bar
+  while it is displayed so it never covers the input or its buttons; a
+  double-click puts a dragged strip back there. A fixed overlay, like
   #approval-banner, so it survives the three center views that hide #input-wrap.
   The reader may DRAG it anywhere (initRunStripDrag in runStripScript.ts): the
   centering transform is dropped on first grab and the box is clamped to the
@@ -225,6 +226,7 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
     <span class="run-strip-line"><span class="run-strip-text" id="run-strip-text">Working…</span><span class="run-strip-percent" id="run-strip-percent" hidden></span></span>
     <span class="run-strip-line" id="run-strip-sub-line" hidden><span class="run-strip-sub-text" id="run-strip-sub-text"></span><span class="run-strip-sub-percent" id="run-strip-sub-percent" hidden></span></span>
   </span>
+  <button class="run-strip-stop" type="button" onclick="stopRuntimeRunFromStrip()" title="Stop the current run (the rest of its skill chain is skipped; other queued requests stay)">Stop</button>
   <button class="run-strip-open" type="button" onclick="showExecutionView(event)">Details</button>
 </div>
 

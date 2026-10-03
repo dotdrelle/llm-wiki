@@ -280,6 +280,7 @@ function runtimeTaskPanelHTML(view='plan') {
         ...item,
         id:item.id||\`control-\${index}\`,
         label:item.input||item.skillName||'Queued request',
+        cancelItemId:item.id&&String(item.status||'queued').toLowerCase()==='queued'?item.id:null,
       }))
     : [];
   const queue=[...controlQueue, ...jobQueue];
@@ -316,6 +317,7 @@ function runtimeTaskPanelHTML(view='plan') {
     remoteId:item.id||item.jobId||index,
     statusTarget:item.id||item.jobId||item.label||item.tool||\`queue item \${index+1}\`,
     label:item.label||item.tool||item.type||'Queued task',
+    cancelItemId:item.cancelItemId||null,
     detail:item.dependsOn||item.depends_on||item.status||'waiting',
     status:normalizeActivityStatus(item.status||'queued',activityTerminalStatus(item.status)),
     terminal:activityTerminalStatus(item.status),

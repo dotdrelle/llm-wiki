@@ -937,12 +937,30 @@ describe('chat html', () => {
     expect(graphBranch).not.toMatch(/renderRuntimeWorkflowGraph\);\s*return;\s*\}/);
   });
 
-  it('pins the run-status strip to the top of the window, clear of the composer', () => {
-    // It used to stick at the base and push the composer up with a padding;
-    // at the top it needs neither.
-    expect(CHAT_HTML).toContain('#run-strip{position:fixed;top:10px;');
+  it('places the run-status strip at the bottom centre, above the composer and the approval banner', () => {
+    // It used to push the composer up with a padding; it now floats above
+    // whatever occupies the bottom instead, and a double-click restores that
+    // place after a drag. The saved position key is versioned: the old one
+    // could hold a 0,0 written before the window had a size.
+    const script = chatScripts().join('\n');
+    expect(CHAT_HTML).toContain('#run-strip{position:fixed;bottom:var(--run-strip-bottom,16px);left:50%;');
+    expect(script).toContain("for(const id of ['input-wrap','approval-banner'])");
+    expect(script).toContain("const RUN_STRIP_POSITION_KEY='run-strip-position-v2';");
+    expect(script).toContain("strip.addEventListener('dblclick'");
+    expect(script).toContain('rect.width<=0||rect.height<=0) return;');
     expect(CHAT_HTML).not.toContain('body.run-active #input-wrap{padding-bottom:66px}');
     expect(CHAT_HTML).not.toContain('body.run-active #approval-banner{bottom:74px}');
+  });
+
+  it('offers a Stop on the run strip and a Cancel on each request still queued', () => {
+    // Deterministic control verbs stay buttons: the strip is visible in every
+    // view (graph and execution included), the queued card cancels one item.
+    const script = chatScripts().join('\n');
+    expect(CHAT_HTML).toContain('onclick="stopRuntimeRunFromStrip()"');
+    expect(script).toContain("await cancelRuntimeRun();");
+    expect(script).toContain("JSON.stringify({action:'cancel_item',itemId})");
+    expect(script).toContain("cancelItemId:item.id&&String(item.status||'queued').toLowerCase()==='queued'?item.id:null");
+    expect(script).toContain('onclick="cancelQueuedRuntimeItem(');
   });
 
   it('lets the reader drag the run-status strip anywhere in the viewport', () => {

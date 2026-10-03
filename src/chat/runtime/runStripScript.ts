@@ -103,6 +103,30 @@ function runIsActive() {
   const chains=Array.isArray(runtimeState.skillChains)?runtimeState.skillChains:[];
   return chains.some(chain=>chain.status==='running'||chain.status==='queued');
 }
+// Deterministic control verbs stay buttons (root rule: cancel/enqueue/approve
+// never go through a Donna turn). Stop is chain-scoped on the runtime side: it
+// cancels the current run and skips the rest of ITS skill chain, leaving the
+// unrelated queued requests alone — each of those has its own Cancel in Plan.
+async function stopRuntimeRunFromStrip() {
+  if(!runtimeEnabled()) return;
+  if(!(await confirmAction({title:'Stop the run',message:'Stop the current run? Its remaining chain steps are skipped; other queued requests stay in the queue.',confirmLabel:'Stop',danger:true}))) return;
+  const button=document.querySelector('#run-strip .run-strip-stop');
+  if(button) button.disabled=true;
+  try { await cancelRuntimeRun(); } finally { if(button) button.disabled=false; }
+}
+// One queued (not yet started) control request, by id: the runtime's
+// cancel_item also skips the later steps of that item's own chain.
+async function cancelQueuedRuntimeItem(itemId) {
+  if(!runtimeEnabled()||!itemId) return;
+  if(!(await confirmAction({title:'Cancel queued request',message:'Remove this request from the queue? It has not started yet.',confirmLabel:'Cancel request',danger:true}))) return;
+  try {
+    const res=await fetch('/api/runtime/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'cancel_item',itemId})});
+    const payload=await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(payload?.error||'Queue cancel failed ('+res.status+')');
+    notify(payload?.cancelled===false?'That request had already left the queue.':'Queued request cancelled');
+    await fetchRuntimeState().catch(()=>{});
+  } catch(e) { notify(e?.message||String(e),'e'); }
+}
 function updateRunStrip() {
   const strip=$('run-strip');
   if(!strip) return;
@@ -111,6 +135,7 @@ function updateRunStrip() {
   if(!active) { strip.hidden=true; return; }
   strip.hidden=false;
   restoreRunStripPosition();
+  placeRunStripDefault(strip);
   const lines=runtimeStripLines();
   const first=lines[0]||{};
   const overall=runtimeState?.workflow?.progress?.percent;
@@ -134,34 +159,68 @@ function updateRunStrip() {
     if(detail) setRunStripLine('run-strip-sub-text','run-strip-sub-percent', detail, first.detail?null:second?.percent);
   }
 }
-// The strip is an overlay pinned to the top by default, but the reader decides
-// where it lives: a pointer drag moves it. The centering transform is dropped
-// on first grab (left/top become px) and the box is clamped to the viewport so
-// it can never be dragged off-screen. Buttons keep their own click: the drag
+// The strip is an overlay at the BOTTOM centre by default, just above the
+// composer when one is shown (--run-strip-bottom), but the reader decides where
+// it lives: a pointer drag moves it. The centering transform is dropped on
+// first grab (left/top become px) and the box is clamped to the viewport so it
+// can never be dragged off-screen. Buttons keep their own click: the drag
 // starts only outside them. The position is persisted, so a view switch or a
-// fresh document load puts the strip back where the reader left it instead of
-// silently snapping back to the top-left.
+// fresh document load puts the strip back where the reader left it; a
+// double-click returns it to the default place.
+//
+// The key is versioned: the former 'run-strip-position' could hold 0,0 — a
+// restore run before the window or the strip had a size clamped every saved
+// position into the top-left corner, and the resize handler saved it back.
+const RUN_STRIP_POSITION_KEY='run-strip-position-v2';
 function saveRunStripPosition(strip) {
   if(!strip||!strip.style.left) return;
   const left=parseFloat(strip.style.left);
   const top=parseFloat(strip.style.top);
   if(!Number.isFinite(left)||!Number.isFinite(top)) return;
-  try { localStorage.setItem('run-strip-position',JSON.stringify({left,top})); } catch {}
+  try { localStorage.setItem(RUN_STRIP_POSITION_KEY,JSON.stringify({left,top})); } catch {}
+}
+function resetRunStripPosition(strip) {
+  if(!strip) return;
+  strip.style.left='';
+  strip.style.top='';
+  strip.style.bottom='';
+  strip.style.transform='';
+  try { localStorage.removeItem(RUN_STRIP_POSITION_KEY); } catch {}
+  placeRunStripDefault(strip);
+}
+// Bottom centre, lifted above whatever already occupies the bottom while it is
+// displayed — the composer, and the approval banner a pending run shows above
+// it — so the strip never covers the input, its buttons or Approve/Reject.
+function placeRunStripDefault(strip) {
+  if(!strip||strip.style.left) return;
+  let highest=window.innerHeight;
+  for(const id of ['input-wrap','approval-banner']) {
+    const el=$(id);
+    if(!el||el.hidden||el.offsetParent===null&&getComputedStyle(el).position!=='fixed') continue;
+    const rect=el.getBoundingClientRect();
+    if(rect.height>0&&rect.top>0) highest=Math.min(highest,rect.top);
+  }
+  const lift=highest<window.innerHeight?Math.round(window.innerHeight-highest+10):16;
+  strip.style.setProperty('--run-strip-bottom',Math.max(16,lift)+'px');
 }
 function restoreRunStripPosition() {
   const strip=$('run-strip');
   if(!strip||strip.__posRestored) return;
+  const rect=strip.getBoundingClientRect();
+  // Not laid out yet (window or strip without a size): clamping now would pin
+  // the saved position to 0,0. Try again on the next update.
+  if(window.innerWidth<=0||window.innerHeight<=0||rect.width<=0||rect.height<=0) return;
   strip.__posRestored=true;
   let pos=null;
   try {
-    const raw=localStorage.getItem('run-strip-position');
+    const raw=localStorage.getItem(RUN_STRIP_POSITION_KEY);
     if(raw) pos=JSON.parse(raw);
   } catch {}
   if(!pos||typeof pos.left!=='number'||typeof pos.top!=='number') return;
-  const rect=strip.getBoundingClientRect();
   const maxX=Math.max(0,window.innerWidth-rect.width);
   const maxY=Math.max(0,window.innerHeight-rect.height);
   strip.style.transform='none';
+  strip.style.bottom='auto';
   strip.style.left=Math.max(0,Math.min(maxX,pos.left))+'px';
   strip.style.top=Math.max(0,Math.min(maxY,pos.top))+'px';
 }
@@ -176,6 +235,7 @@ function initRunStripDrag() {
     if(event.target.closest('button')) return;
     const rect=strip.getBoundingClientRect();
     strip.style.transform='none';
+    strip.style.bottom='auto';
     strip.style.left=Math.round(rect.left)+'px';
     strip.style.top=Math.round(rect.top)+'px';
     drag={dx:event.clientX-rect.left,dy:event.clientY-rect.top};
@@ -199,10 +259,15 @@ function initRunStripDrag() {
     saveRunStripPosition(strip);
   };
   strip.addEventListener('pointerup',release);
+  strip.addEventListener('dblclick',(event)=>{
+    if(event.target.closest('button')) return;
+    resetRunStripPosition(strip);
+  });
   strip.addEventListener('pointercancel',release);
   // A window resize can leave the strip out of reach after it was dragged.
   window.addEventListener('resize',()=>{
-    if(!strip.style.left) return;
+    if(!strip.style.left) { placeRunStripDefault(strip); return; }
+    if(window.innerWidth<=0||window.innerHeight<=0) return;
     const rect=strip.getBoundingClientRect();
     strip.style.left=clamp(rect.left,0,Math.max(0,window.innerWidth-rect.width))+'px';
     strip.style.top=clamp(rect.top,0,Math.max(0,window.innerHeight-rect.height))+'px';

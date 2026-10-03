@@ -464,12 +464,16 @@ plan, activities, logs, queue, and persisted projection. Upload cards with an
 
 A floating **run-status strip** (`position: fixed`, a sibling of
 `#approval-banner`, same reason: it survives the three views that hide
-`#input-wrap`) opens at the TOP of the window, centred, `min(608px, …)` wide.
-The reader can drag it (`initRunStripDrag` in `runStripScript.ts`; the drag
-starts outside its buttons); the position is persisted in `localStorage`
-(`run-strip-position`, wrapped in try/catch) and restored, clamped to the
-viewport, when the strip becomes visible again — a view switch or a reload no
-longer snaps it back. Its background is its own theme token, `--run-strip-bg`
+`#input-wrap`) opens at the BOTTOM centre of the window, `min(608px, …)` wide,
+lifted (`--run-strip-bottom`, `placeRunStripDefault`) above whatever occupies
+the bottom while displayed — the composer and the approval banner — so it never
+covers the input or Approve/Reject. The reader can drag it (`initRunStripDrag`
+in `runStripScript.ts`; the drag starts outside its buttons) and double-click it
+back to that default; the position is persisted in `localStorage`
+(`run-strip-position-v2`, wrapped in try/catch) and restored, clamped to the
+viewport, when the strip becomes visible again. A restore waits until the
+window and the strip have a size: clamping before layout pinned the saved
+position to 0,0 (the top-left corner), which is why the key was versioned. Its background is its own theme token, `--run-strip-bg`
 (`theme.ts`): in the dark theme the shared `--panel` was too close to the
 near-black ground for a bar floating over the chat. It shows **two business lines** like the ShellUI's Activity
 panel: its primary line is the document/step the run is on today — the
@@ -477,9 +481,7 @@ activity's own `progress.label`, exactly what the ShellUI shows for an
 aggregated line — with its percentage; its sub-line carries the live figures
 the direct wiki CLI already exports (step/source/task/batch counters, the
 detail, and the tokens), falling back to a second concurrent activity or the
-running plan step. Being at the top, it needs no composer padding and never
-covers the chat bar or its buttons; the approval banner keeps its own base
-position. It **disappears once the run is over** — the
+running plan step. It floats above the composer rather than padding it. It **disappears once the run is over** — the
 Plan tab keeps the outcome, so the strip is not a second history. The
 `assistant_progress` notes never enter the thread: they feed this strip's
 liveness and the Logs tab only.
