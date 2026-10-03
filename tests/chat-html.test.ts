@@ -233,20 +233,25 @@ describe('chat html', () => {
 
   it('counts the reply offset on the current thread, not on the whole workspace log', () => {
     const script = chatScripts().join('\n');
-    const helper = /function currentRuntimeConversation\(\) \{[\s\S]*?\n\}/.exec(script)?.[0];
+    const helper = /function currentRuntimeConversation\(threadOnly=false\) \{[\s\S]*?\n\}/.exec(script)?.[0];
     const reset = /function resetRuntimeConversationTracking\(\) \{[\s\S]*?\n\}/.exec(script)?.[0];
     expect(helper && reset).toBeTruthy();
-    const run = new Function('state', 'current', `let runtimeState=state,currentConversationId=current,runtimeConversationRefs=[1],runtimeConversationOffset=99,
+    const run = new Function('state', 'current', `let runtimeState=state,currentConversationId=current,runtimeConversationRefs=[1],runtimeConversationOffset=99,runtimeConversationStrictOffset=99,
       pendingRuntimeUserRefs=[],pendingRuntimeStatusEls=[],armedReplyStatusEls=[];const clearRuntimeThinkingBubble=()=>{};
-      ${helper}\n${reset}\nresetRuntimeConversationTracking();return runtimeConversationOffset;`) as (state: unknown, current: string | null) => number;
+      ${helper}\n${reset}\nresetRuntimeConversationTracking();return [runtimeConversationOffset,runtimeConversationStrictOffset];`) as (state: unknown, current: string | null) => [number, number];
     const other = Array.from({ length: 40 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: String(i), conversationId: 'conv-other' }));
     const mine = [{ role: 'user', content: 'q', conversationId: 'conv-mine' }, { role: 'assistant', content: 'a', conversationId: 'conv-mine' }];
 
-    // Loading a thread: its own two entries are already on screen.
-    expect(run({ conversation: [...other, ...mine] }, 'conv-mine')).toBe(2);
+    // Loading a thread: its own two entries are already on screen; the merged
+    // display also carries workspace-level turns and must not count them as
+    // this thread's, or redo would truncate at the wrong boundary.
+    expect(run({ conversation: [...other, ...mine] }, 'conv-mine')).toEqual([2, 2]);
+    expect(run({ conversation: [...other, ...mine, { role: 'assistant', content: 'sys' }] }, 'conv-mine')).toEqual([3, 2]);
+    // A run queued without a thread (legacy: fallback) is shown, not counted.
+    expect(run({ conversation: [...mine, { role: 'assistant', content: 'legacy', conversationId: 'legacy:demo' }] }, 'conv-mine')).toEqual([3, 2]);
     // New chat: nothing of this thread yet, so its first reply is merged.
-    expect(run({ conversation: [...other, ...mine] }, null)).toBe(0);
-    expect(run({}, 'conv-mine')).toBeNull();
+    expect(run({ conversation: [...other, ...mine] }, null)).toEqual([0, 0]);
+    expect(run({}, 'conv-mine')).toEqual([null, null]);
   });
 
   it('hands /remember, /forget and /memory to Donna in agent mode, never answering itself', () => {
@@ -295,8 +300,11 @@ describe('chat html', () => {
     expect(script).toContain('clearRuntimeThinkingBubble(armedReplyStatusEls.shift())');
     // Foreign user turns (ShellUI / another chat) hold a placeholder ref so the
     // refs array stays 1:1 with the conversation tail — without it, a later poll
-    // rewrites synced bubbles with foreign content and duplicates replies.
-    expect(script).toContain('runtimeConversationRefs.push({message:{role,content},el:null})');
+    // rewrites synced bubbles with foreign content and duplicates replies. Each
+    // ref also carries its entry's conversationId so redo can count the thread's
+    // own entries while the display merges workspace-level ones.
+    expect(script).toContain('runtimeConversationRefs.push({message:{role,content},el:null,conversationId:raw.conversationId??null})');
+    expect(script).toContain('runtimeConversationRefs.push({message,el,own:assistantOwn,conversationId:raw.conversationId??null})');
     expect(script).toContain('if(ref.el) {');
   });
 

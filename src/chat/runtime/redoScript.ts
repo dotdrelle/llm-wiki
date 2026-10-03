@@ -19,7 +19,16 @@ async function redoMessage(btn) {
   const refIndex=runtimeConversationRefs.findIndex(ref=>ref.el===msg);
   try {
     if(refIndex>=0) {
-      const res=await fetch('/api/runtime/conversation/truncate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:runtimeConversationOffset+refIndex,conversationId:currentConversationId})});
+      // The runtime index counts THIS thread's entries only, while the display
+      // also merges workspace-level turns (no id, or legacy:). Count the
+      // thread's own entries before the question instead of the merged index.
+      if(runtimeConversationRefs[refIndex]?.conversationId!==currentConversationId) {
+        notify('This message belongs to the workspace, not to this conversation','e');
+        return;
+      }
+      const strictBefore=runtimeConversationRefs.slice(0,refIndex).filter(ref=>ref.conversationId===currentConversationId).length;
+      const strictIndex=(runtimeConversationStrictOffset??0)+strictBefore;
+      const res=await fetch('/api/runtime/conversation/truncate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:strictIndex,conversationId:currentConversationId})});
       const payload=await res.json().catch(()=>({}));
       if(payload?.truncated!==true) {
         notify(payload?.reason==='run_active'?'Cancel the running task before redoing':'Redo failed','e');

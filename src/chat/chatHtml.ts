@@ -476,6 +476,13 @@ function connectRuntimePanel() {
       if(parsed&&parsed.type) noteRunSidebarEvent(parsed.type);
       if(parsed&&parsed.type==='assistant_progress') noteRuntimeProgress(parsed.payload&&parsed.payload.message);
       if(parsed&&parsed.type==='runtime_heartbeat') noteRuntimeHeartbeat();
+      // The Memory tab listens for this event; without an emitter a /remember
+      // or a background extraction only appeared after a full reload. The
+      // runtime says "memory: saved/updated/removed/restored" on its own log
+      // line — the one signal both explicit actions and auto-extraction share.
+      if(parsed&&parsed.type==='runtime_log'&&/(?:^|\\s)memory:\\s*(?:saved|updated|removed|restored)\\b/i.test(String(parsed.payload?.message??''))) {
+        window.dispatchEvent(new Event('llmwiki:memory-updated'));
+      }
       const label=runtimeProgressLabel(parsed);
       if(label) pendingRuntimeStatusEls.forEach(el=>updateRuntimeThinkingBubble(el,label));
     } catch {}
@@ -536,8 +543,10 @@ function mergeRuntimeConversation() {
         if(conversation[i]?.role==='user'&&String(conversation[i]?.content??'')===wanted) { match=i; break; }
       }
       runtimeConversationOffset=match>=0?match:conversation.length;
+      runtimeConversationStrictOffset=conversation.slice(0,runtimeConversationOffset).filter((entry)=>entry?.conversationId===currentConversationId).length;
     } else {
       runtimeConversationOffset=conversation.length;
+      runtimeConversationStrictOffset=conversation.filter((entry)=>entry?.conversationId===currentConversationId).length;
       return false;
     }
   }
@@ -590,6 +599,7 @@ function mergeRuntimeConversation() {
       if(idx>=0) {
         const ref=pendingRuntimeUserRefs.splice(idx,1)[0];
         const statusEl=pendingRuntimeStatusEls.splice(idx,1)[0] ?? null;
+        ref.conversationId=raw.conversationId??null;
         runtimeConversationRefs.push(ref);
         if(statusEl) armedReplyStatusEls.push(statusEl);
         changed=true;
@@ -599,7 +609,7 @@ function mergeRuntimeConversation() {
         // the next poll then rewrites a synced bubble with foreign content and
         // re-appends already-shown assistant replies as duplicates, which is
         // what made ShellUI answers look like they never reached this chat.
-        runtimeConversationRefs.push({message:{role,content},el:null});
+        runtimeConversationRefs.push({message:{role,content},el:null,conversationId:raw.conversationId??null});
       }
       continue;
     }
@@ -630,7 +640,7 @@ function mergeRuntimeConversation() {
     // after the whole batch, right after this function returns.
     const el=duplicateOfDirectReply?null:appendMsg(role,content,{skipGauge:true});
     if(role==='assistant'&&!content) el?.classList.add('msg-empty');
-    runtimeConversationRefs.push({message,el,own:assistantOwn});
+    runtimeConversationRefs.push({message,el,own:assistantOwn,conversationId:raw.conversationId??null});
     changed=true;
   }
   if(changed) scheduleConversationSave();
@@ -1829,6 +1839,7 @@ async function compactConversationMemory() {
   // works whether the runtime keeps or resets its own conversation array.
   resetRuntimeConversationTracking();
   runtimeConversationOffset=null;
+  runtimeConversationStrictOffset=null;
   conversationDirty=true;
   await saveCurrentConversation({immediate:true,force:true});
   notify(conversationSummary&&conversationSummary!==previousSummary

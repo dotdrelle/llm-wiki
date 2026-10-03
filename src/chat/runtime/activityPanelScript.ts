@@ -27,6 +27,8 @@ let runtimeConversationRefs=[];
 // browser clears; this cursor prevents that older log from being replayed into
 // a new/cleared/local history entry.
 let runtimeConversationOffset=null;
+// Same baseline, counted on this thread's entries only (the display merges more).
+let runtimeConversationStrictOffset=null;
 // FIFO queue, not a single slot: sending a second message before the first
 // is confirmed by the merge (e.g. a busy/streaming run delays the fetch that
 // would have consumed it) must not silently drop the first entry's pending
@@ -174,17 +176,21 @@ function clearRuntimeThinkingBubble(div) {
 // conversation boundary (new/load/delete/clear), not just some of them:
 // stale index-aligned refs reused against a fresh messages array is a real
 // bug, not just a style issue, so this must not be re-inlined per call site.
-// The runtime conversation of THIS chat thread only: the workspace log carries
-// every thread, and an offset counted on the whole log skipped this thread's
-// replies until it outgrew all the others together.
-function currentRuntimeConversation() {
+// THIS thread's entries only, or (default) them plus the workspace-level turns
+// that belong to no thread — a system-queued run, an announcement, legacy:.
+function currentRuntimeConversation(threadOnly=false) {
   const all=Array.isArray(runtimeState?.conversation)?runtimeState.conversation:null;
-  return all?all.filter((entry)=>entry?.conversationId===currentConversationId):null;
+  return all?all.filter((entry)=>{
+    const id=entry?.conversationId;
+    return threadOnly?id===currentConversationId:(!id||id===currentConversationId||String(id).startsWith('legacy:'));
+  }):null;
 }
 function resetRuntimeConversationTracking() {
   runtimeConversationRefs=[];
   const conversation=currentRuntimeConversation();
   runtimeConversationOffset=conversation?conversation.length:null;
+  const thread=currentRuntimeConversation(true);
+  runtimeConversationStrictOffset=thread?thread.length:null;
   pendingRuntimeUserRefs=[];
   pendingRuntimeStatusEls.forEach(el=>clearRuntimeThinkingBubble(el));
   pendingRuntimeStatusEls=[];
