@@ -365,7 +365,7 @@ const llmSchema = z
   .object({
     provider: z.enum(['openai-compatible', 'ai-gateway']).default('openai-compatible'),
     engine: z
-      .enum(['ollama', 'vllm', 'mlx', 'albert', 'openai', 'anthropic', 'generic'])
+      .enum(['ollama', 'vllm', 'mlx', 'albert', 'openai', 'generic'])
       .optional(),
     model: z.string().min(1).default('gpt-5-mini'),
     apiKey: z.string().min(1).optional(),
@@ -439,7 +439,7 @@ const retrievalSchema = z
         // independent: filling in one of them makes it diverge.
         provider: z.enum(['openai-compatible', 'ai-gateway']).optional(),
         engine: z
-          .enum(['ollama', 'vllm', 'mlx', 'albert', 'openai', 'anthropic', 'generic'])
+          .enum(['ollama', 'vllm', 'mlx', 'albert', 'openai', 'generic'])
           .optional(),
         baseUrl: z.string().url().optional(),
         apiKey: z.string().min(1).optional(),
@@ -655,7 +655,9 @@ export const buildStateSchema = z.object({
 const LEGACY_PROVIDER_MIGRATION: Record<string, string> = {
   openai: 'provider: openai-compatible / engine: openai',
   ollama: 'provider: openai-compatible / engine: ollama',
-  anthropic: 'provider: openai-compatible / engine: anthropic',
+  // The native `anthropic` engine was removed from the config; the legacy
+  // value migrates to the generic engine, with its endpoint kept.
+  anthropic: 'provider: openai-compatible / engine: generic',
 };
 
 function assertNoLegacyProvider(input: unknown): void {

@@ -409,7 +409,6 @@ describe('baseUrl : aucun repli implicite vers OpenAI', () => {
   it.each([
     ['ollama', 'http://127.0.0.1:11434/v1'],
     ['openai', 'https://api.openai.com/v1'],
-    ['anthropic', 'https://api.anthropic.com/v1'],
     ['albert', 'https://albert.api.etalab.gouv.fr/v1'],
   ])('accepte %s sans baseUrl et vise %s', (engine, expected) => {
     const config = resolveConfig(
@@ -417,6 +416,15 @@ describe('baseUrl : aucun repli implicite vers OpenAI', () => {
       '/tmp/wiki',
     );
     expect(config.llm.baseUrl).toBe(expected);
+  });
+
+  it('refuse le moteur anthropic, retiré de la config', () => {
+    expect(() =>
+      resolveConfig(
+        { llm: { provider: 'openai-compatible', engine: 'anthropic', model: 'm', apiKey: 'k' } },
+        '/tmp/wiki',
+      ),
+    ).toThrow(/engine/);
   });
 
   it('exige une baseUrl derrière une gateway', () => {

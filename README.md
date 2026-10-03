@@ -363,7 +363,7 @@ language: fr # or en, de, … (2-20 chars)
 
 llm:
   provider: openai-compatible # openai-compatible | ai-gateway (routing only)
-  engine: ollama # ollama | vllm | mlx | albert | openai | anthropic | generic
+  engine: ollama # ollama | vllm | mlx | albert | openai | generic
   model: YOUR_MODEL_NAME
   apiKey: ollama # optional — leave empty for Ollama
   baseUrl: http://127.0.0.1:11434/v1

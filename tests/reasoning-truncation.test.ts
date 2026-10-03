@@ -1,10 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { LLMService } from '../src/services/llmService.ts';
 import { resetProviderRateLimiterForTests } from '../src/services/rateLimiter.ts';
-import {
-  outputCapIncludesReasoning,
-  reasoningAwareOutputCap,
-} from '../src/config/engineCapabilities.ts';
+import { reasoningAwareOutputCap } from '../src/config/engineCapabilities.ts';
 import type { AppConfig, LlmEngine, LlmProvider } from '../src/types.ts';
 
 /**
@@ -171,16 +168,9 @@ describe('plafond de sortie élargi pour le raisonnement', () => {
   it('élargit le plafond partout où il couvre aussi le raisonnement', () => {
     for (const engine of ['albert', 'ollama', 'vllm', 'mlx', 'openai', 'generic'] as LlmEngine[]) {
       const config = configFor('openai-compatible', engine);
-      expect(outputCapIncludesReasoning(config.llm)).toBe(true);
       expect(reasoningAwareOutputCap(config.llm, 3000)).toBe(9000);
     }
     expect(reasoningAwareOutputCap(configFor('ai-gateway', 'generic').llm, 3000)).toBe(9000);
-  });
-
-  it('laisse le plafond intact pour anthropic, dont le budget de réflexion est séparé', () => {
-    const config = configFor('openai-compatible', 'anthropic');
-    expect(outputCapIncludesReasoning(config.llm)).toBe(false);
-    expect(reasoningAwareOutputCap(config.llm, 3000)).toBe(3000);
   });
 
   it('respecte llm.reasoningOutputMultiplier — la valeur par défaut est provisoire', () => {

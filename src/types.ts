@@ -19,7 +19,6 @@ export type LlmEngine =
   | 'mlx'
   | 'albert'
   | 'openai'
-  | 'anthropic'
   | 'generic';
 
 export type ConfigPresetName = 'albert' | 'openai' | 'ollama' | 'nvidia';

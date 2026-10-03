@@ -114,7 +114,7 @@ Presets reduce typing only; they are never required. The merge order is
 | Key              | Description                                                                                                                                          | Default            |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
 | `provider`       | Where requests go: `openai-compatible` (a single server, reached directly) or `ai-gateway` (an external gateway routing to several providers)         | `openai-compatible` |
-| `engine`         | How that server behaves: `ollama`, `vllm`, `mlx`, `albert`, `openai`, `anthropic`, `generic`. Ignored when `provider: ai-gateway`.                    | `generic`          |
+| `engine`         | How that server behaves: `ollama`, `vllm`, `mlx`, `albert`, `openai`, `generic`. Ignored when `provider: ai-gateway`.                    | `generic`          |
 | `model`          | Model name passed to the provider. Behind a gateway it carries the routing, e.g. `anthropic/claude-sonnet-4-5`.                                       | `gpt-5-mini`       |
 | `apiKey`         | API key for this workspace. Keep the provider key here.                                                                                              | —                  |
 | `baseUrl`        | Provider base URL                                                                                                                                    | provider-dependent |
@@ -152,16 +152,6 @@ llm:
   provider: openai-compatible
   engine: openai
   model: gpt-5-mini
-  apiKey: YOUR_API_KEY_HERE
-```
-
-**Anthropic**
-
-```yaml
-llm:
-  provider: openai-compatible
-  engine: anthropic
-  model: claude-sonnet-4-6
   apiKey: YOUR_API_KEY_HERE
 ```
 
@@ -225,11 +215,14 @@ rejects them at load time with the exact replacement in the message, and
 | ------------------------------- | ---------------------------------------------------- |
 | `provider: openai`              | `provider: openai-compatible` + `engine: openai`      |
 | `provider: ollama`              | `provider: openai-compatible` + `engine: ollama`      |
-| `provider: anthropic`           | `provider: openai-compatible` + `engine: anthropic`   |
+| `provider: anthropic`           | `provider: openai-compatible` + `engine: generic`     |
 | `provider: openai-compatible`   | unchanged, plus an explicit `engine`                  |
 
 The migration also materializes `baseUrl` when it was implicit, so the migrated
-file targets exactly the same endpoint as before.
+file targets exactly the same endpoint as before. The native `anthropic` engine
+was removed: its legacy value keeps its endpoint and maps to `engine: generic`.
+Claude models remain reachable with their gateway model name
+(`anthropic/claude-…`).
 
 ### `numCtx`
 
@@ -248,7 +241,7 @@ It lets `wiki doctor` estimate whether prompts for `ingest`, `build`, `query`,
 and MCP-driven retrieval fit into the available context, then recommend
 `slotBatchSize`, `maxContextFiles`, `maxChunkChars`, and `maxBuildContextChars`.
 
-For cloud `engine: openai` or `engine: anthropic`, and behind an
+For cloud `engine: openai`, and behind an
 `ai-gateway`, `numCtx` is usually not needed unless you want to override the
 budget used by `wiki doctor`.
 

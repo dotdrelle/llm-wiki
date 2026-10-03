@@ -1,10 +1,6 @@
 import YAML from 'yaml';
 import { safeWriteFile } from '../utils/fs.ts';
-import {
-  DEFAULT_ANTHROPIC_BASE_URL,
-  DEFAULT_OLLAMA_BASE_URL,
-  DEFAULT_OPENAI_BASE_URL,
-} from './defaults.ts';
+import { DEFAULT_OLLAMA_BASE_URL, DEFAULT_OPENAI_BASE_URL } from './defaults.ts';
 import type { LlmEngine } from '../types.ts';
 
 /**
@@ -32,7 +28,10 @@ interface LegacyMapping {
 const LEGACY_PROVIDERS: Record<string, LegacyMapping> = {
   openai: { engine: 'openai', defaultBaseUrl: DEFAULT_OPENAI_BASE_URL },
   ollama: { engine: 'ollama', defaultBaseUrl: DEFAULT_OLLAMA_BASE_URL },
-  anthropic: { engine: 'anthropic', defaultBaseUrl: DEFAULT_ANTHROPIC_BASE_URL },
+  // The native `anthropic` engine was removed from the config. The legacy
+  // value migrates to the generic engine — the file keeps loading and targets
+  // the same endpoint; `doctor` then calibrates it like any other server.
+  anthropic: { engine: 'generic', defaultBaseUrl: 'https://api.anthropic.com/v1' },
 };
 
 /**

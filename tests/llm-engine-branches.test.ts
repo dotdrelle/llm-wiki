@@ -17,8 +17,10 @@ import type { AppConfig, LlmEngine, LlmProvider } from '../src/types.ts';
  *
  *   provider: 'openai'            → engine: 'openai'
  *   provider: 'ollama'            → engine: 'ollama'
- *   provider: 'anthropic'         → engine: 'anthropic'
  *   provider: 'openai-compatible' → engine: 'mlx' | 'vllm' | 'albert' | 'generic'
+ *
+ * Le moteur `anthropic` a été retiré de la config : la valeur historique
+ * `provider: anthropic` migre vers `engine: generic`.
  *
  * S'y ajoute le mode `ai-gateway`, où **aucun** contournement ne s'applique.
  */
@@ -233,7 +235,7 @@ describe('contournements par moteur (caractérisation)', () => {
     },
   );
 
-  it.each<LlmEngine>(['openai', 'anthropic', 'ollama'])(
+  it.each<LlmEngine>(['openai', 'ollama'])(
     '#4 conserve un rôle system distinct pour %s',
     async (engine) => {
       const service = new LLMService(engineFor(engine, 'a-model'));
@@ -317,13 +319,6 @@ describe('contournements par moteur (caractérisation)', () => {
     expect(params().response_format).toEqual({ type: 'json_object' });
   });
 
-  it('#6 omet response_format pour engine anthropic', async () => {
-    const service = new LLMService(engineFor('anthropic', 'claude-sonnet-4-5'));
-    const params = captureParams(service);
-    await run(service, { jsonMode: true });
-    expect(params()).not.toHaveProperty('response_format');
-  });
-
   // `albert` est sorti de cette liste : mesuré comme supportant json_object.
   it.each<LlmEngine>(['mlx', 'vllm', 'generic'])(
     '#6 omet response_format pour le moteur local %s',
@@ -353,7 +348,7 @@ describe('contournements par moteur (caractérisation)', () => {
   });
 
   it('#7 utilise max_tokens hors openai', async () => {
-    const service = new LLMService(engineFor('anthropic', 'claude-sonnet-4-5'));
+    const service = new LLMService(engineFor('vllm', 'qwen2.5'));
     const params = captureParams(service);
     await run(service, { maxOutputTokens: 256 });
     expect(params().max_tokens).toBe(256);
@@ -370,18 +365,11 @@ describe('contournements par moteur (caractérisation)', () => {
 
   // ── #8 · stream_options ───────────────────────────────────────────────────
 
-  it('#8 demande stream_options hors anthropic', async () => {
+  it('#8 demande stream_options sur un serveur direct', async () => {
     const service = new LLMService(engineFor('openai', 'gpt-4.1-mini'));
     const params = captureParams(service);
     await run(service);
     expect(params().stream_options).toEqual({ include_usage: true });
-  });
-
-  it('#8 omet stream_options pour engine anthropic', async () => {
-    const service = new LLMService(engineFor('anthropic', 'claude-sonnet-4-5'));
-    const params = captureParams(service);
-    await run(service);
-    expect(params()).not.toHaveProperty('stream_options');
   });
 
   it('#8 demande stream_options derrière une gateway', async () => {

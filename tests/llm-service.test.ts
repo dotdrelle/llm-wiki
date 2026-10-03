@@ -13,10 +13,10 @@ function createConfig(): AppConfig {
     llm: {
       provider: 'openai-compatible',
 
-      engine: 'anthropic',
+      engine: 'generic',
       model: 'claude-sonnet-4-20250514',
       apiKey: 'test-key',
-      baseUrl: 'https://api.anthropic.com/v1',
+      baseUrl: 'https://api.example.com/v1',
       temperature: 0.1,
       timeoutMs: 600000,
     },
@@ -38,7 +38,7 @@ function createConfig(): AppConfig {
       maxSourceChars: 8000,
       vector: {
         enabled: false,
-        baseUrl: 'https://api.anthropic.com/v1',
+        baseUrl: 'https://api.example.com/v1',
         timeoutMs: 600000,
         embeddingModel: 'BAAI/bge-m3',
         rerankEnabled: true,
@@ -118,7 +118,7 @@ describe('llm service', () => {
     expect(capturedParams).not.toHaveProperty('temperature');
   });
 
-  it('captures Anthropic-shaped streaming usage without stream_options', async () => {
+  it('captures input_tokens/output_tokens streaming usage', async () => {
     const service = new LLMService(createConfig());
     let capturedParams: Record<string, unknown> | undefined;
     let capturedUsage: unknown;
@@ -159,7 +159,7 @@ describe('llm service', () => {
       },
     });
 
-    expect(capturedParams).not.toHaveProperty('stream_options');
+    expect(capturedParams).toHaveProperty('stream_options');
     expect(capturedUsage).toEqual({ inputTokens: 12, outputTokens: 3 });
   });
 

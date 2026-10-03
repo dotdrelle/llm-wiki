@@ -10,7 +10,7 @@ llm:
   # engine = how the server behaves. Carries the workarounds and the `doctor`
   # calibration. Ignored when provider is `ai-gateway`, where every model may
   # have a different engine.
-  #   ollama | vllm | mlx | albert | openai | anthropic | generic
+  #   ollama | vllm | mlx | albert | openai | generic
   engine: generic
 
   baseUrl: https://mon-provider.example.com/v1

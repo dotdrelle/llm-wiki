@@ -656,7 +656,7 @@ async function checkProvider(
     const probe: ProviderProbe = { rateLimitHeaders: {} };
     try {
       const url = `${baseUrl}/models`;
-      const headers = engineFetchHeaders(config.llm, apiKey);
+      const headers = engineFetchHeaders(apiKey);
       const startedAt = Date.now();
       const res = await fetch(url, { headers, signal: AbortSignal.timeout(5000) });
       probe.latencyMs = Date.now() - startedAt;

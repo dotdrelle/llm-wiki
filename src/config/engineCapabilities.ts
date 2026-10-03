@@ -77,32 +77,10 @@ export function supportsTemperature(llm: LlmConfig): boolean {
 }
 
 /**
- * Generation client headers, added on top of the OpenAI SDK authentication
- * (which already sets `Authorization: Bearer`).
- */
-export function engineHeaders(llm: LlmConfig): Record<string, string> | undefined {
-  if (isGateway(llm)) return undefined;
-  if (llm.engine === 'anthropic') return { 'anthropic-version': '2023-06-01' };
-  return undefined;
-}
-
-/**
  * Headers for a raw `fetch` call to the engine API — the `/models` probe of
- * `doctor`, for example.
- *
- * Distinct from `engineHeaders` on purpose: there the OpenAI SDK provides
- * `Authorization`, here nobody does. Anthropic authenticates its native API via
- * `x-api-key`, not a Bearer. The two functions therefore coexist instead of
- * being merged, but they live side by side so that a contract change makes them
- * both visible.
+ * `doctor`, for example, where no OpenAI SDK provides the authentication.
  */
-export function engineFetchHeaders(
-  llm: LlmConfig,
-  apiKey: string | undefined,
-): Record<string, string> {
-  if (!isGateway(llm) && llm.engine === 'anthropic') {
-    return { 'x-api-key': apiKey ?? '', 'anthropic-version': '2023-06-01' };
-  }
+export function engineFetchHeaders(apiKey: string | undefined): Record<string, string> {
   return { Authorization: `Bearer ${apiKey ?? ''}` };
 }
 
@@ -132,17 +110,10 @@ export function foldsSystemIntoUser(llm: LlmConfig): boolean {
 /** `response_format: { type: 'json_object' }` en mode JSON. */
 export function supportsJsonResponseFormat(llm: LlmConfig): boolean {
   if (isGateway(llm)) return true;
-  if (llm.engine === 'anthropic') return false;
   // Albert documents and respects `json_object` (measured, M2). The inherited
   // deactivation cost it the native JSON mode for nothing.
   if (isManagedOpenAiCompatible(llm)) return true;
   return !isLocalServer(llm);
-}
-
-/** `stream_options: { include_usage: true }` to get usage in streaming. */
-export function supportsStreamOptions(llm: LlmConfig): boolean {
-  if (isGateway(llm)) return true;
-  return llm.engine !== 'anthropic';
 }
 
 /** OpenAI expects `max_completion_tokens` where the others expect `max_tokens`. */
@@ -197,24 +168,13 @@ export function hasOllamaDiagnostics(llm: LlmConfig): boolean {
 }
 
 /**
- * Does the output cap also cover reasoning?
- *
- * Yes almost everywhere: `max_tokens` (vLLM, Albert, Ollama) and
- * `max_completion_tokens` (OpenAI) bound the **generated total**, reasoning
- * included. Anthropic is the exception, its reflection budget being a distinct
- * parameter.
- *
- * Consequence: a cap sized for content alone can be exhausted before a single
- * useful character is written. Measured on Albert / gpt-oss-120b, where the
- * content only arrives at chunk 221 of 222.
- */
-export function outputCapIncludesReasoning(llm: LlmConfig): boolean {
-  if (isGateway(llm)) return true;
-  return llm.engine !== 'anthropic';
-}
-
-/**
  * Margin applied to the output cap to absorb reasoning.
+ *
+ * Every engine we support bounds the generated total with the output cap
+ * (reasoning included): `max_tokens` for vLLM/Albert/Ollama,
+ * `max_completion_tokens` for OpenAI. The former native `anthropic` engine,
+ * whose reflection budget was a distinct parameter, was removed from the
+ * config.
  *
  * The right factor depends on the model and the section length. The default of
  * 3 is an order of magnitude, not a measurement — it is therefore adjustable
@@ -225,7 +185,6 @@ export function outputCapIncludesReasoning(llm: LlmConfig): boolean {
  * explicit error raised on cutoff, not this margin.
  */
 export function reasoningOutputMultiplier(llm: LlmConfig): number {
-  if (!outputCapIncludesReasoning(llm)) return 1;
   return llm.reasoningOutputMultiplier ?? 3;
 }
 

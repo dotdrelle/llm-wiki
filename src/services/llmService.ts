@@ -18,13 +18,11 @@ import {
 import type { AppConfig } from '../types.ts';
 import {
   describeTarget,
-  engineHeaders,
   foldsSystemIntoUser,
   hasOllamaDiagnostics,
   supportsJsonResponseFormat,
   supportsModelJsonRepair,
   supportsNumCtx,
-  supportsStreamOptions,
   supportsTemperature,
   usesMaxCompletionTokens,
 } from '../config/engineCapabilities.ts';
@@ -206,7 +204,6 @@ export class LLMService {
       // own loop in completeText, so keep at most one SDK-level retry for
       // transient network errors.
       maxRetries: 1,
-      defaultHeaders: engineHeaders(config.llm),
     });
   }
 
@@ -362,9 +359,7 @@ export class LLMService {
         }
         // Stream tokens so the HTTP connection stays alive during long generations.
         // Without streaming, Ollama's write timeout (~5 min) closes the connection mid-response.
-        if (supportsStreamOptions(this.config.llm)) {
-          createParams.stream_options = { include_usage: true };
-        }
+        createParams.stream_options = { include_usage: true };
         // The SDK's own timeout option does not reliably cover the STREAMING
         // body: a provider that accepts the connection and then stalls leaves
         // the `for await` below hanging forever (ingest jobs observed stuck for

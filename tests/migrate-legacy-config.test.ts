@@ -20,7 +20,7 @@ import { resolveConfig } from '../src/config/schema.ts';
 
 describe('migration du format llm.provider', () => {
   it('rejette les anciens providers avec un message actionnable', () => {
-    for (const provider of ['openai', 'ollama', 'anthropic']) {
+    for (const provider of ['openai', 'ollama']) {
       let caught: unknown;
       try {
         resolveConfig({ llm: { provider, model: 'm' } }, '/tmp/wiki');
@@ -33,10 +33,23 @@ describe('migration du format llm.provider', () => {
     }
   });
 
+  it('rejette provider: anthropic en nommant le moteur générique, retiré du produit', () => {
+    let caught: unknown;
+    try {
+      resolveConfig({ llm: { provider: 'anthropic', model: 'm' } }, '/tmp/wiki');
+    } catch (error) {
+      caught = error;
+    }
+    expect(isLegacyProviderError(caught)).toBe(true);
+    expect((caught as Error).message).toContain('engine: generic');
+  });
+
   it.each([
     ['openai', 'openai', 'https://api.openai.com/v1'],
     ['ollama', 'ollama', 'http://127.0.0.1:11434/v1'],
-    ['anthropic', 'anthropic', 'https://api.anthropic.com/v1'],
+    // Le moteur anthropic n'existe plus : la migration garde l'endpoint et
+    // bascule sur le moteur générique.
+    ['anthropic', 'generic', 'https://api.anthropic.com/v1'],
   ])(
     'migre provider %s en engine %s et matérialise la baseUrl implicite',
     (legacy, engine, expectedBaseUrl) => {
