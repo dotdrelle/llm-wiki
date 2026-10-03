@@ -154,4 +154,33 @@ Other connection-check failures are reported as unavailable, with their cause.
 Reading a message in the conversation uses Gmail search and full-message read;
 it does not import the message into the wiki. Sending runs in Agent mode and
 waits for the run's approval. A queued or approved send is not a delivery
-receipt: success requires the sending task to finish successfully.
+receipt. After a send, the connector checks that the acknowledged message is
+present in Gmail's Sent folder. This confirms the sent copy, not delivery to
+the recipient. Missing read access or an unavailable check is shown explicitly;
+the connector does not send again to resolve that uncertainty. Dry runs are
+simulations and send no message.
+
+## When an agent task fails
+
+Donna makes one bounded diagnosis from the failure, the arguments sent and the
+agent's input contract. If an agent explicitly refused invalid arguments before
+starting a job, Donna can prepare a corrected task. The plan shows it waiting
+for a **new approval**: review the corrected arguments, then use the Approve
+button or `/approve`. Cancelling remains available while approval is pending.
+Already successful tasks are preserved; eligible steps skipped because of that
+failure can follow the correction. The original failure remains in the audit.
+
+A started job, timeout or lost acknowledgement can have produced effects.
+Donna explains the uncertainty rather than preparing another execution. Missing
+access requires authorization; a rejected OAuth application requires a
+configuration repair. If diagnosis is unavailable or a correction cannot be
+validated, Donna says so and keeps the original error visible. Recovery is
+limited to one correction per run.
+
+Ask “Why did this fail?” to inspect current runtime failures and the available
+agent contracts. A task reported successful by its agent is not independent
+proof of delivery or artifact correctness. Donna reports which tasks were
+verified after action, which results were not observed and which checks were
+unavailable. Collected files are read back and their final unique count is
+reported; this verifies collection into raw files, not later wiki ingestion.
+Agents that provide no verification remain explicitly unverified.
