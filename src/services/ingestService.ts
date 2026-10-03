@@ -287,7 +287,15 @@ interface ProvenancePipelineOptions {
   operations: WikiOperation[];
   sourcePagePath: string;
   archiveCitationPath: string;
-  rawBody: string;
+  /**
+   * The archive exactly as it is written to `raw/ingested/` (the raw file,
+   * frontmatter and leading lines included). Line anchors are materialized
+   * and later resolved against that file, so they must be checked against it
+   * too: the trimmed/normalized body shifts every line number, and a valid
+   * `#L4-41@sha256=…` was stripped as "fabricated", which refused the fiche
+   * and left the source unarchived in raw/untracked/.
+   */
+  archiveContent: string;
   /** Reads a workspace-relative file from DISK, or null. */
   readDisk: (documentPath: string) => string | null;
   /** The page as it exists before this write (disk content), for the loss guard. */
@@ -340,7 +348,7 @@ function runProvenancePipeline(options: ProvenancePipelineOptions): ProvenancePi
           ...operation,
           content: materializeLocatorTokens(operation.content, {
             documentPath: options.archiveCitationPath,
-            documentContent: options.rawBody,
+            documentContent: options.archiveContent,
           }).content,
         },
   );
@@ -364,7 +372,7 @@ function runProvenancePipeline(options: ProvenancePipelineOptions): ProvenancePi
   const loadDocument = (documentPath: string): string | null => {
     const fromBatch = batchDocuments.get(documentPath);
     if (fromBatch != null) return fromBatch;
-    if (documentPath === options.archiveCitationPath) return options.rawBody;
+    if (documentPath === options.archiveCitationPath) return options.archiveContent;
     return options.readDisk(documentPath);
   };
   let anchored = 0;
@@ -867,7 +875,6 @@ export class IngestService {
           }
         }
 
-        const rawBody = normalizeSourceBody(source.body ?? '');
         const sourcePagePath = path.posix.join('wiki', 'sources', `${source.slug}.md`);
         // The extraction of this source was scheduled ahead (lookahead): take
         // it, free its slot for the next source, and commit now. Pages are
@@ -991,7 +998,7 @@ export class IngestService {
           operations: identityStampedOperations,
           sourcePagePath,
           archiveCitationPath: source.archiveCitationPath,
-          rawBody,
+          archiveContent: source.rawContent,
           readDisk,
           existingContentOf: (pagePath) => existingPages.get(pagePath)?.content ?? null,
         });
@@ -1256,6 +1263,28 @@ export class IngestService {
           // again — the same stale-marker trap this marker exists to catch.
           await this.regenerateIndex(source.relativePath);
           await this.publishGraphRevision(source.relativePath);
+        }
+
+        // Only the provenance contract's refusal is a failure; a reader who
+        // rejected every operation (`--reject`) chose to write nothing.
+        const refusedByProvenance = allOperationsRejected
+          && allOperations.every((operation) => provenance.refused.has(operation.path));
+        if (!options?.dryRun && refusedByProvenance) {
+          /*
+           Every fiche of this source was refused: nothing was written and the
+           source was NOT archived — it is still in raw/untracked/. Reporting
+           it `success` made the job, the run and Donna announce an ingest
+           that never happened while the file stayed in Pending. It is a
+           failed source, with the refusal reasons in the trace.
+          */
+          const error = 'every fiche of this source was refused by the provenance contract (see ingest:provenance-refused in the trace); nothing was written and the source stays in raw/untracked/';
+          await this.logger.error('ingest:source-failed', {
+            sourcePath,
+            durationMs: Date.now() - sourceStartedAt,
+            message: error,
+          });
+          results.push({ source: source.relativePath, failed: true, error, review });
+          continue;
         }
 
         results.push({

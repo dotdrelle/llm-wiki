@@ -991,6 +991,76 @@ describe('ingest service', () => {
     ).toMatchObject({ reason: 'all operations rejected' });
   });
 
+  it('keeps the line anchor of a single-section source whose raw file starts with a blank line', async () => {
+    // A Confluence export opens with a blank line and a breadcrumb: the trimmed
+    // body is shifted against the archive. The anchor is computed on the raw
+    // file and must be checked against it too, or it is stripped, the fiche is
+    // refused and the source stays in raw/untracked/ while reported a success.
+    const workspace = new FakeWorkspaceService();
+    const body = '[Parent](../Parent.md)\n\n# Modalités\n\n' + '## Présentation\n\n' + '- Présentation au comité de suivi du 13 avril, avec les décisions attendues sur les échéances maximales de saisie.\n'.repeat(4) + '\n## Décisions\n\n' + '- Consensus pour une échéance de 72 h locales par pas de 6 h, validé par les directions concernées.\n'.repeat(4);
+    const read = workspace.readSourceDocument.bind(workspace);
+    workspace.readSourceDocument = async (sourcePath?: string) => ({
+      ...(await read(sourcePath)),
+      rawContent: `\n${body}\n`,
+      body,
+    });
+    const logger = new MemoryTraceLogger();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new FakeLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+      disabledCache(),
+    );
+
+    const results = await service.ingest([]);
+
+    expect(results[0].failed).toBeFalsy();
+    const fiche = workspace.appliedOperations.find((operation) => operation.path.startsWith('wiki/sources/'));
+    expect(fiche?.content).toMatch(/\[src: raw\/ingested\/note\.md#L4-\d+@sha256=[0-9a-f]{64}\]/);
+    expect(workspace.archivedSources).toHaveLength(1);
+    expect(logger.entries.some((entry) => entry.event === 'ingest:provenance-refused')).toBe(false);
+  });
+
+  it('reports a source whose every fiche the provenance contract refuses as failed, not a success', async () => {
+    const workspace = new FakeWorkspaceService();
+    const body = '# Modalités\n\n' + '## Présentation\n\n' + '- Présentation au comité de suivi du 13 avril, avec les décisions attendues sur les échéances maximales de saisie.\n'.repeat(4) + '\n## Décisions\n\n' + '- Consensus pour une échéance de 72 h locales par pas de 6 h, validé par les directions concernées.\n'.repeat(4);
+    const read = workspace.readSourceDocument.bind(workspace);
+    // The archive the fiche cites no longer matches its anchor: the anchor is
+    // stripped and both sub-sections lose their citation.
+    workspace.readSourceDocument = async (sourcePath?: string) => ({
+      ...(await read(sourcePath)),
+      rawContent: `${body}\n`,
+      body,
+    });
+    const logger = new MemoryTraceLogger();
+    const service = new IngestService(
+      createConfig(),
+      workspace as unknown as WorkspaceService,
+      new FakeLLMService() as unknown as LLMService,
+      new FakeRetrievalService() as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger,
+      disabledCache(),
+    );
+    const anchorModule = await import('../src/provenance/anchor.ts');
+    const spy = vi.spyOn(anchorModule, 'anchorCitations').mockImplementation((content: string) => ({
+      content: content.replace(/(\[src: [^#\]]+)#[^\]]+\]/g, '$1]'), anchored: 0, stripped: 1, unresolved: [], noSection: [],
+    }));
+    try {
+      const results = await service.ingest([]);
+      expect(results[0]).toMatchObject({ failed: true });
+      expect(results[0].error).toContain('raw/untracked/');
+      expect(workspace.archivedSources).toEqual([]);
+      expect(logger.entries.find((entry) => entry.event === 'ingest:source-failed')).toBeDefined();
+      expect(logger.entries.some((entry) => entry.event === 'ingest:source-done')).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('retries a transient TAXO section failure once before using the faithful fallback', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {

@@ -671,6 +671,12 @@ ingest`) builds a review per planned operation (`buildReviewOperations`):
   drops one or more planned operations before applying; if every operation
   for a source is rejected, the source is not archived (`ingest:apply-skip`
   is logged, distinct from a genuinely empty plan, which still archives).
+  When the provenance contract (not the reader's `--reject`) refused every
+  fiche, the source is reported **failed** (`ingest:source-failed`, the job
+  exits 1), never `source-done success`: it stays in `raw/untracked/`. Line
+  anchors are checked against the archive exactly as written (`rawContent`),
+  never the trimmed body — the one-line shift stripped every valid
+  `#L…@sha256` anchor of a source opening on a blank line.
   `withRetry` classifies LLM planning failures (`classifyIngestError`):
   `validation` errors (malformed/ambiguous model output) never retry;
   `transient` errors (rate limit, timeout, connection reset) retry once with
