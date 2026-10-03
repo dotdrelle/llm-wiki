@@ -1307,7 +1307,7 @@ describe('chat html', () => {
     expect(script).toContain("uploadSelectedDocument(input)");
     expect(script).toContain("sendRuntimeAgentMessage(input,text,{mode:'chat',displayText:displayOverride||text,hideQuestion})");
     expect(script).toContain("function createRuntimeThinkingBubble(text='Request received · Donna is preparing the response and plan…')");
-    expect(script).toContain("const statusEl=createRuntimeThinkingBubble(mode==='chat'?'Thinking...':undefined)");
+    expect(script).toContain("const statusEl=createRuntimeThinkingBubble(mode==='chat'?'Donna Thinking..':undefined)");
     expect(script).toContain("if(role==='assistant'&&content&&wasEmpty&&ref.own&&armedReplyStatusEls.length)");
     expect(script).toContain("assistantOwn=prevRef?(prevRef.message.role==='user'?!!prevRef.el:!!prevRef.own):false;");
     expect(script).toContain("data?.kind==='ambiguous'");

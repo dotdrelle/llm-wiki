@@ -2946,7 +2946,7 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
   messages.push(userMessage);
   const userEl=appendMsg('user',displayText);
   if(hideQuestion) userEl.classList.add('msg-hidden');
-  const statusEl=createRuntimeThinkingBubble(mode==='chat'?'Thinking...':undefined);
+  const statusEl=createRuntimeThinkingBubble(mode==='chat'?'Donna Thinking..':undefined);
   pendingRuntimeStatusEls.push(statusEl);
   // The /state merge consumes this reference instead of appending a duplicate.
   pendingRuntimeUserRefs.push({message:userMessage,el:userEl});
