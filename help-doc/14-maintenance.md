@@ -70,8 +70,12 @@ Three more rules always apply, whatever the settings:
 
 - A pending file you **modified locally** after a Confluence sync is never
   ingested automatically — keep or delete it from Pending yourself.
-- A deliverable **you edited by hand** is never rebuilt without your approval:
-  the rebuild merges your edits with the new content.
+- A deliverable **you edited by hand** is never rebuilt without your approval.
+  Know what approving does: the rebuild rewrites the sections it produces with
+  the new content and **removes sections the template does not produce** — a
+  section you added yourself disappears. The file as you left it is backed up
+  first in `.wiki/output-backups/`; put your additions in the template or the
+  build context if they must survive rebuilds.
 - A curation is only **prepared**; the merge is yours.
 
 **The latest request wins.** If new files arrive before you answer, the request
