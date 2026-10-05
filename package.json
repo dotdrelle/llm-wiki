@@ -50,7 +50,6 @@
   "files": [
     "dist",
     "scaffold",
-    "examples",
     "help-doc",
     "!**/.gitkeep"
   ],
