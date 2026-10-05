@@ -190,8 +190,8 @@ as a phantom.
 
 Anchored provenance is the only writer; there is no switch. On every ingest,
 build and export the engine:
-- renders the locator catalogue in the consolidation prompt and materializes
-  the tokens;
+- exposes the bounded locator catalogue to the curation tool
+  (`wiki_list_provenance_locators`) and materializes the tokens;
 - derives `sources:` at write time (`applyWikiOperationsAtomic`);
 - supplies the §3.4 update context (full existing body + the excerpts of the
   sources a page already cites);

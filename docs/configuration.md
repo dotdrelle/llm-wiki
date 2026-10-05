@@ -404,11 +404,12 @@ before. See `help-doc/13-login-totp.md` and the manager's
 
 ## Provenance (always on)
 
-Anchored provenance is not an option: the locator catalogue in the
-consolidation prompt, token materialization, derived `sources:`, engine-side
-anchoring, source-page/anchored-citation validation, the deterministic loss
-guard and the build evidence manifest consumed by `export` run on every ingest,
-build and export. There is no environment variable to toggle.
+Anchored provenance is not an option: the locator catalogue exposed to
+curation (`wiki_list_provenance_locators`), token materialization, derived
+`sources:`, engine-side anchoring, source-page/anchored-citation validation,
+the deterministic loss guard and the build evidence manifest consumed by
+`export` run on every ingest, build and export. There is no environment
+variable to toggle.
 
 The model, contracts, modules, migration and rollback are in
 `docs/provenance.md`. The user-facing view is `help-doc/03-content-lifecycle.md`.

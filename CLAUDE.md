@@ -698,33 +698,13 @@ ingest`) builds a review per planned operation (`buildReviewOperations`):
   preview ignore an earlier source's just-applied changes in the same run.
   Hashing anywhere in this repo goes through `utils/hash.ts`'s `hashText`;
   don't add a second SHA-256 wrapper (this happened once already, in
-  `mcpServer.ts`, and was consolidated). The consolidation prompt's inventory
-  of "existing pages that may already cover this subject" is built from three
-  sources, concatenated in `fullInventory`: retrieval relevance (`inventory`,
-  BM25/vector top-N), this source's own previously-produced concepts
-  (`previousInventory`, `previousForSource: true`), and, since 0.15.50+,
-  any OTHER concept page anywhere in the wiki whose `subject` shares a leading
-  token with a candidate subject of this extraction (`subjectMatchInventory`,
-  `provenance.ts`'s `subjectsAreRelated`, `subjectMatch: true`, capped at 5).
-  The third source closes the concept-homonym defect (B17): retrieval
-  relevance alone does not reliably surface a same-subject page when a later
-  source's wording differs, so two sources about "Jedox" ingested separately
-  each never saw the other's page and each invented its own near-duplicate.
-  Do not fold `subjectMatchInventory` into the retrieval-based `inventory` —
-  it is a structural lookup by the `subject` frontmatter field, independent of
-  and complementary to relevance ranking, and conflating them would make the
-  gap this closes silently reappear the next time retrieval tuning changes.
-  There are two predicates and they must not be swapped. `subjectsAreRelated`
-  (lenient) matches the leading token **or any significant shared token**
-  ("couts-infra" and "infra" both carry "infra"), ignoring a stoplist of generic
-  words ("solution", "model", "service"…) and bare numbers, so a shared year or
-  a shared generic token never widens the candidate list on its own; it only
-  SHOWS a candidate, and `subjectMatchStrength` ranks the matches before the
-  5-slot cap so a weak one can never crowd out the genuine page.
-  `subjectsShareEntityRoot` (strict) requires the leading token — the entity,
-  since subjects are written entity-name-first — and is what `detectConceptSplits`
-  uses: a split DECLARES a duplicate, costs retry rounds and tells the model to
-  merge, so `jedox-cloud` and `anaplan-cloud` must stay two products.
+  `mcpServer.ts`, and was consolidated). The old consolidation inventory and
+  its lenient label matcher (`subjectsAreRelated` / `subjectMatchInventory`)
+  were retired with the pre-TAXO pipeline. `detectConceptSplits`
+  (`consolidationValidate.ts`) is the remaining split check and compares only
+  exact normalized subjects, or a shared verified `subject_id`: a split
+  DECLARES a duplicate, costs retry rounds and tells the model to merge, so
+  `jedox-cloud` and `anaplan-cloud` must stay two products.
 - A leaf's first `generated` and its human review trail are **carried at write
   time**; its `sources` is **derived**. `applyWikiOperationsAtomic` first merges
   the existing file's engine-owned frontmatter (`carryForwardEngineFrontmatter`,
