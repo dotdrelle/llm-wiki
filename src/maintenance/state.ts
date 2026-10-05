@@ -6,7 +6,7 @@ import { safeWriteFile } from '../utils/fs.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import type { AppConfig } from '../types.ts';
 import { outputSnapshot } from './outputGuard.ts';
-import { publicationState } from './publications.ts';
+import { publicationState, transformSignature } from './publications.ts';
 import { knowledgeUnchanged, outputEditedSinceBuild } from './buildInputs.ts';
 import { exportOutputPath } from '../services/exportService.ts';
 import { pathExists } from '../utils/fs.ts';
@@ -90,5 +90,6 @@ export async function maintenanceState(config: AppConfig, quietMinutes = 10) {
   const proposals = await fg('*.json', { cwd: path.join(root, '.wiki/agent-proposals') });
   return { schemaVersion: 1, observedAt: new Date().toISOString(), wikiHash,
     pending: await pendingSources(root, quietMinutes * 60_000), deliverables, publications,
+    publicationTransforms: { export: transformSignature('export', config.language), polish: transformSignature('polish', config.language) },
     index: { enabled: config.retrieval.vector.enabled, fresh: vectorFresh }, proposals };
 }

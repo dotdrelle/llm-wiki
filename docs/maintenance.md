@@ -18,6 +18,10 @@ dispatches. The engine only provides facts and protects what it writes. Code:
   `output_modified`), a `version` and `artifacts.{export,polish}` (whether a
   publication already exists — maintenance never proposes a first one).
 - `publications` — the receipts below, with `fresh` and a `reason`.
+- `publicationTransforms` — current export/polish signatures (prompt version,
+  language, operation), included by the manager in candidate and approval
+  identities. Successive settings changes remain distinct even when the
+  deliverable itself has not changed.
 - `index` — `{enabled, fresh}` from `.wiki/vector-freshness.json`, written after
   each vector index build (hash of the indexed pages + embedding model).
 - `proposals` — files in `.wiki/agent-proposals/`.
