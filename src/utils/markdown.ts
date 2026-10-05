@@ -242,16 +242,6 @@ export function canonicalizeSourceCitations(content: string): string {
     .replace(/([^\s\x5B])\x5Bsrc:/g, '$1 [src:');
 }
 
-/*
- The splitting now lives in `sourcePacking.ts`.
-
- It is re-exported here because its historical callers — ingestion, doctor,
- tests — know it under this name, and because a second entry point would
- suggest two algorithms.
-*/
-export { planSourcePacks, splitSourceSections } from './sourcePacking.ts';
-export type { PackReason, SourcePack, SourcePackDiagnostics, SourcePackPlan } from './sourcePacking.ts';
-
 
 function headingPathAtIndex(content: string, index: number): string[] {
   const lines = content.slice(0, index).split('\n');

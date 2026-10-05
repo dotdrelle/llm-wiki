@@ -5,7 +5,7 @@ import type {
   WikiGraphNodeType,
   WikiGraphRelationType,
 } from './projection.ts';
-import { UNCLASSIFIED_ID, UNCLASSIFIED_LABEL, conceptFolderFromId } from '../../ingest/conceptGrid.ts';
+import { UNCLASSIFIED_CLASS, UNCLASSIFIED_LABEL, conceptFolderFromId } from '../../ingest/conceptGrid.ts';
 
 /**
  * Community assignment for the flat graph.
@@ -57,7 +57,7 @@ export function communityId(label: string): string {
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, '-')
-    .replace(/^-|-$/g, '') || UNCLASSIFIED_ID;
+    .replace(/^-|-$/g, '') || UNCLASSIFIED_CLASS;
 }
 
 function title(value: string): string {
@@ -108,7 +108,7 @@ export function assignGraphCommunities(
     if (typeLabel) return { ...node, community: assigned(typeLabel, 'seed') };
     return {
       ...node,
-      community: { communityId: UNCLASSIFIED_ID, communityLabel: UNCLASSIFIED_LABEL, assignment: 'fallback' },
+      community: { communityId: UNCLASSIFIED_CLASS, communityLabel: UNCLASSIFIED_LABEL, assignment: 'fallback' },
     };
   });
 }

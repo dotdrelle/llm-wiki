@@ -19,7 +19,6 @@ export const CONCEPT_PATH_PREFIX = 'wiki/concepts/';
  * pivot. Existing or hand-authored pages may still be filed here temporarily.
  */
 export const UNCLASSIFIED_CLASS = 'unclassified';
-export const UNCLASSIFIED_ID = UNCLASSIFIED_CLASS;
 export const UNCLASSIFIED_LABEL = 'Unclassified';
 
 export function conceptPagePath(concept: string, subject: string): string {

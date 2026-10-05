@@ -6,7 +6,7 @@ import matter from 'gray-matter';
 import { extractWikiLinks } from '../../utils/markdown.ts';
 import { canonicalizeName, toPosix } from '../../utils/path.ts';
 import { readProvenance } from '../../ingest/provenance.ts';
-import { UNCLASSIFIED_ID, UNCLASSIFIED_LABEL } from '../../ingest/conceptGrid.ts';
+import { UNCLASSIFIED_CLASS, UNCLASSIFIED_LABEL } from '../../ingest/conceptGrid.ts';
 import {
   assignGraphCommunities,
   type CommunityAssignment,
@@ -280,7 +280,7 @@ export async function buildWikiGraph(
       okfType: okfTypes.get(file) ?? null,
       group: families.get(file),
       community: {
-        communityId: UNCLASSIFIED_ID,
+        communityId: UNCLASSIFIED_CLASS,
         communityLabel: UNCLASSIFIED_LABEL,
         assignment: 'fallback',
       },

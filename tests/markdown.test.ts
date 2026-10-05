@@ -10,8 +10,8 @@ import {
   parseTemplateInstructions,
   splitCitationAnchor,
   splitMarkdownSections,
-  splitSourceSections,
 } from '../src/utils/markdown.ts';
+import { splitSourceSections } from '../src/utils/sourcePacking.ts';
 
 describe('source citations', () => {
   it('extracts canonical, space-padded, and chained markers', () => {
