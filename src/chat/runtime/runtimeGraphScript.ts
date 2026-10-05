@@ -58,11 +58,24 @@ function runtimeWorkflowSummaryParts() {
   // plan-derived value for replayed/historical runs.
   const resolved=runtimeState?.concurrency;
   const maxParallel=Number.isFinite(Number(resolved?.limit))?Number(resolved.limit):Math.max(0,...phases.map(phase=>phase.parallelism||0));
-  const ceilingTag=resolved?.cappedByCeiling?' <span class="run-summary-ceiling" title="Capped by WIKI_MANAGER_CAPABILITY_CONCURRENCY">(ceiling)</span>':'';
+  const ceilingTag=resolved?.cappedByCeiling?' <span class="run-summary-ceiling" title="Capped by WIKI_MANAGER_CAPABILITY_CONCURRENCY">(manager cap)</span>':'';
+  const ingestion=runtimeWorkflowIngestionSummary();
+  const limits=resolved?'Agent recommended: '+(resolved.agentRecommended??'not reported')+' · Agent maximum: '+(resolved.agentMaximum??'not reported')+' · Manager cap: '+(resolved.ceiling??'unset'):'';
   const done=phases.reduce((sum,phase)=>sum+(phase.done||0),0);
   const total=phases.reduce((sum,phase)=>sum+(phase.total||0),0);
   const live=String(run?.status||runtimeState?.status)==='running';
-  return {live,html:\`<strong>\${esc(run?.label||'Runtime run')}</strong>\${live?'<span class="runtime-live-indicator">● Live</span>':''}<span>\${agents.size} agent\${agents.size===1?'':'s'}</span><span>Parallel \${currentParallel} / max ×\${maxParallel}\${ceilingTag}</span><span>\${done}/\${total} tasks</span><span>Tokens \${esc(formatRuntimeTokens(run?.usage))}</span>\`};
+  return {live,html:\`<strong>\${esc(run?.label||'Runtime run')}</strong>\${live?'<span class="runtime-live-indicator">● Live</span>':''}<span>\${agents.size} agent\${agents.size===1?'':'s'}</span><span title="\${esc(limits)}">Concurrent tasks: \${currentParallel} / \${maxParallel}\${ceilingTag}</span>\${ingestion}<span>\${done}/\${total} tasks</span><span>Tokens \${esc(formatRuntimeTokens(run?.usage))}</span>\`};
+}
+function runtimeWorkflowIngestionSummary() {
+  const tasks=(runtimeState?.workflow?.nodes||[]).filter(task=>task.type==='task'&&['ingest','ingest_rebuild'].includes(task.raw?.operation??task.raw?.arguments?.operation));
+  if(!tasks.length) return '';
+  const limit=runtimeState?.ingestionLlmLimit;
+  const label=Number.isInteger(limit)&&limit>0?'limit '+limit:'limit not reported';
+  const batches=tasks.map(task=>{
+    const files=new Set([...(task.raw?.inputRefs||[]).filter(ref=>ref.type==='file').map(ref=>ref.ref),...(task.raw?.arguments?.inputs||[])]);
+    return files.size?'1 ingestion task processes '+files.size+' input files.':'1 ingestion task processes the batch.';
+  });
+  return \`<span title="Configured extraction capacity from limits.maxInFlightRequests, not a live call count">LLM calls per ingestion: \${esc(label)}</span><span>\${esc(batches.join(' '))}</span>\`;
 }
 function runtimeWorkflowInspectorHTML() {
   return '<aside class="runtime-graph-inspector" id="runtime-graph-inspector"></aside>';
@@ -302,11 +315,12 @@ function renderRuntimeWorkflowInspector() {
   const run=node.type==='run';
   const subagent=node.type==='subagent';
   const details=phase
-    ? [['Status',node.status],['Tasks',node.done+' / '+node.total],['Agents',node.agents?.join(', ')||'Not reported'],['Parallelism',(node.currentParallel||0)+' active / max ×'+node.parallelism],['Tokens',formatRuntimeTokens(node.usage)]]
+    ? [['Status',node.status],['Tasks',node.done+' / '+node.total],['Agents',node.agents?.join(', ')||'Not reported'],['Concurrent tasks',(node.currentParallel||0)+' / '+node.parallelism],['Tokens',formatRuntimeTokens(node.usage)]]
     : subagent
       ? [['Status',node.status],['Started',runtimeSubagentTime(node.startedAt)],['Finished',runtimeSubagentTime(node.finishedAt)]]
       : [['Status',node.status],['Phases',node.phaseCount||0],['Tasks',node.taskCount||0],['Agents',node.agents?.length||0],
-        ...(Number.isFinite(Number(runtimeState?.concurrency?.limit))?[['Parallelism','max ×'+Number(runtimeState.concurrency.limit)+(runtimeState.concurrency.cappedByCeiling?' (ceiling)':'')]]:[]),
+        ...(Number.isFinite(Number(runtimeState?.concurrency?.limit))?[['Task limit',Number(runtimeState.concurrency.limit)],['Agent recommended',runtimeState.concurrency.agentRecommended??'Not reported'],['Agent maximum',runtimeState.concurrency.agentMaximum??'Not reported'],['Manager cap',runtimeState.concurrency.ceiling??'Unset']]:[]),
+        ...(runtimeWorkflowIngestionSummary()?[['LLM calls per ingestion',runtimeState?.ingestionLlmLimit!=null?'limit '+runtimeState.ingestionLlmLimit:'Limit not reported']]:[]),
         ['Tokens',formatRuntimeTokens(node.usage)]];
   // Per-task rows ordered by start time (temporal flow), each with wall-clock
   // duration and tokens in/out — sourced from the workflow projection

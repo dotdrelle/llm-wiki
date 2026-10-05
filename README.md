@@ -264,6 +264,11 @@ workspace. Three ways to reach them:
   questions about the application itself (what it is, chat vs agent mode,
   getting started, troubleshooting) directly in chat, in the user's language.
 
+For concurrency settings and the meaning of `Concurrent tasks: 1 / 4`, see
+[Configuration and performance](help-doc/10-configuration-performance.md).
+The summary counts plan tasks; ingestion's internal model-call concurrency is
+configured separately in the workspace `.wikirc.yaml`.
+
 ### Desktop assistants
 
 The MCP server can be used without starting ShellUI or `serve`. Claude Desktop

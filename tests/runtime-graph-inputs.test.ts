@@ -71,3 +71,34 @@ describe('runtime graph task inputs', () => {
     expect(nodes.filter((node: { type: string }) => node.type === 'task_input').every((node: { status: string }) => node.status === 'done')).toBe(true);
   });
 });
+
+// Execute the browser summary with a real workflow: input-file activity must
+// not be confused with scheduler task concurrency or a live LLM-call count.
+function summary(state: unknown) {
+  return new Function('runtimeState', 'esc', 'formatRuntimeTokens', 'selectedWorkflowNodeId',
+    `${RUNTIME_GRAPH_SCRIPT}\nreturn runtimeWorkflowSummaryParts().html;`)(
+    state, (value: unknown) => String(value), () => '0 in / 0 out', null,
+  );
+}
+
+describe('runtime concurrency summary', () => {
+  it('keeps task capacity separate from the configured extraction limit', () => {
+    const html = summary({
+      concurrency: { limit: 8, agentRecommended: 8, agentMaximum: 8, ceiling: 8 },
+      ingestionLlmLimit: 6,
+      workflow: { nodes: [{ id: 'run:1', type: 'run', status: 'running' }, task('running')] },
+    });
+    expect(html).toContain('Concurrent tasks: 1 / 8');
+    expect(html).toContain('LLM calls per ingestion: limit 6');
+    expect(html).toContain('1 ingestion task processes 3 input files.');
+    expect(html).toContain('Agent recommended: 8 · Agent maximum: 8 · Manager cap: 8');
+    expect(html).not.toContain('max ×');
+  });
+
+  it('announces an unavailable limit and omits ingestion settings for builds', () => {
+    const ingestion = { workflow: { nodes: [task('running')] } };
+    expect(summary(ingestion)).toContain('LLM calls per ingestion: limit not reported');
+    expect(summary({ workflow: { nodes: [{ ...task('running'), raw: { operation: 'build' } }] } }))
+      .not.toContain('LLM calls per ingestion');
+  });
+});

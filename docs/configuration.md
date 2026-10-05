@@ -300,6 +300,10 @@ share each provider budget through `.wiki/rate-limit/`; `maxInFlightRequests`
 only controls how many calls a single job may keep in flight while the shared
 throttle decides when each request is allowed to start.
 
+For how this differs from the manager's `Concurrent tasks: 1 / 4` task summary, and
+examples of which concurrency setting to change, see
+[Configuration and performance](../help-doc/10-configuration-performance.md).
+
 ## `build`
 
 | Key                    | Description                                                                                                        | Default |
