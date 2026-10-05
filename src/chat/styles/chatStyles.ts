@@ -582,13 +582,13 @@ ${WIKI_CSS_VARS}
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --panel-deep: rgba(95, 208, 255, .09);
-    --ok:   #3ddc97;
+    --panel-deep: rgba(214, 210, 201, .07);
+    --ok:   #8ac49e;
     --err:  #ff6b6b;
     --warn: #f2b84b;
   }
 }
 :root.theme-light{--panel-deep:rgba(20,110,160,.09);--ok:#157a52;--err:#c0392b;--warn:#a66f00}
-:root.theme-dark{--panel-deep:rgba(95,208,255,.09);--ok:#3ddc97;--err:#ff6b6b;--warn:#f2b84b}
+:root.theme-dark{--panel-deep:rgba(214,210,201,.07);--ok:#8ac49e;--err:#ff6b6b;--warn:#f2b84b}
 ${CHAT_COMPONENT_CSS}
 </style>`;

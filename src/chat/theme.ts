@@ -33,11 +33,9 @@ export const WIKI_FONT_FACES = `
 `;
 
 // ── Glass look ─────────────────────────────────────────────────────────────
-// Both themes share one construction: a deep ground with two soft radial
-// washes and a faint 48 px grid, and translucent panels (`--panel`,
-// `--panel-soft`) that blur what sits behind them. Light is not an inversion
-// of dark — it is frosted white over a cool grey-blue ground — but every
-// component reads the same tokens, so nothing is themed twice.
+// Light keeps its frosted surfaces over a cool grey-blue ground. Dark uses
+// flat warm charcoal surfaces and restrained neutral borders. Components
+// read the same tokens, so the chosen theme reaches every shared surface.
 //
 // Token roles, beyond the historical ones:
 //   --glass-blur   backdrop blur radius; components opt in via
@@ -53,7 +51,20 @@ export const WIKI_FONT_FACES = `
 // must match the CSS ground color exactly, in both themes — one constant
 // each instead of the same hex repeated in CSS, JSON and HTML.
 export const WIKI_BG_LIGHT = '#e9eef5';
-export const WIKI_BG_DARK = '#070b12';
+export const WIKI_DARK_COLORS = {
+  bg: '#141414',
+  panel: '#202020',
+  soft: '#252525',
+  raised: '#303030',
+  text: '#e8e5df',
+  muted: '#a6a39b',
+  border: '#383838',
+  borderStrong: '#585854',
+  accent: '#d6d2c9',
+  accentSoft: 'rgba(214, 210, 201, .1)',
+  link: '#c7bbb0',
+};
+export const WIKI_BG_DARK = WIKI_DARK_COLORS.bg;
 
 const GLASS_LIGHT = `
   color-scheme: light;
@@ -87,30 +98,23 @@ const GLASS_LIGHT = `
 const GLASS_DARK = `
   color-scheme: dark;
   --bg: ${WIKI_BG_DARK};
-  --bg-image:
-    radial-gradient(1200px 600px at 78% -10%, rgba(40, 110, 170, .28), transparent 60%),
-    radial-gradient(800px 500px at 8% 110%, rgba(20, 70, 120, .25), transparent 60%),
-    linear-gradient(rgba(120, 190, 230, .035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(120, 190, 230, .035) 1px, transparent 1px);
-  --panel: rgba(14, 22, 36, .9);
-  --panel-soft: rgba(20, 32, 50, .82);
-  --panel-solid: #0e1624;
-  /* The run-status strip floats over the chat: on the near-black dark ground it
-     needs a lifted surface to stay legible, not the same --panel used by
-     in-flow cards. */
-  --run-strip-bg: rgba(38, 54, 78, .94);
-  --text: #e6eef7;
-  --muted: #8fa3b8;
-  --border: rgba(120, 190, 230, .18);
-  --line-hi: rgba(95, 208, 255, .45);
-  --accent: #5fd0ff;
-  --accent-soft: rgba(95, 208, 255, .14);
-  --glow: 0 0 0 4px rgba(95, 208, 255, .12), 0 0 24px rgba(95, 208, 255, .12);
-  --card-grad: linear-gradient(180deg, rgba(95, 208, 255, .07), rgba(14, 22, 36, 0));
-  --ok: #3ddc97;
-  --link: #7bd0e8;
-  --shadow: 0 20px 50px rgba(0, 0, 0, .35);
-  --glass-blur: 18px;`;
+  --bg-image: none;
+  --panel: ${WIKI_DARK_COLORS.panel};
+  --panel-soft: ${WIKI_DARK_COLORS.soft};
+  --panel-solid: ${WIKI_DARK_COLORS.panel};
+  --run-strip-bg: ${WIKI_DARK_COLORS.raised};
+  --text: ${WIKI_DARK_COLORS.text};
+  --muted: ${WIKI_DARK_COLORS.muted};
+  --border: ${WIKI_DARK_COLORS.border};
+  --line-hi: ${WIKI_DARK_COLORS.borderStrong};
+  --accent: ${WIKI_DARK_COLORS.accent};
+  --accent-soft: ${WIKI_DARK_COLORS.accentSoft};
+  --glow: 0 0 0 3px rgba(214, 210, 201, .08);
+  --card-grad: linear-gradient(transparent, transparent);
+  --ok: #8ac49e;
+  --link: ${WIKI_DARK_COLORS.link};
+  --shadow: 0 12px 32px rgba(0, 0, 0, .25);
+  --glass-blur: 0px;`;
 
 export const WIKI_CSS_VARS = `
 ${WIKI_FONT_FACES}

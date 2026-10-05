@@ -1,14 +1,16 @@
+import { WIKI_DARK_COLORS as dark } from '../../../../chat/theme.ts';
+
 /**
  * TAXO graph page styles: the prototype's shell (48 px header, filter column,
  * full-frame stage with floating title, tools, legend and frosted inspector),
  * themed by the wiki's `theme-dark` / `theme-light` root classes, plus the
  * context card and preview overlay kept from the former graph.
  */
-const DARK = `--bg:#070b12;--bg-image:radial-gradient(1200px 600px at 78% -10%,rgba(40,110,170,.28),transparent 60%),radial-gradient(800px 500px at 8% 110%,rgba(20,70,120,.25),transparent 60%),linear-gradient(rgba(120,190,230,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(120,190,230,.035) 1px,transparent 1px);
-  --panel:rgba(14,22,36,.9);--soft:rgba(20,32,50,.82);--text:#e6eef7;--muted:#8fa3b8;--line:rgba(120,190,230,.18);--line-hi:rgba(95,208,255,.45);
-  --accent-soft:rgba(95,208,255,.14);--head:#75aff5;--header-bg:#09131fdd;--title:#eef1f6;--summary:#7c879a;
-  --float:#0b0d13d1;--float-line:#ffffff1c;--pill:#ffffff0d;--pill-line:#ffffff24;--pill-hover:#ffffff1a;
-  --row-line:#ffffff0f;--hover:#1d4775;--selected:#245a9e;--body-muted:#8d96a8;--title-shadow:0 1px 10px #000a;--stage-bg:#070a10;color-scheme:dark;`;
+const DARK = `--bg:${dark.bg};--bg-image:none;
+  --panel:${dark.panel};--soft:${dark.soft};--text:${dark.text};--muted:${dark.muted};--line:${dark.border};--line-hi:${dark.borderStrong};
+  --accent-soft:${dark.accentSoft};--head:${dark.accent};--header-bg:${dark.panel};--title:${dark.text};--summary:${dark.muted};
+  --float:${dark.panel};--float-line:${dark.border};--pill:${dark.soft};--pill-line:${dark.border};--pill-hover:${dark.raised};
+  --row-line:${dark.border};--hover:${dark.soft};--selected:${dark.raised};--body-muted:${dark.muted};--title-shadow:none;--stage-bg:${dark.bg};color-scheme:dark;`;
 const LIGHT = `--bg:#e9eef5;--bg-image:radial-gradient(1100px 560px at 80% -12%,rgba(120,190,235,.34),transparent 62%),radial-gradient(760px 480px at 6% 108%,rgba(90,150,210,.22),transparent 62%),linear-gradient(rgba(20,80,130,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(20,80,130,.045) 1px,transparent 1px);
   --panel:rgba(255,255,255,.9);--soft:rgba(255,255,255,.82);--text:#12202e;--muted:#5b6d82;--line:rgba(20,110,160,.2);--line-hi:rgba(14,127,168,.5);
   --accent-soft:rgba(14,127,168,.12);--head:#0e6f9a;--header-bg:#f8fbfddd;--title:#172433;--summary:#5b6d82;

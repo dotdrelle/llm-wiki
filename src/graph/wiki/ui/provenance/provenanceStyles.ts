@@ -1,3 +1,5 @@
+import { WIKI_DARK_COLORS as dark } from '../../../../chat/theme.ts';
+
 /** Styles of the /provenance page: the approved mock-up's, on the app's theme classes. */
 export const PROVENANCE_STYLES = String.raw`
 /* Layout: one stage, five evidence columns read left to right (what built it → the deliverable → how it reached the proof → the proof). */
@@ -9,8 +11,8 @@ export const PROVENANCE_STYLES = String.raw`
   --font:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Inter,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
   color-scheme:light}
 html.theme-dark{
-  --bg:#070b12;--stage:#0a1019;--panel:rgba(14,22,36,.92);--text:#e6eef7;--muted:#8fa3b8;--line:rgba(120,190,230,.2);
-  --line-hi:#5fd0ff;--accent-soft:rgba(95,208,255,.14);
+  --bg:${dark.bg};--stage:${dark.bg};--panel:${dark.panel};--text:${dark.text};--muted:${dark.muted};--line:${dark.border};
+  --line-hi:${dark.borderStrong};--accent-soft:${dark.accentSoft};
   --c-tpl:#b08cf0;--c-deliv:#5fd0ff;--c-pivot:#f1b52f;--c-fiche:#86a9d8;--c-raw:#66bd4b;
   --warn:#f1b52f;--warn-soft:rgba(241,181,47,.14);--bad:#ff7a6b;--bad-soft:rgba(255,122,107,.12);color-scheme:dark}
 *{box-sizing:border-box}
