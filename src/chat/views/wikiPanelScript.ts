@@ -11,7 +11,6 @@
 export const WIKI_PANEL_SCRIPT = `
 // ── Shell state ─────────────────────────────────────────────────────────────
 const SHELL_LEFT_KEY = 'llm-wiki:shell:leftTab';
-const SHELL_CENTER_KEY = 'llm-wiki:shell:center';
 const SHELL_WIKI_PATH_KEY = 'llm-wiki:shell:wikiPath';
 const SHELL_SPLIT_KEY = 'llm-wiki:shell:split';
 const SHELL_SPLIT_W_KEY = 'llm-wiki:shell:splitW';
@@ -434,7 +433,6 @@ function setCenterWiki(path) {
   }
   leaveChatOnlyPaths();
   history.replaceState(null, '', '#wiki=' + encodeURIComponent(target));
-  shellStore(SHELL_CENTER_KEY, 'wiki');
   // Only a real wiki document is worth remembering as "the page to return
   // to" — see isWikiUtilityPath. The hash above still deep-links a reload
   // straight back into the utility view itself, which is the intended,
@@ -445,7 +443,6 @@ function setCenterWiki(path) {
 
 function setCenterChat() {
   document.body.classList.remove('center-wiki');
-  shellStore(SHELL_CENTER_KEY, 'chat');
   if (location.hash.startsWith('#wiki=')) {
     history.replaceState(null, '', location.pathname + location.search);
   }
@@ -458,7 +455,7 @@ function initPageMode() {
   const isConnectors = path === '/chat/connectors';
   const isExecution = path === '/chat/execution';
   const isWiki = !isConnectors && !isExecution &&
-    (path === '/' || location.hash.startsWith('#wiki='));
+    location.hash.startsWith('#wiki=');
   if (isWiki) { setCenterWiki(wikiHashPath() || '/'); return; }
   document.body.classList.remove('center-wiki');
   document.body.classList.toggle('connectors-mode', isConnectors);
@@ -523,14 +520,13 @@ function showExecutionView(event) {
   }
 }
 
-// ── Boot: restore left tab and center (hash deep-link wins) ─────────────────
+// ── Boot: restore the left tab; the centre always opens on chat ─────────────
+// A wiki page opens only through an explicit deep link (#wiki=…, handled by
+// initPageMode). The previous "return to the last centre" is deliberately
+// gone: serve's front door is the conversation, and a reader who left the wiki
+// open hours ago must not land on a document instead of the chat.
 function initShellTabs() {
   setLeftTab(shellStore(SHELL_LEFT_KEY) === 'chat' ? 'chat' : 'wiki');
-  const path = location.pathname.replace(/\\/+$/, '') || '/chat';
-  if (path === '/chat' && !location.hash.startsWith('#wiki=') &&
-      shellStore(SHELL_CENTER_KEY) !== 'chat') {
-    setCenterWiki(currentWikiPath());
-  }
 }
 
 // ── Shell <-> wiki iframes messaging ────────────────────────────────────────

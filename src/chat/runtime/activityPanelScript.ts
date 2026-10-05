@@ -651,13 +651,14 @@ function renderActivities() {
   // every one of those ticks got proportionally heavier on the main thread —
   // choppy token-by-token streaming being the most visible symptom, since it
   // shares that same thread. Compute only the active tab's pane.
-  const activePaneHTML=activityListTab==='memory' ? workspaceMemoryHTML() : activityTabWasCleared(activityListTab)?'':(activityListTab==='local'
+  const activePaneHTML=activityListTab==='memory' ? workspaceMemoryHTML() : activityListTab==='maintenance' ? '<div class="maintenance-content" aria-live="polite"></div>' : activityTabWasCleared(activityListTab)?'':(activityListTab==='local'
     ? localActivityHTML()
     : runtimeTaskPanelHTML(activityListTab));
   // Three tabs, not five: the run's plan, activity lines and skill chain all
   // live in Plan (the Chain and Runtime activity tabs only ever duplicated it),
   // and "Direct agents" was really the local upload/conversion feed.
-  const labels={plan:'Plan',local:'Files',logs:'Logs',memory:'Memory'};
+  const labels={plan:'Plan',local:'Files',memory:'Memory',maintenance:'Maintenance',logs:'Logs'};
+  const runtimeActiveCount=Array.isArray(runtimeState?.activities)?runtimeState.activities.filter(a=>isActivityActive(normalizeActivityStatus(a.status,a.terminal))).length:0;
   const localActiveCount=_activities.filter(a=>isActivityActive(a.status)).length;
   const localFailedCount=_activities.filter(a=>a.status==='failed'||a.error).length;
   const tabStates={
@@ -667,15 +668,17 @@ function renderActivities() {
   // Counts and highlights follow ACTIVE items only: once a conversion is done
   // the tab returns to a plain label — a finished card must not leave a
   // permanent "· 1" residue. Failures stay flagged until dismissed.
-  const tabCounts={local:localActiveCount};
+  const tabCounts={plan:runtimeActiveCount,local:localActiveCount,maintenance:Number(window.getMaintenancePendingCount?.())||0};
   const tabs=Object.entries(labels).map(([key,label])=>{
     const count=tabCounts[key]||0;
-    const suffix=count>0?\` · \${count}\`:'';
-    return \`<button class="activity-subtab \${activityListTab===key?'active':''} \${tabStates[key]||''}" type="button" onclick="setActivityListTab('\${key}')">\${label}\${suffix}</button>\`;
+    const suffix=count>0||key==='maintenance'?\` · \${count}\`:'';
+    return \`<button id="activity-tab-\${key}" class="activity-subtab \${activityListTab===key?'active':''} \${tabStates[key]||''}" type="button" onclick="setActivityListTab('\${key}')">\${label}\${suffix}</button>\`;
   }).join('');
   const empty=\`<div class="act-empty">No \${labels[activityListTab].toLowerCase()} yet.</div>\`;
   const resetPlan=activityListTab==='plan'?'<button class="activity-subtab-reset" type="button" onclick="resetRuntimePlan()">Reset plan</button>':'';
-  const toolbar=\`<div class="activity-subtab-toolbar"><span class="activity-subtab-toolbar-title">\${labels[activityListTab]}</span><span class="activity-subtab-actions">\${resetPlan}<button class="activity-subtab-clear" type="button" onclick="clearActivityTab('\${activityListTab}')">Clear</button></span></div>\`;
+  const clear=activityListTab==='maintenance'?'':\`<button class="activity-subtab-clear" type="button" onclick="clearActivityTab('\${activityListTab}')">Clear</button>\`;
+  const maintenanceState=activityListTab==='maintenance'?'<span class="maintenance-state" aria-live="polite"></span>':'';
+  const toolbar=\`<div class="activity-subtab-toolbar"><span class="activity-subtab-toolbar-title">\${labels[activityListTab]}</span>\${maintenanceState}<span class="activity-subtab-actions">\${resetPlan}\${clear}</span></div>\`;
   const html=\`<div class="activity-subtabs" role="tablist" aria-label="Activity list sections">\${tabs}</div><div class="activity-subtab-content activity-subtab-\${activityListTab}">\${toolbar}\${activePaneHTML||empty}</div>\`;
   // The panel re-renders every second while a run is active; replacing
   // innerHTML unconditionally reset the scroll position each tick, making it
@@ -697,6 +700,7 @@ function renderActivities() {
   const nextLog=document.getElementById('runtime-log-list');
   // Newest-first log: stay pinned to the top only if the reader was there.
   if(nextLog) nextLog.scrollTop=logTop<40?0:logTop;
+  if(activityListTab==='maintenance') window.renderMaintenancePanel?.(el.querySelector('.maintenance-content'));
   return finishActivityRender();
 }
 function finishActivityRender() {
@@ -751,20 +755,23 @@ function updateRunElapsed() {
   el.textContent=formatRunElapsed(Date.now()-started);
 }
 function setActivityListTab(tab) {
-  if(!['plan','logs','local','memory'].includes(tab)) return;
+  if(!['plan','logs','local','memory','maintenance'].includes(tab)) return;
   activityListTab=tab;
   renderActivities();
 }
 function updateActivityBadge() {
   const runtimeCount=Array.isArray(runtimeState?.activities)?runtimeState.activities.filter(a=>isActivityActive(normalizeActivityStatus(a.status,a.terminal))).length:0;
-  const count=_activities.filter(a=>isActivityActive(a.status)).length+runtimeCount;
+  const maintenanceCount=Number(window.getMaintenancePendingCount?.())||0;
+  const count=_activities.filter(a=>isActivityActive(a.status)).length+runtimeCount+maintenanceCount;
   const railBadge=$('rail-act-badge');
   if(railBadge) {
     railBadge.textContent=count>0?String(count):'';
     railBadge.classList.toggle('show',count>0);
   }
-  const panelOpen=!$('activity-panel')?.classList.contains('closed');
+  const badgeDescription=\`Activity: \${_activities.filter(a=>isActivityActive(a.status)).length+runtimeCount} active run or file item(s), \${maintenanceCount} maintenance decision(s) pending.\`;
   const railBtn=$('activity-toggle');
+  if(railBtn){railBtn.title=badgeDescription;railBtn.setAttribute('aria-label',badgeDescription);}
+  const panelOpen=!$('activity-panel')?.classList.contains('closed');
   if(railBtn) {
     railBtn.classList.toggle('active',panelOpen);
     railBtn.classList.toggle('writing',runtimeWritingNow());

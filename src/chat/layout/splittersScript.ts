@@ -15,7 +15,10 @@ function initMainSplitter() {
   const sidebar=$('sidebar'), handle=$('main-resizer');
   if(!sidebar || !handle) return;
 
-  applySidebarOpen(localStorage.getItem(SIDEBAR_OPEN_KEY)!=='0');
+  // Closed by default: the chat is the workspace, the folder panel is a
+  // drawer the reader opens on demand. Only an explicit open ('1') is
+  // remembered across reloads.
+  applySidebarOpen(localStorage.getItem(SIDEBAR_OPEN_KEY)==='1');
 
   const setSidebarW=(width, persist=false)=>{
     const clamped=Math.max(180, Math.min(width, window.innerWidth-320));

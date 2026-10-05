@@ -2795,6 +2795,12 @@ async function sendMessage() {
   const hideQuestion=input.dataset.hideQuestion==='1';
   delete input.dataset.displayText; delete input.dataset.forceChat; delete input.dataset.hideQuestion;
   if(!text) return;
+  if(/^\\/maintenance(?:\\s|$)/i.test(text)&&!forceChat) {
+    input.value='';
+    autoResize(input);
+    window.handleMaintenanceSlashCommand?.(text);
+    return;
+  }
   if(await tryConnectorCommand(input,text)) return;
   if(await tryProfilePreferenceUpdate(input,text)) return;
   const skillInvocation=await matchBrowserSkillInvocation(text);

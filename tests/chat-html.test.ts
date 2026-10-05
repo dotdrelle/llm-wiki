@@ -422,7 +422,12 @@ describe('chat html', () => {
   });
 
   it('splits Activity List into internally scrollable sub-tabs including workspace memory', () => {
-    expect(CHAT_HTML).toContain("const labels={plan:'Plan',local:'Files',logs:'Logs',memory:'Memory'}");
+    expect(CHAT_HTML).toContain("const labels={plan:'Plan',local:'Files',memory:'Memory',maintenance:'Maintenance',logs:'Logs'}");
+    expect(CHAT_HTML).toContain("activityListTab==='maintenance' ? '<div class=\"maintenance-content\"");
+    expect(CHAT_HTML).toContain("window.renderMaintenancePanel?.(el.querySelector('.maintenance-content'))");
+    expect(CHAT_HTML).toContain("if(!['plan','logs','local','memory','maintenance'].includes(tab)) return");
+    expect(CHAT_HTML).not.toContain("button('Close',panel");
+    expect(CHAT_HTML).not.toContain('.maintenance-panel{position:fixed');
     expect(CHAT_HTML).toContain('function loadWorkspaceMemory()');
     expect(CHAT_HTML).toContain('async function forgetWorkspaceMemory');
     expect(CHAT_HTML).toContain('async function restoreWorkspaceMemory');
@@ -437,9 +442,12 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain("fetch('/api/runtime/reset',{method:'POST'})");
     expect(CHAT_HTML).toContain('.activity-subtabs{display:flex;flex-wrap:wrap;gap:4px;flex:none;margin-bottom:8px}');
     expect(CHAT_HTML).toContain('const tabStates={');
-    expect(CHAT_HTML).toContain('const tabCounts={local:localActiveCount}');
+    expect(CHAT_HTML).toContain('const tabCounts={plan:runtimeActiveCount,local:localActiveCount,maintenance:Number(window.getMaintenancePendingCount?.())||0}');
+    expect(CHAT_HTML).toContain('const runtimeActiveCount=Array.isArray(runtimeState?.activities)?runtimeState.activities.filter(a=>isActivityActive(normalizeActivityStatus(a.status,a.terminal))).length:0;');
+    expect(CHAT_HTML).toContain('railBtn.title=badgeDescription');
+    expect(CHAT_HTML).toContain('railBtn.setAttribute(\'aria-label\',badgeDescription)');
     expect(CHAT_HTML).toContain('function autoSelectActivityTab()');
-    expect(CHAT_HTML).toContain("const suffix=count>0?` · ${count}`:''");
+    expect(CHAT_HTML).toContain("const suffix=count>0||key==='maintenance'?` · ${count}`:''");
   });
 
   it('renders activity card icons as stroke SVGs, not emoji', () => {
@@ -512,9 +520,12 @@ describe('chat html', () => {
     expect(script).toContain("let activityView='list';");
   });
 
-  it('boots the root shell with the wiki index in the central frame', () => {
+  it('boots the root shell on the chat, not the wiki centre', () => {
     const script = chatScripts().join('\n');
-    expect(script).toContain("(path === '/' || location.hash.startsWith('#wiki='))");
+    // The root shell opens the conversation; only an explicit #wiki= deep link
+    // brings the wiki into the centre.
+    expect(script).not.toContain("(path === '/' || location.hash.startsWith('#wiki='))");
+    expect(script).not.toContain('SHELL_CENTER_KEY');
     expect(script).toContain("setCenterWiki(wikiHashPath() || '/')");
     expect(script).toContain("if (loadedPath !== target) frame.setAttribute('src', target)");
   });
@@ -1235,6 +1246,22 @@ describe('chat html', () => {
     expect(script).toContain("window.dispatchEvent(new CustomEvent('llmwiki:maintenance-update'");
     expect(script).toContain("window.addEventListener('llmwiki:maintenance-update'");
     expect(script).toContain('Maintenance update gap');
+    expect(script).toContain("window.handleMaintenanceSlashCommand=(text)=>");
+    expect(script).toContain("if(/^\\/maintenance(?:\\s|$)/i.test(text)&&!forceChat)");
+    expect(script).toContain("window.handleMaintenanceSlashCommand?.(text)");
+    expect(script).toContain("if(action==='status'||action==='history'){open();return true;}");
+    expect(script).toContain('Allowed actions and build window');
+    expect(script).toContain('Build window: ');
+    expect(script).toContain('class="maintenance-state"');
+    expect(script).toContain("badge.textContent=state.error?'Error':!state.enabled?'Disabled':state.paused?'Paused':'Active'");
+    expect(script).not.toContain("node('h2','Maintenance'");
+    expect(script).toContain("threadHeading.className='maintenance-thread-heading'");
+    expect(script).toContain('.activity-subtab-maintenance .maintenance-thread-heading{margin-top:16px}');
+    expect(script).toContain("button('Clear',panel,clearHistory)");
+    expect(script).toContain("command({command:'clear'})");
+    expect(script).toContain("tab.textContent='Maintenance · '+count");
+    expect(script).toContain('const maintenanceCount=Number(window.getMaintenancePendingCount?.())||0;');
+    expect(script).toContain('runtimeCount+maintenanceCount');
     expect(script).not.toContain('poll();setInterval(poll,5000)');
     expect(script).toContain('scheduleReconcile();');
   });
@@ -1355,7 +1382,7 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('.sidebar-toggle{');
     expect(script).toContain("const SIDEBAR_OPEN_KEY = 'mcpchat_sidebar_open';");
     expect(script).toContain('function applySidebarOpen(open, persist=false)');
-    expect(script).toContain("localStorage.getItem(SIDEBAR_OPEN_KEY)!=='0'");
+    expect(script).toContain("localStorage.getItem(SIDEBAR_OPEN_KEY)==='1'");
     expect(script).toContain('function toggleSidebar() { applySidebarOpen(!sidebarOpen,true); }');
     expect(script).toContain("if(e.target.closest?.('#sidebar-toggle')) return;");
   });
