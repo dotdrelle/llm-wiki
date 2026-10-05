@@ -79,67 +79,6 @@ export function normalizeTagValue(value: string): string {
   return normalizeProvenanceValue(value);
 }
 
-function significantTokens(value: string): string[] {
-  return value
-    .split(/[-_]/)
-    .filter((token) => [...token].length >= 3 && !/^\d+$/.test(token));
-}
-
-/**
- * Whether two normalized subjects name the same ENTITY: their leading tokens
- * match, or one subject is a prefix run of the other.
- *
- * This legacy predicate is only a candidate hint. Stable subject identity is
- * carried by subject_id; normalized labels are not authoritative keys.
- */
-export function subjectsShareEntityRoot(a: string, b: string): boolean {
-  if (!a || !b) return false;
-  if (a === b) return true;
-  const rootA = a.split('-', 1)[0] ?? '';
-  const rootB = b.split('-', 1)[0] ?? '';
-  return [...rootA].length > 2 && rootA === rootB;
-}
-
-/**
- * How strongly two normalized subjects plausibly identify the same real-world
- * thing: 0 = unrelated, higher = better evidence.
- *
- * This is the LENIENT predicate, and the score exists because its consumer
- * keeps only the best few matches. `subjectMatchInventory` shows the model at
- * most five same-subject candidates; taken in corpus order, five pages sharing
- * nothing but "etude" crowded out the one genuine match and reopened the
- * concept-homonym defect (B17) this inventory exists to close.
- */
-export function subjectMatchStrength(a: string, b: string): number {
-  if (!a || !b) return 0;
-  if (a === b) return 100;
-  if (subjectsShareEntityRoot(a, b)) return 50;
-  const tokensA = significantTokens(a);
-  const tokensB = new Set(significantTokens(b));
-  const shared = tokensA.filter((token) => tokensB.has(token));
-  if (shared.length === 0) return 0;
-  // Sharing several tokens beats sharing one, and a longer token is the more
-  // specific of two — length stands in for rarity, which would need a corpus.
-  return shared.length * 10 + Math.max(...shared.map((token) => Math.min(token.length, 9)));
-}
-
-/**
- * Whether two normalized subjects plausibly identify the same real-world
- * thing according to normalized label overlap. This is only for candidate
- * display; it never establishes identity or authorizes a merge.
- *
- * This is deliberately lenient: it only decides whether an existing page is
- * worth SHOWING the model as a reuse candidate during consolidation, never
- * whether to merge anything outright, so a false positive costs one inventory
- * line (ranked by `subjectMatchStrength`, so it is the first to be dropped)
- * while a false negative reproduces the concept-homonym defect it exists to
- * catch. Anything that DECIDES rather than shows must use
- * `subjectsShareEntityRoot` instead.
- */
-export function subjectsAreRelated(a: string, b: string): boolean {
-  return subjectMatchStrength(a, b) > 0;
-}
-
 export function isExtractionScope(value: unknown): value is ExtractionScope {
   return typeof value === 'string' && value.trim().length > 0;
 }

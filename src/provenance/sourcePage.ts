@@ -6,35 +6,13 @@ import { normalizeProvenanceValue } from '../ingest/provenance.ts';
 /*
  * Lot 2 of `plan-provenance-feuilles.md`: the source page is the harmonized,
  * weakly-interpretive reading sheet of ONE document. This module holds the
- * deterministic half — the template and the contract validation. The writer
+ * deterministic half — the contract validation and the title wiring. The writer
  * prompt that produces the prose is wired at the ingest step, not here.
  *
  * Deterministic and therefore enforceable: one document per page, `subject`
  * names the document, and every factual section is backed by an ANCHORED
  * citation to that same archive.
  */
-
-export const SOURCE_PAGE_TEMPLATE = [
-  '---',
-  'title: <titre du document>',
-  'subject: <identite-du-document>',
-  'type: source',
-  'sources:',
-  '  - path: raw/ingested/.../<document>.md',
-  '---',
-  '',
-  '# <titre du document>',
-  '',
-  '## Résumé',
-  '',
-  '<portée du document, courte>',
-  '',
-  '## <thème réellement présent>',
-  '',
-  '<lecture fidèle ; chiffres, dates et réserves exacts>',
-  '',
-  '[src: raw/ingested/.../<document>.md#<adresse précise>]',
-].join('\n');
 
 /** A `Résumé` section is kept as a section under the document title. */
 const SUMMARY_HEADING = /^(r[ée]sum[ée]|summary)$/i;

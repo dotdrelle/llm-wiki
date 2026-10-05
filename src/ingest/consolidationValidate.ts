@@ -512,37 +512,6 @@ export function detectConceptSplits(
   return splits;
 }
 
-export type ConceptOverflow = {
-  newConcepts: number;
-  budget: number;
-  newConceptPaths: string[];
-};
-
-export function detectConceptOverflow(
-  plan: ConsolidationPlan,
-  existingPaths: Set<string>,
-  budget: number,
-): ConceptOverflow | null {
-  const newConceptPaths = plan.operations
-    .filter((operation) =>
-      operation.path.startsWith(CONCEPT_PREFIX)
-      && operation.type === 'create'
-      && !existingPaths.has(operation.path))
-    .map((operation) => operation.path);
-  if (newConceptPaths.length <= budget) return null;
-  return { newConcepts: newConceptPaths.length, budget, newConceptPaths };
-}
-
-export function detectDuplicatePaths(plan: ConsolidationPlan): string[] {
-  const seen = new Set<string>();
-  const duplicates = new Set<string>();
-  for (const operation of plan.operations) {
-    if (seen.has(operation.path)) duplicates.add(operation.path);
-    seen.add(operation.path);
-  }
-  return [...duplicates].sort();
-}
-
 export type PreviousConcept = {
   path: string;
   subject: string | null;

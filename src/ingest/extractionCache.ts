@@ -4,7 +4,7 @@ import { safeWriteFile } from '../utils/fs.ts';
 import { hashText as fullHash } from '../utils/hash.ts';
 
 /*
- Cache of extraction and consolidation calls.
+ Cache of extraction calls.
 
  A session interruption, a quota overflow or a simple `Ctrl-C` must not force
  repaying calls whose answer was valid. The cache is therefore addressed by what
@@ -13,8 +13,7 @@ import { hashText as fullHash } from '../utils/hash.ts';
  avoids re-serving an answer produced by a contract that no longer exists.
 
  This cache is a DIAGNOSTIC and resume artifact. It is never presented as an
- approvable plan: the only object submitted to review remains the final
- consolidated plan.
+ approvable plan: the only object submitted to review remains the final plan.
 */
 
 const CACHE_DIR = ['.wiki', 'ingest-cache'];
@@ -25,17 +24,6 @@ export type ExtractionCacheKey = {
   sourceHash: string;
   packIndex: number;
   packHash: string;
-  model: string;
-  promptVersion: number;
-  schemaVersion: number;
-};
-
-export type ConsolidationCacheKey = {
-  sourceHash: string;
-  /** Fingerprint of the ORDERED extractions: their order changes the prompt. */
-  extractionsHash: string;
-  /** Fingerprint of the relevant inventory presented to the model. */
-  inventoryHash: string;
   model: string;
   promptVersion: number;
   schemaVersion: number;
@@ -56,17 +44,6 @@ export function extractionCacheName(key: ExtractionCacheKey): string {
     key.sourceHash,
     key.packIndex,
     key.packHash,
-    key.model,
-    key.promptVersion,
-    key.schemaVersion,
-  ]);
-}
-
-export function consolidationCacheName(key: ConsolidationCacheKey): string {
-  return keyToName('consolidate', [
-    key.sourceHash,
-    key.extractionsHash,
-    key.inventoryHash,
     key.model,
     key.promptVersion,
     key.schemaVersion,

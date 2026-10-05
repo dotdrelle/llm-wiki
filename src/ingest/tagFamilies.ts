@@ -102,11 +102,3 @@ export function anchorTagFamilies(
   }
   return [...merged.values()];
 }
-
-export function tagFamilyMap(groups: TagFamily[]): Map<string, string> {
-  const result = new Map<string, string>();
-  for (const group of groups) {
-    for (const tag of group.tags) result.set(key(tag), group.family);
-  }
-  return result;
-}

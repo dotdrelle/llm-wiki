@@ -12,8 +12,6 @@ import { normalizeTags } from './provenance.ts';
  pages to stop following the number of batches.
 */
 
-export const CONSOLIDATION_SCHEMA_VERSION = 2;
-
 const nonEmpty = z.string().trim().min(1);
 const optionalValue = z.preprocess(
   (value) => typeof value === 'string' && value.trim() === '' ? null : value,
