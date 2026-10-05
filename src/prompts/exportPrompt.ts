@@ -1,5 +1,12 @@
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
+/**
+ * Version of what export and polish produce. Bump it whenever a change to these
+ * prompts changes the output: publication receipts carry it, and a receipt
+ * produced with another version reads as stale ("export settings changed").
+ */
+export const EXPORT_PROMPT_VERSION = 1;
+
 export interface SectionExportInput {
   headingPath: string[];
   headingText: string;

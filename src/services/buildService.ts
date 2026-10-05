@@ -1,4 +1,4 @@
-import { FINAL_CONTEXT_EXCLUDED_PATHS, OUTPUT_HASH_VERSION, outputEditedSinceBuild } from '../maintenance/buildInputs.ts';
+import { FINAL_CONTEXT_EXCLUDED_PATHS, OUTPUT_HASH_VERSION, knowledgeUnchanged, outputEditedSinceBuild } from '../maintenance/buildInputs.ts';
 import { outputSnapshot, publishOutput } from '../maintenance/outputGuard.ts';
 import { preserveHumanSections, producedSectionKeys } from '../maintenance/humanSections.ts';
 import { existsSync, readFileSync } from 'node:fs';
@@ -1061,6 +1061,7 @@ export class BuildService {
     const globalBuildContext = this.workspace.composeBuildContext(buildContextSections);
     const wikiPages = await this.retrieval.warmCache(options?.onPageLoad);
     const wikiHash = await this.workspace.computeWikiHash(wikiPages);
+    const legacyWikiHash = await this.workspace.computeLegacyWikiHash(wikiPages);
     const previousState = await this.workspace.readBuildState();
     const stateUpdates: BuildState['deliverables'] = {};
     const results: DeliverableBuildResult[] = [];
@@ -1092,7 +1093,7 @@ export class BuildService {
       const isFresh =
         prior &&
         prior.templateHash === templateHash &&
-        prior.wikiHash === wikiHash &&
+        knowledgeUnchanged(prior.wikiHash, wikiHash, legacyWikiHash) &&
         prior.buildContextHash === buildContext.hash &&
         expectedOutput !== null && !outputEditedSinceBuild(prior, expectedOutput) &&
         !options?.force;

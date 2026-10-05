@@ -1,3 +1,4 @@
+import { knowledgeUnchanged } from '../maintenance/buildInputs.ts';
 import path from 'node:path';
 import matter from 'gray-matter';
 import { semanticLintSchema } from '../config/schema.ts';
@@ -67,6 +68,7 @@ export class LintService {
     const templates = await this.workspace.listTemplatePaths();
     const state = await this.workspace.readBuildState();
     const wikiHash = await this.workspace.computeWikiHash();
+    const legacyWikiHash = await this.workspace.computeLegacyWikiHash();
     const staleDeliverables: string[] = [];
 
     for (const templatePath of templates) {
@@ -76,7 +78,7 @@ export class LintService {
       if (
         !buildInfo ||
         buildInfo.templateHash !== templateHash ||
-        buildInfo.wikiHash !== wikiHash ||
+        !knowledgeUnchanged(buildInfo.wikiHash, wikiHash, legacyWikiHash) ||
         !(await pathExists(template.outputAbsolutePath))
       ) {
         staleDeliverables.push(template.outputRelativePath);

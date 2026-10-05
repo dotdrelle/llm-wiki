@@ -1061,6 +1061,20 @@ export class WorkspaceService {
     );
   }
 
+  /**
+   * The wiki fingerprint as builds recorded it BEFORE BUILD_INPUT_SIGNATURE
+   * (every page, index/log included, no signature). Only used to recognise a
+   * legacy record whose wiki has not changed since — see knowledgeUnchanged.
+   */
+  async computeLegacyWikiHash(pages?: WikiPage[]): Promise<string> {
+    const resolvedPages = pages ?? (await this.listWikiPages());
+    return hashParts(
+      [...resolvedPages]
+        .sort((a, b) => a.relativePath.localeCompare(b.relativePath))
+        .map((page) => `${page.relativePath}\n${page.content}`),
+    );
+  }
+
   async computeTemplateHash(template: TemplateDocument): Promise<string> {
     return hashText(
       JSON.stringify({

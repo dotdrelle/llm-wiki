@@ -12,6 +12,9 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
   function seen(){const seq=state?.events?.at(-1)?.seq??0;lastSeq=seq;try{localStorage.setItem(key,String(seq));}catch{}if(toast){toast.remove();toast=null;}}
   async function command(body){try{const res=await fetch('/api/runtime/maintenance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const data=await res.json();if(!res.ok)throw new Error(data.error||'Action failed');await poll();}catch(e){node('p','Maintenance: '+e.message,panel);panel.hidden=false;}}
   function open(){panel.hidden=false;render();seen();}
+  // "Ask Donna" never sends anything: it opens the chat with the facts in the
+  // composer, and the reader asks (the conversational-action rule).
+  function askDonna(facts){panel.hidden=true;if(typeof showChatView==='function')showChatView();const ta=document.getElementById('chat-input');if(!ta)return;ta.value='About this maintenance activity:\n'+facts+'\n\nMy question: ';if(typeof autoResize==='function')autoResize(ta);ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);}
   function render(){if(!state)return;panel.replaceChildren();node('h2','Maintenance',panel);button('Close',panel,()=>{panel.hidden=true;seen();});
     node('p',state.error||(!state.enabled?'Disabled':state.paused?'Paused':'Active — independent of Donna’s current run'),panel);
     // Turning maintenance on grants a standing mandate: a human decision, confirmed.
@@ -21,7 +24,7 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
       command({command:state.enabled?'disable':'enable'});});
     if(state.enabled){    button(state.paused?'Resume':'Pause',panel,()=>command({command:state.paused?'resume':'pause'}));button('Stop',panel,()=>command({command:'stop'}));}
     const pending=state.requests.filter(r=>r.status==='pending');node('h3','Decisions ('+pending.length+')',panel);
-    for(const r of pending){const row=node('article',null,panel);const text=node('p',r.candidate?.summary||r.action,row);text.title='Request '+r.id+' · version '+r.version;button('Approve',row,()=>command({command:'decide',id:r.id,version:r.version,approved:true}));button('Refuse',row,()=>command({command:'decide',id:r.id,version:r.version,approved:false}));}
+    for(const r of pending){const row=node('article',null,panel);const text=node('p',r.candidate?.summary||r.action,row);text.title='Request '+r.id+' · version '+r.version;button('Approve',row,()=>command({command:'decide',id:r.id,version:r.version,approved:true}));button('Refuse',row,()=>command({command:'decide',id:r.id,version:r.version,approved:false}));button('Ask Donna',row,()=>askDonna('Pending decision: '+(r.candidate?.summary||r.action)));}
     // The Maintenance thread: one entry per cycle, the agent's own summary first,
     // then what was done; routine work and decisions outside a cycle follow.
     const events=state.events.slice(-300);const strip=(m)=>String(m||'').replace(/^Maintenance:\s*/,'');
@@ -33,6 +36,7 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
       if(summary)node('p',strip(summary.message),entry).className='maintenance-summary';
       for(const e of own.filter(e=>e.kind!=='summary'))node('p',strip(e.message),entry);
       if(!own.length)node('p','No action recorded for this cycle.',entry);
+      button('Ask Donna about this cycle',entry,()=>askDonna(['Cycle of '+(c.at?new Date(c.at).toLocaleString():'')+' — '+c.status,...own.map(e=>strip(e.message))].join('\n').slice(0,4000)));
     }
     const shown=new Set(state.cycles.slice(0,10).map(c=>c.id));const loose=events.filter(e=>!shown.has(e.cycleId)).slice(-60).reverse();
     if(loose.length){node('h3','Routine work and decisions',panel);for(const e of loose){const row=node('article',null,panel);node('small',e.at?new Date(e.at).toLocaleString():'',row);node('p',strip(e.message),row);}}

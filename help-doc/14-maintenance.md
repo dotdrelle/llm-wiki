@@ -106,7 +106,8 @@ While a request waits, maintenance carries on with everything else.
 - **The Maintenance panel** (button at the top right of the served chat): the
   pending decisions with *Approve* / *Refuse*, *Pause* / *Resume* / *Stop*, and
   the maintenance thread — one entry per cycle with the agent's own summary,
-  then routine work and decisions.
+  then routine work and decisions. **Ask Donna** on a cycle or a decision opens
+  the chat with its facts in your message box: you add your question and send.
 - **Logs**: every maintenance line also appears in the Logs tab of the served
   chat and in the Shell's Activity, prefixed `Maintenance:`.
 - **`/status`** shows whether maintenance is active, paused or disabled, and how
@@ -138,8 +139,11 @@ included. Your task then waits and the Logs say so (`waiting for maintenance —
   deliverable stale. The build window and `buildsPerDay` group those rebuilds.
 - **No token ceiling** in this version: the limits count cycles and actions,
   not tokens.
-- The first time this version runs, deliverables built before it are rebuilt
-  once (the freshness signature changed).
+- An engine update does not rebuild your deliverables: a deliverable whose wiki
+  has not changed since its last build stays fresh.
+- An export is also out of date when the way exports are written changed (a
+  new export prompt version, or another session language); switching model or
+  profile does not make exports stale.
 - A deliverable is backed up before every rebuild; the last five versions of
   each are kept in `.wiki/output-backups/`.
 - Without the agentic runtime, routine work (sync, doctor, mail) continues and

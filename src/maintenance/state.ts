@@ -7,7 +7,7 @@ import { WorkspaceService } from '../services/workspaceService.ts';
 import type { AppConfig } from '../types.ts';
 import { outputSnapshot } from './outputGuard.ts';
 import { publicationState } from './publications.ts';
-import { outputEditedSinceBuild } from './buildInputs.ts';
+import { knowledgeUnchanged, outputEditedSinceBuild } from './buildInputs.ts';
 import { exportOutputPath } from '../services/exportService.ts';
 import { pathExists } from '../utils/fs.ts';
 
@@ -51,7 +51,9 @@ export async function recordVectorFreshness(workspace: WorkspaceService, config:
 export async function maintenanceState(config: AppConfig, quietMinutes = 10) {
   const workspace = new WorkspaceService(config);
   const root = workspace.paths.rootDir;
-  const wikiHash = await workspace.computeWikiHash();
+  const wikiPages = await workspace.listWikiPages();
+  const wikiHash = await workspace.computeWikiHash(wikiPages);
+  const legacyWikiHash = await workspace.computeLegacyWikiHash(wikiPages);
   const builds = await workspace.readBuildState();
   const sections = await workspace.readBuildContextSections();
   const global = workspace.composeBuildContext(sections);
@@ -66,7 +68,7 @@ export async function maintenanceState(config: AppConfig, quietMinutes = 10) {
     if (!prior) reasons.push('build_not_tracked');
     if (content === null) reasons.push('output_missing');
     if (prior && prior.templateHash !== templateHash) reasons.push('template_changed');
-    if (prior && prior.wikiHash !== wikiHash) reasons.push('knowledge_changed');
+    if (prior && !knowledgeUnchanged(prior.wikiHash, wikiHash, legacyWikiHash)) reasons.push('knowledge_changed');
     if (prior && prior.buildContextHash !== context.hash) reasons.push('context_changed');
     if (prior && content !== null && outputEditedSinceBuild(prior, content)) reasons.push('output_modified');
     // Which publications already exist: maintenance only keeps those current,
@@ -84,7 +86,7 @@ export async function maintenanceState(config: AppConfig, quietMinutes = 10) {
   if (!vectorFresh) {
     try { const receipt = JSON.parse(await readFile(path.join(root, '.wiki/vector-freshness.json'), 'utf8')); vectorFresh = receipt.inputHash === await vectorInputHash(workspace) && receipt.model === config.retrieval.vector.embeddingModel; } catch { /* missing = repair required */ }
   }
-  const publications = await publicationState(root);
+  const publications = await publicationState(root, { language: config.language });
   const proposals = await fg('*.json', { cwd: path.join(root, '.wiki/agent-proposals') });
   return { schemaVersion: 1, observedAt: new Date().toISOString(), wikiHash,
     pending: await pendingSources(root, quietMinutes * 60_000), deliverables, publications,

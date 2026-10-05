@@ -1,5 +1,5 @@
 import { outputSnapshot, publishOutput } from '../maintenance/outputGuard.ts';
-import { preparePublication, finishPublication } from '../maintenance/publications.ts';
+import { preparePublication, finishPublication, transformSignature } from '../maintenance/publications.ts';
 import { hashText } from '../utils/hash.ts';
 import matter from 'gray-matter';
 import path from 'node:path';
@@ -177,7 +177,7 @@ export default async function exportCmd(
     let versionedRelative: string | null = null;
     await publishOutput(workspace.paths.rootDir, absoluteOutput, expectedOutput, async () => {
     if (await workspace.readTextFile(absoluteInput!) !== sourceSnapshot) throw new Error('publication_source_changed');
-    const receipt = await preparePublication(workspace.paths.rootDir, { source: relativeInput, sourceHash: hashText(sourceSnapshot), evidenceBuildId: matter(sourceSnapshot).data.evidence_build_id, operation: options.polish ? 'polish' : 'export', parameters: { polish: Boolean(options.polish), evidenceBuild: options.evidenceBuild ?? null, signature: 'export-v1' }, output: outputRelative, outputHash: hashText(normalized) });
+    const receipt = await preparePublication(workspace.paths.rootDir, { source: relativeInput, sourceHash: hashText(sourceSnapshot), evidenceBuildId: matter(sourceSnapshot).data.evidence_build_id, operation: options.polish ? 'polish' : 'export', parameters: { polish: Boolean(options.polish), evidenceBuild: options.evidenceBuild ?? null, signature: 'export-v1', transform: transformSignature(options.polish ? 'polish' : 'export', config.language) }, output: outputRelative, outputHash: hashText(normalized) });
     if (outputRelative.startsWith('deliverables/') && await pathExists(absoluteOutput)) {
       const previous = await workspace.readTextFile(absoluteOutput);
       // Version siblings live next to the main output: a listing scoped to

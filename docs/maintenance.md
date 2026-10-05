@@ -31,7 +31,10 @@ Decisions and budgets are NOT here; they live in the manager.
   context) and carries `BUILD_INPUT_SIGNATURE`. Every ingest rewrites those two
   pages; counting them made each ingest stale every deliverable. The same hash
   feeds `lint`'s stale-deliverable list, which therefore changes the same way.
-  Changing the signature makes every deliverable stale once.
+  A record written before the signature carries the legacy fingerprint (every
+  page, no signature): `knowledgeUnchanged` accepts it when it still matches the
+  wiki as it is now (`computeLegacyWikiHash`), so an upgrade does not stale
+  everything; the next build writes the new fingerprint.
 - `outputHash` in `.wiki/build-state.json` is the hash of the bytes
   `writeDeliverable` writes (after `normalizeGeneratedMarkdown`), marked
   `outputHashVersion: 2`. Only such a record can report `output_modified`; a
@@ -68,9 +71,13 @@ section, so the renamed copy is kept beside the regenerated original.
 `evidence_build_id`, operation, parameters, output path and hash, status
 `prepared` → `verified` after a read-back. The most recent receipt per output is
 authoritative; `fresh` means the output and the source still match their
-hashes. A `prepared` receipt whose output matches is reported `recovered` (crash
-between write and verification). Parameters are recorded but do not yet enter
-the freshness test.
+hashes, and its `parameters.transform` still equals `transformSignature`
+(`EXPORT_PROMPT_VERSION`, session language, operation — not the model, so a
+profile switch does not stale every export). Bump `EXPORT_PROMPT_VERSION` when
+an export/polish prompt change alters the output; a mismatch reads
+`settings_changed`. A receipt without `transform` (older) is not flagged. A
+`prepared` receipt whose output matches is reported `recovered` (crash between
+write and verification).
 
 ## Maintenance ingest selection
 

@@ -13,3 +13,13 @@ export const OUTPUT_HASH_VERSION = 2;
 export function outputEditedSinceBuild(prior: { outputHash: string; outputHashVersion?: number }, content: string): boolean {
   return prior.outputHashVersion === OUTPUT_HASH_VERSION && prior.outputHash !== hashText(content);
 }
+
+/**
+ * Whether the wiki is unchanged since a deliverable was built. A record written
+ * before the current fingerprint carries the legacy one: if that still matches
+ * the wiki as it is now, nothing changed and the deliverable stays fresh —
+ * an engine upgrade must not stale (and rebuild) every deliverable once.
+ */
+export function knowledgeUnchanged(priorWikiHash: string, current: string, legacy: string): boolean {
+  return priorWikiHash === current || priorWikiHash === legacy;
+}
