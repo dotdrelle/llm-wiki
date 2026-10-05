@@ -29,6 +29,7 @@ Two transports are available:
 | `template_read`              | Read a template (listing carries frontmatter titles; a missing path falls back to a basename search)                                   |
 | `template_write`             | Write a template (instruction blocks only; explicit `build_context` required)                                                           |
 | `wiki_read_deliverable`      | Read a generated deliverable (listing carries frontmatter titles)                                                                       |
+| `wiki_maintenance_state`     | Deterministic maintenance facts, read-only, no model call: pending sources, freshness, index — see `docs/maintenance.md` |
 | `profile_read` / `profile_update` | Read / update the workspace profile                                                                                                 |
 
 Write operations use workspace-owned path guards. `wiki_add_source` resolves its target from the configured `workspace.paths.rawUntrackedDir`, rejects traversal, and refuses replacement unless `overwrite=true`.

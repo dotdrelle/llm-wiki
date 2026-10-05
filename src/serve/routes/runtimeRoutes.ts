@@ -14,6 +14,10 @@ export async function handleRuntimeRoutes(
   urlPath: string,
   deps: RuntimeRoutesDeps,
 ): Promise<boolean> {
+  if (urlPath === '/api/runtime/maintenance' && ['GET','POST'].includes(req.method ?? '')) {
+    await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/maintenance'), deps.proxyDeps);
+    return true;
+  }
   if (urlPath === '/api/runtime/state' && req.method === 'GET') {
     await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/state'), deps.proxyDeps);
     return true;

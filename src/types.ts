@@ -330,6 +330,8 @@ export interface BuildState {
       wikiHash: string;
       buildContextHash: string;
       outputHash: string;
+      /** 2 = hash of the bytes written (normalized); absent = legacy, not comparable to disk. */
+      outputHashVersion?: number;
       outputRelativePath: string;
     }
   >;

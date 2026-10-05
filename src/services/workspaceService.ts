@@ -1,3 +1,4 @@
+import { FINAL_CONTEXT_EXCLUDED_PATHS, BUILD_INPUT_SIGNATURE } from '../maintenance/buildInputs.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import {
   copyFile,
@@ -1053,9 +1054,10 @@ export class WorkspaceService {
   async computeWikiHash(pages?: WikiPage[]): Promise<string> {
     const resolvedPages = pages ?? (await this.listWikiPages());
     return hashParts(
-      resolvedPages
+      [BUILD_INPUT_SIGNATURE, ...resolvedPages
+        .filter((page) => !FINAL_CONTEXT_EXCLUDED_PATHS.has(page.relativePath))
         .sort((a, b) => a.relativePath.localeCompare(b.relativePath))
-        .map((page) => `${page.relativePath}\n${page.content}`),
+        .map((page) => `${page.relativePath}\n${page.content}`)],
     );
   }
 

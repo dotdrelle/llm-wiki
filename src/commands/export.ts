@@ -1,3 +1,7 @@
+import { outputSnapshot, publishOutput } from '../maintenance/outputGuard.ts';
+import { preparePublication, finishPublication } from '../maintenance/publications.ts';
+import { hashText } from '../utils/hash.ts';
+import matter from 'gray-matter';
 import path from 'node:path';
 import type { AppConfig } from '../types.ts';
 import { LLMService } from '../services/llmService.ts';
@@ -105,6 +109,8 @@ export default async function exportCmd(
       options.output ?? exportOutputPath(relativeInput, { polish: options.polish });
     const absoluteOutput = resolveInside(workspace.paths.rootDir, outputRelative);
 
+    const expectedOutput = await outputSnapshot(absoluteOutput);
+    const sourceSnapshot = await workspace.readTextFile(absoluteInput);
     const llm = new LLMService(config);
     const retrieval = new RetrievalService(workspace, config, logger);
     const llmStart = { value: 0 };
@@ -169,6 +175,9 @@ export default async function exportCmd(
     // export/polish names under deliverables/ are versioned — a custom
     // `--output` path is a deliberate write, not a deliverable series.
     let versionedRelative: string | null = null;
+    await publishOutput(workspace.paths.rootDir, absoluteOutput, expectedOutput, async () => {
+    if (await workspace.readTextFile(absoluteInput!) !== sourceSnapshot) throw new Error('publication_source_changed');
+    const receipt = await preparePublication(workspace.paths.rootDir, { source: relativeInput, sourceHash: hashText(sourceSnapshot), evidenceBuildId: matter(sourceSnapshot).data.evidence_build_id, operation: options.polish ? 'polish' : 'export', parameters: { polish: Boolean(options.polish), evidenceBuild: options.evidenceBuild ?? null, signature: 'export-v1' }, output: outputRelative, outputHash: hashText(normalized) });
     if (outputRelative.startsWith('deliverables/') && await pathExists(absoluteOutput)) {
       const previous = await workspace.readTextFile(absoluteOutput);
       // Version siblings live next to the main output: a listing scoped to
@@ -196,6 +205,8 @@ export default async function exportCmd(
       }
     }
     await safeWriteFile(absoluteOutput, normalized);
+    await finishPublication(workspace.paths.rootDir, receipt);
+    });
     spinner?.stop();
     const historyResult = await commitHistorySafely(history, {
       command: options.polish ? 'polish' : 'export',

@@ -1,3 +1,4 @@
+import { MAINTENANCE_PANEL_SCRIPT } from './runtime/maintenancePanelScript.ts';
 import { CHAT_STYLE } from './styles/chatStyles.ts';
 import { WIKI_BG_DARK, WIKI_BG_LIGHT } from './theme.ts';
 import { CONFIRM_DIALOG_SCRIPT } from './confirmDialog.ts';
@@ -118,7 +119,8 @@ function essentialRuntimeLogEntries(logs) {
       .replace(/\\s{2,}/g,' ')
       .trim();
     if(!text||text.length<3) continue;
-    const important=/run\\b|approval|approb|plan\\b|activity|ingest|build|export|polish|done|complete|failed|error|cancel|running|queued|started/i.test(text);
+    // Maintenance lines are written for the reader; they always belong to the journal.
+    const important=/maintenance|run\\b|approval|approb|plan\\b|activity|ingest|build|export|polish|done|complete|failed|error|cancel|running|queued|started/i.test(text);
     if(!orchestrator&&!important) continue;
     const key=text.toLowerCase().replace(/\\d+%/g,'%');
     if(seen.has(key)) continue;
@@ -233,6 +235,7 @@ function notify(msg, type='s') {
   clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3200);
 }
 ${ACTIVITY_PANEL_SCRIPT}
+${MAINTENANCE_PANEL_SCRIPT}
 ${RUN_STRIP_SCRIPT}
 ${SPLITTERS_SCRIPT}
 ${REDO_SCRIPT}

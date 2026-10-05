@@ -29,6 +29,10 @@ replaced; those in square brackets `[…]` are optional.
   can be disabled by the workspace operator. Facts remain workspace-scoped;
   they remain until forgotten or the workspace is deleted.
   conversation threads stay separate unless you ask Donna to consult another.
+- `/maintenance status | pause | resume | stop` — automatic maintenance of the
+  workspace (see *Automatic maintenance*). `/maintenance approve <id> <version>`
+  and `/maintenance refuse <id> <version>` answer a pending decision; the right
+  pane offers the same Approve / Refuse buttons.
 - `/exit` — quit the cockpit.
 
 ## Workspaces and configuration

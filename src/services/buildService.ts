@@ -1,3 +1,5 @@
+import { FINAL_CONTEXT_EXCLUDED_PATHS, OUTPUT_HASH_VERSION, outputEditedSinceBuild } from '../maintenance/buildInputs.ts';
+import { outputSnapshot, publishOutput } from '../maintenance/outputGuard.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
@@ -18,6 +20,7 @@ import { buildPromptContext } from '../prompts/systemPreamble.ts';
 import {
   canonicalizeSourceCitations,
   extractSourceCitations,
+  normalizeGeneratedMarkdown,
   sanitizeFrontmatter,
 } from '../utils/markdown.ts';
 import { OKF_TYPE_DELIVERABLE } from '../okf/frontmatter.ts';
@@ -49,7 +52,6 @@ import type { RetrievalSearchOptions, RetrievalService } from './retrievalServic
 import type { TraceLogger } from './traceLogger.ts';
 import type { WorkspaceService } from './workspaceService.ts';
 
-const FINAL_CONTEXT_EXCLUDED_PATHS = new Set(['wiki/index.md', 'wiki/log.md']);
 /** At most this many pages of one document in a slot's context. */
 const MAX_CONTEXT_PAGES_PER_DOCUMENT = 3;
 
@@ -1084,12 +1086,14 @@ export class BuildService {
       await this.logBuildContextResolution(template, contextResolution);
       const buildContext = contextResolution.context;
       const templateHash = await this.workspace.computeTemplateHash(template);
+      const expectedOutput = await outputSnapshot(template.outputAbsolutePath);
       const prior = previousState.deliverables[template.relativePath];
       const isFresh =
         prior &&
         prior.templateHash === templateHash &&
         prior.wikiHash === wikiHash &&
         prior.buildContextHash === buildContext.hash &&
+        expectedOutput !== null && !outputEditedSinceBuild(prior, expectedOutput) &&
         !options?.force;
 
       if (this.logger) {
@@ -1152,9 +1156,7 @@ export class BuildService {
             template.outputAbsolutePath,
           );
           try {
-            const existing = await this.workspace.readDeliverableIfExists(
-              template.outputAbsolutePath,
-            );
+            const existing = expectedOutput;
             if (existing !== null) {
               await this.logger?.info('build:stabilize-start', {
                 template: template.relativePath,
@@ -1172,23 +1174,18 @@ export class BuildService {
               rendered = result.markdown;
               stabilized = result.diff;
               rendered = await this.freezeDeliverableEvidence(template, rendered);
-              changed = await this.workspace.writeDeliverable(
-                template.outputAbsolutePath,
-                rendered,
-              );
-              await this.workspace.writeChangesSidecar(
-                template.outputAbsolutePath,
-                result.diff,
-              );
+              changed = await publishOutput(this.workspace.paths.rootDir, template.outputAbsolutePath, expectedOutput, async () => {
+                const written = await this.workspace.writeDeliverable(template.outputAbsolutePath, rendered);
+                await this.workspace.writeChangesSidecar(template.outputAbsolutePath, result.diff);
+                return written;
+              });
             } else {
               rendered = await this.freezeDeliverableEvidence(template, rendered);
-              changed = await this.workspace.writeDeliverable(
-                template.outputAbsolutePath,
-                rendered,
-              );
-              await this.workspace.deleteChangesSidecarIfExists(
-                template.outputAbsolutePath,
-              );
+              changed = await publishOutput(this.workspace.paths.rootDir, template.outputAbsolutePath, expectedOutput, async () => {
+                const written = await this.workspace.writeDeliverable(template.outputAbsolutePath, rendered);
+                await this.workspace.deleteChangesSidecarIfExists(template.outputAbsolutePath);
+                return written;
+              });
             }
           } catch (error) {
             await this.logger?.error('build:stabilize-failed', {
@@ -1203,11 +1200,11 @@ export class BuildService {
           }
         } else {
           rendered = await this.freezeDeliverableEvidence(template, rendered);
-          changed = await this.workspace.writeDeliverable(
-            template.outputAbsolutePath,
-            rendered,
-          );
-          await this.workspace.deleteChangesSidecarIfExists(template.outputAbsolutePath);
+          changed = await publishOutput(this.workspace.paths.rootDir, template.outputAbsolutePath, expectedOutput, async () => {
+            const written = await this.workspace.writeDeliverable(template.outputAbsolutePath, rendered);
+            await this.workspace.deleteChangesSidecarIfExists(template.outputAbsolutePath);
+            return written;
+          });
         }
 
         await this.reportMissingCitations(template.relativePath, rendered);
@@ -1216,7 +1213,10 @@ export class BuildService {
           templateHash,
           wikiHash,
           buildContextHash: buildContext.hash,
-          outputHash: hashText(rendered),
+          // The hash of what writeDeliverable actually writes (normalized), so a
+          // later read of the file can tell a hand edit from our own output.
+          outputHash: hashText(normalizeGeneratedMarkdown(rendered)),
+          outputHashVersion: OUTPUT_HASH_VERSION,
           outputRelativePath: template.outputRelativePath,
         };
 

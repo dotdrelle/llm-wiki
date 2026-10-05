@@ -121,3 +121,11 @@ DONNA is your single point of contact and the **governor**:
 
 In short: **the runtime is the analyst you hire; DONNA is the manager with the
 keys.**
+
+## Automatic maintenance
+
+The runtime also hosts the **maintenance agent** (`agent.maintain`). It is the
+one runtime capability with hands, and they are narrow: a closed list of
+maintenance actions, each checked by the manager against `maintenanceAccess`
+before it starts, never a free tool on the workspace. Curation stays a
+proposal you merge. See *Automatic maintenance*.

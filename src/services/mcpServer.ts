@@ -1,3 +1,4 @@
+import { maintenanceState } from '../maintenance/state.ts';
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -2212,6 +2213,8 @@ const withTitles = async (
     READ_ONLY,
     (input) => loggedTool('wiki_read_ingested_source', input, readIngestedSource),
   );
+
+  server.tool('wiki_maintenance_state', 'Read deterministic maintenance facts: pending protected sources, build/publication freshness and vector status. No model call or write.', { quietMinutes: z.number().min(0).max(1440).optional() }, READ_ONLY, (input) => loggedTool('wiki_maintenance_state', input, async () => ({ content: [{ type: 'text', text: JSON.stringify(await maintenanceState(config, input.quietMinutes)) }] })));
 
   server.tool(
     'wiki_search_context',

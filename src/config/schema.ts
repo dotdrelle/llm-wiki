@@ -640,6 +640,7 @@ export const buildStateSchema = z.object({
       wikiHash: z.string().min(1),
       buildContextHash: z.string().default(''),
       outputHash: z.string().min(1),
+      outputHashVersion: z.number().int().optional(),
       outputRelativePath: z.string().min(1),
     }),
   ),

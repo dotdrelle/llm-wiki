@@ -1,3 +1,4 @@
+import { validateMaintenanceSources } from '../maintenance/state.ts';
 import path from 'node:path';
 import { applyOkfFrontmatter } from '../okf/frontmatter.ts';
 import {
@@ -800,6 +801,12 @@ export class IngestService {
 
       try {
         const readStartedAt = Date.now();
+        if (process.env.WIKI_MAINTENANCE_SELECTION) {
+          const selection = JSON.parse(process.env.WIKI_MAINTENANCE_SELECTION) as Array<{path:string;hash:string}>;
+          const relative = sourcePath.startsWith(this.workspace.paths.rootDir) ? path.relative(this.workspace.paths.rootDir, sourcePath) : sourcePath;
+          const approved = selection.filter((item) => item.path === relative);
+          await validateMaintenanceSources(this.workspace.paths.rootDir, approved, Number(process.env.WIKI_MAINTENANCE_QUIET_MINUTES ?? 10) * 60_000);
+        }
         const source = await this.workspace.readSourceDocument(sourcePath, {
           ingested: options?.fromIngested === true,
         });
@@ -1130,6 +1137,12 @@ export class IngestService {
           rejectedPaths: effectiveRejectedPaths,
           applied: !options?.dryRun,
         });
+        // Extraction may take minutes. An approval only covers the original
+        // stable bytes; recheck immediately before the first mutation.
+        if (process.env.WIKI_MAINTENANCE_SELECTION) {
+          const selection = JSON.parse(process.env.WIKI_MAINTENANCE_SELECTION) as Array<{path:string;hash:string}>;
+          await validateMaintenanceSources(this.workspace.paths.rootDir, selection.filter((item) => item.path === source.relativePath), Number(process.env.WIKI_MAINTENANCE_QUIET_MINUTES ?? 10) * 60_000);
+        }
         let applyOperations = allOperations.filter(
           (operation) => !effectiveRejectedPaths.has(operation.path),
         );

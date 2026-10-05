@@ -1,3 +1,4 @@
+import { recordVectorFreshness } from '../maintenance/state.ts';
 import { mkdir } from 'node:fs/promises';
 import * as lancedb from '@lancedb/lancedb';
 import { makeArrowTable } from '@lancedb/lancedb';
@@ -509,6 +510,7 @@ export class VectorIndexService implements VectorIndex {
       });
     }
     await this.writeMetadata(metadata);
+    await recordVectorFreshness(this.workspace, this.config);
 
     return {
       indexedChunks: rows.length,
