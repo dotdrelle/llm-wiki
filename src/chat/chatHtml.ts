@@ -500,7 +500,14 @@ function connectRuntimePanel() {
       fetchRuntimeState().catch(()=>{runtimeConnected=false;renderActivities();});
     },200);
   });
-  events.onerror=()=>{runtimeConnected=false;renderActivities();updateAgentModeUI();};
+  events.addEventListener('maintenance_update',(event)=>{
+    try { window.dispatchEvent(new CustomEvent('llmwiki:maintenance-update',{detail:JSON.parse(event.data)})); } catch {}
+  });
+  events.addEventListener('maintenance_heartbeat',(event)=>{
+    try { window.dispatchEvent(new CustomEvent('llmwiki:maintenance-connection',{detail:{connected:true,workspace:JSON.parse(event.data).workspace}})); } catch {}
+  });
+  events.onopen=()=>window.dispatchEvent(new CustomEvent('llmwiki:maintenance-connection',{detail:{connected:true}}));
+  events.onerror=()=>{runtimeConnected=false;window.dispatchEvent(new CustomEvent('llmwiki:maintenance-connection',{detail:{connected:false}}));renderActivities();updateAgentModeUI();};
   // Self-healing merge: the conversation text is rendered from /state, not
   // from the SSE payloads. When the stream dies silently (and EventSource's
   // reconnect takes a while), a pending answer would otherwise never appear

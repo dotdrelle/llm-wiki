@@ -1229,6 +1229,16 @@ describe('chat html', () => {
     expect(script).toContain("Runtime activity");
   });
 
+  it('updates maintenance from the shared runtime stream and polls only as recovery', () => {
+    const script=chatScripts().join('\n');
+    expect(script).toContain("events.addEventListener('maintenance_update'");
+    expect(script).toContain("window.dispatchEvent(new CustomEvent('llmwiki:maintenance-update'");
+    expect(script).toContain("window.addEventListener('llmwiki:maintenance-update'");
+    expect(script).toContain('Maintenance update gap');
+    expect(script).not.toContain('poll();setInterval(poll,5000)');
+    expect(script).toContain('scheduleReconcile();');
+  });
+
   /*
    Régression : un run accepté affichait « Runtime request accepted. Follow
    progress in Activity. » — une phrase écrite par l'UI, en anglais quelle que
