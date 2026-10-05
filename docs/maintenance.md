@@ -48,6 +48,20 @@ backup to `.wiki/output-backups/<hash(path)>/<hash(content)>.md` first — the
 last 5 per output are kept, independent of git. External editors that ignore
 the lock get no compare-and-swap guarantee.
 
+## Hand-added sections (`humanSections.ts`)
+
+Each build records `producedSections` — the section keys (normalized heading
+paths) of the template render, before any merge — in `.wiki/build-state.json`.
+At the next build, with or without `stabilize`, a section of the existing file
+absent from that list was written by hand: `preserveHumanSections` copies it
+verbatim after the section that preceded it (after that section's own
+sub-sections). A section that was produced and no longer is gets dropped. The
+stabilize sidecar lists the carried sections under `preserved`, and the build
+logs `build:human-sections-kept`. A record without `producedSections` (built
+before this rule) preserves nothing; the maintenance state exposes it as
+`handSectionsTracked: false`. A hand-renamed template heading reads as a hand
+section, so the renamed copy is kept beside the regenerated original.
+
 ## Publication receipts (`publications.ts`)
 
 `export`/`polish` write `.wiki/publications/<id>.json`: source path and hash,

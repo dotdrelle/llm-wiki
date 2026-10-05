@@ -641,6 +641,7 @@ export const buildStateSchema = z.object({
       buildContextHash: z.string().default(''),
       outputHash: z.string().min(1),
       outputHashVersion: z.number().int().optional(),
+      producedSections: z.array(z.string()).optional(),
       outputRelativePath: z.string().min(1),
     }),
   ),

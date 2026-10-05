@@ -332,6 +332,8 @@ export interface BuildState {
       outputHash: string;
       /** 2 = hash of the bytes written (normalized); absent = legacy, not comparable to disk. */
       outputHashVersion?: number;
+      /** Section keys the template produced at this build; absent = recorded before hand sections were kept. */
+      producedSections?: string[];
       outputRelativePath: string;
     }
   >;
@@ -350,6 +352,8 @@ export interface StabilizeDiff {
   merged: string[];
   inserted: string[];
   removed: string[];
+  /** Hand-added sections carried over verbatim (not produced by the template). */
+  preserved?: string[];
 }
 
 export interface StabilizeResult {

@@ -1,5 +1,6 @@
 import { FINAL_CONTEXT_EXCLUDED_PATHS, OUTPUT_HASH_VERSION, outputEditedSinceBuild } from '../maintenance/buildInputs.ts';
 import { outputSnapshot, publishOutput } from '../maintenance/outputGuard.ts';
+import { preserveHumanSections, producedSectionKeys } from '../maintenance/humanSections.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
@@ -1150,6 +1151,20 @@ export class BuildService {
         );
         let changed = false;
         let stabilized: StabilizeDiff | undefined;
+        // What the TEMPLATE produced, before any merge: the next build tells a
+        // hand-added section (absent from this list) from a dropped one.
+        const producedSections = producedSectionKeys(rendered);
+        const keepHumanSections = async (existing: string) => {
+          const kept = preserveHumanSections(existing, rendered, prior?.producedSections);
+          if (kept.preserved.length === 0) return [] as string[];
+          rendered = kept.markdown;
+          await this.logger?.info('build:human-sections-kept', {
+            template: template.relativePath,
+            output: template.outputRelativePath,
+            sections: kept.preserved,
+          });
+          return kept.preserved;
+        };
         if (options?.stabilize) {
           options.onStabilize?.(template.relativePath, template.outputRelativePath);
           const tmpPath = this.workspace.deriveTmpDeliverablePath(
@@ -1172,11 +1187,15 @@ export class BuildService {
                 this.logger,
               ).stabilize(existing, rendered);
               rendered = result.markdown;
-              stabilized = result.diff;
+              const preserved = await keepHumanSections(existing);
+              stabilized = preserved.length
+                ? { ...result.diff, removed: result.diff.removed.filter((label) => !preserved.includes(label)), preserved }
+                : result.diff;
+              const diff = stabilized;
               rendered = await this.freezeDeliverableEvidence(template, rendered);
               changed = await publishOutput(this.workspace.paths.rootDir, template.outputAbsolutePath, expectedOutput, async () => {
                 const written = await this.workspace.writeDeliverable(template.outputAbsolutePath, rendered);
-                await this.workspace.writeChangesSidecar(template.outputAbsolutePath, result.diff);
+                await this.workspace.writeChangesSidecar(template.outputAbsolutePath, diff);
                 return written;
               });
             } else {
@@ -1199,6 +1218,7 @@ export class BuildService {
             await rm(tmpPath, { force: true });
           }
         } else {
+          if (expectedOutput !== null) await keepHumanSections(expectedOutput);
           rendered = await this.freezeDeliverableEvidence(template, rendered);
           changed = await publishOutput(this.workspace.paths.rootDir, template.outputAbsolutePath, expectedOutput, async () => {
             const written = await this.workspace.writeDeliverable(template.outputAbsolutePath, rendered);
@@ -1217,6 +1237,7 @@ export class BuildService {
           // later read of the file can tell a hand edit from our own output.
           outputHash: hashText(normalizeGeneratedMarkdown(rendered)),
           outputHashVersion: OUTPUT_HASH_VERSION,
+          producedSections,
           outputRelativePath: template.outputRelativePath,
         };
 

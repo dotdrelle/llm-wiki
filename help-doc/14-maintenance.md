@@ -82,11 +82,14 @@ Three more rules always apply, whatever the settings:
 - A pending file you **modified locally** after a Confluence sync is never
   ingested automatically — keep or delete it from Pending yourself.
 - A deliverable **you edited by hand** is never rebuilt without your approval.
-  Know what approving does: the rebuild rewrites the sections it produces with
-  the new content and **removes sections the template does not produce** — a
-  section you added yourself disappears. The file as you left it is backed up
-  first in `.wiki/output-backups/`; put your additions in the template or the
-  build context if they must survive rebuilds.
+  A rebuild — automatic or by hand — **keeps the sections you added**, word for
+  word and where you put them; the sections the template produces are updated
+  with the new content (an edit you made inside one of them is merged). A
+  section the template stopped producing is removed. The file is backed up
+  first in `.wiki/output-backups/` (last five versions).
+  One exception: a deliverable last built before this version has no record of
+  what the template produced, so its first rebuild cannot tell your sections
+  apart; the request says so, and every rebuild after that keeps them.
 - A curation is only **prepared**; the merge is yours.
 
 **The latest request wins.** If new files arrive before you answer, the request

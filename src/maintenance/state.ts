@@ -76,6 +76,8 @@ export async function maintenanceState(config: AppConfig, quietMinutes = 10) {
       polish: await pathExists(path.join(root, exportOutputPath(template.outputRelativePath, { polish: true }))),
     };
     deliverables.push({ template: template.relativePath, output: template.outputRelativePath, artifacts,
+      // Whether a rebuild can tell hand-added sections apart (and keep them).
+      handSectionsTracked: Array.isArray(prior?.producedSections),
       version: hashText(JSON.stringify([templateHash, wikiHash, context.hash, content])), fresh: !reasons.length, reasons });
   }
   let vectorFresh = !config.retrieval.vector.enabled;
