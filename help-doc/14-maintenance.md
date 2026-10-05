@@ -148,3 +148,21 @@ included. Your task then waits and the Logs say so (`waiting for maintenance —
   each are kept in `.wiki/output-backups/`.
 - Without the agentic runtime, routine work (sync, doctor, mail) continues and
   the rest waits; the panel says so once.
+
+## Saved history pages
+
+The Maintenance panel shows recent history and keeps every pending decision
+visible. Use **Older history** and **Newer history** to browse saved decision
+pages. In the Shell, use `/maintenance status` for the first page and
+`/maintenance status 2` (then 3, and so on) for older pages. Each page contains
+up to 100 settled requests and 100 settled reservations; pending or approved
+requests and reservations with unresolved effects remain visible on every page.
+Pagination does not delete saved approvals, refusals or budget receipts.
+
+Maintenance logs are kept for **15 rolling days** by default. Set
+`WIKI_MANAGER_LOG_RETENTION_DAYS` in the manager `.env` to a positive number of
+days and restart the runtime to change this window. Older log events expire;
+your saved decisions and budget receipts remain. History pages show up to 100
+log events alongside decisions and receipts; use the history navigation to
+read older retained pages. This setting covers the Maintenance journal;
+technical files such as `runtime.log` and Docker/agent logs have separate lifecycles.

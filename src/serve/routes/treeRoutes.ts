@@ -101,8 +101,8 @@ export async function handleTreeApi(
   }
 
   if (isCreate) {
-    // Un drop de .md dans Pending envoie le contenu du fichier dans ce corps :
-    // la limite est celle de createEntry (5 Mo) plus la marge du JSON.
+    // A .md drop into Pending sends the file content in this body: the limit is
+    // createEntry's (5 MB) plus the JSON margin.
     const body = await readBody(req, deps, 6 * 1024 * 1024);
     if (!body) return respond(res, deps, { ok: false, status: 400, error: 'invalid request' });
     const kind = body.kind === 'folder' ? 'folder' : 'file';

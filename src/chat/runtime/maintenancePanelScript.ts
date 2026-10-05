@@ -5,17 +5,17 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
   const launch=document.createElement('button');launch.className='maintenance-launch';launch.textContent='Maintenance';launch.onclick=()=>open();document.body.append(launch);
   const banner=document.createElement('button');banner.className='maintenance-banner';banner.hidden=true;banner.onclick=()=>open();document.body.append(banner);
   const panel=document.createElement('section');panel.className='maintenance-panel';panel.hidden=true;panel.setAttribute('aria-label','Maintenance history');document.body.append(panel);
-  let state=null,loading=false,toast=null,lastSeq=null;const key='wiki-maintenance-seen:'+location.host;
+  let state=null,loading=false,toast=null,lastSeq=null,historyOffset=0;const key='wiki-maintenance-seen:'+location.host;
   try{lastSeq=Number(localStorage.getItem(key)||0);}catch{lastSeq=0;}
   function node(tag,text,parent){const el=document.createElement(tag);if(text!=null)el.textContent=text;parent.append(el);return el;}
   function button(text,parent,fn){const el=node('button',text,parent);el.onclick=fn;return el;}
-  function seen(){const seq=state?.events?.at(-1)?.seq??0;lastSeq=seq;try{localStorage.setItem(key,String(seq));}catch{}if(toast){toast.remove();toast=null;}}
+  function seen(){const seq=state?.events?.at(-1)?.seq??0;lastSeq=Math.max(lastSeq??0,seq);try{localStorage.setItem(key,String(lastSeq));}catch{}if(toast){toast.remove();toast=null;}}
   async function command(body){try{const res=await fetch('/api/runtime/maintenance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const data=await res.json();if(!res.ok)throw new Error(data.error||'Action failed');await poll();}catch(e){node('p','Maintenance: '+e.message,panel);panel.hidden=false;}}
   function open(){panel.hidden=false;render();seen();}
   // "Ask Donna" never sends anything: it opens the chat with the facts in the
   // composer, and the reader asks (the conversational-action rule).
-  function askDonna(facts){panel.hidden=true;if(typeof showChatView==='function')showChatView();const ta=document.getElementById('chat-input');if(!ta)return;ta.value='About this maintenance activity:\n'+facts+'\n\nMy question: ';if(typeof autoResize==='function')autoResize(ta);ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);}
-  function render(){if(!state)return;panel.replaceChildren();node('h2','Maintenance',panel);button('Close',panel,()=>{panel.hidden=true;seen();});
+  function askDonna(facts){panel.hidden=true;historyOffset=0;if(typeof showChatView==='function')showChatView();const ta=document.getElementById('chat-input');if(!ta)return;ta.value='About this maintenance activity:\n'+facts+'\n\nMy question: ';if(typeof autoResize==='function')autoResize(ta);ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);}
+  function render(){if(!state)return;panel.replaceChildren();node('h2','Maintenance',panel);button('Close',panel,()=>{panel.hidden=true;seen();historyOffset=0;poll();});
     node('p',state.error||(!state.enabled?'Disabled':state.paused?'Paused':'Active — independent of Donna’s current run'),panel);
     // Turning maintenance on grants a standing mandate: a human decision, confirmed.
     button(state.enabled?'Disable':'Enable for this workspace',panel,async()=>{
@@ -35,15 +35,16 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
       const own=events.filter(e=>e.cycleId===c.id);const summary=own.filter(e=>e.kind==='summary').at(-1);
       if(summary)node('p',strip(summary.message),entry).className='maintenance-summary';
       for(const e of own.filter(e=>e.kind!=='summary'))node('p',strip(e.message),entry);
-      if(!own.length)node('p','No action recorded for this cycle.',entry);
+      if(!own.length)node('p','No action recorded for this cycle on this history page.',entry);
       button('Ask Donna about this cycle',entry,()=>askDonna(['Cycle of '+(c.at?new Date(c.at).toLocaleString():'')+' — '+c.status,...own.map(e=>strip(e.message))].join('\n').slice(0,4000)));
     }
     const shown=new Set(state.cycles.slice(0,10).map(c=>c.id));const loose=events.filter(e=>!shown.has(e.cycleId)).slice(-60).reverse();
     if(loose.length){node('h3','Routine work and decisions',panel);for(const e of loose){const row=node('article',null,panel);node('small',e.at?new Date(e.at).toLocaleString():'',row);node('p',strip(e.message),row);}}
+    if(state.history){if(state.history.retentionDays)node('p','Logs retained for '+state.history.retentionDays+' rolling days.',panel);node('p','Saved history — page '+(Math.floor(state.history.offset/state.history.limit)+1)+'. All pending decisions remain visible.',panel);if(historyOffset>0)button('Newer history',panel,()=>{historyOffset=Math.max(0,historyOffset-state.history.limit);poll();});if(state.history.hasMore)button('Older history',panel,()=>{historyOffset+=state.history.limit;poll();});}
     const history=state.requests.filter(r=>r.status!=='pending');if(history.length){const d=node('details',null,panel);node('summary','Decision history',d);for(const r of history)node('p',(r.candidate?.summary||r.action)+' — '+r.status,d);}
   }
   function notify(events){if(!events.length)return;if(toast)toast.remove();toast=node('aside',null,document.body);toast.className='maintenance-toast';node('p',events.length===1?events[0].message:'Maintenance: '+events.length+' updates. Open the history to review them.',toast);button('Open',toast,open);button('Stop',toast,()=>command({command:'stop'}));button('Dismiss',toast,seen);if(events.every(e=>!['failure','decision','proposal'].includes(e.kind)))setTimeout(()=>{toast?.remove();toast=null;},9000);}
-  async function poll(){if(loading)return;loading=true;try{const response=await fetch('/api/runtime/maintenance',{cache:'no-store'});if(!response.ok)throw new Error('Maintenance status unavailable');state=await response.json();const pending=state.requests.filter(r=>r.status==='pending');banner.hidden=!pending.length;banner.textContent='Maintenance: '+pending.length+' decision(s) — Review / Approve / Refuse';launch.hidden=!!pending.length;launch.textContent='Maintenance'+(state.paused?' · paused':'');
+  async function poll(){if(loading)return;loading=true;try{const response=await fetch('/api/runtime/maintenance?historyOffset='+historyOffset,{cache:'no-store'});if(!response.ok)throw new Error('Maintenance status unavailable');state=await response.json();const pending=state.requests.filter(r=>r.status==='pending');banner.hidden=!pending.length;banner.textContent='Maintenance: '+pending.length+' decision(s) — Review / Approve / Refuse';launch.hidden=!!pending.length;launch.textContent='Maintenance'+(state.paused?' · paused':'');
     if(!panel.hidden){render();seen();}else{const fresh=state.events.filter(e=>e.seq>lastSeq);if(fresh.length){notify(fresh);lastSeq=fresh.at(-1).seq;}}
   }catch(e){launch.title=e.message;if(!panel.hidden){panel.replaceChildren();node('p',e.message+' — reconnect to retrieve saved decisions and logs.',panel);}}finally{loading=false;}}
   poll();setInterval(poll,5000);

@@ -248,8 +248,8 @@ export async function moveEntry(
   }
 }
 
-// Un fichier depose dans Pending est du Markdown redige a la main : au-dela de
-// 5 Mo ce n'est plus une source, c'est une erreur de manipulation.
+// A file dropped into Pending is hand-written Markdown: beyond 5 MB it is no
+// longer a source, it is a handling mistake.
 const MAX_CREATED_FILE_BYTES = 5 * 1024 * 1024;
 
 /**

@@ -384,10 +384,9 @@ export const WIKI_LAYOUT_CSS = `
       line-height: 1;
     }
     .side-folder-action:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
-    /* Curseur main sur tout ce qui se clique dans le panneau de gauche : les
-       boutons d'action, les onglets de collection, les raccourcis de l'entete
-       et les lignes de dossier repliables. Un bouton qui garde la fleche par
-       defaut ne se lit pas comme un bouton. */
+    /* Hand cursor on everything clickable in the left panel: action buttons,
+       collection tabs, header shortcuts and collapsible folder rows. A button
+       that keeps the default arrow does not read as a button. */
     .sidebar button,
     .sidebar summary,
     .sidebar .side-action,

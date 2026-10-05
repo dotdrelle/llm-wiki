@@ -53,10 +53,7 @@ function handleWikiAgentLaunch(data) {
     const input = $('chat-input');
     if (!input) return true;
     if (!agentMode) { agentMode = true; updateAgentModeUI(); }
-    const french = window.__WIKI_CONFIG__?.language === 'fr';
-    input.value = french
-      ? 'Reformate la page ' + pagePath + ' sur place, sans la déplacer ni la re-filer : mets le corps en Markdown propre (titres, listes et tableaux bien formés) en conservant tous les faits et sections ; répare les liens et citations mal formés (note « Broken links » pour les irréparables) ; complète le frontmatter OKF (type, title, clés manquantes) ; écris le résultat avec wiki_write_page et confirm=true.'
-      : 'Reformat the page ' + pagePath + ' in place, without moving or re-filing it: rewrite the body as clean Markdown (headings, lists and tables) while preserving every fact and section; fix malformed links and citations ("Broken links" note for the unresolvable ones); complete the OKF frontmatter (type, title, missing keys); write the result back with wiki_write_page and confirm=true.';
+    input.value = 'Reformat the page ' + pagePath + ' in place, without moving or re-filing it: rewrite the body as clean Markdown (headings, lists and tables) while preserving every fact and section; fix malformed links and citations ("Broken links" note for the unresolvable ones); complete the OKF frontmatter (type, title, missing keys); write the result back with wiki_write_page and confirm=true.';
     sendMessage();
     return true;
   }

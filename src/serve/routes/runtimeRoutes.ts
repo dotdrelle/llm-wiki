@@ -15,7 +15,9 @@ export async function handleRuntimeRoutes(
   deps: RuntimeRoutesDeps,
 ): Promise<boolean> {
   if (urlPath === '/api/runtime/maintenance' && ['GET','POST'].includes(req.method ?? '')) {
-    await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/maintenance'), deps.proxyDeps);
+    const offset = new URL(req.url ?? '/', 'http://localhost').searchParams.get('historyOffset');
+    const target = deps.runtimePathForWorkspace('/maintenance');
+    await proxyRuntimeJson(req, res, target + (offset === null ? '' : `${target.includes('?') ? '&' : '?'}historyOffset=${encodeURIComponent(offset)}`), deps.proxyDeps);
     return true;
   }
   if (urlPath === '/api/runtime/state' && req.method === 'GET') {

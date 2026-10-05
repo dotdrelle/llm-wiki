@@ -34,12 +34,26 @@ export async function finishPublication(root: string, record: Publication): Prom
 }
 export async function publicationState(root: string, { language }: { language?: string } = {}) {
   const files = await fg('*.json', { cwd: path.join(root, '.wiki', 'publications'), onlyFiles: true });
-  const records = [];
+  const latest = new Map<string, Publication>();
   for (const file of files.sort()) {
     const record = JSON.parse(await readFile(path.join(root, '.wiki', 'publications', file), 'utf8')) as Publication;
     if (record.schemaVersion !== 1) throw new Error('publication_schema_unsupported');
-    const source = await outputSnapshot(resolveInside(root, record.source));
-    const output = await outputSnapshot(resolveInside(root, record.output));
+    // Validate every receipt, but inspect bytes only for the authoritative one.
+    resolveInside(root, record.source);
+    resolveInside(root, record.output);
+    const previous = latest.get(record.output);
+    if (!previous || previous.createdAt.localeCompare(record.createdAt) <= 0) latest.set(record.output, record);
+  }
+  const snapshots = new Map<string, Promise<string | null>>();
+  const snapshot = (file: string) => {
+    const absolute = resolveInside(root, file);
+    if (!snapshots.has(absolute)) snapshots.set(absolute, outputSnapshot(absolute));
+    return snapshots.get(absolute)!;
+  };
+  const records = [];
+  for (const record of [...latest.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
+    const source = await snapshot(record.source);
+    const output = await snapshot(record.output);
     const verified = output !== null && hashText(output) === record.outputHash;
     const sourceFresh = source !== null && hashText(source) === record.sourceHash;
     // A receipt without a transform (written before it was recorded) is not
@@ -51,5 +65,5 @@ export async function publicationState(root: string, { language }: { language?: 
       reason: !verified ? 'output_missing_or_modified' : !sourceFresh ? 'source_changed' : !settingsFresh ? 'settings_changed' : null });
   }
   // The most recent receipt for each output is authoritative.
-  return [...new Map(records.sort((a,b) => a.createdAt.localeCompare(b.createdAt)).map((r) => [r.output, r])).values()];
+  return records;
 }

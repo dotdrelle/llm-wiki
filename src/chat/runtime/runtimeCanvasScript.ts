@@ -7,7 +7,7 @@ const runtimeCanvasPositions=new Map;
 // framing and lost the reader's chosen zoom.
 let runtimeCanvasCamera=null;
 function runtimeStatusColor(status){return{running:'#4f7eff',done:'#22c55e',completed:'#22c55e',failed:'#f06b6b',pending_approval:'#f59e0b',blocked:'#f59e0b',cancelled:'#64748b'}[status]||'#718096'}
-// "À faire" reads as hollow/dashed, distinct from done (filled) and running
+// Pending reads as hollow/dashed, distinct from done (filled) and running
 // (pulsing). pending/queued/waiting are the states that mean "not started yet".
 function runtimeIsPending(status){return status==='pending'||status==='queued'||status==='waiting'}
 // Stable z-order per node type: run hub at the back, phases above it, details

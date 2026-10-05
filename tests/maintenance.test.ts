@@ -1,13 +1,14 @@
+import * as outputGuard from '../src/maintenance/outputGuard.ts';
 import { OUTPUT_HASH_VERSION, knowledgeUnchanged, outputEditedSinceBuild } from '../src/maintenance/buildInputs.ts';
 import { normalizeGeneratedMarkdown } from '../src/utils/markdown.ts';
 import { mkdtemp,mkdir,writeFile,readFile,readdir,rm,utimes,symlink } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach,expect,it } from 'vitest';
+import { afterEach,expect,it,vi } from 'vitest';
 import { resolveConfig } from '../src/config/schema.ts';
 import { WorkspaceService } from '../src/services/workspaceService.ts';
 import { publishOutput } from '../src/maintenance/outputGuard.ts';
-import { pendingSources,validateMaintenanceSources,maintenanceState } from '../src/maintenance/state.ts';
+import { pendingSources,validateMaintenanceSources,maintenanceState,vectorInputHash } from '../src/maintenance/state.ts';
 import { preparePublication,finishPublication,publicationState,transformSignature } from '../src/maintenance/publications.ts';
 import { hashText } from '../src/utils/hash.ts';
 const roots:string[]=[];
@@ -33,4 +34,29 @@ it('physical state exposes the current export and polish signatures before a pub
   const en=await maintenanceState({...config,language:'en'},0);
   expect(en.publicationTransforms.export).not.toBe(fr.publicationTransforms.export);
   expect(en.publicationTransforms.polish).not.toBe(fr.publicationTransforms.polish);
+});
+
+
+it('only authoritative publication receipts inspect bytes and shared sources are read once', async () => {
+  const r=await root();await writeFile(path.join(r,'source.md'),'source');await writeFile(path.join(r,'out.md'),'current');await writeFile(path.join(r,'other.md'),'current');
+  for(let i=0;i<8;i++) {
+    const record=await preparePublication(r,{source:'source.md',sourceHash:hashText('source'),operation:'export',parameters:{revision:i},output:'out.md',outputHash:hashText(i===7?'current':'old')});
+    await writeFile(path.join(r,'.wiki/publications',record.id+'.json'),JSON.stringify({...record,createdAt:'2026-10-05T00:00:0'+i+'Z'}));
+  }
+  const other=await preparePublication(r,{source:'source.md',sourceHash:hashText('source'),operation:'export',parameters:{},output:'other.md',outputHash:hashText('current')});
+  const spy=vi.spyOn(outputGuard,'outputSnapshot');
+  try {
+    const state=await publicationState(r);
+    expect(state).toHaveLength(2);expect(state.every(p=>p.fresh&&p.recovered)).toBe(true);
+    expect(state.find(p=>p.output==='out.md')?.parameters.revision).toBe(7);
+    expect(state.find(p=>p.output==='other.md')?.id).toBe(other.id);
+    expect(spy).toHaveBeenCalledTimes(3);
+  } finally {spy.mockRestore();}
+});
+
+it('vector freshness reuses supplied wiki pages without changing its hash', async () => {
+  const r=await root();const w=new WorkspaceService(resolveConfig({},r));await writeFile(path.join(r,'wiki/facts.md'),'fact');
+  const pages=await w.listWikiPages();const expected=await vectorInputHash(w);
+  const spy=vi.spyOn(w,'listWikiPages');
+  try {expect(await vectorInputHash(w,pages)).toBe(expected);expect(spy).not.toHaveBeenCalled();} finally {spy.mockRestore();}
 });

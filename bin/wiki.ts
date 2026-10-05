@@ -52,10 +52,10 @@ function workspaceFromArgv(argv: string[]): string | undefined {
   return undefined;
 }
 
-/** Options globales qui consomment la valeur suivante dans argv. */
+/** Global options that consume the next value in argv. */
 const VALUE_TAKING_FLAGS = new Set(['-w', '--workspace']);
 
-/** Première sous-commande réelle, options et valeurs d'options écartées. */
+/** First real subcommand, options and option values discarded. */
 function subcommandOf(argv: string[]): string | undefined {
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i]!;
@@ -70,15 +70,15 @@ function subcommandOf(argv: string[]): string | undefined {
 }
 
 /**
- * `llm.provider` a été scindé en `provider` + `engine` en 0.16, et
- * `resolveConfig` rejette désormais l'ancien format. Le rejet survient avant
- * que la moindre commande soit construite : `wiki doctor --apply` ne peut donc
- * pas migrer un fichier qu'il n'arrive pas à charger.
+ * `llm.provider` was split into `provider` + `engine` in 0.16, and
+ * `resolveConfig` now rejects the old format. The rejection happens before any
+ * command is built: `wiki doctor --apply` therefore cannot migrate a file it
+ * cannot load.
  *
- * On intercepte ici, et uniquement pour `doctor --apply` — la commande que le
- * message d'erreur désigne, et la seule qui a mandat pour réécrire le wikirc.
- * Toute autre commande relaie l'erreur telle quelle : la migration reste un
- * geste explicite de l'utilisateur.
+ * We intercept here, and only for `doctor --apply` — the command the error
+ * message points to, and the only one mandated to rewrite the wikirc. Any
+ * other command relays the error as-is: migration remains an explicit user
+ * action.
  */
 async function loadConfigWithMigration(cwd: string) {
   try {
@@ -86,10 +86,10 @@ async function loadConfigWithMigration(cwd: string) {
   } catch (error) {
     if (!isLegacyProviderError(error)) throw error;
 
-    // `argv.includes('doctor')` ne suffit pas : `--apply` existe aussi sur
-    // d'autres commandes, et « doctor » peut apparaître comme valeur d'option
-    // (un workspace nommé ainsi, par exemple). On identifie donc la
-    // sous-commande réelle en écartant les options et leurs valeurs.
+    // `argv.includes('doctor')` is not enough: `--apply` also exists on other
+    // commands, and "doctor" can appear as an option value (a workspace named
+    // that, for example). The real subcommand is therefore identified by
+    // discarding options and their values.
     const argv = process.argv.slice(2);
     if (subcommandOf(argv) !== 'doctor' || !argv.includes('--apply')) throw error;
 

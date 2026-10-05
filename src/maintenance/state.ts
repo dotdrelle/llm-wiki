@@ -35,14 +35,14 @@ export async function pendingSources(root: string, quietMs = 600_000) {
 }
 export async function validateMaintenanceSources(root: string, selection: Array<{path: string; hash: string}>, quietMs: number) {
   if (!selection.length) throw new Error('maintenance_empty_selection');
-  const current = await pendingSources(root, quietMs);
+  const current = new Map((await pendingSources(root, quietMs)).map((item) => [item.path, item]));
   for (const expected of selection) {
-    const actual = current.find((item) => item.path === expected.path);
+    const actual = current.get(expected.path);
     if (!actual || !actual.stable || actual.protected || actual.hash !== expected.hash) throw new Error(`maintenance_source_changed_or_protected: ${expected.path}`);
   }
 }
-export async function vectorInputHash(workspace: WorkspaceService) {
-  const pages = [...await workspace.listWikiPages(), ...await workspace.listIngestedSourcePages()];
+export async function vectorInputHash(workspace: WorkspaceService, wikiPages?: Awaited<ReturnType<WorkspaceService['listWikiPages']>>) {
+  const pages = [...(wikiPages ?? await workspace.listWikiPages()), ...await workspace.listIngestedSourcePages()];
   return hashText(JSON.stringify(pages.sort((a,b) => a.relativePath.localeCompare(b.relativePath)).map((p) => [p.relativePath, hashText(p.content)])));
 }
 export async function recordVectorFreshness(workspace: WorkspaceService, config: AppConfig) {
@@ -84,7 +84,7 @@ export async function maintenanceState(config: AppConfig, quietMinutes = 10) {
   }
   let vectorFresh = !config.retrieval.vector.enabled;
   if (!vectorFresh) {
-    try { const receipt = JSON.parse(await readFile(path.join(root, '.wiki/vector-freshness.json'), 'utf8')); vectorFresh = receipt.inputHash === await vectorInputHash(workspace) && receipt.model === config.retrieval.vector.embeddingModel; } catch { /* missing = repair required */ }
+    try { const receipt = JSON.parse(await readFile(path.join(root, '.wiki/vector-freshness.json'), 'utf8')); vectorFresh = receipt.inputHash === await vectorInputHash(workspace, wikiPages) && receipt.model === config.retrieval.vector.embeddingModel; } catch { /* missing = repair required */ }
   }
   const publications = await publicationState(root, { language: config.language });
   const proposals = await fg('*.json', { cwd: path.join(root, '.wiki/agent-proposals') });

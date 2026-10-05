@@ -1,3 +1,4 @@
+import { declaredSourcePaths } from './sourcePaths.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -127,20 +128,7 @@ async function listMarkdownFiles(rootDir: string): Promise<string[]> {
   return out.sort();
 }
 
-function declaredSourcePaths(data: Record<string, unknown>): string[] {
-  const raw = data?.sources;
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .map((entry) => {
-      if (typeof entry === 'string') return entry;
-      if (entry && typeof entry === 'object' && typeof (entry as { path?: unknown }).path === 'string') {
-        return (entry as { path: string }).path;
-      }
-      return null;
-    })
-    .filter((value): value is string => Boolean(value))
-    .map((value) => value.replace(/\\/g, '/'));
-}
+
 
 interface RawSectionIndex {
   fullPaths: Map<string, number>;

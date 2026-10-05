@@ -56,10 +56,6 @@ function resolveDocumentInputDir(rootDir: string): string {
 const documentMaxUploadBytes = () => Number(process.env.DOCUMENT_MAX_UPLOAD_BYTES ?? 50 * 1024 * 1024);
 
 const require = createRequire(import.meta.url);
-const D3_DIST_PATH = path.resolve(
-  path.dirname(require.resolve('d3')),
-  '../dist/d3.min.js',
-);
 const MARKED_DIST_PATH = path.resolve(
   path.dirname(require.resolve('marked')),
   'marked.umd.js',
@@ -959,16 +955,6 @@ export default async function serveCmd(
         })) {
           return;
         }
-      }
-
-      if (urlPath === '/assets/d3.min.js') {
-        const js = await readFile(D3_DIST_PATH, 'utf8');
-        res.writeHead(200, {
-          'Content-Type': 'application/javascript; charset=utf-8',
-          'Cache-Control': 'public, max-age=3600',
-        });
-        res.end(js);
-        return;
       }
 
       if (urlPath === '/assets/marked.min.js') {

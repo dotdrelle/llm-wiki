@@ -1,3 +1,4 @@
+import { formatDuration } from '../utils/duration.ts';
 import type { AppConfig, BuildCommandOptions } from '../types.ts';
 import { BuildService } from '../services/buildService.ts';
 import { LLMService } from '../services/llmService.ts';
@@ -184,13 +185,6 @@ function formatContextSummary(contextPages: string[], fallback: string): string 
   return `${contextPages[0]} +${contextPages.length - 1} context page(s)`;
 }
 
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.max(0, Math.round(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  if (minutes === 0) return `${seconds}s`;
-  return `${minutes}m${String(seconds).padStart(2, '0')}s`;
-}
 
 function formatTokenCount(tokens: number): string {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;

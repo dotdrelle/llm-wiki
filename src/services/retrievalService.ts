@@ -389,7 +389,7 @@ export class RetrievalService {
     ) {
       if (!(await pathExists(this.workspace.paths.vectorIndexDir))) {
         this.lastSearchDiagnostics = { mode: 'lexical-fallback', reason: 'missing-index' };
-        await this.logVectorFallback('missing-index', query);
+        await this.logVectorFallback('missing-index');
         return this.searchLexical(query, options);
       }
 
@@ -420,7 +420,7 @@ export class RetrievalService {
           this.vectorDisableReason = 'index-mismatch';
           this.lastSearchDiagnostics = { mode: 'lexical-fallback', reason: 'index-mismatch' };
           const message = error.message;
-          await this.logVectorFallback('vector-index-mismatch', query, error, {
+          await this.logVectorFallback('vector-index-mismatch', error, {
             disabled: true,
           });
           console.warn(`Warning: vector retrieval disabled — ${message}`);
@@ -431,7 +431,7 @@ export class RetrievalService {
             this.vectorDisabledAfterError = true;
             this.vectorDisableReason = 'vector-error';
           }
-          await this.logVectorFallback('vector-error', query, error, {
+          await this.logVectorFallback('vector-error', error, {
             consecutiveErrors: this.consecutiveVectorErrors,
             disabled: this.vectorDisabledAfterError,
           });
@@ -482,14 +482,13 @@ export class RetrievalService {
       if (ranked.length === 0) return results.slice(0, limit);
       return ranked;
     } catch (error) {
-      await this.logVectorFallback('rerank-error', query, error);
+      await this.logVectorFallback('rerank-error', error);
       return results;
     }
   }
 
   private async logVectorFallback(
     reason: 'missing-index' | 'vector-error' | 'vector-index-mismatch' | 'rerank-error',
-    query: string,
     error?: unknown,
     details: Record<string, unknown> = {},
   ): Promise<void> {

@@ -207,3 +207,16 @@ function memoryHarness() {
   };
   return { fetchMock, call };
 }
+
+it('keeps the workspace scope when proxying older maintenance history', async () => {
+  const fetchMock=vi.fn<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>(async()=>new Response(JSON.stringify({requests:[],history:{offset:100}}),{headers:{'content-type':'application/json'}}));
+  vi.stubGlobal('fetch',fetchMock);
+  const req=Readable.from([]);Object.assign(req,{method:'GET',url:'/api/runtime/maintenance?historyOffset=100'});
+  const res={writeHead(){},end(){}};
+  const handled=await handleRuntimeRoutes(req as never,res as never,'/api/runtime/maintenance',{
+    runtimePathForWorkspace:(pathname)=>pathname+'?workspace=docs',workspaceNameFromEnv:()=> 'docs',
+    proxyDeps:{runtimeUrl:()=> 'http://runtime.test',runtimeToken:()=>null,readRequestBuffer:async()=>Buffer.alloc(0),sendJson:()=>undefined},
+  });
+  expect(handled).toBe(true);
+  expect(String(fetchMock.mock.calls[0]?.[0])).toBe('http://runtime.test/maintenance?workspace=docs&historyOffset=100');
+});

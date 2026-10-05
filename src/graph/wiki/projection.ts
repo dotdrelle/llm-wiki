@@ -82,14 +82,14 @@ export const WIKI_GRAPH_RELATION_LABELS: Record<WikiGraphRelationType, string> =
 };
 
 /*
- Ce qui entre dans le graphe.
+ What enters the graph.
 
- `wiki/index.md` et `wiki/concepts-grid.md` en sont exclus : ce sont des pages
- de service regenerees automatiquement (sommaire, plan de classement), pas des
- documents. Les inclure produisait, sur un wiki encore vide, une communaute
- "Non classe / ungrouped" a 1 page dont le seul membre etait le sommaire — un
- graphe qui annonce du contenu la ou il n'y en a pas. L'index relie par ailleurs
- toutes les pages entre elles, ce qui fausse le calcul des communautes.
+ `wiki/index.md` and `wiki/concepts-grid.md` are excluded: they are service
+ pages regenerated automatically (table of contents, classification plan), not
+ documents. Including them produced, on an empty wiki, an "Unclassified"
+ community with 1 page whose only member was the table of contents — a graph
+ announcing content where there is none. The index also links every page to
+ every other, which skews the community computation.
 */
 const GRAPH_PATTERNS = [
   'wiki/**/*.md',

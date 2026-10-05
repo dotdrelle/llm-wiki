@@ -1,3 +1,4 @@
+import { declaredSourcePaths } from './sourcePaths.ts';
 import matter from 'gray-matter';
 import {
   deriveTerminalSources,
@@ -6,13 +7,9 @@ import {
 } from './derive.ts';
 
 /*
- * Lot 3 wiring, write side. `carryForwardEngineFrontmatter` unions `sources:`
- * blindly; the new mode instead DERIVES it from the body's citation closure.
- *
- * These are pure helpers so the writer (ingest, `wiki_write_page`, the curation
- * merge) can call them only when the new mode is explicitly on. Nothing here is
- * invoked by the default path yet — the active corpus must not migrate in
- * silence.
+ * Write-side provenance helpers derive `sources:` from the body's citation
+ * closure rather than blindly carrying an old inventory forward. Provenance
+ * derivation is always on; callers preserve content when resolution is incomplete.
  */
 
 export interface ApplyDerivedSourcesOptions {
@@ -33,20 +30,7 @@ export interface ApplyDerivedSourcesResult {
   depthExceeded: boolean;
 }
 
-function declaredSourcePaths(data: Record<string, unknown>): string[] {
-  const raw = data.sources;
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .map((entry) => {
-      if (typeof entry === 'string') return entry;
-      if (entry && typeof entry === 'object' && typeof (entry as { path?: unknown }).path === 'string') {
-        return (entry as { path: string }).path;
-      }
-      return null;
-    })
-    .filter((value): value is string => Boolean(value))
-    .map((value) => value.replace(/\\/g, '/'));
-}
+
 
 /**
  * Replace the `sources:` inventory with the derived list. A path already

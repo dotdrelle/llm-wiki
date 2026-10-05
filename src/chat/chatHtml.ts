@@ -331,8 +331,8 @@ function runtimeTaskPanelHTML(view='plan') {
   })).join('');
   const synthesisHtml=initialSynthesis.length?\`<div class="act-section-head"><span class="act-section-title">Initial synthesis</span></div><div class="runtime-log">\${esc(initialSynthesis.join('\\n'))}</div>\`:'';
   const runSummary=runtimeWorkflowSummaryHTML();
-  // Le titre "Plan" doublonnait l'onglet et la barre d'outils Activity : on ne
-  // garde que le filet de separation avec le bloc precedent.
+  // The "Plan" title duplicated the Activity tab and toolbar: only the
+  // separator rule with the previous block is kept.
   const planHTML=planCards?\`<div class="act-section-rule"></div>\${planCards}\`:'';
   const queueHTML=queueCards?\`<div class="act-section-head"><span class="act-section-title">Queue</span></div>\${queueCards}\`:'';
   // The single Activity section: the aggregated BUSINESS lines (they replace
@@ -730,9 +730,8 @@ function autoResize(ta) {
 }
 function handleKey(e) {
   if($('skill-ac').classList.contains('open')){
-    // La liste est une grille a 2 colonnes : Bas/Haut changent de ligne (pas de
-    // 2), Droite/Gauche changent de colonne (pas de 1). Sur une seule colonne
-    // (ecran etroit) le pas vaut 1.
+    // The list is a 2-column grid: Down/Up move a row (step 2), Right/Left
+    // move a column (step 1). On a single column (narrow screen) the step is 1.
     if(e.key==='ArrowDown'){e.preventDefault();skillAcIdx=skillAcIdx<0?0:Math.min(skillAcIdx+skillAcColumns(),skillAcItems.length-1);updateSkillAcFocus();return;}
     if(e.key==='ArrowUp'){e.preventDefault();skillAcIdx=Math.max(skillAcIdx-skillAcColumns(),-1);updateSkillAcFocus();return;}
     if(e.key==='ArrowRight'){e.preventDefault();skillAcIdx=Math.min(skillAcIdx+1,skillAcItems.length-1);updateSkillAcFocus();return;}
@@ -754,9 +753,9 @@ function showSkillAc(filter){
   const el=$('skill-ac');
   const normalized=String(filter||'').toLowerCase();
   const builtins=[{name:'connector',description:'List connectors or authorize one: /connector auth google',params:['list | auth google']}];
-  // Pas de troncature : la liste complete est rendue et le conteneur defile
-  // (max-height + overflow-y). Un cap fixe bloquait la navigation clavier sur
-  // les premieres entrees des qu'aucun filtre n'etait saisi.
+  // No truncation: the whole list is rendered and the container scrolls
+  // (max-height + overflow-y). A fixed cap blocked keyboard navigation on the
+  // first entries as soon as no filter was typed.
   const filtered=[...builtins,...(skillsCache||[]).filter(s=>s.name!=='connector')]
     .filter(s=>String(s.name||'').toLowerCase().startsWith(normalized));
   skillAcItems=filtered;
@@ -766,7 +765,7 @@ function showSkillAc(filter){
   el.innerHTML=filtered.map((s,i)=>\`<div class="skill-ac-item" data-idx="\${i}" onclick="selectSkillAc(\${i})" onmouseenter="skillAcIdx=\${i};updateSkillAcFocus()"><div class="skill-ac-slash">/</div><div class="skill-ac-info"><div class="skill-ac-name">\${esc(s.name)}</div>\${s.description?'<div class="skill-ac-desc">'+esc(s.description)+'</div>':''}</div></div>\`).join('');
   el.classList.add('open');
 }
-// Nombre de colonnes reellement rendues par la grille CSS (2, ou 1 sous 720px).
+// Number of columns actually rendered by the CSS grid (2, or 1 below 720px).
 function skillAcColumns(){
   const el=$('skill-ac');
   if(!el) return 1;

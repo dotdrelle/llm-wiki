@@ -39,8 +39,8 @@ export const PAGE_ACTIONS_SCRIPT = `
   const buildTemplateBtn = document.querySelector('[data-build-template]');
   if (buildTemplateBtn) {
     buildTemplateBtn.hidden = false;
-    // Un lancement d'agent consomme du budget LLM et occupe le runtime : il
-    // passe par la meme confirmation que les actions destructives.
+    // Launching an agent consumes LLM budget and occupies the runtime: it goes
+    // through the same confirmation as destructive actions.
     buildTemplateBtn.addEventListener('click', async () => {
       const path = buildTemplateBtn.getAttribute('data-build-template');
       if (!(await confirmAction({

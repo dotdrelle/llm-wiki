@@ -1,32 +1,32 @@
 #!/usr/bin/env node
 /**
- * Sonde de moteur — remplace probe-reasoning.mjs.
+ * Engine probe — replaces probe-reasoning.mjs.
  *
- * Elle répond en une commande à deux familles de questions, sur l'endpoint
- * réel plutôt que sur la documentation :
+ * It answers two families of questions in one command, against the real
+ * endpoint rather than the documentation:
  *
- *  A. RAISONNEMENT — le serveur émet-il le raisonnement dans un champ séparé,
- *     sous quel nom et sous quelle forme, est-il compté dans l'usage, et
- *     `reasoning_effort` est-il honoré ?
+ *  A. REASONING — does the server emit reasoning in a separate field, under
+ *     what name and in what shape, is it counted in usage, and is
+ *     `reasoning_effort` honoured?
  *
- *  B. MOTEUR — les quatre contournements hérités du groupe `openai-compatible`
- *     sont-ils justifiés pour CE serveur ? Ils sont aujourd'hui appliqués à
- *     `albert`, `vllm`, `mlx` et `generic` sans avoir jamais été vérifiés
- *     ailleurs que sur mlx_lm :
- *       M1 · repli du rôle `system` dans `user`
- *       M2 · `response_format: json_object` désactivé
- *       M3 · réparation JSON par le modèle désactivée
- *       M4 · rendu slot unique (sérialise le build)
+ *  B. ENGINE — are the four workarounds inherited from the `openai-compatible`
+ *     group justified for THIS server? They are currently applied to `albert`,
+ *     `vllm`, `mlx` and `generic` without ever having been verified anywhere
+ *     but on mlx_lm:
+ *       M1 · folding the `system` role into `user`
+ *       M2 · `response_format: json_object` disabled
+ *       M3 · model-side JSON repair disabled
+ *       M4 · single-slot rendering (serializes the build)
  *
- * Aucune écriture, aucune modification de config. La clé n'est jamais affichée.
+ * No writes, no config change. The key is never printed.
  *
- * Usage :
- *   node scripts/probe-engine.mjs --workspace /chemin/vers/workspace
+ * Usage:
+ *   node scripts/probe-engine.mjs --workspace /path/to/workspace
  *   node scripts/probe-engine.mjs --base-url URL --api-key KEY --model NAME
  *
- * Options :
- *   --only reasoning|engine   ne lancer qu'une famille
- *   --effort high             effort demandé pour la passe de raisonnement
+ * Options:
+ *   --only reasoning|engine   run a single family
+ *   --effort high             effort requested for the reasoning pass
  *   --timeout 120000
  */
 
@@ -52,7 +52,7 @@ function parseArgs(argv) {
   return args;
 }
 
-/** Lecture minimaliste du bloc `llm:`, sans dépendance YAML. */
+/** Minimalist reader for the `llm:` block, with no YAML dependency. */
 function readWikircLlm(workspacePath) {
   const configPath = path.join(workspacePath, '.wikirc.yaml');
   if (!existsSync(configPath)) throw new Error(`no .wikirc.yaml in ${workspacePath}`);
@@ -71,7 +71,7 @@ function readWikircLlm(workspacePath) {
   return llm;
 }
 
-// ── affichage ────────────────────────────────────────────────────────────────
+// ── output ──────────────────────────────────────────────────────────────────
 
 const ok = (msg) => console.log(`  ✓ ${msg}`);
 const warn = (msg) => console.log(`  ⚠ ${msg}`);
@@ -100,12 +100,12 @@ async function post(body, stream) {
 }
 
 /**
- * Mesure d'une valeur de delta, quelle que soit sa forme.
+ * Measures a delta value, whatever its shape.
  *
- * Correctif : la version précédente ne comptait que les chaînes. Or LiteLLM
- * expose le raisonnement d'Anthropic dans `thinking_blocks`, qui est un
- * **tableau structuré** — il apparaissait donc comme « clé présente, zéro
- * caractère », ce qui est pire que de ne rien voir.
+ * Fix: the previous version only counted strings. But LiteLLM exposes
+ * Anthropic's reasoning in `thinking_blocks`, which is a **structured
+ * array** — it therefore showed up as "key present, zero characters",
+ * which is worse than seeing nothing.
  */
 function measure(value) {
   if (typeof value === 'string') return { chars: value.length, items: 0, text: value };
@@ -126,7 +126,7 @@ function measure(value) {
   return { chars: 0, items: 0, text: '' };
 }
 
-/** Parcourt le flux SSE et inventorie toutes les clés vues dans `delta`. */
+/** Walks the SSE stream and inventories every key seen in `delta`. */
 async function streamProbe(body) {
   const res = await post(body, true);
   if (!res.ok) return { httpError: res.status, detail: (await res.text()).slice(0, 300) };
@@ -197,12 +197,11 @@ const REASONING_KEYS = ['reasoning', 'reasoning_content', 'thinking_blocks', 'th
 // ── A · raisonnement ─────────────────────────────────────────────────────────
 
 /**
- * Question à plusieurs étapes, choisie pour déclencher un raisonnement réel.
+ * Multi-step question, chosen to trigger real reasoning.
  *
- * Correctif : le prompt précédent était trop facile — gpt-5.4 l'a résolu en
- * 4 tokens avec `reasoning_tokens: 0`, ce qui rendait la passe non concluante.
- * On ne peut pas conclure « pas de raisonnement » d'un modèle à qui on n'a
- * rien demandé de dur.
+ * Fix: the previous prompt was too easy — gpt-5.4 solved it in 4 tokens
+ * with `reasoning_tokens: 0`, which made the pass inconclusive. You cannot
+ * conclude "no reasoning" from a model that was never asked anything hard.
  */
 const HARD = {
   system: 'Think it through, then answer with the final number only.',
@@ -223,7 +222,7 @@ function messages(system, user) {
 }
 
 async function probeReasoning() {
-  section('A · Raisonnement');
+  section('A · Reasoning');
 
   const effort = CFG.effort;
   const base = await streamProbe({
@@ -233,14 +232,14 @@ async function probeReasoning() {
   });
   if (base.httpError) {
     bad(`HTTP ${base.httpError}: ${base.detail}`);
-    record('A', 'endpoint injoignable ou requête rejetée');
+    record('A', 'endpoint unreachable or request rejected');
     return;
   }
 
   row('chunks:', String(base.chunks));
   row('delta keys:', Object.keys(base.fields).join(', ') || '(none)');
   for (const [key, value] of Object.entries(base.fields)) {
-    row(`  ${key}:`, `${value.chars} chars${value.items ? `, ${value.items} item(s)` : ''} (1er chunk ${base.firstSeenAt[key]})`);
+    row(`  ${key}:`, `${value.chars} chars${value.items ? `, ${value.items} item(s)` : ''} (first chunk ${base.firstSeenAt[key]})`);
   }
   if (base.finishReason) row('finish_reason:', base.finishReason);
   if (base.usage) row('usage:', JSON.stringify(base.usage));
@@ -251,51 +250,50 @@ async function probeReasoning() {
   const reportedReasoningTokens =
     base.usage?.completion_tokens_details?.reasoning_tokens;
 
-  // Coupure par le plafond pendant le raisonnement : le contenu n'arrive
-  // jamais, sans erreur HTTP. C'est le risque actif sur exportService
-  // (max_tokens: 3000).
+  // Cut off by the cap during reasoning: content never arrives, without an
+  // HTTP error. This is the live risk on exportService (max_tokens: 3000).
   if (base.finishReason === 'length' && contentChars === 0 && reasoningChars > 0) {
     bad(
-      'COUPURE : max_tokens épuisé pendant le raisonnement, aucun contenu produit. Une section vide serait écrite sans erreur.',
+      'CUT-OFF: max_tokens exhausted during reasoning, no content produced. An empty section would be written without error.',
     );
-    record('A′', 'le plafond de sortie peut être consommé entièrement par le raisonnement — CONFIRMÉ');
+    record('A′', 'the output cap can be fully consumed by reasoning — CONFIRMED');
   }
 
   if (key) {
     const value = base.fields[key];
-    bad(`Raisonnement émis dans delta.${key} — llmService ne lit que delta.content, ce flux est jeté.`);
+    bad(`Reasoning emitted in delta.${key} — llmService only reads delta.content, this stream is discarded.`);
     if (value.items > 0) {
-      warn(`${key} est un tableau (${value.items} bloc(s)) : le drain ne peut pas concaténer des chaînes naïvement.`);
+      warn(`${key} is an array (${value.items} block(s)): the drain cannot concatenate strings naively.`);
     }
-    row('  raisonnement / contenu:', `${reasoningChars} / ${contentChars} chars`);
+    row('  reasoning / content:', `${reasoningChars} / ${contentChars} chars`);
     if (contentChars === 0) {
-      bad('content VIDE sur tout le flux : toute réponse de ce modèle arrive vide côté llm-wiki.');
+      bad('EMPTY content over the whole stream: every response from this model reaches llm-wiki empty.');
     }
     if (reportedReasoningTokens === undefined) {
-      warn('usage ne rapporte aucun reasoning_tokens : le coût du raisonnement est invisible.');
-      record('C', `${key} non compté dans l'usage — estimation nécessaire`);
+      warn('usage reports no reasoning_tokens: the cost of reasoning is invisible.');
+      record('C', `${key} not counted in usage — estimation required`);
     }
-    record('A', `drainer delta.${key}${value.items ? ' (tableau)' : ''}`);
+    record('A', `drain delta.${key}${value.items ? ' (array)' : ''}`);
   } else if (reportedReasoningTokens > 0) {
-    ok(`Pas de trace exposée, mais reasoning_tokens=${reportedReasoningTokens} : le raisonnement a lieu et est facturé.`);
-    record('C', 'lire completion_tokens_details.reasoning_tokens — le drain est inutile ici');
+    ok(`No exposed trace, but reasoning_tokens=${reportedReasoningTokens}: reasoning happens and is billed.`);
+    record('C', 'read completion_tokens_details.reasoning_tokens — the drain is useless here');
   } else if (reportedReasoningTokens === 0) {
-    warn('reasoning_tokens=0 : ce modèle n\'a pas raisonné, même sur une question à étapes. Non concluant plutôt que négatif.');
-    record('A', 'non concluant sur cet endpoint — relancer avec --effort high');
+    warn('reasoning_tokens=0: this model did not reason, even on a multi-step question. Inconclusive rather than negative.');
+    record('A', 'inconclusive on this endpoint — rerun with --effort high');
   } else {
-    ok('Aucun champ de raisonnement, aucun compteur. Moteur sans raisonnement.');
-    record('A', 'inutile pour cet endpoint');
+    ok('No reasoning field, no counter. Engine without reasoning.');
+    record('A', 'useless for this endpoint');
   }
 
-  // Effort : mesurable seulement si on a quelque chose à mesurer.
+  // Effort: measurable only if there is something to measure.
   const low = await streamProbe({
     messages: messages(HARD.system, HARD.user),
     max_tokens: 2048,
     reasoning_effort: 'low',
   });
   if (low.httpError) {
-    bad(`reasoning_effort REJETÉ (HTTP ${low.httpError}) — ne pas l'envoyer ici. ${low.detail}`);
-    record('B', 'reasoning_effort rejeté — supportsReasoningEffort = false');
+    bad(`reasoning_effort REJECTED (HTTP ${low.httpError}) — do not send it here. ${low.detail}`);
+    record('B', 'reasoning_effort rejected — supportsReasoningEffort = false');
     return;
   }
   const lowChars = key ? (low.fields[key]?.chars ?? 0) : 0;
@@ -304,48 +302,48 @@ async function probeReasoning() {
   const lowMetric = lowChars || lowTokens || 0;
 
   if (baseMetric > 0 && lowMetric < baseMetric * 0.8) {
-    ok(`reasoning_effort honoré (${baseMetric} → ${lowMetric}).`);
-    record('B', 'reasoning_effort honoré — supportsReasoningEffort = true');
+    ok(`reasoning_effort honoured (${baseMetric} → ${lowMetric}).`);
+    record('B', 'reasoning_effort honoured — supportsReasoningEffort = true');
   } else if (baseMetric > 0) {
-    warn(`Accepté mais sans effet net (${baseMetric} → ${lowMetric}) : probablement ignoré. Ne pas fonder de budget dessus.`);
-    record('B', 'reasoning_effort accepté mais non honoré — indice, pas contrat');
+    warn(`Accepted but with no clear effect (${baseMetric} → ${lowMetric}): probably ignored. Do not build a budget on it.`);
+    record('B', 'reasoning_effort accepted but not honoured — a hint, not a contract');
   } else {
-    warn('Rien à mesurer : effet de reasoning_effort invérifiable sur cet endpoint.');
+    warn('Nothing to measure: effect of reasoning_effort unverifiable on this endpoint.');
   }
 }
 
-// ── B · contournements moteur ────────────────────────────────────────────────
+// ── B · engine workarounds ───────────────────────────────────────────────────
 
 async function probeEngine() {
-  section('B · Contournements hérités du groupe openai-compatible');
+  section('B · Workarounds inherited from the openai-compatible group');
 
-  // M1 · le rôle system en tête est-il rejeté ou mal interprété ?
+  // M1 · is a leading system role rejected or misinterpreted?
   //
-  // Le plafond doit être large : sur un moteur à raisonnement, un `max_tokens`
-  // serré est consommé par le raisonnement avant qu'un seul caractère de
-  // contenu soit émis — observé chez Albert/gpt-oss avec 64. La sonde
-  // concluait alors « consigne non suivie » alors qu'elle mesurait une
-  // coupure. Un contenu vide ici reste donc suspect et doit être signalé
-  // comme tel, pas interprété.
+  // The cap must be generous: on a reasoning engine, a tight `max_tokens`
+  // is consumed by reasoning before a single character of content is
+  // emitted — observed on Albert/gpt-oss with 64. The probe then concluded
+  // "instruction not followed" when it was measuring a cut-off. Empty
+  // content here therefore stays suspect and must be reported as such, not
+  // interpreted.
   const marker = 'ZKQ7';
   const m1 = await jsonProbe({
     messages: messages(`Reply with exactly this token and nothing else: ${marker}`, 'Go.'),
     max_tokens: 2048,
   });
   if (m1.httpError) {
-    warn(`M1 · rôle system : HTTP ${m1.httpError} — repli justifié. ${m1.detail}`);
-    record('M1', 'foldsSystemIntoUser = true (le serveur rejette le rôle system)');
+    warn(`M1 · system role: HTTP ${m1.httpError} — fallback justified. ${m1.detail}`);
+    record('M1', 'foldsSystemIntoUser = true (the server rejects the system role)');
   } else if (contentOf(m1.payload).includes(marker)) {
-    ok('M1 · rôle system honoré — le repli system→user est inutile.');
-    record('M1', 'foldsSystemIntoUser = FALSE (repli inutile)');
+    ok('M1 · system role honoured — the system→user fallback is useless.');
+    record('M1', 'foldsSystemIntoUser = FALSE (useless fallback)');
   } else if (!contentOf(m1.payload).trim()) {
     warn(
-      'M1 · contenu VIDE malgré un plafond large — probablement une coupure pendant le raisonnement, pas un problème de rôle system. Verdict non concluant.',
+      'M1 · EMPTY content despite a generous cap — probably a cut-off during reasoning, not a system role problem. Inconclusive verdict.',
     );
-    record('M1', 'foldsSystemIntoUser = NON CONCLUANT (contenu vide, cause à isoler)');
+    record('M1', 'foldsSystemIntoUser = INCONCLUSIVE (empty content, cause to isolate)');
   } else {
-    warn(`M1 · rôle system accepté mais consigne non suivie (${JSON.stringify(contentOf(m1.payload).slice(0, 60))}) — repli prudent.`);
-    record('M1', 'foldsSystemIntoUser = à garder (consigne system ignorée)');
+    warn(`M1 · system role accepted but instruction not followed (${JSON.stringify(contentOf(m1.payload).slice(0, 60))}) — prudent fallback.`);
+    record('M1', 'foldsSystemIntoUser = keep (system instruction ignored)');
   }
 
   // M2 · response_format json_object
@@ -355,7 +353,7 @@ async function probeEngine() {
     max_tokens: 128,
   });
   if (m2.httpError) {
-    warn(`M2 · response_format rejeté (HTTP ${m2.httpError}) — désactivation justifiée.`);
+    warn(`M2 · response_format rejected (HTTP ${m2.httpError}) — disabling justified.`);
     record('M2', 'supportsJsonResponseFormat = false');
   } else {
     let valid = false;
@@ -365,16 +363,16 @@ async function probeEngine() {
       valid = false;
     }
     if (valid) {
-      ok('M2 · response_format: json_object accepté et respecté — la désactivation coûte du mode JSON natif.');
-      record('M2', 'supportsJsonResponseFormat = TRUE (à réactiver)');
+      ok('M2 · response_format: json_object accepted and honoured — disabling it costs native JSON mode.');
+      record('M2', 'supportsJsonResponseFormat = TRUE (re-enable)');
     } else {
-      warn('M2 · accepté mais la réponse n\'est pas du JSON valide — désactivation prudente.');
-      record('M2', 'supportsJsonResponseFormat = à garder à false');
+      warn('M2 · accepted but the answer is not valid JSON — prudent disabling.');
+      record('M2', 'supportsJsonResponseFormat = keep at false');
     }
   }
 
-  // M3 · réparation JSON par le modèle — reproduit exactement l'appel réel.
-  const broken = '{"replacements": [{"id": "instruction-1", "content": "il a dit "bonjour" hier"}]}';
+  // M3 · model-side JSON repair — reproduces the real call exactly.
+  const broken = '{"replacements": [{"id": "instruction-1", "content": "he said "hello" yesterday"}]}';
   const m3 = await jsonProbe({
     messages: messages(
       [
@@ -388,13 +386,13 @@ async function probeEngine() {
     max_tokens: 512,
   });
   if (m3.httpError) {
-    warn(`M3 · appel de réparation : HTTP ${m3.httpError}`);
-    record('M3', 'supportsModelJsonRepair = indéterminé');
+    warn(`M3 · repair call: HTTP ${m3.httpError}`);
+    record('M3', 'supportsModelJsonRepair = indeterminate');
   } else {
     const text = contentOf(m3.payload);
     if (!text.trim()) {
-      bad('M3 · réparation : contenu VIDE — la désactivation est justifiée, et la cause est identifiée.');
-      record('M3', 'supportsModelJsonRepair = false (contenu vide confirmé)');
+      bad('M3 · repair: EMPTY content — disabling is justified, and the cause is identified.');
+      record('M3', 'supportsModelJsonRepair = false (empty content confirmed)');
     } else {
       let repaired = false;
       try {
@@ -404,16 +402,16 @@ async function probeEngine() {
         repaired = false;
       }
       if (repaired) {
-        ok('M3 · réparation JSON fonctionnelle — la désactivation prive ce moteur d\'un filet utile.');
-        record('M3', 'supportsModelJsonRepair = TRUE (à réactiver)');
+        ok('M3 · JSON repair functional — disabling it deprives this engine of a useful safety net.');
+        record('M3', 'supportsModelJsonRepair = TRUE (re-enable)');
       } else {
-        warn('M3 · réponse non vide mais non réparée — désactivation défendable.');
-        record('M3', 'supportsModelJsonRepair = à garder à false');
+        warn('M3 · non-empty response but not repaired — defensible disabling.');
+        record('M3', 'supportsModelJsonRepair = keep at false');
       }
     }
   }
 
-  // M4 · plusieurs slots dans un seul appel JSON, proxy du rendu slot unique.
+  // M4 · several slots in a single JSON call, proxy for single-slot rendering.
   const m4 = await jsonProbe({
     messages: messages(
       'Reply with JSON only, no prose.',
@@ -423,7 +421,7 @@ async function probeEngine() {
   });
   if (m4.httpError) {
     warn(`M4 · HTTP ${m4.httpError}`);
-    record('M4', 'prefersSingleSlotTextRendering = indéterminé');
+    record('M4', 'prefersSingleSlotTextRendering = indeterminate');
   } else {
     let count = 0;
     try {
@@ -433,16 +431,16 @@ async function probeEngine() {
       count = 0;
     }
     if (count === 3) {
-      ok('M4 · lot JSON multi-slots restitué intact — le rendu slot unique sérialise le build pour rien.');
-      record('M4', 'prefersSingleSlotTextRendering = FALSE (débit récupérable)');
+      ok('M4 · multi-slot JSON batch returned intact — single-slot rendering serializes the build for nothing.');
+      record('M4', 'prefersSingleSlotTextRendering = FALSE (throughput recoverable)');
     } else {
-      warn(`M4 · lot multi-slots dégradé (${count}/3) — le rendu slot unique se justifie.`);
-      record('M4', 'prefersSingleSlotTextRendering = à garder');
+      warn(`M4 · multi-slot batch degraded (${count}/3) — single-slot rendering is justified.`);
+      record('M4', 'prefersSingleSlotTextRendering = keep');
     }
   }
 }
 
-// ── programme ────────────────────────────────────────────────────────────────
+// ── program ──────────────────────────────────────────────────────────────────
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -481,12 +479,12 @@ async function main() {
   if (only !== 'engine') await probeReasoning();
   if (only !== 'reasoning') await probeEngine();
 
-  section('Verdict — à reporter dans engineCapabilities.ts');
-  if (verdicts.length === 0) console.log('  (rien à conclure)');
+  section('Verdict — to report in engineCapabilities.ts');
+  if (verdicts.length === 0) console.log('  (nothing to conclude)');
   for (const verdict of verdicts) console.log(`  ${verdict}`);
   console.log(
-    '\n  Chaque ligne vaut pour CE serveur et CE modèle. Relancer la sonde sur\n' +
-      '  chaque endpoint réellement utilisé avant de généraliser.',
+    '\n  Each line holds for THIS server and THIS model. Rerun the probe on\n' +
+      '  every endpoint actually used before generalizing.',
   );
 }
 

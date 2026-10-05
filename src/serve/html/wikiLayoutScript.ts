@@ -427,13 +427,13 @@ function wireSidebarLaunchButtons() {
     }
   });
   /*
-   Depot de fichiers depuis le bureau sur le panneau Pending.
+   Dropping files from the desktop onto the Pending panel.
 
-   Pending est la boite d'entree des sources : y deposer un .md doit suffire.
-   Markdown uniquement, et volontairement : les autres formats passent par la
-   conversion (upload de document), qui ne se resume pas a ecrire un fichier.
-   Un lot mixte est refuse en bloc plutot qu'a moitie importe, pour que le
-   lecteur sache exactement ce qui a ete ecrit.
+   Pending is the sources inbox: dropping a .md there must be enough.
+   Markdown only, deliberately: the other formats go through conversion
+   (document upload), which is not just writing a file. A mixed batch is
+   refused as a whole instead of being half-imported, so the reader knows
+   exactly what was written.
   */
   const PENDING_PARENT = 'raw/untracked';
   // Markdown is written directly; the rest is handed to the documents agent,
@@ -535,23 +535,23 @@ function wireSidebarLaunchButtons() {
     return 'Pending accepts ' + accepted + '. Rejected:' + listed;
   }
   /*
-   Chaque conversion est annoncee au shell au depart et a l'arrivee.
+   Every conversion is announced to the shell at start and at completion.
 
-   Un lot de dix PDF tient la boucle jusqu'a cinquante minutes — cinq par
-   fichier au plafond du poll — et, sans cela, ni le panneau ni le chat ne
-   bougeaient d'ici la fin. Le shell rend ces messages dans le meme panneau
-   Activity que les conversions lancees depuis le bouton Upload du chat : c'est
-   la meme operation, faite par le meme agent.
+   A batch of ten PDFs holds the loop for up to fifty minutes — five per file
+   at the poll ceiling — and without this neither the panel nor the chat moved
+   until the end. The shell renders these messages in the same Activity panel
+   as conversions launched from the chat's Upload button: it is the same
+   operation, done by the same agent.
 
-   Page wiki ouverte seule, hors du shell : il n'y a personne a qui parler, et
-   postMessage vers son propre window ferait un message que personne n'ecoute.
+   A wiki page opened standalone, outside the shell: there is nobody to talk
+   to, and postMessage to its own window would be a message nobody reads.
   */
   function reportPendingUpload(payload) {
     if (window.parent === window) return;
     try {
       window.parent.postMessage(Object.assign({ type: 'llmwiki:pendingUpload' }, payload), window.location.origin);
     } catch (err) {
-      // Un shell absent ou d'une autre origine ne doit pas interrompre l'import.
+      // An absent or cross-origin shell must not interrupt the import.
     }
   }
   async function uploadForConversion(file) {
@@ -569,20 +569,19 @@ function wireSidebarLaunchButtons() {
     return upload;
   }
   /*
-   La ligne fantome du panneau Pending pendant une conversion.
+   The Pending panel's ghost row during a conversion.
 
-   Un fichier convertible n'apparait dans raw/untracked qu'a la fin de la
-   conversion — cinq minutes par fichier au pire — et sans cette ligne le
-   panneau restait muet pendant tout ce temps, comme si le drop n'avait rien
-   fait. La ligne est volontairement inerte : pas de lien, pas de suppression,
-   pas de drag. Le fichier n'est pas encore une source, il n'y a rien a ouvrir
-   ni a deplacer ; elle ne devient cliquable que lorsque la conversion a ecrit
-   le Markdown, et c'est alors la vraie source que le refresh affiche. Le
-   serveur rend la meme ligne (lue dans le manifest des uploads) aux refreshes
-   suivants, donc un refresh en cours de conversion ne la fait pas disparaitre.
-   En cas d'erreur la ligne est retiree ici, et le refresh qui suit la
-   reconcilie avec le serveur — le record en echec ne compte plus comme
-   in-flight, donc le panneau ne la remontre pas.
+   A convertible file only appears in raw/untracked at the end of the
+   conversion — five minutes per file at worst — and without this row the
+   panel stayed silent all that time, as if the drop had done nothing. The row
+   is deliberately inert: no link, no deletion, no drag. The file is not yet a
+   source, there is nothing to open or move; it only becomes clickable once
+   the conversion has written the Markdown, and it is then the real source the
+   refresh displays. The server renders the same row (read from the uploads
+   manifest) on later refreshes, so a refresh during conversion does not make
+   it disappear. On error the row is removed here, and the following refresh
+   reconciles with the server — the failed record no longer counts as
+   in-flight, so the panel does not show it again.
   */
   function addPendingUploadRow(filename) {
     const list = document.querySelector('[data-untracked-list]');
@@ -667,8 +666,8 @@ function wireSidebarLaunchButtons() {
             uploadId: upload.id || null,
           });
           written.push(file.name + ' → ' + String(upload.outputPath || '').split('/').pop());
-          // Le Markdown converti est arrive dans le dossier : le panneau doit le
-          // montrer maintenant, pas a la fin du lot.
+          // The converted Markdown has arrived in the folder: the panel must
+          // show it now, not at the end of the batch.
           await refreshSidebar();
           continue;
         }
