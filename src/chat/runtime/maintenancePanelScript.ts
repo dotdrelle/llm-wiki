@@ -14,7 +14,12 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
   function open(){panel.hidden=false;render();seen();}
   function render(){if(!state)return;panel.replaceChildren();node('h2','Maintenance',panel);button('Close',panel,()=>{panel.hidden=true;seen();});
     node('p',state.error||(!state.enabled?'Disabled':state.paused?'Paused':'Active — independent of Donna’s current run'),panel);
-    button(state.paused?'Resume':'Pause',panel,()=>command({command:state.paused?'resume':'pause'}));button('Stop',panel,()=>command({command:'stop'}));
+    // Turning maintenance on grants a standing mandate: a human decision, confirmed.
+    button(state.enabled?'Disable':'Enable for this workspace',panel,async()=>{
+      if(!state.enabled){const text='Maintenance will keep this workspace up to date on its own: sync, ingest, rebuilds, index, builds and updates of existing exports. It asks you first for new sources and export updates, and it uses your LLM provider. Turn it on?';
+        const ok=typeof confirmAction==='function'?await confirmAction({title:'Turn on automatic maintenance',message:text,confirmLabel:'Turn on'}):window.confirm(text);if(!ok)return;}
+      command({command:state.enabled?'disable':'enable'});});
+    if(state.enabled){    button(state.paused?'Resume':'Pause',panel,()=>command({command:state.paused?'resume':'pause'}));button('Stop',panel,()=>command({command:'stop'}));}
     const pending=state.requests.filter(r=>r.status==='pending');node('h3','Decisions ('+pending.length+')',panel);
     for(const r of pending){const row=node('article',null,panel);const text=node('p',r.candidate?.summary||r.action,row);text.title='Request '+r.id+' · version '+r.version;button('Approve',row,()=>command({command:'decide',id:r.id,version:r.version,approved:true}));button('Refuse',row,()=>command({command:'decide',id:r.id,version:r.version,approved:false}));}
     // The Maintenance thread: one entry per cycle, the agent's own summary first,

@@ -28,7 +28,18 @@ When nothing has changed, no model is called at all. The maintenance agent
 
 ## Turning it on
 
-Maintenance is configured in the manager's `mcp.endpoints.json`, next to
+The quickest way, for the workspace you are in:
+
+- Shell: `/maintenance enable` (and `/maintenance disable`).
+- Served chat: the **Maintenance** button (top right) → **Enable for this
+  workspace**, after a confirmation.
+
+It is off by default on purpose: once on, it acts on its own and uses your LLM
+provider. Only you can turn it on — Donna can show, pause or stop it, never
+enable it. Enabling says what it implies: which actions will ask you first,
+and whether builds can run (they stay off until a build window is set).
+
+Everything else is configured in the manager's `mcp.endpoints.json`, next to
 `chatAccess`, under `maintenanceAccess`. Each action is `auto` (done),
 `ask` (you approve first) or `off` (never done; suggested in the history):
 
