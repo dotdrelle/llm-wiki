@@ -134,11 +134,25 @@ running in its agent and is followed again when the runtime is back.
 
 ## When maintenance and your work meet
 
-Maintenance never starts a new job while one of your runs has production work
-waiting. A job it has already started is not interrupted: while an ingest or a
-rebuild runs, the whole workspace is busy for every production job, yours
-included. Your task then waits and the Logs say so (`waiting for maintenance —
-…`). Reads, curations and mails never make you wait.
+**Your work goes first.**
+
+- Maintenance starts nothing that writes while one of your runs is unfinished
+  or one of your requests waits in the queue.
+- If you start something while a maintenance sync, ingest, index, rebuild or
+  build is already running, that job is **paused**: it is stopped, the Logs say
+  "paused so your … goes first", and a later scan runs it again. Nothing is
+  lost — sections already ingested are not redone.
+- An update of an existing export, or a mail, is never interrupted. Your task
+  waits for it to end.
+- While your task waits, the run strip says so: **Waiting for maintenance —**
+  followed by the action, instead of a run stuck at 0 %.
+- No maintenance action can block the workspace forever: each one has a fixed
+  time limit (30 minutes for a sync, 2 hours for an ingest…), after which it is
+  stopped and reported as such. A Confluence that does not answer within
+  5 seconds makes the sync fail at once ("Confluence unreachable") instead of
+  waiting.
+
+Reads and curations never make you wait.
 
 ## Limits worth knowing
 
