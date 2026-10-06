@@ -36,9 +36,17 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
   function open(){historyOffset=0;stale=false;if(typeof openActivityPanel==='function')openActivityPanel();if(typeof setActivityListTab==='function')setActivityListTab('maintenance');seen();}
   async function clearHistory({confirmed=false}={}){if(!confirmed){const message='Clear maintenance event logs and finished cycle history? Pending decisions will remain.';confirmed=typeof confirmAction==='function'?await confirmAction({title:'Clear maintenance history',message,confirmLabel:'Clear'}):window.confirm(message);}if(confirmed){historyOffset=0;stale=false;await command({command:'clear'});}}
   window.handleMaintenanceSlashCommand=(text)=>{const match=String(text||'').match(/^\/maintenance(?:\s+([a-z-]+))?(?:\s+([a-z-]+))?/i);if(!match)return false;const action=(match[1]||'status').toLowerCase();if(action==='status'||action==='history'){open();return true;}if(action==='mode'){open();if(['auto','human'].includes(String(match[2]||'').toLowerCase()))void command({command:'mode',mode:String(match[2]).toLowerCase()});else notify([{kind:'failure',message:'Usage: /maintenance mode auto|human'}]);return true;}if(['enable','disable','pause','resume','stop'].includes(action)){open();void command({command:action});return true;}open();return true;};
-  // "Ask Donna" never sends anything: it opens the chat with the facts in the
-  // composer, and the reader asks (the conversational-action rule).
-  function askDonna(facts){historyOffset=0;if(typeof showChatView==='function')showChatView();const ta=document.getElementById('chat-input');if(!ta)return;ta.value='About this maintenance activity:\n'+facts+'\n\nMy question: ';if(typeof autoResize==='function')autoResize(ta);ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);}
+  // "Ask Donna" is one click: the button IS the question. Donna receives the
+  // cycle's records — each with its error detail — plus the routine work around
+  // it, and is told they are maintenance records, not wiki content. The thread
+  // shows only a short label (hideQuestion), never the raw facts. Pre-filling
+  // the composer left the reader to write the question, and "cycle failed" with
+  // no cause made Donna search the wiki and answer that she did not know.
+  function maintenanceRecordLine(e,strip){const time=e.at?new Date(e.at).toLocaleTimeString():'';const message=strip(e.message);const detail=e.detail&&!message.includes(String(e.detail))?' (detail: '+String(e.detail).slice(0,400)+')':'';return '- '+time+' '+(e.kind||'event')+': '+message+detail;}
+  function askDonna({question,label,records}){historyOffset=0;if(typeof showChatView==='function')showChatView();const input=document.getElementById('chat-input');if(!input||(typeof isStreaming!=='undefined'&&isStreaming))return;
+    input.value=[question,'Answer from the maintenance records below. They are system records from the Maintenance panel, not wiki pages: do not look for them in the wiki.','','<maintenance-records>',...records,'</maintenance-records>'].join('\n').slice(0,6000);
+    input.dataset.displayText=label;input.dataset.forceChat='1';input.dataset.hideQuestion='1';
+    if(typeof sendMessage==='function')sendMessage();}
   function render(panel){if(!state||!panel)return;activeTarget=panel;panel.replaceChildren();const badge=panel.closest('.activity-subtab-content')?.querySelector('.maintenance-state');if(badge)badge.textContent=state.error?'Error':!state.enabled?'Disabled':state.paused?'Paused':'Active';
     const policy=node('details',null,panel);node('summary','Build window',policy);
     const window=state.buildSchedule;node('p','Build window: '+(window?(window.start+'–'+window.end+' ('+window.timezone+')'):'not set; automatic builds wait'),policy);
@@ -54,7 +62,7 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
     else button('Enable',controls,async()=>{const text='Maintenance will keep this workspace up to date on its own. Enable it?';const ok=typeof confirmAction==='function'?await confirmAction({title:'Enable maintenance',message:text,confirmLabel:'Enable'}):window.confirm(text);if(ok)command({command:'enable'});});
     const proposals=node('a','Agent proposals',panel);proposals.className='maintenance-proposals-action';proposals.href='/agent-proposals';proposals.target='wiki-frame';
     const pending=state.requests.filter(r=>r.status==='pending');node('h3','Decisions ('+pending.length+')',panel);
-    for(const r of pending){const row=node('article',null,panel);const text=node('p',r.candidate?.summary||r.action,row);text.title='Request '+r.id+' · version '+r.version;button('Approve',row,()=>command({command:'decide',id:r.id,version:r.version,approved:true}));button('Refuse',row,()=>command({command:'decide',id:r.id,version:r.version,approved:false}));button('Ask Donna',row,()=>askDonna('Pending decision: '+(r.candidate?.summary||r.action)));}
+    for(const r of pending){const row=node('article',null,panel);const text=node('p',r.candidate?.summary||r.action,row);text.title='Request '+r.id+' · version '+r.version;button('Approve',row,()=>command({command:'decide',id:r.id,version:r.version,approved:true}));button('Refuse',row,()=>command({command:'decide',id:r.id,version:r.version,approved:false}));button('Ask Donna',row,()=>askDonna({question:'Explain this pending maintenance decision: what it would do, why maintenance proposes it, and what approving or refusing it changes.',label:'Explain the pending decision: '+(r.candidate?.summary||r.action),records:['Pending decision: '+(r.candidate?.summary||r.action),'Action: '+r.action+(r.target?' on '+r.target:'')]}));}
     // The Maintenance thread: one entry per cycle, the agent's own summary first,
     // then what was done; routine work and decisions outside a cycle follow.
     const events=state.events.slice(-300);const strip=(m)=>String(m||'').replace(/^Maintenance:\s*/,'');
@@ -66,7 +74,11 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
       if(summary)maintenanceMarkdown(entry,strip(summary.message),'maintenance-summary maintenance-markdown');
       for(const e of maintenanceActivityRows(own.filter(e=>e.kind!=='summary')))appendMaintenanceActivityRow(entry,e,strip);
       if(!own.length)node('p','No action recorded for this cycle on this history page.',entry);
-      button('Ask Donna about this cycle',entry,()=>askDonna(['Cycle of '+(c.at?new Date(c.at).toLocaleString():'')+' — '+c.status,...own.map(e=>strip(e.message))].join('\n').slice(0,4000)));
+      // Routine work runs outside the cycle (sync, doctor, mail) but is what
+      // usually explains it: the records of the 15 minutes around it travel too.
+      const around=events.filter(e=>e.cycleId!==c.id&&e.at&&c.at&&Math.abs(Date.parse(e.at)-Date.parse(c.at))<=15*60_000);
+      const when=c.at?new Date(c.at).toLocaleString():'';
+      button('Ask Donna about this cycle',entry,()=>askDonna({question:'Explain this maintenance cycle: what happened, why it '+(c.status==='failed'?'failed':'ended as '+c.status)+', and what I should do about it.',label:'Explain the maintenance cycle of '+when,records:['Cycle of '+when+' — '+c.status,...[...own,...around].sort((a,b)=>String(a.at||'').localeCompare(String(b.at||''))).map(e=>maintenanceRecordLine(e,strip))]}));
     }
     const shown=new Set(state.cycles.slice(0,10).map(c=>c.id));const loose=events.filter(e=>!shown.has(e.cycleId)).slice(-60).reverse();
     if(loose.length){node('h3','Routine work and decisions',panel);for(const e of maintenanceActivityRows(loose))appendMaintenanceActivityRow(panel,e,strip);}
