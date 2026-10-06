@@ -150,7 +150,7 @@ function wireSidebarLaunchButtons() {
       markSeen(link.getAttribute('data-side-path') || '', token);
       applyUnreadBadges();
     }
-  });
+  }, true);
   // Re-read the panel from the server instead of pruning the clicked node from
   // the DOM. A delete or a move also prunes the parent folders it empties, and
   // those disappearances are invisible to the client — patching locally left
@@ -441,7 +441,6 @@ function wireSidebarLaunchButtons() {
   // before each drop rather than cached at load: the agent can come up or go
   // down while the page stays open, and a stale answer would either refuse a
   // file the agent can now take or accept one it cannot.
-  const PENDING_CONVERTIBLE_POLICY = ['.pdf', '.txt'];
   let pendingCaps = { markdown: ['.md', '.markdown'], convertible: [], documents: { configured: false, up: false, reason: null } };
   async function refreshPendingCapabilities() {
     try {
@@ -452,54 +451,7 @@ function wireSidebarLaunchButtons() {
       // Keep the last known answer: Markdown must stay droppable even when the
       // capability probe itself cannot be reached.
     }
-    renderPendingFormats();
     return pendingCaps;
-  }
-  /*
-   Says what the panel takes, and shows the conversion formats struck through
-   when the agent that performs it is not answering.
-
-   Without this the only way to learn that a PDF is accepted was to drop one,
-   and the only way to learn the agent was down was to be refused. The line
-   lives inside <details> but outside [data-untracked-list], which is the node
-   refreshSidebar replaces, so it survives a refresh.
-  */
-  function renderPendingFormats() {
-    const host = document.querySelector('[data-untracked-formats]');
-    if (!host) return;
-    const up = pendingCaps.documents.up;
-    const markdown = pendingCaps.markdown.includes('.md') ? '.md' : (pendingCaps.markdown[0] ?? '.md');
-    const convertible = up ? pendingCaps.convertible : PENDING_CONVERTIBLE_POLICY;
-    const why = pendingCaps.documents.configured
-      ? (pendingCaps.documents.reason || 'documents agent is not answering')
-      : 'documents agent is not configured';
-    host.textContent = '';
-    const green = 'var(--ok)';
-    const grey = 'var(--muted)';
-    const mk = document.createElement('span');
-    mk.textContent = markdown;
-    mk.style.color = green;
-    mk.title = 'Written to Pending as Markdown';
-    host.appendChild(mk);
-    for (const ext of convertible) {
-      const part = document.createElement('span');
-      part.textContent = ' ' + ext;
-      if (up) {
-        part.style.color = green;
-        part.title = 'Converted to Markdown by the documents agent';
-      } else {
-        part.style.color = grey;
-        part.title = 'Unavailable: ' + why;
-      }
-      host.appendChild(part);
-    }
-    if (!up) {
-      const note = document.createElement('span');
-      note.textContent = ' — documents agent down';
-      note.style.color = grey;
-      note.title = why;
-      host.appendChild(note);
-    }
   }
   function pendingDropTarget(event) {
     return event.target.closest?.('[data-untracked-panel], [data-untracked-list]') || null;
@@ -608,7 +560,6 @@ function wireSidebarLaunchButtons() {
       if (row.getAttribute('data-upload-filename') === filename) row.remove();
     });
   }
-  renderPendingFormats();
   void refreshPendingCapabilities();
   document.addEventListener('dragover', (event) => {
     if (!dragCarriesFiles(event)) return;

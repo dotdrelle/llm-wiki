@@ -1,6 +1,8 @@
 export const ACTIVITY_PANEL_SCRIPT = `/* ── Activity Panel ─────────────────────────────────────────────────── */
 const ACT_STORE_KEY=storageKey('llm-wiki-chat:activities');
-const ACT_PANEL_KEY=storageKey('llm-wiki-chat:activity-panel-open');
+// Reset the older remembered-open value so the Activity panel starts closed
+// alongside the workspace explorer on a fresh Serve page.
+const ACT_PANEL_KEY=storageKey('llm-wiki-chat:activity-panel-open-v2');
 let _activities=[];
 let _actTimer=null;
 let runtimeState=null;
@@ -401,8 +403,14 @@ function clearActivityTab(tab,{render=true}={}) {
   }
   if(render) { renderActivities(); updateActivityBadge(); }
 }
-function clearAllActivityTabs() {
+async function clearAllActivityTabs() {
+  const message='Clear all Activity history, including maintenance logs and finished cycles? Pending maintenance decisions and unresolved reservations will remain.';
+  const confirmed=typeof confirmAction==='function'
+    ? await confirmAction({title:'Clear all Activity history',message,confirmLabel:'Clear'})
+    : window.confirm(message);
+  if(!confirmed) return;
   ['plan','local','logs'].forEach(tab=>clearActivityTab(tab,{render:false}));
+  if(typeof window.clearMaintenanceHistory==='function') await window.clearMaintenanceHistory({confirmed:true});
   renderActivities(); updateActivityBadge();
 }
 async function loadWorkspaceMemory() {
@@ -664,23 +672,22 @@ function renderActivities() {
   const tabStates={
     plan:runtimeWritingNow()?'writing':'',
     local:localFailedCount>0?'has-error':localActiveCount>0?'has-running':'',
+    maintenance:window.hasMaintenanceUpdates?.()?'has-new':'',
   };
-  // Counts and highlights follow ACTIVE items only: once a conversion is done
-  // the tab returns to a plain label — a finished card must not leave a
-  // permanent "· 1" residue. Failures stay flagged until dismissed.
-  const tabCounts={plan:runtimeActiveCount,local:localActiveCount,maintenance:Number(window.getMaintenancePendingCount?.())||0};
+  // Plan and Files counts show active work only. Maintenance has no numeric
+  // suffix; its separate unread/pending state provides the highlight instead.
+  const tabCounts={plan:runtimeActiveCount,local:localActiveCount};
   const tabs=Object.entries(labels).map(([key,label])=>{
     const count=tabCounts[key]||0;
-    const suffix=count>0||key==='maintenance'?\` · \${count}\`:'';
+    const suffix=count>0?\` · \${count}\`:'';
     return \`<button id="activity-tab-\${key}" class="activity-subtab \${activityListTab===key?'active':''} \${tabStates[key]||''}" type="button" onclick="setActivityListTab('\${key}')">\${label}\${suffix}</button>\`;
   }).join('');
   const empty=\`<div class="act-empty">No \${labels[activityListTab].toLowerCase()} yet.</div>\`;
   const resetPlan=activityListTab==='plan'?'<button class="activity-subtab-reset" type="button" onclick="resetRuntimePlan()">Reset plan</button>':'';
   const clear=activityListTab==='maintenance'?'<button class="activity-subtab-clear" type="button" onclick="clearMaintenanceHistory()">Clear</button>':\`<button class="activity-subtab-clear" type="button" onclick="clearActivityTab('\${activityListTab}')">Clear</button>\`;
   const maintenanceState=activityListTab==='maintenance'?'<span class="maintenance-state" aria-live="polite"></span>':'';
-  const maintenanceProposals=activityListTab==='maintenance'?'<a class="maintenance-proposals-link" href="/agent-proposals" target="wiki-frame" title="Review and merge agent proposals">Agent proposals</a>':'';
   const toolbarTitle=activityListTab==='maintenance'?\`<span class="maintenance-heading"><span class="activity-subtab-toolbar-title">Maintenance</span>\${maintenanceState}</span>\`:\`<span class="activity-subtab-toolbar-title">\${labels[activityListTab]}</span>\`;
-  const toolbar=\`<div class="activity-subtab-toolbar">\${toolbarTitle}<span class="activity-subtab-actions">\${resetPlan}\${maintenanceProposals}\${clear}</span></div>\`;
+  const toolbar=\`<div class="activity-subtab-toolbar">\${toolbarTitle}<span class="activity-subtab-actions">\${resetPlan}\${clear}</span></div>\`;
   const html=\`<div class="activity-subtabs" role="tablist" aria-label="Activity list sections">\${tabs}</div><div class="activity-subtab-content activity-subtab-\${activityListTab}">\${toolbar}\${activePaneHTML||empty}</div>\`;
   // The panel re-renders every second while a run is active; replacing
   // innerHTML unconditionally reset the scroll position each tick, making it

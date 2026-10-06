@@ -112,32 +112,13 @@ describe('Pending drop handler', () => {
     expect(dropHandler).toContain('await refreshPendingCapabilities()');
   });
 
-  it('shows the accepted formats outside the node refreshSidebar replaces', () => {
-    // [data-untracked-list] has its innerHTML swapped on every sidebar refresh.
-    // A hint rendered inside it would vanish on the first refresh.
+  it('keeps the Pending row free of the redundant accepted-formats hint', () => {
     const markup = readFileSync('src/serve/html/wikiHtml.ts', 'utf8');
     const panel = markup.slice(markup.indexOf('data-untracked-panel'), markup.indexOf('side-untracked-count'));
-    expect(panel).toContain('data-untracked-formats');
-    expect(panel.indexOf('data-untracked-formats')).toBeLessThan(panel.indexOf('data-untracked-list'));
+    expect(panel).not.toContain('data-untracked-formats');
+    expect(WIKI_LAYOUT_SCRIPT).not.toContain('function renderPendingFormats');
+    expect(WIKI_LAYOUT_SCRIPT).not.toContain('PENDING_CONVERTIBLE_POLICY');
     expect(WIKI_LAYOUT_SCRIPT).not.toContain("querySelector('[data-untracked-list]').innerHTML = ");
-  });
-
-  it('greys the conversion formats out when the agent is down', () => {
-    const render = WIKI_LAYOUT_SCRIPT.slice(
-      WIKI_LAYOUT_SCRIPT.indexOf('function renderPendingFormats'),
-      WIKI_LAYOUT_SCRIPT.indexOf('function pendingDropTarget'),
-    );
-    // The formats stay listed when the agent is down — greyed with the reason
-    // tooltip, the supported ones in green — instead of disappearing: a panel
-    // that silently drops them cannot tell the user an agent is missing.
-    expect(render).toContain('PENDING_CONVERTIBLE_POLICY');
-    expect(render).toContain("part.style.color = green");
-    expect(render).toContain("part.style.color = grey");
-    expect(render).toContain('Unavailable: ');
-    expect(render).toContain('documents agent down');
-    // No parentheses around the format list: the line reads as plain text.
-    expect(render).not.toContain("textContent = '('");
-    expect(render).not.toContain("textContent = ')'");
   });
 
   it('reports every conversion to the shell, at its start and at its end', () => {

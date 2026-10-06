@@ -128,7 +128,7 @@ main{height:calc(100% - 48px);display:grid;grid-template-columns:var(--left-w) m
   .filter{width:auto}
   .about{display:none}
   .legend{max-width:calc(100% - 20px)}
-  .inspector{position:static;width:auto;max-height:none;box-shadow:none}
+  .inspector{position:absolute;right:8px;top:8px;width:min(268px,calc(100% - 16px));max-height:calc(100% - 16px);box-shadow:0 18px 44px #0006}
   .document-preview-overlay{width:calc(100vw - 16px)}
 }
 `;

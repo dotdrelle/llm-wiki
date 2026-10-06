@@ -440,17 +440,22 @@ describe('chat html', () => {
     expect(CHAT_HTML).not.toContain('runtime-section-toggle');
     expect(CHAT_HTML).toContain('onclick="clearActivityTab(\'${activityListTab}\')">Clear</button>');
     expect(CHAT_HTML).toContain('onclick="clearAllActivityTabs()"');
+    expect(CHAT_HTML).toContain('async function clearAllActivityTabs()');
     expect(CHAT_HTML).toContain("['plan','local','logs'].forEach(tab=>clearActivityTab(tab,{render:false}))");
+    expect(CHAT_HTML).toContain('window.clearMaintenanceHistory({confirmed:true})');
     expect(CHAT_HTML).toContain('onclick="resetRuntimePlan()">Reset plan</button>');
     expect(CHAT_HTML).toContain("fetch('/api/runtime/reset',{method:'POST'})");
     expect(CHAT_HTML).toContain('.activity-subtabs{display:flex;flex-wrap:wrap;gap:4px;flex:none;margin-bottom:8px}');
     expect(CHAT_HTML).toContain('const tabStates={');
-    expect(CHAT_HTML).toContain('const tabCounts={plan:runtimeActiveCount,local:localActiveCount,maintenance:Number(window.getMaintenancePendingCount?.())||0}');
+    expect(CHAT_HTML).toContain('const tabCounts={plan:runtimeActiveCount,local:localActiveCount}');
     expect(CHAT_HTML).toContain('const runtimeActiveCount=Array.isArray(runtimeState?.activities)?runtimeState.activities.filter(a=>isActivityActive(normalizeActivityStatus(a.status,a.terminal))).length:0;');
     expect(CHAT_HTML).toContain('railBtn.title=badgeDescription');
     expect(CHAT_HTML).toContain('railBtn.setAttribute(\'aria-label\',badgeDescription)');
     expect(CHAT_HTML).toContain('function autoSelectActivityTab()');
-    expect(CHAT_HTML).toContain("const suffix=count>0||key==='maintenance'?` · ${count}`:''");
+    expect(CHAT_HTML).toContain("maintenance:window.hasMaintenanceUpdates?.()?'has-new':''");
+    expect(CHAT_HTML).not.toContain("tab.textContent='Maintenance · '+count");
+    expect(CHAT_HTML).toContain("grid-template-columns:repeat(3,minmax(0,1fr))");
+    expect(CHAT_HTML).toContain("statusSections[0].append(banner)");
   });
 
   it('renders activity card icons as stroke SVGs, not emoji', () => {
@@ -922,14 +927,15 @@ describe('chat html', () => {
     expect(handler).not.toContain('/api/runtime/run');
   });
 
-  it('returns a dead remembered wiki page to Home instead of freezing on the error page', () => {
+  it('returns a dead remembered wiki page to the wiki index instead of freezing on the error page', () => {
     const script = chatScripts().join('\n');
     // Boot restores the remembered wiki path; an ingest may have renamed or
     // pruned it, and the centre then froze on "Document not found".
     expect(script).toContain("data.type === 'llmwiki:notfound'");
     const handler = script.match(/llmwiki:notfound'[\s\S]*?\n {2}\} else if/)?.[0] ?? '';
-    expect(handler).toContain("shellStore(SHELL_WIKI_PATH_KEY, '/')");
-    expect(handler).toContain("setCenterWiki('/')");
+    expect(handler).toContain("data.path.startsWith('/') ? data.path : '/' + data.path");
+    expect(handler).toContain("dead === '/wiki/index.md' ? '/' : '/wiki/index.md'");
+    expect(handler).toContain('setCenterWiki(fallback)');
   });
 
   it('offers a curation entry point that selects agent mode, not the read-only chat', () => {
@@ -1265,19 +1271,31 @@ describe('chat html', () => {
     expect(script).toContain("node('summary','Build window',policy)");
     expect(script).toContain('Build window: ');
     expect(script).toContain("node('span','Approval mode',modeRow)");
-    expect(script).toContain("command({command:'mode',mode})");
+    expect(script).toContain("setAttribute('role','switch')");
+    expect(script).toContain("setAttribute('aria-checked',String(state.mode==='human'))");
+    expect(script).toContain("command({command:'mode',mode:switchTo})");
     expect(script).toContain('class="maintenance-state"');
     expect(script).toContain("badge.textContent=state.error?'Error':!state.enabled?'Disabled':state.paused?'Paused':'Active'");
     expect(script).not.toContain("node('h2','Maintenance'");
     expect(script).toContain("threadHeading.className='maintenance-thread-heading'");
+    expect(script).toContain('function maintenanceMarkdown(parent,text,className=');
+    expect(script).toContain("maintenanceMarkdown(entry,strip(summary.message),'maintenance-summary maintenance-markdown')");
+    expect(script).toContain("maintenanceMarkdown(row,strip(event.message)");
+    expect(CHAT_HTML).toContain('.maintenance-log-time{grid-column:1;grid-row:1');
+    expect(CHAT_HTML).toContain('.maintenance-log-status{grid-column:2;grid-row:1');
+    expect(CHAT_HTML).toContain('.maintenance-log-message{grid-column:1/-1;grid-row:2');
+    expect(CHAT_HTML).toContain('.activity-subtab-memory .runtime-task-title{font:500 12px/1.4 var(--font-sans)');
     expect(script).toContain('.activity-subtab-maintenance .maintenance-thread-heading{margin-top:16px}');
     // Clear moved to the Maintenance toolbar (one button per tab), wired to
     // the panel's clearHistory through window.clearMaintenanceHistory.
     expect(script).toContain('onclick="clearMaintenanceHistory()"');
     expect(script).toContain('window.clearMaintenanceHistory=clearHistory');
-    expect(script).toContain('maintenance-proposals-link');
+    expect(script).toContain("node('a','Agent proposals',panel)");
+    expect(script).toContain('maintenance-proposals-action');
     expect(script).toContain("command({command:'clear'})");
-    expect(script).toContain("tab.textContent='Maintenance · '+count");
+    expect(script).toContain("tab.textContent='Maintenance'");
+    expect(script).toContain("tab.classList.toggle('has-new',window.hasMaintenanceUpdates())");
+    expect(script).toContain("maintenance:window.hasMaintenanceUpdates?.()?'has-new':''");
     expect(script).toContain('const maintenanceCount=Number(window.getMaintenancePendingCount?.())||0;');
     expect(script).toContain('runtimeCount+maintenanceCount');
     expect(script).not.toContain('poll();setInterval(poll,5000)');
@@ -1498,11 +1516,13 @@ describe('orchestration investigation visibility', () => {
       '12:00:01 orchestrator: diagnostic connectors__agent_status',
       '12:00:02 orchestrator: checkpoint 1/3; follow-up; diagnostics=2',
       '12:00:03 AGENT_STATUS attempt:internal-noise',
+      '12:00:04 Maintenance: ## Rapport\n\n- Premier point\n- Second point\n\n| Action | Résultat |\n|---|---|\n| build | done |',
     ]);
     expect(rows.map((row) => row.text)).toEqual([
       'orchestrator: diagnostic production__production_job_logs',
       'orchestrator: diagnostic connectors__agent_status',
       'orchestrator: checkpoint 1/3; follow-up; diagnostics=2',
+      'Maintenance: ## Rapport\n\n- Premier point\n- Second point\n\n| Action | Résultat |\n|---|---|\n| build | done |',
     ]);
   });
 });

@@ -557,7 +557,17 @@ export const WIKI_LAYOUT_CSS = `
       color: var(--text);
       font-size: 0.8rem;
       font-weight: 700;
+      list-style: none;
     }
+    .side-untracked-folder summary::-webkit-details-marker { display: none; }
+    .side-untracked-folder summary::before {
+      content: "▸";
+      flex: 0 0 0.8rem;
+      color: var(--muted);
+      font-size: 0.74rem;
+      transition: transform 120ms ease;
+    }
+    .side-untracked-folder[open] > summary::before { transform: rotate(90deg); }
     .side-folder-row:has(> .side-untracked-folder) > .side-folder-actions { top: 0; height: 1.7rem; padding-right: 0.2rem; }
     .side-untracked-children {
       margin-left: 0.65rem;
@@ -963,28 +973,22 @@ export const WIKI_LAYOUT_CSS = `
     .tile-meta { margin-top: 0.7rem; color: var(--muted); font-size: 0.82rem; overflow-wrap: anywhere; }
     .article {
       max-width: 960px;
-      padding: clamp(1.1rem, 2.6vw, 2rem);
+      padding: clamp(0.85rem, 2vw, 1.5rem);
       border: 1px solid var(--border);
       border-radius: 12px;
       background: var(--panel);
-      font-size: 0.94rem;
-      line-height: 1.6;
+      font-size: 0.84rem;
+      line-height: 1.5;
     }
     .article h1, .article h2, .article h3, .article h4, .article h5, .article h6 { line-height: 1.25; letter-spacing: 0; font-family: var(--font-serif); }
     .article h1 { font-family: var(--font-display); font-weight: 600; letter-spacing: .005em; text-wrap: balance; }
-    /* Explicit scale: the UA default is 2em/1.5em, which reads as an oversized
-       page title on a document body.
-       One ratio (~1.22) all the way down. The previous values jumped 1.9 → 1.22
-       then crawled 1.22 → 1.05 → 0.95, so h2 read as a sub-heading of nothing
-       while h3 and h4 were indistinguishable. h5/h6 had no rule at all and fell
-       back to the UA's 0.83em/0.67em — BOLD TEXT SMALLER THAN THE BODY, which
-       is why deep sections looked broken rather than nested. */
-    .article h1 { margin: 0 0 0.75rem; font-size: 1.9rem; }
-    .article h2 { margin: 1.6rem 0 0.6rem; font-size: 1.56rem; }
-    .article h3 { margin: 1.35rem 0 0.45rem; font-size: 1.28rem; }
-    .article h4 { margin: 1.15rem 0 0.4rem; font-size: 1.1rem; }
-    .article h5 { margin: 1rem 0 0.35rem; font-size: 1rem; }
-    .article h6 { margin: 0.9rem 0 0.3rem; font-size: 0.95rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    /* Keep a compact, clearly nested heading scale for dense workspace pages. */
+    .article h1 { margin: 0 0 0.6rem; font-size: 1.62rem; }
+    .article h2 { margin: 1.25rem 0 0.5rem; font-size: 1.34rem; }
+    .article h3 { margin: 1.05rem 0 0.4rem; font-size: 1.12rem; }
+    .article h4 { margin: 0.9rem 0 0.35rem; font-size: 0.98rem; }
+    .article h5 { margin: 0.8rem 0 0.3rem; font-size: 0.9rem; }
+    .article h6 { margin: 0.72rem 0 0.25rem; font-size: 0.84rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
     .article img { max-width: 100%; }
     .article, .article p, .article li, .article a, .article code {
       max-width: 100%;
@@ -1141,13 +1145,13 @@ export const WIKI_LAYOUT_CSS = `
     .edit-textarea {
       width: 100%;
       min-height: min(66vh, 760px);
-      padding: 1rem;
+      padding: 0.8rem;
       border: 1px solid var(--border);
       border-radius: 8px;
       background: var(--panel);
       color: var(--text);
-      font: 0.92rem ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      line-height: 1.55;
+      font: 0.82rem ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      line-height: 1.45;
       resize: vertical;
       outline: none;
     }

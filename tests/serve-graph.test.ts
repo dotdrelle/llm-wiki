@@ -101,6 +101,12 @@ it('follows the shared serve theme without rendering a redundant graph toggle', 
   expect(html).not.toContain("localStorage.setItem(THEME_KEY,theme)");
 });
 
+it('keeps the graph selection inspector compact in the reduced layout', () => {
+  const html = renderWikiGraphV2();
+  expect(html).toContain('.inspector{position:absolute;right:8px;top:8px;width:min(268px,calc(100% - 16px));max-height:calc(100% - 16px)');
+  expect(html).not.toContain('.inspector{position:static;width:auto;max-height:none');
+});
+
 it('displays domain and document names capitalized, never all-caps', () => {
   const html = renderWikiGraphV2();
 

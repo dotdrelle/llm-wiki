@@ -29,6 +29,11 @@ afterEach(async () => {
 });
 
 describe('a single set of attributes for the whole panel', () => {
+  it('shows Pending folders as expanded or collapsed with a disclosure marker', () => {
+    expect(WIKI_LAYOUT_CSS).toContain('.side-untracked-folder summary::before');
+    expect(WIKI_LAYOUT_CSS).toContain('.side-untracked-folder[open] > summary::before');
+  });
+
   it('renders the same data-tree-* in every section', async () => {
     // Drag-and-drop, delete, and create used to exist only for Pending.
     // Giving each section its own attribute set would have meant five
@@ -379,6 +384,8 @@ describe('the rail badges clear item by item', () => {
     expect(WIKI_LAYOUT_SCRIPT).toContain('function setViewBadge(name, count)');
     expect(WIKI_LAYOUT_SCRIPT).toContain('markSeen(');
     expect(WIKI_LAYOUT_SCRIPT).toContain('applyUnreadBadges();');
+    expect(WIKI_LAYOUT_SCRIPT).toContain("link.getAttribute('data-pending-at') || 0,");
+    expect(WIKI_LAYOUT_SCRIPT).toContain('  }, true);');
   });
 });
 

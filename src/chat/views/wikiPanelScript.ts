@@ -550,14 +550,19 @@ window.addEventListener('message', (event) => {
   } else if (data.type === 'llmwiki:notfound') {
     // The centre was asked for a page that no longer exists — typically a
     // stored path restored at boot after an ingest renamed or pruned it. The
-    // shell forgets it and opens Home instead of freezing on "Document not
-    // found" (the standalone page keeps its Back/Home buttons). Only when the
-    // dead page is still the centre's target, so a late message from an
-    // outdated frame cannot yank the reader elsewhere.
-    const dead = sanitizeWikiPath(data.path);
+    // shell forgets it and opens the wiki index instead of freezing on
+    // "Document not found". Fall back to Home only if the index itself is
+    // missing, to avoid repeatedly reloading a missing index. Only act when
+    // the dead page is still the centre's target, so a late frame cannot yank
+    // the reader elsewhere.
+    const reportedPath = typeof data.path === 'string'
+      ? (data.path.startsWith('/') ? data.path : '/' + data.path)
+      : null;
+    const dead = sanitizeWikiPath(reportedPath);
     if (dead && wikiHashPath() === dead) {
-      shellStore(SHELL_WIKI_PATH_KEY, '/');
-      setCenterWiki('/');
+      const fallback = dead === '/wiki/index.md' ? '/' : '/wiki/index.md';
+      shellStore(SHELL_WIKI_PATH_KEY, fallback);
+      setCenterWiki(fallback);
     }
   } else if (data.type === 'llmwiki:addContext') {
     // "+ Context" clicked inside the central wiki page iframe or the tree menu.

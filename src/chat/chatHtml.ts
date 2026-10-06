@@ -116,7 +116,9 @@ function essentialRuntimeLogEntries(logs) {
       .replace(/[a-f0-9]{8}-[a-f0-9-]{20,}/gi,'')
       .replace(/\\b(?:runId|turnId|taskId|attemptId)[:=]\\S+/gi,'')
       .replace(/\\s+·\\s+·/g,' ·')
-      .replace(/\\s{2,}/g,' ')
+      // Keep Markdown block boundaries intact: collapsing all whitespace here
+      // flattened headings, lists and tables before runtimeLogTextHTML parsed it.
+      .split('\\n').map(part=>part.replace(/[ \\t]{2,}/g,' ')).join('\\n')
       .trim();
     if(!text||text.length<3) continue;
     // Maintenance lines are written for the reader; they always belong to the journal.

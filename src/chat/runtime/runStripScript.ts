@@ -238,10 +238,13 @@ function restoreRunStripPosition() {
 function initRunStripDrag() {
   const strip=$('run-strip');
   if(!strip||strip.__dragReady) return;
+  // The shared bottom status bar owns the run strip's position and layout.
+  if(strip.closest('#workspace-status-bar')) return;
   strip.__dragReady=true;
   let drag=null;
   const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
   strip.addEventListener('pointerdown',(event)=>{
+    if(strip.closest('#workspace-status-bar')) return;
     if(event.button!==0) return;
     if(event.target.closest('button')) return;
     const rect=strip.getBoundingClientRect();
