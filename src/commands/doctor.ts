@@ -17,14 +17,16 @@ import {
   VectorIndexService,
 } from '../services/vectorIndexService.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
-import type { AppConfig } from '../types.ts';
+import type { AppConfig, LlmCapabilities } from '../types.ts';
 import {
   bareModelName,
   describeTarget,
   engineFetchHeaders,
   isOllamaEngine,
+  probedCapabilities,
   supportsTemperature,
 } from '../config/engineCapabilities.ts';
+import { probeModelCapabilities } from '../config/modelProbe.ts';
 import {
   fetchGatewayCatalog,
   probeRerank,
@@ -396,34 +398,28 @@ function diffConfigPatch(
   return Object.keys(patch).length > 0 ? patch : undefined;
 }
 
-function deepMergeConfig(current: unknown, patch: unknown): Record<string, unknown> {
-  const base =
-    current && typeof current === 'object' && !Array.isArray(current)
-      ? { ...(current as Record<string, unknown>) }
-      : {};
-  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return base;
-
+/**
+ * Applies a recommendation patch to the YAML document in place, so the file
+ * keeps its comments and layout — a parse/stringify round trip erased every
+ * comment of the scaffold's `.wikirc.yaml`. `null` is the removal marker (e.g.
+ * llm.temperature on a model that refuses it), never written as a value.
+ */
+function applyPatchToDocument(doc: YAML.Document, patch: unknown, prefix: string[] = []): void {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return;
   for (const [key, value] of Object.entries(patch as Record<string, unknown>)) {
     if (typeof value === 'undefined') continue;
-    // `null` is the removal marker: a recommendation to DELETE the key (e.g.
-    // llm.temperature on a model that refuses it), not to write null.
+    const keyPath = [...prefix, key];
     if (value === null) {
-      delete base[key];
+      doc.deleteIn(keyPath);
       continue;
     }
-    const currentValue = base[key];
-    base[key] =
-      value &&
-      typeof value === 'object' &&
-      !Array.isArray(value) &&
-      currentValue &&
-      typeof currentValue === 'object' &&
-      !Array.isArray(currentValue)
-        ? deepMergeConfig(currentValue, value)
-        : value;
+    const isObject = typeof value === 'object' && !Array.isArray(value);
+    if (isObject && YAML.isMap(doc.getIn(keyPath, true))) {
+      applyPatchToDocument(doc, value, keyPath);
+    } else {
+      doc.setIn(keyPath, value);
+    }
   }
-
-  return base;
 }
 
 async function readRawConfigFile(config: AppConfig): Promise<Record<string, unknown>> {
@@ -439,9 +435,10 @@ async function applyRecommendedConfig(
   recommendedConfig: Record<string, unknown>,
 ): Promise<void> {
   const configPath = config.configPath ?? path.join(config.wikiRoot, '.wikirc.yaml');
-  const rawConfig = await readRawConfigFile(config);
-  const nextConfig = deepMergeConfig(rawConfig, recommendedConfig);
-  await safeWriteFile(configPath, YAML.stringify(nextConfig));
+  const rawText = (await pathExists(configPath)) ? await readFile(configPath, 'utf8') : '';
+  const doc = YAML.parseDocument(rawText);
+  applyPatchToDocument(doc, recommendedConfig);
+  await safeWriteFile(configPath, doc.toString());
   ok(`Updated ${configPath}`);
 }
 
@@ -640,6 +637,84 @@ function readOllamaProcessEnv(): {
 }
 
 // ── provider connectivity ─────────────────────────────────────────────────────
+
+/**
+ * Asks the model what it accepts (temperature, thinking, forced tool_choice)
+ * and records it in `llm.capabilities` on `--apply`. Probing costs three tiny
+ * calls, so a plain doctor (the maintenance runs one routinely) probes only
+ * while nothing is recorded for the current model; `--apply` always re-measures.
+ */
+async function reportModelCapabilities(
+  config: AppConfig,
+  rawLlmConfig: unknown,
+  temperatureExplicitlySet: boolean,
+  options: { apply?: boolean },
+): Promise<void> {
+  const recorded = probedCapabilities(config.llm);
+  if (recorded && !options.apply) {
+    row('model capabilities:', describeCapabilities(recorded));
+    if (recorded.toolChoice === undefined) {
+      warn('tool calling was not confirmed for this model — run `wiki doctor --apply` to measure it again');
+    }
+    return;
+  }
+  const result = await probeModelCapabilities(config.llm);
+  if (result.failure) {
+    warn(`model capabilities could not be measured: ${result.failure}`);
+    return;
+  }
+  row('model capabilities:', describeCapabilities(result.capabilities));
+  if (result.toolCallingUnsupported) {
+    err(`${config.llm.model} refuses tool calling (tool_choice "auto") — agent mode and automatic maintenance cannot work with this model`);
+    if (result.toolCallingRefusal) row('provider says:', result.toolCallingRefusal.slice(0, 300));
+  }
+  const rawLlm = rawLlmConfig && typeof rawLlmConfig === 'object' ? rawLlmConfig as Record<string, unknown> : {};
+  const removeTemperature = result.capabilities.temperature === false && temperatureExplicitlySet;
+  // The thinking knob: written when tools only work with the reasoning turned
+  // down, removed when the model refuses the parameter altogether.
+  const reasoningEffort = result.recommendedReasoningEffort
+    ?? (result.capabilities.reasoningEffort === false && 'reasoningEffort' in rawLlm ? null : undefined);
+  if (result.recommendedReasoningEffort) {
+    warn(`tool calling only works with llm.reasoningEffort: ${result.recommendedReasoningEffort} on ${config.llm.model}`);
+  } else if (reasoningEffort === null) {
+    warn(`llm.reasoningEffort (${config.llm.reasoningEffort}) is refused by ${config.llm.model}`);
+  }
+  if (sameConfigValue(rawLlm.capabilities, result.capabilities) && !removeTemperature && reasoningEffort === undefined) return;
+  if (!options.apply) {
+    warn('llm.capabilities does not record what this model accepts');
+    row('action:', 'run `wiki doctor --apply` to record it in .wikirc.yaml');
+    return;
+  }
+  const changes = [
+    'recording llm.capabilities',
+    removeTemperature ? 'removing the refused llm.temperature' : null,
+    typeof reasoningEffort === 'string' ? `setting llm.reasoningEffort: ${reasoningEffort}` : null,
+    reasoningEffort === null ? 'removing the refused llm.reasoningEffort' : null,
+  ].filter(Boolean).join(', ');
+  row('action:', `${changes} in .wikirc.yaml`);
+  // Replaced whole: a field the new measurement could not settle must not
+  // survive from a probe of another model.
+  await applyRecommendedConfig(config, { llm: { capabilities: null } });
+  await applyRecommendedConfig(config, {
+    llm: {
+      capabilities: result.capabilities,
+      ...(removeTemperature ? { temperature: null } : {}),
+      ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
+    },
+  });
+}
+
+function describeCapabilities(capabilities: LlmCapabilities): string {
+  const yesNo = (value: boolean | undefined, yes: string, no: string) =>
+    value === undefined ? null : value ? yes : no;
+  return [
+    yesNo(capabilities.temperature, 'temperature accepted', 'temperature refused'),
+    yesNo(capabilities.thinking, 'thinking mode', 'no thinking'),
+    capabilities.toolChoice === 'named' ? 'tool_choice named + auto'
+      : capabilities.toolChoice === 'auto' ? 'tool_choice auto only' : null,
+    yesNo(capabilities.reasoningEffort, 'reasoning_effort accepted', 'reasoning_effort refused'),
+  ].filter(Boolean).join(' · ') || 'nothing measured';
+}
 
 async function checkProvider(
   config: AppConfig,
@@ -1018,6 +1093,7 @@ export default async function doctorCmd(
   row('language:', config.language);
   if (config.llm.numCtx) row('numCtx:', config.llm.numCtx.toLocaleString());
   row('temperature:', String(config.llm.temperature));
+  if (config.llm.reasoningEffort) row('reasoningEffort:', config.llm.reasoningEffort);
   row('requestsPerMinute:', String(config.limits.requestsPerMinute));
   row('maxInFlightRequests:', String(config.limits.maxInFlightRequests ?? 3));
   if (config.limits.dailyInputTokens) {
@@ -1110,6 +1186,8 @@ export default async function doctorCmd(
       await applyRecommendedConfig(config, { llm: { temperature: null } });
     }
   }
+
+  await reportModelCapabilities(config, rawLlmConfig, temperatureExplicitlySet, options);
 
   // `retrieval.buildStrategy` is retired: the build always uses the hybrid
   // retrieval (vectors when the index exists). The schema no longer reads it,

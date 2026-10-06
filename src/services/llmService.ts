@@ -23,6 +23,7 @@ import {
   supportsJsonResponseFormat,
   supportsModelJsonRepair,
   supportsNumCtx,
+  reasoningEffortParam,
   supportsTemperature,
   usesMaxCompletionTokens,
 } from '../config/engineCapabilities.ts';
@@ -357,6 +358,8 @@ export class LLMService {
         if (supportsTemperature(this.config.llm)) {
           createParams.temperature = request.temperature ?? this.config.llm.temperature;
         }
+        const reasoningEffort = reasoningEffortParam(this.config.llm);
+        if (reasoningEffort) createParams.reasoning_effort = reasoningEffort;
         // Stream tokens so the HTTP connection stays alive during long generations.
         // Without streaming, Ollama's write timeout (~5 min) closes the connection mid-response.
         createParams.stream_options = { include_usage: true };

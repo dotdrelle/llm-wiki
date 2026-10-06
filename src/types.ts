@@ -39,7 +39,38 @@ export interface LlmConfig {
   reasoningOutputMultiplier?: number;
   flashAttention?: boolean;
   kvCacheType?: 'f16' | 'q8_0' | 'q4_0';
+  /**
+   * OpenAI-style `reasoning_effort`, sent on every call when set: the knob of
+   * the thinking mode. `none`/`minimal` turn reasoning down (some models only
+   * accept tools that way). Dropped when the model was measured to refuse it.
+   */
+  reasoningEffort?: ReasoningEffort;
+  /**
+   * What the configured model was measured to accept, written by
+   * `wiki doctor --apply` (`config/modelProbe.ts`). Absent = not probed yet:
+   * the static per-engine rules apply.
+   */
+  capabilities?: LlmCapabilities;
 }
+
+export interface LlmCapabilities {
+  /** The model these facts were measured on; another model ignores them. */
+  model: string;
+  /** `temperature` accepted. `false`: never sent. */
+  temperature?: boolean;
+  /** The model reasons before answering (reasoning fields or `<think>`). */
+  thinking?: boolean;
+  /**
+   * `named`: a forced `{type:'function'}` tool_choice is accepted.
+   * `auto`: only `tool_choice: "auto"` is (thinking mode refuses a forced one).
+   * Tool calling itself is required by agent mode and maintenance.
+   */
+  toolChoice?: 'named' | 'auto';
+  /** `reasoning_effort` accepted (only measured when one is sent). */
+  reasoningEffort?: boolean;
+}
+
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high';
 
 export interface BuildConfig {
   refreshOnIngest: boolean;

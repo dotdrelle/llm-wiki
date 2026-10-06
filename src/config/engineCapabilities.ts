@@ -69,7 +69,27 @@ export function bareModelName(model: string): string {
   return model.slice(model.lastIndexOf('/') + 1);
 }
 
+/**
+ * The doctor's measurement for THIS model, when one was recorded. A probe made
+ * on another model says nothing about the current one and is ignored.
+ */
+export function probedCapabilities(llm: LlmConfig): LlmConfig['capabilities'] {
+  const probed = llm.capabilities;
+  return probed && probed.model === llm.model ? probed : undefined;
+}
+
+/**
+ * The `reasoning_effort` to send, if any: the configured value, unless the
+ * doctor measured that this model refuses the parameter.
+ */
+export function reasoningEffortParam(llm: LlmConfig): string | undefined {
+  if (!llm.reasoningEffort) return undefined;
+  return probedCapabilities(llm)?.reasoningEffort === false ? undefined : llm.reasoningEffort;
+}
+
 export function supportsTemperature(llm: LlmConfig): boolean {
+  const probed = probedCapabilities(llm)?.temperature;
+  if (typeof probed === 'boolean') return probed;
   const isReasoningModel = /^gpt-(?:5|6)(?:[.-]|$)/i.test(bareModelName(llm.model));
   if (!isReasoningModel) return true;
   // These model families, served by OpenAI directly or behind a gateway.

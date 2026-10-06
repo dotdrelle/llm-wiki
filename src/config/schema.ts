@@ -376,6 +376,19 @@ const llmSchema = z
     reasoningOutputMultiplier: z.number().min(1).max(10).optional(),
     flashAttention: z.boolean().optional(),
     kvCacheType: z.enum(['f16', 'q8_0', 'q4_0']).optional(),
+    // The thinking-mode knob, sent as `reasoning_effort` on every call.
+    reasoningEffort: z.enum(['none', 'minimal', 'low', 'medium', 'high']).optional(),
+    // Measured by `wiki doctor --apply`, never hand-tuned (config/modelProbe.ts).
+    capabilities: z
+      .object({
+        model: z.string().min(1),
+        temperature: z.boolean().optional(),
+        thinking: z.boolean().optional(),
+        toolChoice: z.enum(['named', 'auto']).optional(),
+        reasoningEffort: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .default({
     provider: 'openai-compatible',
@@ -814,6 +827,8 @@ export function resolveConfigDetails(
       reasoningOutputMultiplier: parsed.llm?.reasoningOutputMultiplier,
       flashAttention: parsed.llm?.flashAttention,
       kvCacheType: parsed.llm?.kvCacheType,
+      ...(parsed.llm?.reasoningEffort ? { reasoningEffort: parsed.llm.reasoningEffort } : {}),
+      ...(parsed.llm?.capabilities ? { capabilities: parsed.llm.capabilities } : {}),
     },
     limits: {
       requestsPerMinute: parsed.limits?.requestsPerMinute ?? 10,

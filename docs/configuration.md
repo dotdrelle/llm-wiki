@@ -123,9 +123,29 @@ Presets reduce typing only; they are never required. The merge order is
 | `numCtx`         | Active context window of the LLM server, in tokens. Useful for Ollama and local/OpenAI-compatible servers so `wiki doctor` can tune context budgets. | —                  |
 | `flashAttention` | Ollama hint for remote/containerized servers when env vars cannot be detected                                                                        | —                  |
 | `kvCacheType`    | Ollama KV cache quantization: `f16`, `q8_0`, or `q4_0`                                                                                               | —                  |
+| `reasoningEffort` | The thinking-mode knob, sent as `reasoning_effort` on every call (engine, manager, agentic gateway): `none`, `minimal`, `low`, `medium`, `high`. `wiki doctor --apply` writes `none`/`minimal` when tool calling only works with reasoning turned down (gpt-6-luna), and removes it when the model refuses the parameter. | —                  |
+| `capabilities`   | **Written by `wiki doctor --apply`, not by hand.** What the model was measured to accept: `{model, temperature, thinking, toolChoice: named \| auto}`. Read by the engine and the manager's client; ignored when `model` differs from `llm.model`. | —                  |
 
 API key resolution is direct: `llm.apiKey` is used as written. Ollama defaults
 to `ollama` when no key is set.
+
+`llm.capabilities` comes from three tiny chat calls made by `wiki doctor`
+(`src/config/modelProbe.ts`): a plain answer (temperature accepted? reasoning
+fields or `<think>` → thinking), a tool call with `tool_choice: "auto"`, then one
+with a forced (named) tool choice. Tool calling with `auto` is **required** —
+agent mode and the maintenance agent use it — so its refusal is a doctor error.
+A refused named choice (thinking mode: "Thinking mode does not support this
+tool_choice") records `toolChoice: auto`, and the manager then sends `auto`
+instead of forcing a tool. A refused temperature records `temperature: false`
+and `--apply` also removes `llm.temperature`. A plain `wiki doctor` probes only
+while nothing is recorded for the current model; `--apply` always re-measures.
+When tool calling is refused because of the model's reasoning (gpt-6-luna:
+"Function tools with reasoning_effort are not supported"), the probe retries with
+`reasoning_effort: none`, then `minimal`, and `--apply` writes the first that
+works into `llm.reasoningEffort`; a model that refuses the parameter has it
+removed. The agentic gateway forwards it as a raw `reasoning_effort`
+(`modelKwargs`): LangChain's own option only reaches the models it names as
+reasoning models.
 
 ### `provider` and `engine`
 

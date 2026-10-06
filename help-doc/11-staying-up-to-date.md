@@ -51,6 +51,17 @@ applies the format migration for older workspaces (`timestamp` becomes
 `generated`, a trailing `## Citations` section becomes the `sources` list).
 Run it after an upgrade; it never overwrites a value you wrote by hand.
 
+`wiki doctor` also **asks your model what it accepts** — a temperature, a
+thinking mode, a forced tool choice — with three tiny calls, and `--apply`
+records the answer in `.wikirc.yaml` (`llm.capabilities`). Run it after
+changing model or profile: a thinking model that refuses a forced tool choice
+is then served the automatic one, and a model that refuses tools unless its
+reasoning is turned down gets `llm.reasoningEffort: none` (or `minimal`).
+`llm.reasoningEffort` is also yours to set (`none`, `minimal`, `low`,
+`medium`, `high`): it is how you turn the thinking mode up or down. Agent mode
+and automatic maintenance need tool calling; a model that refuses it is
+reported as an error.
+
 ## Automating it (headless)
 
 For a cron job or CI, run the headless manager. Two commands cover the whole
