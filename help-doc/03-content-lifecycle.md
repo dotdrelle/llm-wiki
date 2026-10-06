@@ -166,7 +166,11 @@ too is the move refused.
 
 A sync (Confluence) never overwrites local work: a pending file you deleted
 stays deleted, and one you modified is flagged **orange** in the Pending panel
-— keep it or delete it, the sync will not decide for you. To rebuild TAXO
+— keep it or delete it, the sync will not decide for you. The panel also
+announces what an ingest will do with each pending source: **green** for a
+document that was never ingested, **blue** when the ingested archive already
+holds the same document with different content — a re-export, and an update
+rather than a newcomer. To rebuild TAXO
 fiches from the archived sources without touching Confluence, run
 `wiki ingest --from-ingested` (see `07-commands-shell.md`). Ingestion always
 runs the TAXO pipeline; there is no separate analysis/apply mode. A rebuild

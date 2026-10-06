@@ -455,6 +455,9 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain("maintenance:window.hasMaintenanceUpdates?.()?'has-new':''");
     expect(CHAT_HTML).not.toContain("tab.textContent='Maintenance · '+count");
     expect(CHAT_HTML).toContain("grid-template-columns:repeat(3,minmax(0,1fr))");
+    expect(CHAT_HTML).toContain("statusSections=['maintenance','run','approval']");
+    expect(CHAT_HTML).toContain("statusSections[1].append(run)");
+    expect(CHAT_HTML).toContain("statusSections[2].append(approval)");
     expect(CHAT_HTML).toContain("statusSections[0].append(banner)");
   });
 
@@ -1281,6 +1284,11 @@ describe('chat html', () => {
     expect(script).toContain('function maintenanceMarkdown(parent,text,className=');
     expect(script).toContain("maintenanceMarkdown(entry,strip(summary.message),'maintenance-summary maintenance-markdown')");
     expect(script).toContain("maintenanceMarkdown(row,strip(event.message)");
+    // A markdown summary must NOT keep the plain-text `pre-wrap`: the markup's
+    // own newlines would render as blank lines between every block.
+    expect(script).toContain('.activity-subtab-maintenance .maintenance-summary:not(.maintenance-markdown){white-space:pre-wrap}');
+    expect(CHAT_HTML).toContain('.maintenance-markdown{min-width:0;overflow-wrap:anywhere;white-space:normal}');
+    expect(CHAT_HTML).toContain('.maintenance-markdown li>p{margin:0}');
     expect(CHAT_HTML).toContain('.maintenance-log-time{grid-column:1;grid-row:1');
     expect(CHAT_HTML).toContain('.maintenance-log-status{grid-column:2;grid-row:1');
     expect(CHAT_HTML).toContain('.maintenance-log-message{grid-column:1/-1;grid-row:2');

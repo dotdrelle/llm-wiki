@@ -93,7 +93,7 @@ describe('a single set of attributes for the whole panel', () => {
     }
   });
 
-  it('keeps Wiki folders with descendant pages and drops only branches with no pages', async () => {
+  it('keeps Wiki sections, flattens a single-fiche folder and drops branches with no pages', async () => {
     await mkdir(path.join(root, 'wiki', 'concepts', 'empty-family'), { recursive: true });
     await mkdir(path.join(root, 'wiki', 'sources', 'document', 'empty-section'), { recursive: true });
     await mkdir(path.join(root, 'wiki', 'answers'), { recursive: true });
@@ -102,7 +102,8 @@ describe('a single set of attributes for the whole panel', () => {
     const html = await renderSidebar(root);
 
     expect(html).toContain('data-tree-id="wiki/concepts"');
-    expect(html).toContain('data-tree-id="wiki/sources/document"');
+    expect(html).not.toContain('data-tree-id="wiki/sources/document"');
+    expect(html).toContain('data-side-path="wiki/sources/document/section.md"');
     expect(html).not.toContain('data-tree-id="wiki/concepts/empty-family"');
     expect(html).not.toContain('data-tree-id="wiki/sources/document/empty-section"');
     expect(html).not.toContain('data-tree-id="wiki/answers"');
@@ -344,8 +345,13 @@ describe('pending status colours', () => {
     expect(html).toContain('class="side-untracked-item side-untracked-new"');
   });
 
-  it('marks a pending source blue when the same subject exists and differs', async () => {
-    await writeFile(path.join(root, 'wiki/concepts/source.md'), '# Ancien contenu.\n', 'utf8');
+  it('marks a pending source blue when its archived original differs', async () => {
+    // The archive keeps the untracked relative path: the same document
+    // re-exported with new content is an update, not a newcomer. TAXO rewrites
+    // wiki pages under section/tag names, so the wiki tree no longer carries
+    // the source's own name — the archive is the surviving identity.
+    await mkdir(path.join(root, 'raw/ingested/lot'), { recursive: true });
+    await writeFile(path.join(root, 'raw/ingested/lot/source.md'), '# Ancien contenu.\n', 'utf8');
 
     const html = await renderSidebar(root);
 
@@ -354,12 +360,26 @@ describe('pending status colours', () => {
   });
 
   it('leaves an identical re-drop unmarked', async () => {
-    await writeFile(path.join(root, 'wiki/concepts/source.md'), '# x\n', 'utf8');
+    await mkdir(path.join(root, 'raw/ingested/lot'), { recursive: true });
+    await writeFile(path.join(root, 'raw/ingested/lot/source.md'), '# x\n', 'utf8');
 
     const html = await renderSidebar(root);
 
     expect(html).not.toContain('side-untracked-new');
     expect(html).not.toContain('side-untracked-update');
+  });
+
+  it('keeps the local-edit marker orange even when the archive differs', async () => {
+    await mkdir(path.join(root, 'raw/ingested/lot'), { recursive: true });
+    await writeFile(path.join(root, 'raw/ingested/lot/source.md'), '# Ancien contenu.\n', 'utf8');
+    await mkdir(path.join(root, '.wiki'), { recursive: true });
+    await writeFile(path.join(root, '.wiki/cme-sync.json'), JSON.stringify({ modifiedLocally: ['lot/source.md'] }), 'utf8');
+
+    const html = await renderSidebar(root);
+
+    expect(html).toContain('class="side-untracked-item side-untracked-modified"');
+    expect(html).not.toContain('side-untracked-update');
+    expect(html).not.toContain('side-untracked-new');
   });
 
   it('styles the two statuses in the layout css', () => {
@@ -749,7 +769,7 @@ describe('in-flight document uploads in Pending', () => {
 });
 
 describe('reading notes depth', () => {
-  it('shows only folders holding a fiche directly, like Pending', async () => {
+  it('flattens single-fiche Reading notes folders and keeps folders grouping multiple fiches', async () => {
     for (const file of [
       'wiki/sources/outils/accueil/apps/acpi/specs/eas-avant-projet/synthese/regles.md',
       'wiki/sources/outils/accueil/apps/acpi/specs/eas-avant-projet/eas.md',
@@ -760,7 +780,8 @@ describe('reading notes depth', () => {
     const html = await renderSidebar(root);
     const deep = 'wiki/sources/outils/accueil/apps/acpi/specs/eas-avant-projet';
     expect(html).toContain(`data-tree-id="${deep}"`);
-    expect(html).toContain(`data-tree-id="${deep}/synthese"`);
+    expect(html).not.toContain(`data-tree-id="${deep}/synthese"`);
+    expect(html).toContain('data-side-path="wiki/sources/outils/accueil/apps/acpi/specs/eas-avant-projet/synthese/regles.md"');
     for (const empty of ['wiki/sources/outils', 'wiki/sources/outils/accueil/apps', 'wiki/sources/outils/accueil/apps/acpi/specs']) {
       expect(html, empty).not.toContain(`data-tree-id="${empty}"`);
     }

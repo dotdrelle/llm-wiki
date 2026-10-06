@@ -109,7 +109,7 @@ or model endpoint globally; for production alone, lower
 
 The agentic gateway's own ceilings live in the same manager environment (all
 optional, defaults in parentheses): `GATEWAY_RECURSION_LIMIT` (40) reasoning
-steps, `GATEWAY_TOKEN_BUDGET` (500 000) estimated tokens, and — for curation
+steps, `GATEWAY_TOKEN_BUDGET` (2 000 000) estimated tokens, and — for curation
 hands — `GATEWAY_WORKTREE_MAX_FILES` (40) / `GATEWAY_WORKTREE_MAX_DIFF_CHARS`
 (300 000): beyond them a curation run fails loudly and discards its branch
 instead of queueing a diff nobody can read, and `GATEWAY_WORKTREE_MAX_AGE_MS`

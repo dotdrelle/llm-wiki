@@ -16,7 +16,7 @@ import {
 } from '../../graph/wiki/projection.ts';
 
 import { pathExists, safeWriteFile } from '../../utils/fs.ts';
-import { resolveInside, toPosix } from '../../utils/path.ts';
+import { resolveInside, slugifyPath, toPosix } from '../../utils/path.ts';
 import { listHelpChapters, readHelpChapter } from '../../utils/helpDoc.ts';
 import { WIKI_LAYOUT_CSS } from './wikiLayoutCss.ts';
 import { WIKI_LAYOUT_SCRIPT } from './wikiLayoutScript.ts';
@@ -828,16 +828,19 @@ function pruneEmptyNavDirectories(node: NavTreeNode): void {
 }
 
 /**
- * In Project knowledge, a family folder with exactly one leaf and no nested
- * branches adds a click without grouping anything. Put that leaf at the
- * section level in the rendered tree; its link and stored path stay intact.
+ * In Project knowledge and Reading notes, a folder with exactly one leaf and
+ * no nested branches adds a click without grouping anything. Put that leaf at
+ * the parent level in the rendered tree; its link and stored path stay intact.
  */
 function flattenSingleLeafConceptFolders(node: NavTreeNode): void {
   for (const [name, dir] of node.dirs) {
     flattenSingleLeafConceptFolders(dir);
     // `unfiled` is a reserved section: it keeps its own labelled folder even
     // with a single leaf, because that label is the reader's signal.
-    if (name !== 'unfiled' && toPosix(dir.path).startsWith('wiki/concepts/') && dir.files.length === 1 && dir.dirs.size === 0) {
+    const dirPath = toPosix(dir.path);
+    const flattenable = (dirPath.startsWith('wiki/concepts/') && name !== 'unfiled')
+      || dirPath.startsWith('wiki/sources/');
+    if (flattenable && dir.files.length === 1 && dir.dirs.size === 0) {
       node.files.push(dir.files[0]!);
       node.dirs.delete(name);
     }
@@ -1093,10 +1096,14 @@ async function readLocallyModifiedMarker(rootDir: string): Promise<Set<string>> 
 async function renderUntrackedSidebar(rootDir: string): Promise<{ html: string; count: number }> {
   // Four independent reads: none depends on another's result, so they run
   // concurrently instead of one after another on every Pending panel render.
-  const [foundFiles, foundDirectories, wikiFiles, locallyModified, inflightUploads] = await Promise.all([
+  const [foundFiles, foundDirectories, archivedFiles, locallyModified, inflightUploads] = await Promise.all([
     fg('raw/untracked/**/*.md', { cwd: rootDir, dot: false, onlyFiles: true }),
     fg('raw/untracked/**', { cwd: rootDir, dot: false, onlyDirectories: true }),
-    fg('wiki/**/*.md', { cwd: rootDir, dot: false, onlyFiles: true }),
+    // The ingested archive is the previous life of a pending source: TAXO
+    // writes fiches under wiki/sources/<document>/<section>.md, so a wiki page
+    // no longer carries the source's own name. The archive path, built from
+    // the untracked relative path, is the identity that survives an ingest.
+    fg('raw/ingested/**/*.md', { cwd: rootDir, dot: false, onlyFiles: true }),
     readLocallyModifiedMarker(rootDir),
     // A dropped PDF/text file sits in the documents agent's queue before it
     // can become a source: while that conversion runs, the panel shows a
@@ -1107,14 +1114,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<{ html: string; 
   ]);
   const files = foundFiles.map(toPosix).sort((a, b) => a.localeCompare(b));
   const phases = activeIngestSources(rootDir);
-  // A pending source whose subject already exists in the wiki is an update,
-  // not a newcomer: the tree announces it in colour before the ingest does.
-  // Green = new subject, blue = an existing page that differs.
-  const wikiBySubject = new Map<string, string>();
-  for (const wikiFile of wikiFiles.map(toPosix)) {
-    const subject = path.basename(wikiFile, '.md');
-    if (subject && !wikiBySubject.has(subject)) wikiBySubject.set(subject, wikiFile);
-  }
+  const archived = new Set(archivedFiles.map(toPosix));
   const statuses = new Map<string, 'new' | 'update' | 'modified'>();
   const count = files.length + inflightUploads.length;
   const inflightRows = inflightUploads.map((record) =>
@@ -1186,7 +1186,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<{ html: string; 
           statuses.set(file, 'modified');
           return;
         }
-        const existing = wikiBySubject.get(stripTransportId(path.basename(file, '.md')));
+        const existing = archived.has(`raw/ingested/${slugifyPath(stripPrefix(file))}`) ? `raw/ingested/${slugifyPath(stripPrefix(file))}` : null;
         if (!existing) {
           statuses.set(file, 'new');
           return;
@@ -1196,7 +1196,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<{ html: string; 
           const current = await readFile(resolveInside(rootDir, existing), 'utf8');
           if (content.trim() !== current.trim()) statuses.set(file, 'update');
         } catch {
-          // Unreadable wiki page: leave the source unmarked rather than guess.
+          // Unreadable archive: leave the source unmarked rather than guess.
         }
       })).then(() => `${inflightRows}${renderUntrackedNode(root, titles, statuses, phases, true, pendingAt)}`);
       })()
@@ -1271,7 +1271,10 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
     const concepts = wikiDir.dirs.get('concepts');
     if (concepts) flattenSingleLeafConceptFolders(concepts);
     const notes = wikiDir.dirs.get('sources');
-    if (notes) collapseDocumentlessFolders(notes);
+    if (notes) {
+      collapseDocumentlessFolders(notes);
+      flattenSingleLeafConceptFolders(notes);
+    }
   }
   // In the wiki tree a page reads by its title (first `#` heading), not by
   // its filename — the path stays on the tooltip and on the graph's
