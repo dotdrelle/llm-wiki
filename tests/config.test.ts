@@ -22,6 +22,15 @@ describe('config resolution', () => {
     delete process.env.WIKI_CONFIG_PATH;
     delete process.env.WIKI_WORKSPACE;
     delete process.env.WIKI_WORKSPACE_PATH;
+    delete process.env.WIKI_MAX_IN_FLIGHT_REQUESTS;
+  });
+
+  it('fills maxInFlightRequests from the managed run capacity, file value wins', () => {
+    process.env.WIKI_MAX_IN_FLIGHT_REQUESTS = '6';
+    expect(resolveConfig({}, '/tmp/wiki').limits.maxInFlightRequests).toBe(6);
+    expect(resolveConfig({ limits: { maxInFlightRequests: 2 } }, '/tmp/wiki').limits.maxInFlightRequests).toBe(2);
+    process.env.WIKI_MAX_IN_FLIGHT_REQUESTS = '99';
+    expect(resolveConfig({}, '/tmp/wiki').limits.maxInFlightRequests).toBe(3);
   });
 
   it('defaults Ollama base URL when provider is ollama', () => {

@@ -60,6 +60,9 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .act-dismiss-all{font-size:10px;color:var(--muted);background:none;border:none;cursor:pointer;padding:2px 4px;border-radius:4px}
 .act-dismiss-all:hover{color:var(--text);background:var(--panel-soft)}
 .activity-subtab-toolbar{display:flex;align-items:center;justify-content:space-between;padding:0 4px 7px}.activity-subtab-toolbar-title{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.activity-subtab-actions{display:flex;align-items:center;gap:4px}.activity-subtab-clear,.activity-subtab-reset{border:0;background:none;color:var(--muted);font:700 10px var(--font-sans);cursor:pointer;padding:2px 4px;border-radius:4px}.activity-subtab-clear:hover{color:var(--err);background:color-mix(in srgb,var(--err) 8%,transparent)}.activity-subtab-reset{border:1px solid var(--border);color:var(--muted);padding:3px 6px}.activity-subtab-reset:hover{background:var(--panel-soft);border-color:var(--muted);color:var(--text)}
+.maintenance-heading{display:flex;align-items:center;gap:6px;min-width:0}.maintenance-heading .maintenance-state{margin:0;color:var(--muted)}.maintenance-proposals-link{border:0;background:none;color:var(--muted);font:700 10px var(--font-sans);text-decoration:none;padding:2px 4px;border-radius:4px;white-space:nowrap}.maintenance-proposals-link:hover{color:var(--accent);background:var(--accent-soft)}
+.maintenance-control-row{display:flex;width:100%;gap:6px;margin:8px 0 12px}.maintenance-control-row .maintenance-action{flex:1;min-width:0;margin:0;padding:6px 8px}
+.maintenance-log-row{display:grid;grid-template-columns:112px minmax(0,1fr) auto;align-items:baseline;gap:8px;padding:6px 8px;border-bottom:1px solid color-mix(in srgb,var(--border) 45%,transparent);font-size:11px;line-height:1.4}.maintenance-log-time{color:var(--muted);font-size:9px;white-space:nowrap}.maintenance-log-message{min-width:0;overflow-wrap:anywhere}.maintenance-log-status{font-size:9px;color:var(--muted);text-transform:uppercase;white-space:nowrap}.maintenance-log-row.status-checking .maintenance-log-status,.maintenance-log-row.status-pending .maintenance-log-status{color:var(--warn,#d29922)}.maintenance-log-row.status-checked .maintenance-log-status,.maintenance-log-row.status-done .maintenance-log-status{color:var(--ok,#3fb950)}.maintenance-log-row.status-failed .maintenance-log-status,.maintenance-log-row.status-cancelled .maintenance-log-status{color:var(--err)}
 .act-empty{font-size:12px;color:var(--muted2);text-align:center;padding:22px 10px;line-height:1.5}
 .act-empty-btn{margin-top:10px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text);font-size:12px;font-weight:700;font-family:var(--font-sans);padding:8px 10px;cursor:pointer}
 .act-empty-btn:hover{border-color:var(--accent);color:var(--accent)}
@@ -165,9 +168,9 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .runtime-graph-inspector{padding:10px;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;min-height:0}
 .runtime-inspector-title{font-size:12px;font-weight:850;color:var(--text);line-height:1.25;overflow-wrap:anywhere}
 .runtime-inspector-meta{margin-top:3px;font:700 10px var(--font-mono);color:var(--muted)}
-.runtime-inspector-dl{display:grid;grid-template-columns:42px minmax(0,1fr);gap:5px 7px;margin:10px 0;font-size:10px}
-.runtime-inspector-dl dt{color:var(--muted);font-weight:800}
-.runtime-inspector-dl dd{color:var(--text);font-family:var(--font-mono);overflow-wrap:anywhere}
+.runtime-inspector-dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:5px 7px;margin:10px 0;font-size:10px;width:100%}
+.runtime-inspector-dl dt{color:var(--muted);font-weight:800;white-space:nowrap}
+.runtime-inspector-dl dd{color:var(--text);font-family:var(--font-mono);min-width:0;overflow-wrap:anywhere}
 .runtime-inspector-section{border-top:1px solid var(--border);padding-top:8px;margin-top:8px;flex-shrink:0}
 .runtime-inspector-section:last-child{flex:1;display:flex;flex-direction:column;min-height:0}
 .runtime-inspector-heading{font-size:10px;font-weight:850;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;flex-shrink:0}

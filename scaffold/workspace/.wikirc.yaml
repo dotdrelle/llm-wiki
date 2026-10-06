@@ -35,6 +35,11 @@ llm:
 limits:
   # Maximum generation/chat requests started per minute for the LLM provider.
   requestsPerMinute: 60
+  # Optional: model calls a single ingestion, rebuild or build job may keep in
+  # flight. Left unset, it follows the manager's PRODUCTION_RECOMMENDED_CONCURRENCY
+  # (a standalone `wiki` CLI falls back to 3). Set it to pin THIS workspace
+  # lower or higher, at most 16 — an explicit value wins.
+  # maxInFlightRequests: 6
 
 build:
   # Default false: `ingest` only ingests, no deliverable is rebuilt.

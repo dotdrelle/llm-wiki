@@ -266,8 +266,9 @@ workspace. Three ways to reach them:
 
 For concurrency settings and the meaning of `Concurrent tasks: 1 / 4`, see
 [Configuration and performance](help-doc/10-configuration-performance.md).
-The summary counts plan tasks; ingestion's internal model-call concurrency is
-configured separately in the workspace `.wikirc.yaml`.
+The summary counts plan tasks; ingestion's internal model-call concurrency
+follows the manager's production recommendation by default, and the workspace
+`.wikirc.yaml` can pin its own value.
 
 ### Desktop assistants
 
@@ -384,7 +385,7 @@ llm:
 
 limits:
   requestsPerMinute: 10 # rate cap (default 10)
-  maxInFlightRequests: 3 # concurrent in-job provider calls
+  maxInFlightRequests: 3 # concurrent in-job provider calls; unset follows the manager
   dailyInputTokens: 1000000 # optional daily budget
   maxInputTokensPerCall: 50000 # hard cap per LLM call
   targetInputTokensPerCall: 40000 # soft target for batch planning

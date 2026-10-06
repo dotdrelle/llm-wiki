@@ -121,8 +121,17 @@ function runtimeWorkflowGraphData() {
     },{inputTokens:0,outputTokens:0,totalTokens:0,inputKnown:false,outputKnown:false,totalKnown:false});
     const currentParallel=tasks.filter(task=>task.status==='running').length;
     const parallelism=Math.max(1,Number(definition?.raw?.recommendedConcurrency)||currentParallel||1);
+    // A TAXO ingest is ONE task: its real processes are the source files the
+    // engine extracts in parallel (the per-file states the production agent
+    // reports), bounded by limits.maxInFlightRequests. Carry them on the phase
+    // so the node, the inspector and the run summary describe the same run.
+    const ingestion=tasks.some(task=>['ingest','ingest_rebuild'].includes(String(task.raw?.operation??task.raw?.arguments?.operation)));
+    const liveSources=ingestion&&currentParallel>0?runtimeActiveSourceStates():null;
+    const sourceCounts=liveSources&&liveSources.size?[...liveSources.values()].reduce((counts,value)=>{counts[value]=(counts[value]||0)+1;return counts;},{}):null;
+    const sourceTotal=tasks.reduce((sum,task)=>sum+runtimeTaskInputRefs(task).length,0);
+    const sourceProcessLimit=ingestion&&Number.isInteger(Number(runtimeState?.ingestionLlmLimit))&&Number(runtimeState.ingestionLlmLimit)>0?Number(runtimeState.ingestionLlmLimit):null;
     const done=tasks.filter(task=>task.status==='done').length;
-    return {id:'phase:'+key,type:'task_group',groupId:key,label:String(definition?.label||definition?.raw?.label||humanizeRuntimePhase(key,tasks[0]?.label)||'Phase '+(index+1)),status,tasks,agents,parallelism,currentParallel,done,total:tasks.length,usage,raw:{group:definition?.raw,tasks:tasks.map(task=>task.raw||task)}};
+    return {id:'phase:'+key,type:'task_group',groupId:key,label:String(definition?.label||definition?.raw?.label||humanizeRuntimePhase(key,tasks[0]?.label)||'Phase '+(index+1)),status,tasks,agents,parallelism,currentParallel,sourceCounts,sourceTotal,sourceProcessLimit,done,total:tasks.length,usage,raw:{group:definition?.raw,tasks:tasks.map(task=>task.raw||task)}};
   });
   const phaseByTask=new Map();
   phases.forEach(phase=>phase.tasks.forEach(task=>phaseByTask.set(String(task.stepId),phase.id)));
@@ -314,8 +323,18 @@ function renderRuntimeWorkflowInspector() {
   const phase=node.type==='task_group';
   const run=node.type==='run';
   const subagent=node.type==='subagent';
+  // The live extraction processes of an ingestion phase (sourceStates), never
+  // the single workspace-locked task that owns them. The batch size is the
+  // phase's own input files; the configured capacity is shown beside it.
+  const processTotal=node.sourceTotal||Object.values(node.sourceCounts||{}).reduce((sum,value)=>sum+value,0);
+  const processRow=phase&&node.sourceCounts
+    ? [['Processes',(node.sourceCounts.running||0)+' running'
+      +(node.sourceCounts.done?\` · \${node.sourceCounts.done} done\`:'')
+      +\` / \${processTotal}\`
+      +(node.sourceProcessLimit?\` · limit \${node.sourceProcessLimit}\`:'')]]
+    : [];
   const details=phase
-    ? [['Status',node.status],['Tasks',node.done+' / '+node.total],['Agents',node.agents?.join(', ')||'Not reported'],['Concurrent tasks',(node.currentParallel||0)+' / '+node.parallelism],['Tokens',formatRuntimeTokens(node.usage)]]
+    ? [['Status',node.status],['Tasks',node.done+' / '+node.total],...processRow,['Agents',node.agents?.join(', ')||'Not reported'],['Concurrent tasks',(node.currentParallel||0)+' / '+node.parallelism],['Tokens',formatRuntimeTokens(node.usage)]]
     : subagent
       ? [['Status',node.status],['Started',runtimeSubagentTime(node.startedAt)],['Finished',runtimeSubagentTime(node.finishedAt)]]
       : [['Status',node.status],['Phases',node.phaseCount||0],['Tasks',node.taskCount||0],['Agents',node.agents?.length||0],

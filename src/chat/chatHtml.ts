@@ -214,7 +214,9 @@ function openExternalLinks(html) {
 }
 const SIDEBAR_SPLIT_KEY = 'mcpchat_sidebar_history_height';
 const MAIN_SPLIT_KEY = 'mcpchat_sidebar_width';
-const SIDEBAR_OPEN_KEY = 'mcpchat_sidebar_open';
+// Reset the old remembered-open preference: Serve opens on the conversation,
+// with the workspace explorer available from the drawer toggle.
+const SIDEBAR_OPEN_KEY = 'mcpchat_sidebar_open_v2';
 const ACT_SPLIT_KEY = 'mcpchat_activity_width';
 const traceRegistry = new Map();
 let nextTraceId = 1;
@@ -1685,7 +1687,7 @@ function findSkillByName(name) {
 async function matchBrowserSkillInvocation(text) {
   const match=/^\\/([A-Za-z0-9_-]+)(?:\\s+([\\s\\S]*))?$/.exec(String(text||'').trim());
   if(!match) return {displayText:text,sendText:text,skill:null};
-  if(['status','stop','run','queue','skills','help','exit','quit','chat','agent','remember','forget','memory'].includes(String(match[1]).toLowerCase())) return {displayText:text,sendText:text,skill:null};
+  if(['status','stop','run','queue','skills','help','exit','quit','chat','agent','maintenance','remember','forget','memory'].includes(String(match[1]).toLowerCase())) return {displayText:text,sendText:text,skill:null};
   await fetchSkillsAc();
   const skill=findSkillByName(match[1]);
   if(!skill) return {displayText:text,sendText:text,skill:null};

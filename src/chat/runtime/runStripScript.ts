@@ -28,7 +28,18 @@ function runStripDetail(progress, usage) {
   };
   const stepCounter=counter(p.stepIndex,p.stepTotal,'Step');
   const taskCounter=counter(p.taskIndex,p.taskTotal,'Task');
-  const sourceCounter=counter(p.sourceIndex,p.sourceCount,'Source');
+  // While the engine extracts several sources at once, sourceIndex (the source
+  // being committed) lags far behind: the per-file states the production agent
+  // reports are the live truth, the 1-based index stays the fallback for older
+  // agents. Same source as the run graph's input nodes.
+  const sourceStates=p.sourceStates&&typeof p.sourceStates==='object'?Object.values(p.sourceStates).map(String):null;
+  const sourceStatesTotal=sourceStates?.length||0;
+  const sourceTotal=Number(p.sourceCount)>0?Number(p.sourceCount):sourceStatesTotal;
+  const sourceCounter=sourceStates&&sourceStatesTotal
+    ? \`Sources \${sourceStates.filter(value=>value==='running').length} running\`
+      +(sourceStates.some(value=>value==='done')?\` · \${sourceStates.filter(value=>value==='done').length} done\`:'')
+      +\` / \${sourceTotal}\`
+    : counter(p.sourceIndex,p.sourceCount,'Source');
   // One batch counter, never two. The agent's batch.index is already 1-based;
   // the trace's batchIndex is 0-based. A detail that already says "Batch N/M"
   // (the agent's own sentence, e.g. "Batch 1/2 · LLM running") is kept whole

@@ -108,6 +108,18 @@ function humanTitle(value: string): string {
   return path.basename(value, '.md').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function plainDisplayLabel(value: string): string {
+  return value
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/(`+)(.*?)\1/g, '$2')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/(^|[^\w])\*([^*]+)\*(?!\w)/g, '$1$2')
+    .replace(/(^|[^\w])_([^_]+)_(?!\w)/g, '$1$2')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function capitalizeFirst(value: string): string {
   return value ? value.charAt(0).toLocaleUpperCase() + value.slice(1) : value;
 }
@@ -172,7 +184,7 @@ async function conceptLeafSubject(rootDir: string, relativePath: string): Promis
   const subject = declared
     ? stripTransportId(declared)
     : conceptBasenameSubject(relativePath, concept);
-  return humanTitle(subject).toLocaleUpperCase() || '-';
+  return humanTitle(plainDisplayLabel(subject)).toLocaleUpperCase() || '-';
 }
 
 function deliverableKind(relativePath: string): 'build' | 'export' | 'polish' {
@@ -815,6 +827,23 @@ function pruneEmptyNavDirectories(node: NavTreeNode): void {
   }
 }
 
+/**
+ * In Project knowledge, a family folder with exactly one leaf and no nested
+ * branches adds a click without grouping anything. Put that leaf at the
+ * section level in the rendered tree; its link and stored path stay intact.
+ */
+function flattenSingleLeafConceptFolders(node: NavTreeNode): void {
+  for (const [name, dir] of node.dirs) {
+    flattenSingleLeafConceptFolders(dir);
+    // `unfiled` is a reserved section: it keeps its own labelled folder even
+    // with a single leaf, because that label is the reader's signal.
+    if (name !== 'unfiled' && toPosix(dir.path).startsWith('wiki/concepts/') && dir.files.length === 1 && dir.dirs.size === 0) {
+      node.files.push(dir.files[0]!);
+      node.dirs.delete(name);
+    }
+  }
+}
+
 // UPPERCASE for the wiki root, a collection's own root (depth 0) and a
 // concept folder at any depth; a leading capital for the wiki taxonomy folders
 // (answers/concepts/sources) and a collection sub-folder; other wiki folders as
@@ -1237,7 +1266,13 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
 
   const rootDirs = [...root.dirs.values()].sort((a, b) => SERVED_DIRS.indexOf(a.name) - SERVED_DIRS.indexOf(b.name));
   const wikiDir = rootDirs.find((dir) => dir.name === 'wiki');
-  if (wikiDir) { pruneEmptyNavDirectories(wikiDir); const notes = wikiDir.dirs.get('sources'); if (notes) collapseDocumentlessFolders(notes); }
+  if (wikiDir) {
+    pruneEmptyNavDirectories(wikiDir);
+    const concepts = wikiDir.dirs.get('concepts');
+    if (concepts) flattenSingleLeafConceptFolders(concepts);
+    const notes = wikiDir.dirs.get('sources');
+    if (notes) collapseDocumentlessFolders(notes);
+  }
   // In the wiki tree a page reads by its title (first `#` heading), not by
   // its filename — the path stays on the tooltip and on the graph's
   // secondary label, so the identifier is never lost, only quieter. A concept
@@ -1284,25 +1319,13 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7h-3a2 2 0 0 1-2-2V2"/><path d="M9 18a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h7l4 4v10a2 2 0 0 1-2 2Z"/><path d="M3 7.6v12.8A1.6 1.6 0 0 0 4.6 22h9.8"/><path d="M10.5 10.5h6"/><path d="M10.5 14h4"/></svg>';
   const inboxIcon =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>';
-  // Agent-curate proposals wait on a human decision (merge = approval): the
-  // shortcut carries the pending count so a proposal is never silently waiting.
-  const reviewIcon =
-    '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>';
-  const proposalCount = pendingProposalCount(rootDir);
-  const proposalBadge = proposalCount > 0
-    ? `<span class="side-action-badge">${proposalCount}</span>`
-    : '';
-  // The shortcut sits at the BOTTOM of the view rail — below the Pending tab,
-  // its own section after the three views — and carries the pending count so a
-  // proposal is never silently waiting.
-  const proposalReviewLink = `<a class="side-view-btn side-view-review" href="/agent-proposals" title="Agent proposals — review and merge" aria-label="Agent proposals">${reviewIcon}${proposalBadge}</a>`;
   // The two inboxes announce their backlog on the rail, not only once opened:
   // the brain carries what the last ingest produced (the browser subtracts what
   // has already been read), the inbox the files waiting in Pending.
   const wikiBadgeCount = changed.size;
   const wikiBadge = `<span class="side-view-badge" data-view-badge="wiki"${wikiBadgeCount > 0 ? '' : ' hidden'}>${wikiBadgeCount}</span>`;
   const pendingBadge = `<span class="side-view-badge" data-view-badge="pending"${untrackedPanel.count > 0 ? '' : ' hidden'}>${untrackedPanel.count}</span>`;
-  const viewBar = `<div class="side-views"><div class="side-view-rail"><div class="side-view-tabs" role="tablist" aria-label="Sidebar views"><button class="side-view-btn" type="button" role="tab" data-side-view="pending" title="Pending sources" aria-label="Pending sources">${inboxIcon}${pendingBadge}</button><button class="side-view-btn" type="button" role="tab" data-side-view="wiki" title="Wiki pages" aria-label="Wiki pages">${brainIcon}${wikiBadge}</button><button class="side-view-btn" type="button" role="tab" data-side-view="files" title="Context, templates, deliverables" aria-label="Context, templates, deliverables">${fileIcon}</button></div>${proposalReviewLink}</div><div class="side-view-panes"><section class="side-view-pane" data-side-view-pane="wiki" role="tabpanel" aria-label="Wiki pages" hidden><nav class="side-tree" aria-label="Wiki pages">${wikiTree}</nav></section><section class="side-view-pane" data-side-view-pane="files" role="tabpanel" aria-label="Context, templates, deliverables" hidden>${collections}</section><section class="side-view-pane" data-side-view-pane="pending" role="tabpanel" aria-label="Pending sources">${untrackedPanel.html}</section></div></div>`;
+  const viewBar = `<div class="side-views"><div class="side-view-rail"><div class="side-view-tabs" role="tablist" aria-label="Sidebar views"><button class="side-view-btn" type="button" role="tab" data-side-view="pending" title="Pending sources" aria-label="Pending sources">${inboxIcon}${pendingBadge}</button><button class="side-view-btn" type="button" role="tab" data-side-view="wiki" title="Wiki pages" aria-label="Wiki pages">${brainIcon}${wikiBadge}</button><button class="side-view-btn" type="button" role="tab" data-side-view="files" title="Context, templates, deliverables" aria-label="Context, templates, deliverables">${fileIcon}</button></div></div><div class="side-view-panes"><section class="side-view-pane" data-side-view-pane="wiki" role="tabpanel" aria-label="Wiki pages" hidden><nav class="side-tree" aria-label="Wiki pages">${wikiTree}</nav></section><section class="side-view-pane" data-side-view-pane="files" role="tabpanel" aria-label="Context, templates, deliverables" hidden>${collections}</section><section class="side-view-pane" data-side-view-pane="pending" role="tabpanel" aria-label="Pending sources">${untrackedPanel.html}</section></div></div>`;
 
   const wsSwitcher = hubPort()
     ? `<div class="ws-switcher" id="ws-switcher" data-current="${escapeAttr(workspaceNameFromEnv() ?? '')}"><p class="ws-switcher-title">Workspaces</p><p class="ws-name" style="font-size:0.8rem;color:var(--muted);padding:0 0.2rem">Loading...</p></div>`
@@ -1322,15 +1345,6 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
     '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg>';
 const kbdHint = `<kbd style="font-size:.68rem;font-family:ui-monospace,monospace;background:var(--panel-soft);border:1px solid var(--border);padding:.1rem .35rem;border-radius:4px;color:var(--muted);cursor:pointer" title="Open global search (⌘K)" onclick="document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true}))">⌘K</kbd>`;
   return `<a class="wiki-help-toggle" href="/help" title="Help" aria-label="Help">?</a><button class="wiki-theme-toggle" type="button" data-theme-toggle title="Switch to dark theme" aria-label="Switch color theme">☾</button><aside class="sidebar"><div class="side-head"><a class="brand" href="/"><span class="brand-title">${escapeHtml(workspaceName)}</span></a><div class="side-actions" aria-label="Shortcuts"><a class="side-action" href="/graph" title="Graph" aria-label="Graph">${graphIcon}</a><a class="side-action" href="/chat" title="Chat" aria-label="Chat">${chatIcon}</a><a class="side-action" href="/history" title="History" aria-label="History">${historyIcon}</a><button class="side-action" type="button" title="Refresh sidebar" aria-label="Refresh sidebar" data-sidebar-refresh="wiki"><span class="side-refresh-glyph">${REFRESH_ICON}</span></button></div></div><div class="side-search" style="display:flex;gap:.4rem;align-items:center"><input class="side-search-input" type="search" placeholder="Filter files..." aria-label="Filter files" data-side-search style="margin:0;flex:1">${kbdHint}</div><p class="side-search-status" data-side-search-status style="margin:.35rem 0 0;font-size:.78rem;color:var(--muted)">No matching files.</p>${viewBar}${wsSwitcher}</aside><div class="wiki-main-resizer" data-wiki-main-resizer title="Resize sidebar" role="separator" aria-orientation="vertical"></div>`;
-}
-
-function pendingProposalCount(rootDir: string): number {
-  try {
-    const dir = path.join(rootDir, '.wiki', 'agent-proposals');
-    return readdirSync(dir).filter((name) => name.endsWith('.json')).length;
-  } catch {
-    return 0;
-  }
 }
 
 /**

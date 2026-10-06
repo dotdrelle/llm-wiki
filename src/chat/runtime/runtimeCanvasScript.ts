@@ -262,7 +262,12 @@ function createRuntimeCanvasRenderer(host){
       while(context.measureText(label).width>maxW&&label.length>5)label=label.slice(0,-2);
       context.fillText(label+(label!==String(node.label||'')?'…':''),point.x-w/2+13,point.y-6);
       context.font='9px ui-sans-serif,system-ui';context.fillStyle=rgba(color,.9);
-      context.fillText(node.type==='task_group'?((node.done||0)+'/'+(node.total||0)+' tasks · ×'+(node.parallelism||1)):String(node.status||'pending'),point.x-w/2+13,point.y+12);
+      const meta=node.type==='task_group'
+        ? (node.sourceCounts
+          ?(node.done||0)+'/'+(node.total||0)+' tasks · '+(node.sourceCounts.running||0)+'/'+(node.sourceTotal||Object.values(node.sourceCounts).reduce((sum,value)=>sum+value,0))+' processes'
+          :(node.done||0)+'/'+(node.total||0)+' tasks · ×'+(node.parallelism||1))
+        :String(node.status||'pending');
+      context.fillText(meta,point.x-w/2+13,point.y+12);
     } else {
       const r=node.type==='run'?28:14;
       context.fillStyle=pending?rgba(color,.28):rgba(color,.9);

@@ -283,7 +283,7 @@ These keys describe operational and prompt budgets used by `wiki build --plan`, 
 | Key                        | Description                                                                                 | Default |
 | -------------------------- | ------------------------------------------------------------------------------------------- | ------- |
 | `requestsPerMinute`        | Effective LLM request throttle. Request starts are spaced at `60s / requestsPerMinute`      | `10`    |
-| `maxInFlightRequests`      | Maximum concurrent in-job provider calls for section/batch generation                       | `3`     |
+| `maxInFlightRequests`      | Maximum concurrent in-job provider calls for section/batch generation. Under the manager, defaults to the run's advertised capacity (`WIKI_MAX_IN_FLIGHT_REQUESTS`, set by the production agent from `PRODUCTION_RECOMMENDED_CONCURRENCY`); an explicit value here wins | `3` standalone |
 | `dailyInputTokens`         | Optional daily input-token budget, printed by `wiki build --plan` when set                  | —       |
 | `targetInputTokensPerCall` | Preferred input-token budget per build call. The builder starts a new batch above this size | `40000` |
 | `maxInputTokensPerCall`    | Hard input-token budget per build call. The builder trims retrieved context above this size. The manager's read-only chat also reads it as its per-request input budget (see `llm-wiki-manager/CLAUDE.md`, read-only chat loop) — set it per profile to what the model accepts | `50000` |

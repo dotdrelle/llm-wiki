@@ -224,23 +224,14 @@ describe('sidebar views', () => {
     expect(WIKI_LAYOUT_SCRIPT).toContain('activeView = next;');
   });
 
-  it('puts the agent-proposals shortcut at the bottom of the view rail, below Pending', async () => {
+  it('keeps the agent-proposals shortcut out of the sidebar', async () => {
     const html = await renderSidebar(root);
 
-    // The three tabs form the tablist; the review shortcut is its own entry
-    // AFTER the Pending tab, inside the same rail — not in the head shortcuts.
-    const rail = html.slice(html.indexOf('class="side-view-rail"'));
-    const pendingTab = rail.indexOf('data-side-view="pending"');
-    const review = rail.indexOf('href="/agent-proposals"');
-    expect(pendingTab).toBeGreaterThan(-1);
-    expect(review).toBeGreaterThan(pendingTab);
-    expect(rail.slice(rail.indexOf('class="side-view-tabs"'), review)).toContain('data-side-view="pending"');
-    // The head keeps only the general shortcuts now.
+    // The review link moved to the Maintenance toolbar (Activity panel), where
+    // pending decisions are read; the sidebar keeps no duplicate entry.
+    expect(html).not.toContain('href="/agent-proposals"');
     const head = html.slice(html.indexOf('side-actions'), html.indexOf('class="side-view-rail"'));
     expect(head).not.toContain('href="/agent-proposals"');
-    expect(html).toContain('title="Agent proposals — review and merge"');
-    // The badge rides on the rail entry.
-    expect(WIKI_LAYOUT_CSS).toContain('.side-view-review { position: relative;');
   });
 
   it('capitalises every tab, and renders a collection root as a flat titled drop target', async () => {
@@ -475,7 +466,7 @@ describe('titles in the tree', () => {
     const html = await renderSidebar(root);
 
     expect(html).toContain('data-changed-at=');
-    expect(html).toContain('data-changed-dir="wiki/concepts/offre"');
+    expect(html).toContain('data-side-path="wiki/concepts/offre/alpha.md"');
     expect(html).toContain('data-view-badge="wiki"');
   });
 

@@ -42,4 +42,11 @@ describe('run strip and Activity panel describe a run the same way', () => {
     expect(runStripDetail({ batch: { index: 2, total: 3 }, batchIndex: 1, batchCount: 3 }, null)).toBe('Batch 2/3');
     expect(runStripDetail({ batchIndex: 1, batchCount: 3 }, null)).toBe('Batch 2/3');
   });
+
+  it('reports the live extraction processes instead of the lagging source cursor', () => {
+    const live = { sourceIndex: 0, sourceCount: 8, sourceStates: { 'a.md': 'done', 'b.md': 'running', 'c.md': 'running' } };
+    expect(runStripDetail(live, null)).toBe('Sources 2 running · 1 done / 8');
+    // Without the per-file states, the 1-based cursor stays the fallback.
+    expect(runStripDetail({ sourceIndex: 0, sourceCount: 8 }, null)).toBe('Source 1/8');
+  });
 });

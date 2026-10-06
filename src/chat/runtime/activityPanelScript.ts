@@ -676,9 +676,11 @@ function renderActivities() {
   }).join('');
   const empty=\`<div class="act-empty">No \${labels[activityListTab].toLowerCase()} yet.</div>\`;
   const resetPlan=activityListTab==='plan'?'<button class="activity-subtab-reset" type="button" onclick="resetRuntimePlan()">Reset plan</button>':'';
-  const clear=activityListTab==='maintenance'?'':\`<button class="activity-subtab-clear" type="button" onclick="clearActivityTab('\${activityListTab}')">Clear</button>\`;
+  const clear=activityListTab==='maintenance'?'<button class="activity-subtab-clear" type="button" onclick="clearMaintenanceHistory()">Clear</button>':\`<button class="activity-subtab-clear" type="button" onclick="clearActivityTab('\${activityListTab}')">Clear</button>\`;
   const maintenanceState=activityListTab==='maintenance'?'<span class="maintenance-state" aria-live="polite"></span>':'';
-  const toolbar=\`<div class="activity-subtab-toolbar"><span class="activity-subtab-toolbar-title">\${labels[activityListTab]}</span>\${maintenanceState}<span class="activity-subtab-actions">\${resetPlan}\${clear}</span></div>\`;
+  const maintenanceProposals=activityListTab==='maintenance'?'<a class="maintenance-proposals-link" href="/agent-proposals" target="wiki-frame" title="Review and merge agent proposals">Agent proposals</a>':'';
+  const toolbarTitle=activityListTab==='maintenance'?\`<span class="maintenance-heading"><span class="activity-subtab-toolbar-title">Maintenance</span>\${maintenanceState}</span>\`:\`<span class="activity-subtab-toolbar-title">\${labels[activityListTab]}</span>\`;
+  const toolbar=\`<div class="activity-subtab-toolbar">\${toolbarTitle}<span class="activity-subtab-actions">\${resetPlan}\${maintenanceProposals}\${clear}</span></div>\`;
   const html=\`<div class="activity-subtabs" role="tablist" aria-label="Activity list sections">\${tabs}</div><div class="activity-subtab-content activity-subtab-\${activityListTab}">\${toolbar}\${activePaneHTML||empty}</div>\`;
   // The panel re-renders every second while a run is active; replacing
   // innerHTML unconditionally reset the scroll position each tick, making it

@@ -713,6 +713,18 @@ export function resolveConfigDetails(
   const mergedInput = deepMerge(presetInput, rawInput);
   assertNoLegacyProvider(mergedInput);
   const parsed = rawConfigSchema.parse(mergedInput ?? {});
+  // Managed jobs carry their run's capacity: the manager's production agent
+  // exports WIKI_MAX_IN_FLIGHT_REQUESTS from PRODUCTION_RECOMMENDED_CONCURRENCY
+  // (capped by PRODUCTION_MAX_CONCURRENCY). One knob parallelises both the
+  // plan's tasks and the model calls fired inside one job. An explicit
+  // `limits.maxInFlightRequests` — in the file or through a provider preset —
+  // stays the workspace's own override, and the standalone CLI keeps its 3.
+  const envInFlightRequests = Number(process.env.WIKI_MAX_IN_FLIGHT_REQUESTS);
+  const envInFlightValid = Number.isInteger(envInFlightRequests) && envInFlightRequests >= 1 && envInFlightRequests <= 16;
+  const inFlightSource = sourceForPath(rawInput, presetInput, presetName, 'limits.maxInFlightRequests');
+  const maxInFlightRequests = inFlightSource === 'default' && envInFlightValid
+    ? envInFlightRequests
+    : (parsed.limits?.maxInFlightRequests ?? 3);
   const provider = parsed.llm?.provider ?? 'openai-compatible';
   // `engine` is ignored behind a gateway: the endpoint is opaque and each
   // model may have a different engine. We assume clean OpenAI semantics there
@@ -806,7 +818,7 @@ export function resolveConfigDetails(
     limits: {
       requestsPerMinute: parsed.limits?.requestsPerMinute ?? 10,
       dailyInputTokens: parsed.limits?.dailyInputTokens,
-      maxInFlightRequests: parsed.limits?.maxInFlightRequests ?? 3,
+      maxInFlightRequests,
       maxInputTokensPerCall: parsed.limits?.maxInputTokensPerCall ?? 50000,
       targetInputTokensPerCall: parsed.limits?.targetInputTokensPerCall ?? 40000,
       maxProfileChars: parsed.limits?.maxProfileChars ?? 4000,

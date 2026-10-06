@@ -28,9 +28,7 @@ building, polishing and exporting.
   known limits;
 - **recommended** — the normal operating level announced by the production
   agent;
-- **maximum** — the hard limit announced by that agent;
-- **scheduler workers** — the manager's worker capacity for dispatching ready
-  tasks.
+- **maximum** — the hard limit announced by that agent.
 
 The effective value is the smallest applicable limit: agent recommendation,
 agent maximum, an optional manager cap, and any narrower limit in the plan.
@@ -55,12 +53,17 @@ An ingestion is **one task** over the whole batch. It can therefore show
 the production task limit does not split ingestion into more tasks.
 
 Inside ingestion, the engine extracts sections from several source files with
-a shared model-call budget controlled by `limits.maxInFlightRequests` in the
-workspace `.wikirc.yaml` (default 3, at most 16). Writes remain serialized.
-The run graph and Plan step list each input file as pending, running, done or
-failed; those file states do not count simultaneous model calls.
+a shared model-call budget. By default that budget is the same production
+recommendation (`PRODUCTION_RECOMMENDED_CONCURRENCY`), so raising it raises
+both the task limit and the extraction capacity. A workspace can pin its own
+value with `limits.maxInFlightRequests` in its `.wikirc.yaml` (default 3, at
+most 16); an explicit value then wins over the production recommendation.
+Writes remain serialized. The run graph and Plan step list each input file as
+pending, running, done or failed; those file states do not count simultaneous
+model calls.
 
-`LLM calls per ingestion: limit 6` shows the configured extraction capacity,
+`LLM calls per ingestion: limit 6` shows the extraction capacity actually in
+force — the workspace value when set, otherwise the production recommendation —
 not a live count of calls. If the runtime has no configuration to report, the
 summary says `limit not reported`. The batch note explains that one ingestion
 task processes its input files. The Shell also shows the agent recommendation,
@@ -88,7 +91,7 @@ relevant containers. Connectors and production have separate defaults:
 | --- | --- | --- |
 | `CONNECTORS_RECOMMENDED_CONCURRENCY` | Connector collection task concurrency | 2 |
 | `CONNECTORS_MAX_CONCURRENCY` | Connector agent hard ceiling | 4 |
-| `PRODUCTION_RECOMMENDED_CONCURRENCY` | Production task concurrency: build, export, polish | 4 |
+| `PRODUCTION_RECOMMENDED_CONCURRENCY` | Production task concurrency (build, export, polish) **and**, by default, in-job extraction calls (ingest, rebuild) | 4 |
 | `PRODUCTION_MAX_CONCURRENCY` | Production agent hard ceiling | 8 |
 | `WIKI_MANAGER_CAPABILITY_CONCURRENCY` | Additional manager ceiling | Unset |
 
@@ -96,10 +99,13 @@ The connector default of 2 does not limit production tasks to 2. Lines starting
 with `#` in `.env` are comments: `# WIKI_MANAGER_CAPABILITY_CONCURRENCY=4`
 does not activate a manager ceiling of 4.
 
-`WIKI_MANAGER_CAPABILITY_CONCURRENCY` is an optional global cap. It can only
-lower the concurrency selected from the agent contract; leaving it unset lets
-the agent and plan limits decide. `WIKI_MANAGER_SCHEDULER_CONCURRENCY` controls
-the manager worker capacity.
+`WIKI_MANAGER_CAPABILITY_CONCURRENCY` is an optional global cap, decided by
+the manager rather than the agent. It can only lower the concurrency selected
+from the agent contract, and it applies to every agent at once (production,
+connectors, external runtimes) without recreating their containers. Leaving it
+unset lets the agent and plan limits decide. Use it to protect a shared machine
+or model endpoint globally; for production alone, lower
+`PRODUCTION_RECOMMENDED_CONCURRENCY` instead.
 
 The agentic gateway's own ceilings live in the same manager environment (all
 optional, defaults in parentheses): `GATEWAY_RECURSION_LIMIT` (40) reasoning
@@ -127,30 +133,33 @@ errors, memory pressure, timeouts or an overloaded model endpoint.
 ```dotenv
 PRODUCTION_RECOMMENDED_CONCURRENCY=8
 PRODUCTION_MAX_CONCURRENCY=8
-WIKI_MANAGER_CAPABILITY_CONCURRENCY=8
 ```
 
-The manager cap can also remain unset. Keeping it at 4 would cap these tasks
-at 4. Raising only `MAX` or only the manager cap leaves the agent's lower
-recommendation binding. For collection work, change the `CONNECTORS_…`
-settings instead, keeping the maximum and any manager cap at least as high as
-the desired recommendation. Ready tasks, dependencies and locks still decide
-how many can actually run.
+The optional manager cap (`WIKI_MANAGER_CAPABILITY_CONCURRENCY`) is not needed
+here: leave it unset, or set it to 8 as well. Keeping it at 4 would cap these
+tasks at 4. Raising only `MAX` leaves the agent's lower recommendation binding.
+For collection work, change the `CONNECTORS_…` settings instead, keeping the
+maximum at least as high as the desired recommendation. Ready tasks,
+dependencies and locks still decide how many can actually run.
 
 After changing container environment values, recreate the affected agent
 containers; a container restart alone does not apply a changed Compose
 environment. Restart the manager runtime if its environment changed, then
 check `/status` and the next run's summary for the resolved values.
 
-**To increase concurrent ingestion extraction calls**, change the workspace
-`.wikirc.yaml` instead, preserving its other settings:
+**To increase concurrent ingestion extraction calls**, raise
+`PRODUCTION_RECOMMENDED_CONCURRENCY` with the rest: it is the same knob, and
+the extraction budget follows it unless a workspace pins its own value. To
+keep one workspace lower — a weaker model endpoint, for example — set an
+explicit value in its `.wikirc.yaml`, preserving its other settings:
 
 ```yaml
 limits:
-  maxInFlightRequests: 6
+  maxInFlightRequests: 3
 ```
 
-This applies to the next ingestion or archive rebuild. The run can still show
+An explicit workspace value wins over the production recommendation. The
+change applies to the next ingestion or archive rebuild. The run can still show
 `Concurrent tasks: 1 / 4`, because it remains one plan task. The LLM endpoint's capacity
 and `limits.requestsPerMinute` also constrain throughput; the in-flight limit
 does not change the request-start rate.

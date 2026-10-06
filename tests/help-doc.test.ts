@@ -12,7 +12,7 @@ describe('product help documentation', () => {
       { dir: helpDir },
     );
     expect(result.chapters[0]?.id).toBe('10-configuration-performance');
-    expect(result.chapters[0]?.content).toContain('scheduler workers');
+    expect(result.chapters[0]?.content).toContain('manager cap');
   });
 
   it('contains no local project, test-workspace, credential, or secret values', async () => {

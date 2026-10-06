@@ -47,6 +47,9 @@ describe('chat html', () => {
     expect(matcher).toContain('sendText:text');
     expect(matcher).not.toContain('skill.body');
     expect(matcher).not.toContain('replaceAll');
+    // Keep this copy identical to the manager's RESERVED_SLASH_COMMANDS:
+    // /maintenance is a built-in, a same-named workspace skill never shadows it.
+    expect(matcher).toContain("'maintenance'");
     expect(script).toContain("body:JSON.stringify(skillRun?{input:text,mode:'agent',conversationId:currentConversationId}:turnBody)");
   });
 
@@ -739,6 +742,15 @@ describe('chat html', () => {
     expect(script).toContain("Number(p.instructionCount??p.processing?.instructionCount)");
   });
 
+  it('flexes the graph inspector table to the panel width instead of wrapping its labels', () => {
+    // A fixed 42px label column wrapped "Concurrent tasks" and "LLM calls per
+    // ingestion" onto two lines; the label column sizes to its content and the
+    // value column takes what remains.
+    expect(CHAT_HTML).toContain('.runtime-inspector-dl{display:grid;grid-template-columns:auto minmax(0,1fr)');
+    expect(CHAT_HTML).toContain('.runtime-inspector-dl dt{color:var(--muted);font-weight:800;white-space:nowrap}');
+    expect(CHAT_HTML).toContain('.runtime-inspector-dl dd{color:var(--text);font-family:var(--font-mono);min-width:0;overflow-wrap:anywhere}');
+  });
+
   it('keeps local chat conversational without sending MCP tools to the browser LLM loop', () => {
     const [script] = chatScripts();
     const sendSource = script.match(/async function sendMessage\(\) \{[\s\S]*?\n\}\n\nasync function sendRuntimeAgentMessage/)?.[0] ?? '';
@@ -1250,14 +1262,20 @@ describe('chat html', () => {
     expect(script).toContain("if(/^\\/maintenance(?:\\s|$)/i.test(text)&&!forceChat)");
     expect(script).toContain("window.handleMaintenanceSlashCommand?.(text)");
     expect(script).toContain("if(action==='status'||action==='history'){open();return true;}");
-    expect(script).toContain('Allowed actions and build window');
+    expect(script).toContain("node('summary','Build window',policy)");
     expect(script).toContain('Build window: ');
+    expect(script).toContain("node('span','Approval mode',modeRow)");
+    expect(script).toContain("command({command:'mode',mode})");
     expect(script).toContain('class="maintenance-state"');
     expect(script).toContain("badge.textContent=state.error?'Error':!state.enabled?'Disabled':state.paused?'Paused':'Active'");
     expect(script).not.toContain("node('h2','Maintenance'");
     expect(script).toContain("threadHeading.className='maintenance-thread-heading'");
     expect(script).toContain('.activity-subtab-maintenance .maintenance-thread-heading{margin-top:16px}');
-    expect(script).toContain("button('Clear',panel,clearHistory)");
+    // Clear moved to the Maintenance toolbar (one button per tab), wired to
+    // the panel's clearHistory through window.clearMaintenanceHistory.
+    expect(script).toContain('onclick="clearMaintenanceHistory()"');
+    expect(script).toContain('window.clearMaintenanceHistory=clearHistory');
+    expect(script).toContain('maintenance-proposals-link');
     expect(script).toContain("command({command:'clear'})");
     expect(script).toContain("tab.textContent='Maintenance · '+count");
     expect(script).toContain('const maintenanceCount=Number(window.getMaintenancePendingCount?.())||0;');
@@ -1380,7 +1398,7 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('id="sidebar-toggle"');
     expect(CHAT_HTML).toContain('aria-label="Collapse left panel"');
     expect(CHAT_HTML).toContain('.sidebar-toggle{');
-    expect(script).toContain("const SIDEBAR_OPEN_KEY = 'mcpchat_sidebar_open';");
+    expect(script).toContain("const SIDEBAR_OPEN_KEY = 'mcpchat_sidebar_open_v2';");
     expect(script).toContain('function applySidebarOpen(open, persist=false)');
     expect(script).toContain("localStorage.getItem(SIDEBAR_OPEN_KEY)==='1'");
     expect(script).toContain('function toggleSidebar() { applySidebarOpen(!sidebarOpen,true); }');

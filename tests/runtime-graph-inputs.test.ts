@@ -70,6 +70,27 @@ describe('runtime graph task inputs', () => {
     const { nodes } = project({ workflow: { nodes: [{ id: 'run:1', type: 'run', status: 'done' }, task('done')] } });
     expect(nodes.filter((node: { type: string }) => node.type === 'task_input').every((node: { status: string }) => node.status === 'done')).toBe(true);
   });
+
+  it('carries the live extraction processes on the ingestion phase, not just its one task', () => {
+    const { nodes } = project({
+      concurrency: { limit: 6 },
+      ingestionLlmLimit: 4,
+      workflow: {
+        nodes: [{ id: 'run:1', type: 'run', status: 'running' }, task('running')],
+        activity: { lines: [{ status: 'running', progress: {
+          sourceStates: { 'Etude open source EPM.md': 'done', 'Comparaison Sécurité.md': 'running', 'Synthèse.md': 'running' },
+        } }] },
+      },
+    });
+    const phase = nodes.find((node: { type: string }) => node.type === 'task_group') as {
+      currentParallel: number; sourceCounts: Record<string, number>; sourceTotal: number; sourceProcessLimit: number;
+    };
+    // One workspace-locked task, but the live extraction runs on three files.
+    expect(phase.currentParallel).toBe(1);
+    expect(phase.sourceCounts).toEqual({ done: 1, running: 2 });
+    expect(phase.sourceTotal).toBe(3);
+    expect(phase.sourceProcessLimit).toBe(4);
+  });
 });
 
 // Execute the browser summary with a real workflow: input-file activity must

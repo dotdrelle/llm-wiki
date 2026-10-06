@@ -39,17 +39,24 @@ provider. Only you can turn it on — Donna can show, pause or stop it, never
 enable it. Enabling says what it implies: which actions will ask you first,
 and whether builds can run (they stay off until a build window is set).
 
-Everything else is configured in the manager's `mcp.endpoints.json`, next to
-`chatAccess`, under `maintenanceAccess`. Each action is `auto` (done),
-`ask` (you approve first) or `off` (never done; suggested in the history):
+Choose the approval mode in the served **Maintenance** panel or in the Shell
+with `/maintenance mode auto` or `/maintenance mode human`. The setting is
+saved for the current workspace in `maintenanceAccess.workspaces`.
+
+- **Auto** runs each listed action without an approval request.
+- **Human** asks before running each listed action.
+
+The editable action list lives in `mcp.endpoints.json`, under
+`maintenanceAccess.defaults.actions`; a workspace can override it. Remove an
+action from the list to leave it disabled. The same maintenance agent and
+workspace checks remain in place.
 
 ```json
 "maintenanceAccess": {
   "defaults": {
     "enabled": false,
-    "actions": { "sync": "auto", "ingest": "ask", "doctor": "auto", "index": "auto",
-                 "rebuild": "auto", "curate": "auto", "build": "auto",
-                 "deliver": "ask", "mail": "auto" },
+    "mode": "human",
+    "actions": ["sync", "ingest", "doctor", "index", "rebuild", "curate", "build", "deliver", "mail"],
     "mail": { "to": [], "on": ["failure", "decision", "daily"] },
     "buildSchedule": { "mode": "window", "start": "02:00", "end": "05:00", "timezone": "Europe/Paris" },
     "limits": { "cyclesPerDay": 12, "buildsPerDay": 4, "actionsPerDay": 40,
@@ -61,15 +68,15 @@ Everything else is configured in the manager's `mcp.endpoints.json`, next to
 }
 ```
 
-A workspace inherits `defaults` and overrides only what it names. `build` and
-`deliver` also accept a list of templates or deliverables: those are `auto`,
-every other one is `off`. An invalid block turns nothing on and says why in
-`/maintenance status`.
+A workspace inherits `defaults` and overrides only what it names. For `build`
+and `deliver`, you can instead use an object mapping those action names to
+lists of template or deliverable paths; paths outside the list stay disabled.
+An invalid block turns nothing on and says why in `/maintenance status`.
 
 ## The decisions that stay yours
 
-By default maintenance asks before two things, in a **Maintenance** banner
-(bottom right in the served chat, in the right pane of the Shell):
+In **Human** mode, listed actions create approval requests in the Maintenance
+panel (Serve) or right pane (Shell):
 
 - **New sources**: after a sync or a copy into the pending area, it lists the
   new files and asks whether to ingest them.
@@ -81,8 +88,8 @@ Three more rules always apply, whatever the settings:
 
 - A pending file you **modified locally** after a Confluence sync is never
   ingested automatically — keep or delete it from Pending yourself.
-- A deliverable **you edited by hand** is never rebuilt without your approval.
-  A rebuild — automatic or by hand — **keeps the sections you added**, word for
+- In **Human** mode, a listed rebuild requires approval; **Auto** runs listed
+  rebuilds without an approval request. A rebuild — automatic or by hand — **keeps the sections you added**, word for
   word and where you put them; the sections the template produces are updated
   with the new content (an edit you made inside one of them is merged). A
   section the template stopped producing is removed. The file is backed up
@@ -158,6 +165,11 @@ pages. In the Shell, use `/maintenance status` for the first page and
 up to 100 settled requests and 100 settled reservations; pending or approved
 requests and reservations with unresolved effects remain visible on every page.
 Pagination does not delete saved approvals, refusals or budget receipts.
+
+The served Maintenance panel's **Clear** button deletes this workspace's
+maintenance log events and its finished cycle history, after a confirmation;
+pending decisions, saved approvals and refusals, and reservations with
+unresolved effects stay visible. It never stops or pauses maintenance.
 
 Maintenance logs are kept for **15 rolling days** by default. Set
 `WIKI_MANAGER_LOG_RETENTION_DAYS` in the manager `.env` to a positive number of
