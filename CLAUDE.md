@@ -684,6 +684,11 @@ ingest`) builds a review per planned operation (`buildReviewOperations`):
   anchors are checked against the archive exactly as written (`rawContent`),
   never the trimmed body — the one-line shift stripped every valid
   `#L…@sha256` anchor of a source opening on a blank line.
+  Section titles are normalised deterministically before they reach a fiche's
+  `title:`, file name and subject (`utils/pageTitle.ts`'s `stripTitleMarkup`):
+  a Confluence export's `# **5.5.Vue physique**` becomes `Vue physique`, so the
+  tree never shows the emphasis or the outline number. Already-ingested pages
+  keep their old titles until a rebuild (`wiki ingest --from-ingested`).
   `withRetry` classifies LLM planning failures (`classifyIngestError`):
   `validation` errors (malformed/ambiguous model output) never retry;
   `transient` errors (rate limit, timeout, connection reset) retry once with

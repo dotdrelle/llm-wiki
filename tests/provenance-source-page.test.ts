@@ -96,6 +96,15 @@ describe('source page contract (lot 2)', () => {
     expect(stampSourcePageTitle(once, 'Doc')).toBe(once);
   });
 
+  it('strips markdown emphasis from the document title it seeds', () => {
+    const content = ['---', 'type: source', '---', '', '# Source note', '', 'Contenu.'].join('\n');
+    const stamped = stampSourcePageTitle(content, '**DIRAG (10/09/2026)**');
+    const { data, content: body } = matter(stamped);
+    expect(data.title).toBe('DIRAG (10/09/2026)');
+    expect(body).toContain('# DIRAG (10/09/2026)');
+    expect(body).not.toContain('**');
+  });
+
   it('replaces a model-guessed source subject with the document identity', () => {
     const content = [
       '---',

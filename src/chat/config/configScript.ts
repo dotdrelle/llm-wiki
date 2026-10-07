@@ -285,4 +285,13 @@ function loadServers() {
     servers.push({id, name:s.name, url:s.url, bearer:s.bearer||'', injected:true, origin:s.origin||'global', persistedName:s.name, needsSync:false, syncError:'', sessionId:null, enabled:true, status:'off', tools:[]});
   }
   renderCards(); saveServers();
+}
+
+function runtimeTurnModelOverride() {
+  // The Model field overrides the active profile for this conversation's
+  // turns only: the runtime builds a per-turn client and running jobs keep
+  // their own model. Same value as the profile: nothing to override.
+  const chosen=($('model-name')?.value||'').trim();
+  const profile=String(window.__WIKI_CONFIG__?.model||'');
+  return chosen&&chosen!==profile?{model:chosen}:{};
 }`;

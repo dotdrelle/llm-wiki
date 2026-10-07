@@ -71,7 +71,7 @@ function runtimeStripLines() {
   const usage=runtimeState?.workflow?.usage;
   const lines=runtimeState?.workflow?.activity?.lines;
   if(Array.isArray(lines)&&lines.length) {
-    const active=lines.filter(line=>isActivityActive(normalizeActivityStatus(line.status,false)));
+    const active=lines.filter(line=>!['done','error'].includes(String(line.status||'').toLowerCase()));
     return (active.length?active:lines).slice(-2).map((line)=>{
       const progress=line.progress||{};
       const document=String(progress.label||'').trim();
@@ -104,15 +104,21 @@ function setRunStripLine(lineId,percentId,label,percent) {
     badge.hidden=!value;
   }
 }
+// The run's own status decides. Activities only stand in when the runtime
+// reports no run status at all: a production activity whose last poll said
+// "running" at 100% outlived the run that owned it and pinned the strip open
+// after the end. The aggregated lines are never read as statuses — their
+// status is display text ("3/4", "100 %", "validation").
 function runIsActive() {
-  if(isStreaming||pendingRuntimeStatusEls.length>0) return true;
   if(!runtimeState) return false;
-  const status=String(runtimeState.status||'').toLowerCase();
-  if(status==='running'||status==='pending_approval') return true;
-  const activities=Array.isArray(runtimeState.activities)?runtimeState.activities:[];
-  if(activities.some(activity=>isActivityActive(normalizeActivityStatus(activity.status,activity.terminal)))) return true;
   const chains=Array.isArray(runtimeState.skillChains)?runtimeState.skillChains:[];
-  return chains.some(chain=>chain.status==='running'||chain.status==='queued');
+  if(chains.some(chain=>chain.status==='running'||chain.status==='queued')) return true;
+  const status=String(runtimeState.status||'').toLowerCase();
+  if(['running','pending_approval','waiting','starting','blocked','queued'].includes(status)) return true;
+  if(status) return false;
+  const activities=Array.isArray(runtimeState.activities)?runtimeState.activities:[];
+  return activities.some(activity=>isActivityActive(normalizeActivityStatus(activity.status,activity.terminal))
+    &&!(Number(activity.progress?.percent)>=100));
 }
 // Deterministic control verbs stay buttons (root rule: cancel/enqueue/approve
 // never go through a Donna turn). Stop is chain-scoped on the runtime side: it
@@ -144,9 +150,15 @@ function updateRunStrip() {
   const active=runIsActive();
   document.body.classList.toggle('run-active',active);
   if(!active) { strip.hidden=true; return; }
+  // Layout reads (restore, lift above the composer) force a reflow; they ran
+  // on every SSE event and heartbeat. Do them when the strip appears, and
+  // never when the bottom status bar owns its place.
+  const appearing=strip.hidden;
   strip.hidden=false;
-  restoreRunStripPosition();
-  placeRunStripDefault(strip);
+  if(appearing&&!strip.closest('#workspace-status-bar')) {
+    restoreRunStripPosition();
+    placeRunStripDefault(strip);
+  }
   const lines=runtimeStripLines();
   const first=lines[0]||{};
   const overall=runtimeState?.workflow?.progress?.percent;

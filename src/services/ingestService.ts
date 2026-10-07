@@ -35,6 +35,7 @@ import { anchorTagFamilies, missingTagAssignments, parseTagFamilies, parseTagFam
 import { z } from 'zod';
 import { hashText } from '../utils/hash.ts';
 import { resolveInside } from '../utils/path.ts';
+import { stripTitleMarkup } from '../utils/pageTitle.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import matter from 'gray-matter';
 import { normalizeSourceBody, splitCitationAnchor } from '../utils/markdown.ts';
@@ -1510,7 +1511,9 @@ export class IngestService {
         const source = await this.workspace.readSourceDocument(sourcePath, {
           ingested: options?.fromIngested === true,
         });
-        const docTitle = /^#\s+(.+)$/m.exec(source.body ?? '')?.[1]?.trim() ?? source.title;
+        const docTitle = stripTitleMarkup(
+          /^#\s+(.+)$/m.exec(source.body ?? '')?.[1]?.trim() ?? source.title,
+        );
         const sections = extractSectionSheets(source.rawContent, docTitle, this.config.ingest?.sheets);
         const allCurrent = sections.length > 0 && sections.every((section) => {
           const startLine = section.sourceRanges[0]?.startLine ?? 1;
@@ -1679,8 +1682,10 @@ export class IngestService {
           ingested: options?.fromIngested === true,
         });
         const rawBody = normalizeSourceBody(source.body ?? '');
-        const docTitle = /^#\s+(.+)$/m.exec(source.body ?? '')?.[1]?.trim()
-          ?? source.title;
+        const docTitle = stripTitleMarkup(
+          /^#\s+(.+)$/m.exec(source.body ?? '')?.[1]?.trim()
+          ?? source.title,
+        );
         const sections = extractSectionSheets(source.rawContent, docTitle, this.config.ingest?.sheets).map((section) => ({
           heading: section.title,
           body: section.body,

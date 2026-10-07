@@ -12,3 +12,25 @@ export function pageTitle(parsed: matter.GrayMatterFile<string>): string {
   const heading = parsed.content.match(/^#\s+(.+)$/m);
   return heading ? heading[1]!.trim() : '';
 }
+
+/**
+ * Removes the Markdown emphasis a source heading may carry as literal text.
+ * Confluence exports title sections as `# **5.5.Vue physique**`; taken as a
+ * title that becomes the fiche's `title:` and file name, and the reader sees
+ * the asterisks. Wrapping marker runs are stripped pair by pair first, then
+ * any remaining `**`/`__` run (a title bolding several words) is collapsed —
+ * a single `*` or `_` may be a literal and is left alone.
+ */
+export function stripTitleMarkup(value: string): string {
+  let text = (value ?? '').trim();
+  let previous = '';
+  while (text !== previous) {
+    previous = text;
+    text = text.replace(/^(\*{1,3}|_{1,3})(?=\S)([\s\S]*?)(?<=\S)\1$/, '$2').trim();
+  }
+  return text
+    .replace(/\*{2,}/g, ' ')
+    .replace(/_{2,}/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}

@@ -287,4 +287,26 @@ function findServerForTool(name) {
   for(const s of servers)
     if(s.enabled&&s.status==='ok'&&s.tools.some(t=>t.name===name)) return s;
   return null;
+}
+
+async function handleGoogleOAuthStart(popup,response,payload,reply) {
+  // Already authorized: the agent returns no URL on purpose (sending the user
+  // through consent again proves nothing); the token is valid, so say so
+  // instead of failing on the missing authorization URL.
+  if(response.ok&&payload?.ok===true&&payload.alreadyAuthorized===true) {
+    if(popup) popup.close();
+    const held=Array.isArray(payload.grants)&&payload.grants.length>0?payload.grants:['read','send'];
+    await reply(\`Google is already authorized for \${held.join(', ')} — no new consent is needed. Use the Gmail tools directly.\`);
+    return;
+  }
+  if(!response.ok||payload?.ok!==true||typeof payload.authorizationUrl!=='string') {
+    throw new Error(payload?.error||response.statusText||'Google authorization could not start');
+  }
+  if(popup) {
+    popup.location.replace(payload.authorizationUrl);
+    try { popup.opener=null; } catch {}
+    await reply('Google authorization opened in a new window. Return here after approval, then run /connector list.');
+  } else {
+    await reply(\`Popup blocked. Open this URL to authorize Google:\\n\${payload.authorizationUrl}\`);
+  }
 }`;

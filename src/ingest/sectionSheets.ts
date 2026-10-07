@@ -1,5 +1,6 @@
 import { normalizeProvenanceValue } from './provenance.ts';
 import { slugify } from '../utils/path.ts';
+import { stripTitleMarkup } from '../utils/pageTitle.ts';
 
 export interface SectionRange {
   startLine: number;
@@ -32,7 +33,10 @@ const DEFAULT_MIN_CONTENT_CHARS = 40;
 const DEFAULT_MAX_SECTION_CHARS = 8000;
 
 function stripNumberPrefix(value: string): string {
-  const text = value.trim();
+  // Emphasis first: a heading written `**5.5.Vue physique**` starts with `**`,
+  // so the number-prefix pattern never matched and the fiche kept both the
+  // asterisks and its outline number.
+  const text = stripTitleMarkup(value);
   const stripped = text
     .replace(/^\d{1,3}(?:\.\d{1,3})*(?:[.)]|\s+(?:[-–—:]\s*)?)\s*/, '')
     .trim();

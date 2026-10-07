@@ -78,8 +78,10 @@ An invalid block turns nothing on and says why in `/maintenance status`.
 In **Human** mode, listed actions create approval requests in the Maintenance
 panel (Serve) or right pane (Shell):
 
+- **A sync**: one request covers every configured Confluence source — never
+  one per source or per page.
 - **New sources**: after a sync or a copy into the pending area, it lists the
-  new files and asks whether to ingest them.
+  new files and asks once whether to ingest them all.
 - **Updating an existing export**: after a deliverable was rebuilt, it asks
   whether to update its export or polished version. It **never creates a
   first export** — publishing something new is your decision.

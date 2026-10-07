@@ -149,7 +149,11 @@ Everything below is a **UI panel**, not something you type:
   curation** button on the page launches a new curation through DONNA (with a
   confirmation), so you never have to type the objective.
 - **LLM settings** (sidebar) — Base URL, Model, API key, and the active
-  `.wikirc` profile picker.
+  `.wikirc` profile picker. With the runtime enabled the profile picker
+  switches the whole workspace and is refused while a run is active (the run
+  reads the profile at each phase); the **Model** field instead applies to the
+  conversation's next turns only, so you can change the chat model during a
+  run while the run and its jobs keep the profile's model.
 - **Help panel** — this documentation, read in place, without leaving the chat.
 - **Page `/graph`** — the visual map of the wiki.
 

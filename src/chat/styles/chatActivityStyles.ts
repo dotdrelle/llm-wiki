@@ -23,7 +23,7 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .help-article ul,.help-article ol{padding-left:1.2rem}
 .help-article code{background:#f1e07a;color:#4a3d00;padding:1px 5px;border-radius:4px;font-size:.85em}
 .help-article table{border-collapse:collapse;width:100%;font-size:.85em}
-.help-article th,.help-article td{border:1px solid #d8c95a;padding:4px 8px;text-align:left}
+.help-article th,.help-article td{border:1px solid #d8c95a;padding:4px 8px;text-align:left;vertical-align:top}
 .help-article a{color:#7a5d00}
 .help-loading{color:var(--muted);padding:6px 2px}
 .act-panel-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--border);flex-shrink:0;min-height:44px}
@@ -219,7 +219,7 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .bubble blockquote{border-left:3px solid var(--border);margin:.4em 0;padding:.2em .8em;color:var(--muted)}
 .bubble .table-wrap{overflow-x:auto;max-width:100%;margin:.5em 0}
 .bubble table{border-collapse:collapse;font-size:.9em;width:100%;max-width:100%;table-layout:auto}
-.bubble th,.bubble td{border:1px solid var(--border);padding:4px 9px;word-break:break-word;overflow-wrap:anywhere}
+.bubble th,.bubble td{border:1px solid var(--border);padding:4px 9px;vertical-align:top;word-break:break-word;overflow-wrap:anywhere}
 .bubble th{background:var(--panel-deep);font-weight:600;white-space:normal}
 .bubble a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .bubble .instruction-ref{color:var(--warn);font-family:var(--font-mono);font-size:.92em;background:rgba(199,168,0,.08);border:1px solid rgba(199,168,0,.22);border-radius:5px;padding:1px 5px;white-space:normal;overflow-wrap:anywhere}

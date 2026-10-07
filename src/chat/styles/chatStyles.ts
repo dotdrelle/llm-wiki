@@ -451,7 +451,7 @@ ${CHAT_ACTIVITY_CSS}
 .memory-gauge-btn.memory-gauge-high .memory-gauge-fill{stroke:var(--accent)}
 .agent-mode-btn{border:1px solid var(--border);border-radius:999px;background:transparent;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:7px 9px;cursor:pointer;font-family:var(--font-sans);transition:border-color .2s,color .2s,background .2s}
 .agent-mode-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--panel)}
-.agent-mode-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.agent-mode-btn.active,.agent-mode-btn.active:hover{border-color:#06B6D4;color:#0B1020;background:#06B6D4}
 .agent-mode-btn.disabled{opacity:.45;cursor:not-allowed}
 #send-btn{background:var(--accent);border:none;border-radius:50%;width:34px;height:34px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .2s,transform .2s,background .2s;color:var(--panel-solid);box-shadow:0 0 16px var(--accent-soft)}
 #send-btn:hover{opacity:.82;transform:scale(1.04)}
@@ -513,7 +513,7 @@ ${CHAT_ACTIVITY_CSS}
 .prompt-preview a{color:var(--accent)}
 .prompt-preview .table-wrap{overflow-x:auto;margin:8px 0}
 .prompt-preview table{border-collapse:collapse;width:100%}
-.prompt-preview th,.prompt-preview td{border:1px solid var(--border);padding:6px 10px;font-size:13px;text-align:left}
+.prompt-preview th,.prompt-preview td{border:1px solid var(--border);padding:6px 10px;font-size:13px;text-align:left;vertical-align:top}
 .prompt-preview[hidden]{display:none}
 .prompt-actions button{background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);cursor:pointer;padding:7px 10px;font-size:12px;font-family:var(--font-sans);font-weight:600;transition:all .2s}
 .prompt-actions button:hover{border-color:var(--accent);color:var(--accent)}

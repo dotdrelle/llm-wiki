@@ -160,6 +160,39 @@ describe('TAXO section sheets', () => {
     )).toBe('wiki/sources/dirnc/document/reseau-2.md');
   });
 
+  it('strips markdown emphasis and outline numbering from section titles', () => {
+    const content = [
+      '# **5.5.Vue physique**',
+      'Le plan physique décrit les unités, leurs rôles et leurs dépendances internes.',
+      '# **DIRAG (10/09/2026)**',
+      'La revue de direction de septembre couvre les écarts et les actions ouvertes.',
+    ].join('\n');
+    const sheets = extractSectionSheets(content, 'Document', {
+      minSectionChars: 1,
+      minContentChars: 20,
+    });
+    expect(sheets.map((sheet) => sheet.title)).toEqual(['Vue physique', 'DIRAG (10/09/2026)']);
+    expect(sheets.every((sheet) => !sheet.title.includes('*'))).toBe(true);
+    expect(sectionSheetPath('raw/ingested/x/doc.md', 'Document', sheets[0]!.title))
+      .toBe('wiki/sources/x/doc/vue-physique.md');
+  });
+
+  it('strips emphasis from a bold document title used by the intro sheet', () => {
+    const content = [
+      '**DIRAG (10/09/2026)**',
+      '',
+      'Introduction assez longue pour constituer la première fiche du document.',
+      '# Réseau',
+      'Section assez longue pour constituer une fiche autonome du document.',
+    ].join('\n');
+    const sheets = extractSectionSheets(content, '**DIRAG (10/09/2026)**', {
+      minSectionChars: 1,
+      minContentChars: 20,
+    });
+    expect(sheets[0]!.title).toBe('DIRAG (10/09/2026)');
+    expect(sheets[1]!.title).toBe('Réseau');
+  });
+
   it('parses the TAXO Markdown header without leaking it into the fiche body', () => {
     const parsed = parseTaxoSheet([
       'Description: A faithful summary.',

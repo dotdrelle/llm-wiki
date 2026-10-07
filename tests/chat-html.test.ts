@@ -1369,7 +1369,11 @@ describe('chat html', () => {
     // reply. The runtime now receives every agent-mode message on /turn and
     // classifies it there (control verbs and new tasks → control lane, plain
     // conversation → read-only chat answer).
-    expect(script).toContain("const turnBody={input:text,conversationId:currentConversationId,...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})};");
+    expect(script).toContain("const turnBody={input:text,conversationId:currentConversationId,...runtimeTurnModelOverride(),...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})};");
+    // The per-turn model helper lives in the config script, the Google OAuth
+    // outcome in the connector script — chatHtml only calls them.
+    expect(CHAT_HTML).toContain('function runtimeTurnModelOverride()');
+    expect(CHAT_HTML).toContain('async function handleGoogleOAuthStart(popup,response,payload,reply)');
     expect(script).toContain("const doTurnFetch=()=>fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(skillRun?{input:text,mode:'agent',conversationId:currentConversationId}:turnBody)});");
     expect(script).toContain("const readOnlyChat=mode==='chat'");
     // Selected wiki pages / converted uploads must reach the agent turn too,

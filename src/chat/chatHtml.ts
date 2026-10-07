@@ -1075,7 +1075,10 @@ async function cancelRuntimeRun() {
   try {
     const res=await fetch('/api/runtime/cancel',{method:'POST'});
     if(!res.ok) throw new Error('runtime cancel failed');
-    notify('Runtime cancel requested');
+    // A 200 with cancelled:false stopped nothing: say so instead of claiming it.
+    const payload=await res.json().catch(()=>({}));
+    if(payload?.cancelled===false) notify('Nothing to stop: the runtime reports no active run','e');
+    else notify('Runtime cancel requested');
     await fetchRuntimeState().catch(()=>{});
   } catch(e) {
     notify(e?.message||String(e),'e');
@@ -2770,16 +2773,7 @@ async function tryConnectorCommand(input,text) {
         body:JSON.stringify({instanceId:'google-1'}),
       });
       const payload=await response.json().catch(()=>({}));
-      if(!response.ok||payload?.ok!==true||typeof payload.authorizationUrl!=='string') {
-        throw new Error(payload?.error||response.statusText||'Google authorization could not start');
-      }
-      if(popup) {
-        popup.location.replace(payload.authorizationUrl);
-        try { popup.opener=null; } catch {}
-        await reply('Google authorization opened in a new window. Return here after approval, then run /connector list.');
-      } else {
-        await reply(\`Popup blocked. Open this URL to authorize Google:\\n\${payload.authorizationUrl}\`);
-      }
+      await handleGoogleOAuthStart(popup,response,payload,reply);
     } catch(err) {
       if(popup) popup.close();
       await reply(\`Google authorization could not start (\${err?.message||String(err)}).\`,true);
@@ -2980,7 +2974,10 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
     // lane, plain conversation is answered read-only). Posting /control
     // directly is what made the composer feel blocked — its 'converse'
     // answer was a status line, never a reply. Attachments go in every body.
-    const turnBody={input:text,conversationId:currentConversationId,...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})};
+    // A model chosen in the Model field travels with the turn: the runtime
+    // answers this conversation with it while active jobs keep the profile's
+    // model. Same value as the profile: nothing to override.
+    const turnBody={input:text,conversationId:currentConversationId,...runtimeTurnModelOverride(),...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})};
     const doTurnFetch=()=>fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(skillRun?{input:text,mode:'agent',conversationId:currentConversationId}:turnBody)});
     let res=await doTurnFetch();
     // Transient 503 (host runtime booting/restarting): wait, then replay once.

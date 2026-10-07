@@ -1,6 +1,7 @@
 import { declaredSourcePaths } from './sourcePaths.ts';
 import matter from 'gray-matter';
 import { splitMarkdownSections } from '../utils/markdown.ts';
+import { stripTitleMarkup } from '../utils/pageTitle.ts';
 import { extractBodyCitations } from './derive.ts';
 import { normalizeProvenanceValue } from '../ingest/provenance.ts';
 
@@ -38,7 +39,7 @@ function isStructuralTitle(value: string): boolean {
  * completed. Idempotent.
  */
 export function stampSourcePageTitle(content: string, title: string): string {
-  const wanted = (title ?? '').trim();
+  const wanted = stripTitleMarkup(title ?? '');
   if (!wanted) return content;
   const parsed = matter(content);
   const data: Record<string, unknown> = { ...parsed.data };
