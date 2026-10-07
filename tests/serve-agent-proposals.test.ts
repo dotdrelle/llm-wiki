@@ -55,7 +55,6 @@ function makeDeps(rootDir: string) {
       listWikiPages: vi.fn(async () => []),
     } as unknown as WorkspaceService,
     historyConfig: null,
-    isRunActive: vi.fn(async () => false),
     sendJson: (res: unknown, status: number, data: unknown) => {
       (res as { writeHead: (s: number, h: Record<string, string>) => void; end: (c?: string) => void })
         .writeHead(status, { 'content-type': 'application/json' });
@@ -216,11 +215,18 @@ describe('agent proposal review routes', () => {
       diff: 'x',
     });
     const deps = makeDeps(rootDir);
-    deps.isRunActive = vi.fn(async () => true);
-    const { res, status } = fakeRes();
+    // A production job writing the wiki refuses the merge, and says which.
+    const locks = path.join(rootDir, '.wiki', 'production-jobs', 'locks', 'demo');
+    const jobs = path.join(rootDir, '.wiki', 'production-jobs', 'jobs');
+    mkdirSync(locks, { recursive: true });
+    mkdirSync(jobs, { recursive: true });
+    writeFileSync(path.join(locks, 'job-1.lock'), JSON.stringify({ workspace: 'demo', jobId: 'job-1', scopes: ['workspace-write'] }));
+    writeFileSync(path.join(jobs, 'job-1.json'), JSON.stringify({ jobId: 'job-1', status: 'running', type: 'ingest', steps: ['ingest'] }));
+    const { res, status, body } = fakeRes();
 
     await handleAgentProposalRoutes(fakeReq('POST', '/api/agent-proposals/t4/merge'), res, '/api/agent-proposals/t4/merge', deps);
     expect(status()).toBe(409);
+    expect(JSON.stringify(body())).toContain('job-1');
   });
 
   it('lists proposals through the API without their diffs', async () => {

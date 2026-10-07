@@ -15,6 +15,7 @@ import { stampConceptPageIdentities } from '../../ingest/identity.ts';
 import type { WorkspaceService } from '../../services/workspaceService.ts';
 import type { WikiOperation } from '../../types.ts';
 import { layout } from '../html/wikiHtml.ts';
+import { checkProductionAllowsWrite } from '../../services/productionLocks.ts';
 
 /**
  * The agent-curate review surface (lot 1): proposals written by the manager
@@ -31,7 +32,6 @@ export type AgentProposalRoutesDeps = {
   rootDir: string;
   workspace: WorkspaceService;
   historyConfig: unknown;
-  isRunActive?: () => Promise<boolean>;
   sendJson: (
     res: { writeHead: (s: number, h: Record<string, string>) => void; end: (c?: string) => void },
     status: number,
@@ -399,7 +399,7 @@ export async function handleAgentProposalRoutes(
   urlPath: string,
   deps: AgentProposalRoutesDeps,
 ): Promise<boolean> {
-  const { rootDir, sendJson, sendGzippedHtml, isRunActive } = deps;
+  const { rootDir, sendJson, sendGzippedHtml } = deps;
   if (urlPath === '/agent-proposals' && req.method === 'GET') {
     const records = await listProposals(rootDir);
     return sendGzippedHtml(
@@ -495,8 +495,13 @@ export async function handleAgentProposalRoutes(
   }
 
   if (action === 'merge' && req.method === 'POST') {
-    if (await isRunActive?.()) {
-      return fail(409, { ok: false, error: 'a run is active — try again once it finishes' });
+    // A merge writes wiki/ — it races only with a production job writing the
+    // wiki, the same arbitration as a direct page write. "Any run active"
+    // refused it during any of Donna's runs (a status turn, a build, the
+    // curation run still finishing) and named nothing.
+    const busy = await checkProductionAllowsWrite(deps.rootDir, 'wiki');
+    if (busy.busy) {
+      return fail(409, { ok: false, code: 'PRODUCTION_JOB_ACTIVE', error: busy.message });
     }
     const record = await readProposal(rootDir, id);
     if (!record) {
@@ -611,8 +616,10 @@ export async function handleAgentProposalRoutes(
   }
 
   if (action === 'reject' && req.method === 'POST') {
-    if (await isRunActive?.()) {
-      return fail(409, { ok: false, error: 'a run is active — try again once it finishes' });
+    // Rejecting touches no wiki page: only the worktree and its branch go.
+    const busy = await checkProductionAllowsWrite(deps.rootDir, 'wiki');
+    if (busy.busy) {
+      return fail(409, { ok: false, code: 'PRODUCTION_JOB_ACTIVE', error: busy.message });
     }
     const record = await readProposal(rootDir, id);
     if (!record) {

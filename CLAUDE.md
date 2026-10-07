@@ -269,7 +269,9 @@ never becomes an extra run. Keep scaffold skills generic and English by default.
   through `applyWikiOperations` (adding OKF `verified` + `status: stable`),
   commits them to history, and removes the git worktree + branch;
   `POST /api/agent-proposals/:id/reject` removes the worktree and the proposal
-  without touching the wiki. Both refuse with 409 while a run is active, and
+  without touching the wiki. Both refuse with 409 `PRODUCTION_JOB_ACTIVE`
+  only while a production job writes the wiki (`checkProductionAllowsWrite`,
+  naming the job) — not during any of Donna's runs — and
   only `wiki/` paths are mergeable — the proposal travels from another
   process and is treated as untrusted. See `src/serve/routes/agentProposalRoutes.ts`.
   The page is readable: records read as summaries ("N wiki pages · labels ·
@@ -488,8 +490,10 @@ the direct wiki CLI already exports (step/source/task/batch counters, the
 detail, and the tokens), falling back to a second concurrent activity or the
 running plan step. It floats above the composer rather than padding it. It **disappears once the run is over** — the
 Plan tab keeps the outcome, so the strip is not a second history. The
-`assistant_progress` notes never enter the thread: they feed this strip's
-liveness and the Logs tab only.
+`assistant_progress` notes never enter the thread as messages: they feed this
+strip's liveness, the Logs tab, and the ephemeral waiting bubble, which shows
+the turn's LAST step only (`runtimeProgressLabel` in `chatHtml.ts`), replaced at
+each event until "Writing the answer…".
 
 While a dropped PDF/text file waits on the documents agent, the Pending panel
 shows it as a **non-clickable spinner row**: the server renders it from the

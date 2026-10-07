@@ -428,10 +428,15 @@ async function fetchRuntimeState() {
 function runtimeProgressLabel(event) {
   const type=event&&event.type;
   const p=(event&&event.payload)||{};
-  // Tool steps are not handled here: they arrive as assistant_progress and go
-  // to the Logs tab as diagnostics, never to the thread. The run strip carries
-  // the business line instead.
-  if(type==='assistant_message') return 'Writing the answer…';
+  // The waiting bubble shows the turn's LAST step — classification, wiki
+  // search, each tool call and its outcome — replaced at every event, so the
+  // reader sees the turn move on until "Writing the answer…". Never a list:
+  // the bubble is ephemeral and the full trail stays in the Logs tab.
+  if(type==='assistant_message'||type==='assistant_delta') return 'Writing the answer…';
+  if(type==='assistant_progress') {
+    const msg=String(p.message||'').replace(/\\s+/g,' ').trim();
+    return msg?(msg.length>90?msg.slice(0,90)+'…':msg):'';
+  }
   if(type==='runtime_log') {
     const msg=String(p.message||'').replace(/\\s+/g,' ').trim();
     return msg?(msg.length>90?msg.slice(0,90)+'…':msg):'';

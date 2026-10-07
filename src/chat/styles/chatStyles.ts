@@ -437,6 +437,7 @@ ${CHAT_ACTIVITY_CSS}
 .input-box:focus-within{border-color:var(--accent);box-shadow:var(--glow),var(--shadow)}
 #chat-input{flex:none;width:100%;background:none;border:none;color:var(--text);font-family:var(--font-sans);font-size:15px;resize:none;max-height:180px;overflow-y:auto;line-height:1.55;outline:none;padding:4px 0}
 #chat-input::placeholder{color:var(--muted)}
+:root.theme-dark #chat-input,:root.theme-dark #chat-input::placeholder{color:#fff;opacity:1}
 .attach-btn{background:transparent;border:1px solid var(--border);border-radius:50%;width:34px;height:34px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--muted);transition:border-color .2s,color .2s,background .2s}
 .attach-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--panel)}
 .attach-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}

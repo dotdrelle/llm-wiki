@@ -113,7 +113,8 @@ While a request waits, maintenance carries on with everything else.
 
 - **Toasts, bottom right**: each new event, with *Open*, *Stop* and *Dismiss*.
 - **The Maintenance panel** (button at the top right of the served chat): the
-  pending decisions with *Approve* / *Refuse*, *Pause* / *Resume* / *Stop*, and
+  pending decisions with *Approve* / *Refuse*, *Pause* / *Resume* / *Stop now*
+  (Pause lets the running action finish; *Stop now* cancels it), and
   the maintenance thread — one entry per cycle with the agent's own summary,
   then routine work and decisions. **Ask Donna** on a cycle or a decision opens
   the chat with its facts in your message box: you add your question and send.

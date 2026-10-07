@@ -431,6 +431,12 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain("if(!['plan','logs','local','memory','maintenance'].includes(tab)) return");
     expect(CHAT_HTML).not.toContain("button('Close',panel");
     expect(CHAT_HTML).not.toContain('.maintenance-panel{position:fixed');
+    // The bottom status bar keeps BOTH run lines (title+% / detail+tokens+
+    // alive) and aligns the block to the top, so the Stop/Details buttons and
+    // the spinner sit with the title line instead of centering against a
+    // two-line block. Hiding the sub-line by a class it does not carry was the
+    // bug: it made the run section drift from the sections beside it.
+    expect(CHAT_HTML).toContain('.workspace-status-section #run-strip{align-items:flex-start}');
     expect(CHAT_HTML).toContain('function loadWorkspaceMemory()');
     expect(CHAT_HTML).toContain('async function forgetWorkspaceMemory');
     expect(CHAT_HTML).toContain('async function restoreWorkspaceMemory');
@@ -1271,12 +1277,19 @@ describe('chat html', () => {
     expect(script).toContain("if(/^\\/maintenance(?:\\s|$)/i.test(text)&&!forceChat)");
     expect(script).toContain("window.handleMaintenanceSlashCommand?.(text)");
     expect(script).toContain("if(action==='status'||action==='history'){open();return true;}");
-    expect(script).toContain("node('summary','Build window',policy)");
+    // The Build window is a plain line, not a collapsible: its one fact was
+    // hidden behind a summary that had nothing else to expand.
+    expect(script).not.toContain("node('summary','Build window'");
+    expect(script).toContain("const build=state.buildSchedule;node('p','Build window: '");
     expect(script).toContain('Build window: ');
     expect(script).toContain("node('span','Approval mode',modeRow)");
     expect(script).toContain("setAttribute('role','switch')");
     expect(script).toContain("setAttribute('aria-checked',String(state.mode==='human'))");
     expect(script).toContain("command({command:'mode',mode:switchTo})");
+    // Pause and Stop do different things (Pause lets the action finish, Stop
+    // cancels it) — the labels and tooltips say which.
+    expect(script).toContain("button('Stop now',controls");
+    expect(script).toContain('the action already running finishes on its own');
     expect(script).toContain('class="maintenance-state"');
     expect(script).toContain("badge.textContent=state.error?'Error':!state.enabled?'Disabled':state.paused?'Paused':'Active'");
     expect(script).not.toContain("node('h2','Maintenance'");

@@ -45,7 +45,8 @@ function runtimeCanvasScene(){
   const MAX_ROWS=9,COL_X=.46,ROW_Y=.26;
   const phasesByDepth=new Map();
   nodes.filter(isPhase).forEach(node=>{const d=depthOf.get(node.id)||0;if(!phasesByDepth.has(d))phasesByDepth.set(d,[]);phasesByDepth.get(d).push(node)});
-  [...phasesByDepth.values()].forEach(list=>list.sort((a,b)=>String(a.label).localeCompare(String(b.label))));
+  // Donna's phases first, maintenance's after: two trees side by side, never interleaved.
+  [...phasesByDepth.values()].forEach(list=>list.sort((a,b)=>(a.raw?.maintenance?1:0)-(b.raw?.maintenance?1:0)||String(a.label).localeCompare(String(b.label))));
   const colOf=new Map();
   nodes.filter(isRun).forEach(node=>colOf.set(node.id,0));
   let column=1;

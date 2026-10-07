@@ -1006,7 +1006,6 @@ export default async function serveCmd(
         rootDir,
         workspace,
         historyConfig: config.history,
-        isRunActive: isRuntimeRunActive,
         sendGzippedHtml,
         sendJson,
       })) return;

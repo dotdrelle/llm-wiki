@@ -85,7 +85,35 @@ function runtimeWorkflowInspectorHTML() {
 // revision, the activity spam of one task), replace them with one aggregate
 // bubble labelled "N × type". Members stay listed in the inspector; their
 // relations are rewired to the aggregate and deduped.
+// Maintenance works outside Donna's runs, so its jobs never reach the
+// workflow projection: the canvas stayed on an idle "Runtime run" while the
+// maintenance agent ingested 44 sources. Its actions are drawn as a second
+// tree BESIDE Donna's run — both can execute at once (a doctor, a curation or
+// a mail never holds the workspace) — one phase per action, its agent, and an
+// ingest's files with their live states.
+function runtimeMaintenanceGraphData() {
+  const running=typeof window!=='undefined'&&typeof window.getMaintenanceRunning==='function'?window.getMaintenanceRunning():[];
+  if(!Array.isArray(running)||!running.length) return null;
+  const run={id:'maintenance',type:'run',label:'Maintenance',status:'running',agents:[...new Set(running.map(item=>item.agent).filter(Boolean))],usage:{},phaseCount:running.length,taskCount:running.length};
+  const nodes=[run],relations=[];
+  for(const item of running){
+    const progress=item.progress&&typeof item.progress==='object'?item.progress:{};
+    const states=progress.sourceStates&&typeof progress.sourceStates==='object'?Object.entries(progress.sourceStates):[];
+    const sourceCounts=states.length?states.reduce((counts,[,value])=>{counts[value]=(counts[value]||0)+1;return counts;},{}):null;
+    const id='maintenance:'+item.id;
+    const label=String(progress.label||item.summary||item.action||'Maintenance action');
+    nodes.push({id,type:'task_group',groupId:id,label:label.length>70?label.slice(0,67)+'…':label,status:'running',tasks:[],agents:item.agent?[String(item.agent)]:[],parallelism:1,currentParallel:1,sourceCounts,sourceTotal:Number(progress.sourceCount)||states.length,sourceProcessLimit:null,done:0,total:1,usage:{},raw:{maintenance:item}});
+    relations.push({id:'run-phase:'+id,type:'starts',from:id,to:run.id});
+    states.slice(0,RUNTIME_TASK_INPUT_LIMIT).forEach(([name,value],index)=>{
+      const inputId='input:'+id+':'+index;
+      nodes.push({id:inputId,type:'task_input',taskId:id,detailId:id,label:String(name),ref:String(name),status:String(value)});
+      relations.push({id:'task-input:'+inputId,type:'contains',from:inputId,to:id});
+    });
+  }
+  return {nodes,relations};
+}
 function runtimeWorkflowGraphData() {
+  const maintenanceGraph=runtimeMaintenanceGraphData();
   const workflow=runtimeState?.workflow||{};
   const graph=workflow.graph||{};
   const workflowNodes=Array.isArray(workflow.nodes)?workflow.nodes:[];
@@ -204,8 +232,12 @@ function runtimeWorkflowGraphData() {
     ...subagentNodes,
   ];
   if(runNode) phases.filter(phase=>!relations.some(rel=>rel.from===phase.id)).forEach(phase=>relations.push({id:'run-phase:'+phase.id,type:'starts',from:phase.id,to:String(runNode.id)}));
+  // Without an active run of Donna's, the maintenance tree is what is moving:
+  // select it by default instead of the idle run node.
+  const donnaActive=['running','pending_approval','waiting'].includes(String(runtimeState?.status||'').toLowerCase());
+  if(maintenanceGraph){nodes.push(...maintenanceGraph.nodes);relations.push(...maintenanceGraph.relations);}
   const nodeIds=new Set(nodes.map(node=>node.id));
-  if(!selectedWorkflowNodeId||!nodeIds.has(selectedWorkflowNodeId)) selectedWorkflowNodeId=workflow.current?.id&&nodeIds.has(workflow.current.id)?workflow.current.id:nodes[0]?.id||null;
+  if(!selectedWorkflowNodeId||!nodeIds.has(selectedWorkflowNodeId)) selectedWorkflowNodeId=maintenanceGraph&&!donnaActive?'maintenance':workflow.current?.id&&nodeIds.has(workflow.current.id)?workflow.current.id:nodes[0]?.id||null;
   return {nodes,relations};
 }
 const RUNTIME_TASK_INPUT_LIMIT=40;

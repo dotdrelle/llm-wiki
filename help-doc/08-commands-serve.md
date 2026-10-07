@@ -15,7 +15,8 @@ in Serve's chat or in the Shell:
   deliverables. **The first command to run when in doubt.**
 - `/agent` — switch to agent mode (orchestration: actions and processing).
 - `/chat` — switch to chat mode (read-only: questions, state).
-- `/approve` — grant a pending approval (sensitive step of a job).
+- `/approve` — grant a pending job approval, or apply the only pending plan
+  change. Use `/approve patch <id>` when several plan changes are waiting.
 - `/run status` — state of the runtime and the current run.
 - `/run cancel` (or `/cancel`) — cancel the active run.
 - `/queue` — show the job queue.

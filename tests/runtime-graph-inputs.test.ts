@@ -123,3 +123,35 @@ describe('runtime concurrency summary', () => {
       .not.toContain('LLM calls per ingestion');
   });
 });
+
+describe('runtime graph draws maintenance beside Donna', () => {
+  const withMaintenance = (running: unknown[], state: unknown) => {
+    (globalThis as { window?: unknown }).window = { getMaintenanceRunning: () => running };
+    try {
+      const build = new Function('runtimeState', 'isActivityActive', 'normalizeActivityStatus', 'selectedWorkflowNodeId',
+        `${RUNTIME_GRAPH_SCRIPT}\n return runtimeWorkflowGraphData();`);
+      return build(state, (s: string) => s === 'running', (s: string) => s, null);
+    } finally { delete (globalThis as { window?: unknown }).window; }
+  };
+  const ingest = { id: 'm1', action: 'ingest', agent: 'production', summary: 'Ingest 2 new source(s)', progress: { label: 'Ingest a.md', sourceStates: { 'a.md': 'running', 'b.md': 'done' } } };
+
+  it('keeps Donna\'s run and adds the maintenance tree with its live files', () => {
+    const { nodes, relations } = withMaintenance([ingest], {
+      status: 'running',
+      workflow: { nodes: [{ id: 'run:1', type: 'run', status: 'running' }, task('running')] },
+    });
+    const runs = nodes.filter((n: { type: string }) => n.type === 'run').map((n: { id: string }) => n.id);
+    expect(runs).toEqual(['run:1', 'maintenance']);
+    const phase = nodes.find((n: { id: string }) => n.id === 'maintenance:m1');
+    expect(phase.agents).toEqual(['production']);
+    expect(phase.sourceCounts).toEqual({ running: 1, done: 1 });
+    const files = nodes.filter((n: { type: string; detailId?: string }) => n.type === 'task_input' && n.detailId === 'maintenance:m1');
+    expect(files.map((n: { label: string; status: string }) => [n.label, n.status])).toEqual([['a.md', 'running'], ['b.md', 'done']]);
+    expect(relations.some((r: { from: string; to: string }) => r.from === 'maintenance:m1' && r.to === 'maintenance')).toBe(true);
+  });
+
+  it('draws nothing extra when maintenance is idle', () => {
+    const { nodes } = withMaintenance([], { workflow: { nodes: [{ id: 'run:1', type: 'run', status: 'done' }] } });
+    expect(nodes.some((n: { id: string }) => n.id === 'maintenance')).toBe(false);
+  });
+});
