@@ -883,6 +883,36 @@ export class IngestService {
           }
         }
 
+        /*
+         A rebuild bypasses the unchanged-archive skip above, but the TAXO
+         pre-pass still drops a source whose every section is current (same
+         input_hash and content_hash on disk): no extraction is scheduled for
+         it. Falling through then applied an EMPTY plan — 0 rows, so every
+         fiche this source had produced looked obsolete and was pruned. On
+         juno a maintenance rebuild right after a 44-source ingest deleted 62
+         fresh fiches that way, and the tag pivots built on them. The source
+         is current: keep its pages, mark it seen, write nothing.
+        */
+        if (options?.fromIngested && !options?.force && !taxoRelativeByPath.has(sourcePath)) {
+          await this.logger.info('ingest:source-skip', {
+            source: source.relativePath,
+            reason: 'every section already current',
+          });
+          results.push({
+            source: source.relativePath,
+            archivePath: source.archiveCitationPath,
+            plan: { summary: 'every section already current', operations: [] },
+            skipped: true,
+          });
+          if (!options?.dryRun) await this.observeSource(source, null);
+          await this.logger.info('ingest:source-done', {
+            source: source.relativePath,
+            durationMs: Date.now() - sourceStartedAt,
+            status: 'skipped',
+          });
+          continue;
+        }
+
         const sourcePagePath = path.posix.join('wiki', 'sources', `${source.slug}.md`);
         // The extraction of this source was scheduled ahead (lookahead): take
         // it, free its slot for the next source, and commit now. Pages are

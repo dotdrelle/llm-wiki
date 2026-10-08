@@ -777,8 +777,11 @@ describe('ingest service', () => {
       }]);
   });
 
-  it('still skips an unchanged source whose produced pages all exist', async () => {
-    const workspace = new FakeWorkspaceService();
+  // fromIngested: a rebuild bypasses the unchanged-archive skip, and used to
+  // apply an EMPTY plan for a source whose sections are all current — pruning
+  // the very fiches and pivots it had produced.
+  it.each([false, true])('still skips an unchanged source whose produced pages all exist (fromIngested=%s)', async (fromIngested) => {
+    const workspace = new RebuildWorkspaceService();
     workspace.sourceUnchanged = true;
     const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-ingest-present-'));
     workspace.paths.rootDir = root;
@@ -840,10 +843,13 @@ describe('ingest service', () => {
       disabledCache(),
     );
 
-    const results = await service.ingest([], {});
+    const results = await service.ingest([], { fromIngested });
 
-    expect(workspace.appliedOperations).toEqual([]);
-    expect(workspace.archivedSources).toEqual(['raw/untracked/note.md']);
+    expect(workspace.appliedOperations.filter((operation) => operation.type === 'delete')).toEqual([]);
+    if (!fromIngested) {
+      expect(workspace.appliedOperations).toEqual([]);
+      expect(workspace.archivedSources).toEqual(['raw/untracked/note.md']);
+    }
     expect(results[0]?.skipped).toBe(true);
     expect(logger.entries.some((entry) => entry.event === 'ingest:source-skip')).toBe(true);
   });
