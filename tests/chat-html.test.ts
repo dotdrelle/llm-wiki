@@ -431,12 +431,10 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain("if(!['plan','logs','local','memory','maintenance'].includes(tab)) return");
     expect(CHAT_HTML).not.toContain("button('Close',panel");
     expect(CHAT_HTML).not.toContain('.maintenance-panel{position:fixed');
-    // The bottom status bar keeps BOTH run lines (title+% / detail+tokens+
-    // alive) and aligns the block to the top, so the Stop/Details buttons and
-    // the spinner sit with the title line instead of centering against a
-    // two-line block. Hiding the sub-line by a class it does not carry was the
-    // bug: it made the run section drift from the sections beside it.
-    expect(CHAT_HTML).toContain('.workspace-status-section #run-strip{align-items:flex-start}');
+    // Maintenance notices float in the bottom-right dock, not in a full-width
+    // bottom bar that stole the window's last rows.
+    expect(CHAT_HTML).toContain('#workspace-dock{position:fixed;');
+    expect(CHAT_HTML).not.toContain('workspace-status-bar');
     expect(CHAT_HTML).toContain('function loadWorkspaceMemory()');
     expect(CHAT_HTML).toContain('async function forgetWorkspaceMemory');
     expect(CHAT_HTML).toContain('async function restoreWorkspaceMemory');
@@ -460,11 +458,11 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('function autoSelectActivityTab()');
     expect(CHAT_HTML).toContain("maintenance:window.hasMaintenanceUpdates?.()?'has-new':''");
     expect(CHAT_HTML).not.toContain("tab.textContent='Maintenance · '+count");
-    expect(CHAT_HTML).toContain("grid-template-columns:repeat(3,minmax(0,1fr))");
-    expect(CHAT_HTML).toContain("statusSections=['maintenance','run','approval']");
-    expect(CHAT_HTML).toContain("statusSections[1].append(run)");
-    expect(CHAT_HTML).toContain("statusSections[2].append(approval)");
-    expect(CHAT_HTML).toContain("statusSections[0].append(banner)");
+    // The dock carries the maintenance card and the approval card only — the
+    // run itself reads in Activity → Plan.
+    expect(CHAT_HTML).toContain("maintenanceCard.className='workspace-dock-card workspace-dock-maintenance'");
+    expect(CHAT_HTML).toContain("maintenanceCard.append(banner)");
+    expect(CHAT_HTML).not.toContain("statusSections");
   });
 
   it('renders activity card icons as stroke SVGs, not emoji', () => {
@@ -902,7 +900,7 @@ describe('chat html', () => {
     expect(source).not.toContain('messages.push');
     expect(source).toContain('agentProgressLog=');
     expect(script).toContain("text:'Agent: '+line");
-    expect(script).toContain('function updateRunStrip() {');
+    expect(script).not.toContain('updateRunStrip');
   });
 
   it('paints the scrollbar track transparent so it never reads white in dark mode', () => {
@@ -958,7 +956,7 @@ describe('chat html', () => {
     expect(source.slice(0, 400)).toContain('Curate the wiki');
   });
 
-  it('keeps the run strip in step with the runtime state in the Execution view', () => {
+  it('keeps the run card in step with the runtime state in the Execution view', () => {
     const script = chatScripts().join('\n');
     // The graph branch used to `return;` before finishActivityRender(), the
     // only state-render caller of updateRunStrip(). A run that ended while the
@@ -975,44 +973,25 @@ describe('chat html', () => {
     expect(graphBranch).not.toMatch(/renderRuntimeWorkflowGraph\);\s*return;\s*\}/);
   });
 
-  it('places the run-status strip at the bottom centre, above the composer and the approval banner', () => {
-    // It used to push the composer up with a padding; it now floats above
-    // whatever occupies the bottom instead, and a double-click restores that
-    // place after a drag. The saved position key is versioned: the old one
-    // could hold a 0,0 written before the window had a size.
+  it('has no floating run strip and no bottom status bar: the run reads in Activity → Plan', () => {
     const script = chatScripts().join('\n');
-    expect(CHAT_HTML).toContain('#run-strip{position:fixed;bottom:var(--run-strip-bottom,16px);left:50%;');
-    expect(script).toContain("for(const id of ['input-wrap','approval-banner'])");
-    expect(script).toContain("const RUN_STRIP_POSITION_KEY='run-strip-position-v2';");
-    expect(script).toContain("strip.addEventListener('dblclick'");
-    expect(script).toContain('rect.width<=0||rect.height<=0) return;');
-    expect(CHAT_HTML).not.toContain('body.run-active #input-wrap{padding-bottom:66px}');
-    expect(CHAT_HTML).not.toContain('body.run-active #approval-banner{bottom:74px}');
+    expect(CHAT_HTML).not.toContain('id="run-strip"');
+    expect(CHAT_HTML).not.toContain('#run-strip{');
+    expect(script).not.toContain('initRunStripDrag');
+    expect(CHAT_HTML).not.toContain('--run-strip-bg');
+    expect(CHAT_HTML).not.toContain('id="workspace-status-bar"');
   });
 
-  it('offers a Stop on the run strip and a Cancel on each request still queued', () => {
-    // Deterministic control verbs stay buttons: the strip is visible in every
-    // view (graph and execution included), the queued card cancels one item.
+  it('puts a confirmed, red Cancel on the run card and on each request still queued', () => {
+    // Deterministic control verbs stay buttons; the queued card cancels one item.
     const script = chatScripts().join('\n');
-    expect(CHAT_HTML).toContain('onclick="stopRuntimeRunFromStrip()"');
-    expect(script).toContain("await cancelRuntimeRun();");
+    expect(script).toContain('class="act-btn del cancel" type="button" onclick="confirmCancelRuntimeRun(this)">Cancel</button>');
+    expect(script).toContain("title:'Cancel the run'");
+    expect(script).toContain('await cancelRuntimeRun();');
     expect(script).toContain("JSON.stringify({action:'cancel_item',itemId})");
     expect(script).toContain("cancelItemId:item.id&&String(item.status||'queued').toLowerCase()==='queued'?item.id:null");
-    expect(script).toContain('onclick="cancelQueuedRuntimeItem(');
-  });
-
-  it('lets the reader drag the run-status strip anywhere in the viewport', () => {
-    const script = chatScripts().join('\n');
-    expect(CHAT_HTML).toContain('cursor:grab;touch-action:none;user-select:none');
-    expect(script).toContain('function initRunStripDrag()');
-    expect(script).toContain("strip.addEventListener('pointerdown'");
-    // First grab drops the centering transform and hands the box over to px.
-    expect(script).toContain("strip.style.transform='none'");
-    // The Details button keeps its own click: a grab on it must not drag.
-    expect(script).toContain("if(event.target.closest('button')) return;");
-    // The strip can never be dragged off-screen, resize included.
-    expect(script).toContain('Math.max(0,window.innerWidth-rect.width)');
-    expect(script).toContain("window.addEventListener('resize'");
+    expect(script).toContain('class="act-btn del cancel" onclick="cancelQueuedRuntimeItem(');
+    expect(CHAT_HTML).toContain('.act-btn.cancel{border-color:color-mix(in srgb,var(--err) 55%,var(--border));color:var(--err)}');
   });
 
   it('renders a plan step as Markdown and keeps its dot and value on the first line', () => {
@@ -1028,22 +1007,18 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('.act-step-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:4px}');
   });
 
-  it('shows the running document, its counters and tokens in the run strip', () => {
+  it('formats the run counters and tokens the Plan tab shows', () => {
     const script = chatScripts().join('\n');
 
-    // The primary label is the activity's own document/step (the same
-    // `progress.label` the ShellUI shows for an aggregated line), not the
-    // capability name.
-    expect(script).toContain("const document=String(progress.label||'').trim();");
-    // The sub-line carries the live figures the direct wiki CLI already
-    // exports — counters, detail and tokens.
+    // The live figures the direct wiki CLI already exports — counters,
+    // detail and tokens.
     const tokens = script.slice(
       script.indexOf('function runStripTokenText'),
       script.indexOf('function runStripDetail'),
     );
     const detail = script.slice(
       script.indexOf('function runStripDetail'),
-      script.indexOf('function runtimeStripLines'),
+      script.indexOf('function runStripPercent'),
     );
     expect(tokens).toBeTruthy();
     expect(detail).toBeTruthy();
@@ -1072,16 +1047,17 @@ describe('chat html', () => {
 
   it('consumes the external runtime heartbeat as liveness, not as a log line', () => {
     const script = chatScripts().join('\n');
-    // A bare beat restarts the in-flight watchdog(s) and refreshes the strip,
-    // without adding a Logs entry: a heartbeat is not a tool step.
+    // A bare beat restarts the in-flight watchdog(s) and refreshes the run
+    // card, without adding a Logs entry: a heartbeat is not a tool step.
     expect(script).toContain("if(parsed&&parsed.type==='runtime_heartbeat') noteRuntimeHeartbeat();");
     expect(script).toContain('function noteRuntimeHeartbeat() {');
     const source = script.match(/function noteRuntimeHeartbeat\(\) \{[\s\S]*?\n\}/)?.[0];
     expect(source).toBeTruthy();
     expect(source).not.toContain('agentProgressLog');
     expect(source).not.toContain('messages.push');
-    // The strip reads the beat, so a tool-less phase does not read as frozen.
+    // The run card reads the beat, so a tool-less phase does not read as frozen.
     expect(script).toContain('runtimeState?.lastHeartbeatAt');
+    expect(script).toContain('<span class="run-beat" id="run-beat"></span>');
   });
 
   it('accepts JSON returned directly, in a markdown fence or inside an MCP envelope', () => {
@@ -1356,7 +1332,7 @@ describe('chat html', () => {
     expect(script).toContain('data-turn-id="${esc(turnId)}"');
     expect(script).toContain('data-workspace="${esc(workspace)}"');
     expect(script).toContain('onclick="askRuntimeStatus(${jsArg(runId||title)})">Inspect</button>');
-    expect(script).toContain('onclick="cancelRuntimeRun()">Cancel</button>');
+    expect(script).toContain('onclick="confirmCancelRuntimeRun(this)">Cancel</button>');
     expect(script).toContain('const runCard=runtimeRunCardHTML(plan,activities,runtimeState.workflow?.progress);');
     expect(script).toContain('class="run-progress"');
     expect(CHAT_HTML).toContain('.act-card-meta .run-progress{');

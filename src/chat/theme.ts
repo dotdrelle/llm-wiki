@@ -81,7 +81,7 @@ const GLASS_LIGHT = `
   --panel: rgba(255, 255, 255, .9);
   --panel-soft: rgba(255, 255, 255, .82);
   --panel-solid: #f7f9fc;
-  --run-strip-bg: rgba(255, 255, 255, .92);
+  --dock-bg: rgba(255, 255, 255, .92);
   --text: #12202e;
   --muted: #5b6d82;
   --border: rgba(20, 110, 160, .2);
@@ -102,7 +102,7 @@ const GLASS_DARK = `
   --panel: ${WIKI_DARK_COLORS.panel};
   --panel-soft: ${WIKI_DARK_COLORS.soft};
   --panel-solid: ${WIKI_DARK_COLORS.panel};
-  --run-strip-bg: ${WIKI_DARK_COLORS.raised};
+  --dock-bg: ${WIKI_DARK_COLORS.raised};
   --text: ${WIKI_DARK_COLORS.text};
   --muted: ${WIKI_DARK_COLORS.muted};
   --border: ${WIKI_DARK_COLORS.border};

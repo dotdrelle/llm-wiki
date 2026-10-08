@@ -24,27 +24,30 @@ describe('visibilité de la demande d’approbation', () => {
     expect(banner).toBeGreaterThan(inputBox);
   });
 
-  it('la place hors de #main, qui n’a pas la même mise en page selon le mode', () => {
+  it('la place hors de #main, dans le dock fixe en bas à droite', () => {
     /*
      `#main` est une colonne flex en temps normal et une grille à placements
      explicites en mode split : tout nouvel enfant y demanderait un placement
-     dans les deux. Une surcouche fixe n'appartient à aucune mise en page.
+     dans les deux. Le dock fixe n'appartient à aucune mise en page.
     */
     expect(CHAT_MARKUP.indexOf('id="approval-banner"'))
       .toBeGreaterThan(CHAT_MARKUP.indexOf('id="main"'));
-    expect(CHAT_HTML).toContain('#approval-banner{position:fixed;');
+    expect(CHAT_HTML).toContain("if(approval&&approval.parentElement!==dock)dock.append(approval);");
+    expect(CHAT_HTML).toContain('#workspace-dock{position:fixed;z-index:116;right:48px;bottom:12px;');
   });
 
-  it('reste au-dessus des vues centrales et lisible sur elles', () => {
-    // Fond ambré sur verre dépoli (dégradé + --panel + blur) et ombre : elle
-    // flotte désormais sur du contenu au lieu de s'insérer dans le flux
-    // au-dessus du composer, et reste une alerte — jamais fondue dans le décor.
-    expect(CHAT_HTML).toContain('z-index:60');
+  it('prend la largeur du panneau Activity, texte en haut et boutons dessous', () => {
+    // Largeur du rail Activity (--dock-w, écrite par sa poignée), hauteur
+    // ajustée au contenu ; les deux actions se partagent la largeur.
+    expect(CHAT_HTML).toContain('width:min(calc(var(--dock-w,360px) - 16px),calc(100vw - 64px))');
+    expect(CHAT_HTML).toContain("document.documentElement.style.setProperty('--dock-w', clamped+'px');");
+    expect(CHAT_HTML).toContain('.workspace-dock-card{box-sizing:border-box;display:flex;flex-direction:column;');
+    expect(CHAT_MARKUP.indexOf('id="approval-banner-text"'))
+      .toBeLessThan(CHAT_MARKUP.indexOf('class="approval-banner-actions"'));
+    expect(CHAT_HTML).toContain('.approval-banner-actions .approval-btn{flex:1;');
+    // Reste une alerte ambrée, jamais fondue dans le décor.
+    expect(CHAT_HTML).toMatch(/#approval-banner\{[^}]*border-left:3px solid #f59e0b/);
     expect(CHAT_HTML).toContain('rgba(245,158,11,.16)');
-    expect(CHAT_HTML).toContain('#approval-banner{position:fixed;');
-    expect(CHAT_HTML).toMatch(/#approval-banner\{[^}]*backdrop-filter:blur\(var\(--glass-blur\)\)/);
-    expect(CHAT_HTML).toMatch(/#approval-banner\{[^}]*border-left-color:#f59e0b/);
-    expect(CHAT_HTML).not.toContain('#approval-banner{width:min(900px,100%);align-self:center;');
   });
 
   it('garde ses deux actions et son annonce assistive', () => {

@@ -375,7 +375,7 @@ function runtimeRunCardHTML(plan,activities,progress=null) {
   const elapsedHtml=runStartedAt
     ? \`<span class="run-elapsed" id="run-elapsed" data-started-at="\${runStartedAt}">–</span>\`
     : '';
-  return \`<div class="act-card running" data-run-id="\${esc(runId)}" data-turn-id="\${esc(turnId)}" data-workspace="\${esc(workspace)}"><div class="act-card-head"><span class="act-card-icon">▶</span><div class="act-card-info"><div class="act-card-name">Run — \${esc(title)}</div><div class="act-card-meta"><span class="run-progress">\${esc(progressLabel)}</span>\${elapsedHtml?' · '+elapsedHtml:''}\${meta?' · '+esc(meta):''}</div></div><span class="act-badge running">Running</span></div><div class="act-actions"><button class="act-btn" type="button" onclick="askRuntimeStatus(\${jsArg(runId||title)})">Inspect</button><button class="act-btn del" type="button" onclick="cancelRuntimeRun()">Cancel</button></div></div>\`;
+  return \`<div class="act-card running" data-run-id="\${esc(runId)}" data-turn-id="\${esc(turnId)}" data-workspace="\${esc(workspace)}"><div class="act-card-head"><span class="act-card-icon">▶</span><div class="act-card-info"><div class="act-card-name">Run — \${esc(title)}</div><div class="act-card-meta"><span class="run-progress">\${esc(progressLabel)}</span>\${elapsedHtml?' · '+elapsedHtml:''}<span class="run-beat" id="run-beat"></span>\${meta?' · '+esc(meta):''}</div></div><span class="act-badge running">Running</span></div><div class="act-actions"><button class="act-btn" type="button" onclick="askRuntimeStatus(\${jsArg(runId||title)})">Inspect</button><button class="act-btn del cancel" type="button" onclick="confirmCancelRuntimeRun(this)">Cancel</button></div></div>\`;
 }
 
 function scrollMessagesToBottom() {

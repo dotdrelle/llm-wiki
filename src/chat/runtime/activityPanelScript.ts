@@ -128,7 +128,6 @@ function noteRuntimeProgress(text) {
   const message=String(text||'').trim();
   if(!message) return;
   agentProgressLog=[...agentProgressLog,message].slice(-AGENT_PROGRESS_LOG_LIMIT);
-  updateRunStrip();
 }
 function agentProgressEntries() {
   return agentProgressLog
@@ -158,12 +157,11 @@ function updateRuntimeThinkingBubble(div,text) {
 }
 
 // The external runtime's heartbeat: no label to show, only proof of life. It
-// restarts the in-flight watchdog(s) and refreshes the run strip — the same
-// consumption as a progress note, minus the Logs line (a beat is not a step).
+// restarts the in-flight watchdog(s), minus the Logs line (a beat is not a step).
 function noteRuntimeHeartbeat() {
   lastRuntimeEventAt=Date.now();
   pendingRuntimeStatusEls.forEach(el=>updateRuntimeThinkingBubble(el));
-  updateRunStrip();
+  updateRunElapsed();
 }
 
 // Every bubble removal goes through here, so the safety net never outlives
@@ -540,7 +538,7 @@ function actCardHTML(item) {
   const retryHtml=(item.status==='stored'||item.status==='failed')&&item.uploadId
     ?\`<button class="act-btn" onclick="retryConvert(\${esc(JSON.stringify(item.uploadId))},\${esc(JSON.stringify(item.id))})">Retry</button>\`
     :'';
-  const statusHtml=runtimeCard?\`<button class="act-btn" onclick="askRuntimeStatus(\${esc(JSON.stringify(item.statusTarget||item.remoteId||item.id))})">Status</button>\${item.cancelItemId?\`<button class="act-btn del" onclick="cancelQueuedRuntimeItem(\${esc(JSON.stringify(item.cancelItemId))})">Cancel</button>\`:''}\`:'';
+  const statusHtml=runtimeCard?\`<button class="act-btn" onclick="askRuntimeStatus(\${esc(JSON.stringify(item.statusTarget||item.remoteId||item.id))})">Status</button>\${item.cancelItemId?\`<button class="act-btn del cancel" onclick="cancelQueuedRuntimeItem(\${esc(JSON.stringify(item.cancelItemId))})">Cancel</button>\`:''}\`:'';
   const dismissHtml=runtimeCard?'':\`<button class="act-btn del" onclick="dismissActivity(\${esc(JSON.stringify(item.id))})">Dismiss</button>\`;
   const hint=converted?\`<div class="act-card-meta">Ready · run ingest to integrate.</div>\`
     :stored?\`<div class="act-card-meta">Stored, no conversion agent.</div>\`
@@ -639,11 +637,7 @@ function renderActivities() {
       refreshRuntimeWorkflowSummary();
     }
     requestAnimationFrame(renderRuntimeWorkflowGraph);
-    // The graph view owns the DOM, not the run strip: skipping
-    // finishActivityRender() here left the floating strip frozen on its last
-    // update — a run that ended while the Execution view was open kept showing
-    // its mid-run progress (and never disappeared) because no state refresh
-    // reached updateRunStrip(). The strip, the elapsed tick and the rail badge
+    // The graph view owns the DOM, but the elapsed tick and the rail badge
     // must follow the same state whatever the views render.
     return finishActivityRender();
   }
@@ -723,9 +717,6 @@ function finishActivityRender() {
   if(anyRunning&&!_actTimer) _actTimer=setInterval(renderActivities,1000);
   if(!anyRunning&&_actTimer){clearInterval(_actTimer);_actTimer=null;}
   updateRunElapsed();
-  // The strip must follow the same tick: it disappears when the run ends, and
-  // its percentage/elapsed come from the live state.
-  updateRunStrip();
   // The tick is also what expires the live-write pulse: 4s after the last
   // runtime event the writing highlight fades, and the terminal render clears
   // it for good — the marker never outlives the update it announced.
@@ -757,6 +748,13 @@ function formatRunElapsed(ms) {
   return seconds+'s';
 }
 function updateRunElapsed() {
+  // The external runtime's heartbeat: a run whose model thinks without calling
+  // a tool otherwise reads as frozen, and the beat is what proves it is not.
+  const beat=$('run-beat');
+  if(beat) {
+    const beatAt=Date.parse(String(runtimeState?.lastHeartbeatAt||''))||0;
+    beat.textContent=beatAt?' · alive '+Math.max(0,Math.round((Date.now()-beatAt)/1000))+'s ago':'';
+  }
   const el=$('run-elapsed');
   if(!el) return;
   const started=Number(el.dataset.startedAt||0);

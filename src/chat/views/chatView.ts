@@ -204,33 +204,6 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
 </div>
 
 <!--
-  Run status strip: the chat-side twin of the ShellUI's Activity strip.
-  Two lines, like the ShellUI: the document/step the run is on TODAY (the
-  activity's own progress.label, what the Shell shows for an aggregated line)
-  with its percentage, then the live figures the direct wiki CLI already
-  exports — step/source/task/batch counters, the detail and the tokens. It
-  carries no raw tool id — those are the Logs tab's job.
-
-  At the BOTTOM centre of the window by default, lifted above the chat bar
-  while it is displayed so it never covers the input or its buttons; a
-  double-click puts a dragged strip back there. A fixed overlay, like
-  #approval-banner, so it survives the three center views that hide #input-wrap.
-  The reader may DRAG it anywhere (initRunStripDrag in runStripScript.ts): the
-  centering transform is dropped on first grab and the box is clamped to the
-  viewport. It disappears once the run is over — the Plan tab then carries the
-  outcome (task statuses, skipped chain steps).
--->
-<div id="run-strip" hidden aria-live="polite">
-  <span class="run-strip-spinner" aria-hidden="true"></span>
-  <span class="run-strip-lines">
-    <span class="run-strip-line"><span class="run-strip-text" id="run-strip-text">Working…</span><span class="run-strip-percent" id="run-strip-percent" hidden></span></span>
-    <span class="run-strip-line" id="run-strip-sub-line" hidden><span class="run-strip-sub-text" id="run-strip-sub-text"></span><span class="run-strip-sub-percent" id="run-strip-sub-percent" hidden></span></span>
-  </span>
-  <button class="run-strip-stop" type="button" onclick="stopRuntimeRunFromStrip()" title="Stop the current run (the rest of its skill chain is skipped; other queued requests stay)">Stop</button>
-  <button class="run-strip-open" type="button" onclick="showExecutionView(event)">Details</button>
-</div>
-
-<!--
   Approval is a WORKSPACE-level demand, not a chat message.
 
   This banner used to live inside #input-wrap, which the layout hides in three
@@ -241,16 +214,19 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
 
   Kept OUT of #main on purpose: #main is a flex column normally and an
   explicitly-placed grid in split mode, so any new child there needs a
-  placement in both. A fixed overlay belongs to no layout and survives every
-  mode.
+  placement in both. The maintenance script moves it into #workspace-dock, a
+  fixed card stack at the bottom right, the width of the Activity panel, that
+  survives every view: the text first, the buttons underneath.
 -->
-<div id="approval-banner" hidden role="alert" aria-live="assertive">
-  <span class="approval-banner-icon">⏸</span>
-  <span class="approval-banner-text" id="approval-banner-text">Approval required before mutations.</span>
-  <span class="approval-banner-actions">
+<div id="approval-banner" class="workspace-dock-card" hidden role="alert" aria-live="assertive">
+  <div class="approval-banner-head">
+    <span class="approval-banner-icon">⏸</span>
+    <span class="approval-banner-text" id="approval-banner-text">Approval required before mutations.</span>
+  </div>
+  <div class="approval-banner-actions">
     <button type="button" class="approval-btn approve" onclick="approveRuntimeRun()">Approve</button>
     <button type="button" class="approval-btn reject" onclick="rejectRuntimeRun()">Reject</button>
-  </span>
+  </div>
 </div>
 
 <aside id="activity-panel" class="closed">

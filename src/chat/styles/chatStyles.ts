@@ -403,14 +403,17 @@ ${CHAT_ACTIVITY_CSS}
 /* Drop target highlight: dragging a document row out of the wiki tree or the
    Pending panel over the chat marks the whole column as the landing zone. */
 #messages.is-context-drop,#input-wrap.is-context-drop{outline:2px dashed var(--accent,#4f7eff);outline-offset:-4px;background:color-mix(in srgb,var(--accent-soft,color-mix(in srgb,var(--accent) 12%,transparent)) 55%,transparent)}
-/* Fixed, because the demand outlives the view: the composer is hidden in the
-   wiki, connectors and execution modes, and an approval waited there unseen.
-   Opaque background — it now floats over content instead of sitting in flow. */
-#approval-banner{position:fixed;bottom:50px;left:50%;transform:translateX(-50%);z-index:60;width:min(760px,calc(100vw - 120px));box-sizing:border-box;display:flex;align-items:center;gap:10px;margin:0;padding:9px 12px;border:1px solid rgba(245,158,11,.55);border-left-width:3px;border-left-color:#f59e0b;border-radius:12px;background:linear-gradient(90deg,rgba(245,158,11,.16),rgba(245,158,11,.04)),var(--panel);backdrop-filter:blur(var(--glass-blur));-webkit-backdrop-filter:blur(var(--glass-blur));box-shadow:var(--shadow);color:var(--text)}
+/* A card of #workspace-dock (bottom right, the Activity panel's width), because
+   the demand outlives the view: the composer is hidden in the wiki, connectors
+   and execution modes, and an approval waited there unseen. Text on top, the
+   two actions underneath sharing the card's width. */
+#approval-banner{gap:10px;border-color:rgba(245,158,11,.55);border-left:3px solid #f59e0b;background:linear-gradient(180deg,rgba(245,158,11,.16),rgba(245,158,11,.04)),var(--dock-bg,var(--panel));backdrop-filter:blur(var(--glass-blur));-webkit-backdrop-filter:blur(var(--glass-blur))}
 #approval-banner[hidden]{display:none}
-.approval-banner-icon{font-size:15px;line-height:1;color:#f59e0b}
-.approval-banner-text{flex:1;font-size:13px;line-height:1.35}
-.approval-banner-actions{display:flex;gap:6px;flex-shrink:0}
+.approval-banner-head{display:flex;align-items:flex-start;gap:8px;min-width:0}
+.approval-banner-icon{font-size:15px;line-height:1.2;color:#f59e0b}
+.approval-banner-text{flex:1;min-width:0;font-size:13px;line-height:1.4;overflow-wrap:anywhere}
+.approval-banner-actions{display:flex;gap:8px}
+.approval-banner-actions .approval-btn{flex:1;padding:6px 12px}
 .approval-btn{border:1px solid var(--border);border-radius:7px;padding:4px 12px;font-size:12px;font-weight:600;cursor:pointer;background:var(--panel-soft);color:var(--text)}
 .approval-btn.approve{background:#f59e0b;border-color:#f59e0b;color:#0b1020;box-shadow:0 0 14px rgba(245,158,11,.35)}
 .approval-btn.approve:hover{background:#fbbf24;border-color:#fbbf24}
@@ -452,7 +455,7 @@ ${CHAT_ACTIVITY_CSS}
 .memory-gauge-btn.memory-gauge-high .memory-gauge-fill{stroke:var(--accent)}
 .agent-mode-btn{border:1px solid var(--border);border-radius:999px;background:transparent;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:7px 9px;cursor:pointer;font-family:var(--font-sans);transition:border-color .2s,color .2s,background .2s}
 .agent-mode-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--panel)}
-.agent-mode-btn.active,.agent-mode-btn.active:hover{border-color:#06B6D4;color:#0B1020;background:#06B6D4}
+.agent-mode-btn.active,.agent-mode-btn.active:hover{border-color:#06B6D4;color:#FFFFFF;background:#06B6D4}
 .agent-mode-btn.disabled{opacity:.45;cursor:not-allowed}
 #send-btn{background:var(--accent);border:none;border-radius:50%;width:34px;height:34px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .2s,transform .2s,background .2s;color:var(--panel-solid);box-shadow:0 0 16px var(--accent-soft)}
 #send-btn:hover{opacity:.82;transform:scale(1.04)}

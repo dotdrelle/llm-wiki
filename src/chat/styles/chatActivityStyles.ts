@@ -115,6 +115,10 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .act-btn{font-size:10px;font-weight:700;border:1px solid var(--border);border-radius:6px;background:var(--panel);color:var(--muted);padding:4px 9px;cursor:pointer;font-family:var(--font-sans)}
 .act-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .act-btn.del:hover{border-color:var(--err);color:var(--err);background:color-mix(in srgb,var(--err) 8%,transparent)}
+/* Cancel stops real work: red at rest, so it never reads like Inspect. */
+.act-btn.cancel{border-color:color-mix(in srgb,var(--err) 55%,var(--border));color:var(--err)}
+.act-btn.cancel:hover{border-color:var(--err);color:#fff;background:var(--err)}
+.act-btn.cancel:disabled{opacity:.5;cursor:default}
 .runtime-status{font-size:10px;color:var(--muted);font-family:var(--font-mono);padding:0 4px 6px}
 .runtime-log-filters{margin:0 0 7px}.runtime-log-filters input{width:100%;border:1px solid var(--border);border-radius:8px;background:var(--panel-deep);color:var(--text);font:11px var(--font-mono);padding:6px 8px}.runtime-log{font-family:var(--font-mono);font-size:10px;line-height:1.4;color:var(--muted2);background:var(--panel-deep);border:1px solid var(--border);border-radius:8px;padding:7px 8px;white-space:pre-wrap;word-break:break-word;max-height:240px;overflow-y:auto;overscroll-behavior:contain}.runtime-log .rt-log-time{color:var(--accent)}.runtime-log.empty{color:var(--muted)}.runtime-choice-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .runtime-journal{display:flex;flex-direction:column;gap:3px;max-height:360px;overflow:auto;overscroll-behavior:contain}.runtime-journal.empty{padding:8px;color:var(--muted);font-size:10px}.runtime-journal-entry{display:grid;grid-template-columns:52px minmax(0,1fr);gap:7px;padding:5px 7px;border-left:3px solid var(--border);border-radius:5px;background:var(--panel-deep);font-size:10px;line-height:1.4}.runtime-journal-entry time{color:var(--muted);font-family:var(--font-mono)}.runtime-journal-entry span,.runtime-journal-text{min-width:0;overflow-wrap:anywhere;color:var(--text)}.runtime-journal-text>:first-child{margin-top:0}.runtime-journal-text>:last-child{margin-bottom:0}.runtime-journal-text p,.runtime-journal-text ul,.runtime-journal-text ol{margin:0 0 4px}.runtime-journal-text ul,.runtime-journal-text ol{padding-left:16px}.runtime-journal-text code{font-size:9.5px}.runtime-graph-inspector>.runtime-inspector-section:last-child{flex:1 0 auto}.runtime-inspector-section:last-child .runtime-journal{flex:1 0 auto;max-height:none;overflow:visible}.runtime-journal-entry.running{border-left-color:var(--accent)}.runtime-journal-entry.success{border-left-color:#22c55e}.runtime-journal-entry.warning{border-left-color:#f59e0b}.runtime-journal-entry.error{border-left-color:var(--err)}
@@ -224,27 +228,6 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .bubble a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .bubble .instruction-ref{color:var(--warn);font-family:var(--font-mono);font-size:.92em;background:rgba(199,168,0,.08);border:1px solid rgba(199,168,0,.22);border-radius:5px;padding:1px 5px;white-space:normal;overflow-wrap:anywhere}
 .stream-cursor::after{content:'▋';animation:blink .8s step-end infinite;color:var(--accent);margin-left:1px}
-/* RUN STATUS STRIP — the run's business lines, pinned to the TOP of the window
-   so it never covers the composer. A raw tool id never appears here: it is
-   diagnostic and lives in the Logs tab. */
-#run-strip{position:fixed;bottom:var(--run-strip-bottom,16px);left:50%;transform:translateX(-50%);z-index:59;width:min(608px,calc(100vw - 120px));box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--border);border-radius:12px;background:var(--run-strip-bg);backdrop-filter:blur(var(--glass-blur));-webkit-backdrop-filter:blur(var(--glass-blur));box-shadow:var(--shadow);color:var(--text);font-size:13px;cursor:grab;touch-action:none;user-select:none}
-#run-strip[hidden]{display:none}
-#run-strip.dragging{cursor:grabbing}
-.run-strip-spinner{width:12px;height:12px;flex-shrink:0;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:runStripSpin .8s linear infinite}
-@keyframes runStripSpin{to{transform:rotate(360deg)}}
-.run-strip-lines{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-.run-strip-line{display:flex;align-items:center;gap:8px;min-width:0}
-.run-strip-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
-.run-strip-sub-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--muted);font-family:var(--font-mono)}
-#run-strip-sub-line[hidden]{display:none}
-.run-strip-percent,.run-strip-sub-percent{flex-shrink:0;font-family:var(--font-mono);font-size:11px;color:var(--muted)}
-.run-strip-open{flex-shrink:0;background:none;border:1px solid var(--border);border-radius:7px;color:var(--muted2);font-size:11px;padding:2px 8px;cursor:pointer}
-.run-strip-open:hover{border-color:var(--accent);color:var(--accent)}
-.run-strip-stop{flex-shrink:0;background:none;border:1px solid color-mix(in srgb,var(--err) 55%,var(--border));border-radius:7px;color:var(--err);font-size:11px;padding:2px 8px;cursor:pointer}
-.run-strip-stop:hover{background:color-mix(in srgb,var(--err) 12%,transparent)}
-.run-strip-stop:disabled{opacity:.5;cursor:default}
-/* The strip lives at the top now, so the composer needs no bottom padding and
-   the approval banner keeps its own base position (it stays at the bottom). */
 /* Business activity lines inside the Plan tab (they replaced the raw cards). */
 .act-line{display:flex;align-items:flex-start;gap:8px;padding:5px 12px;font-size:12px}
 .act-line-text{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}

@@ -50,24 +50,3 @@ describe('run strip and Activity panel describe a run the same way', () => {
     expect(runStripDetail({ sourceIndex: 0, sourceCount: 8 }, null)).toBe('Source 1/8');
   });
 });
-
-describe('the run strip is shown for a run, never for a turn or a leftover', () => {
-  const helpers = ['isActivityActive', 'normalizeActivityStatus'].map((n) => grab(ACTIVITY_PANEL_SCRIPT, n)).join('\n');
-  const active = (state: unknown) => new Function('runtimeState', `${helpers}\n${grab(RUN_STRIP_SCRIPT, 'runIsActive')};return runIsActive();`)(state) as boolean;
-
-  it('hides once the run is over, even if its last activity poll still said running at 100%', () => {
-    expect(active({ status: 'done', activities: [{ status: 'running', terminal: false, progress: { percent: 100 } }] })).toBe(false);
-    expect(active({ status: 'idle', activities: [{ status: 'running', terminal: false, progress: { percent: 40 } }] })).toBe(false);
-  });
-
-  it('shows for a running or approval-waiting run and a queued chain', () => {
-    expect(active({ status: 'running' })).toBe(true);
-    expect(active({ status: 'pending_approval' })).toBe(true);
-    expect(active({ status: 'waiting' })).toBe(true);
-    expect(active({ status: 'idle', skillChains: [{ status: 'queued' }] })).toBe(true);
-  });
-
-  it('stays hidden with no runtime state (a chat turn awaiting its answer)', () => {
-    expect(active(null)).toBe(false);
-  });
-});

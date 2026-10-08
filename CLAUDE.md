@@ -432,10 +432,14 @@ Runtime UI surfaces added alongside the graph (keep in lock-step with the
 manager's `state.concurrency` / `workflow.timingByTask` — see
 `llm-wiki-manager/CLAUDE.md`):
 
-- **Approval banner** (`#approval-banner`, `chatView.ts`/`chatHtml.ts`): amber
-  strip above the composer with Approve/Reject, shown whenever
+- **Approval card** (`#approval-banner`, `chatView.ts`/`chatHtml.ts`): amber
+  card with the text on top and Approve/Reject underneath, shown whenever
   `runtimeState.approvals` or a plan task is `pending_approval`. Approve →
-  `POST /api/runtime/approve {scope:'run'}`; Reject cancels the run.
+  `POST /api/runtime/approve {scope:'run'}`; Reject cancels the run. It lives
+  in `#workspace-dock` (`maintenancePanelScript.ts`): a fixed card stack at the
+  bottom right, beside the 40 px rail, the Activity panel's width (`--dock-w`,
+  published on the root by the panel's splitter), height fitted to its content,
+  that survives every view. Maintenance notices are the dock's other card.
 - **Run summary** (`runtimeWorkflowSummaryHTML`, also reused in the Plan tab):
   `agents · Parallel active/max ×N · done/total · tokens`. The `×N` is the
   authoritative resolved concurrency from `runtimeState.concurrency.limit`
@@ -469,29 +473,17 @@ only in the Plan tab, requires browser confirmation and calls
 plan, activities, logs, queue, and persisted projection. Upload cards with an
 `error` always render as failed even if storage succeeded.
 
-A floating **run-status strip** (`position: fixed`, a sibling of
-`#approval-banner`, same reason: it survives the three views that hide
-`#input-wrap`) opens at the BOTTOM centre of the window, `min(608px, …)` wide,
-lifted (`--run-strip-bottom`, `placeRunStripDefault`) above whatever occupies
-the bottom while displayed — the composer and the approval banner — so it never
-covers the input or Approve/Reject. The reader can drag it (`initRunStripDrag`
-in `runStripScript.ts`; the drag starts outside its buttons) and double-click it
-back to that default; the position is persisted in `localStorage`
-(`run-strip-position-v2`, wrapped in try/catch) and restored, clamped to the
-viewport, when the strip becomes visible again. A restore waits until the
-window and the strip have a size: clamping before layout pinned the saved
-position to 0,0 (the top-left corner), which is why the key was versioned. Its background is its own theme token, `--run-strip-bg`
-(`theme.ts`): in the dark theme the shared `--panel` was too close to the
-near-black ground for a bar floating over the chat. It shows **two business lines** like the ShellUI's Activity
-panel: its primary line is the document/step the run is on today — the
-activity's own `progress.label`, exactly what the ShellUI shows for an
-aggregated line — with its percentage; its sub-line carries the live figures
-the direct wiki CLI already exports (step/source/task/batch counters, the
-detail, and the tokens), falling back to a second concurrent activity or the
-running plan step. It floats above the composer rather than padding it. It **disappears once the run is over** — the
-Plan tab keeps the outcome, so the strip is not a second history. The
-`assistant_progress` notes never enter the thread as messages: they feed this
-strip's liveness, the Logs tab, and the ephemeral waiting bubble, which shows
+There is no floating run strip and no bottom status bar any more (both
+removed after 0.16.51): the run reads in Activity → Plan only. The run card at
+the top of the panel (`runtimeRunCardHTML`) carries the percentage, the elapsed
+time and the gateway heartbeat (`alive Ns ago`, `#run-beat`, filled in place by
+`updateRunElapsed` so the per-second tick never resets scroll), with Inspect and
+a red Cancel (`.act-btn.cancel`) that confirms, then `POST /api/runtime/cancel`
+— chain-scoped, and the runtime also sends `agent_cancel` to the jobs of a
+re-attached run. `runStripScript.ts` keeps only the shared formatting
+(`runStripDetail`, the ShellUI's `activityDetailText` port) and the Cancel
+actions. The `assistant_progress` notes never enter the thread as messages: they
+feed the Logs tab and the ephemeral waiting bubble, which shows
 the turn's LAST step only (`runtimeProgressLabel` in `chatHtml.ts`), replaced at
 each event until "Writing the answer…".
 

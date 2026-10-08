@@ -147,7 +147,7 @@ running in its agent and is followed again when the runtime is back.
   lost — sections already ingested are not redone.
 - An update of an existing export, or a mail, is never interrupted. Your task
   waits for it to end.
-- While your task waits, the run strip says so: **Waiting for maintenance —**
+- While your task waits, the Plan tab says so: **Waiting for maintenance —**
   followed by the action, instead of a run stuck at 0 %.
 - No maintenance action can block the workspace forever: each one has a fixed
   time limit (30 minutes for a sync, 2 hours for an ingest…), after which it is

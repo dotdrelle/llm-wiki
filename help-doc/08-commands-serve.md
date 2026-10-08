@@ -128,12 +128,16 @@ Everything below is a **UI panel**, not something you type:
   document and the chat sit side by side; the **×** on the document column
   closes it and hands the full width to the chat; the split button reopens the
   pair.
-- **Run-status strip** — while a run is active, a floating bar near the top of
-  the window shows the document or step it is on, its percentage, the live
-  counters and how long ago the agent last showed a sign of life. Drag it
-  anywhere; it stays inside the window and reappears where you left it, even
-  after a reload. It disappears once the run is over — the Activity panel keeps
-  the outcome.
+- **Run card** — while a run is active, the top of the Activity panel shows it:
+  its percentage, how long it has been running and how long ago the agent last
+  showed a sign of life, with **Inspect** and a red **Cancel**. Cancel asks for
+  confirmation, then stops the run and its running job and skips the rest of
+  its chain; other queued requests stay. The Plan tab below lists the document
+  or step it is on and the live counters.
+- **Approvals** — a run waiting for your approval shows a card at the bottom
+  right of the window, the width of the Activity panel, with **Approve** and
+  **Reject**. It stays on screen whatever view you open. Maintenance notices
+  appear in the same place.
 - **Activity panel** — live tracking of runs, with *List* and *Graph* views.
   Each of its three tabs (Plan, Files, Logs) has its own `Clear`; `Clear all`
   clears all three. `Reset plan` (Plan tab only) stops active work and purges

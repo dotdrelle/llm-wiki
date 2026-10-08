@@ -58,6 +58,8 @@ function initActivitySplitter() {
     // Ceiling: leave the conversation at least 40% of the window.
     const clamped=Math.max(280, Math.min(width, Math.max(320, window.innerWidth*0.6)));
     panel.style.setProperty('--act-w', clamped+'px');
+    // The workspace dock (approvals, maintenance) floats at the panel's width.
+    document.documentElement.style.setProperty('--dock-w', clamped+'px');
     if(persist) localStorage.setItem(ACT_SPLIT_KEY, String(Math.round(clamped)));
   };
 
