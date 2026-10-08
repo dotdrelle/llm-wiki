@@ -122,7 +122,7 @@ function essentialRuntimeLogEntries(logs) {
       .trim();
     if(!text||text.length<3) continue;
     // Maintenance lines are written for the reader; they always belong to the journal.
-    const important=/maintenance|run\\b|approval|approb|plan\\b|activity|ingest|build|export|polish|done|complete|failed|error|cancel|running|queued|started/i.test(text);
+    const important=/^model:|maintenance|run\\b|approval|approb|plan\\b|activity|ingest|build|export|polish|done|complete|failed|error|cancel|running|queued|started/i.test(text); // ^model: = the run/turn model meter, always kept
     if(!orchestrator&&!important) continue;
     const key=text.toLowerCase().replace(/\\d+%/g,'%');
     if(seen.has(key)) continue;
