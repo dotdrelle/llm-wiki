@@ -2982,7 +2982,8 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
     // A model chosen in the Model field travels with the turn: the runtime
     // answers this conversation with it while active jobs keep the profile's
     // model. Same value as the profile: nothing to override.
-    const turnBody={input:text,conversationId:currentConversationId,...runtimeTurnModelOverride(),...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{})};
+    // A hidden question is composed by the interface, not typed: never memory evidence.
+    const turnBody={input:text,conversationId:currentConversationId,...runtimeTurnModelOverride(),...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{}),...(hideQuestion?{extractMemory:false}:{})};
     const doTurnFetch=()=>fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(skillRun?{input:text,mode:'agent',conversationId:currentConversationId}:turnBody)});
     let res=await doTurnFetch();
     // Transient 503 (host runtime booting/restarting): wait, then replay once.
