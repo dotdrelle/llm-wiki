@@ -447,7 +447,7 @@ loadHistory();
 
   if (req.method === 'GET' && isRawDownloadRequestPath(urlPath)) {
     const rawRelative = toPosix(urlPath.replace(/^\/raw\//, '').replace(/\/+$/, ''));
-    if (rawRelative.endsWith('.md') && isServedRelativePath(rawRelative)) {
+    if ((rawRelative.endsWith('.md') || isLockedPendingPath(rawRelative)) && isServedRelativePath(rawRelative)) {
       const normalizedRawRelative = normalizeSafeRelativePath(rawRelative);
       if (normalizedRawRelative === null) {
         res.writeHead(403, { 'Content-Type': 'text/plain' });
@@ -540,7 +540,8 @@ loadHistory();
     return true;
   }
 
-  if (!absolute.endsWith('.md')) {
+  // A source locked out of ingestion (`a.md.lock`) stays readable.
+  if (!absolute.endsWith('.md') && !isLockedPendingPath(toPosix(path.relative(rootDir, absolute)))) {
     res.writeHead(415, { 'Content-Type': 'text/plain' });
     res.end('Only .md files are served');
     return true;
@@ -549,4 +550,8 @@ loadHistory();
   const html = await serveMd(rootDir, absolute, urlPath);
   await deps.sendGzippedHtml(req, res, html);
   return true;
+}
+
+function isLockedPendingPath(relativePath: string): boolean {
+  return relativePath.startsWith('raw/untracked/') && relativePath.endsWith('.md.lock');
 }

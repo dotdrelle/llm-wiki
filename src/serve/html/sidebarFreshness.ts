@@ -63,15 +63,27 @@ export async function wikiFileMtimes(
   return mtimes;
 }
 
-/** Wiki files the last ingest run touched, keyed to the mtime the browser reads. */
+/**
+ * When this serve process started. The "new since the last ingest" marks are a
+ * session's news, not a backlog: kept across restarts, a 158-page ingest had
+ * to be clicked open page by page after every restart to clear the badge.
+ */
+export const SERVE_STARTED_AT = Date.now();
+
+/**
+ * Wiki files the last ingest run touched, keyed to the mtime the browser reads.
+ * `notBefore` (the serve start) drops what was written before this session.
+ */
 export function recentIngestChanges(
   mtimes: Map<string, number>,
   ingestStart: number | null,
+  notBefore = 0,
 ): Map<string, number> {
   const changed = new Map<string, number>();
   if (ingestStart === null) return changed;
+  const since = Math.max(ingestStart, notBefore);
   for (const [file, mtimeMs] of mtimes) {
-    if (mtimeMs >= ingestStart) changed.set(file, mtimeMs);
+    if (mtimeMs >= since) changed.set(file, mtimeMs);
   }
   return changed;
 }

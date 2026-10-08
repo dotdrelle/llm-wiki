@@ -504,7 +504,7 @@ describe('titles in the tree', () => {
     const html = await renderSidebar(root);
 
     expect(html).not.toContain('data-changed-at=');
-    expect(html).toContain('<span class="side-view-badge" data-view-badge="wiki" hidden>0</span>');
+    expect(html).toContain('<span class="side-view-badge" data-view-badge="wiki" data-mark-all-read title="Mark all as read" hidden>0</span>');
   });
 
   it('shows a concept folder and its leaf subjects in capitals', async () => {
@@ -821,7 +821,7 @@ describe('agent proposals shortcut', () => {
     expect(html).toContain('data-tree-lock="raw/untracked/lot/gele.md.lock" data-locked="1"');
     expect(html).toContain('data-tree-lock="raw/untracked/lot/source.md" data-locked="0"');
     expect(html).toContain('side-untracked-locked');
-    expect(html).not.toContain('href="/raw/untracked/lot/gele.md.lock"');
+    expect(html).toContain('href="/raw/untracked/lot/gele.md.lock"');
     expect(html).toMatch(/data-untracked-count>1</);
     expect(WIKI_LAYOUT_CSS).not.toContain('content: "✏"');
     expect(WIKI_LAYOUT_SCRIPT).toContain("fetch('/api/tree/lock'");

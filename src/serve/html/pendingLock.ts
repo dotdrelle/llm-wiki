@@ -34,11 +34,12 @@ export function pendingLockButton(safePath: string, locked: boolean): string {
 }
 
 /**
- * A locked row is a label, not a link: the reader serves `.md` only, and a
- * locked source is read again once unlocked. Still draggable and deletable.
+ * A locked row stays a link — a locked source is still read — greyed, and
+ * outside the unread count (no `data-pending-at`). Draggable and deletable.
+ * `safeHref` is already escaped.
  */
-export function lockedPendingRow(safePath: string, safeTitle: string, deleteButton: string): string {
-  return `<div class="side-untracked-item side-untracked-locked" draggable="true" data-tree-drag="${safePath}" data-tree-kind="file"><span class="side-untracked-link" title="${safePath} — locked, excluded from ingestion">${safeTitle}</span>${pendingLockButton(safePath, true)}${deleteButton}</div>`;
+export function lockedPendingRow(safePath: string, safeHref: string, safeTitle: string, deleteButton: string): string {
+  return `<div class="side-untracked-item side-untracked-locked" draggable="true" data-tree-drag="${safePath}" data-tree-kind="file"><a class="side-untracked-link" href="${safeHref}" title="${safePath} — locked, excluded from ingestion" data-side-path="${safePath}">${safeTitle}</a>${pendingLockButton(safePath, true)}${deleteButton}</div>`;
 }
 
 // Open on hover like the delete cross, closed and always visible once locked;
@@ -63,6 +64,6 @@ export const PENDING_LOCK_CSS = `
     .side-tree-lock:hover { border-color: var(--border); color: var(--accent); }
     :hover > .side-tree-lock, .side-tree-lock:focus-visible, .side-tree-lock.is-locked { opacity: 1; }
     .side-tree-lock.is-locked { color: #f59e0b; }
-    .side-untracked-item.side-untracked-locked .side-untracked-link { color: var(--muted); font-style: italic; cursor: default; }
+    .side-untracked-item.side-untracked-locked .side-untracked-link { color: var(--muted); font-style: italic; }
     .side-untracked-item.side-untracked-locked .side-untracked-link::before { background: var(--muted); opacity: 0.5; }
 `;

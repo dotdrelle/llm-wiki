@@ -36,3 +36,28 @@ describe('pending source lock', () => {
     await expect(workspace.resolveSourceInputs(['lot/missing.md'])).rejects.toThrow(/not found/);
   });
 });
+
+describe('a locked source stays readable', () => {
+  const get = async (url: string) => {
+    const { handleWikiRoutes } = await import('../src/serve/routes/wikiRoutes.ts');
+    let html = ''; let status = 200;
+    await handleWikiRoutes({ method: 'GET', url } as never, {
+      writeHead(code: number) { status = code; }, end(body: string) { html = body ?? html; },
+    } as never, url, {
+      rootDir: root, readRequestBody: async () => '', sendJson: () => {},
+      sendGzippedHtml: async (_req: unknown, _res: unknown, body: string, _headers?: unknown, code?: number) => { html = body; if (code) status = code; },
+    } as never);
+    return { html, status };
+  };
+
+  it('opens `a.md.lock` in the reader like any pending source', async () => {
+    const { html, status } = await get('/raw/untracked/lot/frozen.md.lock');
+    expect(status).toBe(200);
+    expect(html).toContain('frozen');
+  });
+
+  it('still refuses any other non-Markdown file', async () => {
+    await writeFile(path.join(root, 'raw/untracked/lot/notes.txt'), 'x', 'utf8');
+    expect((await get('/raw/untracked/lot/notes.txt')).status).toBe(415);
+  });
+});

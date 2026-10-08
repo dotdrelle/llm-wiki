@@ -139,6 +139,18 @@ function wireSidebarLaunchButtons() {
     setViewBadge('pending', pendingUnread);
   }
   applyUnreadBadges();
+  // The wiki badge itself marks every page of the last ingest as read: a
+  // 158-page ingest was otherwise cleared one click at a time. Capture phase,
+  // so the click does not also switch the sidebar view.
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest?.('[data-mark-all-read]')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    document.querySelectorAll('.sidebar .side-tree [data-changed-at]').forEach((link) => {
+      markSeen(link.getAttribute('data-side-path') || '', Number(link.getAttribute('data-changed-at')) || 0);
+    });
+    applyUnreadBadges();
+  }, true);
   document.addEventListener('click', (event) => {
     const link = event.target.closest?.('[data-side-path]');
     if (!link) return;

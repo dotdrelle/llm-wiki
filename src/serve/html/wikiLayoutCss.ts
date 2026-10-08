@@ -254,7 +254,7 @@ export const WIKI_LAYOUT_CSS = `
       text-align: center;
       padding: 0 3px;
     }
-    .side-view-badge[hidden] { display: none; }
+    .side-view-badge[hidden] { display: none; } .side-view-badge[data-mark-all-read] { cursor: pointer; }
     .side-view-panes { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
     .side-view-pane { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
     .side-view-pane[hidden] { display: none; }

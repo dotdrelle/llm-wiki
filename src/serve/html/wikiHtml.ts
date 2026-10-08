@@ -35,7 +35,7 @@ import {
   foldersWithChanges,
   isConceptLeafPath,
   readFileHead,
-  recentIngestChanges,
+  recentIngestChanges, SERVE_STARTED_AT,
   wikiFileMtimes,
   wikiPageTitle,
 } from './sidebarFreshness.ts';
@@ -1224,7 +1224,7 @@ function renderUntrackedNode(
     ...files.map((file) => {
       const safePath = escapeAttr(file);
       const deleteButton = `<button class="side-tree-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-tree-delete="${safePath}" data-tree-kind="file">×</button>`;
-      if (locked.has(file)) return lockedPendingRow(safePath, escapeHtml(titles.get(file) ?? humanTitle(file)), deleteButton);
+      if (locked.has(file)) return lockedPendingRow(safePath, escapeHref(`/${file}`), escapeHtml(titles.get(file) ?? humanTitle(file)), deleteButton);
       const status = statuses.get(file);
       const statusClass = status ? ` side-untracked-${status}` : '';
       const phase = phases.get(file);
@@ -1262,7 +1262,7 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
     addNavPath(root, file);
   }
   const wikiMtimes = await wikiFileMtimes(rootDir, navFiles.map(toPosix));
-  const changed = recentIngestChanges(wikiMtimes, ingestStart);
+  const changed = recentIngestChanges(wikiMtimes, ingestStart, SERVE_STARTED_AT); // this session's news only
 
   const rootDirs = [...root.dirs.values()].sort((a, b) => SERVED_DIRS.indexOf(a.name) - SERVED_DIRS.indexOf(b.name));
   const wikiDir = rootDirs.find((dir) => dir.name === 'wiki');
@@ -1326,7 +1326,7 @@ export async function renderSidebar(rootDir: string, precomputedNavFiles?: strin
   // the brain carries what the last ingest produced (the browser subtracts what
   // has already been read), the inbox the files waiting in Pending.
   const wikiBadgeCount = changed.size;
-  const wikiBadge = `<span class="side-view-badge" data-view-badge="wiki"${wikiBadgeCount > 0 ? '' : ' hidden'}>${wikiBadgeCount}</span>`;
+  const wikiBadge = `<span class="side-view-badge" data-view-badge="wiki" data-mark-all-read title="Mark all as read"${wikiBadgeCount > 0 ? '' : ' hidden'}>${wikiBadgeCount}</span>`;
   const pendingBadge = `<span class="side-view-badge" data-view-badge="pending"${untrackedPanel.count > 0 ? '' : ' hidden'}>${untrackedPanel.count}</span>`;
   const viewBar = `<div class="side-views"><div class="side-view-rail"><div class="side-view-tabs" role="tablist" aria-label="Sidebar views"><button class="side-view-btn" type="button" role="tab" data-side-view="pending" title="Pending sources" aria-label="Pending sources">${inboxIcon}${pendingBadge}</button><button class="side-view-btn" type="button" role="tab" data-side-view="wiki" title="Wiki pages" aria-label="Wiki pages">${brainIcon}${wikiBadge}</button><button class="side-view-btn" type="button" role="tab" data-side-view="files" title="Context, templates, deliverables" aria-label="Context, templates, deliverables">${fileIcon}</button></div></div><div class="side-view-panes"><section class="side-view-pane" data-side-view-pane="wiki" role="tabpanel" aria-label="Wiki pages" hidden><nav class="side-tree" aria-label="Wiki pages">${wikiTree}</nav></section><section class="side-view-pane" data-side-view-pane="files" role="tabpanel" aria-label="Context, templates, deliverables" hidden>${collections}</section><section class="side-view-pane" data-side-view-pane="pending" role="tabpanel" aria-label="Pending sources">${untrackedPanel.html}</section></div></div>`;
 
