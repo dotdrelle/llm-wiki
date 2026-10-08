@@ -216,3 +216,51 @@ describe('moveEntry on a concept leaf', () => {
     if (!result.ok) expect(result.status).toBe(409);
   });
 });
+
+describe('moveEntry into a concept folder without one established identity', () => {
+  let root = '';
+  beforeEach(async () => {
+    root = await mkdtemp(path.join(tmpdir(), 'concept-move-legacy-'));
+    await mkdir(path.join(root, 'wiki/concepts/produit'), { recursive: true });
+    await mkdir(path.join(root, 'wiki/concepts/produits'), { recursive: true });
+    await writeFile(path.join(root, 'wiki/concepts/produit/gestion-vigilance.md'),
+      '---\nsubject: gestion-vigilance\nscope: source\nkind: dimension\n---\n\n# gestion vigilance\n');
+  });
+  afterEach(async () => { await rm(root, { recursive: true, force: true }); });
+
+  it('refiles into a legacy folder whose pages carry no identity at all', async () => {
+    // Pre-TAXO concept folders carry no concept_id: nothing to conflict with,
+    // and the move is the reader's explicit filing decision.
+    await writeFile(path.join(root, 'wiki/concepts/produits/base-alpha.md'),
+      '---\nsubject: base-alpha\nscope: source\nkind: product\n---\n\n# base alpha\n');
+    const result = await moveEntry(root, 'wiki/concepts/produit/gestion-vigilance.md', 'wiki/concepts/produits');
+    expect(result.ok).toBe(true);
+    const moved = await readFile(path.join(root, 'wiki/concepts/produits/gestion-vigilance.md'), 'utf8');
+    expect(moved).toMatch(/concept_id: [0-9a-f-]{36}/);
+  });
+
+  it('adopts the single identity of a partly identified folder', async () => {
+    const id = '123e4567-e89b-42d3-a456-426614174099';
+    await writeFile(path.join(root, 'wiki/concepts/produits/base-alpha.md'),
+      `---\nconcept_id: ${id}\nsubject: base-alpha\n---\n\n# base alpha\n`);
+    await writeFile(path.join(root, 'wiki/concepts/produits/orea.md'), '---\nsubject: orea\n---\n\n# orea\n');
+    const result = await moveEntry(root, 'wiki/concepts/produit/gestion-vigilance.md', 'wiki/concepts/produits');
+    expect(result.ok).toBe(true);
+    expect(await readFile(path.join(root, 'wiki/concepts/produits/gestion-vigilance.md'), 'utf8')).toContain(`concept_id: ${id}`);
+  });
+
+  it('refuses when the destination pages carry conflicting identities, naming them', async () => {
+    await writeFile(path.join(root, 'wiki/concepts/produits/base-alpha.md'),
+      '---\nconcept_id: 123e4567-e89b-42d3-a456-426614174001\nsubject: base-alpha\n---\n\n# a\n');
+    await writeFile(path.join(root, 'wiki/concepts/produits/orea.md'),
+      '---\nconcept_id: 123e4567-e89b-42d3-a456-426614174002\nsubject: orea\n---\n\n# b\n');
+    const result = await moveEntry(root, 'wiki/concepts/produit/gestion-vigilance.md', 'wiki/concepts/produits');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(409);
+      expect(result.error).toContain('base-alpha.md');
+      expect(result.error).toContain('orea.md');
+    }
+    expect(await readFile(path.join(root, 'wiki/concepts/produit/gestion-vigilance.md'), 'utf8')).toContain('gestion vigilance');
+  });
+});

@@ -82,9 +82,17 @@ export function decideConceptMove(input: {
 }
 
 /**
- * Refuse a manual re-file into a destination whose pages do not establish one
- * unambiguous concept identity. Mixing identities would make the folder cease
- * to be a usable concept candidate for later ingestion.
+ * Refuse a manual re-file into a destination whose pages carry SEVERAL
+ * distinct concept identities: the moved page could not adopt one without
+ * silently choosing between them.
+ *
+ * A destination with no identity at all — the pre-TAXO concept folders an
+ * older ingest left behind carry none — or with one identity and some
+ * unidentified pages is not ambiguous: the move is the reader's explicit
+ * filing decision, and `applyConceptAxes` gives the page the folder's single
+ * identity, or a fresh one. Refusing those cases blocked every hand-filing
+ * into a legacy folder with a message only `pnpm concepts:identities` could
+ * answer.
  */
 export async function conceptFolderIdentityIssue(
   rootDir: string,
@@ -100,16 +108,16 @@ export async function conceptFolderIdentityIssue(
   const children = await readdir(targetFolder, { withFileTypes: true }).catch(() => []);
   const pages = children.filter((entry) => entry.isFile() && entry.name.endsWith('.md'));
   if (pages.length === 0) return null;
-  const identities = new Set<string>();
-  let missingIdentity = false;
+  const pagesByIdentity = new Map<string, string[]>();
   for (const page of pages) {
     const content = await readFile(resolveInside(rootDir, `${CONCEPT_PATH_PREFIX}${destinationFolder}/${page.name}`), 'utf8').catch(() => '');
     const identity = content ? readProvenance(content).concept_id : null;
-    if (identity) identities.add(identity);
-    else missingIdentity = true;
+    if (identity) pagesByIdentity.set(identity, [...(pagesByIdentity.get(identity) ?? []), page.name]);
   }
-  if (identities.size > 1 || missingIdentity || identities.size === 0) {
-    return 'Destination concept pages have missing or conflicting identities; review or backfill their identities before refiling.';
+  if (pagesByIdentity.size > 1) {
+    const groups = [...pagesByIdentity.values()].map((names) => names.slice(0, 3).join(', ') + (names.length > 3 ? '…' : ''));
+    return `The pages of ${destinationFolder}/ carry ${pagesByIdentity.size} different concept identities (${groups.join(' | ')}); `
+      + 'the moved page cannot pick one. Resolve the conflict (pnpm concepts:identities on a copy) or refile into another folder.';
   }
   return null;
 }
