@@ -59,8 +59,12 @@ fall behind them:
 
 <!-- END GENERATED SKILLS -->
 
-`/status` and `/diagnose` are read-only. Every other skill mutates the
-workspace and asks for approval before it does.
+`/status` is a built-in read-only check. A launched skill asks for your
+approval as soon as it is launched, before any work starts and before any model
+call is spent: the approval authorizes the action, not a preview of its
+content, which is produced afterwards. One approval covers the whole run,
+including the tasks it hands to an agent; only a recovery replan after a
+failure asks again.
 
 For the knowledge lifecycle, `/wiki-ingest` is the narrowest rerun: it ingests
 what already waits in `raw/untracked/` and runs the complete TAXO operation —
