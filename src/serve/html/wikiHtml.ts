@@ -1785,7 +1785,7 @@ export async function serveMd(
   // Hidden by default: only the chat shell can build (the action runs through
   // Donna), so WIKI_LAYOUT_SCRIPT reveals it inside the shell's central iframe.
   const buildTemplateBtn = relativePath.startsWith('templates/') && relativePath.endsWith('.md')
-    ? `<button class="action-button action-donna action-agent" type="button" data-build-template="${escapeAttr(relativePath)}" hidden title="Build" aria-label="Build">${HAMMER_ICON}</button>`
+    ? `<button class="action-button action-donna" type="button" data-build-template="${escapeAttr(relativePath)}" hidden title="Build" aria-label="Build">${HAMMER_ICON}</button>`
     : '';
   // "Reformat" on an ingested wiki page: a Donna-run LLM pass that re-normalizes
   // the Markdown, checks the links and repairs the OKF frontmatter, in place and
@@ -1795,7 +1795,7 @@ export async function serveMd(
   const reformatBtn =
     relativePath.endsWith('.md')
     && ['wiki/concepts/', 'wiki/sources/', 'wiki/answers/'].some((dir) => relativePath.startsWith(dir))
-      ? `<button class="action-button action-donna action-agent" type="button" data-reformat-page="${escapeAttr(relativePath)}" hidden title="Reformat — clean Markdown, check links, repair OKF frontmatter" aria-label="Reformat this page">${SPARKLE_ICON}</button>`
+      ? `<button class="action-button action-donna" type="button" data-reformat-page="${escapeAttr(relativePath)}" hidden title="Reformat — clean Markdown, check links, repair OKF frontmatter" aria-label="Reformat this page">${SPARKLE_ICON}</button>`
       : '';
   const actions = [
     chatContextBtn,

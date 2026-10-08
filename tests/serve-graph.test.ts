@@ -206,7 +206,7 @@ describe('serve graph ui', () => {
       expect(page).toContain('aria-label="Export / polish"');
       // Same agent-button family as the template "Build" button, hidden
       // standalone and revealed only inside the chat shell.
-      expect(page).toContain('action-button action-donna action-agent');
+      expect(page).toContain('action-button action-donna');
 
       // Not on an already-exported/polished artifact: re-running it there
       // re-exported the export and spawned a second version.
@@ -564,9 +564,10 @@ describe('serve deliverables ui', () => {
     // sidebar rows.
     expect(css).toMatch(/\.delete-confirm \{[^}]*position: relative/s);
     expect(css).toMatch(/\.delete-confirm-panel \{[^}]*position: absolute[^}]*z-index[^}]*background/s);
-    // The accent fill that marks an agent/LLM-launched button (Build,
-    // Export / polish) apart from the instant local controls.
-    expect(css).toMatch(/\.action-agent \{[^}]*background: var\(--accent\)/s);
+    // Every Donna-launched page action (Add to Donna, Build, Export / polish)
+    // wears the Pending flash's solid accent fill, apart from local controls.
+    expect(css).toMatch(/\.action-donna \{[^}]*color: var\(--panel\); background: var\(--accent\); border-color: var\(--accent\)/s);
+    expect(css).toMatch(/\.side-rebuild-action \{[^}]*color: var\(--panel\); background: var\(--accent\); border-color: var\(--accent\)/s);
     // Comment blocks stay balanced — a botched removal once left an
     // unterminated /* that swallowed the rest of the stylesheet.
     expect((css.match(/\/\*/g) ?? []).length).toBe((css.match(/\*\//g) ?? []).length);

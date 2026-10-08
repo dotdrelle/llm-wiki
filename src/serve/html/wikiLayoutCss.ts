@@ -519,6 +519,8 @@ export const WIKI_LAYOUT_CSS = `
     .side-untracked-row > .side-folder-actions { top: 0; height: 2rem; }
     .side-folder-row.side-folder-primary .side-folder-plain-head { background: var(--accent-soft); }
     .side-folder-row.side-folder-primary .side-folder-plain-label { color: var(--accent); font-weight: 800; }
+    /* WIKI is a fixed header, not a fold: its first level starts flush left — the indent and guide line of a sub-folder bought nothing there. */
+    .side-folder-row.side-folder-primary > .side-folder-children { margin-left: 0; padding-left: 0; border-left: 0; }
     .side-untracked-count {
       min-width: 1.45rem;
       height: 1.45rem;
@@ -801,15 +803,13 @@ export const WIKI_LAYOUT_CSS = `
     .action-close { padding-left: 0.5rem; padding-right: 0.5rem; font-size: 0.95rem; line-height: 1; }
     .action-danger { color: var(--err); border-color: color-mix(in srgb, var(--err) 55%, var(--border)); }
     .action-danger:hover { border-color: var(--err); background: color-mix(in srgb, var(--err) 10%, var(--panel)); color: var(--err); }
-    .action-donna { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--accent-soft); padding-left: 0.5rem; padding-right: 0.5rem; }
-    .action-donna:hover { background: color-mix(in srgb, var(--accent) 16%, var(--panel)); border-color: var(--accent); color: var(--accent); }
+    /* Every Donna-launched page action — "Add to Donna", Build, Export /
+       polish, Reformat — wears the Pending flash's look (.side-ingest-action):
+       solid accent fill, panel-coloured glyph, darker on hover. One marker for
+       "this goes through Donna", in both themes. */
+    .action-donna { color: var(--panel); background: var(--accent); border-color: var(--accent); padding-left: 0.5rem; padding-right: 0.5rem; }
+    .action-donna:hover { background: color-mix(in srgb, var(--accent) 82%, black); border-color: color-mix(in srgb, var(--accent) 82%, black); color: var(--panel); }
     .action-donna svg { width: 16px; height: 16px; display: block; }
-    /* Solid accent fill on top of .action-donna: the "Build" / "Export / polish"
-       launch buttons specifically, not the "+ Add to Donna" context button they
-       share a base class with — same agent/LLM-launched marker as
-       .side-ingest-action and the /graph .agent-btn. */
-    .action-agent { color: var(--panel); background: var(--accent); border-color: var(--accent); }
-    .action-agent:hover { background: color-mix(in srgb, var(--accent) 82%, black); border-color: color-mix(in srgb, var(--accent) 82%, black); color: var(--panel); }
     .delete-confirm { position: relative; }
     .delete-confirm-panel {
       position: absolute;

@@ -22,7 +22,7 @@ export function deliverableActions(relativePath: string, exportIcon: string): st
   if (!relativePath.startsWith('deliverables/') || !relativePath.endsWith('.md')) return '';
   const deliver = isExportArtifactPath(relativePath)
     ? ''
-    : `<button class="action-button action-donna action-agent" type="button" data-deliver="${escapeAttr(relativePath)}" hidden title="Export / polish" aria-label="Export / polish">${exportIcon}</button>`;
+    : `<button class="action-button action-donna" type="button" data-deliver="${escapeAttr(relativePath)}" hidden title="Export / polish" aria-label="Export / polish">${exportIcon}</button>`;
   const provenance = `<a class="action-link" href="${escapeAttr(`/provenance?id=${encodeURIComponent(relativePath)}`)}" title="Show where this deliverable's evidence comes from">Provenance</a>`;
   return deliver + provenance;
 }
