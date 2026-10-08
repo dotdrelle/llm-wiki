@@ -8,7 +8,7 @@ import { OBSERVER_TOOLS_SCRIPT } from './views/observerToolsScript.ts';
 import { MCP_CONNECTOR_SCRIPT } from './runtime/mcpConnectorScript.ts';
 import { CONFIG_SCRIPT } from './config/configScript.ts';
 import { ACTIVITY_PANEL_SCRIPT } from './runtime/activityPanelScript.ts';
-import { RUN_STRIP_SCRIPT } from './runtime/runStripScript.ts';
+import { RUN_STRIP_SCRIPT } from './runtime/runStripScript.ts'; import { RUN_LIVE_LINE_SCRIPT } from './runtime/runLiveLineScript.ts';
 import { SPLITTERS_SCRIPT } from './layout/splittersScript.ts';
 import { REDO_SCRIPT } from './runtime/redoScript.ts';
 import { RUNTIME_GRAPH_SCRIPT } from './runtime/runtimeGraphScript.ts';
@@ -240,7 +240,7 @@ function notify(msg, type='s') {
 }
 ${ACTIVITY_PANEL_SCRIPT}
 ${MAINTENANCE_PANEL_SCRIPT}
-${RUN_STRIP_SCRIPT}
+${RUN_STRIP_SCRIPT}${RUN_LIVE_LINE_SCRIPT}
 ${SPLITTERS_SCRIPT}
 ${REDO_SCRIPT}
 ${RUNTIME_GRAPH_SCRIPT}
@@ -389,7 +389,7 @@ let runtimeStateSeq=0;
 function applyRuntimeState(state) {
   runtimeState=state;
   runtimeConnected=true;
-  const conversationChanged=mergeRuntimeConversation();
+  const conversationChanged=mergeRuntimeConversation(); syncRunLiveLine();
   // Safety net against the "No response received after 120s" watchdog: a
   // reply is already in the conversation, but the armed bubble was never
   // matched (skill turns store the compiled objective, cross-chat turns
@@ -500,7 +500,7 @@ function connectRuntimePanel() {
         window.dispatchEvent(new Event('llmwiki:memory-updated'));
       }
       const label=runtimeProgressLabel(parsed);
-      if(label) pendingRuntimeStatusEls.forEach(el=>updateRuntimeThinkingBubble(el,label));
+      if(label) pendingRuntimeStatusEls.forEach(el=>updateRuntimeThinkingBubble(el,label)); noteRunLiveEvent(parsed);
     } catch {}
     if(runtimeFetchPending) return;
     runtimeFetchPending=true;
