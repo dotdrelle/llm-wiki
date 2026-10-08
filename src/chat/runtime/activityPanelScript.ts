@@ -525,7 +525,9 @@ function actCardHTML(item) {
   const stored=item.status==='stored';
   const elapsed=actElapsed(item);
   const size=formatBytes(item.bytes);
-  const meta=[size,elapsed>0?elapsed+'s':null].filter(Boolean).join(' · ');
+  // A finished card says WHEN it ended ("failed · 683s" could not be placed).
+  const endedAt=!running?Number(item.finishedAt||item.completedAt||item.endedAt||item.updatedAt)||0:0;
+  const meta=[size,elapsed>0?formatRunElapsed(elapsed*1000):null,endedAt?'ended '+activityClock(endedAt):null].filter(Boolean).join(' · ');
   const done=item.status==='done';
   const badge=item.error?'failed':running?'running':(converted||done)?'done':stored?'stored':item.status==='cancelled'?'cancelled':'failed';
   const badgeLabel=ACT_CARD_BADGES[badge];
