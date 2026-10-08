@@ -109,18 +109,32 @@ describe('runtime concurrency summary', () => {
       ingestionLlmLimit: 6,
       workflow: { nodes: [{ id: 'run:1', type: 'run', status: 'running' }, task('running')] },
     });
-    expect(html).toContain('Concurrent tasks: 1 / 8');
-    expect(html).toContain('LLM calls per ingestion: limit 6');
-    expect(html).toContain('1 ingestion task processes 3 input files.');
-    expect(html).toContain('Agent recommended: 8 · Agent maximum: 8 · Manager cap: 8');
+    // A single-task plan shows no task concurrency: "1 / 8" read as unused
+    // capacity while the parallelism is the model calls inside the ingest.
+    expect(html).not.toContain('Tasks:');
+    expect(html).not.toContain('Concurrent tasks');
+    expect(html).toContain('Files: 0/3 done · 0 in progress');
+    expect(html).toContain('Model calls at once: up to 6');
     expect(html).not.toContain('max ×');
+  });
+
+  it('shows task concurrency only for a plan of several tasks', () => {
+    const html = summary({
+      concurrency: { limit: 4, agentRecommended: 4, agentMaximum: 8, ceiling: null },
+      workflow: { nodes: [{ id: 'run:1', type: 'run', status: 'running' },
+        { ...task('running'), id: 'task:a', raw: { operation: 'build' } },
+        { ...task('pending'), id: 'task:b', raw: { operation: 'build' } }] },
+    });
+    expect(html).toMatch(/Tasks: 0\/2 done · \d+ running \(max 4 at once\)/);
+    expect(html).toContain('Agent recommended: 4 · Agent maximum: 8 · Manager cap: unset');
+    expect(html).not.toContain('Model calls at once');
   });
 
   it('announces an unavailable limit and omits ingestion settings for builds', () => {
     const ingestion = { workflow: { nodes: [task('running')] } };
-    expect(summary(ingestion)).toContain('LLM calls per ingestion: limit not reported');
+    expect(summary(ingestion)).toContain('Model calls at once: limit not reported');
     expect(summary({ workflow: { nodes: [{ ...task('running'), raw: { operation: 'build' } }] } }))
-      .not.toContain('LLM calls per ingestion');
+      .not.toContain('Model calls at once');
   });
 });
 
