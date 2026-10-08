@@ -164,6 +164,20 @@ describe('runtime graph draws maintenance beside Donna', () => {
     expect(relations.some((r: { from: string; to: string }) => r.from === 'maintenance:m1' && r.to === 'maintenance')).toBe(true);
   });
 
+  it('moves the inspector off an idle run onto maintenance, unless the reader picked a node', () => {
+    const selectedAfter = (userSelected: boolean) => {
+      (globalThis as { window?: unknown }).window = { getMaintenanceRunning: () => [ingest] };
+      try {
+        const build = new Function('runtimeState', 'isActivityActive', 'normalizeActivityStatus', 'selectedWorkflowNodeId', 'userSelected',
+          `${RUNTIME_GRAPH_SCRIPT}\n runtimeWorkflowUserSelected = userSelected; runtimeWorkflowGraphData(); return selectedWorkflowNodeId;`);
+        return build({ status: 'idle', workflow: { nodes: [{ id: 'run:1', type: 'run', status: 'idle' }] } },
+          (s: string) => s === 'running', (s: string) => s, 'run:1', userSelected);
+      } finally { delete (globalThis as { window?: unknown }).window; }
+    };
+    expect(selectedAfter(false)).toBe('maintenance');
+    expect(selectedAfter(true)).toBe('run:1');
+  });
+
   it('draws nothing extra when maintenance is idle', () => {
     const { nodes } = withMaintenance([], { workflow: { nodes: [{ id: 'run:1', type: 'run', status: 'done' }] } });
     expect(nodes.some((n: { id: string }) => n.id === 'maintenance')).toBe(false);

@@ -9,6 +9,7 @@ import { MCP_CONNECTOR_SCRIPT } from './runtime/mcpConnectorScript.ts';
 import { CONFIG_SCRIPT } from './config/configScript.ts';
 import { ACTIVITY_PANEL_SCRIPT } from './runtime/activityPanelScript.ts';
 import { RUN_STRIP_SCRIPT } from './runtime/runStripScript.ts'; import { RUN_LIVE_LINE_SCRIPT } from './runtime/runLiveLineScript.ts';
+import { RUN_SIDEBAR_REFRESH_SCRIPT } from './runtime/runSidebarRefreshScript.ts';
 import { SPLITTERS_SCRIPT } from './layout/splittersScript.ts';
 import { REDO_SCRIPT } from './runtime/redoScript.ts';
 import { RUNTIME_GRAPH_SCRIPT } from './runtime/runtimeGraphScript.ts';
@@ -241,6 +242,7 @@ function notify(msg, type='s') {
 ${ACTIVITY_PANEL_SCRIPT}
 ${MAINTENANCE_PANEL_SCRIPT}
 ${RUN_STRIP_SCRIPT}${RUN_LIVE_LINE_SCRIPT}
+${RUN_SIDEBAR_REFRESH_SCRIPT}
 ${SPLITTERS_SCRIPT}
 ${REDO_SCRIPT}
 ${RUNTIME_GRAPH_SCRIPT}
@@ -389,6 +391,7 @@ let runtimeStateSeq=0;
 function applyRuntimeState(state) {
   runtimeState=state;
   runtimeConnected=true;
+  noteRunSidebarState(state);
   const conversationChanged=mergeRuntimeConversation(); syncRunLiveLine();
   // Safety net against the "No response received after 120s" watchdog: a
   // reply is already in the conversation, but the armed bubble was never
@@ -444,32 +447,6 @@ function runtimeProgressLabel(event) {
   return '';
 }
 
-// The wiki sidebar is server-rendered and only knows to poll while a job's
-// marker is already in its DOM, so a run that starts and finishes between two
-// of its refreshes never arms it. The shell owns the runtime stream, so it tells
-// the sidebar to re-fetch at every run boundary and keeps it fresh while the run
-// lasts. A lightweight in-place refresh (llmwiki:refresh) is preferred over
-// reloading the iframe: it preserves the reader's scroll and open folders.
-let runSidebarRefreshTimer=null;
-function refreshRunSidebar() {
-  const frame=document.getElementById('wiki-side-frame');
-  try { frame?.contentWindow?.postMessage({type:'llmwiki:refresh'},location.origin); } catch {}
-}
-function noteRunSidebarEvent(type) {
-  if(type==='run_started') {
-    refreshRunSidebar();
-    if(!runSidebarRefreshTimer) runSidebarRefreshTimer=setInterval(refreshRunSidebar,4000);
-    return;
-  }
-  if(type==='run_done'||type==='run_error'||type==='run_cancelled') {
-    if(runSidebarRefreshTimer){clearInterval(runSidebarRefreshTimer);runSidebarRefreshTimer=null;}
-    refreshRunSidebar();
-    return;
-  }
-  if(type==='task.started'||type==='task.completed'||type==='run_pending_approval') {
-    refreshRunSidebar();
-  }
-}
 function connectRuntimePanel() {
   if(!window.__WIKI_CONFIG__?.runtime?.enabled) return;
   fetchRuntimeState().catch(()=>{runtimeConnected=false;renderActivities();});

@@ -1527,3 +1527,40 @@ describe('orchestration investigation visibility', () => {
     ]);
   });
 });
+
+describe('sidebar keep-fresh tick', () => {
+  it('runs while Donna or maintenance is active and refreshes once when both stop', () => {
+    const script = chatScripts().join('\n');
+    const start = script.indexOf('let runSidebarRefreshTimer=null;');
+    const end = script.indexOf('function noteRunSidebarEvent(type)');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const posts: unknown[] = [];
+    const timers = new Set<number>();
+    let next = 1;
+    const window: Record<string, unknown> = {};
+    const context = {
+      window,
+      location: { origin: 'http://x' },
+      document: { getElementById: () => ({ contentWindow: { postMessage: (m: unknown) => posts.push(m) } }) },
+      setInterval: () => { const id = next++; timers.add(id); return id; },
+      clearInterval: (id: number) => { timers.delete(id); },
+    };
+    vm.createContext(context);
+    vm.runInContext(`${script.slice(start, end)}\nwindow.noteRunSidebarState=noteRunSidebarState;`, context);
+    const maintenance = window.noteMaintenanceSidebarActivity as (running: boolean) => void;
+    const donna = window.noteRunSidebarState as (state: unknown) => void;
+
+    maintenance(true);
+    expect(timers.size).toBe(1);
+    expect(posts).toHaveLength(1);
+    donna({ status: 'running' });
+    donna({ status: 'idle' });
+    expect(timers.size).toBe(1); // maintenance still running
+    maintenance(false);
+    expect(timers.size).toBe(0);
+    expect(posts).toHaveLength(2); // one final refresh
+    donna({ status: 'idle' });
+    expect(posts).toHaveLength(2);
+  });
+});

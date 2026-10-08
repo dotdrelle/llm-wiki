@@ -242,11 +242,15 @@ function runtimeWorkflowGraphData() {
   ];
   if(runNode) phases.filter(phase=>!relations.some(rel=>rel.from===phase.id)).forEach(phase=>relations.push({id:'run-phase:'+phase.id,type:'starts',from:phase.id,to:String(runNode.id)}));
   // Without an active run of Donna's, the maintenance tree is what is moving:
-  // select it by default instead of the idle run node.
+  // the inspector follows it instead of the idle run node. The idle run node
+  // always exists, so "select only when nothing is selected" left the panel on
+  // an idle "Runtime run" for the whole maintenance cycle; only a node the
+  // reader clicked holds the inspector.
   const donnaActive=['running','pending_approval','waiting'].includes(String(runtimeState?.status||'').toLowerCase());
   if(maintenanceGraph){nodes.push(...maintenanceGraph.nodes);relations.push(...maintenanceGraph.relations);}
   const nodeIds=new Set(nodes.map(node=>node.id));
-  if(!selectedWorkflowNodeId||!nodeIds.has(selectedWorkflowNodeId)) selectedWorkflowNodeId=maintenanceGraph&&!donnaActive?'maintenance':workflow.current?.id&&nodeIds.has(workflow.current.id)?workflow.current.id:nodes[0]?.id||null;
+  const followMaintenance=Boolean(maintenanceGraph&&!donnaActive);
+  if(!selectedWorkflowNodeId||!nodeIds.has(selectedWorkflowNodeId)||(followMaintenance&&!runtimeWorkflowUserSelected)) selectedWorkflowNodeId=followMaintenance?'maintenance':workflow.current?.id&&nodeIds.has(workflow.current.id)?workflow.current.id:nodes[0]?.id||null;
   return {nodes,relations};
 }
 const RUNTIME_TASK_INPUT_LIMIT=40;

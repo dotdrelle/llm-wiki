@@ -11,7 +11,7 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
   const banner=document.createElement('button');banner.className='maintenance-pending';banner.hidden=true;banner.onclick=()=>{if(stale){historyOffset=0;stale=false;poll().then(open);}else open();};maintenanceCard.append(banner);
   // The run graph draws what maintenance executes (runtimeGraphScript.ts).
   window.getMaintenanceRunning=()=>Array.isArray(state?.running)?state.running:[];
-  function graphChanged(){try{if(typeof renderRuntimeWorkflowCanvas==='function')renderRuntimeWorkflowCanvas();}catch{}}
+  function graphChanged(){try{window.noteMaintenanceSidebarActivity?.(Array.isArray(state?.running)&&state.running.length>0);}catch{}try{if(typeof renderRuntimeWorkflowCanvas==='function')renderRuntimeWorkflowCanvas();}catch{}}
   let state=null,loading=false,toast=null,lastSeq=null,lastNotifiedSeq=null,hasUnread=false,historyOffset=0,connected=false,stale=false;const key='wiki-maintenance-seen:'+location.host;
   window.getMaintenancePendingCount=()=>state?.requests?.filter(r=>r.status==='pending').length??0;
   window.hasMaintenanceUpdates=()=>hasUnread||window.getMaintenancePendingCount()>0;
@@ -67,7 +67,7 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
     else button('Enable',controls,async()=>{const text='Maintenance will keep this workspace up to date on its own. Enable it?';const ok=typeof confirmAction==='function'?await confirmAction({title:'Enable maintenance',message:text,confirmLabel:'Enable'}):window.confirm(text);if(ok)command({command:'enable'});});
     const proposals=node('a','Agent proposals',panel);proposals.className='maintenance-proposals-action';proposals.href='/agent-proposals';proposals.target='wiki-frame';
     const pending=state.requests.filter(r=>r.status==='pending');node('h3','Decisions ('+pending.length+')',panel);
-    for(const r of pending){const row=node('article',null,panel);const text=node('p',r.candidate?.summary||r.action,row);text.title='Request '+r.id+' · version '+r.version;button('Approve',row,()=>command({command:'decide',id:r.id,version:r.version,approved:true}));button('Refuse',row,()=>command({command:'decide',id:r.id,version:r.version,approved:false}));button('Ask Donna',row,()=>askDonna({question:'Explain this pending maintenance decision: what it would do, why maintenance proposes it, and what approving or refusing it changes.',label:'Explain the pending decision: '+(r.candidate?.summary||r.action),records:['Pending decision: '+(r.candidate?.summary||r.action),'Action: '+r.action+(r.target?' on '+r.target:'')]}));}
+    for(const r of pending){const row=node('article',null,panel);const text=node('p',r.candidate?.summary||r.action,row);text.title='Request '+r.id+' · version '+r.version;button('Approve',row,()=>command({command:'decide',id:r.id,version:r.version,approved:true})).classList.add('approve');button('Refuse',row,()=>command({command:'decide',id:r.id,version:r.version,approved:false}));button('Ask Donna',row,()=>askDonna({question:'Explain this pending maintenance decision: what it would do, why maintenance proposes it, and what approving or refusing it changes.',label:'Explain the pending decision: '+(r.candidate?.summary||r.action),records:['Pending decision: '+(r.candidate?.summary||r.action),'Action: '+r.action+(r.target?' on '+r.target:'')]}));}
     // The Maintenance thread: one entry per cycle, the agent's own summary first,
     // then what was done; routine work and decisions outside a cycle follow.
     const events=state.events.slice(-300);const strip=(m)=>String(m||'').replace(/^Maintenance:\s*/,'');
@@ -124,7 +124,7 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
       const rows=new Map((state[name]??[]).map(row=>[String(name==='events'?row.seq:row.id),row]));for(const id of patch.removed)rows.delete(String(id));for(const row of patch.upserts)rows.set(String(name==='events'?row.seq:row.id),row);state[name]=patch.order?patch.order.map(id=>rows.get(String(id))).filter(Boolean):[...rows.values()];
     }
     state.stream={epoch:update.epoch,revision:update.revision};if(fresh.length&&maintenanceIsVisible())seen();else if(fresh.length){hasUnread=true;if(unnotified.length)notify(unnotified);lastNotifiedSeq=Math.max(lastNotifiedSeq??0,fresh.at(-1).seq);}
-    updateMaintenanceBadges();
+    updateMaintenanceBadges();graphChanged();
     const pendingCount=state.requests.filter(r=>r.status==='pending').length;banner.hidden=!pendingCount;banner.textContent='Maintenance · '+pendingCount+' decision'+(pendingCount===1?'':'s')+' — Review';refreshDock();if(activeTarget?.isConnected)render(activeTarget);
   }
   window.addEventListener('llmwiki:maintenance-update',event=>{try{if(state&&event.detail.workspace&&state.workspace&&event.detail.workspace!==state.workspace)return;applyUpdate(event.detail);}catch{poll();}});
