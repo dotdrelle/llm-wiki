@@ -815,4 +815,15 @@ describe('agent proposals shortcut', () => {
     // Wired on both the page's own path and the shell's llmwiki:active.
     expect(WIKI_LAYOUT_SCRIPT.match(/markReviewShortcut\(currentPath\)/g)).toHaveLength(2);
   });
+  it('shows a locked pending source with a closed lock, outside the count, and no edit hint', async () => {
+    await writeFile(path.join(root, 'raw/untracked/lot/gele.md.lock'), '---\ntitle: Gelé\n---\n# x\n', 'utf8');
+    const html = await renderSidebar(root);
+    expect(html).toContain('data-tree-lock="raw/untracked/lot/gele.md.lock" data-locked="1"');
+    expect(html).toContain('data-tree-lock="raw/untracked/lot/source.md" data-locked="0"');
+    expect(html).toContain('side-untracked-locked');
+    expect(html).not.toContain('href="/raw/untracked/lot/gele.md.lock"');
+    expect(html).toMatch(/data-untracked-count>1</);
+    expect(WIKI_LAYOUT_CSS).not.toContain('content: "✏"');
+    expect(WIKI_LAYOUT_SCRIPT).toContain("fetch('/api/tree/lock'");
+  });
 });

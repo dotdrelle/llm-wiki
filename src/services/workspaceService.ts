@@ -323,6 +323,13 @@ export class WorkspaceService {
       );
 
       const match = found.find((entry) => entry.exists);
+      // A source locked from the Pending panel (`a.md` renamed `a.md.lock`) is
+      // refused by name, never ingested and never reported "not found".
+      const lockedInput = input.endsWith('.md.lock')
+        || (!match && (await Promise.all(candidates.map((candidate) => pathExists(`${candidate}.lock`)))).some(Boolean));
+      if (lockedInput) {
+        throw new Error(`Source is locked out of ingestion: ${input} — unlock it in the Pending panel first`);
+      }
       if (!match) {
         throw new Error(`Source file not found: ${input}`);
       }

@@ -9,6 +9,7 @@ import {
   deleteEntry,
   moveEntry,
   resolveTreeRoot,
+  setSourceLock,
 } from '../src/serve/tree/treeMutations.ts';
 
 let root: string;
@@ -224,5 +225,42 @@ describe('règles par section', () => {
     for (const key of ['wiki', 'templates', 'build-context', 'deliverables']) {
       expect(TREE_ROOTS[key].pruneEmptyDirs, key).toBe(false);
     }
+  });
+});
+
+describe('pending source lock', () => {
+  it('locks by renaming a.md to a.md.lock, and unlocks back', async () => {
+    await write('raw/untracked/lot/a.md');
+    const locked = await setSourceLock(root, 'raw/untracked/lot/a.md', true);
+    expect(locked).toMatchObject({ ok: true, body: { path: 'raw/untracked/lot/a.md.lock', locked: true } });
+    expect(await exists('raw/untracked/lot/a.md')).toBe(false);
+    expect(await exists('raw/untracked/lot/a.md.lock')).toBe(true);
+    const unlocked = await setSourceLock(root, 'raw/untracked/lot/a.md.lock', false);
+    expect(unlocked).toMatchObject({ ok: true, body: { path: 'raw/untracked/lot/a.md', locked: false } });
+    expect(await exists('raw/untracked/lot/a.md')).toBe(true);
+  });
+
+  it('refuses to unlock over a newer version delivered while locked', async () => {
+    await write('raw/untracked/a.md.lock', '# old\n');
+    await write('raw/untracked/a.md', '# new\n');
+    const result = await setSourceLock(root, 'raw/untracked/a.md.lock', false);
+    expect(result).toMatchObject({ ok: false, status: 409 });
+    expect(await readFile(path.join(root, 'raw/untracked/a.md'), 'utf8')).toBe('# new\n');
+    expect(await exists('raw/untracked/a.md.lock')).toBe(true);
+  });
+
+  it('only locks pending Markdown sources, never another section or an escape', async () => {
+    await write('wiki/concepts/a.md');
+    expect((await setSourceLock(root, 'wiki/concepts/a.md', true)).ok).toBe(false);
+    expect((await setSourceLock(root, 'raw/untracked/../../x.md', true)).ok).toBe(false);
+    expect((await setSourceLock(root, 'raw/untracked/missing.md', true)).ok).toBe(false);
+  });
+
+  it('keeps a locked source deletable and movable', async () => {
+    await write('raw/untracked/a.md.lock');
+    await mkdir(path.join(root, 'raw/untracked/lot'), { recursive: true });
+    await write('raw/untracked/lot/keep.md');
+    expect((await moveEntry(root, 'raw/untracked/a.md.lock', 'raw/untracked/lot')).ok).toBe(true);
+    expect((await deleteEntry(root, 'raw/untracked/lot/a.md.lock')).ok).toBe(true);
   });
 });

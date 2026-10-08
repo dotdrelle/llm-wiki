@@ -42,7 +42,17 @@ export type TreeRoot = {
    * erase.
    */
   pruneEmptyDirs: boolean;
+  /**
+   * Files may be locked out of ingestion by a `.lock` suffix (`a.md.lock`).
+   * Only Pending: every reader of `raw/untracked` globs `*.md`, so a locked
+   * source is skipped by ingest, maintenance and headless runs alike without
+   * any of them knowing about locks.
+   */
+  lockable?: boolean;
 };
+
+/** Suffix that locks a pending source out of ingestion. */
+export const PENDING_LOCK_SUFFIX = '.lock';
 
 // `EDITABLE_DIRS` in wikiHtml.ts is the same list seen from the rendering.
 // Here it also carries the per-section rules, which have no meaning HTML-side.
@@ -51,7 +61,7 @@ export const TREE_ROOTS: Record<string, TreeRoot> = {
   deliverables: { root: 'deliverables', fileExtension: '.md', pruneEmptyDirs: false },
   templates: { root: 'templates', fileExtension: '.md', pruneEmptyDirs: false },
   'build-context': { root: 'build-context', fileExtension: '.md', pruneEmptyDirs: false },
-  pending: { root: 'raw/untracked', fileExtension: '.md', pruneEmptyDirs: true },
+  pending: { root: 'raw/untracked', fileExtension: '.md', pruneEmptyDirs: true, lockable: true },
 };
 
 export type TreeResult =
@@ -95,7 +105,44 @@ function isRootItself(relativePath: string, root: TreeRoot): boolean {
 }
 
 function hasAllowedExtension(relativePath: string, root: TreeRoot): boolean {
-  return root.fileExtension === null || relativePath.endsWith(root.fileExtension);
+  if (root.fileExtension === null || relativePath.endsWith(root.fileExtension)) return true;
+  // A locked source stays deletable and movable like the source it is.
+  return root.lockable === true && relativePath.endsWith(`${root.fileExtension}${PENDING_LOCK_SUFFIX}`);
+}
+
+/**
+ * Lock a pending source out of ingestion, or unlock it: a rename between
+ * `a.md` and `a.md.lock`, nothing else. Unlocking refuses when `a.md` exists
+ * again — a sync delivered a new version beside the locked one, and which of
+ * the two survives is the reader's call, never a silent overwrite.
+ */
+export async function setSourceLock(rootDir: string, rawPath: unknown, locked: boolean): Promise<TreeResult> {
+  const relativePath = normalizeRelative(rawPath);
+  const root = relativePath ? resolveTreeRoot(relativePath) : null;
+  if (!relativePath || !root?.lockable || !root.fileExtension) return fail('only a pending source can be locked');
+  const unlockedPath = relativePath.endsWith(PENDING_LOCK_SUFFIX)
+    ? relativePath.slice(0, -PENDING_LOCK_SUFFIX.length)
+    : relativePath;
+  if (!unlockedPath.endsWith(root.fileExtension)) return fail(`only ${root.fileExtension} sources can be locked`);
+  const lockedPath = `${unlockedPath}${PENDING_LOCK_SUFFIX}`;
+  const [from, to] = locked ? [unlockedPath, lockedPath] : [lockedPath, unlockedPath];
+  try {
+    const source = resolveInside(rootDir, from);
+    const target = resolveInside(rootDir, to);
+    const sourceInfo = await stat(source).catch(() => null);
+    const targetInfo = await stat(target).catch(() => null);
+    if (!sourceInfo && targetInfo?.isFile()) return { ok: true, status: 200, body: { path: to, locked, unchanged: true } };
+    if (!sourceInfo?.isFile()) return fail('source not found');
+    if (targetInfo) {
+      return fail(locked
+        ? `${to} already exists`
+        : `${to} exists again (a newer version was delivered while this one was locked) — delete one of the two first`, 409);
+    }
+    await rename(source, target);
+    return { ok: true, status: 200, body: { path: to, locked } };
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : String(error));
+  }
 }
 
 export async function deleteEntry(rootDir: string, rawPath: string): Promise<TreeResult> {

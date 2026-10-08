@@ -1,5 +1,6 @@
 import { WIKI_CSS_VARS, SCROLLBAR_CSS } from '../../chat/theme.ts';
 import { CONFIRM_DIALOG_CSS } from '../../chat/confirmDialog.ts';
+import { PENDING_LOCK_CSS } from './pendingLock.ts';
 
 // The self-hosted Newsreader @font-face rules ride inside WIKI_CSS_VARS, so the
 // reader shares exactly one font source with the chat UI — no Google Fonts
@@ -643,15 +644,7 @@ export const WIKI_LAYOUT_CSS = `
     @keyframes sideUploadSpin { to { transform: rotate(360deg); } }
     .side-untracked-link.is-active { font-weight: 720; }
     .side-untracked-link.is-active::before { background: var(--accent); opacity: 1; }
-    .side-untracked-link:hover::after {
-      content: "✏";
-      position: absolute;
-      right: 0.35rem;
-      top: 50%;
-      transform: translateY(-50%);
-      font-size: 0.7rem;
-      opacity: 0.55;
-    }
+    ${PENDING_LOCK_CSS}
     .side-tree-delete {
       flex: 0 0 auto;
       width: 1.55rem;

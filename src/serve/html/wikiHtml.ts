@@ -28,6 +28,7 @@ import { WIKI_BG_DARK, WIKI_BG_LIGHT } from '../../chat/theme.ts';
 import { readInFlightDocumentUploads } from '../routes/uploadRoutes.ts';
 import { listActiveProductionLocks } from '../../services/productionLocks.ts';
 import { collapseDocumentlessFolders } from '../tree/collapseFolders.ts';
+import { PENDING_SOURCE_GLOBS, isLockedSource, lockedPendingRow, pendingLockButton, unlockedSourceName } from './pendingLock.ts';
 import {
   conceptBasenameSubject,
   conceptFolderOf,
@@ -153,7 +154,7 @@ function stripTransportId(value: string): string {
 }
 
 function pendingDisplayTitle(file: string): string {
-  return humanTitle(stripTransportId(path.basename(file, '.md')));
+  return humanTitle(stripTransportId(path.basename(unlockedSourceName(file), '.md')));
 }
 
 // The first `#` heading of a wiki page is its title, not its filename. Reads
@@ -1097,7 +1098,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<{ html: string; 
   // Four independent reads: none depends on another's result, so they run
   // concurrently instead of one after another on every Pending panel render.
   const [foundFiles, foundDirectories, archivedFiles, locallyModified, inflightUploads] = await Promise.all([
-    fg('raw/untracked/**/*.md', { cwd: rootDir, dot: false, onlyFiles: true }),
+    fg(PENDING_SOURCE_GLOBS, { cwd: rootDir, dot: false, onlyFiles: true }), // locked sources too (pendingLock.ts)
     fg('raw/untracked/**', { cwd: rootDir, dot: false, onlyDirectories: true }),
     // The ingested archive is the previous life of a pending source: TAXO
     // writes fiches under wiki/sources/<document>/<section>.md, so a wiki page
@@ -1116,7 +1117,8 @@ async function renderUntrackedSidebar(rootDir: string): Promise<{ html: string; 
   const phases = activeIngestSources(rootDir);
   const archived = new Set(archivedFiles.map(toPosix));
   const statuses = new Map<string, 'new' | 'update' | 'modified'>();
-  const count = files.length + inflightUploads.length;
+  const locked = new Set(files.filter(isLockedSource));
+  const count = files.length - locked.size + inflightUploads.length;
   const inflightRows = inflightUploads.map((record) =>
     `<div class="side-untracked-item side-untracked-uploading" data-upload-inflight title="Converting with the documents agent — ${escapeAttr(record.filename)}"><span class="side-upload-spinner" aria-hidden="true"></span><span class="side-upload-name">${escapeHtml(record.filename)}</span></div>`).join('');
   // Pending is the inbox of documents, not of folders: only a folder that has
@@ -1131,7 +1133,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<{ html: string; 
     .map(toPosix)
     .filter((dir) => dir !== 'raw' && dir !== 'raw/untracked' && directParents.has(stripPrefix(dir)))
     .sort((a, b) => a.localeCompare(b));
-  const items = count > 0
+  const items = count + locked.size > 0
     ? (() => {
         const titles = new Map<string, string>();
         const pendingAt = new Map<string, number>();
@@ -1175,6 +1177,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<{ html: string; 
           // Keep the filename fallback for an unreadable or malformed source.
         }
         titles.set(file, title);
+        if (locked.has(file)) return;
         try {
           pendingAt.set(file, (await stat(resolveInside(rootDir, file))).mtimeMs);
         } catch {
@@ -1198,7 +1201,7 @@ async function renderUntrackedSidebar(rootDir: string): Promise<{ html: string; 
         } catch {
           // Unreadable archive: leave the source unmarked rather than guess.
         }
-      })).then(() => `${inflightRows}${renderUntrackedNode(root, titles, statuses, phases, true, pendingAt)}`);
+      })).then(() => `${inflightRows}${renderUntrackedNode(root, titles, statuses, phases, true, pendingAt, locked)}`);
       })()
     : '<li class="side-untracked-empty">No pending sources.</li>';
   const html = `<div class="side-folder-row side-untracked-row"><div class="side-untracked" data-untracked-panel><div class="side-untracked-label">Pending</div><div class="side-untracked-list" data-untracked-list data-tree-drop="" title="Drop files here: Markdown is written as is, PDF and text are converted by the documents agent"${phases.size > 0 ? ' data-active-ingest="1"' : ''}>${await items}</div></div><div class="side-folder-actions"><button class="side-folder-action side-ingest-action" type="button" title="Ingest pending sources (Donna)" aria-label="Ingest pending sources" data-ingest-launch hidden>${ZAP_ICON}</button><span class="side-untracked-count" data-untracked-count>${count}</span></div></div>`;
@@ -1212,27 +1215,24 @@ function renderUntrackedNode(
   phases: Map<string, 'taxo'> = new Map(),
   root = false,
   pendingAt: Map<string, number> = new Map(),
+  locked: Set<string> = new Set(),
 ): string {
   const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name));
   const files = [...node.files].sort((a, b) => a.localeCompare(b));
   const children = [
-    ...dirs.map((dir) => renderUntrackedNode(dir, titles, statuses, phases, false, pendingAt)),
+    ...dirs.map((dir) => renderUntrackedNode(dir, titles, statuses, phases, false, pendingAt, locked)),
     ...files.map((file) => {
       const safePath = escapeAttr(file);
+      const deleteButton = `<button class="side-tree-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-tree-delete="${safePath}" data-tree-kind="file">×</button>`;
+      if (locked.has(file)) return lockedPendingRow(safePath, escapeHtml(titles.get(file) ?? humanTitle(file)), deleteButton);
       const status = statuses.get(file);
-      const statusClass = status === 'new'
-        ? ' side-untracked-new'
-        : status === 'update'
-          ? ' side-untracked-update'
-          : status === 'modified'
-            ? ' side-untracked-modified'
-            : '';
+      const statusClass = status ? ` side-untracked-${status}` : '';
       const phase = phases.get(file);
       const phaseMark = phase
         ? `<span class="side-ingest-phase ${phase}" aria-hidden="true" title="Ingestion TAXO en cours">◌</span>`
         : '';
       const pendingToken = Math.round(pendingAt.get(file) ?? 1);
-      return `<div class="side-untracked-item${statusClass}" draggable="true" data-tree-drag="${safePath}" data-tree-kind="file">${phaseMark}<a class="side-untracked-link" href="${escapeHref(`/${file}`)}" title="${safePath}" aria-label="${safePath}" data-side-path="${safePath}" data-pending-at="${pendingToken}">${escapeHtml(titles.get(file) ?? humanTitle(file))}</a><button class="side-tree-delete" type="button" title="Delete ${safePath}" aria-label="Delete ${safePath}" data-tree-delete="${safePath}" data-tree-kind="file">×</button></div>`;
+      return `<div class="side-untracked-item${statusClass}" draggable="true" data-tree-drag="${safePath}" data-tree-kind="file">${phaseMark}<a class="side-untracked-link" href="${escapeHref(`/${file}`)}" title="${safePath}" aria-label="${safePath}" data-side-path="${safePath}" data-pending-at="${pendingToken}">${escapeHtml(titles.get(file) ?? humanTitle(file))}</a>${pendingLockButton(safePath, false)}${deleteButton}</div>`;
     }),
   ].join('\n');
   // The root children live directly in [data-untracked-list], which carries the

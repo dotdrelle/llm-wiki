@@ -317,6 +317,31 @@ function wireSidebarLaunchButtons() {
       }
   });
 
+  // Pending lock: a.md <-> a.md.lock. Every ingest path globs *.md, so a
+  // locked source is skipped by Donna, headless runs and maintenance alike.
+  document.addEventListener('click', async (event) => {
+    const button = event.target.closest?.('[data-tree-lock]');
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const relativePath = button.getAttribute('data-tree-lock') || '';
+    if (!relativePath) return;
+    button.disabled = true;
+    try {
+      const response = await fetch('/api/tree/lock', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ path: relativePath, locked: button.getAttribute('data-locked') !== '1' }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) throw new Error(payload.error || 'Lock failed');
+      await refreshSidebar();
+    } catch (err) {
+      await notifyAction({ title: 'Lock failed', message: err instanceof Error ? err.message : String(err), danger: true });
+      button.disabled = false;
+    }
+  });
+
   // Folder creation. A prompt() rather than an inline field: it's a rare
   // action, and a permanent field in the tree would cost a line on every folder
   // for occasional use.

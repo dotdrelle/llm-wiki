@@ -4,6 +4,7 @@ import {
   createEntry,
   deleteEntry,
   moveEntry,
+  setSourceLock,
   type TreeResult,
 } from '../tree/treeMutations.ts';
 
@@ -49,6 +50,11 @@ export type TreeRoutesDeps = {
    * from those broken citations.
    */
   rewriteLinks?: (moves: Array<{ source: string; target: string }>) => Promise<void>;
+  /**
+   * A production job reading raw/untracked (ingest, rebuild…), or null. A lock
+   * toggled under a running ingest would rename the very file it archives.
+   */
+  productionBusy?: () => Promise<string | null>;
 };
 
 function respond(res: ServerResponse, deps: TreeRoutesDeps, result: TreeResult): true {
@@ -98,6 +104,14 @@ export async function handleTreeApi(
     const body = await readBody(req, deps);
     if (!body) return respond(res, deps, { ok: false, status: 400, error: 'invalid request' });
     return respond(res, deps, await moveEntry(deps.rootDir, body.from, body.to, { rewriteLinks: deps.rewriteLinks }));
+  }
+
+  if (urlPath === '/api/tree/lock' && req.method === 'POST') {
+    const body = await readBody(req, deps);
+    if (!body) return respond(res, deps, { ok: false, status: 400, error: 'invalid request' });
+    const busy = await deps.productionBusy?.();
+    if (busy) return respond(res, deps, { ok: false, status: 409, error: busy });
+    return respond(res, deps, await setSourceLock(deps.rootDir, body.path, body.locked !== false));
   }
 
   if (isCreate) {

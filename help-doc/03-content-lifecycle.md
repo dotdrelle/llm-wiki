@@ -170,7 +170,20 @@ stays deleted, and one you modified is flagged **orange** in the Pending panel
 announces what an ingest will do with each pending source: **green** for a
 document that was never ingested, **blue** when the ingested archive already
 holds the same document with different content — a re-export, and an update
-rather than a newcomer. To rebuild TAXO
+rather than a newcomer.
+
+To keep a pending document out of ingestion without deleting it, click the
+**lock** at the right of its row, just before the delete cross. The file is
+renamed `<name>.md.lock`: it stays in Pending, greyed with a closed lock, and
+leaves the panel's count. Every ingest skips it — from the chat, Agent mode, a
+headless run or automatic maintenance — and asking for it by name is refused.
+A sync does not bring it back either: when the page changed in Confluence, the
+newer version arrives only after you unlock it. Click the lock again to unlock;
+if a newer `<name>.md` already sits beside the locked copy, unlocking is
+refused until you delete one of the two. Without the web interface, renaming
+the file by hand (`mv a.md a.md.lock`) does the same.
+
+To rebuild TAXO
 fiches from the archived sources without touching Confluence, run
 `wiki ingest --from-ingested` (see `07-commands-shell.md`). Ingestion always
 runs the TAXO pipeline; there is no separate analysis/apply mode. A rebuild

@@ -287,6 +287,13 @@ export async function handleUntrackedApi(
     sendJson,
     isRunActive,
     rewriteLinks,
+    productionBusy: async () => {
+      const { checkProductionAllowsWrite } = await import('../services/productionLocks.ts');
+      const report = await checkProductionAllowsWrite(rootDir, 'wiki');
+      if (!report.busy) return null;
+      const jobs = [...new Set(report.locks.map((lock) => lock.jobId))].join(', ');
+      return `a production job is ingesting (job ${jobs}) — lock or unlock once it finishes`;
+    },
     commitDeletion: async (relativePath, kind) => {
       const { HistoryService, commitHistorySafely } = await import('../services/historyService.ts');
       await commitHistorySafely(new HistoryService(rootDir), {
