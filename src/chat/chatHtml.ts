@@ -8,7 +8,7 @@ import { OBSERVER_TOOLS_SCRIPT } from './views/observerToolsScript.ts';
 import { MCP_CONNECTOR_SCRIPT } from './runtime/mcpConnectorScript.ts';
 import { CONFIG_SCRIPT } from './config/configScript.ts';
 import { ACTIVITY_PANEL_SCRIPT } from './runtime/activityPanelScript.ts';
-import { RUN_STRIP_SCRIPT } from './runtime/runStripScript.ts'; import { RUN_LIVE_LINE_SCRIPT } from './runtime/runLiveLineScript.ts';
+import { RUN_STRIP_SCRIPT } from './runtime/runStripScript.ts'; import { RUN_LIVE_LINE_SCRIPT } from './runtime/runLiveLineScript.ts'; import { PROGRESS_LABEL_SCRIPT } from './runtime/progressLabelScript.ts';
 import { RUN_SIDEBAR_REFRESH_SCRIPT } from './runtime/runSidebarRefreshScript.ts';
 import { SPLITTERS_SCRIPT } from './layout/splittersScript.ts';
 import { REDO_SCRIPT } from './runtime/redoScript.ts';
@@ -241,7 +241,7 @@ function notify(msg, type='s') {
 }
 ${ACTIVITY_PANEL_SCRIPT}
 ${MAINTENANCE_PANEL_SCRIPT}
-${RUN_STRIP_SCRIPT}${RUN_LIVE_LINE_SCRIPT}
+${RUN_STRIP_SCRIPT}${PROGRESS_LABEL_SCRIPT}${RUN_LIVE_LINE_SCRIPT}
 ${RUN_SIDEBAR_REFRESH_SCRIPT}
 ${SPLITTERS_SCRIPT}
 ${REDO_SCRIPT}
@@ -424,28 +424,7 @@ async function fetchRuntimeState() {
   applyRuntimeState(data);
 }
 
-// Main steps only, deliberately: which tool is running is what the user cannot
-// otherwise know, and it is the one line worth showing. Anything unmapped
-// returns '' and leaves the current label alone rather than replacing it with
-// noise. Keep this list short — it is a progress indicator, not a log.
-function runtimeProgressLabel(event) {
-  const type=event&&event.type;
-  const p=(event&&event.payload)||{};
-  // The waiting bubble shows the turn's LAST step — classification, wiki
-  // search, each tool call and its outcome — replaced at every event, so the
-  // reader sees the turn move on until "Writing the answer…". Never a list:
-  // the bubble is ephemeral and the full trail stays in the Logs tab.
-  if(type==='assistant_message'||type==='assistant_delta') return 'Writing the answer…';
-  if(type==='assistant_progress') {
-    const msg=String(p.message||'').replace(/\\s+/g,' ').trim();
-    return msg?(msg.length>90?msg.slice(0,90)+'…':msg):'';
-  }
-  if(type==='runtime_log') {
-    const msg=String(p.message||'').replace(/\\s+/g,' ').trim();
-    return msg?(msg.length>90?msg.slice(0,90)+'…':msg):'';
-  }
-  return '';
-}
+// runtimeProgressLabel (what the >_ line says) lives in progressLabelScript.ts.
 
 function connectRuntimePanel() {
   if(!window.__WIKI_CONFIG__?.runtime?.enabled) return;
@@ -476,8 +455,11 @@ function connectRuntimePanel() {
       if(parsed&&parsed.type==='runtime_log'&&/(?:^|\\s)memory:\\s*(?:saved|updated|removed|restored)\\b/i.test(String(parsed.payload?.message??''))) {
         window.dispatchEvent(new Event('llmwiki:memory-updated'));
       }
+      // A turn still running in a chat the reader left speaks only in its own
+      // bubble — never in the one "+ New chat" opened beside it.
       const label=runtimeProgressLabel(parsed);
-      if(label) pendingRuntimeStatusEls.forEach(el=>updateRuntimeThinkingBubble(el,label)); noteRunLiveEvent(parsed);
+      if(label) pendingRuntimeStatusEls.filter(el=>progressEventInThread(parsed,el._conversationId)).forEach(el=>updateRuntimeThinkingBubble(el,label));
+      if(progressEventInThread(parsed,currentConversationId)) noteRunLiveEvent(parsed);
     } catch {}
     if(runtimeFetchPending) return;
     runtimeFetchPending=true;
@@ -2943,7 +2925,9 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
   messages.push(userMessage);
   const userEl=appendMsg('user',displayText);
   if(hideQuestion) userEl.classList.add('msg-hidden');
-  const statusEl=createRuntimeThinkingBubble(mode==='chat'?'Donna Thinking..':undefined);
+  const statusEl=createRuntimeThinkingBubble(mode==='chat'?'Thinking…':undefined);
+  statusEl._conversationId=currentConversationId;
+  setProgressText(statusEl.querySelector('.runtime-thinking span'),mode==='chat'?'Thinking…':'');
   pendingRuntimeStatusEls.push(statusEl);
   // The /state merge consumes this reference instead of appending a duplicate.
   pendingRuntimeUserRefs.push({message:userMessage,el:userEl});

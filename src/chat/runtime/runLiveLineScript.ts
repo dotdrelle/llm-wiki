@@ -41,8 +41,16 @@ function syncRunLiveLine() {
   if(waiting) setRunLiveLine(waiting);
 }
 function setRunLiveLine(text) {
-  const span=runLiveLineEl?.querySelector('.runtime-thinking span');
-  if(span&&text) span.textContent=text;
+  setProgressText(runLiveLineEl?.querySelector('.runtime-thinking span'),text);
+}
+// The agent's business line, compacted for one line: "Step 1/1" counts
+// nothing, and "LLM running" is what a running ingest always does.
+function runLiveLineActivityText(progress) {
+  const parts=[String(progress.label||'').trim(),runStripDetail(progress,null),runStripPercent(progress.percent)]
+    .join(' · ').split(' · ').map(part=>part.trim())
+    .filter(part=>part&&!/^Step 1\\/1$/i.test(part)&&!/^LLM running\\b/i.test(part));
+  const text=parts.join(' · ');
+  return text.length>120?text.slice(0,120)+'…':text;
 }
 // The run's own steps: what the turn bubble reads (runtime logs, progress
 // notes) plus the two events only a run carries — a tool it calls and the
@@ -50,14 +58,13 @@ function setRunLiveLine(text) {
 function runLiveLineLabel(event) {
   const type=event&&event.type;
   const p=(event&&event.payload)||{};
-  if(type==='tool_call_started'&&p.name) return 'Calling '+String(p.name);
-  if(type==='activity_upserted') {
-    const progress=p.activity?.progress||{};
-    const parts=[String(progress.label||'').trim(),runStripDetail(progress,null),Number.isFinite(Number(progress.percent))?Math.round(Number(progress.percent))+'%':''].filter(Boolean);
-    const text=parts.join(' · ');
-    return text.length>120?text.slice(0,120)+'…':text;
+  if(type==='tool_call_started'&&p.name) {
+    const summary=String(p.summary||'').trim();
+    return progressToolLabel(String(p.name)+(summary&&summary!=='calling...'?' ('+summary+')':''));
   }
-  return runtimeProgressLabel(event)==='Writing the answer…'?'':runtimeProgressLabel(event);
+  if(type==='activity_upserted') return runLiveLineActivityText(p.activity?.progress||{});
+  const label=runtimeProgressLabel(event);
+  return label==='Writing the answer…'?'':label;
 }
 function noteRunLiveEvent(event) {
   if(!runLiveLineEl||!runLiveLineEl.isConnected) return;

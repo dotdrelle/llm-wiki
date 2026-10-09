@@ -861,18 +861,21 @@ describe('chat html', () => {
     // show progress; the payload must be read. Guard both halves.
     expect(script).toContain('const parsed=JSON.parse(event.data);');
     expect(script).toContain('const label=runtimeProgressLabel(parsed);');
-    expect(script).toContain('pendingRuntimeStatusEls.forEach(el=>updateRuntimeThinkingBubble(el,label))');
+    // Only the bubbles of the event's own conversation: a turn running in a
+    // chat the reader left must not speak in the one "+ New chat" opened.
+    expect(script).toContain('pendingRuntimeStatusEls.filter(el=>progressEventInThread(parsed,el._conversationId)).forEach(el=>updateRuntimeThinkingBubble(el,label))');
 
-    const source = script.match(/function runtimeProgressLabel\(event\) \{[\s\S]*?\n\}/)?.[0];
+    const source = script.match(/const PROGRESS_THINKING=[\s\S]*?\nfunction runtimeProgressLabel\(event\) \{[\s\S]*?\n\}/)?.[0];
     expect(source).toBeTruthy();
     const context: Record<string, unknown> = {};
     vm.runInNewContext(`${source};this.runtimeProgressLabel=runtimeProgressLabel;`, context);
     const label = context.runtimeProgressLabel as (event: unknown) => string;
 
     expect(label({ type: 'assistant_message', payload: {} })).toBe('Writing the answer…');
-    expect(label({ type: 'runtime_log', payload: { message: '  [2/8]   MCP  call  ' } })).toBe(
-      '[2/8] MCP call',
-    );
+    // The agent loop's iteration counter is no step (the full allow-list is
+    // pinned in progress-label.test.ts).
+    expect(label({ type: 'runtime_log', payload: { message: '  [2/8]   MCP  call  ' } })).toBe('');
+    expect(label({ type: 'runtime_log', payload: { message: 'Donna Searching...' } })).toBe('Searching the wiki…');
     // Tool steps belong to the thread, not the label: showing them in both
     // would print the same sentence twice on screen at once.
     expect(label({ type: 'tool_call_started', payload: { name: 'template_write' } })).toBe('');
@@ -1381,7 +1384,7 @@ describe('chat html', () => {
     expect(script).toContain("uploadSelectedDocument(input)");
     expect(script).toContain("sendRuntimeAgentMessage(input,text,{mode:'chat',displayText:displayOverride||text,hideQuestion})");
     expect(script).toContain("function createRuntimeThinkingBubble(text='Request received · Donna is preparing the response and plan…')");
-    expect(script).toContain("const statusEl=createRuntimeThinkingBubble(mode==='chat'?'Donna Thinking..':undefined)");
+    expect(script).toContain("const statusEl=createRuntimeThinkingBubble(mode==='chat'?'Thinking…':undefined)");
     expect(script).toContain("if(role==='assistant'&&content&&wasEmpty&&ref.own&&armedReplyStatusEls.length)");
     expect(script).toContain("assistantOwn=prevRef?(prevRef.message.role==='user'?!!prevRef.el:!!prevRef.own):false;");
     expect(script).toContain("data?.kind==='ambiguous'");

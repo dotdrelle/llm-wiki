@@ -145,8 +145,7 @@ function agentProgressEntries() {
 function updateRuntimeThinkingBubble(div,text) {
   if(!div||!div.isConnected) return;
   if(text) {
-    const span=div.querySelector('.runtime-thinking span');
-    if(span) span.textContent=text;
+    setProgressText(div.querySelector('.runtime-thinking span'),text);
   }
   // Any call restarts the watchdog: a labelled progress AND a bare heartbeat
   // are both proof of life, so a long tool-less phase is never reported lost.

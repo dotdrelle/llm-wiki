@@ -484,8 +484,13 @@ re-attached run. `runStripScript.ts` keeps only the shared formatting
 (`runStripDetail`, the ShellUI's `activityDetailText` port) and the Cancel
 actions. The `assistant_progress` notes never enter the thread as messages: they
 feed the Logs tab and the ephemeral waiting bubble, which shows
-the turn's LAST step only (`runtimeProgressLabel` in `chatHtml.ts`), replaced at
-each event until "Writing the answer…".
+the turn's LAST step only, replaced at each event until "Writing the answer…".
+That line — the turn bubble and a run's live line alike — is an allow-list
+(`src/chat/runtime/progressLabelScript.ts`): wiki search, a tool with its main
+arguments, `Thinking… Ns` while a model call runs, the answer being written and
+the failures that change it; the model meter, raw traces and the loop counter
+stay in Logs. An event of another conversation never updates the bubble or the
+live line of the chat on screen.
 
 While a dropped PDF/text file waits on the documents agent, the Pending panel
 shows it as a **non-clickable spinner row**: the server renders it from the
