@@ -128,7 +128,7 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .runtime-graph-main{display:flex;flex-direction:column}
 .runtime-graph-toolbar{height:34px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 9px;border-bottom:1px solid var(--border);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
 .runtime-graph-toolbar button{border:1px solid var(--border);border-radius:6px;background:var(--panel);color:var(--muted);font:800 10px var(--font-sans);padding:3px 7px;cursor:pointer}
-.runtime-graph-toolbar>span:last-child{display:flex;gap:5px}
+.runtime-graph-toolbar>span:last-child{display:flex;align-items:center;gap:5px}.runtime-graph-title{display:inline-flex;align-items:center;gap:8px}.runtime-graph-tokens{margin-right:4px;font-weight:700;text-transform:none;letter-spacing:0;font-variant-numeric:tabular-nums;white-space:nowrap}
 .runtime-graph-toolbar button:hover{border-color:var(--accent);color:var(--accent)}
 .runtime-run-summary{display:flex;align-items:center;gap:7px 14px;flex-wrap:wrap;padding:8px 10px;border-bottom:1px solid var(--border);font-size:10px;color:var(--muted)}
 /* Stable slot, updated in place: empty while no run exists. */
@@ -137,7 +137,7 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .runtime-run-summary span{white-space:nowrap}
 .runtime-run-summary .run-summary-ceiling{color:#f59e0b;font-weight:600}
 .runtime-live-indicator{color:#2563eb;font-weight:800}
-.runtime-graph-legend{display:flex;flex-wrap:wrap;gap:5px 10px;padding:6px 9px;border-bottom:1px solid var(--border);font-size:9px;color:var(--muted)}
+.runtime-graph-legend{position:absolute;right:8px;bottom:8px;z-index:2;max-width:min(360px,calc(100% - 16px));display:flex;flex-wrap:wrap;gap:4px 10px;padding:6px 9px;border:1px solid var(--border);border-radius:8px;background:color-mix(in srgb,var(--panel) 88%,transparent);font-size:9px;color:var(--muted);pointer-events:none}
 .runtime-graph-legend span{display:inline-flex;align-items:center;gap:4px}.runtime-graph-legend b{font-size:8px;text-transform:uppercase;letter-spacing:.06em}.runtime-graph-legend i{width:18px;border-top:2px solid var(--border)}.runtime-graph-legend i.depends_on{border-color:var(--accent);border-top-style:dashed}.runtime-graph-legend i.executed_by{border-color:#14b8a6}.runtime-graph-legend i.produces{border-color:#16a34a}.runtime-graph-legend i.bubble{width:8px;height:8px;border:0;border-radius:50%}.runtime-graph-legend i.running{background:#4f7eff}.runtime-graph-legend i.done{background:#22c55e}.runtime-graph-legend i.failed{background:#f06b6b}.runtime-graph-legend i.approval{background:#f59e0b}.runtime-graph-legend i.run{background:#8b5cf6}.runtime-graph-legend i.activity{background:#14b8a6}.runtime-graph-legend i.neutral{background:color-mix(in srgb,var(--muted) 42%,var(--panel))}.runtime-graph-legend i.pending{background:transparent;border:1.5px dashed var(--muted)}.runtime-graph-legend i.fresh{background:transparent;border:1.5px solid #74c365}
 .runtime-graph-svg{display:block;width:100%;height:520px;background:radial-gradient(circle at 50% 50%,var(--panel),transparent 66%)}
 /* A <canvas> without a sizing rule keeps its 300×150 intrinsic size, and the

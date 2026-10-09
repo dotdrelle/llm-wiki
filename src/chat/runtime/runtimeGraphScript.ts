@@ -19,33 +19,36 @@ function runtimeWorkflowGraphHTML() {
 }
 function runtimeWorkflowGraphCenterHTML() {
   if(!runtimeState?.workflow?.nodes?.length) return '<div class="act-empty">No runtime workflow graph yet.</div>';
-  return \`<div class="runtime-graph-main"><div class="runtime-graph-toolbar"><span>Run execution</span><span><button type="button" onclick="zoomRuntimeWorkflowGraph(.8)" title="Zoom out" aria-label="Zoom out">−</button><button type="button" onclick="zoomRuntimeWorkflowGraph(1.25)" title="Zoom in" aria-label="Zoom in">+</button><button type="button" onclick="fitRuntimeWorkflowGraph()">Fit</button><button type="button" onclick="resetRuntimeWorkflowGraph()">Reset</button></span></div>\${runtimeWorkflowSummarySlotHTML()}<div class="runtime-graph-legend"><b>Relation</b><span><i class="depends_on"></i>Sequence / dependency</span><b>Status</b><span><i class="bubble running"></i>Running</span><span><i class="bubble done"></i>Done</span><span><i class="bubble failed"></i>Failed</span><span><i class="bubble approval"></i>Approval</span><span><i class="bubble pending"></i>Pending</span><span><i class="bubble fresh"></i>New / changed</span></div><div class="runtime-canvas-stage"><canvas class="runtime-graph-canvas" id="runtime-graph-canvas" tabindex="0" role="application" aria-label="Interactive run execution graph"></canvas><div class="runtime-graph-a11y" role="tree" aria-label="Visible execution nodes"></div></div></div>\`;
+  const head=runtimeWorkflowHeadParts();
+  // One bar: the title, the run's tokens and the camera. The former summary
+  // bar under it repeated the Plan tab, which keeps the full summary. The
+  // legend floats in the canvas's bottom-right corner instead of taking a band.
+  return \`<div class="runtime-graph-main"><div class="runtime-graph-toolbar"><span class="runtime-graph-title">Run execution<span class="runtime-live-indicator" id="runtime-run-live"\${head.live?'':' hidden'}>● Live</span></span><span><span class="runtime-graph-tokens" id="runtime-run-tokens" title="Tokens of the run">\${esc(head.tokens)}</span><button type="button" onclick="zoomRuntimeWorkflowGraph(.8)" title="Zoom out" aria-label="Zoom out">−</button><button type="button" onclick="zoomRuntimeWorkflowGraph(1.25)" title="Zoom in" aria-label="Zoom in">+</button><button type="button" onclick="fitRuntimeWorkflowGraph()">Fit</button><button type="button" onclick="resetRuntimeWorkflowGraph()">Reset</button></span></div><div class="runtime-canvas-stage"><canvas class="runtime-graph-canvas" id="runtime-graph-canvas" tabindex="0" role="application" aria-label="Interactive run execution graph"></canvas><div class="runtime-graph-a11y" role="tree" aria-label="Visible execution nodes"></div><div class="runtime-graph-legend"><b>Relation</b><span><i class="depends_on"></i>Sequence / dependency</span><b>Status</b><span><i class="bubble running"></i>Running</span><span><i class="bubble done"></i>Done</span><span><i class="bubble failed"></i>Failed</span><span><i class="bubble approval"></i>Approval</span><span><i class="bubble pending"></i>Pending</span><span><i class="bubble fresh"></i>New / changed</span></div></div></div>\`;
 }
-// The summary is the only fragment of the frame that changes on every tick. It
-// therefore lives in a stable slot, updated in place: rewriting the whole
-// frame for it destroyed the neighboring canvas every second (see
-// renderActivities), hence the flicker and the impossible dragging.
-function runtimeWorkflowSummarySlotHTML() {
-  const summary=runtimeWorkflowSummaryParts();
-  return \`<div class="runtime-run-summary\${summary.live?' live':''}" id="runtime-run-summary">\${summary.html}</div>\`;
-}
-// The Plan tab reuses the same summary, but without the slot: it is not
-// refreshed in place — the list has its own fingerprint guard — and two
-// elements carrying the same id in one page is a source of bugs we have no
-// reason to introduce.
+// The Plan tab carries the run's full summary (tasks, files, model calls,
+// tokens). It is not refreshed in place: the list has its own fingerprint
+// guard.
 function runtimeWorkflowSummaryHTML() {
   const summary=runtimeWorkflowSummaryParts();
   if(!summary.html) return '';
   return \`<div class="runtime-run-summary\${summary.live?' live':''}">\${summary.html}</div>\`;
 }
+// The tokens and the Live mark are the only fragments of the frame that change
+// on every tick. They are updated in place: rewriting the whole frame for them
+// destroyed the neighboring canvas every second (see renderActivities), hence
+// the flicker and the impossible dragging.
+function runtimeWorkflowHeadParts() {
+  const {nodes}=runtimeWorkflowGraphData();
+  const run=nodes.find(node=>node.type==='run');
+  return {live:String(run?.status||runtimeState?.status)==='running',tokens:'Tokens '+formatRuntimeTokens(run?.usage)};
+}
 function refreshRuntimeWorkflowSummary() {
-  const host=$('runtime-run-summary');
-  if(!host) return;
-  const summary=runtimeWorkflowSummaryParts();
-  host.classList.toggle('live',summary.live);
-  if(host.__summaryHTML===summary.html) return;
-  host.__summaryHTML=summary.html;
-  host.innerHTML=summary.html;
+  const tokens=$('runtime-run-tokens');
+  if(!tokens) return;
+  const head=runtimeWorkflowHeadParts();
+  if(tokens.textContent!==head.tokens) tokens.textContent=head.tokens;
+  const live=$('runtime-run-live');
+  if(live) live.hidden=!head.live;
 }
 function runtimeWorkflowSummaryParts() {
   const {nodes}=runtimeWorkflowGraphData();
