@@ -8,7 +8,7 @@ import { OBSERVER_TOOLS_SCRIPT } from './views/observerToolsScript.ts';
 import { MCP_CONNECTOR_SCRIPT } from './runtime/mcpConnectorScript.ts';
 import { CONFIG_SCRIPT } from './config/configScript.ts';
 import { ACTIVITY_PANEL_SCRIPT } from './runtime/activityPanelScript.ts';
-import { RUN_STRIP_SCRIPT } from './runtime/runStripScript.ts'; import { RUN_LIVE_LINE_SCRIPT } from './runtime/runLiveLineScript.ts'; import { PROGRESS_LABEL_SCRIPT } from './runtime/progressLabelScript.ts';
+import { RUN_STRIP_SCRIPT } from './runtime/runStripScript.ts'; import { RUN_LIVE_LINE_SCRIPT } from './runtime/runLiveLineScript.ts'; import { PROGRESS_LABEL_SCRIPT } from './runtime/progressLabelScript.ts'; import { CONTAINER_STATS_SCRIPT } from './runtime/containerStatsScript.ts';
 import { RUN_SIDEBAR_REFRESH_SCRIPT } from './runtime/runSidebarRefreshScript.ts';
 import { SPLITTERS_SCRIPT } from './layout/splittersScript.ts';
 import { REDO_SCRIPT } from './runtime/redoScript.ts';
@@ -241,7 +241,7 @@ function notify(msg, type='s') {
 }
 ${ACTIVITY_PANEL_SCRIPT}
 ${MAINTENANCE_PANEL_SCRIPT}
-${RUN_STRIP_SCRIPT}${PROGRESS_LABEL_SCRIPT}${RUN_LIVE_LINE_SCRIPT}
+${RUN_STRIP_SCRIPT}${PROGRESS_LABEL_SCRIPT}${RUN_LIVE_LINE_SCRIPT}${CONTAINER_STATS_SCRIPT}
 ${RUN_SIDEBAR_REFRESH_SCRIPT}
 ${SPLITTERS_SCRIPT}
 ${REDO_SCRIPT}
@@ -428,6 +428,7 @@ async function fetchRuntimeState() {
 
 function connectRuntimePanel() {
   if(!window.__WIKI_CONFIG__?.runtime?.enabled) return;
+  startContainerStats();
   fetchRuntimeState().catch(()=>{runtimeConnected=false;renderActivities();});
   const events=new EventSource('/api/runtime/events');
   events.addEventListener('state',(event)=>{

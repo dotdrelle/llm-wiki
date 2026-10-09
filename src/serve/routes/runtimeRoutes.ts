@@ -24,6 +24,12 @@ export async function handleRuntimeRoutes(
     await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/state'), deps.proxyDeps);
     return true;
   }
+  // The workspace's containers' resource use (Run execution view). The runtime
+  // reads Docker on the host; serve, in a container, has no socket.
+  if (urlPath === '/api/runtime/workspace-stats' && req.method === 'GET') {
+    await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/workspace/stats'), deps.proxyDeps);
+    return true;
+  }
   if (urlPath === '/api/runtime/health' && req.method === 'GET') {
     await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/health'), deps.proxyDeps);
     return true;

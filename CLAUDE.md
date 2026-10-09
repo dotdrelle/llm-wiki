@@ -239,6 +239,11 @@ never becomes an extra run. Keep scaffold skills generic and English by default.
 `serve.ts` proxies these routes:
 
 - `GET /api/runtime/state` → runtime `/state`
+- `GET /api/runtime/workspace-stats` → runtime `/workspace/stats` (the
+  workspace containers' summed `docker stats`, shown top-right in the Run
+  execution canvas by `containerStatsScript.ts`, polled every 5 s only while
+  that line is on screen; the legend sits bottom-right, the run's tokens in the
+  graph toolbar)
 - `GET /api/runtime/events` → runtime `/events/stream` (SSE pass-through)
 - `POST /api/runtime/run` → runtime `/run` (injects `workspace: WORKSPACE_NAME`)
 - `POST /api/runtime/cancel` → runtime `/cancel`
