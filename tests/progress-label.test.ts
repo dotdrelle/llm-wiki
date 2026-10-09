@@ -50,3 +50,40 @@ describe('what the >_ line says during a turn', () => {
     expect(progressEventInThread({ conversationId: 'a' }, null)).toBe(true);
   });
 });
+
+describe('the step line keeps time and carries the search result', () => {
+  it('shows the seconds a step has lasted, and what the search found while thinking', () => {
+    const { setProgressText } = new Function(`${PROGRESS_LABEL_SCRIPT}\nreturn { setProgressText };`)() as {
+      setProgressText: (span: { dataset: Record<string, string>; textContent: string }, text: string) => void;
+    };
+    const realNow = Date.now;
+    const realSetInterval = globalThis.setInterval;
+    let clock = 1_000_000;
+    Date.now = () => clock;
+    globalThis.setInterval = (() => 0) as unknown as typeof setInterval;
+    try {
+      const span = { dataset: {} as Record<string, string>, textContent: '' };
+      setProgressText(span, 'Searching the wiki…');
+      expect(span.textContent).toBe('Searching the wiki…');
+      clock += 3_000;
+      setProgressText(span, 'Searching the wiki…');
+      expect(span.textContent).toBe('Searching the wiki… 3s');
+      setProgressText(span, 'Wiki search: 8 passages from 5 pages');
+      setProgressText(span, 'Thinking…');
+      expect(span.textContent).toBe('Thinking over 8 passages from 5 pages…');
+      clock += 7_000;
+      setProgressText(span, 'Thinking…');
+      expect(span.textContent).toBe('Thinking over 8 passages from 5 pages… 7s');
+      setProgressText(span, 'tavily · search (query=x)');
+      setProgressText(span, 'Thinking…');
+      expect(span.textContent).toBe('Thinking…');
+      setProgressText(span, 'wiki.x failed: not found');
+      clock += 5_000;
+      setProgressText(span, 'wiki.x failed: not found');
+      expect(span.textContent).toBe('wiki.x failed: not found');
+    } finally {
+      Date.now = realNow;
+      globalThis.setInterval = realSetInterval;
+    }
+  });
+});

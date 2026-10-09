@@ -7,9 +7,9 @@
  * (`trace: llm:end label=… durationMs=…`) and the agent loop's iteration
  * counter against its safety cap (`[2/80] synthesizing…`) replaced the one
  * line the reader can act on. The line is now an allow-list: a wiki search, a
- * tool and its main arguments, "Thinking…" while a model call runs (with the
- * seconds it has taken — the long silent gap between the search and the
- * answer), "Writing the answer…", and the failures that change the answer.
+ * tool and its main arguments, what the wiki search found, "Thinking…" while a
+ * model call runs, each with the seconds it has taken (the long silent gap
+ * between the search and the answer), "Writing the answer…", and the failures that change the answer.
  * Everything else returns '' and leaves the line alone; the full trail stays
  * in Activity → Logs. Tool names stay data (no per-tool verb catalogue, see
  * the manager's progressNotes.js), and the line stays in English like the
@@ -38,6 +38,8 @@ function progressMessageLabel(message) {
   if(!msg) return '';
   if(/^Donna Searching/i.test(msg)) return 'Searching the wiki…';
   if(/^Wiki pre-search failed/i.test(msg)) return 'Wiki search failed — answering without it';
+  // The pre-search's own result, worded by the manager (wikiPresearch.js).
+  if(/^Wiki search: /.test(msg)) return msg.length>110?msg.slice(0,110)+'…':msg;
   if(/streaming (?:final|direct) answer/i.test(msg)) return 'Writing the answer…';
   if(/^Chat: condensed/i.test(msg)) return 'Condensing the pages read…';
   if(/^Chat: consulting|^Agent: planning next action|^Agent: classified input|^\\[\\d+\\/\\d+\\] synthesizing/i.test(msg)) return PROGRESS_THINKING;
@@ -62,27 +64,32 @@ function runtimeProgressLabel(event) {
   if(type==='assistant_progress'||type==='runtime_log') return progressMessageLabel(p.message);
   return '';
 }
-// One timer for every visible "Thinking…": the seconds are counted here, so
-// the gap a model call leaves has a pulse without any event.
-let progressThinkingTimer=null;
-function renderProgressThinking(span) {
-  const since=Number(span.dataset.thinkingSince);
-  const seconds=Math.floor((Date.now()-since)/1000);
-  span.textContent=seconds>=2?PROGRESS_THINKING+' '+seconds+'s':PROGRESS_THINKING;
+// Every step shows how long it has lasted (after 2 s): a wiki search, a tool
+// call or a model call can each take a while, and a line that does not move
+// reads as stuck. One timer for every visible step; the seconds are counted
+// here, so a long call has a pulse without any event. A failure is a result,
+// not a step in flight: it gets no counter.
+let progressStepTimer=null;
+function renderProgressStep(span) {
+  const label=span.dataset.stepLabel||'';
+  const seconds=Math.floor((Date.now()-Number(span.dataset.stepSince))/1000);
+  span.textContent=seconds>=2&&!/ failed\\b/.test(label)?label+' '+seconds+'s':label;
 }
-function tickProgressThinking() {
-  const spans=[...document.querySelectorAll('.runtime-thinking span[data-thinking-since]')];
-  spans.forEach(renderProgressThinking);
-  if(!spans.length&&progressThinkingTimer){ clearInterval(progressThinkingTimer); progressThinkingTimer=null; }
+function tickProgressSteps() {
+  const spans=[...document.querySelectorAll('.runtime-thinking span[data-step-since]')].filter(span=>span.isConnected);
+  spans.forEach(renderProgressStep);
+  if(!spans.length&&progressStepTimer){ clearInterval(progressStepTimer); progressStepTimer=null; }
 }
 function setProgressText(span, text) {
   if(!span||!text) return;
-  if(text===PROGRESS_THINKING) {
-    if(!span.dataset.thinkingSince) span.dataset.thinkingSince=String(Date.now());
-    renderProgressThinking(span);
-    if(!progressThinkingTimer) progressThinkingTimer=setInterval(tickProgressThinking,1000);
-    return;
-  }
-  delete span.dataset.thinkingSince;
-  span.textContent=text;
+  // What the wiki search found would be replaced at once by the model call
+  // that reads it: it is carried into that "Thinking…" instead.
+  const found=text.match(/^Wiki search: (.+)$/);
+  if(found) span.dataset.searchFound=found[1];
+  else if(text!==PROGRESS_THINKING) delete span.dataset.searchFound;
+  const label=text===PROGRESS_THINKING&&span.dataset.searchFound?'Thinking over '+span.dataset.searchFound+'…':text;
+  // The same step repeated (two model calls in a row) keeps counting.
+  if(span.dataset.stepLabel!==label){ span.dataset.stepLabel=label; span.dataset.stepSince=String(Date.now()); }
+  renderProgressStep(span);
+  if(!progressStepTimer) progressStepTimer=setInterval(tickProgressSteps,1000);
 }`;
