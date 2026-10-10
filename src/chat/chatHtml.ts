@@ -145,7 +145,10 @@ function runtimeLogTextHTML(text) {
   return \`<div class="runtime-journal-text md">\${renderMd(esc(text||''))}</div>\`;
 }
 function essentialRuntimeLogHTML() {
-  const entries=essentialRuntimeLogEntries(runtimeState?.logs).slice(-60).reverse();
+  // The start line of a maintenance action still running reads as running:
+  // nothing else in the journal said which of the "Rebuild …" lines was live.
+  const live=new Set((typeof window!=='undefined'&&typeof window.getMaintenanceRunning==='function'?window.getMaintenanceRunning():[]).map(item=>'Maintenance: '+String(item.summary||'')));
+  const entries=essentialRuntimeLogEntries(runtimeState?.logs).slice(-60).reverse().map(entry=>live.delete(entry.text)?{...entry,tone:'running'}:entry);
   if(!entries.length) return '<div class="runtime-journal empty">No essential run event yet.</div>';
   return \`<div class="runtime-journal">\${entries.map(entry=>\`<div class="runtime-journal-entry \${entry.tone}"><time>\${esc(entry.time||'—')}</time>\${runtimeLogTextHTML(entry.text)}</div>\`).join('')}</div>\`;
 }

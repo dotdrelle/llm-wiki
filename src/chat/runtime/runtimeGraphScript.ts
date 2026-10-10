@@ -113,7 +113,9 @@ function runtimeMaintenanceGraphData() {
     const states=progress.sourceStates&&typeof progress.sourceStates==='object'?Object.entries(progress.sourceStates):[];
     const sourceCounts=states.length?states.reduce((counts,[,value])=>{counts[value]=(counts[value]||0)+1;return counts;},{}):null;
     const id='maintenance:'+item.id;
-    const label=String(progress.label||item.summary||item.action||'Maintenance action');
+    // The node is narrow: a path reads as its file name ("Stabilize
+    // templates/eas/J…" said nothing). The full wording is in the inspector.
+    const label=String(progress.label||item.summary||item.action||'Maintenance action').replace(/(?:[^\\s/]+\\/)+([^\\s/]+)/g,'$1');
     nodes.push({id,type:'task_group',groupId:id,label:label.length>70?label.slice(0,67)+'…':label,status:'running',tasks:[],agents:item.agent?[String(item.agent)]:[],parallelism:1,currentParallel:1,sourceCounts,sourceTotal:Number(progress.sourceCount)||states.length,sourceProcessLimit:null,done:0,total:1,usage:{},raw:{maintenance:item}});
     relations.push({id:'run-phase:'+id,type:'starts',from:id,to:run.id});
     states.slice(0,RUNTIME_TASK_INPUT_LIMIT).forEach(([name,value],index)=>{
@@ -386,8 +388,17 @@ function renderRuntimeWorkflowInspector() {
     : [];
   // A phase of one task has no concurrency to report (see the summary line).
   const concurrencyRows=node.total>1?[['Tasks',node.done+'/'+node.total+' done · '+(node.currentParallel||0)+' running (max '+node.parallelism+' at once)']]:[];
+  // A maintenance action says what it is, on what, since when, and its step.
+  const maintenanceItem=phase?node.raw?.maintenance:null;
+  const maintenanceRows=maintenanceItem?[
+    ['Action',String(maintenanceItem.summary||maintenanceItem.action||'')],
+    ...(maintenanceItem.target?[['Target',String(maintenanceItem.target)]]:[]),
+    ...(maintenanceItem.startedAt?[['Started',formatLocalTime(maintenanceItem.startedAt)],['Running for',formatRuntimeDuration(Date.now()-Date.parse(maintenanceItem.startedAt))||'—']]:[]),
+    ...(maintenanceItem.progress?.detail||maintenanceItem.progress?.label?[['Step',String(maintenanceItem.progress.detail||maintenanceItem.progress.label)]]:[]),
+    ...(maintenanceItem.jobId?[['Job',String(maintenanceItem.jobId)]]:[]),
+  ]:[];
   const details=phase
-    ? [['Status',node.status],...concurrencyRows,...processRow,['Agents',node.agents?.join(', ')||'Not reported'],['Tokens',formatRuntimeTokens(node.usage)]]
+    ? [['Status',node.status],...maintenanceRows,...concurrencyRows,...processRow,['Agents',node.agents?.join(', ')||'Not reported'],['Tokens',formatRuntimeTokens(node.usage)]]
     : subagent
       ? [['Status',node.status],['Started',runtimeSubagentTime(node.startedAt)],['Finished',runtimeSubagentTime(node.finishedAt)]]
       : [['Status',node.status],['Phases',node.phaseCount||0],['Tasks',node.taskCount||0],['Agents',node.agents?.length||0],
