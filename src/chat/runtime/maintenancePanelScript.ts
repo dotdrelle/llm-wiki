@@ -90,11 +90,18 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
     if(state.history){if(state.history.retentionDays)node('p','Logs retained for '+state.history.retentionDays+' rolling days.',panel);node('p','Saved history — page '+(Math.floor(state.history.offset/state.history.limit)+1)+'. All pending decisions remain visible.',panel);if(historyOffset>0)button('Newer history',panel,()=>{historyOffset=Math.max(0,historyOffset-state.history.limit);poll();});if(state.history.hasMore)button('Older history',panel,()=>{historyOffset+=state.history.limit;poll();});}
     const history=state.requests.filter(r=>r.status!=='pending');if(history.length){const d=node('details',null,panel);node('summary','Decision history',d);for(const r of history)node('p',(r.candidate?.summary||r.action)+' — '+r.status,d);}
   }
+  // One row per action: its start and its outcome share the action's summary
+  // ("X", "Done: X", "X — not done: …"), which every record carries — the
+  // outcome records had no target, so a finished action kept its PENDING start.
+  function maintenanceActionSummary(event){return String(event.message||'').replace(/^Maintenance:\s*/,'').replace(/^(?:Done|Failed|Cancelled):\s*/i,'').split(' — ')[0].trim();}
   function maintenanceActivityRows(events){
-    const grouped=new Map();
-    for(const event of events){const key=event.action?String(event.cycleId||'')+'|'+event.action+'|'+String(event.target||''):String(event.seq);grouped.set(key,event);}
-    return [...grouped.values()].sort((a,b)=>(Number(b.seq)||0)-(Number(a.seq)||0));
+    const grouped=new Map();const started=new Map();
+    for(const event of events){const key=event.action?String(event.cycleId||'')+'|'+event.action+'|'+maintenanceActionSummary(event):String(event.seq);if(event.kind==='action_started'&&!started.has(key))started.set(key,event.at);grouped.set(key,event);}
+    // A finished action carries how long it took, from its own start record.
+    return [...grouped.entries()].map(([key,event])=>{const from=started.get(key);const ms=event.kind!=='action_started'&&from&&event.at?Date.parse(event.at)-Date.parse(from):NaN;return Number.isFinite(ms)&&ms>=0?{...event,durationMs:ms}:event;})
+      .sort((a,b)=>(Number(b.seq)||0)-(Number(a.seq)||0));
   }
+  function maintenanceDuration(ms){const s=Math.round(Number(ms)/1000);if(!Number.isFinite(s)||s<0)return '';if(s<60)return s+'s';const m=Math.floor(s/60);if(m<60)return m+'m '+String(s%60).padStart(2,'0')+'s';return Math.floor(m/60)+'h '+String(m%60).padStart(2,'0')+'m';}
   function maintenanceActivityStatus(event){
     if(event.kind==='action_started')return event.action==='sync'?'checking':'pending';
     if(event.kind==='waiting')return 'pending';
@@ -107,7 +114,8 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
     const row=node('div',null,parent);row.className='maintenance-log-row status-'+maintenanceActivityStatus(event).replaceAll(' ','-');
     const time=node('small',event.at?formatLocalDateTime(event.at,{seconds:true}):'',row);time.className='maintenance-log-time';
     const message=maintenanceMarkdown(row,strip(event.message).replace(/^(?:Done|Failed|Cancelled|Maintenance):\s*/i,''),'maintenance-log-message maintenance-markdown');
-    const status=node('b',maintenanceActivityStatus(event),row);status.className='maintenance-log-status';
+    const took=event.durationMs!=null?maintenanceDuration(event.durationMs):'';
+    const status=node('b',maintenanceActivityStatus(event)+(took?' · '+took:''),row);status.className='maintenance-log-status';if(took)status.title='Processing time: '+took;
   }
   function notify(events){if(!events.length)return;if(toast)toast.remove();toast=node('aside',null,maintenanceCard);toast.className='maintenance-toast';maintenanceMarkdown(toast,events.length===1?events[0].message:'Maintenance: '+events.length+' updates. Open the history to review them.','maintenance-toast-message maintenance-markdown');const actions=node('div',null,toast);actions.className='maintenance-toast-actions';button('Open',actions,open);if(events.some(e=>['failure','decision','proposal'].includes(e.kind)))button('Stop',actions,()=>command({command:'stop'}));button('Dismiss',actions,seen);refreshDock();if(events.every(e=>!['failure','decision','proposal'].includes(e.kind)))setTimeout(()=>{toast?.remove();toast=null;refreshDock();},9000);}
   let reconcileTimer=null;function scheduleReconcile(){if(reconcileTimer)clearInterval(reconcileTimer);reconcileTimer=setInterval(poll,connected?60000:5000);}

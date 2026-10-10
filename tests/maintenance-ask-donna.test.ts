@@ -23,3 +23,33 @@ describe('Ask Donna from the Maintenance panel', () => {
     expect(MAINTENANCE_PANEL_SCRIPT).toMatch(/Math\.abs\(Date\.parse\(e\.at\)-Date\.parse\(c\.at\)\)<=15\*60_000/);
   });
 });
+
+describe('Maintenance thread rows', () => {
+  const start = MAINTENANCE_PANEL_SCRIPT.indexOf('function maintenanceActionSummary(');
+  const end = MAINTENANCE_PANEL_SCRIPT.indexOf('function maintenanceDuration(');
+  const rows = new Function(`${MAINTENANCE_PANEL_SCRIPT.slice(start, end)}\nreturn maintenanceActivityRows;`)() as (events: unknown[]) => Array<{ seq: number; kind: string }>;
+
+  it('shows a finished action once, with its outcome, not its PENDING start', () => {
+    // juno: outcome records carry no target, so every start stayed PENDING
+    // and all the outcomes of a cycle collapsed into a single row.
+    const c = 'cycle-1';
+    const out = rows([
+      { seq: 1, cycleId: c, kind: 'action_started', action: 'build', target: 'templates/a.md', message: 'Maintenance: Rebuild a.md because the wiki content changed' },
+      { seq: 2, cycleId: c, kind: 'action_started', action: 'build', target: 'templates/b.md', message: 'Maintenance: Rebuild b.md because the wiki content changed' },
+      { seq: 3, cycleId: c, kind: 'action_done', action: 'build', message: 'Maintenance: Done: Rebuild a.md because the wiki content changed' },
+      { seq: 4, cycleId: c, kind: 'failure', action: 'build', message: 'Maintenance: Rebuild b.md because the wiki content changed — not done: boom' },
+    ]);
+    expect(out.map((e) => [e.seq, e.kind])).toEqual([[4, 'failure'], [3, 'action_done']]);
+  });
+
+  it('carries how long a finished action took, from its own start', () => {
+    const c = 'cycle-1';
+    const [done] = rows([
+      { seq: 1, cycleId: c, at: '2026-10-10T11:24:13Z', kind: 'action_started', action: 'build', target: 't', message: 'Maintenance: Rebuild f.md' },
+      { seq: 2, cycleId: c, at: '2026-10-10T11:30:55Z', kind: 'action_done', action: 'build', target: 't', message: 'Maintenance: Done: Rebuild f.md' },
+    ]) as Array<{ durationMs?: number }>;
+    expect(done.durationMs).toBe(402_000);
+    const running = rows([{ seq: 1, cycleId: c, at: '2026-10-10T11:24:13Z', kind: 'action_started', action: 'build', message: 'Maintenance: Rebuild f.md' }]) as Array<{ durationMs?: number }>;
+    expect(running[0].durationMs).toBeUndefined();
+  });
+});
