@@ -121,6 +121,13 @@ function runtimeMaintenanceGraphData() {
       nodes.push({id:inputId,type:'task_input',taskId:id,detailId:id,label:String(name),ref:String(name),status:String(value)});
       relations.push({id:'task-input:'+inputId,type:'contains',from:inputId,to:id});
     });
+    // An external runtime's collective (a curation): its roles under the
+    // action, as under Donna's run — the manager follows them for maintenance too.
+    (Array.isArray(progress.roles)?progress.roles:[]).forEach(role=>{
+      const roleId=id+':role:'+String(role?.name||'');
+      nodes.push({id:roleId,type:'subagent',subagent:String(role?.name||''),label:String(role?.name||'subagent'),status:String(role?.status||'pending')});
+      relations.push({id:'run-subagent:'+roleId,type:'contains',from:id,to:roleId});
+    });
   }
   return {nodes,relations};
 }
@@ -330,8 +337,7 @@ function formatRuntimeDuration(ms) {
 // rendered as "Invalid Date" for every role.
 function runtimeSubagentTime(value) {
   if(value==null||value==='')return '—';
-  const date=new Date(value);
-  return Number.isNaN(date.getTime())?'—':date.toLocaleTimeString();
+  return formatLocalTime(value)||'—';
 }
 function fitRuntimeWorkflowGraph(){runtimeCanvasRenderer?.fit()}
 function zoomRuntimeWorkflowGraph(factor){runtimeCanvasRenderer?.zoom(factor)}
@@ -410,7 +416,7 @@ function renderRuntimeWorkflowInspector() {
   const taskFlow=selectedTask?(()=>{
     const previous=taskRows[selectedTaskIndex-1];
     const next=taskRows[selectedTaskIndex+1];
-    const started=selectedTask.tm.startedAt!=null&&Number.isFinite(Number(selectedTask.tm.startedAt))?new Date(Number(selectedTask.tm.startedAt)).toLocaleTimeString():'—';
+    const started=selectedTask.tm.startedAt!=null&&Number.isFinite(Number(selectedTask.tm.startedAt))?formatLocalTime(Number(selectedTask.tm.startedAt)):'—';
     const duration=formatRuntimeDuration(selectedTask.tm.durationMs)||'—';
     const tokens=ritTok(selectedTask.tk.inputKnown,selectedTask.tk.inputTokens)+' in / '+ritTok(selectedTask.tk.outputKnown,selectedTask.tk.outputTokens)+' out';
     const agent=selectedTask.task.executor||selectedTask.task.raw?.executor||'—';

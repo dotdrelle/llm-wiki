@@ -178,6 +178,16 @@ describe('runtime graph draws maintenance beside Donna', () => {
     expect(selectedAfter(true)).toBe('run:1');
   });
 
+  it('draws a maintenance curation\'s roles under its action', () => {
+    const curate = { id: 'c1', action: 'curate', agent: 'deepagents', summary: 'Review the wiki for duplicates', progress: { detail: 'Role 2/5: analyst', roles: [{ name: 'scout', status: 'done' }, { name: 'analyst', status: 'running' }] } };
+    const { nodes, relations } = withMaintenance([curate], { status: 'idle', workflow: { nodes: [] } });
+    const roles = nodes.filter((n: { type: string }) => n.type === 'subagent');
+    expect(roles.map((n: { label: string; status: string }) => [n.label, n.status])).toEqual([['scout', 'done'], ['analyst', 'running']]);
+    expect(roles.every((n: { id: string }) => relations.some((r: { from: string; to: string }) => r.from === 'maintenance:c1' && r.to === n.id))).toBe(true);
+    // The action keeps its own title.
+    expect(nodes.find((n: { id: string }) => n.id === 'maintenance:c1').label).toBe('Review the wiki for duplicates');
+  });
+
   it('draws nothing extra when maintenance is idle', () => {
     const { nodes } = withMaintenance([], { workflow: { nodes: [{ id: 'run:1', type: 'run', status: 'done' }] } });
     expect(nodes.some((n: { id: string }) => n.id === 'maintenance')).toBe(false);
