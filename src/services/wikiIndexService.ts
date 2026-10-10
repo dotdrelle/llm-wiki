@@ -7,6 +7,7 @@ import { toPosix } from '../utils/path.ts';
 import { pageTitle } from '../utils/pageTitle.ts';
 import { mapWithConcurrency } from '../utils/concurrency.ts';
 import { applyOkfFrontmatter, OKF_TYPE_INDEX } from '../okf/frontmatter.ts';
+import { compareLabels } from '../utils/labelOrder.ts';
 
 /*
  `wiki/index.md` used to be written by the consolidation LLM, per source, as
@@ -102,7 +103,11 @@ async function listEntries(
     const link = linkRoot === 'raw' ? `../${file}` : file.replace(/^wiki\//, '');
     return { path: link, label: entryLabel(raw, fallback) };
   });
-  return entries.filter((entry) => entry !== null);
+  // Listed by the title the reader sees, not by the source folder the path
+  // happens to sit in.
+  return entries
+    .filter((entry) => entry !== null)
+    .sort((a, b) => compareLabels(a.label, b.label) || a.path.localeCompare(b.path));
 }
 
 function renderSection(title: string, intro: string, entries: WikiIndexEntry[], emptyLine: string): string {

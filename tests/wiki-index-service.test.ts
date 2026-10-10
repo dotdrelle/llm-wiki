@@ -34,6 +34,26 @@ describe('regenerateWikiIndex', () => {
     expect(content).toContain('type: index');
   });
 
+  it('lists reading notes by their title, accents and case ignored, not by source folder', async () => {
+    const write = async (rel: string, title: string) => {
+      await mkdir(path.dirname(path.join(root, rel)), { recursive: true });
+      await writeFile(path.join(root, rel), `---\ntitle: ${title}\n---\n# ${title}\n`, 'utf8');
+    };
+    // juno: "Bilan", "Démo", "Divers", "Étude" from one folder, then
+    // "Open-Source…" and "Demo Project Brief" from others.
+    await write('wiki/sources/a-folder/etude.md', 'Étude des exigences');
+    await write('wiki/sources/a-folder/bilan.md', 'Bilan');
+    await write('wiki/sources/b-folder/demo.md', 'Demo Project Brief');
+    await write('wiki/sources/c-folder/open.md', 'Open-Source Alternatives');
+    await write('wiki/sources/c-folder/item10.md', 'Item 10');
+    await write('wiki/sources/c-folder/item2.md', 'Item 2');
+    await regenerateWikiIndex(root);
+    const content = await readFile(path.join(root, 'wiki', 'index.md'), 'utf8');
+    const section = content.slice(content.indexOf('## Reading notes'), content.indexOf('## Archived documents'));
+    const labels = [...section.matchAll(/^- \[([^\]]+)\]/gm)].map((m) => m[1]);
+    expect(labels).toEqual(['Bilan', 'Demo Project Brief', 'Étude des exigences', 'Item 2', 'Item 10', 'Open-Source Alternatives']);
+  });
+
   it('lists every concept page on disk, across class subfolders and legacy flat pages', async () => {
     await mkdir(path.join(root, 'wiki', 'concepts', 'market-offering'), { recursive: true });
     await mkdir(path.join(root, 'wiki', 'concepts', 'unclassified'), { recursive: true });

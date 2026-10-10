@@ -39,6 +39,7 @@ import {
   wikiFileMtimes,
   wikiPageTitle,
 } from './sidebarFreshness.ts';
+import { compareLabels } from '../../utils/labelOrder.ts';
 
 export { graphEtagForFiles, listGraphFiles, escapeScriptJson };
 
@@ -1599,7 +1600,8 @@ export async function generateIndex(rootDir: string): Promise<string> {
       if (files.length > 0) {
         indexTiles.push({
           heading,
-          tiles: files.map((f) => ({ title: humanTitle(f), href: `/${f}`, meta: f })),
+          tiles: files.map((f) => ({ title: humanTitle(f), href: `/${f}`, meta: f }))
+            .sort((a, b) => compareLabels(a.title, b.title)),
         });
       }
     }
