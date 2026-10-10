@@ -188,7 +188,7 @@ maintenance log events and its finished cycle history, after a confirmation;
 pending decisions, saved approvals and refusals, and reservations with
 unresolved effects stay visible. It never stops or pauses maintenance.
 
-Maintenance logs are kept for **15 rolling days** by default. Set
+Maintenance logs are kept for **7 rolling days** by default. Set
 `WIKI_MANAGER_LOG_RETENTION_DAYS` in the manager `.env` to a positive number of
 days and restart the runtime to change this window. Older log events expire;
 your saved decisions and budget receipts remain. History pages show up to 100
