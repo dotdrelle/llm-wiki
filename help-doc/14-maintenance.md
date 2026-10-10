@@ -59,8 +59,8 @@ workspace checks remain in place.
     "actions": ["sync", "ingest", "doctor", "index", "rebuild", "curate", "build", "deliver", "mail"],
     "mail": { "to": [], "on": ["failure", "decision", "daily"] },
     "buildSchedule": { "mode": "window", "start": "12:00", "end": "14:00", "timezone": "Europe/Paris" },
-    "limits": { "cyclesPerDay": 12, "buildsPerDay": 4, "actionsPerDay": 40,
-                "actionsPerCycle": 10, "sourceQuietMinutes": 10 }
+    "limits": { "cyclesPerDay": 96, "buildsPerDay": 50, "actionsPerDay": 500,
+                "actionsPerCycle": 30, "sourceQuietMinutes": 10 }
   },
   "workspaces": {
     "my-workspace": { "enabled": true, "actions": { "build": ["templates/offer.md"] } }
