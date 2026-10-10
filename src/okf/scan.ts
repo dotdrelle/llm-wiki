@@ -5,6 +5,15 @@ import matter from 'gray-matter';
 import { safeWriteFile } from '../utils/fs.ts';
 import { toPosix } from '../utils/path.ts';
 import { applyOkfFrontmatter, okfTypeForPath } from './frontmatter.ts';
+import { hashText } from '../utils/hash.ts';
+
+/**
+ * A file the engine itself rewrote (metadata only), with the hash before and
+ * after. A deliverable's build record keeps the hash of what the build wrote;
+ * without re-anchoring it, `doctor --apply` adding `status: draft` made four
+ * juno deliverables read as hand-edited, and maintenance asked a human for each.
+ */
+export type EngineRewrite = { file: string; beforeHash: string; afterHash: string };
 
 /*
  Bundle scan for the OKF catch-up.
@@ -61,10 +70,11 @@ export async function listBundleFilesMissingType(rootDir: string): Promise<strin
  */
 export async function applyMissingOkfTypes(
   rootDir: string,
-): Promise<{ written: string[]; skipped: string[] }> {
+): Promise<{ written: string[]; skipped: string[]; rewrites: EngineRewrite[] }> {
   const files = await listBundleFilesMissingType(rootDir);
   const written: string[] = [];
   const skipped: string[] = [];
+  const rewrites: EngineRewrite[] = [];
   for (const file of files) {
     const type = okfTypeForPath(file);
     if (!type) {
@@ -86,8 +96,9 @@ export async function applyMissingOkfTypes(
     }
     await safeWriteFile(absolutePath, next);
     written.push(file);
+    rewrites.push({ file, beforeHash: hashText(content), afterHash: hashText(next) });
   }
-  return { written, skipped };
+  return { written, skipped, rewrites };
 }
 
 // ── OKF v0.2 catch-up ────────────────────────────────────────────────────────
@@ -199,10 +210,11 @@ export async function listBundleFilesV02Migration(rootDir: string): Promise<OkfV
  */
 export async function applyOkfV02Migration(
   rootDir: string,
-): Promise<{ written: string[]; skipped: string[] }> {
+): Promise<{ written: string[]; skipped: string[]; rewrites: EngineRewrite[] }> {
   const migrations = await listBundleFilesV02Migration(rootDir);
   const written: string[] = [];
   const skipped: string[] = [];
+  const rewrites: EngineRewrite[] = [];
   for (const migration of migrations) {
     const absolutePath = path.join(rootDir, migration.file);
     let content: string;
@@ -219,6 +231,7 @@ export async function applyOkfV02Migration(
     }
     await safeWriteFile(absolutePath, next);
     written.push(migration.file);
+    rewrites.push({ file: migration.file, beforeHash: hashText(content), afterHash: hashText(next) });
   }
-  return { written, skipped };
+  return { written, skipped, rewrites };
 }

@@ -60,3 +60,26 @@ it('vector freshness reuses supplied wiki pages without changing its hash', asyn
   const spy=vi.spyOn(w,'listWikiPages');
   try {expect(await vectorInputHash(w,pages)).toBe(expected);expect(spy).not.toHaveBeenCalled();} finally {spy.mockRestore();}
 });
+
+it('a metadata line doctor adds to a built deliverable is not a hand edit, a real edit still is',async()=>{
+  // juno: doctor --apply added `status: draft` to four freshly built
+  // deliverables; maintenance then read them as hand-edited and asked a human
+  // to approve each rebuild, cycle after cycle.
+  const { applyOkfV02Migration } = await import('../src/okf/scan.ts');
+  const r=await root();await mkdir(path.join(r,'deliverables'),{recursive:true});
+  const w=new WorkspaceService(resolveConfig({},r));
+  const built='---\ntype: deliverable\n---\n# Report\n\nBody.\n';
+  const edited='---\ntype: deliverable\n---\n# Report\n\nBody, edited by hand.\n';
+  await writeFile(path.join(r,'deliverables/a.md'),built);
+  await writeFile(path.join(r,'deliverables/b.md'),edited);
+  await w.writeBuildState({deliverables:{
+    'templates/a.md':{templateHash:'t',wikiHash:'w',buildContextHash:'c',outputHash:hashText(built),outputHashVersion:OUTPUT_HASH_VERSION,outputRelativePath:'deliverables/a.md'},
+    'templates/b.md':{templateHash:'t',wikiHash:'w',buildContextHash:'c',outputHash:hashText(built),outputHashVersion:OUTPUT_HASH_VERSION,outputRelativePath:'deliverables/b.md'},
+  }} as any);
+  const { rewrites }=await applyOkfV02Migration(r);
+  expect(rewrites.map(x=>x.file).sort()).toEqual(['deliverables/a.md','deliverables/b.md']);
+  expect(await w.reanchorDeliverableHashes(rewrites)).toEqual(['deliverables/a.md']);
+  const state=await w.readBuildState();
+  expect(outputEditedSinceBuild(state.deliverables['templates/a.md']!,await readFile(path.join(r,'deliverables/a.md'),'utf8'))).toBe(false);
+  expect(outputEditedSinceBuild(state.deliverables['templates/b.md']!,await readFile(path.join(r,'deliverables/b.md'),'utf8'))).toBe(true);
+});

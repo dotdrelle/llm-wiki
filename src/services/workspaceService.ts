@@ -1,4 +1,4 @@
-import { FINAL_CONTEXT_EXCLUDED_PATHS, BUILD_INPUT_SIGNATURE } from '../maintenance/buildInputs.ts';
+import { FINAL_CONTEXT_EXCLUDED_PATHS, BUILD_INPUT_SIGNATURE, OUTPUT_HASH_VERSION } from '../maintenance/buildInputs.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import {
   copyFile,
@@ -1055,6 +1055,32 @@ export class WorkspaceService {
       await this.writeBuildState(merged);
       await finalize?.(merged);
       return merged;
+    });
+  }
+
+  /**
+   * After the engine rewrote a deliverable's metadata (doctor's OKF catch-up),
+   * move its build record to the new hash — but only when the file was exactly
+   * what the build wrote. A hand-edited file keeps reading as hand-edited.
+   * Returns the deliverables re-anchored.
+   */
+  async reanchorDeliverableHashes(
+    rewrites: Array<{ file: string; beforeHash: string; afterHash: string }>,
+  ): Promise<string[]> {
+    const byFile = new Map(rewrites.filter((r) => r.file.startsWith('deliverables/')).map((r) => [r.file, r]));
+    if (byFile.size === 0) return [];
+    const lockPath = path.join(this.paths.internalDir, 'build-state.lock');
+    return withFileLock(lockPath, async () => {
+      const current = await this.readBuildState();
+      const reanchored: string[] = [];
+      for (const record of Object.values(current.deliverables)) {
+        const rewrite = record.outputRelativePath ? byFile.get(record.outputRelativePath) : undefined;
+        if (!rewrite || record.outputHashVersion !== OUTPUT_HASH_VERSION || record.outputHash !== rewrite.beforeHash) continue;
+        record.outputHash = rewrite.afterHash;
+        reanchored.push(rewrite.file);
+      }
+      if (reanchored.length > 0) await this.writeBuildState(current);
+      return reanchored;
     });
   }
 

@@ -34,7 +34,7 @@ import {
 } from '../services/gatewayProbe.ts';
 import { pathExists, safeWriteFile } from '../utils/fs.ts';
 import { HistoryService } from '../services/historyService.ts';
-import { applyMissingOkfTypes, applyOkfV02Migration, listBundleFilesMissingType, listBundleFilesV02Migration } from '../okf/scan.ts';
+import { applyMissingOkfTypes, applyOkfV02Migration, listBundleFilesMissingType, listBundleFilesV02Migration, type EngineRewrite } from '../okf/scan.ts';
 import {
   isEngineOwnedWikiPage,
   isReportClean,
@@ -718,6 +718,20 @@ async function reportModelCapabilities(
 function reasoningModelWithoutEffort(llm: AppConfig['llm'], recorded: LlmCapabilities): boolean {
   if (llm.reasoningEffort || recorded.reasoningEffort === false) return false;
   return recorded.thinking === true || recorded.temperature === false;
+}
+
+/**
+ * A metadata line added by doctor is not a hand edit: keep the deliverables it
+ * touched recognised as engine-built, so maintenance does not ask a human to
+ * approve rebuilding them.
+ */
+async function reanchorEngineRewrites(config: AppConfig, rewrites: EngineRewrite[]): Promise<void> {
+  try {
+    const reanchored = await new WorkspaceService(config).reanchorDeliverableHashes(rewrites);
+    if (reanchored.length > 0) ok(`build records kept in step for ${reanchored.length} deliverable(s)`);
+  } catch (error) {
+    warn(`build records not updated after the OKF catch-up: ${error instanceof Error ? error.message : String(error)} — maintenance may read those deliverables as hand-edited`);
+  }
 }
 
 function describeCapabilities(capabilities: LlmCapabilities): string {
@@ -1699,8 +1713,9 @@ export default async function doctorCmd(
     if (missingOkfType.length === 0) {
       ok('every bundle page carries an OKF type');
     } else if (options.apply) {
-      const { written, skipped } = await applyMissingOkfTypes(config.wikiRoot);
+      const { written, skipped, rewrites } = await applyMissingOkfTypes(config.wikiRoot);
       if (written.length > 0) ok(`OKF type written to ${written.length} page(s)`);
+      await reanchorEngineRewrites(config, rewrites);
       for (const file of skipped) warn(`could not write OKF type: ${file}`);
     } else {
       row('action:', 'run `wiki doctor --apply` to write the missing type(s)');
@@ -1717,8 +1732,9 @@ export default async function doctorCmd(
     if (v02.length === 0) {
       ok('every bundle page carries its OKF v0.2 keys');
     } else if (options.apply) {
-      const { written, skipped } = await applyOkfV02Migration(config.wikiRoot);
+      const { written, skipped, rewrites } = await applyOkfV02Migration(config.wikiRoot);
       if (written.length > 0) ok(`OKF v0.2 migration applied to ${written.length} page(s)`);
+      await reanchorEngineRewrites(config, rewrites);
       for (const file of skipped) warn(`could not migrate: ${file}`);
     } else {
       row('action:', 'run `wiki doctor --apply` to apply the v0.2 migration');
