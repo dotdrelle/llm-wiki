@@ -174,6 +174,11 @@ export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
 .runtime-graph-node.task_detail text{fill:#fff;stroke:none;font-size:8px}
 .runtime-graph-node.task_detail .runtime-graph-node-meta{fill:rgba(255,255,255,.85);font-size:7px;text-transform:uppercase}
 .runtime-graph-inspector{padding:10px;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;min-height:0}
+/* Alone in the Activity panel (the graph is in the centre), the inspector takes
+   the panel's height and scrolls itself. Sized to its content, it never
+   overflowed, and its overscroll containment then swallowed the wheel: the end
+   of a long journal entry (a maintenance report) could not be reached. */
+.act-body>.runtime-graph-inspector{flex:1 1 auto}
 .runtime-inspector-title{font-size:12px;font-weight:850;color:var(--text);line-height:1.25;overflow-wrap:anywhere}
 .runtime-inspector-meta{margin-top:3px;font:700 10px var(--font-mono);color:var(--muted)}
 .runtime-inspector-dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:5px 7px;margin:10px 0;font-size:10px;width:100%}

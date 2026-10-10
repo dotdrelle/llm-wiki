@@ -36,6 +36,12 @@ describe('chat html', () => {
     expect(declared).toBeLessThan(script.indexOf('(function initActivityPanel(){'));
   });
 
+  it('bounds the Activity inspector so the wheel reaches the end of a long journal', () => {
+    // Sized to its content the inspector never overflowed, and its overscroll
+    // containment swallowed the wheel: a maintenance report's end was out of reach.
+    expect(CHAT_HTML).toContain('.act-body>.runtime-graph-inspector{flex:1 1 auto}');
+  });
+
   it('compacts the current conversation in place: a persisted boundary, never a new conversation', () => {
     const script = chatScripts().join('\n');
     const compact = script.match(/async function compactConversationMemory\(\) \{[\s\S]*?\n\}/)?.[0] ?? '';
