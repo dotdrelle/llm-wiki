@@ -238,7 +238,9 @@ export class BuildService {
   ): Promise<string> {
     if (template.instructions.length === 0) {
       const sanitized = sanitizeFrontmatter(template.frontmatter);
-      const outputFrontmatter = { type: OKF_TYPE_DELIVERABLE, ...sanitized };
+      // `status: draft` like every generated page: left out, doctor's OKF
+      // catch-up added it afterwards and the deliverable read as hand-edited.
+      const outputFrontmatter = { type: OKF_TYPE_DELIVERABLE, status: 'draft', ...sanitized };
       return Object.keys(outputFrontmatter).length > 0
         ? matter.stringify(template.content.trim(), outputFrontmatter)
         : `${template.content.trim()}\n`;
@@ -323,7 +325,7 @@ export class BuildService {
       renderedBody = renderedBody.replace(instruction.token, replacement);
     }
 
-    const outputFrontmatter = { type: OKF_TYPE_DELIVERABLE, ...sanitizeFrontmatter(template.frontmatter) };
+    const outputFrontmatter = { type: OKF_TYPE_DELIVERABLE, status: 'draft', ...sanitizeFrontmatter(template.frontmatter) };
     return Object.keys(outputFrontmatter).length > 0
       ? matter.stringify(renderedBody.trim(), outputFrontmatter)
       : `${renderedBody.trim()}\n`;

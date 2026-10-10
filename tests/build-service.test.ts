@@ -845,6 +845,11 @@ describe('build service', () => {
     expect(llm.lastJsonRequest?.system).not.toContain('Unrelated rule.');
     const output = await readFile(path.join(root, 'deliverables', 'brief.md'), 'utf8');
     expect(output).not.toContain('build_context');
+    // OKF-complete at write time: doctor's catch-up has nothing to add, so it
+    // never makes a freshly built deliverable read as hand-edited.
+    expect(output).toContain('status: draft');
+    const { migrateOkfV02 } = await import('../src/okf/scan.ts');
+    expect(migrateOkfV02(output).reasons).toEqual([]);
 
     await writeFile(path.join(root, 'build-context', 'unrelated.md'), 'Changed.');
     expect((await service.build({ changedOnly: true }))[0].skipped).toBe(true);
