@@ -43,11 +43,15 @@ export interface ModelProbeResult {
   /** A call that failed for another reason than a refused parameter. */
   failure?: string;
   /**
-   * Tool calling only works with the reasoning turned down: the value of
-   * `llm.reasoningEffort` that made it work (`--apply` writes it).
+   * The `llm.reasoningEffort` to write (`--apply` writes it): `none`/`minimal`
+   * when tool calling only works with the reasoning turned down, else
+   * `DEFAULT_REASONING_EFFORT` for a reasoning model configured without one.
    */
-  recommendedReasoningEffort?: 'none' | 'minimal';
+  recommendedReasoningEffort?: 'none' | 'minimal' | typeof DEFAULT_REASONING_EFFORT;
 }
+
+/** What a reasoning model gets when `llm.reasoningEffort` is not written. */
+export const DEFAULT_REASONING_EFFORT = 'low';
 
 type ProbeFetch = typeof fetch;
 
@@ -151,6 +155,23 @@ export async function probeModelCapabilities(
   if (llm.reasoningEffort && capabilities.reasoningEffort === undefined) capabilities.reasoningEffort = true;
   capabilities.thinking = messageShowsThinking(plain.message);
 
+  // 1b. A reasoning model left at the provider's default effort spends most
+  //     of its output on reasoning nobody reads (juno, deepseek-flash: ~85 % of
+  //     an ingest's output tokens, 20 000 tokens for a 1 000-character family
+  //     batch). Without an explicit value, try `low` and recommend it when the
+  //     model accepts it. A value the user wrote is never second-guessed.
+  let recommendedReasoningEffort: ModelProbeResult['recommendedReasoningEffort'];
+  if (!llm.reasoningEffort && (capabilities.thinking || capabilities.temperature === false)) {
+    const low = await chat(llm, { messages, ...(capabilities.temperature === true ? { temperature: llm.temperature } : {}), reasoning_effort: DEFAULT_REASONING_EFFORT }, fetchImpl);
+    if (low.ok) {
+      capabilities.reasoningEffort = true;
+      effort = { reasoning_effort: DEFAULT_REASONING_EFFORT };
+      recommendedReasoningEffort = DEFAULT_REASONING_EFFORT;
+    } else if (refused(low)) {
+      capabilities.reasoningEffort = false;
+    }
+  }
+
   // 2. Tool calling. `auto` first — it is the one that is required. Some
   //    reasoning models refuse tools unless their reasoning is turned down
   //    (gpt-6-luna: "Function tools with reasoning_effort are not supported …
@@ -161,10 +182,9 @@ export async function probeModelCapabilities(
   const autoCall = (extra: Record<string, unknown>) =>
     chat(llm, { messages: toolMessages, tools: [PROBE_TOOL], tool_choice: 'auto', ...temperature, ...extra }, fetchImpl);
   let auto = await autoCall(effort);
-  let recommendedReasoningEffort: ModelProbeResult['recommendedReasoningEffort'];
   if (refused(auto) && mentionsReasoningEffort(auto)) {
     for (const candidate of TOOL_FRIENDLY_EFFORTS) {
-      if (candidate === llm.reasoningEffort) continue;
+      if (candidate === (llm.reasoningEffort ?? recommendedReasoningEffort)) continue;
       const retried = await autoCall({ reasoning_effort: candidate });
       if (retried.ok) {
         auto = retried;

@@ -26,7 +26,7 @@ import {
   probedCapabilities,
   supportsTemperature,
 } from '../config/engineCapabilities.ts';
-import { probeModelCapabilities } from '../config/modelProbe.ts';
+import { DEFAULT_REASONING_EFFORT, probeModelCapabilities } from '../config/modelProbe.ts';
 import {
   fetchGatewayCatalog,
   probeRerank,
@@ -656,6 +656,10 @@ async function reportModelCapabilities(
     if (recorded.toolChoice === undefined) {
       warn('tool calling was not confirmed for this model — run `wiki doctor --apply` to measure it again');
     }
+    if (reasoningModelWithoutEffort(config.llm, recorded)) {
+      warn(`${config.llm.model} reasons at the provider's default effort — llm.reasoningEffort: ${DEFAULT_REASONING_EFFORT} is recommended`);
+      row('action:', 'run `wiki doctor --apply` to measure and set it');
+    }
     return;
   }
   const result = await probeModelCapabilities(config.llm);
@@ -674,7 +678,9 @@ async function reportModelCapabilities(
   // down, removed when the model refuses the parameter altogether.
   const reasoningEffort = result.recommendedReasoningEffort
     ?? (result.capabilities.reasoningEffort === false && 'reasoningEffort' in rawLlm ? null : undefined);
-  if (result.recommendedReasoningEffort) {
+  if (result.recommendedReasoningEffort === DEFAULT_REASONING_EFFORT) {
+    warn(`${config.llm.model} is a reasoning model with no llm.reasoningEffort — ${DEFAULT_REASONING_EFFORT} is recommended: at the default effort the reasoning dominates every call's output`);
+  } else if (result.recommendedReasoningEffort) {
     warn(`tool calling only works with llm.reasoningEffort: ${result.recommendedReasoningEffort} on ${config.llm.model}`);
   } else if (reasoningEffort === null) {
     warn(`llm.reasoningEffort (${config.llm.reasoningEffort}) is refused by ${config.llm.model}`);
@@ -702,6 +708,16 @@ async function reportModelCapabilities(
       ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
     },
   });
+}
+
+/**
+ * A reasoning model (thinking measured, or temperature refused) with no
+ * `llm.reasoningEffort` written and no recorded refusal of the parameter: the
+ * case `--apply` would settle with `DEFAULT_REASONING_EFFORT`.
+ */
+function reasoningModelWithoutEffort(llm: AppConfig['llm'], recorded: LlmCapabilities): boolean {
+  if (llm.reasoningEffort || recorded.reasoningEffort === false) return false;
+  return recorded.thinking === true || recorded.temperature === false;
 }
 
 function describeCapabilities(capabilities: LlmCapabilities): string {

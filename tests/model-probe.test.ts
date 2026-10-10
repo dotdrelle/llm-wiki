@@ -40,8 +40,9 @@ describe('probeModelCapabilities', () => {
     });
     const result = await probeModelCapabilities(llm, impl);
     expect(result).toEqual({
-      capabilities: { model: 'deepseek-v4-flash', temperature: true, thinking: true, toolChoice: 'auto' },
+      capabilities: { model: 'deepseek-v4-flash', temperature: true, thinking: true, reasoningEffort: true, toolChoice: 'auto' },
       toolCallingUnsupported: false,
+      recommendedReasoningEffort: 'low',
     });
   });
 
@@ -51,7 +52,9 @@ describe('probeModelCapabilities', () => {
       return okMessage({ content: 'OK' });
     });
     const result = await probeModelCapabilities(llm, impl);
-    expect(result.capabilities).toEqual({ model: 'deepseek-v4-flash', temperature: false, thinking: false, toolChoice: 'named' });
+    expect(result.capabilities).toEqual({ model: 'deepseek-v4-flash', temperature: false, thinking: false, reasoningEffort: true, toolChoice: 'named' });
+    // A model that refuses temperature is a reasoning model: it gets the default effort.
+    expect(result.recommendedReasoningEffort).toBe('low');
     // Once refused, the temperature is never sent again.
     expect(calls.slice(1).every((call) => !('temperature' in call))).toBe(true);
   });
@@ -75,6 +78,39 @@ describe('probeModelCapabilities', () => {
 });
 
 describe('reasoning effort', () => {
+  const thinking = () => okMessage({ content: 'OK', reasoning_content: 'The user wants OK.' });
+
+  it('recommends low for a reasoning model configured without an effort', async () => {
+    const { impl, calls } = fakeFetch(thinking);
+    const result = await probeModelCapabilities(llm, impl);
+    expect(result.recommendedReasoningEffort).toBe('low');
+    expect(result.capabilities.reasoningEffort).toBe(true);
+    // Tools are then measured with the effort that will be written.
+    expect(calls.filter((call) => call.tools).every((call) => call.reasoning_effort === 'low')).toBe(true);
+  });
+
+  it('recommends nothing when the reasoning model refuses reasoning_effort', async () => {
+    const { impl, calls } = fakeFetch((body) => ('reasoning_effort' in body
+      ? { status: 400, text: 'Unrecognized request argument supplied: reasoning_effort' }
+      : thinking()));
+    const result = await probeModelCapabilities(llm, impl);
+    expect(result.recommendedReasoningEffort).toBeUndefined();
+    expect(result.capabilities).toMatchObject({ thinking: true, reasoningEffort: false, toolChoice: 'named' });
+    expect(calls.filter((call) => call.tools).every((call) => !('reasoning_effort' in call))).toBe(true);
+  });
+
+  it('never second-guesses an effort the user wrote, nor probes one for a non-reasoning model', async () => {
+    const written = fakeFetch(thinking);
+    const kept = await probeModelCapabilities({ ...llm, reasoningEffort: 'high' }, written.impl);
+    expect(kept.recommendedReasoningEffort).toBeUndefined();
+    expect(written.calls.every((call) => call.reasoning_effort === 'high')).toBe(true);
+
+    const plain = fakeFetch(() => okMessage({ content: 'OK' }));
+    const none = await probeModelCapabilities(llm, plain.impl);
+    expect(none.recommendedReasoningEffort).toBeUndefined();
+    expect(plain.calls.every((call) => !('reasoning_effort' in call))).toBe(true);
+  });
+
   it('recommends the lowest effort that makes tool calling work', async () => {
     const { impl, calls } = fakeFetch((body) => {
       if (body.tools && body.reasoning_effort !== 'none') {

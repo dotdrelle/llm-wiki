@@ -123,7 +123,7 @@ Presets reduce typing only; they are never required. The merge order is
 | `numCtx`         | Active context window of the LLM server, in tokens. Useful for Ollama and local/OpenAI-compatible servers so `wiki doctor` can tune context budgets. | —                  |
 | `flashAttention` | Ollama hint for remote/containerized servers when env vars cannot be detected                                                                        | —                  |
 | `kvCacheType`    | Ollama KV cache quantization: `f16`, `q8_0`, or `q4_0`                                                                                               | —                  |
-| `reasoningEffort` | The thinking-mode knob, sent as `reasoning_effort` on every call (engine, manager, agentic gateway): `none`, `minimal`, `low`, `medium`, `high`. `wiki doctor --apply` writes `none`/`minimal` when tool calling only works with reasoning turned down (gpt-6-luna), and removes it when the model refuses the parameter. | —                  |
+| `reasoningEffort` | The thinking-mode knob, sent as `reasoning_effort` on every call (engine, manager, agentic gateway): `none`, `minimal`, `low`, `medium`, `high`. `wiki doctor --apply` writes `low` for a reasoning model (thinking measured, or temperature refused) left without one, `none`/`minimal` when tool calling only works with reasoning turned down (gpt-6-luna), and removes it when the model refuses the parameter. A value you wrote is never replaced. | —                  |
 | `capabilities`   | **Written by `wiki doctor --apply`, not by hand.** What the model was measured to accept: `{model, temperature, thinking, toolChoice: named \| auto}`. Read by the engine and the manager's client; ignored when `model` differs from `llm.model`. | —                  |
 
 API key resolution is direct: `llm.apiKey` is used as written. Ollama defaults
@@ -143,7 +143,11 @@ When tool calling is refused because of the model's reasoning (gpt-6-luna:
 "Function tools with reasoning_effort are not supported"), the probe retries with
 `reasoning_effort: none`, then `minimal`, and `--apply` writes the first that
 works into `llm.reasoningEffort`; a model that refuses the parameter has it
-removed. The agentic gateway forwards it as a raw `reasoning_effort`
+removed. A reasoning model — thinking measured, or temperature refused — with
+no `llm.reasoningEffort` is probed with `low`, and `--apply` writes it when the
+model accepts it: at the provider's default effort the reasoning made up about
+85 % of an ingest's output tokens on juno (deepseek-flash). A plain doctor on an
+already-probed model warns about that case and points to `--apply`. The agentic gateway forwards it as a raw `reasoning_effort`
 (`modelKwargs`): LangChain's own option only reaches the models it names as
 reasoning models.
 

@@ -56,7 +56,10 @@ thinking mode, a forced tool choice — with three tiny calls, and `--apply`
 records the answer in `.wikirc.yaml` (`llm.capabilities`). Run it after
 changing model or profile: a thinking model that refuses a forced tool choice
 is then served the automatic one, and a model that refuses tools unless its
-reasoning is turned down gets `llm.reasoningEffort: none` (or `minimal`).
+reasoning is turned down gets `llm.reasoningEffort: none` (or `minimal`). A
+thinking model you left without a value gets `low`, when it accepts it: at its
+default effort most of what it produces is reasoning you never read, which
+makes ingests and maintenance much slower.
 `llm.reasoningEffort` is also yours to set (`none`, `minimal`, `low`,
 `medium`, `high`): it is how you turn the thinking mode up or down. Agent mode
 and automatic maintenance need tool calling; a model that refuses it is
