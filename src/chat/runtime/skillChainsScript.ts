@@ -1,7 +1,6 @@
 export const SKILL_CHAINS_SCRIPT = `// Wall-clock end of a settled chain or card, hours and minutes (Logs keep seconds).
 function activityClock(value) {
-  const date=new Date(Number(value)||value);
-  return Number.isNaN(date.getTime())?'':date.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  return formatLocalTime(Number(value)||value,{seconds:false});
 }
 function skillChainsHTML() {
   const chains=Array.isArray(runtimeState?.skillChains)?runtimeState.skillChains:[];

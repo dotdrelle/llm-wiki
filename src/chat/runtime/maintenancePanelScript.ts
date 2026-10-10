@@ -48,7 +48,7 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
   // shows only a short label (hideQuestion), never the raw facts. Pre-filling
   // the composer left the reader to write the question, and "cycle failed" with
   // no cause made Donna search the wiki and answer that she did not know.
-  function maintenanceRecordLine(e,strip){const time=e.at?new Date(e.at).toLocaleTimeString():'';const message=strip(e.message);const detail=e.detail&&!message.includes(String(e.detail))?' (detail: '+String(e.detail).slice(0,400)+')':'';return '- '+time+' '+(e.kind||'event')+': '+message+detail;}
+  function maintenanceRecordLine(e,strip){const time=e.at?formatLocalDateTime(e.at,{seconds:true}):'';const message=strip(e.message);const detail=e.detail&&!message.includes(String(e.detail))?' (detail: '+String(e.detail).slice(0,400)+')':'';return '- '+time+' '+(e.kind||'event')+': '+message+detail;}
   function askDonna({question,label,records}){historyOffset=0;if(typeof showChatView==='function')showChatView();const input=document.getElementById('chat-input');if(!input||(typeof isStreaming!=='undefined'&&isStreaming))return;
     input.value=[question,'Answer from the maintenance records below. They are system records from the Maintenance panel, not wiki pages: do not look for them in the wiki.','','<maintenance-records>',...records,'</maintenance-records>'].join('\n').slice(0,6000);
     input.dataset.displayText=label;input.dataset.forceChat='1';input.dataset.hideQuestion='1';
@@ -74,7 +74,7 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
     const threadHeading=node('h3','Maintenance thread',panel);threadHeading.className='maintenance-thread-heading';
     for(const c of state.cycles.slice(0,10)){
       const entry=node('details',null,panel);entry.open=c===state.cycles[0];
-      node('summary',(c.at?new Date(c.at).toLocaleString():'')+' — cycle '+c.status,entry);
+      node('summary',(c.at?formatLocalDateTime(c.at,{seconds:true}):'')+' — cycle '+c.status,entry);
       const own=events.filter(e=>e.cycleId===c.id);const summary=own.filter(e=>e.kind==='summary').at(-1);
       if(summary)maintenanceMarkdown(entry,strip(summary.message),'maintenance-summary maintenance-markdown');
       for(const e of maintenanceActivityRows(own.filter(e=>e.kind!=='summary')))appendMaintenanceActivityRow(entry,e,strip);
@@ -82,7 +82,7 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
       // Routine work runs outside the cycle (sync, doctor, mail) but is what
       // usually explains it: the records of the 15 minutes around it travel too.
       const around=events.filter(e=>e.cycleId!==c.id&&e.at&&c.at&&Math.abs(Date.parse(e.at)-Date.parse(c.at))<=15*60_000);
-      const when=c.at?new Date(c.at).toLocaleString():'';
+      const when=c.at?formatLocalDateTime(c.at,{seconds:true}):'';
       button('Ask Donna about this cycle',entry,()=>askDonna({question:'Explain this maintenance cycle: what happened, why it '+(c.status==='failed'?'failed':'ended as '+c.status)+', and what I should do about it.',label:'Explain the maintenance cycle of '+when,records:['Cycle of '+when+' — '+c.status,...[...own,...around].sort((a,b)=>String(a.at||'').localeCompare(String(b.at||''))).map(e=>maintenanceRecordLine(e,strip))]}));
     }
     const shown=new Set(state.cycles.slice(0,10).map(c=>c.id));const loose=events.filter(e=>!shown.has(e.cycleId)).slice(-60).reverse();
@@ -105,7 +105,7 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
   }
   function appendMaintenanceActivityRow(parent,event,strip){
     const row=node('div',null,parent);row.className='maintenance-log-row status-'+maintenanceActivityStatus(event).replaceAll(' ','-');
-    const time=node('small',event.at?new Date(event.at).toLocaleString():'',row);time.className='maintenance-log-time';
+    const time=node('small',event.at?formatLocalDateTime(event.at,{seconds:true}):'',row);time.className='maintenance-log-time';
     const message=maintenanceMarkdown(row,strip(event.message).replace(/^(?:Done|Failed|Cancelled|Maintenance):\s*/i,''),'maintenance-log-message maintenance-markdown');
     const status=node('b',maintenanceActivityStatus(event),row);status.className='maintenance-log-status';
   }

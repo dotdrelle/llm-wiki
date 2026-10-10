@@ -8,7 +8,7 @@ import { OBSERVER_TOOLS_SCRIPT } from './views/observerToolsScript.ts';
 import { MCP_CONNECTOR_SCRIPT } from './runtime/mcpConnectorScript.ts';
 import { CONFIG_SCRIPT } from './config/configScript.ts';
 import { ACTIVITY_PANEL_SCRIPT } from './runtime/activityPanelScript.ts';
-import { RUN_STRIP_SCRIPT } from './runtime/runStripScript.ts'; import { RUN_LIVE_LINE_SCRIPT } from './runtime/runLiveLineScript.ts'; import { PROGRESS_LABEL_SCRIPT } from './runtime/progressLabelScript.ts'; import { CONTAINER_STATS_SCRIPT } from './runtime/containerStatsScript.ts';
+import { RUN_STRIP_SCRIPT } from './runtime/runStripScript.ts'; import { RUN_LIVE_LINE_SCRIPT } from './runtime/runLiveLineScript.ts'; import { PROGRESS_LABEL_SCRIPT } from './runtime/progressLabelScript.ts'; import { CONTAINER_STATS_SCRIPT } from './runtime/containerStatsScript.ts'; import { TIME_FORMAT_SCRIPT } from './runtime/timeFormatScript.ts';
 import { RUN_SIDEBAR_REFRESH_SCRIPT } from './runtime/runSidebarRefreshScript.ts';
 import { SPLITTERS_SCRIPT } from './layout/splittersScript.ts';
 import { REDO_SCRIPT } from './runtime/redoScript.ts';
@@ -104,7 +104,7 @@ function essentialRuntimeLogEntries(logs) {
     if(!line) continue;
     const orchestrator=/\\borchestrator:/i.test(line);
     if(!orchestrator&&/\\btrace:|AGENT_STATUS|source-path=|idempotency|attempt[-_:]/i.test(line)) continue;
-    const time=line.match(/^(\\d{2}:\\d{2}:\\d{2})/)?.[1]||'';
+    const time=localClockFromUtc(line.match(/^(\\d{2}:\\d{2}:\\d{2})/)?.[1]||'');
     let text=line.replace(/^\\d{2}:\\d{2}:\\d{2}\\s*/,'').trim();
     if(/^Task started:\\s*[a-f0-9-]{16,}/i.test(text)) continue;
     if(/^activity:/i.test(text)) {
@@ -239,9 +239,10 @@ function notify(msg, type='s') {
   const el=$('notif'); el.textContent=msg; el.className=\`show \${type}\`;
   clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3200);
 }
+${TIME_FORMAT_SCRIPT}${CONTAINER_STATS_SCRIPT}
 ${ACTIVITY_PANEL_SCRIPT}
 ${MAINTENANCE_PANEL_SCRIPT}
-${RUN_STRIP_SCRIPT}${PROGRESS_LABEL_SCRIPT}${RUN_LIVE_LINE_SCRIPT}${CONTAINER_STATS_SCRIPT}
+${RUN_STRIP_SCRIPT}${PROGRESS_LABEL_SCRIPT}${RUN_LIVE_LINE_SCRIPT}
 ${RUN_SIDEBAR_REFRESH_SCRIPT}
 ${SPLITTERS_SCRIPT}
 ${REDO_SCRIPT}
@@ -1242,8 +1243,7 @@ function scheduleConversationSave() {
 }
 
 function historyMeta(item) {
-  const date=new Date(item.updatedAt);
-  const when=Number.isNaN(date.getTime()) ? '' : date.toLocaleString([], {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  const when=formatLocalDateTime(item.updatedAt);
   const tools=item.toolCallCount ? \` · \${item.toolCallCount} tool\${item.toolCallCount>1?'s':''}\` : '';
   return \`\${when}\${tools}\`;
 }

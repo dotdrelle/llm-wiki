@@ -1,6 +1,7 @@
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { CHAT_HTML } from '../src/chat/chatHtml.ts';
+import { TIME_FORMAT_SCRIPT } from '../src/chat/runtime/timeFormatScript.ts';
 import packageJson from '../package.json' with { type: 'json' };
 
 function chatScripts(): string[] {
@@ -20,6 +21,19 @@ describe('chat html', () => {
     for (const script of scripts) {
       expect(() => new vm.Script(script)).not.toThrow();
     }
+  });
+
+  it('declares the container-stats state before the Activity panel boots', () => {
+    const script = chatScripts().join('\n');
+
+    // initActivityPanel() runs as the script loads and reaches
+    // startContainerStats() through connectRuntimePanel(); a `let` declared
+    // below it is still in its temporal dead zone, the ReferenceError aborts
+    // the whole script and the chat opens with empty LLM fields, no connector
+    // and no history. Compiling the script cannot see that — only the order.
+    const declared = script.indexOf('let containerStatsTimer=null;');
+    expect(declared).toBeGreaterThanOrEqual(0);
+    expect(declared).toBeLessThan(script.indexOf('(function initActivityPanel(){'));
   });
 
   it('compacts the current conversation in place: a persisted boundary, never a new conversation', () => {
@@ -1513,7 +1527,7 @@ describe('orchestration investigation visibility', () => {
     const source = script.match(/function essentialRuntimeLogEntries\(logs\) \{[\s\S]*?\n\}/)?.[0];
     expect(source).toBeTruthy();
     const context: Record<string, unknown> = {};
-    vm.runInNewContext(`${source};this.entries=essentialRuntimeLogEntries;`, context);
+    vm.runInNewContext(`${TIME_FORMAT_SCRIPT}\n${source};this.entries=essentialRuntimeLogEntries;`, context);
     const entries = context.entries as (logs: string[]) => Array<{ text: string }>;
     const rows = entries([
       '12:00:00 orchestrator: diagnostic production__production_job_logs',

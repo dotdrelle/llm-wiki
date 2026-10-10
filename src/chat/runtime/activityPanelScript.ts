@@ -430,9 +430,9 @@ function workspaceMemoryHTML() {
     const key=encodeURIComponent(fact.key).replace(/'/g,'%27');
     const history=memoryHistory[fact.key];
     const historyHtml=history===undefined?'':history.map(version=>version.previous
-      ? '<div class="runtime-log-entry"><span>'+esc(version.createdAt||'')+'</span> '+esc(version.previous.text||'')+' <button class="act-btn" type="button" onclick="restoreWorkspaceMemory(\\''+key+'\\',\\''+encodeURIComponent(version.id).replace(/'/g,'%27')+'\\')">Restore</button></div>'
+      ? '<div class="runtime-log-entry"><span>'+esc(formatLocalDateTime(version.createdAt,{seconds:true})||version.createdAt||'')+'</span> '+esc(version.previous.text||'')+' <button class="act-btn" type="button" onclick="restoreWorkspaceMemory(\\''+key+'\\',\\''+encodeURIComponent(version.id).replace(/'/g,'%27')+'\\')">Restore</button></div>'
       :'').join('');
-    return '<article class="runtime-task-card"><div class="runtime-task-title">'+esc(fact.text)+'</div><div class="runtime-task-meta">'+esc(fact.kind||'fact')+' · updated '+esc(fact.updatedAt||'')+'</div><div class="act-actions"><button class="act-btn" type="button" onclick="showWorkspaceMemoryHistory(\\''+key+'\\')">History</button><button class="act-btn del" type="button" onclick="forgetWorkspaceMemory(\\''+key+'\\')">Forget</button></div>'+historyHtml+'</article>';
+    return '<article class="runtime-task-card"><div class="runtime-task-title">'+esc(fact.text)+'</div><div class="runtime-task-meta">'+esc(fact.kind||'fact')+' · updated '+esc(formatLocalDateTime(fact.updatedAt)||fact.updatedAt||'')+'</div><div class="act-actions"><button class="act-btn" type="button" onclick="showWorkspaceMemoryHistory(\\''+key+'\\')">History</button><button class="act-btn del" type="button" onclick="forgetWorkspaceMemory(\\''+key+'\\')">Forget</button></div>'+historyHtml+'</article>';
   }).join('');
 }
 async function showWorkspaceMemoryHistory(key) {

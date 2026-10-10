@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CHAT_HTML } from '../src/chat/chatHtml.ts';
+import { TIME_FORMAT_SCRIPT } from '../src/chat/runtime/timeFormatScript.ts';
 
 // The manager journals every model call of a run or a turn ("model: …"). The
 // Logs tab keeps only "essential" lines, and a turn's line carries none of
@@ -8,7 +9,7 @@ import { CHAT_HTML } from '../src/chat/chatHtml.ts';
 describe('model meter lines in the Logs tab', () => {
   const start = CHAT_HTML.indexOf('function essentialRuntimeLogEntries(logs) {');
   const end = CHAT_HTML.indexOf('\n}\n', start) + 2;
-  const essential = new Function(`${CHAT_HTML.slice(start, end)}\nreturn essentialRuntimeLogEntries;`)() as (logs: string[]) => Array<{ text: string }>;
+  const essential = new Function(`${TIME_FORMAT_SCRIPT}\n${CHAT_HTML.slice(start, end)}\nreturn essentialRuntimeLogEntries;`)() as (logs: string[]) => Array<{ text: string }>;
 
   it('keeps every model call line, of a turn as well as a run', () => {
     const texts = essential([
