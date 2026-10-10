@@ -261,3 +261,15 @@ describe('markdown helpers', () => {
     expect(sections[0]).toContain('[section truncated]');
   });
 });
+
+describe('citation paths followed by sentence punctuation', () => {
+  it('keeps the file, not the "). " the model left inside the marker', async () => {
+    const { extractSourceCitations, extractSourceCitationsWithAnchors, canonicalizeSourceCitations } = await import('../src/utils/markdown.ts');
+    const text = 'Échéance max [src: wiki/sources/a/b.md).] et [src: wiki/sources/c.md#Titre).] puis [src: wiki/sources/d.md ;].';
+    expect(extractSourceCitations(text)).toEqual(['wiki/sources/a/b.md', 'wiki/sources/c.md', 'wiki/sources/d.md']);
+    expect(extractSourceCitationsWithAnchors(text)[1]).toEqual({ path: 'wiki/sources/c.md', anchor: 'Titre' });
+    // A heading that really ends on a parenthesis keeps it.
+    expect(extractSourceCitationsWithAnchors('[src: wiki/sources/c.md#Synthèse (Références).]')[0]?.anchor).toBe('Synthèse (Références)');
+    expect(canonicalizeSourceCitations('x [src: wiki/sources/a/b.md).] y')).toBe('x [src: wiki/sources/a/b.md] y');
+  });
+});

@@ -175,6 +175,24 @@ function normalizeCitationBrackets(content: string): string {
 }
 
 /**
+ * Sentence punctuation the model left inside the marker after the file name —
+ * `[src: wiki/sources/x.md).]` — is not part of the path. Kept, it made an
+ * existing fiche "missing": the build warned and froze no evidence for it.
+ */
+function stripTrailingCitationPunctuation(path: string): string {
+  return path.replace(/(\.md)[\s).,;:!?'"»”’\]]+$/i, '$1');
+}
+
+/** The same for an anchor: a closing parenthesis goes only when it opens nothing ("Synthèse (Références)" stays). */
+function stripTrailingAnchorPunctuation(anchor: string): string {
+  let value = anchor.replace(/[\s.,;:!?]+$/, '');
+  while (value.endsWith(')') && (value.match(/\(/g)?.length ?? 0) < (value.match(/\)/g)?.length ?? 0)) {
+    value = value.slice(0, -1).replace(/[\s.,;:!?]+$/, '');
+  }
+  return value;
+}
+
+/**
  * Splits a citation into its file path and an optional section anchor.
  *
  * The model may write `path#Heading` to say "only that section backs this
@@ -184,9 +202,9 @@ function normalizeCitationBrackets(content: string): string {
 export function splitCitationAnchor(citation: string): { path: string; anchor: string | null } {
   const raw = String(citation ?? '').trim();
   const hash = raw.indexOf('#');
-  if (hash < 0) return { path: raw, anchor: null };
-  const path = raw.slice(0, hash).trim();
-  const anchor = raw.slice(hash + 1).trim();
+  if (hash < 0) return { path: stripTrailingCitationPunctuation(raw), anchor: null };
+  const path = stripTrailingCitationPunctuation(raw.slice(0, hash).trim());
+  const anchor = stripTrailingAnchorPunctuation(raw.slice(hash + 1).trim());
   return { path, anchor: anchor || null };
 }
 
@@ -229,7 +247,10 @@ export function canonicalizeSourceCitations(content: string): string {
         .split(';')
         .map((part) => part.trim().replace(/^src\s*:\s*/i, ''))
         .filter(Boolean)
-        .map((path) => `[src: ${path}]`)
+        .map((value) => {
+          const { path, anchor } = splitCitationAnchor(value);
+          return `[src: ${path}${anchor ? `#${anchor}` : ''}]`;
+        })
         .join(' '),
     )
     .replace(SOURCE_LABEL_PATTERN, (_match, path: string) => `[src: ${path.trim()}]`)
