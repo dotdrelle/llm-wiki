@@ -36,7 +36,15 @@ export function renderProvenancePage(): string {
     </div>
   </header>
   <div class="banner" id="banner" role="status"></div>
-  <div class="stage-scroll">
+  <div class="stage-frame">
+  <div class="zoom-tools" role="group" aria-label="Zoom">
+    <button type="button" id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+    <span id="zoom-level" aria-live="polite">100%</span>
+    <button type="button" id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+    <button type="button" id="zoom-fit" title="Fit the whole chain in view">Fit</button>
+  </div>
+  <div class="stage-scroll" id="stage-scroll">
+    <div class="stage-sizer" id="stage-sizer">
     <div class="stage" id="stage">
       <svg class="edges" id="edges" aria-hidden="true"></svg>
       <div class="col" id="col-0"><h3>Template &amp; context</h3></div>
@@ -45,6 +53,8 @@ export function renderProvenancePage(): string {
       <div class="col" id="col-3"><h3>TAXO fiches</h3></div>
       <div class="col" id="col-4"><h3>Archives <small>the proof</small></h3></div>
     </div>
+    </div>
+  </div>
   </div>
   <div class="bottom">
     <div class="card" id="detail" aria-live="polite"></div>

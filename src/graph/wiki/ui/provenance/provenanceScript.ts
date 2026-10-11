@@ -102,7 +102,7 @@ function render(){
   // An empty column says why, in its header: below it the chains run through.
   const empty={0:'Template unknown: no build record for this deliverable.',2:'None on these chains: the build cited fiches directly.',3:'No fiche on these chains.',4:'No evidence fragment.'};
   for(const c of [0,2,3,4])if(!$('col-'+c).querySelector('.node'))$('col-'+c).querySelector('h3').insertAdjacentHTML('afterend','<div class="empty">'+empty[c]+'</div>');
-  renderControls();renderBanner();renderDetail();applyHighlight()}
+  renderControls();renderBanner();renderDetail();applyZoom();applyHighlight()}
 
 function renderControls(){
   const frozenAvailable=Boolean(data.buildId)||(data.builds||[]).some(b=>b.createdAt);
@@ -135,8 +135,37 @@ function renderBanner(){
       +((data.brokenChains||[]).length?', '+data.brokenChains.length+' chain'+(data.brokenChains.length>1?'s':'')+' of the build no longer resolve':'')
       +'. They may differ from what the build used.'+artifact+list+legend+'</div>'}}
 
+// Screen rectangles are scaled by the zoom; the edges are drawn in the
+// stage's own (unscaled) coordinates, so every distance is divided back.
 function anchorPoint(el,side){const s=$('stage').getBoundingClientRect(),r=el.getBoundingClientRect();
-  return{x:(side==='out'?r.right:r.left)-s.left,y:r.top+Math.min(r.height/2,18)-s.top}}
+  return{x:((side==='out'?r.right:r.left)-s.left)/zoom,y:(r.top-s.top)/zoom+Math.min(r.height/zoom/2,18)}}
+
+// Zoom: the stage is scaled with a transform (columns and edges together);
+// the sizer gives the scroll area the scaled size, which a transform alone
+// does not. The stage keeps the width it has at 100% so its columns never
+// reflow while zooming.
+let zoom=1;
+const ZOOM_MIN=.3,ZOOM_MAX=2;
+function baseWidth(){return Math.max(1180,$('stage-scroll').clientWidth)}
+function applyZoom(next=zoom){
+  zoom=Math.min(ZOOM_MAX,Math.max(ZOOM_MIN,next));
+  const st=$('stage'),sizer=$('stage-sizer');
+  st.style.width=baseWidth()+'px';
+  st.style.transform=zoom===1?'':'scale('+zoom+')';
+  sizer.style.width=st.offsetWidth*zoom+'px';
+  sizer.style.height=st.offsetHeight*zoom+'px';
+  $('zoom-level').textContent=Math.round(zoom*100)+'%';
+  $('zoom-out').disabled=zoom<=ZOOM_MIN;$('zoom-in').disabled=zoom>=ZOOM_MAX;
+  requestAnimationFrame(drawEdges)}
+function zoomBy(factor){
+  const box=$('stage-scroll'),cx=(box.scrollLeft+box.clientWidth/2)/zoom,cy=(box.scrollTop+box.clientHeight/2)/zoom;
+  applyZoom(zoom*factor);
+  box.scrollLeft=cx*zoom-box.clientWidth/2;box.scrollTop=cy*zoom-box.clientHeight/2}
+function zoomFit(){
+  const box=$('stage-scroll'),st=$('stage');
+  applyZoom(1);
+  applyZoom(Math.min(1,box.clientWidth/st.offsetWidth,box.clientHeight/st.offsetHeight));
+  box.scrollLeft=0;box.scrollTop=0}
 const curve=(a,b)=>{const dx=Math.max(30,(b.x-a.x)*.5);return'M'+a.x+','+a.y+' C'+(a.x+dx)+','+a.y+' '+(b.x-dx)+','+b.y+' '+b.x+','+b.y};
 function drawEdges(){
   const svg=$('edges'),stage=$('stage');if(!data)return;
@@ -221,7 +250,12 @@ $('mode-frozen').addEventListener('click',()=>{mode='frozen';load()});
 $('mode-live').addEventListener('click',()=>{mode='live';load()});
 $('build').addEventListener('change',e=>{build=e.target.value;load()});
 $('refresh').addEventListener('click',()=>load());
-window.addEventListener('resize',()=>requestAnimationFrame(drawEdges));
+window.addEventListener('resize',()=>applyZoom());
+$('zoom-in').addEventListener('click',()=>zoomBy(1.2));
+$('zoom-out').addEventListener('click',()=>zoomBy(1/1.2));
+$('zoom-fit').addEventListener('click',zoomFit);
+// Ctrl/⌘ + wheel zooms the chain, not the page.
+$('stage-scroll').addEventListener('wheel',e=>{if(!(e.ctrlKey||e.metaKey))return;e.preventDefault();zoomBy(e.deltaY<0?1.1:1/1.1)},{passive:false});
 if(window.parent&&window.parent!==window){const close=$('close');close.hidden=false;
   close.addEventListener('click',()=>{try{window.parent.postMessage({type:'llmwiki:close',from:'graph'},location.origin)}catch(error){}})}
 load();

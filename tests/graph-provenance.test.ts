@@ -331,3 +331,50 @@ describe('announcements on a live reading', () => {
     expect(live.degradations).toContain(`page no longer exists since the build: ${LOCALISATION}`);
   });
 });
+
+describe('provenance zoom', () => {
+  // Runs the zoom block of the page script against elements of known size.
+  function zoomHarness(box: { clientWidth: number; clientHeight: number }, stageHeight: number) {
+    const start = PROVENANCE_SCRIPT.indexOf('let zoom=1;');
+    const end = PROVENANCE_SCRIPT.indexOf('box.scrollLeft=0;box.scrollTop=0}', start) + 'box.scrollLeft=0;box.scrollTop=0}'.length;
+    const block = PROVENANCE_SCRIPT.slice(start, end);
+    const els: Record<string, Record<string, unknown>> = {
+      'stage-scroll': { ...box, scrollLeft: 0, scrollTop: 0 },
+      'stage-sizer': { style: {} },
+      'zoom-level': { textContent: '' },
+      'zoom-in': { disabled: false },
+      'zoom-out': { disabled: false },
+    };
+    const stage: Record<string, unknown> = { style: {} as Record<string, string> };
+    Object.defineProperty(stage, 'offsetWidth', { get: () => parseFloat((stage.style as Record<string, string>).width) || 1180 });
+    Object.defineProperty(stage, 'offsetHeight', { get: () => stageHeight });
+    els.stage = stage;
+    const api = new Function('$', 'requestAnimationFrame', 'drawEdges',
+      `${block}; return { applyZoom, zoomBy, zoomFit, get zoom(){ return zoom; } };`)(
+      (id: string) => els[id], () => 0, () => {}) as { applyZoom(z?: number): void; zoomBy(f: number): void; zoomFit(): void; zoom: number };
+    return { api, els };
+  }
+
+  it('scales the scroll area with the stage, within bounds, and shows the level', () => {
+    const { api, els } = zoomHarness({ clientWidth: 1000, clientHeight: 600 }, 800);
+    api.applyZoom(1.5);
+    expect((els['stage-sizer'].style as Record<string, string>).width).toBe(`${1180 * 1.5}px`);
+    expect((els['stage-sizer'].style as Record<string, string>).height).toBe(`${800 * 1.5}px`);
+    expect(els['zoom-level'].textContent).toBe('150%');
+    api.applyZoom(9);
+    expect(api.zoom).toBe(2);
+    expect(els['zoom-in'].disabled).toBe(true);
+    api.applyZoom(0.01);
+    expect(api.zoom).toBe(0.3);
+    expect(els['zoom-out'].disabled).toBe(true);
+  });
+
+  it('fits the whole chain in view, never enlarging past 100%', () => {
+    const tall = zoomHarness({ clientWidth: 1180, clientHeight: 600 }, 1200);
+    tall.api.zoomFit();
+    expect(tall.api.zoom).toBe(0.5);
+    const small = zoomHarness({ clientWidth: 2000, clientHeight: 2000 }, 400);
+    small.api.zoomFit();
+    expect(small.api.zoom).toBe(1);
+  });
+});

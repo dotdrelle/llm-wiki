@@ -41,8 +41,15 @@ button:focus-visible,select:focus-visible,a:focus-visible,.node:focus-visible,.r
 .banner.live .dot{background:var(--warn)}.banner.error .dot{background:var(--bad)}
 .banner ul{margin:4px 0 0;padding-left:18px;color:var(--muted)}
 .banner li code{overflow-wrap:anywhere}
-.stage-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--stage)}
-.stage{position:relative;min-width:1180px;display:grid;grid-template-columns:1fr 1.15fr 1fr 1.05fr 1.25fr;gap:44px;padding:16px 22px 24px}
+.stage-frame{position:relative}
+.zoom-tools{position:absolute;top:10px;right:12px;z-index:3;display:flex;align-items:center;gap:2px;padding:3px;border:1px solid var(--line);border-radius:9px;background:var(--panel);box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.zoom-tools button{font:inherit;font-size:13px;min-width:28px;height:26px;padding:0 8px;border:0;border-radius:6px;background:none;color:var(--text);cursor:pointer}
+.zoom-tools button:hover{background:var(--line)}
+.zoom-tools button:disabled{opacity:.4;cursor:default}
+.zoom-tools span{min-width:42px;text-align:center;font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.stage-scroll{overflow:auto;max-height:calc(100vh - 140px);border:1px solid var(--line);border-radius:14px;background:var(--stage)}
+.stage-sizer{position:relative}
+.stage{transform-origin:0 0;position:relative;min-width:1180px;display:grid;grid-template-columns:1fr 1.15fr 1fr 1.05fr 1.25fr;gap:44px;padding:16px 22px 24px}
 svg.edges{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
 .col{display:flex;flex-direction:column;gap:10px;min-width:0;position:relative;z-index:1}
 .col h3{margin:0 0 2px;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;gap:6px}
