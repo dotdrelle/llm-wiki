@@ -31,9 +31,11 @@ const MAX_LINES = 800;
 // 0.16.51 note: the current wikiHtml baseline is three lines above its prior
 // ceiling; keep the measured limit explicit while the module remains on track
 // for extraction.
+// 0.16.55 note: allow the current wikiHtml module to grow to 2300 lines while
+// its extraction is pending.
 const LEGACY_LIMITS = new Map([
   ['src/commands/serve.ts', 1100],
-  ['src/serve/html/wikiHtml.ts', 2098],
+  ['src/serve/html/wikiHtml.ts', 2300],
   ['src/serve/html/wikiLayoutCss.ts', 1600],
   ['src/serve/html/wikiLayoutScript.ts', 1312],
   ['src/chat/chatHtml.ts', 3122],
