@@ -38,8 +38,8 @@ describe('live line of a run in the chat', () => {
   it('compacts the business line: no lone step, no "LLM running", no invented 0%', () => {
     const { runLiveLineLabel } = load({ status: 'running' });
     expect(runLiveLineLabel({ type: 'activity_upserted', payload: { activity: { progress: {
-      label: 'Ingest juno.md +1', detail: 'Step 1/1 · Sources 3 running / 3 · LLM running …', percent: null } } } }))
-      .toBe('Ingest juno.md +1 · Sources 3 running / 3');
+      label: 'Ingest lyra.md +1', detail: 'Step 1/1 · Sources 3 running / 3 · LLM running …', percent: null } } } }))
+      .toBe('Ingest lyra.md +1 · Sources 3 running / 3');
   });
 
   it('keeps the meter, raw traces and scheduler lines out of the line', () => {

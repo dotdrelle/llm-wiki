@@ -73,7 +73,7 @@ describe('DELETE /api/untracked/*', () => {
 
   it('deletes a non-empty pending folder', async () => {
     const root = await makeRoot();
-    const dir = path.join(root, 'raw/untracked/dirnctti');
+    const dir = path.join(root, 'raw/untracked/docs');
     await mkdir(dir, { recursive: true });
     await writeFile(path.join(dir, 'a.md'), '# A\n', 'utf8');
     await writeFile(path.join(dir, 'b.md'), '# B\n', 'utf8');
@@ -83,7 +83,7 @@ describe('DELETE /api/untracked/*', () => {
       root,
       deleteRequest(),
       res as unknown as ServerResponse,
-      '/api/untracked/raw/untracked/dirnctti',
+      '/api/untracked/raw/untracked/docs',
     );
 
     expect(handled).toBe(true);

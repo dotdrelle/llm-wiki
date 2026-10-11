@@ -556,13 +556,13 @@ describe('titles in the tree', () => {
   });
 
   it('strips the leading transport hash of downloaded Pending files', async () => {
-    await writeFile(path.join(root, 'raw/untracked/8d5e3fe3-ACPI_RapportEtudeDonneesAmont_V0.md'), '# x\n', 'utf8');
+    await writeFile(path.join(root, 'raw/untracked/8d5e3fe3-ATLAS_RapportEtudeDonneesAmont_V0.md'), '# x\n', 'utf8');
 
     const html = await renderSidebar(root);
 
-    expect(html).toContain('>ACPI RapportEtudeDonneesAmont V0</a>');
+    expect(html).toContain('>ATLAS RapportEtudeDonneesAmont V0</a>');
     expect(html).not.toContain('>8d5e3fe3</a>');
-    expect(html).not.toContain('>8d5e3fe3 ACPI</a>');
+    expect(html).not.toContain('>8d5e3fe3 ATLAS</a>');
   });
 
   it('strips the transport id carried by the converted frontmatter title', async () => {
@@ -771,18 +771,18 @@ describe('in-flight document uploads in Pending', () => {
 describe('reading notes depth', () => {
   it('flattens single-fiche Reading notes folders and keeps folders grouping multiple fiches', async () => {
     for (const file of [
-      'wiki/sources/outils/accueil/apps/acpi/specs/eas-avant-projet/synthese/regles.md',
-      'wiki/sources/outils/accueil/apps/acpi/specs/eas-avant-projet/eas.md',
+      'wiki/sources/outils/accueil/apps/atlas/specs/eas-avant-projet/synthese/regles.md',
+      'wiki/sources/outils/accueil/apps/atlas/specs/eas-avant-projet/eas.md',
     ]) {
       await mkdir(path.join(root, path.dirname(file)), { recursive: true });
       await writeFile(path.join(root, file), '# x\n', 'utf8');
     }
     const html = await renderSidebar(root);
-    const deep = 'wiki/sources/outils/accueil/apps/acpi/specs/eas-avant-projet';
+    const deep = 'wiki/sources/outils/accueil/apps/atlas/specs/eas-avant-projet';
     expect(html).toContain(`data-tree-id="${deep}"`);
     expect(html).not.toContain(`data-tree-id="${deep}/synthese"`);
-    expect(html).toContain('data-side-path="wiki/sources/outils/accueil/apps/acpi/specs/eas-avant-projet/synthese/regles.md"');
-    for (const empty of ['wiki/sources/outils', 'wiki/sources/outils/accueil/apps', 'wiki/sources/outils/accueil/apps/acpi/specs']) {
+    expect(html).toContain('data-side-path="wiki/sources/outils/accueil/apps/atlas/specs/eas-avant-projet/synthese/regles.md"');
+    for (const empty of ['wiki/sources/outils', 'wiki/sources/outils/accueil/apps', 'wiki/sources/outils/accueil/apps/atlas/specs']) {
       expect(html, empty).not.toContain(`data-tree-id="${empty}"`);
     }
     // The section itself stays, with its full document count.

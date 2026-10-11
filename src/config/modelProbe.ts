@@ -6,7 +6,7 @@ import { engineFetchHeaders, supportsTemperature } from './engineCapabilities.ts
  *
  * Static rules (`engineCapabilities.ts`) guess from the engine and the model
  * name; they missed a thinking-mode model refusing a forced `tool_choice`
- * (HTTP 400 "Thinking mode does not support this tool_choice") on juno. Three
+ * (HTTP 400 "Thinking mode does not support this tool_choice") on lyra. Three
  * tiny chat calls settle it, and `wiki doctor --apply` records the result in
  * `llm.capabilities`, read by the engine and by the manager's own client.
  *
@@ -156,7 +156,7 @@ export async function probeModelCapabilities(
   capabilities.thinking = messageShowsThinking(plain.message);
 
   // 1b. A reasoning model left at the provider's default effort spends most
-  //     of its output on reasoning nobody reads (juno, deepseek-flash: ~85 % of
+  //     of its output on reasoning nobody reads (lyra, deepseek-flash: ~85 % of
   //     an ingest's output tokens, 20 000 tokens for a 1 000-character family
   //     batch). Without an explicit value, try `low` and recommend it when the
   //     model accepts it. A value the user wrote is never second-guessed.

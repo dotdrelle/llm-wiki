@@ -889,7 +889,7 @@ export class IngestService {
          input_hash and content_hash on disk): no extraction is scheduled for
          it. Falling through then applied an EMPTY plan — 0 rows, so every
          fiche this source had produced looked obsolete and was pruned. On
-         juno a maintenance rebuild right after a 44-source ingest deleted 62
+         lyra a maintenance rebuild right after a 44-source ingest deleted 62
          fresh fiches that way, and the tag pivots built on them. The source
          is current: keep its pages, mark it seen, write nothing.
         */
@@ -2177,7 +2177,7 @@ export class IngestService {
       try {
         if (initialGrouping && requestedTags.length > TAXO_FAMILY_BATCH_THRESHOLD) {
           // A monolithic assignment prompt can become enormous and ask one
-          // response to emit hundreds of tag assignments. On the 220-tag ACPI
+          // response to emit hundreds of tag assignments. On the 220-tag ATLAS
           // corpus it consumed the full 10-minute model timeout and fell back
           // to unfiled pages. Discover a small, workspace-specific catalogue
           // once, then assign bounded chunks against that shared vocabulary.

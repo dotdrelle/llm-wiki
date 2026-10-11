@@ -189,12 +189,12 @@ describe('runtime graph draws maintenance beside Donna', () => {
   });
 
   it('names a maintenance action by its file and details it in the inspector data', () => {
-    const build = { id: 'b1', action: 'build', agent: 'production', target: 'templates/eas/JUNO-EAS-fonctionnel.md', summary: 'Rebuild JUNO-EAS-fonctionnel.md because the wiki content changed', startedAt: '2026-10-10T11:24:13Z', jobId: 'prod_1', progress: { label: 'Stabilize templates/eas/JUNO-EAS-fonctionnel.md' } };
+    const build = { id: 'b1', action: 'build', agent: 'production', target: 'templates/eas/LYRA-EAS-fonctionnel.md', summary: 'Rebuild LYRA-EAS-fonctionnel.md because the wiki content changed', startedAt: '2026-10-10T11:24:13Z', jobId: 'prod_1', progress: { label: 'Stabilize templates/eas/LYRA-EAS-fonctionnel.md' } };
     const { nodes } = withMaintenance([build], { status: 'idle', workflow: { nodes: [] } });
     const phase = nodes.find((n: { id: string }) => n.id === 'maintenance:b1');
     // "Stabilize templates/eas/J…" said nothing in a narrow node.
-    expect(phase.label).toBe('Stabilize JUNO-EAS-fonctionnel.md');
-    expect(phase.raw.maintenance.target).toBe('templates/eas/JUNO-EAS-fonctionnel.md');
+    expect(phase.label).toBe('Stabilize LYRA-EAS-fonctionnel.md');
+    expect(phase.raw.maintenance.target).toBe('templates/eas/LYRA-EAS-fonctionnel.md');
   });
 
   it('draws nothing extra when maintenance is idle', () => {

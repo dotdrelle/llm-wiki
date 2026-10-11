@@ -191,10 +191,10 @@ describe('templateCitationViolations', () => {
     const violations = templateCitationViolations(wrap([
       '# Presentation',
       '[[INSTRUCTION:',
-      'Describe the purpose. [src: raw/untracked/976c34f6-MF_FO_MACSI_Rapport_EAS_ACPI-v0.3.md]',
+      'Describe the purpose. [src: raw/untracked/976c34f6-MF_FO_MACSI_Rapport_EAS_ATLAS-v0.3.md]',
       ']]',
     ].join('\n')));
-    expect(violations).toContain('raw/untracked/976c34f6-MF_FO_MACSI_Rapport_EAS_ACPI-v0.3.md');
+    expect(violations).toContain('raw/untracked/976c34f6-MF_FO_MACSI_Rapport_EAS_ATLAS-v0.3.md');
   });
 
   it('flags every distinct target exactly once', () => {

@@ -56,11 +56,11 @@ describe('resolveReadableWorkspacePath decoding', () => {
   });
 
   it('accepts a manager-style workspaces/<name>/ prefix that lands under a readable root', () => {
-    expect(resolveReadableWorkspacePath(workspace, 'workspaces/acpi/raw/untracked/x.md'))
+    expect(resolveReadableWorkspacePath(workspace, 'workspaces/atlas/raw/untracked/x.md'))
       .toBe(path.join(root, 'raw', 'untracked', 'x.md'));
-    expect(() => resolveReadableWorkspacePath(workspace, 'workspaces/acpi/templates/x.md'))
+    expect(() => resolveReadableWorkspacePath(workspace, 'workspaces/atlas/templates/x.md'))
       .toThrow(/Access denied/);
-    expect(() => resolveReadableWorkspacePath(workspace, 'workspaces/acpi/../raw/ingested/x.md'))
+    expect(() => resolveReadableWorkspacePath(workspace, 'workspaces/atlas/../raw/ingested/x.md'))
       .toThrow();
   });
 });

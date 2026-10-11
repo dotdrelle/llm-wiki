@@ -28,7 +28,7 @@ describe('provenance audit (lot 0)', () => {
     expect(report.summary.sourcePageDistinctFormats).toBeGreaterThan(1);
   });
 
-  it('flags the acpi shape: a declared source the body never reaches', async () => {
+  it('flags the atlas shape: a declared source the body never reaches', async () => {
     const report = await auditWorkspace({ rootDir: FIXTURE });
     const anaplan = report.leaves.find((leaf) => leaf.path.endsWith('/anaplan.md'));
     expect(anaplan).toBeTruthy();
@@ -49,7 +49,7 @@ describe('provenance audit (lot 0)', () => {
   it('audits a nested TAXO fiche and its tag pivot without phantom terminal sources', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'wiki-audit-taxo-'));
     await mkdir(path.join(root, 'raw', 'ingested'), { recursive: true });
-    await mkdir(path.join(root, 'wiki', 'sources', 'acpi', 'guide'), { recursive: true });
+    await mkdir(path.join(root, 'wiki', 'sources', 'atlas', 'guide'), { recursive: true });
     await mkdir(path.join(root, 'wiki', 'concepts', 'infrastructure'), { recursive: true });
     await writeFile(
       path.join(root, 'raw', 'ingested', 'guide.md'),
@@ -57,19 +57,19 @@ describe('provenance audit (lot 0)', () => {
       'utf8',
     );
     await writeFile(
-      path.join(root, 'wiki', 'sources', 'acpi', 'guide', 'couts.md'),
+      path.join(root, 'wiki', 'sources', 'atlas', 'guide', 'couts.md'),
       '---\ntype: source\nsubject: guide-couts\ninput_hash: input\ncontent_hash: content\ngenerated:\n  by: llm-wiki\nsources:\n  - path: raw/ingested/guide.md\n---\n\n# Coûts\n\nLe coût documenté.\n\n[src: raw/ingested/guide.md#Coûts]\n',
       'utf8',
     );
     await writeFile(
       path.join(root, 'wiki', 'concepts', 'infrastructure', 'couts.md'),
-      '---\ntype: concept\nsubject: coûts\nfamily: Infrastructure\ngenerated:\n  by: llm-wiki-tags\nsources:\n  - path: raw/ingested/guide.md\n---\n\n# Coûts\n\n[src: wiki/sources/acpi/guide/couts.md#Coûts]\n',
+      '---\ntype: concept\nsubject: coûts\nfamily: Infrastructure\ngenerated:\n  by: llm-wiki-tags\nsources:\n  - path: raw/ingested/guide.md\n---\n\n# Coûts\n\n[src: wiki/sources/atlas/guide/couts.md#Coûts]\n',
       'utf8',
     );
 
     const report = await auditWorkspace({ rootDir: root, workspace: 'taxo' });
     const fiche = report.sourcePages.find((entry) => entry.path.endsWith('/couts.md'));
-    expect(fiche?.path).toBe('wiki/sources/acpi/guide/couts.md');
+    expect(fiche?.path).toBe('wiki/sources/atlas/guide/couts.md');
     expect(fiche?.declaredSources).toEqual(['raw/ingested/guide.md']);
     expect(report.summary.phantomSourceEntries).toBe(0);
     expect(report.summary.sourcePagesWithNoCitation).toBe(0);

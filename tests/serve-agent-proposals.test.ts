@@ -138,7 +138,7 @@ describe('agent proposal review routes', () => {
     writeProposal(rootDir, {
       id,
       runId: '21ad9866-6805-4b06-95a4-942f93ec5c64',
-      workspace: 'acpi',
+      workspace: 'atlas',
       branch: 'agent/gateway-1',
       worktreeRelativePath: '.wiki/agent-worktrees/gateway-1',
       createdAt: '2026-09-21T14:17:55.783Z',

@@ -146,7 +146,7 @@ works into `llm.reasoningEffort`; a model that refuses the parameter has it
 removed. A reasoning model — thinking measured, or temperature refused — with
 no `llm.reasoningEffort` is probed with `low`, and `--apply` writes it when the
 model accepts it: at the provider's default effort the reasoning made up about
-85 % of an ingest's output tokens on juno (deepseek-flash). A plain doctor on an
+85 % of an ingest's output tokens on lyra (deepseek-flash). A plain doctor on an
 already-probed model warns about that case and points to `--apply`. The agentic gateway forwards it as a raw `reasoning_effort`
 (`modelKwargs`): LangChain's own option only reaches the models it names as
 reasoning models.

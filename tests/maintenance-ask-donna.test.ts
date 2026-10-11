@@ -30,7 +30,7 @@ describe('Maintenance thread rows', () => {
   const rows = new Function(`${MAINTENANCE_PANEL_SCRIPT.slice(start, end)}\nreturn maintenanceActivityRows;`)() as (events: unknown[]) => Array<{ seq: number; kind: string }>;
 
   it('shows a finished action once, with its outcome, not its PENDING start', () => {
-    // juno: outcome records carry no target, so every start stayed PENDING
+    // lyra: outcome records carry no target, so every start stayed PENDING
     // and all the outcomes of a cycle collapsed into a single row.
     const c = 'cycle-1';
     const out = rows([

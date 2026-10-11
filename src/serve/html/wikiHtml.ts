@@ -852,7 +852,7 @@ function flattenSingleLeafConceptFolders(node: NavTreeNode): void {
 // UPPERCASE for the wiki root, a collection's own root (depth 0) and a
 // concept folder at any depth; a leading capital for the wiki taxonomy folders
 // (answers/concepts/sources) and a collection sub-folder; other wiki folders as
-// capitalized words (`eas-avant-projet-acpi` → `Eas Avant Projet Acpi`).
+// capitalized words (`eas-avant-projet-atlas` → `Eas Avant Projet Atlas`).
 function navNodeLabel(node: NavTreeNode, depth: number): string {
   if (toPosix(node.path) === 'wiki/concepts/unfiled') return 'Unfiled';
   if (toPosix(node.path) === 'wiki' || isConceptFolderPath(node.path) || (isCollectionPath(node.path) && depth === 0)) {

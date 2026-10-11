@@ -11,7 +11,7 @@ import { hashText } from '../utils/hash.ts';
  * A file the engine itself rewrote (metadata only), with the hash before and
  * after. A deliverable's build record keeps the hash of what the build wrote;
  * without re-anchoring it, `doctor --apply` adding `status: draft` made four
- * juno deliverables read as hand-edited, and maintenance asked a human for each.
+ * lyra deliverables read as hand-edited, and maintenance asked a human for each.
  */
 export type EngineRewrite = { file: string; beforeHash: string; afterHash: string };
 

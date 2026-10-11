@@ -39,7 +39,7 @@ describe('regenerateWikiIndex', () => {
       await mkdir(path.dirname(path.join(root, rel)), { recursive: true });
       await writeFile(path.join(root, rel), `---\ntitle: ${title}\n---\n# ${title}\n`, 'utf8');
     };
-    // juno: "Bilan", "Démo", "Divers", "Étude" from one folder, then
+    // lyra: "Bilan", "Démo", "Divers", "Étude" from one folder, then
     // "Open-Source…" and "Demo Project Brief" from others.
     await write('wiki/sources/a-folder/etude.md', 'Étude des exigences');
     await write('wiki/sources/a-folder/bilan.md', 'Bilan');
@@ -138,7 +138,7 @@ describe('regenerateWikiIndex', () => {
   });
 
   it('adopts a marker-less hand-written body as the initial overview instead of dropping it', async () => {
-    const prose = 'Ce workspace couvre le chiffrage ACPI.';
+    const prose = 'Ce workspace couvre le chiffrage ATLAS.';
     await writeFile(path.join(root, 'wiki', 'index.md'), `# Wiki Index\n\n${prose}\n`, 'utf8');
 
     const outcome = await regenerateWikiIndex(root);

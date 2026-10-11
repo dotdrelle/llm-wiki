@@ -45,13 +45,13 @@ describe('serve link handling', () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-notfound-'));
     try {
       await mkdir(path.join(root, 'wiki'), { recursive: true });
-      const html = await generateNotFoundPage(root, '/wiki/concepts/budget/acpi-version-3.md');
+      const html = await generateNotFoundPage(root, '/wiki/concepts/budget/atlas-version-3.md');
       // The page keeps its Back/Home buttons for a standalone reader, and
       // tells the shell when it is embedded, so a remembered path that no
       // longer exists is forgotten instead of freezing the centre frame.
       expect(html).toContain('Document not found');
       expect(html).toContain("type:'llmwiki:notfound'");
-      expect(html).toContain('wiki/concepts/budget/acpi-version-3.md');
+      expect(html).toContain('wiki/concepts/budget/atlas-version-3.md');
     } finally {
       await rm(root, { recursive: true, force: true });
     }

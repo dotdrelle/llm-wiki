@@ -151,7 +151,7 @@ describe('TAXO section sheets', () => {
   });
 
   it('creates TAXO paths and bounded identities from document and section labels', () => {
-    expect(sectionSheetSubject('JUNO / Inventaire', '1. Réseau')).toBe('juno-inventaire-1-réseau');
+    expect(sectionSheetSubject('LYRA / Inventaire', '1. Réseau')).toBe('lyra-inventaire-1-réseau');
     expect(sectionSheetPath(
       'raw/ingested/dirnc/document.md',
       'Document',

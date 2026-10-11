@@ -62,7 +62,7 @@ it('vector freshness reuses supplied wiki pages without changing its hash', asyn
 });
 
 it('a metadata line doctor adds to a built deliverable is not a hand edit, a real edit still is',async()=>{
-  // juno: doctor --apply added `status: draft` to four freshly built
+  // lyra: doctor --apply added `status: draft` to four freshly built
   // deliverables; maintenance then read them as hand-edited and asked a human
   // to approve each rebuild, cycle after cycle.
   const { applyOkfV02Migration } = await import('../src/okf/scan.ts');

@@ -251,7 +251,7 @@ describe('pages possédées par le moteur', () => {
   it('ne questionne jamais l’index, le journal ni un pivot TAXO généré', () => {
     // La réconciliation demande à l'opérateur quelles pages n'ont pas de
     // source vivante. Ces pages-là ne peuvent pas en avoir : les compter était
-    // un faux positif du passage à TAXO (59 pivots + index + log sur ACPI).
+    // un faux positif du passage à TAXO (59 pivots + index + log sur ATLAS).
     expect(isEngineOwnedWikiPage({ relativePath: 'wiki/index.md' })).toBe(true);
     expect(isEngineOwnedWikiPage({ relativePath: 'wiki/log.md' })).toBe(true);
     expect(isEngineOwnedWikiPage({
