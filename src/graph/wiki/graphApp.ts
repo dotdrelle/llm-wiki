@@ -24,7 +24,7 @@ const GRAPH_BRAND_MARK =
  */
 export function renderWikiGraphV2(): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Wiki Graph</title><style>${taxoStyles}</style></head><body>
-<header><a class="brand" href="/">${GRAPH_BRAND_MARK}Wiki graph</a>
+<header><a class="brand" href="/" aria-label="Wiki home" title="Wiki home">${GRAPH_BRAND_MARK}</a>
 <nav aria-label="View"><button type="button" id="v-family" aria-pressed="true">Families</button><button type="button" id="v-concepts" aria-pressed="false">Concepts</button><button type="button" id="v-focus" aria-pressed="false">Concept focus</button><button type="button" id="v-full" aria-pressed="false">Concepts + sources</button></nav>
 <div class="search-wrap" id="search-wrap"><input class="search" id="q" type="search" autocomplete="off" placeholder="Search the wiki (semantic when the vector index is built)…" aria-label="Search the graph"><span class="search-spinner" aria-hidden="true"></span><span class="search-mode" id="search-mode" hidden></span></div>
 <button id="graph-shell-close" class="shell-close" type="button" hidden title="Close graph" aria-label="Close graph">✕</button></header>
