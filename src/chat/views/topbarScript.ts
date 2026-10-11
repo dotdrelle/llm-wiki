@@ -9,7 +9,11 @@ function syncModel() {
   const badge=$('model-badge');
   if(!badge) return;
   const model=$('model-name').value||'model';
-  const profile=$('profile-picker')?.dataset.active||'';
+  const picker=$('profile-picker');
+  const activeFile=picker?.dataset.active||'';
+  const activeName=picker?.dataset.activeName||'';
+  // A second "default" (.wikirc.yaml.default) is named by its file.
+  const profile=activeName==='default'&&activeFile&&activeFile!=='.wikirc.yaml'?activeFile:activeName;
   const switchable=!!window.__WIKI_CONFIG__?.runtime?.enabled;
   badge.textContent=(profile&&profile!=='default'?profile+' · ':'')+model+(switchable?' ▾':'');
   badge.title=switchable?'Active .wikirc profile'+(profile?' "'+profile+'"':'')+' — click to switch':'Model';
@@ -31,16 +35,16 @@ async function toggleProfileMenu(event) {
     const res=await fetch('/api/config/profiles',{cache:'no-store'});
     const data=await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(data.error||\`HTTP \${res.status}\`);
-    const items=Array.isArray(data.items)?data.items:[];
-    if(!items.length) { menu.innerHTML='<div class="tb-profile-empty">No .wikirc profile found.</div>'; return; }
-    menu.innerHTML=items.map(item=>\`<button type="button" role="menuitemradio" aria-checked="\${item.name===data.active}" class="tb-profile-item\${item.name===data.active?' active':''}" data-profile="\${esc(item.name)}" title="\${esc(item.fileName||'')}"><span>\${item.name===data.active?'✓':''}</span>\${esc(item.name)}</button>\`).join('');
+    const entries=profileEntries(data);
+    if(!entries.length) { menu.innerHTML='<div class="tb-profile-empty">No .wikirc profile found.</div>'; return; }
+    menu.innerHTML=entries.map(entry=>\`<button type="button" role="menuitemradio" aria-checked="\${entry.active}" class="tb-profile-item\${entry.active?' active':''}" data-file="\${esc(entry.fileName)}" title="\${esc(entry.fileName)}"><span>\${entry.active?'✓':''}</span>\${esc(entry.name)}\${entry.showFile?\`<em class="tb-profile-file">\${esc(entry.fileName)}</em>\`:''}</button>\`).join('');
     menu.querySelectorAll('.tb-profile-item').forEach(btn=>btn.addEventListener('click',async()=>{
-      const name=btn.dataset.profile;
+      const fileName=btn.dataset.file;
       closeProfileMenu();
-      if(name&&name!==data.active) {
+      if(fileName&&!btn.classList.contains('active')) {
         const select=$('profile-picker');
-        if(select) select.value=name;
-        await switchConfigProfile(name);
+        if(select) select.value=fileName;
+        await switchConfigProfile(fileName);
         syncModel();
       }
     }));
@@ -48,6 +52,17 @@ async function toggleProfileMenu(event) {
     menu.innerHTML='<div class="tb-profile-empty">Profiles unavailable: '+esc(err?.message||String(err))+'</div>';
   }
 }
+// The FILE identifies a profile: ".wikirc.yaml" and ".wikirc.yaml.default"
+// both list as "default", and matching on the name checked both and switched
+// to the first. Colliding names show their file.
+function profileEntries(data) {
+  const items=Array.isArray(data?.items)?data.items.filter(item=>item&&item.fileName):[];
+  const counts={};
+  items.forEach(item=>{ counts[item.name]=(counts[item.name]||0)+1; });
+  const activeFile=data?.activeFileName||(items.find(item=>item.name===data?.active)||{}).fileName||'';
+  return items.map(item=>({name:item.name,fileName:item.fileName,showFile:counts[item.name]>1,active:item.fileName===activeFile}));
+}
+
 function closeProfileMenu() {
   const menu=$('profile-menu');
   if(menu) menu.hidden=true;

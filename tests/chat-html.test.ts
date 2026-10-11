@@ -675,7 +675,7 @@ describe('chat html', () => {
     expect(script).not.toContain('window.location.reload()');
   });
 
-  it('places the profile picker in the sidebar next to Reset, showing only the profile name', () => {
+  it('places the profile picker in the sidebar next to Reset, showing the profile name', () => {
     const [script] = chatScripts();
 
     // Lives in the LLM section header, alongside Reset — not the topbar.
@@ -683,9 +683,10 @@ describe('chat html', () => {
       '<div class="sec-label">LLM<div class="sec-label-actions"><select class="tb-profile-select" id="profile-picker"',
     );
     expect(CHAT_HTML).not.toContain('id="profile-picker-wrap"');
-    // The backing .wikirc file is a hover title, not part of the visible option label.
+    // Options are keyed by file (two files can both be named "default"); the
+    // file is a hover title and joins the visible label only when names collide.
     expect(script).toContain(
-      "select.innerHTML=profiles.map(profile=>`<option value=\"${esc(profile.name)}\"${profile.fileName?` title=\"${esc(profile.fileName)}\"`:''}>${esc(profile.name)}</option>`).join('');",
+      "select.innerHTML=entries.map(entry=>`<option value=\"${esc(entry.fileName)}\" title=\"${esc(entry.fileName)}\">${esc(entry.name)}${entry.showFile?' · '+esc(entry.fileName):''}</option>`).join('');",
     );
   });
 
@@ -981,7 +982,11 @@ describe('chat html', () => {
     // The menu switches through the same runtime route as the config picker.
     const menu = script.slice(script.indexOf('async function toggleProfileMenu('));
     expect(menu.slice(0, 2000)).toContain("fetch('/api/config/profiles'");
-    expect(menu.slice(0, 2000)).toContain('switchConfigProfile(name)');
+    expect(menu.slice(0, 2000)).toContain('switchConfigProfile(fileName)');
+    // Profiles are identified by file: two files can both be named "default".
+    const entries = script.slice(script.indexOf('function profileEntries('));
+    expect(entries.slice(0, 700)).toContain('item.fileName===activeFile');
+    expect(entries.slice(0, 700)).toContain('showFile:counts[item.name]>1');
   });
 
   it('edits the workspace system-prompt file, never a browser copy', () => {

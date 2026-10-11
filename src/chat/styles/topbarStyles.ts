@@ -1,12 +1,14 @@
 // The top bar's profile menu and connector status pill (topbarScript.ts).
-export const TOPBAR_CSS = `.tb-model-wrap{position:relative}
+export const TOPBAR_CSS = `#topbar{position:relative;z-index:50}
+.tb-model-wrap{position:relative}
 .tb-model.switchable{cursor:pointer}
 .tb-model.switchable:hover{border-color:var(--accent);color:var(--text)}
-.tb-profile-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:60;min-width:180px;padding:4px;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow)}
+.tb-profile-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:60;min-width:200px;max-height:min(360px,70vh);overflow-y:auto;padding:4px;background:var(--panel-solid);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow)}
 .tb-profile-item{display:flex;align-items:center;gap:6px;width:100%;border:0;background:none;color:var(--text);font-size:12px;font-family:var(--font-sans);padding:6px 8px;border-radius:6px;cursor:pointer;text-align:left}
 .tb-profile-item span{width:12px;color:var(--accent)}
 .tb-profile-item:hover{background:var(--panel-soft)}
 .tb-profile-item.active{font-weight:700}
+.tb-profile-file{font-style:normal;margin-left:auto;padding-left:10px;font-family:var(--font-mono);font-size:10px;color:var(--muted)}
 .tb-profile-empty{font-size:12px;color:var(--muted);padding:6px 8px}
 .tb-connectors{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-family:var(--font-mono);padding:4px 10px;border-radius:99px;border:1px solid var(--border);background:var(--panel-soft);color:var(--muted2);cursor:pointer}
 .tb-connectors:hover{border-color:var(--accent);color:var(--text)}

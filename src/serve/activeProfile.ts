@@ -24,14 +24,18 @@ export function createActiveProfileFollower(deps: {
     if (now - checkedAt < intervalMs) return;
     checkedAt = now;
     let profile: string | null = null;
+    let fileName: string | null = null;
     try {
-      const record = JSON.parse(await readFile(path.join(deps.rootDir, '.wiki', 'active-profile.json'), 'utf8')) as { profile?: unknown };
+      const record = JSON.parse(await readFile(path.join(deps.rootDir, '.wiki', 'active-profile.json'), 'utf8')) as { profile?: unknown; fileName?: unknown };
       profile = typeof record.profile === 'string' && record.profile.trim() ? record.profile.trim() : null;
+      // The file is the identity (two files can both be named "default").
+      fileName = typeof record.fileName === 'string' && /^\.wikirc\.yaml(\.[^/\\]+)?$/.test(record.fileName.trim()) ? record.fileName.trim() : null;
     } catch {
       return;
     }
-    if (!profile) return;
-    const fileName = profile === 'default' ? '.wikirc.yaml' : `.wikirc.yaml.${profile}`;
+    if (!profile && !fileName) return;
+    fileName ??= profile === 'default' ? '.wikirc.yaml' : `.wikirc.yaml.${profile}`;
+    profile ??= fileName;
     const current = deps.currentConfigPath();
     if (current && path.resolve(deps.rootDir, fileName) === path.resolve(current)) return;
     if (!(await pathExists(path.join(deps.rootDir, fileName)))) return;

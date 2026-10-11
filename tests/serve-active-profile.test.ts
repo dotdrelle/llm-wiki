@@ -30,6 +30,18 @@ describe('createActiveProfileFollower', () => {
     expect(mirrored).toEqual(['.wikirc.yaml.fast']);
   });
 
+  it('follows the recorded file when two profiles share a name', async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'active-profile-'));
+    await writeFile(path.join(dir, '.wikirc.yaml'), 'llm: {}\n');
+    await writeFile(path.join(dir, '.wikirc.yaml.default'), 'llm: {}\n');
+    await mkdir(path.join(dir, '.wiki'), { recursive: true });
+    await writeFile(path.join(dir, '.wiki', 'active-profile.json'), JSON.stringify({ profile: 'default', fileName: '.wikirc.yaml.default' }));
+    const mirrored: string[] = [];
+    const follow = createActiveProfileFollower({ rootDir: dir, currentConfigPath: () => path.join(dir, '.wikirc.yaml'), mirror: async (f) => { mirrored.push(f); }, intervalMs: 0, log: () => {} });
+    await follow();
+    expect(mirrored).toEqual(['.wikirc.yaml.default']);
+  });
+
   it('ignores a persisted profile whose file is gone', async () => {
     dir = await mkdtemp(path.join(tmpdir(), 'active-profile-'));
     await mkdir(path.join(dir, '.wiki'), { recursive: true });

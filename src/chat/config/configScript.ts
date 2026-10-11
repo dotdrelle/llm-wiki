@@ -110,15 +110,16 @@ async function loadConfigProfiles() {
     const res=await fetch('/api/config/profiles',{cache:'no-store'});
     if(!res.ok) throw new Error('profiles unavailable');
     const data=await res.json();
-    // Show only the profile name — the backing .wikirc file is an
-    // implementation detail, kept as a hover title instead of cluttering the option label.
-    const profiles=Array.isArray(data.items)&&data.items.length
-      ? data.items.map(item=>({name:item.name,fileName:item.fileName||''}))
-      : (Array.isArray(data.profiles)?data.profiles.map(name=>({name,fileName:''})):[]);
-    if(!profiles.length) return;
-    select.innerHTML=profiles.map(profile=>\`<option value="\${esc(profile.name)}"\${profile.fileName?\` title="\${esc(profile.fileName)}"\`:''}>\${esc(profile.name)}</option>\`).join('');
-    select.value=data.active||profiles[0].name;
-    select.dataset.active=select.value;
+    // Options are keyed by FILE (two files can both be named "default"); the
+    // label is the name, followed by the file only when names collide.
+    const entries=profileEntries(data);
+    if(!entries.length) return;
+    select.innerHTML=entries.map(entry=>\`<option value="\${esc(entry.fileName)}" title="\${esc(entry.fileName)}">\${esc(entry.name)}\${entry.showFile?' · '+esc(entry.fileName):''}</option>\`).join('');
+    const active=entries.find(entry=>entry.active)||entries[0];
+    select.value=active.fileName;
+    select.dataset.active=active.fileName;
+    select.dataset.activeName=active.name;
+    syncModel();
     select.disabled=false;
     select.classList.add('visible');
   } catch {
@@ -140,8 +141,9 @@ async function switchConfigProfile(profile) {
     });
     const data=await res.json().catch(()=>({}));
     if(!res.ok||data.ok===false) throw new Error(data.error||data.message||\`HTTP \${res.status}\`);
-    select.dataset.active=data.active||profile;
-    select.value=data.active||profile;
+    select.dataset.active=data.fileName||profile;
+    select.dataset.activeName=data.active||profile;
+    select.value=data.fileName||profile;
     // A profile switch is authoritative — drop any leftover local override so
     // it can't resurface and silently diverge from the newly active profile.
     localStorage.removeItem(storageKey('mcpchat_config'));
