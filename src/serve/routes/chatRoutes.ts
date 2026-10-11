@@ -12,6 +12,8 @@ import { escapeScriptJson } from '../html/wikiHtml.ts';
 import { appDisplayName, appFaviconHref } from '../html/appIdentity.ts';
 import { resolveMcpTargets, type ExternalMcpEndpoint } from './uploadRoutes.ts';
 
+const SYSTEM_PROMPT_MAX_CHARS = 20000;
+
 type ChatWorkspace = {
   paths: { internalDir: string };
   loadProfileSection: (maxChars: number) => Promise<string>;
@@ -256,6 +258,34 @@ export async function handleChatRoutes(
   urlPath: string,
   deps: ChatRoutesDeps,
 ): Promise<boolean> {
+  // The System instructions drawer edits the workspace's own
+  // `.wiki/system-prompt.md` — the file the runtime prepends to Donna's
+  // prompt at every turn, in chat and agent mode. It used to edit a browser
+  // copy that, with the runtime on, reached no model at all.
+  if (urlPath === '/api/system-prompt' && (req.method === 'GET' || req.method === 'PUT')) {
+    const systemPromptPath = path.join(deps.workspace.paths.internalDir, 'system-prompt.md');
+    try {
+      if (req.method === 'PUT') {
+        const body = JSON.parse(await readRequestBody(req) || '{}') as { content?: unknown };
+        if (typeof body.content !== 'string') {
+          deps.sendJson(res, 400, { error: 'Missing content.' });
+          return true;
+        }
+        if (body.content.length > SYSTEM_PROMPT_MAX_CHARS) {
+          deps.sendJson(res, 413, { error: `System instructions exceed ${SYSTEM_PROMPT_MAX_CHARS} characters.` });
+          return true;
+        }
+        await mkdir(deps.workspace.paths.internalDir, { recursive: true });
+        await writeFile(systemPromptPath, body.content.trim() ? `${body.content.trim()}\n` : '', 'utf8');
+      }
+      const content = (await pathExists(systemPromptPath)) ? await readFile(systemPromptPath, 'utf8') : '';
+      deps.sendJson(res, 200, { ok: true, content: content.trim() });
+    } catch (err) {
+      deps.sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return true;
+  }
+
   if (req.method === 'POST' && urlPath === '/api/profile/preference') {
     try {
       const body = JSON.parse(await readRequestBody(req) || '{}') as { preference?: unknown };
@@ -339,6 +369,9 @@ export async function handleChatRoutes(
   // LLM config?", it otherwise answers from memory and invents one.
   const llmFact = `Active LLM configuration (what YOU run on — answer questions about your own config from here, never from memory): provider=${deps.config.llm.provider ?? 'unset'}, engine=${deps.config.llm.engine ?? 'unspecified'}, model=${deps.config.llm.model ?? 'unset'}, baseUrl=${promptSafeBaseUrl(deps.config.llm.baseUrl)}, temperature=${deps.config.llm.temperature ?? 'unset'}. The vector/embedding model is configured separately and may differ from this chat model.`;
   const systemPrompt = [systemPromptBase, llmFact, profileSection].filter(Boolean).join('\n\n') || undefined;
+  // The drawer shows and edits the file alone; the LLM fact and the profile
+  // are injected separately (by the runtime, or by the fallback chat below).
+  const systemPromptExtras = [llmFact, profileSection].filter(Boolean).join('\n\n');
   const llmConfigured = Boolean(
     deps.config.llm.provider &&
     deps.config.llm.baseUrl &&
@@ -360,6 +393,8 @@ export async function handleChatRoutes(
     language: deps.config.language ?? 'en',
     workspaceName: deps.workspaceNameFromEnv() ?? path.basename(deps.rootDir),
     ...(systemPrompt ? { systemPrompt } : {}),
+    systemPromptFile: systemPromptBase ?? '',
+    systemPromptExtras,
     storageScope: createHash('sha256')
       .update(`${deps.workspaceNameFromEnv() ?? ''}:${deps.rootDir}`)
       .digest('hex')

@@ -136,7 +136,7 @@ async function connectServer(id,{silent=false}={}) {
     }
     if(!silent && !s.syncError) notify(\`✓ \${s.name}: \${s.tools.length} tool(s)\`);
   } catch(err) {
-    s.status='err'; s.enabled=false;
+    s.status='err'; s.enabled=false; s.error=String(err?.message||err).slice(0,160);
     if(!silent) showErrModal(\`MCP connection — \${s.name}\`, mcpConnectErrorMessage(err));
   }
   renderCards(); renderTopPills(); saveServers();

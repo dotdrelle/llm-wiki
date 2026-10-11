@@ -44,7 +44,9 @@ replaced; those in square brackets `[…]` are optional.
   to it).
 - `/workspace delete <name>` — delete a workspace.
 - `/config list` — list configuration profiles.
-- `/config use <name>` — activate a profile.
+- `/config use <name>` — activate a profile for the whole workspace: the
+  runtime and the served chat follow it at their next turn, and it survives a
+  restart. An edit of the active profile file is picked up the same way.
 - `/config edit <name>` — edit a profile.
 
 ## Services and infrastructure

@@ -210,10 +210,11 @@ shortcut and `/wiki-rebuild` (re-file the archived sources into their concept
 folders — `wiki ingest --from-ingested` — then run the content verification;
 launched from the wiki row's history glyph in serve). `/curate` is the curation
 entry point: it delegates `agent.curate` (the external runtime's confined-hands
-capability — a reviewable branch, never a direct wiki write), and the empty
-chat offers a **Curate the wiki** tile (`startCuration` in `chatHtml.ts`) that
-selects agent mode before sending the same objective — a curation is an action,
-so the read-only chat loop would only describe what it cannot do.
+capability — a reviewable branch, never a direct wiki write), and the
+proposals page's **Start a curation** button reaches `startCuration` in
+`chatHtml.ts`, which selects agent mode before sending the same objective — a
+curation is an action, so the read-only chat loop would only describe what it
+cannot do.
 
 Scaffold skill bodies are **business intentions**, not procedures: they state
 the outcome, the guardrails and the reporting, and never name an MCP server, a
@@ -653,8 +654,13 @@ six skills for a while after the concepts rework shipped eleven, and nothing
 caught it. A skill's `description` is therefore read by two audiences — the
 help, and the catalog the model selects from — so write it for a user.
 
-The second empty-chat tile, `Fill workspace profile`, should prompt the user to
-populate `.wiki/profile.md`; it must not mutate files without confirmation.
+The empty chat offers four tiles, all entry points onto the wiki and the
+tools, each a Donna turn: Help (the panel), **Workspace status** (`/status` —
+the runtime hands Donna the workspace snapshot plus the run state),
+**Explore the wiki** (a read-only guided tour) and **Workspace profile**
+(agent mode: Donna reads the profile, asks at most three questions, and writes
+`.wiki/profile.md` only after confirmation). Curation is no longer a tile; it
+stays reachable through `/curate` and the proposals page.
 
 Skill runs are multi-step workflows. Do not let observation-only tool calls
 (`*_status`, `*_list`, logs, history, summaries) auto-finalize a skill run.

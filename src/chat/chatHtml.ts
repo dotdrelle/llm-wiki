@@ -7,6 +7,9 @@ import { PRODUCTION_TRACE_SCRIPT } from './workflow/productionTraceScript.ts';
 import { OBSERVER_TOOLS_SCRIPT } from './views/observerToolsScript.ts';
 import { MCP_CONNECTOR_SCRIPT } from './runtime/mcpConnectorScript.ts';
 import { CONFIG_SCRIPT } from './config/configScript.ts';
+import { TOPBAR_SCRIPT } from './views/topbarScript.ts';
+import { SYSTEM_PROMPT_SCRIPT } from './views/systemPromptScript.ts';
+import { EMPTY_TILES_SCRIPT } from './views/emptyTilesScript.ts';
 import { ACTIVITY_PANEL_SCRIPT } from './runtime/activityPanelScript.ts';
 import { RUN_STRIP_SCRIPT } from './runtime/runStripScript.ts'; import { RUN_LIVE_LINE_SCRIPT } from './runtime/runLiveLineScript.ts'; import { PROGRESS_LABEL_SCRIPT } from './runtime/progressLabelScript.ts'; import { CONTAINER_STATS_SCRIPT } from './runtime/containerStatsScript.ts'; import { TIME_FORMAT_SCRIPT } from './runtime/timeFormatScript.ts';
 import { RUN_SIDEBAR_REFRESH_SCRIPT } from './runtime/runSidebarRefreshScript.ts';
@@ -921,7 +924,7 @@ function applySidebarOpen(open, persist=false) {
   if(persist) localStorage.setItem(SIDEBAR_OPEN_KEY,sidebarOpen?'1':'0');
 }
 function toggleSidebar() { applySidebarOpen(!sidebarOpen,true); }
-function syncModel() { $('model-badge').textContent=$('model-name').value||'model'; }
+
 
 function clampSidebarSplit(height) {
   const split=$('sidebar-split');
@@ -1112,60 +1115,6 @@ async function rejectRuntimeRun() {
   cancelRuntimeRun();
 }
 
-function toggleSystemPrompt() {
-  const drawer=$('system-prompt-drawer'), btn=$('system-drawer-btn');
-  const open=!drawer.classList.contains('open');
-  drawer.classList.toggle('open',open);
-  drawer.setAttribute('aria-hidden',open?'false':'true');
-  btn?.classList.toggle('active',open);
-  if(open) {
-    // Markdown is the reading format, editing is the exception: open in
-    // rendered preview by default.
-    if(!systemPromptPreviewMode) toggleSystemPromptPreview();
-  }
-}
-
-function closeSystemPrompt() {
-  const drawer=$('system-prompt-drawer'), btn=$('system-drawer-btn');
-  drawer?.classList.remove('open');
-  drawer?.setAttribute('aria-hidden','true');
-  btn?.classList.remove('active');
-}
-
-function saveSystemPrompt() {
-  localStorage.setItem(storageKey('mcpchat_system_prompt'), $('system-prompt').value);
-}
-
-// The drawer edits raw markdown, but the operator reads it rendered — a raw
-// textarea made a markdown system prompt look like uninterpreted noise.
-// Toggle between the editor and a live rendered view of the same content.
-let systemPromptPreviewMode = false;
-function toggleSystemPromptPreview() {
-  const ta = $('system-prompt'), preview = $('system-prompt-preview'), btn = $('system-prompt-preview-btn');
-  if (!ta || !preview || !btn) return;
-  systemPromptPreviewMode = !systemPromptPreviewMode;
-  if (systemPromptPreviewMode) {
-    preview.innerHTML = renderMd(ta.value || '');
-    preview.hidden = false;
-    ta.hidden = true;
-    btn.textContent = 'Edit';
-  } else {
-    preview.hidden = true;
-    ta.hidden = false;
-    btn.textContent = 'Preview';
-    ta.focus();
-  }
-}
-
-function resetSystemPrompt() {
-  $('system-prompt').value = DEFAULT_SYSTEM_PROMPT;
-  saveSystemPrompt();
-  notify('Instructions reset');
-}
-
-function currentSystemPrompt() {
-  return ($('system-prompt')?.value || '').trim();
-}
 
 function newConversationId() {
   return \`conv_\${new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14)}_\${Math.random().toString(36).slice(2,8)}\`;
@@ -1352,10 +1301,6 @@ async function loadConversation(id) {
     updateAgentModeUI();
     resetRuntimeConversationTracking();
     conversationDirty=false;
-    if(conv.systemPrompt && $('system-prompt')) {
-      $('system-prompt').value=conv.systemPrompt;
-      saveSystemPrompt();
-    }
     $('messages').innerHTML=conv.messageHtml || '';
     if(!$('messages').innerHTML.trim()) setEmptyChat();
     recoverProductionStateFromMessages();
@@ -1459,14 +1404,6 @@ function buildProxyLLMHeaders() {
   return h;
 }
 
-function renderTopPills() {
-  const el=$('tb-mcps');
-  if(!el) return;
-  el.innerHTML = servers
-    .filter(s=>s.enabled&&s.status==='ok')
-    .map(s=>\`<span class="tb-mcp-pill" title="\${esc(s.url)}">\${esc(s.name)} <span style="opacity:.6">(\${s.tools.length})</span></span>\`)
-    .join('');
-}
 
 function addServer(name='', url='', bearer='') {
   const id=nextId++;
@@ -2831,7 +2768,9 @@ async function sendMessage() {
   let streamMessagePersisted=false;
   const streamClearSeq=clearChatSeq;
   try {
-    const systemPrompt=currentSystemPrompt();
+    // Fallback chat (no runtime): the file as edited, plus the LLM fact and
+    // the profile the runtime would have injected.
+    const systemPrompt=[currentSystemPrompt(),window.__WIKI_CONFIG__?.systemPromptExtras||''].filter(Boolean).join('\\n\\n');
     const langLine=languageInstruction();
     const toolsNotice=chatModeToolsNotice();
     const sysContent=[systemPrompt,toolsNotice,langLine].filter(Boolean).join('\\n\\n');
@@ -3040,6 +2979,9 @@ async function sendRuntimeControlChoice(intent,text) {
 // ── Secret fields ───────────────────────────────────────────────────────────
 
 ${CONFIG_SCRIPT}
+${TOPBAR_SCRIPT}
+${SYSTEM_PROMPT_SCRIPT}
+${EMPTY_TILES_SCRIPT}
 
 ${WIKI_PANEL_SCRIPT}
 

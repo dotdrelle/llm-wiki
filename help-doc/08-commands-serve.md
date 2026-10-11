@@ -157,10 +157,21 @@ Everything below is a **UI panel**, not something you type:
   the branch; *Reject* discards it and leaves the wiki untouched. A **Start a
   curation** button on the page launches a new curation through DONNA (with a
   confirmation), so you never have to type the objective.
+- **Top bar** — the model badge names the active model (prefixed by the
+  profile when it is not `default`); with the runtime enabled a click opens the
+  list of `.wikirc` profiles to switch. The connector pill reads `● N
+  connectors` while every connector answers and names the one that does not
+  (`● documents down`); a click opens Connectors. **System instructions** edits
+  the workspace's `.wiki/system-prompt.md`, which DONNA reads at every turn in
+  chat and agent mode — *Save* writes the file, *Reset* loads the shipped
+  default without saving.
 - **LLM settings** (sidebar) — Base URL, Model, API key, and the active
-  `.wikirc` profile picker. With the runtime enabled the profile picker
-  switches the whole workspace and is refused while a run is active (the run
-  reads the profile at each phase); the **Model** field instead applies to the
+  `.wikirc` profile picker. With the runtime enabled a profile switch (here or
+  from the top bar) applies to the whole workspace: it is remembered in
+  `.wiki/active-profile.json`, so the ShellUI follows it at its next message and
+  a runtime restart keeps it, and an edit of the active profile file is picked
+  up the same way. A switch is refused while a run is active (the run reads the
+  profile at each phase); the **Model** field instead applies to the
   conversation's next turns only, so you can change the chat model during a
   run while the run and its jobs keep the profile's model.
 - **Help panel** — this documentation, read in place, without leaving the chat.

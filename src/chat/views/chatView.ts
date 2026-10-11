@@ -3,19 +3,23 @@ import { CONFIRM_DIALOG_HTML } from '../confirmDialog.ts';
 export const EMPTY_CHAT_HTML = `<div id="empty">
   <div class="em-icon">⬡</div>
   <h2>Donna</h2>
-  <p>Enable an MCP server, then start the conversation.</p>
+  <p>Ask about your wiki, or start from one of these.</p>
   <div class="empty-actions">
     <button class="empty-tile help-tile" type="button" onclick="toggleHelpPanel()">
       <span class="empty-tile-title">Help &amp; documentation</span>
       <span class="empty-tile-desc">What this app does, chat vs agent, getting started, and troubleshooting.</span>
     </button>
-    <button class="empty-tile" type="button" onclick="submitSuggestion('Help me fill my workspace profile.')">
-      <span class="empty-tile-title">Fill workspace profile</span>
-      <span class="empty-tile-desc">Describe your context so answers and deliverables fit this workspace.</span>
+    <button class="empty-tile" type="button" onclick="startWorkspaceStatus()">
+      <span class="empty-tile-title">Workspace status</span>
+      <span class="empty-tile-desc">What the wiki holds, what waits to be ingested, which services and connectors answer.</span>
     </button>
-    <button class="empty-tile" type="button" onclick="startCuration()">
-      <span class="empty-tile-title">Curate the wiki</span>
-      <span class="empty-tile-desc">Find duplicates, disagreements, outdated pages and unsourced claims; the corrections land on a branch you merge or discard.</span>
+    <button class="empty-tile" type="button" onclick="startWikiTour()">
+      <span class="empty-tile-title">Explore the wiki</span>
+      <span class="empty-tile-desc">The main topics and families it covers, and the pages worth opening first.</span>
+    </button>
+    <button class="empty-tile" type="button" onclick="startProfileInterview()">
+      <span class="empty-tile-title">Workspace profile</span>
+      <span class="empty-tile-desc">Donna reads your profile, asks what is missing, and writes it once you confirm.</span>
     </button>
   </div>
 </div>`;
@@ -88,8 +92,11 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
 </div>
 <div id="main">
   <div id="topbar">
-    <span class="tb-model" id="model-badge">gpt-4o</span>
-    <div class="tb-mcps" id="tb-mcps"></div>
+    <div class="tb-model-wrap">
+      <button class="tb-model" id="model-badge" type="button" onclick="toggleProfileMenu(event)" aria-haspopup="menu" aria-expanded="false">gpt-4o</button>
+      <div class="tb-profile-menu" id="profile-menu" role="menu" hidden></div>
+    </div>
+    <button class="tb-connectors" id="tb-mcps" type="button" onclick="showConnectorsView(event)"></button>
     <div class="tb-actions">
       <button class="tb-system" id="system-drawer-btn" onclick="toggleSystemPrompt()">System instructions</button>
       <button class="tb-clear" onclick="clearChat()">Clear</button>
@@ -290,16 +297,17 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
     <div class="prompt-head">
       <div class="prompt-title">
         <h2>System instructions</h2>
-        <p>Injected into the model on every call, without appearing in history.</p>
+        <p>The workspace's <code>.wiki/system-prompt.md</code>: Donna reads it at every turn, in chat and agent mode.</p>
       </div>
       <button class="prompt-close" type="button" onclick="closeSystemPrompt()" title="Close">×</button>
     </div>
     <div class="prompt-body">
-      <textarea id="system-prompt" spellcheck="false" onchange="saveSystemPrompt()" oninput="saveSystemPrompt()"></textarea>
+      <textarea id="system-prompt" spellcheck="false" oninput="markSystemPromptDirty()"></textarea>
       <div class="prompt-preview" id="system-prompt-preview" hidden></div>
       <div class="prompt-actions">
         <button type="button" id="system-prompt-preview-btn" onclick="toggleSystemPromptPreview()">Preview</button>
         <button type="button" onclick="resetSystemPrompt()">Reset</button>
+        <button type="button" id="system-prompt-save-btn" onclick="saveSystemPrompt()" disabled>Save</button>
       </div>
     </div>
   </aside>

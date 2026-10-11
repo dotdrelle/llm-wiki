@@ -13,6 +13,7 @@ import { loadConfig } from '../config/loadConfig.ts';
 import { WorkspaceService } from '../services/workspaceService.ts';
 import { createGraphSearch } from '../serve/graphSearch.ts';
 import { pathExists, safeWriteFile } from '../utils/fs.ts';
+import { createActiveProfileFollower } from '../serve/activeProfile.ts';
 import { resolveInside, toPosix } from '../utils/path.ts';
 import {
   extractIndexTiles,
@@ -788,11 +789,18 @@ export default async function serveCmd(
     return fresh;
   };
 
+  const followActiveProfile = createActiveProfileFollower({
+    rootDir,
+    currentConfigPath: () => config.configPath,
+    mirror: (fileName) => mirrorRuntimeConfig({ fileName }),
+  });
+
   server.on('request', async (req, res) => {
     try {
       const urlPath = decodeURIComponent(
         new URL(req.url ?? '/', `http://localhost`).pathname,
       );
+      await followActiveProfile();
 
       if (await totpLoginGuard(req, res, urlPath, {
         runtimeBaseUrl: runtimeUrl,

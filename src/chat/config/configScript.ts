@@ -238,7 +238,10 @@ function loadConfig() {
     if (saved.apiKey)  { $('api-key').value = saved.apiKey; flashSaved('llm-saved'); }
     if (saved.model)   $('model-name').value = saved.model;
   }
-  $('system-prompt').value = localStorage.getItem(storageKey('mcpchat_system_prompt')) ?? window.__WIKI_CONFIG__?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
+  // The workspace file, never a browser copy: a copy kept in localStorage
+  // outlived every edit of the file and, with the runtime on, reached no model.
+  try { localStorage.removeItem(storageKey('mcpchat_system_prompt')); } catch {}
+  $('system-prompt').value = window.__WIKI_CONFIG__ ? (window.__WIKI_CONFIG__.systemPromptFile ?? '') : (window.__WIKI_CONFIG__?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT);
   syncModel();
 }
 

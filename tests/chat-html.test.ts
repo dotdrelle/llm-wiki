@@ -735,12 +735,13 @@ describe('chat html', () => {
     const [script] = chatScripts();
 
     expect(CHAT_HTML).toContain('Help &amp; documentation');
-    expect(CHAT_HTML).toContain('Fill workspace profile');
+    expect(CHAT_HTML).toContain('Workspace profile');
+    expect(CHAT_HTML).toContain('onclick="startWorkspaceStatus()"');
+    expect(CHAT_HTML).toContain('onclick="startWikiTour()"');
     expect(CHAT_HTML).not.toContain('Get contextual tips');
     expect(CHAT_HTML).toContain('onclick="toggleHelpPanel()"');
     expect(CHAT_HTML).not.toContain('getTipsPrompt');
-    // Both remaining tiles are regular grid cells so they sit side by side on
-    // one row (no full-width 'wide' tile pushing one to its own line).
+    // Four regular grid cells, two per row (no full-width 'wide' tile).
     expect(CHAT_HTML).not.toContain('empty-tile wide');
     expect(CHAT_HTML).toContain('id="help-panel"');
     expect(script).not.toContain('function maybeAutoStartGuide');
@@ -968,15 +969,43 @@ describe('chat html', () => {
     expect(handler).toContain('setCenterWiki(fallback)');
   });
 
-  it('offers a curation entry point that selects agent mode, not the read-only chat', () => {
-    // A curation is an action: the tile must switch to agent mode, or the chat
-    // loop would only describe what it cannot do. The objective carries the
-    // "curate" alias the runtime resolves deterministically.
-    expect(CHAT_HTML).toContain('onclick="startCuration()"');
+  it('makes the top bar a profile switcher and one connector status pill', () => {
+    const script = chatScripts().join('\n');
+    expect(CHAT_HTML).toContain('onclick="toggleProfileMenu(event)"');
+    expect(CHAT_HTML).toContain('onclick="showConnectorsView(event)"');
+    expect(CHAT_HTML).not.toContain('tb-mcp-pill');
+    // A failing connector is named, never hidden behind a list of healthy ones.
+    const pills = script.slice(script.indexOf('function renderTopPills()'));
+    expect(pills.slice(0, 900)).toContain("s.status==='err'");
+    expect(pills.slice(0, 900)).toContain('connectors down');
+    // The menu switches through the same runtime route as the config picker.
+    const menu = script.slice(script.indexOf('async function toggleProfileMenu('));
+    expect(menu.slice(0, 2000)).toContain("fetch('/api/config/profiles'");
+    expect(menu.slice(0, 2000)).toContain('switchConfigProfile(name)');
+  });
+
+  it('edits the workspace system-prompt file, never a browser copy', () => {
+    const script = chatScripts().join('\n');
+    expect(script).toContain("fetch('/api/system-prompt',{method:'PUT'");
+    expect(script).not.toContain("localStorage.setItem(storageKey('mcpchat_system_prompt')");
+    expect(script).toContain('systemPromptFile');
+    // A conversation reload no longer overwrites the editor with its snapshot.
+    expect(script).not.toContain("$('system-prompt').value=conv.systemPrompt");
+  });
+
+  it('routes the empty-chat tiles through a Donna turn, the profile in agent mode', () => {
+    // Curation stays reachable (/curate, the proposals page) but is no longer
+    // an empty-chat tile: the tiles are entry points onto the wiki and the tools.
+    expect(CHAT_HTML).not.toContain('onclick="startCuration()"');
     expect(CHAT_HTML).toContain('function startCuration() {');
-    const source = CHAT_HTML.slice(CHAT_HTML.indexOf('function startCuration()'));
-    expect(source.slice(0, 400)).toContain('agentMode=true');
-    expect(source.slice(0, 400)).toContain('Curate the wiki');
+    const profile = CHAT_HTML.slice(CHAT_HTML.indexOf('function startProfileInterview()'));
+    expect(profile.slice(0, 700)).toContain('agent:true');
+    expect(profile.slice(0, 700)).toContain('Write nothing until I have answered and confirmed');
+    const status = CHAT_HTML.slice(CHAT_HTML.indexOf('function startWorkspaceStatus()'));
+    expect(status.slice(0, 300)).toContain("input.value='/status'");
+    const composed = CHAT_HTML.slice(CHAT_HTML.indexOf('function submitComposedTurn('));
+    expect(composed.slice(0, 500)).toContain('sendMessage()');
+    expect(composed.slice(0, 500)).toContain("input.dataset.hideQuestion='1'");
   });
 
   it('keeps the run card in step with the runtime state in the Execution view', () => {

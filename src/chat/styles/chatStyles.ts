@@ -1,6 +1,6 @@
 import { WIKI_CSS_VARS, SCROLLBAR_CSS } from '../theme.ts';
 import { CONFIRM_DIALOG_CSS } from '../confirmDialog.ts';
-import { CHAT_ACTIVITY_CSS } from './chatActivityStyles.ts'; const CHAT_COMPONENT_CSS = `*{box-sizing:border-box;margin:0;padding:0}
+import { CHAT_ACTIVITY_CSS } from './chatActivityStyles.ts'; import { TOPBAR_CSS } from './topbarStyles.ts'; const CHAT_COMPONENT_CSS = `*{box-sizing:border-box;margin:0;padding:0}
 body{font-family:var(--font-sans);background:var(--bg);background-image:var(--bg-image);background-size:var(--bg-size);background-attachment:fixed;color:var(--text);height:100vh;display:flex;overflow:hidden}
 /* Themed scrollbars (shared with the wiki reader): see SCROLLBAR_CSS. */
 ${SCROLLBAR_CSS}
@@ -189,8 +189,6 @@ body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #input-wr
 .tb-profile-select{display:none;max-width:130px;border:1px solid var(--border);border-radius:6px;background:var(--panel-soft);color:var(--muted2);font-size:11px;padding:2px 8px;font-family:var(--font-sans);font-weight:600}
 .tb-profile-select.visible{display:inline-block}
 .tb-profile-select:disabled{opacity:.55;cursor:not-allowed}
-.tb-mcps{display:flex;gap:5px;flex-wrap:wrap}
-.tb-mcp-pill{font-size:10px;font-family:var(--font-mono);font-weight:500;padding:3px 8px;border-radius:99px;background:color-mix(in srgb,var(--accent) 12%,transparent);border:1px solid color-mix(in srgb,var(--accent) 25%,transparent);color:var(--accent)}
 .tb-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
 .tb-clear,.tb-system{background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);height:30px;display:inline-flex;align-items:center;padding:0 12px;cursor:pointer;font-size:12px;font-family:var(--font-sans);font-weight:600;transition:all .2s}
 .tb-clear:hover{border-color:var(--err);color:var(--err)}
@@ -594,4 +592,5 @@ ${WIKI_CSS_VARS}
 :root.theme-light{--panel-deep:rgba(20,110,160,.09);--ok:#157a52;--err:#c0392b;--warn:#a66f00}
 :root.theme-dark{--panel-deep:rgba(214,210,201,.07);--ok:#8ac49e;--err:#ff6b6b;--warn:#f2b84b}
 ${CHAT_COMPONENT_CSS}
+${TOPBAR_CSS}
 </style>`;
