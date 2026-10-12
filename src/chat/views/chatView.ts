@@ -121,6 +121,15 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
         <div class="mcp-cards" id="mcp-cards"></div>
       </div>
     </section>
+    <section class="connectors-section" id="tchap-section" hidden>
+      <div class="connectors-section-head">
+        <div class="connectors-section-title">
+          <h2>Tchap</h2>
+          <p>Talk to Donna from a Tchap forum on your phone. The Tchap sign-in serves every workspace; each workspace has its own forum.</p>
+        </div>
+      </div>
+      <div class="tchap-card" id="tchap-card"></div>
+    </section>
     <section class="connectors-section">
       <div class="connectors-section-head">
         <div class="connectors-section-title">

@@ -801,6 +801,13 @@ function submitSuggestion(text) {
   sendMessage();
 }
 
+// An action asked from a button (a curation, a Tchap forum…) is a Donna turn
+// in agent mode: the read-only chat would only describe what it cannot do.
+function submitAgentSuggestion(text) {
+  if(!agentMode) { agentMode=true; updateAgentModeUI(); }
+  submitSuggestion(text);
+}
+
 // The empty-chat curation tile — and the Agent proposals page's "Start a
 // curation" button, which routes here through llmwiki:curate. A curation is
 // an ACTION, not a chat answer: select agent mode first, or the read-only
@@ -809,8 +816,7 @@ function submitSuggestion(text) {
 // curation capability (a branch proposal a human merges or discards — never a
 // direct wiki write).
 function startCuration() {
-  if(!agentMode) { agentMode=true; updateAgentModeUI(); }
-  submitSuggestion('Curate the wiki: find duplicate pages, pages that disagree or repeat each other, outdated or superseded pages, and claims with no cited source, then write the corrections on a dedicated branch.');
+  submitAgentSuggestion('Curate the wiki: find duplicate pages, pages that disagree or repeat each other, outdated or superseded pages, and claims with no cited source, then write the corrections on a dedicated branch.');
 }
 
 function renderSkillsManager() {
