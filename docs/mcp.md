@@ -14,6 +14,7 @@ Two transports are available:
 | Tool                         | Description                                                                                                                           |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `wiki_list_pages`            | List all pages under `wiki/` with their type                                                                                          |
+| `wiki_curation_inventory`    | Paginated metadata for `wiki/sources/` fiches: titles, tags, citations, sizes, fingerprints and exact duplicate candidates; no page bodies or generated pivots |
 | `wiki_read_page`             | Read a page by relative path (`wiki/`, `raw/ingested/`, `raw/untracked/`); the result ends with a sources comment naming every `[src: ...]` citation |
 | `wiki_read_pages`            | Read multiple pages by relative path in one call; each entry carries the page's `citations` and `links` structurally                  |
 | `wiki_write_page`            | Write or update a page — restricted to `wiki/*` paths                                                                                 |
@@ -31,6 +32,8 @@ Two transports are available:
 | `wiki_read_deliverable`      | Read a generated deliverable (listing carries frontmatter titles)                                                                       |
 | `wiki_maintenance_state`     | Deterministic maintenance facts, read-only, no model call: pending sources, freshness, index — see `docs/maintenance.md` |
 | `profile_read` / `profile_update` | Read / update the workspace profile                                                                                                 |
+
+`wiki_curation_inventory` is a deterministic discovery aid for curation. Its metadata and duplicate fingerprints are not evidence; read the candidate fiches and their cited source fragments before reporting or changing a claim. `wiki_list_pages` lists paths without loading page bodies.
 
 Write operations use workspace-owned path guards. `wiki_add_source` resolves its target from the configured `workspace.paths.rawUntrackedDir`, rejects traversal, and refuses replacement unless `overwrite=true`.
 

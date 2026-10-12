@@ -134,6 +134,11 @@ export const WIKI_MCP_TOOLS = [
       'List llm-wiki markdown pages under wiki/. Use this only for the llm-wiki knowledge base, not CME runtime configuration.',
   },
   {
+    name: 'wiki_curation_inventory',
+    description:
+      'Read a compact, deterministic inventory of wiki/sources fiches for curation: paths, citation paths, body sizes, exact duplicate groups and a page of titles/tags. It returns metadata only, never page content. Use it to choose fiches for wiki_read_pages; metadata is a search aid, not proof of a finding.',
+  },
+  {
     name: 'wiki_read_page',
     description:
       'Read one llm-wiki markdown page (wiki/, raw/ingested/, or raw/untracked/) by relative path. Use for targeted inspection when a page needs full content. The result ends with a wiki_read_page sources comment naming every [src: ...] citation in the page — follow a wiki/... target with this same tool (or wiki_read_pages) and a raw/ingested/... target with wiki_read_ingested_source; do not re-read a file whose content you already hold.',
@@ -668,9 +673,82 @@ export async function createWikiMcpServer(
   const history = new HistoryService(workspace.paths.rootDir, config.history);
 
   const listWikiPages = async () => {
-    const pages = await workspace.listWikiPages();
-    const items = pages.map((p) => `${p.relativePath} [${p.type}]`);
+    const pages = await workspace.listWikiPagePaths();
+    const items = pages.map((relativePath) => `${relativePath} [${relativePath.startsWith('wiki/sources/') ? 'source' : relativePath.startsWith('wiki/concepts/') ? 'concept' : relativePath === 'wiki/index.md' ? 'index' : 'other'}]`);
     return textResult(items.join('\n'));
+  };
+
+  const curationInventory = async ({ cursor = 0, limit = 200 }: { cursor?: number; limit?: number }) => {
+    const paths = (await workspace.listWikiPagePaths()).filter((pagePath) => pagePath.startsWith('wiki/sources/'));
+    const pages: Array<{
+      path: string;
+      title: string;
+      tags: string[];
+      citations: string[];
+      chars: number;
+      bodyHash: string;
+      hasBody: boolean;
+      parseError: boolean;
+    }> = [];
+    for (let offset = 0; offset < paths.length; offset += 16) {
+      pages.push(...await Promise.all(paths.slice(offset, offset + 16).map(async (pagePath) => {
+        const absolutePath = resolveReadableWorkspacePath(workspace, pagePath);
+        const raw = await readFile(absolutePath, 'utf8');
+        let parsed: ReturnType<typeof matter>;
+        let parseError = false;
+        try {
+          parsed = matter(raw);
+        } catch {
+          parsed = { content: raw, data: {} } as ReturnType<typeof matter>;
+          parseError = true;
+        }
+        const heading = /^#\s+(.+)$/m.exec(parsed.content)?.[1]?.trim();
+        const title = typeof parsed.data.title === 'string' && parsed.data.title.trim()
+          ? parsed.data.title.trim()
+          : heading || path.basename(pagePath, '.md').replace(/[-_]+/g, ' ');
+        const tagsLine = /^Tags:\s*(.+)$/im.exec(parsed.content)?.[1] ?? '';
+        const tags = [...new Set(tagsLine.split(/[,;|]/).map((tag) => tag.trim()).filter(Boolean))].sort();
+        const normalizedBody = parsed.content.normalize('NFKC').toLowerCase().replace(/\s+/gu, ' ').trim();
+        return {
+          path: pagePath,
+          title,
+          tags,
+          citations: [...new Set(extractSourceCitations(raw))].sort(),
+          chars: raw.length,
+          bodyHash: hashText(normalizedBody),
+          hasBody: Boolean(normalizedBody),
+          parseError,
+        };
+      })));
+    }
+    const duplicateGroups = new Map<string, string[]>();
+    for (const page of pages) {
+      if (!page.hasBody) continue;
+      const group = duplicateGroups.get(page.bodyHash) ?? [];
+      group.push(page.path);
+      duplicateGroups.set(page.bodyHash, group);
+    }
+    const exactDuplicates = [...duplicateGroups.values()].filter((group) => group.length > 1);
+    const start = Math.max(0, Math.floor(cursor));
+    const size = Math.max(1, Math.min(500, Math.floor(limit)));
+    const selected = pages.slice(start, start + size);
+    const nextCursor = start + selected.length < pages.length ? start + selected.length : null;
+    return textResult(JSON.stringify({
+      total: pages.length,
+      cursor: start,
+      nextCursor,
+      exactDuplicateGroupCount: exactDuplicates.length,
+      exactDuplicates: exactDuplicates.slice(0, 100),
+      pages: selected.map((page) => ({
+        path: page.path,
+        title: page.title,
+        tags: page.tags,
+        citations: page.citations,
+        chars: page.chars,
+        bodyHash: page.bodyHash.slice(0, 16),
+        ...(page.parseError ? { parseError: true } : {}),
+      })),
+    }));
   };
 
   const readWorkspaceStatus = async () =>
@@ -1983,6 +2061,17 @@ const withTitles = async (
     {},
     READ_ONLY,
     (input) => loggedTool('wiki_list_pages', input, listWikiPages),
+  );
+
+  server.tool(
+    'wiki_curation_inventory',
+    'Return metadata only for wiki/sources fiches: paginated paths, titles, tags, cited source paths, page sizes, short content fingerprints, and exact duplicate groups. This is a deterministic search aid, not evidence; read candidate pages and their cited sources before making findings. Does not return page contents or include generated wiki/concepts pivots.',
+    {
+      cursor: z.number().int().min(0).optional(),
+      limit: z.number().int().min(1).max(500).optional(),
+    },
+    READ_ONLY,
+    (input) => loggedTool('wiki_curation_inventory', input, curationInventory),
   );
 
   const readWikiPageInput = {

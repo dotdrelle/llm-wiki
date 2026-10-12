@@ -10,7 +10,7 @@ This workflow never fetches sources, never ingests, never builds, exports or pub
 
 ## Execution
 
-Obtain the normal mutation approval, keep the curation capability's own analysis sequence, and list the changed files and the objections it could not resolve.
+Run the curation analysis and prepare a reviewable proposal on its dedicated branch. The human approval is the later merge or discard on the Agent proposals page; do not request a separate pre-run mutation approval. List the changed files and the objections the review could not resolve.
 
 ## Notification
 

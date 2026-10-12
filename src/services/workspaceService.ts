@@ -466,19 +466,14 @@ export class WorkspaceService {
   async listWikiPages(
     onPage?: (relativePath: string, index: number, total: number) => void,
   ): Promise<WikiPage[]> {
-    const files = (
-      await fg('**/*.md', {
-        cwd: this.paths.wikiDir,
-        absolute: true,
-      })
-    ).sort();
+    const relativePaths = await this.listWikiPagePaths();
 
     const pages: WikiPage[] = [];
-    for (let i = 0; i < files.length; i++) {
-      const absolutePath = files[i];
-      const relativePath = relativeFrom(this.paths.rootDir, absolutePath);
+    for (let i = 0; i < relativePaths.length; i++) {
+      const relativePath = relativePaths[i];
+      const absolutePath = path.join(this.paths.rootDir, relativePath);
       const content = await readFile(absolutePath, 'utf8');
-      onPage?.(relativePath, i, files.length);
+      onPage?.(relativePath, i, relativePaths.length);
       pages.push({
         absolutePath,
         relativePath,
@@ -489,6 +484,15 @@ export class WorkspaceService {
     }
 
     return pages;
+  }
+
+  /** List wiki paths without reading page bodies; MCP inventories use this to stay cheap. */
+  async listWikiPagePaths(): Promise<string[]> {
+    const files = await fg('**/*.md', {
+      cwd: this.paths.wikiDir,
+      absolute: true,
+    });
+    return files.sort().map((absolutePath) => relativeFrom(this.paths.rootDir, absolutePath));
   }
 
   /**
