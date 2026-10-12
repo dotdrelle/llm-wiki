@@ -61,8 +61,12 @@ replaced; those in square brackets `[…]` are optional.
   shows this instead.
 - `/mcp endpoints` — declared MCP endpoints.
 - `/mcp tools [mcp]` — tools exposed by the connectors.
-- `/connector list` — connector authorization status.
-- `/connector auth <name>` — authorize a connector.
+- `/connector list` — connector authorization status (Gmail, Tchap).
+- `/connector auth <name>` — authorize a connector: `google`, or `tchap
+  [#forum:server]` to attach a Tchap forum to the workspace (without an
+  address, it lists your forums).
+- `/connector remove tchap` — detach this workspace's Tchap forum;
+  `/connector signout tchap` — sign out of Tchap for every workspace.
 
 ## Documents and wiki (raw CLI)
 

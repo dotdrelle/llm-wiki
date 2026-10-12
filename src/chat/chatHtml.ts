@@ -6,6 +6,7 @@ import { PRODUCTION_STATE_SCRIPT } from './workflow/productionStateScript.ts';
 import { PRODUCTION_TRACE_SCRIPT } from './workflow/productionTraceScript.ts';
 import { OBSERVER_TOOLS_SCRIPT } from './views/observerToolsScript.ts';
 import { MCP_CONNECTOR_SCRIPT } from './runtime/mcpConnectorScript.ts';
+import { TCHAP_CARD_SCRIPT } from './runtime/tchapCardScript.ts';
 import { CONFIG_SCRIPT } from './config/configScript.ts';
 import { TOPBAR_SCRIPT } from './views/topbarScript.ts';
 import { SYSTEM_PROMPT_SCRIPT } from './views/systemPromptScript.ts';
@@ -1542,6 +1543,7 @@ async function toggleServer(id, checked) {
 }
 
 ${MCP_CONNECTOR_SCRIPT}
+${TCHAP_CARD_SCRIPT}
 
 ${PRODUCTION_STATE_SCRIPT}
 
