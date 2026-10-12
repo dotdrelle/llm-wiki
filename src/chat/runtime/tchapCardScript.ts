@@ -1,9 +1,9 @@
 /**
  * Tchap bridge card in the Connectors view (agent-connectors' `connectors_tchap_*`).
  *
- * Shown ONLY when Tchap is signed in: an absent or disabled bridge, an
- * unreachable connectors agent, or a not-yet-connected account leave the
- * view as it was — no empty card. It reads `connectors_tchap_status` (a
+ * Shown once Tchap has been set up: signed in, a sign-in pending, or a
+ * bridge that STOPPED (session ended, forum kept) — a failure is shown, never
+ * hidden. Never set up, disabled, or no connectors agent: no card at all. It reads `connectors_tchap_status` (a
  * read-only tool) and displays the account, this workspace's forum and its
  * bridge state. Its two buttons are Donna turns in agent mode, never direct
  * tool calls: attaching or detaching a forum is an action, and Donna owns it.
@@ -42,8 +42,21 @@ export const TCHAP_CARD_SCRIPT = String.raw`
     try{
       if(workspace) status=JSON.parse(await callMCPTool('connectors_tchap_status',{workspace},{trackActivity:false}));
     }catch{status=null;}
-    // Not signed in, disabled, or no connectors agent: no card at all.
-    if(!status||status.ok===false||!status.connected){host.hidden=true;return;}
+    // Never set up, disabled, or no connectors agent: no card at all. A
+    // session that ended keeps its forum and its error — that one is shown.
+    const setUp=status&&status.ok!==false&&(status.connected||status.pending||status.lastError||status.forum);
+    if(!setUp){host.hidden=true;return;}
+    if(!status.connected){
+      let body='<div class="tchap-card-head"><strong>Tchap</strong><span class="tchap-state warn">'+esc(status.pending&&!status.pending.error?'Sign-in pending':'Not signed in')+'</span></div>';
+      if(status.pending&&status.pending.userCode) body+='<div>Open '+esc(status.pending.verificationUri||'')+' and confirm the code <strong>'+esc(status.pending.userCode)+'</strong>.</div>';
+      if(status.forum) body+=row('Forum',status.forum)+'<div>The bridge is stopped until you sign in again.</div>';
+      const error=status.lastError||(status.pending&&status.pending.error);
+      if(error) body+='<div class="tchap-error">Last error: '+esc(error)+'</div>';
+      body+='<div class="tchap-actions"><button type="button" onclick="tchapAttachForum()">Sign in again</button></div>';
+      document.getElementById('tchap-card').innerHTML=body;
+      host.hidden=false;
+      return;
+    }
     const [label,tone]=status.forum?(STATE_LABEL[status.bridge]||[String(status.bridge||'Unknown'),'']):['No forum',''];
     const running=status.forum&&!status.running?' (stopped)':'';
     let html='<div class="tchap-card-head"><strong>Tchap</strong><span class="tchap-state '+tone+'">'+esc(label+running)+'</span></div>';

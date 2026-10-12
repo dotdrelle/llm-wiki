@@ -43,7 +43,23 @@ function mount(status: unknown) {
 }
 
 describe('Tchap card in the Connectors view', () => {
-  it('stays hidden while Tchap is not signed in, disabled or unreachable', async () => {
+  it('shows a stopped bridge instead of hiding it when the session ended', async () => {
+    const page = mount({ ok: true, connected: false, forum: 'Donna-demo', bridge: 'active', lastError: 'tchap_reauthorization_required' });
+    await page.render();
+    expect(page.section()?.hidden).toBe(false);
+    expect(page.card.innerHTML).toContain('Not signed in');
+    expect(page.card.innerHTML).toContain('tchap_reauthorization_required');
+    expect(page.card.innerHTML).toContain('Sign in again');
+  });
+
+  it('shows a pending sign-in code', async () => {
+    const page = mount({ ok: true, connected: false, pending: { userCode: 'ABCD-1234', verificationUri: 'https://auth.example/link' } });
+    await page.render();
+    expect(page.card.innerHTML).toContain('Sign-in pending');
+    expect(page.card.innerHTML).toContain('ABCD-1234');
+  });
+
+  it('stays hidden while Tchap was never set up, is disabled or unreachable', async () => {
     for (const status of [{ ok: true, connected: false }, { ok: false, error: 'bridge_not_configured' }, new Error('Unknown tool')]) {
       const page = mount(status);
       await page.render();

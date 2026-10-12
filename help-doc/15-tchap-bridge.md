@@ -44,7 +44,8 @@ The same set-up is available without Donna: in the ShellUI,
 **Connectors** view shows a **Tchap** card once you are signed in — account,
 this workspace's forum, its state, and buttons to attach, change or detach the
 forum (each one is a request to Donna). Before the first sign-in there is no
-card.
+card; a bridge stopped by an ended session keeps its card, with the error and
+a button to sign in again.
 
 ## Using it
 
