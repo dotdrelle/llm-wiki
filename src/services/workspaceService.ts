@@ -68,7 +68,7 @@ function fallbackTitleFromWikiPath(wikiPath: string): string {
   return fileName.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Untitled';
 }
 
-function inferWikiPageType(relativePath: string): WikiPage['type'] {
+export function inferWikiPageType(relativePath: string): WikiPage['type'] {
   if (relativePath === 'wiki/index.md') {
     return 'index';
   }
