@@ -46,8 +46,10 @@ function runLiveLineStatusLabel() {
 }
 // A waiting bubble no pending turn owns any more (a skill turn's bubble that
 // took the run's first "0%" and was never cleared) is an orphan: it would sit
-// in the thread with its seconds still counting.
+// in the thread with its seconds still counting. Swept only while no turn is
+// in flight, so a live turn's bubble can never be taken for one.
 function removeOrphanWaitingBubbles(wrap) {
+  if(pendingRuntimeStatusEls.length||armedReplyStatusEls.length) return;
   wrap?.querySelectorAll('.runtime-thinking').forEach(el=>{
     const msg=el.closest('.msg');
     if(msg&&msg!==runLiveLineEl&&!pendingRuntimeStatusEls.includes(msg)&&!armedReplyStatusEls.includes(msg)) msg.remove();

@@ -380,8 +380,13 @@ describe('chat html', () => {
     const bubble = (name: string) => ({ name, remove: () => removed.push(name) });
     const pending = bubble('pending'); const armed = bubble('armed'); const live = bubble('live'); const orphan = bubble('orphan');
     const wrap = { querySelectorAll: () => [pending, armed, live, orphan].map((msg) => ({ closest: () => msg })) };
-    new Function('pendingRuntimeStatusEls', 'armedReplyStatusEls', 'runLiveLineEl', 'wrap', `${source}; removeOrphanWaitingBubbles(wrap);`)([pending], [armed], live, wrap);
-    expect(removed).toEqual(['orphan']);
+    const sweep = (pendingEls: unknown[], armedEls: unknown[]) => new Function('pendingRuntimeStatusEls', 'armedReplyStatusEls', 'runLiveLineEl', 'wrap', `${source}; removeOrphanWaitingBubbles(wrap);`)(pendingEls, armedEls, live, wrap);
+    // A turn in flight: nothing is swept, its bubble is never at risk.
+    sweep([pending], [armed]);
+    expect(removed).toEqual([]);
+    // No turn in flight: only the orphans go (the live line stays).
+    sweep([], []);
+    expect(removed).toEqual(['pending', 'armed', 'orphan']);
     expect(script).toContain("removeOrphanWaitingBubbles($('messages'));");
   });
 

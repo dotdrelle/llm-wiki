@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { pathExists, writeIfChanged } from '../../utils/fs.ts';
 import { normalizeSafeRelativePath, resolveInside, toPosix } from '../../utils/path.ts';
@@ -296,7 +296,8 @@ loadHistory();
   if (urlPath === '/api/report' && req.method === 'GET') {
     const requested = new URL(req.url ?? '', 'http://serve.local').searchParams.get('path') ?? '';
     const relative = toPosix(requested).replace(/^\/+/, '');
-    if (!relative.startsWith('raw/untracked/') || !/\.md(?:\.lock)?$/.test(relative)) {
+    if (!relative.startsWith('raw/untracked/') || !/\.md(?:\.lock)?$/.test(relative)
+      || normalizeSafeRelativePath(relative) !== relative) {
       deps.sendJson(res, 400, { error: 'Only a Markdown document under raw/untracked/ can be read here.' });
       return true;
     }
@@ -313,6 +314,25 @@ loadHistory();
     }
     if (!(await pathExists(absolute))) {
       deps.sendJson(res, 404, { error: 'This report no longer exists — it was deleted, renamed or ingested.' });
+      return true;
+    }
+    // `resolveInside` only confines a lexical path to the workspace root. The
+    // report reader's contract is narrower: the actual file must remain under
+    // raw/untracked, including when that file or one of its parent folders is
+    // a symlink. Read from the canonical path after checking both roots.
+    try {
+      const workspaceRoot = await realpath(rootDir);
+      const untrackedRoot = await realpath(path.join(workspaceRoot, 'raw', 'untracked'));
+      const untrackedRelative = path.relative(workspaceRoot, untrackedRoot);
+      if (untrackedRelative !== path.join('raw', 'untracked')) throw new Error('Invalid pending directory.');
+      const actual = await realpath(absolute);
+      const actualRelative = path.relative(untrackedRoot, actual);
+      if (!actualRelative || actualRelative.startsWith('..') || path.isAbsolute(actualRelative)) {
+        throw new Error('Report path escapes raw/untracked.');
+      }
+      absolute = actual;
+    } catch {
+      deps.sendJson(res, 400, { error: 'The report path must resolve to a file under raw/untracked.' });
       return true;
     }
     deps.sendJson(res, 200, { path: served, markdown: await readFile(absolute, 'utf8') });

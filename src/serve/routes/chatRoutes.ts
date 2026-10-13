@@ -8,6 +8,7 @@ import type { AppConfig } from '../../types.ts';
 import { pathExists } from '../../utils/fs.ts';
 import { escapeHtml } from '../../utils/html.ts';
 import { promptSafeBaseUrl } from '../../utils/promptSafeUrl.ts';
+import { writeDonnaReport } from '../../services/reportWriter.ts';
 import { escapeScriptJson } from '../html/wikiHtml.ts';
 import { appDisplayName, appFaviconHref } from '../html/appIdentity.ts';
 import { resolveMcpTargets, type ExternalMcpEndpoint } from './uploadRoutes.ts';
@@ -320,6 +321,32 @@ export async function handleChatRoutes(
         message: result.changed
           ? `Profile updated: ${result.line.replace(/^- /, '')}`
           : `Profile already up to date: ${result.line.replace(/^- /, '')}`,
+      });
+    } catch (err) {
+      deps.sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return true;
+  }
+
+  // The standalone Chat path has no manager runtime to call report_write.
+  // Keep its long-answer conversion on the server so reports get the same
+  // locked, collision-safe storage and metadata as runtime-written reports.
+  if (req.method === 'POST' && urlPath === '/api/chat/report') {
+    try {
+      const body = JSON.parse(await readRequestBody(req) || '{}') as { title?: unknown; content?: unknown };
+      const title = typeof body.title === 'string' ? body.title.trim() : '';
+      const content = typeof body.content === 'string' ? body.content : '';
+      if (!title || !content.trim()) {
+        deps.sendJson(res, 400, { error: 'A report needs a title and content.' });
+        return true;
+      }
+      if (content.length > 100_000) {
+        deps.sendJson(res, 413, { error: 'Report content exceeds 100000 characters.' });
+        return true;
+      }
+      const report = await writeDonnaReport(deps.rootDir, { title, content });
+      deps.sendJson(res, 201, {
+        attachment: { kind: 'report', target: report.relativePath, title: report.title },
       });
     } catch (err) {
       deps.sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });

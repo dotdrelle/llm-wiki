@@ -66,6 +66,23 @@ describe('the step line keeps time and carries the search result', () => {
     } })).toBe('cme · cme_export_status (job_id=abc)');
   });
 
+  it('starts every displayed step with a capital letter', () => {
+    const { setProgressText } = new Function(`${PROGRESS_LABEL_SCRIPT}\nreturn { setProgressText };`)() as {
+      setProgressText: (span: { dataset: Record<string, string>; textContent: string }, text: string) => void;
+    };
+    const realSetInterval = globalThis.setInterval;
+    globalThis.setInterval = (() => 0) as unknown as typeof setInterval;
+    try {
+      const span = { dataset: {} as Record<string, string>, textContent: '' };
+      setProgressText(span, 'analyst (2/5) · Role 2/5: analyst · 20%');
+      expect(span.textContent).toBe('Analyst (2/5) · Role 2/5: analyst · 20%');
+      setProgressText(span, 'éditeur · ingest');
+      expect(span.textContent).toBe('Éditeur · ingest');
+    } finally {
+      globalThis.setInterval = realSetInterval;
+    }
+  });
+
   it('shows the seconds a step has lasted, and what the search found while thinking', () => {
     const { setProgressText } = new Function(`${PROGRESS_LABEL_SCRIPT}\nreturn { setProgressText };`)() as {
       setProgressText: (span: { dataset: Record<string, string>; textContent: string }, text: string) => void;
@@ -98,7 +115,7 @@ describe('the step line keeps time and carries the search result', () => {
       setProgressText(span, 'wiki.x failed: not found');
       clock += 5_000;
       setProgressText(span, 'wiki.x failed: not found');
-      expect(span.textContent).toBe('wiki.x failed: not found');
+      expect(span.textContent).toBe('Wiki.x failed: not found');
     } finally {
       Date.now = realNow;
       globalThis.setInterval = realSetInterval;

@@ -82,7 +82,10 @@ function runtimeProgressLabel(event) {
 // not a step in flight: it gets no counter.
 let progressStepTimer=null;
 function renderProgressStep(span) {
-  const label=span.dataset.stepLabel||'';
+  // Every line after ">_" starts with a capital, whatever produced it (a tool
+  // name, an agent's role, a counter): "analyst (2/5)" reads "Analyst (2/5)".
+  const raw=span.dataset.stepLabel||'';
+  const label=raw.charAt(0).toLocaleUpperCase()+raw.slice(1);
   const seconds=Math.floor((Date.now()-Number(span.dataset.stepSince))/1000);
   span.textContent=seconds>=2&&!/ failed\\b/.test(label)?label+' '+seconds+'s':label;
 }

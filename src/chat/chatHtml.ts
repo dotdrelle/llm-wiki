@@ -2863,9 +2863,32 @@ async function sendMessage() {
     if(streamAbortController.signal.aborted) return;
     streamText=content;
     const finalContent=String(content||'').trim() ? content : 'No response.';
-    setStreamContent(streamDiv,finalContent);
+    let displayContent=finalContent;
+    let finalAttachments=null;
+    // Standalone Chat bypasses the manager's interactive turn, so it cannot
+    // pass a long final answer through answerAsReport. Apply the same boundary
+    // here after the stream has completed; short answers stay in the thread.
+    if(finalContent.length>3000 || finalContent.split(/\\r?\\n/).length>30) {
+      const heading=/^\\s{0,3}#\\s+(.+?)\\s*#*\\s*$/m.exec(finalContent)?.[1];
+      const title=String(heading||resolved.displayText||'Report').replace(/[\\x60*_]/g,'').replace(/\\s+/g,' ').trim().slice(0,120)||'Report';
+      try {
+        const reportRes=await fetch('/api/chat/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,content:finalContent}),signal:streamAbortController.signal});
+        const reportData=await reportRes.json().catch(()=>({}));
+        if(!reportRes.ok||!reportData?.attachment?.target) throw new Error(reportData?.error||('Report save failed ('+reportRes.status+')'));
+        finalAttachments=[reportData.attachment];
+        const lang=String(window.__WIKI_CONFIG__?.language||'en').toLowerCase();
+        displayContent=lang.startsWith('fr')
+          ? 'Réponse longue enregistrée dans « '+reportData.attachment.title+' ». Ouvre le rapport avec le bouton ci-dessous.'
+          : 'Long answer saved as “'+reportData.attachment.title+'”. Open the report with the button below.';
+      } catch(err) {
+        if(err?.name==='AbortError') throw err;
+        notify('Long answer could not be saved as a report; the full answer remains in the chat.','e');
+      }
+    }
+    setStreamContent(streamDiv,displayContent);
+    if(finalAttachments) streamDiv.querySelector('.bubble')?.insertAdjacentHTML('afterend',msgAttachmentsHTML(finalAttachments));
     streamFinalized=true;
-    messages.push({role:'assistant',content:finalContent});
+    messages.push({role:'assistant',content:displayContent,...(finalAttachments?{attachments:finalAttachments}:{})});
     streamMessagePersisted=true;
     conversationDirty=true;
     await saveCurrentConversation({immediate:true});
