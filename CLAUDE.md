@@ -258,6 +258,18 @@ never becomes an extra run. Keep scaffold skills generic and English by default.
   messages. The runtime derives its conversation from the event log, so a
   DOM-only deletion would be merged straight back in by the next poll; the
   runtime answers `409 run_active` while a run is in progress.
+- `POST /api/runtime/conversation/remove` → workspace-scoped runtime
+  `/conversation/remove` (delete ONE of Donna's answers from a thread, keeping
+  what follows: only that entry's assistant events are deleted). Backs the
+  `Delete` button on assistant messages (`src/chat/runtime/messageEditScript.ts`),
+  which sends the displayed text so a drifted index is refused (`409
+  entry_mismatch`) instead of deleting a neighbour; the last answer of a thread
+  is refused while a run is active. The browser splices its own copy of the
+  conversation and its refs at once, since serve's merge assumes an
+  append-only array. A workspace-level entry is only hidden locally.
+- `GET /api/report?path=` — a report (or any pending document) as Markdown
+  for the chat's report reader, confined to `raw/untracked/**.md(.lock)`; a
+  locked link still opens its report once unlocked (`.lock` dropped).
 - `POST /api/runtime/conversation/compact` → workspace-scoped runtime
   `/conversation/compact` (compact: mark everything said so far as forgotten
   for future turns without deleting the event log, and return the generated
@@ -471,13 +483,40 @@ agents"); Logs keeps the essential run events plus the `assistant_progress`
 notes, prefixed `Agent:` like the ShellUI's Agent status tab. The former
 `Chain` and `Runtime activity` tabs were removed — they only duplicated Plan.
 Each tab owns a `Clear` action; `Clear all` beside the List/Graph switch applies
-all three. Local clearing removes browser-owned upload/MCP cards, while clearing
-the other tabs hides the current runtime snapshot until new state changes its
-fingerprint. This is deliberately not a runtime deletion. `Reset plan`, shown
+all three. Local clearing removes browser-owned upload/MCP cards; clearing Plan hides the
+current runtime snapshot until new state changes its fingerprint; clearing Logs
+sets a boundary (`runtimeLogsClearedMark`, `messageEditScript.ts`) that the
+Logs tab and the graph inspector's Run journal both honour — later lines show,
+earlier ones stay hidden (a fingerprint brought the whole log back with the
+next line, and the journal ignored it). This is deliberately not a runtime
+deletion. `/clear` and `/clear --all` are handled in the browser, never sent
+to Donna (`handleClearCommand`): the first empties the conversation, the second
+also confirms, calls `/api/runtime/reset` and clears the Activity tabs. `Reset plan`, shown
 only in the Plan tab, requires browser confirmation and calls
 `/api/runtime/reset`; it stops active work and purges the workspace runtime
 plan, activities, logs, queue, and persisted projection. Upload cards with an
 `error` always render as failed even if storage succeeded.
+
+The Plan tab opens on `runtimeState.stepNarratives` (`stepNarrativeScript.ts`):
+the model's one-line-per-step account of the thread's latest runs and action
+turns, in the workspace language (manager `runtime/stepNarrator.js`). The
+browser adds no word of its own there — no heading, only a state mark — and
+once the live run is narrated its raw activity lines give way to it. Agents'
+`progress.facts` (CME: sources, exported/unchanged/delivered counts, error)
+stay data in `runStripDetail`'s fallback (`key value`), never a sentence.
+
+**Reports, not long messages.** The MCP tool `report_write`
+(`services/reportWriter.ts`, write scope, audited) writes
+`raw/untracked/Donna/<date>-<title>.md.lock` with an OKF header (`type:
+report`, `generated: {by: donna, at}`, `status: draft`, `sources`): locked, so
+every ingest skips it, listed greyed in Pending, unlocked by the reader to make
+it a source — the header keeps a model-written text from passing for
+first-hand evidence once ingested. An assistant message may carry
+`attachments: [{kind, target, title}]` (a report path or `/agent-proposals/<id>`);
+`msgAttachmentsHTML` renders them as buttons under the bubble, and
+`openReportReader` (`runtime/reportReaderScript.ts`) slides `#report-reader`
+in from the right over the panels (wider than Help): Markdown from
+`/api/report`, any other page in a frame. The thread keeps the sentence only.
 
 There is no floating run strip and no bottom status bar any more (both
 removed after 0.16.51): the run reads in Activity → Plan only. The run card at

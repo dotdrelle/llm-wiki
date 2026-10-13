@@ -52,6 +52,20 @@ describe('what the >_ line says during a turn', () => {
 });
 
 describe('the step line keeps time and carries the search result', () => {
+  it('shows a tool\'s sentence argument whole, after its server', () => {
+    const { runtimeProgressLabel } = new Function(`${PROGRESS_LABEL_SCRIPT}\nreturn { runtimeProgressLabel };`)() as {
+      runtimeProgressLabel: (event: unknown) => string;
+    };
+    expect(runtimeProgressLabel({ type: 'assistant_progress', payload: {
+      message: 'Using runtime.delegate (objective=Ingérer les fichiers Markdown en att)…',
+      tool: 'runtime.delegate', subject: 'Ingérer les fichiers Markdown en attente dans raw/untracked',
+    } })).toBe('Runtime : Ingérer les fichiers Markdown en attente dans raw/untracked');
+    // Without a sentence argument, the tool and its arguments as before.
+    expect(runtimeProgressLabel({ type: 'assistant_progress', payload: {
+      message: 'Using cme.cme_export_status (job_id=abc)…', tool: 'cme.cme_export_status',
+    } })).toBe('cme · cme_export_status (job_id=abc)');
+  });
+
   it('shows the seconds a step has lasted, and what the search found while thinking', () => {
     const { setProgressText } = new Function(`${PROGRESS_LABEL_SCRIPT}\nreturn { setProgressText };`)() as {
       setProgressText: (span: { dataset: Record<string, string>; textContent: string }, text: string) => void;
@@ -77,6 +91,10 @@ describe('the step line keeps time and carries the search result', () => {
       setProgressText(span, 'tavily · search (query=x)');
       setProgressText(span, 'Thinking…');
       expect(span.textContent).toBe('Thinking…');
+      // An empty search is no material to think over.
+      setProgressText(span, 'Wiki search: nothing found');
+      setProgressText(span, 'Thinking…');
+      expect(span.textContent).toBe('Thinking (nothing in the wiki)…');
       setProgressText(span, 'wiki.x failed: not found');
       clock += 5_000;
       setProgressText(span, 'wiki.x failed: not found');

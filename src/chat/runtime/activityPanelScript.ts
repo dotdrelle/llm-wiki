@@ -124,15 +124,15 @@ function createRuntimeThinkingBubble(text='Request received · Donna is preparin
 // this is the same rule, different surface.
 const AGENT_PROGRESS_LOG_LIMIT=100;
 let agentProgressLog=[];
-function noteRuntimeProgress(text) {
+function noteRuntimeProgress(text,at) {
   const message=String(text||'').trim();
   if(!message) return;
-  agentProgressLog=[...agentProgressLog,message].slice(-AGENT_PROGRESS_LOG_LIMIT);
+  agentProgressLog=[...agentProgressLog,{message,at:at||new Date().toISOString()}].slice(-AGENT_PROGRESS_LOG_LIMIT);
 }
 function agentProgressEntries() {
   return agentProgressLog
-    .filter(line=>runtimeLogMatchesFilter(line,runtimeLogFilter))
-    .map(line=>({time:'',text:'Agent: '+line,tone:'info'}));
+    .filter(entry=>runtimeLogMatchesFilter(entry.message,runtimeLogFilter))
+    .map(entry=>({time:formatLocalTime(entry.at),text:'Agent: '+entry.message,tone:'info'}));
 }
 
 // An agent-mode turn runs on an ephemeral runtime session whose events never
@@ -382,7 +382,7 @@ function activityTabFingerprint(tab) {
   if(!runtimeState) return 'empty';
   // Plan now carries the skill chain and the aggregated activity lines too, so
   // its fingerprint must cover them: a Clear on Plan has to hide the whole tab.
-  if(tab==='plan') return JSON.stringify([runtimeState.runId,runtimeState.currentRunId,runtimeState.plan,runtimeState.queue,runtimeState.skillChains,runtimeState.workflow?.activity,runtimeState.workflow?.nodes?.filter(node=>node.type==='task'||node.type==='queue'||node.type==='activity')]);
+  if(tab==='plan') return JSON.stringify([runtimeState.runId,runtimeState.currentRunId,runtimeState.plan,runtimeState.queue,runtimeState.skillChains,runtimeState.workflow?.activity,runtimeState.stepNarratives,runtimeState.workflow?.nodes?.filter(node=>node.type==='task'||node.type==='queue'||node.type==='activity')]);
   if(tab==='logs') return JSON.stringify(runtimeState.logs||[]);
   return '';
 }
@@ -395,9 +395,8 @@ function clearActivityTab(tab,{render=true}={}) {
     _activities.forEach(item=>clearPollTimer(item.id));
     _activities=[];
     saveActivities();
-  } else if(['plan','logs'].includes(tab)) {
-    activityClearedFingerprints[tab]=activityTabFingerprint(tab);
-  }
+  } else if(tab==='logs') markRuntimeLogsCleared();
+  else if(tab==='plan') activityClearedFingerprints.plan=activityTabFingerprint('plan');
   if(render) { renderActivities(); updateActivityBadge(); }
 }
 async function clearAllActivityTabs() {
@@ -429,23 +428,25 @@ function workspaceMemoryHTML() {
   return memoryFacts.map(fact=>{
     const key=encodeURIComponent(fact.key).replace(/'/g,'%27');
     const history=memoryHistory[fact.key];
-    const historyHtml=history===undefined?'':history.map(version=>version.previous
-      ? '<div class="runtime-log-entry"><span>'+esc(formatLocalDateTime(version.createdAt,{seconds:true})||version.createdAt||'')+'</span> '+esc(version.previous.text||'')+' <button class="act-btn" type="button" onclick="restoreWorkspaceMemory(\\''+key+'\\',\\''+encodeURIComponent(version.id).replace(/'/g,'%27')+'\\')">Restore</button></div>'
-      :'').join('');
+    const historyHtml=history===undefined?'':!history.length?'<div class="runtime-log-entry">No recorded change.</div>':history.map(version=>'<div class="runtime-log-entry"><span>'+esc(formatLocalDateTime(version.createdAt,{seconds:true})||version.createdAt||'')+' · '+esc(MEMORY_OPERATION_LABELS[version.operation]||version.operation||'')+'</span> '+esc((version.current||version.previous)?.text||'')
+      +(version.previous&&version.previous.text!==fact.text?' <button class="act-btn" type="button" title="Put back the text this change replaced" onclick="restoreWorkspaceMemory(\\''+key+'\\',\\''+encodeURIComponent(version.id).replace(/'/g,'%27')+'\\')">Restore previous</button>':'')+'</div>').join('');
     return '<article class="runtime-task-card"><div class="runtime-task-title">'+esc(fact.text)+'</div><div class="runtime-task-meta">'+esc(fact.kind||'fact')+' · updated '+esc(formatLocalDateTime(fact.updatedAt)||fact.updatedAt||'')+'</div><div class="act-actions"><button class="act-btn" type="button" onclick="showWorkspaceMemoryHistory(\\''+key+'\\')">History</button><button class="act-btn del" type="button" onclick="forgetWorkspaceMemory(\\''+key+'\\')">Forget</button></div>'+historyHtml+'</article>';
   }).join('');
 }
+// History lists every recorded change of a fact and toggles closed on a second
+// click. It showed only versions that replaced an earlier text, so a fact never
+// updated opened on nothing and the button looked broken.
+const MEMORY_OPERATION_LABELS={ADD:'saved',UPDATE:'updated',DELETE:'forgotten',RESTORE:'restored'};
 async function showWorkspaceMemoryHistory(key) {
   key=decodeURIComponent(key);
+  if(memoryHistory[key]!==undefined) { delete memoryHistory[key]; renderActivities(); return; }
   try { const r=await fetch('/api/runtime/memory/history/'+encodeURIComponent(key),{cache:'no-store'}); const d=await r.json(); if(!r.ok) throw new Error(d.error||'History unavailable'); memoryHistory[key]=Array.isArray(d.history)?d.history:[]; renderActivities(); }
   catch(error) { notify(error?.message||String(error),'e'); }
 }
 async function forgetWorkspaceMemory(encodedKey) {
   const key=decodeURIComponent(encodedKey);
-  if(!(await confirmAction({title:'Forget saved fact',message:'Remove this fact from the current workspace memory? Its history remains available for restoration.',confirmLabel:'Forget',danger:true}))) return;
-  // 404: the fact is already gone (removed elsewhere) — reload the list
-  // rather than reporting a failure for what the reader asked.
-  try { const r=await fetch('/api/runtime/memory/facts/'+encodeURIComponent(key),{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({conversationId:currentConversationId})}); const d=await r.json().catch(()=>({})); if(r.status===404){ notify('That fact was already removed.','i'); memoryFacts=null; memoryHistory={}; await loadWorkspaceMemory(); return; } if(!r.ok) throw new Error(d.error||'Could not remove fact'); memoryFacts=(memoryFacts||[]).filter(f=>f.key!==key); renderActivities(); }
+  // No confirmation (the history keeps it); a 404 means already gone: reload.
+  try { const r=await fetch('/api/runtime/memory/facts/'+encodeURIComponent(key),{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({conversationId:currentConversationId})}); const d=await r.json().catch(()=>({})); if(r.status===404){ notify('That fact was already removed.','i'); memoryFacts=null; memoryHistory={}; await loadWorkspaceMemory(); return; } if(!r.ok) throw new Error(d.error||'Could not remove fact'); memoryFacts=(memoryFacts||[]).filter(f=>f.key!==key); renderActivities(); notify('Fact forgotten — /memory can restore it from its history','i'); }
   catch(error) { notify(error?.message||String(error),'e'); }
 }
 async function restoreWorkspaceMemory(key,historyId) {
@@ -461,7 +462,7 @@ async function resetRuntimePlan() {
     const data=await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(data.error||'Runtime plan reset failed');
     activityClearedFingerprints.plan=null;
-    activityClearedFingerprints.logs=null;
+    runtimeLogsClearedMark=null;
     await fetchRuntimeState();
     notify('Runtime plan reset');
   } catch(err) {
@@ -539,7 +540,7 @@ function actCardHTML(item) {
   const retryHtml=(item.status==='stored'||item.status==='failed')&&item.uploadId
     ?\`<button class="act-btn" onclick="retryConvert(\${esc(JSON.stringify(item.uploadId))},\${esc(JSON.stringify(item.id))})">Retry</button>\`
     :'';
-  const statusHtml=runtimeCard?\`<button class="act-btn" onclick="askRuntimeStatus(\${esc(JSON.stringify(item.statusTarget||item.remoteId||item.id))})">Status</button>\${item.cancelItemId?\`<button class="act-btn del cancel" onclick="cancelQueuedRuntimeItem(\${esc(JSON.stringify(item.cancelItemId))})">Cancel</button>\`:''}\`:'';
+  const statusHtml=runtimeCard?\`<button class="act-btn" onclick="askRuntimeStatus(\${esc(JSON.stringify(item.statusTarget||item.remoteId||item.id))})">Status</button>\${item.cancelItemId?\`<button class="act-btn del cancel" onclick="cancelQueuedRuntimeItem(\${esc(JSON.stringify(item.cancelItemId))})">Delete</button>\`:''}\`:'';
   const dismissHtml=runtimeCard?'':\`<button class="act-btn del" onclick="dismissActivity(\${esc(JSON.stringify(item.id))})">Dismiss</button>\`;
   const hint=converted?\`<div class="act-card-meta">Ready · run ingest to integrate.</div>\`
     :stored?\`<div class="act-card-meta">Stored, no conversion agent.</div>\`

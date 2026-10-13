@@ -121,10 +121,10 @@ Each case below gives the **symptom**, the **cause** and the **fix**.
 ## Getting back to a clean state
 
 - `/status`: full diagnosis (Shell or Serve).
-- Shell: `/clear --all` resets the screen, run, plan, queue and session logs.
-  Serve: the Activity panel's `Reset plan` (Plan tab) does the equivalent for
-  the current run; `Clear all` beside it only clears what's displayed, not the
-  runtime state. None of these delete your wiki.
+- `/clear --all` (Shell or Serve) resets the conversation, run, plan, queue
+  and logs. In Serve, the Activity panel's `Reset plan` (Plan tab) does the
+  same for the current run; `Clear all` beside it only clears what's
+  displayed, not the runtime state. None of these delete your wiki.
 - `doctor` (in agent mode): diagnosis of the workspace itself.
 
 ## I don't know what to do

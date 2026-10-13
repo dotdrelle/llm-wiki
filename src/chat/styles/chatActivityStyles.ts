@@ -1,5 +1,7 @@
+import { REPORT_READER_CSS } from '../runtime/reportReaderScript.ts';
 /** Activity/help side-panel styles, split from chatStyles.ts (size guard). */
 export const CHAT_ACTIVITY_CSS = `/* ACTIVITY PANEL */
+${REPORT_READER_CSS}
 /* --act-w is the single source of the rail width: the handle writes it, the
    panel reads it. A hard-coded 360px in both places would drift apart. */
 #activity-panel{order:2;width:var(--act-w,360px);min-width:var(--act-w,360px);height:100vh;background:var(--panel);backdrop-filter:blur(var(--glass-blur));-webkit-backdrop-filter:blur(var(--glass-blur));border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;transition:width .25s,min-width .25s;flex-shrink:0}

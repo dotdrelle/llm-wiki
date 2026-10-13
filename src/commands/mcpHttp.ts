@@ -27,6 +27,7 @@ const WRITE_MCP_TOOLS = new Set([
   'template_write',
   'build_context_write',
   'wiki_add_source',
+  'report_write',
   'profile_update',
 ]);
 

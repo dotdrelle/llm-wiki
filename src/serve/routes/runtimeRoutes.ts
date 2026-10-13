@@ -68,6 +68,11 @@ export async function handleRuntimeRoutes(
     await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/conversation/truncate'), deps.proxyDeps);
     return true;
   }
+  // Delete one of Donna's answers from a thread, keeping what follows it.
+  if (urlPath === '/api/runtime/conversation/remove' && req.method === 'POST') {
+    await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/conversation/remove'), deps.proxyDeps);
+    return true;
+  }
   // Compact: mark everything said so far as forgotten for future turns
   // (conversationSeed), without deleting the event log — unlike truncate
   // above. Same workspace-scoped, run-active-refusing shape.

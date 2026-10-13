@@ -21,13 +21,20 @@ in Serve's chat or in the Shell:
 - `/run cancel` (or `/cancel`) — cancel the active run.
 - `/queue` — show the job queue.
 - `/queue cancel <id>` — cancel a queued or running job.
+- `/clear` — empty this conversation. `/clear --all` also clears the Activity
+  panel and resets the workspace runtime (active work stops; plan, activities,
+  logs and queue are purged) after a confirmation. Both act at once: they are
+  interface commands, never sent to Donna. Your wiki is not touched.
 - `/remember <fact>` — explicitly save a durable fact for this workspace across
   conversations. `/memory` lists saved facts; `/memory history <key>` shows
   versions; `/memory restore <key> <history-id>` restores one; `/forget <key>`
   removes a fact. These are requests to Donna: the composer switches to agent
   mode, she performs them with her memory tools and answers in your language
   (the runtime must be connected). Activity → Memory provides the same inspect, forget and
-  restore controls. Donna may also extract durable facts from user messages;
+  restore controls: *Forget* acts at once (the fact's history keeps it, so it
+  can be restored), *History* opens and closes the list of every change of a
+  fact — saved, updated, restored — with *Restore previous* where a change
+  replaced an earlier text. Donna may also extract durable facts from user messages;
   credential-shaped messages are skipped, and each stored fact can be removed
   or restored. Automatic extraction can be disabled by the workspace operator.
   Facts remain until forgotten or the workspace is deleted.
@@ -137,19 +144,43 @@ Everything below is a **UI panel**, not something you type:
   showed a sign of life, with **Inspect** and a red **Cancel**. Cancel asks for
   confirmation, then stops the run and its running job and skips the rest of
   its chain; other queued requests stay. The Plan tab below lists the document
-  or step it is on and the live counters.
+  or step it is on and the live counters. A request waiting in the queue has a
+  red **Delete**: it leaves the queue (it had not started, nothing is stopped)
+  and disappears from the Plan tab.
 - **Approvals** — a run waiting for your approval shows a card at the bottom
   right of the window, the width of the Activity panel, with **Approve** and
   **Reject**. It stays on screen whatever view you open. Maintenance notices
   appear in the same place.
 - **Activity panel** — live tracking of runs, with *List* and *Graph* views.
+  At the top of the Plan tab, Donna tells in your language (the workspace's
+  `.wikirc`) what the latest runs and actions did, one line per finished step
+  (what is still running reads on the live line and the run card) — a source added, an export with its page count, a failure and its
+  cause. Questions that only read are not narrated. Without a model, the steps
+  stay shown as data and Logs says why.
   Each of its three tabs (Plan, Files, Logs) has its own `Clear`; `Clear all`
-  clears all three. `Reset plan` (Plan tab only) stops active work and purges
+  clears all three. Clearing the logs hides the lines present at that moment,
+  in the Logs tab and in the graph's *Run journal* alike; later lines still
+  appear. `Reset plan` (Plan tab only) stops active work and purges
   the run — ask for confirmation first.
 - **Execution view** — the same Run/Task graph as the Activity panel's *Graph*
   view, opened full-page. A curation run's subagents (Scout, Analyst, Critique,
   Redactor, Archivist) appear as child nodes of the run.
+- **Reports** — a long result never fills the chat. When you ask Donna for a
+  document (a summary of a document, a report, an analysis to keep), or when an
+  agent finishes with a long report, Donna answers with one sentence and a
+  button under it. The button slides the report in from the right, over the
+  panels, wider than the Help panel. A report is saved in
+  `raw/untracked/Donna/`, **locked**: it shows in Pending, greyed, and no ingest
+  takes it. To make it a wiki source, unlock it (the lock on its Pending row);
+  its header says it is a report written by Donna (`type: report`) and lists
+  the documents it was drawn from. A curation's report stays on its proposal
+  page, which the button opens the same way. In the Shell, the location
+  follows the sentence (`↳ raw/untracked/Donna/…`).
 - **Redo** — on a past message, truncates the conversation back to that point.
+- **Delete** — on one of Donna's answers, removes that answer alone: from the
+  thread, from the saved conversation, and from what Donna is told on later
+  turns. What follows it stays. An answer still being written cannot be
+  deleted.
 - **Agent proposals** — the curation review queue: a link with an amber badge
   in the sidebar opens the pending diffs, each read as a plain-language summary
   with the changed pages named and a coloured diff. *Merge into the wiki*

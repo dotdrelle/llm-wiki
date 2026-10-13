@@ -16,10 +16,13 @@ import { RUN_STRIP_SCRIPT } from './runtime/runStripScript.ts'; import { RUN_LIV
 import { RUN_SIDEBAR_REFRESH_SCRIPT } from './runtime/runSidebarRefreshScript.ts';
 import { SPLITTERS_SCRIPT } from './layout/splittersScript.ts';
 import { REDO_SCRIPT } from './runtime/redoScript.ts';
+import { MESSAGE_EDIT_SCRIPT } from './runtime/messageEditScript.ts';
+import { STEP_NARRATIVE_SCRIPT } from './runtime/stepNarrativeScript.ts';
 import { RUNTIME_GRAPH_SCRIPT } from './runtime/runtimeGraphScript.ts';
 import { SKILL_CHAINS_SCRIPT } from './runtime/skillChainsScript.ts';
 import { CHAT_MARKUP, EMPTY_CHAT_HTML } from './views/chatView.ts';
 import { HELP_PANEL_SCRIPT } from './views/helpPanelScript.ts';
+import { REPORT_READER_SCRIPT } from './runtime/reportReaderScript.ts';
 import { WIKI_PANEL_SCRIPT } from './views/wikiPanelScript.ts';
 import { WIKI_AGENT_LAUNCH_SCRIPT } from './views/wikiAgentLaunchScript.ts';
 const CHAT_BODY = `${CHAT_MARKUP}\n\n<script>\nlet servers = [];
@@ -152,12 +155,23 @@ function essentialRuntimeLogHTML() {
   // The start line of a maintenance action still running reads as running:
   // nothing else in the journal said which of the "Rebuild …" lines was live.
   const live=new Set((typeof window!=='undefined'&&typeof window.getMaintenanceRunning==='function'?window.getMaintenanceRunning():[]).map(item=>'Maintenance: '+String(item.summary||'')));
-  const entries=essentialRuntimeLogEntries(runtimeState?.logs).slice(-60).reverse().map(entry=>live.delete(entry.text)?{...entry,tone:'running'}:entry);
+  const entries=essentialRuntimeLogEntries(visibleRuntimeLogs(runtimeState?.logs)).slice(-60).reverse().map(entry=>live.delete(entry.text)?{...entry,tone:'running'}:entry);
   if(!entries.length) return '<div class="runtime-journal empty">No essential run event yet.</div>';
   return \`<div class="runtime-journal">\${entries.map(entry=>\`<div class="runtime-journal-entry \${entry.tone}"><time>\${esc(entry.time||'—')}</time>\${runtimeLogTextHTML(entry.text)}</div>\`).join('')}</div>\`;
 }
+// Both lists are newest first; the Agent notes now carry their time, so they
+// interleave with the run events instead of all sitting on top.
+function mergeLogRowsByTime(a,b) {
+  const rows=[];
+  let i=0, j=0;
+  while(i<a.length||j<b.length) {
+    if(j>=b.length||(i<a.length&&(!a[i].time||!b[j].time||a[i].time>=b[j].time))) rows.push(a[i++]);
+    else rows.push(b[j++]);
+  }
+  return rows;
+}
 function runtimeLogListHTML() {
-  const rows=[...agentProgressEntries().reverse(), ...essentialRuntimeLogEntries(filteredRuntimeLogs(runtimeState.logs)).slice(-100).reverse()];
+  const rows=mergeLogRowsByTime(agentProgressEntries().reverse(), essentialRuntimeLogEntries(filteredRuntimeLogs(visibleRuntimeLogs(runtimeState.logs))).slice(-100).reverse());
   return rows.length
     ? \`<div class="runtime-journal" id="runtime-log-list">\${rows.map(entry=>\`<div class="runtime-journal-entry \${entry.tone}"><time>\${esc(entry.time||'—')}</time>\${runtimeLogTextHTML(entry.text)}</div>\`).join('')}</div>\`
     : '<div class="runtime-journal empty" id="runtime-log-list">No matching essential run events.</div>';
@@ -253,8 +267,12 @@ ${RUN_STRIP_SCRIPT}${PROGRESS_LABEL_SCRIPT}${RUN_LIVE_LINE_SCRIPT}
 ${RUN_SIDEBAR_REFRESH_SCRIPT}
 ${SPLITTERS_SCRIPT}
 ${REDO_SCRIPT}
+
+${MESSAGE_EDIT_SCRIPT}
 ${RUNTIME_GRAPH_SCRIPT}
 ${HELP_PANEL_SCRIPT}
+
+${REPORT_READER_SCRIPT}
 
 function runtimeTime(value,fallback=Date.now()) {
   if(value==null) return fallback;
@@ -294,8 +312,10 @@ function runtimeTaskPanelHTML(view='plan') {
   // The control lane (runs queued while another run is active) is a distinct
   // queue from the MCP job queue. Surface it here too, labelled by the request
   // it carries, so a queued task is visible in serve — not only in Donna's reply.
+  // Waiting or running requests only: a deleted or finished one left a
+  // "cancelled" card behind, as if the delete had not happened.
   const controlQueue=Array.isArray(runtimeState.controlQueue)
-    ? runtimeState.controlQueue.map((item,index)=>({
+    ? runtimeState.controlQueue.filter(item=>['queued','running','starting'].includes(String(item?.status||'queued').toLowerCase())).map((item,index)=>({
         ...item,
         id:item.id||\`control-\${index}\`,
         label:item.input||item.skillName||'Queued request',
@@ -354,14 +374,20 @@ function runtimeTaskPanelHTML(view='plan') {
   // chain. Folding them into Plan is what lets the run strip disappear at the
   // end of a run without losing the outcome — including the steps a chain
   // skipped, which used to live only in the removed Chain tab.
-  const activityHtml=activityLines.length
+  // Donna's wording of the latest steps leads; once the live run has one, its
+  // raw activity lines (the agents' own counters) give way to it.
+  const narrativeHtml=stepNarrativeHTML();
+  const runNarrated=narratedRunIds().has(runtimeState.runId||runtimeState.currentRunId);
+  const activityHtml=activityLines.length&&!runNarrated
     ? \`<div class="act-section-head"><span class="act-section-title">Activity</span></div>\${[...activityLines].reverse().map(runtimeActivityLineHTML).join('')}\`
     : '';
   const chainHtml=skillChainsHTML();
-  return status+runSummary+runCard+synthesisHtml+activityHtml+chainHtml+planHTML+queueHTML;
+  return status+runSummary+runCard+narrativeHtml+synthesisHtml+activityHtml+chainHtml+planHTML+queueHTML;
 }
 
 ${SKILL_CHAINS_SCRIPT}
+
+${STEP_NARRATIVE_SCRIPT}
 
 function runtimeRunCardHTML(plan,activities,progress=null) {
   if(!runtimeIsRunning()) return '';
@@ -455,7 +481,7 @@ function connectRuntimePanel() {
       noteRuntimeEvent();
       const parsed=JSON.parse(event.data);
       if(parsed&&parsed.type) noteRunSidebarEvent(parsed.type);
-      if(parsed&&parsed.type==='assistant_progress') noteRuntimeProgress(parsed.payload&&parsed.payload.message);
+      if(parsed&&parsed.type==='assistant_progress') noteRuntimeProgress(parsed.payload&&parsed.payload.message,parsed.ts);
       if(parsed&&parsed.type==='runtime_heartbeat') noteRuntimeHeartbeat();
       // The Memory tab listens for this event; without an emitter a /remember
       // or a background extraction only appeared after a full reload. The
@@ -556,6 +582,7 @@ function mergeRuntimeConversation() {
     const content=String(raw.content??'');
     if(i<runtimeConversationRefs.length) {
       const ref=runtimeConversationRefs[i];
+      if(ref.el&&raw.attachments) attachMsgAttachments(ref.el,raw.attachments);
       const contentChanged=ref.message.content!==content;
       if(contentChanged) {
         // Only the first transition from empty to non-empty content marks a
@@ -629,7 +656,7 @@ function mergeRuntimeConversation() {
     // skipGauge: this runs in a loop that can append several entries per
     // call (catching up a backlog); applyRuntimeState updates the gauge once,
     // after the whole batch, right after this function returns.
-    const el=duplicateOfDirectReply?null:appendMsg(role,content,{skipGauge:true});
+    const el=duplicateOfDirectReply?null:appendMsg(role,content,{skipGauge:true,attachments:raw.attachments});
     if(role==='assistant'&&!content) el?.classList.add('msg-empty');
     runtimeConversationRefs.push({message,el,own:assistantOwn,conversationId:raw.conversationId??null});
     changed=true;
@@ -814,9 +841,12 @@ function submitAgentSuggestion(text) {
 // chat loop would only describe what it cannot do. The objective carries the
 // "curate" alias, which the runtime resolves deterministically to the
 // curation capability (a branch proposal a human merges or discards — never a
-// direct wiki write).
-function startCuration() {
-  submitAgentSuggestion('Curate the wiki: find duplicate pages, pages that disagree or repeat each other, outdated or superseded pages, and claims with no cited source, then write the corrections on a dedicated branch.');
+// direct wiki write). With the workspace's curate skill installed, the thread
+// reads "/curate", exactly as if typed: the objective is the skill's private
+// body, never a message of the reader's.
+async function startCuration() {
+  const viaSkill=(await matchBrowserSkillInvocation('/curate'))?.skill;
+  submitAgentSuggestion(viaSkill?'/curate':'Curate the wiki: find duplicate pages, pages that disagree or repeat each other, outdated or superseded pages, and claims with no cited source, then write the corrections on a dedicated branch.');
 }
 
 function renderSkillsManager() {
@@ -1164,7 +1194,7 @@ function buildConversationPayload(snapshot={}) {
     compactedCount: memoryCompactedCount,
     compactedSummary: snapshot.compactedSummary ?? conversationSummary,
     traceHtml: snapshot.traceHtml ?? [...document.querySelectorAll('.trace-card')].map(el=>el.outerHTML),
-    messageHtml: snapshot.messageHtml ?? $('messages')?.innerHTML ?? '',
+    messageHtml: snapshot.messageHtml ?? savedMessagesHtml(),
   };
 }
 
@@ -1276,7 +1306,7 @@ async function loadConversation(id) {
           systemPrompt:currentSystemPrompt(),
           mcpServers:activeServerSnapshot(),
           traceHtml:[...document.querySelectorAll('.trace-card')].map(el=>el.outerHTML),
-          messageHtml:$('messages')?.innerHTML || '',
+          messageHtml:savedMessagesHtml(),
         })
       : null;
     currentConversationId=id;
@@ -1309,6 +1339,9 @@ async function loadConversation(id) {
     resetRuntimeConversationTracking();
     conversationDirty=false;
     $('messages').innerHTML=conv.messageHtml || '';
+    // Conversations saved before the transient bubbles were left out still
+    // carry them: a ">_ Run started…" that no run would ever update or remove.
+    removeTransientMessages($('messages'));
     if(!$('messages').innerHTML.trim()) setEmptyChat();
     recoverProductionStateFromMessages();
     renderHistory();
@@ -1605,7 +1638,7 @@ function findSkillByName(name) {
 async function matchBrowserSkillInvocation(text) {
   const match=/^\\/([A-Za-z0-9_-]+)(?:\\s+([\\s\\S]*))?$/.exec(String(text||'').trim());
   if(!match) return {displayText:text,sendText:text,skill:null};
-  if(['status','stop','run','queue','skills','help','exit','quit','chat','agent','maintenance','remember','forget','memory'].includes(String(match[1]).toLowerCase())) return {displayText:text,sendText:text,skill:null};
+  if(['status','stop','run','queue','skills','help','exit','quit','chat','agent','maintenance','remember','forget','memory','approve','cancel','clear'].includes(String(match[1]).toLowerCase())) return {displayText:text,sendText:text,skill:null};
   await fetchSkillsAc();
   const skill=findSkillByName(match[1]);
   if(!skill) return {displayText:text,sendText:text,skill:null};
@@ -1640,11 +1673,15 @@ function requestMessagesForLLM(sourceMessages) {
    guarantees they exist when called. */
 function msgIcon(name) {
   if(name==='copied') return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>';
+  if(name==='delete') return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>';
   if(name==='redo') return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg>';
   return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>';
 }
 function msgCopyButton() {
   return '<button class="msg-action" onclick="copyMessage(this)" title="Copy" aria-label="Copy message">'+msgIcon('copy')+'</button>';
+}
+function msgDeleteButton() {
+  return '<button class="msg-action" onclick="deleteAnswer(this)" title="Delete" aria-label="Delete this answer">'+msgIcon('delete')+'</button>';
 }
 function msgRedoButton() {
   return '<button class="msg-action" onclick="redoMessage(this)" title="Redo" aria-label="Ask this question again">'+msgIcon('redo')+'</button>';
@@ -1780,7 +1817,21 @@ async function compactConversationMemory() {
     : 'Conversation memory compacted');
 }
 
-function appendMsg(role, content, {html=false,plainText=null,skipGauge=false}={}) {
+// The waiting bubbles (">_ Thinking…", the run's live line) belong to the
+// moment, not to the conversation: saved with it, they came back on reopening
+// as a ">_ Run started…" nothing would ever update or remove.
+function removeTransientMessages(root) {
+  root?.querySelectorAll('.runtime-thinking').forEach(el=>el.closest('.msg')?.remove());
+}
+function savedMessagesHtml() {
+  const wrap=$('messages');
+  if(!wrap) return '';
+  const copy=wrap.cloneNode(true);
+  removeTransientMessages(copy);
+  return copy.innerHTML;
+}
+
+function appendMsg(role, content, {html=false,plainText=null,skipGauge=false,attachments=null}={}) {
   removeEmpty();
   const wrap=$('messages');
   const div=document.createElement('div');
@@ -1788,8 +1839,8 @@ function appendMsg(role, content, {html=false,plainText=null,skipGauge=false}={}
   div.dataset.copy=plainText??content??'';
   const av=role==='user'?'<div class="av u">You</div>':'';
   const bodyHtml=html ? (content||'') : (role==='assistant' ? renderMd(content||'') : esc(content||''));
-  const redoBtn=role==='user' ? msgRedoButton() : '';
-  div.innerHTML=\`\${av}<div class="msg-content"><div class="bubble">\${bodyHtml}</div><div class="msg-actions">\${msgCopyButton()}\${redoBtn}</div></div>\`;
+  const redoBtn=role==='user' ? msgRedoButton() : role==='assistant' ? msgDeleteButton() : '';
+  div.innerHTML=\`\${av}<div class="msg-content"><div class="bubble">\${bodyHtml}</div>\${msgAttachmentsHTML(attachments)}<div class="msg-actions">\${msgCopyButton()}\${redoBtn}</div></div>\`;
   wrap.appendChild(div);
   wrap.scrollTop=wrap.scrollHeight;
   if(!skipGauge) updateMemoryGauge();
@@ -2712,6 +2763,10 @@ async function sendMessage() {
     window.handleMaintenanceSlashCommand?.(text);
     return;
   }
+  if(/^\\/clear(?![A-Za-z0-9_])/i.test(text)&&!forceChat) {
+    if(await handleClearCommand(text)) { input.value=''; autoResize(input); }
+    return;
+  }
   if(await tryConnectorCommand(input,text)) return;
   if(await tryProfilePreferenceUpdate(input,text)) return;
   const skillInvocation=await matchBrowserSkillInvocation(text);
@@ -2909,7 +2964,10 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
     }
     let data={};
     try { data=await res.json(); } catch {}
-    if(!res.ok && data?.kind!=='ambiguous') {
+    // A refusal Donna worded (an unknown command, a skill that cannot start)
+    // is her reply, not a transport error: no "Runtime 404" around it.
+    if(!res.ok && data?.explanation && data?.kind!=='ambiguous') data.kind='refused';
+    if(!res.ok && data?.kind!=='ambiguous' && data?.kind!=='refused') {
       let message=res.statusText;
       message=data?.error||data?.message||message;
       throw new Error(\`Runtime \${res.status}: \${message}\`);

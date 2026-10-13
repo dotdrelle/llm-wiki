@@ -1,3 +1,4 @@
+import { REPORT_READER_HTML } from '../runtime/reportReaderScript.ts';
 import { CONFIRM_DIALOG_HTML } from '../confirmDialog.ts';
 
 export const EMPTY_CHAT_HTML = `<div id="empty">
@@ -278,6 +279,7 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
   </div>
   <div class="act-body" id="help-body"></div>
 </aside>
+${REPORT_READER_HTML}
 <aside id="right-rail" aria-label="Monitoring">
   <button class="rail-btn" id="activity-toggle" type="button" onclick="toggleActivityPanel()" title="Activity" aria-label="Activity" aria-expanded="false">
     <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>

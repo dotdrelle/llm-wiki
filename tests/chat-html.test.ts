@@ -208,8 +208,8 @@ describe('chat html', () => {
     expect(script).toContain('function filteredRuntimeLogs(logs)');
     expect(script).toContain('placeholder="Filter essential run events…"');
     expect(script).toContain('function essentialRuntimeLogEntries(logs)');
-    expect(script).toContain('essentialRuntimeLogEntries(filteredRuntimeLogs(runtimeState.logs))');
-    expect(script).toContain('essentialRuntimeLogEntries(runtimeState?.logs)');
+    expect(script).toContain('essentialRuntimeLogEntries(filteredRuntimeLogs(visibleRuntimeLogs(runtimeState.logs)))');
+    expect(script).toContain('essentialRuntimeLogEntries(visibleRuntimeLogs(runtimeState?.logs))');
     expect(script).not.toContain('runtimeState.logs.slice(-5)');
     expect(script).not.toContain('runtimeState.logs.slice(-6)');
     expect(script).not.toContain('runtimeState.logs.slice(-8)');
@@ -282,7 +282,172 @@ describe('chat html', () => {
     expect(script).toContain("if(/^\\/(?:remember|forget|memory)(?:\\s|$)/i.test(text)&&runtimeEnabled()&&!forceChat) {");
     expect(script).not.toContain('Saved workspace fact');
     expect(script).not.toContain("fetch('/api/runtime/memory/facts',{method:'POST'");
-    expect(script).toContain("'remember','forget','memory'].includes(String(match[1]).toLowerCase())");
+    expect(script).toContain("'remember','forget','memory','approve','cancel','clear'].includes(String(match[1]).toLowerCase())");
+  });
+
+  it('clears the logs from a boundary that the Logs tab and the run journal both honour', () => {
+    const script = chatScripts().join('\n');
+    const source = script.match(/let runtimeLogsClearedMark=null;[\s\S]*?function visibleRuntimeLogs\(logs\) \{[\s\S]*?\n\}/)?.[0] ?? '';
+    const make = new Function('state', `let runtimeState=state; let agentProgressLog=['x']; ${source}; return { mark: markRuntimeLogsCleared, visible: visibleRuntimeLogs, progress: () => agentProgressLog };`);
+    const state = { logs: ['10:00:00 a', '10:00:01 b'] };
+    const api = make(state);
+    expect(api.visible(state.logs)).toEqual(state.logs);
+    api.mark();
+    expect(api.progress()).toEqual([]);
+    expect(api.visible(state.logs)).toEqual([]);
+    // A later line shows; the cleared ones stay hidden.
+    expect(api.visible([...state.logs, '10:00:02 c'])).toEqual(['10:00:02 c']);
+    // A purged log (reset) shows whatever comes next.
+    expect(api.visible(['11:00:00 fresh'])).toEqual(['11:00:00 fresh']);
+    expect(script).toContain("else if(tab==='logs') markRuntimeLogsCleared();");
+  });
+
+  it('deletes one of Donna\'s answers through the runtime, and handles /clear without Donna', () => {
+    const script = chatScripts().join('\n');
+    expect(script).toContain("role==='assistant' ? msgDeleteButton() : ''");
+    expect(script).toContain("fetch('/api/runtime/conversation/remove'");
+    expect(script).toContain('runtimeConversationRefs.splice(target.refIndex,1)');
+    expect(script).toContain("if(/^\\/clear(?![A-Za-z0-9_])/i.test(text)&&!forceChat) {");
+    expect(script).toContain('if(await handleClearCommand(text)) {');
+    // A typo (or macOS turning "--" into a dash) never wipes the thread silently.
+    const source = script.match(/const parsed=(\/.*?\/i)\.exec/)?.[1] ?? '';
+    const parse = new Function(`return ${source};`)() as RegExp;
+    expect(parse.exec('/clear')?.[1]).toBeUndefined();
+    expect(parse.exec('/clear --all')?.[1]).toBe('all');
+    expect(parse.exec('/clear \u2014all')?.[1]).toBe('all');
+    expect(parse.exec('/clear v--all')).toBeNull();
+    expect(script).toContain("fetch('/api/runtime/reset',{method:'POST'})");
+  });
+
+  it('renders Donna\'s step lines for this thread with no wording of its own, and lets them replace the raw activity lines', () => {
+    const script = chatScripts().join('\n');
+    const source = script.match(/function threadStepNarratives\(\) \{[\s\S]*?\nfunction stepNarrativeHTML\(\) \{[\s\S]*?\n\}/)?.[0] ?? '';
+    const render = new Function('state', 'conversation', `const runtimeState=state; const currentConversationId=conversation; const esc=(v)=>String(v).replace(/</g,'&lt;'); ${source}; return stepNarrativeHTML();`);
+    const state = { stepNarratives: [
+      { scope: 'turn:other', conversationId: 'conv-other', final: true, lines: [{ id: 'x', state: 'done', text: 'autre fil' }] },
+      { scope: 'run:r1', runId: 'r1', conversationId: 'conv-mine', final: false, lines: [
+        { id: 'a', state: 'done', text: 'Source « Réunions » ajoutée' },
+        { id: 'b', state: 'running', text: 'Export en cours : <14> pages' },
+      ] },
+    ] };
+    const html = render(state, 'conv-mine') as string;
+    expect(html).toContain('act-line done');
+    expect(html).toContain('act-line running');
+    expect(html).toContain('Export en cours : &lt;14> pages');
+    expect(html).not.toContain('autre fil');
+    expect(render({}, 'conv-mine')).toBe('');
+    expect(script).toContain('const activityHtml=activityLines.length&&!runNarrated');
+    // The agents' facts stay data in the fallback detail, never a sentence.
+    expect(script).toContain("p.facts&&typeof p.facts==='object'?Object.entries(p.facts)");
+  });
+
+  it('shows a refusal Donna worded as her reply, not as a transport error', () => {
+    const script = chatScripts().join('\n');
+    expect(script).toContain("if(!res.ok && data?.explanation && data?.kind!=='ambiguous') data.kind='refused';");
+    expect(script).toContain("if(!res.ok && data?.kind!=='ambiguous' && data?.kind!=='refused') {");
+  });
+
+  it('stamps each Agent note in Logs with its event time and interleaves it with the run events', () => {
+    const script = chatScripts().join('\n');
+    expect(script).toContain("noteRuntimeProgress(parsed.payload&&parsed.payload.message,parsed.ts)");
+    expect(script).toContain("time:formatLocalTime(entry.at)");
+    const source = script.match(/function mergeLogRowsByTime\(a,b\) \{[\s\S]*?\n\}/)?.[0] ?? '';
+    const merge = new Function(`${source}; return mergeLogRowsByTime;`)();
+    const rows = merge([{ time: '10:05:00', text: 'agent late' }, { time: '10:01:00', text: 'agent early' }], [{ time: '10:03:00', text: 'run' }]);
+    expect(rows.map((row: { text: string }) => row.text)).toEqual(['agent late', 'run', 'agent early']);
+  });
+
+  it('never saves the waiting bubbles with the conversation, and drops any restored one', () => {
+    const script = chatScripts().join('\n');
+    expect(script).toContain('messageHtml: snapshot.messageHtml ?? savedMessagesHtml(),');
+    expect(script).toContain('messageHtml:savedMessagesHtml(),');
+    expect(script).not.toContain("messageHtml:$('messages')?.innerHTML");
+    expect(script).toContain("removeTransientMessages($('messages'));");
+    expect(script).toContain("wrap.querySelectorAll('.run-live-line').forEach(el=>{ if(el!==runLiveLineEl) el.remove(); });");
+  });
+
+  it('restores the run\'s last step when its live line is recreated, never "Run started…" again', () => {
+    const script = chatScripts().join('\n');
+    expect(script).toContain('const restored=last?.label||runLiveLineSeedLabel();');
+    expect(script).toContain('if(last){ span.dataset.stepSince=String(last.since); renderProgressStep(span); }');
+    expect(script).toContain('runLiveLineLast={runId:runLiveLineRunId(),label,since:Date.now()}');
+  });
+
+  it('removes a waiting bubble no pending turn owns, so no orphan ">_" keeps counting', () => {
+    const script = chatScripts().join('\n');
+    const source = script.match(/function removeOrphanWaitingBubbles\(wrap\) \{[\s\S]*?\n\}/)?.[0] ?? '';
+    const removed: string[] = [];
+    const bubble = (name: string) => ({ name, remove: () => removed.push(name) });
+    const pending = bubble('pending'); const armed = bubble('armed'); const live = bubble('live'); const orphan = bubble('orphan');
+    const wrap = { querySelectorAll: () => [pending, armed, live, orphan].map((msg) => ({ closest: () => msg })) };
+    new Function('pendingRuntimeStatusEls', 'armedReplyStatusEls', 'runLiveLineEl', 'wrap', `${source}; removeOrphanWaitingBubbles(wrap);`)([pending], [armed], live, wrap);
+    expect(removed).toEqual(['orphan']);
+    expect(script).toContain("removeOrphanWaitingBubbles($('messages'));");
+  });
+
+  it('shows a run\'s live line only in the conversation that launched it, delegated runs included', () => {
+    const script = chatScripts().join('\n');
+    const source = script.match(/function runLiveLineActive\(\) \{[\s\S]*?\n\}/)?.[0] ?? '';
+    const active = (state: unknown, conversation: string) => new Function('runtimeState', 'currentConversationId', `${source}; return runLiveLineActive();`)(state, conversation);
+    const delegated = { running: true, status: 'running', runId: 'r1', runs: [{ id: 'r1', conversationId: 'conv-a' }], controlQueue: [] };
+    expect(active(delegated, 'conv-a')).toBe(true);
+    expect(active(delegated, 'conv-b')).toBe(false);
+    const queued = { running: true, status: 'running', runId: 'r2', runs: [], controlQueue: [{ status: 'running', conversationId: 'conv-b' }] };
+    expect(active(queued, 'conv-b')).toBe(true);
+    expect(active(queued, 'conv-a')).toBe(false);
+    const workspaceLevel = { running: true, status: 'running', runId: 'r3', runs: [{ id: 'r3', conversationId: 'legacy:juno' }] };
+    expect(active(workspaceLevel, 'conv-a')).toBe(true);
+    expect(active({ running: false, status: 'idle' }, 'conv-a')).toBe(false);
+  });
+
+  it('deletes a queued request, and a deleted one leaves neither a queue card nor a chain behind', () => {
+    const script = chatScripts().join('\n');
+    expect(script).toContain('cancelQueuedRuntimeItem(${esc(JSON.stringify(item.cancelItemId))})">Delete</button>');
+    expect(script).toContain("title:'Delete queued request'");
+    expect(script).toContain("runtimeState.controlQueue.filter(item=>['queued','running','starting'].includes(String(item?.status||'queued').toLowerCase()))");
+    expect(script).toContain("!(chain.steps||[]).every(step=>step.status==='cancelled'&&!step.runId)");
+  });
+
+  it('counts a running task\'s duration up to now in the run graph, and short ones in seconds', () => {
+    const script = chatScripts().join('\n');
+    const source = ['formatRuntimeDuration', 'runtimeTaskRunning', 'runtimeTaskDurationMs']
+      .map((name) => script.match(new RegExp(`function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}`))?.[0] ?? '').join('\n');
+    const api = new Function('activityTerminalStatus', `${source}; return { formatRuntimeDuration, runtimeTaskDurationMs };`)(
+      (status: string) => ['done', 'failed', 'cancelled'].includes(status),
+    );
+    expect(api.formatRuntimeDuration(6000)).toBe('6 s');
+    expect(api.formatRuntimeDuration(11 * 60000)).toBe('11 min');
+    const started = Date.now() - 10 * 60000;
+    // Running: the frozen 6 s from the agent's acceptance is ignored.
+    expect(api.runtimeTaskDurationMs({ task: { status: 'running' }, tm: { startedAt: started, durationMs: 6000 } })).toBeGreaterThanOrEqual(10 * 60000);
+    expect(api.runtimeTaskDurationMs({ task: { status: 'done' }, tm: { startedAt: started, durationMs: 6000 } })).toBe(6000);
+    expect(script).toContain("runtimeTaskRunning(selectedTask.task)?'Running for':'Duration'");
+  });
+
+  it('opens a report or a proposal in the reader layer from the button under Donna\'s message', () => {
+    const script = chatScripts().join('\n');
+    expect(CHAT_HTML).toContain('<aside id="report-reader" aria-hidden="true" aria-label="Report">');
+    expect(script).toContain("${msgAttachmentsHTML(attachments)}<div class=\"msg-actions\">".replace('${', '$' + '{'));
+    expect(script).toContain('if(ref.el&&raw.attachments) attachMsgAttachments(ref.el,raw.attachments);');
+    expect(script).toContain("fetch('/api/report?path='+encodeURIComponent(target),{cache:'no-store'})");
+    const source = script.match(/function msgAttachmentsHTML\(attachments\) \{[\s\S]*?\n\}/)?.[0] ?? '';
+    const render = new Function('esc', `const REPORT_ICON=''; ${source}; return msgAttachmentsHTML;`)((v: string) => String(v));
+    expect(render([{ target: 'raw/untracked/Donna/a.md.lock', title: 'Résumé' }])).toContain('data-target="raw/untracked/Donna/a.md.lock"');
+    expect(render([{ title: 'no target' }])).toBe('');
+  });
+
+  it('starts a curation as the /curate skill when it is installed, never as a raw objective', () => {
+    const script = chatScripts().join('\n');
+    expect(script).toContain("const viaSkill=(await matchBrowserSkillInvocation('/curate'))?.skill;");
+    expect(script).toContain("submitAgentSuggestion(viaSkill?'/curate':");
+  });
+
+  it('forgets a memory fact without a confirmation and lists every change in its history', () => {
+    const script = chatScripts().join('\n');
+    const forget = script.match(/async function forgetWorkspaceMemory[\s\S]*?\n\}/)?.[0] ?? '';
+    expect(forget).not.toContain('confirmAction');
+    expect(script).toContain("const MEMORY_OPERATION_LABELS={ADD:'saved',UPDATE:'updated',DELETE:'forgotten',RESTORE:'restored'};");
+    expect(script).toContain('if(memoryHistory[key]!==undefined) { delete memoryHistory[key]; renderActivities(); return; }');
   });
 
   it('renames a conversation in place and keeps its custom title on later saves', () => {
@@ -912,19 +1077,19 @@ describe('chat html', () => {
     // The sentence must come from the event: the browser must never synthesize
     // an acknowledgement of its own.
     expect(script).toContain(
-      "if(parsed&&parsed.type==='assistant_progress') noteRuntimeProgress(parsed.payload&&parsed.payload.message);",
+      "if(parsed&&parsed.type==='assistant_progress') noteRuntimeProgress(parsed.payload&&parsed.payload.message,parsed.ts);",
     );
-    expect(script).toContain('function noteRuntimeProgress(text) {');
+    expect(script).toContain('function noteRuntimeProgress(text,at) {');
     // The note names an internal tool, so it is diagnostic: it feeds the Logs
     // tab (prefixed like the ShellUI's Agent status tab) and the run strip's
     // liveness — it never becomes a chat message.
     expect(script).not.toContain('function appendRuntimeProgressNote');
     expect(script).not.toContain('runtime-progress-feed');
-    const source = script.match(/function noteRuntimeProgress\(text\) \{[\s\S]*?\n\}/)?.[0];
+    const source = script.match(/function noteRuntimeProgress\(text,at\) \{[\s\S]*?\n\}/)?.[0];
     expect(source).toBeTruthy();
     expect(source).not.toContain('messages.push');
     expect(source).toContain('agentProgressLog=');
-    expect(script).toContain("text:'Agent: '+line");
+    expect(script).toContain("text:'Agent: '+entry.message");
     expect(script).not.toContain('updateRunStrip');
   });
 
@@ -1310,11 +1475,11 @@ describe('chat html', () => {
     expect(script).toContain("if(/^\\/maintenance(?:\\s|$)/i.test(text)&&!forceChat)");
     expect(script).toContain("window.handleMaintenanceSlashCommand?.(text)");
     expect(script).toContain("if(action==='status'||action==='history'){open();return true;}");
-    // The Build window is a plain line, not a collapsible: its one fact was
-    // hidden behind a summary that had nothing else to expand.
+    // The Build Window is a row, not a collapsible: its one fact was hidden
+    // behind a summary that had nothing else to expand. It reads like the
+    // Approval mode row beside it (same label font), not like body text.
     expect(script).not.toContain("node('summary','Build window'");
-    expect(script).toContain("const build=state.buildSchedule;node('p','Build window: '");
-    expect(script).toContain('Build window: ');
+    expect(script).toContain("buildRow.className='maintenance-mode-row';node('span','Build Window',buildRow)");
     expect(script).toContain("node('span','Approval mode',modeRow)");
     expect(script).toContain("setAttribute('role','switch')");
     expect(script).toContain("setAttribute('aria-checked',String(state.mode==='human'))");

@@ -22,6 +22,9 @@
 // Starts on a newline: it is concatenated into the chat script.
 export const PROGRESS_LABEL_SCRIPT = `
 const PROGRESS_THINKING='Thinking…';
+// Two lines' worth (the CSS clamps the line at two): a step is read whole,
+// not cut mid-word at the end of one line.
+const PROGRESS_LINE_MAX=240;
 function progressEventInThread(event, conversationId) {
   const id=event&&event.conversationId;
   return !id||!conversationId||id===conversationId;
@@ -31,7 +34,7 @@ function progressToolLabel(text) {
   const compact=String(text||'').replace(/\\s+/g,' ').replace(/…$/,'').trim();
   if(!compact) return '';
   const label=compact.replace(/^([\\w-]+)[.](\\S)/,'$1 · $2');
-  return label.length>110?label.slice(0,110)+'…':label;
+  return label.length>PROGRESS_LINE_MAX?label.slice(0,PROGRESS_LINE_MAX)+'…':label;
 }
 function progressMessageLabel(message) {
   const msg=String(message||'').replace(/\\s+/g,' ').trim();
@@ -39,7 +42,7 @@ function progressMessageLabel(message) {
   if(/^Donna Searching/i.test(msg)) return 'Searching the wiki…';
   if(/^Wiki pre-search failed/i.test(msg)) return 'Wiki search failed — answering without it';
   // The pre-search's own result, worded by the manager (wikiPresearch.js).
-  if(/^Wiki search: /.test(msg)) return msg.length>110?msg.slice(0,110)+'…':msg;
+  if(/^Wiki search: /.test(msg)) return msg.length>PROGRESS_LINE_MAX?msg.slice(0,PROGRESS_LINE_MAX)+'…':msg;
   if(/streaming (?:final|direct) answer/i.test(msg)) return 'Writing the answer…';
   if(/^Chat: condensed/i.test(msg)) return 'Condensing the pages read…';
   if(/^Chat: consulting|^Agent: planning next action|^Agent: classified input|^\\[\\d+\\/\\d+\\] synthesizing/i.test(msg)) return PROGRESS_THINKING;
@@ -51,7 +54,7 @@ function progressMessageLabel(message) {
   // The agent loop's own tool notes (progressNotes.js).
   match=msg.match(/^Using (.+)$/);
   if(match) return progressToolLabel(match[1]);
-  if(/^\\S+ failed[.:]/.test(msg)) return msg.length>110?msg.slice(0,110)+'…':msg;
+  if(/^\\S+ failed[.:]/.test(msg)) return msg.length>PROGRESS_LINE_MAX?msg.slice(0,PROGRESS_LINE_MAX)+'…':msg;
   // A tool returned: the model reads it next.
   if(/^\\S+ done[.:]/.test(msg)) return PROGRESS_THINKING;
   if(/waiting for (?:the )?(?:workspace|production) lock/i.test(msg)) return 'Waiting for the workspace lock…';
@@ -61,6 +64,14 @@ function runtimeProgressLabel(event) {
   const type=event&&event.type;
   const p=(event&&event.payload)||{};
   if(type==='assistant_message'||type==='assistant_delta') return 'Writing the answer…';
+  // A tool whose request is a sentence (a delegated objective, a search
+  // question) shows that sentence whole, after its server: "Runtime : Ingérer
+  // les fichiers…" rather than "runtime · delegate (objective=Ingérer les f)".
+  if(type==='assistant_progress'&&p.subject) {
+    const server=String(p.tool||'').split('.')[0];
+    const label=(server?server.charAt(0).toUpperCase()+server.slice(1)+' : ':'')+String(p.subject).replace(/\\s+/g,' ').trim();
+    return label.length>PROGRESS_LINE_MAX?label.slice(0,PROGRESS_LINE_MAX)+'…':label;
+  }
   if(type==='assistant_progress'||type==='runtime_log') return progressMessageLabel(p.message);
   return '';
 }
@@ -87,7 +98,11 @@ function setProgressText(span, text) {
   const found=text.match(/^Wiki search: (.+)$/);
   if(found) span.dataset.searchFound=found[1];
   else if(text!==PROGRESS_THINKING) delete span.dataset.searchFound;
-  const label=text===PROGRESS_THINKING&&span.dataset.searchFound?'Thinking over '+span.dataset.searchFound+'…':text;
+  // "nothing found" is no material to think over: say the wiki had nothing.
+  const searched=span.dataset.searchFound;
+  const label=text===PROGRESS_THINKING&&searched
+    ? (/^nothing found$/i.test(searched)?'Thinking (nothing in the wiki)…':'Thinking over '+searched+'…')
+    : text;
   // The same step repeated (two model calls in a row) keeps counting.
   if(span.dataset.stepLabel!==label){ span.dataset.stepLabel=label; span.dataset.stepSince=String(Date.now()); }
   renderProgressStep(span);

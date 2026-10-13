@@ -55,6 +55,8 @@ function runStripDetail(progress, usage) {
     sourceCounter,
     batchCounter,
     batchDetail,
+    // Facts are data (key value), worded by Donna in the Plan tab's narrative.
+    p.facts&&typeof p.facts==='object'?Object.entries(p.facts).map(([key,value])=>key+' '+(Array.isArray(value)?value.join(', '):String(value))).join(' · '):null,
     instructions>0?\`\${instructions} instruction\${instructions>1?'s':''}\`:null,
     stabilize,
     p.currentStep||p.step||p.phase,
@@ -81,16 +83,17 @@ async function confirmCancelRuntimeRun(button) {
   if(button) button.disabled=true;
   try { await cancelRuntimeRun(); } finally { if(button) button.disabled=false; }
 }
-// One queued (not yet started) control request, by id: the runtime's
-// cancel_item also skips the later steps of that item's own chain.
+// Delete one queued (not yet started) control request, by id: the runtime's
+// cancel_item also skips the later steps of that item's own chain, and the
+// Plan tab stops showing it (queue and chain alike).
 async function cancelQueuedRuntimeItem(itemId) {
   if(!runtimeEnabled()||!itemId) return;
-  if(!(await confirmAction({title:'Cancel queued request',message:'Remove this request from the queue? It has not started yet.',confirmLabel:'Cancel request',danger:true}))) return;
+  if(!(await confirmAction({title:'Delete queued request',message:'Delete this request from the queue? It has not started yet, so nothing is stopped.',confirmLabel:'Delete',danger:true}))) return;
   try {
     const res=await fetch('/api/runtime/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'cancel_item',itemId})});
     const payload=await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(payload?.error||'Queue cancel failed ('+res.status+')');
-    notify(payload?.cancelled===false?'That request had already left the queue.':'Queued request cancelled');
+    notify(payload?.cancelled===false?'That request had already left the queue.':'Queued request deleted');
     await fetchRuntimeState().catch(()=>{});
   } catch(e) { notify(e?.message||String(e),'e'); }
 }

@@ -172,6 +172,11 @@ document that was never ingested, **blue** when the ingested archive already
 holds the same document with different content — a re-export, and an update
 rather than a newcomer.
 
+A page with almost no content — a Confluence page that only lists its child
+pages, or a blank one — is not staged at all: an ingest would spend a model
+call on it and produce an empty fiche. The sync counts these pages as skipped,
+and such a page arrives as soon as it is filled in Confluence.
+
 To keep a pending document out of ingestion without deleting it, click the
 **lock** at the right of its row, just before the delete cross. The file is
 renamed `<name>.md.lock`: it stays in Pending, greyed with a closed lock, and

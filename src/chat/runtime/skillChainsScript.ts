@@ -4,7 +4,9 @@ function activityClock(value) {
 }
 function skillChainsHTML() {
   const chains=Array.isArray(runtimeState?.skillChains)?runtimeState.skillChains:[];
-  const visible=chains.filter(chain=>chain.status!=='done');
+  // A chain deleted before any step started is gone for the reader: nothing
+  // ran, nothing was skipped. A chain stopped mid-way stays, to show the rest.
+  const visible=chains.filter(chain=>chain.status!=='done'&&!(chain.steps||[]).every(step=>step.status==='cancelled'&&!step.runId));
   if(!visible.length) return '';
   const statusLabel={running:'Running',queued:'Queued',failed:'Failed',cancelled:'Cancelled',incomplete:'Incomplete'};
   const blocks=visible.map(chain=>{

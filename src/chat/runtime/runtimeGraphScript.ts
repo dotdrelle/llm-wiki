@@ -331,8 +331,22 @@ function formatRuntimeTokens(usage) {
 function formatRuntimeDuration(ms) {
   const n=Number(ms);
   if(!Number.isFinite(n)||n<0)return '';
+  // Under a minute in seconds: "0.1 min" said the same for 1 s and 6 s.
+  if(n<60000) return Math.max(1,Math.round(n/1000))+' s';
   const minutes=n/60000;
-  return (minutes<10?Math.max(.1,minutes).toFixed(1):Math.round(minutes))+' min';
+  return (minutes<10?minutes.toFixed(1):Math.round(minutes))+' min';
+}
+// A task still running counts from its start to now. The projection's own
+// duration ends at the agent's FIRST answer (task.result_returned), which for
+// an asynchronous agent is "accepted", seconds after the start: a curation ten
+// minutes in read "0.1 min", frozen.
+function runtimeTaskRunning(task) {
+  const status=String(task?.status||'').toLowerCase();
+  return !activityTerminalStatus(status)&&!['succeeded','skipped'].includes(status);
+}
+function runtimeTaskDurationMs(row) {
+  const started=Number(row.tm.startedAt);
+  return runtimeTaskRunning(row.task)&&Number.isFinite(started)?Date.now()-started:row.tm.durationMs;
 }
 // Subagent timestamps are ISO strings (event.ts in agentEvents.js), not epoch
 // milliseconds. new Date(Number(iso)) is a NaN date, which the inspector
@@ -417,7 +431,7 @@ function renderRuntimeWorkflowInspector() {
   }).sort((a,b)=>(Number(a.tm.startedAt)||Number(a.tm.finishedAt)||Infinity)-(Number(b.tm.startedAt)||Number(b.tm.finishedAt)||Infinity)):[];
   if(selectedRuntimeWorkflowTaskId&&!taskRows.some(row=>row.taskId===selectedRuntimeWorkflowTaskId)) selectedRuntimeWorkflowTaskId=null;
   const taskList=taskRows.length?\`<div class="runtime-inspector-section"><div class="runtime-inspector-heading">Tasks · flow (by start)</div>\${taskRows.slice(0,20).map((row,i)=>{
-    const dur=formatRuntimeDuration(row.tm.durationMs);
+    const dur=formatRuntimeDuration(runtimeTaskDurationMs(row));
     const hasTok=row.tk.inputKnown||row.tk.outputKnown;
     const meta=[dur?'⏱ '+dur:'',hasTok?ritTok(row.tk.inputKnown,row.tk.inputTokens)+' in / '+ritTok(row.tk.outputKnown,row.tk.outputTokens)+' out':''].filter(Boolean).join(' · ');
     return \`<button type="button" class="runtime-inspector-task\${row.taskId===selectedRuntimeWorkflowTaskId?' selected':''}" data-task-id="\${esc(row.taskId)}" onclick="selectRuntimeWorkflowTask(this.dataset.taskId)"><span class="rit-top"><span class="rit-seq">\${i+1}</span><span class="rit-label">\${esc(row.task.label)}</span><b class="\${esc(row.task.status)}">\${esc(row.task.status)}</b></span>\${meta?\`<span class="rit-meta">\${esc(meta)}</span>\`:''}</button>\`;
@@ -428,10 +442,10 @@ function renderRuntimeWorkflowInspector() {
     const previous=taskRows[selectedTaskIndex-1];
     const next=taskRows[selectedTaskIndex+1];
     const started=selectedTask.tm.startedAt!=null&&Number.isFinite(Number(selectedTask.tm.startedAt))?formatLocalTime(Number(selectedTask.tm.startedAt)):'—';
-    const duration=formatRuntimeDuration(selectedTask.tm.durationMs)||'—';
+    const duration=formatRuntimeDuration(runtimeTaskDurationMs(selectedTask))||'—';
     const tokens=ritTok(selectedTask.tk.inputKnown,selectedTask.tk.inputTokens)+' in / '+ritTok(selectedTask.tk.outputKnown,selectedTask.tk.outputTokens)+' out';
     const agent=selectedTask.task.executor||selectedTask.task.raw?.executor||'—';
-    return \`<div class="runtime-inspector-section runtime-task-flow"><div class="runtime-inspector-heading">Execution sequence · task \${selectedTaskIndex+1}/\${taskRows.length}</div><div class="rit-flow-line previous"><span>Previous</span><b>\${esc(previous?.task.label||'Start')}</b></div><div class="rit-flow-line current"><span>Selected</span><b>\${esc(selectedTask.task.label)}</b></div><div class="rit-flow-line next"><span>Next</span><b>\${esc(next?.task.label||'End')}</b></div><dl class="runtime-inspector-dl"><dt>Status</dt><dd>\${esc(selectedTask.task.status||'—')}</dd><dt>Started</dt><dd>\${esc(started)}</dd><dt>Duration</dt><dd>\${esc(duration)}</dd><dt>Agent</dt><dd>\${esc(agent)}</dd><dt>Tokens</dt><dd>\${esc(tokens)}</dd></dl></div>\`;
+    return \`<div class="runtime-inspector-section runtime-task-flow"><div class="runtime-inspector-heading">Execution sequence · task \${selectedTaskIndex+1}/\${taskRows.length}</div><div class="rit-flow-line previous"><span>Previous</span><b>\${esc(previous?.task.label||'Start')}</b></div><div class="rit-flow-line current"><span>Selected</span><b>\${esc(selectedTask.task.label)}</b></div><div class="rit-flow-line next"><span>Next</span><b>\${esc(next?.task.label||'End')}</b></div><dl class="runtime-inspector-dl"><dt>Status</dt><dd>\${esc(selectedTask.task.status||'—')}</dd><dt>Started</dt><dd>\${esc(started)}</dd><dt>\${runtimeTaskRunning(selectedTask.task)?'Running for':'Duration'}</dt><dd>\${esc(duration)}</dd><dt>Agent</dt><dd>\${esc(agent)}</dd><dt>Tokens</dt><dd>\${esc(tokens)}</dd></dl></div>\`;
   })():'';
   // The files the selected task (or a phase's only task) works on, with the
   // status the graph shows for each.

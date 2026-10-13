@@ -1,3 +1,4 @@
+import { writeDonnaReport } from './reportWriter.ts';
 import { maintenanceState } from '../maintenance/state.ts';
 import { appendFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -193,6 +194,11 @@ export const WIKI_MCP_TOOLS = [
     name: 'wiki_add_source',
     description:
       'Stage one Markdown source in the workspace ingestion inbox. Use for content already available as Markdown; use the documents agent for binary conversion or OCR.',
+  },
+  {
+    name: 'report_write',
+    description:
+      'Write a report (a summary or an analysis the user asked for as a document) to raw/untracked/Donna/, locked out of ingestion until the user unlocks it. Reply with one sentence: the user opens it from the link.',
   },
   {
     name: 'wiki_list_ingested_sources',
@@ -2308,6 +2314,30 @@ const withTitles = async (
     'Stage one Markdown source in the workspace ingestion inbox.',
     addWikiSourceInput,
     (input) => loggedTool('wiki_add_source', input, addWikiSource),
+  );
+
+  // A report the user asked for as a document, or an agent's long result:
+  // locked in the inbox (services/reportWriter.ts), never a chat message.
+  server.tool(
+    'report_write',
+    'Write a report — a summary, an analysis or any long result the user asked for as a document — to raw/untracked/Donna/ as a locked file: readable from the Pending panel and from the link in your reply, never ingested until the user unlocks it. Then answer with ONE sentence saying it is ready; do not repeat its content in the chat.',
+    {
+      title: z.string().trim().min(1).max(160).describe('Short title of the report, in the user language.'),
+      content: z.string().min(1).max(MAX_SOURCE_CONTENT_CHARS).describe('The report body, in Markdown.'),
+      sources: z.array(z.string().trim().max(500)).max(40).optional()
+        .describe('Workspace paths of the documents the report draws from (wiki pages, raw/ingested sources).'),
+    },
+    (input) => loggedTool('report_write', input, async ({ title, content, sources }) => {
+      const result = await writeDonnaReport(workspace.paths.rootDir, { title, content, sources });
+      await appendAuditRecord(workspace, {
+        tool: 'report_write',
+        target: result.relativePath,
+        action: 'write',
+        contentChars: content.length,
+        contentBytes: result.bytes,
+      });
+      return textResult(JSON.stringify({ written: true, relativePath: result.relativePath, title: result.title, report: { path: result.relativePath, title: result.title } }, null, 2));
+    }),
   );
 
   server.tool(

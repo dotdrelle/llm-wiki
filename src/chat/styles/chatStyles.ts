@@ -380,7 +380,8 @@ ${CHAT_ACTIVITY_CSS}
 .tc-raw pre{margin-top:6px}
 .typing{display:flex;align-items:center;gap:4px;padding:3px 0;font-family:var(--font-mono);font-size:13px;color:var(--muted);animation:typing-blink 1.1s steps(1) infinite}
 .runtime-thinking{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px}
-.runtime-thinking .typing{flex:none}
+.runtime-thinking .typing{flex:none;align-self:flex-start}
+.runtime-thinking span{min-width:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
 @keyframes typing-blink{50%{opacity:.35}}
 #empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--muted)}
 #empty .em-icon{font-size:36px;opacity:.6}

@@ -291,6 +291,34 @@ loadHistory();
     return true;
   }
 
+  // A report (or any pending document) as Markdown, for the chat's report
+  // reader: confined to raw/untracked, a locked file included.
+  if (urlPath === '/api/report' && req.method === 'GET') {
+    const requested = new URL(req.url ?? '', 'http://serve.local').searchParams.get('path') ?? '';
+    const relative = toPosix(requested).replace(/^\/+/, '');
+    if (!relative.startsWith('raw/untracked/') || !/\.md(?:\.lock)?$/.test(relative)) {
+      deps.sendJson(res, 400, { error: 'Only a Markdown document under raw/untracked/ can be read here.' });
+      return true;
+    }
+    let absolute: string;
+    try { absolute = resolveInside(rootDir, relative); } catch {
+      deps.sendJson(res, 400, { error: 'Path escapes the workspace.' });
+      return true;
+    }
+    // Unlocked since the link was written: the same report without `.lock`.
+    let served = relative;
+    if (!(await pathExists(absolute)) && relative.endsWith('.lock') && (await pathExists(absolute.slice(0, -'.lock'.length)))) {
+      absolute = absolute.slice(0, -'.lock'.length);
+      served = relative.slice(0, -'.lock'.length);
+    }
+    if (!(await pathExists(absolute))) {
+      deps.sendJson(res, 404, { error: 'This report no longer exists — it was deleted, renamed or ingested.' });
+      return true;
+    }
+    deps.sendJson(res, 200, { path: served, markdown: await readFile(absolute, 'utf8') });
+    return true;
+  }
+
   if (urlPath.startsWith('/new/')) {
     const collection = urlPath.replace(/^\/new\//, '').replace(/\/+$/, '');
     if (req.method === 'GET') {
