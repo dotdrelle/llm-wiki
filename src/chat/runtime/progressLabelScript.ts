@@ -53,7 +53,7 @@ function progressMessageLabel(message) {
   if(match) return progressToolLabel(match[1]);
   // The agent loop's own tool notes (progressNotes.js).
   match=msg.match(/^Using (.+)$/);
-  if(match) return progressToolLabel(match[1]);
+  if(match) return msg.length>PROGRESS_LINE_MAX?msg.slice(0,PROGRESS_LINE_MAX)+'…':msg;
   if(/^\\S+ failed[.:]/.test(msg)) return msg.length>PROGRESS_LINE_MAX?msg.slice(0,PROGRESS_LINE_MAX)+'…':msg;
   // A tool returned: the model reads it next.
   if(/^\\S+ done[.:]/.test(msg)) return PROGRESS_THINKING;
@@ -64,6 +64,12 @@ function runtimeProgressLabel(event) {
   const type=event&&event.type;
   const p=(event&&event.payload)||{};
   if(type==='assistant_message'||type==='assistant_delta') return 'Writing the answer…';
+  // The CQL and limit are the useful live status for a direct Confluence
+  // lookup. Keep the exact tool call visible instead of replacing it with the
+  // shorter natural-language subject while the request is running.
+  if(type==='assistant_progress'&&/^Using cme\.cme_confluence_search\b/.test(String(p.message||''))) {
+    return progressMessageLabel(p.message);
+  }
   // A tool whose request is a sentence (a delegated objective, a search
   // question) shows that sentence whole, after its server: "Runtime : Ingérer
   // les fichiers…" rather than "runtime · delegate (objective=Ingérer les f)".
@@ -101,11 +107,16 @@ function setProgressText(span, text) {
   const found=text.match(/^Wiki search: (.+)$/);
   if(found) span.dataset.searchFound=found[1];
   else if(text!==PROGRESS_THINKING) delete span.dataset.searchFound;
+  const confluenceCall=text.match(/^Using cme\.cme_confluence_search\b/);
+  if(confluenceCall) span.dataset.confluenceSearch='1';
+  else if(text!==PROGRESS_THINKING) delete span.dataset.confluenceSearch;
   // "nothing found" is no material to think over: say the wiki had nothing.
   const searched=span.dataset.searchFound;
-  const label=text===PROGRESS_THINKING&&searched
-    ? (/^nothing found$/i.test(searched)?'Thinking (nothing in the wiki)…':'Thinking over '+searched+'…')
-    : text;
+  const label=text===PROGRESS_THINKING&&span.dataset.confluenceSearch
+    ? 'Thinking over Confluence search results…'
+    : text===PROGRESS_THINKING&&searched
+      ? (/^nothing found$/i.test(searched)?'Thinking (nothing in the wiki)…':'Thinking over '+searched+'…')
+      : text;
   // The same step repeated (two model calls in a row) keeps counting.
   if(span.dataset.stepLabel!==label){ span.dataset.stepLabel=label; span.dataset.stepSince=String(Date.now()); }
   renderProgressStep(span);

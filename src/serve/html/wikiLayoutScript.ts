@@ -190,6 +190,10 @@ function wireSidebarLaunchButtons() {
       ['[data-untracked-count]', 'textContent'],
     ];
     let replaced = 0;
+    // A batch is processed sequentially, so files that have not started yet
+    // have no server record. Preserve their queued rows across sidebar refreshes.
+    const queuedUploads = [...document.querySelectorAll('[data-upload-optimistic][data-upload-state="queued"]')]
+      .map((row) => row.cloneNode(true));
     for (const [selector, property] of pairs) {
       const current = document.querySelector(selector);
       const next = nextDocument.querySelector(selector);
@@ -198,6 +202,15 @@ function wireSidebarLaunchButtons() {
       replaced += 1;
     }
     if (!replaced) throw new Error('Sidebar unavailable');
+    const pendingList = document.querySelector('[data-untracked-list]');
+    if (pendingList && queuedUploads.length) {
+      pendingList.querySelector('.side-untracked-empty')?.remove();
+      queuedUploads.reverse().forEach((row) => {
+        pendingList.prepend(row);
+        const count = document.querySelector('[data-untracked-count]');
+        if (count) count.textContent = String(Number(count.textContent || 0) + 1);
+      });
+    }
     document.querySelectorAll('.sidebar [data-tree-id]').forEach((node) => {
       const id = node.getAttribute('data-tree-id');
       if (id && openBefore.size) node.open = openBefore.has(id);
@@ -558,12 +571,14 @@ function wireSidebarLaunchButtons() {
     return upload;
   }
   /*
-   The Pending panel's ghost row during a conversion.
+   The Pending panel's ghost row for every convertible file in a dropped
+   batch. Queued rows stay grey; the current file gets the spinner when its
+   conversion starts.
 
    A convertible file only appears in raw/untracked at the end of the
-   conversion — five minutes per file at worst — and without this row the
-   panel stayed silent all that time, as if the drop had done nothing. The row
-   is deliberately inert: no link, no deletion, no drag. The file is not yet a
+   conversion — five minutes per file at worst — and without these rows the
+   panel stayed silent while a batch waited or converted. Rows are deliberately
+   inert: no link, no deletion, no drag. The file is not yet a
    source, there is nothing to open or move; it only becomes clickable once
    the conversion has written the Markdown, and it is then the real source the
    refresh displays. The server renders the same row (read from the uploads
@@ -572,29 +587,41 @@ function wireSidebarLaunchButtons() {
    reconciles with the server — the failed record no longer counts as
    in-flight, so the panel does not show it again.
   */
-  function addPendingUploadRow(filename) {
+  function addPendingUploadRow(filename, uploadId) {
     const list = document.querySelector('[data-untracked-list]');
     if (!list) return;
     list.querySelector('.side-untracked-empty')?.remove();
     const row = document.createElement('div');
-    row.className = 'side-untracked-item side-untracked-uploading';
+    row.className = 'side-untracked-item side-untracked-uploading side-untracked-upload-queued';
     row.dataset.uploadOptimistic = '1';
+    row.dataset.uploadId = uploadId;
     row.dataset.uploadFilename = filename;
-    row.title = 'Converting with the documents agent…';
-    const spinner = document.createElement('span');
-    spinner.className = 'side-upload-spinner';
-    spinner.setAttribute('aria-hidden', 'true');
+    row.dataset.uploadState = 'queued';
+    row.title = 'Waiting for the documents agent…';
+    const marker = document.createElement('span');
+    marker.className = 'side-upload-queue-marker';
+    marker.setAttribute('aria-hidden', 'true');
     const name = document.createElement('span');
     name.className = 'side-upload-name';
     name.textContent = filename;
-    row.append(spinner, name);
+    row.append(marker, name);
     list.prepend(row);
     const count = document.querySelector('[data-untracked-count]');
     if (count) count.textContent = String(Number(count.textContent || 0) + 1);
   }
-  function removePendingUploadRow(filename) {
+  function activatePendingUploadRow(uploadId) {
+    const row = [...document.querySelectorAll('[data-upload-optimistic]')]
+      .find((item) => item.getAttribute('data-upload-id') === uploadId);
+    if (!row) return;
+    row.dataset.uploadState = 'active';
+    row.classList.remove('side-untracked-upload-queued');
+    row.title = 'Converting with the documents agent…';
+    const marker = row.querySelector('.side-upload-queue-marker');
+    if (marker) marker.className = 'side-upload-spinner';
+  }
+  function removePendingUploadRow(uploadId) {
     document.querySelectorAll('[data-upload-optimistic]').forEach((row) => {
-      if (row.getAttribute('data-upload-filename') === filename) row.remove();
+      if (row.getAttribute('data-upload-id') === uploadId) row.remove();
     });
   }
   void refreshPendingCapabilities();
@@ -635,13 +662,20 @@ function wireSidebarLaunchButtons() {
       });
       return;
     }
+    const uploadIds = new Map();
+    for (const file of files) {
+      if (!isConvertibleFile(file)) continue;
+      const actId = 'pending-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+      uploadIds.set(file, actId);
+      addPendingUploadRow(file.name, actId);
+    }
     const written = [];
     const failed = [];
     for (const file of files) {
-      const actId = 'pending-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+      const actId = uploadIds.get(file);
       try {
         if (isConvertibleFile(file)) {
-          addPendingUploadRow(file.name);
+          activatePendingUploadRow(actId);
           reportPendingUpload({ id: actId, phase: 'start', filename: file.name, bytes: file.size });
           const upload = await uploadForConversion(file);
           reportPendingUpload({
@@ -674,7 +708,7 @@ function wireSidebarLaunchButtons() {
           reportPendingUpload({ id: actId, phase: 'done', filename: file.name, status: 'failed', error: message });
           // The placeholder must not linger on an error: it disappears from
           // the panel and from the serve screen it was displayed on.
-          removePendingUploadRow(file.name);
+          removePendingUploadRow(actId);
           await refreshSidebar().catch(() => {});
         }
         failed.push(file.name + ' — ' + message);

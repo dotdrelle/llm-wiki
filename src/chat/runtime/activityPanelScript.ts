@@ -124,15 +124,21 @@ function createRuntimeThinkingBubble(text='Request received · Donna is preparin
 // this is the same rule, different surface.
 const AGENT_PROGRESS_LOG_LIMIT=100;
 let agentProgressLog=[];
-function noteRuntimeProgress(text,at) {
+function noteRuntimeProgress(text,at,eventId=null,kind=null) {
   const message=String(text||'').trim();
   if(!message) return;
-  agentProgressLog=[...agentProgressLog,{message,at:at||new Date().toISOString()}].slice(-AGENT_PROGRESS_LOG_LIMIT);
+  if(eventId&&agentProgressLog.some(entry=>entry.id===eventId)) return;
+  agentProgressLog=[...agentProgressLog,{id:eventId||null,message,kind:kind||null,at:at||new Date().toISOString()}].slice(-AGENT_PROGRESS_LOG_LIMIT);
+}
+function restoreRuntimeProgress(events) {
+  if(!Array.isArray(events)) return;
+  agentProgressLog=[];
+  for(const event of events) noteRuntimeProgress(event?.payload?.message,event?.ts,event?.id,event?.payload?.kind);
 }
 function agentProgressEntries() {
   return agentProgressLog
     .filter(entry=>runtimeLogMatchesFilter(entry.message,runtimeLogFilter))
-    .map(entry=>({time:formatLocalTime(entry.at),text:'Agent: '+entry.message,tone:'info'}));
+    .map(entry=>({time:formatLocalTime(entry.at),text:(entry.kind==='model_meter'?'':'Agent: ')+entry.message,tone:'info'}));
 }
 
 // An agent-mode turn runs on an ephemeral runtime session whose events never
@@ -157,9 +163,11 @@ function updateRuntimeThinkingBubble(div,text) {
 
 // The external runtime's heartbeat: no label to show, only proof of life. It
 // restarts the in-flight watchdog(s), minus the Logs line (a beat is not a step).
-function noteRuntimeHeartbeat() {
+function noteRuntimeHeartbeat(event=null) {
   lastRuntimeEventAt=Date.now();
-  [...pendingRuntimeStatusEls,...armedReplyStatusEls].forEach(el=>updateRuntimeThinkingBubble(el));
+  [...pendingRuntimeStatusEls,...armedReplyStatusEls]
+    .filter(el=>progressEventInThread(event,el._conversationId))
+    .forEach(el=>updateRuntimeThinkingBubble(el));
   updateRunElapsed();
 }
 
@@ -419,6 +427,25 @@ async function loadWorkspaceMemory() {
     memoryFacts=Array.isArray(data.facts)?data.facts:[];
   } catch(error) { memoryError=error?.message||String(error); }
   finally { memoryLoading=false; renderActivities(); }
+}
+async function clearWorkspaceMemory() {
+  const confirmed=await confirmAction({
+    title:'Clear workspace memory',
+    message:'Permanently delete every saved fact and its history for this workspace? This does not clear conversations or maintenance data.',
+    confirmLabel:'Clear memory',
+    danger:true,
+  });
+  if(!confirmed) return;
+  try {
+    const response=await fetch('/api/runtime/memory/facts',{method:'DELETE'});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok) throw new Error(data.error||'Workspace memory could not be cleared.');
+    memoryFacts=[];
+    memoryHistory={};
+    renderActivities();
+    const cleared=data.cleared||{};
+    notify('Cleared '+(cleared.items||0)+' saved fact(s) and '+(cleared.versions||0)+' history record(s).','i');
+  } catch(error) { notify(error?.message||String(error),'e'); }
 }
 function workspaceMemoryHTML() {
   if(memoryLoading) return '<div class="act-empty">Loading workspace memory…</div>';
@@ -680,7 +707,7 @@ function renderActivities() {
   }).join('');
   const empty=\`<div class="act-empty">No \${labels[activityListTab].toLowerCase()} yet.</div>\`;
   const resetPlan=activityListTab==='plan'?'<button class="activity-subtab-reset" type="button" onclick="resetRuntimePlan()">Reset plan</button>':'';
-  const clear=activityListTab==='maintenance'?'<button class="activity-subtab-clear" type="button" onclick="clearMaintenanceHistory()">Clear</button>':\`<button class="activity-subtab-clear" type="button" onclick="clearActivityTab('\${activityListTab}')">Clear</button>\`;
+  const clear=activityListTab==='maintenance'?'<button class="activity-subtab-clear" type="button" onclick="clearMaintenanceHistory()">Clear</button>':activityListTab==='memory'?'<button class="activity-subtab-clear" type="button" onclick="clearWorkspaceMemory()">Clear</button>':\`<button class="activity-subtab-clear" type="button" onclick="clearActivityTab('\${activityListTab}')">Clear</button>\`;
   const maintenanceState=activityListTab==='maintenance'?'<span class="maintenance-state" aria-live="polite"></span>':'';
   const toolbarTitle=activityListTab==='maintenance'?\`<span class="maintenance-heading"><span class="activity-subtab-toolbar-title">Maintenance</span>\${maintenanceState}</span>\`:\`<span class="activity-subtab-toolbar-title">\${labels[activityListTab]}</span>\`;
   const toolbar=\`<div class="activity-subtab-toolbar">\${toolbarTitle}<span class="activity-subtab-actions">\${resetPlan}\${clear}</span></div>\`;

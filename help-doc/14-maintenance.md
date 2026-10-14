@@ -172,6 +172,11 @@ Reads and curations never make you wait.
   each are kept in `.wiki/output-backups/`.
 - Without the agentic runtime, routine work (sync, doctor, mail) continues and
   the rest waits; the panel says so once.
+- A gateway container can be running before its health and capability endpoints
+  are ready. On a slow host, Maintenance waits longer for those checks and
+  retries a missing gateway with backoff. `/status` shows the last probe reason
+  and whether it serves `agent.maintain`; starting the container alone is not
+  enough if that capability is absent from its configuration.
 
 ## Saved history pages
 

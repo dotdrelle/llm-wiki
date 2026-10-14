@@ -1,6 +1,8 @@
 ---
 name: curate
 description: Curate the wiki — find duplicate, disagreeing, outdated or unsourced pages and propose corrections on a branch a human merges or discards
+capability: agent.curate
+operation: run
 ---
 Curate the wiki: find duplicate pages, pages that disagree or repeat each other, outdated or superseded pages, and claims with no cited source, then write the corrections on a dedicated branch. A human decides whether to keep them: never merge, publish or delete anything yourself.
 
@@ -10,7 +12,7 @@ This workflow never fetches sources, never ingests, never builds, exports or pub
 
 ## Execution
 
-Run the curation analysis and prepare a reviewable proposal on its dedicated branch. The human approval is the later merge or discard on the Agent proposals page; do not request a separate pre-run mutation approval. List the changed files and the objections the review could not resolve.
+Run one curation objective through the declared curation capability. It must inspect wiki content and prepare a reviewable proposal on its dedicated branch. Do not replace curation with `lint`, `knowledge.check`, or another workspace check: those do not review or correct wiki content. If the curation capability is unavailable or refuses the objective, stop and report that blocker; do not claim the skill succeeded. The human approval is the later merge or discard on the Agent proposals page; do not request a separate pre-run mutation approval. List the changed files and the objections the review could not resolve.
 
 ## Notification
 

@@ -21,7 +21,11 @@ export async function handleRuntimeRoutes(
     return true;
   }
   if (urlPath === '/api/runtime/state' && req.method === 'GET') {
-    await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/state'), deps.proxyDeps);
+    const conversationId = new URL(req.url ?? '/', 'http://localhost').searchParams.get('conversationId');
+    const target = deps.runtimePathForWorkspace('/state');
+    await proxyRuntimeJson(req, res, conversationId
+      ? `${target}${target.includes('?') ? '&' : '?'}conversationId=${encodeURIComponent(conversationId)}`
+      : target, deps.proxyDeps);
     return true;
   }
   // The workspace's containers' resource use (Run execution view). The runtime
@@ -80,7 +84,7 @@ export async function handleRuntimeRoutes(
     await proxyRuntimeJson(req, res, deps.runtimePathForWorkspace('/conversation/compact'), deps.proxyDeps);
     return true;
   }
-  if (urlPath === '/api/runtime/memory/facts' && (req.method === 'GET' || req.method === 'POST')) {
+  if (urlPath === '/api/runtime/memory/facts' && ['GET', 'POST', 'DELETE'].includes(req.method ?? '')) {
     // The workspace path already carries `?workspace=`: the caller's query
     // joins it with `&`, never a second `?`.
     const target = deps.runtimePathForWorkspace('/memory/facts');

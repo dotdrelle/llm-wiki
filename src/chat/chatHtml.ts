@@ -424,6 +424,7 @@ function scrollMessagesToBottom() {
 let runtimeStateSeq=0;
 function applyRuntimeState(state) {
   runtimeState=state;
+  if(Array.isArray(state?.progressEvents)) restoreRuntimeProgress(state.progressEvents);
   runtimeConnected=true;
   noteRunSidebarState(state);
   const conversationChanged=mergeRuntimeConversation(); syncRunLiveLine();
@@ -439,10 +440,12 @@ function applyRuntimeState(state) {
 async function fetchRuntimeState() {
   if(!window.__WIKI_CONFIG__?.runtime?.enabled) return;
   const seq=++runtimeStateSeq;
-  const res=await fetch('/api/runtime/state',{cache:'no-store'});
+  const requestedConversationId=currentConversationId;
+  const query=requestedConversationId?'?conversationId='+encodeURIComponent(requestedConversationId):'';
+  const res=await fetch('/api/runtime/state'+query,{cache:'no-store'});
   if(!res.ok) throw new Error('runtime unavailable');
   const data=await res.json();
-  if(seq!==runtimeStateSeq) return;
+  if(seq!==runtimeStateSeq||requestedConversationId!==currentConversationId) return;
   applyRuntimeState(data);
 }
 
@@ -469,13 +472,13 @@ function connectRuntimePanel() {
       noteRuntimeEvent();
       const parsed=JSON.parse(event.data);
       if(parsed&&parsed.type) noteRunSidebarEvent(parsed.type);
-      if(parsed&&parsed.type==='assistant_progress') noteRuntimeProgress(parsed.payload&&parsed.payload.message,parsed.ts);
-      if(parsed&&parsed.type==='runtime_heartbeat') noteRuntimeHeartbeat();
+      if(parsed&&parsed.type==='assistant_progress') noteRuntimeProgress(parsed.payload&&parsed.payload.message,parsed.ts,parsed.id,parsed.payload&&parsed.payload.kind);
+      if(parsed&&parsed.type==='runtime_heartbeat') noteRuntimeHeartbeat(parsed);
       // The Memory tab listens for this event; without an emitter a /remember
       // or a background extraction only appeared after a full reload. The
-      // runtime says "memory: saved/updated/removed/restored" on its own log
+      // runtime says "memory: saved/updated/removed/restored/cleared" on its own log
       // line — the one signal both explicit actions and auto-extraction share.
-      if(parsed&&parsed.type==='runtime_log'&&/(?:^|\\s)memory:\\s*(?:saved|updated|removed|restored)\\b/i.test(String(parsed.payload?.message??''))) {
+      if(parsed&&parsed.type==='runtime_log'&&/(?:^|\\s)memory:\\s*(?:saved|updated|removed|restored|cleared)\\b/i.test(String(parsed.payload?.message??''))) {
         window.dispatchEvent(new Event('llmwiki:memory-updated'));
       }
       // A turn still running in a chat the reader left speaks only in its own
@@ -838,23 +841,24 @@ function submitSuggestion(text) {
 
 // An action asked from a button (a curation, a Tchap forum…) is a Donna turn
 // in agent mode: the read-only chat would only describe what it cannot do.
-function submitAgentSuggestion(text) {
+function submitAgentSuggestion(text, {hideQuestion=false}={}) {
   if(!agentMode) { agentMode=true; updateAgentModeUI(); }
+  const input=$('chat-input');
+  if(input) {
+    if(hideQuestion) input.dataset.hideQuestion='1';
+    else delete input.dataset.hideQuestion;
+  }
   submitSuggestion(text);
 }
 
 // The empty-chat curation tile — and the Agent proposals page's "Start a
-// curation" button, which routes here through llmwiki:curate. A curation is
-// an ACTION, not a chat answer: select agent mode first, or the read-only
-// chat loop would only describe what it cannot do. The objective carries the
-// "curate" alias, which the runtime resolves deterministically to the
-// curation capability (a branch proposal a human merges or discards — never a
-// direct wiki write). With the workspace's curate skill installed, the thread
-// reads "/curate", exactly as if typed: the objective is the skill's private
-// body, never a message of the reader's.
-async function startCuration() {
-  const viaSkill=(await matchBrowserSkillInvocation('/curate'))?.skill;
-  submitAgentSuggestion(viaSkill?'/curate':'Curate the wiki: find duplicate pages, pages that disagree or repeat each other, outdated or superseded pages, and claims with no cited source, then write the corrections on a dedicated branch.');
+// curation" button, which routes here through llmwiki:curate. Keep this as an
+// explicit agent objective even when a workspace has a /curate skill with the
+// same name: that guide can be resolved as an unrelated lint/check plan. The
+// curate alias selects the confined curation capability; its branch proposal
+// still needs a human merge and never writes the wiki directly.
+function startCuration() {
+  submitAgentSuggestion('Curate the wiki: find duplicate pages, pages that disagree or repeat each other, outdated or superseded pages, and claims with no cited source, then write the corrections on a dedicated branch.', {hideQuestion:true});
 }
 
 function renderSkillsManager() {

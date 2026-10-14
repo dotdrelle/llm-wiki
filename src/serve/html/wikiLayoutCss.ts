@@ -616,11 +616,10 @@ export const WIKI_LAYOUT_CSS = `
     .side-ingest-phase.analyze, .side-ingest-phase.taxo { animation: sideIngestPhasePulse 1.2s ease-in-out infinite; }
     .side-ingest-phase.write { color: #f59e0b; }
     @keyframes sideIngestPhasePulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
-    /* In-flight document conversion: a placeholder row while the documents
-       agent turns a dropped PDF/text file into a Markdown source. Deliberately
-       not a link, not draggable, not deletable — the file is not a source yet,
-       so there is nothing to open or move; it becomes clickable only once the
-       conversion lands and the real raw/untracked file replaces this row. */
+    /* Queued or in-flight document conversion: a placeholder row while the
+       documents agent turns dropped PDF/text files into Markdown sources.
+       Deliberately not a link, not draggable, not deletable — the file is not
+       a source yet, so it becomes clickable only once conversion lands. */
     .side-untracked-item.side-untracked-uploading {
       padding: 0.15rem 0.55rem 0.15rem 1rem;
       gap: 0.45rem;
@@ -633,6 +632,15 @@ export const WIKI_LAYOUT_CSS = `
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    .side-upload-queue-marker {
+      flex: 0 0 auto;
+      width: 0.38rem;
+      height: 0.38rem;
+      margin: 0 0.17rem;
+      border-radius: 50%;
+      background: var(--muted);
+      opacity: 0.55;
     }
     .side-upload-spinner {
       flex: 0 0 auto;

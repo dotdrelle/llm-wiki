@@ -34,7 +34,9 @@ in Serve's chat or in the Shell:
   restore controls: *Forget* acts at once (the fact's history keeps it, so it
   can be restored), *History* opens and closes the list of every change of a
   fact — saved, updated, restored — with *Restore previous* where a change
-  replaced an earlier text. Donna may also extract durable facts from user messages;
+  replaced an earlier text. *Clear* permanently deletes all saved facts and
+  their history for the workspace; it does not clear conversations or
+  maintenance data. Donna may also extract durable facts from user messages;
   credential-shaped messages are skipped, and each stored fact can be removed
   or restored. Automatic extraction can be disabled by the workspace operator.
   Facts remain until forgotten or the workspace is deleted.
