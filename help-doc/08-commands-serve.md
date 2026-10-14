@@ -165,13 +165,15 @@ Everything below is a **UI panel**, not something you type:
 - **Execution view** — the same Run/Task graph as the Activity panel's *Graph*
   view, opened full-page. A curation run's subagents (Scout, Analyst, Critique,
   Redactor, Archivist) appear as child nodes of the run.
-- **Reports** — a long result never fills the chat. When you ask Donna for a
-  document (a summary of a document, a report, an analysis to keep), or when an
-  agent finishes with a long report, Donna answers with one sentence and a
-  button under it. An answer of hers long enough to be a document (more than
+- **Reports** — a long result never fills the chat. When you explicitly ask
+  Donna for a report, the complete answer is saved even if it is short. When
+  an agent finishes with a long report, Donna answers with a short summary and
+  a button under it. An answer of hers long enough to be a document (more than
   30 lines or 3,000 characters) is saved the same way even when you did not ask
-  for one: you may see it being written, then it is replaced by her sentence
-  and the button. The button slides the report in from the right, over the
+  for one: you may see it being written, then, when streaming finishes, it is
+  replaced by a summary of the complete answer and the button. The summary
+  covers the answer as a whole. The
+  button slides the full response in from the right, over the
   panels, wider than the Help panel. A report is saved in
   `raw/untracked/Donna/`, **locked**: it shows in Pending, greyed, and no ingest
   takes it. To make it a wiki source, unlock it (the lock on its Pending row);
@@ -179,6 +181,10 @@ Everything below is a **UI panel**, not something you type:
   the documents it was drawn from. A curation's report stays on its proposal
   page, which the button opens the same way. In the Shell, the location
   follows the sentence (`↳ raw/untracked/Donna/…`).
+- **Progress in chat** — Donna's completed updates appear in order while she
+  works, with “Thinking…” below the latest update. They disappear from the
+  conversation when her final answer arrives; the Activity panel remains
+  available for action history.
 - **Redo** — on a past message, truncates the conversation back to that point.
 - **Delete** — on one of Donna's answers, removes that answer alone: from the
   thread, from the saved conversation, and from what Donna is told on later

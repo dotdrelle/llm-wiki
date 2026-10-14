@@ -159,7 +159,7 @@ function updateRuntimeThinkingBubble(div,text) {
 // restarts the in-flight watchdog(s), minus the Logs line (a beat is not a step).
 function noteRuntimeHeartbeat() {
   lastRuntimeEventAt=Date.now();
-  pendingRuntimeStatusEls.forEach(el=>updateRuntimeThinkingBubble(el));
+  [...pendingRuntimeStatusEls,...armedReplyStatusEls].forEach(el=>updateRuntimeThinkingBubble(el));
   updateRunElapsed();
 }
 
