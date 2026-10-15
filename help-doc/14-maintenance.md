@@ -19,7 +19,7 @@ start immediately while maintenance works. It is **off by default**.
 | `ingest` | `/wiki-ingest` | the maintenance agent |
 | `index` | `/wiki run index` | the agent, only when the search index is behind |
 | `rebuild` | `/wiki-rebuild` | the agent, only when TAXO fiches or tag pages are inconsistent |
-| `curate` | `/curate` | the agent prepares a proposal; **you merge it** on `/agent-proposals` |
+| `curate` | `/curate` | the agent prepares a proposal; Human mode waits for your merge, Auto mode merges a valid maintenance proposal |
 | `build` | `/wiki-build` | the agent, during the build window |
 | `deliver` | `/deliver` | the agent, for exports and polished versions **that already exist** |
 
@@ -80,6 +80,11 @@ panel (Serve) or right pane (Shell):
 
 - **A sync**: one request covers every configured Confluence source — never
   one per source or per page.
+- **Curation**: in Human mode, its proposal waits for your review on
+  `/agent-proposals`. In Auto mode, a proposal produced by maintenance is
+  merged automatically after the engine validates its paths and citations.
+  Maintenance then curates the updated wiki again before any build or export.
+  Proposals created outside that automatic maintenance run still need review.
 - **New sources**: after a sync or a copy into the pending area, it lists the
   new files and asks once whether to ingest them all.
 - **Updating an existing export**: after a deliverable was rebuilt, it asks
@@ -99,7 +104,9 @@ Three more rules always apply, whatever the settings:
   One exception: a deliverable last built before this version has no record of
   what the template produced, so its first rebuild cannot tell your sections
   apart; the request says so, and every rebuild after that keeps them.
-- A curation is only **prepared**; the merge is yours.
+- If Confluence is disconnected, maintenance announces that sync was skipped
+  and continues with independent work, including curation of the wiki already
+  in the workspace.
 
 **The latest request wins.** If new files arrive before you answer, the request
 is replaced by an up-to-date one — requests never pile up. Approving a request

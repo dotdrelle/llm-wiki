@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { readFile, unlink, readdir } from 'node:fs/promises';
+import { readFile, unlink, readdir, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { resolveInside } from '../../utils/path.ts';
 import { escapeHtml } from '../../utils/html.ts';
@@ -26,7 +26,8 @@ import { checkProductionAllowsWrite } from '../../services/productionLocks.ts';
  * removes the git worktree the agent edited on. Rejecting removes the
  * worktree and the proposal, leaving the wiki untouched. The gateway never
  * writes the workspace; this endpoint is the only place a proposal becomes
- * content.
+ * content. A human uses the review route; automatic maintenance calls the
+ * same merge service only when its effective approval mode is `auto`.
  */
 export type AgentProposalRoutesDeps = {
   rootDir: string;
@@ -164,6 +165,133 @@ async function removeProposalFile(rootDir: string, id: string): Promise<void> {
   await unlink(path.join(proposalsDir(rootDir), `${proposalFileId(value)}.json`)).catch(() => {});
 }
 
+export type AgentProposalMergeResult = {
+  status: number;
+  body: Record<string, unknown>;
+};
+
+/**
+ * Merge one curation proposal through the engine's guarded wiki write path.
+ * Serve uses this for the human review action; maintenance may use it only
+ * when its effective approval policy is automatic. The durable receipt makes
+ * a retried manager call idempotent if the MCP response is lost after commit.
+ */
+export async function mergeAgentProposal(
+  deps: Pick<AgentProposalRoutesDeps, 'rootDir' | 'workspace' | 'historyConfig'>,
+  id: string,
+  { verifiedBy = 'human:merge' }: { verifiedBy?: string } = {},
+): Promise<AgentProposalMergeResult> {
+  const { rootDir } = deps;
+  const safeId = String(id ?? '');
+  if (!SAFE_ID.test(safeId) || safeId.includes('..')) {
+    return { status: 404, body: { ok: false, error: 'proposal not found' } };
+  }
+  const receiptPath = path.join(proposalsDir(rootDir), 'merged', `${proposalFileId(safeId)}.json`);
+  try {
+    const receipt = JSON.parse(await readFile(receiptPath, 'utf8')) as Record<string, unknown>;
+    if (receipt.id === safeId) {
+      const record = await readProposal(rootDir, safeId);
+      if (record) {
+        cleanupWorktree(rootDir, record);
+        await removeProposalFile(rootDir, safeId);
+      }
+      return { status: 200, body: { ok: true, proposalId: safeId, merged: receipt.merged, files: receipt.files, alreadyMerged: true } };
+    }
+  } catch {
+    // No durable receipt: continue with the live proposal.
+  }
+
+  const busy = await checkProductionAllowsWrite(rootDir, 'wiki');
+  if (busy.busy) {
+    return { status: 409, body: { ok: false, code: 'PRODUCTION_JOB_ACTIVE', error: busy.message } };
+  }
+  const record = await readProposal(rootDir, safeId);
+  if (!record) return { status: 404, body: { ok: false, error: 'proposal not found' } };
+
+  const mergedAt = new Date().toISOString();
+  let operations: WikiOperation[] = record.changes
+    .filter((change) => mergeableChange(rootDir, change))
+    .map((change) => {
+      if (change.status === 'D') return { type: 'delete' as const, path: change.path, content: '' };
+      return {
+        type: 'update' as const,
+        path: change.path,
+        content: applyOkfFrontmatter(change.content ?? '', {
+          verified: [{ by: verifiedBy, at: mergedAt }],
+          status: 'stable',
+        }),
+      };
+    });
+  const existingPages = new Map((await deps.workspace.listWikiPages()).map((page) => [page.relativePath, page.content] as const));
+  operations = stampConceptPageIdentities(operations, existingPages);
+  if (operations.length === 0) {
+    return { status: 400, body: { ok: false, error: 'the proposal carries no mergeable wiki change' } };
+  }
+
+  const proposed = new Map(record.changes.map((change) => [change.path, change.content ?? '']));
+  const resolvePage = (pagePath: string): string | null => {
+    if (proposed.has(pagePath)) return proposed.get(pagePath) ?? null;
+    try {
+      const absolute = resolveInside(rootDir, pagePath);
+      return existsSync(absolute) ? readFileSync(absolute, 'utf8') : null;
+    } catch {
+      return null;
+    }
+  };
+  const diagnostics: Array<{
+    path: string;
+    unresolved: string[];
+    cycles: string[][];
+    issues: Array<{ code: string; citation: string; message: string }>;
+    tokens: string[];
+  }> = [];
+  let mergeProcessed = 0;
+  let incomplete = false;
+  const mergeStartedAt = Date.now();
+  const MAX_MERGE_FILES = 200;
+  const MERGE_TIME_BUDGET_MS = 15000;
+  for (const operation of operations) {
+    if (operation.type === 'delete' || !/^wiki\/(concepts|sources)\//.test(operation.path)) continue;
+    if (mergeProcessed >= MAX_MERGE_FILES || Date.now() - mergeStartedAt > MERGE_TIME_BUDGET_MS) {
+      incomplete = true;
+      break;
+    }
+    mergeProcessed += 1;
+    const materialized = materializeAllLocatorTokens(operation.content ?? '', resolvePage);
+    const derived = applyDerivedSources(materialized.content, { resolvePage });
+    const issues = validateAnchoredCitations(derived.content, resolvePage);
+    if (!derived.clean || issues.length > 0 || materialized.unresolved.length > 0) {
+      diagnostics.push({ path: operation.path, unresolved: derived.unresolved, cycles: derived.cycles, issues, tokens: materialized.unresolved });
+    } else {
+      operation.content = derived.content;
+    }
+    if (Date.now() - mergeStartedAt > MERGE_TIME_BUDGET_MS) {
+      incomplete = true;
+      break;
+    }
+  }
+  if (diagnostics.length > 0 || incomplete) {
+    return { status: 422, body: { ok: false, error: 'provenance_invalid', validation_incomplete: incomplete, diagnostics } };
+  }
+  try {
+    await deps.workspace.applyWikiOperations(operations);
+    const history = new HistoryService(rootDir, deps.historyConfig as never);
+    await commitHistorySafely(history, {
+      command: 'page',
+      message: `agent-curate${verifiedBy === 'human:merge' ? '' : ' (automatic)'}: ${safeId}`,
+      scope: operations.map((operation) => operation.path),
+    });
+    const body = { ok: true, proposalId: safeId, merged: operations.length, files: operations.map((operation) => operation.path), verifiedBy };
+    await mkdir(path.dirname(receiptPath), { recursive: true });
+    await writeFile(receiptPath, JSON.stringify({ id: safeId, ...body, mergedAt }, null, 2));
+    cleanupWorktree(rootDir, record);
+    await removeProposalFile(rootDir, safeId);
+    return { status: 200, body };
+  } catch (error) {
+    return { status: 500, body: { ok: false, error: error instanceof Error ? error.message : String(error) } };
+  }
+}
+
 function proposalFileLabel(value: string): string {
   const base = path.posix.basename(String(value ?? '')).replace(/\.[^.]+$/, '');
   return base.split(/[-_\s]+/).filter(Boolean)
@@ -199,12 +327,12 @@ function renderProposalList(records: Array<{ record: ProposalRecord }>): string 
         const files = record.changedFiles.length;
         return `<li class="proposal-card"><a class="proposal-link" href="/agent-proposals/${encodeURIComponent(record.id)}"><span class="proposal-id">${escapeHtml(proposalSummary(record))}</span><span class="proposal-meta">${escapeHtml(record.workspace)} · ${files} ${files === 1 ? 'page' : 'pages'} · ${escapeHtml(proposalDate(record.createdAt))}</span></a></li>`;
       }).join('\n')
-    : '<li class="proposal-empty">No proposal is waiting for review. A curation run (agent.curate) writes its corrections on a separate branch; its diff lands here — nothing touches the wiki until you merge it.</li>';
+    : '<li class="proposal-empty">No proposal is waiting. A curation run writes corrections on a separate branch. Human mode waits for review here; automatic maintenance merges only after the engine validates provenance.</li>';
   return `<main class="content"><article class="article"><h1>Agent proposals</h1>`
     + '<p class="proposal-lede">A proposal is a set of wiki corrections an agent wrote on a separate git branch. It is a draft: the wiki itself has not been changed.</p>'
-    + '<p class="proposal-lede">Curation reviews the workspace for duplicates, pages that disagree or repeat each other, outdated or superseded pages, and claims with no cited source, then proposes the fixes for a human to review.</p>'
+    + '<p class="proposal-lede">Curation reviews the workspace for duplicates, pages that disagree or repeat each other, outdated or superseded pages, and claims with no cited source, then prepares fixes for approval.</p>'
     + '<ul class="proposal-legend">'
-    + '<li><strong>Merge into the wiki</strong> — revalidates the citations and the derived <code>sources:</code>, writes the pages atomically, commits them to history and marks them <code>status: stable</code> / <code>verified</code>. Merging is the approval; the branch is discarded afterwards.</li>'
+    + '<li><strong>Merge into the wiki</strong> — revalidates the citations and the derived <code>sources:</code>, writes the pages atomically, commits them to history and marks them <code>status: stable</code> / <code>verified</code>. A human or automatic maintenance policy can approve the merge; the branch is discarded afterwards.</li>'
     + '<li><strong>Reject &amp; discard the branch</strong> — deletes the proposal and leaves the wiki exactly as it was.</li>'
     + '</ul>'
     // Hidden standalone: only the chat shell can start a run (through Donna).
@@ -495,124 +623,9 @@ export async function handleAgentProposalRoutes(
   }
 
   if (action === 'merge' && req.method === 'POST') {
-    // A merge writes wiki/ — it races only with a production job writing the
-    // wiki, the same arbitration as a direct page write. "Any run active"
-    // refused it during any of Donna's runs (a status turn, a build, the
-    // curation run still finishing) and named nothing.
-    const busy = await checkProductionAllowsWrite(deps.rootDir, 'wiki');
-    if (busy.busy) {
-      return fail(409, { ok: false, code: 'PRODUCTION_JOB_ACTIVE', error: busy.message });
-    }
-    const record = await readProposal(rootDir, id);
-    if (!record) {
-      return fail(404, { ok: false, error: 'proposal not found' });
-    }
-    // The merge IS the approval, and it is what OKF v0.2 records: every
-    // merged page gains a `verified` decision and moves to `stable` —
-    // additively, a hand-set key always wins.
-    const mergedAt = new Date().toISOString();
-    let operations: WikiOperation[] = record.changes
-      .filter((change) => mergeableChange(rootDir, change))
-      .map((change) => {
-        if (change.status === 'D') {
-          return { type: 'delete' as const, path: change.path, content: '' };
-        }
-        return {
-          type: 'update' as const,
-          path: change.path,
-          content: applyOkfFrontmatter(change.content ?? '', {
-            verified: [{ by: 'human:merge', at: mergedAt }],
-            status: 'stable',
-          }),
-        };
-      });
-    const existingPages = new Map(
-      (await deps.workspace.listWikiPages())
-        .map((page) => [page.relativePath, page.content] as const),
-    );
-    operations = stampConceptPageIdentities(operations, existingPages);
-    if (operations.length === 0) {
-      return fail(400, { ok: false, error: 'the proposal carries no mergeable wiki change' });
-    }
-
-    // A curation merge is a writer like any other. Its pages are prevalidated
-    // here, the `sources:` inventory is recomputed from the body closure, and
-    // an unresolved citation REFUSES the merge instead of writing a page whose
-    // provenance nobody can resolve. The proposal and the wiki are left
-    // untouched so the proposal stays correctable.
-    const proposed = new Map(record.changes.map((change) => [change.path, change.content ?? '']));
-    const resolvePage = (pagePath: string): string | null => {
-      if (proposed.has(pagePath)) return proposed.get(pagePath) ?? null;
-      try {
-        const absolute = resolveInside(rootDir, pagePath);
-        return existsSync(absolute) ? readFileSync(absolute, 'utf8') : null;
-      } catch {
-        return null;
-      }
-    };
-    const diagnostics: Array<{
-      path: string;
-      unresolved: string[];
-      cycles: string[][];
-      issues: Array<{ code: string; citation: string; message: string }>;
-      tokens: string[];
-    }> = [];
-    // The merge is exhaustive by design but still bounded: past the file/time
-    // budget the validation is INCOMPLETE and the merge is refused, never
-    // silently partial.
-    let mergeProcessed = 0;
-    let incomplete = false;
-    const mergeStartedAt = Date.now();
-    const MAX_MERGE_FILES = 200;
-    const MERGE_TIME_BUDGET_MS = 15000;
-    for (const operation of operations) {
-      if (operation.type === 'delete' || !/^wiki\/(concepts|sources)\//.test(operation.path)) continue;
-      if (mergeProcessed >= MAX_MERGE_FILES || Date.now() - mergeStartedAt > MERGE_TIME_BUDGET_MS) {
-        incomplete = true;
-        break;
-      }
-      mergeProcessed += 1;
-      // 1) A curation run writes catalogue tokens (`#section:…`); materialize
-      //    them, or the raw token would land in the wiki. 2) Then derive
-      //    `sources:`. 3) Then VALIDATE the anchors — a clean closure is not
-      //    proof the anchors resolve.
-      const materialized = materializeAllLocatorTokens(operation.content ?? '', resolvePage);
-      const derived = applyDerivedSources(materialized.content, { resolvePage });
-      const issues = validateAnchoredCitations(derived.content, resolvePage);
-      if (!derived.clean || issues.length > 0 || materialized.unresolved.length > 0) {
-        diagnostics.push({
-          path: operation.path,
-          unresolved: derived.unresolved,
-          cycles: derived.cycles,
-          issues,
-          tokens: materialized.unresolved,
-        });
-      } else {
-        operation.content = derived.content;
-      }
-      if (Date.now() - mergeStartedAt > MERGE_TIME_BUDGET_MS) {
-        incomplete = true;
-        break;
-      }
-    }
-    if (diagnostics.length > 0 || incomplete) {
-      return fail(422, { ok: false, error: 'provenance_invalid', validation_incomplete: incomplete, diagnostics });
-    }
-    try {
-      await deps.workspace.applyWikiOperations(operations);
-      const history = new HistoryService(rootDir, deps.historyConfig as never);
-      await commitHistorySafely(history, {
-        command: 'page',
-        message: `agent-curate: ${id}`,
-        scope: operations.map((operation) => operation.path),
-      });
-      cleanupWorktree(rootDir, record);
-      await removeProposalFile(rootDir, id);
-      await succeed({ ok: true, merged: operations.length, files: operations.map((operation) => operation.path) });
-    } catch (error) {
-      await fail(500, { ok: false, error: error instanceof Error ? error.message : String(error) });
-    }
-    return true;
+    const merged = await mergeAgentProposal(deps, id);
+    if (merged.status !== 200) return fail(merged.status, merged.body);
+    return succeed(merged.body);
   }
 
   if (action === 'reject' && req.method === 'POST') {

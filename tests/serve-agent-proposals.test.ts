@@ -12,7 +12,7 @@ vi.mock('../src/services/historyService.ts', () => ({
   commitHistorySafely: vi.fn(async () => ({ sha: null })),
 }));
 
-const { handleAgentProposalRoutes } = await import('../src/serve/routes/agentProposalRoutes.ts');
+const { handleAgentProposalRoutes, mergeAgentProposal } = await import('../src/serve/routes/agentProposalRoutes.ts');
 
 function fakeRes() {
   const res = {
@@ -106,6 +106,34 @@ describe('agent proposal review routes', () => {
     expect(applied[0].content).toContain("by: 'human:merge'");
     expect(applied[0].content).toMatch(/at: '\d{4}-\d{2}-\d{2}T/);
     expect(existsSync(path.join(rootDir, '.wiki', 'agent-proposals', 't1.json'))).toBe(false);
+  });
+
+  it('automatically merges an authorized maintenance proposal idempotently and records the automatic approver', async () => {
+    writeProposal(rootDir, {
+      id: 'maintenance:auto-1',
+      runId: 'maintenance-cycle',
+      workspace: 'demo',
+      branch: 'agent/gateway-auto',
+      worktreeRelativePath: '.wiki/agent-worktrees/gateway-auto',
+      createdAt: '2026-10-15T10:00:00.000Z',
+      changedFiles: [{ status: 'M', path: 'wiki/concepts/demo/a.md' }],
+      changes: [{ path: 'wiki/concepts/demo/a.md', status: 'M', content: '# A\ncorrected\n' }],
+      diff: 'diff',
+    });
+    const deps = makeDeps(rootDir);
+    const mergeDeps = { rootDir, workspace: deps.workspace, historyConfig: null };
+
+    const first = await mergeAgentProposal(mergeDeps, 'maintenance:auto-1', { verifiedBy: 'maintenance:auto' });
+    const second = await mergeAgentProposal(mergeDeps, 'maintenance:auto-1', { verifiedBy: 'maintenance:auto' });
+
+    expect(first.status).toBe(200);
+    expect(first.body.ok).toBe(true);
+    expect(first.body.verifiedBy).toBe('maintenance:auto');
+    expect(second.body.alreadyMerged).toBe(true);
+    expect((deps.workspace.applyWikiOperations as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+    const applied = (deps.workspace.applyWikiOperations as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(applied[0].content).toContain("by: 'maintenance:auto'");
+    expect(existsSync(path.join(rootDir, '.wiki', 'agent-proposals', 'maintenance_auto-1.json'))).toBe(false);
   });
 
   it('rejects a proposal without touching the wiki', async () => {
@@ -433,7 +461,7 @@ describe('agent proposal review routes', () => {
     expect(html).toContain('duplicates');
     expect(html).toContain('Merge into the wiki');
     expect(html).toContain('Reject');
-    expect(html).toContain('nothing touches the wiki until you merge it');
+    expect(html).toContain('Human mode waits for review here; automatic maintenance merges only after the engine validates provenance.');
     // The launch button ships hidden and is revealed by the wiki layout inside
     // the chat shell; the page itself never calls the runtime.
     expect(html).toContain('data-curate-row hidden');

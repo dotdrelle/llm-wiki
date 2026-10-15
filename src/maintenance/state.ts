@@ -88,8 +88,19 @@ export async function maintenanceState(config: AppConfig, quietMinutes = 10) {
   }
   const publications = await publicationState(root, { language: config.language });
   const proposals = await fg('*.json', { cwd: path.join(root, '.wiki/agent-proposals') });
+  const proposalIds: string[] = [];
+  const autoMergeProposalIds: string[] = [];
+  for (const file of proposals) {
+    try {
+      const record = JSON.parse(await readFile(path.join(root, '.wiki/agent-proposals', file), 'utf8'));
+      if (typeof record?.id === 'string') {
+        proposalIds.push(record.id);
+        if (record.automaticApproval === true) autoMergeProposalIds.push(record.id);
+      }
+    } catch { /* malformed proposals remain visible by filename, but cannot be auto-merged */ }
+  }
   return { schemaVersion: 1, observedAt: new Date().toISOString(), wikiHash,
     pending: await pendingSources(root, quietMinutes * 60_000), deliverables, publications,
     publicationTransforms: { export: transformSignature('export', config.language), polish: transformSignature('polish', config.language) },
-    index: { enabled: config.retrieval.vector.enabled, fresh: vectorFresh }, proposals };
+    index: { enabled: config.retrieval.vector.enabled, fresh: vectorFresh }, proposals, proposalIds, autoMergeProposalIds };
 }

@@ -24,6 +24,7 @@ interface McpHttpOptions {
 type McpScope = 'read' | 'write';
 const WRITE_MCP_TOOLS = new Set([
   'wiki_write_page',
+  'wiki_maintenance_merge_proposal',
   'template_write',
   'build_context_write',
   'wiki_add_source',

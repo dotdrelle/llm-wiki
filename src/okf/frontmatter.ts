@@ -69,7 +69,7 @@ export function okfTypeForPath(relativePath: string): string | null {
  *
  * OKF v0.2 keys beyond v0.1's `type`/`title`/`timestamp`:
  * - `generated` — who produced the page and when (written at ingest);
- * - `verified` — the human decisions that reviewed it (written at merge);
+ * - `verified` — the human or configured automatic approval recorded at merge;
  * - `status` — draft | stable | deprecated (draft at ingest, stable at merge).
  * `timestamp` stays a tolerated legacy key; the v0.2 migration of existing
  * pages is a separate manual catch-up phase, never a mass write during a run.

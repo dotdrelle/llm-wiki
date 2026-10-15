@@ -61,6 +61,7 @@ describe('MCP HTTP security helpers', () => {
   it('maps read and write tools to the required scope', () => {
     expect(mcpToolScope('wiki_read_page')).toBe('read');
     expect(mcpToolScope('wiki_write_page')).toBe('write');
+    expect(mcpToolScope('wiki_maintenance_merge_proposal')).toBe('write');
     expect(mcpToolScope('template_write')).toBe('write');
     expect(mcpToolScope('build_context_write')).toBe('write');
     expect(mcpToolScope('wiki_add_source')).toBe('write');

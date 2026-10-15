@@ -1,5 +1,6 @@
 import { writeDonnaReport } from './reportWriter.ts';
 import { maintenanceState } from '../maintenance/state.ts';
+import { mergeAgentProposal } from '../serve/routes/agentProposalRoutes.ts';
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -154,6 +155,11 @@ export const WIKI_MCP_TOOLS = [
     name: 'wiki_list_provenance_locators',
     description:
       'List the citable locator tokens (section:… / fragment:…) of one document under wiki/sources/ or raw/ingested/. Copy a token verbatim into [src: <path>#<token>]; never write a line number, offset or hash yourself — the engine materializes the address.',
+  },
+  {
+    name: 'wiki_maintenance_merge_proposal',
+    description:
+      'Merge one curation proposal through the engine’s provenance validation and history commit path. Mutates wiki pages. Reserved for the manager when maintenance approval mode is auto; requires confirm=true.',
   },
   {
     name: 'wiki_write_page',
@@ -2273,6 +2279,21 @@ const withTitles = async (
   );
 
   server.tool('wiki_maintenance_state', 'Read deterministic maintenance facts: pending protected sources, build/publication freshness and vector status. No model call or write.', { quietMinutes: z.number().min(0).max(1440).optional() }, READ_ONLY, (input) => loggedTool('wiki_maintenance_state', input, async () => ({ content: [{ type: 'text', text: JSON.stringify(await maintenanceState(config, input.quietMinutes)) }] })));
+
+  server.tool(
+    'wiki_maintenance_merge_proposal',
+    'Merge one curation proposal after the manager has authorized automatic maintenance approval. The engine revalidates provenance, applies the changes atomically, records history, and removes the proposal. This mutates wiki pages; confirm must be true.',
+    { proposalId: z.string().min(1).max(300), confirm: z.literal(true) },
+    {},
+    (input) => loggedTool('wiki_maintenance_merge_proposal', input, async () => {
+      const result = await mergeAgentProposal(
+        { rootDir: workspace.paths.rootDir, workspace, historyConfig: config.history },
+        input.proposalId,
+        { verifiedBy: 'maintenance:auto' },
+      );
+      return textResult(JSON.stringify(result.body), { isError: result.status >= 400 });
+    }),
+  );
 
   server.tool(
     'wiki_search_context',
