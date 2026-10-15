@@ -79,13 +79,15 @@ describe('wiki_curation_inventory MCP tool', () => {
 
   it('reads tags from the frontmatter, counts body characters and groups exact duplicates', async () => {
     const { client } = await setup();
-    const payload = textPayload(await client.callTool({ name: 'wiki_curation_inventory', arguments: {} }));
+    const payload = textPayload(await client.callTool({ name: 'wiki_curation_inventory', arguments: { view: 'pages' } }));
+    const summary = textPayload(await client.callTool({ name: 'wiki_curation_inventory', arguments: {} }));
     const pages = payload.pages as Array<{ path: string; tags: string[]; chars: number }>;
     const byPath = Object.fromEntries(pages.map((page) => [page.path, page]));
     expect(byPath['wiki/sources/doc/a.md']?.tags).toEqual(['hyperviseur', 'réseau'].sort());
     expect(byPath['wiki/sources/doc/c.md']?.tags).toEqual(['alpha', 'beta']);
     expect(byPath['wiki/sources/doc/empty.md']?.chars).toBe(0);
-    expect(payload.exactDuplicates).toEqual([['wiki/sources/doc/a.md', 'wiki/sources/doc/b.md']]);
+    expect(summary.exactDuplicates).toEqual([['wiki/sources/doc/a.md', 'wiki/sources/doc/b.md']]);
+    expect(summary.pages).toBeUndefined();
     await client.close();
   });
 
@@ -100,13 +102,69 @@ describe('wiki_curation_inventory MCP tool', () => {
 
   it('pages through the same inventory and reflects a removed fiche', async () => {
     const { root, client } = await setup();
-    const first = textPayload(await client.callTool({ name: 'wiki_curation_inventory', arguments: { limit: 2 } }));
+    const first = textPayload(await client.callTool({ name: 'wiki_curation_inventory', arguments: { view: 'pages', limit: 2 } }));
     expect(first.total).toBe(4);
     expect(first.nextCursor).toBe(2);
     await rm(path.join(root, 'wiki', 'sources', 'doc', 'b.md'));
-    const after = textPayload(await client.callTool({ name: 'wiki_curation_inventory', arguments: {} }));
+    const after = textPayload(await client.callTool({ name: 'wiki_curation_inventory', arguments: { view: 'pages' } }));
     expect(after.total).toBe(3);
-    expect(after.exactDuplicates).toEqual([]);
+    const afterSummary = textPayload(await client.callTool({ name: 'wiki_curation_inventory', arguments: {} }));
+    expect(afterSummary.exactDuplicates).toEqual([]);
+    await client.close();
+  });
+
+  it('extends to concept pivots with deterministic signals, each with its owner', async () => {
+    const { root, client } = await setup();
+    await mkdir(path.join(root, 'raw', 'ingested'), { recursive: true });
+    await writeFile(path.join(root, 'raw', 'ingested', 'doc.md'), '# Doc\n', 'utf8');
+    await mkdir(path.join(root, 'wiki', 'concepts', 'fam'), { recursive: true });
+    await writeFile(path.join(root, 'wiki', 'sources', 'doc', 'cited.md'),
+      '---\ntitle: Cited\ntags: [hyperviseur]\nsources:\n  - path: raw/ingested/doc.md\n---\n\nBody [src: raw/ingested/doc.md] and [x](../gone.md) [[nowhere]].\n', 'utf8');
+    await writeFile(path.join(root, 'wiki', 'concepts', 'fam', 'hyperviseur.md'),
+      '---\ntitle: Hyperviseur\ntags: [hyperviseur]\nsheet_count: 3\nstatus: draft\ngenerated:\n  by: llm-wiki-tags\nsources:\n  - path: raw/ingested/doc.md\n---\n\n- [src: wiki/sources/doc/cited.md]\n', 'utf8');
+    await writeFile(path.join(root, 'wiki', 'concepts', 'fam', 'orphan.md'),
+      '---\ntitle: Orphan\ntags: [ghost]\nstatus: draft\ngenerated:\n  by: llm-wiki-tags\nsources: raw/ingested/doc.md\n---\n\n- [src: wiki/sources/doc/vanished.md]\n', 'utf8');
+    await writeFile(path.join(root, 'wiki', 'concepts', 'fam', 'kept.md'),
+      '---\ntitle: Kept\ntags: [hyperviseur]\nstatus: stable\nverified:\n  - by: human:merge\n    at: now\n---\n\n- [src: wiki/sources/doc/cited.md]\n', 'utf8');
+    const payload = textPayload(await client.callTool({ name: 'wiki_curation_inventory', arguments: {} }));
+    const counts = payload.counts as Record<string, unknown>;
+    expect(counts.concepts).toBe(3);
+    expect(payload.editorialPages).toEqual(['wiki/concepts/fam/kept.md']);
+    const signals = payload.signals as Array<{ path: string; signal: string; owner: string; detail?: string }>;
+    const of = (pagePath: string) => signals.filter((signal) => signal.path === pagePath);
+    expect(of('wiki/sources/doc/cited.md').map((s) => s.signal).sort()).toEqual(['broken-link']);
+    expect(of('wiki/sources/doc/cited.md')[0]).toMatchObject({ owner: 'curation' });
+    expect(of('wiki/sources/doc/cited.md')[0]?.detail).toContain('[[nowhere]]');
+    expect(of('wiki/concepts/fam/hyperviseur.md')).toEqual([
+      expect.objectContaining({ signal: 'pivot-sheet-count-mismatch', owner: 'rebuild' }),
+    ]);
+    expect(of('wiki/concepts/fam/orphan.md').map((s) => s.signal).sort()).toEqual([
+      'broken-citation', 'invalid-sources', 'pivot-tag-not-carried', 'pivot-without-fiche-citation',
+    ]);
+    expect(of('wiki/concepts/fam/orphan.md').every((s) => s.owner === 'rebuild')).toBe(true);
+    expect(of('wiki/concepts/fam/kept.md').map((s) => [s.signal, s.owner])).toEqual([['missing-sources', 'editorial']]);
+    // Fiches written before sources: was derived say so too.
+    expect(of('wiki/sources/doc/a.md').map((s) => s.signal)).toEqual(['missing-sources']);
+    const conceptsOnly = textPayload(await client.callTool({ name: 'wiki_curation_inventory', arguments: { view: 'pages', scope: 'concepts' } }));
+    expect((conceptsOnly.pages as Array<{ kind: string }>).every((page) => page.kind === 'concept')).toBe(true);
+    await client.close();
+  });
+
+  it('returns candidate groups as reading batches of at most 25, never as duplicates', async () => {
+    const { root, client } = await setup();
+    for (let index = 0; index < 30; index += 1) {
+      await writeFile(path.join(root, 'wiki', 'sources', 'doc', `wide-${String(index).padStart(2, '0')}.md`),
+        `---\ntitle: Wide ${index}\ntags: [wide]\n---\n\nDistinct body ${index} [src: raw/ingested/big.md]\n`, 'utf8');
+    }
+    const payload = textPayload(await client.callTool({ name: 'wiki_curation_inventory', arguments: { view: 'candidates', limit: 100 } }));
+    expect(String(payload.note)).toMatch(/not findings/);
+    const batches = payload.batches as Array<{ reason: string; key: string; size: number; part: number; parts: number; paths: string[] }>;
+    // Narrowest first: the two-fiche hyperviseur group leads.
+    expect(batches[0]).toMatchObject({ reason: 'shared-tag', key: 'hyperviseur', size: 2, parts: 1 });
+    const wide = batches.filter((batch) => batch.key === 'wide');
+    expect(wide.map((batch) => [batch.part, batch.parts, batch.paths.length])).toEqual([[1, 2, 25], [2, 2, 5]]);
+    expect(batches.some((batch) => batch.reason === 'shared-source' && batch.key === 'raw/ingested/big.md')).toBe(false);
+    expect(batches.every((batch) => batch.paths.length <= 25)).toBe(true);
     await client.close();
   });
 });

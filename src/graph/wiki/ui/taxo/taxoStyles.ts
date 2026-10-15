@@ -85,6 +85,8 @@ main{height:calc(100% - 48px);display:grid;grid-template-columns:var(--left-w) m
 .panel-head span{font-size:10.5px;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
 #panel p{margin:0;font-size:11.5px;line-height:1.55;color:var(--body-muted)}
 .path{font:10px var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.path-link{display:block;width:100%;padding:0;border:0;background:transparent;text-align:left;cursor:pointer}
+.path-link:hover,.path-link:focus-visible{color:var(--head);text-decoration:underline}
 .sec{font-size:9.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--head);margin:4px 0 0}
 .rows{list-style:none;margin:0;padding:0}
 .rows li{border-bottom:1px solid var(--row-line)}

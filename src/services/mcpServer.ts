@@ -1,6 +1,6 @@
 import { writeDonnaReport } from './reportWriter.ts';
 import { maintenanceState } from '../maintenance/state.ts';
-import { appendFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -8,7 +8,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import matter from 'gray-matter';
 import { inferWikiPageType, WorkspaceService } from './workspaceService.ts';
-import { normalizeTags } from '../ingest/provenance.ts';
+import { createCurationInventory, type CurationInventoryInput } from './curationInventory.ts';
 import { RetrievalService } from './retrievalService.ts';
 import { HistoryService, commitHistorySafely } from './historyService.ts';
 import { checkProductionAllowsWrite, type ProductionBusyReport } from './productionLocks.ts';
@@ -138,7 +138,7 @@ export const WIKI_MCP_TOOLS = [
   {
     name: 'wiki_curation_inventory',
     description:
-      'Read a compact, deterministic inventory of wiki/sources fiches for curation: paths, citation paths, body sizes, exact duplicate groups and a page of titles/tags. It returns metadata only, never page content. Use it to choose fiches for wiki_read_pages; metadata is a search aid, not proof of a finding.',
+      'Read a compact, deterministic curation inventory of wiki/sources fiches and wiki/concepts pivots. Default view "summary": counts, deterministic defects (broken references, missing or invalid sources:, metadata staleness) with who fixes each, exact duplicates and the stable/verified pages. view "candidates": fiche groups sharing a tag or source, in reading batches of at most 25. view "pages": paginated entries with status and sources. Metadata only, never page content; a candidate is something to examine, not a finding.',
   },
   {
     name: 'wiki_read_page',
@@ -685,105 +685,14 @@ export async function createWikiMcpServer(
     return textResult(items.join('\n'));
   };
 
-  type InventoryPage = {
-    path: string;
-    title: string;
-    tags: string[];
-    citations: string[];
-    chars: number;
-    bodyHash: string;
-    hasBody: boolean;
-    parseError: boolean;
-  };
-  // One fiche's metadata. Tags come from the frontmatter, where TAXO writes
-  // them (`tags: [...]`); a body `Tags: #a #b` line is only a fallback.
-  const inventoryEntry = async (pagePath: string): Promise<InventoryPage> => {
-    const raw = await readFile(resolveReadableWorkspacePath(workspace, pagePath), 'utf8');
-    let parsed: ReturnType<typeof matter>;
-    let parseError = false;
-    try {
-      parsed = matter(raw);
-    } catch {
-      parsed = { content: raw, data: {} } as ReturnType<typeof matter>;
-      parseError = true;
-    }
-    const heading = /^#\s+(.+)$/m.exec(parsed.content)?.[1]?.trim();
-    const title = typeof parsed.data.title === 'string' && parsed.data.title.trim()
-      ? parsed.data.title.trim()
-      : heading || path.basename(pagePath, '.md').replace(/[-_]+/g, ' ');
-    const bodyTags = (/^Tags:\s*(.+)$/im.exec(parsed.content)?.[1] ?? '')
-      .split(/[\s,;|]+/).map((tag) => tag.replace(/^#/, '')).filter(Boolean);
-    const tags = normalizeTags(Array.isArray(parsed.data.tags) || typeof parsed.data.tags === 'string' ? parsed.data.tags : bodyTags).sort();
-    const normalizedBody = parsed.content.normalize('NFKC').toLowerCase().replace(/\s+/gu, ' ').trim();
-    return {
-      path: pagePath,
-      title,
-      tags,
-      citations: [...new Set(extractSourceCitations(raw))].sort(),
-      chars: parsed.content.trim().length,
-      bodyHash: hashText(normalizedBody),
-      hasBody: Boolean(normalizedBody),
-      parseError,
-    };
-  };
-  // The whole inventory is computed once per state of wiki/sources (paths,
-  // sizes, mtimes) and reused across the pages a caller walks through: each
-  // paginated call used to re-read and re-hash every fiche.
-  let inventoryCache: { signature: string; pages: InventoryPage[]; unreadable: string[] } | null = null;
-  const buildInventory = async () => {
-    const paths = (await workspace.listWikiPagePaths()).filter((pagePath) => pagePath.startsWith('wiki/sources/'));
-    const stats = await Promise.all(paths.map((pagePath) =>
-      stat(resolveReadableWorkspacePath(workspace, pagePath)).then((info) => `${pagePath}:${info.size}:${info.mtimeMs}`, () => `${pagePath}:missing`)));
-    const signature = hashText(stats.join('\n'));
-    if (inventoryCache?.signature === signature) return inventoryCache;
-    const pages: InventoryPage[] = [];
-    const unreadable: string[] = [];
-    for (let offset = 0; offset < paths.length; offset += 16) {
-      const batch = paths.slice(offset, offset + 16);
-      // A fiche pruned by a concurrent rebuild between listing and reading is
-      // skipped and named, never the reason the whole inventory fails.
-      const settled = await Promise.allSettled(batch.map(inventoryEntry));
-      settled.forEach((result, index) => {
-        if (result.status === 'fulfilled') pages.push(result.value);
-        else unreadable.push(batch[index] ?? '');
-      });
-    }
-    inventoryCache = { signature, pages, unreadable };
-    return inventoryCache;
-  };
-
-  const curationInventory = async ({ cursor = 0, limit = 200 }: { cursor?: number; limit?: number }) => {
-    const { pages, unreadable } = await buildInventory();
-    const duplicateGroups = new Map<string, string[]>();
-    for (const page of pages) {
-      if (!page.hasBody) continue;
-      const group = duplicateGroups.get(page.bodyHash) ?? [];
-      group.push(page.path);
-      duplicateGroups.set(page.bodyHash, group);
-    }
-    const exactDuplicates = [...duplicateGroups.values()].filter((group) => group.length > 1);
-    const start = Math.max(0, Math.floor(cursor));
-    const size = Math.max(1, Math.min(500, Math.floor(limit)));
-    const selected = pages.slice(start, start + size);
-    const nextCursor = start + selected.length < pages.length ? start + selected.length : null;
-    return textResult(JSON.stringify({
-      total: pages.length,
-      cursor: start,
-      nextCursor,
-      exactDuplicateGroupCount: exactDuplicates.length,
-      exactDuplicates: exactDuplicates.slice(0, 100),
-      ...(unreadable.length ? { unreadable } : {}),
-      pages: selected.map((page) => ({
-        path: page.path,
-        title: page.title,
-        tags: page.tags,
-        citations: page.citations,
-        chars: page.chars,
-        bodyHash: page.bodyHash.slice(0, 16),
-        ...(page.parseError ? { parseError: true } : {}),
-      })),
-    }));
-  };
+  // Metadata only, never a page body: see services/curationInventory.ts.
+  const curationInventoryPayload = createCurationInventory({
+    rootDir: workspace.paths.rootDir,
+    listWikiPagePaths: () => workspace.listWikiPagePaths(),
+    resolvePath: (pagePath) => resolveReadableWorkspacePath(workspace, pagePath),
+  });
+  const curationInventory = async (input: CurationInventoryInput) =>
+    textResult(JSON.stringify(await curationInventoryPayload(input)));
 
   const readWorkspaceStatus = async () =>
     textResult(JSON.stringify(await workspaceStatusPayload(workspace), null, 2));
@@ -2099,8 +2008,10 @@ const withTitles = async (
 
   server.tool(
     'wiki_curation_inventory',
-    'Return metadata only for wiki/sources fiches: paginated paths, titles, tags, cited source paths, page sizes, short content fingerprints, and exact duplicate groups. This is a deterministic search aid, not evidence; read candidate pages and their cited sources before making findings. Does not return page contents or include generated wiki/concepts pivots.',
+    'Return metadata only for wiki/sources fiches and wiki/concepts pivots. view "summary" (default): counts, deterministic signals (broken-citation, broken-link, missing-sources, invalid-sources, broken-source-path, deprecated, pivot-* staleness) each with its owner — rebuild for a generated pivot, curation for a fiche, editorial for a stable/verified page — exact duplicate groups and the editorial pages. view "pages": paginated entries (kind, title, tags, status, sources, citation and link counts, size), filtered by scope. view "candidates": fiche groups sharing a tag or a cited source, narrowest first, split into batches of at most 25 paths. A candidate is something to examine, never proof of a duplicate; content that is wrong on the merits needs an editorial reading. Never returns page contents.',
     {
+      view: z.enum(['summary', 'pages', 'candidates']).optional(),
+      scope: z.enum(['all', 'sources', 'concepts']).optional(),
       cursor: z.number().int().min(0).optional(),
       limit: z.number().int().min(1).max(500).optional(),
     },

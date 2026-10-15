@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadTaxoGraph } from '../src/graph/wiki/taxoGraph.ts';
 import { handleGraphRoutes, type GraphRoutesDeps } from '../src/serve/routes/graphRoutes.ts';
 import { taxoStateScript } from '../src/graph/wiki/ui/taxo/taxoStateScript.ts';
+import { taxoPanelScript } from '../src/graph/wiki/ui/taxo/taxoPanelScript.ts';
 
 let root: string;
 
@@ -150,5 +151,22 @@ describe('family layout and dragging', () => {
     expect(html).toContain("if(n.type==='family')nodes.forEach(m=>{if(m.type==='concept'&&m.family===n.family){m.x+=dx;m.y+=dy;");
     expect(html).toContain('id="zoom-in" title="Zoom in"');
     expect(html).toContain('id="zoom-out" title="Zoom out"');
+  });
+});
+
+describe('TAXO inspector path', () => {
+  it('opens the page in the preview modal, like the context card\'s Open page', () => {
+    const script = taxoPanelScript();
+    const line = script.split('\n').find((entry) => entry.startsWith('const pathLink='));
+    expect(line).toBeDefined();
+    const esc = (value: unknown) => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    const pathLink = new Function('esc', `${line}\nreturn pathLink;`)(esc) as (node: { id: string; path: string }) => string;
+    const node = { id: 'wiki/concepts/architecture-flux-et-intégration/flux-réseau.md', path: 'wiki/concepts/architecture-flux-et-intégration/flux-réseau.md' };
+    const html = pathLink(node);
+    expect(html).toContain('<button type="button" class="path path-link" data-preview-doc="wiki/concepts/architecture-flux-et-intégration/flux-réseau.md"');
+    expect(html).toContain('>wiki/concepts/architecture-flux-et-intégration/flux-réseau.md</button>');
+    // Both the concept and the source heads use it; no bare path div is left.
+    expect(script).not.toContain('class="path">');
+    expect(script.match(/pathLink\(n\)/g)?.length).toBe(2);
   });
 });

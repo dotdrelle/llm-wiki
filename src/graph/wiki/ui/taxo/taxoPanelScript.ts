@@ -102,7 +102,10 @@ const mark=n=>n.type==='source'?'<span class="dot" style="--c:'+SRC_COLOR+'"></s
 const row=(n,count,extra='',attr='data-id')=>'<li><button type="button" '+attr+'="'+esc(n.id)+'">'+mark(n)+'<span>'+esc(n.title)+'</span><span class="n">'+count+'</span></button>'+extra+'</li>';
 const via=ids=>'<div class="via">via '+ids.map(s=>esc(byId.get(s)?.title||s)).join(' · ')+'</div>';
 const head=(kind,title,sub)=>'<div class="panel-head"><small>'+kind+'</small><strong>'+esc(title)+'</strong>'+(sub?'<span>'+sub+'</span>':'')+'</div>';
-const conceptHead=n=>head('Concept',n.title,mark(n)+esc(n.family)+' · '+n.nsrc+' source'+(n.nsrc>1?'s':''))+(n.desc?'<p>'+esc(n.desc)+'</p>':'')+'<div class="path">'+esc(n.path)+'</div>';
+// The path opens the page in the preview modal, like the context card's
+// "Open page" (same data-preview-doc handler, documentActionsScript.ts).
+const pathLink=n=>'<button type="button" class="path path-link" data-preview-doc="'+esc(n.id)+'" title="Open page">'+esc(n.path)+'</button>';
+const conceptHead=n=>head('Concept',n.title,mark(n)+esc(n.family)+' · '+n.nsrc+' source'+(n.nsrc>1?'s':''))+(n.desc?'<p>'+esc(n.desc)+'</p>':'')+pathLink(n);
 const byWeight=(a,b)=>b.nsrc-a.nsrc||a.title.localeCompare(b.title);
 function searchPanel(){
   const matched=[...searchHits].map(id=>byId.get(id)).filter(Boolean);
@@ -149,7 +152,7 @@ function renderPanel(){
       h+='<div class="sec">Sources · '+srcs.length+'</div><ul class="rows">'+srcs.map(s=>row(s,s.nsrc,'','data-src')).join('')+'</ul>';
     }else{
       const cs=[...bip.get(sel)].map(id=>byId.get(id)).sort(byWeight);
-      h=head('Source',n.title,mark(n)+esc(n.folder||''))+(n.desc?'<p>'+esc(n.desc)+'</p>':'')+'<div class="path">'+esc(n.path)+'</div>'+
+      h=head('Source',n.title,mark(n)+esc(n.folder||''))+(n.desc?'<p>'+esc(n.desc)+'</p>':'')+pathLink(n)+
         '<div class="sec">Tagged concepts · '+cs.length+'</div><ul class="rows">'+cs.map(c=>row(c,c.nsrc,'','data-focus')).join('')+'</ul>'}}
   panel.innerHTML=h}
 panel.addEventListener('click',event=>{
