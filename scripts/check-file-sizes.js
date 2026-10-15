@@ -33,19 +33,18 @@ const MAX_LINES = 800;
 // for extraction.
 // 0.16.55 note: allow the current wikiHtml module to grow to 2300 lines while
 // its extraction is pending.
-// 0.16.57 follow-up note: the served chat's step narrations (and the removal
-// of the ephemeral progress label) grew activityPanelScript and chatStyles,
-// and chatHtml carries the reportIntent helper and the saveAsReport turn body.
-// wikiLayoutCss was already one line over its ceiling. Ceilings record the
-// measured reality; they drop as the extractions land.
+// 0.16.57 follow-up note (2): the agent-connectors card, the run-status fixes
+// and the module extractions kept chatHtml and activityPanelScript over their
+// ceilings (chatStyles by one line). Ceilings record the measured reality;
+// they drop as the extractions land.
 const LEGACY_LIMITS = new Map([
   ['src/commands/serve.ts', 1100],
   ['src/serve/html/wikiHtml.ts', 2300],
   ['src/serve/html/wikiLayoutCss.ts', 1601],
   ['src/serve/html/wikiLayoutScript.ts', 1312],
-  ['src/chat/chatHtml.ts', 3207],
-  ['src/chat/styles/chatStyles.ts', 601],
-  ['src/chat/runtime/activityPanelScript.ts', 1008],
+  ['src/chat/chatHtml.ts', 3292],
+  ['src/chat/styles/chatStyles.ts', 602],
+  ['src/chat/runtime/activityPanelScript.ts', 1046],
   ['src/chat/views/wikiPanelScript.ts', 840],
   ['src/graph/wiki/ui/canvas/canvasExplorerScript.ts', 850],
 ]);

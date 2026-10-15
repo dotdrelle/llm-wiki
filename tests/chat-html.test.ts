@@ -959,7 +959,7 @@ describe('chat html', () => {
     expect(script).toContain("callMCPTool(item.poll.tool,item.poll.args||{},{trackActivity:false})");
     expect(script).toContain("cme_export_run:'Confluence export'");
     expect(script).toContain("production_start_job:'Production job'");
-    expect(script).toContain('async function callMCPTool(name, args, {trackActivity=true}={})');
+    expect(script).toContain('async function callMCPTool(name, args, {trackActivity=true,timeoutMs=MCP_REQUEST_TIMEOUT_MS}={})');
     expect(script).toContain('const seenMeta=new Set([cardTitle.trim().toLowerCase()]);');
     expect(script).toContain('if(!normalized||seenMeta.has(normalized)) return false;');
     expect(script).toContain("progress.throttling?.active?");
@@ -1354,13 +1354,13 @@ describe('chat html', () => {
     const [script] = chatScripts();
 
     expect(script).toContain('function isMcpSessionOrNetworkFailure');
-    expect(script).toContain('async function reconnectMCPServer(server)');
+    expect(script).toContain('async function reconnectMCPServer(server, timeoutMs=MCP_REQUEST_TIMEOUT_MS)');
     expect(script).toContain('const MCP_STALE_SESSION_MS = 5 * 60 * 1000;');
     expect(script).toContain('const MCP_REQUEST_TIMEOUT_MS = 60 * 1000;');
     expect(script).toContain('function mcpSessionIsStale(server)');
     expect(script).toContain('if(mcpSessionIsStale(server))');
     expect(script).toContain("notify(`${server.name}: reconnecting MCP...`);");
-    expect(script).toContain("resp = await mcpRPC(server, 'tools/call', {name, arguments: args});");
+    expect(script).toContain("resp = await mcpRPC(server, 'tools/call', {name, arguments: args},timeoutMs);");
     expect(script).toContain('MCP timeout after');
   });
 
@@ -1525,8 +1525,8 @@ describe('chat html', () => {
     expect(script).not.toContain("node('h2','Maintenance'");
     expect(script).toContain("threadHeading.className='maintenance-thread-heading'");
     expect(script).toContain('function maintenanceMarkdown(parent,text,className=');
-    expect(script).toContain("maintenanceMarkdown(entry,strip(summary.message),'maintenance-summary maintenance-markdown')");
-    expect(script).toContain("maintenanceMarkdown(row,strip(event.message)");
+    expect(script).toContain("maintenanceMarkdown(entry,maintenanceDisplayMessage(summary.message),'maintenance-summary maintenance-markdown')");
+    expect(script).toContain("maintenanceMarkdown(row,maintenanceDisplayMessage(strip(event.message)");
     // A markdown summary must NOT keep the plain-text `pre-wrap`: the markup's
     // own newlines would render as blank lines between every block.
     expect(script).toContain('.activity-subtab-maintenance .maintenance-summary:not(.maintenance-markdown){white-space:pre-wrap}');

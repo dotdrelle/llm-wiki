@@ -48,7 +48,7 @@ function runLiveLineStatusLabel() {
     item?.status==='pending_approval'&&(!item.runId||!runId||item.runId===runId)
   );
   const reason=String(approval?.reason||'');
-  return approval&&!approval.taskId&&/^Approve .+ before it runs\.$/.test(reason)
+  return approval&&!approval.taskId&&/^Approve .+ before it runs\\.$/.test(reason)
     ?'Waiting for your approval to start this run.'
     :'Waiting for your approval for the pending mutation.';
 }
