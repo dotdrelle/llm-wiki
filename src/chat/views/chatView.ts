@@ -97,6 +97,7 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
       <button class="tb-model" id="model-badge" type="button" onclick="toggleProfileMenu(event)" aria-haspopup="menu" aria-expanded="false">gpt-4o</button>
       <div class="tb-profile-menu" id="profile-menu" role="menu" hidden></div>
     </div>
+    <button class="tb-connectors tb-agent-connectors" id="tb-agent-connectors" type="button" onclick="showConnectorsView(event)" title="Gmail and Tchap workspace connectors — click to view their status"><span class="tb-dot"></span>2 Connectors</button>
     <button class="tb-connectors" id="tb-mcps" type="button" onclick="showConnectorsView(event)"></button>
     <div class="tb-actions">
       <button class="tb-system" id="system-drawer-btn" onclick="toggleSystemPrompt()">System instructions</button>
@@ -122,14 +123,15 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
         <div class="mcp-cards" id="mcp-cards"></div>
       </div>
     </section>
-    <section class="connectors-section" id="tchap-section" hidden>
+    <section class="connectors-section">
       <div class="connectors-section-head">
         <div class="connectors-section-title">
-          <h2>Tchap</h2>
-          <p>Talk to Donna from a Tchap forum on your phone. The Tchap sign-in serves every workspace; each workspace has its own forum.</p>
+          <h2>Agent / Connector</h2>
+          <p>Gmail authorization and the Tchap forum are workspace-specific; the Tchap sign-in is shared.</p>
         </div>
+        <button class="connectors-add" type="button" onclick="renderAgentConnectorCards()">Refresh status</button>
       </div>
-      <div class="tchap-card" id="tchap-card"></div>
+      <div class="agent-connector-grid" id="agent-connector-cards"></div>
     </section>
     <section class="connectors-section">
       <div class="connectors-section-head">

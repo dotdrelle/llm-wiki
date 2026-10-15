@@ -1,6 +1,7 @@
 /**
  * The chat top bar: the model badge (a .wikirc profile switcher when the
- * runtime is on) and one connector status pill. Extracted from chatHtml.ts.
+ * runtime is on) and separate workspace-connector and MCP status pills.
+ * Extracted from chatHtml.ts.
  */
 export const TOPBAR_SCRIPT = `
 // The badge names the model, prefixed by the profile when it is not the
@@ -71,23 +72,23 @@ function closeProfileMenu() {
 document.addEventListener('click',e=>{ if(!e.target.closest?.('.tb-model-wrap')) closeProfileMenu(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeProfileMenu(); });
 
-// One status pill instead of a chip per server: quiet while every connector
-// answers, and naming the one that does not — a list of the healthy ones hid
-// exactly the failure worth seeing. A click opens the Connectors view.
+// The MCP pill counts ready MCP endpoints and switches to a failure count
+// when any endpoint does not answer. The separate Connectors pill counts the
+// workspace integrations (Gmail and Tchap). Both open the Connectors view.
 function renderTopPills() {
   const el=$('tb-mcps');
   if(!el) return;
   const ok=servers.filter(s=>s.enabled&&s.status==='ok');
   const failing=servers.filter(s=>s.status==='err');
-  const state=failing.length?'warn':ok.length?'ok':'off';
-  const label=failing.length
-    ? (failing.length===1?\`\${failing[0].name} down\`:\`\${failing.length} connectors down\`)
-    : ok.length?\`\${ok.length} connector\${ok.length>1?'s':''}\`:'No connector';
+  const count=servers.length;
+  const state=failing.length||servers.some(s=>!s.enabled)?'warn':ok.length===count&&count?'ok':'off';
+  const label=count?\`\${count} MCP\${count>1?'s':''}\`:'No MCPs';
   el.className='tb-connectors '+state;
   el.innerHTML=\`<span class="tb-dot"></span>\${esc(label)}\`;
   el.title=[
     ...ok.map(s=>\`● \${s.name} — \${s.tools.length} tools\`),
     ...failing.map(s=>\`✕ \${s.name} — \${s.error||'not answering'}\`),
+    ...servers.filter(s=>!s.enabled&&s.status!=='err').map(s=>\`○ \${s.name} — disabled\`),
     'Click to open Connectors',
   ].join('\\n');
 }

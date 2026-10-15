@@ -168,7 +168,7 @@ function setRuntimeNarrativeText(el,text) {
   setProgressText(el?.querySelector('.runtime-thinking-narration'),text);
 }
 function showRuntimeNarrative(el,item) {
-  if(!el?.isConnected) return;
+  if(!el?.isConnected||el._approvalWaiting) return;
   clearTimeout(el._narrativeTimer);
   el._narrativeCurrent=item;
   el._narrativeMinUntil=Date.now()+RUNTIME_NARRATIVE_MIN_MS;
@@ -198,6 +198,13 @@ function queueRuntimeNarrative(event) {
   for(const el of candidates) {
     el._narrativeSeen??=new Set();
     el._narrativeQueue??=[];
+    if(el._approvalWaiting) {
+      for(const line of Array.isArray(payload.lines)?payload.lines:[]) {
+        const id=String(line?.id||'');
+        if(id) el._narrativeSeen.add(id);
+      }
+      continue;
+    }
     for(const line of Array.isArray(payload.lines)?payload.lines:[]) {
       const id=String(line?.id||'');
       const text=String(line?.text||'').trim();
@@ -209,7 +216,7 @@ function queueRuntimeNarrative(event) {
   }
 }
 function queueReportPreparation(el,text) {
-  if(!el) return;
+  if(!el||el._approvalWaiting) return;
   el._reportPreparation=true;
   el._narrativeQueue??=[];
   const item={id:'report-preparation',text:String(text||'Preparing the full report…'),sticky:true};
@@ -221,6 +228,37 @@ function queueReportPreparation(el,text) {
     el._narrativeQueue.push(item);
     if(!el._narrativeCurrent) showRuntimeNarrative(el,el._narrativeQueue.shift());
   }
+}
+function setRuntimeApprovalWait(el,text) {
+  if(!el?.isConnected) return;
+  const waiting=String(text||'');
+  if(Boolean(waiting)===Boolean(el._approvalWaiting)) return;
+  if(waiting) {
+    clearTimeout(el._narrativeTimer);
+    el._narrativeTimer=null;
+    el._narrativeSeen??=new Set();
+    for(const item of [...(el._narrativeQueue||[]),el._narrativeCurrent].filter(Boolean)) {
+      if(item.id) el._narrativeSeen.add(item.id);
+    }
+    el._narrativeQueue=[];
+    el._narrativeCurrent=null;
+    el._narrativeMinUntil=0;
+    el._approvalWaiting=true;
+    const main=el.querySelector('.runtime-thinking-main');
+    if(main) main.textContent=waiting;
+    const narration=el.querySelector('.runtime-thinking-narration');
+    if(narration) {
+      narration.textContent='';
+      delete narration.dataset.stepLabel;
+      delete narration.dataset.stepSince;
+      delete narration.dataset.searchFound;
+      delete narration.dataset.confluenceSearch;
+    }
+    return;
+  }
+  el._approvalWaiting=false;
+  const main=el.querySelector('.runtime-thinking-main');
+  if(main) main.textContent='Thinking…';
 }
 function hasRuntimeNarrativeDelay(el) {
   return Boolean(el&&((el._narrativeQueue?.length||0)>0||(el._narrativeCurrent&&Date.now()<(el._narrativeMinUntil||0))));

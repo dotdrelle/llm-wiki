@@ -14,5 +14,6 @@ export const TOPBAR_CSS = `#topbar{position:relative;z-index:50}
 .tb-connectors:hover{border-color:var(--accent);color:var(--text)}
 .tb-dot{width:7px;height:7px;border-radius:50%;background:var(--muted2)}
 .tb-connectors.ok .tb-dot{background:#16a34a}
+.tb-agent-connectors .tb-dot{background:var(--accent)}
 .tb-connectors.warn{border-color:color-mix(in srgb,#d97706 55%,var(--border));color:#d97706}
 .tb-connectors.warn .tb-dot{background:#d97706}`;

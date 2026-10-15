@@ -187,7 +187,7 @@ function saveServers() {
   localStorage.setItem(LS.USER_SERVERS, JSON.stringify(data));
 }
 
-async function restoreEnabledServers() {
+async function restoreEnabledServers({connectorsFirst=false}={}) {
   // Server-injected connectors are enabled optimistically, then verified by
   // the MCP initialize + tools/list handshake. Failed probes are silent here
   // and leave the connector in its explicit error/disabled state.
@@ -198,6 +198,20 @@ async function restoreEnabledServers() {
     return;
   }
   renderCards();
+  if(connectorsFirst) {
+    // The Agent / Connector cards need only this MCP endpoint. Restore it
+    // before unrelated endpoints so a slow or offline wiki/agent server does
+    // not keep Gmail and Tchap stuck on "Checking…" during page startup.
+    const connector=toRestore.find(server=>['connectors','agent-connectors'].includes(String(server.name||'').toLowerCase()));
+    if(connector) {
+      await connectServer(connector.id,{silent:true});
+      const remaining=toRestore.filter(server=>server!==connector);
+      void (async()=>{
+        for(const server of remaining) await connectServer(server.id,{silent:true});
+      })();
+      return;
+    }
+  }
   for(const server of toRestore) {
     await connectServer(server.id,{silent:true});
   }

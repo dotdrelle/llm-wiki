@@ -1165,15 +1165,17 @@ describe('chat html', () => {
     expect(handler).toContain('setCenterWiki(fallback)');
   });
 
-  it('makes the top bar a profile switcher and one connector status pill', () => {
+  it('makes the top bar a profile switcher with separate Connector and MCP pills', () => {
     const script = chatScripts().join('\n');
     expect(CHAT_HTML).toContain('onclick="toggleProfileMenu(event)"');
     expect(CHAT_HTML).toContain('onclick="showConnectorsView(event)"');
+    expect(CHAT_HTML).toContain('id="tb-agent-connectors"');
+    expect(CHAT_HTML).toContain('2 Connectors');
     expect(CHAT_HTML).not.toContain('tb-mcp-pill');
-    // A failing connector is named, never hidden behind a list of healthy ones.
+    // MCP failures remain visible in the MCP pill.
     const pills = script.slice(script.indexOf('function renderTopPills()'));
     expect(pills.slice(0, 900)).toContain("s.status==='err'");
-    expect(pills.slice(0, 900)).toContain('connectors down');
+    expect(pills.slice(0, 900)).toContain('MCP');
     // The menu switches through the same runtime route as the config picker.
     const menu = script.slice(script.indexOf('async function toggleProfileMenu('));
     expect(menu.slice(0, 2000)).toContain("fetch('/api/config/profiles'");

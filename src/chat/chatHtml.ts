@@ -6,7 +6,7 @@ import { PRODUCTION_STATE_SCRIPT } from './workflow/productionStateScript.ts';
 import { PRODUCTION_TRACE_SCRIPT } from './workflow/productionTraceScript.ts';
 import { OBSERVER_TOOLS_SCRIPT } from './views/observerToolsScript.ts';
 import { MCP_CONNECTOR_SCRIPT } from './runtime/mcpConnectorScript.ts';
-import { TCHAP_CARD_SCRIPT } from './runtime/tchapCardScript.ts';
+import { AGENT_CONNECTORS_CARD_SCRIPT } from './runtime/agentConnectorsCardScript.ts';
 import { CONFIG_SCRIPT } from './config/configScript.ts';
 import { TOPBAR_SCRIPT } from './views/topbarScript.ts';
 import { SYSTEM_PROMPT_SCRIPT } from './views/systemPromptScript.ts';
@@ -1668,7 +1668,7 @@ async function toggleServer(id, checked) {
 }
 
 ${MCP_CONNECTOR_SCRIPT}
-${TCHAP_CARD_SCRIPT}
+${AGENT_CONNECTORS_CARD_SCRIPT}
 
 ${PRODUCTION_STATE_SCRIPT}
 
@@ -2816,7 +2816,62 @@ async function tryConnectorCommand(input,text) {
     }
     return true;
   }
-  if(action==='auth'&&args.length===2&&['google','gmail'].includes(String(args[1]).toLowerCase())) {
+  if(action==='auth'&&String(args[1]||'').toLowerCase()==='tchap') {
+    const workspace=window.__WIKI_CONFIG__?.workspaceName;
+    if(!workspace) { await reply('No active workspace.'); return true; }
+    if(args.length>3) { await reply('Usage: /connector auth tchap [#forum:server]',true); return true; }
+    const forum=String(args[2]||'').trim();
+    // Open synchronously from the user's click/Enter gesture. It is used only
+    // if the connector returns a Tchap device-verification URL.
+    const popup=forum?window.open('about:blank','connector-tchap-auth','width=980,height=780'):null;
+    try {
+      if(!forum) {
+        const payload=JSON.parse(await callMCPTool('connectors_tchap_forums',{}, {trackActivity:false}));
+        if(payload?.ok===false) {
+          const message=payload.error==='tchap_not_connected'
+            ? 'Tchap is not signed in yet. Create a forum in Tchap, then run /connector auth tchap #forum:server.'
+            : 'Tchap forums could not be listed ('+(payload.error||'status failed')+').';
+          await reply(message,true);
+          return true;
+        }
+        const forums=Array.isArray(payload?.forums)?payload.forums:[];
+        if(!forums.length) {
+          await reply('No usable Tchap forum was found. Create an unencrypted forum you administer, then run /connector auth tchap #forum:server.');
+          return true;
+        }
+        const lines=forums.map(item=>{
+          const address=item.alias||item.roomId||'unknown forum';
+          const label=item.name?String(item.name)+' — '+address:address;
+          const note=item.usedBy?' (already used by '+item.usedBy+')':((item.members||[]).length>1?' (must be the only member)':'');
+          return '• '+label+note;
+        });
+        const skipped=payload.skipped?'\\n('+payload.skipped+' more rooms were not examined.)':'';
+        await reply('Choose a forum and run /connector auth tchap <address>:\\n'+lines.join('\\n')+skipped);
+        return true;
+      }
+      const payload=JSON.parse(await callMCPTool('connectors_tchap_connect',{workspace,room:forum},{trackActivity:false}));
+      if(payload?.ok===false) throw new Error(payload.error||'Tchap authorization failed');
+      if(payload?.pending) {
+        const verificationUrl=payload.verificationUriComplete||payload.verificationUri||'';
+        if(!verificationUrl) throw new Error('Tchap did not return a verification URL');
+        if(popup) { popup.location.replace(verificationUrl); try{popup.opener=null;}catch{} }
+        await reply('Tchap sign-in is pending. Open '+verificationUrl+' and confirm code '+(payload.userCode||'')+'. The sign-in is shared across workspaces; once confirmed, this forum will be attached here. Then type /activate in the forum.');
+      } else {
+        if(popup) popup.close();
+        const name=payload.report?.name||forum;
+        await reply('Tchap forum '+name+' is attached to workspace '+workspace+'. Type /activate in the forum to switch the bridge on.');
+      }
+      renderAgentConnectorCards();
+    } catch(err) {
+      if(popup) popup.close();
+      await reply('Tchap authorization could not start ('+(err?.message||String(err))+').',true);
+    }
+    return true;
+  }
+  if(action==='auth'&&args.length>=2&&['google','gmail'].includes(String(args[1]).toLowerCase())) {
+    const requested=[...new Set(args.slice(2).map(value=>String(value).toLowerCase()))];
+    const unknown=requested.filter(grant=>!['read','send','modify'].includes(grant));
+    if(unknown.length) { await reply('Unsupported Google grant(s): '+unknown.join(', ')+'. Available grants: read, send, modify.',true); return true; }
     // Open synchronously so browser popup blockers do not reject the window
     // after the OAuth-start network round trip.
     const popup=window.open('about:blank','connector-google-oauth','width=980,height=780');
@@ -2824,17 +2879,18 @@ async function tryConnectorCommand(input,text) {
       const response=await fetch('/api/connectors/google/oauth/start',{
         method:'POST',
         headers:{'content-type':'application/json','x-llm-wiki-oauth':'1'},
-        body:JSON.stringify({instanceId:'google-1'}),
+        body:JSON.stringify({instanceId:'google-1',...(requested.length?{grants:requested}:{})}),
       });
       const payload=await response.json().catch(()=>({}));
       await handleGoogleOAuthStart(popup,response,payload,reply);
+      renderAgentConnectorCards();
     } catch(err) {
       if(popup) popup.close();
       await reply(\`Google authorization could not start (\${err?.message||String(err)}).\`,true);
     }
     return true;
   }
-  await reply('Usage: /connector list or /connector auth google',true);
+  await reply('Usage: /connector list, /connector auth google, or /connector auth tchap [#forum:server]',true);
   return true;
 }
 
@@ -3205,8 +3261,14 @@ async function initChat() {
   initActivitySplitter();
   renderProductionTrace();
   updateAgentModeUI();
-  await Promise.all([restoreEnabledServers(),fetchSkillsAc()]);
-  window.addEventListener('popstate', initPageMode);
+  // Make workspace connector status available as soon as its MCP endpoint is
+  // ready; unrelated MCP handshakes continue in the background.
+  await Promise.all([restoreEnabledServers({connectorsFirst:true}),fetchSkillsAc()]);
+  if(location.pathname.replace(/\\/+$/, '')==='/chat/connectors') renderAgentConnectorCards();
+  window.addEventListener('popstate',()=>{
+    initPageMode();
+    if(location.pathname.replace(/\\/+$/, '')==='/chat/connectors') renderAgentConnectorCards();
+  });
 }
 initChat();
 </script>`;

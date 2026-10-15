@@ -24,7 +24,7 @@ function mcpProxyUrl(server) {
   return \`/api/mcp?url=\${encodeURIComponent(server.url)}\`;
 }
 
-async function mcpRPC(server, method, params) {
+async function mcpRPC(server, method, params, timeoutMs=MCP_REQUEST_TIMEOUT_MS) {
   const body = {jsonrpc: '2.0', id: Date.now(), method};
   if (params !== undefined) body.params = params;
   const headers = {
@@ -34,7 +34,8 @@ async function mcpRPC(server, method, params) {
   if (server.bearer?.trim()) headers['Authorization'] = \`Bearer \${server.bearer.trim()}\`;
   if (server.sessionId) headers['Mcp-Session-Id'] = server.sessionId;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), MCP_REQUEST_TIMEOUT_MS);
+  const requestTimeoutMs=Math.max(1000,Number(timeoutMs)||MCP_REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
   try {
     const res = await fetch(mcpProxyUrl(server), {method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal});
     const sid = res.headers.get('Mcp-Session-Id');
@@ -57,7 +58,7 @@ async function mcpRPC(server, method, params) {
     const ct = res.headers.get('content-type') || '';
     return ct.includes('text/event-stream') ? await readSSE(res) : await res.json();
   } catch(err) {
-    const e = new Error(err?.name==='AbortError' ? \`MCP timeout after \${Math.round(MCP_REQUEST_TIMEOUT_MS/1000)}s\` : (err?.message || String(err)));
+    const e = new Error(err?.name==='AbortError' ? \`MCP timeout after \${Math.round(requestTimeoutMs/1000)}s\` : (err?.message || String(err)));
     e.raw = e.message;
     e.status = err?.status;
     throw e;
@@ -108,7 +109,7 @@ function openOAuthWindow(url, server) {
   }
 }
 
-async function mcpNotify(server, method, params) {
+async function mcpNotify(server, method, params, timeoutMs=MCP_REQUEST_TIMEOUT_MS) {
   const body = {jsonrpc: '2.0', method};
   if (params !== undefined) body.params = params;
   const headers = {
@@ -117,7 +118,11 @@ async function mcpNotify(server, method, params) {
   };
   if (server.bearer?.trim()) headers['Authorization'] = \`Bearer \${server.bearer.trim()}\`;
   if (server.sessionId) headers['Mcp-Session-Id'] = server.sessionId;
-  await fetch(mcpProxyUrl(server), {method: 'POST', headers, body: JSON.stringify(body)}).catch(() => {});
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),Math.max(1000,Number(timeoutMs)||MCP_REQUEST_TIMEOUT_MS));
+  try {
+    await fetch(mcpProxyUrl(server), {method: 'POST', headers, body: JSON.stringify(body),signal:controller.signal});
+  } catch {} finally { clearTimeout(timeout); }
 }
 
 async function connectServer(id,{silent=false}={}) {
@@ -200,17 +205,17 @@ async function retryPendingServerSyncs() {
   }
 }
 
-async function reconnectMCPServer(server) {
+async function reconnectMCPServer(server, timeoutMs=MCP_REQUEST_TIMEOUT_MS) {
   server.sessionId=null;
   const initResp = await mcpRPC(server, 'initialize', {
     protocolVersion: '2024-11-05',
     capabilities: {},
     clientInfo: {name: 'WikiChatConnector', version: '0.16.57'}
-  });
+  },timeoutMs);
   if (initResp?.error) throw new Error(initResp.error.message || 'initialize failed');
-  await mcpNotify(server, 'notifications/initialized', {});
+  await mcpNotify(server, 'notifications/initialized', {},timeoutMs);
 
-  const toolsResp = await mcpRPC(server, 'tools/list');
+  const toolsResp = await mcpRPC(server, 'tools/list',undefined,timeoutMs);
   if (toolsResp?.error) throw new Error(toolsResp.error.message || 'tools/list failed');
   server.tools = toolsResp?.result?.tools || [];
   server.status='ok';
@@ -218,7 +223,7 @@ async function reconnectMCPServer(server) {
   server.lastMcpActivityAt=Date.now();
 }
 
-async function callMCPTool(name, args, {trackActivity=true}={}) {
+async function callMCPTool(name, args, {trackActivity=true,timeoutMs=MCP_REQUEST_TIMEOUT_MS}={}) {
   const server=findServerForTool(name);
   if(!server) throw new Error(\`No active MCP server for "\${name}"\`);
   const requestedWorkspace=String(args?.workspace||'').trim();
@@ -241,22 +246,22 @@ async function callMCPTool(name, args, {trackActivity=true}={}) {
     try {
       if(mcpSessionIsStale(server)) {
         notify(\`\${server.name}: inactive MCP session, reconnecting...\`);
-        await reconnectMCPServer(server);
+        await reconnectMCPServer(server,timeoutMs);
         renderCards(); renderTopPills(); saveServers();
       }
-      resp = await mcpRPC(server, 'tools/call', {name, arguments: args});
+      resp = await mcpRPC(server, 'tools/call', {name, arguments: args},timeoutMs);
     } catch(err) {
       if(!isMcpSessionOrNetworkFailure(err)) throw err;
       notify(\`\${server.name}: reconnecting MCP...\`);
-      await reconnectMCPServer(server);
+      await reconnectMCPServer(server,timeoutMs);
       renderCards(); renderTopPills(); saveServers();
-      resp = await mcpRPC(server, 'tools/call', {name, arguments: args});
+      resp = await mcpRPC(server, 'tools/call', {name, arguments: args},timeoutMs);
     }
     if (resp?.error && isMcpSessionOrNetworkFailure(resp.error)) {
       notify(\`\${server.name}: expired MCP session, reconnecting...\`);
-      await reconnectMCPServer(server);
+      await reconnectMCPServer(server,timeoutMs);
       renderCards(); renderTopPills(); saveServers();
-      resp = await mcpRPC(server, 'tools/call', {name, arguments: args});
+      resp = await mcpRPC(server, 'tools/call', {name, arguments: args},timeoutMs);
     }
     if (resp?.error) throw new Error(resp.error.message || 'Tool call error');
     const content = resp?.result?.content || [];

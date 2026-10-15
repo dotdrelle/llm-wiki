@@ -42,7 +42,20 @@ function runLiveLineActive() {
   return !owner||String(owner).startsWith('legacy:')||owner===currentConversationId;
 }
 function runLiveLineStatusLabel() {
-  return String(runtimeState?.status||'').toLowerCase()==='pending_approval'?'Waiting for your approval — nothing runs before it.':'';
+  if(String(runtimeState?.status||'').toLowerCase()!=='pending_approval') return '';
+  const runId=runLiveLineRunId();
+  const approval=(Array.isArray(runtimeState?.approvals)?runtimeState.approvals:[]).find(item=>
+    item?.status==='pending_approval'&&(!item.runId||!runId||item.runId===runId)
+  );
+  const reason=String(approval?.reason||'');
+  return approval&&!approval.taskId&&/^Approve .+ before it runs\.$/.test(reason)
+    ?'Waiting for your approval to start this run.'
+    :'Waiting for your approval for the pending mutation.';
+}
+function runLiveLineTurnBubbles() {
+  return [...pendingRuntimeStatusEls,...armedReplyStatusEls].filter(el=>
+    el?.isConnected&&(!el._conversationId||!currentConversationId||el._conversationId===currentConversationId)
+  );
 }
 // A waiting bubble no pending turn owns any more (a skill turn's bubble that
 // took the run's first "0%" and was never cleared) is an orphan: it would sit
@@ -57,7 +70,12 @@ function removeOrphanWaitingBubbles(wrap) {
 }
 function syncRunLiveLine() {
   removeOrphanWaitingBubbles($('messages'));
-  const show=runLiveLineActive()&&!pendingRuntimeStatusEls.length;
+  const waiting=runLiveLineStatusLabel();
+  const turnBubbles=runLiveLineTurnBubbles();
+  turnBubbles.forEach(el=>setRuntimeApprovalWait(el,waiting));
+  // An active turn already owns a Thinking bubble. Reuse it for approval
+  // waits too, instead of adding a second typing row below Donna's narration.
+  const show=runLiveLineActive()&&turnBubbles.length===0;
   if(!show){ if(runLiveLineEl){ runLiveLineEl.remove(); runLiveLineEl=null; } $('messages')?.querySelectorAll('.run-live-line').forEach(el=>el.remove()); return; }
   const wrap=$('messages');
   if(!wrap) return;
@@ -80,7 +98,6 @@ function syncRunLiveLine() {
   // Always the last line of the thread: an announcement that arrives during
   // the run lands above it.
   if(wrap.lastElementChild!==runLiveLineEl){ wrap.appendChild(runLiveLineEl); wrap.scrollTop=wrap.scrollHeight; }
-  const waiting=runLiveLineStatusLabel();
   if(waiting) setRunLiveLine(waiting);
 }
 function setRunLiveLine(text) {

@@ -490,7 +490,7 @@ function showConnectorsView(event) {
   $('connectors-link')?.classList.add('active');
   renderCards();
   renderSkillsManager();
-  renderTchapCard();
+  renderAgentConnectorCards();
   activityView='list';
   renderActivities();
   if (location.pathname.replace(/\\/+$/, '') !== '/chat/connectors') {
