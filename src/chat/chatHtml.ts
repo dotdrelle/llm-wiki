@@ -3044,10 +3044,8 @@ async function sendMessage() {
         displayContent=String(summary).trim();
       } catch(err) {
         if(err?.name!=='AbortError') {
-          const lang=String(window.__WIKI_CONFIG__?.language||'en').toLowerCase();
-          notify(lang.startsWith('fr')
-            ? 'Impossible de résumer et d’enregistrer la réponse complète; elle reste dans le fil.'
-            : 'Could not summarize and save the full answer; the complete answer remains in the chat.','e');
+          // Interface chrome is English: the reply language is Donna's, not the toast's.
+          notify('Could not summarize and save the full answer; the complete answer remains in the chat.','e');
         }
       }
     }
