@@ -9,7 +9,7 @@ function runtimeAnswerTarget(msg,text) {
     const ref=runtimeConversationRefs[refIndex];
     if(ref.conversationId!==currentConversationId) return {ref,refIndex,index:null};
     const before=runtimeConversationRefs.slice(0,refIndex).filter(r=>r.conversationId===currentConversationId).length;
-    return {ref,refIndex,index:(runtimeConversationStrictOffset??0)+before,content:ref.message.content};
+    return {ref,refIndex,index:(runtimeConversationStrictOffset??0)+before,content:ref.message.content,turnId:ref.turnId??ref.message.turnId??null};
   }
   // A reopened conversation: its answers precede the merge baseline. Match by
   // text, and by rank among identical answers when there are several.
@@ -18,7 +18,7 @@ function runtimeAnswerTarget(msg,text) {
   const same=[...document.querySelectorAll('#messages .msg.assistant')].filter(el=>(el.dataset.copy||'')===text);
   const rank=same.indexOf(msg);
   const index=candidates.length===1?candidates[0]:candidates.length===same.length&&rank>=0?candidates[rank]:null;
-  return {ref:null,refIndex:-1,index,content:text,beforeBaseline:index!==null};
+  return {ref:null,refIndex:-1,index,content:text,turnId:index!==null?thread[index]?.turnId??null:null,beforeBaseline:index!==null};
 }
 function localMessageFor(msg,text) {
   const same=[...document.querySelectorAll('#messages .msg.assistant')].filter(el=>(el.dataset.copy||'')===text);
@@ -33,7 +33,7 @@ async function deleteAnswer(btn) {
   const target=runtimeEnabled()?runtimeAnswerTarget(msg,text):{ref:null,refIndex:-1,index:null};
   if(target.index!==null) {
     try {
-      const res=await fetch('/api/runtime/conversation/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:target.index,conversationId:currentConversationId,content:target.content})});
+      const res=await fetch('/api/runtime/conversation/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:target.index,conversationId:currentConversationId,content:target.content,...(target.turnId?{turnId:target.turnId}:{})})});
       const data=await res.json().catch(()=>({}));
       if(data?.removed!==true) {
         notify(data?.reason==='run_active'?'Wait for this answer to finish before deleting it':'This answer could not be deleted','e');
@@ -44,7 +44,9 @@ async function deleteAnswer(btn) {
     // against the stale array would rewrite the following bubbles.
     const all=Array.isArray(runtimeState?.conversation)?runtimeState.conversation:[];
     let seen=-1;
-    const at=all.findIndex(entry=>entry?.conversationId===currentConversationId&&++seen===target.index);
+    const at=target.turnId
+      ?all.findIndex(entry=>entry?.turnId===target.turnId&&String(entry?.content??'')===String(target.content??''))
+      :all.findIndex(entry=>entry?.conversationId===currentConversationId&&++seen===target.index);
     if(at>=0) all.splice(at,1);
     if(target.ref) runtimeConversationRefs.splice(target.refIndex,1);
     else if(target.beforeBaseline&&runtimeConversationOffset!==null) {

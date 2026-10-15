@@ -182,14 +182,14 @@ describe('Pending drop handler', () => {
 
   it('shows a non-clickable placeholder row during conversion and removes it on error', () => {
     expect(WIKI_LAYOUT_SCRIPT).toContain('function addPendingUploadRow');
-    expect(WIKI_LAYOUT_SCRIPT).toContain("row.className = 'side-untracked-item side-untracked-uploading'");
+    expect(WIKI_LAYOUT_SCRIPT).toContain("row.className = 'side-untracked-item side-untracked-uploading side-untracked-upload-queued'");
     expect(WIKI_LAYOUT_SCRIPT).toContain('function removePendingUploadRow');
     const loop = WIKI_LAYOUT_SCRIPT.slice(
       WIKI_LAYOUT_SCRIPT.indexOf('for (const file of files)'),
       WIKI_LAYOUT_SCRIPT.indexOf('if (written.length)'),
     );
-    expect(loop).toContain('addPendingUploadRow(file.name)');
-    expect(loop).toContain('removePendingUploadRow(file.name)');
+    expect(loop).toContain('addPendingUploadRow(file.name, actId)');
+    expect(loop).toContain('removePendingUploadRow(actId)');
     // The failure must not linger in the panel: the optimistic row goes, and
     // the refresh reconciles with the server, which no longer counts the
     // failed record as in-flight.

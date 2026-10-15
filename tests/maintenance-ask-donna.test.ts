@@ -20,7 +20,7 @@ describe('Ask Donna from the Maintenance panel', () => {
 
   it('hands Donna each record with its error detail and the routine work around the cycle', () => {
     expect(MAINTENANCE_PANEL_SCRIPT).toContain("(detail: '");
-    expect(MAINTENANCE_PANEL_SCRIPT).toMatch(/Math\.abs\(Date\.parse\(e\.at\)-Date\.parse\(c\.at\)\)<=15\*60_000/);
+    expect(MAINTENANCE_PANEL_SCRIPT).toMatch(/Math\.abs\(Date\.parse\(e\.at\)-Date\.parse\(referenceAt\)\)<=15\*60_000/);
   });
 });
 

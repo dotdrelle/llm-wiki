@@ -22,12 +22,15 @@
 // Starts on a newline: it is concatenated into the chat script.
 export const PROGRESS_LABEL_SCRIPT = `
 const PROGRESS_THINKING='Thinking…';
-// Two lines' worth (the CSS clamps the line at two): a step is read whole,
+// Bounded to three lines by CSS: a step is read whole,
 // not cut mid-word at the end of one line.
 const PROGRESS_LINE_MAX=240;
 function progressEventInThread(event, conversationId) {
   const id=event&&event.conversationId;
   return !id||!conversationId||id===conversationId;
+}
+function reportPreparationLabel() {
+  return 'Preparing the full report…';
 }
 // "wiki.wiki_search_context (question=…)" → "wiki · wiki_search_context (question=…)".
 function progressToolLabel(text) {
@@ -63,11 +66,12 @@ function progressMessageLabel(message) {
 function runtimeProgressLabel(event) {
   const type=event&&event.type;
   const p=(event&&event.payload)||{};
+  if(type==='assistant_progress'&&p.kind==='report_preparation') return reportPreparationLabel();
   if(type==='assistant_message'||type==='assistant_delta') return 'Writing the answer…';
   // The CQL and limit are the useful live status for a direct Confluence
   // lookup. Keep the exact tool call visible instead of replacing it with the
   // shorter natural-language subject while the request is running.
-  if(type==='assistant_progress'&&/^Using cme\.cme_confluence_search\b/.test(String(p.message||''))) {
+  if(type==='assistant_progress'&&/^Using cme\\.cme_confluence_search\\b/.test(String(p.message||''))) {
     return progressMessageLabel(p.message);
   }
   // A tool whose request is a sentence (a delegated objective, a search
@@ -107,7 +111,7 @@ function setProgressText(span, text) {
   const found=text.match(/^Wiki search: (.+)$/);
   if(found) span.dataset.searchFound=found[1];
   else if(text!==PROGRESS_THINKING) delete span.dataset.searchFound;
-  const confluenceCall=text.match(/^Using cme\.cme_confluence_search\b/);
+  const confluenceCall=text.match(/^Using cme\\.cme_confluence_search\\b/);
   if(confluenceCall) span.dataset.confluenceSearch='1';
   else if(text!==PROGRESS_THINKING) delete span.dataset.confluenceSearch;
   // "nothing found" is no material to think over: say the wiki had nothing.

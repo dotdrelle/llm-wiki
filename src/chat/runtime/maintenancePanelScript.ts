@@ -12,7 +12,7 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
   // The run graph draws what maintenance executes (runtimeGraphScript.ts).
   window.getMaintenanceRunning=()=>Array.isArray(state?.running)?state.running:[];
   function graphChanged(){try{window.noteMaintenanceSidebarActivity?.(Array.isArray(state?.running)&&state.running.length>0);}catch{}try{if(typeof renderRuntimeWorkflowCanvas==='function')renderRuntimeWorkflowCanvas();}catch{}}
-  let state=null,loading=false,toast=null,lastSeq=null,lastNotifiedSeq=null,hasUnread=false,historyOffset=0,connected=false,stale=false;const key='wiki-maintenance-seen:'+location.host;
+  let state=null,loading=false,toast=null,lastSeq=null,lastNotifiedSeq=null,hasUnread=false,historyOffset=0,connected=false,stale=false,decisionHistoryOpen=false;const key='wiki-maintenance-seen:'+location.host;
   window.getMaintenancePendingCount=()=>state?.requests?.filter(r=>r.status==='pending').length??0;
   window.hasMaintenanceUpdates=()=>hasUnread||window.getMaintenancePendingCount()>0;
   mountDock();
@@ -51,7 +51,7 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
   function maintenanceRecordLine(e,strip){const time=e.at?formatLocalDateTime(e.at,{seconds:true}):'';const message=strip(e.message);const detail=e.detail&&!message.includes(String(e.detail))?' (detail: '+String(e.detail).slice(0,400)+')':'';return '- '+time+' '+(e.kind||'event')+': '+message+detail;}
   function askDonna({question,label,records}){historyOffset=0;if(typeof showChatView==='function')showChatView();const input=document.getElementById('chat-input');if(!input||(typeof isStreaming!=='undefined'&&isStreaming))return;
     input.value=[question,'Answer from the maintenance records below. They are system records from the Maintenance panel, not wiki pages: do not look for them in the wiki.','','<maintenance-records>',...records,'</maintenance-records>'].join('\n').slice(0,6000);
-    input.dataset.displayText=label;input.dataset.forceChat='1';input.dataset.hideQuestion='1';
+    input.dataset.displayText=label;input.dataset.forceChat='1';input.dataset.hideQuestion='1';input.dataset.saveAsReport='1';
     if(typeof sendMessage==='function')sendMessage();}
   function render(panel){if(!state||!panel)return;activeTarget=panel;panel.replaceChildren();const badge=panel.closest('.activity-subtab-content')?.querySelector('.maintenance-state');if(badge)badge.textContent=state.error?'Error':!state.enabled?'Disabled':state.paused?'Paused':'Active';
     const build=state.buildSchedule;const buildRow=node('div',null,panel);buildRow.className='maintenance-mode-row';node('span','Build Window',buildRow);node('span',build?(build.start+'–'+build.end+' ('+build.timezone+')'):'not set; automatic builds wait',buildRow).className='maintenance-build-value';
@@ -66,33 +66,37 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
     if(state.enabled){const pauseBtn=button(state.paused?'Resume':'Pause',controls,()=>command({command:state.paused?'resume':'pause'}));pauseBtn.title=state.paused?'Resume automatic maintenance for this workspace.':'Pause maintenance: nothing new starts; the action already running finishes on its own.';const stopBtn=button('Stop now',controls,()=>command({command:'stop'}));stopBtn.title='Stop maintenance now: pauses it and cancels the running action and every in-flight job.';button('Disable',controls,()=>command({command:'disable'}));}
     else button('Enable',controls,async()=>{const text='Maintenance will keep this workspace up to date on its own. Enable it?';const ok=typeof confirmAction==='function'?await confirmAction({title:'Enable maintenance',message:text,confirmLabel:'Enable'}):window.confirm(text);if(ok)command({command:'enable'});});
     const proposals=node('a','Agent proposals',panel);proposals.className='maintenance-proposals-action';proposals.href='/agent-proposals';proposals.target='wiki-frame';
-    const pending=state.requests.filter(r=>r.status==='pending');node('h3','Decisions ('+pending.length+')',panel);
-    for(const r of pending){const row=node('article',null,panel);const text=node('p',r.candidate?.summary||r.action,row);text.title='Request '+r.id+' · version '+r.version;button('Approve',row,()=>command({command:'decide',id:r.id,version:r.version,approved:true})).classList.add('approve');button('Refuse',row,()=>command({command:'decide',id:r.id,version:r.version,approved:false}));button('Ask Donna',row,()=>askDonna({question:'Explain this pending maintenance decision: what it would do, why maintenance proposes it, and what approving or refusing it changes.',label:'Explain the pending decision: '+(r.candidate?.summary||r.action),records:['Pending decision: '+(r.candidate?.summary||r.action),'Action: '+r.action+(r.target?' on '+r.target:'')]}));}
+    const pending=state.requests.filter(r=>r.status==='pending');const decisions=node('section',null,panel);decisions.className='maintenance-decisions';node('h3','Decisions ('+pending.length+')',decisions);
+    for(const r of pending){const row=node('article',null,decisions);const text=node('p',r.candidate?.summary||r.action,row);text.title='Request '+r.id+' · version '+r.version;button('Approve',row,()=>command({command:'decide',id:r.id,version:r.version,approved:true})).classList.add('approve');button('Refuse',row,()=>command({command:'decide',id:r.id,version:r.version,approved:false}));button('Ask Donna',row,()=>askDonna({question:'Explain this pending maintenance decision: what it would do, why maintenance proposes it, and what approving or refusing it changes.',label:'Explain the pending decision: '+(r.candidate?.summary||r.action),records:['Pending decision: '+(r.candidate?.summary||r.action),'Action: '+r.action+(r.target?' on '+r.target:'')]}));}
+    const history=state.requests.filter(r=>r.status!=='pending');if(history.length){const d=node('details',null,decisions);d.className='maintenance-decision-history';d.open=decisionHistoryOpen;const summary=node('summary','Previous decisions ('+history.length+')',d);summary.addEventListener('click',()=>{decisionHistoryOpen=!d.open;});d.addEventListener('toggle',()=>{decisionHistoryOpen=d.open;});for(const r of history)node('p',(r.candidate?.summary||r.action)+' — '+r.status,d);}
     // The Maintenance thread: one entry per cycle, the agent's own summary first,
     // then what was done; routine work and decisions outside a cycle follow.
     const events=state.events.slice(-300);const strip=(m)=>String(m||'').replace(/^Maintenance:\s*/,'');
     const threadHeading=node('h3','Maintenance thread',panel);threadHeading.className='maintenance-thread-heading';
     for(const c of state.cycles.slice(0,10)){
-      const entry=node('details',null,panel);entry.open=c===state.cycles[0];
-      node('summary',(c.at?formatLocalDateTime(c.at,{seconds:true}):'')+' — cycle '+c.status,entry);
+      const startedAt=c.at?formatLocalDateTime(c.at,{seconds:true}):'';
+      const resumedAt=c.resumedAt?formatLocalDateTime(c.resumedAt,{seconds:true}):'';
+      const referenceAt=c.resumedAt||c.at;
+      const when=resumedAt?resumedAt+(startedAt?' (started '+startedAt+')':''):startedAt;
       const own=events.filter(e=>e.cycleId===c.id);const summary=own.filter(e=>e.kind==='summary').at(-1);
+      // Routine work runs outside the cycle (sync, doctor, mail) but is what
+      // usually explains it: the records of the 15 minutes around it travel too.
+      const around=events.filter(e=>e.cycleId!==c.id&&e.at&&referenceAt&&Math.abs(Date.parse(e.at)-Date.parse(referenceAt))<=15*60_000);
+      const question=c.status==='running'?'Explain this active maintenance cycle: what is happening, when it started or resumed, and what the recent actions mean.':'Explain this maintenance cycle: what happened, why it '+(c.status==='failed'?'failed':'ended as '+c.status)+', and what I should do about it.';
+      const entry=node('details',null,panel);entry.open=c===state.cycles[0];
+      node('summary',(resumedAt?'cycle resumed '+resumedAt+(startedAt?' (started '+startedAt+')':''):(startedAt?'cycle started '+startedAt:''))+' — '+c.status,entry);
+      button('Ask Donna about this cycle',entry,()=>askDonna({question,label:'Explain the maintenance cycle of '+when,records:['Cycle of '+when+' — '+c.status,...[...own,...around].sort((a,b)=>String(a.at||'').localeCompare(String(b.at||''))).map(e=>maintenanceRecordLine(e,strip))]}));
       if(summary)maintenanceMarkdown(entry,strip(summary.message),'maintenance-summary maintenance-markdown');
       for(const e of maintenanceActivityRows(own.filter(e=>e.kind!=='summary')))appendMaintenanceActivityRow(entry,e,strip);
       if(!own.length)node('p','No action recorded for this cycle on this history page.',entry);
-      // Routine work runs outside the cycle (sync, doctor, mail) but is what
-      // usually explains it: the records of the 15 minutes around it travel too.
-      const around=events.filter(e=>e.cycleId!==c.id&&e.at&&c.at&&Math.abs(Date.parse(e.at)-Date.parse(c.at))<=15*60_000);
-      const when=c.at?formatLocalDateTime(c.at,{seconds:true}):'';
-      button('Ask Donna about this cycle',entry,()=>askDonna({question:'Explain this maintenance cycle: what happened, why it '+(c.status==='failed'?'failed':'ended as '+c.status)+', and what I should do about it.',label:'Explain the maintenance cycle of '+when,records:['Cycle of '+when+' — '+c.status,...[...own,...around].sort((a,b)=>String(a.at||'').localeCompare(String(b.at||''))).map(e=>maintenanceRecordLine(e,strip))]}));
     }
     const shown=new Set(state.cycles.slice(0,10).map(c=>c.id));const loose=events.filter(e=>!shown.has(e.cycleId)).slice(-60).reverse();
     if(loose.length){node('h3','Routine work and decisions',panel);for(const e of maintenanceActivityRows(loose))appendMaintenanceActivityRow(panel,e,strip);}
     if(state.history){if(state.history.retentionDays)node('p','Logs retained for '+state.history.retentionDays+' rolling days.',panel);node('p','Saved history — page '+(Math.floor(state.history.offset/state.history.limit)+1)+'. All pending decisions remain visible.',panel);if(historyOffset>0)button('Newer history',panel,()=>{historyOffset=Math.max(0,historyOffset-state.history.limit);poll();});if(state.history.hasMore)button('Older history',panel,()=>{historyOffset+=state.history.limit;poll();});}
-    const history=state.requests.filter(r=>r.status!=='pending');if(history.length){const d=node('details',null,panel);node('summary','Decision history',d);for(const r of history)node('p',(r.candidate?.summary||r.action)+' — '+r.status,d);}
   }
   // One row per action: its start and its outcome share the action's summary
   // ("X", "Done: X", "X — not done: …"), which every record carries — the
-  // outcome records had no target, so a finished action kept its PENDING start.
+  // outcome records have no target, so the summary pairs them with the start.
   function maintenanceActionSummary(event){return String(event.message||'').replace(/^Maintenance:\s*/,'').replace(/^(?:Done|Failed|Cancelled):\s*/i,'').split(' — ')[0].trim();}
   function maintenanceActivityRows(events){
     const grouped=new Map();const started=new Map();
@@ -101,9 +105,9 @@ export const MAINTENANCE_PANEL_SCRIPT = String.raw`
     return [...grouped.entries()].map(([key,event])=>{const from=started.get(key);const ms=event.kind!=='action_started'&&from&&event.at?Date.parse(event.at)-Date.parse(from):NaN;return Number.isFinite(ms)&&ms>=0?{...event,durationMs:ms}:event;})
       .sort((a,b)=>(Number(b.seq)||0)-(Number(a.seq)||0));
   }
-  function maintenanceDuration(ms){const s=Math.round(Number(ms)/1000);if(!Number.isFinite(s)||s<0)return '';if(s<60)return s+'s';const m=Math.floor(s/60);if(m<60)return m+'m '+String(s%60).padStart(2,'0')+'s';return Math.floor(m/60)+'h '+String(m%60).padStart(2,'0')+'m';}
+  function maintenanceDuration(ms){const value=Number(ms);if(!Number.isFinite(value)||value<0)return '';const minutes=Math.floor(value/60000);return minutes?minutes+' min':'<1 min';}
   function maintenanceActivityStatus(event){
-    if(event.kind==='action_started')return event.action==='sync'?'checking':'pending';
+    if(event.kind==='action_started')return event.action==='sync'?'checking':'running';
     if(event.kind==='waiting')return 'pending';
     if(event.kind==='action_done')return event.action==='doctor'?'checked':'done';
     if(event.kind==='failure')return 'failed';

@@ -28,7 +28,7 @@ describe('what the >_ line says during a turn', () => {
     expect(log('Agent: planning next action…')).toBe('Thinking…');
     expect(log('[2/80] synthesizing…')).toBe('Thinking…');
     expect(log('Agent: malformed tool call rejected; retrying…')).toBe('Retrying…');
-    expect(note('Using wiki.wiki_read_page (path=wiki/a.md)…')).toBe('wiki · wiki_read_page (path=wiki/a.md)');
+    expect(note('Using wiki.wiki_read_page (path=wiki/a.md)…')).toBe('Using wiki.wiki_read_page (path=wiki/a.md)…');
     expect(note('wiki.wiki_read_page done.')).toBe('Thinking…');
     expect(note('wiki.wiki_read_page failed: not found')).toBe('wiki.wiki_read_page failed: not found');
   });
@@ -60,10 +60,17 @@ describe('the step line keeps time and carries the search result', () => {
       message: 'Using runtime.delegate (objective=Ingérer les fichiers Markdown en att)…',
       tool: 'runtime.delegate', subject: 'Ingérer les fichiers Markdown en attente dans raw/untracked',
     } })).toBe('Runtime : Ingérer les fichiers Markdown en attente dans raw/untracked');
-    // Without a sentence argument, the tool and its arguments as before.
+    // Without a sentence argument, the agent loop's own note stays visible
+    // as written (the tool and its arguments in place).
     expect(runtimeProgressLabel({ type: 'assistant_progress', payload: {
       message: 'Using cme.cme_export_status (job_id=abc)…', tool: 'cme.cme_export_status',
-    } })).toBe('cme · cme_export_status (job_id=abc)');
+    } })).toBe('Using cme.cme_export_status (job_id=abc)…');
+    // A Confluence lookup keeps its exact call even when a shorter subject is
+    // offered: the CQL and the limit are the useful live status.
+    expect(runtimeProgressLabel({ type: 'assistant_progress', payload: {
+      message: 'Using cme.cme_confluence_search (cql=type = page and space = DEV, limit=10)…',
+      tool: 'cme.cme_confluence_search', subject: 'Chercher dans l’espace DEV',
+    } })).toBe('Using cme.cme_confluence_search (cql=type = page and space = DEV, limit=10)…');
   });
 
   it('starts every displayed step with a capital letter', () => {
@@ -116,6 +123,11 @@ describe('the step line keeps time and carries the search result', () => {
       clock += 5_000;
       setProgressText(span, 'wiki.x failed: not found');
       expect(span.textContent).toBe('Wiki.x failed: not found');
+      // A Confluence lookup carries its own phrasing once the model starts
+      // reading the results.
+      setProgressText(span, 'Using cme.cme_confluence_search (cql=type = page, limit=10)');
+      setProgressText(span, 'Thinking…');
+      expect(span.textContent).toBe('Thinking over Confluence search results…');
     } finally {
       Date.now = realNow;
       globalThis.setInterval = realSetInterval;

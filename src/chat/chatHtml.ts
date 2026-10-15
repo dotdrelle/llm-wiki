@@ -427,14 +427,16 @@ function applyRuntimeState(state) {
   if(Array.isArray(state?.progressEvents)) restoreRuntimeProgress(state.progressEvents);
   runtimeConnected=true;
   noteRunSidebarState(state);
-  const conversationChanged=mergeRuntimeConversation(); syncRunLiveLine();
+  const conversationChanged=mergeRuntimeConversation();
+  const progressHistoryRestored=restoreProgressHistoryFromRuntime();
+  syncRunLiveLine();
   renderActivities();
   updateActivityBadge();
   updateApprovalBanner();
   updateAgentModeUI();
   updateMemoryGauge();
   // Scroll after renderActivities (panel resize reflows width/height).
-  if(conversationChanged) scrollMessagesToBottom();
+  if(conversationChanged||progressHistoryRestored) scrollMessagesToBottom();
 }
 
 async function fetchRuntimeState() {
@@ -472,6 +474,7 @@ function connectRuntimePanel() {
       noteRuntimeEvent();
       const parsed=JSON.parse(event.data);
       if(parsed&&parsed.type) noteRunSidebarEvent(parsed.type);
+      if(parsed&&parsed.type==='step_narrative') queueRuntimeNarrative(parsed);
       if(parsed&&parsed.type==='assistant_progress') noteRuntimeProgress(parsed.payload&&parsed.payload.message,parsed.ts,parsed.id,parsed.payload&&parsed.payload.kind);
       if(parsed&&parsed.type==='runtime_heartbeat') noteRuntimeHeartbeat(parsed);
       // The Memory tab listens for this event; without an emitter a /remember
@@ -486,8 +489,11 @@ function connectRuntimePanel() {
       const label=runtimeProgressLabel(parsed);
       if(label) {
         [...pendingRuntimeStatusEls,...armedReplyStatusEls]
-          .filter(el=>progressEventInThread(parsed,el._conversationId))
-          .forEach(el=>updateRuntimeThinkingBubble(el,label));
+          .filter(el=>progressEventInThread(parsed,el._conversationId)&&(!el._reportPreparation||parsed.payload?.kind==='report_preparation'))
+          .forEach(el=>{
+            if(parsed.payload?.kind==='report_preparation') queueReportPreparation(el,label);
+            else updateRuntimeThinkingBubble(el);
+          });
       }
       if(progressEventInThread(parsed,currentConversationId)) noteRunLiveEvent(parsed);
     } catch {}
@@ -532,7 +538,8 @@ function updateMsgBubble(el,role,content) {
   el.dataset.copy=content||'';
   const bubble=el.querySelector('.bubble');
   if(bubble) bubble.innerHTML=role==='assistant'?renderMd(content||''):esc(content||'');
-  if(content) el.classList.remove('msg-empty');
+  const hasAttachments=Boolean(el.querySelector('.msg-attachments'));
+  el.classList.toggle('msg-empty',!String(content||'').trim()&&!hasAttachments);
 }
 
 // Merges Donna's actual replies (and any user turns not already shown, e.g.
@@ -584,6 +591,10 @@ function mergeRuntimeConversation() {
     const content=String(raw.content??'');
     if(i<runtimeConversationRefs.length) {
       const ref=runtimeConversationRefs[i];
+      if(ref.own&&role==='assistant'&&content&&raw.streaming!==true&&raw.progress!==true) {
+        const statusEl=armedReplyStatusEls.find((el)=>!raw.conversationId||el._conversationId===raw.conversationId);
+        if(statusEl&&hasRuntimeNarrativeDelay(statusEl)) break;
+      }
       if(ref.el&&raw.attachments) attachMsgAttachments(ref.el,raw.attachments);
       const contentChanged=ref.message.content!==content;
       ref.message.streaming=raw.streaming===true;
@@ -621,7 +632,15 @@ function mergeRuntimeConversation() {
         const statusEl=pendingRuntimeStatusEls.splice(idx,1)[0] ?? null;
         ref.conversationId=raw.conversationId??null;
         runtimeConversationRefs.push(ref);
-        if(statusEl) armedReplyStatusEls.push(statusEl);
+        if(statusEl) {
+          statusEl._turnId=raw.turnId??null;
+          armedReplyStatusEls.push(statusEl);
+          for(const narrative of runtimeState?.stepNarratives??[]) {
+            if(narrative?.turnId===statusEl._turnId&&(!narrative.conversationId||narrative.conversationId===statusEl._conversationId)) {
+              queueRuntimeNarrative({conversationId:narrative.conversationId,turnId:narrative.turnId,payload:{lines:narrative.lines}});
+            }
+          }
+        }
         changed=true;
       } else {
         // Foreign user turn: hold its slot with a placeholder ref. Skipping it
@@ -629,7 +648,7 @@ function mergeRuntimeConversation() {
         // the next poll then rewrites a synced bubble with foreign content and
         // re-appends already-shown assistant replies as duplicates, which is
         // what made ShellUI answers look like they never reached this chat.
-        runtimeConversationRefs.push({message:{role,content,streaming:raw.streaming===true},el:null,conversationId:raw.conversationId??null});
+        runtimeConversationRefs.push({message:{role,content,streaming:raw.streaming===true,turnId:raw.turnId??null},el:null,conversationId:raw.conversationId??null,turnId:raw.turnId??null});
       }
       continue;
     }
@@ -644,11 +663,13 @@ function mergeRuntimeConversation() {
       const prevRef=runtimeConversationRefs[runtimeConversationRefs.length-1];
       assistantOwn=prevRef?(prevRef.message.role==='user'?!!prevRef.el:!!prevRef.own):false;
       if(assistantOwn&&content&&raw.streaming!==true&&raw.progress!==true) {
-        const statusIndex=armedReplyStatusEls.findIndex((el)=>!raw.conversationId||el._conversationId===raw.conversationId);
+        const statusEl=armedReplyStatusEls.find((el)=>!raw.conversationId||el._conversationId===raw.conversationId);
+        if(statusEl&&hasRuntimeNarrativeDelay(statusEl)) break;
+        const statusIndex=armedReplyStatusEls.findIndex((el)=>el===statusEl);
         if(statusIndex>=0) clearRuntimeThinkingBubble(armedReplyStatusEls.splice(statusIndex,1)[0]);
       }
     }
-    const message={role,content,streaming:raw.streaming===true,progress:raw.progress===true,progressHidden:raw.progressHidden===true};
+    const message={role,content,streaming:raw.streaming===true,progress:raw.progress===true,progressHidden:raw.progressHidden===true,turnId:raw.turnId??null};
     messages.push(message);
     const lastLocal=messages.length>1?messages[messages.length-2]:null;
     // A /turn that returned a direct reply (converse/answer) already rendered
@@ -665,11 +686,38 @@ function mergeRuntimeConversation() {
     if(role==='assistant'&&raw.progress===true&&el) {
       const statusEl=armedReplyStatusEls.find((item)=>!raw.conversationId||item._conversationId===raw.conversationId);
       if(statusEl) {
-        updateRuntimeThinkingBubble(statusEl,'Thinking…');
+        updateRuntimeThinkingBubble(statusEl);
         el.parentElement?.appendChild(statusEl);
       }
     }
-    runtimeConversationRefs.push({message,el,own:assistantOwn,conversationId:raw.conversationId??null});
+    runtimeConversationRefs.push({message,el,own:assistantOwn,conversationId:raw.conversationId??null,turnId:raw.turnId??null});
+    changed=true;
+  }
+  if(changed) scheduleConversationSave();
+  return changed;
+}
+
+// Older served histories saved step narrations after the runtime had emptied
+// them on completion. The event log can rebuild those entries; restore their
+// text into the saved progress bubbles when that conversation is reopened.
+function restoreProgressHistoryFromRuntime() {
+  const runtimeEntries=(currentRuntimeConversation(true)||[])
+    .filter((entry)=>entry?.role==='assistant'&&entry.progress===true&&!entry.progressHidden&&String(entry.content??'').trim());
+  const savedEntries=messages.filter((message)=>message?.role==='assistant'&&message.progress===true);
+  const bubbles=[...($('messages')?.querySelectorAll('.msg.assistant.progress')||[])];
+  let changed=false;
+  for(let i=0;i<Math.min(runtimeEntries.length,savedEntries.length);i++) {
+    const content=String(runtimeEntries[i].content??'');
+    const message=savedEntries[i];
+    if(message.content===content&&!message.progressHidden) continue;
+    message.content=content;
+    message.streaming=false;
+    delete message.progressHidden;
+    const el=bubbles[i];
+    if(el) {
+      el.hidden=false;
+      updateMsgBubble(el,'assistant',content);
+    }
     changed=true;
   }
   if(changed) scheduleConversationSave();
@@ -1359,6 +1407,7 @@ async function loadConversation(id) {
     renderHistory();
     updateMemoryGauge();
     $('messages').scrollTop=$('messages').scrollHeight;
+    fetchRuntimeState().catch(()=>{});
   } catch(e) {
     notify(\`History: \${e.message}\`,'e');
   }
@@ -1834,6 +1883,10 @@ async function compactConversationMemory() {
 // as a ">_ Run started…" nothing would ever update or remove.
 function removeTransientMessages(root) {
   root?.querySelectorAll('.runtime-thinking').forEach(el=>el.closest('.msg')?.remove());
+  root?.querySelectorAll('.msg.assistant').forEach(el=>{
+    const text=el.querySelector('.bubble')?.textContent?.trim()||'';
+    if(!text&&!el.querySelector('.msg-attachments')) el.classList.add('msg-empty');
+  });
 }
 function savedMessagesHtml() {
   const wrap=$('messages');
@@ -2760,6 +2813,18 @@ async function tryConnectorCommand(input,text) {
   return true;
 }
 
+// A request to WRITE a document: a creation verb ("fais un document", "rédige
+// une restitution") or the placement/form phrasing that introduces an
+// indefinite one ("dans un rapport", "as a report"). A bare "dans le
+// document" / "dans le rapport" references an existing one — a question, not
+// a request — and must not turn the answer into a report. Kept in sync with
+// the manager's requestsReportDocument (src/core/reports.js).
+function reportIntent(text) {
+  const value=String(text||'').normalize('NFKC').toLowerCase();
+  if(!/\\b(?:rapport|report|restitution|document)\\b/.test(value)) return false;
+  if(/\\b(?:faire|fais|fait|rédige|redige|prépare|prepare|crée|cree|génère|genere|produis|écris|ecris|write|create|make|prepare|generate|draft|produce)\\b/.test(value)) return true;
+  return /\\b(?:dans|as|sous forme(?: de)?)\\s+(?:un|une|a|an)?\\s*(?:rapport|report|restitution|document)\\b/.test(value);
+}
 async function sendMessage() {
   if(isStreaming) return;
   const input=$('chat-input');
@@ -2767,7 +2832,9 @@ async function sendMessage() {
   const displayOverride=input.dataset.displayText||'';
   const forceChat=input.dataset.forceChat==='1';
   const hideQuestion=input.dataset.hideQuestion==='1';
-  delete input.dataset.displayText; delete input.dataset.forceChat; delete input.dataset.hideQuestion;
+  const reportIntentText=String(text+' '+displayOverride);
+  const saveAsReport=input.dataset.saveAsReport==='1'||reportIntent(reportIntentText);
+  delete input.dataset.displayText; delete input.dataset.forceChat; delete input.dataset.hideQuestion; delete input.dataset.saveAsReport;
   if(!text) return;
   if(/^\\/maintenance(?:\\s|$)/i.test(text)&&!forceChat) {
     input.value='';
@@ -2784,7 +2851,7 @@ async function sendMessage() {
   const skillInvocation=await matchBrowserSkillInvocation(text);
   if(skillInvocation.skill&&runtimeEnabled()&&!forceChat) {
     if(!agentMode) { agentMode=true; updateAgentModeUI(); }
-    await sendRuntimeAgentMessage(input,text,{mode:'skill',displayText:displayOverride||text,hideQuestion});
+    await sendRuntimeAgentMessage(input,text,{mode:'skill',displayText:displayOverride||text,hideQuestion,saveAsReport});
     return;
   }
   // /remember, /forget, /memory: Donna performs them with her memory tools and
@@ -2792,11 +2859,11 @@ async function sendMessage() {
   // never writes memory, nor an acknowledgement of its own.
   if(/^\\/(?:remember|forget|memory)(?:\\s|$)/i.test(text)&&runtimeEnabled()&&!forceChat) {
     if(!agentMode) { agentMode=true; updateAgentModeUI(); }
-    await sendRuntimeAgentMessage(input,text,{displayText:displayOverride||text,hideQuestion});
+    await sendRuntimeAgentMessage(input,text,{displayText:displayOverride||text,hideQuestion,saveAsReport});
     return;
   }
   if(agentMode&&!forceChat) {
-    await sendRuntimeAgentMessage(input,text,{displayText:displayOverride||text,hideQuestion});
+    await sendRuntimeAgentMessage(input,text,{displayText:displayOverride||text,hideQuestion,saveAsReport});
     return;
   }
   // Chat mode: when the runtime is up, delegate to its READ-ONLY turn
@@ -2804,7 +2871,7 @@ async function sendMessage() {
   // to duplicate. Only when there is no runtime do we fall back to the
   // tool-less local LLM proxy below.
   if(runtimeEnabled()) {
-    await sendRuntimeAgentMessage(input,text,{mode:'chat',displayText:displayOverride||text,hideQuestion});
+    await sendRuntimeAgentMessage(input,text,{mode:'chat',displayText:displayOverride||text,hideQuestion,saveAsReport});
     return;
   }
   const resolved=skillInvocation;
@@ -2841,9 +2908,9 @@ async function sendMessage() {
   let streamText='';
   let streamFinalized=false;
   let streamMessagePersisted=false;
+  let reportPreparationStartedAt=0;
   const streamClearSeq=clearChatSeq;
-  const reportRequested=/\\b(?:rapport|report)\\b/i.test(resolved.displayText)
-    && /\\b(?:faire|fais|fait|rédige|redige|prépare|prepare|crée|cree|génère|genere|produis|écris|ecris|dans|sous forme|write|create|make|prepare|generate|draft|produce)\\b/i.test(resolved.displayText);
+  const reportRequested=saveAsReport||reportIntent(resolved.displayText);
   try {
     // Fallback chat (no runtime): the file as edited, plus the LLM fact and
     // the profile the runtime would have injected.
@@ -2855,30 +2922,10 @@ async function sendMessage() {
     const reqMessages=sysContent ? [{role:'system',content:sysContent},...cleanMessages] : cleanMessages;
     const reqBody={model,...(Number.isFinite(temp)?{temperature:temp}:{}),messages:reqMessages};
     streamDiv=createStreamBubble();
-    if(reportRequested) {
-      const french=String(window.__WIKI_CONFIG__?.language||'').toLowerCase().startsWith('fr');
-      setStreamContent(streamDiv,french?'Préparation du rapport…':'Preparing the report…');
-    }
-    // fetchStream's onDelta fires once per SSE token with no throttling of its
-    // own — a fast provider can call this dozens of times a second. Batch to
-    // one DOM write per animation frame (the latest accumulated text wins;
-    // frames skipped between deltas just coalesce) instead of one per token.
-    let streamRafPending=false;
-    const {content}=await fetchStream(llmUrl,llmHeaders,reqBody,t=>{
-      streamText=t;
-      if(reportRequested) return;
-      if(streamRafPending) return;
-      streamRafPending=true;
-      requestAnimationFrame(()=>{
-        streamRafPending=false;
-        // A frame requested for the last delta can still be pending once the
-        // read loop ends and the final markdown render already ran below —
-        // without this guard it would fire right after and overwrite that
-        // proper render with a plain-text one.
-        if(streamFinalized) return;
-        setStreamContent(streamDiv,streamText,'',{streaming:true});
-      });
-    },streamAbortController.signal);
+    setStreamContent(streamDiv,'Thinking…');
+    // Keep the generated draft in memory until it is clear whether the answer
+    // will become a report. Rendering early could expose report content.
+    const {content}=await fetchStream(llmUrl,llmHeaders,reqBody,t=>{ streamText=t; },streamAbortController.signal);
     if(streamAbortController.signal.aborted) return;
     streamText=content;
     const finalContent=String(content||'').trim() ? content : 'No response.';
@@ -2888,6 +2935,8 @@ async function sendMessage() {
     // document-sized reply, summarize that complete text and keep the original
     // behind a report button; never decide from partial stream chunks.
     if(reportRequested || finalContent.length>3000 || finalContent.split(/\\r?\\n/).length>30) {
+      setStreamContent(streamDiv,reportPreparationLabel());
+      reportPreparationStartedAt=Date.now();
       const heading=/^\\s{0,3}#\\s+(.+?)\\s*#*\\s*$/m.exec(finalContent)?.[1];
       const title=String(heading||resolved.displayText||'Report').replace(/[\\x60*_]/g,'').replace(/\\s+/g,' ').trim().slice(0,120)||'Report';
       try {
@@ -2921,6 +2970,10 @@ async function sendMessage() {
         }
       }
     }
+    if(reportPreparationStartedAt) {
+      const remaining=2000-(Date.now()-reportPreparationStartedAt);
+      if(remaining>0) await new Promise(resolve=>setTimeout(resolve,remaining));
+    }
     setStreamContent(streamDiv,displayContent);
     if(finalAttachments) streamDiv.querySelector('.bubble')?.insertAdjacentHTML('afterend',msgAttachmentsHTML(finalAttachments));
     streamFinalized=true;
@@ -2932,12 +2985,12 @@ async function sendMessage() {
     if(streamClearSeq!==clearChatSeq) return;
     if(err.name==='AbortError') {
       if(streamDiv) {
-        const partial=reportRequested?(streamText||'Response stopped.'):(streamDiv.dataset.copy || 'Response stopped.');
-        setStreamContent(streamDiv,partial);
-        streamText=partial;
+        const stopped='Response stopped.';
+        setStreamContent(streamDiv,stopped);
+        streamText=stopped;
         streamFinalized=true;
-        streamDiv.dataset.copy=partial;
-        messages.push({role:'assistant',content:partial});
+        streamDiv.dataset.copy=stopped;
+        messages.push({role:'assistant',content:stopped});
         streamMessagePersisted=true;
       } else {
         const stopped='Response stopped.';
@@ -2948,7 +3001,7 @@ async function sendMessage() {
       await saveCurrentConversation({immediate:true});
     } else {
       if(streamDiv) {
-        const errorText=streamText || \`Error: \${err.message}\`;
+        const errorText=\`Error: \${err.message}\`;
         setStreamContent(streamDiv,errorText);
         streamText=errorText;
         streamFinalized=true;
@@ -2978,7 +3031,7 @@ async function sendMessage() {
   }
 }
 
-async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQuestion=false}={}) {
+async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQuestion=false,saveAsReport=false}={}) {
   if(!runtimeEnabled()) {
     notify('Runtime is not configured.','e');
     return;
@@ -2990,9 +3043,9 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
   messages.push(userMessage);
   const userEl=appendMsg('user',displayText);
   if(hideQuestion) userEl.classList.add('msg-hidden');
-  const statusEl=createRuntimeThinkingBubble(mode==='chat'?'Thinking…':undefined);
+  const statusEl=createRuntimeThinkingBubble('');
   statusEl._conversationId=currentConversationId;
-  setProgressText(statusEl.querySelector('.runtime-thinking span'),mode==='chat'?'Thinking…':'');
+  statusEl._reportPreparation=false;
   pendingRuntimeStatusEls.push(statusEl);
   // The /state merge consumes this reference instead of appending a duplicate.
   pendingRuntimeUserRefs.push({message:userMessage,el:userEl});
@@ -3009,8 +3062,8 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
     // answers this conversation with it while active jobs keep the profile's
     // model. Same value as the profile: nothing to override.
     // A hidden question is composed by the interface, not typed: never memory evidence.
-    const turnBody={input:text,conversationId:currentConversationId,...runtimeTurnModelOverride(),...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{}),...(hideQuestion?{extractMemory:false}:{})};
-    const doTurnFetch=()=>fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(skillRun?{input:text,mode:'agent',conversationId:currentConversationId}:turnBody)});
+    const turnBody={input:text,conversationId:currentConversationId,...runtimeTurnModelOverride(),...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{}),...(hideQuestion?{extractMemory:false}:{}),...(saveAsReport?{saveAsReport:true}:{})};
+    const doTurnFetch=()=>fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(skillRun?{input:text,mode:'agent',conversationId:currentConversationId,...(saveAsReport?{saveAsReport:true}:{})}:turnBody)});
     let res=await doTurnFetch();
     // Transient 503 (host runtime booting/restarting): wait, then replay once.
     if(res.status===503&&(notify('Runtime unavailable — waiting for it to come back…','i'),await waitForRuntimeReady(30000))) res=await doTurnFetch();

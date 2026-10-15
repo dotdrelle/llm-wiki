@@ -70,7 +70,7 @@ describe('chat html', () => {
     // Keep this copy identical to the manager's RESERVED_SLASH_COMMANDS:
     // /maintenance is a built-in, a same-named workspace skill never shadows it.
     expect(matcher).toContain("'maintenance'");
-    expect(script).toContain("body:JSON.stringify(skillRun?{input:text,mode:'agent',conversationId:currentConversationId}:turnBody)");
+    expect(script).toContain("body:JSON.stringify(skillRun?{input:text,mode:'agent',conversationId:currentConversationId,...(saveAsReport?{saveAsReport:true}:{})}:turnBody)");
   });
 
   it('accepts wiki-tree and Pending drops as page context, like "+ Context"', () => {
@@ -224,7 +224,7 @@ describe('chat html', () => {
     expect(script).toContain('Chat server unreachable. Check that the wiki server is running.');
     expect(script).toContain('LLM unreachable. Check that the LLM service is running and the Base URL is reachable.');
     expect(script).toContain('Invalid LLM configuration. Check the Base URL in chat settings.');
-    expect(script).toContain("const partial=streamDiv.dataset.copy || 'Response stopped.';");
+    expect(script).toContain("const stopped='Response stopped.';");
     expect(script).toContain('setStreamContent(streamDiv,finalText);');
   });
 
@@ -304,7 +304,7 @@ describe('chat html', () => {
 
   it('deletes one of Donna\'s answers through the runtime, and handles /clear without Donna', () => {
     const script = chatScripts().join('\n');
-    expect(script).toContain("role==='assistant' ? msgDeleteButton() : ''");
+    expect(script).toContain("role==='assistant'&&!progress ? msgDeleteButton() : ''");
     expect(script).toContain("fetch('/api/runtime/conversation/remove'");
     expect(script).toContain('runtimeConversationRefs.splice(target.refIndex,1)');
     expect(script).toContain("if(/^\\/clear(?![A-Za-z0-9_])/i.test(text)&&!forceChat) {");
@@ -349,7 +349,7 @@ describe('chat html', () => {
 
   it('stamps each Agent note in Logs with its event time and interleaves it with the run events', () => {
     const script = chatScripts().join('\n');
-    expect(script).toContain("noteRuntimeProgress(parsed.payload&&parsed.payload.message,parsed.ts)");
+    expect(script).toContain("noteRuntimeProgress(parsed.payload&&parsed.payload.message,parsed.ts,parsed.id,parsed.payload&&parsed.payload.kind)");
     expect(script).toContain("time:formatLocalTime(entry.at)");
     const source = script.match(/function mergeLogRowsByTime\(a,b\) \{[\s\S]*?\n\}/)?.[0] ?? '';
     const merge = new Function(`${source}; return mergeLogRowsByTime;`)();
@@ -441,10 +441,13 @@ describe('chat html', () => {
     expect(render([{ title: 'no target' }])).toBe('');
   });
 
-  it('starts a curation as the /curate skill when it is installed, never as a raw objective', () => {
+  it('starts a curation from the button as an explicit objective, never as a compiled skill body', () => {
     const script = chatScripts().join('\n');
-    expect(script).toContain("const viaSkill=(await matchBrowserSkillInvocation('/curate'))?.skill;");
-    expect(script).toContain("submitAgentSuggestion(viaSkill?'/curate':");
+    // The button sends the explicit curation objective even when a workspace
+    // has a same-named /curate skill: the curate alias resolves the confined
+    // capability, and no browser skill body is ever compiled or replayed.
+    expect(script).toContain('function startCuration() {');
+    expect(script).toContain("submitAgentSuggestion('Curate the wiki: find duplicate pages");
   });
 
   it('forgets a memory fact without a confirmation and lists every change in its history', () => {
@@ -489,15 +492,15 @@ describe('chat html', () => {
     // Skill turns store the compiled objective, never the typed text: an exact
     // match can never succeed, so the next pending turn is claimed positionally.
     expect(script).toContain('if(idx<0 && pendingRuntimeUserRefs.length>0) idx=0;');
-    expect(script).toContain('if(statusEl) armedReplyStatusEls.push(statusEl)');
-    expect(script).toContain('clearRuntimeThinkingBubble(armedReplyStatusEls.shift())');
+    expect(script).toContain('armedReplyStatusEls.push(statusEl);');
+    expect(script).toContain('clearRuntimeThinkingBubble(armedReplyStatusEls.splice(statusIndex,1)[0])');
     // Foreign user turns (ShellUI / another chat) hold a placeholder ref so the
     // refs array stays 1:1 with the conversation tail — without it, a later poll
     // rewrites synced bubbles with foreign content and duplicates replies. Each
     // ref also carries its entry's conversationId so redo can count the thread's
     // own entries while the display merges workspace-level ones.
-    expect(script).toContain('runtimeConversationRefs.push({message:{role,content},el:null,conversationId:raw.conversationId??null})');
-    expect(script).toContain('runtimeConversationRefs.push({message,el,own:assistantOwn,conversationId:raw.conversationId??null})');
+    expect(script).toContain('runtimeConversationRefs.push({message:{role,content,streaming:raw.streaming===true,turnId:raw.turnId??null},el:null,conversationId:raw.conversationId??null,turnId:raw.turnId??null})');
+    expect(script).toContain('runtimeConversationRefs.push({message,el,own:assistantOwn,conversationId:raw.conversationId??null,turnId:raw.turnId??null})');
     expect(script).toContain('if(ref.el) {');
   });
 
@@ -1055,7 +1058,9 @@ describe('chat html', () => {
     expect(script).toContain('const label=runtimeProgressLabel(parsed);');
     // Only the bubbles of the event's own conversation: a turn running in a
     // chat the reader left must not speak in the one "+ New chat" opened.
-    expect(script).toContain('pendingRuntimeStatusEls.filter(el=>progressEventInThread(parsed,el._conversationId)).forEach(el=>updateRuntimeThinkingBubble(el,label))');
+    expect(script).toContain("[...pendingRuntimeStatusEls,...armedReplyStatusEls]");
+    expect(script).toContain("progressEventInThread(parsed,el._conversationId)");
+    expect(script).toContain("(!el._reportPreparation||parsed.payload?.kind==='report_preparation')");
 
     const source = script.match(/const PROGRESS_THINKING=[\s\S]*?\nfunction runtimeProgressLabel\(event\) \{[\s\S]*?\n\}/)?.[0];
     expect(source).toBeTruthy();
@@ -1082,19 +1087,19 @@ describe('chat html', () => {
     // The sentence must come from the event: the browser must never synthesize
     // an acknowledgement of its own.
     expect(script).toContain(
-      "if(parsed&&parsed.type==='assistant_progress') noteRuntimeProgress(parsed.payload&&parsed.payload.message,parsed.ts);",
+      "if(parsed&&parsed.type==='assistant_progress') noteRuntimeProgress(parsed.payload&&parsed.payload.message,parsed.ts,parsed.id,parsed.payload&&parsed.payload.kind);",
     );
-    expect(script).toContain('function noteRuntimeProgress(text,at) {');
+    expect(script).toContain('function noteRuntimeProgress(text,at,eventId=null,kind=null) {');
     // The note names an internal tool, so it is diagnostic: it feeds the Logs
     // tab (prefixed like the ShellUI's Agent status tab) and the run strip's
     // liveness — it never becomes a chat message.
     expect(script).not.toContain('function appendRuntimeProgressNote');
     expect(script).not.toContain('runtime-progress-feed');
-    const source = script.match(/function noteRuntimeProgress\(text,at\) \{[\s\S]*?\n\}/)?.[0];
+    const source = script.match(/function noteRuntimeProgress\(text,at,eventId=null,kind=null\) \{[\s\S]*?\n\}/)?.[0];
     expect(source).toBeTruthy();
     expect(source).not.toContain('messages.push');
     expect(source).toContain('agentProgressLog=');
-    expect(script).toContain("text:'Agent: '+entry.message");
+    expect(script).toContain("(entry.kind==='model_meter'?'':'Agent: ')+entry.message");
     expect(script).not.toContain('updateRunStrip');
   });
 
@@ -1276,9 +1281,9 @@ describe('chat html', () => {
     const script = chatScripts().join('\n');
     // A bare beat restarts the in-flight watchdog(s) and refreshes the run
     // card, without adding a Logs entry: a heartbeat is not a tool step.
-    expect(script).toContain("if(parsed&&parsed.type==='runtime_heartbeat') noteRuntimeHeartbeat();");
-    expect(script).toContain('function noteRuntimeHeartbeat() {');
-    const source = script.match(/function noteRuntimeHeartbeat\(\) \{[\s\S]*?\n\}/)?.[0];
+    expect(script).toContain("if(parsed&&parsed.type==='runtime_heartbeat') noteRuntimeHeartbeat(parsed);");
+    expect(script).toContain('function noteRuntimeHeartbeat(event=null) {');
+    const source = script.match(/function noteRuntimeHeartbeat\(event=null\) \{[\s\S]*?\n\}/)?.[0];
     expect(source).toBeTruthy();
     expect(source).not.toContain('agentProgressLog');
     expect(source).not.toContain('messages.push');
@@ -1585,12 +1590,12 @@ describe('chat html', () => {
     // reply. The runtime now receives every agent-mode message on /turn and
     // classifies it there (control verbs and new tasks → control lane, plain
     // conversation → read-only chat answer).
-    expect(script).toContain("const turnBody={input:text,conversationId:currentConversationId,...runtimeTurnModelOverride(),...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{}),...(hideQuestion?{extractMemory:false}:{})};");
+    expect(script).toContain("const turnBody={input:text,conversationId:currentConversationId,...runtimeTurnModelOverride(),...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{}),...(hideQuestion?{extractMemory:false}:{}),...(saveAsReport?{saveAsReport:true}:{})};");
     // The per-turn model helper lives in the config script, the Google OAuth
     // outcome in the connector script — chatHtml only calls them.
     expect(CHAT_HTML).toContain('function runtimeTurnModelOverride()');
     expect(CHAT_HTML).toContain('async function handleGoogleOAuthStart(popup,response,payload,reply)');
-    expect(script).toContain("const doTurnFetch=()=>fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(skillRun?{input:text,mode:'agent',conversationId:currentConversationId}:turnBody)});");
+    expect(script).toContain("const doTurnFetch=()=>fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(skillRun?{input:text,mode:'agent',conversationId:currentConversationId,...(saveAsReport?{saveAsReport:true}:{})}:turnBody)});");
     expect(script).toContain("const readOnlyChat=mode==='chat'");
     // Selected wiki pages / converted uploads must reach the agent turn too,
     // not only the read-only chat turn.
@@ -1606,10 +1611,10 @@ describe('chat html', () => {
     // button; only wiki-graph context drops use the custom MIME.
     expect(script).toContain("function carriesFiles(event)");
     expect(script).toContain("uploadSelectedDocument(input)");
-    expect(script).toContain("sendRuntimeAgentMessage(input,text,{mode:'chat',displayText:displayOverride||text,hideQuestion})");
+    expect(script).toContain("sendRuntimeAgentMessage(input,text,{mode:'chat',displayText:displayOverride||text,hideQuestion,saveAsReport})");
     expect(script).toContain("function createRuntimeThinkingBubble(text='Request received · Donna is preparing the response and plan…')");
-    expect(script).toContain("const statusEl=createRuntimeThinkingBubble(mode==='chat'?'Thinking…':undefined)");
-    expect(script).toContain("if(role==='assistant'&&content&&wasEmpty&&ref.own&&armedReplyStatusEls.length)");
+    expect(script).toContain("const statusEl=createRuntimeThinkingBubble('')");
+    expect(script).toContain("if(role==='assistant'&&content&&raw.streaming!==true&&raw.progress!==true&&ref.own) {");
     expect(script).toContain("assistantOwn=prevRef?(prevRef.message.role==='user'?!!prevRef.el:!!prevRef.own):false;");
     expect(script).toContain("data?.kind==='ambiguous'");
     expect(script).toContain('function handleSendButton()');
@@ -1789,5 +1794,17 @@ describe('sidebar keep-fresh tick', () => {
     expect(posts).toHaveLength(2); // one final refresh
     donna({ status: 'idle' });
     expect(posts).toHaveLength(2);
+  });
+
+  it('asks for a report only when the message wants one written, never for a document it mentions', () => {
+    const script = chatScripts().join('\n');
+    const source = script.match(/function reportIntent\(text\) \{[\s\S]*?\n\}/)?.[0] ?? '';
+    expect(source).not.toBe('');
+    const reportIntent = new Function(`${source};return reportIntent;`)() as (text: string) => boolean;
+    expect(reportIntent('fais-moi un rapport sur le projet')).toBe(true);
+    expect(reportIntent('mets ça dans un document')).toBe(true);
+    expect(reportIntent('rédige une restitution')).toBe(true);
+    expect(reportIntent('que dit le document fournisseur ?')).toBe(false);
+    expect(reportIntent('explique ce qu’il y a dans le rapport')).toBe(false);
   });
 });

@@ -103,7 +103,7 @@ const RUNTIME_THINKING_TIMEOUT_MS=120000;
 function createRuntimeThinkingBubble(text='Request received · Donna is preparing the response and plan…') {
   const div=createStreamBubble();
   const bubble=div.querySelector('.bubble');
-  if(bubble) bubble.innerHTML=\`<div class="runtime-thinking"><div class="typing">>_</div><span>\${esc(text)}</span></div>\`;
+  if(bubble) bubble.innerHTML=\`<div class="runtime-thinking"><div class="typing">>_</div><div class="runtime-thinking-copy"><span class="runtime-thinking-main">Thinking…</span><span class="runtime-thinking-narration" aria-live="polite">\${esc(text)}</span></div></div>\`;
   div._runtimeTimeoutFn=()=>{
     if(!div.isConnected) return;
     pendingRuntimeStatusEls=pendingRuntimeStatusEls.filter(el=>el!==div);
@@ -144,21 +144,86 @@ function agentProgressEntries() {
 // An agent-mode turn runs on an ephemeral runtime session whose events never
 // reach /state, and it buffers its text until validation — so the panels and
 // the stream are both empty for its whole duration. The SSE events are the only
-// live signal, and this is where they land: one label at a time, replaced in
-// place, so a turn with fifty tool calls still shows a single line.
-// Each event is also proof the runtime is alive, so it restarts the watchdog:
-// a slow-but-working turn must not be reported as lost after 120s.
-function updateRuntimeThinkingBubble(div,text) {
+// live signal: they prove the turn is alive, while the visible line is Donna's
+// step narration (queueRuntimeNarrative), never a raw tool note. Each event
+// also restarts the watchdog, so a slow-but-working turn is not reported lost
+// after 120s.
+function updateRuntimeThinkingBubble(div) {
   if(!div||!div.isConnected) return;
-  if(text) {
-    setProgressText(div.querySelector('.runtime-thinking span'),text);
-  }
-  // Any call restarts the watchdog: a labelled progress AND a bare heartbeat
-  // are both proof of life, so a long tool-less phase is never reported lost.
+  // Any call restarts the watchdog: a progress event AND a bare heartbeat are
+  // both proof of life, so a long tool-less phase is never reported lost.
   if(div._runtimeTimeoutFn) {
     clearTimeout(div._runtimeTimeout);
     div._runtimeTimeout=setTimeout(div._runtimeTimeoutFn,RUNTIME_THINKING_TIMEOUT_MS);
   }
+}
+
+const RUNTIME_NARRATIVE_MIN_MS=2000;
+let runtimeNarrativeRefetchTimer=null;
+function scheduleRuntimeNarrativeRefetch() {
+  clearTimeout(runtimeNarrativeRefetchTimer);
+  runtimeNarrativeRefetchTimer=setTimeout(()=>fetchRuntimeState().catch(()=>{}),0);
+}
+function setRuntimeNarrativeText(el,text) {
+  setProgressText(el?.querySelector('.runtime-thinking-narration'),text);
+}
+function showRuntimeNarrative(el,item) {
+  if(!el?.isConnected) return;
+  clearTimeout(el._narrativeTimer);
+  el._narrativeCurrent=item;
+  el._narrativeMinUntil=Date.now()+RUNTIME_NARRATIVE_MIN_MS;
+  setRuntimeNarrativeText(el,item.text);
+  if(item.sticky) {
+    el._narrativeTimer=setTimeout(()=>{
+      el._narrativeTimer=null;
+      scheduleRuntimeNarrativeRefetch();
+    },RUNTIME_NARRATIVE_MIN_MS);
+    return;
+  }
+  el._narrativeTimer=setTimeout(()=>{
+    el._narrativeCurrent=null;
+    el._narrativeTimer=null;
+    const next=el._narrativeQueue?.shift();
+    if(next) showRuntimeNarrative(el,next);
+    else {
+      if(!el._reportPreparation) setRuntimeNarrativeText(el,'');
+      scheduleRuntimeNarrativeRefetch();
+    }
+  },RUNTIME_NARRATIVE_MIN_MS);
+}
+function queueRuntimeNarrative(event) {
+  const payload=event?.payload||{};
+  const candidates=[...pendingRuntimeStatusEls,...armedReplyStatusEls].filter((el)=>
+    progressEventInThread(event,el._conversationId)&&(!el._turnId||!payload.turnId||el._turnId===payload.turnId));
+  for(const el of candidates) {
+    el._narrativeSeen??=new Set();
+    el._narrativeQueue??=[];
+    for(const line of Array.isArray(payload.lines)?payload.lines:[]) {
+      const id=String(line?.id||'');
+      const text=String(line?.text||'').trim();
+      if(!id||!text||el._narrativeSeen.has(id)||!['done','failed'].includes(line?.state)) continue;
+      el._narrativeSeen.add(id);
+      el._narrativeQueue.push({id,text});
+    }
+    if(!el._narrativeCurrent&&el._narrativeQueue.length) showRuntimeNarrative(el,el._narrativeQueue.shift());
+  }
+}
+function queueReportPreparation(el,text) {
+  if(!el) return;
+  el._reportPreparation=true;
+  el._narrativeQueue??=[];
+  const item={id:'report-preparation',text:String(text||'Preparing the full report…'),sticky:true};
+  if(el._narrativeCurrent?.id==='report-preparation') {
+    el._narrativeCurrent.text=item.text;
+    setRuntimeNarrativeText(el,item.text);
+  } else {
+    // Report preparation follows the last completed Donna narration.
+    el._narrativeQueue.push(item);
+    if(!el._narrativeCurrent) showRuntimeNarrative(el,el._narrativeQueue.shift());
+  }
+}
+function hasRuntimeNarrativeDelay(el) {
+  return Boolean(el&&((el._narrativeQueue?.length||0)>0||(el._narrativeCurrent&&Date.now()<(el._narrativeMinUntil||0))));
 }
 
 // The external runtime's heartbeat: no label to show, only proof of life. It
@@ -176,6 +241,7 @@ function noteRuntimeHeartbeat(event=null) {
 function clearRuntimeThinkingBubble(div) {
   if(!div) return;
   if(div._runtimeTimeout) { clearTimeout(div._runtimeTimeout); div._runtimeTimeout=null; }
+  if(div._narrativeTimer) { clearTimeout(div._narrativeTimer); div._narrativeTimer=null; }
   div.remove();
 }
 

@@ -94,6 +94,6 @@ describe('Tchap card in the Connectors view', () => {
     expect(CHAT_HTML).toContain('id="tchap-section" hidden');
     expect(CHAT_HTML).toContain('window.renderTchapCard=async function');
     expect(CHAT_HTML).toContain('  renderTchapCard();');
-    expect(CHAT_HTML).toContain('function submitAgentSuggestion(text)');
+    expect(CHAT_HTML).toContain('function submitAgentSuggestion(text, {hideQuestion=false}={}) {');
   });
 });
