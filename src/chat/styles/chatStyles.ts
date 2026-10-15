@@ -272,6 +272,7 @@ body:not(.execution-mode) #execution-view{display:none}
    matter what percentage is picked. */
 .msg.user .bubble{width:max-content;max-width:min(65%,900px);background:transparent;border:0;border-radius:0;padding:4px 0;white-space:pre-wrap;text-align:left}
 .msg.assistant .bubble{flex:1;min-width:0;padding:2px 0;white-space:normal}
+.msg .bubble a.wiki-source-link{color:var(--accent);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 .msg-actions{display:flex;gap:6px;opacity:.45;transition:opacity .2s}
 .msg:hover .msg-actions{opacity:1}
 .msg-action{display:inline-grid;place-items:center;width:22px;height:22px;background:none;border:none;color:var(--muted);cursor:pointer;padding:0}

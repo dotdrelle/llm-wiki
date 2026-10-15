@@ -87,6 +87,26 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('#messages.is-context-drop,#input-wrap.is-context-drop');
   });
 
+  it('makes plain wiki source paths in Donna answers open in the wiki pane', () => {
+    const script = chatScripts().join('\n');
+    const helper = script.match(/function linkBareWikiSources\(html\) \{[\s\S]*?\n\}/)?.[0] ?? '';
+    expect(helper).not.toBe('');
+    const linkBareWikiSources = new Function(
+      'esc',
+      `${helper}; return linkBareWikiSources;`,
+    )((value: string) => String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;')) as (html: string) => string;
+    const sourcePath = 'wiki/sources/jouvence-de-la-chaine/reunions/synthese-reunion-6.md';
+    const rendered = linkBareWikiSources(
+      `<p>Source : ${sourcePath}.</p><p><code>${sourcePath}</code></p><p><a href="/${sourcePath}">${sourcePath}</a></p>`,
+    );
+
+    expect(rendered).toContain(`<a class="wiki-source-link" href="/${sourcePath}" data-wiki-path="${sourcePath}"`);
+    expect(rendered).toContain(`<code>${sourcePath}</code>`);
+    expect(rendered).toContain(`<a href="/${sourcePath}">${sourcePath}</a>`);
+    expect(script).toContain("event.target.closest('a.wiki-source-link[data-wiki-path]')");
+    expect(script).toContain("setCenterWiki('/' + wikiPath.split('/').map(encodeURIComponent).join('/'));");
+  });
+
   it('closes the split document from the embedded page toolbar, not an overlay button', () => {
     const script = chatScripts().join('\n');
 

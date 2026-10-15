@@ -224,8 +224,33 @@ function renderMd(t) {
   try {
     let html = typeof marked!=='undefined' ? marked.parse(t||'') : esc(t||'');
     html = String(html).split('<table').join('<div class="table-wrap"><table').split('</table>').join('</table></div>');
-    return renderInstructionRefs(openExternalLinks(html));
+    return renderInstructionRefs(linkBareWikiSources(openExternalLinks(html)));
   } catch { return renderInstructionRefs(esc(t||'')); }
+}
+// Answers often cite the exact wiki/sources path as plain text. Turn those
+// references into links in the chat while leaving Markdown links, URLs and
+// code blocks untouched.
+function linkBareWikiSources(html) {
+  const protectedTags = new Set(['a','code','pre','script','style']);
+  const stack = [];
+  return String(html).replace(/<[^>]*>|[^<]+/g, token => {
+    if (token.startsWith('<')) {
+      const tag = /^<(\\/)?([a-z][a-z0-9-]*)\\b/i.exec(token);
+      if (tag && protectedTags.has(tag[2].toLowerCase())) {
+        const name = tag[2].toLowerCase();
+        if (tag[1]) {
+          const index = stack.lastIndexOf(name);
+          if (index >= 0) stack.splice(index, 1);
+        } else if (!/\\/\\s*>$/.test(token)) stack.push(name);
+      }
+      return token;
+    }
+    if (stack.length) return token;
+    return token.replace(/(^|[^A-Za-z0-9_./-])((?:wiki\\/sources\\/|raw\\/ingested\\/)[^\\s&<>"'()\\x60\\[\\]{}]+?\\.md)(?=$|[^A-Za-z0-9_-])/g, (full, before, path) => {
+      const href = '/' + path.split('/').map(segment => encodeURIComponent(segment)).join('/');
+      return before + '<a class="wiki-source-link" href="' + esc(href) + '" data-wiki-path="' + esc(path) + '" title="Open wiki source">' + esc(path) + '</a>';
+    });
+  });
 }
 // External links in a reply open in a new tab: following them in place would
 // replace the chat and lose the conversation. Internal/anchored links stay.

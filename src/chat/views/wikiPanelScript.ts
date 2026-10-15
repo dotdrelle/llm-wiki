@@ -441,6 +441,20 @@ function setCenterWiki(path) {
   window.dispatchEvent(new CustomEvent('llmwiki:wikiPathChanged', { detail: target }));
 }
 
+// A source path cited in Donna's answer should open inside the wiki pane,
+// without navigating away from the conversation. Modified clicks retain the
+// normal link behavior, so the page can still be opened in another tab.
+document.addEventListener('click', event => {
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  const link = event.target instanceof Element ? event.target.closest('a.wiki-source-link[data-wiki-path]') : null;
+  if (!link) return;
+  const wikiPath = decodeWikiPath(link.getAttribute('data-wiki-path') || '').replace(/^\\/+/, '');
+  if ((!wikiPath.startsWith('wiki/sources/') && !wikiPath.startsWith('raw/ingested/'))
+    || !wikiPath.endsWith('.md') || wikiPath.includes('..')) return;
+  event.preventDefault();
+  setCenterWiki('/' + wikiPath.split('/').map(encodeURIComponent).join('/'));
+});
+
 function setCenterChat() {
   document.body.classList.remove('center-wiki');
   if (location.hash.startsWith('#wiki=')) {
