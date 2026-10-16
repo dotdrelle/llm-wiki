@@ -5,7 +5,7 @@ import { hashText } from '../utils/hash.ts';
 import { safeWriteFile } from '../utils/fs.ts';
 import { resolveInside } from '../utils/path.ts';
 import { outputSnapshot } from './outputGuard.ts';
-import { EXPORT_PROMPT_VERSION } from '../prompts/exportPrompt.ts';
+import { EXPORT_PROMPT_VERSION, POLISH_PROMPT_VERSION } from '../prompts/exportPrompt.ts';
 
 export interface Publication {
   schemaVersion: 1; id: string; source: string; sourceHash: string;
@@ -19,7 +19,8 @@ export interface Publication {
  * out on purpose — a profile switch must not stale every export at once.
  */
 export function transformSignature(operation: 'export' | 'polish', language: string): string {
-  return hashText(JSON.stringify({ prompt: EXPORT_PROMPT_VERSION, language: String(language ?? ''), operation }));
+  const prompt = operation === 'polish' ? POLISH_PROMPT_VERSION : EXPORT_PROMPT_VERSION;
+  return hashText(JSON.stringify({ prompt, language: String(language ?? ''), operation }));
 }
 export async function preparePublication(root: string, data: Omit<Publication, 'schemaVersion' | 'id' | 'createdAt' | 'status'>): Promise<Publication> {
   const id = hashText(JSON.stringify(data));

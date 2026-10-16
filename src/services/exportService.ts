@@ -131,10 +131,11 @@ export function sectionValidationIssue(
   originalBody: string,
   candidateBody: string,
   minRatio: number,
+  allowHeadings = false,
 ): string | undefined {
   const candidate = candidateBody.trim();
   if (!candidate) return 'empty_output';
-  if (containsHeading(candidate)) return 'heading_added';
+  if (!allowHeadings && containsHeading(candidate)) return 'heading_added';
   // Citation markers are removed from regenerated sections by design: they
   // must not count as content or contribute numeric tokens (source filenames
   // often contain digit sequences, e.g. [src: raw/ingested/2c4953e3-...]).
@@ -148,6 +149,38 @@ export function sectionValidationIssue(
     (token) => !candidateNormalized.includes(token),
   );
   if (missing.length > 0) return `numbers_lost:${missing.slice(0, 5).join(',')}`;
+  return undefined;
+}
+
+function markdownHeadingLevels(markdown: string): number[] {
+  let fence: '`' | '~' | null = null;
+  const levels: number[] = [];
+  for (const line of markdown.split('\n')) {
+    const marker = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
+    if (marker) {
+      const character = marker[0] as '`' | '~';
+      if (!fence) fence = character;
+      else if (fence === character) fence = null;
+      continue;
+    }
+    if (fence) continue;
+    const heading = /^(#{1,6})\s+/.exec(line);
+    if (heading) levels.push(heading[1].length);
+  }
+  return levels;
+}
+
+function polishValidationIssue(original: string, candidate: string): string | undefined {
+  const contentIssue = sectionValidationIssue(original, candidate, MIN_POLISH_RATIO, true);
+  if (contentIssue) return contentIssue;
+  const originalLevels = markdownHeadingLevels(original);
+  const candidateLevels = markdownHeadingLevels(candidate);
+  if (
+    originalLevels.length !== candidateLevels.length ||
+    originalLevels.some((level, i) => level !== candidateLevels[i])
+  ) {
+    return 'heading_structure_changed';
+  }
   return undefined;
 }
 
@@ -267,6 +300,18 @@ export async function expandDeliverable(
       label: 'export:polish',
       logger,
     });
+    const issue = polishValidationIssue(content, result);
+    if (issue) {
+      warnings.push(
+        `polish kept the original document: generated content failed validation (${issue})`,
+      );
+      await logger.warn('export:polish-rejected', {
+        deliverable: deliverablePath,
+        issue,
+        mode: 'polish-only',
+      });
+      return { content, warnings };
+    }
     await logger.info('export:done', { outputChars: result.length, mode: 'polish-only' });
     return { content: result, warnings };
   }

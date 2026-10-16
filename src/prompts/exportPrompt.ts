@@ -1,11 +1,24 @@
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
 /**
- * Version of what export and polish produce. Bump it whenever a change to these
- * prompts changes the output: publication receipts carry it, and a receipt
- * produced with another version reads as stale ("export settings changed").
+ * Prompt versions feed publication receipts. Bump only the operation's version
+ * when its prompt changes so a polish edit does not stale unchanged exports.
  */
 export const EXPORT_PROMPT_VERSION = 1;
+export const POLISH_PROMPT_VERSION = 2;
+
+const POLISH_EDITORIAL_RULES = [
+  '- Make the smallest edits that materially improve clarity, precision, or flow. Keep wording that is already clear and effective.',
+  '- Prefer concise sentences and active voice when they sound natural. Keep necessary technical terms; explain jargon only when the intended reader needs it.',
+  '- Correct grammar, spelling, and punctuation. Improve transitions only where the relationship between ideas needs clarification.',
+  '- Infer the audience, purpose, and professional register from the document and section. If they are unclear, preserve the existing tone rather than inventing one.',
+  '- Replace vague or weak wording with precise wording supported by the existing text. Do not add facts, examples, numbers, dates, names, sources, conclusions, or obligations.',
+  '- Avoid clichés, repeated openings, and formulaic rhetorical patterns. Keep valid reasoning and lists of distinct points when they help the reader.',
+  '- Keep lists for steps, options, and compact enumerations when they improve scanning; use prose when it explains relationships or develops an idea.',
+  '- Let sentence and paragraph lengths vary naturally. Do not force a length pattern, add first-person voice, or add parenthetical asides unless they improve clarity.',
+  '- Do not add personal opinions, emotional color, or decorative language. Preserve the document’s existing voice and level of formality.',
+  '- Write in the configured target language from the system instructions.',
+];
 
 export interface SectionExportInput {
   headingPath: string[];
@@ -68,13 +81,11 @@ export function buildSectionPolishPrompt(
       buildSystemPreamble(ctx),
       'You are an editorial reviewer polishing ONE section of a source-grounded markdown deliverable.',
       'Rules:',
-      '- Improve clarity, flow, and readability without changing the meaning.',
-      '- Do not add new factual claims, examples, numbers, dates, names, conclusions, or source citations.',
       '- Preserve every number, date, identifier, and obligation exactly.',
-      '- Preserve tables and lists; polish only their prose cells or items.',
+      ...POLISH_EDITORIAL_RULES,
+      '- Preserve tables and their rows and columns. Edit only their prose cells.',
       '- Return ONLY the polished body of the section: no heading line, no explanation.',
       '- Do not add any markdown heading (#, ##, ...) to the output.',
-      '- Write in the configured target language from the system instructions.',
     ].join('\n'),
     user: [
       `# Section to polish — ${headingPath.join(' > ')}`,
@@ -95,22 +106,10 @@ export function buildPolishPrompt(markdown: string, ctx: PromptContext) {
       buildSystemPreamble(ctx),
       'You are an editorial reviewer polishing a source-grounded markdown deliverable.',
       'Rules:',
-      '- Improve clarity, flow, and readability without changing the meaning.',
-      '- Preserve the markdown structure and heading hierarchy. Translate heading text to the configured target language when needed.',
-      '- Do not add new factual claims, examples, numbers, dates, names, conclusions, or source citations.',
-      '- Markdown linting rules: keep a single top-level H1, keep one blank line before and after headings, and do not output raw HTML tags.',
-      '- Do not remove important technical or project-specific details.',
-      '- Write in the configured target language from the system instructions.',
-      '- Write in a natural, clear voice — as if explaining to a thoughtful colleague. Keep it simple and direct without becoming casual in formal documents.',
-      '- Vary sentence length and rhythm: mix short punchy sentences with fuller explanatory ones. Avoid a uniformly smooth or templated cadence.',
-      '- Vary sentence openings and reduce repetitive phrasing or keyword repetition unless technically necessary.',
-      '- Replace generic connective phrases and boilerplate wording with precise transitions that fit the surrounding content.',
-      '- When the document type allows it, use light first- or second-person framing ("we" or "you") to make the prose more direct; avoid this in formal or compliance-style documents.',
-      '- Add warmth where appropriate, without cliches or exaggerated emotion.',
-      '- Replace semicolons with periods or coordinating words when that improves readability.',
-      '- Avoid overusing em dashes; prefer commas, periods, parentheses, or clearer sentence breaks.',
-      '- Do not add personal opinions; the document must remain factual and source-grounded.',
-      '- Use language-specific forms only when they are idiomatic in the configured target language and appropriate to the document type.',
+      ...POLISH_EDITORIAL_RULES,
+      '- Preserve the heading hierarchy and Markdown structures that carry meaning, especially tables and code blocks. A list may become prose only when that makes relationships clearer; keep steps and options as lists.',
+      '- Preserve every number, date, identifier, technical detail, and obligation exactly.',
+      '- Keep one blank line before and after headings, and do not output raw HTML tags.',
     ].join('\n'),
     user: [
       '# Markdown document to polish',
@@ -121,7 +120,7 @@ export function buildPolishPrompt(markdown: string, ctx: PromptContext) {
       '',
       '# Task',
       'Return a polished version of the document.',
-      'Keep the same facts and markdown structure. Use the configured target language.',
+      'Keep the same meaning, facts, and heading hierarchy. Use the configured target language.',
       'Use plain Markdown only: no raw HTML, no extra H1 headings, and blank lines around headings.',
     ].join('\n'),
   };

@@ -2284,7 +2284,6 @@ const withTitles = async (
     'wiki_maintenance_merge_proposal',
     'Merge one curation proposal after the manager has authorized automatic maintenance approval. The engine revalidates provenance, applies the changes atomically, records history, and removes the proposal. This mutates wiki pages; confirm must be true.',
     { proposalId: z.string().min(1).max(300), confirm: z.literal(true) },
-    {},
     (input) => loggedTool('wiki_maintenance_merge_proposal', input, async () => {
       const result = await mergeAgentProposal(
         { rootDir: workspace.paths.rootDir, workspace, historyConfig: config.history },
