@@ -56,12 +56,12 @@ body.center-wiki #right-rail{padding-top:10px}
 .sb-scroll{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .sb-pane{min-height:0;overflow-y:auto;padding-bottom:12px}
 .sb-pane.history-pane{padding-bottom:8px;flex:1 1 auto}
-/* The connector/config stack hugs its own content and sits at the bottom of
-   the panel: the horizontal split lands exactly on the stack's first line
-   instead of floating above a dead gap. The history pane takes all the space
-   left over; a stack taller than the panel scrolls, capped so the history
-   keeps its minimum. */
-.sb-pane.config-pane{flex:0 0 auto;max-height:calc(100% - 106px)}
+/* The config fields scroll independently; navigation stays at the bottom of
+   its pane while the horizontal splitter adjusts the space above it. */
+.sb-pane.config-pane{display:flex;flex-direction:column;flex:0 0 auto;overflow:hidden;padding-bottom:0;max-height:calc(100% - 106px)}
+.config-settings{flex:1 1 auto;min-height:0;overflow-y:auto;padding-bottom:12px}
+.config-nav{flex:0 0 auto;padding:0 0 12px;border-top:1px solid var(--border)}
+.config-nav .sec-label{padding-top:12px;padding-bottom:4px}
 .sb-resizer{flex:0 0 10px;height:10px;cursor:row-resize;display:flex;align-items:center;justify-content:center;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--panel);touch-action:none}
 .sb-resizer:hover,.sb-resizer.dragging{background:var(--panel-soft)}
 .sb-resizer::before{content:'';width:34px;height:3px;border-radius:99px;background:var(--border)}
@@ -186,9 +186,6 @@ body.split-wiki.center-wiki:not(.connectors-mode):not(.execution-mode) #input-wr
 #topbar{min-height:54px;padding:6px 18px;border-bottom:1px solid var(--border);background:var(--panel);backdrop-filter:blur(var(--glass-blur));-webkit-backdrop-filter:blur(var(--glass-blur));display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .tb-model{font-family:var(--font-mono);font-size:11px;color:var(--muted2);background:var(--panel-soft);border:1px solid var(--border);padding:4px 10px;border-radius:99px}
 .sec-label-actions{display:flex;align-items:center;gap:6px}
-.tb-profile-select{display:none;max-width:130px;border:1px solid var(--border);border-radius:6px;background:var(--panel-soft);color:var(--muted2);font-size:11px;padding:2px 8px;font-family:var(--font-sans);font-weight:600}
-.tb-profile-select.visible{display:inline-block}
-.tb-profile-select:disabled{opacity:.55;cursor:not-allowed}
 .tb-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
 .tb-clear,.tb-system{background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);height:30px;display:inline-flex;align-items:center;padding:0 12px;cursor:pointer;font-size:12px;font-family:var(--font-sans);font-weight:600;transition:all .2s}
 .tb-clear:hover{border-color:var(--err);color:var(--err)}

@@ -53,7 +53,8 @@ export const AGENT_CONNECTORS_CARD_SCRIPT = String.raw`
     const phase=String(result.phase||'');
     const state=PHASE[phase];
     if(result.ok===false||!state) return card('Tchap','Unavailable','error','<div class="agent-connector-error">'+esc(result.error||(phase?'Unknown Tchap status phase: '+phase+'.':'The Tchap status response did not include a phase.'))+'</div>',retry);
-    tchapForumForAuth=['signed_out','signin_failed'].includes(phase)?String(result.roomId||result.forum||''):'';
+    const needsReauthorization=['signed_out','stopped'].includes(phase)&&result.lastError==='tchap_reauthorization_required';
+    tchapForumForAuth=['signed_out','signin_failed'].includes(phase)||needsReauthorization?String(result.roomId||result.forum||''):'';
     const [label,tone]=state;
     const signedIn=SIGNED_IN.includes(phase);
     let body='';
@@ -66,9 +67,10 @@ export const AGENT_CONNECTORS_CARD_SCRIPT = String.raw`
     if(phase==='no_forum') body+='<div>No forum is attached to this workspace.</div>';
     if(phase==='awaiting_activation') body+='<div>Type <code>/activate</code> in the forum to switch the bridge on.</div>';
     if(phase==='signed_out'&&result.forum) body+='<div>The bridge is stopped until you sign in again.</div>';
+    if(needsReauthorization) body+='<div>The Tchap session ended. Sign in again to restart this bridge.</div>';
     const error=result.lastError||result.pending?.error;
     if(error) body+='<div class="agent-connector-error">Last error: '+esc(error)+'</div>';
-    const actions=phase==='disabled'||phase==='signin_pending'?'':!signedIn?'<button type="button" onclick="tchapAttachForum()">Connect Tchap</button>'
+    const actions=phase==='disabled'||phase==='signin_pending'?'':needsReauthorization?'<button type="button" onclick="tchapAttachForum()">Reconnect Tchap</button>':!signedIn?'<button type="button" onclick="tchapAttachForum()">Connect Tchap</button>'
       :result.forum?'<button type="button" onclick="tchapAttachForum()">Change forum</button><button type="button" onclick="tchapDetachForum()">Detach forum</button>'
         :'<button type="button" onclick="tchapAttachForum()">Attach a forum</button>';
     return card('Tchap',label,tone,body,actions);

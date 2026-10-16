@@ -1,9 +1,12 @@
-// The top bar's profile menu and connector status pill (topbarScript.ts).
+// The composer's profile menu and topbar connector status pills (topbarScript.ts).
 export const TOPBAR_CSS = `#topbar{position:relative;z-index:50}
 .tb-model-wrap{position:relative}
 .tb-model.switchable{cursor:pointer}
 .tb-model.switchable:hover{border-color:var(--accent);color:var(--text)}
 .tb-profile-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:60;min-width:200px;max-height:min(360px,70vh);overflow-y:auto;padding:4px;background:var(--panel-solid);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow)}
+.input-actions .tb-model-wrap{flex:0 0 auto;z-index:60}
+.input-actions .tb-model{max-width:min(180px,38vw);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.input-actions .tb-profile-menu{top:auto;bottom:calc(100% + 8px)}
 .tb-profile-item{display:flex;align-items:center;gap:6px;width:100%;border:0;background:none;color:var(--text);font-size:12px;font-family:var(--font-sans);padding:6px 8px;border-radius:6px;cursor:pointer;text-align:left}
 .tb-profile-item span{width:12px;color:var(--accent)}
 .tb-profile-item:hover{background:var(--panel-soft)}

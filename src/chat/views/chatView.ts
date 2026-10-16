@@ -53,35 +53,39 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
     </div>
     <div class="sb-resizer" id="sidebar-resizer" title="Resize panels"></div>
     <div class="sb-pane config-pane" id="config-pane">
-      <div class="sec-label">Connectors</div>
-      <a class="sb-link" id="connectors-link" href="/chat/connectors" onclick="showConnectorsView(event)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a6 6 0 0 1-12 0V8z"/></svg> Connectors <span>MCP & skills</span></a>
-      <a class="sb-link" id="execution-link" href="/chat/execution" onclick="showExecutionView(event)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg> Execution <span>runtime runs</span></a>
-      <div class="sec-label">LLM<div class="sec-label-actions"><select class="tb-profile-select" id="profile-picker" title="Active .wikirc profile managed by wiki-manager runtime" onchange="switchConfigProfile(this.value)"></select><button type="button" onclick="resetYamlConfig()">Reset</button></div></div>
-      <div class="api-block">
-        <div class="field">
-          <label for="base-url">Base URL</label>
-          <input id="base-url" type="text" placeholder="http://localhost:11434/v1" onchange="saveConfig()">
-        </div>
-        <div class="field">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-            <label for="api-key" style="margin:0">API Key</label>
-            <span class="key-saved" id="llm-saved">saved</span>
+      <div class="config-settings">
+        <div class="sec-label">LLM<div class="sec-label-actions"><button type="button" onclick="resetYamlConfig()">Reset</button></div></div>
+        <div class="api-block">
+          <div class="field">
+            <label for="base-url">Base URL</label>
+            <input id="base-url" type="text" placeholder="http://localhost:11434/v1" onchange="saveConfig()">
           </div>
-          <div class="secret-wrap">
-            <input id="api-key" type="password" placeholder="sk-… (leave empty for Ollama)" autocomplete="off" onchange="saveConfig()">
-            <div class="secret-actions">
-              <button class="secret-btn" id="reveal-btn-apikey" onclick="toggleReveal('api-key',this)" title="Show/hide">
-                <svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
-              </button>
+          <div class="field">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+              <label for="api-key" style="margin:0">API Key</label>
+              <span class="key-saved" id="llm-saved">saved</span>
+            </div>
+            <div class="secret-wrap">
+              <input id="api-key" type="password" placeholder="sk-… (leave empty for Ollama)" autocomplete="off" onchange="saveConfig()">
+              <div class="secret-actions">
+                <button class="secret-btn" id="reveal-btn-apikey" onclick="toggleReveal('api-key',this)" title="Show/hide">
+                  <svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="model-name">Model</label>
+              <input id="model-name" type="text" placeholder="gpt-4o" oninput="syncModel()" onchange="saveConfig()">
             </div>
           </div>
         </div>
-        <div class="row2">
-          <div class="field">
-            <label for="model-name">Model</label>
-            <input id="model-name" type="text" placeholder="gpt-4o" oninput="syncModel()" onchange="saveConfig()">
-          </div>
-        </div>
+      </div>
+      <div class="config-nav">
+        <div class="sec-label">Connectors</div>
+        <a class="sb-link" id="connectors-link" href="/chat/connectors" onclick="showConnectorsView(event)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a6 6 0 0 1-12 0V8z"/></svg> Connectors <span>MCP & skills</span></a>
+        <a class="sb-link" id="execution-link" href="/chat/execution" onclick="showExecutionView(event)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg> Execution <span>runtime runs</span></a>
       </div>
     </div>
   </div>
@@ -93,10 +97,6 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
 </div>
 <div id="main">
   <div id="topbar">
-    <div class="tb-model-wrap">
-      <button class="tb-model" id="model-badge" type="button" onclick="toggleProfileMenu(event)" aria-haspopup="menu" aria-expanded="false">gpt-4o</button>
-      <div class="tb-profile-menu" id="profile-menu" role="menu" hidden></div>
-    </div>
     <button class="tb-connectors tb-agent-connectors" id="tb-agent-connectors" type="button" onclick="showConnectorsView(event)" title="Gmail and Tchap workspace connectors — click to view their status"><span class="tb-dot"></span>2 Connectors</button>
     <button class="tb-connectors" id="tb-mcps" type="button" onclick="showConnectorsView(event)"></button>
     <div class="tb-actions">
@@ -211,6 +211,10 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
           </svg>
         </button>
         <button id="agent-mode-btn" class="agent-mode-btn" type="button" onclick="toggleAgentMode()" title="Send prompts to the agent runtime">Agent</button>
+        <div class="tb-model-wrap">
+          <button class="tb-model" id="model-badge" type="button" onclick="toggleProfileMenu(event)" aria-haspopup="menu" aria-expanded="false">gpt-4o</button>
+          <div class="tb-profile-menu" id="profile-menu" role="menu" hidden></div>
+        </div>
         <div class="input-actions-spacer"></div>
         <button id="send-btn" onclick="handleSendButton()" title="Send">
           <svg viewBox="0 0 24 24"><path d="M12 5l7 7-1.4 1.4L13 8.8V20h-2V8.8l-4.6 4.6L5 12z"/></svg>

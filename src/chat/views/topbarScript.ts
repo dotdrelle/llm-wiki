@@ -1,7 +1,6 @@
 /**
- * The chat top bar: the model badge (a .wikirc profile switcher when the
- * runtime is on) and separate workspace-connector and MCP status pills.
- * Extracted from chatHtml.ts.
+ * The model badge in the composer and the separate workspace-connector and
+ * MCP status pills in the top bar. Extracted from chatHtml.ts.
  */
 export const TOPBAR_SCRIPT = `
 // The badge names the model, prefixed by the profile when it is not the
@@ -10,9 +9,9 @@ function syncModel() {
   const badge=$('model-badge');
   if(!badge) return;
   const model=$('model-name').value||'model';
-  const picker=$('profile-picker');
-  const activeFile=picker?.dataset.active||'';
-  const activeName=picker?.dataset.activeName||'';
+  const activeProfile=window.__WIKI_ACTIVE_PROFILE__||{};
+  const activeFile=activeProfile.fileName||'';
+  const activeName=activeProfile.name||'';
   // A second "default" (.wikirc.yaml.default) is named by its file.
   const profile=activeName==='default'&&activeFile&&activeFile!=='.wikirc.yaml'?activeFile:activeName;
   const switchable=!!window.__WIKI_CONFIG__?.runtime?.enabled;
@@ -21,9 +20,8 @@ function syncModel() {
   badge.classList.toggle('switchable',switchable);
 }
 
-// Profile menu: the same switch as the config panel's picker (runtime
-// /config/use, persisted for the ShellUI and serve), refused while a run is
-// active. Profiles are re-read at each opening: one may have been added, or
+// Profile menu: the runtime /config/use route, persisted for the ShellUI and
+// serve. Profiles are re-read at each opening: one may have been added, or
 // switched from the ShellUI.
 async function toggleProfileMenu(event) {
   event?.stopPropagation();
@@ -38,13 +36,13 @@ async function toggleProfileMenu(event) {
     if(!res.ok) throw new Error(data.error||\`HTTP \${res.status}\`);
     const entries=profileEntries(data);
     if(!entries.length) { menu.innerHTML='<div class="tb-profile-empty">No .wikirc profile found.</div>'; return; }
+    const active=entries.find(entry=>entry.active);
+    if(active) setActiveConfigProfile(active.name,active.fileName);
     menu.innerHTML=entries.map(entry=>\`<button type="button" role="menuitemradio" aria-checked="\${entry.active}" class="tb-profile-item\${entry.active?' active':''}" data-file="\${esc(entry.fileName)}" title="\${esc(entry.fileName)}"><span>\${entry.active?'✓':''}</span>\${esc(entry.name)}\${entry.showFile?\`<em class="tb-profile-file">\${esc(entry.fileName)}</em>\`:''}</button>\`).join('');
     menu.querySelectorAll('.tb-profile-item').forEach(btn=>btn.addEventListener('click',async()=>{
       const fileName=btn.dataset.file;
       closeProfileMenu();
       if(fileName&&!btn.classList.contains('active')) {
-        const select=$('profile-picker');
-        if(select) select.value=fileName;
         await switchConfigProfile(fileName);
         syncModel();
       }

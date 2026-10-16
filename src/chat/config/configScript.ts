@@ -46,8 +46,7 @@ function saveConfig() {
  endpoint responds.
 */
 async function resetYamlConfig() {
-  const select=$('profile-picker');
-  const activeProfile=select?.dataset.active||select?.value||null;
+  const activeProfile=window.__WIKI_ACTIVE_PROFILE__?.fileName||null;
   if(activeProfile&&window.__WIKI_CONFIG__?.runtime?.enabled) {
     // Reapply the active profile: the server re-reads the .wikirc, and
     // switchConfigProfile reconnects the MCP servers.
@@ -104,35 +103,29 @@ function applyServerConfig(config) {
 }
 
 async function loadConfigProfiles() {
-  const select=$('profile-picker');
-  if(!select||!window.__WIKI_CONFIG__?.runtime?.enabled) return;
+  if(!window.__WIKI_CONFIG__?.runtime?.enabled) {
+    setActiveConfigProfile('', '');
+    return;
+  }
   try {
     const res=await fetch('/api/config/profiles',{cache:'no-store'});
     if(!res.ok) throw new Error('profiles unavailable');
     const data=await res.json();
-    // Options are keyed by FILE (two files can both be named "default"); the
-    // label is the name, followed by the file only when names collide.
+    // The FILE identifies a profile; two files can both be named "default".
     const entries=profileEntries(data);
-    if(!entries.length) return;
-    select.innerHTML=entries.map(entry=>\`<option value="\${esc(entry.fileName)}" title="\${esc(entry.fileName)}">\${esc(entry.name)}\${entry.showFile?' · '+esc(entry.fileName):''}</option>\`).join('');
+    if(!entries.length) {
+      setActiveConfigProfile('', '');
+      return;
+    }
     const active=entries.find(entry=>entry.active)||entries[0];
-    select.value=active.fileName;
-    select.dataset.active=active.fileName;
-    select.dataset.activeName=active.name;
-    syncModel();
-    select.disabled=false;
-    select.classList.add('visible');
+    setActiveConfigProfile(active.name, active.fileName);
   } catch {
-    select.disabled=true;
-    select.classList.remove('visible');
+    setActiveConfigProfile('', '');
   }
 }
 
 async function switchConfigProfile(profile) {
-  const select=$('profile-picker');
-  if(!profile||!select) return;
-  const previous=select.dataset.active||select.value;
-  select.disabled=true;
+  if(!profile) return;
   try {
     const res=await fetch('/api/config/use',{
       method:'POST',
@@ -141,9 +134,7 @@ async function switchConfigProfile(profile) {
     });
     const data=await res.json().catch(()=>({}));
     if(!res.ok||data.ok===false) throw new Error(data.error||data.message||\`HTTP \${res.status}\`);
-    select.dataset.active=data.fileName||profile;
-    select.dataset.activeName=data.active||profile;
-    select.value=data.fileName||profile;
+    setActiveConfigProfile(data.active||profile, data.fileName||profile);
     // A profile switch is authoritative — drop any leftover local override so
     // it can't resurface and silently diverge from the newly active profile.
     localStorage.removeItem(storageKey('mcpchat_config'));
@@ -162,11 +153,13 @@ async function switchConfigProfile(profile) {
     fetchRuntimeState().catch(()=>{});
     notify('Config profile: '+(data.active||profile));
   } catch(err) {
-    select.value=previous;
     notify(err?.message||String(err),'e');
-  } finally {
-    select.disabled=false;
   }
+}
+
+function setActiveConfigProfile(name,fileName) {
+  window.__WIKI_ACTIVE_PROFILE__={name:name||'',fileName:fileName||''};
+  syncModel();
 }
 
 // ── LocalStorage (user-added servers only) ──────────────────────────────────

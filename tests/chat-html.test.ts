@@ -859,7 +859,7 @@ describe('chat html', () => {
   it('offers runtime-backed config profile switching without page reload', () => {
     const [script] = chatScripts();
 
-    expect(CHAT_HTML).toContain('id="profile-picker"');
+    expect(CHAT_HTML).not.toContain('id="profile-picker"');
     expect(CHAT_HTML).toContain('/api/config/profiles');
     expect(CHAT_HTML).toContain('/api/config/use');
     expect(script).toContain('function loadConfigProfiles()');
@@ -868,19 +868,16 @@ describe('chat html', () => {
     expect(script).not.toContain('window.location.reload()');
   });
 
-  it('places the profile picker in the sidebar next to Reset, showing the profile name', () => {
+  it('places profile selection beside Agent and leaves Reset in the LLM panel', () => {
     const [script] = chatScripts();
 
-    // Lives in the LLM section header, alongside Reset — not the topbar.
-    expect(CHAT_HTML).toContain(
-      '<div class="sec-label">LLM<div class="sec-label-actions"><select class="tb-profile-select" id="profile-picker"',
-    );
-    expect(CHAT_HTML).not.toContain('id="profile-picker-wrap"');
-    // Options are keyed by file (two files can both be named "default"); the
-    // file is a hover title and joins the visible label only when names collide.
-    expect(script).toContain(
-      "select.innerHTML=entries.map(entry=>`<option value=\"${esc(entry.fileName)}\" title=\"${esc(entry.fileName)}\">${esc(entry.name)}${entry.showFile?' · '+esc(entry.fileName):''}</option>`).join('');",
-    );
+    expect(CHAT_HTML).toContain('<div class="sec-label">LLM<div class="sec-label-actions"><button type="button" onclick="resetYamlConfig()">Reset</button></div></div>');
+    expect(CHAT_HTML).toContain('onclick="toggleProfileMenu(event)"');
+    expect(CHAT_HTML.indexOf('id="model-badge"')).toBeGreaterThan(CHAT_HTML.indexOf('id="input-wrap"'));
+    expect(CHAT_HTML.indexOf('id="model-badge"')).toBeLessThan(CHAT_HTML.indexOf('id="send-btn"'));
+    expect(script).toContain('window.__WIKI_ACTIVE_PROFILE__={name:name||\'\',fileName:fileName||\'\'}');
+    expect(script).toContain('const activeProfile=window.__WIKI_ACTIVE_PROFILE__||{}');
+    expect(script).not.toContain('profile-picker');
   });
 
   it('never lets a stale local override win over the active .wikirc profile config', () => {
@@ -1165,9 +1162,8 @@ describe('chat html', () => {
     expect(handler).toContain('setCenterWiki(fallback)');
   });
 
-  it('makes the top bar a profile switcher with separate Connector and MCP pills', () => {
+  it('keeps separate Connector and MCP pills in the top bar', () => {
     const script = chatScripts().join('\n');
-    expect(CHAT_HTML).toContain('onclick="toggleProfileMenu(event)"');
     expect(CHAT_HTML).toContain('onclick="showConnectorsView(event)"');
     expect(CHAT_HTML).toContain('id="tb-agent-connectors"');
     expect(CHAT_HTML).toContain('2 Connectors');
@@ -1176,7 +1172,7 @@ describe('chat html', () => {
     const pills = script.slice(script.indexOf('function renderTopPills()'));
     expect(pills.slice(0, 900)).toContain("s.status==='err'");
     expect(pills.slice(0, 900)).toContain('MCP');
-    // The menu switches through the same runtime route as the config picker.
+    // The composer menu and Reset use the same runtime profile switch path.
     const menu = script.slice(script.indexOf('async function toggleProfileMenu('));
     expect(menu.slice(0, 2000)).toContain("fetch('/api/config/profiles'");
     expect(menu.slice(0, 2000)).toContain('switchConfigProfile(fileName)');
