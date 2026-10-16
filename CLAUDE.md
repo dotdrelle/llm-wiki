@@ -43,9 +43,12 @@ window. Earlier per-lot history below is kept for context.
 0.9.4 is the incremental, iso-behavior extraction of `src/commands/serve.ts`
 and `src/chat/chatHtml.ts` into smaller modules (see Layout below); neither
 file has reached its final target size yet, and `scripts/check-file-sizes.js`
-keeps temporary legacy thresholds for the still-unsplit files until they do
-(`serve.ts`, `chatHtml.ts`, `wikiHtml.ts`, `activityPanelScript.ts` — the
-ceilings record the shipped reality and drop as the extractions land).
+now covers **all** of `src/` plus `bin/` (it used to walk only `src/serve`,
+`src/graph`, `src/chat` and `serve.ts`), with temporary legacy thresholds
+recording the still-unsplit files until they shrink (`serve.ts`, `chatHtml.ts`,
+`wikiHtml.ts`, `activityPanelScript.ts`, `ingestService.ts`, `mcpServer.ts`,
+`doctor.ts` — the ceilings record the shipped reality and drop as the
+extractions land).
 0.9.5 is the runtime
 control-lane work described under Agent Runtime Integration. 0.9.6 is the
 `projectWorkflow` canonical projection (defined in `llm-wiki-manager`); this
@@ -787,21 +790,27 @@ ingest`) builds a review per planned operation (`buildReviewOperations`):
   by nature, and testing the whole citation rejected every real anchored
   citation — destroying the anchor and reattributing the claim. The anchor
   rides along on both branches.
-- `wiki ingest --from-ingested` **rebuilds the concept tree from scratch.** A
-  full rebuild (no input paths) deletes EVERY leaf under `wiki/concepts/`
-  before re-filing the archive (`purgeConceptTreeForRebuild` →
-  `listConceptLeafPaths`, logged `ingest:rebuild-purge`), then the command's
-  normal end-of-run vector index rebuild reindexes the new content. Pruning only
-  the leaves the run no longer produces was not enough: the model, shown the
-  existing pages, may keep an old projection AND add a new one, so the
-  accumulated set only grew — concepts and leaves doubled on every rebuild.
-  The purge owns the `wiki/concepts/` subtree, including pages a human wrote
-  there; it stops at the section root (the empty `concepts/` folder survives).
-  A partial rebuild (input paths given) keeps the rest of the tree and the
-  stale-leaf safety net (`staleRebuiltLeaves`): a leaf the rebuilt sources no
-  longer produce, that no other source claims, is deleted after a failure-free
-  run (`ingest:rebuild-prune`), while a partial failure prunes nothing
-  (`ingest:rebuild-prune-skipped`).
+- `wiki ingest --from-ingested` **re-files the archive; it never purges the
+  concept tree.** Pruning is registry-driven and deterministic: every write
+  records its produced pages in `.wiki/source-registry.json`, and only pages
+  the registry owns under `wiki/sources/` or `wiki/concepts/` can be removed —
+  a hand-written page, the index or a source note is never touched, and a page
+  any source still produces is kept. A **complete** rebuild (no input paths,
+  every archived source succeeded) calls `pruneMissingSourcePages`
+  (`ingestService.ts`): pages of sources missing from the rebuilt archive
+  inventory whose paths no active source still owns are deleted
+  (`ingest:sheet-pruned`; `status: stable` / `verified: true` pages are
+  announced and skipped as `ingest:sheet-prune-skipped`), and their registry
+  records are marked `missing` (`markMissingSourceRecords`). A **partial**
+  rebuild (input paths given) keeps the rest of the tree and uses the
+  stale-leaf safety net (`staleRebuiltLeaves`): a concept leaf the rebuilt
+  sources no longer produce, that no source claims, is deleted after a
+  failure-free run (`ingest:rebuild-prune`), while a partial failure prunes
+  nothing (`ingest:rebuild-prune-skipped`). Both paths run under the registry
+  file lock, and the command's normal end-of-run vector index rebuild
+  reindexes the new content. The former whole-tree purge
+  (`purgeConceptTreeForRebuild`) is gone — do not reintroduce it: it erased
+  pages a human had written under `wiki/concepts/`.
 - `buildService.ts`: template slot batching and generation. Build context is
   **fiches first**: it searches `wiki/sources/` with the same hybrid retrieval
   as everything else (there is no `buildStrategy` any more — the vector index

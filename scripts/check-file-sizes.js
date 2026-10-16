@@ -37,6 +37,13 @@ const MAX_LINES = 800;
 // and the module extractions kept chatHtml and activityPanelScript over their
 // ceilings (chatStyles by one line). Ceilings record the measured reality;
 // they drop as the extractions land.
+// 0.16.58 follow-up: the guard used to walk only `src/serve`, `src/graph`,
+// `src/chat` and `src/commands/serve.ts`, so the engine services were never
+// guarded. It now walks ALL of `src/` plus `bin/`; the engine files that grew
+// unguarded get their measured ceilings here (ingestService, mcpServer,
+// doctor, buildService, workspaceService, schema). The stale
+// `canvasExplorerScript.ts` ceiling is dropped — that file no longer exists
+// (its extraction landed).
 const LEGACY_LIMITS = new Map([
   ['src/commands/serve.ts', 1100],
   ['src/serve/html/wikiHtml.ts', 2300],
@@ -46,7 +53,12 @@ const LEGACY_LIMITS = new Map([
   ['src/chat/styles/chatStyles.ts', 602],
   ['src/chat/runtime/activityPanelScript.ts', 1046],
   ['src/chat/views/wikiPanelScript.ts', 840],
-  ['src/graph/wiki/ui/canvas/canvasExplorerScript.ts', 850],
+  ['src/services/ingestService.ts', 2591],
+  ['src/services/mcpServer.ts', 2526],
+  ['src/commands/doctor.ts', 1749],
+  ['src/services/buildService.ts', 1298],
+  ['src/services/workspaceService.ts', 1141],
+  ['src/config/schema.ts', 937],
 ]);
 
 function walk(dir) {
@@ -55,18 +67,12 @@ function walk(dir) {
     const path = join(dir, name);
     const stat = statSync(path);
     if (stat.isDirectory()) entries.push(...walk(path));
-    else if (path.endsWith('.ts')) entries.push(path);
+    else if (/\.(ts|tsx)$/.test(path)) entries.push(path);
   }
   return entries;
 }
 
-const files = [
-  join(ROOT, 'src', 'commands', 'serve.ts'),
-  join(ROOT, 'src', 'chat', 'chatHtml.ts'),
-  ...walk(join(ROOT, 'src', 'serve')),
-  ...walk(join(ROOT, 'src', 'graph')),
-  ...walk(join(ROOT, 'src', 'chat')).filter((file) => !file.endsWith('/chatHtml.ts')),
-];
+const files = [...walk(join(ROOT, 'src')), ...walk(join(ROOT, 'bin'))];
 
 const failures = [];
 for (const file of files) {

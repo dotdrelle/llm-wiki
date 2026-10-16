@@ -171,14 +171,8 @@ class FakeWorkspaceService {
 }
 
 class RebuildWorkspaceService extends FakeWorkspaceService {
-  conceptLeaves: string[] = [];
-
   async resolveIngestedSourceInputs(): Promise<string[]> {
     return this.sourcePaths;
-  }
-
-  async listConceptLeafPaths(): Promise<string[]> {
-    return this.conceptLeaves;
   }
 }
 
@@ -691,10 +685,6 @@ describe('ingest service', () => {
   it('does not purge the concept tree during a --from-ingested rebuild', async () => {
     const workspace = new RebuildWorkspaceService();
     workspace.sourcePaths = ['/tmp/wiki/raw/ingested/note.md'];
-    workspace.conceptLeaves = [
-      'wiki/concepts/old/note.md',
-      'wiki/concepts/other/thing.md',
-    ];
     const logger = new MemoryTraceLogger();
     const service = new IngestService(
       createConfig(),
@@ -710,7 +700,7 @@ describe('ingest service', () => {
 
     expect(workspace.appliedBatches.flat().some((operation) => (
       operation.type === 'delete'
-      && ['wiki/concepts/old/note.md', 'wiki/concepts/other/thing.md'].includes(operation.path)
+      && operation.path.startsWith('wiki/concepts/')
     ))).toBe(false);
   });
 
