@@ -2,6 +2,22 @@ import type { SearchResult, TemplateDocument } from '../types.ts';
 import { formatContextResult } from './formatContext.ts';
 import { buildSystemPreamble, type PromptContext } from './systemPreamble.ts';
 
+function templatePurpose(template: TemplateDocument): string {
+  const title = typeof template.frontmatter.title === 'string'
+    ? template.frontmatter.title.trim()
+    : '';
+  const description = typeof template.frontmatter.description === 'string'
+    ? template.frontmatter.description.trim()
+    : '';
+  return [
+    title ? `Title: ${title}` : '',
+    description ? `Description: ${description}` : '',
+  ].filter(Boolean).join('\n') || '(No title or description provided.)';
+}
+
+const SLOT_SCOPE_RULE = 'Keep each slot within the subject stated by its heading and instruction. Do not move a fact into a neighboring slot merely because a source mentions it; when the sources do not establish the requested distinction, state that evidence is missing.';
+const PRESENTATION_LENGTH_RULE = 'When the template purpose identifies a presentation or slide deck, treat each slot as one slide: use one short takeaway and at most five concise bullets, or a compact table when asked. Avoid report-style paragraphs. Follow any explicit slot length or format instruction.';
+
 export function buildDeliverablePrompt(args: {
   template: TemplateDocument;
   maxChunkChars: number;
@@ -47,6 +63,8 @@ export function buildDeliverablePrompt(args: {
       'Use only the provided wiki context. Never fabricate facts, names, or numbers.',
       'When context is insufficient, write a short note: "> Missing evidence: the wiki does not contain enough documented information for this section."',
       'Do not repeat headings already present in the template.',
+      SLOT_SCOPE_RULE,
+      PRESENTATION_LENGTH_RULE,
       'Do not output unresolved template placeholders such as {{name}}. Use the documented real name, a neutral label from the sources, or state that the name is not documented.',
       'When comparing candidates, keep labels consistent across sections: the reference candidate must not also be described as an alternative, and numeric/cost details must stay attached to the candidate whose source documents them.',
       'Markdown linting rules: do not emit raw HTML tags; do not emit level-1 headings unless the slot explicitly requires a document title; keep one blank line before and after any heading.',
@@ -62,6 +80,9 @@ export function buildDeliverablePrompt(args: {
       .filter(Boolean)
       .join('\n'),
     user: [
+      '# Template purpose',
+      templatePurpose(args.template),
+      '',
       '# Slots to fill',
       slotsText,
       '',
@@ -104,6 +125,8 @@ export function buildSingleSlotDeliverablePrompt(args: {
       'Use only the provided wiki context. Never fabricate facts, names, or numbers.',
       'When context is insufficient, write a short note: "> Missing evidence: the wiki does not contain enough documented information for this section."',
       'Do not repeat headings already present in the template.',
+      SLOT_SCOPE_RULE,
+      PRESENTATION_LENGTH_RULE,
       'Do not output unresolved template placeholders such as {{name}}. Use the documented real name, a neutral label from the sources, or state that the name is not documented.',
       'When comparing candidates, keep labels consistent across sections: the reference candidate must not also be described as an alternative, and numeric/cost details must stay attached to the candidate whose source documents them.',
       'Markdown linting rules: do not emit raw HTML tags; do not emit level-1 headings unless the slot explicitly requires a document title; keep one blank line before and after any heading.',
@@ -116,6 +139,9 @@ export function buildSingleSlotDeliverablePrompt(args: {
       .filter(Boolean)
       .join('\n'),
     user: [
+      '# Template purpose',
+      templatePurpose(args.template),
+      '',
       `# Slot ${args.slot.id}`,
       `Instruction: ${args.slot.instruction}`,
       `Heading path: ${args.slot.headingPath.join(' > ') || '(root)'}`,

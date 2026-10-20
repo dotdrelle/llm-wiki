@@ -545,6 +545,10 @@ export class BuildService {
       .filter((result) => !FINAL_CONTEXT_EXCLUDED_PATHS.has(result.page.relativePath)
         && !isGeneratedTaxoTagPage(result.page))
       .sort((a, b) => {
+        // Retrieval relevance decides which evidence reaches the model. Dates
+        // should resolve equally relevant candidates, not allow an unrelated
+        // recent page to displace a page that actually answers this slot.
+        if (a.score !== b.score) return b.score - a.score;
         const aDate = extractMostRecentDateMs(a);
         const bDate = extractMostRecentDateMs(b);
         if (aDate !== undefined && bDate !== undefined && aDate !== bDate) {
@@ -552,7 +556,7 @@ export class BuildService {
         }
         if (aDate !== undefined && bDate === undefined) return -1;
         if (aDate === undefined && bDate !== undefined) return 1;
-        return b.score - a.score;
+        return 0;
       }));
   }
 
