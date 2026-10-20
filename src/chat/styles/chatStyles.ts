@@ -1,6 +1,6 @@
 import { WIKI_CSS_VARS, SCROLLBAR_CSS } from '../theme.ts';
 import { CONFIRM_DIALOG_CSS } from '../confirmDialog.ts';
-import { CHAT_ACTIVITY_CSS } from './chatActivityStyles.ts'; import { TOPBAR_CSS } from './topbarStyles.ts'; const CHAT_COMPONENT_CSS = `*{box-sizing:border-box;margin:0;padding:0}
+import { CHAT_ACTIVITY_CSS } from './chatActivityStyles.ts'; import { TOPBAR_CSS } from './topbarStyles.ts'; import { NARRATION_CSS } from '../runtime/narrationBlockScript.ts'; const CHAT_COMPONENT_CSS = `*{box-sizing:border-box;margin:0;padding:0}
 body{font-family:var(--font-sans);background:var(--bg);background-image:var(--bg-image);background-size:var(--bg-size);background-attachment:fixed;color:var(--text);height:100vh;display:flex;overflow:hidden}
 /* Themed scrollbars (shared with the wiki reader): see SCROLLBAR_CSS. */
 ${SCROLLBAR_CSS}
@@ -377,12 +377,12 @@ ${CHAT_ACTIVITY_CSS}
 .tc-raw summary{cursor:pointer;color:var(--muted);font-family:var(--font-sans);font-size:11px;font-weight:600}
 .tc-raw pre{margin-top:6px}
 .typing{display:flex;align-items:center;gap:4px;padding:3px 0;font-family:var(--font-mono);font-size:13px;color:var(--muted);animation:typing-blink 1.1s steps(1) infinite}
-.runtime-thinking{display:flex;align-items:flex-start;gap:10px;color:var(--muted);font-size:13px}
-.runtime-thinking .typing{flex:none;align-self:flex-start}
+.runtime-thinking{display:flex;align-items:flex-start;gap:10px;color:var(--muted);font-size:13px;line-height:1.5}
+.runtime-thinking .typing{flex:none;align-self:flex-start;padding:0;line-height:inherit}
 .runtime-thinking-copy{display:flex;flex-direction:column;gap:3px;min-width:0}
 .runtime-thinking-main{color:var(--text);font-weight:650}
 .runtime-thinking-narration{min-width:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden;overflow-wrap:anywhere}
-.runtime-thinking>span{min-width:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+.runtime-thinking>span,.run-live-text{min-width:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
 @keyframes typing-blink{50%{opacity:.35}}
 #empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--muted)}
 #empty .em-icon{font-size:36px;opacity:.6}
@@ -594,5 +594,5 @@ ${WIKI_CSS_VARS}
 :root.theme-light{--panel-deep:rgba(20,110,160,.09);--ok:#157a52;--err:#c0392b;--warn:#a66f00}
 :root.theme-dark{--panel-deep:rgba(214,210,201,.07);--ok:#8ac49e;--err:#ff6b6b;--warn:#f2b84b}
 ${CHAT_COMPONENT_CSS}
-${TOPBAR_CSS}
+${TOPBAR_CSS}${NARRATION_CSS}
 </style>`;

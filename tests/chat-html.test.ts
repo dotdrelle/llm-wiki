@@ -383,7 +383,21 @@ describe('chat html', () => {
     expect(script).toContain('messageHtml:savedMessagesHtml(),');
     expect(script).not.toContain("messageHtml:$('messages')?.innerHTML");
     expect(script).toContain("removeTransientMessages($('messages'));");
-    expect(script).toContain("wrap.querySelectorAll('.run-live-line').forEach(el=>{ if(el!==runLiveLineEl) el.remove(); });");
+    expect(script).toContain("wrap.querySelectorAll('.run-live-line').forEach(el=>{ if(el!==runLiveLineEl){ freezeNarrationHost(el); el.remove(); } });");
+  });
+
+  it('puts run narration under the live >_ and keeps it as a block, never as answers', () => {
+    const script = chatScripts().join('\n');
+    // A progress entry is a narration line, not a message of its own.
+    expect(script).toContain('if(progress&&role===\'assistant\') return appendNarrationLine(content,runId);');
+    // Every removal of a live element first freezes its lines in place.
+    expect(script).toContain('freezeNarrationHost(div); div.remove();');
+    expect(script).toContain('freezeNarrationHost(runLiveLineEl); runLiveLineEl.remove();');
+    // A saved conversation keeps the frozen block and regroups older loose lines.
+    expect(script).toContain('groupLooseNarrations(root);');
+    // A bubble takes only its own turn's narration: null never matches null.
+    expect(script).toContain('el._turnId&&el._turnId===payload.turnId');
+    expect(script).toContain('if(statusEl._turnId&&narrative?.turnId===statusEl._turnId&&');
   });
 
   it('restores the run\'s last step when its live line is recreated, never "Run started…" again', () => {
@@ -400,7 +414,7 @@ describe('chat html', () => {
     const bubble = (name: string) => ({ name, remove: () => removed.push(name) });
     const pending = bubble('pending'); const armed = bubble('armed'); const live = bubble('live'); const orphan = bubble('orphan');
     const wrap = { querySelectorAll: () => [pending, armed, live, orphan].map((msg) => ({ closest: () => msg })) };
-    const sweep = (pendingEls: unknown[], armedEls: unknown[]) => new Function('pendingRuntimeStatusEls', 'armedReplyStatusEls', 'runLiveLineEl', 'wrap', `${source}; removeOrphanWaitingBubbles(wrap);`)(pendingEls, armedEls, live, wrap);
+    const sweep = (pendingEls: unknown[], armedEls: unknown[]) => new Function('pendingRuntimeStatusEls', 'armedReplyStatusEls', 'runLiveLineEl', 'wrap', 'freezeNarrationHost', `${source}; removeOrphanWaitingBubbles(wrap);`)(pendingEls, armedEls, live, wrap, () => {});
     // A turn in flight: nothing is swept, its bubble is never at risk.
     sweep([pending], [armed]);
     expect(removed).toEqual([]);

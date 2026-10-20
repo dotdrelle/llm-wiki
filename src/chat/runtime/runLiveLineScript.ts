@@ -65,7 +65,7 @@ function removeOrphanWaitingBubbles(wrap) {
   if(pendingRuntimeStatusEls.length||armedReplyStatusEls.length) return;
   wrap?.querySelectorAll('.runtime-thinking').forEach(el=>{
     const msg=el.closest('.msg');
-    if(msg&&msg!==runLiveLineEl&&!pendingRuntimeStatusEls.includes(msg)&&!armedReplyStatusEls.includes(msg)) msg.remove();
+    if(msg&&msg!==runLiveLineEl&&!pendingRuntimeStatusEls.includes(msg)&&!armedReplyStatusEls.includes(msg)){ freezeNarrationHost(msg); msg.remove(); }
   });
 }
 function syncRunLiveLine() {
@@ -76,14 +76,14 @@ function syncRunLiveLine() {
   // An active turn already owns a Thinking bubble. Reuse it for approval
   // waits too, instead of adding a second typing row below Donna's narration.
   const show=runLiveLineActive()&&turnBubbles.length===0;
-  if(!show){ if(runLiveLineEl){ runLiveLineEl.remove(); runLiveLineEl=null; } $('messages')?.querySelectorAll('.run-live-line').forEach(el=>el.remove()); return; }
+  if(!show){ if(runLiveLineEl){ freezeNarrationHost(runLiveLineEl); runLiveLineEl.remove(); runLiveLineEl=null; } $('messages')?.querySelectorAll('.run-live-line').forEach(el=>{ freezeNarrationHost(el); el.remove(); }); return; }
   const wrap=$('messages');
   if(!wrap) return;
   if(!runLiveLineEl||!runLiveLineEl.isConnected){
     runLiveLineEl=document.createElement('div');
     runLiveLineEl.className='msg assistant run-live-line';
-    runLiveLineEl.innerHTML='<div class="msg-content"><div class="bubble"><div class="runtime-thinking"><div class="typing">>_</div><span>Run started…</span></div></div></div>';
-    const span=runLiveLineEl.querySelector('.runtime-thinking span');
+    runLiveLineEl.innerHTML='<div class="msg-content"><div class="bubble"><div class="runtime-thinking"><div class="typing">>_</div><div class="runtime-thinking-copy"><span class="run-live-text">Run started…</span></div></div></div></div>';
+    const span=runLiveLineEl.querySelector('.run-live-text');
     const last=runLiveLineLast&&runLiveLineLast.runId===runLiveLineRunId()?runLiveLineLast:null;
     const restored=last?.label||runLiveLineSeedLabel();
     if(restored) {
@@ -94,14 +94,14 @@ function syncRunLiveLine() {
   }
   // One live line only: a stray copy (restored with an old conversation, or
   // left by a re-render) would sit there as a frozen ">_ Run started…".
-  wrap.querySelectorAll('.run-live-line').forEach(el=>{ if(el!==runLiveLineEl) el.remove(); });
+  wrap.querySelectorAll('.run-live-line').forEach(el=>{ if(el!==runLiveLineEl){ freezeNarrationHost(el); el.remove(); } });
   // Always the last line of the thread: an announcement that arrives during
   // the run lands above it.
   if(wrap.lastElementChild!==runLiveLineEl){ wrap.appendChild(runLiveLineEl); wrap.scrollTop=wrap.scrollHeight; }
   if(waiting) setRunLiveLine(waiting);
 }
 function setRunLiveLine(text) {
-  setProgressText(runLiveLineEl?.querySelector('.runtime-thinking span'),text);
+  setProgressText(runLiveLineEl?.querySelector('.run-live-text'),text);
 }
 // The agent's business line, compacted (two lines at most): "Step 1/1" counts
 // nothing, and "LLM running" is what a running ingest always does.

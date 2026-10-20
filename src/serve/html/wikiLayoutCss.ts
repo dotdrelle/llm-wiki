@@ -817,7 +817,7 @@ export const WIKI_LAYOUT_CSS = `
        "this goes through Donna", in both themes. */
     .action-donna { color: var(--panel); background: var(--accent); border-color: var(--accent); padding-left: 0.5rem; padding-right: 0.5rem; }
     .action-donna:hover { background: color-mix(in srgb, var(--accent) 82%, black); border-color: color-mix(in srgb, var(--accent) 82%, black); color: var(--panel); }
-    .action-donna svg { width: 16px; height: 16px; display: block; }
+    .action-donna svg, .action-reload svg { width: 16px; height: 16px; display: block; } .action-reload { padding-left: 0.5rem; padding-right: 0.5rem; }
     .delete-confirm { position: relative; }
     .delete-confirm-panel {
       position: absolute;
@@ -1140,7 +1140,7 @@ export const WIKI_LAYOUT_CSS = `
     }
     /* A template's name is edited here, inline (templates/[name].md): renaming rides the same Save. */
     .edit-name { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0; min-width: 0; }
-    .edit-name-dir, .edit-name-ext { color: var(--muted); }
+    .edit-name-dir { color: var(--muted); } .edit-name-ext { /* the extension the rename keeps, as a pill like the chat's Agent badge */ margin-left: 0.35rem; padding: 0.18rem 0.5rem; border-radius: 999px; background: #06B6D4; color: #fff; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; line-height: 1.2; }
     .edit-name-input { width: auto; min-width: 8ch; max-width: 34ch; padding: 0.12rem 0.35rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-soft); color: var(--text); font: inherit; }
     .edit-name-input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
     .edit-textarea {

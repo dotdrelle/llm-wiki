@@ -12,7 +12,7 @@ import { TOPBAR_SCRIPT } from './views/topbarScript.ts';
 import { SYSTEM_PROMPT_SCRIPT } from './views/systemPromptScript.ts';
 import { EMPTY_TILES_SCRIPT } from './views/emptyTilesScript.ts';
 import { ACTIVITY_PANEL_SCRIPT } from './runtime/activityPanelScript.ts';
-import { RUN_STRIP_SCRIPT } from './runtime/runStripScript.ts'; import { RUN_LIVE_LINE_SCRIPT } from './runtime/runLiveLineScript.ts'; import { PROGRESS_LABEL_SCRIPT } from './runtime/progressLabelScript.ts'; import { CONTAINER_STATS_SCRIPT } from './runtime/containerStatsScript.ts'; import { TIME_FORMAT_SCRIPT } from './runtime/timeFormatScript.ts';
+import { RUN_STRIP_SCRIPT } from './runtime/runStripScript.ts'; import { RUN_LIVE_LINE_SCRIPT } from './runtime/runLiveLineScript.ts'; import { NARRATION_BLOCK_SCRIPT } from './runtime/narrationBlockScript.ts'; import { PROGRESS_LABEL_SCRIPT } from './runtime/progressLabelScript.ts'; import { CONTAINER_STATS_SCRIPT } from './runtime/containerStatsScript.ts'; import { TIME_FORMAT_SCRIPT } from './runtime/timeFormatScript.ts';
 import { RUN_SIDEBAR_REFRESH_SCRIPT } from './runtime/runSidebarRefreshScript.ts';
 import { SPLITTERS_SCRIPT } from './layout/splittersScript.ts';
 import { REDO_SCRIPT } from './runtime/redoScript.ts';
@@ -288,7 +288,7 @@ function notify(msg, type='s') {
 ${TIME_FORMAT_SCRIPT}${CONTAINER_STATS_SCRIPT}
 ${ACTIVITY_PANEL_SCRIPT}
 ${MAINTENANCE_PANEL_SCRIPT}
-${RUN_STRIP_SCRIPT}${PROGRESS_LABEL_SCRIPT}${RUN_LIVE_LINE_SCRIPT}
+${RUN_STRIP_SCRIPT}${PROGRESS_LABEL_SCRIPT}${RUN_LIVE_LINE_SCRIPT}${NARRATION_BLOCK_SCRIPT}
 ${RUN_SIDEBAR_REFRESH_SCRIPT}
 ${SPLITTERS_SCRIPT}
 ${REDO_SCRIPT}
@@ -661,7 +661,7 @@ function mergeRuntimeConversation() {
           statusEl._turnId=raw.turnId??null;
           armedReplyStatusEls.push(statusEl);
           for(const narrative of runtimeState?.stepNarratives??[]) {
-            if(narrative?.turnId===statusEl._turnId&&(!narrative.conversationId||narrative.conversationId===statusEl._conversationId)) {
+            if(statusEl._turnId&&narrative?.turnId===statusEl._turnId&&(!narrative.conversationId||narrative.conversationId===statusEl._conversationId)) {
               queueRuntimeNarrative({conversationId:narrative.conversationId,turnId:narrative.turnId,payload:{lines:narrative.lines}});
             }
           }
@@ -705,16 +705,11 @@ function mergeRuntimeConversation() {
     // skipGauge: this runs in a loop that can append several entries per
     // call (catching up a backlog); applyRuntimeState updates the gauge once,
     // after the whole batch, right after this function returns.
-    const el=duplicateOfDirectReply?null:appendMsg(role,content,{skipGauge:true,attachments:raw.attachments,progress:raw.progress===true});
+    const el=duplicateOfDirectReply?null:appendMsg(role,content,{skipGauge:true,attachments:raw.attachments,progress:raw.progress===true,runId:raw.runId??null});
     if(el&&raw.progressHidden===true) el.hidden=true;
     if(role==='assistant'&&!content) el?.classList.add('msg-empty');
-    if(role==='assistant'&&raw.progress===true&&el) {
-      const statusEl=armedReplyStatusEls.find((item)=>!raw.conversationId||item._conversationId===raw.conversationId);
-      if(statusEl) {
-        updateRuntimeThinkingBubble(statusEl);
-        el.parentElement?.appendChild(statusEl);
-      }
-    }
+    // A narration line went under the live >_ (narrationBlockScript); it also proves the turn alive.
+    if(role==='assistant'&&raw.progress===true&&el) updateRuntimeThinkingBubble(armedReplyStatusEls.find((item)=>!raw.conversationId||item._conversationId===raw.conversationId));
     runtimeConversationRefs.push({message,el,own:assistantOwn,conversationId:raw.conversationId??null,turnId:raw.turnId??null});
     changed=true;
   }
@@ -1907,7 +1902,8 @@ async function compactConversationMemory() {
 // moment, not to the conversation: saved with it, they came back on reopening
 // as a ">_ Run started…" nothing would ever update or remove.
 function removeTransientMessages(root) {
-  root?.querySelectorAll('.runtime-thinking').forEach(el=>el.closest('.msg')?.remove());
+  root?.querySelectorAll('.runtime-thinking').forEach(el=>{ const msg=el.closest('.msg'); freezeNarrationHost(msg); msg?.remove(); });
+  groupLooseNarrations(root);
   root?.querySelectorAll('.msg.assistant').forEach(el=>{
     const text=el.querySelector('.bubble')?.textContent?.trim()||'';
     if(!text&&!el.querySelector('.msg-attachments')) el.classList.add('msg-empty');
@@ -1921,8 +1917,8 @@ function savedMessagesHtml() {
   return copy.innerHTML;
 }
 
-function appendMsg(role, content, {html=false,plainText=null,skipGauge=false,attachments=null,progress=false}={}) {
-  removeEmpty();
+function appendMsg(role, content, {html=false,plainText=null,skipGauge=false,attachments=null,progress=false,runId=null}={}) {
+  if(progress&&role==='assistant') return appendNarrationLine(content,runId); removeEmpty();
   const wrap=$('messages');
   const div=document.createElement('div');
   div.className=\`msg \${role}\${progress?' progress':''}\`;

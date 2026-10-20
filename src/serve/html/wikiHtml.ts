@@ -23,7 +23,7 @@ import { WIKI_LAYOUT_SCRIPT } from './wikiLayoutScript.ts';
 import { CONFIRM_DIALOG_HTML } from '../../chat/confirmDialog.ts';
 import { removeBrokenWikiLinks } from './wikiLinkValidation.ts';
 import { appFaviconHref } from './appIdentity.ts';
-import { deliverableActions } from './deliverableActions.ts';
+import { deliverableActions, deliverableReloadButton } from './deliverableActions.ts';
 import { WIKI_BG_DARK, WIKI_BG_LIGHT } from '../../chat/theme.ts';
 import { readInFlightDocumentUploads } from '../routes/uploadRoutes.ts';
 import { listActiveProductionLocks } from '../../services/productionLocks.ts';
@@ -1811,6 +1811,7 @@ export async function serveMd(
     isManagedMarkdownRelativePath(relativePath)
       ? `<form class="delete-confirm" method="post" action="${escapeHref(deleteHref(relativePath))}" onsubmit="if(window.self!==window.top)window.parent.postMessage({type:'llmwiki:refresh-sidebar'},window.location.origin)"><button class="action-button action-danger" type="button" onclick="this.form.querySelector('.delete-confirm-panel').hidden=false">Delete</button><div class="delete-confirm-panel" hidden><p class="delete-confirm-title">Delete this file?</p><p class="delete-confirm-text">${escapeHtml(relativePath)} will be deleted from the workspace.</p><div class="delete-confirm-actions"><button class="action-button" type="button" onclick="this.closest('.delete-confirm-panel').hidden=true">Cancel</button><button class="action-button action-danger" type="submit">Delete</button></div></div></form>`
       : '',
+    deliverableReloadButton(relativePath),
     shellCloseBtn,
   ].join('');
   const tocScript = `<script>

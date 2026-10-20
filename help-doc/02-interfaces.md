@@ -97,6 +97,10 @@ Four views, from the widest to the most detailed:
 - **Concepts + sources** — every concept and every source sheet, each source
   linked to the concepts it tags.
 
+A deliverable page also carries a **Reload** button (↻) at the right end of
+its action bar: a build or an export rewrites the file while you read it.
+Opened in the chat, the page also reloads by itself when a run ends.
+
 ### Provenance of a deliverable
 
 A separate page answers a different question: *where does this deliverable's

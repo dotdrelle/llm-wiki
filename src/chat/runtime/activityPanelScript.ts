@@ -62,7 +62,7 @@ function createStreamBubble() {
 
 function removeStreamBubble(div) {
   if(!div) return;
-  div.remove();
+  freezeNarrationHost(div); div.remove();
 }
 
 function publishAssistantOutput(content, statusDiv, opts={}) {
@@ -75,7 +75,7 @@ function publishAssistantOutput(content, statusDiv, opts={}) {
 
 function setStreamContent(div, text, extra='', {html=false,plainText=null,streaming=false}={}) {
   const bubble=div.querySelector('.bubble');
-  if(!bubble) return;
+  if(!bubble) return; freezeNarrationHost(div); // a waiting bubble turning into the answer keeps its narration above
   div.dataset.copy=plainText??text??'';
   // Mid-stream, every token was re-parsing the WHOLE accumulated text as
   // markdown and replacing the bubble's innerHTML — cost growing with the
@@ -108,7 +108,7 @@ function createRuntimeThinkingBubble(text='Request received · Donna is preparin
     if(!div.isConnected) return;
     pendingRuntimeStatusEls=pendingRuntimeStatusEls.filter(el=>el!==div);
     armedReplyStatusEls=armedReplyStatusEls.filter(el=>el!==div);
-    div.remove();
+    freezeNarrationHost(div); div.remove();
     // A failure notice, not a status: it must not push a raw system dump into
     // the thread (the next turn reaches Donna when the runtime answers again).
     appendMsg('assistant',\`No response from the runtime after \${Math.round(RUNTIME_THINKING_TIMEOUT_MS/1000)}s. The run may still be progressing — check the Execution panel, or resend.\`);
@@ -194,7 +194,7 @@ function showRuntimeNarrative(el,item) {
 function queueRuntimeNarrative(event) {
   const payload=event?.payload||{};
   const candidates=[...pendingRuntimeStatusEls,...armedReplyStatusEls].filter((el)=>
-    progressEventInThread(event,el._conversationId)&&(!el._turnId||!payload.turnId||el._turnId===payload.turnId));
+    progressEventInThread(event,el._conversationId)&&el._turnId&&el._turnId===payload.turnId);
   for(const el of candidates) {
     el._narrativeSeen??=new Set();
     el._narrativeQueue??=[];
@@ -280,7 +280,7 @@ function clearRuntimeThinkingBubble(div) {
   if(!div) return;
   if(div._runtimeTimeout) { clearTimeout(div._runtimeTimeout); div._runtimeTimeout=null; }
   if(div._narrativeTimer) { clearTimeout(div._narrativeTimer); div._narrativeTimer=null; }
-  div.remove();
+  freezeNarrationHost(div); div.remove();
 }
 
 // Single reset entry point for the pair above — call this at every local

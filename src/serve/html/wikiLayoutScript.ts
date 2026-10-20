@@ -173,6 +173,9 @@ function wireSidebarLaunchButtons() {
   // tree — the sections an ingest is precisely most likely to have changed.
   // /embed/sidebar already returns the whole thing.
   async function refreshSidebar() {
+    // Never under a drag: a run or maintenance refreshes every 4 s, and
+    // replacing the dragged Pending row cut its drag to the chat. Run at dragend.
+    if (document.querySelector('.is-dragging')) { window.__sidebarRefreshAfterDrag = true; return; }
     const response = await fetch('/embed/sidebar', { cache: 'no-store' });
     if (!response.ok) throw new Error('Refresh failed');
     const nextDocument = new DOMParser().parseFromString(await response.text(), 'text/html');
@@ -423,6 +426,7 @@ function wireSidebarLaunchButtons() {
     document.querySelectorAll('.is-dragging')
       .forEach((node) => node.classList.remove('is-dragging'));
     clearDropTargets();
+    if (window.__sidebarRefreshAfterDrag) { window.__sidebarRefreshAfterDrag = false; void refreshSidebar().catch(() => {}); }
   });
   function clearDropTargets() {
     document.querySelectorAll('.is-drop-target').forEach((node) => node.classList.remove('is-drop-target'));

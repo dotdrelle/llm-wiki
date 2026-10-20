@@ -158,7 +158,9 @@ Everything below is a **UI panel**, not something you type:
   `.wikirc`) what the latest runs and actions did, one line per finished step
   (what is still running reads on the live line and the run card) — a source added, an export with its page count, a failure and its
   cause. Questions that only read are not narrated. Without a model, the steps
-  stay shown as data and Logs says why.
+  stay shown as data and Logs says why. In the conversation, a run's lines
+  appear under the live `>_` line while it works, and stay as one shaded block
+  above the answer once it ends — never as separate answers.
   Each of its three tabs (Plan, Files, Logs) has its own `Clear`; `Clear all`
   clears all three. Clearing the logs hides the lines present at that moment,
   in the Logs tab and in the graph's *Run journal* alike; later lines still

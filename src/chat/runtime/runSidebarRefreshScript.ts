@@ -35,6 +35,18 @@ window.noteMaintenanceSidebarActivity=(running)=>{
   runSidebarMaintenanceActive=Boolean(running);
   syncRunSidebarRefresh();
 };
+// A build rewrites the deliverable the reader may have open in the centre, and
+// a server-rendered page never re-renders by itself: the old text stayed on
+// screen and the build looked like it had not replaced the file. Reloaded at
+// the end of a run, only when the centre shows a deliverable (the browser
+// keeps the scroll position on reload).
+function refreshOpenDeliverable() {
+  const frame=document.getElementById('wiki-frame');
+  try {
+    const path=decodeURIComponent(frame?.contentWindow?.location?.pathname||'');
+    if(path.startsWith('/deliverables/')&&path.endsWith('.md')) frame.contentWindow.location.reload();
+  } catch {}
+}
 function noteRunSidebarEvent(type) {
   if(type==='run_started') {
     runSidebarDonnaActive=true;
@@ -43,6 +55,7 @@ function noteRunSidebarEvent(type) {
   }
   if(type==='run_done'||type==='run_error'||type==='run_cancelled') {
     runSidebarDonnaActive=false;
+    refreshOpenDeliverable();
     if(runSidebarRefreshTimer&&!runSidebarMaintenanceActive) syncRunSidebarRefresh();
     else refreshRunSidebar();
     return;
