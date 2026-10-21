@@ -521,7 +521,9 @@ describe('serve command palette', () => {
     const source = `${await serveSource()}\n${await wikiRoutesSource()}`;
 
     expect(source).toContain("'Cache-Control': 'no-store, no-cache, must-revalidate'");
-    expect(source).toContain('const html = await serveMd(rootDir, absolute, urlPath);');
+    expect(source).toContain("searchParams.get('view') ===\n    'document'");
+    expect(source).toContain('await serveMd(rootDir, absolute, urlPath, { documentOnly: true })');
+    expect(source).toContain(': await serveMd(rootDir, absolute, urlPath);');
     expect(source).toContain('await deps.sendGzippedHtml(req, res, html);');
     expect(source).not.toContain('async function navigationEtag(rootDir: string)');
     expect(source).not.toContain('function pageEtag(');
