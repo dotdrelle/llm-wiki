@@ -494,7 +494,7 @@ function activityTabFingerprint(tab) {
   if(!runtimeState) return 'empty';
   // Plan now carries the skill chain and the aggregated activity lines too, so
   // its fingerprint must cover them: a Clear on Plan has to hide the whole tab.
-  if(tab==='plan') return JSON.stringify([runtimeState.runId,runtimeState.currentRunId,runtimeState.plan,runtimeState.queue,runtimeState.skillChains,runtimeState.workflow?.activity,runtimeState.stepNarratives,runtimeState.workflow?.nodes?.filter(node=>node.type==='task'||node.type==='queue'||node.type==='activity')]);
+  if(tab==='plan') return JSON.stringify([runtimeState.runId,runtimeState.currentRunId,runtimeState.plan,runtimeState.queue,runtimeState.skillChains,runtimeState.workflow?.activity,runtimeState.stepNarratives,runtimeState.workflow?.nodes?.filter(node=>node.type==='task'||node.type==='queue'||node.type==='activity'||node.type==='subagent')]);
   if(tab==='logs') return JSON.stringify(runtimeState.logs||[]);
   return '';
 }
@@ -667,12 +667,13 @@ function actCardHTML(item) {
   const output=item.outputPath?uploadOutputLabel(item.outputPath):(item.resultSummary||null);
   const outputHtml=output?\`<div class="act-output" title="\${esc(output)}" onclick="copyText(\${esc(JSON.stringify(output))})">\${esc(output)}</div>\`:'';
   const errorHtml=item.error?\`<div class="act-error">\${esc(item.error)}</div>\`:'';
-  const runtimeCard=String(item.kind||'').startsWith('runtime');
+  const subagentCard=String(item.kind||'')==='runtime-subagent';
+  const runtimeCard=!subagentCard&&String(item.kind||'').startsWith('runtime');
   const retryHtml=(item.status==='stored'||item.status==='failed')&&item.uploadId
     ?\`<button class="act-btn" onclick="retryConvert(\${esc(JSON.stringify(item.uploadId))},\${esc(JSON.stringify(item.id))})">Retry</button>\`
     :'';
   const statusHtml=runtimeCard?\`<button class="act-btn" onclick="askRuntimeStatus(\${esc(JSON.stringify(item.statusTarget||item.remoteId||item.id))})">Status</button>\${item.cancelItemId?\`<button class="act-btn del cancel" onclick="cancelQueuedRuntimeItem(\${esc(JSON.stringify(item.cancelItemId))})">Delete</button>\`:''}\`:'';
-  const dismissHtml=runtimeCard?'':\`<button class="act-btn del" onclick="dismissActivity(\${esc(JSON.stringify(item.id))})">Dismiss</button>\`;
+  const dismissHtml=runtimeCard||subagentCard?'':\`<button class="act-btn del" onclick="dismissActivity(\${esc(JSON.stringify(item.id))})">Dismiss</button>\`;
   const hint=converted?\`<div class="act-card-meta">Ready · run ingest to integrate.</div>\`
     :stored?\`<div class="act-card-meta">Stored, no conversion agent.</div>\`
     :'';
@@ -794,6 +795,7 @@ function renderActivities() {
   // and "Direct agents" was really the local upload/conversion feed.
   const labels={plan:'Plan',local:'Files',memory:'Memory',maintenance:'Maintenance',logs:'Logs'};
   const runtimeActiveCount=Array.isArray(runtimeState?.activities)?runtimeState.activities.filter(a=>isActivityActive(normalizeActivityStatus(a.status,a.terminal))).length:0;
+  const runtimeSubagentActiveCount=Array.isArray(runtimeState?.workflow?.nodes)?runtimeState.workflow.nodes.filter(node=>node.type==='subagent'&&isActivityActive(normalizeActivityStatus(node.status))).length:0;
   const localActiveCount=_activities.filter(a=>isActivityActive(a.status)).length;
   const localFailedCount=_activities.filter(a=>a.status==='failed'||a.error).length;
   const tabStates={
@@ -803,7 +805,7 @@ function renderActivities() {
   };
   // Plan and Files counts show active work only. Maintenance has no numeric
   // suffix; its separate unread/pending state provides the highlight instead.
-  const tabCounts={plan:runtimeActiveCount,local:localActiveCount};
+  const tabCounts={plan:runtimeActiveCount+runtimeSubagentActiveCount,local:localActiveCount};
   const tabs=Object.entries(labels).map(([key,label])=>{
     const count=tabCounts[key]||0;
     const suffix=count>0?\` · \${count}\`:'';

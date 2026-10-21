@@ -42,6 +42,16 @@ describe('live line of a run in the chat', () => {
       .toBe('Ingest lyra.md +1 · Sources 3 running / 3');
   });
 
+  it('shows a subagent step on the live line', () => {
+    const label = new Function(`${PROGRESS_LABEL_SCRIPT}\nreturn progressMessageLabel;`)() as (message: string) => string;
+    expect(label('Agent: subagent verifier starting…')).toBe('Subagent verifier starting…');
+    expect(label('Agent: subagent verifier — step 2/3…')).toBe('Subagent verifier — step 2/3…');
+    expect(label('Agent: subagent verifier finished.')).toBe('Subagent verifier finished…');
+    expect(label('Chat: spawning a read-only subagent…')).toBe('Creating a read-only subagent…');
+    expect(label('Chat: evidence incomplete for 2 reference(s); the ledger lists them.'))
+      .toBe('Evidence incomplete for 2 references — see the ledger');
+  });
+
   it('keeps the meter, raw traces and scheduler lines out of the line', () => {
     const { runLiveLineLabel } = load({ status: 'running' });
     for (const message of [

@@ -318,7 +318,15 @@ export class RetrievalService {
     return this.wikiPagesCache;
   }
 
-  async search(query: string, options?: RetrievalSearchOptions): Promise<SearchResult[]> {
+  async search(
+    query: string,
+    options?: RetrievalSearchOptions,
+    diagnostics?: RetrievalSearchDiagnostics,
+  ): Promise<SearchResult[]> {
+    // Diagnostics belong to the CALL, not to the instance: two concurrent MCP
+    // requests share this service, and a field written after the awaited
+    // vector search could otherwise describe the other request's fallback.
+    const target = diagnostics ?? { mode: 'lexical', reason: null };
     const allowedSources = options?.allowedSources?.filter(Boolean);
     if (allowedSources && allowedSources.length > 0) {
       const limit = options?.limit ?? this.config.retrieval.vector.maxResults;
@@ -329,15 +337,29 @@ export class RetrievalService {
       const results = await this.searchUnscoped(query, {
         ...rest,
         limit: Math.max(limit * 12, 96),
-      });
+      }, target);
       const allowed = new Set(allowedSources.map((path) => path.replace(/^\.\//, '')));
       return results
         .filter((result) => allowed.has(result.page.relativePath))
         .slice(0, limit);
     }
 
-    const results = await this.searchUnscoped(query, options);
+    const results = await this.searchUnscoped(query, options, target);
     return this.expandTaxoTagPivots(query, results, options?.limit ?? this.config.retrieval.maxContextFiles);
+  }
+
+  /**
+   * Search and return the diagnostics that describe THIS call. Prefer this
+   * over `search()` + `getLastSearchDiagnostics()` whenever the caller builds
+   * a payload or a UI answer: the latter reads shared instance state.
+   */
+  async searchWithDiagnostics(
+    query: string,
+    options?: RetrievalSearchOptions,
+  ): Promise<{ results: SearchResult[]; diagnostics: RetrievalSearchDiagnostics }> {
+    const diagnostics: RetrievalSearchDiagnostics = { mode: 'lexical', reason: null };
+    const results = await this.search(query, options, diagnostics);
+    return { results, diagnostics };
   }
 
   /** Tag pages are navigational pivots: return their relevant fiches instead
@@ -373,22 +395,36 @@ export class RetrievalService {
     return merged.slice(0, limit);
   }
 
+  private setSearchDiagnostics(
+    diagnostics: RetrievalSearchDiagnostics,
+    mode: RetrievalSearchDiagnostics['mode'],
+    reason: RetrievalSearchDiagnostics['reason'],
+  ): void {
+    diagnostics.mode = mode;
+    diagnostics.reason = reason;
+    // Keep the legacy accessor truthful for callers that still read it, but
+    // never let it be the value a payload reports back.
+    this.lastSearchDiagnostics = { mode, reason };
+  }
+
   private async searchUnscoped(
     query: string,
     options?: RetrievalSearchOptions,
+    diagnostics: RetrievalSearchDiagnostics = this.lastSearchDiagnostics,
   ): Promise<SearchResult[]> {
     // The build uses the same hybrid retrieval as everything else: the vector
     // index exists precisely to rank its context by meaning.
-    this.lastSearchDiagnostics = {
-      mode: 'lexical',
-      reason: !this.config.retrieval.vector.enabled ? 'disabled' : null,
-    };
+    this.setSearchDiagnostics(
+      diagnostics,
+      'lexical',
+      !this.config.retrieval.vector.enabled ? 'disabled' : null,
+    );
     if (
       this.config.retrieval.vector.enabled &&
       !this.vectorDisabledAfterError
     ) {
       if (!(await pathExists(this.workspace.paths.vectorIndexDir))) {
-        this.lastSearchDiagnostics = { mode: 'lexical-fallback', reason: 'missing-index' };
+        this.setSearchDiagnostics(diagnostics, 'lexical-fallback', 'missing-index');
         await this.logVectorFallback('missing-index');
         return this.searchLexical(query, options);
       }
@@ -409,7 +445,7 @@ export class RetrievalService {
               this.config.retrieval.vector.maxResults,
             ),
         });
-        this.lastSearchDiagnostics = { mode: 'hybrid', reason: null };
+        this.setSearchDiagnostics(diagnostics, 'hybrid', null);
         return fuseRankedResults(vectorResults, lexicalResults).slice(
           0,
           options?.limit ?? this.config.retrieval.vector.maxResults,
@@ -418,14 +454,14 @@ export class RetrievalService {
         if (error instanceof VectorIndexConfigMismatchError) {
           this.vectorDisabledAfterError = true;
           this.vectorDisableReason = 'index-mismatch';
-          this.lastSearchDiagnostics = { mode: 'lexical-fallback', reason: 'index-mismatch' };
+          this.setSearchDiagnostics(diagnostics, 'lexical-fallback', 'index-mismatch');
           const message = error.message;
           await this.logVectorFallback('vector-index-mismatch', error, {
             disabled: true,
           });
           console.warn(`Warning: vector retrieval disabled — ${message}`);
         } else {
-          this.lastSearchDiagnostics = { mode: 'lexical-fallback', reason: 'vector-error' };
+          this.setSearchDiagnostics(diagnostics, 'lexical-fallback', 'vector-error');
           this.consecutiveVectorErrors += 1;
           if (this.consecutiveVectorErrors >= VECTOR_DISABLE_AFTER_CONSECUTIVE_ERRORS) {
             this.vectorDisabledAfterError = true;
@@ -447,11 +483,12 @@ export class RetrievalService {
       }
     }
 
-    if (this.vectorDisabledAfterError && this.lastSearchDiagnostics.reason == null) {
-      this.lastSearchDiagnostics = {
-        mode: 'lexical-fallback',
-        reason: this.vectorDisableReason ?? 'vector-error',
-      };
+    if (this.vectorDisabledAfterError && diagnostics.reason == null) {
+      this.setSearchDiagnostics(
+        diagnostics,
+        'lexical-fallback',
+        this.vectorDisableReason ?? 'vector-error',
+      );
     }
 
     return this.searchLexical(query, options);

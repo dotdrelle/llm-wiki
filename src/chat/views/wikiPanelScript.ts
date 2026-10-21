@@ -73,7 +73,12 @@ let pageContexts=[];
 */
 function validPageContext(path) {
   const value=decodeWikiPath(path).replace(/^\\//,'');
-  if(value.includes('..')||!value.endsWith('.md')) return null;
+  // A Donna report is a locked pending source ('raw/untracked/Donna/*.md.lock'):
+  // readable, draggable and attachable like any other document. The lock
+  // suffix is accepted only under raw/untracked — 'wiki/x.md.lock' is not a
+  // report.
+  const lockedReport=value.endsWith('.md.lock')&&value.startsWith('raw/untracked/');
+  if(value.includes('..')||(!value.endsWith('.md')&&!lockedReport)) return null;
   return value.startsWith('wiki/')||value.startsWith('raw/untracked/')||value.startsWith('raw/ingested/')?value:null;
 }
 function pageContextFileName(path) {

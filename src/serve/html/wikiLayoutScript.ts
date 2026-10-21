@@ -415,7 +415,11 @@ function wireSidebarLaunchButtons() {
       // below keep working — the stamp is additive, never a substitute.
       const kind = source.getAttribute('data-tree-kind');
       const dragPath = untrackedDragPath || '';
-      if (kind === 'file' && dragPath.endsWith('.md')
+      // A locked report ('raw/untracked/Donna/*.md.lock') is a document too:
+      // the pending row is draggable and must reach the chat's context.
+      const contextFile = dragPath.endsWith('.md')
+        || (dragPath.endsWith('.md.lock') && dragPath.startsWith('raw/untracked/'));
+      if (kind === 'file' && contextFile
         && (dragPath.startsWith('wiki/') || dragPath.startsWith('raw/untracked/'))) {
         event.dataTransfer.setData('application/x-llm-wiki-context', dragPath);
       }
@@ -1198,7 +1202,9 @@ function wireSidebarLaunchButtons() {
         const link = event.target instanceof Element ? event.target.closest('[data-side-path]') : null;
         if (!link) return;
         const sidePath = link.getAttribute('data-side-path') || '';
-        if (!sidePath.endsWith('.md')) return;
+        const contextFile = sidePath.endsWith('.md')
+          || (sidePath.endsWith('.md.lock') && sidePath.startsWith('raw/untracked/'));
+        if (!contextFile) return;
         event.preventDefault();
         closeMenu();
         const eligible = sidePath.indexOf('wiki/') === 0 || sidePath.indexOf('raw/untracked/') === 0;

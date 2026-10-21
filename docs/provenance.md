@@ -122,6 +122,14 @@ preserved.
   section of the intermediate page — walking the whole page would attribute
   every other section's proofs to the caller and make the guard blind to a
   section-level change.
+- **Reading a reference is a status, not a conclusion.** `wiki_read_pages`
+  accepts `path#anchor`; `resolveAnchor` resolves it and each page returns
+  `read`, `partial`, `missing`, `unreadable`, `anchor-missing`,
+  `anchor-ambiguous` or `over-budget`. An unresolved anchor returns no content
+  and its matching headings; the caller explicitly reads the whole file if it
+  wants to widen. `maxTotalChars` is enforced as a ledger, so a reference that
+  does not fit is listed as over-budget, never dropped. The manager consumes
+  these statuses; it never resolves an anchor itself.
 - **Anchoring is engine-side.** The model does not anchor reliably, so
   `provenance/anchor.ts` ties a bare citation — or re-ties a **fabricated**
   anchor — to the section whose significant tokens best match the claim

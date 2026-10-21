@@ -230,6 +230,20 @@ describe('serve graph ui', () => {
     }
   });
 
+  it('offers + Context on a locked Donna report', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-locked-context-'));
+    const relative = 'raw/untracked/Donna/2026-10-21-synthese.md.lock';
+    const absolute = path.join(root, relative);
+    try {
+      await mkdir(path.dirname(absolute), { recursive: true });
+      await writeFile(absolute, '# Synthèse\n\nCorps du rapport.\n', 'utf8');
+      const page = await serveMd(root, absolute, `/${relative}`);
+      expect(page).toContain(`data-chat-context="/${relative}"`);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('routes the deliverable export through the /deliver skill turn', () => {
     expect(WIKI_AGENT_LAUNCH_SCRIPT).toContain("data.type === 'llmwiki:deliver'");
     expect(WIKI_AGENT_LAUNCH_SCRIPT).toContain("'/deliver ' + deliverablePath");

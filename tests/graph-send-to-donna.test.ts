@@ -35,11 +35,18 @@ describe('documents que le shell accepte en contexte', () => {
     // La régression : le graphe propose « Send to Donna » sur une note de
     // source ingérée, et le shell la jetait en silence.
     expect(validPageContext('/raw/ingested/outils-de-gestion/synthese.md')).toBe('raw/ingested/outils-de-gestion/synthese.md');
+    // A Donna report is a locked pending source. The Pending panel renders it
+    // draggable and the report reader serves it, so the context gate accepts
+    // the same path.
+    expect(validPageContext('/raw/untracked/Donna/2026-10-21-synthese.md.lock'))
+      .toBe('raw/untracked/Donna/2026-10-21-synthese.md.lock');
   });
 
   it('refuse la traversée, les non-markdown et le hors-périmètre', () => {
     expect(validPageContext('/wiki/../etc/passwd.md')).toBeNull();
     expect(validPageContext('/wiki/concepts/page.txt')).toBeNull();
+    expect(validPageContext('/wiki/concepts/page.md.lock')).toBeNull();
+    expect(validPageContext('/raw/ingested/source.md.lock')).toBeNull();
     expect(validPageContext('/deliverables/rapport.md')).toBeNull();
     expect(validPageContext('/templates/modele.md')).toBeNull();
   });

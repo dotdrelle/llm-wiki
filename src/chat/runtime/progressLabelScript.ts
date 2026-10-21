@@ -43,14 +43,34 @@ function progressMessageLabel(message) {
   const msg=String(message||'').replace(/\\s+/g,' ').trim();
   if(!msg) return '';
   if(/^Donna Searching/i.test(msg)) return 'Searching the wiki…';
+  if(/^Chat: spawning a read-only subagent/i.test(msg)) return 'Creating a read-only subagent…';
+  let subagentMatch=msg.match(/^Agent: subagent (.+?) — step (\\d+)\\/(\\d+)/i);
+  if(subagentMatch) return 'Subagent '+subagentMatch[1]+' — step '+subagentMatch[2]+'/'+subagentMatch[3]+'…';
+  subagentMatch=msg.match(/^Agent: subagent (.+?) (starting|finished)/i);
+  if(subagentMatch) return 'Subagent '+subagentMatch[1]+' '+subagentMatch[2].toLowerCase()+'…';
   if(/^Wiki pre-search failed/i.test(msg)) return 'Wiki search failed — answering without it';
+  if(/^Wiki search did not open readable pages/i.test(msg)) return 'Wiki search found no pages Donna could open; using excerpts';
+  if(/^Wiki page read failed/i.test(msg)) return 'Wiki page read failed; using search excerpts';
+  if(/^Wiki search found no additional readable pages/i.test(msg)) return 'No additional wiki pages; using attached documents';
+  if(/^Wiki page search failed/i.test(msg)) return 'Wiki search failed; answering from attached documents';
+  if(/^Fast wiki lookup (?:failed|did not open|returned|used a degraded)/i.test(msg)) return msg.length>PROGRESS_LINE_MAX?msg.slice(0,PROGRESS_LINE_MAX)+'…':msg;
   // The pre-search's own result, worded by the manager (wikiPresearch.js).
   if(/^Wiki search: /.test(msg)) return msg.length>PROGRESS_LINE_MAX?msg.slice(0,PROGRESS_LINE_MAX)+'…':msg;
+  if(/^Wiki read: /.test(msg)) return msg.length>PROGRESS_LINE_MAX?msg.slice(0,PROGRESS_LINE_MAX)+'…':msg;
+  if(/^Chat: engine read (?:tool unavailable|failed)/i.test(msg)) return 'Wiki read engine unavailable; reading whole files';
   if(/streaming (?:final|direct) answer/i.test(msg)) return 'Writing the answer…';
   if(/^Chat: condensed/i.test(msg)) return 'Condensing the pages read…';
+  let match=msg.match(/^Chat: opening (\\d+) attached document\\(s\\)/i);
+  if(match) return 'Opening '+match[1]+' attached document'+(match[1]==='1'?'…':'s…');
+  match=msg.match(/^Chat: opening (\\d+) cited source section\\(s\\)/i);
+  if(match) return 'Opening '+match[1]+' cited source section'+(match[1]==='1'?'…':'s…');
+  match=msg.match(/^Chat: opened (\\d+) of (\\d+) cited source sections; source coverage is partial/i);
+  if(match) return 'Cited source coverage is partial ('+match[1]+' of '+match[2]+' opened)';
+  match=msg.match(/^Chat: evidence incomplete for (\\d+) reference/i);
+  if(match) return 'Evidence incomplete for '+match[1]+' reference'+(match[1]==='1'?'':'s')+' — see the ledger';
   if(/^Chat: consulting|^Agent: planning next action|^Agent: classified input|^\\[\\d+\\/\\d+\\] synthesizing/i.test(msg)) return PROGRESS_THINKING;
   if(/^Agent: .*retrying/i.test(msg)) return 'Retrying…';
-  let match=msg.match(/^Chat: (\\w+) (workspace memory|same-workspace conversation)/i);
+  match=msg.match(/^Chat: (\\w+) (workspace memory|same-workspace conversation)/i);
   if(match) return (match[2].toLowerCase()==='workspace memory'?'memory':'conversation')+' · '+match[1];
   match=msg.match(/^Chat: read (.+)$/i);
   if(match) return progressToolLabel(match[1]);
@@ -111,13 +131,19 @@ function setProgressText(span, text) {
   const found=text.match(/^Wiki search: (.+)$/);
   if(found) span.dataset.searchFound=found[1];
   else if(text!==PROGRESS_THINKING) delete span.dataset.searchFound;
+  const wikiRead=text.match(/^Wiki read(?:ing)?: (.+)$/);
+  if(wikiRead) span.dataset.wikiRead=wikiRead[1];
+  else if(text!==PROGRESS_THINKING) delete span.dataset.wikiRead;
   const confluenceCall=text.match(/^Using cme\\.cme_confluence_search\\b/);
   if(confluenceCall) span.dataset.confluenceSearch='1';
   else if(text!==PROGRESS_THINKING) delete span.dataset.confluenceSearch;
   // "nothing found" is no material to think over: say the wiki had nothing.
   const searched=span.dataset.searchFound;
+  const read=span.dataset.wikiRead;
   const label=text===PROGRESS_THINKING&&span.dataset.confluenceSearch
     ? 'Thinking over Confluence search results…'
+    : text===PROGRESS_THINKING&&read
+      ? 'Thinking over wiki reading: '+read
     : text===PROGRESS_THINKING&&searched
       ? (/^nothing found$/i.test(searched)?'Thinking (nothing in the wiki)…':'Thinking over '+searched+'…')
       : text;

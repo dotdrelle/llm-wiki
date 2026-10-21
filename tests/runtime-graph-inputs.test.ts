@@ -164,6 +164,45 @@ describe('runtime graph draws maintenance beside Donna', () => {
     expect(relations.some((r: { from: string; to: string }) => r.from === 'maintenance:m1' && r.to === 'maintenance')).toBe(true);
   });
 
+  it('renders a subagent and its tool steps as nested graph nodes', () => {
+    const { nodes, relations } = project({
+      workflow: {
+        nodes: [
+          { id: 'run:1', type: 'run', status: 'running' },
+          {
+            id: 'subagent:s1:0',
+            type: 'subagent',
+            label: 'verifier',
+            status: 'running',
+            subagentId: 's1',
+            step: 1,
+            maxSteps: 3,
+            tool: 'wiki_read_pages',
+            toolCount: 1,
+            startedAt: '2026-10-21T10:00:00Z',
+          },
+          {
+            id: 'subagent-step:s1:1',
+            type: 'subagent_step',
+            label: 'wiki_read_pages',
+            status: 'done',
+            parentId: 'subagent:s1:0',
+            subagentId: 's1',
+            step: 1,
+            maxSteps: 3,
+            tool: 'wiki_read_pages',
+          },
+        ],
+      },
+    });
+    const subagent = nodes.find((node: { type: string }) => node.type === 'subagent');
+    const step = nodes.find((node: { type: string }) => node.type === 'subagent_step');
+    expect(subagent.label).toBe('verifier');
+    expect(subagent.step).toBe(1);
+    expect(step.label).toBe('wiki_read_pages');
+    expect(relations.some((rel: { from: string; to: string }) => rel.from === subagent.id && rel.to === step.id)).toBe(true);
+  });
+
   it('moves the inspector off an idle run onto maintenance, unless the reader picked a node', () => {
     const selectedAfter = (userSelected: boolean) => {
       (globalThis as { window?: unknown }).window = { getMaintenanceRunning: () => [ingest] };

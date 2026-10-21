@@ -334,7 +334,9 @@ describe('sidebar views', () => {
     expect(WIKI_LAYOUT_SCRIPT).toContain("event.dataTransfer.effectAllowed = 'copyMove';");
     expect(WIKI_LAYOUT_SCRIPT).toContain("event.dataTransfer.setData('application/x-llm-wiki-context', dragPath)");
     expect(WIKI_LAYOUT_SCRIPT).toContain("dragPath.startsWith('wiki/') || dragPath.startsWith('raw/untracked/')");
-    expect(WIKI_LAYOUT_SCRIPT).toContain("kind === 'file' && dragPath.endsWith('.md')");
+    expect(WIKI_LAYOUT_SCRIPT).toContain("dragPath.endsWith('.md')");
+    // A locked Donna report is draggable to the chat as context too.
+    expect(WIKI_LAYOUT_SCRIPT).toContain("dragPath.endsWith('.md.lock') && dragPath.startsWith('raw/untracked/')");
   });
 });
 

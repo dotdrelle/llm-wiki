@@ -11,6 +11,7 @@ import matter from 'gray-matter';
 import { inferWikiPageType, WorkspaceService } from './workspaceService.ts';
 import { createCurationInventory, type CurationInventoryInput } from './curationInventory.ts';
 import { RetrievalService } from './retrievalService.ts';
+import { MAX_READ_PAGES, readWikiPagesPayload, readWorkspaceWikiPage, resolveReadableWorkspacePath } from './workspaceRead.ts';
 import { HistoryService, commitHistorySafely } from './historyService.ts';
 import { checkProductionAllowsWrite, type ProductionBusyReport } from './productionLocks.ts';
 import { loadWikiGraphSnapshot, summarizeWikiGraph } from '../graph/wiki/overview.ts';
@@ -22,7 +23,7 @@ import { applyDerivedSources } from '../provenance/write.ts';
 import { validateAnchoredCitations } from '../provenance/validate.ts';
 import { materializeAllLocatorTokens } from '../provenance/promptLocators.ts';
 import { stampConceptPageIdentities } from '../ingest/identity.ts';
-import { extractSourceCitations, extractSourceCitationsWithAnchors, extractWikiLinks, parseTemplateInstructions } from '../utils/markdown.ts';
+import { extractSourceCitations, extractSourceCitationsWithAnchors, parseTemplateInstructions } from '../utils/markdown.ts';
 import {
   buildQueryGraph,
   graphNeighbors,
@@ -36,6 +37,8 @@ import { listHelpChapters, readHelpChapter, searchHelpChapters } from '../utils/
 import type { AppConfig } from '../types.ts';
 
 const LLM_WIKI_VERSION = '0.16.60';
+export { resolveReadableWorkspacePath };
+
 const MAX_SOURCE_NAME_CHARS = 200;
 const MAX_SOURCE_SUBDIR_CHARS = 300;
 const MAX_SOURCE_CONTENT_CHARS = 1_000_000;
@@ -310,7 +313,6 @@ export async function workspaceStatusPayload(workspace: WorkspaceService) {
 const DEFAULT_COLLECT_CONTEXT_RESULTS = 10;
 const MAX_SEARCH_CONTEXT_RESULTS = 50;
 const MAX_COLLECT_CONTEXT_RESULTS = 25;
-const MAX_READ_PAGES = 25;
 const MAX_PAGE_CHARS = 50_000;
 const DEFAULT_COLLECT_PAGE_CHARS = 24_000;
 
@@ -518,68 +520,6 @@ function normalizeMaxPageChars(
   return typeof value === 'number' ? Math.min(value, MAX_PAGE_CHARS) : undefined;
 }
 
-interface ReadWikiPagePayload {
-  path: string;
-  found: boolean;
-  allowed: boolean;
-  truncated: boolean;
-  content: string;
-  // The page's provenance, surfaced structurally so the caller can follow it:
-  // citations are [src: ...] paths (wiki/... pages or raw/ingested/... archive
-  // sources), links are wiki-internal [[...]] targets. Content alone forced
-  // the caller to re-parse markdown it already held.
-  citations?: string[];
-  links?: string[];
-  error?: string;
-}
-
-async function readWorkspaceWikiPage(
-  workspace: WorkspaceService,
-  pagePath: string,
-  options?: { maxPageChars?: number },
-): Promise<ReadWikiPagePayload> {
-  try {
-    const absolutePath = resolveReadableWorkspacePath(workspace, pagePath);
-    if (!(await pathExists(absolutePath))) {
-      return {
-        path: pagePath,
-        found: false,
-        allowed: true,
-        truncated: false,
-        content: '',
-        error: `Page not found: ${pagePath}`,
-      };
-    }
-
-    const content = await readFile(absolutePath, 'utf8');
-    const maxPageChars = options?.maxPageChars;
-    const truncated =
-      typeof maxPageChars === 'number' &&
-      maxPageChars > 0 &&
-      content.length > maxPageChars;
-    return {
-      path: pagePath,
-      found: true,
-      allowed: true,
-      truncated,
-      content: truncated
-        ? `${content.slice(0, maxPageChars).trimEnd()}\n[truncated]`
-        : content,
-      citations: [...new Set(extractSourceCitations(content))],
-      links: [...new Set(extractWikiLinks(content))],
-    };
-  } catch (error) {
-    return {
-      path: pagePath,
-      found: false,
-      allowed: false,
-      truncated: false,
-      content: '',
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
 async function loggedTool<T>(
   name: string,
   input: T,
@@ -602,69 +542,6 @@ async function loggedTool<T>(
     );
     throw error;
   }
-}
-
-// Exported for tests: the decode step must never weaken the boundary checks.
-export function resolveReadableWorkspacePath(
-  workspace: WorkspaceService,
-  requestedPath: string,
-): string {
-  let decodedPath = requestedPath.trim();
-  try {
-    decodedPath = decodeURIComponent(decodedPath);
-  } catch {
-    // Keep malformed percent sequences literal; the allow-list and workspace
-    // boundary checks below remain authoritative.
-  }
-  const normalizedPath = decodedPath.replace(/\\/g, '/').replace(/^\.\//, '');
-  // Models reconstruct full paths from the status output (absolute workspace
-  // path + relative file) or pass manager-style `workspaces/<name>/…`
-  // prefixes. Both mean the same file the user selected: relativize them
-  // instead of answering "Access denied" on a path that points at the right
-  // place. The allow-list check below stays authoritative either way.
-  let candidatePath = normalizedPath;
-  if (path.isAbsolute(normalizedPath)) {
-    const relativeToRoot = path.relative(
-      workspace.paths.rootDir,
-      path.normalize(normalizedPath),
-    );
-    if (!relativeToRoot.startsWith('..') && !path.isAbsolute(relativeToRoot)) {
-      candidatePath = relativeToRoot;
-    }
-  } else {
-    const managerPrefix = /^workspaces\/[^/]+\/(.+)$/.exec(normalizedPath);
-    if (managerPrefix) candidatePath = managerPrefix[1];
-  }
-  const absolutePath = resolveInside(workspace.paths.rootDir, candidatePath);
-  const relativeToRoot = path.relative(workspace.paths.rootDir, absolutePath);
-  const relativeToWiki = path.relative(workspace.paths.wikiDir, absolutePath);
-  const relativeToIngested = path.relative(workspace.paths.rawIngestedDir, absolutePath);
-  const relativeToUntracked = path.relative(workspace.paths.rawUntrackedDir, absolutePath);
-  const underRoot = !relativeToRoot.startsWith('..') && !path.isAbsolute(relativeToRoot);
-  const underWiki = !relativeToWiki.startsWith('..') && !path.isAbsolute(relativeToWiki);
-  const underIngested =
-    !relativeToIngested.startsWith('..') && !path.isAbsolute(relativeToIngested);
-  const underUntracked =
-    !relativeToUntracked.startsWith('..') && !path.isAbsolute(relativeToUntracked);
-
-  if (!underRoot || (!underWiki && !underIngested && !underUntracked)) {
-    // Name the tool that DOES read this tree. The bare refusal sent the caller
-    // looping — it read the templates listing, tried this tool again on a
-    // templates/ path, was refused again, and eventually wrote a new template
-    // rather than reading the one it was asked to edit.
-    const suggestion = relativeToRoot.startsWith('templates/')
-      ? ' Use template_read for templates/.'
-      : relativeToRoot.startsWith('deliverables/')
-        ? ' Deliverables are generated: read the template that produces it with template_read, or the wiki pages it cites.'
-        : relativeToRoot.startsWith('build-context/')
-          ? ' build-context/ is applied at build time, not read here; template_read reports which files a template resolves.'
-          : '';
-    throw new Error(
-      `Access denied: path must be under wiki/, raw/ingested/, or raw/untracked/.${suggestion}`,
-    );
-  }
-
-  return absolutePath;
 }
 
 export async function createWikiMcpServices(config: AppConfig): Promise<WikiMcpServices> {
@@ -712,6 +589,16 @@ export async function createWikiMcpServer(
       if (!page.found) {
         return textResult(`Page not found: ${pagePath}`, { isError: true });
       }
+      if (page.anchorStatus && page.anchorStatus !== 'resolved') {
+        const alternatives = page.alternatives?.length
+          ? ` Matching headings: ${page.alternatives.join(' | ')}.`
+          : '';
+        return textResult(
+          `Citation anchor ${page.anchorStatus}: ${page.anchor}.${alternatives} `
+          + `Read the whole document with path ${page.filePath}, or retry with one of the matching headings.`,
+          { isError: true },
+        );
+      }
       // The content stays the page, verbatim; the trailer is tool furniture,
       // not page text — never write it back. It names the page's real sources
       // so the caller can follow them with wiki_read_page/wiki_read_pages (for
@@ -733,9 +620,11 @@ export async function createWikiMcpServer(
   const readWikiPages = async ({
     paths,
     maxPageChars,
+    maxTotalChars,
   }: {
     paths: string[];
     maxPageChars?: number;
+    maxTotalChars?: number;
   }) => {
     const requestedPaths = uniqueValues(paths);
     if (requestedPaths.length > MAX_READ_PAGES) {
@@ -744,13 +633,11 @@ export async function createWikiMcpServer(
         { isError: true },
       );
     }
-    const safeMaxPageChars = normalizeMaxPageChars(maxPageChars);
-    const pages = await Promise.all(
-      requestedPaths.map((pagePath) =>
-        readWorkspaceWikiPage(workspace, pagePath, { maxPageChars: safeMaxPageChars }),
-      ),
-    );
-    return textResult(JSON.stringify({ pages }, null, 2));
+    const payload = await readWikiPagesPayload(workspace, requestedPaths, {
+      maxPageChars: normalizeMaxPageChars(maxPageChars),
+      maxTotalChars,
+    });
+    return textResult(JSON.stringify(payload, null, 2));
   };
 
   // Provenance (plan-provenance-feuilles.md, lot 5): the citation catalogue a
@@ -1655,7 +1542,7 @@ const withTitles = async (
     includeRaw?: boolean;
     maxExcerptChars?: number;
   }) => {
-    const results = await retrieval.search(question, {
+    const { results, diagnostics } = await retrieval.searchWithDiagnostics(question, {
       limit:
         maxResults ??
         (config.retrieval.vector.enabled
@@ -1666,6 +1553,7 @@ const withTitles = async (
     const excerptLimit = maxExcerptChars ?? config.retrieval.maxChunkChars;
     const payload = {
       question,
+      retrieval: diagnostics,
       results: results.map((result) => {
         const excerpt = result.chunk?.content ?? result.page.content;
         return {
@@ -1686,10 +1574,12 @@ const withTitles = async (
     question,
     maxResults,
     maxPageChars,
+    excludePaths,
   }: {
     question: string;
     maxResults?: number;
     maxPageChars?: number;
+    excludePaths?: string[];
   }) => {
     const resultLimit = Math.min(
       maxResults ?? DEFAULT_COLLECT_CONTEXT_RESULTS,
@@ -1699,10 +1589,20 @@ const withTitles = async (
       maxPageChars,
       DEFAULT_COLLECT_PAGE_CHARS,
     );
-    const results = await retrieval.search(question, {
-      limit: resultLimit,
+    const excluded = new Set(
+      (excludePaths ?? []).filter((pagePath) =>
+        pagePath.startsWith('wiki/')
+        && !pagePath.includes('\\')
+        && pagePath.split('/').every((part) => part && part !== '.' && part !== '..'),
+      ),
+    );
+    const search = await retrieval.searchWithDiagnostics(question, {
+      limit: Math.min(resultLimit + excluded.size, MAX_COLLECT_CONTEXT_RESULTS + 20),
       includeRaw: true,
     });
+    const results = search.results
+      .filter((result) => !excluded.has(result.page.relativePath))
+      .slice(0, resultLimit);
     const excerptLimit = config.retrieval.maxChunkChars;
     const candidateResults = results.map((result) => {
       const excerpt = result.chunk?.content ?? result.page.content;
@@ -1753,6 +1653,7 @@ const withTitles = async (
           'notReadRawSources lists archived candidates or citations; none was opened by this call, so read a listed source with wiki_read_ingested_source before treating its complete content as evidence.',
       },
       question,
+      retrieval: search.diagnostics,
       candidateResults,
       readPagePaths,
       readPages,
@@ -2028,11 +1929,11 @@ const withTitles = async (
   const readWikiPageInput = {
     path: z
       .string()
-      .describe('Relative path from workspace root under wiki/, raw/ingested/, or raw/untracked/'),
+      .describe('Relative path or reference `path#anchor` under wiki/, raw/ingested/, or raw/untracked/'),
   };
   server.tool(
     'wiki_read_page',
-    'Read one markdown document under wiki/, raw/ingested/, or raw/untracked/ by relative path. Use for targeted inspection, including converted documents awaiting ingestion.',
+    'Read one markdown document under wiki/, raw/ingested/, or raw/untracked/ by relative path, or one cited section with `path#anchor`. An anchor that cannot be resolved is an error naming the matching headings; read the whole file by omitting the anchor. Use for targeted inspection, including converted documents awaiting ingestion.',
     readWikiPageInput,
     READ_ONLY,
     (input) => loggedTool('wiki_read_page', input, readWikiPage),
@@ -2043,18 +1944,25 @@ const withTitles = async (
       .array(z.string())
       .min(1)
       .max(MAX_READ_PAGES)
-      .describe('Relative paths from workspace root under wiki/, raw/ingested/, or raw/untracked/'),
+      .describe('References `path` or `path#anchor` under wiki/, raw/ingested/, or raw/untracked/'),
     maxPageChars: z
       .number()
       .int()
-      .min(500)
+      .min(1)
       .max(MAX_PAGE_CHARS)
       .optional()
       .describe('Maximum characters returned per page. Omit for full page content.'),
+    maxTotalChars: z
+      .number()
+      .int()
+      .min(1)
+      .max(500_000)
+      .optional()
+      .describe('Total content budget for this batch. References that do not fit are returned with status over-budget, never dropped.'),
   };
   server.tool(
     'wiki_read_pages',
-    'Read multiple markdown documents under wiki/, raw/ingested/, or raw/untracked/ in one call. Returns a JSON object with a `pages` array; each entry has `path`, `content`, `found`, `allowed`, `truncated`, and optionally `error`. Use for selected documents or after context search.',
+    'Read multiple markdown documents under wiki/, raw/ingested/, or raw/untracked/ in one call. Each path may be `path#anchor`; the engine resolves the section. Returns `{schemaVersion, pages, coverage}`: each page has `ref`, `status` (read/partial/missing/unreadable/anchor-missing/anchor-ambiguous/over-budget), `content`, `truncated`, `alternatives` and `error`, and coverage counts what was actually read. Nothing requested disappears; use `wiki_read_pages` again with the listed refs when status is not read.',
     readWikiPagesInput,
     READ_ONLY,
     (input) => loggedTool('wiki_read_pages', input, readWikiPages),
@@ -2322,6 +2230,11 @@ const withTitles = async (
       .describe(
         `Maximum characters returned per read page. Omit to use the default ${DEFAULT_COLLECT_PAGE_CHARS} character safety cap.`,
       ),
+    excludePaths: z
+      .array(z.string().min(1).max(500))
+      .max(20)
+      .optional()
+      .describe('Wiki page paths already attached to this turn. These are skipped to avoid sending the same page twice.'),
   };
   server.tool(
     'wiki_collect_context',

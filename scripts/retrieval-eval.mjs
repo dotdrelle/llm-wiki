@@ -66,8 +66,7 @@ for (const [index, item] of fixture.cases.entries()) {
     service = new RetrievalService(new WorkspaceService(config), config);
     services.set(root, service);
   }
-  const results = await service.search(item.query, { includeRaw: true, limit });
-  const retrieval = service.getLastSearchDiagnostics();
+  const { results, diagnostics: retrieval } = await service.searchWithDiagnostics(item.query, { includeRaw: true, limit });
   const expectedByPath = new Map(item.expected.map((target) => [target.path.replace(/^\.\//, ''), target]));
   const ranks = [];
   const quoteHits = [];

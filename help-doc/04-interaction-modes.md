@@ -60,6 +60,20 @@ unavailable, the agent is temporarily cut off — but chat remains usable (see
 plain question is answered right away (read-only), a new task is queued to run
 after the current one — the composer never locks up.
 
+## Temporary subagents
+
+For a question that needs several reads, a comparison or a second reading,
+DONNA can create a **temporary read-only subagent**: she gives it a role and a
+bounded objective, it uses the read tools offered in the turn, and it returns
+its answer and the paths it used. The subagent cannot modify the workspace,
+start a job, approve or delegate; those actions remain DONNA's and follow the
+normal approval path. It is available in chat and agent mode, and its work is
+bounded so a question cannot turn into an endless chain of agents. While it
+runs, the Activity **Plan** panel shows a **Subagents** card with its role,
+step, current tool and reads; the execution graph shows the subagent and its
+tool steps as child nodes; the live line names the current step, and DONNA
+narrates the finish in the workspace language.
+
 ## How to express yourself
 
 You do not have to name an agent or a technical operation. You describe a

@@ -44,19 +44,26 @@ const MAX_LINES = 800;
 // doctor, buildService, workspaceService, schema). The stale
 // `canvasExplorerScript.ts` ceiling is dropped — that file no longer exists
 // (its extraction landed).
+// 0.16.60 follow-up: wiki_collect_context gained `excludePaths` and per-call
+// retrieval diagnostics (mcpServer), and the build context gained the
+// relevance-first tie-break (buildService). Record the measured lines; the
+// module extractions remain the follow-up.
+// 0.16.60 subagents: the Plan panel gained a Subagents section and the
+// Activity card suppresses its status action for that kind (chatHtml,
+// activityPanelScript). Record the measured lines.
 const LEGACY_LIMITS = new Map([
   ['src/commands/serve.ts', 1100],
   ['src/serve/html/wikiHtml.ts', 2300],
   ['src/serve/html/wikiLayoutCss.ts', 1601],
   ['src/serve/html/wikiLayoutScript.ts', 1312],
-  ['src/chat/chatHtml.ts', 3292],
+  ['src/chat/chatHtml.ts', 3308],
   ['src/chat/styles/chatStyles.ts', 602],
-  ['src/chat/runtime/activityPanelScript.ts', 1046],
+  ['src/chat/runtime/activityPanelScript.ts', 1048],
   ['src/chat/views/wikiPanelScript.ts', 840],
   ['src/services/ingestService.ts', 2591],
-  ['src/services/mcpServer.ts', 2526],
+  ['src/services/mcpServer.ts', 2544],
   ['src/commands/doctor.ts', 1749],
-  ['src/services/buildService.ts', 1298],
+  ['src/services/buildService.ts', 1302],
   ['src/services/workspaceService.ts', 1141],
   ['src/config/schema.ts', 937],
 ]);

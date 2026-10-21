@@ -12,7 +12,7 @@ function runtimeStatusColor(status){return{running:'#4f7eff',done:'#22c55e',comp
 function runtimeIsPending(status){return status==='pending'||status==='queued'||status==='waiting'}
 // Stable z-order per node type: run hub at the back, phases above it, details
 // on top. Lower value draws first.
-function runtimeNodeDepth(node){return node.type==='run'?.9:node.type==='task_group'?1:node.type==='task_detail'?1.2:node.type==='task_input'?1.25:node.type==='subagent'?1.15:1.1}
+function runtimeNodeDepth(node){return node.type==='run'?.9:node.type==='task_group'?1:node.type==='task_detail'?1.2:node.type==='task_input'?1.25:node.type==='subagent'?1.15:node.type==='subagent_step'?1.18:1.1}
 /*
  Layered DAG layout, left → right.
 
@@ -25,7 +25,7 @@ function runtimeNodeDepth(node){return node.type==='run'?.9:node.type==='task_gr
 */
 function runtimeCanvasScene(){
   const projection=runtimeWorkflowGraphData(),nodes=projection.nodes,relations=projection.relations;
-  const isRun=node=>node.type==='run',isPhase=node=>node.type==='task_group',isDetail=node=>node.type==='task_detail',isSub=node=>node.type==='subagent',isInput=node=>node.type==='task_input';
+  const isRun=node=>node.type==='run',isPhase=node=>node.type==='task_group',isDetail=node=>node.type==='task_detail',isSub=node=>node.type==='subagent'||node.type==='subagent_step',isInput=node=>node.type==='task_input';
   // phase -> its prerequisites, over depends_on only.
   const deps=new Map();
   relations.forEach(rel=>{if(rel.type==='depends_on'){if(!deps.has(rel.from))deps.set(rel.from,new Set());deps.get(rel.from).add(rel.to)}});

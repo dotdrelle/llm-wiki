@@ -1780,8 +1780,12 @@ export async function serveMd(
   const shellCloseBtn = `<button class="action-button action-close" type="button" data-shell-close hidden title="Close document" aria-label="Close document">✕</button>`;
   // Hidden by default: only revealed by WIKI_LAYOUT_SCRIPT when the page is
   // embedded in the chat shell's central iframe, where "chat context" exists.
+  // A locked Donna report (`raw/untracked/Donna/*.md.lock`) is a readable
+  // pending source, so it carries the same context action as a .md page.
+  const contextFile = relativePath.endsWith('.md')
+    || (relativePath.endsWith('.md.lock') && relativePath.startsWith('raw/untracked/'));
   const chatContextBtn =
-    relativePath.endsWith('.md') && (relativePath.startsWith('wiki/') || relativePath.startsWith('raw/untracked/'))
+    contextFile && (relativePath.startsWith('wiki/') || relativePath.startsWith('raw/untracked/'))
       ? `<button class="action-button action-donna" type="button" data-chat-context="${escapeAttr(`/${relativePath}`)}" hidden title="Add to Donna" aria-label="Add to Donna"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 19.8 7.5v9L12 21l-7.8-4.5v-9Z"/></svg></button>`
       : '';
   // Hidden by default: only the chat shell can build (the action runs through

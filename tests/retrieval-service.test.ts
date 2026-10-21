@@ -128,10 +128,37 @@ describe('retrieval service', () => {
 
     const french = await retrieval.search('paiement échoué reprise', { limit: 3 });
     const turkish = await retrieval.search('ödeme kullanıcı arayüzü', { limit: 3 });
+    const scoped = await retrieval.searchWithDiagnostics('paiement échoué reprise', { limit: 3 });
 
     expect(french[0].page.relativePath).toBe('wiki/concepts/paiement-resilience.md');
     expect(turkish[0].page.relativePath).toBe('wiki/concepts/odeme-deneyimi.md');
     expect(retrieval.getLastSearchDiagnostics()).toEqual({ mode: 'lexical', reason: 'disabled' });
+    expect(scoped.diagnostics).toEqual({ mode: 'lexical', reason: 'disabled' });
+  });
+
+  it('keeps diagnostics per call when two searches overlap', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-retrieval-concurrent-'));
+    const config = createConfig(root);
+    const retrieval = new RetrievalService(new WorkspaceService(config), config);
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    // Replace the private search body with a controlled interleaving: the
+    // slower call finishes last, but each caller must still get its own mode.
+    (retrieval as unknown as { searchUnscoped: unknown }).searchUnscoped = async (
+      query: string,
+      _options: unknown,
+      diagnostics: { mode: string; reason: string | null },
+    ) => {
+      await delay(query === 'slow' ? 25 : 0);
+      diagnostics.mode = query === 'slow' ? 'hybrid' : 'lexical-fallback';
+      diagnostics.reason = query === 'slow' ? null : 'vector-error';
+      return [];
+    };
+    const [slow, fast] = await Promise.all([
+      retrieval.searchWithDiagnostics('slow'),
+      retrieval.searchWithDiagnostics('fast'),
+    ]);
+    expect(slow.diagnostics).toEqual({ mode: 'hybrid', reason: null });
+    expect(fast.diagnostics).toEqual({ mode: 'lexical-fallback', reason: 'vector-error' });
   });
 
   it('does not treat a query token inside a page title as an exact lexical match', async () => {

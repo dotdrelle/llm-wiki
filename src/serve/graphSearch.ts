@@ -51,8 +51,7 @@ export function createGraphSearch(workspace: WorkspaceService, config: AppConfig
     if (current !== etag) { retrieval.invalidateCache(); etag = current; }
     // The hybrid answer is rank-fused (flat scores); the configured reranker
     // gives scores a cut can read. Rerank off or failing: the fused order stays.
-    const fused = await retrieval.search(query, { limit: 40, intent: 'search' });
-    const diagnostics = retrieval.getLastSearchDiagnostics();
+    const { results: fused, diagnostics } = await retrieval.searchWithDiagnostics(query, { limit: 40, intent: 'search' });
     const results = diagnostics.mode === 'hybrid' ? await retrieval.rerankResults(query, fused) : fused;
     const best = bestPerPage(results);
     // The reranker judged nothing relevant (all scores near zero): a relative

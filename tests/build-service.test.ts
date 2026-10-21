@@ -232,7 +232,9 @@ class FinalContextRetrievalService {
           'wiki/sources/new-decision.md',
           '# New\n\nDecision settled on 2026-04-13.',
         ),
-        score: 10,
+        // Equal relevance keeps this fixture about the recency tie-break:
+        // buildService now sorts by score first (relevance before recency).
+        score: 98,
       },
     ];
   }
@@ -762,6 +764,53 @@ describe('build service', () => {
     expect(userPrompt).not.toContain('wiki/log.md');
     expect(userPrompt.indexOf('wiki/sources/new-decision.md')).toBeLessThan(
       userPrompt.indexOf('wiki/sources/old-decision.md'),
+    );
+  });
+
+  it('keeps relevance ahead of recency when the two disagree', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'llm-wiki-build-'));
+    await mkdir(path.join(root, 'wiki'), { recursive: true });
+    await mkdir(path.join(root, 'templates'), { recursive: true });
+    await mkdir(path.join(root, 'deliverables'), { recursive: true });
+
+    await writeFile(path.join(root, 'wiki', 'index.md'), '# Wiki Index\n', 'utf8');
+    await writeFile(
+      path.join(root, 'templates', 'brief.md'),
+      ['# Brief', '', '[[INSTRUCTION: Summarize decisions.]]'].join('\n'),
+      'utf8',
+    );
+
+    const config = createConfig(root);
+    const llm = new FakeLLMService();
+    const retrieval = {
+      async warmCache() {
+        return [];
+      },
+      async search() {
+        return [
+          {
+            page: wikiPage('wiki/sources/old-decision.md', '# Old\n\nOlder but directly relevant.'),
+            score: 98,
+          },
+          {
+            page: wikiPage('wiki/sources/new-decision.md', '# New\n\nRecent but weakly relevant.'),
+            score: 10,
+          },
+        ];
+      },
+    };
+    const service = new BuildService(
+      config,
+      new WorkspaceService(config),
+      llm as unknown as LLMService,
+      retrieval as unknown as RetrievalService,
+    );
+
+    await service.build();
+
+    const userPrompt = llm.lastJsonRequest?.user ?? '';
+    expect(userPrompt.indexOf('wiki/sources/old-decision.md')).toBeLessThan(
+      userPrompt.indexOf('wiki/sources/new-decision.md'),
     );
   });
 

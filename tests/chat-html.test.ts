@@ -42,6 +42,12 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain('.act-body>.runtime-graph-inspector{flex:1 1 auto}');
   });
 
+  it('shows subagent cards in the Plan panel', () => {
+    expect(CHAT_HTML).toContain("node.type==='subagent'");
+    expect(CHAT_HTML).toContain("kind:'runtime-subagent'");
+    expect(CHAT_HTML).toContain('<span class="act-section-title">Subagents</span>');
+  });
+
   it('compacts the current conversation in place: a persisted boundary, never a new conversation', () => {
     const script = chatScripts().join('\n');
     const compact = script.match(/async function compactConversationMemory\(\) \{[\s\S]*?\n\}/)?.[0] ?? '';
@@ -678,7 +684,7 @@ describe('chat html', () => {
     expect(CHAT_HTML).toContain("fetch('/api/runtime/reset',{method:'POST'})");
     expect(CHAT_HTML).toContain('.activity-subtabs{display:flex;flex-wrap:wrap;gap:4px;flex:none;margin-bottom:8px}');
     expect(CHAT_HTML).toContain('const tabStates={');
-    expect(CHAT_HTML).toContain('const tabCounts={plan:runtimeActiveCount,local:localActiveCount}');
+    expect(CHAT_HTML).toContain('const tabCounts={plan:runtimeActiveCount+runtimeSubagentActiveCount,local:localActiveCount}');
     expect(CHAT_HTML).toContain('const runtimeActiveCount=Array.isArray(runtimeState?.activities)?runtimeState.activities.filter(a=>isActivityActive(normalizeActivityStatus(a.status,a.terminal))).length:0;');
     expect(CHAT_HTML).toContain('railBtn.title=badgeDescription');
     expect(CHAT_HTML).toContain('railBtn.setAttribute(\'aria-label\',badgeDescription)');

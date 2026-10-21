@@ -137,7 +137,9 @@ Everything below is a **UI panel**, not something you type:
 - **Drag into the chat** — drag a `.md` row from the wiki tree or from Pending
   onto the conversation or the composer: it joins DONNA's context, exactly like
   the *+ Context* button (validated paths only, five at most; the selection is
-  saved with the conversation). *+ Context* opens the split view so the
+  saved with the conversation). A locked Donna report (`.md.lock`, greyed in
+  Pending) is a document too: it can be dragged, opened, picked with
+  *+ Context* and attached the same way. *+ Context* opens the split view so the
   document and the chat sit side by side; the **×** on the document column
   closes it and hands the full width to the chat; the split button reopens the
   pair.

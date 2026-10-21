@@ -245,12 +245,23 @@ function runtimeWorkflowGraphData() {
     status:String(node.status||'pending'),
   }));
   if(runNode) subagentNodes.forEach(node=>relations.push({id:'run-subagent:'+node.id,type:'contains',from:String(runNode.id),to:node.id}));
+  const subagentStepNodes=workflowNodes.filter(node=>node.type==='subagent_step').map(node=>({
+    ...node,
+    id:String(node.id),
+    type:'subagent_step',
+    label:String(node.label||node.tool||'subagent step'),
+    status:String(node.status||'pending'),
+  }));
+  subagentStepNodes.forEach(node=>{
+    if(node.parentId) relations.push({id:'subagent-step:'+node.id,type:'contains',from:String(node.parentId),to:node.id});
+  });
   const nodes=[
     ...(runNode?[{...runNode,id:String(runNode.id),type:'run',label:String(runNode.label||'Runtime run'),agents:[...new Set(phases.flatMap(phase=>phase.agents))],usage:workflow.usage||{},phaseCount:phases.length,taskCount:taskNodes.length}]:[]),
     ...phases,
     ...expandedTasks,
     ...inputNodes,
     ...subagentNodes,
+    ...subagentStepNodes,
   ];
   if(runNode) phases.filter(phase=>!relations.some(rel=>rel.from===phase.id)).forEach(phase=>relations.push({id:'run-phase:'+phase.id,type:'starts',from:phase.id,to:String(runNode.id)}));
   // Without an active run of Donna's, the maintenance tree is what is moving:
@@ -393,6 +404,7 @@ function renderRuntimeWorkflowInspector() {
   const phase=node.type==='task_group';
   const run=node.type==='run';
   const subagent=node.type==='subagent';
+  const subagentStep=node.type==='subagent_step';
   // The live extraction processes of an ingestion phase (sourceStates), never
   // the single workspace-locked task that owns them. The batch size is the
   // phase's own input files; the configured capacity is shown beside it.
@@ -414,8 +426,20 @@ function renderRuntimeWorkflowInspector() {
   const details=phase
     ? [['Status',node.status],...maintenanceRows,...concurrencyRows,...processRow,['Agents',node.agents?.join(', ')||'Not reported'],['Tokens',formatRuntimeTokens(node.usage)]]
     : subagent
-      ? [['Status',node.status],['Started',runtimeSubagentTime(node.startedAt)],['Finished',runtimeSubagentTime(node.finishedAt)]]
-      : [['Status',node.status],['Phases',node.phaseCount||0],['Tasks',node.taskCount||0],['Agents',node.agents?.length||0],
+      ? [
+        ['Status',node.status],
+        ['Step',node.maxSteps?((node.step||0)+'/'+node.maxSteps):(node.step||'—')],
+        ['Current tool',node.tool||'—'],
+        ['Tools used',node.toolCount||0],
+        ['Started',runtimeSubagentTime(node.startedAt)],
+        ['Finished',runtimeSubagentTime(node.finishedAt)],
+        ['Duration',node.durationMs?formatRuntimeDuration(node.durationMs):'—'],
+        ...(node.objective?[['Objective',String(node.objective).slice(0,200)]]:[]),
+        ...(node.error?[['Error',String(node.error).slice(0,200)]]:[]),
+      ]
+      : subagentStep
+        ? [['Status',node.status],['Step',node.maxSteps?((node.step||0)+'/'+node.maxSteps):(node.step||'—')],['Tool',node.tool||node.label||'—'],...(node.error?[['Error',String(node.error).slice(0,200)]]:[])]
+        : [['Status',node.status],['Phases',node.phaseCount||0],['Tasks',node.taskCount||0],['Agents',node.agents?.length||0],
         ...(Number.isFinite(Number(runtimeState?.concurrency?.limit))&&(node.taskCount||0)>1?[['Tasks at once (max)',Number(runtimeState.concurrency.limit)],['Agent recommended',runtimeState.concurrency.agentRecommended??'Not reported'],['Agent maximum',runtimeState.concurrency.agentMaximum??'Not reported'],['Manager cap',runtimeState.concurrency.ceiling??'Unset']]:[]),
         ...(runtimeWorkflowIngestionSummary()?[['Model calls at once',runtimeWorkflowIngestionLimitLabel()]]:[]),
         ['Tokens',formatRuntimeTokens(node.usage)]];

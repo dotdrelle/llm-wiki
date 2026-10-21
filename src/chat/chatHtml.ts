@@ -325,6 +325,7 @@ function runtimeTaskPanelHTML(view='plan') {
   const workflowTasks=workflowNodes?.filter(node=>node.type==='task')||null;
   const workflowActivities=workflowNodes?.filter(node=>node.type==='activity')||null;
   const workflowQueue=workflowNodes?.filter(node=>node.type==='queue')||null;
+  const workflowSubagents=workflowNodes?.filter(node=>node.type==='subagent')||null;
   const plan=workflowTasks
     ? workflowTasks.map((node,index)=>({...(node.raw||{}),step:node.step||index+1,description:node.description||node.label,status:node.status,activityKey:node.activityKey}))
     : Array.isArray(runtimeState.plan)?runtimeState.plan:[];
@@ -388,6 +389,25 @@ function runtimeTaskPanelHTML(view='plan') {
     startedAt:runtimeTime(item.startedAt||item.createdAt,runStartedAt),
     updatedAt:runtimeTime(item.finishedAt||item.completedAt||item.updatedAt,runUpdatedAt),
   })).join('');
+  const subagentCards=(workflowSubagents||[]).map((node,index)=>actCardHTML({
+    id:'runtime-subagent-'+(node.id||index),
+    kind:'runtime-subagent',
+    source:'runtime',
+    remoteId:node.id||index,
+    statusTarget:node.label||'subagent',
+    label:node.label||node.subagent||'Subagent',
+    detail:[
+      node.maxSteps?('step '+(node.step||0)+'/'+node.maxSteps):(node.step?('step '+node.step):null),
+      node.tool||null,
+      node.toolCount?(node.toolCount+' read'+(Number(node.toolCount)===1?'':'s')):null,
+      node.objective?String(node.objective).slice(0,120):null,
+    ].filter(Boolean).join(' · '),
+    status:normalizeActivityStatus(node.status,activityTerminalStatus(node.status)),
+    terminal:activityTerminalStatus(node.status),
+    startedAt:runtimeTime(node.startedAt,runStartedAt),
+    updatedAt:runtimeTime(node.finishedAt||node.updatedAt,runUpdatedAt),
+  })).join('');
+  const subagentHtml=subagentCards?'<div class="act-section-head"><span class="act-section-title">Subagents</span></div>'+subagentCards:'';
   const synthesisHtml=initialSynthesis.length?\`<div class="act-section-head"><span class="act-section-title">Initial synthesis</span></div><div class="runtime-log">\${esc(initialSynthesis.join('\\n'))}</div>\`:'';
   const runSummary=runtimeWorkflowSummaryHTML();
   // The "Plan" title duplicated the Activity tab and toolbar: only the
@@ -407,7 +427,7 @@ function runtimeTaskPanelHTML(view='plan') {
     ? \`<div class="act-section-head"><span class="act-section-title">Activity</span></div>\${[...activityLines].reverse().map(runtimeActivityLineHTML).join('')}\`
     : '';
   const chainHtml=skillChainsHTML();
-  return status+runSummary+runCard+narrativeHtml+synthesisHtml+activityHtml+chainHtml+planHTML+queueHTML;
+  return status+runSummary+runCard+narrativeHtml+synthesisHtml+activityHtml+chainHtml+subagentHtml+planHTML+queueHTML;
 }
 
 ${SKILL_CHAINS_SCRIPT}
