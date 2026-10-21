@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 declare const __PKG_VERSION__: string;
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { Command } from 'commander';
 import { loadConfig, findWikircPath } from '../src/config/loadConfig.ts';
 import { loadWorkspaceEnv } from '../src/config/loadEnv.ts';
@@ -70,6 +71,36 @@ function subcommandOf(argv: string[]): string | undefined {
 }
 
 /**
+ * Doctor calibrates the model selected for this workspace. The managed
+ * runtime passes WIKI_CONFIG_PATH itself; a direct CLI invocation follows the
+ * workspace's active-profile record unless the caller explicitly selected a
+ * config file.
+ */
+function selectActiveWikircForDoctor(argv: string[]): void {
+  if (subcommandOf(argv) !== 'doctor' || process.env.WIKI_CONFIG_PATH) return;
+  const root = path.resolve(
+    process.env.WIKI_WORKSPACE ?? process.env.WIKI_WORKSPACE_PATH ?? process.cwd(),
+  );
+  try {
+    const active = JSON.parse(readFileSync(path.join(root, '.wiki', 'active-profile.json'), 'utf8')) as {
+      fileName?: unknown;
+      profile?: unknown;
+    };
+    const fileName = typeof active.fileName === 'string' && active.fileName.trim()
+      ? active.fileName.trim()
+      : typeof active.profile === 'string' && active.profile.trim()
+        ? active.profile.trim() === 'default'
+          ? '.wikirc.yaml'
+          : `.wikirc.yaml.${active.profile.trim()}`
+        : '';
+    if (!/^\.wikirc\.yaml(?:\.[^/\\]+)?$/.test(fileName)) return;
+    if (existsSync(path.join(root, fileName))) process.env.WIKI_CONFIG_PATH = fileName;
+  } catch {
+    // No active-profile record: retain the ordinary workspace config lookup.
+  }
+}
+
+/**
  * `llm.provider` was split into `provider` + `engine` in 0.16, and
  * `resolveConfig` now rejects the old format. The rejection happens before any
  * command is built: `wiki doctor --apply` therefore cannot migrate a file it
@@ -127,6 +158,7 @@ async function main() {
     process.env.WIKI_WORKSPACE = workspaceArg;
   }
   await loadWorkspaceEnv(process.cwd());
+  selectActiveWikircForDoctor(process.argv.slice(2));
   const config = await loadConfigWithMigration(process.cwd());
 
   program

@@ -28,12 +28,14 @@ export function deliverableActions(relativePath: string, exportIcon: string): st
 }
 
 /**
- * "Reload" on a deliverable page: a build or an export rewrites the file while
- * the reader has it open, and nothing else re-renders the page. Placed at the
- * right end of the action bar (before the shell's Close), visible everywhere.
+ * "Reload" on a deliverable or template page: a build or an export rewrites a
+ * deliverable, Donna rewrites a template, while the reader has it open, and
+ * nothing else re-renders the page. Placed at the right end of the action bar
+ * (before the shell's Close), visible everywhere.
  */
 export function deliverableReloadButton(relativePath: string): string {
-  if (!relativePath.startsWith('deliverables/') || !relativePath.endsWith('.md')) return '';
-  return '<button class="action-button action-reload" type="button" onclick="location.reload()" title="Reload this deliverable" aria-label="Reload this deliverable">'
+  const kind = relativePath.startsWith('deliverables/') ? 'deliverable' : relativePath.startsWith('templates/') ? 'template' : '';
+  if (!kind || !relativePath.endsWith('.md')) return '';
+  return `<button class="action-button action-reload" type="button" onclick="location.reload()" title="Reload this ${kind}" aria-label="Reload this ${kind}">`
     + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>';
 }

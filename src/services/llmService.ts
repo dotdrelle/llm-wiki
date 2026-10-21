@@ -285,6 +285,13 @@ export class LLMService {
       );
     }
 
+    if (/unsupported parameter:\s*['"]?(?:max_tokens|max_completion_tokens)['"]?/i.test(details.message)) {
+      return new Error(
+        `LLM request failed for ${providerTarget}: the model rejected the configured output-token parameter. Run \`wiki doctor --apply\` to measure and record the parameter accepted by this model in .wikirc.yaml, then retry.${requestSuffix}`,
+        { cause: error instanceof Error ? error : undefined },
+      );
+    }
+
     if (details.status && details.status >= 400) {
       return new Error(
         `LLM request failed for ${providerTarget} with HTTP ${details.status}: ${details.message}${requestSuffix}`,
@@ -350,9 +357,10 @@ export class LLMService {
             ? { response_format: { type: 'json_object' } }
             : {}),
           ...(request.maxOutputTokens
-            ? usesMaxCompletionTokens(this.config.llm)
-              ? { max_completion_tokens: request.maxOutputTokens }
-              : { max_tokens: request.maxOutputTokens }
+            ? {
+                [usesMaxCompletionTokens(this.config.llm) ? 'max_completion_tokens' : 'max_tokens']:
+                  request.maxOutputTokens,
+              }
             : {}),
         };
         if (supportsTemperature(this.config.llm)) {

@@ -14,6 +14,7 @@ const workspace = {
     wikiDir: path.join(root, 'wiki'),
     rawIngestedDir: path.join(root, 'raw', 'ingested'),
     rawUntrackedDir: path.join(root, 'raw', 'untracked'),
+    deliverablesDir: path.join(root, 'deliverables'),
   },
 } as unknown as WorkspaceService;
 
@@ -46,6 +47,8 @@ describe('resolveReadableWorkspacePath decoding', () => {
       .toBe(path.join(root, 'raw', 'untracked', 'x.md'));
     expect(resolveReadableWorkspacePath(workspace, path.join(root, 'wiki', 'a', 'b.md')))
       .toBe(path.join(root, 'wiki', 'a', 'b.md'));
+    expect(resolveReadableWorkspacePath(workspace, 'deliverables/rapport.md'))
+      .toBe(path.join(root, 'deliverables', 'rapport.md'));
   });
 
   it('rejects an absolute path inside the workspace but outside the readable roots', () => {

@@ -518,7 +518,7 @@ function connectRuntimePanel() {
     try {
       noteRuntimeEvent();
       const parsed=JSON.parse(event.data);
-      if(parsed&&parsed.type) noteRunSidebarEvent(parsed.type);
+      if(parsed&&parsed.type) noteRunSidebarEvent(parsed.type,parsed);
       if(parsed&&parsed.type==='step_narrative') queueRuntimeNarrative(parsed);
       if(parsed&&parsed.type==='assistant_progress') noteRuntimeProgress(parsed.payload&&parsed.payload.message,parsed.ts,parsed.id,parsed.payload&&parsed.payload.kind);
       if(parsed&&parsed.type==='runtime_heartbeat') noteRuntimeHeartbeat(parsed);

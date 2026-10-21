@@ -88,7 +88,13 @@ describe('chat html', () => {
     expect(script).toContain("targets.forEach((target) => {");
     expect(script).toContain('target.classList.add(\'is-context-drop\')');
     expect(script).toContain("event.dataTransfer.dropEffect = 'copy';");
-    expect(script).toContain('validPageContext(String((event.dataTransfer && event.dataTransfer.getData(CONTEXT_MIME)) || \'\'))');
+    // Safari can keep the custom type in `types` but return an empty value
+    // across the sidebar iframe boundary: the drop reads text/uri-list and
+    // text/plain as fallbacks before validating each candidate.
+    expect(script).toContain('const uriList = String((transfer && transfer.getData(\'text/uri-list\')) || \'\');');
+    expect(script).toContain('transfer.getData(CONTEXT_MIME),');
+    expect(script).toContain("transfer.getData('text/plain'),");
+    expect(script).toContain('rawPaths.map((candidate) => validPageContext(candidate)).find(Boolean)');
     expect(script).toContain('addPageContext(path)');
     expect(CHAT_HTML).toContain('#messages.is-context-drop,#input-wrap.is-context-drop');
   });
@@ -1769,11 +1775,33 @@ describe('orchestration investigation visibility', () => {
   });
 });
 
+describe('open template reload', () => {
+  it('reloads an open template after Donna writes one, and leaves other pages alone', () => {
+    const script = chatScripts().join('\n');
+    const start = script.indexOf('function refreshOpenDeliverable()');
+    const end = script.indexOf("  if(type==='run_started') {", start);
+    expect(start).toBeGreaterThan(-1);
+    const reloads: string[] = [];
+    let pathname = '/templates/eas/juno.md';
+    const frame = { contentWindow: { location: { get pathname() { return pathname; }, reload: () => reloads.push(pathname) } } };
+    const context = { document: { getElementById: () => frame } };
+    vm.createContext(context);
+    vm.runInContext(`${script.slice(start, end)}}; this.note = noteRunSidebarEvent;`, context);
+    const note = (context as unknown as { note: (type: string, event: unknown) => void }).note;
+    note('tool_call_result', { payload: { name: 'wiki__template_write', ok: true } });
+    note('tool_call_result', { payload: { name: 'wiki__template_write', ok: false } });
+    note('tool_call_result', { payload: { name: 'wiki__wiki_read_page', ok: true } });
+    pathname = '/wiki/concepts/a.md';
+    note('tool_call_result', { payload: { name: 'wiki__template_write', ok: true } });
+    expect(reloads).toEqual(['/templates/eas/juno.md']);
+  });
+});
+
 describe('sidebar keep-fresh tick', () => {
   it('runs while Donna or maintenance is active and refreshes once when both stop', () => {
     const script = chatScripts().join('\n');
     const start = script.indexOf('let runSidebarRefreshTimer=null;');
-    const end = script.indexOf('function noteRunSidebarEvent(type)');
+    const end = script.indexOf('function noteRunSidebarEvent(type,event)');
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const posts: unknown[] = [];

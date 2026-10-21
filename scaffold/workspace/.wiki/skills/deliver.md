@@ -1,6 +1,10 @@
 ---
 name: deliver
 description: Publish existing deliverables, with or without polishing
+capability: document.publish
+operation: export
+capability-arguments: {"deliverable":"deliverables[]"}
+operation-param: polish
 params:
   - deliverable
   - polish
@@ -17,7 +21,7 @@ This workflow never fetches sources and never builds a missing deliverable.
 
 ## Execution
 
-Obtain the normal mutation approval, preserve the publishing capability's internal execution plan, and report the exact published files and any failure.
+Obtain the normal mutation approval, complete the publication, and report the exact published files and any failure.
 
 ## Notification
 

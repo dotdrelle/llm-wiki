@@ -51,9 +51,10 @@ applies the format migration for older workspaces (`timestamp` becomes
 `generated`, a trailing `## Citations` section becomes the `sources` list).
 Run it after an upgrade; it never overwrites a value you wrote by hand.
 
-`wiki doctor` also **asks your model what it accepts** — a temperature, a
-thinking mode, a forced tool choice — with three tiny calls, and `--apply`
-records the answer in `.wikirc.yaml` (`llm.capabilities`). Run it after
+`wiki doctor` also **asks your model what it accepts** — the output-token
+parameter, temperature, thinking mode and tool-choice forms — with a few small
+calls. It uses the workspace's active `.wikirc` profile; `--apply` records the
+answer in that same file under `llm.capabilities`. Run it after
 changing model or profile: a thinking model that refuses a forced tool choice
 is then served the automatic one, and a model that refuses tools unless its
 reasoning is turned down gets `llm.reasoningEffort: none` (or `minimal`). A

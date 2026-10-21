@@ -639,8 +639,8 @@ function readOllamaProcessEnv(): {
 // ── provider connectivity ─────────────────────────────────────────────────────
 
 /**
- * Asks the model what it accepts (temperature, thinking, forced tool_choice)
- * and records it in `llm.capabilities` on `--apply`. Probing costs three tiny
+ * Asks the model what it accepts (output cap, temperature, thinking, tool_choice)
+ * and records it in `llm.capabilities` on `--apply`. Probing uses a few small
  * calls, so a plain doctor (the maintenance runs one routinely) probes only
  * while nothing is recorded for the current model; `--apply` always re-measures.
  */
@@ -653,6 +653,10 @@ async function reportModelCapabilities(
   const recorded = probedCapabilities(config.llm);
   if (recorded && !options.apply) {
     row('model capabilities:', describeCapabilities(recorded));
+    if (!recorded.outputTokenParameter) {
+      warn('the output-token parameter is not measured for this model — run `wiki doctor --apply` to record it');
+      return;
+    }
     if (recorded.toolChoice === undefined) {
       warn('tool calling was not confirmed for this model — run `wiki doctor --apply` to measure it again');
     }
@@ -668,6 +672,9 @@ async function reportModelCapabilities(
     return;
   }
   row('model capabilities:', describeCapabilities(result.capabilities));
+  if (result.outputTokenParameterFailure) {
+    warn(`output-token parameter could not be measured: ${result.outputTokenParameterFailure}`);
+  }
   if (result.toolCallingUnsupported) {
     err(`${config.llm.model} refuses tool calling (tool_choice "auto") — agent mode and automatic maintenance cannot work with this model`);
     if (result.toolCallingRefusal) row('provider says:', result.toolCallingRefusal.slice(0, 300));
@@ -738,6 +745,7 @@ function describeCapabilities(capabilities: LlmCapabilities): string {
   const yesNo = (value: boolean | undefined, yes: string, no: string) =>
     value === undefined ? null : value ? yes : no;
   return [
+    capabilities.outputTokenParameter ? `output cap ${capabilities.outputTokenParameter}` : null,
     yesNo(capabilities.temperature, 'temperature accepted', 'temperature refused'),
     yesNo(capabilities.thinking, 'thinking mode', 'no thinking'),
     capabilities.toolChoice === 'named' ? 'tool_choice named + auto'
@@ -895,23 +903,13 @@ async function printGatewayDiagnostics(
     );
   }
 
+  // This catalog belongs to llm.baseUrl. Vector retrieval can point at a
+  // different service with its own base URL and credentials, so checking its
+  // model IDs here produces false errors. The live embedding and rerank probes
+  // in the Vector retrieval section validate those configured endpoints.
   const checks: Array<{ label: string; model: string; expectedMode?: string }> = [
     { label: 'llm.model', model: config.llm.model, expectedMode: 'chat' },
   ];
-  if (config.retrieval.vector.enabled) {
-    checks.push({
-      label: 'vector.embeddingModel',
-      model: config.retrieval.vector.embeddingModel,
-      expectedMode: 'embedding',
-    });
-    if (config.retrieval.vector.rerankEnabled) {
-      checks.push({
-        label: 'vector.rerankerModel',
-        model: config.retrieval.vector.rerankerModel,
-        expectedMode: 'rerank',
-      });
-    }
-  }
 
   for (const check of checks) {
     const found = catalog.byName.get(check.model);

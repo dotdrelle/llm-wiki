@@ -1083,10 +1083,9 @@ export const WIKI_LAYOUT_CSS = `
       font-size: 0.9rem;
       line-height: 1.45;
     }
-    .edit-form {
-      display: grid;
-      gap: 0.85rem;
-    }
+    /* The editor fills the window: the text scrolls, not the page (no resize handle). */
+    .content:has(> .edit-form) { display: flex; flex-direction: column; height: 100dvh; box-sizing: border-box; }
+    .edit-form { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; gap: 0.85rem; }
     .edit-form .hero {
       position: sticky;
       top: 0.75rem;
@@ -1144,8 +1143,7 @@ export const WIKI_LAYOUT_CSS = `
     .edit-name-input { width: auto; min-width: 8ch; max-width: 34ch; padding: 0.12rem 0.35rem; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-soft); color: var(--text); font: inherit; }
     .edit-name-input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
     .edit-textarea {
-      width: 100%;
-      min-height: min(66vh, 760px);
+      flex: 1 1 auto; width: 100%; min-height: 16rem; box-sizing: border-box;
       padding: 0.8rem;
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -1153,7 +1151,7 @@ export const WIKI_LAYOUT_CSS = `
       color: var(--text);
       font: 0.82rem ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
       line-height: 1.45;
-      resize: vertical;
+      resize: none;
       outline: none;
     }
     .edit-textarea:focus {

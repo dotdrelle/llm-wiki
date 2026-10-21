@@ -138,6 +138,8 @@ export function supportsJsonResponseFormat(llm: LlmConfig): boolean {
 
 /** OpenAI expects `max_completion_tokens` where the others expect `max_tokens`. */
 export function usesMaxCompletionTokens(llm: LlmConfig): boolean {
+  const measured = probedCapabilities(llm)?.outputTokenParameter;
+  if (measured) return measured === 'max_completion_tokens';
   if (isGateway(llm)) return false;
   return llm.engine === 'openai';
 }

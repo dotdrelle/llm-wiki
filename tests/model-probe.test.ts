@@ -40,7 +40,7 @@ describe('probeModelCapabilities', () => {
     });
     const result = await probeModelCapabilities(llm, impl);
     expect(result).toEqual({
-      capabilities: { model: 'deepseek-v4-flash', temperature: true, thinking: true, reasoningEffort: true, toolChoice: 'auto' },
+      capabilities: { model: 'deepseek-v4-flash', outputTokenParameter: 'max_tokens', temperature: true, thinking: true, reasoningEffort: true, toolChoice: 'auto' },
       toolCallingUnsupported: false,
       recommendedReasoningEffort: 'low',
     });
@@ -52,7 +52,7 @@ describe('probeModelCapabilities', () => {
       return okMessage({ content: 'OK' });
     });
     const result = await probeModelCapabilities(llm, impl);
-    expect(result.capabilities).toEqual({ model: 'deepseek-v4-flash', temperature: false, thinking: false, reasoningEffort: true, toolChoice: 'named' });
+    expect(result.capabilities).toEqual({ model: 'deepseek-v4-flash', outputTokenParameter: 'max_tokens', temperature: false, thinking: false, reasoningEffort: true, toolChoice: 'named' });
     // A model that refuses temperature is a reasoning model: it gets the default effort.
     expect(result.recommendedReasoningEffort).toBe('low');
     // Once refused, the temperature is never sent again.
@@ -103,7 +103,7 @@ describe('reasoning effort', () => {
     const written = fakeFetch(thinking);
     const kept = await probeModelCapabilities({ ...llm, reasoningEffort: 'high' }, written.impl);
     expect(kept.recommendedReasoningEffort).toBeUndefined();
-    expect(written.calls.every((call) => call.reasoning_effort === 'high')).toBe(true);
+    expect(written.calls.filter((call) => call.tools).every((call) => call.reasoning_effort === 'high')).toBe(true);
 
     const plain = fakeFetch(() => okMessage({ content: 'OK' }));
     const none = await probeModelCapabilities(llm, plain.impl);

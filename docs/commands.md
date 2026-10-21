@@ -275,7 +275,7 @@ wiki doctor --apply
 docker compose --profile cli run --rm wiki doctor
 ```
 
-By default, `doctor` prints suggested `.wikirc.yaml` changes only. Use `--apply` to write the suggested values directly.
+By default, `doctor` prints suggested changes only. It follows the workspace's active `.wikirc` profile (or the file named by `WIKI_CONFIG_PATH`) so its model probe checks the configured model and `--apply` writes `llm.capabilities` back to that same profile. The probe measures the accepted output-token parameter alongside temperature, reasoning and tool-calling capabilities.
 
 `doctor` also owns the OKF checks: pages missing their `type`, and pages
 pending the **v0.2 migration** (`timestamp` → `generated`, a trailing

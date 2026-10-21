@@ -382,6 +382,7 @@ const llmSchema = z
     capabilities: z
       .object({
         model: z.string().min(1),
+        outputTokenParameter: z.enum(['max_tokens', 'max_completion_tokens']).optional(),
         temperature: z.boolean().optional(),
         thinking: z.boolean().optional(),
         toolChoice: z.enum(['named', 'auto']).optional(),

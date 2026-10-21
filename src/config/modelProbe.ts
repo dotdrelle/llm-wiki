@@ -1,13 +1,13 @@
 import type { LlmCapabilities, LlmConfig } from '../types.ts';
-import { engineFetchHeaders, supportsTemperature } from './engineCapabilities.ts';
+import { engineFetchHeaders, supportsTemperature, usesMaxCompletionTokens } from './engineCapabilities.ts';
 
 /**
  * Measures what the configured model accepts, by asking it.
  *
  * Static rules (`engineCapabilities.ts`) guess from the engine and the model
  * name; they missed a thinking-mode model refusing a forced `tool_choice`
- * (HTTP 400 "Thinking mode does not support this tool_choice") on lyra. Three
- * tiny chat calls settle it, and `wiki doctor --apply` records the result in
+ * (HTTP 400 "Thinking mode does not support this tool_choice") on lyra. A few
+ * small chat calls settle it, and `wiki doctor --apply` records the result in
  * `llm.capabilities`, read by the engine and by the manager's own client.
  *
  * Tool calling with `tool_choice: "auto"` is REQUIRED — agent mode and the
@@ -42,6 +42,8 @@ export interface ModelProbeResult {
   toolCallingRefusal?: string;
   /** A call that failed for another reason than a refused parameter. */
   failure?: string;
+  /** The output-cap parameter could not be measured, independently of other capabilities. */
+  outputTokenParameterFailure?: string;
   /**
    * The `llm.reasoningEffort` to write (`--apply` writes it): `none`/`minimal`
    * when tool calling only works with the reasoning turned down, else
@@ -94,6 +96,33 @@ function providerMessage(outcome: CallOutcome): string {
     // Not JSON: the raw body is the message.
   }
   return (outcome.body ?? '').trim();
+}
+
+async function probeOutputTokenParameter(
+  llm: LlmConfig,
+  messages: Array<{ role: string; content: string }>,
+  fetchImpl: ProbeFetch,
+): Promise<{ parameter?: LlmCapabilities['outputTokenParameter']; failure?: string }> {
+  const first: NonNullable<LlmCapabilities['outputTokenParameter']> = usesMaxCompletionTokens(llm)
+    ? 'max_completion_tokens'
+    : 'max_tokens';
+  const firstResult = await chat(llm, { messages, [first]: 16 }, fetchImpl);
+  if (firstResult.ok) return { parameter: first };
+
+  // Change parameter only when the endpoint explicitly identifies the
+  // rejected field and recommends its alternative. Other failures (network,
+  // auth, quota) are not evidence about model capabilities.
+  const message = providerMessage(firstResult);
+  const rejected = /unsupported parameter:\s*['"]?(max_tokens|max_completion_tokens)['"]?/i.exec(message)?.[1];
+  const suggested = /use\s+['"]?(max_tokens|max_completion_tokens)['"]?\s+instead/i.exec(message)?.[1];
+  if (!refused(firstResult) || rejected !== first || !suggested || suggested === rejected) {
+    return { failure: `could not measure ${first}: ${describeFailure(firstResult)}` };
+  }
+
+  const alternate = suggested as NonNullable<LlmCapabilities['outputTokenParameter']>;
+  const alternateResult = await chat(llm, { messages, [alternate]: 16 }, fetchImpl);
+  if (alternateResult.ok) return { parameter: alternate };
+  return { failure: `neither output-cap parameter was confirmed: ${describeFailure(alternateResult)}` };
 }
 
 function describeFailure(outcome: CallOutcome): string {
@@ -152,6 +181,8 @@ export async function probeModelCapabilities(
   if (!plain.ok) {
     return { capabilities, toolCallingUnsupported: false, failure: describeFailure(plain) };
   }
+  const outputParameter = await probeOutputTokenParameter(llm, messages, fetchImpl);
+  if (outputParameter.parameter) capabilities.outputTokenParameter = outputParameter.parameter;
   if (llm.reasoningEffort && capabilities.reasoningEffort === undefined) capabilities.reasoningEffort = true;
   capabilities.thinking = messageShowsThinking(plain.message);
 
@@ -195,8 +226,18 @@ export async function probeModelCapabilities(
       }
     }
   }
-  if (refused(auto)) return { capabilities, toolCallingUnsupported: true, toolCallingRefusal: providerMessage(auto) };
-  if (!auto.ok) return { capabilities, toolCallingUnsupported: false, failure: describeFailure(auto) };
+  if (refused(auto)) return {
+    capabilities,
+    toolCallingUnsupported: true,
+    toolCallingRefusal: providerMessage(auto),
+    ...(outputParameter.failure ? { outputTokenParameterFailure: outputParameter.failure } : {}),
+  };
+  if (!auto.ok) return {
+    capabilities,
+    toolCallingUnsupported: false,
+    failure: describeFailure(auto),
+    ...(outputParameter.failure ? { outputTokenParameterFailure: outputParameter.failure } : {}),
+  };
 
   // 3. A forced (named) tool choice — what thinking mode refuses.
   const named = await chat(llm, {
@@ -208,7 +249,18 @@ export async function probeModelCapabilities(
   }, fetchImpl);
   if (named.ok) capabilities.toolChoice = 'named';
   else if (refused(named)) capabilities.toolChoice = 'auto';
-  else return { capabilities, toolCallingUnsupported: false, failure: describeFailure(named), recommendedReasoningEffort };
+  else return {
+    capabilities,
+    toolCallingUnsupported: false,
+    failure: describeFailure(named),
+    recommendedReasoningEffort,
+    ...(outputParameter.failure ? { outputTokenParameterFailure: outputParameter.failure } : {}),
+  };
 
-  return { capabilities, toolCallingUnsupported: false, ...(recommendedReasoningEffort ? { recommendedReasoningEffort } : {}) };
+  return {
+    capabilities,
+    toolCallingUnsupported: false,
+    ...(recommendedReasoningEffort ? { recommendedReasoningEffort } : {}),
+    ...(outputParameter.failure ? { outputTokenParameterFailure: outputParameter.failure } : {}),
+  };
 }

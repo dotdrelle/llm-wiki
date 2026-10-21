@@ -53,7 +53,6 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
     </div>
     <div class="sb-pane config-pane" id="config-pane">
       <div class="config-nav">
-        <div class="sec-label">Connectors</div>
         <a class="sb-link" id="connectors-link" href="/chat/connectors" onclick="showConnectorsView(event)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a6 6 0 0 1-12 0V8z"/></svg> Connectors <span>MCP & skills</span></a>
         <a class="sb-link" id="execution-link" href="/chat/execution" onclick="showExecutionView(event)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg> Execution <span>runtime runs</span></a>
       </div>

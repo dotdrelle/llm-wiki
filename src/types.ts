@@ -56,6 +56,8 @@ export interface LlmConfig {
 export interface LlmCapabilities {
   /** The model these facts were measured on; another model ignores them. */
   model: string;
+  /** Which OpenAI-compatible parameter this model accepts for the output cap. */
+  outputTokenParameter?: 'max_tokens' | 'max_completion_tokens';
   /** `temperature` accepted. `false`: never sent. */
   temperature?: boolean;
   /** The model reasons before answering (reasoning fields or `<think>`). */

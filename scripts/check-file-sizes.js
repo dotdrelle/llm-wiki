@@ -51,6 +51,8 @@ const MAX_LINES = 800;
 // 0.16.60 subagents: the Plan panel gained a Subagents section and the
 // Activity card suppresses its status action for that kind (chatHtml,
 // activityPanelScript). Record the measured lines.
+// 0.16.60 follow-ups: the Safari drag fallback grew wikiPanelScript, and the
+// probed output-token capability key grew schema by one line. Record both.
 const LEGACY_LIMITS = new Map([
   ['src/commands/serve.ts', 1100],
   ['src/serve/html/wikiHtml.ts', 2300],
@@ -59,13 +61,13 @@ const LEGACY_LIMITS = new Map([
   ['src/chat/chatHtml.ts', 3308],
   ['src/chat/styles/chatStyles.ts', 602],
   ['src/chat/runtime/activityPanelScript.ts', 1048],
-  ['src/chat/views/wikiPanelScript.ts', 840],
+  ['src/chat/views/wikiPanelScript.ts', 857],
   ['src/services/ingestService.ts', 2591],
   ['src/services/mcpServer.ts', 2544],
   ['src/commands/doctor.ts', 1749],
   ['src/services/buildService.ts', 1302],
   ['src/services/workspaceService.ts', 1141],
-  ['src/config/schema.ts', 937],
+  ['src/config/schema.ts', 938],
 ]);
 
 function walk(dir) {

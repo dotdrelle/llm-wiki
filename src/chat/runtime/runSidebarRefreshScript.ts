@@ -36,19 +36,28 @@ window.noteMaintenanceSidebarActivity=(running)=>{
   syncRunSidebarRefresh();
 };
 // A build rewrites the deliverable the reader may have open in the centre, and
-// a server-rendered page never re-renders by itself: the old text stayed on
-// screen and the build looked like it had not replaced the file. Reloaded at
-// the end of a run, only when the centre shows a deliverable (the browser
-// keeps the scroll position on reload).
+// Donna rewrites a template — often in an interactive turn, which is no run —
+// and a server-rendered page never re-renders by itself: the old text stayed on
+// screen. Reloaded at the end of a run, or after a template write, only when the
+// centre shows a deliverable or a template (the browser keeps the scroll
+// position on reload).
 function refreshOpenDeliverable() {
+  // The central wiki iframe stays alive while Donna is shown. Reloading it
+  // while hidden makes the embedded page announce llmwiki:nav on its next load,
+  // which can pull the centre back to the document after the user returned to
+  // chat.
   if(document.body&&!document.body.classList.contains('center-wiki')) return;
   const frame=document.getElementById('wiki-frame');
   try {
     const path=decodeURIComponent(frame?.contentWindow?.location?.pathname||'');
-    if(path.startsWith('/deliverables/')&&path.endsWith('.md')) frame.contentWindow.location.reload();
+    if((path.startsWith('/deliverables/')||path.startsWith('/templates/'))&&path.endsWith('.md')) frame.contentWindow.location.reload();
   } catch {}
 }
-function noteRunSidebarEvent(type) {
+function noteRunSidebarEvent(type,event) {
+  if(type==='tool_call_result'&&event?.payload?.ok!==false&&/template_write$/.test(String(event?.payload?.name||''))) {
+    refreshOpenDeliverable();
+    return;
+  }
   if(type==='run_started') {
     runSidebarDonnaActive=true;
     syncRunSidebarRefresh();

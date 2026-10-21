@@ -75,7 +75,44 @@ type ProposalRecord = {
   changedFiles: Array<{ status: string; path: string }>;
   changes: Array<{ path: string; status: string; content: string | null }>;
   diff: string;
+  pathCanonicalizations?: Array<{ from: string; to: string }>;
 };
+
+/**
+ * Proposals written before the gateway's virtual-root correction can carry
+ * `workspace/wiki/...`. The gateway backend is rooted at the workspace, so
+ * this one legacy prefix identifies a wiki path unambiguously. Normalize it
+ * at the proposal boundary; mergeableChange still confines writes to wiki/.
+ */
+function normalizeLegacyProposalPaths(record: ProposalRecord): ProposalRecord {
+  // This field is derived below. Do not trust a similarly named field stored
+  // in the gateway proposal, which is an input to the merge boundary.
+  const storedRecord = { ...record };
+  delete storedRecord.pathCanonicalizations;
+  const canonicalPath = (value: string) =>
+    value.startsWith('workspace/wiki/') ? value.slice('workspace/'.length) : value;
+  const changes = Array.isArray(record.changes)
+    ? record.changes.map((change) => ({ ...change, path: canonicalPath(String(change.path ?? '')) }))
+    : record.changes;
+  const canonicalChanges = new Set<string>();
+  for (const change of changes ?? []) {
+    if (canonicalChanges.has(change.path)) return storedRecord;
+    canonicalChanges.add(change.path);
+  }
+  const pathCanonicalizations = (record.changes ?? [])
+    .filter((change) => canonicalPath(String(change.path ?? '')) !== String(change.path ?? ''))
+    .map((change) => ({ from: String(change.path), to: canonicalPath(String(change.path)) }));
+  if (pathCanonicalizations.length === 0) return storedRecord;
+  return {
+    ...storedRecord,
+    changedFiles: (storedRecord.changedFiles ?? []).map((entry) => ({
+      ...entry,
+      path: canonicalPath(String(entry.path ?? '')),
+    })),
+    changes,
+    pathCanonicalizations,
+  };
+}
 
 async function listProposals(rootDir: string): Promise<Array<{ record: ProposalRecord; file: string }>> {
   try {
@@ -84,7 +121,7 @@ async function listProposals(rootDir: string): Promise<Array<{ record: ProposalR
     for (const file of files) {
       try {
         const raw = await readFile(path.join(proposalsDir(rootDir), file), 'utf8');
-        const record = JSON.parse(raw) as ProposalRecord;
+        const record = normalizeLegacyProposalPaths(JSON.parse(raw) as ProposalRecord);
         if (record && typeof record.id === 'string' && Array.isArray(record.changes)) {
           records.push({ record, file });
         }
@@ -103,7 +140,7 @@ async function readProposal(rootDir: string, id: string): Promise<ProposalRecord
   if (!SAFE_ID.test(value) || value.includes('..')) return null;
   try {
     const raw = await readFile(path.join(proposalsDir(rootDir), `${proposalFileId(value)}.json`), 'utf8');
-    const record = JSON.parse(raw) as ProposalRecord;
+    const record = normalizeLegacyProposalPaths(JSON.parse(raw) as ProposalRecord);
     // The file name is sanitized; confirm the STORED id is the one asked for,
     // so two ids that sanitize to the same name cannot serve each other.
     return record && record.id === value ? record : null;
@@ -281,7 +318,14 @@ export async function mergeAgentProposal(
       message: `agent-curate${verifiedBy === 'human:merge' ? '' : ' (automatic)'}: ${safeId}`,
       scope: operations.map((operation) => operation.path),
     });
-    const body = { ok: true, proposalId: safeId, merged: operations.length, files: operations.map((operation) => operation.path), verifiedBy };
+    const body = {
+      ok: true,
+      proposalId: safeId,
+      merged: operations.length,
+      files: operations.map((operation) => operation.path),
+      verifiedBy,
+      ...(record.pathCanonicalizations?.length ? { pathCanonicalizations: record.pathCanonicalizations } : {}),
+    };
     await mkdir(path.dirname(receiptPath), { recursive: true });
     await writeFile(receiptPath, JSON.stringify({ id: safeId, ...body, mergedAt }, null, 2));
     cleanupWorktree(rootDir, record);

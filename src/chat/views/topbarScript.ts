@@ -3,8 +3,8 @@
  * MCP status pills in the top bar. Extracted from chatHtml.ts.
  */
 export const TOPBAR_SCRIPT = `
-// The badge names the model, prefixed by the profile when it is not the
-// default one. With the runtime on it opens the profile menu.
+// The badge names the model only; the profile, its file and the provider sit
+// in the tooltip. With the runtime on it opens the profile menu.
 function syncModel() {
   const badge=$('model-badge');
   if(!badge) return;
@@ -15,8 +15,14 @@ function syncModel() {
   // A second "default" (.wikirc.yaml.default) is named by its file.
   const profile=activeName==='default'&&activeFile&&activeFile!=='.wikirc.yaml'?activeFile:activeName;
   const switchable=!!window.__WIKI_CONFIG__?.runtime?.enabled;
-  badge.textContent=(profile&&profile!=='default'?profile+' · ':'')+model+(switchable?' ▾':'');
-  badge.title=switchable?'Active .wikirc profile'+(profile?' "'+profile+'"':'')+' — click to switch':'Model';
+  const provider=window.__WIKI_CONFIG__?.provider||'';
+  badge.textContent=model;
+  badge.title=[
+    'Model: '+model,
+    profile?'Profile: '+profile+(activeFile&&activeFile!==profile?' ('+activeFile+')':''):'',
+    provider?'Provider: '+provider:'',
+    switchable?'Click to switch the .wikirc profile':'',
+  ].filter(Boolean).join('\\n');
   badge.classList.toggle('switchable',switchable);
 }
 
