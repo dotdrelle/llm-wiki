@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { resolveWritablePath, templateCitationViolations, templateHardContentViolations } from '../src/services/mcpServer.ts';
+import { normalizedNewAssetPath, resolveWritablePath, templateCitationViolations, templateHardContentViolations } from '../src/services/mcpServer.ts';
 import type { WorkspaceService } from '../src/services/workspaceService.ts';
 
 // resolveWritablePath is the single guard for template_write and
@@ -63,6 +63,23 @@ describe('resolveWritablePath', () => {
   it('rejects an empty path', () => {
     expect(() => resolveWritablePath(workspace, '   ', templates(), 'templates/'))
       .toThrow(/Access denied/);
+  });
+});
+
+describe('normalizedNewAssetPath', () => {
+  // The engine's own naming rules for a new template: lowercase, no accents,
+  // hyphens. A skill's convention (word count, family folder) stays the
+  // skill's; these rules never contradict it.
+  it('slugifies every segment of a new template path', () => {
+    expect(normalizedNewAssetPath(templates(), path.join(templates(), 'EAS', 'JUNO-EAS-presentation-projet.md')))
+      .toBe(path.join(root, 'templates', 'eas', 'juno-eas-presentation-projet.md'));
+    expect(normalizedNewAssetPath(templates(), path.join(templates(), 'Présentation  Équipe_v2.MD')))
+      .toBe(path.join(root, 'templates', 'presentation-equipe-v2.md'));
+  });
+
+  it('leaves an already conforming path untouched', () => {
+    const conforming = path.join(templates(), 'overview', 'project-overview.md');
+    expect(normalizedNewAssetPath(templates(), conforming)).toBe(conforming);
   });
 });
 

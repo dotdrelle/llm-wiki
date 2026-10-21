@@ -17,7 +17,7 @@ import { checkProductionAllowsWrite, type ProductionBusyReport } from './product
 import { loadWikiGraphSnapshot, summarizeWikiGraph } from '../graph/wiki/overview.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import { pathExists } from '../utils/fs.ts';
-import { resolveInside, relativeFrom } from '../utils/path.ts';
+import { resolveInside, relativeFrom, slugify } from '../utils/path.ts';
 import { buildLocatorCatalogue } from '../provenance/locators.ts';
 import { applyDerivedSources } from '../provenance/write.ts';
 import { validateAnchoredCitations } from '../provenance/validate.ts';
@@ -192,7 +192,7 @@ export const WIKI_MCP_TOOLS = [
   {
     name: 'template_write',
     description:
-      'Create or update one template under templates/. A template is a generation spec: an OKF-style frontmatter (title, description, and an explicit build_context list — use [] for none; the write is refused without the build_context key) followed by headings and multiline [[INSTRUCTION: ...]] blocks, nothing else — never prewritten prose, never notes about the template itself. Do NOT write [src: ...] citations in a template: they are the build model\'s job, not the template author\'s — an instruction may state that every claim must be cited, and the build fills the markers in at build time. Citing a raw source (raw/untracked/...) is refused outright because the file is archived once ingested — put reusable context in build-context/ instead. Instruction blocks state WHAT to produce and HOW to format it (sections, tables, bullet lists, length, language), never the facts themselves: no vendor comparisons, figures, dates, conclusions or any claim — facts are pulled from the wiki at build time. Refused (with the offending lines) when the body contains prose outside an instruction block, when a citation targets a non-wiki path, or when the frontmatter has no explicit build_context list; preview unless confirm=true; refused while a production job is running.',
+      'Create or update one template under templates/. A template is a generation spec: an OKF-style frontmatter (title, description, and an explicit build_context list — use [] for none; the write is refused without the build_context key) followed by headings and multiline [[INSTRUCTION: ...]] blocks, nothing else — never prewritten prose, never notes about the template itself. Do NOT write [src: ...] citations in a template: they are the build model\'s job, not the template author\'s — an instruction may state that every claim must be cited, and the build fills the markers in at build time. Citing a raw source (raw/untracked/...) is refused outright because the file is archived once ingested — put reusable context in build-context/ instead. Instruction blocks state WHAT to produce and HOW to format it (sections, tables, bullet lists, length, language), never the facts themselves: no vendor comparisons, figures, dates, conclusions or any claim — facts are pulled from the wiki at build time. Refused (with the offending lines) when the body contains prose outside an instruction block, when a citation targets a non-wiki path, or when the frontmatter has no explicit build_context list; preview unless confirm=true; refused while a production job is running. A NEW file\'s name is normalized (lowercase, no accents, hyphens) and reported as pathNormalized; an existing file keeps its name.',
   },
   {
     name: 'build_context_write',
@@ -459,6 +459,25 @@ function resolveWritableWikiPath(
   requestedPath: string,
 ): string {
   return resolveWritablePath(workspace, requestedPath, workspace.paths.wikiDir, 'wiki/');
+}
+
+/**
+ * The engine's naming rules for a NEW template: each segment under the target
+ * directory slugified (lowercase, accents stripped, hyphens). They never
+ * contradict a skill's own convention (word count, family folder) — they only
+ * remove what no convention wants. An existing file keeps its name, so an
+ * update never forks it. Exported for tests.
+ */
+export function normalizedNewAssetPath(targetDir: string, absolutePath: string): string {
+  const relative = path.relative(targetDir, absolutePath).replaceAll('\\', '/');
+  const parts = relative.split('/');
+  const slugged = parts.map((part) => {
+    const ext = path.extname(part);
+    // An underscore separates words; slugify alone would glue them together.
+    const base = slugify(part.slice(0, part.length - ext.length).replaceAll('_', ' '));
+    return base ? base + ext.toLowerCase() : part;
+  });
+  return path.join(targetDir, ...slugged);
 }
 
 /**
@@ -869,9 +888,12 @@ export async function createWikiMcpServer(
     confirm?: boolean;
     dryRun?: boolean;
     decorate?: (relativePath: string, content: string) => Promise<Record<string, unknown>>;
+    /** Slugify the name of a NEW file (lowercase, hyphens, no accents). */
+    normalizeNewName?: boolean;
   }): Promise<CallToolResult> => {
     let absolutePath: string;
     let relativePath: string;
+    let pathNormalized: { requested: string; written: string; rule: string } | null = null;
     try {
       absolutePath = resolveWritablePath(
         workspace,
@@ -879,6 +901,17 @@ export async function createWikiMcpServer(
         options.targetDir,
         options.label,
       );
+      if (options.normalizeNewName && !(await pathExists(absolutePath))) {
+        const normalized = normalizedNewAssetPath(options.targetDir, absolutePath);
+        if (normalized !== absolutePath) {
+          pathNormalized = {
+            requested: path.relative(workspace.paths.rootDir, absolutePath).replaceAll('\\', '/'),
+            written: path.relative(workspace.paths.rootDir, normalized).replaceAll('\\', '/'),
+            rule: 'A new file name is lowercase, without accents, words separated by hyphens. Report the written path, not the requested one.',
+          };
+          absolutePath = normalized;
+        }
+      }
       relativePath = path.relative(workspace.paths.rootDir, absolutePath).replaceAll('\\', '/');
       requireMarkdownPath(relativePath);
     } catch (error) {
@@ -898,9 +931,10 @@ export async function createWikiMcpServer(
       dryRun: options.dryRun === true,
       written: false,
     });
-    const decoration = options.decorate
-      ? await options.decorate(relativePath, options.content)
-      : {};
+    const decoration = {
+      ...(options.decorate ? await options.decorate(relativePath, options.content) : {}),
+      ...(pathNormalized ? { pathNormalized } : {}),
+    };
 
     if (previewOnly) {
       await appendAuditRecord(workspace, {
@@ -1248,6 +1282,7 @@ const withTitles = async (
     }
     return writeWorkspaceAsset({
       tool: 'template_write',
+      normalizeNewName: true,
       targetDir: workspace.paths.templatesDir,
       label: 'templates/',
       requestedPath: input.path,
@@ -2082,7 +2117,7 @@ const withTitles = async (
 
   server.tool(
     'template_write',
-    'Create or update one template under templates/. A template is a generation spec: an OKF-style frontmatter (title, description, and an explicit build_context list — use [] for none; the write is refused without the build_context key) followed by headings and multiline [[INSTRUCTION: ...]] blocks, nothing else — never prewritten prose, never notes about the template itself. [src: ...] citations are OPTIONAL, never required: when used they must point at wiki pages only ([src: wiki/...]); citing a raw source (raw/untracked/...) is refused because the file is archived once ingested and the built deliverable would carry a dead link — put reusable context in build-context/ instead. Instruction blocks state WHAT to produce and HOW to format it (sections, tables, bullet lists, length, language), never the facts themselves: no vendor comparisons, figures, dates, conclusions or any claim — facts are pulled from the wiki at build time. The write is refused (with the offending lines) when the body contains prose outside an instruction block, when a citation is not a wiki page, or when the frontmatter has no explicit build_context list. Returns a diff preview unless confirm=true, including which build_context files resolve and which are missing. Refused while a production job is running.',
+    'Create or update one template under templates/. A template is a generation spec: an OKF-style frontmatter (title, description, and an explicit build_context list — use [] for none; the write is refused without the build_context key) followed by headings and multiline [[INSTRUCTION: ...]] blocks, nothing else — never prewritten prose, never notes about the template itself. [src: ...] citations are OPTIONAL, never required: when used they must point at wiki pages only ([src: wiki/...]); citing a raw source (raw/untracked/...) is refused because the file is archived once ingested and the built deliverable would carry a dead link — put reusable context in build-context/ instead. Instruction blocks state WHAT to produce and HOW to format it (sections, tables, bullet lists, length, language), never the facts themselves: no vendor comparisons, figures, dates, conclusions or any claim — facts are pulled from the wiki at build time. The write is refused (with the offending lines) when the body contains prose outside an instruction block, when a citation is not a wiki page, or when the frontmatter has no explicit build_context list. Returns a diff preview unless confirm=true, including which build_context files resolve and which are missing. A NEW file\'s name is normalized (lowercase, no accents, hyphens) and reported as pathNormalized — report that written path; an existing file keeps its name. Refused while a production job is running.',
     {
       path: z
         .string()
