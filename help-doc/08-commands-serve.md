@@ -134,8 +134,9 @@ Everything below is a **UI panel**, not something you type:
   deliverables…) starts collapsed. A pending file a sync delivered and you
   then modified is shown in **orange** — keep it or delete it, your call; the
   sync never overwrites it.
-- **Drag into the chat** — drag a `.md` row from the wiki tree or from Pending
-  onto the conversation or the composer: it joins DONNA's context, exactly like
+- **Drag into the chat** — drag a `.md` row from the wiki tree, Pending, or
+  Deliverables (including an exported result) onto the conversation or composer:
+  it joins DONNA's context, exactly like
   the *+ Context* button (validated paths only, five at most; the selection is
   saved with the conversation). A locked Donna report (`.md.lock`, greyed in
   Pending) is a document too: it can be dragged, opened, picked with

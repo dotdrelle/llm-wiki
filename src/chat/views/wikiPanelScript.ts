@@ -61,15 +61,9 @@ function decodeWikiPath(value) {
 const PAGE_CONTEXT_LIMIT=5;
 let pageContexts=[];
 /*
- Documents the chat may take as context.
-
- The list must match what the graph OFFERS a "Send to Donna" button on, and the
- graph draws every knowledge type — \`raw/ingested/\` included, which is where an
- ingested source note lives. Leaving it out made the button silently do nothing
- on exactly the pages a comparison is read from.
-
- The guard's job is traversal and extension, not a second knowledge policy: the
- three prefixes are the workspace's readable knowledge, nothing more.
+ Documents the chat may take as context. The list matches the documents that
+ can be sent from the graph or dragged from the sidebar, including deliverables
+ that Donna can review, compare, or revise in the current conversation.
 */
 function validPageContext(path) {
   const value=decodeWikiPath(path).replace(/^\\//,'');
@@ -79,7 +73,7 @@ function validPageContext(path) {
   // report.
   const lockedReport=value.endsWith('.md.lock')&&value.startsWith('raw/untracked/');
   if(value.includes('..')||(!value.endsWith('.md')&&!lockedReport)) return null;
-  return value.startsWith('wiki/')||value.startsWith('raw/untracked/')||value.startsWith('raw/ingested/')?value:null;
+  return value.startsWith('wiki/')||value.startsWith('raw/untracked/')||value.startsWith('raw/ingested/')||value.startsWith('deliverables/')?value:null;
 }
 function pageContextFileName(path) {
   const decoded=decodeWikiPath(path);

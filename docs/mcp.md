@@ -15,8 +15,8 @@ Two transports are available:
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `wiki_list_pages`            | List all pages under `wiki/` with their type                                                                                          |
 | `wiki_curation_inventory`    | Metadata for `wiki/sources/` fiches and `wiki/concepts/` pivots, never page bodies: `summary` (default — counts, deterministic signals with their owner, exact duplicates, stable/verified pages), `candidates` (fiche groups sharing a tag or a cited source across distinct `wiki/sources/` roots, batches of ≤ 25), `pages` (paginated entries) |
-| `wiki_read_page`             | Read a page by relative path (`wiki/`, `raw/ingested/`, `raw/untracked/`); the result ends with a sources comment naming every `[src: ...]` citation |
-| `wiki_read_pages`            | Read multiple pages by relative path in one call; each entry carries the page's `citations` and `links` structurally                  |
+| `wiki_read_page`             | Read a page by relative path (`wiki/`, `raw/ingested/`, `raw/untracked/`, `deliverables/`); the result ends with a sources comment naming every `[src: ...]` citation |
+| `wiki_read_pages`            | Read multiple pages by relative path in one call, including existing deliverables; each entry carries the page's `citations` and `links` structurally |
 | `wiki_write_page`            | Write or update a page — restricted to `wiki/*` paths                                                                                 |
 | `wiki_add_source`            | Stage Markdown content in the workspace ingestion inbox; writes directly unless `dryRun=true`                                         |
 | `wiki_list_ingested_sources` | List ingested source documents in `raw/ingested/`                                                                                     |

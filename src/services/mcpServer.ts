@@ -147,12 +147,12 @@ export const WIKI_MCP_TOOLS = [
   {
     name: 'wiki_read_page',
     description:
-      'Read one llm-wiki markdown page (wiki/, raw/ingested/, or raw/untracked/) by relative path. Use for targeted inspection when a page needs full content. The result ends with a wiki_read_page sources comment naming every [src: ...] citation in the page — follow a wiki/... target with this same tool (or wiki_read_pages) and a raw/ingested/... target with wiki_read_ingested_source; do not re-read a file whose content you already hold.',
+      'Read one markdown document (wiki/, raw/ingested/, raw/untracked/, or deliverables/) by relative path. Use for targeted inspection when a page needs full content. The result ends with a wiki_read_page sources comment naming every [src: ...] citation in the page — follow a wiki/... target with this same tool (or wiki_read_pages) and a raw/ingested/... target with wiki_read_ingested_source; do not re-read a file whose content you already hold.',
   },
   {
     name: 'wiki_read_pages',
     description:
-      'Read multiple llm-wiki markdown pages (wiki/, raw/ingested/, or raw/untracked/) by relative path in one call. Use after wiki_search_context, or after wiki_collect_context when additional pages are needed. Each entry carries path, content, found, allowed, truncated, citations (the [src: ...] paths of the page) and links (its [[...]] wiki targets) — follow them with this same tool or wiki_read_ingested_source, and do not re-read a path already returned.',
+      'Read multiple markdown documents (wiki/, raw/ingested/, raw/untracked/, or deliverables/) by relative path in one call. Use after wiki_search_context, or after wiki_collect_context when additional pages are needed. Each entry carries path, content, found, allowed, truncated, citations (the [src: ...] paths of the page) and links (its [[...]] wiki targets) — follow them with this same tool or wiki_read_ingested_source, and do not re-read a path already returned.',
   },
   {
     name: 'wiki_list_provenance_locators',
@@ -603,7 +603,7 @@ export async function createWikiMcpServer(
     try {
       const page = await readWorkspaceWikiPage(workspace, pagePath);
       if (!page.allowed) {
-        return textResult('Access denied: path must be under wiki/, raw/ingested/, or raw/untracked/.', { isError: true });
+        return textResult('Access denied: path must be under wiki/, raw/ingested/, raw/untracked/, or deliverables/.', { isError: true });
       }
       if (!page.found) {
         return textResult(`Page not found: ${pagePath}`, { isError: true });
@@ -1964,11 +1964,11 @@ const withTitles = async (
   const readWikiPageInput = {
     path: z
       .string()
-      .describe('Relative path or reference `path#anchor` under wiki/, raw/ingested/, or raw/untracked/'),
+      .describe('Relative path or reference `path#anchor` under wiki/, raw/ingested/, raw/untracked/, or deliverables/'),
   };
   server.tool(
     'wiki_read_page',
-    'Read one markdown document under wiki/, raw/ingested/, or raw/untracked/ by relative path, or one cited section with `path#anchor`. An anchor that cannot be resolved is an error naming the matching headings; read the whole file by omitting the anchor. Use for targeted inspection, including converted documents awaiting ingestion.',
+    'Read one markdown document under wiki/, raw/ingested/, raw/untracked/, or deliverables/ by relative path, or one cited section with `path#anchor`. An anchor that cannot be resolved is an error naming the matching headings; read the whole file by omitting the anchor. Use for targeted inspection, including converted documents awaiting ingestion and existing deliverables.',
     readWikiPageInput,
     READ_ONLY,
     (input) => loggedTool('wiki_read_page', input, readWikiPage),
@@ -1979,7 +1979,7 @@ const withTitles = async (
       .array(z.string())
       .min(1)
       .max(MAX_READ_PAGES)
-      .describe('References `path` or `path#anchor` under wiki/, raw/ingested/, or raw/untracked/'),
+      .describe('References `path` or `path#anchor` under wiki/, raw/ingested/, raw/untracked/, or deliverables/'),
     maxPageChars: z
       .number()
       .int()
@@ -1997,7 +1997,7 @@ const withTitles = async (
   };
   server.tool(
     'wiki_read_pages',
-    'Read multiple markdown documents under wiki/, raw/ingested/, or raw/untracked/ in one call. Each path may be `path#anchor`; the engine resolves the section. Returns `{schemaVersion, pages, coverage}`: each page has `ref`, `status` (read/partial/missing/unreadable/anchor-missing/anchor-ambiguous/over-budget), `content`, `truncated`, `alternatives` and `error`, and coverage counts what was actually read. Nothing requested disappears; use `wiki_read_pages` again with the listed refs when status is not read.',
+    'Read multiple markdown documents under wiki/, raw/ingested/, raw/untracked/, or deliverables/ in one call. Each path may be `path#anchor`; the engine resolves the section. Returns `{schemaVersion, pages, coverage}`: each page has `ref`, `status` (read/partial/missing/unreadable/anchor-missing/anchor-ambiguous/over-budget), `content`, `truncated`, `alternatives` and `error`, and coverage counts what was actually read. Nothing requested disappears; use `wiki_read_pages` again with the listed refs when status is not read.',
     readWikiPagesInput,
     READ_ONLY,
     (input) => loggedTool('wiki_read_pages', input, readWikiPages),

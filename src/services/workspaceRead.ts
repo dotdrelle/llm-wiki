@@ -92,14 +92,17 @@ export function resolveReadableWorkspacePath(
   const relativeToWiki = path.relative(workspace.paths.wikiDir, absolutePath);
   const relativeToIngested = path.relative(workspace.paths.rawIngestedDir, absolutePath);
   const relativeToUntracked = path.relative(workspace.paths.rawUntrackedDir, absolutePath);
+  const relativeToDeliverables = path.relative(workspace.paths.deliverablesDir, absolutePath);
   const underRoot = !relativeToRoot.startsWith('..') && !path.isAbsolute(relativeToRoot);
   const underWiki = !relativeToWiki.startsWith('..') && !path.isAbsolute(relativeToWiki);
   const underIngested =
     !relativeToIngested.startsWith('..') && !path.isAbsolute(relativeToIngested);
   const underUntracked =
     !relativeToUntracked.startsWith('..') && !path.isAbsolute(relativeToUntracked);
+  const underDeliverables =
+    !relativeToDeliverables.startsWith('..') && !path.isAbsolute(relativeToDeliverables);
 
-  if (!underRoot || (!underWiki && !underIngested && !underUntracked)) {
+  if (!underRoot || (!underWiki && !underIngested && !underUntracked && !underDeliverables)) {
     const suggestion = relativeToRoot.startsWith('templates/')
       ? ' Use template_read for templates/.'
       : relativeToRoot.startsWith('deliverables/')
@@ -108,7 +111,7 @@ export function resolveReadableWorkspacePath(
           ? ' build-context/ is applied at build time, not read here; template_read reports which files a template resolves.'
           : '';
     throw new Error(
-      `Access denied: path must be under wiki/, raw/ingested/, or raw/untracked/.${suggestion}`,
+      `Access denied: path must be under wiki/, raw/ingested/, raw/untracked/, or deliverables/.${suggestion}`,
     );
   }
 

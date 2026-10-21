@@ -420,7 +420,8 @@ function wireSidebarLaunchButtons() {
       const contextFile = dragPath.endsWith('.md')
         || (dragPath.endsWith('.md.lock') && dragPath.startsWith('raw/untracked/'));
       if (kind === 'file' && contextFile
-        && (dragPath.startsWith('wiki/') || dragPath.startsWith('raw/untracked/'))) {
+        && (dragPath.startsWith('wiki/') || dragPath.startsWith('raw/untracked/')
+          || dragPath.startsWith('raw/ingested/') || dragPath.startsWith('deliverables/'))) {
         event.dataTransfer.setData('application/x-llm-wiki-context', dragPath);
       }
     }
