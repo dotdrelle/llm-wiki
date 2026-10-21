@@ -185,6 +185,11 @@ export const WIKI_MCP_TOOLS = [
       'Read one template under templates/ with its output path and build_context report, or list every template when no path is given.',
   },
   {
+    name: 'build_context_read',
+    description:
+      'Read shared build-context rules under build-context/. Omit paths to read the inventory and as much content as fits the declared total budget; every requested file is returned as read, partial, missing, or over-budget.',
+  },
+  {
     name: 'wiki_read_deliverable',
     description:
       'Read one generated deliverable under deliverables/ by relative path, or list every deliverable when no path is given. Use to inspect the generated output of a build (e.g. a generated presentation) before simplifying or correcting its template.',
@@ -1140,6 +1145,60 @@ const withTitles = async (
         isError: true,
       });
     }
+  };
+
+  const readBuildContext = async (input: {
+    paths?: string[];
+    maxPageChars?: number;
+    maxTotalChars?: number;
+  }) => {
+    const knownPaths = relativeWorkspacePaths(workspace, await workspace.listBuildContextPaths());
+    const requestedPaths = input.paths?.length
+      ? [...new Set(input.paths.map((value) => value.trim().replaceAll('\\', '/').replace(/^\.\//, '')))]
+      : knownPaths;
+    const maxPageChars = Math.min(50_000, Math.max(1, input.maxPageChars ?? 12_000));
+    const maxTotalChars = Math.min(100_000, Math.max(1, input.maxTotalChars ?? 24_000));
+    const sections = await workspace.readBuildContextSections();
+    const byPath = new Map(sections.map((section) => [section.relativePath, section.content]));
+    let remaining = maxTotalChars;
+    let charsRead = 0;
+    const files = requestedPaths.map((requested) => {
+      const content = byPath.get(requested);
+      if (content === undefined) {
+        return { path: requested, status: 'missing', content: '', truncated: false };
+      }
+      const allowance = Math.min(maxPageChars, remaining);
+      if (allowance <= 0) {
+        return { path: requested, status: 'over-budget', content: '', truncated: true };
+      }
+      const returned = content.slice(0, allowance);
+      const truncated = returned.length < content.length;
+      remaining -= returned.length;
+      charsRead += returned.length;
+      return {
+        path: requested,
+        status: truncated ? 'partial' : 'read',
+        content: returned,
+        truncated,
+      };
+    });
+    const counts = Object.fromEntries(
+      ['read', 'partial', 'missing', 'over-budget'].map((status) => [
+        status,
+        files.filter((file) => file.status === status).length,
+      ]),
+    );
+    return textResult(JSON.stringify({
+      schemaVersion: 1,
+      files,
+      coverage: {
+        requested: files.length,
+        ...counts,
+        charsRead,
+        maxTotalChars,
+        complete: files.every((file) => file.status === 'read'),
+      },
+    }, null, 2));
   };
 
   const readDeliverable = async ({ path: requestedPath }: { path?: string }) => {
@@ -2125,6 +2184,18 @@ const withTitles = async (
     },
     READ_ONLY,
     (input) => loggedTool('template_read', input, readTemplate),
+  );
+
+  server.tool(
+    'build_context_read',
+    'Read shared Markdown rules under build-context/. Omit paths to read all files within the total budget, or name exact build-context/... paths. Returns every requested path with read, partial, missing, or over-budget status; increase the budget or request only the missing paths when coverage is incomplete.',
+    {
+      paths: z.array(z.string().min(1)).max(100).optional(),
+      maxPageChars: z.number().int().min(1).max(50_000).optional(),
+      maxTotalChars: z.number().int().min(1).max(100_000).optional(),
+    },
+    READ_ONLY,
+    (input) => loggedTool('build_context_read', input, readBuildContext),
   );
 
   server.tool(

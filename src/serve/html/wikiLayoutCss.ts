@@ -1595,4 +1595,18 @@ export const WIKI_LAYOUT_CSS = `
        won on specificity and inflated the flex row) is zeroed here. */
     html.sidebar-panel .side-head{margin-bottom:.4rem}
     html.sidebar-panel .side-head .brand{margin-bottom:0}
+    /* Direct document links (view=document) are intended for readers that need
+       the Markdown itself, not the Serve workspace navigation around it. */
+    html.document-only .app-shell{display:block;min-height:100vh}
+    html.document-only .sidebar,
+    html.document-only .wiki-main-resizer,
+    html.document-only .topbar,
+    html.document-only .doc-toc,
+    html.document-only .wiki-theme-toggle,
+    html.document-only .wiki-help-toggle,
+    html.document-only .modal-backdrop,
+    html.document-only .palette-backdrop{display:none!important}
+    html.document-only body{background-image:none}
+    html.document-only .content{min-height:100vh;padding:clamp(1rem,4vw,3.5rem);display:block}
+    html.document-only .article{max-width:1000px;margin:0 auto}
 `;

@@ -1720,7 +1720,9 @@ export async function serveMd(
   rootDir: string,
   filePath: string,
   urlPath: string,
+  options: { documentOnly?: boolean } = {},
 ): Promise<string> {
+  const documentOnly = options.documentOnly === true;
   const relativePath = urlPath.replace(/^\//, '');
   const isDeliverable = relativePath.startsWith('deliverables/');
   const [rawContent, sidecarRaw] = await Promise.all([
@@ -1740,7 +1742,7 @@ export async function serveMd(
       };
       const modifiedPaths = new Set((sidecar.merged ?? []).map(normalizeChangedPath));
       const insertedPaths = new Set((sidecar.inserted ?? []).map(normalizeChangedPath));
-      if (modifiedPaths.size > 0 || insertedPaths.size > 0) {
+      if (!documentOnly && (modifiedPaths.size > 0 || insertedPaths.size > 0)) {
         raw = injectChangeTags(raw, modifiedPaths, insertedPaths);
       }
       const parts = [
@@ -1750,9 +1752,15 @@ export async function serveMd(
         sidecar.removed?.length ? `${sidecar.removed.length} removed` : '',
       ].filter(Boolean).join(' · ');
       const date = new Date(sidecar.stabilizedAt).toLocaleString('en-US', {
-        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
       });
-      stabilizeBadge = `<div class="stabilize-badge">Stabilized on ${escapeHtml(date)} · ${escapeHtml(parts)}</div>`;
+      if (!documentOnly) {
+        stabilizeBadge = `<div class="stabilize-badge">Stabilized on ${escapeHtml(date)} · ${escapeHtml(parts)}</div>`;
+      }
     } catch {
       // malformed sidecar — ignore
     }
@@ -1764,11 +1772,20 @@ export async function serveMd(
       ? humanTitle(stripTransportId(parsedForDisplay.data.title.trim()))
       : pendingDisplayTitle(filePath))
     : path.basename(filePath, '.md');
-  const sidebar = await renderSidebar(rootDir);
+  const sidebar = documentOnly ? '' : await renderSidebar(rootDir);
   const html =
     relativePath === 'wiki/log.md'
       ? renderLogMarkdown(raw)
       : await renderMarkdown(raw, currentDir, rootDir);
+  if (documentOnly) {
+    return layout(
+      title,
+      `<main class="content"><article class="article">${html}</article></main>`,
+      {
+        htmlClass: 'document-only',
+      },
+    );
+  }
   // "Print / PDF" and "Download .md" are one decision — take this page out of
   // the wiki — so they share a single disclosure menu instead of two separate
   // toolbar buttons. Native <details>: no JS, works on a standalone page too.

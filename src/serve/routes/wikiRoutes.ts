@@ -595,7 +595,12 @@ loadHistory();
     return true;
   }
 
-  const html = await serveMd(rootDir, absolute, urlPath);
+  const documentOnly =
+    new URL(req.url ?? urlPath, 'http://localhost').searchParams.get('view') ===
+    'document';
+  const html = documentOnly
+    ? await serveMd(rootDir, absolute, urlPath, { documentOnly: true })
+    : await serveMd(rootDir, absolute, urlPath);
   await deps.sendGzippedHtml(req, res, html);
   return true;
 }
