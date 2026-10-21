@@ -56,15 +56,11 @@ body.center-wiki #right-rail{padding-top:10px}
 .sb-scroll{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .sb-pane{min-height:0;overflow-y:auto;padding-bottom:12px}
 .sb-pane.history-pane{padding-bottom:8px;flex:1 1 auto}
-/* Navigation stays at the bottom of its pane while the horizontal splitter
-   adjusts the space above it. */
-.sb-pane.config-pane{display:flex;flex-direction:column;flex:0 0 auto;overflow:hidden;padding-bottom:0;max-height:calc(100% - 106px)}
+/* The conversation list takes the height; the navigation hugs its content at
+   the bottom of the sidebar. */
+.sb-pane.config-pane{display:flex;flex-direction:column;flex:0 0 auto;overflow:hidden;padding-bottom:0}
 .config-nav{flex:0 0 auto;padding:0 0 12px;border-top:1px solid var(--border)}
 .config-nav .sec-label{padding-top:12px;padding-bottom:4px}
-.sb-resizer{flex:0 0 10px;height:10px;cursor:row-resize;display:flex;align-items:center;justify-content:center;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--panel);touch-action:none}
-.sb-resizer:hover,.sb-resizer.dragging{background:var(--panel-soft)}
-.sb-resizer::before{content:'';width:34px;height:3px;border-radius:99px;background:var(--border)}
-.sb-resizer:hover::before,.sb-resizer.dragging::before{background:var(--muted)}
 .sec-label{font-size:10px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--muted);padding:16px 16px 8px;display:flex;align-items:center;justify-content:space-between}
 .sec-label button{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted2);font-size:11px;padding:2px 8px;cursor:pointer;font-family:var(--font-sans);font-weight:600;transition:border-color .2s,color .2s}
 .sec-label button:hover{border-color:var(--accent);color:var(--accent)}

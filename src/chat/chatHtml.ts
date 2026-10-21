@@ -261,7 +261,6 @@ function openExternalLinks(html) {
     return \`<a \${attrs} target="_blank" rel="noopener noreferrer">\`;
   });
 }
-const SIDEBAR_SPLIT_KEY = 'mcpchat_sidebar_history_height';
 const MAIN_SPLIT_KEY = 'mcpchat_sidebar_width';
 // Reset the old remembered-open preference: Serve opens on the conversation,
 // with the workspace explorer available from the drawer toggle.
@@ -1062,66 +1061,6 @@ function applySidebarOpen(open, persist=false) {
 }
 function toggleSidebar() { applySidebarOpen(!sidebarOpen,true); }
 
-
-function clampSidebarSplit(height) {
-  const split=$('sidebar-split');
-  if(!split) return height;
-  const total=split.clientHeight;
-  const minTop=96;
-  const minBottom=180;
-  return Math.max(minTop, Math.min(height, total-minBottom-10));
-}
-
-function setSidebarSplitHeight(height, persist=false) {
-  const split=$('sidebar-split');
-  if(!split) return;
-  const clamped=clampSidebarSplit(height);
-  split.style.setProperty('--history-pane-height', clamped+'px');
-  // The split is manual from here on: freeze the history pane and let the
-  // config pane take (and scroll through) the rest. Without a drag the config
-  // pane hugs its content, so the split sits on the connector stack.
-  const history=$('history-pane'), config=$('config-pane');
-  if(history) history.style.flex='0 0 '+Math.round(clamped)+'px';
-  if(config) config.style.flex='1 1 auto';
-  if(persist) localStorage.setItem(SIDEBAR_SPLIT_KEY, String(Math.round(clamped)));
-}
-
-function initSidebarSplitter() {
-  const split=$('sidebar-split'), handle=$('sidebar-resizer');
-  if(!split || !handle) return;
-  const saved=Number(localStorage.getItem(SIDEBAR_SPLIT_KEY));
-  if(Number.isFinite(saved) && saved>0) setSidebarSplitHeight(saved);
-
-  let dragging=false;
-  const move=e=>{
-    if(!dragging) return;
-    const rect=split.getBoundingClientRect();
-    setSidebarSplitHeight(e.clientY-rect.top,true);
-  };
-  const up=()=>{
-    if(!dragging) return;
-    dragging=false;
-    handle.classList.remove('dragging');
-    document.body.style.cursor='';
-    document.body.style.userSelect='';
-    window.removeEventListener('pointermove',move);
-    window.removeEventListener('pointerup',up);
-  };
-  handle.addEventListener('pointerdown',e=>{
-    dragging=true;
-    handle.classList.add('dragging');
-    document.body.style.cursor='row-resize';
-    document.body.style.userSelect='none';
-    handle.setPointerCapture?.(e.pointerId);
-    window.addEventListener('pointermove',move);
-    window.addEventListener('pointerup',up);
-    e.preventDefault();
-  });
-  window.addEventListener('resize',()=>{
-    const current=parseFloat(getComputedStyle(split).getPropertyValue('--history-pane-height'));
-    if(Number.isFinite(current)) setSidebarSplitHeight(current);
-  });
-}
 
 function setSendButtonStreaming(streaming) {
   const btn=$('send-btn');
@@ -3248,7 +3187,6 @@ async function initChat() {
   initPageMode();
   initShellTabs();
   await loadHistory();
-  initSidebarSplitter();
   initMainSplitter();
   initActivitySplitter();
   renderProductionTrace();

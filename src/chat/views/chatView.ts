@@ -41,7 +41,7 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
       <div class="sb-logo-sub">workspace chat</div>
     </div>
   </div>
-  <div class="sb-scroll" id="sidebar-split">
+  <div class="sb-scroll">
     <div class="sb-pane history-pane" id="history-pane">
       <div class="sec-label">
         Conversations
@@ -51,7 +51,6 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
         <div class="history-empty">No history.</div>
       </div>
     </div>
-    <div class="sb-resizer" id="sidebar-resizer" title="Resize panels"></div>
     <div class="sb-pane config-pane" id="config-pane">
       <div class="config-nav">
         <div class="sec-label">Connectors</div>
@@ -236,7 +235,7 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
 </aside>
 <!--
   The rail was a fixed 360px behind a plain border-left — and that border looks
-  exactly like this layout's two real handles (#main-resizer, .sb-resizer), so
+  exactly like this layout's real handle (#main-resizer), so
   it invited a drag it could not honour. A panel carrying a run graph and full
   file paths is precisely the one a reader wants wider.
 
