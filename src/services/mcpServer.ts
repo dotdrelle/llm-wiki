@@ -222,12 +222,12 @@ export const WIKI_MCP_TOOLS = [
   {
     name: 'wiki_search_context',
     description:
-      'Search wiki pages and archived originals for a question. Archived originals are included by default and remain distinct from TAXO section fiches. Returns ranked candidate paths with excerpts, citations, and relatedPaths only; excerpts are for triage, not full evidence. Prefer wiki_collect_context for synthesis, architecture, audit, functional analysis, or comparison questions, but call this again if coverage is insufficient.',
+      'Search wiki pages and archived originals for a question. Returns wiki candidates with excerpts marked candidate-only, plus archived source candidates as path-only unread leads (never source text). Read the cited page or source before using its content as evidence. Prefer wiki_collect_context for synthesis, architecture, audit, functional analysis, or comparison questions.',
   },
   {
     name: 'wiki_collect_context',
     description:
-      'Search wiki pages and archived originals, read up to 10 returned wiki pages by default, and report coverage in one call. Archived originals are returned as candidates but must be opened with wiki_read_ingested_source when needed. Prefer this first for synthesis, architecture, audit, functional analysis, or comparison questions.',
+      'Search wiki pages and archived originals, read up to 10 returned wiki pages by default, and report coverage in one call. candidateResults contains wiki excerpts for triage and readPages contains opened evidence. sourceCandidates contains paths and metadata only, never archived source excerpts; open one with wiki_read_ingested_source before relying on it. Prefer this first for synthesis, architecture, audit, functional analysis, or comparison questions.',
   },
   {
     name: 'profile_read',
@@ -1556,7 +1556,7 @@ const withTitles = async (
       .boolean()
       .optional()
       .describe(
-        'Whether to include archived raw/ingested documents in addition to wiki pages. Default true so details omitted from a fiche remain searchable.',
+        'Whether archived raw/ingested documents contribute candidates in addition to wiki pages. They are returned as path-only unread leads; open one with wiki_read_ingested_source before using its contents.',
       ),
     maxExcerptChars: z
       .number()
@@ -1586,21 +1586,38 @@ const withTitles = async (
       includeRaw: includeRaw ?? true,
     });
     const excerptLimit = maxExcerptChars ?? config.retrieval.maxChunkChars;
+    const wikiResults = [];
+    const sourceCandidates = [];
+    for (const result of results) {
+      const relativePath = result.page.relativePath;
+      if (!relativePath.startsWith('wiki/')) {
+        sourceCandidates.push({
+          path: relativePath,
+          type: result.page.type,
+          score: result.score,
+          sourceKind: relativePath.startsWith('raw/ingested/') ? 'archived-source' : 'workspace-source',
+          evidenceStatus: 'unread',
+        });
+        continue;
+      }
+      const excerpt = result.chunk?.content ?? result.page.content;
+      wikiResults.push({
+        path: relativePath,
+        type: result.page.type,
+        score: result.score,
+        headingPath: result.chunk?.headingPath ?? [],
+        excerpt: truncateText(excerpt, excerptLimit),
+        citations: extractSourceCitations(excerpt),
+        relatedPaths: result.relatedPaths ?? [],
+        sourceKind: 'wiki-page',
+        evidenceStatus: 'candidate-only',
+      });
+    }
     const payload = {
       question,
       retrieval: diagnostics,
-      results: results.map((result) => {
-        const excerpt = result.chunk?.content ?? result.page.content;
-        return {
-          path: result.page.relativePath,
-          type: result.page.type,
-          score: result.score,
-          headingPath: result.chunk?.headingPath ?? [],
-          excerpt: truncateText(excerpt, excerptLimit),
-          citations: extractSourceCitations(excerpt),
-          relatedPaths: result.relatedPaths ?? [],
-        };
-      }),
+      results: wikiResults,
+      sourceCandidates,
     };
     return textResult(JSON.stringify(payload, null, 2));
   };
@@ -1639,18 +1656,31 @@ const withTitles = async (
       .filter((result) => !excluded.has(result.page.relativePath))
       .slice(0, resultLimit);
     const excerptLimit = config.retrieval.maxChunkChars;
-    const candidateResults = results.map((result) => {
-      const excerpt = result.chunk?.content ?? result.page.content;
-      return {
+    const candidateResults = results
+      .filter((result) => result.page.relativePath.startsWith('wiki/'))
+      .map((result) => {
+        const excerpt = result.chunk?.content ?? result.page.content;
+        return {
+          path: result.page.relativePath,
+          type: result.page.type,
+          score: result.score,
+          headingPath: result.chunk?.headingPath ?? [],
+          excerpt: truncateText(excerpt, excerptLimit),
+          citations: extractSourceCitations(excerpt),
+          relatedPaths: result.relatedPaths ?? [],
+          sourceKind: 'wiki-page',
+          evidenceStatus: 'candidate-only',
+        };
+      });
+    const sourceCandidates = results
+      .filter((result) => !result.page.relativePath.startsWith('wiki/'))
+      .map((result) => ({
         path: result.page.relativePath,
         type: result.page.type,
         score: result.score,
-        headingPath: result.chunk?.headingPath ?? [],
-        excerpt: truncateText(excerpt, excerptLimit),
-        citations: extractSourceCitations(excerpt),
-        relatedPaths: result.relatedPaths ?? [],
-      };
-    });
+        sourceKind: result.page.relativePath.startsWith('raw/ingested/') ? 'archived-source' : 'workspace-source',
+        evidenceStatus: 'unread',
+      }));
     const readPaths = uniqueValues(
       candidateResults
         .map((result) => result.path)
@@ -1665,15 +1695,17 @@ const withTitles = async (
       .filter((page) => page.found && page.allowed)
       .map((page) => page.path);
     const notReadRawSources = uniqueValues(
-      candidateResults.flatMap((result) =>
-        [
-          ...(result.path.startsWith('raw/ingested/') ? [result.path] : []),
-          ...result.citations,
-          ...result.relatedPaths,
+      results.flatMap((result) => {
+        const excerpt = result.chunk?.content ?? result.page.content;
+        const citations = extractSourceCitations(excerpt);
+        return [
+          ...(result.page.relativePath.startsWith('raw/ingested/') ? [result.page.relativePath] : []),
+          ...citations,
+          ...(result.relatedPaths ?? []),
         ].filter((sourcePath) =>
           sourcePath.startsWith('raw/ingested/'),
-        ),
-      ),
+        );
+      }),
     );
     const payload = {
       usageContract: {
@@ -1681,7 +1713,9 @@ const withTitles = async (
         readPagesMeaning:
           'Pages listed in readPagePaths were opened and their returned content is available in readPages. Check truncated before treating a page as complete.',
         excerptsRole:
-          'candidateResults.excerpt explains why a page was selected; it is search trace, not the primary evidence.',
+          'candidateResults contains wiki-page previews only. Its excerpts explain why a page was selected; they are search trace, not read evidence.',
+        sourceCandidatesMeaning:
+          'sourceCandidates contains paths and metadata only. No source content was opened; read it with the matching read tool before using it as evidence.',
         followUpPolicy:
           'If readPages do not provide enough evidence, the client may call wiki_search_context, wiki_read_page, wiki_read_pages, or wiki_read_ingested_source to improve coverage.',
         rawSourcesPolicy:
@@ -1690,12 +1724,15 @@ const withTitles = async (
       question,
       retrieval: search.diagnostics,
       candidateResults,
+      sourceCandidates,
       readPagePaths,
       readPages,
       notReadRawSources,
       coverage: {
         requestedResultLimit: resultLimit,
-        candidateCount: candidateResults.length,
+        candidateCount: candidateResults.length + sourceCandidates.length,
+        wikiCandidateCount: candidateResults.length,
+        sourceCandidateCount: sourceCandidates.length,
         readPageCount: readPagePaths.length,
         missingPageCount: readPages.filter((page) => !page.found && page.allowed).length,
         deniedPageCount: readPages.filter((page) => !page.allowed).length,
@@ -1704,7 +1741,7 @@ const withTitles = async (
       },
     };
     console.log(
-      `[wiki-mcp] collect_context candidates=${candidateResults.length} readPages=${readPagePaths.length} truncated=${payload.coverage.truncatedPageCount} rawRefs=${notReadRawSources.length} readPaths=${readPagePaths.join(',')}`,
+      `[wiki-mcp] collect_context candidates=${payload.coverage.candidateCount} wikiCandidates=${candidateResults.length} sourceCandidates=${sourceCandidates.length} readPages=${readPagePaths.length} truncated=${payload.coverage.truncatedPageCount} rawRefs=${notReadRawSources.length} readPaths=${readPagePaths.join(',')}`,
     );
     return textResult(JSON.stringify(payload, null, 2));
   };
@@ -2239,7 +2276,7 @@ const withTitles = async (
 
   server.tool(
     'wiki_search_context',
-    'Search wiki pages and archived originals for a question. Archived originals are included by default and remain distinct from TAXO section fiches. Returns ranked candidate paths with excerpts, citations, and relatedPaths only; excerpts are for triage, not full evidence. Prefer wiki_collect_context for synthesis, architecture, audit, functional analysis, or comparison questions, but call this again if coverage is insufficient.',
+    'Search wiki pages and archived originals for a question. Returns wiki candidates with excerpts marked candidate-only, plus archived source candidates as path-only unread leads (never source text). Read the cited page or source before using its content as evidence. Prefer wiki_collect_context for synthesis, architecture, audit, functional analysis, or comparison questions.',
     searchWikiContextInput,
     READ_ONLY,
     (input) => loggedTool('wiki_search_context', input, searchWikiContext),
@@ -2273,7 +2310,7 @@ const withTitles = async (
   };
   server.tool(
     'wiki_collect_context',
-    'Search wiki pages and archived originals, read up to 10 returned wiki pages by default, and report coverage in one call. Archived originals are returned as candidates but must be opened with wiki_read_ingested_source when needed. Prefer this first for synthesis, architecture, audit, functional analysis, or comparison questions.',
+    'Search wiki pages and archived originals, read up to 10 returned wiki pages by default, and report coverage in one call. candidateResults contains wiki excerpts for triage and readPages contains opened evidence. sourceCandidates contains paths and metadata only, never archived source excerpts; open one with wiki_read_ingested_source before relying on it. Prefer this first for synthesis, architecture, audit, functional analysis, or comparison questions.',
     collectWikiContextInput,
     READ_ONLY,
     (input) => loggedTool('wiki_collect_context', input, collectWikiContext),

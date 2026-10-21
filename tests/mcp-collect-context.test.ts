@@ -80,6 +80,14 @@ describe('wiki_collect_context', () => {
               page: { relativePath: 'wiki/concepts/b.md', type: 'concept', content: '# B\n\nB CONTENT\n' },
               score: 9,
             },
+            {
+              page: {
+                relativePath: 'raw/ingested/source.md',
+                type: 'source',
+                content: '# Raw source\n\nRAW_SOURCE_PRIVATE_EXCERPT\n',
+              },
+              score: 8,
+            },
           ],
           diagnostics: { mode: 'hybrid', reason: null },
         };
@@ -98,8 +106,33 @@ describe('wiki_collect_context', () => {
       expect(searchCalls[0]).toMatchObject({ limit: 11, includeRaw: true });
       expect((payload.candidateResults as Array<{ path: string }>).map((result) => result.path))
         .toEqual(['wiki/concepts/b.md']);
+      expect(payload.sourceCandidates).toEqual([{
+        path: 'raw/ingested/source.md',
+        type: 'source',
+        score: 8,
+        sourceKind: 'archived-source',
+        evidenceStatus: 'unread',
+      }]);
+      expect(JSON.stringify(payload)).not.toContain('RAW_SOURCE_PRIVATE_EXCERPT');
       expect(payload.readPagePaths).toEqual(['wiki/concepts/b.md']);
+      expect(payload.coverage).toMatchObject({ candidateCount: 2, wikiCandidateCount: 1, sourceCandidateCount: 1 });
       expect(payload.retrieval).toEqual({ mode: 'hybrid', reason: null });
+
+      const searchPayload = textPayload(await client.callTool({
+        name: 'wiki_search_context',
+        arguments: { question: 'source facts' },
+      }));
+      expect(searchCalls).toHaveLength(2);
+      expect((searchPayload.results as Array<{ path: string }>).every((result) => result.path.startsWith('wiki/')))
+        .toBe(true);
+      expect(searchPayload.sourceCandidates).toEqual([{
+        path: 'raw/ingested/source.md',
+        type: 'source',
+        score: 8,
+        sourceKind: 'archived-source',
+        evidenceStatus: 'unread',
+      }]);
+      expect(JSON.stringify(searchPayload)).not.toContain('RAW_SOURCE_PRIVATE_EXCERPT');
     } finally {
       await client.close();
       await server.close();

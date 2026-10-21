@@ -2366,6 +2366,15 @@ function wikiResultItemHTML(item) {
   </div>\`;
 }
 
+function sourceCandidateItemHTML(item) {
+  const sourceKind=(item.sourceKind || (String(item.path||'').startsWith('raw/ingested/') ? 'archived source' : 'source')).replaceAll('-', ' ');
+  const meta=[sourceKind, item.evidenceStatus || 'unread · path only'].filter(Boolean).join(' · ');
+  return \`<div class="tc-item">
+    <div class="tc-item-title"><span>\${esc(item.path||'unread source')}</span></div>
+    \${meta?\`<div class="tc-item-meta">\${esc(meta)}</div>\`:''}
+  </div>\`;
+}
+
 async function openLocalDoc(href, label) {
   const modal=$('doc-modal'), title=$('doc-title'), content=$('doc-content'), open=$('doc-open');
   if(!modal||!content) return;
@@ -2430,12 +2439,16 @@ function toolResultSummaryHTML(result, ok, toolName='MCP') {
 
   if(data?.results && Array.isArray(data.results)) {
     const shown=data.results.slice(0,6);
+    const sourceCandidates=Array.isArray(data.sourceCandidates) ? data.sourceCandidates : [];
+    const isWikiSearch=String(toolName).endsWith('wiki_search_context');
     return \`<div class="tc-summary">
       <div class="tc-summary-head">
-        <span>\${data.results.length} result\${data.results.length>1?'s':''}</span>
+        <span>\${data.results.length} \${isWikiSearch?'wiki candidate':'result'}\${data.results.length>1?'s':''}</span>
         <span class="tc-pill">search</span>
+        \${sourceCandidates.length?\`<span class="tc-pill">\${sourceCandidates.length} unread source lead\${sourceCandidates.length>1?'s':''}</span>\`:''}
       </div>
       <div class="tc-list">\${shown.map(wikiResultItemHTML).join('')}</div>
+      \${sourceCandidates.length?\`<div class="tc-item"><div class="tc-item-meta">Unread source leads · path only</div><div class="tc-list">\${sourceCandidates.slice(0,5).map(sourceCandidateItemHTML).join('')}</div></div>\`:''}
       \${data.results.length>shown.length?\`<div class="tc-item-meta">+\${data.results.length-shown.length} more results hidden</div>\`:''}
       <details class="tc-raw"><summary>Raw JSON</summary><pre>\${esc(raw)}</pre></details>
     </div>\`;
@@ -2444,6 +2457,7 @@ function toolResultSummaryHTML(result, ok, toolName='MCP') {
   if(data?.candidateResults && Array.isArray(data.candidateResults)) {
     const coverage=data.coverage||{};
     const pages=Array.isArray(data.readPages) ? data.readPages : [];
+    const sourceCandidates=Array.isArray(data.sourceCandidates) ? data.sourceCandidates : [];
     const shown=data.candidateResults.slice(0,5);
     const pagePaths=(data.readPagePaths||pages.map(p=>p.path)).filter(Boolean);
     return \`<div class="tc-summary">
@@ -2451,10 +2465,12 @@ function toolResultSummaryHTML(result, ok, toolName='MCP') {
         <span>Collected context</span>
         <span class="tc-pill">\${coverage.readPageCount ?? pagePaths.length} page\${(coverage.readPageCount ?? pagePaths.length)>1?'s':''} read</span>
         <span class="tc-pill">\${coverage.candidateCount ?? data.candidateResults.length} candidate\${(coverage.candidateCount ?? data.candidateResults.length)>1?'s':''}</span>
+        \${sourceCandidates.length?\`<span class="tc-pill">\${sourceCandidates.length} unread source lead\${sourceCandidates.length>1?'s':''}</span>\`:''}
         \${coverage.truncatedPageCount?\`<span class="tc-pill">\${coverage.truncatedPageCount} truncated</span>\`:''}
       </div>
       \${pagePaths.length?\`<div class="tc-item"><div class="tc-item-meta">Opened pages</div><div class="tc-doc-chip-row">\${pagePaths.slice(0,8).map(p=>docButtonHTML(p,p,true)).join('')}\${pagePaths.length>8?'<span class="tc-item-meta">…</span>':''}</div></div>\`:''}
       <div class="tc-list">\${shown.map(wikiResultItemHTML).join('')}</div>
+      \${sourceCandidates.length?\`<div class="tc-item"><div class="tc-item-meta">Unread source leads · path only</div><div class="tc-list">\${sourceCandidates.slice(0,5).map(sourceCandidateItemHTML).join('')}</div></div>\`:''}
       <details class="tc-raw"><summary>Raw JSON</summary><pre>\${esc(raw)}</pre></details>
     </div>\`;
   }
@@ -2574,12 +2590,18 @@ function toolResultTraceSummary(result, ok) {
       return [String(status),action?shortText(action,45):null].filter(Boolean).join(' · ');
     }
   }
-  if(data?.results && Array.isArray(data.results)) return \`\${data.results.length} result\${data.results.length>1?'s':''}\`;
+  if(data?.results && Array.isArray(data.results)) {
+    const sources=Array.isArray(data.sourceCandidates)?data.sourceCandidates.length:0;
+    const wikiSearch=Array.isArray(data.sourceCandidates) || data.results.some((item) => item?.sourceKind === 'wiki-page');
+    const label=wikiSearch ? 'wiki candidate' : 'result';
+    return \`\${data.results.length} \${label}\${data.results.length>1?'s':''}\${sources?\` · \${sources} unread source lead\${sources>1?'s':''}\`:''}\`;
+  }
   if(data?.candidateResults && Array.isArray(data.candidateResults)) {
     const coverage=data.coverage||{};
     const pages=coverage.readPageCount ?? (Array.isArray(data.readPages)?data.readPages.length:0);
     const candidates=coverage.candidateCount ?? data.candidateResults.length;
-    return \`\${candidates} candidate\${candidates>1?'s':''} · \${pages} page\${pages>1?'s':''}\`;
+    const sources=Array.isArray(data.sourceCandidates)?data.sourceCandidates.length:0;
+    return \`\${candidates} candidate\${candidates>1?'s':''} · \${pages} page\${pages>1?'s':''}\${sources?\` · \${sources} unread source lead\${sources>1?'s':''}\`:''}\`;
   }
   if(data?.pages && Array.isArray(data.pages)) return \`\${data.pages.length} page\${data.pages.length>1?'s':''}\`;
   if(data?.sources && Array.isArray(data.sources)) {

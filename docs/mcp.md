@@ -72,14 +72,17 @@ use the JSON result.
 1. Call `wiki_collect_context` with the user question.
 2. Use `readPagePaths` as the authoritative list of pages opened by the tool.
 3. Use `readPages` as the primary evidence.
-4. Treat `candidateResults.excerpt` as search trace only: it explains why pages were selected but is not the main evidence.
+4. Treat `candidateResults.excerpt` as search trace only: it explains why wiki pages were selected but is not read evidence.
 5. If coverage is insufficient, call `wiki_search_context`, `wiki_read_page`, `wiki_read_pages`, or `wiki_read_ingested_source` to gather the missing evidence.
 6. End with a short coverage note that distinguishes pages read in full, pages truncated, and `raw/ingested/` sources cited but not read.
 
 `wiki_collect_context` searches archived originals too, but opens only wiki
-pages automatically. Check `notReadRawSources` and use
-`wiki_read_ingested_source` before relying on an archived document's full
-content.
+pages automatically. Archived hits are returned in `sourceCandidates` as
+path-and-status metadata only; their excerpts are deliberately omitted so an
+unread source cannot be mistaken for a wiki page. Check `notReadRawSources` and
+use `wiki_read_ingested_source` before relying on an archived document's
+content. `candidateResults` contains wiki candidates only; `readPages` remains
+the evidence opened by the collection call.
 
 Manual equivalent:
 
