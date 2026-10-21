@@ -140,7 +140,8 @@ function essentialRuntimeLogEntries(logs) {
     // ("⚠ 0 error(s), 2 warning(s)") is a warning by construction, and a bare
     // "⚠ … not ready yet …" notice is a warning, never in-progress activity.
     const isZeroErrorSummary=/\\b0 error\\(s\\)/i.test(text);
-    const tone=(/failed|error|cancel/i.test(text)&&!isZeroErrorSummary)?'error':(/⚠/.test(text)||isZeroErrorSummary)?'warning':/done|complete|success/i.test(text)?'success':/approval|approb|waiting/i.test(text)?'warning':/running|started/i.test(text)?'running':'info';
+    // A run that ended done with a warning stays amber, whatever its reason says.
+    const tone=/^Run finished with a warning/i.test(text)?'warning':(/failed|error|cancel/i.test(text)&&!isZeroErrorSummary)?'error':(/⚠/.test(text)||isZeroErrorSummary)?'warning':/done|complete|success/i.test(text)?'success':/approval|approb|waiting/i.test(text)?'warning':/running|started/i.test(text)?'running':'info';
     entries.push({time,text,tone});
   }
   return entries;

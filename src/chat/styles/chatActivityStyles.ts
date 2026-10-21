@@ -52,6 +52,7 @@ ${REPORT_READER_CSS}
 .chain-head-status-running{color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
 .chain-head-status-failed,.chain-head-status-cancelled{color:var(--err);background:color-mix(in srgb,var(--err) 14%,transparent)}
 .chain-head-status-queued,.chain-head-status-incomplete{color:var(--muted);background:color-mix(in srgb,var(--muted) 12%,transparent)}
+.chain-head-status-warning{color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent)}
 .chain-step{display:grid;grid-template-columns:14px 1fr auto;align-items:baseline;gap:6px;padding:2px 0;font-size:11px;color:var(--muted)}
 .chain-symbol{font-weight:800;text-align:center}
 .chain-label{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -59,6 +60,8 @@ ${REPORT_READER_CSS}
 .chain-step.chain-running .chain-symbol,.chain-step.chain-running .chain-label{color:var(--accent)}
 .chain-step.chain-failed .chain-symbol,.chain-step.chain-cancelled .chain-symbol{color:var(--err)}
 .chain-step.chain-skipped{opacity:.6}
+.chain-step.chain-warning .chain-symbol,.chain-step.chain-warning .chain-status{color:var(--warn)}
+.chain-warning-text{margin:1px 0 4px 20px;font-size:10.5px;line-height:1.4;color:var(--warn);overflow-wrap:anywhere}
 .act-dismiss-all{font-size:10px;color:var(--muted);background:none;border:none;cursor:pointer;padding:2px 4px;border-radius:4px}
 .act-dismiss-all:hover{color:var(--text);background:var(--panel-soft)}
 .activity-subtab-toolbar{display:flex;align-items:center;justify-content:space-between;padding:0 4px 7px}.activity-subtab-toolbar-title{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.activity-subtab-actions{display:flex;align-items:center;gap:4px}.activity-subtab-clear,.activity-subtab-reset{border:0;background:none;color:var(--muted);font:700 10px var(--font-sans);cursor:pointer;padding:2px 4px;border-radius:4px}.activity-subtab-clear:hover{color:var(--err);background:color-mix(in srgb,var(--err) 8%,transparent)}.activity-subtab-reset{border:1px solid var(--border);color:var(--muted);padding:3px 6px}.activity-subtab-reset:hover{background:var(--panel-soft);border-color:var(--muted);color:var(--text)}

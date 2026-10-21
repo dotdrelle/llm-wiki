@@ -167,7 +167,7 @@ describe('chat html', () => {
     // ("⚠ 0 error(s), 2 warning(s)") is a warning even though it says "error";
     // a genuine failure whose text carries a ⚠ still reads red.
     expect(script).toContain('const isZeroErrorSummary=/\\b0 error\\(s\\)/i.test(text);');
-    expect(script).toContain("const tone=(/failed|error|cancel/i.test(text)&&!isZeroErrorSummary)?'error':(/⚠/.test(text)||isZeroErrorSummary)?'warning'");
+    expect(script).toContain("const tone=/^Run finished with a warning/i.test(text)?'warning':(/failed|error|cancel/i.test(text)&&!isZeroErrorSummary)?'error':(/⚠/.test(text)||isZeroErrorSummary)?'warning'");
   });
 
   it('edits and preserves skill execution mode with an expandable body', () => {
