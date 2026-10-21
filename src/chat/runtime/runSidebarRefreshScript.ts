@@ -41,6 +41,7 @@ window.noteMaintenanceSidebarActivity=(running)=>{
 // the end of a run, only when the centre shows a deliverable (the browser
 // keeps the scroll position on reload).
 function refreshOpenDeliverable() {
+  if(document.body&&!document.body.classList.contains('center-wiki')) return;
   const frame=document.getElementById('wiki-frame');
   try {
     const path=decodeURIComponent(frame?.contentWindow?.location?.pathname||'');

@@ -56,6 +56,7 @@ function runtimeWorkflowSummaryParts() {
   const run=nodes.find(node=>node.type==='run');
   const phases=nodes.filter(node=>node.type==='task_group');
   const currentParallel=phases.reduce((sum,phase)=>sum+(phase.currentParallel||0),0);
+  const failed=phases.reduce((sum,phase)=>sum+(phase.failed||0),0);
   // Authoritative resolved concurrency from the runtime; fall back to the
   // plan-derived value for replayed/historical runs.
   const resolved=runtimeState?.concurrency;
@@ -70,7 +71,8 @@ function runtimeWorkflowSummaryParts() {
   // as a quarter of the capacity unused, while the real parallelism is the
   // model calls inside the ingest. The task line appears only for a plan of
   // several tasks, where it means something.
-  const tasks=total>1?\`<span title="\${esc(limits)}">Tasks: \${done}/\${total} done · \${currentParallel} running (max \${maxParallel} at once)\${ceilingTag}</span>\`:'';
+  const failureLabel=failed?\` · \${failed} failed\`:'';
+  const tasks=total>1?\`<span title="\${esc(limits)}">Tasks: \${done}/\${total} done · \${currentParallel} running (max \${maxParallel} at once)\${failureLabel}\${ceilingTag}</span>\`:'';
   return {live,html:\`<strong>\${esc(run?.label||'Runtime run')}</strong>\${live?'<span class="runtime-live-indicator">● Live</span>':''}\${tasks}\${runtimeWorkflowIngestionSummary(phases)}<span>Tokens \${esc(formatRuntimeTokens(run?.usage))}</span>\`};
 }
 // The files of an ingestion and the model-call budget they share: the engine
@@ -180,7 +182,8 @@ function runtimeWorkflowGraphData() {
     const sourceTotal=tasks.reduce((sum,task)=>sum+runtimeTaskInputRefs(task).length,0);
     const sourceProcessLimit=ingestion&&Number.isInteger(Number(runtimeState?.ingestionLlmLimit))&&Number(runtimeState.ingestionLlmLimit)>0?Number(runtimeState.ingestionLlmLimit):null;
     const done=tasks.filter(task=>task.status==='done').length;
-    return {id:'phase:'+key,type:'task_group',groupId:key,label:String(definition?.label||definition?.raw?.label||humanizeRuntimePhase(key,tasks[0]?.label)||'Phase '+(index+1)),status,tasks,agents,parallelism,currentParallel,sourceCounts,sourceTotal,sourceProcessLimit,done,total:tasks.length,usage,raw:{group:definition?.raw,tasks:tasks.map(task=>task.raw||task)}};
+    const failed=tasks.filter(task=>['failed','error'].includes(String(task.status||'').toLowerCase())).length;
+    return {id:'phase:'+key,type:'task_group',groupId:key,label:String(definition?.label||definition?.raw?.label||humanizeRuntimePhase(key,tasks[0]?.label)||'Phase '+(index+1)),status,tasks,agents,parallelism,currentParallel,sourceCounts,sourceTotal,sourceProcessLimit,done,failed,total:tasks.length,usage,raw:{group:definition?.raw,tasks:tasks.map(task=>task.raw||task)}};
   });
   const phaseByTask=new Map();
   phases.forEach(phase=>phase.tasks.forEach(task=>phaseByTask.set(String(task.stepId),phase.id)));

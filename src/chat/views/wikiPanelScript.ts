@@ -562,6 +562,19 @@ window.addEventListener('message', (event) => {
     // a page): bring the wiki to the center and highlight the active file.
     const navPath = sanitizeWikiPath(data.path);
     if (!navPath) return;
+    const centerFrame = document.getElementById('wiki-frame');
+    // A reload or navigation can finish after the user has switched back to
+    // chat. Ignore that late announcement (and any announcement from another
+    // frame); only the currently displayed central wiki page owns navigation.
+    if (event.source !== centerFrame?.contentWindow
+      || !document.body.classList.contains('center-wiki')) return;
+    try {
+      const requestedSrc = centerFrame.getAttribute('src');
+      const requestedPath = requestedSrc ? new URL(requestedSrc, location.href).pathname : '';
+      const framePath = centerFrame.contentWindow.location.pathname;
+      if (decodeWikiPath(requestedPath) !== decodeWikiPath(navPath)
+        || decodeWikiPath(framePath) !== decodeWikiPath(navPath)) return;
+    } catch { return; }
     setCenterWiki(navPath);
     document.getElementById('wiki-side-frame')?.contentWindow?.postMessage(
       { type: 'llmwiki:active', path: navPath }, location.origin);
