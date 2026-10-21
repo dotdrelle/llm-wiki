@@ -53,8 +53,10 @@ const MAX_LINES = 800;
 // activityPanelScript). Record the measured lines.
 // 0.16.60 follow-ups: the Safari drag fallback grew wikiPanelScript, and the
 // probed output-token capability key grew schema by one line. Record both.
+// 0.16.60 MCP timeouts: serve.ts carries the per-endpoint timeout through the
+// external endpoint allow-list. Record the measured lines.
 const LEGACY_LIMITS = new Map([
-  ['src/commands/serve.ts', 1100],
+  ['src/commands/serve.ts', 1104],
   ['src/serve/html/wikiHtml.ts', 2300],
   ['src/serve/html/wikiLayoutCss.ts', 1601],
   ['src/serve/html/wikiLayoutScript.ts', 1312],

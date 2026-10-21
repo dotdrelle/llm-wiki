@@ -1470,7 +1470,7 @@ async function renameConversation(id, title) {
 
 function addServer(name='', url='', bearer='') {
   const id=nextId++;
-  servers.push({id, name:name||\`mcp-\${id}\`, url, bearer, sessionId:null, enabled:false, status:'off', tools:[],origin:'ui',persistedName:null,needsSync:true,syncError:''});
+  servers.push({id, name:name||\`mcp-\${id}\`, url, bearer, timeoutMs:null, sessionId:null, enabled:false, status:'off', tools:[],origin:'ui',persistedName:null,needsSync:true,syncError:''});
   renderCards(); saveServers();
 }
 
@@ -1484,7 +1484,9 @@ function updateServerField(id,field,value) {
   server.needsSync=true;
   server.syncError=field==='name'&&!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(server.name)
     ? 'Name must use 1–80 letters, numbers, dots, underscores or hyphens.'
-    : '';
+    : field==='timeoutMs'&&value!=null&&(!Number.isInteger(Number(value))||Number(value)<1000||Number(value)>120000)
+      ? 'Timeout must be between 1 and 120 seconds.'
+      : '';
   if(server.syncError) renderCards();
   renderTopPills();
   saveServers();
@@ -1591,6 +1593,16 @@ function cardHTML(s) {
         : s.injected
           ? '<span class="key-saved show" style="flex-shrink:0">server token &#x2713;</span>'
           : '<span style="font-size:10px;color:var(--muted);flex-shrink:0;font-family:var(--font-mono)">no auth</span>'}
+    </div>
+    <div class="mcp-timeout-row" style="display:flex;align-items:center;gap:8px;padding:0 0 10px 34px">
+      <label for="mcp-timeout-\${s.id}" style="font-size:10px;color:var(--muted);white-space:nowrap">Tool timeout</label>
+      <input id="mcp-timeout-\${s.id}" type="number" min="1" max="120" step="1"
+        value="\${s.timeoutMs?Math.round(Number(s.timeoutMs)/1000):''}" placeholder="Default"
+        aria-label="Tool timeout in seconds" title="Optional per-call timeout, from 1 to 120 seconds"
+        \${s.origin==='builtin'?'readonly':''}
+        onchange="updateServerField(\${s.id},'timeoutMs',this.value===''?null:Number(this.value)*1000)"
+        style="width:118px;padding:6px 8px;font-size:11px">
+      <span style="font-size:10px;color:var(--muted)">seconds · 1–120</span>
     </div>
     \${s.syncError?\`<div class="mcp-sync-warning" title="\${esc(s.syncError)}">Connected in this browser; runtime synchronization pending.</div>\`:''}
     \${toolsHTML}

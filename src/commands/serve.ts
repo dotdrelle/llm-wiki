@@ -139,11 +139,15 @@ async function loadExternalMcpEndpoints(rootDir: string): Promise<ExternalMcpEnd
           const headers = normalizeMcpHeaders((endpoint as { headers?: unknown }).headers);
           const authHeader = headers['authorization'] ?? '';
           const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+          const configuredTimeoutMs = Number((endpoint as { timeoutMs?: unknown }).timeoutMs);
           return {
             name,
             url: interpolateEnv(String((endpoint as { url?: unknown }).url)),
             headers,
             bearer,
+            ...(Number.isInteger(configuredTimeoutMs) && configuredTimeoutMs >= 1000 && configuredTimeoutMs <= 120_000
+              ? { timeoutMs: configuredTimeoutMs }
+              : {}),
             managedBy: String((endpoint as { managedBy?: unknown }).managedBy ?? ''),
           };
         })

@@ -9,6 +9,7 @@ export type ExternalMcpEndpoint = {
   url: string;
   headers: Record<string, string>;
   bearer?: string;
+  timeoutMs?: number;
   managedBy?: string;
 };
 

@@ -432,8 +432,9 @@ export async function handleChatRoutes(
     mcpServers: [
       { name: 'llm-wiki', url: wikiTarget, origin: 'builtin' },
       { name: 'wiki-production', url: productionTarget, origin: 'builtin' },
-      ...externalMcpEndpoints.map(({ name, url, bearer, managedBy }) => ({
-        name, url, origin: managedBy === 'serve-ui' ? 'ui' : 'global', ...(bearer ? { bearer } : {}),
+      ...externalMcpEndpoints.map(({ name, url, bearer, timeoutMs, managedBy }) => ({
+        name, url, origin: managedBy === 'serve-ui' ? 'ui' : 'global',
+        ...(bearer ? { bearer } : {}), ...(timeoutMs ? { timeoutMs } : {}),
       })),
     ],
   };

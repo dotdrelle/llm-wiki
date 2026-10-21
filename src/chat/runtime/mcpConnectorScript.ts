@@ -168,7 +168,7 @@ async function syncRuntimeMcpServerName(server, {silent=false, failureMessage=er
 async function persistRuntimeMcpServer(server) {
   const res=await fetch('/api/runtime/mcp/endpoints',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({action:'upsert',name:server.name,previousName:server.persistedName||undefined,url:server.url,bearer:server.bearer||''}),
+    body:JSON.stringify({action:'upsert',name:server.name,previousName:server.persistedName||undefined,url:server.url,bearer:server.bearer||'',timeoutMs:server.timeoutMs??null}),
   });
   const data=await res.json().catch(()=>({}));
   if(!res.ok) throw new Error(data.error||\`Runtime MCP update failed (HTTP \${res.status})\`);

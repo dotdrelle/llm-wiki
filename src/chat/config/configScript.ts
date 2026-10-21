@@ -96,7 +96,7 @@ function saveServers() {
   const defaults = window.__WIKI_CONFIG__?.mcpServers || [];
   const data = servers.map(s => {
     const inDefaults = defaults.some(d => d.name === s.name);
-    return {id:s.id,name:s.name,url:s.url,bearer:inDefaults?'':(s.bearer||''),enabled:s.enabled&&s.status==='ok',injected:s.injected,persistedName:s.persistedName||null,origin:s.origin||'ui',needsSync:!!s.needsSync,syncError:s.syncError||''};
+    return {id:s.id,name:s.name,url:s.url,bearer:inDefaults?'':(s.bearer||''),timeoutMs:s.timeoutMs??null,enabled:s.enabled&&s.status==='ok',injected:s.injected,persistedName:s.persistedName||null,origin:s.origin||'ui',needsSync:!!s.needsSync,syncError:s.syncError||''};
   });
   localStorage.setItem(LS.USER_SERVERS, JSON.stringify(data));
 }
@@ -179,14 +179,14 @@ function loadServers() {
         const bearer = override ? (override.bearer || s.bearer || '') : (s.bearer || '');
         const injected = override ? true : (s.injected === true);
         const origin=override?.origin||s.origin||'ui';
-        servers.push({...s, name, url, bearer, injected, origin, persistedName:override?name:(s.persistedName||null), needsSync:override?false:!!s.needsSync, syncError:s.syncError||'', enabled:override ? true : !!s.enabled, sessionId:null, status:'off', tools:[]});
+        servers.push({...s, name, url, bearer, timeoutMs:override?(override.timeoutMs??null):(s.timeoutMs??null), injected, origin, persistedName:override?name:(s.persistedName||null), needsSync:override?false:!!s.needsSync, syncError:s.syncError||'', enabled:override ? true : !!s.enabled, sessionId:null, status:'off', tools:[]});
         if(s.id >= nextId) nextId = s.id + 1;
       }
       for (const s of defaults) {
         if(seen.has(s.name)) continue;
         dirty=true;
         const id=nextId++;
-        servers.push({id, name:s.name, url:s.url, bearer:s.bearer||'', injected:true, origin:s.origin||'global', persistedName:s.name, needsSync:false, syncError:'', enabled:true, status:'off', tools:[]});
+        servers.push({id, name:s.name, url:s.url, bearer:s.bearer||'', timeoutMs:s.timeoutMs??null, injected:true, origin:s.origin||'global', persistedName:s.name, needsSync:false, syncError:'', enabled:true, status:'off', tools:[]});
       }
       renderCards();
       if(dirty) saveServers();
@@ -196,7 +196,7 @@ function loadServers() {
   // No saved state (or stale) — seed from server config
   for (const s of defaults) {
     const id=nextId++;
-    servers.push({id, name:s.name, url:s.url, bearer:s.bearer||'', injected:true, origin:s.origin||'global', persistedName:s.name, needsSync:false, syncError:'', sessionId:null, enabled:true, status:'off', tools:[]});
+    servers.push({id, name:s.name, url:s.url, bearer:s.bearer||'', timeoutMs:s.timeoutMs??null, injected:true, origin:s.origin||'global', persistedName:s.name, needsSync:false, syncError:'', sessionId:null, enabled:true, status:'off', tools:[]});
   }
   renderCards(); saveServers();
 }
