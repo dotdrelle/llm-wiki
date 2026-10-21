@@ -66,13 +66,22 @@ let pageContexts=[];
  that Donna can review, compare, or revise in the current conversation.
 */
 function validPageContext(path) {
-  const value=decodeWikiPath(path).replace(/^\\//,'');
+  let candidate=String(path||'').trim();
+  if(candidate.startsWith('http://')||candidate.startsWith('https://')) {
+    try {
+      const url=new URL(candidate,location.origin);
+      if(url.origin!==location.origin) return null;
+      candidate=url.pathname;
+    } catch { return null; }
+  }
+  if(candidate.startsWith('./')) candidate=candidate.slice(2);
+  const value=decodeWikiPath(candidate).replace(/^\\//,'');
   // A Donna report is a locked pending source ('raw/untracked/Donna/*.md.lock'):
   // readable, draggable and attachable like any other document. The lock
   // suffix is accepted only under raw/untracked — 'wiki/x.md.lock' is not a
   // report.
   const lockedReport=value.endsWith('.md.lock')&&value.startsWith('raw/untracked/');
-  if(value.includes('..')||(!value.endsWith('.md')&&!lockedReport)) return null;
+  if(value.split('/').some(part=>part==='..'||part==='.')||(!value.endsWith('.md')&&!lockedReport)) return null;
   return value.startsWith('wiki/')||value.startsWith('raw/untracked/')||value.startsWith('raw/ingested/')||value.startsWith('deliverables/')?value:null;
 }
 function pageContextFileName(path) {
@@ -774,7 +783,20 @@ function refreshWikiSidebar() {
         }
         return;
       }
-      const path = validPageContext(String((event.dataTransfer && event.dataTransfer.getData(CONTEXT_MIME)) || ''));
+      const transfer = event.dataTransfer;
+      // Safari can preserve the custom type in types but return an empty
+      // value for getData(customType) when the drag crosses the sidebar iframe
+      // boundary. The sidebar also stamps the same relative path as text/plain;
+      // read that fallback only after carriesContext() has verified our marker.
+      const uriList = String((transfer && transfer.getData('text/uri-list')) || '');
+      const uriPaths = uriList.split(String.fromCharCode(10))
+        .map((item) => item.trim()).filter((item) => item && item[0] !== '#');
+      const rawPaths = transfer ? [
+        transfer.getData(CONTEXT_MIME),
+        transfer.getData('text/plain'),
+        ...uriPaths,
+      ] : [];
+      const path = rawPaths.map((candidate) => validPageContext(candidate)).find(Boolean) || null;
       if (!path) {
         if (typeof notify === 'function') notify('This document cannot be added to Donna\\'s context');
         return;
