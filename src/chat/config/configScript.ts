@@ -12,79 +12,6 @@ function toggleReveal(inputOrId, btn) {
   }
 }
 
-function flashSaved(id) {
-  const el=$(id); if(!el) return;
-  el.classList.add('show');
-}
-
-function saveConfig() {
-  const cfg = {
-    baseUrl: $('base-url').value,
-    apiKey:  $('api-key').value,
-    model:   $('model-name').value,
-  };
-  localStorage.setItem(storageKey('mcpchat_config'), JSON.stringify(cfg));
-  fetch('/api/llm-config',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-    baseUrl:cfg.baseUrl,
-    apiKey:cfg.apiKey,
-    model:cfg.model,
-  })}).catch(()=>{});
-  if (cfg.apiKey) flashSaved('llm-saved');
-}
-
-/*
- Reset — return to the active profile's config, connections included.
-
- Reset used to only rewrite the fields from GET /api/llm-config. On a workspace
- whose endpoint was unreachable, the screen therefore looked identical to a
- healthy workspace while everything kept failing, and the MCP connectors stayed
- as they were. The only known workaround was to create a second .wikirc profile
- and switch to it — which worked because the switch goes through the
- authoritative server-side path.
-
- Reset now takes that same path when it exists, then reports whether the
- endpoint responds.
-*/
-async function resetYamlConfig() {
-  const activeProfile=window.__WIKI_ACTIVE_PROFILE__?.fileName||null;
-  if(activeProfile&&window.__WIKI_CONFIG__?.runtime?.enabled) {
-    // Reapply the active profile: the server re-reads the .wikirc, and
-    // switchConfigProfile reconnects the MCP servers.
-    await switchConfigProfile(activeProfile);
-    await probeLlmEndpoint();
-    return;
-  }
-  // No runtime: the profile is not replayed server-side, so we fall back to
-  // re-reading the fields — but we still reconnect and probe.
-  const wc = window.__WIKI_CONFIG__;
-  let cfg = wc;
-  try {
-    const res=await fetch('/api/llm-config',{cache:'no-store'});
-    if(res.ok) cfg=await res.json();
-  } catch {}
-  localStorage.removeItem(storageKey('mcpchat_config'));
-  if(cfg?.baseUrl) $('base-url').value=cfg.baseUrl;
-  if(cfg?.apiKey!==undefined) $('api-key').value=cfg.apiKey||'';
-  if(cfg?.model) $('model-name').value=cfg.model;
-  syncModel();
-  flashSaved('llm-saved');
-  await restoreEnabledServers();
-  await probeLlmEndpoint();
-}
-
-/** Reports whether the configured LLM endpoint responds. Silent only on clean success. */
-async function probeLlmEndpoint() {
-  try {
-    const res=await fetch('/api/llm/probe',{method:'POST'});
-    const data=await res.json().catch(()=>({}));
-    if(data?.ok===false) return notify(data.message||'LLM endpoint unreachable','e');
-    if(data?.warning) return notify(data.warning,'e');
-    notify('LLM endpoint reachable ('+(data?.models??0)+' models)');
-  } catch(err) {
-    notify('LLM probe failed: '+(err?.message||String(err)),'e');
-  }
-}
-
 function applyServerConfig(config) {
   if(!config||typeof config!=='object') return;
   const llm=config.llm||config;
@@ -96,9 +23,6 @@ function applyServerConfig(config) {
     apiKey:llm.apiKey??window.__WIKI_CONFIG__?.apiKey,
     language:config.language??window.__WIKI_CONFIG__?.language,
   };
-  if(llm.baseUrl) $('base-url').value=llm.baseUrl;
-  if(llm.apiKey!==undefined) $('api-key').value=llm.apiKey||'';
-  if(llm.model) $('model-name').value=llm.model;
   syncModel();
 }
 
@@ -135,9 +59,6 @@ async function switchConfigProfile(profile) {
     const data=await res.json().catch(()=>({}));
     if(!res.ok||data.ok===false) throw new Error(data.error||data.message||\`HTTP \${res.status}\`);
     setActiveConfigProfile(data.active||profile, data.fileName||profile);
-    // A profile switch is authoritative — drop any leftover local override so
-    // it can't resurface and silently diverge from the newly active profile.
-    localStorage.removeItem(storageKey('mcpchat_config'));
     applyServerConfig(data.config);
     servers.forEach(server=>{ server.sessionId=null; server.status=server.enabled?'off':server.status; server.tools=[]; });
     servers=[];
@@ -224,29 +145,10 @@ function applyWorkspaceTitle() {
 }
 
 function loadConfig() {
-  const wc = window.__WIKI_CONFIG__;
-  let saved = {};
-  try {
-    saved = JSON.parse(localStorage.getItem(storageKey('mcpchat_config'))||'{}');
-  } catch {}
-  if (wc) {
-    // Proxy mode: the active .wikirc profile (managed server-side by
-    // wiki-manager runtime) is authoritative. A stale localStorage value here
-    // used to silently win over it on every reload — and since
-    // buildProxyLLMHeaders() sends an override header whenever the displayed
-    // field differs from window.__WIKI_CONFIG__, that stale value would then
-    // hijack the actual outbound LLM request regardless of which profile was
-    // selected. Do not read from localStorage in this mode.
-    if (wc.model) $('model-name').value = wc.model;
-    if (wc.baseUrl) $('base-url').value = wc.baseUrl;
-    if (wc.apiKey)  { $('api-key').value = wc.apiKey; flashSaved('llm-saved'); }
-  } else {
-    // CLI mode: no server-managed profile exists, so localStorage is the
-    // only source of truth for these fields.
-    if (saved.baseUrl) $('base-url').value = saved.baseUrl;
-    if (saved.apiKey)  { $('api-key').value = saved.apiKey; flashSaved('llm-saved'); }
-    if (saved.model)   $('model-name').value = saved.model;
-  }
+  // The LLM endpoint, key and model belong to the active .wikirc profile,
+  // switched from the model badge. The sidebar no longer edits them, so an
+  // override a former panel left in the browser is dropped, never replayed.
+  try { localStorage.removeItem(storageKey('mcpchat_config')); } catch {}
   // The workspace file, never a browser copy: a copy kept in localStorage
   // outlived every edit of the file and, with the runtime on, reached no model.
   try { localStorage.removeItem(storageKey('mcpchat_system_prompt')); } catch {}
@@ -298,12 +200,4 @@ function loadServers() {
   }
   renderCards(); saveServers();
 }
-
-function runtimeTurnModelOverride() {
-  // The Model field overrides the active profile for this conversation's
-  // turns only: the runtime builds a per-turn client and running jobs keep
-  // their own model. Same value as the profile: nothing to override.
-  const chosen=($('model-name')?.value||'').trim();
-  const profile=String(window.__WIKI_CONFIG__?.model||'');
-  return chosen&&chosen!==profile?{model:chosen}:{};
-}`;
+`;

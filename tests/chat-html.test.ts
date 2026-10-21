@@ -882,10 +882,13 @@ describe('chat html', () => {
     expect(script).not.toContain('window.location.reload()');
   });
 
-  it('places profile selection beside Agent and leaves Reset in the LLM panel', () => {
+  it('places profile selection beside Agent and has no LLM panel in the sidebar', () => {
     const [script] = chatScripts();
 
-    expect(CHAT_HTML).toContain('<div class="sec-label">LLM<div class="sec-label-actions"><button type="button" onclick="resetYamlConfig()">Reset</button></div></div>');
+    expect(CHAT_HTML).not.toContain('<div class="sec-label">LLM');
+    expect(CHAT_HTML).not.toContain('id="base-url"');
+    expect(CHAT_HTML).not.toContain('id="api-key"');
+    expect(CHAT_HTML).not.toContain('id="model-name"');
     expect(CHAT_HTML).toContain('onclick="toggleProfileMenu(event)"');
     expect(CHAT_HTML.indexOf('id="model-badge"')).toBeGreaterThan(CHAT_HTML.indexOf('id="input-wrap"'));
     expect(CHAT_HTML.indexOf('id="model-badge"')).toBeLessThan(CHAT_HTML.indexOf('id="send-btn"'));
@@ -894,38 +897,14 @@ describe('chat html', () => {
     expect(script).not.toContain('profile-picker');
   });
 
-  it('never lets a stale local override win over the active .wikirc profile config', () => {
+  it('drops a stale local LLM override instead of replaying it', () => {
     const [script] = chatScripts();
     const loadConfigSource = script.match(/function loadConfig\(\) \{[\s\S]*?\n\}\n/)?.[0] ?? '';
 
-    // Regression: this used to unconditionally re-apply localStorage's saved
-    // values *after* setting fields from window.__WIKI_CONFIG__ (the active
-    // profile), even in proxy mode — silently reverting to a stale
-    // baseUrl/apiKey/model that buildProxyLLMHeaders() would then send as an
-    // override header, hijacking the actual outbound LLM request regardless
-    // of which profile was selected.
-    const wcBranch = loadConfigSource.match(/if \(wc\) \{([\s\S]*?)\} else \{/)?.[1] ?? '';
-    expect(wcBranch).not.toContain('saved.');
-    // Guards against the duplicated post-if/else block reappearing: each of
-    // these reads must appear exactly once (inside the else/CLI-mode branch),
-    // not a second time unconditionally after the if/else. A count check is
-    // robust to reformatting, unlike slicing on an exact brace/indent pattern.
-    for (const line of [
-      "if (saved.baseUrl) $('base-url').value = saved.baseUrl;",
-      "if (saved.apiKey)  { $('api-key').value = saved.apiKey; flashSaved('llm-saved'); }",
-      "if (saved.model)   $('model-name').value = saved.model;",
-      // `saved.temp` a disparu avec le champ Temp. : la température appartient
-      // au profil .wikirc actif et n'a plus de forme locale à restaurer.
-    ]) {
-      expect(loadConfigSource.split(line).length - 1).toBe(1);
-    }
-  });
-
-  it('clears any stale local LLM override when a profile switch succeeds', () => {
-    const [script] = chatScripts();
-    const switchSource = script.match(/async function switchConfigProfile\(profile\) \{[\s\S]*?\n\}\n/)?.[0] ?? '';
-
-    expect(switchSource).toContain("localStorage.removeItem(storageKey('mcpchat_config'));");
+    // The sidebar no longer edits the endpoint: a value a former panel left
+    // in localStorage must never reach an outbound request again.
+    expect(loadConfigSource).toContain("localStorage.removeItem(storageKey('mcpchat_config'))");
+    expect(script).not.toContain('X-LLM-Wiki-LLM-Base-Url');
   });
 
   it('handles explicit profile updates before chat or agent runtime routing', () => {
@@ -1343,15 +1322,6 @@ describe('chat html', () => {
     expect(parseToolJSON('MCP result:\n{"status":"done"}\nEnd.')).toEqual({ status: 'done' });
   });
 
-  it('supports runtime llm overrides and yaml reset', () => {
-    const [script] = chatScripts();
-
-    expect(script).toContain('function buildProxyLLMHeaders()');
-    expect(script).toContain("h['X-LLM-Wiki-LLM-Base-Url']=baseUrl;");
-    expect(script).toContain('async function resetYamlConfig()');
-    expect(script).toContain("fetch('/api/llm-config',{cache:'no-store'})");
-  });
-
   it('summarizes multiple production jobs', () => {
     const [script] = chatScripts();
 
@@ -1622,10 +1592,11 @@ describe('chat html', () => {
     // reply. The runtime now receives every agent-mode message on /turn and
     // classifies it there (control verbs and new tasks → control lane, plain
     // conversation → read-only chat answer).
-    expect(script).toContain("const turnBody={input:text,conversationId:currentConversationId,...runtimeTurnModelOverride(),...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{}),...(hideQuestion?{extractMemory:false}:{}),...(saveAsReport?{saveAsReport:true}:{})};");
-    // The per-turn model helper lives in the config script, the Google OAuth
-    // outcome in the connector script — chatHtml only calls them.
-    expect(CHAT_HTML).toContain('function runtimeTurnModelOverride()');
+    expect(script).toContain("const turnBody={input:text,conversationId:currentConversationId,...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{}),...(hideQuestion?{extractMemory:false}:{}),...(saveAsReport?{saveAsReport:true}:{})};");
+    // The model is the active profile's: no per-turn override is sent.
+    expect(CHAT_HTML).not.toContain('runtimeTurnModelOverride');
+    // The Google OAuth outcome lives in the connector script — chatHtml only
+    // calls it.
     expect(CHAT_HTML).toContain('async function handleGoogleOAuthStart(popup,response,payload,reply)');
     expect(script).toContain("const doTurnFetch=()=>fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(skillRun?{input:text,mode:'agent',conversationId:currentConversationId,...(saveAsReport?{saveAsReport:true}:{})}:turnBody)});");
     expect(script).toContain("const readOnlyChat=mode==='chat'");

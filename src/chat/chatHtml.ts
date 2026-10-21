@@ -1508,24 +1508,6 @@ async function renameConversation(id, title) {
   }
 }
 
-function buildLLMHeaders() {
-  const key=$('api-key').value.trim();
-  const h={'Content-Type':'application/json'};
-  if(key) h['Authorization']=\`Bearer \${key}\`;
-  return h;
-}
-
-function buildProxyLLMHeaders() {
-  const h={'Content-Type':'application/json'};
-  const yaml=window.__WIKI_CONFIG__||{};
-  const baseUrl=$('base-url').value.trim();
-  const apiKey=$('api-key').value.trim();
-  if(baseUrl && baseUrl!==yaml.baseUrl) h['X-LLM-Wiki-LLM-Base-Url']=baseUrl;
-  if(apiKey && apiKey!==yaml.apiKey) h['X-LLM-Wiki-LLM-API-Key']=apiKey;
-  return h;
-}
-
-
 function addServer(name='', url='', bearer='') {
   const id=nextId++;
   servers.push({id, name:name||\`mcp-\${id}\`, url, bearer, sessionId:null, enabled:false, status:'off', tools:[],origin:'ui',persistedName:null,needsSync:true,syncError:''});
@@ -1844,11 +1826,9 @@ async function summarizeLocalConversationForCompact(cutMessages) {
     .join('\\n')
     .slice(0,8000);
   if(!transcript) return conversationSummary;
-  const useProxy=!!(window.__WIKI_CONFIG__);
-  if(!useProxy && !$('base-url').value.trim()) return conversationSummary;
-  const model=$('model-name').value.trim()||'gpt-4o';
-  const llmUrl=useProxy ? '/api/chat' : \`\${$('base-url').value.trim().replace(/\\/$/, '')}/v1/chat/completions\`;
-  const llmHeaders=useProxy ? buildProxyLLMHeaders() : buildLLMHeaders();
+  const model=window.__WIKI_CONFIG__?.model||'gpt-4o';
+  const llmUrl='/api/chat';
+  const llmHeaders={'Content-Type':'application/json'};
   const sys='You maintain a compact working memory for Donna, a workspace assistant. You are shown an optional PREVIOUS SUMMARY and a NEW SEGMENT of conversation about to leave the assistant\\'s context window. Write ONE updated summary that preserves the facts, decisions, open questions and user preferences that still matter for future turns. Be concise: well under 200 words. Return only the summary text — no preamble, no meta-commentary, no headings.';
   const input=[conversationSummary?\`PREVIOUS SUMMARY:\\n\${conversationSummary}\`:null,\`NEW SEGMENT:\\n\${transcript}\`].filter(Boolean).join('\\n\\n');
   try {
@@ -2953,7 +2933,7 @@ async function sendMessage() {
   }
   const resolved=skillInvocation;
   if(displayOverride) resolved.displayText=displayOverride;
-  const model=$('model-name').value.trim()||'gpt-4o';
+  const model=window.__WIKI_CONFIG__?.model||'gpt-4o';
   // Temperature comes from the active .wikirc profile, never from the UI.
   // The panel used to carry a field for it, prefilled from the same config and
   // defaulting to 0.7 against a schema default of 0.1 — two sources for one
@@ -2962,8 +2942,6 @@ async function sendMessage() {
   // controlled. Undefined here means "let the server decide", which behind a
   // gateway is the only correct answer: some models refuse the parameter.
   const temp=window.__WIKI_CONFIG__?.temperature;
-  const useProxy=!!(window.__WIKI_CONFIG__);
-  if(!useProxy && !$('base-url').value.trim()){notify('Enter a Base URL','e');return;}
 
   input.value=''; input.style.height='auto';
   isStreaming=true; setSendButtonStreaming(true);
@@ -2978,8 +2956,8 @@ async function sendMessage() {
   appendMsg('user',resolved.displayText);
   scheduleConversationSave();
 
-  const llmUrl=useProxy ? '/api/chat' : \`\${$('base-url').value.trim().replace(/\\/$/, '')}/v1/chat/completions\`;
-  const llmHeaders=useProxy ? buildProxyLLMHeaders() : buildLLMHeaders();
+  const llmUrl='/api/chat';
+  const llmHeaders={'Content-Type':'application/json'};
 
   let streamDiv=null;
   let streamText='';
@@ -3137,7 +3115,7 @@ async function sendRuntimeAgentMessage(input,text,{mode,displayText=text,hideQue
     // answers this conversation with it while active jobs keep the profile's
     // model. Same value as the profile: nothing to override.
     // A hidden question is composed by the interface, not typed: never memory evidence.
-    const turnBody={input:text,conversationId:currentConversationId,...runtimeTurnModelOverride(),...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{}),...(hideQuestion?{extractMemory:false}:{}),...(saveAsReport?{saveAsReport:true}:{})};
+    const turnBody={input:text,conversationId:currentConversationId,...(mode?{mode}:{}),...(openWikiPages.length?{context:{openWikiPages}}:{}),...(hideQuestion?{extractMemory:false}:{}),...(saveAsReport?{saveAsReport:true}:{})};
     const doTurnFetch=()=>fetch('/api/runtime/turn',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(skillRun?{input:text,mode:'agent',conversationId:currentConversationId,...(saveAsReport?{saveAsReport:true}:{})}:turnBody)});
     let res=await doTurnFetch();
     // Transient 503 (host runtime booting/restarting): wait, then replay once.

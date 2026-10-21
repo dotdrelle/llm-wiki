@@ -209,15 +209,13 @@ Everything below is a **UI panel**, not something you type:
   the workspace's `.wiki/system-prompt.md`, which DONNA reads at every turn in
   chat and agent mode — *Save* writes the file, *Reset* loads the shipped
   default without saving.
-- **LLM settings** (sidebar) — Base URL, Model, API key, and the active
-  `.wikirc` profile picker. With the runtime enabled a profile switch (here or
-  from the top bar) applies to the whole workspace: it is remembered in
-  `.wiki/active-profile.json`, so the ShellUI follows it at its next message and
-  a runtime restart keeps it, and an edit of the active profile file is picked
-  up the same way. A switch is refused while a run is active (the run reads the
-  profile at each phase); the **Model** field instead applies to the
-  conversation's next turns only, so you can change the chat model during a
-  run while the run and its jobs keep the profile's model.
+- **LLM profile** — the endpoint, key and model come from the active `.wikirc`
+  profile; serve has no field to edit them. With the runtime enabled the model
+  badge switches profiles, and a switch applies to the whole workspace: it is
+  remembered in `.wiki/active-profile.json`, so the ShellUI follows it at its
+  next message and a runtime restart keeps it, and an edit of the active
+  profile file is picked up the same way. A switch is refused while a run is
+  active (the run reads the profile at each phase).
 - **Help panel** — this documentation, read in place, without leaving the chat.
 - **Page `/graph`** — the visual map of the wiki.
 

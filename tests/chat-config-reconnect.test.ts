@@ -34,35 +34,6 @@ describe('LLM profile switching', () => {
   });
 });
 
-describe('LLM config reset', () => {
-  const body = CONFIG_SCRIPT.slice(
-    CONFIG_SCRIPT.indexOf('async function resetYamlConfig'),
-    CONFIG_SCRIPT.indexOf('function applyServerConfig'),
-  );
-
-  it('replays the active profile when the runtime allows it', () => {
-    // The workaround found in QA — creating a second .wikirc and switching
-    // to it — worked because switching goes through the server-side
-    // authoritative path. Reset borrows the same one.
-    assert.match(body, /await switchConfigProfile\(activeProfile\)/);
-    assert.match(body, /runtime\?\.enabled/);
-  });
-
-  it('reconnects and probes, even without a runtime', () => {
-    assert.match(body, /await restoreEnabledServers\(\);/);
-    assert.equal((body.match(/await probeLlmEndpoint\(\)/g) ?? []).length, 2);
-  });
-
-  it('says what the probe answers instead of staying silent', () => {
-    // Rewriting the fields without checking anything made an unreachable
-    // workspace look fixed: the same screen as a healthy workspace.
-    const probe = CONFIG_SCRIPT.slice(CONFIG_SCRIPT.indexOf('async function probeLlmEndpoint'));
-    assert.match(probe, /\/api\/llm\/probe/);
-    assert.match(probe, /data\?\.ok===false/);
-    assert.match(probe, /data\?\.warning/);
-  });
-});
-
 describe('temperature', () => {
   it('is gone from the panel', () => {
     assert.doesNotMatch(CHAT_MARKUP, /id="temperature"/);

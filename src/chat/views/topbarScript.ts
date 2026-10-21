@@ -8,7 +8,7 @@ export const TOPBAR_SCRIPT = `
 function syncModel() {
   const badge=$('model-badge');
   if(!badge) return;
-  const model=$('model-name').value||'model';
+  const model=window.__WIKI_CONFIG__?.model||'model';
   const activeProfile=window.__WIKI_ACTIVE_PROFILE__||{};
   const activeFile=activeProfile.fileName||'';
   const activeName=activeProfile.name||'';

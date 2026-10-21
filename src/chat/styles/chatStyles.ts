@@ -56,10 +56,9 @@ body.center-wiki #right-rail{padding-top:10px}
 .sb-scroll{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .sb-pane{min-height:0;overflow-y:auto;padding-bottom:12px}
 .sb-pane.history-pane{padding-bottom:8px;flex:1 1 auto}
-/* The config fields scroll independently; navigation stays at the bottom of
-   its pane while the horizontal splitter adjusts the space above it. */
+/* Navigation stays at the bottom of its pane while the horizontal splitter
+   adjusts the space above it. */
 .sb-pane.config-pane{display:flex;flex-direction:column;flex:0 0 auto;overflow:hidden;padding-bottom:0;max-height:calc(100% - 106px)}
-.config-settings{flex:1 1 auto;min-height:0;overflow-y:auto;padding-bottom:12px}
 .config-nav{flex:0 0 auto;padding:0 0 12px;border-top:1px solid var(--border)}
 .config-nav .sec-label{padding-top:12px;padding-bottom:4px}
 .sb-resizer{flex:0 0 10px;height:10px;cursor:row-resize;display:flex;align-items:center;justify-content:center;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--panel);touch-action:none}
@@ -83,8 +82,6 @@ body.center-wiki #right-rail{padding-top:10px}
 .history-rename{display:none;background:none;border:none;color:var(--muted);cursor:pointer;border-radius:6px;padding:3px 5px;font-size:11px}
 .history-item:hover .history-rename{display:block}
 .history-rename:hover{color:var(--accent);background:var(--accent-soft)}
-.api-block{padding:0 12px 4px;display:flex;flex-direction:column;gap:7px}
-.field label{display:block;font-size:10px;color:var(--muted);margin-bottom:4px;font-weight:600;letter-spacing:.5px}
 input,select{width:100%;background:var(--panel-soft);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--font-mono);font-size:12px;padding:7px 10px;outline:none;transition:border-color .2s}
 input:focus,select:focus{border-color:var(--accent)}
 input[type=password]{letter-spacing:3px}
@@ -97,8 +94,6 @@ input[type=password]{letter-spacing:3px}
 .key-saved{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--ok);font-family:var(--font-mono);opacity:0;transition:opacity .3s}
 .key-saved.show{opacity:1}
 .key-saved::before{content:'●';font-size:7px}
-.row2{display:flex;gap:6px}
-.row2 .field{flex:1}
 .sb-link{display:flex;align-items:center;justify-content:space-between;margin:4px 12px 0;padding:9px 10px;border:1px solid var(--border);border-radius:9px;background:var(--panel-soft);color:var(--text);text-decoration:none;font-size:12px;font-weight:700;transition:border-color .2s,color .2s,background .2s}
 .sb-link:hover,.sb-link.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .sb-link span{font-family:var(--font-mono);font-size:10px;color:var(--muted)}

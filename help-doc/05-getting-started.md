@@ -23,13 +23,14 @@ is unavailable, someone with terminal access needs to check this first (see
 
 DONNA needs an LLM to reason.
 
-- In the Serve interface launched by `wiki serve`, the LLM is usually
-  **pre-configured**: check that the model name shown at the top is correct.
-- In standalone mode, fill in the settings:
-  - **Base URL**: the OpenAI-compatible endpoint (for example a local instance or
-    a provider's URL);
-  - **Model**: the model name exposed by that endpoint;
-  - **API key**: only if the provider requires it.
+- In the Serve interface launched by `wiki serve`, the LLM comes from the
+  workspace's `.wikirc.yaml`: check that the model name shown beside the
+  composer is correct.
+- To change it, edit the `llm` section of `.wikirc.yaml`:
+  - **`baseUrl`**: the OpenAI-compatible endpoint (for example a local instance
+    or a provider's URL);
+  - **`model`**: the model name exposed by that endpoint;
+  - **`apiKey`**: only if the provider requires it.
 
 A capable model is required: a model that is too weak fails on ingestion.
 

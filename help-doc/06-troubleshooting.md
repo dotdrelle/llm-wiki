@@ -34,9 +34,10 @@ Each case below gives the **symptom**, the **cause** and the **fix**.
 
 - **Symptom**: empty, inconsistent answers, or a refusal to analyze.
 - **Cause**: LLM missing, misconfigured, or too weak.
-- **Fix**: check the model shown at the top of the interface; fill in Base URL,
-  Model and (if required) the API key. Pick a capable model: ingestion fails with
-  a model that is too light.
+- **Fix**: check the model shown beside the composer; set `llm.baseUrl`,
+  `llm.model` and (if required) `llm.apiKey` in the active `.wikirc.yaml`
+  profile, or switch profiles from the model badge. Pick a capable model:
+  ingestion fails with a model that is too light.
 
 ## A connector doesn't work
 

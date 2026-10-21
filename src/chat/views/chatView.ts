@@ -53,35 +53,6 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
     </div>
     <div class="sb-resizer" id="sidebar-resizer" title="Resize panels"></div>
     <div class="sb-pane config-pane" id="config-pane">
-      <div class="config-settings">
-        <div class="sec-label">LLM<div class="sec-label-actions"><button type="button" onclick="resetYamlConfig()">Reset</button></div></div>
-        <div class="api-block">
-          <div class="field">
-            <label for="base-url">Base URL</label>
-            <input id="base-url" type="text" placeholder="http://localhost:11434/v1" onchange="saveConfig()">
-          </div>
-          <div class="field">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-              <label for="api-key" style="margin:0">API Key</label>
-              <span class="key-saved" id="llm-saved">saved</span>
-            </div>
-            <div class="secret-wrap">
-              <input id="api-key" type="password" placeholder="sk-… (leave empty for Ollama)" autocomplete="off" onchange="saveConfig()">
-              <div class="secret-actions">
-                <button class="secret-btn" id="reveal-btn-apikey" onclick="toggleReveal('api-key',this)" title="Show/hide">
-                  <svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
-                </button>
-              </div>
-            </div>
-          </div>
-          <div class="row2">
-            <div class="field">
-              <label for="model-name">Model</label>
-              <input id="model-name" type="text" placeholder="gpt-4o" oninput="syncModel()" onchange="saveConfig()">
-            </div>
-          </div>
-        </div>
-      </div>
       <div class="config-nav">
         <div class="sec-label">Connectors</div>
         <a class="sb-link" id="connectors-link" href="/chat/connectors" onclick="showConnectorsView(event)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a6 6 0 0 1-12 0V8z"/></svg> Connectors <span>MCP & skills</span></a>
