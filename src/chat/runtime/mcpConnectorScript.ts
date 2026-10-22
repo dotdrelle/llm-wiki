@@ -24,7 +24,23 @@ function mcpProxyUrl(server) {
   return \`/api/mcp?url=\${encodeURIComponent(server.url)}\`;
 }
 
-async function mcpRPC(server, method, params, timeoutMs=MCP_REQUEST_TIMEOUT_MS) {
+// The per-endpoint timeoutMs in mcp.endpoints.json remains a code-level
+// setting: the Connectors panel no longer edits it. An explicit timeout in the
+// call wins; otherwise the endpoint's value, then the connector default.
+function mcpTimeoutFor(server, timeoutMs) {
+  const explicit=Number(timeoutMs);
+  if(Number.isFinite(explicit)&&explicit>0) return Math.max(1000,explicit);
+  const configured=Number(server?.timeoutMs);
+  return Number.isFinite(configured)&&configured>=1000 ? configured : MCP_REQUEST_TIMEOUT_MS;
+}
+// A timeout leaves no runtime event behind, so it is written to the Logs tab
+// explicitly instead of disappearing with the retry that follows it.
+function noteMcpTimeout(server, method, params, requestTimeoutMs) {
+  const subject=method==='tools/call'&&params?.name ? method+': '+params.name : method;
+  noteClientDiagnostic('MCP timeout after '+Math.round(requestTimeoutMs/1000)+'s — '+(server?.name||'MCP')+' · '+subject);
+}
+
+async function mcpRPC(server, method, params, timeoutMs) {
   const body = {jsonrpc: '2.0', id: Date.now(), method};
   if (params !== undefined) body.params = params;
   const headers = {
@@ -34,7 +50,7 @@ async function mcpRPC(server, method, params, timeoutMs=MCP_REQUEST_TIMEOUT_MS) 
   if (server.bearer?.trim()) headers['Authorization'] = \`Bearer \${server.bearer.trim()}\`;
   if (server.sessionId) headers['Mcp-Session-Id'] = server.sessionId;
   const controller = new AbortController();
-  const requestTimeoutMs=Math.max(1000,Number(timeoutMs)||MCP_REQUEST_TIMEOUT_MS);
+  const requestTimeoutMs=mcpTimeoutFor(server,timeoutMs);
   const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
   try {
     const res = await fetch(mcpProxyUrl(server), {method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal});
@@ -58,7 +74,9 @@ async function mcpRPC(server, method, params, timeoutMs=MCP_REQUEST_TIMEOUT_MS) 
     const ct = res.headers.get('content-type') || '';
     return ct.includes('text/event-stream') ? await readSSE(res) : await res.json();
   } catch(err) {
-    const e = new Error(err?.name==='AbortError' ? \`MCP timeout after \${Math.round(requestTimeoutMs/1000)}s\` : (err?.message || String(err)));
+    const timedOut=err?.name==='AbortError';
+    if(timedOut) noteMcpTimeout(server,method,params,requestTimeoutMs);
+    const e = new Error(timedOut ? 'MCP timeout after '+Math.round(requestTimeoutMs/1000)+'s' : (err?.message || String(err)));
     e.raw = e.message;
     e.status = err?.status;
     throw e;
@@ -109,7 +127,7 @@ function openOAuthWindow(url, server) {
   }
 }
 
-async function mcpNotify(server, method, params, timeoutMs=MCP_REQUEST_TIMEOUT_MS) {
+async function mcpNotify(server, method, params, timeoutMs) {
   const body = {jsonrpc: '2.0', method};
   if (params !== undefined) body.params = params;
   const headers = {
@@ -119,10 +137,11 @@ async function mcpNotify(server, method, params, timeoutMs=MCP_REQUEST_TIMEOUT_M
   if (server.bearer?.trim()) headers['Authorization'] = \`Bearer \${server.bearer.trim()}\`;
   if (server.sessionId) headers['Mcp-Session-Id'] = server.sessionId;
   const controller=new AbortController();
-  const timeout=setTimeout(()=>controller.abort(),Math.max(1000,Number(timeoutMs)||MCP_REQUEST_TIMEOUT_MS));
+  const requestTimeoutMs=mcpTimeoutFor(server,timeoutMs);
+  const timeout=setTimeout(()=>controller.abort(),requestTimeoutMs);
   try {
     await fetch(mcpProxyUrl(server), {method: 'POST', headers, body: JSON.stringify(body),signal:controller.signal});
-  } catch {} finally { clearTimeout(timeout); }
+  } catch(err) { if(err?.name==='AbortError') noteMcpTimeout(server,method,params,requestTimeoutMs); } finally { clearTimeout(timeout); }
 }
 
 async function connectServer(id,{silent=false}={}) {
@@ -168,7 +187,7 @@ async function syncRuntimeMcpServerName(server, {silent=false, failureMessage=er
 async function persistRuntimeMcpServer(server) {
   const res=await fetch('/api/runtime/mcp/endpoints',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({action:'upsert',name:server.name,previousName:server.persistedName||undefined,url:server.url,bearer:server.bearer||'',timeoutMs:server.timeoutMs??null}),
+    body:JSON.stringify({action:'upsert',name:server.name,previousName:server.persistedName||undefined,url:server.url,bearer:server.bearer||''}),
   });
   const data=await res.json().catch(()=>({}));
   if(!res.ok) throw new Error(data.error||\`Runtime MCP update failed (HTTP \${res.status})\`);
@@ -205,7 +224,7 @@ async function retryPendingServerSyncs() {
   }
 }
 
-async function reconnectMCPServer(server, timeoutMs=MCP_REQUEST_TIMEOUT_MS) {
+async function reconnectMCPServer(server, timeoutMs) {
   server.sessionId=null;
   const initResp = await mcpRPC(server, 'initialize', {
     protocolVersion: '2024-11-05',
@@ -223,7 +242,7 @@ async function reconnectMCPServer(server, timeoutMs=MCP_REQUEST_TIMEOUT_MS) {
   server.lastMcpActivityAt=Date.now();
 }
 
-async function callMCPTool(name, args, {trackActivity=true,timeoutMs=MCP_REQUEST_TIMEOUT_MS}={}) {
+async function callMCPTool(name, args, {trackActivity=true,timeoutMs}={}) {
   const server=findServerForTool(name);
   if(!server) throw new Error(\`No active MCP server for "\${name}"\`);
   const requestedWorkspace=String(args?.workspace||'').trim();

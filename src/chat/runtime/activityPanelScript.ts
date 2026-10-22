@@ -140,6 +140,22 @@ function agentProgressEntries() {
     .filter(entry=>runtimeLogMatchesFilter(entry.message,runtimeLogFilter))
     .map(entry=>({time:formatLocalTime(entry.at),text:(entry.kind==='model_meter'?'':'Agent: ')+entry.message,tone:'info'}));
 }
+// A browser-side MCP timeout has no runtime event behind it, so it would leave
+// no trace at all in the Logs tab while a tool spent a minute waiting. Kept
+// apart from agentProgressLog, which every runtime state refresh rebuilds.
+const CLIENT_DIAGNOSTIC_LIMIT=50;
+let clientDiagnostics=[];
+function noteClientDiagnostic(text,tone='warning') {
+  const message=String(text||'').trim();
+  if(!message) return;
+  clientDiagnostics=[...clientDiagnostics,{time:new Date().toISOString(),message,tone}].slice(-CLIENT_DIAGNOSTIC_LIMIT);
+  if(activityListTab==='logs') renderActivities();
+}
+function clientDiagnosticEntries() {
+  return clientDiagnostics
+    .filter(entry=>runtimeLogMatchesFilter(entry.message,runtimeLogFilter))
+    .map(entry=>({time:formatLocalTime(entry.time),text:entry.message,tone:entry.tone||'warning'}));
+}
 
 // An agent-mode turn runs on an ephemeral runtime session whose events never
 // reach /state, and it buffers its text until validation — so the panels and

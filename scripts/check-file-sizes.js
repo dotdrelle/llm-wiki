@@ -55,6 +55,9 @@ const MAX_LINES = 800;
 // probed output-token capability key grew schema by one line. Record both.
 // 0.16.60 MCP timeouts: serve.ts carries the per-endpoint timeout through the
 // external endpoint allow-list. Record the measured lines.
+// 0.16.62 follow-up: the Connectors panel dropped its per-connector timeout
+// field; browser-side MCP timeouts now feed the Activity Logs
+// (activityPanelScript). Record the measured lines.
 const LEGACY_LIMITS = new Map([
   ['src/commands/serve.ts', 1104],
   ['src/serve/html/wikiHtml.ts', 2300],
@@ -62,7 +65,7 @@ const LEGACY_LIMITS = new Map([
   ['src/serve/html/wikiLayoutScript.ts', 1312],
   ['src/chat/chatHtml.ts', 3308],
   ['src/chat/styles/chatStyles.ts', 602],
-  ['src/chat/runtime/activityPanelScript.ts', 1048],
+  ['src/chat/runtime/activityPanelScript.ts', 1064],
   ['src/chat/views/wikiPanelScript.ts', 857],
   ['src/services/ingestService.ts', 2591],
   ['src/services/mcpServer.ts', 2544],

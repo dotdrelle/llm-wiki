@@ -961,7 +961,7 @@ describe('chat html', () => {
     expect(script).toContain("callMCPTool(item.poll.tool,item.poll.args||{},{trackActivity:false})");
     expect(script).toContain("cme_export_run:'Confluence export'");
     expect(script).toContain("production_start_job:'Production job'");
-    expect(script).toContain('async function callMCPTool(name, args, {trackActivity=true,timeoutMs=MCP_REQUEST_TIMEOUT_MS}={})');
+    expect(script).toContain('async function callMCPTool(name, args, {trackActivity=true,timeoutMs}={})');
     expect(script).toContain('const seenMeta=new Set([cardTitle.trim().toLowerCase()]);');
     expect(script).toContain('if(!normalized||seenMeta.has(normalized)) return false;');
     expect(script).toContain("progress.throttling?.active?");
@@ -1346,7 +1346,7 @@ describe('chat html', () => {
     const [script] = chatScripts();
 
     expect(script).toContain('function isMcpSessionOrNetworkFailure');
-    expect(script).toContain('async function reconnectMCPServer(server, timeoutMs=MCP_REQUEST_TIMEOUT_MS)');
+    expect(script).toContain('async function reconnectMCPServer(server, timeoutMs)');
     expect(script).toContain('const MCP_STALE_SESSION_MS = 5 * 60 * 1000;');
     expect(script).toContain('const MCP_REQUEST_TIMEOUT_MS = 60 * 1000;');
     expect(script).toContain('function mcpSessionIsStale(server)');
@@ -1354,6 +1354,21 @@ describe('chat html', () => {
     expect(script).toContain("notify(`${server.name}: reconnecting MCP...`);");
     expect(script).toContain("resp = await mcpRPC(server, 'tools/call', {name, arguments: args},timeoutMs);");
     expect(script).toContain('MCP timeout after');
+  });
+
+  it('keeps the MCP timeout in code and reports it in the logs', () => {
+    const [script] = chatScripts();
+
+    // The Connectors panel no longer offers a per-connector timeout: the
+    // deadline stays a code default (60 s) or the endpoint file's timeoutMs.
+    expect(script).not.toContain('Tool timeout');
+    expect(script).not.toContain("field==='timeoutMs'");
+    expect(script).toContain('function mcpTimeoutFor(server, timeoutMs)');
+    expect(script).toContain('const MCP_REQUEST_TIMEOUT_MS = 60 * 1000;');
+    // A timeout is not a runtime event, so it is written to the Logs tab.
+    expect(script).toContain('function noteClientDiagnostic(text,tone=');
+    expect(script).toContain('noteMcpTimeout(server,method,params,requestTimeoutMs);');
+    expect(script).toContain('clientDiagnosticEntries().reverse()');
   });
 
   it('keeps production summaries for runtime traces without local LLM chaining', () => {

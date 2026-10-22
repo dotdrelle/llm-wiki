@@ -106,6 +106,7 @@ function markRuntimeLogsCleared() {
   const logs=Array.isArray(runtimeState?.logs)?runtimeState.logs:[];
   runtimeLogsClearedMark=logs.length?String(logs[logs.length-1]):null;
   agentProgressLog=[];
+  clientDiagnostics=[];
 }
 function visibleRuntimeLogs(logs) {
   const list=Array.isArray(logs)?logs:[];
