@@ -36,7 +36,7 @@ import type { QueryEdgeType } from '../graph/wiki/queryGraph.ts';
 import { listHelpChapters, readHelpChapter, searchHelpChapters } from '../utils/helpDoc.ts';
 import type { AppConfig } from '../types.ts';
 
-const LLM_WIKI_VERSION = '0.16.63';
+const LLM_WIKI_VERSION = '0.16.64';
 export { resolveReadableWorkspacePath };
 
 const MAX_SOURCE_NAME_CHARS = 200;
