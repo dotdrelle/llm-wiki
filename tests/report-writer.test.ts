@@ -11,13 +11,13 @@ describe('Donna reports', () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'reports-'));
     const now = new Date('2026-10-13T19:20:00Z');
     const first = await writeDonnaReport(root, {
-      title: 'Résumé du comité de suivi', content: '# Résumé\n\nTrois décisions.', sources: ['raw/ingested/juno.md'], now,
+      title: 'Résumé du comité de suivi', content: '# Résumé\n\nTrois décisions.', sources: ['raw/ingested/demo.md'], now,
     });
     expect(first.relativePath).toBe(`${REPORTS_DIR}/2026-10-13-resume-du-comite-de-suivi.md.lock`);
     const parsed = matter(await readFile(first.absolutePath, 'utf8'));
     expect(parsed.data).toMatchObject({
       type: 'report', title: 'Résumé du comité de suivi', status: 'draft',
-      generated: { by: 'donna', at: now.toISOString() }, sources: ['raw/ingested/juno.md'],
+      generated: { by: 'donna', at: now.toISOString() }, sources: ['raw/ingested/demo.md'],
     });
     expect(parsed.content.trim()).toBe('# Résumé\n\nTrois décisions.');
     // Same title the same day: a new file, the first one untouched.

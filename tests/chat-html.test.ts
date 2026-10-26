@@ -446,7 +446,7 @@ describe('chat html', () => {
     const queued = { running: true, status: 'running', runId: 'r2', runs: [], controlQueue: [{ status: 'running', conversationId: 'conv-b' }] };
     expect(active(queued, 'conv-b')).toBe(true);
     expect(active(queued, 'conv-a')).toBe(false);
-    const workspaceLevel = { running: true, status: 'running', runId: 'r3', runs: [{ id: 'r3', conversationId: 'legacy:juno' }] };
+    const workspaceLevel = { running: true, status: 'running', runId: 'r3', runs: [{ id: 'r3', conversationId: 'legacy:demo' }] };
     expect(active(workspaceLevel, 'conv-a')).toBe(true);
     expect(active({ running: false, status: 'idle' }, 'conv-a')).toBe(false);
   });
@@ -1797,7 +1797,7 @@ describe('open template reload', () => {
     const end = script.indexOf("  if(type==='run_started') {", start);
     expect(start).toBeGreaterThan(-1);
     const reloads: string[] = [];
-    let pathname = '/templates/eas/juno.md';
+    let pathname = '/templates/eas/demo.md';
     const frame = { contentWindow: { location: { get pathname() { return pathname; }, reload: () => reloads.push(pathname) } } };
     const context = { document: { getElementById: () => frame } };
     vm.createContext(context);
@@ -1808,7 +1808,7 @@ describe('open template reload', () => {
     note('tool_call_result', { payload: { name: 'wiki__wiki_read_page', ok: true } });
     pathname = '/wiki/concepts/a.md';
     note('tool_call_result', { payload: { name: 'wiki__template_write', ok: true } });
-    expect(reloads).toEqual(['/templates/eas/juno.md']);
+    expect(reloads).toEqual(['/templates/eas/demo.md']);
   });
 });
 

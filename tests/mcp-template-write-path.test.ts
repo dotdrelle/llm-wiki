@@ -71,8 +71,8 @@ describe('normalizedNewAssetPath', () => {
   // hyphens. A skill's convention (word count, family folder) stays the
   // skill's; these rules never contradict it.
   it('slugifies every segment of a new template path', () => {
-    expect(normalizedNewAssetPath(templates(), path.join(templates(), 'EAS', 'JUNO-EAS-presentation-projet.md')))
-      .toBe(path.join(root, 'templates', 'eas', 'juno-eas-presentation-projet.md'));
+    expect(normalizedNewAssetPath(templates(), path.join(templates(), 'EAS', 'DEMO-EAS-presentation-projet.md')))
+      .toBe(path.join(root, 'templates', 'eas', 'demo-eas-presentation-projet.md'));
     expect(normalizedNewAssetPath(templates(), path.join(templates(), 'Présentation  Équipe_v2.MD')))
       .toBe(path.join(root, 'templates', 'presentation-equipe-v2.md'));
   });
