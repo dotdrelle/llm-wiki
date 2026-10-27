@@ -27,6 +27,10 @@ ${REPORT_READER_CSS}
 .help-article table{border-collapse:collapse;width:100%;font-size:.85em}
 .help-article th,.help-article td{border:1px solid #d8c95a;padding:4px 8px;text-align:left;vertical-align:top}
 .help-article a{color:#7a5d00}
+.help-article blockquote{border-left:3px solid #c9a300;background:#fbefa0;margin:.5em 0;padding:.45em .8em;border-radius:0 6px 6px 0}
+.rr-toc{display:flex;flex-direction:column;gap:2px;margin:0 0 12px;padding:0 0 10px;border-bottom:1px solid #e6d566}
+.rr-toc button{text-align:left;background:none;border:0;padding:2px 0;font:inherit;font-size:.85em;color:#7a5d00;cursor:pointer}
+.rr-toc button.sub{padding-left:12px}.rr-toc button:hover{text-decoration:underline}
 .help-loading{color:var(--muted);padding:6px 2px}
 .act-panel-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--border);flex-shrink:0;min-height:44px}
 .act-panel-title{font-size:13px;font-weight:800;color:var(--text)}
@@ -232,7 +236,9 @@ ${REPORT_READER_CSS}
 .bubble,.bubble p,.bubble li,.bubble a,.bubble code{max-width:100%;overflow-wrap:anywhere;word-break:normal}
 .bubble pre{background:var(--panel-deep);border-radius:8px;padding:10px 12px;margin:.5em 0;max-width:100%;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere}
 .bubble pre code{background:none;padding:0;font-size:.85em}
-.bubble blockquote{border-left:3px solid var(--border);margin:.4em 0;padding:.2em .8em;color:var(--muted)}
+.bubble blockquote,.maintenance-markdown blockquote{border-left:3px solid var(--accent);margin:.5em 0;padding:.45em .8em;color:var(--text);background:var(--accent-soft);border-radius:0 8px 8px 0}
+.bubble blockquote p,.maintenance-markdown blockquote p,.help-article blockquote p{margin:0}
+.bubble ol>li::marker,.maintenance-markdown ol>li::marker,.help-article ol>li::marker{color:var(--accent);font-weight:700}
 .bubble .table-wrap{overflow-x:auto;max-width:100%;margin:.5em 0}
 .bubble table{border-collapse:collapse;font-size:.9em;width:100%;max-width:100%;table-layout:auto}
 .bubble th,.bubble td{border:1px solid var(--border);padding:4px 9px;vertical-align:top;word-break:break-word;overflow-wrap:anywhere}

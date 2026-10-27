@@ -14,6 +14,14 @@ function chatScripts(): string[] {
 }
 
 describe('chat html', () => {
+  it('opens a long report on its contents, built as text from the rendered headings', () => {
+    const fn = /function addReportContents\(article\) \{[\s\S]*?\n\}/.exec(CHAT_HTML)?.[0] ?? '';
+    expect(fn).toContain('link.textContent=head.textContent');
+    expect(fn).not.toContain('innerHTML');
+    expect(CHAT_HTML).toContain("addReportContents(body.querySelector('.help-article'))");
+    expect(CHAT_HTML).toContain('.bubble blockquote,.maintenance-markdown blockquote{border-left:3px solid var(--accent)');
+  });
+
   it('embeds syntactically valid scripts', () => {
     const scripts = chatScripts();
 

@@ -73,8 +73,23 @@ async function openReportReader(target, title) {
     const at=/\\bat:\\s*['"]?([^'"\\n]+)/.exec(front)?.[1];
     meta.textContent=[d.path, at?formatLocalDateTime(at):''].filter(Boolean).join(' · ');
     body.innerHTML='<div class="help-article">'+renderMd(fm?(d.markdown||'').slice(fm[0].length):(d.markdown||''))+'</div>';
+    addReportContents(body.querySelector('.help-article'));
     body.scrollTop=0;
   } catch(e) { body.innerHTML='<div class="help-loading">'+esc(e?.message||String(e))+'</div>'; }
+}
+// A report of three sections or more opens on its contents, drawn from the
+// headings already rendered: text only, never markup.
+function addReportContents(article) {
+  const heads=[...(article?.querySelectorAll('h2,h3')||[])];
+  if(heads.length<3) return;
+  const nav=document.createElement('nav'); nav.className='rr-toc'; nav.setAttribute('aria-label','Contents');
+  for(const head of heads) {
+    const link=document.createElement('button'); link.type='button'; link.textContent=head.textContent;
+    if(head.tagName==='H3') link.className='sub';
+    link.addEventListener('click',()=>head.scrollIntoView({behavior:'smooth',block:'start'}));
+    nav.appendChild(link);
+  }
+  article.prepend(nav);
 }
 function closeReportReader() {
   const panel=$('report-reader');
