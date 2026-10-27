@@ -101,3 +101,10 @@ TOTP is the **human** lock in front of the interactive surfaces, not a
 replacement for those. An already-issued session token stays valid until it
 expires even after a logout — the logout clears the browser cookie and the
 shell session, the copy an attacker could hold expires with the TTL.
+
+The runtime service bearer is required on every bind address, including
+loopback. The manager creates it in `.wiki/runtime/runtime.token` and its
+clients add it automatically. When a reverse proxy uses a public host name, add
+that name to `WIKI_MANAGER_RUNTIME_ALLOWED_HOSTS`; otherwise the runtime
+refuses the request with a Host error. This is separate from the TOTP code and
+does not require entering the service token in the browser.

@@ -50,6 +50,12 @@ The wiki is the set of durable knowledge pages. It is organized into:
 Pages are linked to one another by internal links, so you can navigate from one
 concept to the next.
 
+Markdown pages are displayed safely: raw HTML appears as text, except for line
+breaks (`<br>`), and HTML comments are removed. Markdown links may use relative
+paths, `http`, `https` or `mailto`; images must use relative paths, so external
+images are blocked. If imported content shows tags such as `<b>` as text, use
+Markdown formatting instead (for example, `**bold**`).
+
 The generated index separates **Project knowledge**, **Reading notes**, and
 **Archived documents**. Reading notes summarize individual documents; archived
 documents are the complete original evidence. The archive list links directly

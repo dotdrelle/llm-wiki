@@ -97,7 +97,16 @@ Everything below is a **UI panel**, not something you type:
 - **Connectors panel** — add, edit, remove, and reconnect MCP servers; this is
   Serve's equivalent of the Shell's `/mcp status`/`/mcp endpoints`. It also has
   a visual **skill editor** (create, edit, save a workspace skill) — the
-  equivalent of the Shell's `/skills edit`.
+  equivalent of the Shell's `/skills edit`. With the manager runtime connected,
+  a connector is saved by the manager before Serve connects to it. Saved bearer
+  tokens are write-only: the panel shows whether one is configured, then clears
+  the value from the browser. Credentials and query values in a connector URL
+  are hidden too; saving the displayed URL unchanged keeps the manager's saved
+  URL, while changing the URL replaces it. Without the manager runtime, Serve
+  can use connectors declared in `mcp.endpoints.json`, but cannot add them from
+  the panel. If saving a change fails for a connector the manager already
+  knows, the card stays connected with its saved settings and warns that the
+  edit is not saved.
 - **Upload button** — attach a document to the conversation; the equivalent of
   the Shell's `/upload <path>`.
 - **Pending panel** (wiki browser) — the inbox of sources, `raw/untracked/`.

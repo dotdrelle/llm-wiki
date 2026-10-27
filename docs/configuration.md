@@ -426,6 +426,14 @@ unavailable" page. A standalone `serve` without a runtime URL stays open as
 before. See `help-doc/13-login-totp.md` and the manager's
 `docs/configuration.md` (`WIKI_MANAGER_TOTP`, `WIKI_MANAGER_SESSION_TTL_HOURS`).
 
+Serve renders raw Markdown HTML as text (retaining `<br>` and dropping
+comments), validates link schemes, and permits only relative images. Browser
+configuration contains presence flags rather than LLM/MCP credentials; user
+info, query and fragment values in displayed endpoint URLs are withheld. The
+MCP relay accepts connector names resolved from server-side configuration and
+refuses redirects; `/api/chat` always uses the configured LLM endpoint. Every
+Serve response carries `nosniff`, same-origin framing and a partial CSP.
+
 ## Provenance (always on)
 
 Anchored provenance is not an option: the locator catalogue exposed to

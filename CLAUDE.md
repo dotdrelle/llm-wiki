@@ -974,8 +974,10 @@ must be supplied together. Keep TLS in env/Compose, not `.wikirc.yaml`.
   `rejected_production_busy`; the preview path is never guarded.
 - Preserve MCP bearer-token behavior: browser clients must not receive
   workspace MCP tokens — nor the LLM key, a connector bearer, or a base URL's
-  credentials: `__WIKI_CONFIG__`, `/api/llm-config` and `/api/config/use`
-  carry `hasApiKey`/`hasBearer` and a `promptSafeBaseUrl` only. `/api/chat`
+  credentials or an MCP URL's user-info/query/fragment: `__WIKI_CONFIG__`,
+  `/api/llm-config`, `/api/config/use` and `/mcp/endpoints` carry presence flags
+  and a safe display URL only. The manager retains the real MCP URL and
+  preserves it when an unchanged redacted URL is saved. `/api/chat`
   always targets the configured endpoint (the old browser override headers are
   ignored) and `proxyPost` follows no redirect (`serve/proxy/refuseRedirect.ts`).
 - **Rendered Markdown is untrusted content** (`src/utils/safeMarkdown.ts`):
