@@ -607,19 +607,27 @@ runtime, not only in the browser. Four fields carry it, all persisted in
 - `persistedName` — the name the runtime actually knows. Renaming only changes
   `name`; the next connect sends both as `previousName`/`name` so the manager
   performs an atomic rename. Deletion always targets `persistedName`.
-- `needsSync` / `syncError` — the MCP handshake and the runtime write are two
-  independent concerns and must not share a `catch`. A successful handshake
-  followed by a failed write (409 while a plan runs, name refused, runtime
-  down) leaves the card **connected and enabled**, badged `local only`; the
-  write is retried on the next reconnect. Marking it `err` would remove a
-  working server's tools from chat because the runtime happened to be busy.
+- `needsSync` / `syncError` — the browser reaches a connector only through
+  `/api/mcp?name=<persistedName>`, which serve resolves against the endpoints
+  file and to which it adds the credentials (`mcpRoutes.ts`; no URL, no
+  browser Authorization header). An edited card is therefore saved to the
+  runtime BEFORE its handshake. A card the runtime never saved cannot connect
+  until that write succeeds; one it already knows still connects when the
+  write fails (409 while a plan runs, name refused, runtime down) — through
+  its saved entry, with a "last change not saved" warning — and the write is
+  retried on the next reconnect. Marking it `err` would remove a working
+  server's tools from chat because the runtime happened to be busy.
+- The token is **write-only**: typed into a card it is kept as `bearerDraft`
+  only until the runtime saved it, then forgotten; the page only ever knows
+  `hasBearer`. An upsert without `bearer` keeps the saved token (manager
+  `mcpEndpoints.js`), so a rename never erases it. A token stored by an older
+  release in `localStorage` is dropped at load once its card is saved.
 
-`chatRoutes` re-reads the endpoints file per request
+`chatRoutes` and `mcpRoutes` re-read the endpoints file per request
 (`externalMcpEndpoints` is a thunk, not a boot-time array) — a connector added
-from the UI must appear in `__WIKI_CONFIG__.mcpServers` on the next page load
-without restarting serve. `mcpRoutes`/`uploadRoutes` still hold the boot
-snapshot; they only need it to resolve outbound headers for file-declared
-endpoints.
+from the UI must appear in `__WIKI_CONFIG__.mcpServers` on the next page load,
+and be reachable through the relay, without restarting serve. `uploadRoutes`
+still holds the boot snapshot; it only resolves the `documents` endpoint.
 
 Trace mutations in `sendMessage` must go through `dispatchChatAgentEvent`.
 Do not add direct `trace.steps.push()` mutations outside event handlers.
@@ -965,7 +973,21 @@ must be supplied together. Keep TLS in env/Compose, not `.wikirc.yaml`.
   `PRODUCTION_JOB_ACTIVE` with the job and its operations, and are audited
   `rejected_production_busy`; the preview path is never guarded.
 - Preserve MCP bearer-token behavior: browser clients must not receive
-  workspace MCP tokens.
+  workspace MCP tokens — nor the LLM key, a connector bearer, or a base URL's
+  credentials: `__WIKI_CONFIG__`, `/api/llm-config` and `/api/config/use`
+  carry `hasApiKey`/`hasBearer` and a `promptSafeBaseUrl` only. `/api/chat`
+  always targets the configured endpoint (the old browser override headers are
+  ignored) and `proxyPost` follows no redirect (`serve/proxy/refuseRedirect.ts`).
+- **Rendered Markdown is untrusted content** (`src/utils/safeMarkdown.ts`):
+  raw HTML is shown as text (`<br>` kept, comments dropped), links are
+  relative or explicit http/https/mailto, images relative only — for wiki
+  pages, curation proposals and every chat bubble (the browser copy,
+  `SAFE_MARKDOWN_SCRIPT`, is tested against the server one). The engine's own
+  HTML (citation chips, stabilized-section tags) goes through `marked` as
+  placeholders (`stashTrustedHtml` in `wikiHtml.ts`); a link label is rendered
+  by the parser, never inserted raw. Every response carries the headers of
+  `serve/http/securityHeaders.ts` (a CSP without `script-src` until the inline
+  handlers are gone).
 - Keep Docker one-shot CLI usage separate from long-running `serve`.
 - There is no skill installer: `.wiki/skills/` is written directly (operator
   copy, scaffold or workspace method). Do not reintroduce a fetch-and-extract

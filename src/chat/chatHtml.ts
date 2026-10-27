@@ -2,6 +2,7 @@ import { MAINTENANCE_PANEL_SCRIPT } from './runtime/maintenancePanelScript.ts';
 import { CHAT_STYLE } from './styles/chatStyles.ts';
 import { WIKI_BG_DARK, WIKI_BG_LIGHT } from './theme.ts';
 import { CONFIRM_DIALOG_SCRIPT } from './confirmDialog.ts';
+import { SAFE_MARKDOWN_SCRIPT } from '../utils/safeMarkdown.ts';
 import { PRODUCTION_STATE_SCRIPT } from './workflow/productionStateScript.ts';
 import { PRODUCTION_TRACE_SCRIPT } from './workflow/productionTraceScript.ts';
 import { OBSERVER_TOOLS_SCRIPT } from './views/observerToolsScript.ts';
@@ -1474,9 +1475,9 @@ async function renameConversation(id, title) {
   }
 }
 
-function addServer(name='', url='', bearer='') {
+function addServer(name='', url='', bearerDraft='') {
   const id=nextId++;
-  servers.push({id, name:name||\`mcp-\${id}\`, url, bearer, sessionId:null, enabled:false, status:'off', tools:[],origin:'ui',persistedName:null,needsSync:true,syncError:''});
+  servers.push({id, name:name||\`mcp-\${id}\`, url, bearerDraft, hasBearer:false, hasUrlSecrets:false, urlSecretOmitted:false, sessionId:null, enabled:false, status:'off', tools:[],origin:'ui',persistedName:null,needsSync:true,syncError:''});
   renderCards(); saveServers();
 }
 
@@ -1487,6 +1488,8 @@ function updateServerField(id,field,value) {
   // authored outside serve.
   if(field==='name' && server.origin!=='ui') return;
   server[field]=field==='name'?String(value||'').trim():value;
+  if(field==='url'&&!server.persistedName) server.hasUrlSecrets=!!safeConnectorUrl(server.url).hasUrlSecrets;
+  if(field==='url') server.urlSecretOmitted=false;
   server.needsSync=true;
   server.syncError=field==='name'&&!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(server.name)
     ? 'Name must use 1–80 letters, numbers, dots, underscores or hyphens.'
@@ -1579,18 +1582,19 @@ function cardHTML(s) {
       <button class="btn-icon" onclick="connectServer(\${s.id})" title="Connect">&#x21BB;</button>
       \${s.origin==='builtin'?'':\`<button class="btn-icon btn-del" onclick="removeServer(\${s.id})" title="Remove">&#x2715;</button>\`}
     </div>
+    \${s.hasUrlSecrets?'<div class="mcp-sync-warning">The saved URL has hidden credentials or query values. Saving it unchanged keeps them; entering a different URL replaces them.</div>':''}
     <div class="mcp-bearer-row">
       <div class="secret-wrap" style="flex:1">
-        <input type="password" value="\${esc(s.bearer||'')}" placeholder="Bearer token (optional)" aria-label="Bearer token"
+        <input type="password" value="\${esc(s.bearerDraft||'')}" placeholder="\${s.hasBearer?'Token saved — type to replace':'Bearer token (optional)'}" aria-label="Bearer token"
           autocomplete="off" style="padding-right:34px;font-size:11px"
-          \${s.origin==='builtin'?'readonly':''} onchange="(function(el,id){updateServerField(id,'bearer',el.value);const sv=servers.find(x=>x.id==id);if(sv?.url)connectServer(id);})(this,\${s.id})">
+          \${s.origin==='builtin'?'readonly':''} onchange="(function(el,id){updateServerField(id,'bearerDraft',el.value);const sv=servers.find(x=>x.id==id);if(sv?.url)connectServer(id);})(this,\${s.id})">
         <div class="secret-actions">
           <button class="secret-btn" onclick="toggleReveal(this.closest('.secret-wrap').querySelector('input'),this)" title="Show/hide">
             <svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
         </div>
       </div>
-      \${s.bearer
+      \${s.bearerDraft||s.hasBearer
         ? (s.status==='err'
           ? '<span class="key-saved show" style="flex-shrink:0;background:rgba(192,57,43,.12);color:var(--err)">token &#x2717;</span>'
           : '<span class="key-saved show" style="flex-shrink:0">token &#x2713;</span>')
@@ -1598,7 +1602,7 @@ function cardHTML(s) {
           ? '<span class="key-saved show" style="flex-shrink:0">server token &#x2713;</span>'
           : '<span style="font-size:10px;color:var(--muted);flex-shrink:0;font-family:var(--font-mono)">no auth</span>'}
     </div>
-    \${s.syncError?\`<div class="mcp-sync-warning" title="\${esc(s.syncError)}">Connected in this browser; runtime synchronization pending.</div>\`:''}
+    \${s.syncError?\`<div class="mcp-sync-warning" title="\${esc(s.syncError)}">Your last change is not saved yet; the connector uses its saved settings.</div>\`:''}
     \${toolsHTML}
   </div>\`;
 }
@@ -3245,6 +3249,7 @@ export const CHAT_HTML = `<!DOCTYPE html>
 <script>try{const t=localStorage.getItem('llm-wiki:theme')||localStorage.getItem('llm-wiki:graph:theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.classList.add('theme-'+(t==='dark'?'dark':'light'));const tc=document.getElementById('theme-color-meta');if(tc)tc.content=t==='dark'?'${WIKI_BG_DARK}':'${WIKI_BG_LIGHT}';}catch{}</script>
 ${CHAT_STYLE}
 <script src="/assets/marked.min.js"></script>
+<script>${SAFE_MARKDOWN_SCRIPT}</script>
 </head>
 <body>
 ${CHAT_BODY}

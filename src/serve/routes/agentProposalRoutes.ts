@@ -5,6 +5,7 @@ import { readFile, unlink, readdir, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { resolveInside } from '../../utils/path.ts';
 import { escapeHtml } from '../../utils/html.ts';
+import { rawHtmlAsText, safeHref } from '../../utils/safeMarkdown.ts';
 import { marked } from 'marked';
 import { HistoryService, commitHistorySafely } from '../../services/historyService.ts';
 import { applyOkfFrontmatter } from '../../okf/frontmatter.ts';
@@ -483,16 +484,14 @@ function renderProposalMarkdown(raw: string): string {
   // while preserving the latter as the only permitted raw HTML element.
   const source = String(raw ?? '').replace(/\\n/g, '<br>');
   const renderer = new marked.Renderer();
-  renderer.html = ({ text }) => text
-    .split(/(<br\s*\/?>)/gi)
-    .map((part) => /^<br\s*\/?>$/i.test(part) ? '<br>' : escapeHtml(part))
-    .join('');
-  renderer.link = ({ href, title, text }) => {
-    const target = String(href ?? '').trim();
-    if (!/^(https?:\/\/|mailto:|\/|#)/i.test(target)) return text;
+  renderer.html = ({ text }) => rawHtmlAsText(text);
+  renderer.link = function ({ href, title, tokens }) {
+    const label = this.parser.parseInline(tokens);
+    const target = safeHref(href);
+    if (!target) return label;
     const titleAttr = title ? ` title="${escapeHtml(title)}"` : '';
     const external = /^https?:\/\//i.test(target) ? ' target="_blank" rel="noopener noreferrer"' : '';
-    return `<a href="${escapeHtml(target)}"${titleAttr}${external}>${text}</a>`;
+    return `<a href="${escapeHtml(target)}"${titleAttr}${external}>${label}</a>`;
   };
   renderer.image = ({ text }) => escapeHtml(text);
   return marked(source, { async: false, gfm: true, renderer });

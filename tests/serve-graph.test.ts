@@ -606,7 +606,8 @@ describe('serve missing feature endpoints', () => {
     expect(source).not.toContain('async function renameTemplate()');
     expect(source).not.toContain('function renameHref(relativePath: string)');
     expect(configSource).toContain("urlPath !== '/api/llm-config'");
-    expect(chatSource).toContain("req.headers['x-llm-wiki-llm-base-url']");
+    // The browser can no longer choose the LLM target: no override header is read.
+    expect(chatSource).not.toContain("req.headers['x-llm-wiki-llm-base-url']");
   });
 
   // The Save form is `application/x-www-form-urlencoded`, the /rename/ route is
@@ -667,7 +668,7 @@ describe('serve chat proxy', () => {
     expect(source).toContain('try {');
     expect(source).toContain('const { done, value } = await reader.read();');
     expect(source).toContain('function chatProxyErrorStatus');
-    expect(source).toContain("message === 'INVALID_LLM_BASE_URL' ? 400 : 502");
+    expect(source).toContain("message === 'LLM_BASE_URL_UNSET' ? 400 : 502");
   });
 });
 

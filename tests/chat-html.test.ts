@@ -1698,7 +1698,14 @@ describe('chat html', () => {
     expect(script).toContain('await syncRuntimeMcpServerName(s,');
     expect(script).toContain('await syncRuntimeMcpServerName(server,');
     expect(script).not.toContain("await reconnectMCPServer(s);\n    if(runtimeEnabled() && !s.injected) await persistRuntimeMcpServer(s);");
-    expect(script).toContain("Connected in this browser; runtime synchronization pending.");
+    expect(script).toContain("Your last change is not saved yet; the connector uses its saved settings.");
+    // A card the runtime already knows keeps connecting when the write fails.
+    expect(script).toContain("if(!saved && !s.persistedName) throw new Error");
+
+    // The relay is addressed by name and the page never sends a token itself.
+    expect(script).toContain('/api/mcp?name=');
+    expect(script).not.toContain('/api/mcp?url=');
+    expect(script).not.toContain("headers['Authorization']");
 
     // The page-load heal must cover a FAILED INITIAL add too — that case never
     // reached `server.persistedName = server.name`, so gating the retry on

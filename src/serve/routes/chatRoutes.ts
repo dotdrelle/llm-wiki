@@ -1,7 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import net from 'node:net';
 import path from 'node:path';
 import { CHAT_HTML } from '../../chat/chatHtml.ts';
 import type { AppConfig } from '../../types.ts';
@@ -61,119 +60,43 @@ function headerString(value: string | string[] | undefined): string | undefined 
   return raw.replace(/[\r\n]/g, '').trim();
 }
 
-const BLOCKED_IPV4: Array<[string, number]> = [
-  ['0.0.0.0', 8],
-  ['10.0.0.0', 8],
-  ['100.64.0.0', 10],
-  ['127.0.0.0', 8],
-  ['169.254.0.0', 16],
-  ['172.16.0.0', 12],
-  ['192.0.0.0', 24],
-  ['192.0.2.0', 24],
-  ['192.168.0.0', 16],
-  ['198.18.0.0', 15],
-  ['198.51.100.0', 24],
-  ['203.0.113.0', 24],
-  ['224.0.0.0', 4],
-  ['240.0.0.0', 4],
-];
-
-const INTERNAL_HOSTNAME_SUFFIXES = ['.localhost', '.local', '.internal', '.lan'];
-
-function ipv4ToInt(ip: string): number {
-  const parts = ip.split('.').map((octet) => Number(octet));
-  return ((parts[0] * 256 + parts[1]) * 256 + parts[2]) * 256 + parts[3];
-}
-
-function isInternalIPv4(ip: string): boolean {
-  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return false;
-  const n = ipv4ToInt(ip);
-  for (const [base, bits] of BLOCKED_IPV4) {
-    const shift = 32 - bits;
-    if ((n >>> shift) === (ipv4ToInt(base) >>> shift)) return true;
-  }
-  return false;
-}
-
-function isInternalIPv6(ip: string): boolean {
-  const lower = ip.toLowerCase();
-  if (lower === '::' || lower === '::1') return true;
-  if (lower.startsWith('::ffff:')) return isInternalIPv4(lower.slice('::ffff:'.length));
-  return (
-    lower.startsWith('fe8') ||
-    lower.startsWith('fe9') ||
-    lower.startsWith('fea') ||
-    lower.startsWith('feb') ||
-    lower.startsWith('fc') ||
-    lower.startsWith('fd') ||
-    lower.startsWith('ff')
-  );
-}
-
-function isInternalHostname(hostname: string): boolean {
-  const lower = hostname.toLowerCase();
-  if (lower === 'localhost') return true;
-  if (lower.includes('metadata.')) return true;
-  return INTERNAL_HOSTNAME_SUFFIXES.some((suffix) => lower.endsWith(suffix));
-}
-
-function hostFromUrl(raw: string): string {
-  return new URL(raw).hostname.replace(/^\[|\]$/g, '');
-}
-
-// The override header is untrusted browser input: it must not turn `serve` into
-// an open proxy toward loopback, link-local, private, or cloud-metadata hosts.
-// The configured baseUrl is trusted, so its own host is always allowed (the
-// override then only tweaks port/key), and public hosts remain switchable.
-function isUnsafeLlmProxyHost(parsed: URL, configBaseUrl: string): boolean {
-  const host = parsed.hostname.replace(/^\[|\]$/g, '');
-  if (!host) return true;
-  let configHost = '';
+/** A connector URL is only a label in the browser; serve resolves its name. */
+function browserSafeMcpUrl(raw: string): { url: string; hasUrlSecrets: boolean } {
   try {
-    configHost = hostFromUrl(configBaseUrl);
+    const url = new URL(raw);
+    const hasUrlSecrets = Boolean(url.username || url.password || url.search || url.hash);
+    url.username = '';
+    url.password = '';
+    url.search = '';
+    url.hash = '';
+    return { url: url.toString(), hasUrlSecrets };
   } catch {
-    configHost = '';
+    // Never send an unparseable configured URL to the browser.
+    return { url: '', hasUrlSecrets: Boolean(raw) };
   }
-  if (host === configHost) return false;
-  const ipVersion = net.isIP(host);
-  if (ipVersion === 4) return isInternalIPv4(host);
-  if (ipVersion === 6) return isInternalIPv6(host);
-  return isInternalHostname(host);
 }
 
-function chatLlmProxyTarget(req: IncomingMessage, config: AppConfig): {
+/*
+ * The chat proxy always talks to the configured LLM endpoint, with the
+ * configured key added here. It used to accept `x-llm-wiki-llm-base-url` /
+ * `x-llm-wiki-llm-api-key` from the browser: no page sent them any more, and a
+ * public override target received the configured key. Those headers are now
+ * ignored, so no request can choose where the key goes.
+ */
+function chatLlmProxyTarget(config: AppConfig): {
   url: string;
   headers: Record<string, string>;
 } {
-  const overrideBaseUrl = headerString(req.headers['x-llm-wiki-llm-base-url']);
-  const overrideApiKey = headerString(req.headers['x-llm-wiki-llm-api-key']);
-  let baseUrl = config.llm.baseUrl;
-  if (overrideBaseUrl) {
-    let parsed: URL;
-    try {
-      parsed = new URL(overrideBaseUrl);
-    } catch {
-      throw new Error('INVALID_LLM_BASE_URL');
-    }
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      throw new Error('INVALID_LLM_BASE_URL');
-    }
-    if (isUnsafeLlmProxyHost(parsed, config.llm.baseUrl)) {
-      throw new Error('INVALID_LLM_BASE_URL');
-    }
-    baseUrl = overrideBaseUrl;
-  }
+  if (!config.llm.baseUrl) throw new Error('LLM_BASE_URL_UNSET');
   return {
-    url: `${baseUrl.replace(/\/+$/, '')}/chat/completions`,
-    headers: {
-      authorization: `Bearer ${overrideApiKey ?? config.llm.apiKey ?? ''}`,
-    },
+    url: `${config.llm.baseUrl.replace(/\/+$/, '')}/chat/completions`,
+    headers: config.llm.apiKey ? { authorization: `Bearer ${config.llm.apiKey}` } : {},
   };
 }
 
 function chatProxyErrorStatus(err: unknown): number {
   const message = err instanceof Error ? err.message : String(err);
-  return message === 'INVALID_LLM_BASE_URL' ? 400 : 502;
+  return message === 'LLM_BASE_URL_UNSET' ? 400 : 502;
 }
 
 const DEFAULT_PROFILE = `# Workspace Profile
@@ -356,7 +279,7 @@ export async function handleChatRoutes(
 
   if (req.method === 'POST' && urlPath === '/api/chat') {
     try {
-      const llmTarget = chatLlmProxyTarget(req, deps.config);
+      const llmTarget = chatLlmProxyTarget(deps.config);
       await deps.proxyPost(req, res, llmTarget.url, llmTarget.headers, {
         retry429: true,
         retryNetwork: true,
@@ -410,12 +333,15 @@ export async function handleChatRoutes(
     deps.mcpProductionPort,
   );
   const externalMcpEndpoints = await deps.externalMcpEndpoints();
+  // Everything here is serialized into the page: no key, no bearer, and a base
+  // URL stripped of the credentials it may carry. /api/chat and /api/mcp add
+  // the secrets server-side.
   const chatConfig = {
     provider: deps.config.llm.provider,
     model: deps.config.llm.model,
     temperature: deps.config.llm.temperature,
-    baseUrl: deps.config.llm.baseUrl,
-    apiKey: deps.config.llm.apiKey ?? '',
+    baseUrl: promptSafeBaseUrl(deps.config.llm.baseUrl),
+    hasApiKey: Boolean(deps.config.llm.apiKey),
     llmConfigured,
     language: deps.config.language ?? 'en',
     workspaceName: deps.workspaceNameFromEnv() ?? path.basename(deps.rootDir),
@@ -433,8 +359,8 @@ export async function handleChatRoutes(
       { name: 'llm-wiki', url: wikiTarget, origin: 'builtin' },
       { name: 'wiki-production', url: productionTarget, origin: 'builtin' },
       ...externalMcpEndpoints.map(({ name, url, bearer, timeoutMs, managedBy }) => ({
-        name, url, origin: managedBy === 'serve-ui' ? 'ui' : 'global',
-        ...(bearer ? { bearer } : {}), ...(timeoutMs ? { timeoutMs } : {}),
+        name, ...browserSafeMcpUrl(url), origin: managedBy === 'serve-ui' ? 'ui' : 'global',
+        hasBearer: Boolean(bearer), ...(timeoutMs ? { timeoutMs } : {}),
       })),
     ],
   };

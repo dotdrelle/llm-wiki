@@ -1,6 +1,15 @@
 export const CONFIG_SCRIPT = `const SVG_EYE     = \`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>\`;
 const SVG_EYE_OFF = \`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>\`;
 
+function safeConnectorUrl(raw) {
+  try {
+    const url=new URL(String(raw||''));
+    const hasUrlSecrets=!!(url.username||url.password||url.search||url.hash);
+    url.username=''; url.password=''; url.search=''; url.hash='';
+    return {url:url.toString(),hasUrlSecrets};
+  } catch { return {url:'',hasUrlSecrets:!!raw}; }
+}
+
 function toggleReveal(inputOrId, btn) {
   const inp = typeof inputOrId === 'string' ? $(inputOrId) : inputOrId;
   const isHidden = inp.type === 'password';
@@ -20,7 +29,7 @@ function applyServerConfig(config) {
     model:llm.model??window.__WIKI_CONFIG__?.model,
     temperature:llm.temperature??window.__WIKI_CONFIG__?.temperature,
     baseUrl:llm.baseUrl??window.__WIKI_CONFIG__?.baseUrl,
-    apiKey:llm.apiKey??window.__WIKI_CONFIG__?.apiKey,
+    hasApiKey:llm.hasApiKey??window.__WIKI_CONFIG__?.hasApiKey,
     language:config.language??window.__WIKI_CONFIG__?.language,
   };
   syncModel();
@@ -96,7 +105,12 @@ function saveServers() {
   const defaults = window.__WIKI_CONFIG__?.mcpServers || [];
   const data = servers.map(s => {
     const inDefaults = defaults.some(d => d.name === s.name);
-    return {id:s.id,name:s.name,url:s.url,bearer:inDefaults?'':(s.bearer||''),enabled:s.enabled&&s.status==='ok',injected:s.injected,persistedName:s.persistedName||null,origin:s.origin||'ui',needsSync:!!s.needsSync,syncError:s.syncError||''};
+    const projectedUrl=safeConnectorUrl(s.url);
+    const hasUrlSecrets=!!(s.hasUrlSecrets||projectedUrl.hasUrlSecrets);
+    // A token is kept here only while the card waits to be saved by the
+    // runtime (bearerDraft); once saved, the page only knows that one exists.
+    const draft=!inDefaults&&(s.needsSync||!s.persistedName)?(s.bearerDraft||''):'';
+    return {id:s.id,name:s.name,url:projectedUrl.url,hasUrlSecrets,urlSecretOmitted:!!(s.urlSecretOmitted||(projectedUrl.hasUrlSecrets&&(!s.persistedName||s.needsSync))),bearerDraft:draft,hasBearer:!!s.hasBearer,enabled:s.enabled&&s.status==='ok',injected:s.injected,persistedName:s.persistedName||null,origin:s.origin||'ui',needsSync:!!s.needsSync,syncError:s.syncError||''};
   });
   localStorage.setItem(LS.USER_SERVERS, JSON.stringify(data));
 }
@@ -175,21 +189,31 @@ function loadServers() {
         if(seen.has(name)) { dirty=true; continue; }
         seen.add(name);
         if(override) dirty=true;
-        const url = override ? override.url : s.url;
-        const bearer = override ? (override.bearer || s.bearer || '') : (s.bearer || '');
+        const urlProjection = safeConnectorUrl(override ? override.url : s.url);
+        const url = urlProjection.url;
+        if(urlProjection.hasUrlSecrets) dirty=true;
+        const hasUrlSecrets = !!(override ? (override.hasUrlSecrets||urlProjection.hasUrlSecrets) : (s.hasUrlSecrets||urlProjection.hasUrlSecrets));
+        // \`bearer\` is the pre-write-only field of older releases: a card
+        // the runtime already saved drops it (the runtime holds the token);
+        // an unsaved one keeps it as its draft until the save.
+        const hasBearer = override ? !!override.hasBearer : !!(s.hasBearer || s.bearer);
+        const bearerDraft = override || (s.persistedName && !s.needsSync) ? '' : (s.bearerDraft || s.bearer || '');
+        if(s.bearer) dirty=true;
         const injected = override ? true : (s.injected === true);
         const origin=override?.origin||s.origin||'ui';
         // The timeout is read from the endpoint file, never from localStorage:
         // the Connectors panel no longer edits it, so a value left by an older
         // release must not keep applying invisibly.
-        servers.push({...s, name, url, bearer, timeoutMs:override?(override.timeoutMs??null):null, injected, origin, persistedName:override?name:(s.persistedName||null), needsSync:override?false:!!s.needsSync, syncError:s.syncError||'', enabled:override ? true : !!s.enabled, sessionId:null, status:'off', tools:[]});
+        const persistedName=override?name:(s.persistedName||null);
+        const urlSecretOmitted=!!(s.urlSecretOmitted||(urlProjection.hasUrlSecrets&&(!persistedName||s.needsSync)));
+        servers.push({...s, bearer:undefined, name, url, hasUrlSecrets, urlSecretOmitted, hasBearer, bearerDraft, timeoutMs:override?(override.timeoutMs??null):null, injected, origin, persistedName, needsSync:override?false:!!s.needsSync, syncError:s.syncError||'', enabled:override ? true : !!s.enabled, sessionId:null, status:'off', tools:[]});
         if(s.id >= nextId) nextId = s.id + 1;
       }
       for (const s of defaults) {
         if(seen.has(s.name)) continue;
         dirty=true;
         const id=nextId++;
-        servers.push({id, name:s.name, url:s.url, bearer:s.bearer||'', timeoutMs:s.timeoutMs??null, injected:true, origin:s.origin||'global', persistedName:s.name, needsSync:false, syncError:'', enabled:true, status:'off', tools:[]});
+        servers.push({id, name:s.name, url:s.url, hasUrlSecrets:!!s.hasUrlSecrets, urlSecretOmitted:false, hasBearer:!!s.hasBearer, bearerDraft:'', timeoutMs:s.timeoutMs??null, injected:true, origin:s.origin||'global', persistedName:s.name, needsSync:false, syncError:'', enabled:true, status:'off', tools:[]});
       }
       renderCards();
       if(dirty) saveServers();
@@ -199,7 +223,7 @@ function loadServers() {
   // No saved state (or stale) — seed from server config
   for (const s of defaults) {
     const id=nextId++;
-    servers.push({id, name:s.name, url:s.url, bearer:s.bearer||'', timeoutMs:s.timeoutMs??null, injected:true, origin:s.origin||'global', persistedName:s.name, needsSync:false, syncError:'', sessionId:null, enabled:true, status:'off', tools:[]});
+    servers.push({id, name:s.name, url:s.url, hasUrlSecrets:!!s.hasUrlSecrets, urlSecretOmitted:false, hasBearer:!!s.hasBearer, bearerDraft:'', timeoutMs:s.timeoutMs??null, injected:true, origin:s.origin||'global', persistedName:s.name, needsSync:false, syncError:'', sessionId:null, enabled:true, status:'off', tools:[]});
   }
   renderCards(); saveServers();
 }

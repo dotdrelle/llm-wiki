@@ -6,6 +6,7 @@ import matter from 'gray-matter';
 import { marked } from 'marked';
 import { pageTitle } from '../../utils/pageTitle.ts';
 import { escapeHtml } from '../../utils/html.ts';
+import { rawHtmlAsText, safeHref, safeImageSrc } from '../../utils/safeMarkdown.ts';
 import { renderWikiGraphV2 } from '../../graph/wiki/graphApp.ts';
 import {
   buildWikiGraph,
@@ -313,7 +314,27 @@ function slugifyMarkdownTitle(value: string): string {
   return `${slug}.md`;
 }
 
-function linkSourceCitations(raw: string, currentDir = ''): string {
+/*
+ * Raw HTML in a page is shown as text (`rawHtmlAsText`), but the engine adds
+ * HTML of its own to the Markdown before rendering it: the citation chips and
+ * the stabilized-section tags. Those fragments travel through `marked` as
+ * opaque placeholders (private-use characters `marked` neither escapes nor
+ * parses) and are put back once the page is rendered. Only code that builds
+ * its fragment from escaped values may stash one.
+ */
+const TRUSTED_OPEN = '';
+const TRUSTED_CLOSE = '';
+
+function stashTrustedHtml(stash: string[], html: string): string {
+  stash.push(html);
+  return `${TRUSTED_OPEN}${stash.length - 1}${TRUSTED_CLOSE}`;
+}
+
+function restoreTrustedHtml(html: string, stash: string[]): string {
+  return html.replace(new RegExp(`${TRUSTED_OPEN}(\\d+)${TRUSTED_CLOSE}`, 'g'), (_, index: string) => stash[Number(index)] ?? '');
+}
+
+function linkSourceCitations(raw: string, currentDir = '', stash: string[] = []): string {
   return raw.replace(/\[src:\s*([^\]]+)\]/g, (match, citationPath: string) => {
     const cleanPath = citationPath.trim();
     if (!cleanPath) return '[src:]';
@@ -325,10 +346,10 @@ function linkSourceCitations(raw: string, currentDir = ''): string {
     if (!path.endsWith('.md')) return match;
     const anchorSuffix = anchor && anchor.trim() ? `#${encodeURIComponent(anchor.trim())}` : '';
     const href = localHref(path, currentDir) + anchorSuffix;
-    if (isRawUntrackedReference(path) || isRawUntrackedReference(href)) {
-      return `<span class="source-citation source-citation-stale" title="Raw source archived or moved">[src: ${escapeHtml(cleanPath)}]</span>`;
-    }
-    return `<a class="source-citation" href="${escapeHref(href)}" title="${escapeAttr(cleanPath)}">[src: ${escapeHtml(cleanPath)}]</a>`;
+    const chip = isRawUntrackedReference(path) || isRawUntrackedReference(href) || !safeHref(href)
+      ? `<span class="source-citation source-citation-stale" title="Raw source archived or moved">[src: ${escapeHtml(cleanPath)}]</span>`
+      : `<a class="source-citation" href="${escapeHref(href)}" title="${escapeAttr(cleanPath)}">[src: ${escapeHtml(cleanPath)}]</a>`;
+    return stashTrustedHtml(stash, chip);
   });
 }
 
@@ -345,7 +366,7 @@ function linkWikiLinks(raw: string): string {
   );
 }
 
-async function renderMarkdown(raw: string, currentDir = '', rootDir?: string): Promise<string> {
+async function renderMarkdown(raw: string, currentDir = '', rootDir?: string, trusted: string[] = []): Promise<string> {
   // Frontmatter is metadata, never content. Strip it here — the single render
   // choke point — so a page's `subject:` / `type:` / `tags:` block never
   // surfaces as a spurious setext heading (and its URL values as a stray blue
@@ -357,27 +378,39 @@ async function renderMarkdown(raw: string, currentDir = '', rootDir?: string): P
     // Malformed YAML frontmatter: render the file verbatim rather than nothing.
   }
   const renderer = new marked.Renderer();
-  renderer.link = ({ href, title, text }) => {
+  // Raw HTML in a page is content, not markup (see utils/safeMarkdown.ts).
+  renderer.html = ({ text }) => rawHtmlAsText(text);
+  renderer.image = ({ href, title, text }) => {
+    const src = safeImageSrc(href);
+    if (!src) return escapeHtml(text);
+    const safeTitle = title ? ` title="${escapeAttr(title)}"` : '';
+    return `<img src="${escapeHref(src)}" alt="${escapeAttr(text)}"${safeTitle}>`;
+  };
+  renderer.link = function ({ href, title, tokens }) {
+    // The label is rendered by the parser, never inserted as raw source: a
+    // label is Markdown, and its raw form can carry HTML.
+    const label = this.parser.parseInline(tokens);
     const resolvedHref = localHref(href, currentDir);
     if (isRawUntrackedReference(href) || isRawUntrackedReference(resolvedHref)) {
       const safeTitle = title
         ? ` title="${escapeAttr(title)}"`
         : ' title="Raw source archived or moved"';
-      return `<span class="stale-reference"${safeTitle}>${text}</span>`;
+      return `<span class="stale-reference"${safeTitle}>${label}</span>`;
     }
-    const safeHref = escapeHref(resolvedHref);
+    if (!safeHref(resolvedHref)) return label;
     const safeTitle = title ? ` title="${escapeAttr(title)}"` : '';
     // Off-site links open in a new tab: a wiki page is often shown in the
     // shell's central iframe (or under a <base target> in the sidebar panel),
     // where following an external link would replace the whole shell.
     const external = /^https?:\/\//i.test(resolvedHref) ? ' target="_blank" rel="noopener noreferrer"' : '';
-    return `<a href="${safeHref}"${safeTitle}${external}>${text}</a>`;
+    return `<a href="${escapeHref(resolvedHref)}"${safeTitle}${external}>${label}</a>`;
   };
   const validated = rootDir ? await removeBrokenWikiLinks(body, currentDir, rootDir) : body;
-  return marked(linkSourceCitations(linkWikiLinks(validated), currentDir), {
+  const html = await marked(linkSourceCitations(linkWikiLinks(validated), currentDir, trusted), {
     gfm: true,
     renderer,
   });
+  return restoreTrustedHtml(html, trusted);
 }
 
 function renderLogPath(value: string, currentDir = 'wiki'): string {
@@ -1686,6 +1719,7 @@ function injectChangeTags(
   raw: string,
   modifiedPaths: Set<string>,
   insertedPaths: Set<string>,
+  trusted: string[],
 ): string {
   const headingStack: Array<{ depth: number; title: string }> = [];
   let inFence = false;
@@ -1706,10 +1740,10 @@ function injectChangeTags(
         .map((h) => h.title.trim().toLowerCase().replace(/\s+/g, ' '))
         .join(' > ');
       if (modifiedPaths.has(key)) {
-        return `${match[1]} ${title} <span class="section-tag section-tag-modified">modified</span>`;
+        return `${match[1]} ${title} ${stashTrustedHtml(trusted, '<span class="section-tag section-tag-modified">modified</span>')}`;
       }
       if (insertedPaths.has(key)) {
-        return `${match[1]} ${title} <span class="section-tag section-tag-inserted">new</span>`;
+        return `${match[1]} ${title} ${stashTrustedHtml(trusted, '<span class="section-tag section-tag-inserted">new</span>')}`;
       }
       return line;
     })
@@ -1731,6 +1765,7 @@ export async function serveMd(
   ]);
   let raw = rawContent;
   let stabilizeBadge = '';
+  const trusted: string[] = [];
   if (sidecarRaw) {
     try {
       const sidecar = JSON.parse(sidecarRaw) as {
@@ -1743,7 +1778,7 @@ export async function serveMd(
       const modifiedPaths = new Set((sidecar.merged ?? []).map(normalizeChangedPath));
       const insertedPaths = new Set((sidecar.inserted ?? []).map(normalizeChangedPath));
       if (!documentOnly && (modifiedPaths.size > 0 || insertedPaths.size > 0)) {
-        raw = injectChangeTags(raw, modifiedPaths, insertedPaths);
+        raw = injectChangeTags(raw, modifiedPaths, insertedPaths, trusted);
       }
       const parts = [
         sidecar.kept?.length ? `${sidecar.kept.length} kept` : '',
@@ -1776,7 +1811,7 @@ export async function serveMd(
   const html =
     relativePath === 'wiki/log.md'
       ? renderLogMarkdown(raw)
-      : await renderMarkdown(raw, currentDir, rootDir);
+      : await renderMarkdown(raw, currentDir, rootDir, trusted);
   if (documentOnly) {
     return layout(
       title,

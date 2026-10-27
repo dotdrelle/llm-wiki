@@ -20,8 +20,13 @@ async function readSSE(response) {
   return result;
 }
 
+// The relay targets a connector by its runtime name; serve resolves the URL
+// and adds the credentials. The browser never names a URL nor sends a token.
+function mcpProxyName(server) {
+  return server.persistedName || server.name;
+}
 function mcpProxyUrl(server) {
-  return \`/api/mcp?url=\${encodeURIComponent(server.url)}\`;
+  return \`/api/mcp?name=\${encodeURIComponent(mcpProxyName(server))}\`;
 }
 
 // The per-endpoint timeoutMs in mcp.endpoints.json remains a code-level
@@ -47,7 +52,6 @@ async function mcpRPC(server, method, params, timeoutMs) {
     'Content-Type': 'application/json',
     'Accept': 'application/json, text/event-stream',
   };
-  if (server.bearer?.trim()) headers['Authorization'] = \`Bearer \${server.bearer.trim()}\`;
   if (server.sessionId) headers['Mcp-Session-Id'] = server.sessionId;
   const controller = new AbortController();
   const requestTimeoutMs=mcpTimeoutFor(server,timeoutMs);
@@ -134,7 +138,6 @@ async function mcpNotify(server, method, params, timeoutMs) {
     'Content-Type': 'application/json',
     'Accept': 'application/json, text/event-stream',
   };
-  if (server.bearer?.trim()) headers['Authorization'] = \`Bearer \${server.bearer.trim()}\`;
   if (server.sessionId) headers['Mcp-Session-Id'] = server.sessionId;
   const controller=new AbortController();
   const requestTimeoutMs=mcpTimeoutFor(server,timeoutMs);
@@ -149,15 +152,22 @@ async function connectServer(id,{silent=false}={}) {
   if(!s.url) { notify('Missing URL','e'); return; }
   s.status='loading'; s.sessionId=null; renderCards();
   try {
-    await reconnectMCPServer(s);
-    if(runtimeEnabled() && s.origin!=='builtin' && s.needsSync) {
-      // The MCP itself is healthy. A busy runtime (409), invalid name, or
-      // persistence failure must not be mislabeled as a connection failure.
-      await syncRuntimeMcpServerName(s, {
+    // The relay only reaches connectors the runtime has saved, so an edited
+    // card is saved FIRST; the handshake then goes through its saved name. A
+    // card the runtime never saved cannot be reached at all. One it already
+    // knows still connects when the write fails (409 while a plan runs,
+    // runtime down): the saved entry answers, and the card says its edit is
+    // pending — a busy runtime must not take a working server's tools away.
+    if(s.origin!=='builtin' && (s.needsSync || !s.persistedName)) {
+      if(!runtimeEnabled()) throw new Error('Connectors are saved by the manager runtime, which this serve is not connected to. Declare it in mcp.endpoints.json instead.');
+      if(s.urlSecretOmitted) throw new Error('This unsaved connector URL had credentials or query values removed from browser storage. Re-enter the complete URL before saving it.');
+      const saved=await syncRuntimeMcpServerName(s, {
         silent,
-        failureMessage:err=>\`\${s.name}: connected locally, runtime sync pending — \${err}\`,
+        failureMessage:err=>\`\${s.name}: change not saved to the runtime — \${err}\`,
       });
+      if(!saved && !s.persistedName) throw new Error(\`Not saved to the runtime: \${s.syncError}\`);
     }
+    await reconnectMCPServer(s);
     if(!silent && !s.syncError) notify(\`✓ \${s.name}: \${s.tools.length} tool(s)\`);
   } catch(err) {
     s.status='err'; s.enabled=false; s.error=String(err?.message||err).slice(0,160);
@@ -184,16 +194,25 @@ async function syncRuntimeMcpServerName(server, {silent=false, failureMessage=er
   }
 }
 
+// The token is write-only: a value typed in the card (\`bearerDraft\`) is sent
+// once and then forgotten by the page. Omitting it keeps the saved one.
 async function persistRuntimeMcpServer(server) {
+  const draft=String(server.bearerDraft||'').trim();
   const res=await fetch('/api/runtime/mcp/endpoints',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({action:'upsert',name:server.name,previousName:server.persistedName||undefined,url:server.url,bearer:server.bearer||''}),
+    body:JSON.stringify({action:'upsert',name:server.name,previousName:server.persistedName||undefined,url:server.url,...(draft?{bearer:draft}:{})}),
   });
   const data=await res.json().catch(()=>({}));
   if(!res.ok) throw new Error(data.error||\`Runtime MCP update failed (HTTP \${res.status})\`);
+  if(typeof data?.endpoint?.url==='string') server.url=data.endpoint.url;
+  if(typeof data?.endpoint?.hasUrlSecrets==='boolean') server.hasUrlSecrets=data.endpoint.hasUrlSecrets;
+  server.urlSecretOmitted=false;
   server.injected=true;
   server.persistedName=server.name;
   server.origin=data?.endpoint?.origin||server.origin||'ui';
+  if(draft) server.hasBearer=true;
+  if(typeof data?.endpoint?.hasBearer==='boolean') server.hasBearer=data.endpoint.hasBearer;
+  server.bearerDraft='';
 }
 
 async function deleteRuntimeMcpServer(server) {

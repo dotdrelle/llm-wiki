@@ -79,6 +79,9 @@ describe('temperature is owned by .wikirc, not by the session', () => {
   it('is still readable, because the fallback chat path needs it', async () => {
     const { payload } = await call('GET', '/api/llm-config', deps());
     assert.equal(payload.temperature, 0.1);
+    // Readable, but never the key itself: the page only learns that one is set.
+    assert.equal('apiKey' in payload, false);
+    assert.equal(payload.hasApiKey, true);
   });
 });
 

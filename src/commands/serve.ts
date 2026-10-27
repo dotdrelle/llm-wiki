@@ -23,6 +23,8 @@ import {
   serveMd,
 } from '../serve/html/wikiHtml.ts';
 import { runtimeHeaders, submitHistoryRestoreToRuntime, type RuntimeProxyDeps } from '../serve/proxy/runtimeProxy.ts';
+import { refuseUpstreamRedirect } from '../serve/proxy/refuseRedirect.ts';
+import { applySecurityHeaders } from '../serve/http/securityHeaders.ts';
 import { handleChatHistoryApi } from '../serve/routes/chatHistoryRoutes.ts';
 import { handleChatRoutes } from '../serve/routes/chatRoutes.ts';
 import { handleConfigRoutes } from '../serve/routes/configRoutes.ts';
@@ -484,11 +486,7 @@ async function proxyPost(
     'content-type': (req.headers['content-type'] as string) ?? 'application/json',
     accept: (req.headers['accept'] as string) ?? 'application/json, text/event-stream',
   };
-  // Forward browser Authorization only when server doesn't override it
-  if (!extraHeaders['authorization'] && req.headers['authorization']) {
-    headers['authorization'] = req.headers['authorization'] as string;
-  }
-  Object.assign(headers, extraHeaders);
+  Object.assign(headers, extraHeaders); // credentials: server side only, never the browser's
   const sid = req.headers['mcp-session-id'];
   if (sid) headers['mcp-session-id'] = sid as string;
 
@@ -507,7 +505,7 @@ async function proxyPost(
   let networkFailures = 0;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      upstream = await fetch(targetUrl, { method: 'POST', headers, body });
+      upstream = await fetch(targetUrl, { method: 'POST', headers, body, redirect: 'manual' }); // see refuseRedirect.ts
     } catch (err) {
       if (options.retryNetwork && networkFailures < 1) {
         networkFailures += 1;
@@ -552,6 +550,7 @@ async function proxyPost(
     res.end();
     return;
   }
+  if (await refuseUpstreamRedirect(upstream, targetUrl, res)) return;
   const ct = upstream.headers.get('content-type') ?? 'application/json';
   const respSid = upstream.headers.get('mcp-session-id');
   const respHeaders: Record<string, string> = { 'content-type': ct };
@@ -800,6 +799,7 @@ export default async function serveCmd(
   });
 
   server.on('request', async (req, res) => {
+    applySecurityHeaders(res);
     try {
       const urlPath = decodeURIComponent(
         new URL(req.url ?? '/', `http://localhost`).pathname,
@@ -967,7 +967,7 @@ export default async function serveCmd(
       if (req.method === 'POST') {
         if (await handleMcpRoutes(req, res, urlPath, {
           mcpAccessKey: () => config.mcp.accessKey,
-          externalMcpEndpoints,
+          externalMcpEndpoints: () => loadExternalMcpEndpoints(rootDir),
           mcpWikiPort,
           mcpProductionPort,
           proxyPost,

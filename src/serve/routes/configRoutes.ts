@@ -2,6 +2,27 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AppConfig } from '../../types.ts';
 import { proxyRuntimeJson, type RuntimeProxyDeps } from '../proxy/runtimeProxy.ts';
 import { fetchGatewayCatalog } from '../../services/gatewayProbe.ts';
+import { promptSafeBaseUrl } from '../../utils/promptSafeUrl.ts';
+
+/*
+ * What the browser may learn about a configuration: the fields the chat page
+ * displays, never a key. The runtime's own `/config/use` answer carries the
+ * whole resolved profile (LLM, vector and MCP keys); it is replaced by this
+ * projection before it reaches the page.
+ */
+export function browserSafeConfig(config: AppConfig) {
+  return {
+    llm: {
+      provider: config.llm?.provider,
+      engine: config.llm?.engine,
+      model: config.llm?.model,
+      temperature: config.llm?.temperature,
+      baseUrl: promptSafeBaseUrl(config.llm?.baseUrl),
+      hasApiKey: Boolean(config.llm?.apiKey),
+    },
+    language: config.language,
+  };
+}
 
 type ConfigRoutesDeps = {
   config: AppConfig;
@@ -39,7 +60,16 @@ export async function handleConfigRoutes(
       deps.runtimePathForWorkspace('/config/use'),
       deps.proxyDeps,
       wsName ? { workspace: wsName } : undefined,
-      async (parsed) => ({ ...(parsed as Record<string, unknown>), config: await deps.mirrorRuntimeConfig(parsed) }),
+      async (parsed) => {
+        const payload = parsed as Record<string, unknown>;
+        const summary = payload.summary && typeof payload.summary === 'object'
+          ? { ...(payload.summary as Record<string, unknown>) }
+          : payload.summary;
+        if (summary && typeof summary === 'object' && 'baseUrl' in summary) {
+          (summary as Record<string, unknown>).baseUrl = promptSafeBaseUrl(String((summary as Record<string, unknown>).baseUrl ?? ''));
+        }
+        return { ...payload, summary, config: browserSafeConfig(await deps.mirrorRuntimeConfig(parsed)) };
+      },
     );
     return true;
   }
@@ -96,8 +126,8 @@ export async function handleConfigRoutes(
     deps.sendJson(res, 200, {
       model: deps.config.llm.model,
       temperature: deps.config.llm.temperature,
-      baseUrl: deps.config.llm.baseUrl,
-      apiKey: deps.config.llm.apiKey ?? '',
+      baseUrl: promptSafeBaseUrl(deps.config.llm.baseUrl),
+      hasApiKey: Boolean(deps.config.llm.apiKey),
     });
     return true;
   }
