@@ -142,10 +142,10 @@ export const WIKI_LAYOUT_CSS = `
     .brand-title {
       display: block;
       font-family: var(--font-display);
-      font-size: 1.55rem;
+      font-size: 1.15rem;
       font-weight: 600;
-      line-height: 1.05;
-      letter-spacing: .01em;
+      line-height: 1.15;
+      letter-spacing: -.01em;
       overflow-wrap: anywhere;
     }
     .side-actions {
@@ -178,7 +178,7 @@ export const WIKI_LAYOUT_CSS = `
     .side-view-review { position: relative; margin-top: 0.3rem; }
     .side-action-badge { position: absolute; top: -6px; right: -6px; min-width: 15px; height: 15px; border-radius: 99px; background: #f59e0b; color: #fff; font-size: 9px; font-weight: 800; line-height: 15px; text-align: center; padding: 0 3px; }
     .side-action:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
-    .side-action svg { width: 1.05rem; height: 1.05rem; stroke: currentColor; flex-shrink: 0; }
+    .side-action svg { width: 1.05rem; height: 1.05rem; stroke: currentColor; stroke-width: 1.5; flex-shrink: 0; }
     .side-action span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .side-search {
       margin: 0.9rem 0 0.65rem;
@@ -228,7 +228,7 @@ export const WIKI_LAYOUT_CSS = `
       color: var(--muted);
       cursor: pointer;
     }
-    .side-view-btn svg { width: 1.05rem; height: 1.05rem; stroke: currentColor; }
+    .side-view-btn svg { width: 1.05rem; height: 1.05rem; stroke: currentColor; stroke-width: 1.5; }
     .side-view-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
     .side-view-btn.active {
       border-color: var(--accent);
@@ -843,7 +843,7 @@ export const WIKI_LAYOUT_CSS = `
       background: var(--card-grad), var(--panel);
       box-shadow: var(--shadow);
     }
-    .hero h1 { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: clamp(2rem, 3.4vw, 3rem); line-height: 1.02; letter-spacing: .005em; text-wrap: balance; }
+    .hero h1 { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: clamp(1.6rem, 2.6vw, 2.2rem); line-height: 1.1; letter-spacing: -.02em; text-wrap: balance; }
     .hero p { max-width: 72ch; margin: 0.75rem 0 0; color: var(--muted); }
     .index-layout {
       display: grid;
@@ -982,7 +982,7 @@ export const WIKI_LAYOUT_CSS = `
       line-height: 1.5;
     }
     .article h1, .article h2, .article h3, .article h4, .article h5, .article h6 { line-height: 1.25; letter-spacing: 0; font-family: var(--font-serif); }
-    .article h1 { font-family: var(--font-display); font-weight: 600; letter-spacing: .005em; text-wrap: balance; }
+    .article h1 { font-family: var(--font-display); font-weight: 600; letter-spacing: -.02em; text-wrap: balance; }
     /* Keep a compact, clearly nested heading scale for dense workspace pages. */
     .article h1 { margin: 0 0 0.6rem; font-size: 1.62rem; }
     .article h2 { margin: 1.25rem 0 0.5rem; font-size: 1.34rem; }
@@ -1473,21 +1473,21 @@ export const WIKI_LAYOUT_CSS = `
     .ws-stats{display:flex;flex-wrap:wrap;gap:.65rem;margin-bottom:1.5rem}
     .ws-stat{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:88px;padding:.75rem 1rem;border:1px solid var(--border);border-radius:12px;background:var(--card-grad),var(--panel);text-align:center;gap:.2rem;text-decoration:none;color:var(--text);transition:border-color .14s,transform .14s}
     a.ws-stat:hover{border-color:var(--accent);transform:translateY(-1px)}
-    .ws-stat-n{font-family:var(--font-display);font-size:2rem;font-weight:600;line-height:1;color:var(--accent);font-variant-numeric:lining-nums tabular-nums}
+    .ws-stat-n{font-family:var(--font-display);font-size:1.6rem;letter-spacing:-.02em;font-weight:600;line-height:1;color:var(--accent);font-variant-numeric:lining-nums tabular-nums}
     .ws-stat-l{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
     .ws-stat-warn .ws-stat-n{color:#c07000}
     .ws-stat-warn{border-color:rgba(192,112,0,.25)}
     .ws-stat-muted .ws-stat-n{font-size:.95rem;font-weight:700}
     .workspace-dashboard{margin:0 0 2rem}
     .dashboard-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;margin:0 0 1rem}
-    .dashboard-heading h1{margin:0;font-family:var(--font-display);font-size:clamp(1.8rem,3vw,2.5rem);font-weight:600;line-height:1.05}
+    .dashboard-heading h1{margin:0;font-family:var(--font-display);font-size:clamp(1.5rem,2.4vw,2rem);font-weight:600;letter-spacing:-.02em;line-height:1.1}
     .dashboard-eyebrow,.dashboard-action-kicker{margin:0 0 .35rem;color:var(--muted);font-size:.7rem;font-weight:780;letter-spacing:.09em;text-transform:uppercase}
     .dashboard-ask,.dashboard-action b{color:var(--accent);font-weight:700;text-decoration:none}
     .dashboard-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(240px,.8fr);gap:1rem;align-items:stretch}
     .dashboard-action,.dashboard-watch{min-width:0;padding:1.15rem 1.25rem;border:1px solid var(--border);border-radius:12px;background:var(--card-grad),var(--panel);box-shadow:var(--shadow)}
     .dashboard-action{display:flex;flex-direction:column;align-items:flex-start;gap:.45rem;color:var(--text);text-decoration:none;transition:border-color .14s,transform .14s}
     .dashboard-action:hover{border-color:var(--accent);transform:translateY(-1px)}
-    .dashboard-action strong{font-family:var(--font-display);font-size:1.25rem;line-height:1.2}
+    .dashboard-action strong{font-family:var(--font-display);font-size:1.05rem;line-height:1.2}
     .dashboard-action>span:not(.dashboard-action-kicker){color:var(--muted);font-size:.88rem;line-height:1.45}
     .dashboard-action b{margin-top:.4rem;font-size:.85rem}
     .dashboard-action-warn{border-color:rgba(192,112,0,.38)}

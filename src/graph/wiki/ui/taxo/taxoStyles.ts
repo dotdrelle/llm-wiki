@@ -1,4 +1,4 @@
-import { WIKI_DARK_COLORS as dark } from '../../../../chat/theme.ts';
+import { WIKI_DARK_COLORS as dark, WIKI_FONT_STACK, WIKI_LIGHT_COLORS as light } from '../../../../chat/theme.ts';
 
 /**
  * TAXO graph page styles: the prototype's shell (48 px header, filter column,
@@ -11,18 +11,18 @@ const DARK = `--bg:${dark.bg};--bg-image:none;
   --accent-soft:${dark.accentSoft};--head:${dark.accent};--header-bg:${dark.panel};--title:${dark.text};--summary:${dark.muted};
   --float:${dark.panel};--float-line:${dark.border};--pill:${dark.soft};--pill-line:${dark.border};--pill-hover:${dark.raised};
   --row-line:${dark.border};--hover:${dark.soft};--selected:${dark.raised};--body-muted:${dark.muted};--title-shadow:none;--stage-bg:${dark.bg};color-scheme:dark;`;
-const LIGHT = `--bg:#e9eef5;--bg-image:radial-gradient(1100px 560px at 80% -12%,rgba(120,190,235,.34),transparent 62%),radial-gradient(760px 480px at 6% 108%,rgba(90,150,210,.22),transparent 62%),linear-gradient(rgba(20,80,130,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(20,80,130,.045) 1px,transparent 1px);
-  --panel:rgba(255,255,255,.9);--soft:rgba(255,255,255,.82);--text:#12202e;--muted:#5b6d82;--line:rgba(20,110,160,.2);--line-hi:rgba(14,127,168,.5);
-  --accent-soft:rgba(14,127,168,.12);--head:#0e6f9a;--header-bg:#f8fbfddd;--title:#172433;--summary:#5b6d82;
-  --float:#ffffffd9;--float-line:#0000001f;--pill:#ffffffc4;--pill-line:#00000024;--pill-hover:#ffffff;
-  --row-line:#0000000f;--hover:#0e7fa814;--selected:#cfe3fb;--body-muted:#4a5d72;--title-shadow:none;--stage-bg:#f4f7fb;color-scheme:light;`;
+const LIGHT = `--bg:${light.bg};--bg-image:none;
+  --panel:${light.panel};--soft:${light.soft};--text:${light.text};--muted:${light.muted};--line:${light.border};--line-hi:${light.borderStrong};
+  --accent-soft:${light.accentSoft};--head:${light.accent};--header-bg:${light.panel};--title:${light.text};--summary:${light.muted};
+  --float:${light.raised};--float-line:${light.border};--pill:${light.raised};--pill-line:${light.border};--pill-hover:${light.soft};
+  --row-line:${light.border};--hover:${light.accentSoft};--selected:${light.soft};--body-muted:${light.muted};--title-shadow:none;--stage-bg:${light.bg};color-scheme:light;`;
 
 export const taxoStyles = `
-:root{--font:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Inter,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;--left-w:220px;${DARK}}
+:root{--font:${WIKI_FONT_STACK};--mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;--left-w:220px;${DARK}}
 :root.theme-light{${LIGHT}}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
-body{background:var(--bg);background-image:var(--bg-image);background-size:auto,auto,48px 48px,48px 48px;color:var(--text);font:14px var(--font);overflow:hidden}
+body{background:var(--bg);background-image:var(--bg-image);color:var(--text);font:14px var(--font);overflow:hidden}
 button,input,select{font:inherit;color:inherit}
 button{border:1px solid var(--line);background:var(--soft);border-radius:6px;cursor:pointer}
 button:focus-visible,input:focus-visible,select:focus-visible,canvas:focus-visible{outline:2px solid var(--head);outline-offset:1px}
@@ -113,7 +113,7 @@ main{height:calc(100% - 48px);display:grid;grid-template-columns:var(--left-w) m
 .gcc-actions button{flex:1;padding:.32rem .5rem;font-size:10.5px;white-space:nowrap}
 .gcc-actions .gcc-donna{flex:0 0 auto;display:grid;place-items:center;width:30px;padding:0;color:var(--head)}
 .gcc-actions .gcc-donna.done{color:#74c365}
-.gcc-actions .gcc-donna svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2}
+.gcc-actions .gcc-donna svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5}
 .document-preview-overlay{position:fixed;z-index:50;right:8px;top:56px;width:50vw;height:calc(100vh - 64px);display:flex;flex-direction:column;overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 50px #000c;backdrop-filter:blur(12px)}
 .document-preview-overlay[hidden]{display:none}
 .document-preview-head{display:flex;flex:none;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--line)}

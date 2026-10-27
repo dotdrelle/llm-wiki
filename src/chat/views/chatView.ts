@@ -53,8 +53,8 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
     </div>
     <div class="sb-pane config-pane" id="config-pane">
       <div class="config-nav">
-        <a class="sb-link" id="connectors-link" href="/chat/connectors" onclick="showConnectorsView(event)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a6 6 0 0 1-12 0V8z"/></svg> Connectors <span>MCP & skills</span></a>
-        <a class="sb-link" id="execution-link" href="/chat/execution" onclick="showExecutionView(event)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg> Execution <span>runtime runs</span></a>
+        <a class="sb-link" id="connectors-link" href="/chat/connectors" onclick="showConnectorsView(event)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a6 6 0 0 1-12 0V8z"/></svg> Connectors <span>MCP & skills</span></a>
+        <a class="sb-link" id="execution-link" href="/chat/execution" onclick="showExecutionView(event)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg> Execution <span>runtime runs</span></a>
       </div>
     </div>
   </div>
@@ -257,11 +257,11 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
 ${REPORT_READER_HTML}
 <aside id="right-rail" aria-label="Monitoring">
   <button class="rail-btn" id="activity-toggle" type="button" onclick="toggleActivityPanel()" title="Activity" aria-label="Activity" aria-expanded="false">
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
     <span class="rail-badge" id="rail-act-badge"></span>
   </button>
   <button id="split-toggle" class="rail-btn" type="button" onclick="toggleSplitWiki()" title="Split document + chat" aria-label="Split document + chat">
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
   </button>
   <button id="help-toggle" class="rail-btn" type="button" onclick="toggleHelpPanel()" title="Help &amp; documentation" aria-label="Open help">?</button>
   <button id="theme-toggle" class="rail-btn" type="button" onclick="toggleTheme()" title="Switch to dark theme" aria-label="Switch color theme">☾</button>

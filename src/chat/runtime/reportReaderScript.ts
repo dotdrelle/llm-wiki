@@ -32,7 +32,7 @@ export const REPORT_READER_CSS = `
 .msg-attachments{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .msg-attachment{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:5px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel-soft);color:var(--text);font:600 12px var(--font-sans);cursor:pointer}
 .msg-attachment:hover{border-color:var(--accent);color:var(--accent)}
-.msg-attachment svg{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.msg-attachment svg{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
 .msg-attachment span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}`;
 
 export const REPORT_READER_SCRIPT = `/* ── Report reader ─────────────────────────────────────────────────── */

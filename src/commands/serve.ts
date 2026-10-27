@@ -63,17 +63,14 @@ const MARKED_DIST_PATH = path.resolve(
   path.dirname(require.resolve('marked')),
   'marked.umd.js',
 );
-// Self-hosted UI fonts, served from node_modules, never a CDN: Geist (body)
-// and Cormorant Garamond 600 (display serif for titles). Both @font-face
-// declarations live in `src/chat/theme.ts` — keep the two lists in sync.
-// A font package that is not installed is not fatal — the browser falls back
-// to the next face in the stack — but it is announced once at startup rather
-// than discovered as a silently different-looking page.
+// Self-hosted UI font, served from node_modules, never a CDN: Inter (body and
+// titles). The @font-face declarations live in `src/chat/theme.ts` — keep the
+// two lists in sync. A font package that is not installed is not fatal — the
+// browser falls back to the next face in the stack — but it is announced once
+// at startup rather than discovered as a silently different-looking page.
 const UI_FONT_SOURCES: Record<string, string> = {
-  '/assets/geist-latin-wght-normal.woff2': '@fontsource-variable/geist/files/geist-latin-wght-normal.woff2',
-  '/assets/geist-latin-wght-italic.woff2': '@fontsource-variable/geist/files/geist-latin-wght-italic.woff2',
-  '/assets/cormorant-garamond-latin-600-normal.woff2': '@fontsource/cormorant-garamond/files/cormorant-garamond-latin-600-normal.woff2',
-  '/assets/cormorant-garamond-latin-600-italic.woff2': '@fontsource/cormorant-garamond/files/cormorant-garamond-latin-600-italic.woff2',
+  '/assets/inter-latin-wght-normal.woff2': '@fontsource-variable/inter/files/inter-latin-wght-normal.woff2',
+  '/assets/inter-latin-wght-italic.woff2': '@fontsource-variable/inter/files/inter-latin-wght-italic.woff2',
 };
 const UI_FONT_WOFF2: Record<string, string> = {};
 {

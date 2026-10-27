@@ -1,14 +1,14 @@
-import { WIKI_DARK_COLORS as dark } from '../../../../chat/theme.ts';
+import { WIKI_DARK_COLORS as dark, WIKI_FONT_STACK, WIKI_LIGHT_COLORS as light } from '../../../../chat/theme.ts';
 
 /** Styles of the /provenance page: the approved mock-up's, on the app's theme classes. */
 export const PROVENANCE_STYLES = String.raw`
 /* Layout: one stage, five evidence columns read left to right (what built it → the deliverable → how it reached the proof → the proof). */
 :root{
-  --bg:#e9eef5;--stage:#f4f7fb;--panel:#ffffffe6;--text:#12202e;--muted:#5b6d82;--line:rgba(20,110,160,.22);
-  --line-hi:#0e7fa8;--accent-soft:rgba(14,127,168,.12);
+  --bg:${light.bg};--stage:${light.bg};--panel:${light.raised};--text:${light.text};--muted:${light.muted};--line:${light.border};
+  --line-hi:${light.borderStrong};--accent-soft:${light.accentSoft};
   --c-tpl:#8a63c9;--c-deliv:#0e7fa8;--c-pivot:#c98a12;--c-fiche:#4f7bb3;--c-raw:#3f9a57;
   --warn:#b26a00;--warn-soft:rgba(178,106,0,.12);--bad:#c0392b;--bad-soft:rgba(192,57,43,.1);
-  --font:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Inter,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  --font:${WIKI_FONT_STACK};--mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
   color-scheme:light}
 html.theme-dark{
   --bg:${dark.bg};--stage:${dark.bg};--panel:${dark.panel};--text:${dark.text};--muted:${dark.muted};--line:${dark.border};

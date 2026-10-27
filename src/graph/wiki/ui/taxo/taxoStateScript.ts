@@ -13,7 +13,7 @@ export function taxoStateScript(): string {
 const PALETTE=['#4d9cff','#a75ee8','#34c4ca','#66bd4b','#f1b52f','#ed7550','#dc5277','#7895bb','#9d70b9'];
 const colors=PALETTE;
 const SRC_COLOR='#7895bb';
-const FONT='"Geist",ui-sans-serif,system-ui,sans-serif';
+const FONT='"Inter Variable",Inter,ui-sans-serif,system-ui,sans-serif';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function json(url,init){const r=await fetch(url,init?{...init,cache:'no-store'}:{cache:'no-store'});if(!r.ok)throw Error(await r.text());return r.json()}
 let FAMS=[],base=[],byId=new Map(),bip=new Map(),concepts=[],sources=[];

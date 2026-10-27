@@ -715,7 +715,7 @@ describe('chat html', () => {
     const [script] = chatScripts();
 
     expect(CHAT_HTML).toContain('id="activity-toggle"');
-    expect(CHAT_HTML).toContain('.rail-btn:hover,.rail-btn.active{');
+    expect(CHAT_HTML).toContain('.rail-btn.active::before{');
     expect(script).toContain("railBtn.classList.toggle('active',panelOpen)");
     expect(script).toContain("railBtn.setAttribute('aria-expanded',panelOpen?'true':'false')");
     expect(script).toContain("if(wasClosed) $('activity-panel')?.classList.add('closed');");
