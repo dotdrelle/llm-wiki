@@ -190,6 +190,7 @@ $('#q').addEventListener('input',event=>{
   query=event.target.value.trim();if(query&&sel)sel=null;
   searchHits=null;render();
   clearTimeout(searchTimer);searchTimer=setTimeout(runSearch,250)});
+$('#q').value=query;
 
 // ---------- loading and live revisions ----------
 let taxoLoading=false,taxoWanted=false;

@@ -84,6 +84,8 @@ is organized, which families overlap, and which sources a concept rests on.
 - **Entry point**: page `/graph` of the Serve interface. The *Graph* view of the
   Activity panel also offers a representation of running processing.
 - **For whom**: explore and understand the wiki's organization at a glance.
+- Add `?q=<search>` to `/graph` to open it with a search already entered; matching
+  concepts and sources are highlighted and listed in the inspector.
 
 Four views, from the widest to the most detailed:
 

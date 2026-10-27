@@ -23,7 +23,7 @@ const colorOf=n=>n.type==='source'?SRC_COLOR:famColor(n.family);
 let view='family',focusId=null,sel=null,hover=null;
 // Search: the server answers with the pages it matched (hybrid retrieval); the
 // browser only decides what of them each view can show.
-let query='',searchHits=null,searchMode=null,searchError=null;
+let query=(new URLSearchParams(location.search).get('q')||'').trim(),searchHits=null,searchMode=null,searchError=null;
 const active=new Set(['__src']);
 function ingestTaxo(payload){
   FAMS=payload.families||[];
