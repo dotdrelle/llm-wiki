@@ -204,6 +204,20 @@ function cleanupWorktree(rootDir: string, record: ProposalRecord): void {
   }
 }
 
+/**
+ * Drop a proposal without touching the wiki: its worktree, its branch, its
+ * record. The reject route's action, shared with automatic maintenance, which
+ * discards a proposal the engine refused instead of leaving it pending
+ * forever. Returns false when there was no such proposal.
+ */
+export async function discardAgentProposal(rootDir: string, id: string): Promise<boolean> {
+  const record = await readProposal(rootDir, id);
+  if (!record) return false;
+  cleanupWorktree(rootDir, record);
+  await removeProposalFile(rootDir, id);
+  return true;
+}
+
 async function removeProposalFile(rootDir: string, id: string): Promise<void> {
   const value = String(id ?? '');
   if (!SAFE_ID.test(value)) return;
@@ -684,12 +698,9 @@ export async function handleAgentProposalRoutes(
     if (busy.busy) {
       return fail(409, { ok: false, code: 'PRODUCTION_JOB_ACTIVE', error: busy.message });
     }
-    const record = await readProposal(rootDir, id);
-    if (!record) {
+    if (!(await discardAgentProposal(rootDir, id))) {
       return fail(404, { ok: false, error: 'proposal not found' });
     }
-    cleanupWorktree(rootDir, record);
-    await removeProposalFile(rootDir, id);
     return succeed({ ok: true, rejected: id });
   }
 

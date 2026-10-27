@@ -90,7 +90,10 @@ panel (Serve) or right pane (Shell):
   three passes in a day (`limits.curationPassesPerDay`), and builds then use
   the wiki as it stands. A curation that fails is retried once on its own;
   if it fails again, maintenance asks you: approve to try once more, or refuse
-  to let builds and exports go ahead without it.
+  to let builds and exports go ahead without it. A proposal the engine refuses
+  at merge (an invalid citation) is discarded on its own, the wiki untouched,
+  and counts as such a failed attempt — it never waits on the review page in
+  Auto mode.
   Proposals created outside that automatic maintenance run still need review.
 - **New sources**: after a sync or a copy into the pending area, it lists the
   new files and asks once whether to ingest them all.

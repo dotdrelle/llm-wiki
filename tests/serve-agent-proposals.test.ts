@@ -13,7 +13,7 @@ vi.mock('../src/services/historyService.ts', () => ({
   commitHistorySafely: vi.fn(async () => ({ sha: null })),
 }));
 
-const { handleAgentProposalRoutes, mergeAgentProposal } = await import('../src/serve/routes/agentProposalRoutes.ts');
+const { discardAgentProposal, handleAgentProposalRoutes, mergeAgentProposal } = await import('../src/serve/routes/agentProposalRoutes.ts');
 
 function fakeRes() {
   const res = {
@@ -168,6 +168,31 @@ describe('agent proposal review routes', () => {
     expect(merged.status).toBe(200);
     expect(existsSync(worktree)).toBe(false);
     expect(String(git('branch', '--list', 'agent/*'))).toBe('');
+  });
+
+  it('discards a proposal, its worktree and its branch without touching the wiki', async () => {
+    const git = (...args: string[]) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: rootDir, stdio: 'pipe' });
+    git('init', '-q');
+    writeFileSync(path.join(rootDir, 'README.md'), 'x\n');
+    git('add', '.');
+    git('commit', '-q', '-m', 'init');
+    const worktree = path.join(rootDir, '.wiki', 'agent-worktrees', 'gateway-refused');
+    git('worktree', 'add', '-q', '-b', 'agent/gateway-refused', worktree);
+    writeProposal(rootDir, {
+      id: 'maintenance:refused',
+      branch: 'agent/gateway-refused',
+      worktreeRelativePath: '.wiki/agent-worktrees/gateway-refused',
+      changes: [{ path: 'wiki/sources/a.md', status: 'M', content: '# A\n' }],
+    });
+    const deps = makeDeps(rootDir);
+
+    expect(await discardAgentProposal(rootDir, 'maintenance:refused')).toBe(true);
+    expect(await discardAgentProposal(rootDir, 'maintenance:refused')).toBe(false);
+
+    expect(existsSync(path.join(rootDir, '.wiki', 'agent-proposals', 'maintenance_refused.json'))).toBe(false);
+    expect(existsSync(worktree)).toBe(false);
+    expect(String(git('branch', '--list', 'agent/*'))).toBe('');
+    expect((deps.workspace.applyWikiOperations as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(0);
   });
 
   it('rejects a proposal without touching the wiki', async () => {

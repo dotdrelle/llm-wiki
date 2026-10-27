@@ -1,6 +1,6 @@
 import { writeDonnaReport } from './reportWriter.ts';
 import { maintenanceState } from '../maintenance/state.ts';
-import { mergeAgentProposal } from '../serve/routes/agentProposalRoutes.ts';
+import { discardAgentProposal, mergeAgentProposal } from '../serve/routes/agentProposalRoutes.ts';
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -2333,15 +2333,14 @@ const withTitles = async (
 
   server.tool(
     'wiki_maintenance_merge_proposal',
-    'Merge one curation proposal after the manager has authorized automatic maintenance approval. The engine revalidates provenance, applies the changes atomically, records history, and removes the proposal. This mutates wiki pages; confirm must be true.',
-    { proposalId: z.string().min(1).max(300), confirm: z.literal(true) },
+    'Merge one curation proposal after the manager has authorized automatic maintenance approval. The engine revalidates provenance, applies the changes atomically, records history, and removes the proposal. This mutates wiki pages; confirm must be true. With discardIfRefused, a proposal the engine refuses on its content (invalid provenance, nothing mergeable) is discarded instead of staying pending; a busy workspace is never a refusal.',
+    { proposalId: z.string().min(1).max(300), confirm: z.literal(true), discardIfRefused: z.boolean().optional() },
     (input) => loggedTool('wiki_maintenance_merge_proposal', input, async () => {
-      const result = await mergeAgentProposal(
-        { rootDir: workspace.paths.rootDir, workspace, historyConfig: config.history },
-        input.proposalId,
-        { verifiedBy: 'maintenance:auto' },
-      );
-      return textResult(JSON.stringify(result.body), { isError: result.status >= 400 });
+      const rootDir = workspace.paths.rootDir;
+      const result = await mergeAgentProposal({ rootDir, workspace, historyConfig: config.history }, input.proposalId, { verifiedBy: 'maintenance:auto' });
+      const discarded = input.discardIfRefused === true && (result.status === 400 || result.status === 422)
+        && await discardAgentProposal(rootDir, input.proposalId);
+      return textResult(JSON.stringify(discarded ? { ...result.body, discarded: true } : result.body), { isError: result.status >= 400 });
     }),
   );
 
