@@ -789,6 +789,7 @@ export const WIKI_LAYOUT_CSS = `
     /* Export disclosure: the <summary> is a plain .action-button; the panel
        drops below it, right-aligned, and never widens the toolbar. */
     .action-menu { position: relative; }
+    .topbar:has(.action-menu[open]) { z-index: 30; } /* an open menu sits in the sticky bar (8): lift it over the fixed On this page panel (20) */
     .action-menu > summary { list-style: none; gap: 0.3rem; }
     .action-menu > summary::-webkit-details-marker { display: none; }
     .action-menu > summary::marker { content: ""; }

@@ -58,10 +58,12 @@ const MAX_LINES = 800;
 // 0.16.62 follow-up: the Connectors panel dropped its per-connector timeout
 // field; browser-side MCP timeouts now feed the Activity Logs
 // (activityPanelScript). Record the measured lines.
+// 0.16.66 note: wikiLayoutCss records the Inter typeface switch (+12) and the
+// open-menu lift over the On this page panel (+1).
 const LEGACY_LIMITS = new Map([
   ['src/commands/serve.ts', 1104],
   ['src/serve/html/wikiHtml.ts', 2300],
-  ['src/serve/html/wikiLayoutCss.ts', 1601],
+  ['src/serve/html/wikiLayoutCss.ts', 1614],
   ['src/serve/html/wikiLayoutScript.ts', 1312],
   ['src/chat/chatHtml.ts', 3308],
   ['src/chat/styles/chatStyles.ts', 602],
