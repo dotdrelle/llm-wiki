@@ -18,7 +18,7 @@ export const REPORT_READER_HTML = `<aside id="report-reader" aria-hidden="true" 
 </aside>`;
 
 export const REPORT_READER_CSS = `
-#report-reader{position:fixed;z-index:140;top:0;right:40px;height:100vh;width:min(960px,calc(100vw - 80px));display:flex;flex-direction:column;background:var(--panel);border-left:1px solid var(--border);box-shadow:var(--shadow);transform:translateX(calc(100% + 48px));transition:transform .25s ease;visibility:hidden}
+#report-reader{position:fixed;z-index:140;top:0;right:40px;height:100vh;width:min(672px,calc(100vw - 80px));display:flex;flex-direction:column;background:var(--panel);border-left:1px solid var(--border);box-shadow:var(--shadow);transform:translateX(calc(100% + 48px));transition:transform .25s ease;visibility:hidden}
 #report-reader.open{transform:none;visibility:visible}
 #report-reader .rr-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border)}
 #report-reader .rr-title{flex:1;min-width:0;font:700 14px/1.3 var(--font-sans);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
