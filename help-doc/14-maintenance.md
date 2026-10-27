@@ -60,7 +60,8 @@ workspace checks remain in place.
     "mail": { "to": [], "on": ["failure", "decision", "daily"] },
     "buildSchedule": { "mode": "window", "start": "12:00", "end": "14:00", "timezone": "Europe/Paris" },
     "limits": { "cyclesPerDay": 96, "buildsPerDay": 50, "actionsPerDay": 500,
-                "actionsPerCycle": 30, "sourceQuietMinutes": 10 }
+                "actionsPerCycle": 30, "sourceQuietMinutes": 10,
+                "curationPassesPerDay": 3 }
   },
   "workspaces": {
     "my-workspace": { "enabled": true, "actions": { "build": ["templates/offer.md"] } }
@@ -84,6 +85,12 @@ panel (Serve) or right pane (Shell):
   `/agent-proposals`. In Auto mode, a proposal produced by maintenance is
   merged automatically after the engine validates its paths and citations.
   Maintenance then curates the updated wiki again before any build or export.
+  Each pass corrects a limited number of pages and leaves the rest to the next
+  one; the chain ends with a pass that finds nothing to correct, or after
+  three passes in a day (`limits.curationPassesPerDay`), and builds then use
+  the wiki as it stands. A curation that fails is retried once on its own;
+  if it fails again, maintenance asks you: approve to try once more, or refuse
+  to let builds and exports go ahead without it.
   Proposals created outside that automatic maintenance run still need review.
 - **New sources**: after a sync or a copy into the pending area, it lists the
   new files and asks once whether to ingest them all.

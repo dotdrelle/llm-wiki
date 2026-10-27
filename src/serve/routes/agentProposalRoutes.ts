@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { readFile, unlink, readdir, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { resolveInside } from '../../utils/path.ts';
@@ -183,17 +183,24 @@ function cleanupWorktree(rootDir: string, record: ProposalRecord): void {
   } catch {
     // The worktree may already be gone (hand cleanup, crashed run).
   }
+  // The gateway registers the worktree under ITS mount of the workspace
+  // (`/workspaces/<name>/…`), which this container does not have, so
+  // `worktree remove` refuses it as "not a working tree". The directory then
+  // stayed, and the branch with it: still attached to the stale worktree
+  // metadata, `branch -D` refused it. Remove the directory (confined above),
+  // prune the metadata it leaves, THEN delete the branch.
+  rmSync(worktreeAbsolute, { recursive: true, force: true });
+  try {
+    execFileSync('git', [...safe, 'worktree', 'prune'], { cwd: rootDir, stdio: 'ignore' });
+  } catch {
+    // Pruning is bookkeeping, never the operation itself.
+  }
   if (/^agent\/[a-zA-Z0-9._-]+$/.test(branch)) {
     try {
       execFileSync('git', [...safe, 'branch', '-D', branch], { cwd: rootDir, stdio: 'ignore' });
     } catch {
       // A merged or never-pushed branch is not an error here.
     }
-  }
-  try {
-    execFileSync('git', [...safe, 'worktree', 'prune'], { cwd: rootDir, stdio: 'ignore' });
-  } catch {
-    // Pruning is bookkeeping, never the operation itself.
   }
 }
 

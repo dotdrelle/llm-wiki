@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -134,6 +135,39 @@ describe('agent proposal review routes', () => {
     const applied = (deps.workspace.applyWikiOperations as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(applied[0].content).toContain("by: 'maintenance:auto'");
     expect(existsSync(path.join(rootDir, '.wiki', 'agent-proposals', 'maintenance_auto-1.json'))).toBe(false);
+  });
+
+  it('cleans up a worktree the gateway registered under its own mount path, branch included', async () => {
+    // The gateway container mounts the workspace at /workspaces/<name>; serve
+    // and mcp-http do not, so git sees that worktree as foreign and refuses
+    // `worktree remove`. The merge must still leave no directory nor branch.
+    const git = (...args: string[]) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: rootDir, stdio: 'pipe' });
+    git('init', '-q');
+    writeFileSync(path.join(rootDir, 'README.md'), 'x\n');
+    git('add', '.');
+    git('commit', '-q', '-m', 'init');
+    const worktree = path.join(rootDir, '.wiki', 'agent-worktrees', 'gateway-foreign');
+    git('worktree', 'add', '-q', '-b', 'agent/gateway-foreign', worktree);
+    writeFileSync(path.join(rootDir, '.git', 'worktrees', 'gateway-foreign', 'gitdir'), '/workspaces/demo/.wiki/agent-worktrees/gateway-foreign/.git\n');
+    writeFileSync(path.join(worktree, '.git'), 'gitdir: /workspaces/demo/.git/worktrees/gateway-foreign\n');
+    writeProposal(rootDir, {
+      id: 'maintenance:foreign',
+      runId: 'maintenance-cycle',
+      workspace: 'demo',
+      branch: 'agent/gateway-foreign',
+      worktreeRelativePath: '.wiki/agent-worktrees/gateway-foreign',
+      createdAt: '2026-10-27T10:00:00.000Z',
+      changedFiles: [{ status: 'M', path: 'wiki/concepts/demo/a.md' }],
+      changes: [{ path: 'wiki/concepts/demo/a.md', status: 'M', content: '# A\ncorrected\n' }],
+      diff: 'diff',
+    });
+    const deps = makeDeps(rootDir);
+
+    const merged = await mergeAgentProposal({ rootDir, workspace: deps.workspace, historyConfig: null }, 'maintenance:foreign', { verifiedBy: 'maintenance:auto' });
+
+    expect(merged.status).toBe(200);
+    expect(existsSync(worktree)).toBe(false);
+    expect(String(git('branch', '--list', 'agent/*'))).toBe('');
   });
 
   it('rejects a proposal without touching the wiki', async () => {
