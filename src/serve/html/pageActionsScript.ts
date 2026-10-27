@@ -110,5 +110,18 @@ export const PAGE_ACTIONS_SCRIPT = `
       window.parent.postMessage({ type: 'llmwiki:curate' }, window.location.origin);
     });
   }
+  // "Explain with Donna" on a curation proposal: a read-only question, so no
+  // confirmation — the page hands its records to the shell, which asks.
+  const explainRow = document.querySelector('[data-explain-row]');
+  const explainLaunch = document.querySelector('[data-explain-launch]');
+  if (explainRow && explainLaunch) {
+    explainRow.hidden = false;
+    explainLaunch.addEventListener('click', () => {
+      let payload = null;
+      try { payload = JSON.parse(document.querySelector('[data-explain-records]')?.textContent || 'null'); } catch { payload = null; }
+      if (!payload) return;
+      window.parent.postMessage({ type: 'llmwiki:explainProposal', label: payload.label, records: payload.records }, window.location.origin);
+    });
+  }
 })();
 `;

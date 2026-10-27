@@ -25,6 +25,7 @@ import { CHAT_MARKUP, EMPTY_CHAT_HTML } from './views/chatView.ts';
 import { HELP_PANEL_SCRIPT } from './views/helpPanelScript.ts';
 import { REPORT_READER_SCRIPT } from './runtime/reportReaderScript.ts';
 import { WIKI_PANEL_SCRIPT } from './views/wikiPanelScript.ts';
+import { PROPOSAL_EXPLAIN_SCRIPT } from './runtime/proposalExplainScript.ts';
 import { WIKI_AGENT_LAUNCH_SCRIPT } from './views/wikiAgentLaunchScript.ts';
 const CHAT_BODY = `${CHAT_MARKUP}\n\n<script>\nlet servers = [];
 let messages = [];
@@ -3207,6 +3208,7 @@ ${SYSTEM_PROMPT_SCRIPT}
 ${EMPTY_TILES_SCRIPT}
 
 ${WIKI_PANEL_SCRIPT}
+${PROPOSAL_EXPLAIN_SCRIPT}
 
 ${WIKI_AGENT_LAUNCH_SCRIPT}
 

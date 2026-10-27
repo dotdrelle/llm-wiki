@@ -470,6 +470,23 @@ function prevalidateProposal(rootDir: string, record: ProposalRecord): ProposalP
   return results;
 }
 
+/**
+ * What Donna is handed to explain a proposal in plain words: facts as short
+ * lines, the agent's own report cut to a bounded excerpt. A system review
+ * item, never wiki content — the chat says so when it asks.
+ */
+export function proposalExplainRecords(record: ProposalRecord, prevalidation: ProposalPrevalidation = []): string[] {
+  const status = (s: string) => (s === 'A' ? 'New' : s === 'D' ? 'Removed' : 'Updated');
+  return [
+    `Proposal: ${proposalSummary(record)} (created ${record.createdAt})`,
+    ...record.changedFiles.slice(0, 20).map((entry) => `File ${status(entry.status)}: ${proposalFileLabel(entry.path)} (${entry.path})`),
+    ...prevalidation.flatMap((entry) => entry.issues.map((issue) => `Provenance problem, blocks the merge: ${entry.path} — ${issue.code}: ${issue.citation} — ${issue.message}`)),
+    ...(Array.isArray(record.objections) ? record.objections.slice(0, 10) : [])
+      .map((entry) => `Objection (${String(entry?.severity ?? 'non-blocking')}): ${String(entry?.statement ?? '')}`),
+    ...(record.justification ? [`Agent report (excerpt): ${String(record.justification).slice(0, 2500)}`] : []),
+  ];
+}
+
 function renderProposalDetail(record: ProposalRecord, prevalidation: ProposalPrevalidation = []): string {
   const files = record.changedFiles
     .map((entry) => {
@@ -494,8 +511,12 @@ function renderProposalDetail(record: ProposalRecord, prevalidation: ProposalPre
     : '';
   const diff = renderProposalDiff(record.diff || '(no diff)');
   const actions = `<form class="proposal-actions" method="post" action="/agent-proposals/${encodeURIComponent(record.id)}/merge"><button class="action-button" type="submit">Merge into the wiki</button></form><form class="proposal-actions" method="post" action="/agent-proposals/${encodeURIComponent(record.id)}/reject"><button class="action-link" type="submit">Reject &amp; discard the branch</button></form>`;
+  // Hidden standalone, like "Start a curation": only the chat shell can ask
+  // Donna. The page hands over the records; the shell owns the question.
+  const explainData = JSON.stringify({ label: `Explain the curation proposal: ${proposalSummary(record)}`, records: proposalExplainRecords(record, prevalidation) }).replace(/</g, '\\u003c');
+  const explain = `<div class="proposal-curate" data-explain-row hidden><button type="button" class="action-button" data-explain-launch>Explain with Donna</button><span class="proposal-lede">Donna explains in plain words what this proposal changes, why, and what to do.</span><script type="application/json" data-explain-records>${explainData}</script></div>`;
   const technical = `<details class="proposal-technical"><summary>Technical details</summary><dl><dt>Proposal ID</dt><dd><code>${escapeHtml(record.id)}</code></dd><dt>Branch</dt><dd><code>${escapeHtml(record.branch)}</code></dd><dt>Created</dt><dd>${escapeHtml(record.createdAt)}</dd></dl></details>`;
-  return `<main class="content"><article class="article"><h1>Wiki curation proposal</h1><p class="proposal-summary">${escapeHtml(proposalSummary(record))}</p><p class="proposal-lede">Workspace <strong>${escapeHtml(record.workspace)}</strong> · ${escapeHtml(proposalDate(record.createdAt))}</p>${actions}${technical}${justification}${objections}${prevalidationHtml}<h2>Changed files</h2><ul class="proposal-files">${files}</ul><h2>Diff</h2><pre class="proposal-diff">${diff}</pre>${actions}</article></main>`;
+  return `<main class="content"><article class="article"><h1>Wiki curation proposal</h1><p class="proposal-summary">${escapeHtml(proposalSummary(record))}</p><p class="proposal-lede">Workspace <strong>${escapeHtml(record.workspace)}</strong> · ${escapeHtml(proposalDate(record.createdAt))}</p>${explain}${actions}${technical}${justification}${objections}${prevalidationHtml}<h2>Changed files</h2><ul class="proposal-files">${files}</ul><h2>Diff</h2><pre class="proposal-diff">${diff}</pre>${actions}</article></main>`;
 }
 
 /** Render gateway-authored Markdown as content, never as trusted HTML. */

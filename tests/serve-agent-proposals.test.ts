@@ -195,6 +195,36 @@ describe('agent proposal review routes', () => {
     expect((deps.workspace.applyWikiOperations as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(0);
   });
 
+  it('offers Donna an explanation of a proposal, its records inert in the page', async () => {
+    writeProposal(rootDir, {
+      id: 't-explain',
+      workspace: 'demo',
+      branch: 'agent/gateway-explain',
+      worktreeRelativePath: '.wiki/agent-worktrees/gateway-explain',
+      createdAt: '2026-10-27T10:00:00.000Z',
+      justification: 'Fixed two fiches </script><img src=x onerror=alert(1)>',
+      objections: [{ severity: 'blocking', statement: 'claim lacks a source' }],
+      changedFiles: [{ status: 'M', path: 'wiki/sources/doc/a.md' }],
+      changes: [{ path: 'wiki/sources/doc/a.md', status: 'M', content: '# A\n' }],
+      diff: 'x',
+    });
+    const deps = makeDeps(rootDir);
+    const { res } = fakeRes();
+
+    await handleAgentProposalRoutes(fakeReq('GET', '/agent-proposals/t-explain'), res, '/agent-proposals/t-explain', deps);
+
+    const html = String((deps.sendGzippedHtml as ReturnType<typeof vi.fn>).mock.calls[0][2]);
+    expect(html).toContain('data-explain-row hidden');
+    const data = /<script type="application\/json" data-explain-records>([\s\S]*?)<\/script>/.exec(html)?.[1] ?? '';
+    expect(data).not.toContain('<');
+    const payload = JSON.parse(data);
+    expect(payload.records).toEqual(expect.arrayContaining([
+      expect.stringMatching(/^File Updated: .*wiki\/sources\/doc\/a\.md/),
+      'Objection (blocking): claim lacks a source',
+      expect.stringContaining('</script><img'),
+    ]));
+  });
+
   it('rejects a proposal without touching the wiki', async () => {
     writeProposal(rootDir, {
       id: 't2',
