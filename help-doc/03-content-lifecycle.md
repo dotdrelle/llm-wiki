@@ -158,9 +158,10 @@ them with the knowledge steps below.
 
 The knowledge is organized as it is ingested — there is no separate grouping
 step. Every source section becomes a **fiche** under
-`wiki/sources/<document>/<section>.md`. Tags produce generated pivot pages under
-`wiki/concepts/<family>/<tag>.md`; these pages organize navigation but do not
-replace the fiches as evidence.
+`wiki/sources/<document>/<section>.md`. A tag produces a generated pivot page
+under `wiki/concepts/<family>/<tag>.md` only when at least two fiches carry it;
+the tag stays on each fiche when no pivot is created. These pages organize
+navigation but do not replace the fiches as evidence.
 
 Filing a page by hand works too: move a page into a concept folder and it is
 re-filed for real — its axes are rewritten and every link pointing at it is

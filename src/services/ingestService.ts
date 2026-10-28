@@ -80,6 +80,9 @@ const TAXO_PROMPT_VERSION = 4;
 const TAXO_FAMILY_BATCH_THRESHOLD = 60;
 const TAXO_FAMILY_BATCH_SIZE = 40;
 const TAXO_FAMILY_BATCH_CONCURRENCY = 3;
+// A generated concept pivot is useful for navigation only once at least two
+// distinct source fiches support its tag. The tag stays on every source fiche.
+const TAXO_TAG_PAGE_MIN_FICHE_SUPPORT = 2;
 
 function isUnfiledTagPage(page: WikiPage, family: unknown): boolean {
   const conceptFolder = page.relativePath.split('/')[2] ?? '';
@@ -1997,11 +2000,11 @@ export class IngestService {
   }
 
   /**
-   * Deterministic early refresh of the navigation pages for the tags a
-   * just-applied source produced. No LLM, no purge: every tag the run has
-   * seen gets its page immediately (under `unfiled/` until the end-of-run
-   * family pass moves it). The final `regenerateTaxoTagPages` stays the
-   * authority; this only makes the pages appear as the run advances.
+   * Deterministic early refresh of supported navigation tags after a source
+   * is applied. Tags remain on their source fiches; a concept pivot appears
+   * only after two distinct fiches support it. The final
+   * `regenerateTaxoTagPages` pass stays the authority and prunes generated
+   * pivots that no longer meet the support threshold.
    */
   private async refreshIncrementalTagPages(tags: string[]): Promise<void> {
     const wanted = new Set(tags.map((tag) => normalizeProvenanceValue(tag)).filter(Boolean));
@@ -2014,9 +2017,11 @@ export class IngestService {
       const pageTags = Array.isArray(parsed.data?.tags)
         ? parsed.data.tags.filter((tag): tag is string => typeof tag === 'string')
         : [];
+      const seenOnFiche = new Set<string>();
       for (const tag of pageTags) {
         const normalized = normalizeProvenanceValue(tag);
-        if (!normalized || !wanted.has(normalized)) continue;
+        if (!normalized || seenOnFiche.has(normalized) || !wanted.has(normalized)) continue;
+        seenOnFiche.add(normalized);
         const entries = tagRows.get(normalized) ?? [];
         entries.push({
           title: typeof parsed.data?.title === 'string' ? parsed.data.title : page.relativePath,
@@ -2027,6 +2032,20 @@ export class IngestService {
       }
     }
     if (tagRows.size === 0) return;
+    const eligibleTagRows = [...tagRows].filter(
+      ([, entries]) => entries.length >= TAXO_TAG_PAGE_MIN_FICHE_SUPPORT,
+    );
+    const filteredTags = tagRows.size - eligibleTagRows.length;
+    if (filteredTags > 0) {
+      await this.logger.info('ingest:tag-pages-filtered-by-support', {
+        minimumFicheSupport: TAXO_TAG_PAGE_MIN_FICHE_SUPPORT,
+        tagsSeen: tagRows.size,
+        eligibleTags: eligibleTagRows.length,
+        filteredTags,
+        phase: 'incremental',
+      });
+    }
+    if (eligibleTagRows.length === 0) return;
     const existingTagPages = new Map<string, WikiPage>();
     for (const page of pages) {
       if (!page.relativePath.startsWith('wiki/concepts/')) continue;
@@ -2038,7 +2057,7 @@ export class IngestService {
     }
     const operations: WikiOperation[] = [];
     const generatedAt = new Date().toISOString();
-    for (const [tag, entries] of tagRows) {
+    for (const [tag, entries] of eligibleTagRows) {
       const prior = existingTagPages.get(tag);
       const priorMatter = prior ? matter(prior.content) : null;
       if (priorMatter && (priorMatter.data?.status === 'stable' || priorMatter.data?.verified === true)) continue;
@@ -2067,12 +2086,12 @@ export class IngestService {
     await this.workspace.applyNormalizedWikiOperations(operations);
     this.retrieval.invalidateCache();
     await this.logger.info('ingest:tag-pages-refreshed', {
-      tags: tagRows.size,
+      tags: eligibleTagRows.length,
       pages: operations.length,
     });
   }
 
-  /** Build deterministic tag pivots after all TAXO fiches in the run exist. */
+  /** Build deterministic pivots only for tags supported by at least two TAXO fiches. */
   private async regenerateTaxoTagPages(options?: IngestProgressHooks): Promise<void> {
     await this.logger.info('ingest:regroup-start', {});
     const pages = await this.retrieval.warmCache();
@@ -2091,7 +2110,7 @@ export class IngestService {
       const tags = Array.isArray(parsed.data?.tags)
         ? parsed.data.tags.filter((tag): tag is string => typeof tag === 'string')
         : [];
-      for (const tag of harmonizeTags(tags, tagCatalogue)) {
+      for (const tag of new Set(harmonizeTags(tags, tagCatalogue))) {
         const normalized = tag;
         if (!normalized) continue;
         const entries = tagRows.get(normalized) ?? [];
@@ -2104,7 +2123,6 @@ export class IngestService {
       }
     }
 
-    const activeTags = [...tagRows.keys()].sort((a, b) => a.localeCompare(b));
     const existingTagPages = new Map<string, WikiPage>();
     const establishedFamilies = new Map<string, TagFamily>();
     for (const page of pages) {
@@ -2119,6 +2137,9 @@ export class IngestService {
         ? normalizeProvenanceValue(parsed.data.subject)
         : normalizeProvenanceValue(path.posix.basename(page.relativePath, '.md'));
       if (subject) existingTagPages.set(subject, page);
+      const protectedPage = parsed.data?.status === 'stable' || parsed.data?.verified === true;
+      if (generatedTag && !protectedPage
+        && (tagRows.get(subject)?.length ?? 0) < TAXO_TAG_PAGE_MIN_FICHE_SUPPORT) continue;
       if (isUnfiledTagPage(page, parsed.data?.family)) continue;
       const family = typeof parsed.data?.family === 'string'
         ? parsed.data.family.trim()
@@ -2136,6 +2157,28 @@ export class IngestService {
       establishedFamilies.set(family, row);
     }
 
+    const protectedTags = new Set([...existingTagPages]
+      .filter(([, page]) => {
+        const metadata = matter(page.content).data;
+        return metadata?.status === 'stable' || metadata?.verified === true;
+      })
+      .map(([tag]) => tag));
+    const eligibleTagRows = new Map(
+      [...tagRows].filter(([tag, entries]) =>
+        entries.length >= TAXO_TAG_PAGE_MIN_FICHE_SUPPORT || protectedTags.has(tag),
+      ),
+    );
+    const filteredTags = tagRows.size - eligibleTagRows.size;
+    if (filteredTags > 0) {
+      await this.logger.info('ingest:tag-pages-filtered-by-support', {
+        minimumFicheSupport: TAXO_TAG_PAGE_MIN_FICHE_SUPPORT,
+        tagsSeen: tagRows.size,
+        eligibleTags: eligibleTagRows.size,
+        filteredTags,
+        phase: 'final',
+      });
+    }
+    const activeTags = [...eligibleTagRows.keys()].sort((a, b) => a.localeCompare(b));
     const established = [...establishedFamilies.values()];
     const newTags = activeTags.filter((tag) => {
       const page = existingTagPages.get(tag);
@@ -2153,6 +2196,8 @@ export class IngestService {
       await options?.onPhase?.('regroup', {
         tags: initialGrouping ? activeTags.length : newTags.length,
         establishedFamilies: established.length,
+        minimumFicheSupport: TAXO_TAG_PAGE_MIN_FICHE_SUPPORT,
+        filteredTags,
       });
       const taxonomyPrompt = initialGrouping
         ? [
@@ -2165,13 +2210,13 @@ export class IngestService {
             'Return only a JSON array: [{"family":"...","tags":["..."]}]. Every new tag must occur exactly once and remain unchanged.',
           ].join('\n');
       const context = initialGrouping
-        ? activeTags.map((tag) => `- ${tag}: ${tagRows.get(tag)?.slice(0, 3).map((row) => row.description || row.title).join('; ')}`).join('\n')
+        ? activeTags.map((tag) => `- ${tag}: ${eligibleTagRows.get(tag)?.slice(0, 3).map((row) => row.description || row.title).join('; ')}`).join('\n')
         : [
             'Established families:',
             ...established.map((row) => `- ${row.family}: ${row.tags.join(', ')}`),
             '',
             'New tags:',
-            ...newTags.map((tag) => `- ${tag}: ${tagRows.get(tag)?.slice(0, 3).map((row) => row.description || row.title).join('; ')}`),
+            ...newTags.map((tag) => `- ${tag}: ${eligibleTagRows.get(tag)?.slice(0, 3).map((row) => row.description || row.title).join('; ')}`),
           ].join('\n');
       const requestedTags = initialGrouping ? activeTags : newTags;
       try {
@@ -2184,7 +2229,7 @@ export class IngestService {
           const minFamilies = this.config.ingest?.families.min ?? 3;
           const maxFamilies = this.config.ingest?.families.max ?? 10;
           const inventory = requestedTags.map((tag) => {
-            const example = tagRows.get(tag)?.[0];
+            const example = eligibleTagRows.get(tag)?.[0];
             const context = String(example?.description || example?.title || '').replace(/\s+/g, ' ').slice(0, 120);
             return context ? `- ${tag}: ${context}` : `- ${tag}`;
           }).join('\n');
@@ -2218,7 +2263,7 @@ export class IngestService {
                 batchCount: batches.length,
               });
               const batchContext = batch.map((tag) => {
-                const example = tagRows.get(tag)?.[0];
+                const example = eligibleTagRows.get(tag)?.[0];
                 const detail = String(example?.description || example?.title || '').replace(/\s+/g, ' ').slice(0, 240);
                 return detail ? `- ${tag}: ${detail}` : `- ${tag}`;
               }).join('\n');
@@ -2330,7 +2375,7 @@ export class IngestService {
     const operations: WikiOperation[] = [];
     const generatedAt = new Date().toISOString();
     const expectedTagPaths = new Set<string>();
-    for (const [tag, entries] of tagRows) {
+    for (const [tag, entries] of eligibleTagRows) {
       const priorPage = existingTagPages.get(tag);
       const priorMatter = priorPage ? matter(priorPage.content) : null;
       const protectedPage = Boolean(priorMatter && (
