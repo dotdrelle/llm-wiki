@@ -194,6 +194,10 @@ describe('knowledge engine E2E', { timeout: 15_000 }, () => {
         '',
         'Donna centralise les notes projet et produit un livrable public.',
         'Le flux attendu couvre conversion, review, ingest, index, build et export.',
+        '',
+        '# Workflow',
+        '',
+        'Chaque fiche TAXO reçoit les tags Donna et workflow, puis alimente le même parcours de publication.',
       ].join('\n'),
       'utf8',
     );

@@ -395,12 +395,14 @@ class MemoryTraceLogger implements TraceLogger {
 
 describe('ingest service', () => {
   it('chunks initial family assignment for large tag inventories under one shared family catalogue', async () => {
-    const fichePages: WikiPage[] = Array.from({ length: 61 }, (_, index) => {
+    const fichePages: WikiPage[] = Array.from({ length: 122 }, (_, pageIndex) => {
+      const index = Math.floor(pageIndex / 2);
+      const copy = (pageIndex % 2) + 1;
       const tag = `tag-${String(index + 1).padStart(3, '0')}`;
       return {
-        absolutePath: `/tmp/wiki/wiki/sources/doc/${tag}.md`,
-        relativePath: `wiki/sources/doc/${tag}.md`, name: `${tag}.md`, type: 'source',
-        content: `---\ntitle: Topic ${index + 1}\ntags: [${tag}]\n---\n# Topic ${index + 1}\nEvidence.`,
+        absolutePath: `/tmp/wiki/wiki/sources/doc-${copy}/${tag}.md`,
+        relativePath: `wiki/sources/doc-${copy}/${tag}.md`, name: `${tag}.md`, type: 'source',
+        content: `---\ntitle: Topic ${index + 1} copy ${copy}\ntags: [${tag}]\n---\n# Topic ${index + 1}\nEvidence.`,
       };
     });
     const logger = new MemoryTraceLogger();
@@ -442,12 +444,57 @@ describe('ingest service', () => {
     expect(workspace.appliedOperations.some((operation) => operation.path.includes('/unfiled/'))).toBe(false);
   });
 
-  it('falls back to an unfiled pivot page when the first family grouping degrades', async () => {
-    const fiche: WikiPage = {
-      absolutePath: '/tmp/wiki/wiki/sources/doc/section.md',
-      relativePath: 'wiki/sources/doc/section.md', name: 'section.md', type: 'source',
-      content: '---\ntitle: Réseau\ntags: [orphelin]\n---\n# Réseau\nFiche.',
+  it('creates tag pivots only with support from two fiches, while keeping protected pages', async () => {
+    const fiches: WikiPage[] = [
+      {
+        absolutePath: '/tmp/wiki/wiki/sources/doc/section-1.md',
+        relativePath: 'wiki/sources/doc/section-1.md', name: 'section-1.md', type: 'source',
+        content: '---\ntitle: First\ntags: [shared, rare, protected]\n---\n# First\nFiche.',
+      },
+      {
+        absolutePath: '/tmp/wiki/wiki/sources/doc/section-2.md',
+        relativePath: 'wiki/sources/doc/section-2.md', name: 'section-2.md', type: 'source',
+        content: '---\ntitle: Second\ntags: [shared]\n---\n# Second\nFiche.',
+      },
+    ];
+    const generatedRare: WikiPage = {
+      absolutePath: '/tmp/wiki/wiki/concepts/knowledge/rare.md',
+      relativePath: 'wiki/concepts/knowledge/rare.md', name: 'rare.md', type: 'concept',
+      content: '---\ntype: concept\nsubject: rare\nfamily: Knowledge\ntags: [rare]\ngenerated:\n  by: llm-wiki-tags\n---\n# Rare\n',
     };
+    const protectedTag: WikiPage = {
+      absolutePath: '/tmp/wiki/wiki/concepts/history/protected.md',
+      relativePath: 'wiki/concepts/history/protected.md', name: 'protected.md', type: 'concept',
+      content: '---\ntype: concept\nsubject: protected\nfamily: History\ntags: [protected]\nstatus: stable\ngenerated:\n  by: llm-wiki-tags\n---\n# Protected\n',
+    };
+    const logger = new MemoryTraceLogger();
+    const workspace = new FakeWorkspaceService();
+    const service = new IngestService(
+      createConfig(), workspace as unknown as WorkspaceService,
+      new FakeLLMService() as unknown as LLMService,
+      new FakeRetrievalService([...fiches, generatedRare, protectedTag]) as unknown as RetrievalService,
+      { refresh: async () => [] } as unknown as RefreshService,
+      logger, disabledCache(),
+    );
+
+    await (service as unknown as { regenerateTaxoTagPages(): Promise<void> }).regenerateTaxoTagPages();
+
+    expect(workspace.appliedOperations.some((operation) => operation.path === 'wiki/concepts/knowledge/shared.md')).toBe(true);
+    expect(workspace.appliedOperations).toContainEqual({ type: 'delete', path: 'wiki/concepts/knowledge/rare.md' });
+    expect(workspace.appliedOperations.some((operation) => operation.path === protectedTag.relativePath)).toBe(false);
+    expect(workspace.appliedOperations.some((operation) => operation.path.startsWith('wiki/sources/'))).toBe(false);
+    expect(fiches[0]?.content).toContain('rare');
+    expect(logger.entries.some((entry) => entry.event === 'ingest:tag-pages-filtered-by-support'
+      && entry.data?.minimumFicheSupport === 2
+      && entry.data.filteredTags === 1)).toBe(true);
+  });
+
+  it('falls back to an unfiled pivot page when the first family grouping degrades', async () => {
+    const fiches: WikiPage[] = [1, 2].map((copy) => ({
+      absolutePath: `/tmp/wiki/wiki/sources/doc/section-${copy}.md`,
+      relativePath: `wiki/sources/doc/section-${copy}.md`, name: `section-${copy}.md`, type: 'source',
+      content: `---\ntitle: Réseau ${copy}\ntags: [orphelin]\n---\n# Réseau\nFiche.`,
+    }));
     const logger = new MemoryTraceLogger();
     const workspace = new FakeWorkspaceService();
     const llm = Object.assign(new FakeLLMService(), {
@@ -456,7 +503,7 @@ describe('ingest service', () => {
     const service = new IngestService(
       createConfig(), workspace as unknown as WorkspaceService,
       llm as unknown as LLMService,
-      new FakeRetrievalService([fiche]) as unknown as RetrievalService,
+      new FakeRetrievalService(fiches) as unknown as RetrievalService,
       { refresh: async () => [] } as unknown as RefreshService,
       logger, disabledCache(),
     );
@@ -468,11 +515,18 @@ describe('ingest service', () => {
   });
 
   it('announces a new tag left unfiled when families are already established', async () => {
-    const fiche: WikiPage = {
-      absolutePath: '/tmp/wiki/wiki/sources/doc/section.md',
-      relativePath: 'wiki/sources/doc/section.md', name: 'section.md', type: 'source',
-      content: '---\ntitle: Réseau\ntags: [orphelin]\n---\n# Réseau\nFiche.',
-    };
+    const fiches: WikiPage[] = [
+      ...[1, 2].map((copy) => ({
+        absolutePath: `/tmp/wiki/wiki/sources/orphelin/section-${copy}.md`,
+        relativePath: `wiki/sources/orphelin/section-${copy}.md`, name: `section-${copy}.md`, type: 'source' as const,
+        content: `---\ntitle: Réseau ${copy}\ntags: [orphelin]\n---\n# Réseau\nFiche.`,
+      })),
+      ...[1, 2].map((copy) => ({
+        absolutePath: `/tmp/wiki/wiki/sources/vlan/section-${copy}.md`,
+        relativePath: `wiki/sources/vlan/section-${copy}.md`, name: `section-${copy}.md`, type: 'source' as const,
+        content: `---\ntitle: VLAN ${copy}\ntags: [vlan]\n---\n# VLAN\nFiche.`,
+      })),
+    ];
     const established: WikiPage = {
       absolutePath: '/tmp/wiki/wiki/concepts/reseau/vlan.md',
       relativePath: 'wiki/concepts/reseau/vlan.md', name: 'vlan.md', type: 'concept',
@@ -486,7 +540,7 @@ describe('ingest service', () => {
     const service = new IngestService(
       createConfig(), workspace as unknown as WorkspaceService,
       llm as unknown as LLMService,
-      new FakeRetrievalService([fiche, established]) as unknown as RetrievalService,
+      new FakeRetrievalService([...fiches, established]) as unknown as RetrievalService,
       { refresh: async () => [] } as unknown as RefreshService,
       logger, disabledCache(),
     );
@@ -496,11 +550,11 @@ describe('ingest service', () => {
   });
 
   it('does not treat the unfiled holding folder as an established family', async () => {
-    const fiche: WikiPage = {
-      absolutePath: '/tmp/wiki/wiki/sources/doc/section.md',
-      relativePath: 'wiki/sources/doc/section.md', name: 'section.md', type: 'source',
-      content: '---\ntitle: Logiciel\ntags: [logiciel]\n---\n# Logiciel\nFiche.',
-    };
+    const fiches: WikiPage[] = [1, 2].map((copy) => ({
+      absolutePath: `/tmp/wiki/wiki/sources/doc/section-${copy}.md`,
+      relativePath: `wiki/sources/doc/section-${copy}.md`, name: `section-${copy}.md`, type: 'source',
+      content: `---\ntitle: Logiciel ${copy}\ntags: [logiciel]\n---\n# Logiciel\nFiche.`,
+    }));
     const provisional: WikiPage = {
       absolutePath: '/tmp/wiki/wiki/concepts/unfiled/logiciel.md',
       relativePath: 'wiki/concepts/unfiled/logiciel.md', name: 'logiciel.md', type: 'concept',
@@ -523,7 +577,7 @@ describe('ingest service', () => {
     const service = new IngestService(
       createConfig(), workspace as unknown as WorkspaceService,
       llm as unknown as LLMService,
-      new FakeRetrievalService([fiche, provisional]) as unknown as RetrievalService,
+      new FakeRetrievalService([...fiches, provisional]) as unknown as RetrievalService,
       { refresh: async () => [] } as unknown as RefreshService,
       logger, disabledCache(),
     );
@@ -784,8 +838,10 @@ describe('ingest service', () => {
     const startLine = sheet.sourceRanges[0]!.startLine;
     const endLine = sheet.sourceRanges[sheet.sourceRanges.length - 1]!.endLine;
     const sheetPath = 'wiki/sources/note/contexte.md';
+    const secondSheetPath = 'wiki/sources/other/context.md';
     const tagPath = 'wiki/concepts/knowledge/knowledge.md';
     await mkdir(path.dirname(path.join(root, sheetPath)), { recursive: true });
+    await mkdir(path.dirname(path.join(root, secondSheetPath)), { recursive: true });
     await mkdir(path.dirname(path.join(root, tagPath)), { recursive: true });
     await mkdir(path.join(root, 'wiki', 'concepts', 'unclassified'), { recursive: true });
     const sheetContent = [
@@ -794,17 +850,23 @@ describe('ingest service', () => {
       `content_hash: ${sheetContentHash(sheet.body, signature)}`,
       '---', '', '# Contexte', '', 'Information de contexte.',
     ].join('\n');
+    const secondSheetContent = [
+      '---', 'type: source', 'title: Other', 'tags:', '  - knowledge',
+      '---', '', '# Context', '', 'Additional supporting information.',
+    ].join('\n');
     const tagContent = [
       '---', 'type: concept', 'subject: "knowledge"',
       'concept_id: "00000000-0000-4000-8000-000000000001"',
       'subject_id: "00000000-0000-4000-8000-000000000002"',
-      'title: "Knowledge"', 'family: "Knowledge"', 'sheet_count: 1',
+      'title: "Knowledge"', 'family: "Knowledge"', 'sheet_count: 2',
       'status: draft', 'generated:', '  by: llm-wiki-tags',
       '  at: 2026-01-01T00:00:00.000Z', 'tags: ["knowledge"]',
       '---', '', '# Knowledge', '', '## Sources', '',
-      '- **Note** [src: wiki/sources/note/contexte.md]', '',
+      '- **Note** [src: wiki/sources/note/contexte.md]',
+      '- **Other** [src: wiki/sources/other/context.md]', '',
     ].join('\n');
     await writeFile(path.join(root, sheetPath), sheetContent, 'utf8');
+    await writeFile(path.join(root, secondSheetPath), secondSheetContent, 'utf8');
     await writeFile(path.join(root, tagPath), tagContent, 'utf8');
     await writeFile(
       path.join(workspace.paths.internalDir, 'source-registry.json'),
@@ -820,6 +882,7 @@ describe('ingest service', () => {
     );
     const retrieval = new FakeRetrievalService([
       { absolutePath: path.join(root, sheetPath), relativePath: sheetPath, name: 'contexte.md', type: 'source', content: sheetContent },
+      { absolutePath: path.join(root, secondSheetPath), relativePath: secondSheetPath, name: 'context.md', type: 'source', content: secondSheetContent },
       { absolutePath: path.join(root, tagPath), relativePath: tagPath, name: 'knowledge.md', type: 'concept', content: tagContent },
     ]);
     const logger = new MemoryTraceLogger();
