@@ -105,10 +105,10 @@ describe('graph search route', () => {
 describe('TAXO graph in the browser', () => {
   it('derives co-citation, cross-family links and membership from one payload', async () => {
     const graph = await loadTaxoGraph(root);
-    const run = new Function('payload', `${taxoStateScript()}
+    const run = new Function('payload', 'location', `${taxoStateScript()}
       ingestTaxo(payload);
       return {cross:crossLinks.map(l=>[l.source,l.target,l.w]),co:coLinks.map(l=>[l.source,l.target,l.w]).sort(),families:famNodes.map(f=>[f.id,f.count,f.nsrc])};`);
-    const out = run(graph) as { cross: unknown[]; co: unknown[]; families: unknown[] };
+    const out = run(graph, { search: '' }) as { cross: unknown[]; co: unknown[]; families: unknown[] };
 
     // Sécurité cites A and B, Projet cites B and C: they share B.
     expect(out.cross).toEqual([['f:Sécurité', 'f:Projet', 1]]);
