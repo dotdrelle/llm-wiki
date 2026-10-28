@@ -43,7 +43,7 @@ export async function generateSkillsPage(rootDir: string): Promise<string> {
     </div>
     <div>
       <label class="field-label" for="f-name">Name <span style="color:var(--err)">*</span></label>
-      <input class="field-input" id="f-name" type="text" placeholder="pipeline" pattern="[a-zA-Z0-9_-]{1,60}" autocomplete="off">
+      <input class="field-input" id="f-name" type="text" placeholder="pipeline" pattern="[a-zA-Z0-9_\\-]{1,60}" autocomplete="off">
       <div class="field-sub">Letters, digits, - and _ only. Invoked as /name in chat.</div>
     </div>
     <div>

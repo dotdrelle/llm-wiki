@@ -1573,7 +1573,7 @@ function cardHTML(s) {
         <div class="mcp-toggle-track"><div class="mcp-toggle-thumb"></div></div>
       </label>
       <input class="mcp-name-input" type="text" value="\${esc(s.name)}" placeholder="Name" aria-label="Connector name"
-        maxlength="80" pattern="[A-Za-z0-9][A-Za-z0-9_.-]{0,79}" title="1–80 letters, numbers, dots, underscores or hyphens"
+        maxlength="80" pattern="[A-Za-z0-9][A-Za-z0-9_.\\-]{0,79}" title="1–80 letters, numbers, dots, underscores or hyphens"
         \${s.origin==='builtin'||s.origin==='global'?'readonly':''} onchange="updateServerField(\${s.id},'name',this.value)">
       <span class="mcp-origin mcp-origin-\${esc(s.origin||'ui')}" title="Connector source">\${esc(originLabel)}</span>
       <span class="mcp-badge \${badgeClass}">\${badgeLabel}</span>
