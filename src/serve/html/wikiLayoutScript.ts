@@ -488,15 +488,13 @@ function wireSidebarLaunchButtons() {
   /*
    Dropping files from the desktop onto the Pending panel.
 
-   Pending is the sources inbox: dropping a .md there must be enough.
-   Markdown only, deliberately: the other formats go through conversion
-   (document upload), which is not just writing a file. A mixed batch is
-   refused as a whole instead of being half-imported, so the reader knows
-   exactly what was written.
+   Pending is the sources inbox: Markdown can be written directly, and the
+   other formats supported by chat upload are converted by the documents
+   agent. A mixed batch is refused as a whole instead of being half-imported.
   */
   const PENDING_PARENT = 'raw/untracked';
-  // Markdown is written directly; the rest is handed to the documents agent,
-  // which converts it and writes its Markdown into this same folder. Refreshed
+  // Markdown is written directly; the other supported formats are handed to
+  // the documents agent, which writes converted Markdown into this folder. Refreshed
   // before each drop rather than cached at load: the agent can come up or go
   // down while the page stays open, and a stale answer would either refuse a
   // file the agent can now take or accept one it cannot.
@@ -532,7 +530,7 @@ function wireSidebarLaunchButtons() {
   }
   // Names what the panel would have taken had the agent been up, so a refusal
   // says which file and why, not just "no".
-  const PENDING_CONVERTIBLE_LABEL = '.pdf and .txt';
+  const PENDING_CONVERTIBLE_LABEL = 'supported non-Markdown formats';
   function rejectionMessage(rejected) {
     const accepted = pendingCaps.markdown.concat(pendingCaps.convertible).join(', ');
     const listed = '\\n· ' + rejected.map((file) => file.name).join('\\n· ');

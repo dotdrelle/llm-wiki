@@ -116,18 +116,18 @@ Everything below is a **UI panel**, not something you type:
   convert an upload; Serve reports when it is unavailable. This is the
   equivalent of the Shell's `/upload <path>`.
 - **Pending panel** (wiki browser) — the inbox of sources, `raw/untracked/`.
-  Drop files on it from your desktop: `.md` and `.markdown` are written as is,
-  and `.pdf` or `.txt` files are converted to Markdown first. That conversion
-  is done by the documents agent, so those two formats are accepted **only
-  while that agent is running** — when it is down or not configured, the panel
-  says so and takes Markdown only. Each conversion appears in the **Activity panel** as it runs,
+  Drop the same formats accepted by the Upload button above. `.md` and
+  `.markdown` are written as is; the other formats are converted to Markdown
+  by the documents agent, so they are accepted **only while that agent is
+  running** — when it is down or not configured, the panel says so and takes
+  Markdown only. Each conversion appears in the **Activity panel** as it runs,
   one file at a time, exactly like a conversion started from the Upload button;
   the panel fills in as each file lands. While the agent works, the file also
   shows in Pending as a **spinner row that is not clickable** — it becomes an
   ordinary source once the conversion lands, and if the conversion fails the
   row simply disappears. While a run is in progress, a Markdown
-  drop is refused — the tree is read-only during a run — whereas a PDF or text
-  drop goes through and waits for the next ingestion. Its lightning button
+  drop is refused — the tree is read-only during a run — whereas a document
+  conversion drop goes through and waits for the next ingestion. Its lightning button
   starts the ingestion of everything pending.
 - **Wiki browser sidebar** — three views behind the small icon rail on the
   left, in the order of the work: **Pending** (inbox, the default view),

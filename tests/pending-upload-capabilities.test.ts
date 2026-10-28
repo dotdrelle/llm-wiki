@@ -62,16 +62,16 @@ describe('Pending upload capabilities', () => {
     const original = globalThis.fetch;
     globalThis.fetch = endpointFetch(() => ({
       ok: true,
-      supportedExtensions: ['.pdf', '.txt', '.png', '.docx'],
+      supportedExtensions: [...PENDING_CONVERTIBLE_EXTENSIONS],
     })) as typeof fetch;
     try {
       const caps = await pendingUploadCapabilities({ externalMcpEndpoints: [documentsEndpoint], version: '0' });
       expect(caps.documents.up).toBe(true);
       expect(caps.convertible).toEqual(PENDING_CONVERTIBLE_EXTENSIONS);
-      // The agent converts images and Office formats too; the panel does not
-      // promise them, and a drop must not silently become an OCR run.
-      expect(caps.convertible).not.toContain('.png');
-      expect(caps.convertible).not.toContain('.docx');
+      // Pending and chat upload use the same formats, including images and Office.
+      expect(caps.convertible).toContain('.png');
+      expect(caps.convertible).toContain('.docx');
+      expect(caps.convertible).toContain('.odp');
     } finally {
       globalThis.fetch = original;
     }

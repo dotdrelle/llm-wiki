@@ -677,8 +677,8 @@ window.addEventListener('message', (event) => {
     refreshWikiSidebar();
   } else if (data.type === 'llmwiki:pendingUpload') {
     /*
-     A PDF or text file dropped on the wiki's Pending panel is converted by the
-     documents agent, one file at a time, up to five minutes each. The sidebar
+     A supported non-Markdown file dropped on the wiki's Pending panel is
+     converted by the documents agent, one file at a time, up to five minutes each. The sidebar
      iframe cannot report that on its own, so it reports here — into the same
      Activity panel, with the same item shape, as a conversion started from the
      chat's Upload button. It is the same operation done by the same agent, and

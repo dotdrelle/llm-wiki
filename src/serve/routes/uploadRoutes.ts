@@ -64,19 +64,13 @@ const DOCUMENT_EXTENSION_SET = new Set<string>(DOCUMENT_EXTENSIONS);
 /*
  What the Pending panel accepts on an OS file drop.
 
- Markdown is written straight into raw/untracked: dropping a .md there is just
- a file write. Everything else has to be converted first, and conversion is the
- documents agent's job — it writes its Markdown into that same raw/untracked,
- which is why a converted drop lands exactly where a Markdown drop does.
-
- The list is deliberately narrow. The agent converts images and Office formats
- too, and widening this set is one constant away, but a drop that silently
- becomes an OCR run is a surprise; .pdf and .txt are what the panel promises.
- The set is intersected at runtime with what the agent itself reports, so the
- panel can never offer a conversion the running agent would refuse.
+ The list matches the chat upload button and is intersected at runtime with the
+ formats the documents agent reports. Markdown is written directly to
+ raw/untracked; every other supported format is converted to Markdown there.
 */
 export const PENDING_MARKDOWN_EXTENSIONS = ['.md', '.markdown'];
-export const PENDING_CONVERTIBLE_EXTENSIONS = ['.pdf', '.txt'];
+export const PENDING_CONVERTIBLE_EXTENSIONS = DOCUMENT_EXTENSIONS
+  .filter((extension) => !PENDING_MARKDOWN_EXTENSIONS.includes(extension));
 
 export type PendingUploadCapabilities = {
   markdown: string[];
@@ -209,8 +203,8 @@ async function removeDocumentUploadsForFilename(
 /*
  Which uploads the Pending panel may show as "in flight".
 
- The panel is the inbox of sources, and a dropped PDF or text file only becomes
- a source once the documents agent has written its Markdown into raw/untracked.
+ The panel is the inbox of sources, and a dropped non-Markdown document only
+ becomes a source once the documents agent has written its Markdown into raw/untracked.
  During that wait the file exists nowhere the panel can see, so the sidebar
  renders a placeholder row — a spinner, no link, no delete — for every record
  the agent is still working on.
