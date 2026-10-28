@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { pathExists, safeWriteFile } from '../../utils/fs.ts';
+import { DOCUMENT_EXTENSIONS } from '../documentFormats.ts';
 
 export type ExternalMcpEndpoint = {
   name: string;
@@ -58,12 +59,7 @@ type UploadRoutesDeps = {
   ) => void;
 };
 
-const DOCUMENT_EXTENSIONS = new Set([
-  '.txt', '.md', '.markdown', '.csv', '.json', '.xml', '.yaml', '.yml', '.html', '.htm', '.rtf',
-  '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.webp',
-  '.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.odt', '.ods', '.odp',
-  '.pdf',
-]);
+const DOCUMENT_EXTENSION_SET = new Set<string>(DOCUMENT_EXTENSIONS);
 
 /*
  What the Pending panel accepts on an OS file drop.
@@ -143,7 +139,7 @@ function sanitizeUploadFilename(filename: string): string {
 
 function assertDocumentUpload(filename: string, bytes: number, documentMaxUploadBytes: () => number): void {
   const ext = path.extname(filename).toLowerCase();
-  if (!DOCUMENT_EXTENSIONS.has(ext)) throw new Error(`Unsupported document type: ${ext || 'no extension'}`);
+  if (!DOCUMENT_EXTENSION_SET.has(ext)) throw new Error(`Unsupported document type: ${ext || 'no extension'}`);
   const configuredMax = documentMaxUploadBytes();
   const max = Number.isFinite(configuredMax) && configuredMax > 0
     ? configuredMax

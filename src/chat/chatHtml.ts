@@ -27,6 +27,7 @@ import { REPORT_READER_SCRIPT } from './runtime/reportReaderScript.ts';
 import { WIKI_PANEL_SCRIPT } from './views/wikiPanelScript.ts';
 import { PROPOSAL_EXPLAIN_SCRIPT } from './runtime/proposalExplainScript.ts';
 import { WIKI_AGENT_LAUNCH_SCRIPT } from './views/wikiAgentLaunchScript.ts';
+import { DOCUMENT_UPLOAD_ALLOWED_EXTENSIONS } from '../serve/documentFormats.ts';
 const CHAT_BODY = `${CHAT_MARKUP}\n\n<script>\nlet servers = [];
 let messages = [];
 let isStreaming = false;
@@ -811,7 +812,7 @@ function uploadDocumentRequest(form,onUploaded) {
     xhr.send(form);
   });
 }
-const UPLOAD_ALLOWED_EXTENSIONS=['txt','md','pdf','xls','xlsx','doc','docx','ppt','pptx','odt','odp'];
+const UPLOAD_ALLOWED_EXTENSIONS=${JSON.stringify(DOCUMENT_UPLOAD_ALLOWED_EXTENSIONS)};
 async function uploadSelectedDocument(input) {
   const file=input?.files?.[0];
   if(!file) return;

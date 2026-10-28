@@ -107,14 +107,20 @@ Everything below is a **UI panel**, not something you type:
   the panel. If saving a change fails for a connector the manager already
   knows, the card stays connected with its saved settings and warns that the
   edit is not saved.
-- **Upload button** — attach a document to the conversation; the equivalent of
-  the Shell's `/upload <path>`.
+- **Upload button** — attach a document to the conversation; dropping a file
+  from your desktop onto the chat does the same thing. Both accept the formats
+  handled by the documents agent: text (`txt`, `md`, `markdown`, `csv`, `json`,
+  `xml`, `yaml`, `yml`, `html`, `htm`, `rtf`), images (`png`, `jpg`, `jpeg`,
+  `tif`, `tiff`, `bmp`, `webp`), PDF, and Office (`doc`, `docx`, `ppt`, `pptx`,
+  `xls`, `xlsx`, `odt`, `ods`, `odp`). The documents agent must be running to
+  convert an upload; Serve reports when it is unavailable. This is the
+  equivalent of the Shell's `/upload <path>`.
 - **Pending panel** (wiki browser) — the inbox of sources, `raw/untracked/`.
-  Drop files on it from your desktop: Markdown is written as is, and PDF or
-  text files are converted to Markdown first. That conversion is done by the
-  documents agent, so those two formats are accepted **only while that agent is
-  running** — when it is down or not configured, the panel says so and takes
-  Markdown only. Each conversion appears in the **Activity panel** as it runs,
+  Drop files on it from your desktop: `.md` and `.markdown` are written as is,
+  and `.pdf` or `.txt` files are converted to Markdown first. That conversion
+  is done by the documents agent, so those two formats are accepted **only
+  while that agent is running** — when it is down or not configured, the panel
+  says so and takes Markdown only. Each conversion appears in the **Activity panel** as it runs,
   one file at a time, exactly like a conversion started from the Upload button;
   the panel fills in as each file lands. While the agent works, the file also
   shows in Pending as a **spinner row that is not clickable** — it becomes an

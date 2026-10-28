@@ -1,5 +1,6 @@
 import { REPORT_READER_HTML } from '../runtime/reportReaderScript.ts';
 import { CONFIRM_DIALOG_HTML } from '../confirmDialog.ts';
+import { DOCUMENT_FILE_ACCEPT } from '../../serve/documentFormats.ts';
 
 export const EMPTY_CHAT_HTML = `<div id="empty">
   <div class="em-icon">⬡</div>
@@ -166,7 +167,7 @@ export const CHAT_MARKUP = `<div id="wco-titlebar" aria-hidden="true"><span id="
     <div id="page-context-chips" hidden aria-label="Documents shared with Donna as context"></div>
     <div class="input-box" id="input-box">
       <div class="skill-ac" id="skill-ac"></div>
-      <input id="doc-upload-input" type="file" hidden accept=".txt,.md,.pdf,.xls,.xlsx,.doc,.docx,.ppt,.pptx,.odt,.odp" onchange="uploadSelectedDocument(this)">
+      <input id="doc-upload-input" type="file" hidden accept="${DOCUMENT_FILE_ACCEPT}" onchange="uploadSelectedDocument(this)">
       <textarea id="chat-input" rows="1" placeholder="Your message… (/ for skills)"
         oninput="autoResize(this)" onkeydown="handleKey(event)"></textarea>
       <div class="input-actions">
